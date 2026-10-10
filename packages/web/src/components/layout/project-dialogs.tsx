@@ -3,7 +3,6 @@
  * (member management and deletion, owner only). Invoked from the sidebar's Project switcher.
  */
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
 import type {
   ApprovalMode,
   ChatDefaultsDto,
@@ -13,6 +12,24 @@ import type {
   ModelRefDto,
   ModelsResponse,
 } from "@prismshadow/penguin-server/api";
+import {
+  Badge,
+  Button,
+  ConfirmModal,
+  FieldError,
+  FieldLabel,
+  ICONS,
+  InfoPopover,
+  Input,
+  Modal,
+  NavList,
+  NavRow,
+  Select,
+  SettingRow,
+  Switch,
+  toastError,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -28,21 +45,10 @@ import {
   dispatchChatDefaultsChanged,
   type ChatDefaultsChangedDetail,
 } from "../../features/chat/chat-defaults-event";
-import { ModelSelect, modelLabel } from "../../features/chat/model-select";
+import { ModelCatalogSelect, modelLabel } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Select } from "../ui/select";
-import { Switch } from "../ui/switch";
-import { GEAR_ICON } from "../ui/icons";
-import { FieldError, FieldHint, FieldLabel } from "../ui/field";
-import { toastError, toastSuccess } from "../ui/toast";
-import { Modal } from "../ui/modal";
-import { ConfirmModal } from "../ui/confirm-modal";
-import { Badge } from "../ui/badge";
-import { InfoPopover } from "../ui/info-popover";
 import { SemanticIdField } from "../../features/semantic-id/semantic-id-field";
 
 /** Approval modes offered by the new-chat-defaults select, in the composer menu's order. */
@@ -159,63 +165,18 @@ export function CreateProjectDialog({
   );
 }
 
-/** Path data for the settings tabs' small icons (24px viewBox, stroked like NAV_ICONS). */
+/** The settings tabs' small icons (stroked like NAV_ICONS). */
 const TAB_ICON_PATHS = {
-  general: GEAR_ICON,
-  /** Two people (lucide users). Project members are humans — the Agent glyph used to stand in here. */
-  members:
-    "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
-  /** Sliders (lucide sliders-vertical). */
-  defaults: "M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6",
-  /** Shield (lucide shield). */
-  security: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+  general: ICONS.gear,
+  /** Two people: Project members are humans, so the Agent glyph does not stand in here. */
+  members: ICONS.users,
+  /** Three sliders set at different heights. */
+  defaults: ICONS.sliders,
+  /** The shield with a check: the policy that guards the Project. */
+  security: ICONS.shieldCheck,
 } as const;
 
 type SettingsTab = keyof typeof TAB_ICON_PATHS;
-
-function TabIcon({ d }: { d: string }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="shrink-0"
-    >
-      <path d={d} />
-    </svg>
-  );
-}
-
-/**
- * One row of a settings page: title plus a one-line gray description on the left, the
- * control on the right. Rows are separated by the parent container's divide-y hairlines
- * (ruled sections, not card boxes).
- */
-function SettingRow({
-  title,
-  description,
-  children,
-}: {
-  title: ReactNode;
-  description?: ReactNode;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm">{title}</p>
-        {description !== undefined && <p className="mt-0.5 text-xs text-gray-400">{description}</p>}
-      </div>
-      {children !== undefined && <div className="flex shrink-0 items-center gap-2">{children}</div>}
-    </div>
-  );
-}
 
 /**
  * Project settings dialog: a left tab rail (General / Members / Defaults / Security
@@ -255,27 +216,21 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   return (
     <Modal open={open} title={S.project.settingsTitle} onClose={onClose} widthClass="sm:max-w-3xl">
       <div className="flex flex-col gap-3 sm:min-h-[26rem] sm:flex-row sm:gap-0">
-        <nav
-          aria-label={S.project.settingsTitle}
-          className="flex shrink-0 gap-1 overflow-x-auto sm:w-44 sm:flex-col sm:overflow-x-visible sm:border-r sm:border-gray-100 sm:pr-3 dark:sm:border-gray-800"
+        <NavList
+          label={S.project.settingsTitle}
+          orientation="responsive"
+          className="shrink-0 sm:w-44 sm:border-r sm:border-line-muted sm:pr-3"
         >
           {tabs.map((t) => (
-            <button
+            <NavRow
               key={t.key}
-              type="button"
-              aria-current={active.key === t.key ? "page" : undefined}
+              label={t.label}
+              glyph={TAB_ICON_PATHS[t.key]}
+              active={active.key === t.key}
               onClick={() => setTab(t.key)}
-              className={`flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
-                active.key === t.key
-                  ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/60"
-              }`}
-            >
-              <TabIcon d={TAB_ICON_PATHS[t.key]} />
-              <span className="truncate">{t.label}</span>
-            </button>
+            />
           ))}
-        </nav>
+        </NavList>
         <section className="min-w-0 flex-1 sm:pl-5">
           <h3 className="flex items-center gap-1.5 text-base font-semibold">
             {active.label}
@@ -359,20 +314,24 @@ function GeneralSection({
         {isOwner ? (
           <div className="flex flex-col items-end gap-1">
             <div className="flex items-stretch gap-2">
-              <Input
-                size="sm"
-                className="w-44"
-                value={name}
-                invalid={Boolean(nameError)}
-                maxLength={100}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (nameError) setNameError(undefined);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void saveName();
-                }}
-              />
+              {/* The width sits on a box around the field: the control's own `w-full` outranks
+                  a width passed to it, and a field as wide as the row leaves the button
+                  beside it no room. Narrower on a phone, where the row's title needs the room. */}
+              <div className="w-32 sm:w-44">
+                <Input
+                  size="sm"
+                  value={name}
+                  invalid={Boolean(nameError)}
+                  maxLength={100}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (nameError) setNameError(undefined);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveName();
+                  }}
+                />
+              </div>
               <Button
                 size="sm"
                 disabled={nameBusy || !name.trim() || name.trim() === savedName}
@@ -415,6 +374,8 @@ function GeneralSection({
         title={S.project.deleteProject}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => void doDelete()}
+        confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
       </ConfirmModal>
@@ -432,6 +393,8 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
   const [members, setMembers] = useState<MemberInfo[] | null>(null);
   const [newMemberId, setNewMemberId] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** The member whose removal awaits confirmation: it revokes their access at once. */
+  const [removing, setRemoving] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -478,59 +441,76 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
     // Member permission table: username / role / actions; cells never wrap. Last row
     // (owner only) = add member: small username input + add button (new members are
     // always the member role).
-    <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
-            <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.username}</th>
-            <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.role}</th>
-            <th className="w-20 whitespace-nowrap px-2.5 py-1.5 text-right font-medium">
-              {S.common.actions}
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
-          {members.map((m) => (
-            <tr key={m.userId}>
-              <td className="whitespace-nowrap px-2.5 py-1.5">{m.userId}</td>
-              <td className="whitespace-nowrap px-2.5 py-1.5">
-                <Badge tone="gray">{m.role}</Badge>
-              </td>
-              <td className="whitespace-nowrap px-2.5 py-1 text-right">
-                {isOwner && m.role !== "owner" && m.userId !== user?.userId && (
-                  <Button size="sm" variant="ghost" onClick={() => void doRemove(m.userId)}>
-                    {S.project.removeMember}
+    <>
+      <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
+              <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.username}</th>
+              <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.role}</th>
+              <th className="w-20 whitespace-nowrap px-2.5 py-1.5 text-right font-medium">
+                {S.common.actions}
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+            {members.map((m) => (
+              <tr key={m.userId}>
+                <td className="whitespace-nowrap px-2.5 py-1.5">{m.userId}</td>
+                <td className="whitespace-nowrap px-2.5 py-1.5">
+                  <Badge>{m.role}</Badge>
+                </td>
+                <td className="whitespace-nowrap px-2.5 py-1 text-right">
+                  {isOwner && m.role !== "owner" && m.userId !== user?.userId && (
+                    <Button size="sm" variant="ghost" onClick={() => setRemoving(m.userId)}>
+                      {S.project.removeMember}
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {isOwner && (
+              <tr>
+                <td className="px-2.5 py-1.5">
+                  <Input
+                    placeholder={S.common.username}
+                    size="sm"
+                    value={newMemberId}
+                    onChange={(e) => setNewMemberId(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void addMember();
+                    }}
+                  />
+                </td>
+                <td className="whitespace-nowrap px-2.5 py-1.5">
+                  <Badge>member</Badge>
+                </td>
+                <td className="whitespace-nowrap px-2.5 py-1 text-right">
+                  <Button size="sm" disabled={!newMemberId.trim()} onClick={() => void addMember()}>
+                    {S.project.addMember}
                   </Button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {isOwner && (
-            <tr>
-              <td className="px-2.5 py-1.5">
-                <Input
-                  placeholder={S.common.username}
-                  size="sm"
-                  value={newMemberId}
-                  onChange={(e) => setNewMemberId(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void addMember();
-                  }}
-                />
-              </td>
-              <td className="whitespace-nowrap px-2.5 py-1.5">
-                <Badge tone="gray">member</Badge>
-              </td>
-              <td className="whitespace-nowrap px-2.5 py-1 text-right">
-                <Button size="sm" disabled={!newMemberId.trim()} onClick={() => void addMember()}>
-                  {S.project.addMember}
-                </Button>
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <ConfirmModal
+        open={removing !== null}
+        title={S.project.removeMemberTitle}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => {
+          if (removing !== null) void doRemove(removing);
+          setRemoving(null);
+        }}
+        confirmLabel={S.project.removeMember}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {removing !== null ? S.project.removeMemberConfirm(removing) : ""}
+        </p>
+      </ConfirmModal>
+    </>
   );
 }
 
@@ -539,9 +519,9 @@ function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: bo
  * delete zone): the `[default_chat]` block (Agent / Workspace / approval mode / thinking
  * level) plus the Project's default model, laid out as a compact responsive two-column
  * grid. Workspace and model reuse the chat draft's own pickers — WorkspaceSelect (the
- * dir browser) and ModelSelect (the composer's model dropdown) — with their `form`
- * trigger variant, so the controls line up with the dialog's Input/Select while the
- * POPOVER menus stay exactly the composer's.
+ * folder finder, a modal stacked on this one) and ModelCatalogSelect (the composer's model
+ * picker, a dialog too) — with their `form` trigger variant, so the controls line up with
+ * the dialog's Input/Select while what they open stays exactly the composer's.
  * The model default is SINGLE-SOURCED with the models page — the picker renders and writes
  * the same top-level `default_model` (via the narrow PUT /models/default route), never a
  * second key; changing it also releases the draft-cached model pin exactly as the models
@@ -714,8 +694,8 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                 </option>
               ))}
             </Select>
-            {/* Plain tier names, not the composer dropdown's annotated variant: a native
-                <select> paints the picked option's own text on the collapsed control, so
+            {/* Plain tier names, not the composer dropdown's annotated variant: a Select
+                shows the picked option's own text on its closed trigger, so
                 annotating the rows here would also put "(xhigh)" on what is, once closed,
                 a trigger. Matches the approval-mode select directly above, whose options
                 are plain localized names too. */}
@@ -739,9 +719,9 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
               </span>
               {models.models.length > 0 ? (
                 <>
-                  {/* The composer's model dropdown (provider logo + name + searchable grouped
-                      panel); the default row carries the S.models.default marker. */}
-                  <ModelSelect
+                  {/* The composer's model picker (provider logo + name, opening the model-picker
+                      dialog); the default row carries the S.models.default marker. */}
+                  <ModelCatalogSelect
                     models={models.models}
                     value={modelRef}
                     defaultModel={models.defaultModel}
@@ -756,15 +736,16 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
             </div>
             <div className="sm:col-span-2">
               <FieldLabel>{S.chat.workspace}</FieldLabel>
-              {/* The draft page's dir-browser pill: browse server directories, edit the path
-                  inline, or clear back to a temporary workspace. */}
+              {/* The draft page's folder finder: browse server directories, go to a typed
+                  path, or start in a temporary workspace. That one would belong to the
+                  default Agent when one is set, so the finder can show where. */}
               <WorkspaceSelect
                 projectId={projectId}
                 workspace={workspace}
                 onChange={setWorkspace}
+                {...(agentId ? { agentId } : {})}
                 variant="form"
               />
-              <FieldHint>{S.chat.workspaceHintShort}</FieldHint>
             </div>
           </div>
           <div className="mt-3 flex justify-end">
@@ -937,6 +918,8 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
   const [rules, setRules] = useState<CommandPolicyRuleDto[]>([]);
   /** Index being edited inline, "new" for the add form, null when idle. */
   const [editing, setEditing] = useState<number | "new" | null>(null);
+  /** "Restore defaults" awaiting confirmation: it replaces every rule in the list. */
+  const [confirmRestore, setConfirmRestore] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -966,6 +949,17 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
     (enabled !== saved.enabled ||
       rules.length !== saved.rules.length ||
       rules.some((r, i) => !sameRule(r, saved.rules[i]!)));
+
+  const restoreDefaults = () => {
+    if (saved === null) return;
+    setRules(saved.defaultRules.map((r) => ({ ...r })));
+    setConfirmRestore(false);
+  };
+  /** Already the factory set: there is nothing to restore, so the button rests disabled. */
+  const atDefaults =
+    saved !== null &&
+    rules.length === saved.defaultRules.length &&
+    rules.every((r, i) => sameRule(r, saved.defaultRules[i]!));
 
   const save = async () => {
     if (busy || !dirty) return;
@@ -1018,8 +1012,8 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy || !enabled || editing !== null}
-                    onClick={() => setRules(saved.defaultRules.map((r) => ({ ...r })))}
+                    disabled={busy || !enabled || editing !== null || atDefaults}
+                    onClick={() => setConfirmRestore(true)}
                   >
                     {S.project.commandPolicyRestore}
                   </Button>
@@ -1074,8 +1068,9 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                         <p className="mt-0.5 text-xs text-gray-400">{r.description}</p>
                       )}
                       <p
-                        className="mt-0.5 truncate font-mono text-[11px] text-gray-400"
-                        title={r.pattern}
+                        className="mt-0.5 truncate font-mono text-xs text-gray-400"
+                        data-tooltip={r.pattern}
+                        data-tooltip-content="code"
                       >
                         {r.pattern}
                       </p>
@@ -1135,6 +1130,18 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
           )}
         </>
       )}
+      <ConfirmModal
+        open={confirmRestore}
+        title={S.project.commandPolicyRestore}
+        onClose={() => setConfirmRestore(false)}
+        onConfirm={restoreDefaults}
+        confirmLabel={S.project.commandPolicyRestore}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.project.commandPolicyRestoreConfirm}
+        </p>
+      </ConfirmModal>
     </div>
   );
 }

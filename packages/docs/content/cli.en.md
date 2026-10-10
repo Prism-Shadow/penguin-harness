@@ -7,11 +7,11 @@ This page documents every `penguin` command. It opens with how the CLI reaches a
 
 The CLI ships as the npm package `@prismshadow/penguin-cli`, and the command is `penguin`. Bare `penguin` prints help. `-v, --version` prints the running build's one-line identity, and `penguin version --json` prints all of it. On startup the CLI loads a `.env` file from the working directory.
 
-The CLI is a thin client of the server. Every session-facing command (`run`, `chat`, `ls`, `input`, `logs`, `agent`, `project`, `cost`, `schedule`, `org`) sends HTTP requests to a PenguinHarness server and renders the replies. Tasks run on the server, Sessions live in its index, and the Web App sees everything the CLI creates, and the other way round. Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
+The CLI is a thin client of the server. Every session-facing command (`run`, `chat`, `session`, `agent`, `project`, `cost`, `schedule`, `org`, `browser`) sends HTTP requests to a PenguinHarness server and renders the replies. Tasks run on the server, Sessions live in its index, and the Web App sees everything the CLI creates, and the other way round. Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
 
 ## Server connection
 
-A CLI that talks to the server on the local machine needs no login. The CLI picks its server in this order, and the first match wins:
+A CLI that talks to the server on the local machine needs no login, except to change an agent's exposure (see [penguin agent api](#penguin-agent-api)). The CLI picks its server in this order, and the first match wins:
 
 1. `--server <url>`: an explicit target.
 2. `PENGUIN_API_URL`: the same, from the environment. Server-driven sessions inject it into every tool subprocess, together with `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID`, so an agent's own `penguin` calls reach the server that runs them.
@@ -20,16 +20,18 @@ A CLI that talks to the server on the local machine needs no login. The CLI pick
 
 The CLI authenticates with the local API token. The server writes a fresh token to `<root>/api-token` on every boot (owner-only), and the CLI sends it as `Authorization: Bearer`. `PENGUIN_API_TOKEN` overrides the file. The CLI reads the file only for loopback targets, so a remote `--server` needs `PENGUIN_API_TOKEN` set explicitly. Holding the file grants admin authority by design, because local filesystem access to the data root already does. `penguin server reset-admin-password` relies on the same rule.
 
+A few writes take a person's sign-in instead, such as those that change an agent's exposure (see [penguin agent api](#penguin-agent-api)). The server refuses the token on them with `403` `human_required`, and the CLI then sends that request once more with your sign-in from [`penguin auth login`](#penguin-auth-login) or [`penguin auth token`](#penguin-auth-token), stored in `<root>/cli-session.json` and sent as the session cookie. It does so only for a server on this machine, only when the sign-in itself is to a server on this machine, and never from inside a Session, where the command is an agent's. Every other request carries the token alone.
+
 ## Global conventions
 
 - Model references: a model's identity is always the `(provider, model_id)` pair. `--model-id` takes the upstream model id and `--provider` the group it belongs to. The CLI never infers, guesses or defaults the provider. On `run` and `chat` the pair as a whole is optional: pass both to pick a model, or neither to use the Project's default model. Passing only one is an error.
 - Project and agent defaults: `--project-id` falls back to `PENGUIN_PROJECT_ID`, then `default_project`. `--agent-id` falls back to `PENGUIN_AGENT_ID`, then `default_agent`. Inside a server-driven session, those variables name the session's own Project and agent.
-- Session references: wherever a command takes a session id (`input`, `logs`, `run --session`, `chat --resume`), the full id or any unique fragment works. The 8-hex tail that `penguin ls` prints is the intended shorthand. An ambiguous fragment is an error that lists the candidates.
-- Latest-session default: where the session id is optional (`input [session_id]`, `logs [session_id]`, `chat --resume`), omitting it means the agent's most recent Session, and `--agent-id` picks the agent. `input` and `logs` name the Session they picked in a dim `[latest]` line on stderr, so the target is always clear and `--json` output on stdout stays parseable. When the agent has no Session at all, they print one line pointing at `penguin run` / `penguin chat` and exit non-zero.
+- Session references: wherever a command takes a session id (`session log`, `session input`, `session rename`, `run --session`, `chat --resume`), the full id or any unique fragment works. The 8-hex tail that `penguin session ls` prints is the intended shorthand. An ambiguous fragment is an error that lists the candidates.
+- Latest-session default: where the session id is optional (`session log`, `session input`, `chat --resume`), omitting it means the agent's most recent Session, and `--agent-id` picks the agent. (`session rename` takes the calling Session first; see [penguin session rename](#penguin-session-rename).) `session log` and `session input` name the Session they picked in a dim `[latest]` line on stderr, so the target is always clear and `--json` output on stdout stays parseable. When the agent has no Session at all, they print one line pointing at `penguin run` / `penguin chat` and exit non-zero.
 - JSON output: `--json` prints raw JSON instead of rendered or tabular output.
 - Target server: `--server <url>` targets a specific server. See [Server connection](#server-connection).
 - Caller-context defaults: inside a harness agent (`PENGUIN_SESSION_ID` is set), a Session created by `run` or `chat` takes each unspecified field from the calling Session's live values: the Workspace, the model pair, the approval mode and the thinking level. `run_subagent` applies the same inheritance to the children it spawns, so both surfaces follow one convention. For each field, an explicit flag wins over the caller's value, which wins over the plain fallback. A failed lookup prints a dim warning and uses the plain fallback. Outside an agent nothing changes, and `--project-id` / `--agent-id` keep their environment-variable defaults.
-- Timeouts: `--timeout <duration>` on `run`, `input` and `logs -f` bounds the wait with soft-yield semantics, the `exec_command` yield-window model applied to the CLI. At expiry the command detaches cleanly and exits 0. The Task keeps running on the server, and a later `penguin input` or `penguin logs` can pick it up. Accepted values are `30s`, `5m`, `2h`, or a bare integer meaning seconds; anything else is rejected. `--timeout 0` returns immediately after delivery (`{sessionId, status: "running"}` under `--json`), so the same option also covers "don't wait". Without the option, the command waits indefinitely. For new Tasks, `run --background` remains the usual fire-and-forget: it prints the bare session id for scripts and detaches as soon as the Task is created.
+- Timeouts: `--timeout <duration>` on `run`, `session input` and `session log -f` bounds the wait with soft-yield semantics, the `exec_command` yield-window model applied to the CLI. At expiry the command detaches cleanly and exits 0. The Task keeps running on the server, and a later `penguin session input` or `penguin session log` can pick it up. Accepted values are `30s`, `5m`, `2h`, or a bare integer meaning seconds; anything else is rejected. `--timeout 0` returns immediately after delivery (`{sessionId, status: "running"}` under `--json`), so the same option also covers "don't wait". Without the option, the command waits indefinitely. For new Tasks, `run --background` remains the usual fire-and-forget: it prints the bare session id for scripts and detaches as soon as the Task is created.
 - Argument errors: a missing argument, a missing required option, an unknown option or a mistyped command prints one line in the interface language, the command's own usage and a pointer to its `--help`, then exits non-zero.
 - Data root: `--root <dir>` sets the data root for the commands that read it directly: `config`, `auth`, `version`, `server status` and `server stop`. A relative path resolves against the working directory. Priority: `--root`, then the `PENGUIN_HOME` environment variable, then `~/.penguin/data`.
 
@@ -52,12 +54,14 @@ penguin run -m <message> [options]
 | `--approve <mode>` | Approval mode; see [Approval modes (--approve)](#approval-modes---approve). With `--session`, it PATCHes the Session's sticky mode. | `allow-all` |
 | `--thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`) before the Task. It applies from the Session's next LLM request. | The Session's pinned level, else the agent config |
 | `--session <sessionId>` | Reuses an existing Session (full id or unique fragment) instead of creating one. Cannot be combined with `--workspace` or the model pair. | — |
-| `--source <source>` | Marks the new Session as created by a Benchmark evaluation. The only value is `benchmark`, and the Web App files such Sessions under the Evaluations folder of the session list. Cannot be combined with `--session`. | — |
-| `--background` | POSTs the Task and exits immediately, printing the session id (`{"sessionId"}` under `--json`). The Task keeps running on the server; follow it with `penguin logs -f`. | — |
+| `--title <title>` | Names the Session (a manual rename; the auto-generated title never overwrites it). With `--session` it renames the reused Session instead. The title follows the rules of [penguin session rename](#penguin-session-rename). | — |
+| `--background` | POSTs the Task and exits immediately, printing the session id (`{"sessionId"}` under `--json`). The Task keeps running on the server; follow it with `penguin session log -f`. | — |
 | `--timeout <duration>` | Soft-yield wait budget; see [Global conventions](#global-conventions). Cannot be combined with `--background`. | Wait indefinitely |
 | `--goal [budget]` | Goal mode: the message is the objective, and the server loops until the goal reaches a terminal state. The optional value is a token budget, such as `500k`. | — |
 | `--json` | Prints a final `{sessionId, status, text}` object instead of the rendered stream. `text` joins the main Session's assistant text messages. | — |
 | `--server <url>` | Target server; see [Server connection](#server-connection). | — |
+
+Every Session `run` creates is a CLI Session (`source: "cli"`), which the Web App lists in the **Background** folder of its session list rather than among the agent's conversations. `penguin chat` creates ordinary conversations. The `--source benchmark` that older evaluation skills pass is accepted and ignored, with a note.
 
 When `--timeout` expires, `run` prints what has rendered so far and a dim still-running line with the session id, then exits 0 without aborting the Task. Under `--json` it prints `{sessionId, status: "running", text}`. `--timeout 0` returns right after the POST, and under `--json` prints `{sessionId, status: "running"}` with no `text`. For a goal run, the `status` in the final JSON object is the goal outcome.
 
@@ -88,18 +92,22 @@ penguin chat [options]
 | `--verbose` | Shows full tool output instead of collapsing long outputs; see [Tool output collapsing](#tool-output-collapsing). | Long outputs collapsed |
 | `--server <url>` | Target server; see [Server connection](#server-connection). | — |
 
-With `--resume`, the original Session fixes the Workspace and model, so `--workspace`, `--model-id` and `--provider` cannot override them. `--thinking` is still accepted: it re-pins the existing Session from its next LLM request. Changing the level mid-context costs the provider's cached context, so compact first. On exit, if the Session has any history, the REPL prints a copy-pastable `penguin chat --resume <sessionId>` command.
+With `--resume`, the original Session fixes the Workspace and model, so `--workspace`, `--model-id` and `--provider` cannot override them; to change the model, use `/switch-model` inside the resumed chat. `--thinking` is still accepted: it re-pins the existing Session from its next LLM request. Changing the level mid-context costs the provider's cached context, so compact first. On exit, if the Session has any history, the REPL prints a copy-pastable `penguin chat --resume <sessionId>` command.
+
+On a terminal, the REPL marks its prompts with OSC 133 semantic prompt sequences, the ones shells emit for shell integration: `A` and `B` around the `> ` prompt, `C` when a submitted prompt's turn starts, and `D;0` when it ends (`D;1` after an error). A terminal that supports them can jump between prompts and select one turn's output, and a program that runs the chat in a terminal of its own can tell when it is back at its prompt. Other terminals ignore them, and none are written unless both stdin and stdout are a terminal and `TERM` is not `dumb`. The marks are advisory: model output reaches the terminal unfiltered and can contain the same sequences.
 
 ### In-REPL commands
 
 | Input | Behavior |
 | --- | --- |
-| Any text while a Task runs | Mid-run steering. The line is queued and reaches the model between turns as a `[user_steering]` user message, and a `»` acknowledgment echoes the text. Rendering pauses while you type, so streamed output does not overwrite the line. If the Task finishes first, the line is sent as the next normal prompt. |
+| Any text while a Task runs, typed or pasted | Mid-run steering. Enter sends it, a multi-line paste as one message; the text is queued and reaches the model between turns as a `[user_steering]` user message, and a `»` acknowledgment echoes the text. Rendering pauses while you type, so streamed output does not overwrite the line. If the Task finishes first, the text is sent as the next normal prompt: a line already entered at once, a paste not yet entered by the next Enter. |
 | `/goal[:<budget>] <objective>` | Runs goal mode on the objective. The optional budget is a token budget, such as `/goal:500k`. Ctrl-C aborts the whole goal. See [Goal mode](/goal-mode). |
 | `/compact` | Compacts the current context now. |
 | `/clear` | Starts a fresh blank Session in place, on the same Workspace and model. The old Session stays on the server and can be resumed with `--resume`. |
 | `/thinking` | Shows this Session's thinking level: the level pinned by `--thinking` or `/thinking`, else the agent's configured level. |
 | `/thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`). The level is never written back to the agent config. |
+| `/switch-model` | Shows this Session's current model. |
+| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model; a compaction that fails or is interrupted keeps the current model. A Session that has not run yet switches without compacting. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
 | `/verbose` | Switches between collapsed and full tool output. |
 | `/exit`, `/quit` | Quits. |
 
@@ -122,12 +130,23 @@ What Ctrl-C does depends on the REPL's state:
 | Input buffer not empty | Clears the current input. |
 | Idle with an empty buffer | Shows an exit confirmation (y/N). |
 
-## penguin ls
+## penguin session
+
+Works with the Project's Sessions from the terminal: `ls` lists them, `log` renders one's history, `input` sends one a message or polls its last answer, and `rename` sets its title.
+
+```bash
+penguin session ls [options]
+penguin session log [session_id] [options]
+penguin session input [session_id] [options]
+penguin session rename [session_id] -t <title> [options]
+```
+
+### penguin session ls
 
 Lists the Project's Sessions, for all agents or for one with `--agent-id`. Columns: short id (the 8-hex tail other commands accept as a fragment), agent, title, running/idle, last active and the end of the Workspace path. Archived Sessions appear only with `-a`.
 
 ```bash
-penguin ls [options]
+penguin session ls [options]
 ```
 
 | Option | Description | Default |
@@ -138,17 +157,40 @@ penguin ls [options]
 | `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
 
 ```bash
-penguin ls
-penguin ls --agent-id default_agent -a
-penguin ls --json
+penguin session ls
+penguin session ls --agent-id default_agent -a
+penguin session ls --json
 ```
 
-## penguin input
+### penguin session log
 
-Sends a message into a Session or, without `-m`, polls its last answer. The session id is optional. When you omit it, the command uses the agent's most recent Session (see [Global conventions](#global-conventions)), so bare `penguin input` answers "what did my agent last say".
+Renders a Session's history with the same renderer the REPL uses. The session id is optional. When you omit it, the command uses the agent's most recent Session (see [Global conventions](#global-conventions)), so bare `penguin session log` shows what just happened.
 
 ```bash
-penguin input [session_id] [options]
+penguin session log [session_id] [options]
+```
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--tail <n>` | Shows only the last n entries. | All entries |
+| `-f, --follow` | Keeps following the live stream after the history. Read-only: Ctrl-C detaches without touching the Session. | — |
+| `--timeout <duration>` | Stops following after this long (soft yield, exit 0). Only meaningful with `-f`. | — |
+| `--project-id <id>` | Scope of the fragment search. | `PENGUIN_PROJECT_ID`, else `default_project` |
+| `--agent-id <id>` | The agent whose most recent Session an omitted session id means. | `PENGUIN_AGENT_ID`, else `default_agent` |
+| `--json` / `--server <url>` | `--json` prints the raw message array, and with `-f` one JSON message per line as messages arrive. | — |
+
+```bash
+penguin session log                    # the agent's most recent session
+penguin session log 402a2e24 --tail 20
+penguin session log 402a2e24 -f
+```
+
+### penguin session input
+
+Sends a message into a Session or, without `-m`, polls its last answer. The session id is optional. When you omit it, the command uses the agent's most recent Session (see [Global conventions](#global-conventions)), so bare `penguin session input` answers "what did my agent last say".
+
+```bash
+penguin session input [session_id] [options]
 ```
 
 | Option | Description | Default |
@@ -169,39 +211,40 @@ Under `--json`:
 - The poll form prints `{sessionId, status, text}`, where `status` is `idle` or `running`, and `text` is `""` when there is no reply yet.
 
 ```bash
-penguin input 402a2e24 -m "also check the tests"
-penguin input 402a2e24 -m "queue this" --timeout 0    # deliver and return immediately
-penguin input 402a2e24                    # poll: print the last assistant reply
-penguin input                             # poll the agent's most recent session
-penguin input 402a2e24 --timeout 5m       # poll, waiting out a running turn up to 5 minutes
+penguin session input 402a2e24 -m "also check the tests"
+penguin session input 402a2e24 -m "queue this" --timeout 0    # deliver and return immediately
+penguin session input 402a2e24                    # poll: print the last assistant reply
+penguin session input                             # poll the agent's most recent session
+penguin session input 402a2e24 --timeout 5m       # poll, waiting out a running turn up to 5 minutes
 ```
 
-## penguin logs
+### penguin session rename
 
-Renders a Session's history with the same renderer the REPL uses. The session id is optional. When you omit it, the command uses the agent's most recent Session (see [Global conventions](#global-conventions)), so bare `penguin logs` shows what just happened.
+Sets a Session's title. This is the same manual rename as the Web App's **Rename chat**, and the auto-generated title never overwrites it. The command sends `PATCH /api/sessions/<id>`, which applies the API's existing Project access check. The CLI authenticates with the local API token or a `penguin auth login` sign-in and adds no authorization of its own, so the command can rename any Session that credential can reach.
 
 ```bash
-penguin logs [session_id] [options]
+penguin session rename [session_id] -t <title> [options]
 ```
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--tail <n>` | Shows only the last n entries. | All entries |
-| `-f, --follow` | Keeps following the live stream after the history. Read-only: Ctrl-C detaches without touching the Session. | — |
-| `--timeout <duration>` | Stops following after this long (soft yield, exit 0). Only meaningful with `-f`. | — |
-| `--project-id <id>` | Scope of the fragment search. | `PENGUIN_PROJECT_ID`, else `default_project` |
+| `-t, --title <title>` | The new title. Required. Runs of whitespace become one space, and the result must be 1–120 characters. The server refuses control characters and bidirectional-override characters. | — |
+| `--project-id <id>` | Scope of the fragment search. A full session id needs none. | `PENGUIN_PROJECT_ID`, else `default_project` |
 | `--agent-id <id>` | The agent whose most recent Session an omitted session id means. | `PENGUIN_AGENT_ID`, else `default_agent` |
-| `--json` / `--server <url>` | `--json` prints the raw message array, and with `-f` one JSON message per line as messages arrive. | — |
+| `--json` | Prints `{sessionId, title}` instead of the done line. | — |
+| `--server <url>` | See [Server connection](#server-connection). | — |
+
+An explicit `session_id` always wins. When you omit it inside a Session, the command renames the calling Session (`PENGUIN_SESSION_ID`), so an agent asked to rename "this chat" renames its own. Only when `PENGUIN_SESSION_ID` is unset does it fall back to the agent's most recent Session, which can be a different, parallel one.
 
 ```bash
-penguin logs                    # the agent's most recent session
-penguin logs 402a2e24 --tail 20
-penguin logs 402a2e24 -f
+penguin session rename -t "Q3 release prep"              # inside a session: renames it
+penguin session rename 402a2e24 -t "Q3 release prep"     # by fragment, from outside
+penguin session rename 402a2e24 -t "Q3 release prep" --json
 ```
 
 ## penguin agent
 
-`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent.
+`agent ls` lists the Project's agents with their id, name, session count and description. `agent create` creates an agent. `agent api` manages an agent's API; see [penguin agent api](#penguin-agent-api).
 
 ```bash
 penguin agent ls [--project-id <id>] [--json] [--server <url>]
@@ -220,6 +263,51 @@ Options of `agent create`:
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
+```
+
+### penguin agent api
+
+Manages an agent's [Agent API](/agent-api), the way its **API** tab does: whether programs may call it, keyless access, the approval mode its API conversations start with, and its keys. Any member can run `status` and `keys ls`; the server takes every change from the Project's owner only, and `server` from an admin only.
+
+Every change also takes a person's sign-in. The server refuses the local API token on them with `human_required`, because every agent's commands carry that token and an agent must not expose itself. Run `penguin auth login` once, or `penguin auth token` on the server's machine; outside a Session the CLI then sends a refused change again with that sign-in. Without one, or when the server no longer accepts it, a change prints that hint and exits 1.
+
+```bash
+penguin agent api status        --agent-id <id> [--project-id <id>] [--json] [--server <url>]
+penguin agent api enable        --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
+penguin agent api disable       --agent-id <id> [...]
+penguin agent api set           --agent-id <id> [--open | --no-open] [--approve <mode>] [...]
+penguin agent api keys ls       --agent-id <id> [...]
+penguin agent api keys create   --agent-id <id> --name <name> [...]
+penguin agent api keys rm <keyId> --agent-id <id> [...]
+penguin agent api server on|off [--json] [--server <url>]
+```
+
+| Command | What it does |
+| --- | --- |
+| `status` | Prints whether the API is on, keyless access, the approval mode, the Base URL (the server's address followed by `/api/amsp/v1`), the Agent ID (`<projectId>/<agentId>`), the number of keys and the server-wide switch. `--json` prints `{agent, baseUrl, api, serverEnabled}` |
+| `enable` | Turns the API on; `--open` / `--no-open` and `--approve` set keyless access and the approval mode in the same request. Prints the status it left |
+| `disable` | Turns the API off. Keyless access, the approval mode and the keys are kept. Prints the status it left |
+| `set` | Changes keyless access or the approval mode and leaves the switch as it is. Given neither, it sends nothing and exits non-zero |
+| `keys ls` | Lists the keys: id, name, prefix, created and last used (`never` until a run uses it). `--json` prints the array |
+| `keys create` | Creates a key. The key alone is printed to stdout, and the confirmation to stderr, so `KEY=$(penguin agent api keys create …)` captures exactly the key. It is shown this once. `--json` prints `{key, secret}` |
+| `keys rm` | Deletes a key by its id; a program presenting it is refused from its next request. An unknown id fails with `key_not_found` |
+| `server` | Turns the Agent API on or off for the whole server (`agentApiEnabled`). Off refuses every agent's API requests and keeps their settings and keys. Any state other than `on` or `off` sends nothing and fails |
+
+Options:
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--agent-id <id>` | The agent. Required: unlike other commands, it never falls back to `PENGUIN_AGENT_ID` or `default_agent`, so no agent is exposed by default. | — |
+| `--open` / `--no-open` | Allows keyless access / requires a key (`enable`, `set`). | Unchanged |
+| `--approve <mode>` | The approval mode new API conversations start with; see [Approval modes (--approve)](#approval-modes---approve). A mode that asks sends the question to the calling program (`enable`, `set`). An unknown mode fails before any request. | Unchanged |
+| `--name <name>` | The key's name, 1–64 characters (`keys create`, required). | — |
+| `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). | — |
+
+```bash
+penguin auth login
+penguin agent api enable --agent-id helper --approve read-only
+KEY=$(penguin agent api keys create --agent-id helper --name ci)
+penguin agent api status --agent-id helper --json
 ```
 
 ## penguin project
@@ -384,7 +472,7 @@ A desk or ticket session also creates its directory when it opens. `--budget` is
 
 ### employee set
 
-`employee set` changes only the fields you give. `--workspace` works as it does for `hire` but has no default: the partition changes only when you pass the flag. `--budget` is the monthly budget in USD for the employee plus everyone below it. The model pair is both-or-neither, as everywhere.
+`employee set` changes only the fields you give. `--workspace` works as it does for `hire` but has no default: the partition changes only when you pass the flag. `--budget` is the monthly budget in USD for the employee plus everyone below it. The model pair is both-or-neither, as everywhere; it names the model the employee's next desk opens on and leaves the open desk as it is (see [Desk sessions](/company-mode#desk-sessions)).
 
 ### calendar
 
@@ -397,7 +485,7 @@ A desk or ticket session also creates its directory when it opens. `--budget` is
 - `ls` fetches the whole board and filters it locally. `--status` takes a column: `proposed`, `in_progress`, `review`, `done` or `rejected`. Under `--json`, `ls` prints the filtered list as `{ tickets, invalidFiles }`.
 - `show` prints the derived figures first (column, running state, cost and rolled-up cost, contributing sessions, child tickets), then the ticket's own fields, its prose sections, and its operation history under `History:`.
 - `create` takes either `--goal` (with `--criteria`) or the whole Markdown body from `--body-file`. The frontmatter is generated either way.
-- `start` prints the bare session id, as `run --background` does, for `penguin logs` and `penguin input` to pick up.
+- `start` prints the bare session id, as `run --background` does, for `penguin session log` and `penguin session input` to pick up.
 - `--owner <principal>` names the one principal responsible: an employee (an agent id or `agent:<id>`) or a Project member (`user:<id>`). It defaults to the caller. When no `--notify` is given, the owner becomes the whole `notify` list, but only if the owner is an employee: a person is not notified about a ticket they own, and adds themselves with `--notify` to be told.
 - Who filed a ticket is not a flag. It is the `created` entry of the ticket's history, taken from the environment the command ran in.
 - A ticket id is `<yyyy-mm-dd>-<slug>`, where the slug is lowercase English words joined by hyphens. `--slug <words>` sets it. A title with too little English in it needs this flag when the server cannot have the Project's model name it (400 `slug_required`).
@@ -426,6 +514,138 @@ Paths that contain `..` segments are refused.
 
 `finance` prints the period's spend per employee (own and cumulative along the reporting line, against the budget, with `warned` and `paused` marks) and per ticket, then the total. When some usage ran on a model without pricing, a note on stderr says the figures are a lower bound.
 
+## penguin browser
+
+Drives the agent browser, a thin client over the server's `/api/builtin-browser` routes. The browser is the one the user chose: the desktop app's [Built-in Browser](/builtin-browser), or [the user's own Chrome](/builtin-browser#use-your-own-chrome) through the PenguinHarness Browser extension. The commands are the same for both, and none of them picks the backend. The commands follow GenericAgent's `web_scan` / `web_execute_js` design: `scan` reads the page, and `exec` runs JavaScript in it and reports what changed. The output is written for an agent to read: short labelled lines, nothing decorative. The preinstalled `browser-automation` plugin teaches agents to use it.
+
+```bash
+penguin browser status                                   # which backend, available? and the open tabs
+penguin browser tabs                                     # id (* = active), title, URL
+penguin browser open <url> [--new-tab]                   # in the active tab (a new one when none is open), or a new tab
+penguin browser switch <tab-id>
+penguin browser close [<tab-id>]                         # default: the active tab
+penguin browser scan [--text] [--max-chars <n>]          # the page as simplified HTML, or text
+penguin browser exec [<script> | -] [--file <f>] [--save <f>] [--no-monitor] [--timeout <s>] [--accept-dialogs]
+penguin browser click <selector> [--index <n>] | --at <x>,<y> [--accept-dialogs]
+penguin browser type <text> [--selector <css>] [--submit] [--accept-dialogs]
+penguin browser screenshot [-o <file.png>] [--full-page]
+penguin browser cdp <Domain.method> [--params '<json>']
+penguin browser import --list | --from <source-id|browser> [--cookies] [--history] [--domain <d>]...
+penguin browser history [<query>] [-n <count>]
+```
+
+### Tabs, output and the calling session
+
+- `--tab <id>` names the tab that `open`, `scan`, `exec`, `click`, `type`, `screenshot` and `cdp` act on: a tab id from `tabs`, or `active`, the default.
+- `--json` prints the response as one line of JSON, and `--server` works as everywhere.
+- Inside a session, every command sends `PENGUIN_SESSION_ID`: in the body, or in the query of a `GET` or `DELETE`. The server then acts for the person driving that session, so an agent drives its own user's Chrome, and the app opens the Browser panel in the conversation that is driving it.
+- These commands never auto-start a server: a server started that way would have no desktop app to host the built-in browser, and no Chrome paired with it. With no server running they fail with `browser_unavailable`.
+- The labels and messages follow the CLI's language. The examples here are the English output; with `PENGUIN_LANG=zh` they are in Chinese.
+
+`status` prints `status: available` with the backend, then the tab list. The backend is `builtin`, or `chrome` followed by the user's Chrome and the extension's version:
+
+```text
+status: available · backend: chrome (Chrome 130 on macOS, extension 0.2.13)
+tabs: *1203 Your Orders
+```
+
+When the browser cannot be driven, `status` prints `status: unavailable (<reason>)` with the backend, then a `note:` saying what to tell the user, and exits 1:
+
+```text
+status: unavailable (extension_not_paired) · backend: chrome
+note: No Chrome is paired for this user. Ask the user to install the PenguinHarness Browser extension and pair it: Browser panel → Connect your Chrome.
+```
+
+| Reason | Backend | Meaning |
+| --- | --- | --- |
+| `not_desktop` | builtin | The server is not the desktop app's |
+| `shell_unsupported` | builtin | The desktop app is too old for the browser |
+| `no_window` | builtin | The app has no window open |
+| `extension_not_paired` | chrome | The user has paired no Chrome |
+| `extension_disconnected` | chrome | The user's Chrome is paired but not connected now |
+| `extension_disabled` | chrome | An administrator turned Chrome extension connections off |
+
+Once the desktop app has measured the built-in browser's tabs (it does every 10 seconds), `status` adds a `memory:` line: the memory the tabs use together and how many tabs there are, then this computer's free and total memory (not on macOS). While the browser is too heavy (over 1.5 GB in its tabs, under 10% of the computer's memory free, or over 12 tabs) a `warning:` line follows, saying what is too much and to close the tabs no longer needed:
+
+```text
+status: available · backend: builtin
+tabs: *12 Your Orders | 15 Google
+memory: 2.1 GB across 2 tabs · this computer: 3.2 GB free of 16.0 GB
+warning: The browser holds a lot of memory. Close the tabs you no longer need (penguin browser close <tab-id>).
+```
+
+### scan
+
+```text
+tab 12 · Your Orders · https://www.amazon.com/your-orders/orders
+tabs: *12 Your Orders | 15 Google
+---
+<simplified HTML, or text with --text>
+```
+
+The first line names the tab, the second lists every tab with the active one starred, and the page follows the rule. Simplifying drops hidden, floating and covered elements, keeps a short list of attributes and shortens long `src` and `href` values. A long list is cut to three items plus `[FAKE ELEMENT] N more items hidden, selector: "…"`, whose selector reaches the rest from `exec`. The body stops at `--max-chars`, 35,000 characters by default; `--text` gets a third of it, as GenericAgent's `web_scan` does.
+
+### exec
+
+The script runs in the page the way GenericAgent's `web_execute_js` runs it: its value is its explicit `return`, or else its last expression, and top-level `await` works; the value must survive JSON. An explicit `return` on its own last line means the same in every script. The script comes from exactly one place: the argument, `--file`, or stdin. Stdin is read when the argument is `-`, or when there is no argument and stdin is not a terminal, as with a heredoc (`penguin browser exec <<'EOF'`), which needs no escaping. An implicit stdin that stays silent for a second counts as no script.
+
+```text
+status: success   tab: 12
+return: {"added":true}
+diff: 14 elements changed
+  <the most significant change, indented>
+transients: "Added to cart"
+new tabs: 16 https://www.amazon.com/cart
+note: No visible change on the page.
+```
+
+- A line appears only when it has something to say, except `return:`, which `exec` always prints: `return: undefined` usually means a missing `return`. `page: reloaded` joins the status line when the page navigated during the call.
+- A string return value prints as-is, and one spanning lines prints as an indented block; any other value prints as compact JSON. The value is cut at 8,000 characters with `[truncated — use --save]`.
+- `--save <file>` writes the whole value to the file, a string as-is and anything else as indented JSON, and prints only its first 170 characters and `[saved to <absolute path>]`.
+- `transients:` lists text that appeared during the call and may be gone again, such as a toast. `new tabs:` lists tabs the page opened.
+- `--no-monitor` skips the change tracking, so no `diff:` or `transients:`; it is faster for scripts that only read.
+- A dialog the page opens during the call is answered, so the page does not block: an alert is accepted, and a confirm, a prompt or a leave-page dialog is dismissed unless `--accept-dialogs` is given (a prompt then gets its default text). Each prints a line after the status, `dialog: confirm "Delete this item?" → dismissed (rerun with --accept-dialogs to accept)`. `click` and `type` do the same. Outside these calls the browser shows dialogs to the user as usual.
+- `--timeout` bounds the script: `30s`, `2m` or bare seconds, 15 seconds by default.
+- A script that throws prints `status: failed` and an `error:` line, and the command exits 1.
+
+### click and type
+
+- `click <selector>` scrolls the `--index`-th match into view (counting from 0) and clicks its center with trusted mouse events: a move, a press and a release. `click --at <x>,<y>` clicks a point of the viewport, in CSS pixels. Either prints `clicked: <tag> "<text>" at <x>,<y>` after the status line, then the same lines as `exec`.
+- `type <text>` inserts the text into the focused element, or into `--selector` after focusing it, and fires `input` and `change`. `--submit` presses Enter afterwards.
+
+### screenshot and cdp
+
+- `screenshot` writes a PNG to `-o`, by default `screenshot-<time>.png` in the working directory, and prints `screenshot: <path> (<width>x<height>, <size> KB)`. `--full-page` captures the whole page instead of the viewport. With `--json` it prints the response, `{mime, data}` with the image in base64, and writes a file only when `-o` is given.
+- `cdp` sends one Chrome DevTools Protocol command to the tab and prints its result as compact JSON, cut at 8,000 characters (the whole result with `--json`). It reaches what page JavaScript cannot: a file input's files (`DOM.setFileInputFiles`), a cross-origin frame (`Page.createIsolatedWorld`), a closed shadow root. It stays within the tab: the `Target` domain is refused (`cdp_refused`), and `Page.navigate` goes only to a web page or `about:blank` (`invalid_url`). In the user's Chrome more is refused, since the browser's cookies and stores are the user's own: the `Browser`, `Storage`, `Fetch`, `Security`, `Extensions` and `Tethering` domains, the `Network` methods that read or change cookies, clear the cache or intercept requests, `DOM.setFileInputFiles` and `Page.setDownloadBehavior`.
+
+### import
+
+`import` and `history` belong to the built-in browser. Asked of the user's Chrome, they fail with `not_supported`.
+
+- `--list` lists the browser profiles on this machine: the source id, the browser, the profile's name, and whether it holds cookies and history.
+- `--from` takes a source id from that list, or a browser (`chrome`, `edge`, `brave`, `arc`, `vivaldi`, `opera`, `chromium` or `firefox`) for its `Default` profile, or its only one.
+- `--cookies` and `--history` choose what to import; neither means both.
+- `--domain` keeps only the cookies of a site and its subdomains. Repeat it, or separate sites with commas.
+
+The result names the source, then prints `cookies: <n> imported, <n> skipped, <n> failed (<n> found)`, `history: <n> imported (<n> found)` and a `warning:` line for each warning. Platform details, such as the macOS Keychain prompt and Chrome's app-bound cookies on Windows, are in [Import from your browser](/builtin-browser#import-from-your-browser).
+
+### history
+
+`history` searches the titles and URLs of the built-in browser's history, imported pages included, without regard to case. It lists the most visited pages first, the most recent first among equals, 20 unless `-n` says otherwise, one per line: `4 visits · 2026-09-23 14:03 · Your Orders · https://…`.
+
+### Errors
+
+An error is one line on stderr, `error: <code>: <message>`, and the command exits 1. The server's codes are:
+
+- `browser_unavailable`: the browser cannot be driven. With a reason, the message is the one the `note:` of `status` gives. Without one, it is the server's, such as the user having paused the extension in Chrome.
+- `no_tab` (no tab is open), `no_such_tab`, `tab_crashed` (the tab's page crashed: close it and open the page in a new tab), `too_many_tabs` (the browser holds 20 tabs).
+- `tab_released`: the user took the tab back in their Chrome. Do not retry it; open a new tab.
+- `cdp_refused`: a raw command outside what the backend allows (see [screenshot and cdp](#screenshot-and-cdp)).
+- `not_supported`: import or history asked of the user's Chrome; the message says to have the user sign in in the Penguin tab in Chrome instead.
+- `script_error`, `timeout`, `invalid_url`, `source_not_found` and `import_failed`.
+
+The CLI adds `invalid_argument` for a command typed wrong, `io_error` for a file it cannot read or write, and `request_failed` when the server cannot be reached.
+
 ## Approval modes (--approve)
 
 | Mode | Behavior |
@@ -439,25 +659,27 @@ At an approval prompt, `n` or `no` denies the call. `y`, `yes` or any other answ
 
 ## penguin config
 
-Manages a Project's model configuration, per-agent vault environment variables and the UI language. Every subcommand except `lang` takes `--project-id <id>` (default: the default Project) and `--root <dir>`.
+Manages a Project's model configuration, its groups' connections, per-agent vault environment variables and the UI language. Every subcommand except `lang` takes `--project-id <id>` (default: the default Project) and `--root <dir>`.
 
 ### model add
 
-Adds or updates a model entry.
+Adds or updates a model entry. Without `--model-id`, it sets a group's connection instead: the API key, base URL and protocol that the group's models without a value of their own use, stored once in `[providers.<group>]` (see [Group connections](/configuration#group-connections)).
 
 ```bash
 penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
+penguin config model add --provider tokendance --api-key td-...
+penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --clear-api-key
 ```
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--model-id <id>` | The upstream model id. Required. | — |
-| `--provider <group>` | The provider group the entry belongs to. Required. | — |
-| `--api-key <key>` | API key, stored inline in the Project's hidden `.project_config.toml`. | — |
-| `--base-url <url>` | Custom endpoint base URL. | See below |
+| `--model-id <id>` | The upstream model id. Omit it to set the group's connection. | — |
+| `--provider <group>` | The provider group the entry belongs to, or whose connection to set: a built-in group id or a group of your own. Required. | — |
+| `--api-key <key>` / `--clear-api-key` | Sets or removes an API key, stored inline in the Project's hidden `.project_config.toml`: the model's own with `--model-id`, else the group key. | The group key |
+| `--base-url <url>` / `--clear-base-url` | Sets or removes a base URL: the model's own, else the group's. | See below |
+| `--client-type <type>` / `--clear-client-type` | Sets or removes an MMSP client type, such as `openai-chat`: the model's own, else the group's. | See below |
 | `--context-window <n>` | Context window size, in tokens. | — |
 | `--max-tokens <n>` | Maximum output tokens for this model, a positive integer. When set, it overrides the agent's `model.max_tokens`; lower it for small-context models. | The agent's `model.max_tokens` |
-| `--client-type <type>` | AgentHub client protocol type, such as `openai-chat`. | See below |
 | `--vision` / `--no-vision` | Marks image input as supported or unsupported. | Keeps the current value |
 | `--fast-mode` / `--no-fast-mode` | Turns fast mode (faster output at premium pricing) on or off. | Off; omitting both keeps the current value |
 | `--price-cache-read <n>` | Cache-read price, in USD per million tokens. | — |
@@ -466,8 +688,18 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--set-default` | Also sets the entry as the Project's default model. | — |
 
 - The CLI never derives `--provider` from the model id. Gateways resell vendor models under their upstream ids, so a guessed group could write the credential onto another vendor's endpoint. Use `custom` for any endpoint outside the built-in groups.
-- For a new entry, `--client-type` and `--base-url` default to what the built-in catalog sets for that exact `(provider, model_id)` pair. Without a catalog row, the group decides: a group that pins a protocol uses it; `custom`, user-defined and gateway groups get `openai-chat`, with a gateway's endpoint filled in as the base URL; and first-party vendor groups leave both unset. Updating an existing entry changes them only when you pass the flags.
-- Turning on `--fast-mode` for a model whose AgentHub client rejects the parameter still writes the entry, but prints a warning on stderr.
+- A new entry stores `--client-type`, `--base-url` and `--api-key` only when you pass them. Left out, each follows the group, and with no group value the client's default; the built-in catalog is not read. A new Project's file already holds the gateways' endpoints and protocols, Penguin Go's relay URL and `vllm`'s `openai-chat-vllm-adapter` on their groups. A `custom` or user-defined entry whose group sets no protocol gets `openai-chat`. Updating an existing entry changes these fields only when you pass the flags; a `--clear-*` flag removes the entry's own value, after which it follows the group.
+- Re-adding a removed preset this way stores only what you pass; **Add new models** on the Models page brings it back with its catalog protocol and endpoint.
+- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
+- Turning on `--fast-mode` for a model whose MMSP client rejects the parameter still writes the entry, but prints a warning on stderr.
+- In both forms, a field you do not name is left as it is, each set/clear pair is exclusive, and an empty value is refused: remove a value with its `--clear-*` flag.
+
+Without `--model-id`:
+
+- The flags that describe one model — `--context-window`, `--max-tokens`, `--vision`, `--fast-mode`, the `--price-*` flags and `--set-default` — are refused, and nothing is written. So is a call that names no connection field.
+- Any group takes a protocol: a model's own `client_type` wins over its group's, so the Penguin Go and OpenCode Go models keep theirs.
+- The group key reaches only the models that go to the group's endpoint: those with no base URL of their own, or one on the group's origin (scheme, host and port).
+- The command reports how many of the group's models a changed field passes by, because they set their own value or the key does not reach them, and notes a user-defined group that has no models yet.
 
 ### model default / model vision / model list / model remove
 
@@ -476,11 +708,13 @@ penguin config model default --model-id <id> --provider <group>
 penguin config model vision --model-id <id> --provider <group>
 penguin config model list
 penguin config model remove --model-id <id> --provider <group>
+penguin config model remove --provider <group>
 ```
 
 - `model default` sets the Project's default model, and `model vision` sets the vision proxy model. Both require `--model-id` and `--provider`, and the pair must already be in the model list.
-- `model list` lists the configured models and marks the default model with `*`.
-- `model remove` deletes a model entry together with the credential stored inline on it. It requires `--model-id` and `--provider` and matches the pair exactly, so the same upstream id under another group is left alone. It exits non-zero when the pair is not in the config. If the removed entry was the default model or the vision model, that setting is cleared, because a setting that names a model no longer configured would make the next session fail outright.
+- `model list` prints the groups' connections first: each `[providers.<group>]` with its `base_url`, `client_type` and key (masked), `-` where the group stores none. The configured models follow, the default marked with `*`. Their `client_type`, `api_key` (masked) and `base_url` columns show what each model is used with, read from the file alone: a value taken from the group is marked `(provider)`, a key read from an environment variable `(env)`, and an unmarked value is the model's own.
+- `model remove` deletes a model entry together with the credential stored inline on it. It matches the `--model-id` and `--provider` pair exactly, so the same upstream id under another group is left alone, and exits non-zero when the pair is not in the config. If the removed entry was the default model or the vision model, that setting is cleared, because a setting that names a model no longer configured would make the next session fail outright. Removing the last model of a user-defined group also removes that group's connection.
+- `model remove` without `--model-id` removes the group's connection, the whole `[providers.<group>]` table, key included, and keeps the group's models: those without a value of their own then use the client's defaults. It exits non-zero when the group stores no connection.
 
 ### vault
 
@@ -660,7 +894,7 @@ When run interactively, `login` asks for the account first and then the password
 
 ### penguin auth status / penguin auth logout
 
-The session is stored in `<root>/cli-session.json` with mode 0600. `login` writes it, and so does `token` when a server is running on the data root. `status` reads it. `logout` revokes the session and deletes the file: it tells the server first, so the session ends on the server rather than merely being forgotten locally. If the server cannot be reached, `logout` says so and deletes the local file anyway.
+The session is stored in `<root>/cli-session.json` with mode 0600. `login` writes it, and so does `token` when a server is running on the data root. `status` reads it. Outside a Session, the other commands send it to a server on this machine only to repeat a request the server refused to the local API token with `human_required`; see [Server connection](#server-connection). `logout` revokes the session and deletes the file: it tells the server first, so the session ends on the server rather than merely being forgotten locally. If the server cannot be reached, `logout` says so and deletes the local file anyway.
 
 ## penguin update
 

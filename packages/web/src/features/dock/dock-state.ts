@@ -4,7 +4,7 @@
  * The dock is TWO surfaces — one on the right edge, one at the bottom of the chat page —
  * and every side element is a TAB in one of them: the subagents panel, the Workspace
  * files panel, the Memory panel, the Trace panel, the messaging panel, the scheduled-tasks
- * panel, and any number of terminals. A dock
+ * panel, the built-in browser, and any number of terminals. A dock
  * shows its tabs in a strip and renders the active one; an OPEN dock with no tabs shows a
  * picker instead (choose what to open here), which is what the toolbar's two pull-open
  * buttons land on. Both docks can be open at once, and any tab can live in either dock
@@ -27,11 +27,26 @@
  * merged bottom surface (a 320px-minimum right panel does not fit a phone); the stored
  * arrangement splits back apart when the window widens.
  *
+ * The store knows panels by id alone. What an id names — its label, its mark, its body — is
+ * the panel registry's (panel-registry.ts), so a tab whose panel this build has never heard of
+ * (a plugin's, stored before the plugin loads) is kept as it is and rendered as a placeholder
+ * until its definition arrives; only a key that cannot be a panel id at all is dropped.
+ *
+ * One surface at a time can be FULLSCREEN — the dock grown as far as its own edge goes: the right
+ * dock over its row (the conversation beside it, with the toolbar above and the bottom dock below
+ * still in view), the bottom dock or the narrow merged view up to the toolbar (over the row, and
+ * the right dock in it). That is the one piece of state here that is transient — in memory, never
+ * stored, cleared by a scope switch and by the breakpoint flipping — and it holds only while its
+ * surface is on screen with tabs and no dock it COVERS is brought forward (checked after every
+ * mutation, in commit()): the right dock taking the stage under a fullscreen bottom dock drops
+ * it, so what was asked for is seen rather than opening under the cover.
+ *
  * A store (rather than component state) because the consumers live far apart: the chat
  * toolbar toggles the docks, the global hotkey flips the terminal, AppLayout points the
  * scope at the route's conversation, the chat page renders the docks, and the terminal
  * list prunes dead shells' tabs on refresh.
  */
+import type { PanelId } from "./panel-registry";
 
 const LAYOUT_KEY = "penguin.dock.layout";
 /** Scopes kept in storage; past that, the least recently touched conversations age out. */
@@ -39,31 +54,38 @@ const MAX_SCOPES = 40;
 
 export type DockPosition = "right" | "bottom";
 
-/** The singleton panel kinds. Terminals are the one multi-instance tab kind. */
-export type PanelKind = "agents" | "workspace" | "memory" | "trace" | "messaging" | "schedules";
+/**
+ * Panels are singletons — one tab per id within a conversation — and terminals are the one
+ * multi-instance tab kind. Which panels exist, and whether one is offered here (the built-in
+ * browser exists only in the desktop app), is the registry's business; the store only carries
+ * their ids.
+ */
+export type { PanelId };
 
-export const PANEL_KINDS: readonly PanelKind[] = [
-  "agents",
-  "workspace",
-  "memory",
-  "trace",
-  "messaging",
-  "schedules",
-];
-
-export type DockTab =
-  { kind: "panel"; panel: PanelKind } | { kind: "terminal"; terminalId: string };
+export type DockTab = { kind: "panel"; panel: PanelId } | { kind: "terminal"; terminalId: string };
 
 /** Stable identity of a tab ("agents", …, "terminal:<id>") — the stored form. */
 export function tabKey(tab: DockTab): string {
   return tab.kind === "panel" ? tab.panel : `terminal:${tab.terminalId}`;
 }
 
+/**
+ * The shape of a panel id: lowercase words joined by hyphens, with dots or slashes between
+ * segments for a namespaced plugin panel ("acme.kanban", "acme/board"); the built-in ids all fit.
+ * The store accepts any key of this shape without asking the registry, so a stored tab survives
+ * its panel being unknown for a while.
+ */
+const PANEL_ID_PATTERN = /^[a-z][a-z0-9-]*(?:[./][a-z0-9-]+)*$/;
+const PANEL_ID_MAX_LENGTH = 100;
+
+export function isPanelId(key: string): boolean {
+  return key.length <= PANEL_ID_MAX_LENGTH && PANEL_ID_PATTERN.test(key);
+}
+
 function parseTabKey(key: string): DockTab | null {
-  if ((PANEL_KINDS as readonly string[]).includes(key))
-    return { kind: "panel", panel: key as PanelKind };
   if (key.startsWith("terminal:") && key.length > "terminal:".length)
     return { kind: "terminal", terminalId: key.slice("terminal:".length) };
+  if (isPanelId(key)) return { kind: "panel", panel: key };
   return null;
 }
 
@@ -195,6 +217,12 @@ let scope = NO_SCOPE;
 // Unpacked into a local rather than read through `scopes[scope]` everywhere: the reads
 // are on every render path, and one live object per scope keeps switching cheap.
 let layout: ScopeLayout = scopes[scope] ?? emptyScope();
+/**
+ * The surface grown to its fullscreen cover, by the position it renders at ("bottom" for the
+ * narrow merged view), or null. In memory only: a reload, a scope switch and the breakpoint
+ * flipping all start in the normal layout. The rules live in the fullscreen section below.
+ */
+let fullscreen: DockPosition | null = null;
 
 /** Whether a scope's arrangement is worth a storage entry at all. */
 function scopeIsEmpty(s: ScopeLayout): boolean {
@@ -240,6 +268,17 @@ let instant = 0;
 function notify(): void {
   version += 1;
   for (const listener of [...listeners]) listener();
+}
+
+/**
+ * The tail of every mutation: the layout reaches storage, the fullscreen state is checked
+ * against what the mutation left on screen, and the listeners hear about it. One place, so no
+ * action has to remember the check — a new action that ends in commit() is covered.
+ */
+function commit(): void {
+  persist();
+  reconcileFullscreen();
+  notify();
 }
 
 /** Monotonic change counter — subscribe with this snapshot to re-render on ANY change. */
@@ -314,12 +353,24 @@ function switchScope(target: string, mayHandOver: boolean): void {
   }
   scope = target;
   layout = scopes[scope] ?? emptyScope();
+  // Fullscreen belongs to the moment, not to the conversation: a new scope starts in the
+  // normal layout even when its own dock would have qualified, and coming back never restores it.
+  fullscreen = null;
   notify();
 }
 
 /** The scope on screen (tests and diagnostics; components never need it). */
 export function currentDockScope(): string {
   return scope;
+}
+
+/**
+ * Whether a page with docks is on screen. Pages without them (organization pages, login, the
+ * standalone /terminal page) sit on the `~none` placeholder, where a dock command would act on
+ * nothing visible — or worse, spawn shells into an arrangement the next conversation inherits.
+ */
+export function docksOnScreen(): boolean {
+  return scope !== NO_SCOPE;
 }
 
 // ------------------------------------------------------------------------------- narrow
@@ -335,6 +386,9 @@ if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
   narrow = query.matches;
   query.addEventListener("change", (event) => {
     narrow = event.matches;
+    // The surfaces are re-cut at the breakpoint (two docks ↔ one merged view), so the surface
+    // that was fullscreen no longer exists as such; the user re-enters on the new one if wanted.
+    fullscreen = null;
     notify();
   });
 }
@@ -470,8 +524,7 @@ export function activateTab(key: string): void {
   const found = findTab(key);
   if (!found) return;
   activate(found.position, key);
-  persist();
-  notify();
+  commit();
 }
 
 function insertTab(tab: DockTab, position: DockPosition): void {
@@ -505,8 +558,7 @@ export function removeTab(key: string): void {
   if (state.active === key)
     state.active = state.tabs.length > 0 ? tabKey(state.tabs[state.tabs.length - 1]!) : null;
   if (state.tabs.length === 0) state.open = false;
-  persist();
-  notify();
+  commit();
 }
 
 /** Moves one tab to the other dock (drag / the dock pickers), activating it there. */
@@ -517,8 +569,7 @@ export function moveTab(key: string, to: DockPosition): void {
   const tab = layout[found.position].tabs[found.index]!;
   insertTab(tab, to);
   if (layout[found.position].tabs.length === 0) layout[found.position].open = false;
-  persist();
-  notify();
+  commit();
 }
 
 /** Moves a whole dock's tabs onto the other edge, after any tabs already there. */
@@ -536,8 +587,7 @@ export function moveDock(from: DockPosition, to: DockPosition): void {
   if (shown !== null) activate(to, shown);
   else layout.focus = to;
   target.open = true;
-  persist();
-  notify();
+  commit();
 }
 
 /** Reorders one dock's strip; `keys` is the full new order of that dock's tabs. */
@@ -548,8 +598,7 @@ export function reorderDock(position: DockPosition, keys: readonly string[]): vo
   if (next.length !== state.tabs.length) return; // a stale drag; keep the strip consistent
   if (next.every((tab, index) => tab === state.tabs[index])) return;
   state.tabs = next;
-  persist();
-  notify();
+  commit();
 }
 
 /**
@@ -560,8 +609,7 @@ export function toggleDock(position: DockPosition): void {
   const state = area(position);
   state.open = !state.open;
   if (state.open) layout.focus = position;
-  persist();
-  notify();
+  commit();
 }
 
 /** The merged view's ×: both docks away (wide views pass their own position instead). */
@@ -572,15 +620,69 @@ export function hideView(view: DockView): void {
   } else {
     area(view.position).open = false;
   }
-  persist();
+  commit();
+}
+
+// --------------------------------------------------------------------------- fullscreen
+
+/** The surface grown to its fullscreen cover ("bottom" for the narrow merged view), or null. */
+export function fullscreenDock(): DockPosition | null {
+  return fullscreen;
+}
+
+/** Whether the merged view is on screen with something in its strip (rather than its picker). */
+function mergedViewHasTabs(): boolean {
+  return (
+    (isDockVisible("bottom") && hasTabs("bottom")) || (isDockVisible("right") && hasTabs("right"))
+  );
+}
+
+/**
+ * Whether a surface can be fullscreen as the layout stands: on screen with tabs (the picker is
+ * never fullscreen). Wide, the surface is one dock; narrow, it is the merged view, which only
+ * exists at the bottom.
+ */
+function fullscreenEligible(position: DockPosition): boolean {
+  if (narrow) return position === "bottom" && mergedViewHasTabs();
+  return isDockVisible(position) && hasTabs(position);
+}
+
+/**
+ * Drops fullscreen when its surface stopped qualifying — hidden, or its last tab gone — and when a
+ * dock it COVERS takes the stage, which would otherwise happen invisibly under the cover. Only the
+ * bottom dock's cover reaches another dock: it climbs to the toolbar, over the right dock, so the
+ * right dock being touched — activated, opened, or had something moved into it — ends it. The
+ * right dock's cover is its own row, with the bottom dock still in view below it, so the bottom
+ * dock opening, being touched or receiving a tab leaves it alone; so does anything within the
+ * merged view, which is every dock there is. Runs in commit(), after every mutation.
+ */
+function reconcileFullscreen(): void {
+  if (fullscreen === null) return;
+  const coveredTakesStage = !narrow && fullscreen === "bottom" && layout.focus === "right";
+  if (!fullscreenEligible(fullscreen) || coveredTakesStage) fullscreen = null;
+}
+
+/**
+ * Enters (a position) or leaves (null). Entering counts as touching that dock — it becomes the
+ * focused one, so the header button works on a dock that was not touched last — and is a no-op
+ * for a surface that is not on screen with tabs.
+ */
+export function setDockFullscreen(position: DockPosition | null): void {
+  if (position !== null && !fullscreenEligible(position)) return;
+  if (position !== null && !narrow && layout.focus !== position) {
+    layout.focus = position;
+    persist();
+  }
+  if (position === fullscreen) return;
+  fullscreen = position;
   notify();
 }
 
 // ------------------------------------------------------------------------------- panels
 
 /** The dock a panel's tab lives in (open or not), or null when the panel is closed. */
-export function panelDock(kind: PanelKind): DockPosition | null {
-  return tabHome(kind);
+export function panelDock(id: PanelId): DockPosition | null {
+  return tabHome(id);
 }
 
 /**
@@ -588,15 +690,14 @@ export function panelDock(kind: PanelKind): DockPosition | null {
  * right dock — the default edge for panels opened from the conversation) and activates
  * it. Idempotent when already shown.
  */
-export function openPanel(kind: PanelKind, position?: DockPosition): void {
-  const target = position ?? panelDock(kind) ?? "right";
-  insertTab({ kind: "panel", panel: kind }, target);
-  persist();
-  notify();
+export function openPanel(id: PanelId, position?: DockPosition): void {
+  const target = position ?? panelDock(id) ?? "right";
+  insertTab({ kind: "panel", panel: id }, target);
+  commit();
 }
 
-export function closePanel(kind: PanelKind): void {
-  removeTab(kind);
+export function closePanel(id: PanelId): void {
+  removeTab(id);
 }
 
 // ---------------------------------------------------------------------------- terminals
@@ -635,8 +736,7 @@ export function unownedTerminals(ids: readonly string[]): string[] {
 /** New terminals land at the bottom dock unless a dock asked for them explicitly. */
 export function addTerminalTab(id: string, position?: DockPosition): void {
   insertTab({ kind: "terminal", terminalId: id }, position ?? terminalTabDock(id) ?? "bottom");
-  persist();
-  notify();
+  commit();
 }
 
 /**
@@ -666,8 +766,7 @@ export function restoreTerminalTab(scopeId: string, id: string, position: DockPo
   state.open = true;
   const { [scopeId]: _previous, ...rest } = scopes;
   scopes = { ...rest, [scopeId]: target };
-  persist();
-  notify();
+  commit();
 }
 
 /**
@@ -694,8 +793,7 @@ export function pruneTerminalTabs(liveIds: ReadonlySet<string>): void {
   if (pruneArea(layout.right)) changed = true;
   if (pruneArea(layout.bottom)) changed = true;
   if (!changed) return;
-  persist();
-  notify();
+  commit();
 }
 
 /**
@@ -720,8 +818,7 @@ export function toggleTerminalDocks(): boolean {
   );
   if (anyShown) {
     for (const position of holders) area(position).open = false;
-    persist();
-    notify();
+    commit();
     return true;
   }
   showTerminal(ids[ids.length - 1]!);
@@ -739,12 +836,10 @@ export function setBottomRatio(next: number): void {
   const clamped = clampRatio(next);
   if (clamped === ratio) return;
   ratio = clamped;
-  persist();
-  notify();
+  commit();
 }
 
 export function resetBottomRatio(): void {
   ratio = DEFAULT_DOCK_HEIGHT_RATIO;
-  persist();
-  notify();
+  commit();
 }

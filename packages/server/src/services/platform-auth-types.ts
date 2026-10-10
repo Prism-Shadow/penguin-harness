@@ -23,7 +23,7 @@ export interface PlatformCatalogModel {
   /** Fraction off `pricing` the platform is running (0.5 = half price); absent when none. */
   discount?: number;
   baseUrl: string;
-  clientType: "gemini-3.8" | "deepseek-v4";
+  clientType: "google-genai" | "deepseek-official";
 }
 
 /** Validated snapshot returned by Penguin Go's client-model catalog. */
@@ -31,7 +31,10 @@ export interface PlatformModelCatalog {
   models: PlatformCatalogModel[];
 }
 
-/** Catalog merge result. `updated` counts existing rows whose list price, client type or promotion changed. */
+/**
+ * Catalog merge result. `updated` is always 0: a merge adds what is new and never rewrites a row
+ * the Project already holds (its price, routing and promotion may be the user's own).
+ */
 export interface PlatformModelApplyResult {
   added: number;
   updated: number;

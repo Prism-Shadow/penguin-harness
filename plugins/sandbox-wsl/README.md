@@ -1,12 +1,13 @@
-# @prismshadow/penguin-plugin-sandbox-wsl
+# @penguinharness/sandbox-wsl
 
 A Windows sandbox backend for PenguinHarness. Each agent command runs in a dedicated WSL2 distro (Ubuntu by default), as an unprivileged account, under [bubblewrap](https://github.com/containers/bubblewrap).
 
 | Dimension  | How                                                                                        |
 | ---------- | ------------------------------------------------------------------------------------------ |
-| fs-write   | The distro is read-only; the Workspace is bound read-write (or read-only) at its /mnt path |
+| fs-write   | The distro is read-only; the Workspace is bound read-write (or read-only) at its /mnt path, and under `workspace-write` so are the policy's `writableRoots` (the Session's scratchpad) |
 | network    | `network: "none"` runs the command in an empty network namespace; `"local"` is not supported |
 | mask-paths | A tmpfs over a directory, `/dev/null` over a file                                          |
+| closed-temp | `/tmp` gets a private tmpfs only when the policy grants temp; otherwise it stays read-only |
 
 Other Windows drives are hidden from a confined command unless **Show Windows drives read-only** is on. The mount that hides them is remounted read-only after the Workspace is bound, so a write to a path outside the Workspace is refused rather than landing in a tmpfs that vanishes with the command.
 

@@ -39,7 +39,13 @@ import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotoc
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage } from "../../omnimessage/index.js";
 import { VERSION } from "../../index.js";
-import type { MCPServerConfig, ToolDefinition, ToolPermission } from "../../interfaces/index.js";
+import type {
+  ConfinedSpawn,
+  MCPServerConfig,
+  SpawnConfiner,
+  ToolDefinition,
+  ToolPermission,
+} from "../../interfaces/index.js";
 import type { BuiltinTool, ToolResult } from "../tools/types.js";
 import { resolveMCPServers, type ResolvedMCPServer } from "./config.js";
 
@@ -83,6 +89,16 @@ function clientInfo(): { name: string; version: string } {
 export interface McpToolProviderOptions {
   /** Session Workspace: the default working directory for stdio server processes. */
   workspaceDir?: string;
+  /**
+   * The Session's sandbox (see {@link EnvironmentConfig.confineSpawn}): a stdio server is a
+   * process the harness starts for the Session, so its argv goes through the same confiner
+   * a command's does, re-read at every start. A confiner that cannot enforce the policy
+   * fails that server's connect — reported like any other connect failure — and the server
+   * never starts unconfined. Absent, or a getter returning null = servers start unconfined.
+   */
+  confineSpawn?: () => SpawnConfiner | null;
+  /** The Session's scratchpad, the confiner's scope beside the Workspace. */
+  scratchpadDir?: string;
   /** Warning sink; defaults to a `[penguin]`-prefixed stderr line. */
   warn?: (message: string) => void;
 }
@@ -163,6 +179,8 @@ export class McpToolProvider {
   private servers: ResolvedMCPServer[];
   private configWarnings: string[];
   private readonly workspaceDir: string | undefined;
+  private readonly confineSpawn: (() => SpawnConfiner | null) | undefined;
+  private readonly scratchpadDir: string | undefined;
   private readonly warn: (message: string) => void;
   /** Single-flight connect+discovery of the servers still pending; resolved results live in the fields below. */
   private ensurePromise: Promise<void> | null = null;
@@ -184,6 +202,8 @@ export class McpToolProvider {
     this.servers = resolved.servers;
     this.configWarnings = resolved.warnings;
     this.workspaceDir = options?.workspaceDir;
+    this.confineSpawn = options?.confineSpawn;
+    this.scratchpadDir = options?.scratchpadDir;
     this.warn = options?.warn ?? ((message) => process.stderr.write(`[penguin] ${message}\n`));
   }
 
@@ -389,9 +409,16 @@ export class McpToolProvider {
     let transport: Transport;
     const t = server.transport;
     if (t.kind === "stdio") {
+      const cwd = t.cwd ?? this.workspaceDir;
+      // The server's argv under the Session's sandbox, exactly as a command's: confined
+      // before anything starts, so a policy nothing can enforce is this server's connect
+      // failure and not a server running outside the sandbox.
+      const confined = this.confine([t.command, ...t.args], cwd);
+      const [command, ...args] = confined.argv;
+      if (command === undefined) throw new Error("sandbox: the confiner returned an empty argv");
       const stdio = new StdioClientTransport({
-        command: t.command,
-        args: t.args,
+        command,
+        args,
         // Safe inherited defaults plus the entry's own env — and nothing else: the Agent
         // vault is deliberately NOT injected into MCP server processes (unlike command
         // subprocesses); a variable a server needs must be listed in the entry's env.
@@ -399,11 +426,10 @@ export class McpToolProvider {
         // harness's own configuration — every PENGUIN_* variable, PORT/HOST and the rest —
         // never reaches a server: the same outcome the command-session strip enforces,
         // by the opposite mechanism. Widening this base (e.g. to process.env) would undo
-        // that; the "harness variables never reach a stdio server" test pins it.
-        env: { ...getDefaultEnvironment(), ...t.env },
-        ...(t.cwd !== undefined || this.workspaceDir !== undefined
-          ? { cwd: t.cwd ?? this.workspaceDir }
-          : {}),
+        // that; the "harness variables never reach a stdio server" test pins it. A
+        // sandbox runner's own entries lie over the result.
+        env: { ...getDefaultEnvironment(), ...t.env, ...confined.env },
+        ...(cwd !== undefined ? { cwd } : {}),
         stderr: "pipe",
       });
       // The tail makes spawn/startup failures diagnosable ("command not found", stack
@@ -451,6 +477,26 @@ export class McpToolProvider {
       await transport.close().catch(() => {});
       const detail = describeError(err);
       throw new Error(stderrTail ? `${detail}; server stderr: ${stderrTail.trim()}` : detail);
+    }
+  }
+
+  /**
+   * The argv a stdio server is started with under the Session's sandbox: the confiner's
+   * answer, with the server's working directory as `cwd` and the Session's Workspace and
+   * scratchpad as scope; the argv itself when the Session has no confiner. A throw is the
+   * server's connect failure.
+   */
+  private confine(argv: readonly string[], cwd: string | undefined): ConfinedSpawn {
+    const confiner = this.confineSpawn?.() ?? null;
+    if (confiner === null) return { argv };
+    try {
+      return confiner(argv, {
+        cwd: cwd ?? process.cwd(),
+        workspaceDir: this.workspaceDir ?? cwd ?? process.cwd(),
+        ...(this.scratchpadDir !== undefined ? { scratchpadDir: this.scratchpadDir } : {}),
+      });
+    } catch (err) {
+      throw new Error(`sandbox: ${describeError(err)}`);
     }
   }
 

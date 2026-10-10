@@ -36,17 +36,22 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
+import {
+  AgentAvatar,
+  Dot,
+  Dropdown,
+  GlyphIcon,
+  ICONS,
+  ICON_SIZE,
+  Legend,
+  useRowContextMenu,
+} from "@prismshadow/penguin-ui";
+import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { useRowContextMenu } from "../../components/ui/context-menu";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
+import type { Tone } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Dropdown } from "../../components/ui/dropdown";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ELLIPSIS_ICON } from "../../components/ui/session-row-menu";
-import { FOLDER_ICON } from "../../components/ui/group-list";
 import { budgetTone } from "./finance-tree";
 import { INVALID_ICON } from "./shared";
 import { CHART_NODE_H, CHART_NODE_W, workspaceTail } from "./org-chart-tree";
@@ -55,20 +60,22 @@ import { employeeStateTone } from "./chart-view";
 /** The legend's order: the states a reader is most likely to be looking for first. */
 const LEGEND_STATES: readonly OrgEmployeeState[] = ["running", "idle", "paused"];
 
-/** A 6px state dot with its label beside it; the running dot carries a pulsing halo (transform-only, so reduced motion leaves a plain dot). */
+/** The app's tones in the shared package's names: a busy dot takes the success fill. */
+const DOT_TONE: Record<Tone, ToneName> = {
+  busy: "success",
+  attention: "attention",
+  success: "success",
+  link: "info",
+  danger: "danger",
+  muted: "neutral",
+};
+
+/** A 6px state dot with its label beside it; the running dot pulses, reduced motion stills it. */
 export function ChartStateDot({ state }: { state: OrgEmployeeState }) {
-  const tone = employeeStateTone(state);
   const label = S.company.employeeStates[state] ?? state;
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5">
-      <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden>
-        {state === "running" && (
-          <span
-            className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${toneDot[tone]}`}
-          />
-        )}
-        <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
-      </span>
+      <Dot tone={DOT_TONE[employeeStateTone(state)]} pulse={state === "running"} />
       <span>{label}</span>
     </span>
   );
@@ -76,16 +83,21 @@ export function ChartStateDot({ state }: { state: OrgEmployeeState }) {
 
 export function ChartLegend() {
   return (
-    <ul
-      aria-label={S.company.chart.legend}
-      className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400"
-    >
-      {LEGEND_STATES.map((state) => (
-        <li key={state} className="flex items-center">
-          <ChartStateDot state={state} />
-        </li>
-      ))}
-    </ul>
+    <Legend
+      label={S.company.chart.legend}
+      items={LEGEND_STATES.map((state) => ({
+        key: state,
+        label: S.company.employeeStates[state] ?? state,
+        // Running and on-desk share one tone (busy and success are one emerald); the running
+        // dot is told apart by its pulse.
+        mark: (
+          <Dot
+            tone={employeeStateTone(state) === "attention" ? "attention" : "success"}
+            pulse={state === "running"}
+          />
+        ),
+      }))}
+    />
   );
 }
 
@@ -153,14 +165,14 @@ export function ChartCard({
       {/* The tooltip carries what the two truncating lines may have cut, and nothing else:
           the face has no click of its own, so it must not promise one either. */}
       <div
-        title={
+        data-tooltip={
           flag !== undefined ? `${employee.name} · ${flag}` : `${employee.name} · ${employee.title}`
         }
         className={`absolute inset-0 flex flex-col rounded-lg border bg-white px-3 py-2.5 shadow-sm dark:bg-gray-900 ${
           flagged ? "border-red-300 dark:border-red-800" : "border-gray-200 dark:border-gray-700"
         }`}
       >
-        <span className="flex items-center gap-2.5 pr-6">
+        <span className="flex items-center gap-2 pr-6">
           <AgentAvatar
             id={employee.agentId}
             name={employee.name}
@@ -168,26 +180,24 @@ export function ChartCard({
             className="shrink-0 rounded-md"
           />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] leading-4 font-semibold text-gray-900 dark:text-gray-100">
+            <span className="block truncate text-sm leading-4 font-semibold text-fg">
               {employee.name}
             </span>
-            <span className="block truncate text-[11px] leading-4 text-gray-500 dark:text-gray-400">
-              {employee.title}
-            </span>
+            <span className="block truncate text-xs leading-4 text-fg-muted">{employee.title}</span>
           </span>
         </span>
-        <span className="mt-2 flex items-center gap-1.5 text-[11px] leading-4 text-gray-600 dark:text-gray-300">
+        <span className="mt-2 flex items-center gap-1.5 text-xs leading-4 text-gray-600 dark:text-gray-300">
           <ChartStateDot state={state} />
           <span
-            className="flex min-w-0 flex-1 items-center gap-1 font-mono text-[10px] text-gray-400 dark:text-gray-500"
-            title={flag ?? employee.resolvedWorkspace ?? employee.workspace}
+            className="flex min-w-0 flex-1 items-center gap-1 font-mono text-fg-subtle"
+            data-tooltip={flag ?? employee.resolvedWorkspace ?? employee.workspace}
           >
             {flag !== undefined ? (
               <span className={toneInk.danger}>
                 <GlyphIcon d={INVALID_ICON} size={10} />
               </span>
             ) : (
-              <GlyphIcon d={FOLDER_ICON} size={10} />
+              <GlyphIcon d={ICONS.folder} size={10} />
             )}
             <span className="truncate">{workspaceTail(employee.workspace)}</span>
           </span>
@@ -195,7 +205,7 @@ export function ChartCard({
             className={`shrink-0 tabular-nums ${
               tone === "attention" || tone === "danger" ? `font-medium ${toneInk[tone]}` : ""
             }`}
-            title={spendTitle}
+            data-tooltip={spendTitle}
           >
             {spend}
           </span>
@@ -229,7 +239,7 @@ export function ChartCard({
           button={
             <button
               type="button"
-              title={S.company.chart.nodeMenu}
+              data-tooltip={S.company.chart.nodeMenu}
               aria-label={`${employee.name} · ${S.company.chart.nodeMenu}`}
               aria-haspopup="menu"
               aria-expanded={ctx.open}
@@ -245,7 +255,7 @@ export function ChartCard({
                 ctx.open ? "opacity-100" : "opacity-70"
               }`}
             >
-              <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.groupHeaderAction} filled />
+              <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.groupHeaderAction} filled />
             </button>
           }
         >

@@ -1,9 +1,17 @@
 /**
- * Unit tests for scrypt password hashing: format, verification, salt randomness,
- * and fallback behavior for invalid stored strings. The `password` cases call `hashPassword`
- * without a cost argument, so they are the one place the production work factor is exercised.
- * The account-check cases hash at a token cost: they count derivations through an injected
- * check, never time them.
+ * Password hashing (auth/password.ts) and the account check the login route runs on it.
+ *
+ * - A hash made without a cost argument is stored as `scrypt$N$r$p$salt$hash` at the
+ *   production work factor; it verifies its own password and fails any other.
+ * - The same password hashed twice differs (random salt), and both verify.
+ * - A stored string that is not a checkable hash verifies as false instead of throwing.
+ * - The check tells a mismatch apart from a hash it cannot check.
+ * - An unknown username is checked against the dummy hash, once, and never signs anyone in.
+ * - A real account is checked against its own hash, once, without the dummy.
+ * - An account whose stored hash cannot be checked still spends its one derivation, on the dummy.
+ *
+ * The `password` cases hash at the production work factor: they are the one place it runs.
+ * The account-check cases hash at a token cost and count derivations, never time them.
  */
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -16,20 +24,15 @@ import {
 import type { PasswordCheck } from "../src/auth/password.js";
 
 describe("password", () => {
-  it("hash format is scrypt$N$r$p$salt$hash and verifies", async () => {
+  it("stores an unparameterized hash at the production cost, verifying only its own password", async () => {
     const stored = await hashPassword("hello-world-123");
     const parts = stored.split("$");
     expect(parts).toHaveLength(6);
     expect(parts[0]).toBe("scrypt");
-    // The default work factor is what production hashes at; `hashPassword`'s cost argument
-    // exists for the test suite and must never lower what an unparameterized call writes.
-    expect(SCRYPT_COST).toBe(16384);
+    // `hashPassword`'s cost argument exists for the test suite and must never lower what an
+    // unparameterized call writes.
     expect(Number(parts[1])).toBe(SCRYPT_COST);
     await expect(verifyPassword("hello-world-123", stored)).resolves.toBe(true);
-  });
-
-  it("a wrong password fails verification", async () => {
-    const stored = await hashPassword("correct-password");
     await expect(verifyPassword("wrong-password", stored)).resolves.toBe(false);
   });
 

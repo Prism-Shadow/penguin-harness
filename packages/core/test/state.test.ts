@@ -22,6 +22,7 @@ import {
   DATE_PLACEHOLDER,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
+  MMSP_CLIENTS,
   MODEL_CATALOG,
   OS_VERSION_PLACEHOLDER,
   PLATFORM_PLACEHOLDER,
@@ -39,6 +40,8 @@ import {
   buildToolConfig,
   selectBuiltinToolsForModel,
   defaultProjectConfig,
+  effectiveConnection,
+  fastModeProtocol,
   effectivePluginTable,
   parsePluginTables,
   defaultSystemConfig,
@@ -49,17 +52,26 @@ import {
   loadProjectConfig,
   memoryDir,
   scratchpadDir,
+  projectConfigFromTable,
   projectConfigPath,
+  presetModelEntries,
+  presetProviderTable,
+  providerConnectionShape,
   removeVaultEntry,
   renderProjectConfigToml,
+  resolveEntryCredential,
+  resolveModelEnv,
   resolveModelRef,
   resolveRoot,
+  routedClientType,
   saveProjectConfig,
   setDefaultModel,
+  setProviderConnection,
   setVaultEntry,
   skillsDir,
   systemConfigPath,
   toolsDir,
+  unroutableVendorModel,
   type ModelRef,
   type ProjectConfig,
   type SystemConfig,
@@ -988,7 +1000,7 @@ describe("project-config round trip", () => {
   });
 
   it('normalizes the pre-0.4.2 client_type = "openai" alias to openai-chat on read and write', async () => {
-    // A config saved before AgentHub 0.4.2 renamed the generic Chat Completions client must
+    // A config saved before the generic Chat Completions client was renamed (AgentHub 0.4.2) must
     // keep working: the stored bare "openai" spelling reads back as the canonical
     // "openai-chat" (normalize-on-read, no error and no disk rewrite required).
     const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
@@ -1030,6 +1042,141 @@ describe("project-config round trip", () => {
     expect(getModel(third, { provider: "custom", model_id: "responses-model" })?.client_type).toBe(
       "openai-responses",
     );
+  });
+
+  it('keeps a stored client_type = "gemini-official" as written, and it still reaches Google\'s official client', async () => {
+    // MMSP 0.5.2 named the official Gemini client google-official and kept its earlier name
+    // as an alias. A Project that stores the earlier name is neither migrated nor rewritten:
+    // it loads as written and is used exactly as google-official would be — the same
+    // variables, the same Interactions path, the same fast tier.
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const text = [
+      "[providers.google]",
+      'client_type = "gemini-official"',
+      "",
+      "[[models]]",
+      'provider = "google"',
+      'model_id = "gemini-3.8-flash"',
+      "",
+      "[[models]]",
+      'provider = "custom"',
+      'model_id = "gemini-direct"',
+      'client_type = "gemini-official"',
+      'base_url = "https://generativelanguage.googleapis.com"',
+      "",
+    ].join("\n");
+    await fs.writeFile(file, text, "utf8");
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(await fs.readFile(file, "utf8")).toBe(text);
+    const env = { GEMINI_API_KEY: "sk-gemini-env" };
+
+    // The group's protocol reaches its keyless row, which the client then serves from the
+    // GEMINI_* pair it reads itself.
+    const grouped = getModel(loaded, { provider: "google", model_id: "gemini-3.8-flash" })!;
+    expect(
+      resolveEntryCredential(grouped, providerConnectionShape(loaded.providers?.google), {}, env),
+    ).toEqual({ clientType: "gemini-official" });
+    // A row naming Google's own endpoint is lent GEMINI_API_KEY, as google-official's would be.
+    const pinned = getModel(loaded, { provider: "custom", model_id: "gemini-direct" })!;
+    expect(pinned.client_type).toBe("gemini-official");
+    expect(resolveEntryCredential(pinned, undefined, {}, env)).toEqual({
+      apiKey: "sk-gemini-env",
+      baseUrl: "https://generativelanguage.googleapis.com",
+      clientType: "gemini-official",
+    });
+
+    // Routed, and so accepted by the models page, the server and the CLI alike.
+    expect(unroutableVendorModel("google", "gemini-3.8-flash", "gemini-official")).toBe(false);
+    const routed = routedClientType("gemini-3.8-flash", "gemini-official")!;
+    expect(MMSP_CLIENTS[routed]).toEqual(MMSP_CLIENTS["google-official"]);
+    expect(resolveModelEnv("gemini-3.8-flash", "gemini-official")).toEqual(
+      resolveModelEnv("gemini-3.8-flash"),
+    );
+    expect(fastModeProtocol("gemini-3.8-flash", "gemini-official")).toBe("openai");
+  });
+
+  it("rewrites the client types of AgentHub 0.4 to MMSP's once, on load, keeping the rest of the file", async () => {
+    // A Project written before MMSP 0.5.0 holds the per-generation names the old router
+    // accepted; MMSP refuses them at client construction, so the loader maps each to the
+    // client that speaks the same wire protocol and writes the file back — every other key
+    // (a display name, the default chat block) intact.
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        'name = "Legacy"',
+        'default_model = { provider = "deepseek", model_id = "deepseek-flash" }',
+        "",
+        "[default_chat]",
+        'thinking_level = "high"',
+        "",
+        "[[models]]",
+        'provider = "deepseek"',
+        'model_id = "deepseek-flash"',
+        'client_type = "deepseek-v4"',
+        'base_url = "https://api.deepseek.com"',
+        "",
+        "[[models]]",
+        'provider = "penguin-go"',
+        'model_id = "gemini-3.8-flash"',
+        'client_type = "gemini-3.8"',
+        'base_url = "https://go.example/api"',
+        "",
+        "[[models]]",
+        'provider = "minimax"',
+        'model_id = "MiniMax-M3"',
+        'client_type = "minimax-m3"',
+        "",
+        "[[models]]",
+        'provider = "custom"',
+        'model_id = "my-claude"',
+        'client_type = "Claude-5"',
+        'base_url = "https://proxy.example"',
+        'api_key = "sk-keep"',
+        "",
+        "[[models]]",
+        'provider = "custom"',
+        'model_id = "kept"',
+        'client_type = "openai-responses"',
+        'base_url = "https://proxy.example/v1"',
+      ].join("\n"),
+      "utf8",
+    );
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    // What each model speaks now, wherever the file keeps it: the group hoist runs after the
+    // rename, so a group whose one row was renamed holds the new name on its table.
+    const typeOf = (provider: string, modelId: string): string | undefined => {
+      const entry = getModel(loaded, { provider, model_id: modelId })!;
+      return effectiveConnection(
+        { provider, modelId, clientType: entry.client_type, baseUrl: entry.base_url },
+        providerConnectionShape(loaded.providers?.[provider]),
+      ).clientType;
+    };
+    expect(typeOf("deepseek", "deepseek-flash")).toBe("deepseek-official");
+    expect(typeOf("penguin-go", "gemini-3.8-flash")).toBe("google-genai");
+    expect(typeOf("minimax", "MiniMax-M3")).toBe("minimax-official");
+    expect(typeOf("custom", "my-claude")).toBe("anthropic-official"); // matched case-insensitively
+    expect(typeOf("custom", "kept")).toBe("openai-responses"); // a 0.5.0 name passes through
+    expect(loaded.name).toBe("Legacy");
+    expect(loaded.default_chat?.thinking_level).toBe("high");
+    expect(loaded.default_model).toEqual({ provider: "deepseek", model_id: "deepseek-flash" });
+    // The file was rewritten with the new names and nothing else lost.
+    const rewritten = await fs.readFile(file, "utf8");
+    expect(rewritten).toContain('client_type = "deepseek-official"');
+    expect(rewritten).toContain('client_type = "minimax-official"');
+    expect(rewritten).toContain('client_type = "anthropic-official"');
+    expect(rewritten).not.toMatch(/deepseek-v4|gemini-3\.8"|minimax-m3|Claude-5/);
+    expect(rewritten).toContain('api_key = "sk-keep"');
+    expect(rewritten).toContain('base_url = "https://go.example/api"');
+    expect(rewritten).toContain('thinking_level = "high"');
+    expect(rewritten).toContain('name = "Legacy"');
+    // Once: a second load finds nothing to migrate and leaves the file untouched.
+    const { mtimeMs } = await fs.stat(file);
+    await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect((await fs.stat(file)).mtimeMs).toBe(mtimeMs);
+    expect(await fs.readFile(file, "utf8")).toBe(rewritten);
   });
 
   it("addModel files the entry under the provider it was given, never one of its own choosing", async () => {
@@ -1290,6 +1437,57 @@ describe("project-config round trip", () => {
     expect(m?.created_at).toBe("2026-07-01T00:00:00Z");
   });
 
+  it("addModel clears a row's own key, endpoint or protocol given null or blank, keeps the ones it is not given, and the key's write time goes with the key", async () => {
+    // A row with all three of its own, as the interface layer wrote it (created_at included).
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        "[providers.openrouter]",
+        'base_url = "https://openrouter.ai/api/v1"',
+        'client_type = "openai-responses"',
+        'api_key = "or-group"',
+        "[[models]]",
+        'provider = "openrouter"',
+        'model_id = "openai/gpt-5.5"',
+        'client_type = "openai-chat"',
+        'base_url = "https://proxy.example/v1"',
+        'api_key = "or-own"',
+        'created_at = "2026-09-01T00:00:00Z"',
+      ].join("\n"),
+      "utf8",
+    );
+    const ref = { provider: "openrouter", model_id: "openai/gpt-5.5" };
+    const stored = async () => getModel(await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID), ref)!;
+    // Clearing the endpoint alone: the protocol and the key stay.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { ...ref, base_url: null });
+    expect(await stored()).toMatchObject({
+      client_type: "openai-chat",
+      api_key: "or-own",
+      created_at: "2026-09-01T00:00:00Z",
+    });
+    expect((await stored()).base_url).toBeUndefined();
+    // A blank protocol clears it as null does; the key's write time leaves with the key.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { ...ref, client_type: " ", api_key: null });
+    const bare = await stored();
+    expect([bare.client_type, bare.base_url, bare.api_key, bare.created_at]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    // With nothing of its own left, the row runs on its group's table.
+    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(
+      resolveEntryCredential(bare, providerConnectionShape(cfg.providers?.openrouter), {}, {}),
+    ).toEqual({
+      apiKey: "or-group",
+      baseUrl: "https://openrouter.ai/api/v1",
+      clientType: "openai-responses",
+    });
+  });
+
   it("default config carries the anthropic claude-sonnet-4-6 pricing (three buckets)", () => {
     const entry = getModel(defaultProjectConfig(), {
       provider: "anthropic",
@@ -1320,16 +1518,16 @@ describe("project-config round trip", () => {
         m.provider === cfg.default_model!.provider && m.modelId === cfg.default_model!.model_id,
     );
     expect(chosen?.supportsVision).toBe(true);
-    // And it has to be routable as written. deepseek-flash carries no `deepseek-v4`
-    // substring, which is all AgentHub routes DeepSeek on, so the preset entry for the
-    // default must carry the catalog row's pinned client and endpoint — a default that
-    // resolved to no client would fail every first request.
+    // And it has to be routable as written: `deepseek-flash` begins with the family MMSP
+    // routes to its DeepSeek client, so the preset entry for the default pins nothing — a
+    // default that resolved to no client would fail every first request.
     const defaultEntry = cfg.models.find(
       (m) =>
         m.provider === cfg.default_model!.provider && m.model_id === cfg.default_model!.model_id,
     );
-    expect(defaultEntry?.client_type).toBe("deepseek-v4");
-    expect(defaultEntry?.base_url).toBe("https://api.deepseek.com");
+    expect(defaultEntry).toBeDefined();
+    expect(defaultEntry?.client_type).toBeUndefined();
+    expect(defaultEntry?.base_url).toBeUndefined();
     // The catalog is presented in full, retired rows aside (they are kept only for Projects
     // that already carry them): provider and model_id are separate columns, model_id being the
     // plain upstream id (vision is only persisted as false for models that don't support images).
@@ -1345,20 +1543,28 @@ describe("project-config round trip", () => {
       // every priced catalog entry stores USD pricing.
       if (cat.pricing === undefined) expect(entry.pricing).toBeUndefined();
       else expect(entry.pricing?.unit).toBe("usd_per_mtok");
-      // A model that auto-routes leaves client_type unset; a gateway model pins one
-      // explicitly (OpenRouter pins openai-responses, the other gateways openai-chat).
-      expect(entry.client_type).toBe(cat.clientType);
-      // A gateway model has its base URL preset inline (no key included); other models have
-      // no credential.
-      expect(entry.base_url).toBe(cat.baseUrl);
+      // No key on any row. The protocol and endpoint come from the file alone — the row's own
+      // where it differs from its group, else the group's table the config carries beside the
+      // rows: a model that auto-routes resolves to no client_type, a gateway model to its pin
+      // (OpenRouter openai-responses, the other gateways openai-chat) and its preset base URL.
       expect(entry.api_key).toBeUndefined();
+      const effective = effectiveConnection(
+        {
+          provider: entry.provider,
+          modelId: entry.model_id,
+          clientType: entry.client_type,
+          baseUrl: entry.base_url,
+        },
+        providerConnectionShape(cfg.providers?.[entry.provider]),
+      );
+      expect(effective.clientType).toBe(cat.clientType);
+      expect(effective.baseUrl).toBe(cat.baseUrl);
     }
-    expect(getModel(cfg, { provider: "openrouter", model_id: "xiaomi/mimo-v2.5" })?.base_url).toBe(
-      "https://openrouter.ai/api/v1",
-    );
-    expect(
-      getModel(cfg, { provider: "deepseek", model_id: "deepseek-v4-pro" })?.base_url,
-    ).toBeUndefined();
+    // The group tables are the catalog's, written once: a gateway's endpoint lives there, a
+    // first-party vendor has none (its client's own endpoint).
+    expect(cfg.providers).toEqual(presetProviderTable());
+    expect(cfg.providers?.openrouter?.base_url).toBe("https://openrouter.ai/api/v1");
+    expect(cfg.providers?.deepseek).toBeUndefined();
   });
 
   it("persists pricing and field-merges buckets on upsert", async () => {
@@ -1544,6 +1750,477 @@ describe("plugins (shared and per-machine tables)", () => {
       all: { abcdefghijklmnop: { version: "1" } },
       machines: {},
     });
+  });
+});
+
+/**
+ * Group-level connections (`[providers.<id>]`) and the one-time move of a file written before
+ * them.
+ *
+ * - A group's table round-trips through save/load, sits between the top-level lines and
+ *   [[models]], and is read leniently (a non-table value or member drops, blank fields drop,
+ *   the deprecated "openai" spelling converges).
+ * - setProviderConnection sets and clears per field and stamps the key's write time, and never
+ *   touches a model's own key; a group table cleared leaves its rows on the client's defaults —
+ *   the catalog does not fill them back in.
+ * - Any group takes a protocol, Penguin Go and OpenCode Go included; their rows keep the
+ *   protocols they store.
+ * - Loading a file from before group tables, per group (custom aside, whose rows keep
+ *   everything): a base URL every row carries moves by strict plurality, a protocol by
+ *   unanimity, and a key every keyed row shares when the group could lend it back to each of
+ *   them; nothing is read from the catalog, and every model keeps running on what it ran on (a
+ *   keyless model the group key reaches now has it). Old OpenCode Go and Penguin Go files land
+ *   on the shape a new Project has.
+ * - What does not move: a tie for the most common base URL; any base URL in a group with a
+ *   bare row; a shared key the group could not lend back to every row holding it.
+ * - The move is one-time and quiet: a second load writes nothing, a file with nothing to move
+ *   is never rewritten, and a key typed on one model afterwards — or a group key cleared while
+ *   models keep their own — stays where it was put.
+ * - A file this release wrote (it has a providers table) is never migrated: a base URL or
+ *   protocol the user set on a model stays even when it equals the group's.
+ */
+describe("providers (group-level connections)", () => {
+  const TD = "https://tokendance.space/gateway/v1";
+  const OR = "https://openrouter.ai/api/v1";
+  const file = (): string => projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+  async function writeRaw(lines: string[]): Promise<void> {
+    await fs.mkdir(path.dirname(file()), { recursive: true });
+    await fs.writeFile(file(), lines.join("\n") + "\n", "utf8");
+  }
+  /** A file's lines read as they are, without the load-time migration. */
+  const projectConfigFromLines = (lines: string[]): ProjectConfig =>
+    projectConfigFromTable(file(), parseToml(lines.join("\n")) as Record<string, unknown>);
+  /** The credential and protocol each row's client is built with, the way a Session builds it. */
+  const connections = (cfg: Pick<ProjectConfig, "models" | "providers">) =>
+    Object.fromEntries(
+      cfg.models.map((m) => {
+        const key = `${m.provider}/${m.model_id}`;
+        try {
+          const group = providerConnectionShape(cfg.providers?.[m.provider]);
+          return [key, resolveEntryCredential(m, group, {}, {})];
+        } catch (err) {
+          return [key, (err as Error).name];
+        }
+      }),
+    );
+  /** One `[[models]]` row of an old file. */
+  const row = (fields: Record<string, string>): string[] => [
+    "[[models]]",
+    ...Object.entries(fields).map(([k, v]) => `${k} = ${JSON.stringify(v)}`),
+  ];
+  /** Writes an old file and loads it once: what each model ran on before, and the result. */
+  async function migrate(lines: string[]) {
+    await writeRaw(lines);
+    const before = connections(projectConfigFromLines(lines));
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    const stored = (provider: string, modelId: string) =>
+      getModel(loaded, { provider, model_id: modelId })!;
+    return { before, loaded, after: connections(loaded), stored };
+  }
+
+  it("a group's table round-trips, sits above [[models]], and reads leniently", async () => {
+    await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "tokendance", {
+      base_url: "https://proxy.example/td/v1",
+      client_type: "openai",
+      api_key: "td-key",
+    });
+    const text = await fs.readFile(file(), "utf8");
+    expect(text.indexOf("[providers.tokendance]")).toBeGreaterThan(-1);
+    expect(text.indexOf("[providers.tokendance]")).toBeLessThan(text.indexOf("[[models]]"));
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    // A new Project's tables, TokenDance's as the patch left it.
+    expect(loaded.providers).toEqual({
+      ...presetProviderTable(),
+      tokendance: {
+        base_url: "https://proxy.example/td/v1",
+        client_type: "openai-chat",
+        api_key: "td-key",
+        created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) as unknown,
+      },
+    });
+    // The CLI's load -> save path keeps it.
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, loaded);
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).providers).toEqual(
+      loaded.providers,
+    );
+
+    await writeRaw([
+      "[providers]",
+      'odd = "not a table"',
+      "[providers.blank]",
+      'base_url = "  "',
+      "api_key = 3",
+      "[providers.legacy]",
+      'client_type = "openai"',
+      "[providers.empty]",
+    ]);
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).providers).toEqual({
+      legacy: { client_type: "openai-chat" },
+    });
+    await writeRaw(['providers = "nope"']);
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).providers).toBeUndefined();
+  });
+
+  it("setProviderConnection sets and clears per field and never touches a model's own key; a cleared table leaves its rows on the client's defaults", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "tokendance",
+      model_id: "kimi-k3",
+      api_key: "td-own",
+    });
+    await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "tokendance", {
+      api_key: "td-group",
+      base_url: "https://proxy.example/v1",
+    });
+    let cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(cfg, { provider: "tokendance", model_id: "kimi-k3" })?.api_key).toBe("td-own");
+    expect(connections(cfg)["tokendance/glm-5.3"]).toEqual({
+      apiKey: "td-group",
+      baseUrl: "https://proxy.example/v1",
+      clientType: "openai-chat",
+    });
+    expect(connections(cfg)["tokendance/kimi-k3"]).toMatchObject({ apiKey: "td-own" });
+    // Omitted fields are kept; null and blank clear, the key's write time with the key.
+    await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "tokendance", { api_key: null });
+    cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(cfg.providers?.tokendance).toEqual({
+      base_url: "https://proxy.example/v1",
+      client_type: "openai-chat",
+    });
+    await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "tokendance", {
+      base_url: " ",
+      client_type: null,
+    });
+    cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(cfg.providers?.tokendance).toBeUndefined();
+    // The file now holds nothing for the row, so it has nothing: the gateway's endpoint and
+    // protocol, which the catalog still knows, are not filled back in.
+    const glm = getModel(cfg, { provider: "tokendance", model_id: "glm-5.3" })!;
+    expect(
+      effectiveConnection(
+        {
+          provider: glm.provider,
+          modelId: glm.model_id,
+          clientType: glm.client_type,
+          baseUrl: glm.base_url,
+        },
+        providerConnectionShape(cfg.providers?.tokendance),
+      ),
+    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" });
+  });
+
+  it("any group takes a protocol, Penguin Go and OpenCode Go included, and their rows keep the protocols they store", async () => {
+    for (const provider of ["penguin-go", "opencode-go"]) {
+      await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, provider, {
+        client_type: "openai-chat",
+        api_key: "go-key",
+      });
+    }
+    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(cfg.providers?.["penguin-go"]).toMatchObject({ client_type: "openai-chat" });
+    expect(cfg.providers?.["opencode-go"]).toMatchObject({ client_type: "openai-chat" });
+    const all = connections(cfg);
+    expect(all["penguin-go/gemini-3.8-flash"]).toMatchObject({
+      apiKey: "go-key",
+      clientType: "google-genai",
+    });
+    expect(all["penguin-go/deepseek-flash"]).toMatchObject({ clientType: "deepseek-official" });
+    // A Messages row on its own base, on the group's host: the group key reaches it.
+    expect(all["opencode-go/minimax-m3"]).toEqual({
+      apiKey: "go-key",
+      baseUrl: "https://opencode.ai/zen/go",
+      clientType: "ant-messages",
+    });
+  });
+
+  it("a file from before group tables moves what every row of a group shares onto the group, once, and every model runs on what it ran on", async () => {
+    const lines = [
+      'default_model = { provider = "tokendance", model_id = "glm-5.3" }',
+      // Enter key wrote one key across TokenDance; a model synced in later has none.
+      ...["glm-5.3", "kimi-k3"].flatMap((id, i) =>
+        row({
+          provider: "tokendance",
+          model_id: id,
+          // The pre-0.4.2 spelling is the same protocol.
+          client_type: i === 0 ? "openai-chat" : "openai",
+          base_url: TD,
+          api_key: "td-aaaa",
+          // The group's key takes the LATEST write time, wherever that row sits.
+          created_at: `2026-09-${30 - i}T10:00:00.000Z`,
+        }),
+      ),
+      ...row({
+        provider: "tokendance",
+        model_id: "seed-2.1-pro",
+        client_type: "openai-chat",
+        base_url: TD,
+      }),
+      // OpenRouter: a different key on each model.
+      ...["openai/gpt-5.5", "xiaomi/mimo-v2.5"].flatMap((id, i) =>
+        row({
+          provider: "openrouter",
+          model_id: id,
+          client_type: "openai-responses",
+          base_url: OR,
+          api_key: `or-${i}`,
+        }),
+      ),
+      // custom: one key, one protocol and one endpoint on both rows, which still keep all three.
+      ...["a", "b"].flatMap((id) =>
+        row({
+          provider: "custom",
+          model_id: id,
+          client_type: "openai-chat",
+          base_url: "https://shared.example/v1",
+          api_key: "sk-custom",
+        }),
+      ),
+      // A user-defined group the import filled.
+      ...row({
+        provider: "my-ollama",
+        model_id: "qwen-local",
+        client_type: "openai-chat",
+        base_url: "http://127.0.0.1:11434/v1",
+        api_key: "ol-key",
+      }),
+    ];
+    const { before, loaded, after, stored } = await migrate(lines);
+    expect(loaded.providers).toEqual({
+      tokendance: {
+        base_url: TD,
+        client_type: "openai-chat",
+        api_key: "td-aaaa",
+        created_at: "2026-09-30T10:00:00.000Z",
+      },
+      openrouter: { base_url: OR, client_type: "openai-responses" },
+      "my-ollama": {
+        base_url: "http://127.0.0.1:11434/v1",
+        client_type: "openai-chat",
+        api_key: "ol-key",
+      },
+    });
+    // What moved left the rows; what a row does not share with its group stays on it.
+    for (const id of ["glm-5.3", "kimi-k3", "seed-2.1-pro"]) {
+      const { client_type, base_url, api_key, created_at } = stored("tokendance", id);
+      expect([client_type, base_url, api_key, created_at], id).toEqual([
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ]);
+    }
+    expect(stored("openrouter", "openai/gpt-5.5")).toEqual({
+      provider: "openrouter",
+      model_id: "openai/gpt-5.5",
+      api_key: "or-0",
+    });
+    expect(stored("custom", "a")).toMatchObject({
+      client_type: "openai-chat",
+      api_key: "sk-custom",
+      base_url: "https://shared.example/v1",
+    });
+    expect(stored("my-ollama", "qwen-local")).toEqual({
+      provider: "my-ollama",
+      model_id: "qwen-local",
+    });
+    // Every model runs on what it ran on; the keyless TokenDance model now has the group key.
+    expect(before["tokendance/seed-2.1-pro"]).toBe("ModelCredentialError");
+    expect(after["tokendance/seed-2.1-pro"]).toEqual(after["tokendance/glm-5.3"]);
+    expect({ ...after, "tokendance/seed-2.1-pro": "-" }).toEqual({
+      ...before,
+      "tokendance/seed-2.1-pro": "-",
+    });
+    expect(loaded.default_model).toEqual({ provider: "tokendance", model_id: "glm-5.3" });
+
+    // Written to disk once: the second load reads the same, finds nothing and writes nothing.
+    const text = await fs.readFile(file(), "utf8");
+    const { mtimeMs } = await fs.stat(file());
+    const reloaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(reloaded.providers).toEqual(loaded.providers);
+    expect(reloaded.models).toEqual(loaded.models);
+    expect((await fs.stat(file())).mtimeMs).toBe(mtimeMs);
+    expect(await fs.readFile(file(), "utf8")).toBe(text);
+  });
+
+  it("old OpenCode Go and Penguin Go files land on a new Project's shape: the common endpoint and the key on the group, each row's own protocol and other base on the row", async () => {
+    // As an older release wrote them: every row a copy of its catalog entry, one key across
+    // each group. OpenCode Go's rows sit on two bases (four on the Chat Completions one, two
+    // on the Messages one) and three protocols; Penguin Go's on one relay and two protocols.
+    const go = [
+      "glm-5.3",
+      "kimi-k3",
+      "deepseek-v4-pro",
+      "gpt-5.6-luna",
+      "minimax-m3",
+      "qwen3.8-max",
+    ];
+    const relay = ["gemini-3.8-flash", "deepseek-flash"];
+    const oldRow = (provider: string, modelId: string, key: string): string[] => {
+      const cat = MODEL_CATALOG.find((m) => m.provider === provider && m.modelId === modelId)!;
+      return row({
+        provider,
+        model_id: modelId,
+        client_type: cat.clientType!,
+        base_url: cat.baseUrl!,
+        api_key: key,
+        created_at: "2026-09-20T00:00:00.000Z",
+      });
+    };
+    const { before, loaded, after, stored } = await migrate([
+      ...go.flatMap((id) => oldRow("opencode-go", id, "go-key")),
+      ...relay.flatMap((id) => oldRow("penguin-go", id, "pg-key")),
+    ]);
+    const fresh = presetProviderTable();
+    expect(loaded.providers).toEqual({
+      "opencode-go": {
+        base_url: fresh["opencode-go"]!.base_url,
+        api_key: "go-key",
+        created_at: "2026-09-20T00:00:00.000Z",
+      },
+      "penguin-go": {
+        base_url: fresh["penguin-go"]!.base_url,
+        api_key: "pg-key",
+        created_at: "2026-09-20T00:00:00.000Z",
+      },
+    });
+    // Each row keeps exactly what a new Project's row stores, and no key.
+    const preset = presetModelEntries();
+    for (const [provider, ids] of [
+      ["opencode-go", go],
+      ["penguin-go", relay],
+    ] as const) {
+      for (const id of ids) {
+        const own = stored(provider, id);
+        const seeded = preset.find((e) => e.provider === provider && e.model_id === id)!;
+        expect([own.client_type, own.base_url], id).toEqual([seeded.client_type, seeded.base_url]);
+        expect(own.api_key, id).toBeUndefined();
+      }
+    }
+    // The Messages rows keep their own base on the group's host, so the group key reaches
+    // them, and every model runs on what it ran on.
+    expect(stored("opencode-go", "minimax-m3").base_url).toBe("https://opencode.ai/zen/go");
+    expect(after).toEqual(before);
+  });
+
+  it("a tie for the most common base URL moves no base URL", async () => {
+    const lines = [
+      "https://a.example/v1",
+      "https://a.example/v1",
+      "https://b.example/v1",
+      "https://b.example/v1",
+    ].flatMap((url, i) =>
+      row({ provider: "split", model_id: `m${i}`, client_type: "openai-chat", base_url: url }),
+    );
+    const { loaded, stored } = await migrate(lines);
+    // The protocol every row shares still moves; each row keeps its base URL.
+    expect(loaded.providers).toEqual({ split: { client_type: "openai-chat" } });
+    expect([0, 1, 2, 3].map((i) => stored("split", `m${i}`).base_url)).toEqual([
+      "https://a.example/v1",
+      "https://a.example/v1",
+      "https://b.example/v1",
+      "https://b.example/v1",
+    ]);
+  });
+
+  it("a shared key the group could not lend back to every row holding it stays on every row", async () => {
+    // Three rows on one host and one on another, all with the same key: the common base URL
+    // moves, but a group key would not reach the fourth row, so no row gives its key up.
+    const lines = [
+      "https://a.example/v1",
+      "https://a.example/v1",
+      "https://a.example/v1",
+      "https://elsewhere.example/v1",
+    ].flatMap((url, i) =>
+      row({
+        provider: "mostly",
+        model_id: `m${i}`,
+        client_type: "openai-chat",
+        base_url: url,
+        api_key: "k",
+      }),
+    );
+    const { before, loaded, after, stored } = await migrate(lines);
+    expect(loaded.providers).toEqual({
+      mostly: { base_url: "https://a.example/v1", client_type: "openai-chat" },
+    });
+    expect([0, 1, 2, 3].map((i) => stored("mostly", `m${i}`).api_key)).toEqual([
+      "k",
+      "k",
+      "k",
+      "k",
+    ]);
+    expect(stored("mostly", "m3").base_url).toBe("https://elsewhere.example/v1");
+    expect(after).toEqual(before);
+  });
+
+  it("a bare row blocks its group's base URL, and a file with nothing to move is never rewritten", async () => {
+    // DeepSeek: one row on the official endpoint, one with none (the client's default); both
+    // hold the same key, which a group with no base URL could not lend the first row back.
+    const lines = [
+      ...row({
+        provider: "deepseek",
+        model_id: "deepseek-flash",
+        base_url: "https://api.deepseek.com",
+        api_key: "sk-ds",
+      }),
+      ...row({ provider: "deepseek", model_id: "deepseek-v4-pro", api_key: "sk-ds" }),
+      ...row({ provider: "custom", model_id: "mine", api_key: "sk-mine" }),
+    ];
+    await writeRaw(lines);
+    const before = await fs.readFile(file(), "utf8");
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(await fs.readFile(file(), "utf8")).toBe(before);
+    expect(loaded.providers).toBeUndefined();
+    expect(connections(loaded)).toEqual(connections(projectConfigFromLines(lines)));
+  });
+
+  it("the move is one-time: a key typed on one model later, or a group key cleared while models keep theirs, stays put", async () => {
+    // A Project this release created: the model's own key is an override, not a group write.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "deepseek",
+      model_id: "deepseek-v4-pro",
+      api_key: "sk-own",
+    });
+    let cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(cfg.providers?.deepseek).toBeUndefined();
+    expect(getModel(cfg, { provider: "deepseek", model_id: "deepseek-v4-pro" })?.api_key).toBe(
+      "sk-own",
+    );
+    // A cleared group key does not come back from the models that keep their own.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "deepseek",
+      model_id: "deepseek-flash",
+      api_key: "sk-own",
+    });
+    await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "deepseek", { api_key: "sk-group" });
+    await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "deepseek", { api_key: null });
+    cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(cfg.providers?.deepseek).toBeUndefined();
+    expect(getModel(cfg, { provider: "deepseek", model_id: "deepseek-flash" })?.api_key).toBe(
+      "sk-own",
+    );
+  });
+
+  it("a file this release wrote keeps a model's own base URL and protocol, even ones an old file would have moved", async () => {
+    await writeRaw([
+      "[providers.openrouter]",
+      'base_url = "https://proxy.example/openrouter/v1"',
+      ...row({
+        provider: "openrouter",
+        model_id: "openai/gpt-5.5",
+        client_type: "openai-responses",
+        base_url: OR,
+        api_key: "or-key",
+      }),
+    ]);
+    const before = await fs.readFile(file(), "utf8");
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    const entry = getModel(loaded, { provider: "openrouter", model_id: "openai/gpt-5.5" })!;
+    // Pinned to OpenRouter itself while the group goes through a proxy: kept, and still used.
+    expect(entry.base_url).toBe(OR);
+    expect(entry.client_type).toBe("openai-responses");
+    expect(entry.api_key).toBe("or-key");
+    expect(connections(loaded)["openrouter/openai/gpt-5.5"]).toMatchObject({ baseUrl: OR });
+    expect(await fs.readFile(file(), "utf8")).toBe(before);
   });
 });
 

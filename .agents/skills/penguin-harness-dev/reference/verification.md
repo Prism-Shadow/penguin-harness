@@ -46,7 +46,7 @@ Some misses are there by design and the lifecycle suite names each one with its 
 thinking-level move, a compaction reopen and a subagent child's first request each read nothing,
 even though the tools and system prompt go out byte-identical, because the harness sends one
 automatic breakpoint at the end of the request and no entry ever ended at the system block. Those
-are properties of what AgentHub sends, not defects in the change under test. Adding a **new** name
+are properties of what MMSP sends, not defects in the change under test. Adding a **new** name
 to that list is the thing you must not do quietly.
 
 The simulator is offline: it encodes the documented rules over the same recordings, which makes it

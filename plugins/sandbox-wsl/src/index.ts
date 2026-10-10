@@ -1,5 +1,5 @@
 /**
- * @prismshadow/penguin-plugin-sandbox-wsl — a Windows sandbox backend that confines in a Linux
+ * @penguinharness/sandbox-wsl — a Windows sandbox backend that confines in a Linux
  * distro: each agent command runs in a dedicated WSL2 distro, as an unprivileged account, under
  * bubblewrap.
  *
@@ -119,7 +119,7 @@ export function createWslProvider(
   const node = internals.node ?? process.execPath;
   const launcher = internals.launcher ?? launcherPath();
   return {
-    dimensions: ["fs-write", "network", "mask-paths"],
+    dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
     confine(argv, policy: SandboxPolicy): ConfinedArgv {
       const state = readState();
       if (state === null) {
@@ -397,7 +397,7 @@ export class SandboxWslStatus {
       {
         id: "sandbox-wsl.provider",
         name: "penguin-wsl",
-        dimensions: ["fs-write", "network", "mask-paths"],
+        dimensions: ["fs-write", "network", "mask-paths", "closed-temp"],
       },
     ],
     "PluginConfigProvider.groups": [
@@ -446,7 +446,7 @@ export class SandboxWslStatus {
               "Packages Initialize installs besides bubblewrap, one per line (for example nodejs, npm, python3). They are apt packages on Ubuntu and apk packages on Alpine. Windows toolchains cannot run inside the sandbox.",
             descriptionZh:
               "初始化时除 bubblewrap 外安装的软件包，每行一个（例如 nodejs、npm、python3）。Ubuntu 上是 apt 包，Alpine 上是 apk 包。Windows 工具链无法在沙盒内运行。",
-            default: ["git", "curl"],
+            default: ["git", "curl", "nodejs"],
             pattern: "^[a-z0-9][a-z0-9._+-]*$",
             patternErrorMessage: "must be package names",
           },

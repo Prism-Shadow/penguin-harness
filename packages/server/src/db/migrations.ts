@@ -524,6 +524,86 @@ export const MIGRATIONS: readonly Migration[] = [
     // was never this migration's to take away.
     down() {},
   },
+  {
+    version: 13,
+    name: "browser-extensions",
+    // Additive: one new table and its index. The Chrome backend's pairings — one row per
+    // PenguinHarness Browser extension a user paired, its token stored hashed. A predecessor
+    // build never reads the table, so a rollback survives it; the paired extensions then simply
+    // fail to connect until a build that knows them is back.
+    swapSafe: true,
+    up(db) {
+      // Frozen copy of the DDL as of the system-Chrome feature; do not re-derive from schema.ts.
+      // IF NOT EXISTS because the declarative track may already have created it (ADOPTION).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS browser_extensions ( -- one row per Chrome paired to a user (builtin-browser/extension-pairing.ts): the PenguinHarness Browser extension's long-lived credential, stored only hashed; NOT rebuildable — a lost row means pairing that Chrome again
+          extension_id TEXT PRIMARY KEY,
+          user_id      TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+          token_hash   TEXT NOT NULL UNIQUE,
+          name         TEXT NOT NULL,
+          version      TEXT NOT NULL,
+          created_at   TEXT NOT NULL,
+          last_seen_at TEXT,
+          revoked_at   TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_browser_extensions_user ON browser_extensions(user_id);
+      `);
+    },
+    // LOSES every pairing: each user's Chrome has to be paired again (a new code from the
+    // Browser panel) before agents can drive it.
+    down(db) {
+      db.exec(`
+        DROP INDEX IF EXISTS idx_browser_extensions_user;
+        DROP TABLE IF EXISTS browser_extensions;
+      `);
+    },
+  },
+  {
+    version: 14,
+    name: "agent-api",
+    // Additive: two new tables and an index. The Agent API's per-Agent settings (the switch,
+    // keyless access, the approval mode API Sessions are created with) and its keys, stored
+    // hashed. A predecessor build never reads them and serves no /api/amsp route, so a
+    // rollback survives it: callers get 404 until a build that knows the tables is back.
+    swapSafe: true,
+    up(db) {
+      // Frozen copy of the DDL as of the Agent API feature; do not re-derive from schema.ts.
+      // IF NOT EXISTS because the declarative track may already have created them (ADOPTION).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS agent_api (          -- per-Agent public API settings (amsp/routes.ts); NOT rebuildable from files
+          project_id    TEXT NOT NULL,
+          agent_id      TEXT NOT NULL,
+          enabled       INTEGER NOT NULL DEFAULT 0,
+          open          INTEGER NOT NULL DEFAULT 0,
+          approval_mode TEXT NOT NULL DEFAULT 'allow-all',
+          updated_at    TEXT NOT NULL,
+          PRIMARY KEY (project_id, agent_id)
+        );
+        CREATE TABLE IF NOT EXISTS agent_api_keys (     -- one row per key the API tab or the CLI minted; the caller alone holds the key
+          key_id       TEXT PRIMARY KEY,
+          project_id   TEXT NOT NULL,
+          agent_id     TEXT NOT NULL,
+          token_hash   TEXT NOT NULL UNIQUE,
+          prefix       TEXT NOT NULL,
+          name         TEXT NOT NULL,
+          created_by   TEXT NOT NULL REFERENCES users(user_id),
+          created_at   TEXT NOT NULL,
+          last_used_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_api_keys_agent ON agent_api_keys(project_id, agent_id);
+      `);
+    },
+    // LOSES every Agent's API settings and every key: each exposed Agent reads as disabled
+    // again (404 to its callers), and every caller needs a newly created key once it is back
+    // on — no file holds a copy of either.
+    down(db) {
+      db.exec(`
+        DROP INDEX IF EXISTS idx_agent_api_keys_agent;
+        DROP TABLE IF EXISTS agent_api_keys;
+        DROP TABLE IF EXISTS agent_api;
+      `);
+    },
+  },
 ];
 
 /** The highest version this build knows how to reach. */

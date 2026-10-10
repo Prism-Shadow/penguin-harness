@@ -58,8 +58,8 @@ test("a run_in_background completion reaches the open chat page unprompted", asy
 
   // The launched command is a normal background process: the header stats show a background
   // task (same registry as the promoted-past-yield path).
-  const detailsBtn = page.locator('button[title="Session 信息"]');
-  await expect(detailsBtn.locator('span[title="1 个后台任务"]')).toBeVisible({
+  const detailsBtn = page.locator('button[data-tooltip="Session 信息"]');
+  await expect(detailsBtn.locator('span[data-tooltip="1 个后台任务"]')).toBeVisible({
     timeout: 10_000,
   });
 

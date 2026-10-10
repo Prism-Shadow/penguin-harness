@@ -1,9 +1,79 @@
 ---
 name: penguin-sdk
-description: Use whenever the user wants to build an agent application — their own program with an embedded agent, such as an AI app, an agentic app or a RAG app. This is writing application code on the Penguin Harness SDK, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI. Also use it for workflows — the tabs and pages beside the chat that an Agent keeps in its own `workflows/` folder inside PenguinHarness: building one, changing it, restoring an earlier version, and removing a tab or a whole workflow when the user wants the custom UI gone.
+description: Use whenever the user wants to build an agent application — their own program with an agent in it, such as an AI app, an agentic app, a RAG app or a bot — or to connect a program to a Penguin agent. A program reaches an agent in one of two ways, and the skill asks the user which before building — embedded with the Penguin Harness SDK (`@prismshadow/penguin-core`, no server), or over the Penguin server's Agent API (AMSP, with the `@prismshadow/amsp` client or curl). This is writing application code, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and the Agent API client. Also use it for workflows — the tabs and pages beside the chat that an Agent keeps in its own `workflows/` folder inside PenguinHarness: building one, changing it, restoring an earlier version, and removing a tab or a whole workflow when the user wants the custom UI gone.
 ---
 
-# Penguin Harness SDK
+# Penguin Harness SDK and Agent API
+
+This skill builds programs that use a Penguin agent. A program reaches one in either of two ways, embedded with the SDK or through the Penguin server's Agent API, and the user picks which. Workflows, at the end of this file, are a third thing: pages and server code an Agent keeps inside PenguinHarness.
+
+To have an agent perform a task for you, use the `run_subagent` tool: both ways are for programs, not for handing off your own work.
+
+## Two ways to reach an agent
+
+**The SDK: `@prismshadow/penguin-core`, embedded in the program.**
+
+- *What it is.* The agent loop as a TypeScript library. The program creates its own Agent from a data directory inside the project and runs its Sessions in-process. No Penguin server is involved, at build time or at run time.
+- *What you get.* The basic agent loop: the Agent State files (`AGENTS.md`, Skills, tools), the streamed OmniMessages and an `approve` callback for every tool call, in a self-contained folder that runs wherever Node 24 does, on the program's own model key.
+- *What you don't get.* No server-managed Sessions (the program keeps its own), no visibility in the Web App, no approvals UI (the program answers in code), no cost center and no sidebar Background folder. The embedded agent belongs to the program: changes to an Agent inside PenguinHarness never reach it.
+- *Choose it when* the program must stand alone: shipped to other machines or people, run where no Penguin server is, or with the agent built into the product.
+
+**The API: Penguin's Agent API, over AMSP.**
+
+- *What it is.* The program calls an Agent that lives in PenguinHarness, over HTTP. The Penguin server runs each turn and streams it back as AMSP events, and the program continues a conversation by its Session id. TypeScript uses the `@prismshadow/amsp` client (`AgentClient`); any other language, or curl, speaks HTTP and SSE directly.
+- *What you get.* The Agent as PenguinHarness runs it: its `AGENTS.md`, Skills and memory, on the Project's models and credentials, so the program holds no model key. The server keeps the conversations in the Agent's Background folder, where a person can read them and answer approvals, and their usage lands in the cost center.
+- *What it requires.* A running Penguin server that the program can reach over the network; API access turned on for that Agent by the Project's owner, on the Agent's **API** tab; and a key created there, shown once. You never turn these on yourself (see *The API path*).
+- *Choose it when* the Agent already exists in PenguinHarness or should be managed there, people need to see its conversations or costs, or the program is not written in TypeScript.
+
+### Ask which way first
+
+Whenever the user asks to connect a program to an agent, or to build a program with an agent in it (an AI, agentic or RAG app, a bot, a service, a script), ask which way before you write anything, even when the request is otherwise concrete. It is the only question a concrete request gets: it overrides the no-follow-up-questions default of *Before you start* for this one question.
+
+Do not ask when the way is already chosen:
+
+- in the user's message: "use the SDK", "standalone", "without the Penguin server" or "embed the agent" chooses the SDK; "call it over the API", "through the Agent API", "with AMSP", "with `@prismshadow/amsp`" or "with curl" chooses the API;
+- earlier in this conversation, for the same program.
+
+Naming this skill does not choose a way. Workflows (below) take neither way and need no question; neither does connecting a Feishu, Telegram, QQ or WeChat bot to a conversation, which is the Web App's Remote control.
+
+Ask with one sentence and this choice block, in the user's language, as the end of your reply. Mark one option `"recommended": true` only when the request leans that way: an Agent the user already has in PenguinHarness leans to the API, an app to ship to others leans to the SDK.
+
+````markdown
+Your program can reach the agent in two ways: embedded with the SDK, or through the Penguin server's Agent API.
+
+```a2ui
+{
+  "type": "choice",
+  "id": "agent-access",
+  "question": "How should the program reach the agent?",
+  "options": [
+    {
+      "label": "SDK: embed the agent",
+      "value": "Use the SDK: embed the agent in the program",
+      "description": "Runs inside the program on its own model key. No Penguin server; nothing appears in the Web App."
+    },
+    {
+      "label": "API: call a Penguin Agent",
+      "value": "Use the Agent API: call a Penguin Agent over AMSP",
+      "description": "Calls an Agent on your Penguin server. You turn on its API access and create a key; its conversations appear in the Web App."
+    }
+  ]
+}
+```
+````
+
+The Web App shows the block as two buttons; the CLI and the messaging channels show it as a numbered list. The answer arrives as the user's next message, in plain text: read it like any other message and build on the way it names.
+
+## Before you start
+
+If the user's message only invokes this skill (e.g. "use penguin-sdk skill") without a concrete app to build, ask the user what they want to build. Once the request is concrete, settle the way first (see *Ask which way first*); a workflow needs none. Then do **not** ask follow-up questions: build it end to end with that way's defaults and list the assumptions you made in your final reply.
+
+- SDK path: a self-contained workspace project, the project default model, BM25 retrieval, a web UI styled per the web-design skill.
+- API path: a self-contained workspace project in TypeScript on `@prismshadow/amsp` (plain HTTP when the user's program is in another language), calling the Agent the user named ("you" means this Agent) or, with none named, a new Agent created for the purpose with the agent-initialization skill.
+
+Each path also needs one thing only the user can provide: a model credential on the SDK path (see *Keys and the data root*), and on the API path the Agent's API access and key (see *The API path*).
+
+## The SDK path
 
 `@prismshadow/penguin-core` is the TypeScript SDK this agent itself runs on. Use it to build your own AI apps:
 
@@ -11,13 +81,7 @@ description: Use whenever the user wants to build an agent application — their
 - A **Session** is one conversation of an Agent inside a **Workspace** directory.
 - `session.run()` executes one task and streams every step (thinking, text, tool calls) as OmniMessages.
 
-To have an agent perform a task, use the `run_subagent` tool — the SDK is for building applications, not for invoking agents.
-
-## Before you start
-
-If the user's message only invokes this skill (e.g. "use penguin-sdk skill") without a concrete app to build, ask the user what they want to build. But when the request names a concrete goal — even a single sentence like "build a RAG app that answers questions about these docs" — do **not** ask follow-up questions: build it end to end with the defaults in this skill (self-contained workspace project, project default model, BM25 retrieval, web UI styled per the web-design skill) and list the assumptions you made in your final reply.
-
-## Project location
+### Project location
 
 Create the app in the current workspace directory by default (the `CWD` value from your Environment section), as a self-contained project — do not place it under `<app_data_dir>` (PenguinHarness's app data root) or depend on any path outside the project folder. When creating the app's agent, the data root defaults **under the working directory (CWD)** too: point `createAgent({ root })` at a directory inside the project, resolved from the source file so it stays relative:
 
@@ -27,7 +91,7 @@ const agent = await createAgent({ root: path.join(import.meta.dirname, "penguin_
 
 With every reference relative to the project, the user can move or copy the folder anywhere and it still runs.
 
-## Keys and the data root — check before you build
+### Keys and the data root — check before you build
 
 **The app's Penguin data root must live inside the CWD workspace — never `~/.penguin`.** Point `createAgent({ root })` and every `penguin config ... --root <dir>` at a directory under the current working directory (e.g. `./penguin_data`); the global `~/.penguin` belongs to the person running Penguin and must never hold — or lend — the app's config or keys.
 
@@ -39,9 +103,9 @@ env | grep -oE "(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI)_API_KEY" || echo none
 
 **Only two sources count as a usable credential**: a vault-injected environment variable (the check above; vault keys also appear in your Vault Keys section), or a key already configured in the app's own data root (`penguin config model list --root <data_dir>`). Keys in the global `~/.penguin` or any other `.penguin` directory do **not** count — a bare `penguin config model list` (no `--root`) reads the global store, because the CLI defaults to the global root unless `--root` is given, so a key showing up there proves nothing for the app and must never be used or copied.
 
-If neither counted source yields a key, **stop immediately and ask the user to configure one — do not start building, and do not burn turns re-checking in a loop**: have them open this agent's settings via the **gear icon** on its card (left side, Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) in the **key vault** tab — vault values reach your shell environment on the next task. One clear check, then hand back to the user. Build only after a credential is confirmed, or after clearly agreeing with the user to build now and verify later. Model ids to offer the user come from the penguin CLI catalog (`penguin config model add --help`) and the agenthub-models skill's id table.
+If neither counted source yields a key, **stop immediately and ask the user to configure one — do not start building, and do not burn turns re-checking in a loop**: have them open this agent's settings via the **gear icon** on its card (left side, Agents page) and add a model API key (e.g. `DEEPSEEK_API_KEY`) in the **key vault** tab — vault values reach your shell environment on the next task. One clear check, then hand back to the user. Build only after a credential is confirmed, or after clearly agreeing with the user to build now and verify later. Model ids to offer the user come from the penguin CLI catalog (`penguin config model add --help`) and the unified-llm-api skill's id table.
 
-## Setup
+### Setup
 
 ```bash
 npm install @prismshadow/penguin-core tsx
@@ -51,8 +115,8 @@ If the package is not on your npm registry (it is developed in the PenguinHarnes
 
 Configure a model for the app's data root, in this order — stop at the first that works:
 
-1. `penguin config model add --root <data_dir> --provider <group> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai-chat] --set-default` — prefer `--client-type openai-chat --base-url <endpoint>` (works with any OpenAI Chat Completions compatible endpoint; exact ids in the agenthub-models skill). `--provider` is required: a model is always the `(provider, model_id)` pair and the group is never inferred from the id (`custom` for an endpoint outside the built-in groups).
-2. Environment variables cover the **credential only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) — model selection still comes from the project config, whose preset default is `deepseek-flash`. Env-only setup therefore works out of the box only with `DEEPSEEK_API_KEY`; for another vendor either run the CLI command above or pass a configured `{ provider, modelId }` pair to `createSession`.
+1. `penguin config model add --root <data_dir> --provider <group> --model-id <id> --api-key <key> [--base-url <url>] [--client-type openai-chat] --set-default` — prefer `--client-type openai-chat --base-url <endpoint>` (works with any OpenAI Chat Completions compatible endpoint; exact ids in the unified-llm-api skill). `--provider` is required: a model is always the `(provider, model_id)` pair and the group is never inferred from the id (`custom` for an endpoint outside the built-in groups).
+2. Environment variables cover the **credential only** (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …), and only for an entry whose requests go to the **vendor's own endpoint** (no `--base-url`, or the vendor's official one) — an entry with a `--base-url` of its own (a gateway, a self-hosted server) needs `--api-key`, or `createSession` refuses it. Model selection still comes from the project config, whose preset default is `deepseek-flash`. Env-only setup therefore works out of the box only with `DEEPSEEK_API_KEY`; for another vendor either run the CLI command above or pass a configured `{ provider, modelId }` pair to `createSession`.
 
 Keep model API keys **project-local**: configure them with the penguin CLI into the app's own data root under the working directory, so the project stays self-contained and movable. When building an AI app, **always pass `--root <data_dir>` pointing at the app's data directory inside the current working directory** (the same path you give `createAgent({ root })`, e.g. `./penguin_data`) — never run `penguin config ...` without `--root`, or it writes to the global `~/.penguin/data` instead of the project. Never read, copy or fall back to model keys stored in the user's global `~/.penguin` directory — that config belongs to the person running Penguin, not to the app you are building.
 
@@ -60,7 +124,7 @@ Model config lives in one hidden file under the data root's project directory: `
 
 If the user agreed to build before a credential exists, do not fake the verification: finish the build, report it as **unverified**, and point them at the key vault flow above — once a key is added, vault values reach your environment on the next task and you can run the self-test to completion.
 
-## Streaming loop
+### Streaming loop
 
 The raw `run()` stream mixes model, event and session-meta payloads — always narrow with the exported guards (`isModelMessage`, `isCompleteModelMessage`, `isEventMessage`) before touching `payload.type`; accessing `msg.payload.type` directly does not typecheck.
 
@@ -99,7 +163,7 @@ session.dispose();
 - Session lifetime is the app's memory model: reuse one Session for a stateful chat (context accumulates, as above), create one per request for stateless QA (the RAG recipe below); either way call `session.dispose()` when done to release background processes.
 - An Agent's behavior is edited in its `agent_state/` files (system_config.yaml, AGENTS.md, skills/), not in code.
 
-## Thinking and image messages
+### Thinking and image messages
 
 Modern models think before answering and accept images; the stream and the input protocol carry both — use them instead of flattening everything to text.
 
@@ -116,15 +180,15 @@ Browser flow: `<input type="file" accept="image/*">` plus paste/drag-drop → `F
 
 **Other payloads worth handling** (always narrow with the guards first): `partial_tool_call` / `partial_tool_call_output` — surface as an activity line ("running `search`…") in apps that grant tools; `request_end` (event) — a non-`completed` `status` is the error signal (`auth` → ask for a key; `message` carries the failure detail; `retry_in_ms` announces a planned in-run retry, renderable as a countdown); `token_usage` (event) — session-cumulative and last-request counts, if the app shows cost; `compaction_begin` / `compaction_end` (events) — long-lived chats only, show a brief "context being compacted" notice. Everything else is safe to ignore.
 
-## Wiring in the user's tools
+### Wiring in the user's tools
 
 When the app's agent must call the user's existing tools (scripts, internal CLIs, anything with an entry point), integrate them as **CLI commands** first: wrap each one as a small executable inside the project (a script under `tools/`, or the user's own binary), and describe it in the embedded agent's persona / `AGENTS.md` — name, what it does, one usage line. The agent invokes it through the built-in `exec_command` tool, so there is nothing to register: no schema to declare, arguments are flags, stdout is the result, the `approve` callback still gates every invocation, and the same command stays testable by hand.
 
 Add an MCP server (`tools.mcpServers` in `system_config.yaml`) only when a CLI wrapper cannot express the integration — a long-lived authenticated connection, or tool schemas the model must see typed. Otherwise the CLI form is the cheaper default and keeps the project self-contained.
 
-## RAG knowledge app
+### RAG knowledge app
 
-The default recipe when the user wants an app that answers questions over a document set ("docs QA", "knowledge base", "chat with our docs", "become an expert on X"). The core contributes the agent loop only — retrieval is app code. Default to **lexical BM25**: no extra dependencies, no embedding credential, works offline. (Semantic upgrade: embed chunks via `@prismshadow/agenthub` — see the agenthub-models skill — and rank by cosine; only when an embedding-capable key is configured.)
+The default recipe when the user wants an app that answers questions over a document set ("docs QA", "knowledge base", "chat with our docs", "become an expert on X"). The core contributes the agent loop only — retrieval is app code. Default to **lexical BM25**: no extra dependencies, no embedding credential, works offline. (Semantic upgrade: embed chunks via `@prismshadow/mmsp` — see the unified-llm-api skill — and rank by cosine; only when an embedding-capable key is configured.)
 
 ```
 my-app/
@@ -344,6 +408,29 @@ http.createServer(async (req, res) => {
 
 **Persona** (`persona.md`) — the embedded agent's role, written per the agent-initialization skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, plain-text output (no Markdown — the output contract above), answer language follows the question.
 
+### Verify before you hand over
+
+Never declare the app done without running it:
+
+1. `npm install` succeeds (or the workspace route builds).
+2. Model configured for `penguin_data` (CLI or env var; no usable key → see Setup: ask the user to add one to this agent's key vault, and report the app as unverified for now).
+3. `npm run ingest` prints `indexed N chunks` with N > 0.
+4. Start `npm start` in the background, then ask a real question:
+   `curl -N -sS -X POST localhost:4630/api/ask -H 'content-type: application/json' -d '{"question":"<something the corpus answers>"}'` — expect streamed `data:` deltas ending in a `sources` event that carries `source`, `url` **and the matched chunk `text`** per hit. If nothing streams, the model call failed: re-check step 2 and the provider endpoint before touching the code.
+   Then `curl` one of the returned source `url`s — it must return the document, not a 404 (citation links have to resolve).
+5. Open the UI (or screenshot it) to confirm the layout renders.
+
+Fix any failure and re-verify; when the app accepts image input, one verification question must include a real image. Report with backtick-wrapped relative paths (`server.ts`, `public/index.html`, …), how to start the app, and the assumptions you made.
+
+## The API path
+
+The program calls an Agent that lives in PenguinHarness. You write the program; the Project's owner opens the Agent to it. Read [`reference/agent-api.md`](reference/agent-api.md) before you write any code: it has the steps to hand the owner, the client code, curl, the errors and the checks. These rules hold throughout:
+
+- **Never open an Agent yourself.** Whether an Agent is open to programs is the owner's decision, and so is everything around it: API access, keys, keyless access, the API approval mode and the server-wide switch. An Agent must not be able to expose itself. The server refuses `penguin agent api enable`, `disable`, `set`, `keys create`, `keys rm` and `server` to the token in your shell with `403 human_required`, because they take a person's sign-in. Never run them, and never sign in or mint a session to get past that refusal. Ask the user to make the change on the Agent's **API** tab, or with those commands in their own terminal after `penguin auth login`, and give them the steps. `penguin agent api status` and `keys ls` only read; use them to check.
+- **Keep the key out of the code.** The program reads it from the `PENGUIN_AGENT_KEY` environment variable. Never write a key into source, a committed file, a log or a reply, and never ask the user to paste one into the chat.
+- **Connection values.** The Base URL and the Agent ID come from the API tab or `penguin agent api status --agent-id <agentId>`. A local server's Base URL is `http://localhost:7364/api/amsp/v1`: `localhost`, not `127.0.0.1`, where a local server serves previews and refuses every API request with `401`. The Agent ID is `<projectId>/<agentId>`.
+- **No data root, no model key.** The server runs the Agent on the Project's models. An SDK recipe keeps its shape on this path: the RAG app, for instance, replaces `createAgent`, `createSession` and `session.run` with an `AgentClient` run, and its persona goes into the Agent's `AGENTS.md`.
+
 ## Workflows: pages and server code the Agent keeps for itself
 
 Inside PenguinHarness an Agent can hold *workflows*: small plugin packages in its own directory, written in TypeScript, that the server boots as module trees, shows as tabs beside the chat, reloads on every file change, and versions so any edit can be undone. This is the same module mechanism the server itself is built from — manifests as data, everything checked before any code runs — so a workflow that does not type-check, that was written against an interface version this server no longer fits, or whose manifests do not hold together fails to load with the problem named, while the previous version keeps serving.
@@ -447,17 +534,3 @@ Your handler's responses are served from the app's own origin, so anything you e
 **Theme.** A workflow page is a separate document, so it inherits nothing from the app's stylesheet by itself. The Web App stamps `light`/`dark` on the page's root, copies its resolved palette (the gray scale, the accent pair, the font stack, the root font size) onto it, and injects `/workflow-ui.css` first in the head — a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wf-bg`, `--wf-fg`, `--wf-muted`, `--wf-border`, `--wf-surface`, `--wf-accent`, `--wf-accent-fg`, plus the classes `wf-primary` (a button), `wf-card`, `wf-rows`, `wf-row`, `wf-muted`. Write plain markup, take every colour and font from those variables, and the page follows the user through a theme or accent change; hardcode them and it clashes in one theme or the other. The page's own rules always win, and linking `/workflow-ui.css` yourself makes it look right when opened outside the app too.
 
 **Filling the app.** A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workflow>[/<tab key>]` (the workflow's first tab when no key is given): the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workflow>[/<tab key>]` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The way back is the command palette — Ctrl+P or Ctrl+Shift+P (⌘ on macOS), both, so a page may take one of them for itself but never both — whose *Exit full page* lands on that Agent's chat.
-
-## Verify before you hand over
-
-Never declare the app done without running it:
-
-1. `npm install` succeeds (or the workspace route builds).
-2. Model configured for `penguin_data` (CLI or env var; no usable key → see Setup: ask the user to add one to this agent's key vault, and report the app as unverified for now).
-3. `npm run ingest` prints `indexed N chunks` with N > 0.
-4. Start `npm start` in the background, then ask a real question:
-   `curl -N -sS -X POST localhost:4630/api/ask -H 'content-type: application/json' -d '{"question":"<something the corpus answers>"}'` — expect streamed `data:` deltas ending in a `sources` event that carries `source`, `url` **and the matched chunk `text`** per hit. If nothing streams, the model call failed: re-check step 2 and the provider endpoint before touching the code.
-   Then `curl` one of the returned source `url`s — it must return the document, not a 404 (citation links have to resolve).
-5. Open the UI (or screenshot it) to confirm the layout renders.
-
-Fix any failure and re-verify; when the app accepts image input, one verification question must include a real image. Report with backtick-wrapped relative paths (`server.ts`, `public/index.html`, …), how to start the app, and the assumptions you made.

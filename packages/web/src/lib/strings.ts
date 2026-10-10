@@ -7,21 +7,22 @@
  * language (module-level constants do not update on switch — keep reads inside components).
  * Keep domain terms capitalized in English — Workspace, Token, Task, Session, Project, Trace.
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start of a
- * label/sentence or in a proper name (Agent State, AgentHub). zh names the SURFACE
+ * label/sentence or in a proper name (Agent State). zh names the SURFACE
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
 import type { PeakWindows } from "../features/models/model-grouping";
+import type { ModelGroupSort } from "../features/models/model-sort";
 
 export const zh = {
   appName: "PenguinHarness",
 
   nav: {
     chat: "对话",
-    newChat: "新对话",
+    newChat: "新建对话",
     agents: "智能体",
     models: "模型库",
-    machines: "机器",
+    machines: "机器管理",
     plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
@@ -36,6 +37,9 @@ export const zh = {
     expandGroup: "展开",
     pinGroup: "置顶分组",
     unpinGroup: "取消置顶",
+    /** A nav entry's favourite toggle (a star): a favourite stays visible when the collapsible area folds. */
+    pinEntry: "收藏",
+    unpinEntry: "取消收藏",
     /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
     org: {
       overview: "概览",
@@ -49,7 +53,7 @@ export const zh = {
 
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
   machines: {
-    pageTitle: "机器",
+    pageTitle: "机器管理",
     /** Tooltip on the version in the header: what this server would install. */
     imageVersion: (version: string) => `本服务端版本：${version}`,
     noImage:
@@ -103,6 +107,13 @@ export const zh = {
     stopUsing: "停用",
     /** One tap brings every machine behind this build forward (and reconnects it). */
     updateAll: (count: number) => `全部更新（${count}）`,
+    updateAllConfirm: (count: number) =>
+      `把这 ${count} 台机器更新到本服务端的版本？每台都会重装程序、重启服务并重新连接，期间正在用它的人会短暂断开。`,
+    /** Asked before letting machines go: the connection drops, the install stays. */
+    stopUsingOne: (alias: string) =>
+      `停用 ${alias}？本 Project 会断开与它的连接并不再列出它，正在经它进行的工作会中断。程序仍留在那台机器上，之后可以重新启用。`,
+    stopUsingMany: (count: number) =>
+      `停用这 ${count} 台机器？本 Project 会断开与它们的连接并不再列出它们，正在经它们进行的工作会中断。程序仍留在那些机器上，之后可以重新启用。`,
     /** The floating bar over a selection. */
     selectedCount: (count: number) => `已选 ${count} 台`,
     pickAll: "全选",
@@ -139,6 +150,8 @@ export const zh = {
     replaceProgram: "强制安装",
     replaceProgramWhy:
       "无论那台机器上现在是什么，都把这个构建的程序装上去并重启它的服务——正在用它的人会被打断。",
+    replaceProgramConfirm: (alias: string) =>
+      `在 ${alias} 上强制安装？无论那台机器上现在是什么，都会装上本服务端的构建并重启它的服务，正在用它的人会被打断。`,
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
     refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
@@ -156,8 +169,53 @@ export const zh = {
     serverUpOn: (port: number) => `运行中，端口 ${port}`,
     /** The progress log's own heading, so the block is not an unlabelled wall of text. */
     output: "输出",
-    agentsUnreachable: "那台机器尚未连接——请在「机器」页面使用它",
+    agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
     adminOnly: "只有管理员可以管理机器。",
+  },
+
+  /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */
+  shortcuts: {
+    commands: {
+      "palette.toggle": "命令面板",
+      "sessions.search": "搜索会话",
+      "chat.new": "新建对话",
+      "find.open": "页内查找",
+      "find.all": "在所有区域查找",
+      "sidebar.toggle": "显示或隐藏侧栏",
+      "dock.toggleRight": "显示或隐藏右侧栏",
+      "dock.toggleBottom": "显示或隐藏下侧栏",
+      "terminal.toggle": "显示或隐藏终端",
+      "terminal.new": "新建终端",
+      "terminal.close": "关闭当前终端",
+      "editor.save": "保存",
+    },
+    groups: {
+      general: "通用",
+      panels: "面板",
+      terminal: "终端",
+      editor: "编辑器",
+    },
+    /** Where a focus-scoped command wins, for the shadowed-conflict hint. */
+    scopes: {
+      terminal: "终端",
+      editor: "编辑器",
+    },
+    unbound: "未设置",
+    /** The recorder button's tooltip. */
+    rebind: "更改快捷键",
+    record: "按下新的快捷键…",
+    recordHint: "Esc 取消 · Backspace 清除",
+    needsModifier: "需要配合 Ctrl 或 Alt（macOS 为 ⌘ 或 ⌃），Shift 只能与它们一起使用；或使用 F 键",
+    resetRow: "恢复默认",
+    resetAll: "全部恢复默认",
+    resetAllBody: (n: number): string => `将 ${n} 条快捷键恢复为默认值？`,
+    conflictSame: (other: string): string => `与「${other}」使用同一个快捷键，只有排在前面的生效`,
+    conflictShadowed: (other: string, surface: string): string =>
+      `在${surface}里会被「${other}」抢先`,
+    browserReserved: "浏览器保留了这个组合，只在桌面应用里生效",
+    browserCommon: "浏览器本身也用这个组合，在浏览器里会取代它的那个功能",
+    desktopMenuReserved: "会覆盖桌面应用菜单里使用同一组合的快捷键",
+    saveFailed: "快捷键未能保存到账号",
   },
 
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
@@ -181,6 +239,28 @@ export const zh = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `退出码 ${code}`,
+    /**
+     * The touch key bar (terminal-keybar.tsx), shown only under `(pointer: coarse)`: the
+     * keys a phone's soft keyboard has none of. Cap faces are the key names themselves
+     * (Esc / Tab / Ctrl / Alt / ^C) and stay untranslated, as on a physical keyboard; these
+     * are their accessible names.
+     */
+    touchKeys: {
+      label: "终端快捷键",
+      esc: "Esc 键",
+      tab: "Tab 键",
+      /** Sticky: tap to arm, the next character composes with it. */
+      ctrl: "Ctrl 键（点一下，下一个字符生效）",
+      alt: "Alt 键（点一下，下一个字符生效）",
+      up: "上方向键",
+      down: "下方向键",
+      left: "左方向键",
+      right: "右方向键",
+      interrupt: "中断（Ctrl+C）",
+      paste: "粘贴",
+      hideKeyboard: "收起键盘",
+      showKeyboard: "调出键盘",
+    },
   },
 
   /** The dock surfaces (right / bottom) every side element renders in as a tab. */
@@ -221,6 +301,230 @@ export const zh = {
     /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
     launcherHide: "隐藏悬浮球",
     launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
+    /** The dock header's fullscreen toggle while the dock is at its usual size. */
+    fullscreen: "全屏",
+    /** The same toggle while the dock is fullscreen: it leaves in place. */
+    exitFullscreen: "退出全屏",
+    /** A tab whose panel has no definition registered (a plugin's panel before it loads). */
+    panelUnavailable: "此面板暂不可用",
+  },
+
+  /** The agent browser — the built-in one (desktop app) or the user's own Chrome: its dock panel, toolbar and dialogs. */
+  builtinBrowser: {
+    /** The dock tab's name, also in the dock's menus and the launcher. */
+    panelTitle: "浏览器",
+    /** The browser's own tab strip (its accessible name). */
+    tabs: "标签页",
+    newTab: "新建标签页",
+    closeTab: "关闭标签页",
+    /** A tab with no title yet — a blank new tab. */
+    untitled: "新标签页",
+    back: "后退",
+    forward: "前进",
+    reload: "重新加载",
+    stop: "停止加载",
+    /** The address bar's accessible name, and its placeholder. */
+    address: "地址栏",
+    addressPlaceholder: "搜索或输入网址",
+    /** The history suggestions under the address bar (their accessible name). */
+    suggestions: "历史记录",
+    /** The toolbar's overflow menu. */
+    more: "更多",
+    importAction: "从浏览器导入…",
+    clearDataAction: "清除浏览数据…",
+    /** Opens the homepage dialog. */
+    setHomepageAction: "设置主页…",
+    openExternal: "在系统浏览器中打开",
+    devTools: "开发者工具",
+    /** The toolbar's button to the homepage, beside reload; shown only while one is set. */
+    home: "主页",
+    /** The toolbar's mark while an agent drives the browser; `action` is one of `actions`. */
+    agentBusy: (action: string): string => `智能体正在使用浏览器：${action}`,
+    /** A busy tab's tooltip in the strip, after its title. */
+    agentBusyTab: "智能体正在使用此标签页",
+    actions: {
+      navigate: "打开网页",
+      scan: "读取页面",
+      exec: "运行脚本",
+      click: "点击页面",
+      type: "输入文字",
+      screenshot: "截取屏幕",
+      cdp: "发送调试命令",
+    },
+    /** The panel where the browser cannot run; the title, then why. */
+    unavailableTitle: "内置浏览器不可用",
+    unavailableDesktop: "内置浏览器只能在 PenguinHarness 桌面应用中使用。",
+    unavailableShell: "当前桌面应用版本过旧，请更新后使用内置浏览器。",
+    unavailableWindow: "没有可以显示浏览器的应用窗口。",
+    /** The unavailable built-in panel's way out, where the server offers the user's Chrome. */
+    useChrome: "改用系统 Chrome",
+    openFailed: (reason: string): string => `无法打开标签页：${reason}`,
+    closeFailed: (reason: string): string => `无法关闭标签页：${reason}`,
+    /** The overflow menu's backend choice (desktop app): the group's name and its two choices. */
+    backendGroup: "浏览器",
+    backendBuiltin: "内置",
+    backendChrome: "系统 Chrome",
+    /** The status row under the choice: the user's Chrome as the server last said. */
+    chromeConnected: (name: string | null): string =>
+      name !== null ? `Chrome：已连接 · ${name}` : "Chrome：已连接",
+    chromeNotConnected: "Chrome：未连接",
+    chromeNotPaired: "尚未配对 Chrome",
+    chromeDisabled: "Chrome 连接已关闭",
+    /** The status row's action: the pairing dialog, or Settings › Browser once one is paired. */
+    connectChrome: "连接你的 Chrome…",
+    manageChrome: "管理…",
+    /** The toast after a switch, and the one when an agent at work refuses it. */
+    switchedToChrome: "Agent 现在使用你的 Chrome",
+    switchedToBuiltin: "Agent 现在使用内置浏览器",
+    switchRefused: "Agent 正在使用浏览器，等它完成后再切换",
+    switchFailed: (reason: string): string => `无法切换浏览器：${reason}`,
+    /** The Chrome surface: in place of the page, a card for a tab that lives in the user's Chrome. */
+    chromeTabCard: "此标签页在你的 Chrome 中打开",
+    showInChrome: "在 Chrome 中显示",
+    chromeNoTabsTitle: "你的 Chrome 里还没有 Agent 的标签页",
+    chromeNoTabsBody: "Agent 打开的页面会出现在 Chrome 的 Penguin 标签组里。",
+    /** Paired but not connected: the title, which Chrome, and the fold with what to check. */
+    chromeDisconnectedTitle: "Chrome 未连接",
+    chromeDisconnectedBody: (name: string | null): string =>
+      name !== null
+        ? `${name} 现在没有连到这台服务器。`
+        : "你配对的 Chrome 现在没有连到这台服务器。",
+    reconnectHelp: "重新连接帮助",
+    reconnectOpen: "打开 Chrome，确认 PenguinHarness Browser 扩展在 chrome://extensions 中已启用。",
+    reconnectResume: "点工具栏上的扩展图标；如果显示已暂停，选择「继续」。",
+    reconnectPair: "服务器地址变了，或扩展里移除了这台服务器时，需要重新配对。",
+    /** The admin's switch is off. */
+    chromeDisabledTitle: "Chrome 连接已关闭",
+    chromeDisabledBody: "这台服务器的管理员关闭了 Chrome 扩展连接。",
+    /** No Chrome paired: the line above the pairing steps the panel shows in its place. */
+    chromeUnpairedIntro:
+      "安装 PenguinHarness Browser 扩展并完成配对后，Agent 就能在你自己的 Chrome 里打开和操作网页，使用你在 Chrome 中的登录状态。",
+    /** The pairing dialog, and the same three steps inline in the panel while no Chrome is paired. */
+    pairTitle: "连接你的 Chrome",
+    pairStepInstall:
+      "安装扩展并把它固定到工具栏。推荐从 Chrome 应用商店安装，Chrome 会自动更新它。",
+    pairStore: "打开 Chrome 应用商店",
+    /** Under the store link: the zip, for a network that cannot reach the store. */
+    pairStepInstallZip:
+      "打不开商店时，也可以下载 zip 并解压，在 chrome://extensions 开启「开发者模式」，选择「加载已解压的扩展程序」并选中解压出的文件夹。",
+    pairDownload: "下载扩展（zip）",
+    pairStepOpen: "点工具栏上的 PenguinHarness Browser 图标，选择「设置」，打开扩展的配对页。",
+    pairStepPaste: "把下面的服务器地址和配对码粘贴进去，选择「连接」。",
+    pairServer: "服务器地址",
+    pairCode: "配对码",
+    /** Under the code: one use, until when (a local HH:mm). */
+    pairCodeExpiry: (time: string): string => `只能使用一次，${time} 前有效`,
+    pairCodeExpired: "配对码已过期",
+    pairNewCode: "换一个",
+    pairCodeFailed: (reason: string): string => `无法生成配对码：${reason}`,
+    pairWaiting: "正在等待 Chrome…",
+    pairConnected: "已连接",
+    /** The import dialog: copies sign-ins and history from a browser installed on this computer. */
+    importTitle: "从浏览器导入",
+    importIntro: "把系统浏览器里的登录状态和历史记录复制到内置浏览器，原浏览器中的数据不会改变。",
+    importLoading: "正在查找浏览器…",
+    importNone: "这台电脑上没有找到可以导入的浏览器。",
+    importSourcesFailed: (reason: string): string => `无法读取浏览器列表：${reason}`,
+    importSource: "导入来源",
+    importWhat: "导入内容",
+    importCookies: "Cookie 与登录状态",
+    importHistory: "历史记录",
+    importDomains: "仅限这些网站",
+    importDomainsHint: "用逗号分隔，例如 amazon.com, github.com；留空则导入全部网站",
+    importDomainsPlaceholder: "amazon.com, github.com",
+    importKeychainNote: "Mac 可能会请求钥匙串访问权限。",
+    importRun: "导入",
+    importRunning: "正在导入…",
+    importDone: "完成",
+    importCookiesResult: (c: {
+      found: number;
+      imported: number;
+      skipped: number;
+      failed: number;
+    }): string =>
+      `Cookie：已导入 ${c.imported} / ${c.found}` +
+      (c.skipped > 0 ? `，跳过 ${c.skipped}` : "") +
+      (c.failed > 0 ? `，失败 ${c.failed}` : ""),
+    importHistoryResult: (h: { found: number; imported: number }): string =>
+      `历史记录：已导入 ${h.imported} / ${h.found} 条`,
+    importFailed: (reason: string): string => `导入失败：${reason}`,
+    /** The clear-browsing-data confirmation. */
+    clearTitle: "清除浏览数据",
+    clearBody: "选择要从内置浏览器中删除的数据，此操作无法撤销。",
+    clearCookies: "Cookie 与登录状态",
+    clearCache: "缓存的图片和文件",
+    clearStorage: "网站存储的数据",
+    clearHistory: "历史记录",
+    clearConfirm: "清除",
+    clearDone: "已清除浏览数据",
+    clearFailed: (reason: string): string => `清除失败：${reason}`,
+    /** The homepage dialog: the page new tabs and the Home button open. */
+    homepageTitle: "设置主页",
+    homepageIntro: "新建标签页和主页按钮会打开这个页面。",
+    homepageAddress: "网址",
+    homepagePlaceholder: "example.com",
+    /** The address field's hint: what an empty field means, else the page the entry opens. */
+    homepageHintEmpty: "留空表示不设主页，新建标签页为空白页。",
+    homepageHintOpens: (url: string): string => `将打开 ${url}`,
+    /** Fills the field with the page on screen. */
+    homepageUseCurrent: "使用当前页面",
+    /** Empties the field; saving it then removes the homepage. */
+    homepageClear: "清除",
+    homepageFailed: (reason: string): string => `无法保存主页：${reason}`,
+    /** A tab whose page crashed: the panel's notice in its place, with Reload as the action. */
+    crashedTitle: "此页面已崩溃",
+    /** The notice's body when the page ran out of memory (the system took its memory back). */
+    crashedOutOfMemory: "它耗尽了内存。请先关闭不再需要的标签页，再重新加载。",
+    crashedBody: "重新加载即可再试一次。",
+    /** A crashed tab's tooltip line in the strip, after its title, and its mark's accessible name. */
+    crashedTab: "页面已崩溃",
+    /**
+     * The browser's load, when the server warns about it: the toolbar's mark (its tooltip and
+     * accessible name) and the one toast per warning. Sentences joined in the order given here.
+     */
+    load: {
+      memory: (size: string, tabs: number): string =>
+        `浏览器正在使用 ${size} 内存（${tabs} 个标签页）。`,
+      lowSystemMemory: (percent: number): string => `这台电脑的可用内存不足（剩余 ${percent}%）。`,
+      manyTabs: (tabs: number): string => `已打开 ${tabs} 个标签页。`,
+      advice: "请关闭不再需要的标签页。",
+      /** The sentences above, as one warning. */
+      join: (sentences: string[]): string => sentences.join(""),
+      /** A heavy tab's tooltip line in the strip, after its title, and its mark's accessible name. */
+      heavyTab: (size: string): string => `占用 ${size} 内存`,
+    },
+  },
+
+  /** Settings › Personal › Browser (the user's agent browser) and Settings › Server › Chrome extension. */
+  browserSettings: {
+    /** The backend choice; only on the desktop app, which has both. */
+    backend: "Agent 使用的浏览器",
+    backendInfo:
+      "内置浏览器在桌面应用里，有自己的登录状态；系统 Chrome 是你自己的 Chrome，Agent 只操作它打开的标签页和你交给它的标签页。Agent 自己不能切换。",
+    paired: "已配对的 Chrome",
+    pairedNone: "还没有配对的 Chrome。",
+    /** A paired Chrome's line under its name: the extension's version, and when it was last connected. */
+    pairedLine: (version: string, seen: string | null): string =>
+      seen === null ? `扩展 ${version} · 尚未连接过` : `扩展 ${version} · 最近连接 ${seen}`,
+    /** The state dot's accessible name. */
+    connected: "已连接",
+    notConnected: "未连接",
+    revoke: "撤销",
+    revokeTitle: "撤销这个 Chrome？",
+    revokeBody: (name: string): string =>
+      `撤销后，Agent 不能再操作「${name}」，它会立即断开；要再使用它，需要重新配对。`,
+    revoked: (name: string): string => `已撤销「${name}」`,
+    revokeFailed: (reason: string): string => `无法撤销：${reason}`,
+    connectFirst: "连接你的 Chrome",
+    connectAnother: "连接另一个 Chrome",
+    loadFailed: (reason: string): string => `无法读取已配对的 Chrome：${reason}`,
+    disabledNote: "这台服务器的管理员关闭了 Chrome 扩展连接。",
+    /** Settings › Server › Chrome extension: the admin's switch, and the question before it goes off. */
+    allow: "允许 Chrome 扩展连接",
+    offTitle: "关闭 Chrome 扩展连接？",
+    offBody:
+      "所有用户的扩展会立即断开，整个服务器上的 Agent 都不能再使用 Chrome。配对会保留，重新开启后扩展会自行重连。",
+    off: "关闭",
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */
@@ -235,6 +539,19 @@ export const zh = {
     languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "设置",
+    /** Settings › Personal › Browser, and the server page with the admin's Chrome switch. */
+    browserTitle: "浏览器",
+    chromeExtensionTitle: "Chrome 扩展",
+    chromeExtensionInfo:
+      "开启时，这台服务器上的每个用户都可以配对自己的 Chrome，让 Agent 在其中操作；关闭时，所有扩展断开，已有的配对保留。",
+    /** Settings › Server › Agent API: the admin's switch over every Agent's public API, and the question before it goes off. */
+    agentApiTitle: "Agent API",
+    agentApiToggle: "允许 Agent API",
+    agentApiHint: "关闭后所有 Agent 的 API 请求均被拒绝；各 Agent 的开关、审批模式与密钥保留。",
+    agentApiOffTitle: "关闭 Agent API？",
+    agentApiOffConfirm:
+      "这台服务器上所有 Agent 的 API 会立即拒绝请求，调用它们的外部程序都会失败，直到重新开启。各 Agent 的开关、审批模式与密钥保留。",
+    agentApiOff: "关闭",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
@@ -242,6 +559,10 @@ export const zh = {
     profile: "个人资料",
     generalTitle: "通用",
     appearanceTitle: "外观",
+    shortcutsTitle: "快捷键",
+    /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
+    shortcutsInfo:
+      "快捷键随平台：macOS 用 ⌘，其余平台用 Ctrl。改动即刻生效，本浏览器的其他标签页同步跟随；本账号的其他浏览器与桌面应用在下次加载时取得。按账号并按平台分别保存，Mac 与 Windows 各有一套。浏览器自身保留的组合（如 Ctrl+W / ⌘W）在浏览器标签页里收不到，只在桌面应用里生效；浏览器本身也用的组合（如打印的 Ctrl+P / ⌘P）在浏览器标签页里会取代它的那个功能。两者都在列表中标出。",
     accountTitle: "账户",
     /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "导入 Trace",
@@ -289,6 +610,11 @@ export const zh = {
     pluginsTitle: "插件",
     /** An enum option this machine cannot honour, listed greyed out. */
     pluginOptionUnavailable: (title: string, reason: string) => `${title}（不支持：${reason}）`,
+    /** A switch one of whose positions this machine cannot honour, under the switch. */
+    pluginPositionUnavailable: (position: string, reason: string) =>
+      `本机不支持${position}：${reason}`,
+    pluginPositionOn: "开启",
+    pluginPositionOff: "关闭",
     pluginsInfo:
       "各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
@@ -296,6 +622,12 @@ export const zh = {
     pluginSecretClear: "清除已存值",
     /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
     pluginConfigMachine: "机器",
+    /** A plugin group's action: it runs once on the picked machine, and only the plugin knows what it does. */
+    pluginActionTitle: "执行插件操作",
+    pluginActionRun: "执行",
+    /** `machine` is the picked machine's name, null for this server. */
+    pluginActionConfirm: (action: string, machine: string | null): string =>
+      `在${machine === null ? "本机" : ` ${machine} `}上执行「${action}」？它会立即在那台机器上运行，具体做什么由插件决定。`,
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "必须是数字",
     uploadLimitsTitle: "上传限制",
@@ -310,8 +642,49 @@ export const zh = {
     uploadLimitsInfo: (count: number, imageMb: number): string =>
       `一条消息最多 ${count} 个附件；对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——` +
       `图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
+    /** The fold holding the fields a settings group marks advanced. */
+    pluginAdvanced: "高级选项",
+    /** A table cell its row does not let change, beside the lock mark. */
+    pluginCellLocked: "已锁定：此行保持这个取值",
+    pluginCellOn: "开",
+    pluginCellOff: "关",
+    /** A table row's drag handle: what it moves, and how. */
+    pluginTableMove: (row: string) => `移动 ${row}`,
+    pluginTableMoveHint: "拖动，或按上下方向键",
+    /** The add button under an extensible table that names none of its own. */
+    pluginTableAdd: "添加一行",
+    /** After the chosen row's name (the sandbox's default preset): the row choice's title. */
+    pluginTableChosenMarker: (title: string) => `（${title}）`,
+    /** A table row's "…" button: its accessible name and tooltip. */
+    pluginTableRowMenu: (row: string) => `更多操作：${row}`,
+    pluginTableRowMenuHint: "更多操作",
+    /** The row menu's items: make the row the chosen one, and delete a row an administrator added. */
+    pluginTableChoose: "设为默认",
+    pluginTableChosen: "已是默认",
+    pluginTableDelete: "删除",
+    pluginTableDeleteChosen: "请先把其他行设为默认",
+    /** One line of a row's "?" that lists its values: a choice column's value, and what it does. */
+    pluginTableRowValue: (column: string, value: string, does: string | undefined) =>
+      does === undefined ? `${column}：${value}` : `${column}：${value}。${does}`,
+    /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
+    sandboxBackendPrompt: {
+      title: "安装沙盒后端",
+      body: (machine: string, pkgs: readonly string[]) =>
+        `${machine} 没有适用于其操作系统的沙盒后端，新会话暂时无法进入沙盒。是否安装 ${pkgs.join(" 和 ")}？` +
+        (pkgs.length > 1 ? "两者都可用时，使用封禁范围更大的那个。" : ""),
+      cost: "安装会重新装载服务器的插件，所有项目中正在进行的 Agent 运行都会停止。无论是否安装，开关都保持打开。",
+      install: "安装",
+      installing: "正在安装…",
+      later: "暂不",
+      dontAsk: "此机器不再询问",
+      noProject: "请先打开一个项目：后端会安装到当前项目。",
+    },
     theme: "主题",
-    themeInfo: "应用的明暗外观。",
+    themeInfo: "应用的整体风格：布局、线条、字体与动效随之改变，内容与其他设置不受影响。",
+    /** Display names of the three themes; the ids stay github / modern / geek. */
+    themeNames: { github: "朴素", modern: "白领", geek: "极客" },
+    colorMode: "明暗",
+    colorModeInfo: "应用的明暗外观。",
     themeLight: "浅色",
     themeDark: "深色",
     followSystem: "跟随系统",
@@ -322,11 +695,16 @@ export const zh = {
     langEn: "English",
     fontSize: "字号",
     fontSizeInfo: "界面整体字号。",
-    fontSmall: "小",
-    fontMedium: "中",
-    fontLarge: "大",
-    accent: "主题色",
-    accentInfo: "界面强调色。",
+    textSizeNames: { xs: "特小", s: "小", m: "中", l: "大", xl: "特大" },
+    fonts: "字体",
+    fontsInfo: "英文与中文各自的字体，默认随主题；代码与等宽文字始终使用主题的等宽字体。",
+    fontLatin: "英文",
+    fontCjk: "中文",
+    fontFollowTheme: "随主题",
+    fontSystem: "系统字体",
+    accent: "强调色",
+    accentInfo:
+      "界面强调色。每个主题有自己的一组强调色，换主题后不在新主题里的颜色会暂时按「随主题」显示。",
     launcher: "快捷方式悬浮球",
     launcherInfo:
       "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
@@ -352,15 +730,32 @@ export const zh = {
     companyModePersonalInfo:
       "关闭只隐藏本人的模式切换，组织照常运转；管理员的总开关在「服务器」分组。",
     companyModeServer: "启用公司模式",
+    /** Asked before the master switch goes off (turning it on does not ask). */
+    companyModeOffTitle: "关闭公司模式",
+    companyModeOff: "关闭",
+    companyModeOffBody:
+      "关闭公司模式？整个服务器的组织调度器会停止，所有人都打不开组织页面，期间错过的触发在重新打开后也不会补发。磁盘上的组织不受影响。",
     companyModeServerInfo:
       "服务器总开关，缺省关闭，需由管理员在此打开。关闭即停用组织调度器与全部组织路由，并隐藏所有人的模式切换；磁盘上的组织不受影响，重新打开后不会补发错过的触发。内测功能：可能有不稳定的现象，遇到问题请反馈。",
     accentNames: {
-      neutral: "灰白",
+      neutral: "随主题",
+      forest: "森林绿",
       blue: "蓝",
       green: "绿",
       violet: "紫",
       rose: "红",
       amber: "橙",
+      ocean: "海蓝",
+      clay: "陶土",
+      plum: "梅紫",
+      honey: "蜂蜜",
+      slate: "石板灰",
+      phosphor: "荧光绿",
+      cyan: "青",
+      magenta: "品红",
+      gold: "金",
+      cobalt: "钴蓝",
+      orange: "橙红",
     } as Record<string, string>,
   },
 
@@ -368,8 +763,22 @@ export const zh = {
     title: "命令面板",
     placeholder: "输入以筛选命令…",
     noResults: "没有匹配的命令",
-    hint: "Ctrl+P / Ctrl+Shift+P（⌘P）切换 · ↑↓ 选择 · Enter 执行",
+    /** Footer of the palette; `toggle` is the formatted palette.toggle chord, null while unbound. */
+    hint: (toggle: string | null): string =>
+      toggle === null ? "↑↓ 选择 · Enter 执行" : `${toggle} 切换 · ↑↓ 选择 · Enter 执行`,
     harnessHistory: "Harness 历史",
+  },
+  modelPicker: {
+    /** Accessible name of the dialog's provider-group rail. */
+    groups: "模型分组",
+    /** Footer toggle while models without a key are listed: turns the listing back off. */
+    hideModelsWithoutKey: "隐藏未配置 key 的模型",
+    /**
+     * Footer keyboard legend; `mod` is "⌥" on macOS and "Alt+" elsewhere. Only the two moves a
+     * list does not suggest by itself — ↑↓, Enter and Esc go without saying, and the footer
+     * shares its line with the key-less toggle.
+     */
+    hint: (mod: string): string => `←→ 切换分组与列表 · ${mod}1–9 跳到分组`,
   },
   workflows: {
     tabsLabel: "聊天与工作流",
@@ -385,11 +794,20 @@ export const zh = {
     noHistory: "还没有记录过版本。",
     current: "当前",
     restore: "恢复",
+    restoreTitle: "恢复版本",
+    /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
+    restoreConfirm: (revision: string) =>
+      `恢复到版本 ${revision}？工作流的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
     remove: "移除",
     fillApp: "占满应用",
-    fillAppHint: "让这个页面占满整个应用；Ctrl+P / Ctrl+Shift+P 打开命令面板可退出",
+    /** `palette` is the formatted palette.toggle chord, null while unbound. */
+    fillAppHint: (palette: string | null): string =>
+      palette === null
+        ? "让这个页面占满整个应用；打开命令面板可退出"
+        : `让这个页面占满整个应用；${palette} 打开命令面板可退出`,
     exitFullPage: "退出全页模式（回到聊天）",
-    exitHint: "按 Ctrl+P 或 Ctrl+Shift+P 打开命令面板可回到聊天。",
+    exitHint: (palette: string | null): string =>
+      palette === null ? "打开命令面板可回到聊天。" : `按 ${palette} 打开命令面板可回到聊天。`,
     noSuchPage: "这个 workflow 不存在或没有页面。",
     removeConfirm: "删除这个工作流及其全部已记录版本？",
     removeYes: "确认移除",
@@ -443,35 +861,65 @@ export const zh = {
     fields: "字段",
     slots: "槽位",
   },
+  /** The App info dialog, opened from the avatar menu: identity, links, update, release notes, credits. */
+  appInfo: {
+    title: "应用信息",
+    /** The avatar-menu row. */
+    menuEntry: "应用信息",
+    /** The muted labels before the two addresses the identity block links to. */
+    homepage: "主页",
+    repository: "GitHub",
+    /** Read after a link out of the app: the glyph that shows it is decorative. */
+    opensInNewTab: "在新标签页中打开",
+    releaseNotes: "更新日志",
+    /** The fold under the newest release note, holding the rest; `n` = how many. */
+    earlierVersions: (n: number) => `更早的版本（${n}）`,
+    /** Pill on the release-notes entry of the running version. */
+    current: "当前版本",
+    credits: "版权信息",
+    copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+    /** Disclosure row that expands the font and icon credits. */
+    licenses: "字体与图标许可",
+    // —— the credit lists: the bundled fonts and the icon families, each with its licence ——
+    creditsThemes: "用于",
+    creditsNoTheme: "没有主题默认使用",
+    creditsLicense: "许可",
+    creditsSource: "来源",
+    creditsLicenseText: "许可全文",
+    creditsFonts: "字体",
+    creditsIcons: "图标",
+  },
   /**
-   * The software-update flow (lib/update-flow.ts): the one modal for both the server release
-   * and the desktop client, the account-menu row, the version-line badge, and the toasts for
-   * outcomes that land while the modal is closed. Null version = the backend named none.
+   * The software-update flow (lib/update-flow.ts): the App info dialog's update section for
+   * both the server release and the desktop client, the account-menu row's status line, the
+   * version-line badge, and the toasts for outcomes that land while the dialog is closed. Null
+   * version = the backend named none.
    */
   update: {
     /** Version-line date label (owner-specified wording); `date` is formatMonthDay output. */
     lastUpdated: (date: string) => `最近更新日期 ${date}`,
-    /** The version line's superscript (owner-specified wording), a button into the modal; the other two follow the flow. */
+    /** The version line's superscript (owner-specified wording), a button into the App info dialog; the other two follow the flow. */
     newVersionBadge: "有新版本可用",
     badgeDownloading: "正在下载更新",
     badgeReady: "重启以更新",
-    /** A release offered: the row's label and the avatar badges' sentence. */
+    /** A release offered: the row's status line and the avatar badges' sentence. */
     newVersion: (v: string) => `新版本 v${v} 可用`,
-    /** A release downloaded / installed and waiting for the restart: the row's label and the badges' sentence. */
+    /** A release downloaded / installed and waiting for the restart: the row's status line and the badges' sentence. */
     restartToUpdate: (v: string | null) => (v !== null ? `重启以更新到 v${v}` : "重启以完成更新"),
     /** The combined wording for an anchor covering several update trails at once. */
     updatesAvailable: "有可用更新",
-    // —— the account-menu row ——
+    /** The update section's button that forces a fresh check. */
     checkNow: "检查更新",
+    // —— the account-menu row's status line ——
     checking: "检查中…",
     rowDownloading: (v: string | null, percent: number | null) =>
       `正在下载${v !== null ? ` v${v}` : "更新"}${percent !== null ? ` ${percent}%` : "…"}`,
     rowRestarting: "正在重启…",
-    rowUnsupported: "无法在线更新",
-    // —— the modal ——
+    // —— the App info dialog's update section ——
     title: "软件更新",
-    currentVersion: (v: string) => `当前版本 v${v}`,
     checkingBody: "正在检查更新…",
+    /** Nothing is known yet: no check has answered since the page loaded. */
+    notChecked: "尚未检查更新",
     upToDate: "已是最新版本",
     checkFailed: "检查更新失败，请稍后重试",
     checkDisabled: "更新检查已关闭（PENGUIN_UPDATE_CHECK=off）",
@@ -485,8 +933,6 @@ export const zh = {
     /** Shown to non-admins in place of the body above (they can read the notes but cannot run the update). */
     adminOnly: "只有管理员可以在这里执行更新。",
     downloadAndInstall: "下载并更新",
-    later: "稍后",
-    background: "放到后台",
     downloading: (v: string | null) => (v !== null ? `正在下载 v${v}…` : "正在下载更新…"),
     /** The progress bar's accessible name. */
     downloadProgress: "下载进度",
@@ -512,12 +958,12 @@ export const zh = {
     unsupportedNonAppImage: "Linux 上只有 AppImage 版本支持自更新——包安装请通过包管理器更新",
     unsupportedNotViaCli: "当前服务不是通过 penguin web 或 penguin server 启动的，无法从这里更新",
     unsupportedCli: "当前安装方式不支持在线更新",
-    // —— toasts: outcomes that land while the modal is closed ——
-    foundNew: (v: string) => `发现新版本 v${v}，打开更新入口即可下载`,
-    foundNewUnnamed: "发现新版本，打开更新入口即可下载",
+    // —— toasts: outcomes that land while the dialog is closed ——
+    foundNew: (v: string) => `发现新版本 v${v}，打开应用信息即可下载`,
+    foundNewUnnamed: "发现新版本，打开应用信息即可下载",
     readyToast: (v: string | null) =>
       v !== null ? `v${v} 已就绪，可重启更新` : "更新已就绪，可重启更新",
-    failedToast: "更新失败，打开更新入口查看详情",
+    failedToast: "更新失败，打开应用信息查看详情",
     unsupportedToast: "当前安装方式不支持在线更新",
     /** The shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
     clientUpdateFailed: (detail: string) => `客户端更新失败：${detail}`,
@@ -534,7 +980,7 @@ export const zh = {
    */
   todo: {
     pluginUpdates: (n: number) => `${n} 个插件有更新`,
-    presetUpdates: (n: number) => `${n} 个预置模型可同步`,
+    presetUpdates: (n: number) => `${n} 个新预置模型可同步`,
     unexpectedErrors: (n: number) => `${n} 条未预期错误`,
     /** Combined anchor whose trails are not all updates — an unexpected error is not one. */
     pending: "有待处理事项",
@@ -543,12 +989,9 @@ export const zh = {
     /** The cost center's wording: nothing is being updated there, the errors are simply read. */
     markRead: "标记为已读",
 
-    // —— The page notice's own line and its bulk action (components/ui/todo-notice.tsx) ——
+    // —— The page notice's own line and its bulk action (the UI package's TodoNotice) ——
 
-    /** The notice line where the trail can separate genuinely new things from upgradable ones (Models only). */
-    changesWithAdded: (added: number, updated: number): string =>
-      `检测到变更：${added} 个新增，${updated} 个可升级`,
-    /** The same line where the trail has only one honest count — no padded zero (Agents, Plugins). */
+    /** The notice line on the trails whose objects are upgraded in place (Agents, Plugins). */
     changesUpgradable: (updated: number): string => `检测到变更：${updated} 个可升级`,
     /** Updates every object the notice counts, behind the page's own confirmation. */
     updateNow: "现在升级",
@@ -560,8 +1003,8 @@ export const zh = {
     pluginsConfirmTitle: (n: number): string => `更新 ${n} 个插件`,
     pluginsConfirmBody:
       "更新会把库内当前副本重装到各 Agent，覆盖其已安装的技能与钩子文件——本地改动会丢失，如有需要请先导出备份。",
-    /** Bulk preset sync confirmation; the body reuses models.syncCatalogHint verbatim. */
-    modelsConfirmTitle: (n: number): string => `同步 ${n} 个预置模型`,
+    /** Confirmation of adding the new presets; the body reuses models.syncNewPresetsHint verbatim. */
+    modelsConfirmTitle: (n: number): string => `补入 ${n} 个新预置模型`,
     /** Every target of the batch was written. Counted in Agents: both pages that use this
      * send one request per Agent, and the partial-failure line below names Agents too. */
     bulkDone: (ok: number): string => `已更新 ${ok} 个 Agent`,
@@ -577,6 +1020,36 @@ export const zh = {
     taskCompleteTitle: "任务完成",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `「${session}」已完成，点击查看`,
+  },
+
+  /**
+   * The find bar (components/find/find-bar.tsx) and the searchable regions it queries
+   * (lib/find-dom.ts). A region's name is both a result row's tag and the subject of the scope
+   * button (`scopeThisRegion`).
+   */
+  find: {
+    placeholder: "在当前区域查找…",
+    next: "下一个",
+    prev: "上一个",
+    close: "关闭",
+    caseSensitive: "区分大小写",
+    /** Counter line when the query matches nothing. */
+    noResults: "无结果",
+    regionConversation: "对话",
+    regionSubagent: "子会话",
+    regionSessions: "会话列表",
+    regionFiles: "文件",
+    /** Scope button while the search is limited to one region: widen it to everything on screen. */
+    scopeAll: "所有区域",
+    /** Scope button while searching everything: narrow it back to `region`. */
+    scopeThisRegion: (region: string): string => `仅在${region}中`,
+    /** The region's own notice that it holds content this search could not reach. */
+    loadMore: "更早的内容尚未加载",
+    loadMoreAction: "加载并继续搜索",
+    /** `count` hits past the rows the result list shows. */
+    moreRows: (count: number): string => `另有 ${count} 条未显示`,
+    /** Name of the aggregated result list (read out when it is announced). */
+    resultsLabel: "查找结果",
   },
 
   common: {
@@ -598,6 +1071,10 @@ export const zh = {
     /** Confirm-before-save dialog shared by the settings forms (writes go to server-side config files). */
     confirmSaveTitle: "保存修改",
     confirmSaveBody: "确定保存这些修改吗？修改将写入服务器上的配置文件。",
+    /** Leaving or cancelling a form that holds unsaved edits (Agent settings tabs, the handbook editor, the binding dialog). */
+    discardTitle: "放弃未保存的修改",
+    discardBody: "放弃尚未保存的修改？放弃后无法找回。",
+    discard: "放弃",
     none: "（无）",
     retry: "重试",
     unknownError: "请求失败，请稍后重试",
@@ -609,6 +1086,13 @@ export const zh = {
     moreInfo: "说明",
     /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
     moreInfoAbout: (subject: string) => `说明：${subject}`,
+    /** The toast stack's name as a live region (the shared UI package's `Toaster`). */
+    notifications: "通知",
+    /** Read after a toast's text: pressing the toast dismisses it. */
+    dismiss: "关闭",
+    /** A pager's two steps, as their names and tooltips (the shared UI package's `Pager`). */
+    previousPage: "上一页",
+    nextPage: "下一页",
     name: "名称",
     username: "用户名",
     role: "角色",
@@ -697,13 +1181,15 @@ export const zh = {
     restoreDefault: "恢复默认",
     /** The same, named for what it restores: two of these sit on one page. */
     restoreDefaultOf: (subject: string) => `恢复默认：${subject}`,
+    /** Asked before the avatar's restore: the uploaded picture is deleted, unlike the nickname's. */
+    avatarResetConfirm: "恢复默认头像？已上传的图片会从服务器删除，想再用需要重新上传。",
     /** The picked image could not be brought under the size limit even as JPEG. */
     avatarTooLarge: "图片过大，请换一张尺寸更小的图片。",
     /** The picked file could not be decoded as an image at all. */
     avatarUnreadable: "无法读取这张图片，请换一个文件。",
-    /** Nickname row: the field, and the shape rule that stays on screen while typing. */
+    /** Nickname row: the field, and its length and blank-clears rule, disclosed by the "?" (user decision, 2026-10-03). */
     displayName: "昵称",
-    displayNameHint: "1–32 个字符，留空即清除",
+    displayNameInfo: "1–32 个字符，留空即清除",
     displayNamePlaceholder: "留空则显示用户名",
   },
 
@@ -749,6 +1235,9 @@ export const zh = {
     members: "成员",
     addMember: "添加成员",
     removeMember: "移除",
+    removeMemberTitle: "移除成员",
+    removeMemberConfirm: (user: string): string =>
+      `将 ${user} 移出该 Project？对方会立即失去访问权限，之后可以重新添加。`,
     /** New-conversation defaults section (Project settings): prefills each new conversation's agent / working directory / approval mode / thinking level / default model. */
     chatDefaultsTitle: "新对话默认值",
     chatDefaultsHint: "新建对话时预填的默认值：Agent、工作目录、审批模式、思考等级与默认模型。",
@@ -772,6 +1261,9 @@ export const zh = {
     commandPolicyEnableDesc: "关闭后所有规则都不再拦截。",
     commandPolicyRules: "规则",
     commandPolicyRestore: "恢复默认",
+    /** Buffered like every edit (Save writes it), but it replaces the whole list in one click. */
+    commandPolicyRestoreConfirm:
+      "恢复为默认规则？列表中的所有规则（包括自定义规则）都会被替换，保存后生效。",
     commandPolicyAddRule: "添加规则",
     commandPolicyEditRule: "编辑",
     commandPolicyApplyRule: "确定",
@@ -846,7 +1338,7 @@ export const zh = {
     createDirSkillsHint: "选择一个项目目录，读取其 .agents/skills 与 .claude/skills 下的技能",
     createDirSkillsEmpty: "该目录下没有可安装的技能",
     createDirSkillsFound: (n: number): string => `该目录下找到 ${n} 个技能`,
-    createDirSkillsClear: "清除已选目录",
+    createDirSkillsClear: "不从目录导入",
     /** Create dialog's optional snapshot seed: the new Agent starts from an exported package. */
     createSnapshot: "从快照初始化",
     createSnapshotPick: "选择快照包",
@@ -931,6 +1423,7 @@ export const zh = {
     tabHooks: "钩子",
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
+    tabApi: "API",
     stateDir: "State 路径",
     copyStateDir: "复制 State 路径",
     agentsMd: "AGENTS.md",
@@ -1081,6 +1574,9 @@ export const zh = {
     importing: "导入中…",
     importDone: (v: number): string => `导入完成，Agent State 版本 v${v}`,
     importConflictTitle: "版本冲突",
+    /** Asked before every snapshot import; the server snapshots the current version first and keeps the Vault. */
+    importConfirmBody: (file: string): string =>
+      `用「${file}」替换整个 Agent State？现有内容都会被快照包取代（Vault 保留），导入前会自动为当前版本存一份快照。`,
     importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
     resetConfigTitle: "还原为默认配置",
     resetConfigAction: "还原为默认配置",
@@ -1107,6 +1603,70 @@ export const zh = {
         : `内核已更新至 ${version}，设置页均已是当前默认或保持自定义`,
     kernelUpdateKeptIntro: "以下设置页因自定义被整体保留：",
     kernelListSeparator: "、",
+    /** The API tab: this server's switch for the Agent's public API, its approval mode, keys and examples. */
+    apiEnable: "开启 API 访问",
+    apiEnableHint:
+      "外部程序可通过 URL、密钥与 Agent ID 与此 Agent 对话；对话归入侧栏的「后台会话」。",
+    apiOwnerOnly: "只有 Project 所有者可以更改这些设置。",
+    apiAdminOff:
+      "管理员已在服务器设置中关闭 Agent API：所有 API 请求都会被拒绝，这里的设置与密钥保留。",
+    apiApprovalMode: "API 会话的审批模式",
+    apiApprovalModeHint:
+      "应用于之后新建的 API 会话；需要确认时，确认请求会发给调用方，也可在 Web App 中回答。",
+    apiConnection: "连接",
+    apiBaseUrl: "Base URL",
+    apiAgentId: "Agent ID",
+    /** A copy button beside a connection value, named for what it copies. */
+    apiCopy: (what: string): string => `复制 ${what}`,
+    apiKeys: "密钥",
+    apiKeysEmpty: "还没有密钥。",
+    apiNewKey: "新建密钥",
+    apiKeyName: "密钥名称",
+    apiKeyCreated: "创建",
+    apiKeyLastUsed: "最近使用",
+    apiKeyNever: "从未",
+    apiKeyShownOnce: "此密钥只显示一次，请立即复制。",
+    apiCopySecret: "复制密钥",
+    apiKeyDone: "完成",
+    apiDeleteKey: "删除密钥",
+    apiDeleteKeyBody: (name: string): string =>
+      `删除密钥「${name}」？使用它的程序会立即被拒绝，此操作不可撤销。`,
+    apiOpen: "允许无密钥访问",
+    apiOpenHint: "任何能访问此地址的程序都能与该 Agent 对话；仅建议本机使用。",
+    apiExamples: "示例",
+    /** Turning the Agent's API off asks first: every program using it is refused from then on. */
+    apiOpenTitle: "允许无密钥访问？",
+    apiOpenBody:
+      "开启后，任何能访问此服务器地址的程序都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据，工具按 API 会话的审批模式执行。仅建议在只监听本机的服务器上开启。",
+    apiOpenConfirm: "仍然开启",
+    apiOffTitle: "关闭 API 访问？",
+    apiOffBody: "外部程序会立即无法与此 Agent 对话。审批模式与密钥保留，重新开启后照常可用。",
+    apiOff: "关闭",
+    /** The Agents list's plug mark on an Agent whose API is on. */
+    apiOn: "已开启 API 访问",
+    /** The tab's Try it: one real API run on the owner's sign-in, shown as a program receives it. */
+    apiTry: "试一试",
+    apiTryHint:
+      "以你的登录身份走程序用的同一条运行路由，收到的就是程序会收到的事件流；开出的会话归入侧栏的「后台会话」。",
+    apiTryExample: "现在几点了？",
+    apiTryRun: "运行",
+    apiTryStop: "停止",
+    /** The input's placeholder once a run has named its Session: the next run continues it. */
+    apiTryFollowUp: "继续这个会话…",
+    apiTryNewSession: "新会话",
+    /** The output's two views: the stream with fragments merged, and its `data:` lines as received. */
+    apiTryRendered: "渲染",
+    apiTryRaw: "原始",
+    apiTryCopyRaw: "复制原始行",
+    /** The output before the first run. */
+    apiTryEmpty: "运行后，事件流显示在这里。",
+    apiTryStatus: "状态",
+    apiTryRequests: "Request",
+    apiTryTokens: "Token（输出 / 合计）",
+    apiTryCacheRead: "缓存读",
+    apiTryCacheWrite: "缓存写",
+    apiTryElapsed: "用时",
+    apiTryStreamBroken: "事件流在 run.done 之前结束。",
   },
 
   models: {
@@ -1114,29 +1674,33 @@ export const zh = {
     addCustom: "添加自定义模型",
     addToGroup: "添加模型",
     editTitle: "模型配置",
-    addTitle: "新增模型（OpenAI 协议）",
-    addTitleVendor: "新增模型",
-    addProtocolHint: "新增模型走 OpenAI Chat Completions 兼容协议，base URL 填其兼容端点",
-    /** Add-dialog note for preset direct-vendor groups (fed the provider label): states whose protocol the group speaks — the in-field suffix on the base URL shows which path. */
-    vendorProtocolHint: (vendor: string): string =>
-      `仅支持 ${vendor} 官方接口协议，OpenAI 兼容接口请使用自定义模型分组`,
+    addTitle: "新增模型",
     /** Add-dialog note for a group that pins one protocol on every entry (fed the client type): the protocol is not a choice here, and the endpoint is the user's own. */
     addProtocolHintPinned: (protocol: string): string =>
       `本分组的模型固定使用 ${protocol} 协议，base URL 填你自己的服务地址`,
-    /** The same note for a gateway group that pins a protocol: the endpoint is the gateway's, already filled in. */
-    addProtocolHintPinnedGateway: (protocol: string): string =>
-      `本分组的模型固定使用 ${protocol} 协议，base URL 已预填网关端点`,
-    autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
+    /** The same note where the group also supplies the endpoint (a gateway, or a group whose settings name one): blank fields follow the group. */
+    addProtocolHintInherit: (protocol: string): string =>
+      `本分组的模型使用 ${protocol} 协议；base URL、API key 与协议留空即继承分组`,
+    autoRouteNone:
+      "厂商分组按模型 ID 开头的厂商前缀（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由，该模型 ID 无法路由；若使用 OpenAI 兼容接口，可转为自定义模型。",
     useCustomGroup: "转为自定义模型",
+    /** Warning on a hand-added vendor-group row whose model id MMSP cannot route — it begins with no known vendor prefix (such a row can no longer be created, only inherited). */
+    vendorRowUnroutable:
+      "该模型 ID 无法路由，运行时会失败：厂商分组只能路由以已知厂商前缀开头的模型 ID。",
+    /** The way out offered beside that warning: opens the config dialog with the row already in the custom group. */
+    moveToCustomGroup: "移到自定义分组",
+    /** Connectivity test on a hand-added row: replaces MMSP's "No client for model" sentence, which names client types the user has no way to act on. */
+    testNotRoutable:
+      "连通失败：该模型 ID 无法路由。厂商分组只能路由以已知厂商前缀开头的模型 ID；把它移到自定义分组，并选择或检测其接口协议。",
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后，一键导入其全部模型；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后，一键导入其全部模型，所填的 base URL、API key 与协议作为分组设置只写一次，导入的模型都跟随分组；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
     groupModeCreate: "仅新增分组",
     groupModeImport: "导入模型",
     groupImportAll: "批量导入模型",
     groupImportNeedUrl: "请先填写有效的 base URL（http/https）",
-    groupImportKeyHint: "留空按协议读取 OPENAI_* / ANTHROPIC_* 环境变量",
+    groupImportKeyHint: "该端点的 API key（URL 不是厂商官方地址时必填）",
     groupImportListing: "正在获取模型列表…",
     groupImportSaving: (n: number): string => `正在导入 ${n} 个模型…`,
     groupImportUnsupported: "该协议不支持列出模型，请手动添加",
@@ -1156,11 +1720,24 @@ export const zh = {
     groupDeleted: (n: number): string => `已删除分组（${n} 个模型）`,
     searchPlaceholder: "搜索模型：id / 名称 / 厂商",
     noSearchResults: "没有匹配的模型",
-    syncCatalog: "同步预置",
-    syncCatalogHint:
-      "用内置目录更新预置模型：新增缺失条目、以目录字段为准刷新差异；本地新增模型与 API key 保持不变",
-    syncDone: (added: number, updated: number) => `预置模型已同步：新增 ${added}、更新 ${updated}`,
-    syncUpToDate: "预置模型已是最新",
+    /** The header action that adds the catalog's presets the Project lacks — and nothing else. */
+    syncNewPresets: "同步新增模型",
+    /** What it does, as its tooltip and as the body of the notice's confirmation. */
+    syncNewPresetsHint:
+      "只补入内置目录里缺失的预置模型；已有的模型、你自己添加的模型、分组设置与 API key 一概不动",
+    presetsAdded: (n: number): string => `已新增 ${n} 个预置模型`,
+    presetsNone: "没有新的预置模型",
+    /** The header action that puts every built-in model back to the catalog, behind a danger confirmation. */
+    restoreDefaults: "恢复默认",
+    restoreDefaultsTitle: "恢复默认模型设置",
+    /** The confirmation's body, in three parts: what is reset, what is kept, and that it is final. */
+    restoreDefaultsResets:
+      "恢复：内置模型的上下文、价格与视觉标志回到目录值，显示名、输出上限与快速模式清除；模型与内置分组（Custom 除外）上自定的 base URL 与协议回到目录值；已删除的内置模型补回；促销折扣按目录重置（Penguin Go 的除外）。",
+    restoreDefaultsKeeps:
+      "保留：全部 API key（分组的与模型的）、你自己添加的模型（连同其折扣）与自建分组、Custom 的分组设置与 vLLM 的 base URL，以及默认模型与视觉模型的选择（所指模型不再适用时除外）。",
+    restoreDefaultsFinal: "此操作不可撤销。",
+    restoredDefaults: (added: number, restored: number): string =>
+      `已恢复默认：补回 ${added}、重置 ${restored}`,
     /**
      * The header's "Create with AI" entry: the dialog's title and lead, the prompt box's
      * placeholder, the examples and the fixed instruction tail. The tail
@@ -1178,9 +1755,9 @@ export const zh = {
       {
         key: "openrouter",
         label: "OpenRouter 热门模型",
-        description: "读取模型列表页，加为一个分组",
+        description: "读取模型列表页，加为一个自建分组",
         prompt:
-          "把 https://openrouter.ai/models 上的热门模型加为一个 OpenRouter 分组（先问我要 API key）。",
+          "把 https://openrouter.ai/models 上的热门模型加为一个自建分组（先问我要 API key）。",
       },
       {
         key: "vllm",
@@ -1212,9 +1789,13 @@ export const zh = {
         "- 不要读取或改动 .project_config.toml，配置只经 penguin 命令。",
         `- 最后运行 \`penguin config model list --project-id ${projectId} --root <数据根目录>\` 把结果列给我。`,
       ].join("\n"),
-    platformSync: "同步",
+    /** Penguin Go's "Sync models" (in its Connected menu) adds the models the platform newly offers; it never rewrites the ones already here. */
+    platformSyncAdded: (n: number): string => `已新增 ${n} 个模型`,
+    platformUpToDate: "已是最新",
     homepage: "模型主页",
     speedTest: "测速",
+    /** The same icon button while its group's run is going: stops after the probe in flight. */
+    speedTestStop: "停止测速",
     speedTestTitle: "分组测速",
     speedTestConfirm: (n: number): string =>
       `将对该分组的 ${n} 个模型逐个发起一次真实请求,测量首 token 延迟(TTFT)与输出速率(TPS),会消耗少量 API 额度。是否继续?`,
@@ -1240,12 +1821,14 @@ export const zh = {
       "按模型限制单次请求的最大输出 Token 数；留空沿用 Agent 设置，小上下文模型建议调低",
     maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
-    /** Protocol selector (custom / user-defined groups): AgentHub's generic protocol clients. Protocol names are proper nouns, identical in both locales. */
+    /** Protocol selector (custom / user-defined groups): MMSP's generic protocol clients. Protocol names are proper nouns, identical in both locales. */
     protocol: "接口协议",
     protocolNames: {
       "openai-responses": "OpenAI Responses",
       "ant-messages": "Anthropic Messages",
       "openai-chat": "OpenAI Chat Completions",
+      "google-genai": "Google GenAI (generateContent)",
+      mmsp: "MMSP",
     } as Record<string, string | undefined>,
     /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
     protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
@@ -1267,8 +1850,7 @@ export const zh = {
     detectFellBack: "未检测到协议，已按 OpenAI Chat Completions 保存",
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
     addProtocolHintDetect:
-      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可点“检测协议”探测端点；未选协议时保存会先自动检测",
-    addTitleCustom: "新增模型",
+      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions / Google GenAI / MMSP），也可点“检测协议”探测端点是否为前三种之一；未选协议时保存会先自动检测",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
     /** Detect action beside the vision switch. */
@@ -1280,7 +1862,7 @@ export const zh = {
     detectVisionNo: "该模型不接受图片输入，视觉保持关闭",
     /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (read_file hands them to it). */
     visionOffProxyHint: "使用视觉代理模型读图",
-    /** Switch label for the per-model fast mode (the provider's premium faster serving tier); the switch is only rendered for models whose AgentHub client can carry the parameter. */
+    /** Switch label for the per-model fast mode (the provider's premium faster serving tier); the switch is only rendered for models whose MMSP client can carry the parameter. */
     fastMode: "快速模式",
     /** Shown while the fast-mode switch is ON (and as the label's hover title): what it buys, and that the recorded prices do not follow the premium rate. */
     fastModeHint: "输出更快，按厂商的溢价档位计费；成本中心仍按条目记录的标准单价统计",
@@ -1304,6 +1886,11 @@ export const zh = {
      * group, so a user who drags that group elsewhere still sees why it is called out.
      */
     recommendedGroup: "官方推荐",
+    /** A group header's favourite star: its name (aria-pressed carries the state), and the hint while a favourite. */
+    pinGroup: "收藏",
+    unpinGroup: "取消收藏",
+    /** The bar that folds the groups that are not favourites, naming how many it holds. */
+    foldedGroups: (n: number): string => `其余 ${n} 个分组`,
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
     discountBadge: (pct: number): string => `省 ${pct}%`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
@@ -1348,26 +1935,101 @@ export const zh = {
     keyConfigured: "已配置 key",
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",
-    baseUrlHint: "留空使用厂商默认地址",
     /** Hover title for the base URL field: explains the in-field suffix (the protocol path the client appends to the base URL); for custom groups that suffix is also the protocol picker. */
     baseUrlSuffixTitle: "客户端会在 base URL 后追加字段右侧的协议路径",
     baseUrlRequired: "必须填写 base URL",
+    /** A base URL that is set but is not an absolute http(s) URL (the group settings refuse to save it). */
+    baseUrlInvalid: "base URL 须为以 http:// 或 https:// 开头的完整地址",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
     confirmDeleteTitle: "删除模型",
     confirmDelete: (name: string): string =>
       `确定删除「${name}」？该模型的配置与 API key 将一并移除。`,
-    groupApiKey: "手动设置密钥",
-    groupApiKeyTitle: (label: string): string => `为「${label}」统一配置 API key`,
-    groupApiKeyHint: (n: number): string => `将写入该分组下全部 ${n} 个模型；留空不改动。`,
     getApiKey: "前往密钥管理",
     getModelIds: "获取模型 id",
-    groupKeyApplied: (n: number): string => `已为 ${n} 个模型配置 API key`,
-    // 供应商授权取 key（模型分组头部动作）：整个 PKCE 流程都在服务端跑，前端只拿到一个
-    // 不透明的 flow id 和状态。
-    oauthKey: "自动获取密钥",
+    /** The group settings' link to the vendor's model list (the catalog's modelsUrl). */
+    modelList: "前往模型列表",
+    // —— The gear at the end of every group header: the group's sort, then its settings ——
+    /** The gear's accessible name (followed by the group's name). */
+    groupSettings: "设置",
+    /** The gear's hover hint, naming how the group's models are ordered now. */
+    groupMenuTitle: (sort: string): string => `设置 · 排序：${sort}`,
+    /** The gear menu's first section: how the group's models are ordered (radio rows). */
+    sortHeading: "排序",
+    /** The three orders; price is the blended rate billed right now. */
+    sortModes: {
+      "price-asc": "价格（从低到高）",
+      "price-desc": "价格（从高到低）",
+      name: "名称（A→Z）",
+    } satisfies Record<ModelGroupSort, string>,
+    /** The gear menu's last row, under the sort (owner only): opens the group settings dialog. */
+    groupSettingsEntry: "分组设置…",
+    groupSettingsTitle: (label: string): string => `${label} 分组设置`,
+    /** The clear box under a stored group key. */
+    clearGroupKey: "清除分组密钥",
+    /** A blank base URL that nothing fills: the group settings' placeholder, and a model's where its group sets none. */
+    baseUrlNone: "未设置：使用客户端默认端点",
+    /** The group settings' Detect while neither the field nor the group holds a base URL. */
+    detectNeedsBaseUrl: "先填写 base URL",
+    /** The protocol menu's first row in the group settings: the group sets none. */
+    protocolNone: "未设置",
+    /** Its second line on a built-in group: a model with no protocol of its own is routed by its id. */
+    protocolRoutedById: "按模型 id 路由",
+    /** Its second line on custom and user-defined groups, where each model keeps its own. */
+    protocolEachModel: "由各模型自行设置",
+    /** The model dialog's protocol menu row that drops a model's own protocol and follows its group. */
+    protocolFollowGroup: "跟随分组",
+    /** A model dialog's API key or base URL placeholder where the group's setting covers a blank field (no value after it). */
+    inheritFromGroup: "留空继承分组设置",
+    /** The API key placeholder where the group holds a key but the model's own base URL is on another origin, so the key is not sent there. */
+    keyNotReachedNote: "分组密钥不适用：该模型的 base URL 不在分组端点上",
+    /** The model dialogs' fold holding the fields a model rarely changes. */
+    details: "详细配置",
+    /** The card's hover note on a key that is the group's rather than the model's own. */
+    keyFromGroup: "继承分组密钥",
+    // Authorizing a key with the provider (a group header action): the whole PKCE flow runs on
+    // the server, and the page only ever holds an opaque flow id and its status.
+    oauthKey: "连接",
+    /** The group's connection: whether it holds a stored key, however that key got there. Connected is a menu for the owner. */
+    connectedStatus: "已连接",
+    notConnectedStatus: "未连接",
+    /** The Connected menu's rows: Penguin Go's platform catalog sync, the connect flow again, and clearing the group key. */
+    syncModels: "同步模型",
+    reconnect: "重新连接",
+    disconnect: "断开连接",
+    disconnectConfirm: (label: string): string =>
+      `断开 ${label}？将删除分组密钥；使用分组密钥的模型将无法调用，单独设置了 key 的模型不受影响。`,
+    disconnected: (label: string): string => `已断开 ${label}`,
+    /**
+     * A group's account balance in its header (and pinned beside the user name): the sentence
+     * spoken behind the amount names the group, the vendor's own figures and the time of the
+     * reading. `amounts` and `time` are already formatted.
+     */
+    balanceTitle: (label: string, amounts: string, time: string): string =>
+      `${label} 余额 ${amounts}，查询于 ${time}`,
+    /** The balance menu's re-read (skips the server's cache). */
+    balanceRefresh: "更新余额",
+    /** The balance menu's last line: when the balance was read (`time` is YYYY-MM-DD HH:mm, local). */
+    balanceUpdatedAt: (time: string): string => `更新于：${time}`,
+    /** The same line, and the spoken sentence, when no balance could be read. */
+    balanceFailed: (reason: string): string => `更新失败：${reason}`,
+    /** Added to the tooltip when the vendor says the account cannot make requests (DeepSeek's is_available). */
+    balanceUnavailable: "账户当前不可用，余额可能不足",
+    /** Why no balance could be read, by the server's code: the reason after balanceFailed's prefix. */
+    balanceErrors: {
+      no_key: "没有可用的 API key",
+      upstream_failed: "服务商没有返回余额",
+      unsupported: "该分组不支持查询余额",
+    } as Record<string, string | undefined>,
+    /** Appended when the vendor answered with an HTTP error. */
+    balanceStatus: (status: number): string => `（HTTP ${status}）`,
+    /** The balance menu's pin: keeps it beside the user name at the sidebar's bottom-left, one at a time. */
+    pinBalance: "置顶至左下角",
+    unpinBalance: "取消置顶",
+    /** The banner above every group: TokenDance's own connect flow, pitched as the way to skip keys. */
+    tokenDanceBanner: "连接 TokenDance 钱包，无需手动配置模型密钥",
     oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,
     oauthIntro: (label: string, n: number): string =>
-      `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,
+      `将在你的 ${label} 账户下新建一个 API key，设为该分组的分组密钥，${n} 个模型使用它；单独设置了密钥的模型不受影响。`,
     oauthAuthorize: "打开授权页",
     oauthWaiting: "等待在新标签页中完成授权…",
     /**
@@ -1376,7 +2038,7 @@ export const zh = {
      * which authorization they just finished.
      */
     oauthAppliedBody: (provider: string, n: number): string =>
-      `已完成授权：${provider} 的 API key 已配置到 ${n} 个模型上，可以直接使用了。`,
+      `已完成授权：已为「${provider}」配置分组密钥（${n} 个模型使用），可以直接使用了。`,
     oauthManualSwitch: "授权页跳不回来？改为手动填写授权码",
     oauthCallbackSwitch: "改回自动跳转",
     oauthManualHint: "先打开授权页，再把页面上显示的一次性授权码粘贴到这里。",
@@ -1392,9 +2054,9 @@ export const zh = {
       apply_failed: "key 已创建但未能保存。请重新授权，并到供应商控制台删掉那个没用上的 key。",
     },
     platformKeyIntro: (n: number): string =>
-      `授权后会自动获取一个 Penguin Go API key，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key。`,
+      `授权后会自动获取一个 Penguin Go API key，设为该分组的分组密钥，${n} 个模型使用它；单独设置了密钥的模型不受影响。`,
     platformKeyAppliedBody: (n: number): string =>
-      `已完成授权：Penguin Go API key 已配置到 ${n} 个模型上，可以直接使用了。`,
+      `已完成授权：已为「Penguin Go」配置分组密钥（${n} 个模型使用），可以直接使用了。`,
     platformKeyStarting: "正在创建授权请求…",
     platformKeyApplying: "授权已完成，正在写入模型组…",
     platformKeyErrors: {
@@ -1406,12 +2068,13 @@ export const zh = {
       already_delivered: "该授权结果已经交付，请重新开始。",
       apply_failed: "API key 已取得，但未能写入模型组。可以直接重试，无需再次授权。",
     },
-    // 魔搭走的是授权中转层：harness 不直接与魔搭对话，中转层拿着 client secret 换回
-    // api-inference token。access token 会写入模型表；refresh token 只保存在服务端 DB。
+    // ModelScope goes through an authorization bridge: the harness never talks to ModelScope
+    // directly; the bridge exchanges its client secret for an api-inference token. The access
+    // token is written as the group key; the refresh token stays in the server's DB.
     modelScopeKeyIntro: (n: number): string =>
-      `授权后会自动获取一个魔搭 API token，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key；后续请求会在服务端静默续期，连续续期失败时会提示你重新授权。`,
+      `授权后会自动获取一个魔搭 API token，设为该分组的分组密钥，${n} 个模型使用它；单独设置了密钥的模型不受影响。后续请求会在服务端静默续期，连续续期失败时会提示你重新授权。`,
     modelScopeKeyAppliedBody: (n: number): string =>
-      `已完成授权：魔搭 API token 已配置到 ${n} 个模型上，可以直接使用了。`,
+      `已完成授权：已为「魔搭」配置分组密钥（${n} 个模型使用），可以直接使用了。`,
     modelScopeKeyErrors: {
       unreachable: "无法连接授权中转层，请检查网络后重新开始。",
       upstream_failed: "中转层未能完成授权，请重新开始。",
@@ -1423,7 +2086,8 @@ export const zh = {
     },
     // Providers with separate domestic / international endpoints: note on the default
     // endpoint used when left blank via env var (the other side's key needs an explicit
-    // base URL). Written to match AgentHub's actual behavior; rendered wherever the env fallback hint appears.
+    // base URL). Written to match the defaults MMSP's Z.AI and Moonshot clients carry; rendered
+    // wherever the env fallback hint appears.
     providerEnvNotes: {
       zhipu:
         "缺省端点为 Z.AI 国际版（api.z.ai）；智谱开放平台（bigmodel.cn）的 key 需填 base URL https://open.bigmodel.cn/api/paas/v4",
@@ -1450,7 +2114,7 @@ export const zh = {
      * which is what identifies the key to the reader.
      */
     readFromEnv: "读取自环境变量",
-    /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
+    /** Model picker's footer toggle: lists the models hidden by the configured-key filter. */
     showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
     modelIdExists: "该模型 id 已存在",
     pricingAllOrNone: "三项价格需一并填写",
@@ -1820,7 +2484,7 @@ export const zh = {
     sharedCannotRemove: "已对所有机器启用：请在「所有机器」视图中移除。",
     machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
     /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
-    openSettings: "插件设置",
+    openSettings: "设置",
     pageDesc:
       "所有插件在一个列表里。插件库里的随本次构建自带（技能和／或钩子包——快捷调用，或安装到 Agent）；当前 Project 要求的模块插件在服务端运行，市场里其余的可以为它安装。",
     /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
@@ -1855,8 +2519,11 @@ export const zh = {
     detailSkills: "技能",
     detailHooks: "钩子",
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
-    /** Title on a disabled quick-start button: it pre-selects one of the plugin's skills on the currently selected Agent, so the plugin has to be installed there first. */
-    quickInvokeNeedsInstall: "先在当前 Agent 安装该插件后才能快捷调用",
+    /** Quick start's tooltip: what pressing it does, and what it does not. */
+    quickStartHint: "快速开始：打开一份带该插件演示的草稿——点发送之前什么都不会运行",
+    quickStartInstallTitle: (plugin: string, agent: string) =>
+      `先把 ${plugin} 安装到 ${agent} 再快速开始？`,
+    quickStartAfterInstall: "随后打开一份带演示的草稿；点发送之前什么都不会运行。",
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
@@ -1911,8 +2578,8 @@ export const zh = {
     importPromptTail: (projectId: string, agentId: string): string =>
       [
         "先完整阅读来源，逐个审查脚本有没有恶意行为（外传数据、改动来源之外的文件、执行来路不明的命令等），确认安全后再继续。",
-        '然后产出一个 PenguinHarness 钩子包：一份 hooks.json（name、description、description_zh、version（格式 YYYY.MM.DD.N），以及各钩子点的命令列表 stop / pre_tool_use / user_prompt，每项为 { "command": "<脚本相对路径>", "timeout": <秒> }）加上纯 Node 的 .mjs 脚本（只用内置模块）。',
-        '脚本契约：stdin 收到一份 JSON——stop 点为 { "hook": "stop", "session_id", "trace_path" }（trace_path 是 Session 正在写入的 Trace 文件，无 Trace 时缺省），pre_tool_use 点另有 tool_name、tool_call_id、arguments（原始参数 JSON 串），user_prompt 点则是 scratchpad_dir 与 prompt；stdout 为空即无意见，否则一份 JSON 回答——stop 点 { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }，pre_tool_use 点 { "decision": "allow" | "deny", "reason", "output" }，user_prompt 点 { "context" }；退出码非零、stdout 不是 JSON 或超时都按失败记录、不采纳。',
+        '然后产出一个 PenguinHarness 钩子包：一份 hooks.json（name、description、description_zh、version（格式 YYYY.MM.DD.N），以及各钩子点的命令列表 stop / pre_tool_use / user_prompt，每项为 { "command": "<脚本相对路径>", "timeout": <秒> }）加上纯 Node 的 .mjs 脚本（只用内置模块）。用不到的钩子点可以省略或写成 []；user_prompt 的条目可以另加 "trigger": "prompt"（缺省：用户每次提交 Prompt 时运行）或 "host"（只在宿主按包名启动该包的流程时运行）。',
+        '脚本契约：stdin 收到一份 JSON——stop 点为 { "hook": "stop", "session_id", "trace_path" }（trace_path 是 Session 正在写入的 Trace 文件，无 Trace 时缺省），pre_tool_use 点另有 tool_name、tool_call_id、arguments（原始参数 JSON 串），user_prompt 点带 trace_path、scratchpad_dir 与 prompt（用户的消息文本）；stdout 为空即无意见，否则一份 JSON 回答——stop 点 { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }，pre_tool_use 点 { "decision": "allow" | "deny", "reason", "output" }，user_prompt 点 { "context" }，它在每条 Prompt 中紧随用户消息发出；退出码非零、stdout 不是 JSON 或超时都按失败记录、不采纳。',
         `把它安装到 Project「${projectId}」中 Agent「${agentId}」的 agent_state/hooks/<name>/ 目录（目录名即包名，须匹配 ^[A-Za-z0-9_-]+$），最后向我说明它做什么、在哪个钩子点触发。`,
       ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `卸载 ${name}`,
@@ -1923,7 +2590,7 @@ export const zh = {
     injection: {
       enable: "启用钩子",
       enableHint:
-        "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置。",
+        "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置，直到其上下文被压缩。",
       savedToast: "已保存，自下一轮对话起生效",
     },
   },
@@ -1937,6 +2604,11 @@ export const zh = {
     readme: "说明文档",
     noReadme: "该插件暂无说明文档。",
     notFound: "找不到这个插件。",
+    /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
+    sourceUnavailable: (count: number): string =>
+      count === 1
+        ? "有 1 个插件来源无法访问，下面的列表可能不完整。"
+        : `有 ${count} 个插件来源无法访问，下面的列表可能不完整。`,
     repository: "源码仓库",
     homepage: "主页",
     authors: "作者",
@@ -1946,7 +2618,7 @@ export const zh = {
   },
 
   skills: {
-    quickInvoke: "快捷调用",
+    quickInvoke: "快速开始",
     /** Pre-filled body for quick invoke (per UI language; English is `use the <name> skill`). */
     quickInvokeText: (name: string): string => `使用 ${name} 技能`,
     /** Bulk controls of the multi-select skill panel; both act on the rows the search box currently leaves visible. */
@@ -2026,8 +2698,6 @@ export const zh = {
   },
 
   chat: {
-    /** Footnote of the session picker's menu — the pre-pick reminder: a change applies right away but costs the model's cached context, so compacting first is recommended. */
-    thinkingLevelChangeNote: "立即生效。更换思考等级会使模型缓存失效，建议先压缩上下文。",
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
@@ -2057,19 +2727,123 @@ export const zh = {
     thinkingSwitchApplied: (to: string): string => `上下文已压缩，思考等级已切换为「${to}」。`,
     /** Compaction ended without completing — the switch still applies, so say both. */
     thinkingSwitchCompactFailed: "压缩未成功完成，思考等级已照常切换。",
-    /** The machine a workspace lives on; the row only shows when more than one is reachable. */
-    workspaceMachine: "机器",
+    /** In-conversation model switch (the session toolbar's model picker). Title is the confirm dialog's accessible name only. Unlike the thinking level there is no "switch anyway": a switch always compacts on the current model first, and a failed compaction keeps it. */
+    modelSwitchInSessionTitle: "切换模型",
+    modelSwitchInSessionConfirm: "压缩并切换",
+    /** Confirm label when the transcript is empty: nothing to compact, so it only switches. */
+    modelSwitchInSessionDirectConfirm: "切换",
+    modelSwitchInSessionBody: (from: string, to: string): string =>
+      `将先用当前模型「${from}」压缩上下文，成功后以「${to}」继续本对话；压缩失败则保持「${from}」。`,
+    /** Body when the transcript is empty: there is no context to compact, so the switch is immediate. */
+    modelSwitchInSessionDirectBody: (to: string): string =>
+      `当前上下文没有内容，将直接切换到「${to}」。`,
+    /** Body when the transcript ends in a completed compaction or a model switch with nothing since: the switch runs no compaction and continues from what that context opened with (a summary, or nothing). */
+    modelSwitchInSessionCompactedBody: (to: string): string =>
+      `上下文刚压缩或切换过、此后没有新的对话，不会再次压缩：本对话将直接以「${to}」继续。`,
+    /** Toast once the server accepted a compacting switch: the row in the conversation carries it from here. */
+    modelSwitchInSessionStarted: (from: string, to: string): string =>
+      `正在用「${from}」压缩上下文，完成后切换到「${to}」。`,
+    /** Toast once the server accepted a switch that compacts nothing (the context was just compacted or switched): the model-change marker in the conversation carries it from here. */
+    modelSwitchInSessionSwitching: (to: string): string => `正在切换到「${to}」。`,
+    /** Toast when the switch completed inside the request (the Session had never run). */
+    modelSwitchInSessionApplied: (to: string): string => `已切换到「${to}」。`,
     workspaceHere: "本机",
     /** Why a listed machine cannot be picked — shown ON its row, where the question is asked. */
     workspaceMachineWhy: {
       "no-identity": "待识别",
     },
-    workspaceUseThis: "使用此目录",
-    workspaceUp: "上级目录",
-    workspaceNoSubdirs: "无子目录",
     workspaceAuto: "临时工作区",
-    workspaceClear: "改用临时工作区",
+    /** The finder's no-folder button; `workspaceTempRule` is its tooltip while the folder it would get is unknown. */
+    workspaceClear: "从临时工作区开始",
+    workspaceTempRule: "在 Agent 目录的 workspaces/ 下新建一个空目录",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
+    /** The Workspace finder: the modal the Workspace pickers open (workspace-finder.tsx). */
+    finder: {
+      choose: "选择",
+      back: "后退",
+      forward: "前进",
+      /** Toolbar: the parent folder. */
+      up: "上一级",
+      refresh: "刷新",
+      /** The address bar turned into a text field: its accessible name and placeholder. */
+      address: "路径",
+      addressPlaceholder: "输入绝对路径，或以 ~ 开头",
+      /** What clicking the address bar does (also ⌘⇧G / Ctrl+Shift+G). */
+      editPath: "编辑路径",
+      filter: "筛选",
+      showSidebar: "显示侧边栏",
+      hideSidebar: "隐藏侧边栏",
+      quickAccess: "常用",
+      /** Windows only: the section listing the drives. */
+      thisPc: "此电脑",
+      /** The same section on a Mac (its volumes) or a Linux machine (the root and the mounted devices). */
+      locations: "位置",
+      /** A Windows drive with no label of its own, by its type, as Explorer names it; the letter follows. */
+      drives: {
+        drive: "本地磁盘",
+        removable: "U 盘",
+        network: "网络驱动器",
+        optical: "CD 驱动器",
+      },
+      /** A Linux machine's root directory, as its file managers name it. */
+      fileSystem: "文件系统",
+      /** The caret before the path that lists the machine's drives or volumes: its accessible name and hint. */
+      switchLocation: "切换位置",
+      recent: "最近使用",
+      machines: "机器",
+      places: {
+        desktop: "桌面",
+        documents: "文档",
+        downloads: "下载",
+        pictures: "图片",
+      },
+      /** Finder's own name for Documents, used when the browsed machine is a Mac. */
+      documentsMac: "文稿",
+      addToQuickAccess: "添加到常用",
+      removeFromQuickAccess: "从常用中移除",
+      /** The + beside the Quick access heading. */
+      addCurrentToQuickAccess: "将当前文件夹添加到常用",
+      /** Accessible name of a Quick access row's remove button. */
+      removeNamed: (name: string): string => `从常用中移除「${name}」`,
+      open: "打开",
+      /** Accessible name of the enter button at the end of a folder row. */
+      openFolder: (name: string): string => `打开「${name}」`,
+      chooseThis: "选择此文件夹",
+      chooseCurrent: "选择当前文件夹",
+      copyPath: "复制路径",
+      /** Accessible name of the breadcrumb trail. */
+      path: "当前路径",
+      columnName: "名称",
+      columnModified: "修改日期",
+      /** Tooltip on a file row: files are listed for context but cannot be picked. */
+      fileNotSelectable: "只能选择文件夹",
+      empty: "此文件夹为空",
+      noMatch: (q: string): string => `没有名称包含「${q}」的项目`,
+      deniedTitle: "无法读取此文件夹",
+      denied: "运行服务的账户没有读取此文件夹的权限。",
+      /**
+       * macOS privacy protection refused the folder and this page cannot ask for it (a browser
+       * tab, or another machine's listing): the process that reads it has to be allowed.
+       */
+      deniedMacServer:
+        "macOS 阻止了对此文件夹的访问。运行服务的进程需要被放行：从终端启动的服务归该终端所有，请在「系统设置 → 隐私与安全性 → 文件与文件夹」里放行该终端（或给它完全磁盘访问权限）后重试。",
+      /** The desktop app can ask: before it has (see allowAccess). */
+      deniedMacAsk:
+        "macOS 阻止了对此文件夹的访问。点「允许访问」向 macOS 申请，macOS 询问时选择允许。",
+      /** Asked, and the folder is still refused: a packaged app. */
+      deniedMacRefused:
+        "系统没有放行。若「文件与文件夹」里没有 PenguinHarness，请在「完全磁盘访问权限」里用 + 添加它，然后再试。",
+      /** Asked, and the folder is still refused: a development instance, whose reads macOS charges to its terminal. */
+      deniedMacRefusedDev:
+        "这是未打包的开发实例：macOS 把它的文件访问算在启动它的终端名下。请在「文件与文件夹」里放行该终端（或给它完全磁盘访问权限），再试。",
+      /** Has the desktop app read the folder in its own name, which is what makes macOS ask. */
+      allowAccess: "允许访问",
+      /** The same button while the app's read waits for the user to answer macOS. */
+      allowAccessWaiting: "等待 macOS 询问…",
+      /** Opens System Settings at the Privacy & Security pane the box names. */
+      openSystemSettings: "打开系统设置",
+      loadFailed: "无法打开此文件夹",
+    },
     /** Grouping toggle of the sidebar conversation list (workspace grouping is the default) and the workspace groups. */
     groupByWorkspace: "按工作区分组",
     groupByAgent: "按智能体分组",
@@ -2092,12 +2866,14 @@ export const zh = {
     sortManual: "手动排序",
     sortRecent: "最近更新",
     newWorkspaceEntity: "新建工作区",
-    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    /** A Workspace group's overflow (… right of the header "+"): browse its files; a registry-backed group adds alias rename + sidebar-only removal. */
     workspaceMenu: "工作区选项",
     renameWorkspace: "重命名工作区",
     renameWorkspaceLabel: "名称",
     renameWorkspaceHint: "留空则使用目录名",
     deleteWorkspace: "删除工作区",
+    /** A Workspace group's "more" menu: the dock's Files panel on that directory. */
+    browseWorkspaceFiles: "打开文件浏览",
     deleteWorkspaceConfirm: (name: string) =>
       `确定移除「${name}」？仅从侧边栏移除该工作区分组，不影响磁盘目录与已有会话，可随时重新添加。`,
     tempWorkspaces: "临时工作区",
@@ -2294,13 +3070,12 @@ Benchmark：
       },
     },
     sessionList: "Session",
+    /** The Session list's heading, named for how the list is grouped. */
+    sessionListByMode: { workspace: "工作区", agent: "智能体", time: "最近" },
     defaultSessionTitle: "新对话",
     agent: "Agent",
     model: "Model",
     workspace: "Workspace",
-    workspaceHint: "留空自动创建临时工作区；指定时必须是服务器上已存在的目录",
-    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
-    workspaceHintShort: "留空自动创建临时工作区",
     approvalMode: "审批模式",
     /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
     permission: {
@@ -2325,8 +3100,44 @@ Benchmark：
       } as Record<string, string>,
       unsupported: "不支持",
       localUnsupported: "本机的沙盒后端不支持只允许 localhost",
+      notInstalled: "未安装",
+      noBackend:
+        "本服务器没有安装沙盒后端，命令无法被封禁。管理员可在插件页启用适用于本平台的后端（更多…）。",
+      noNetworkUnsupported: (backends?: string) =>
+        `本机的沙盒只封禁文件${backends !== undefined ? `（${backends} 不隔离网络）` : ""}，无法断开网络`,
+      maskUnsupported: (backends?: string) =>
+        `本会话要对命令隐藏屏蔽路径，但本机没有能屏蔽路径的沙盒后端${backends !== undefined ? `（${backends} 不能屏蔽路径）` : ""}，每条命令都会被拒绝。管理员可在「更多…」里的沙盒卡片清空屏蔽路径。`,
+      notAvailable: "不可用",
+      adminOnly: "仅管理员",
+      aboveCeiling: "超出了本服务器的沙盒上限：只有管理员可以给会话这么大的权限。",
+      backendUnavailable: (name: string, reason: string) =>
+        `沙盒后端 ${name} 已启用但未在用：${reason}。管理员可在「更多…」里的沙盒卡片处理。`,
       more: "更多…",
       approval: "审批",
+      custom: "自定义",
+      advancedActive: "高级设置生效中",
+      advancedHint: "本会话另有屏蔽路径或只读的临时目录，来自沙盒卡片；选择预设会保留它们。",
+      blocks: "封住",
+      allows: "放开",
+      nothing: "无",
+      enforceable: "本机可以实施。",
+      needsNoBackend: "不需要沙盒后端。",
+      effects: {
+        "write-outside-workspace": "写工作区之外",
+        "write-anywhere": "写任何文件",
+        network: "全部网络",
+        "network-beyond-localhost": "本机 localhost 之外的网络",
+        "unasked-calls": "不经询问的工具调用（每次调用先问）",
+        "unasked-writes": "不经询问的写入（可能写入的调用先问）",
+        "every-call": "每一次工具调用（全部拒绝）",
+        "files-everywhere": "读写任何文件",
+        "files-in-workspace": "写工作区之内",
+        "read-files": "读取文件",
+        "network-open": "完整网络",
+        localhost: "本机 localhost",
+        "calls-unasked": "所有工具调用，不经询问",
+        "reads-unasked": "只读调用，不经询问",
+      } as Record<string, string>,
     },
     /** Short description (the trigger button shows only the description, not the mode id). */
     approvalModeNames: {
@@ -2485,6 +3296,8 @@ Benchmark：
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "会话进程",
     processStop: "停止",
+    processStopTitle: "停止进程",
+    processStopConfirm: "停止这个后台进程？它会被立即结束，已捕获的输出也会一并丢弃。",
     processExited: "已退出",
     processRemove: "移除",
     /** Remove button tooltip: removal also drops the output captured from that process. */
@@ -2492,6 +3305,14 @@ Benchmark：
     /** The list heading's text action: removes every exited entry at once; its hint says the captured output goes too. */
     processClearExited: "清除已退出",
     processClearExitedHint: "清除所有已退出的进程——它们已捕获的输出也会一并丢弃",
+    /** An example task, a saved shortcut or a schedule's prompt about to replace text typed in the composer. */
+    replaceTypedTitle: "替换输入框内容",
+    replaceTyped: "替换",
+    replaceTypedBody: "用这条提示词替换输入框里已有的内容？你输入的文字会被清掉。",
+    /** A choice's "Other…" about to empty the composer of text the user typed. */
+    clearTypedTitle: "清空输入框内容",
+    clearTyped: "清空",
+    clearTypedBody: "清空输入框里已输入的文字，另写自己的回答？",
     statTokens: "Token 累计",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "总 Token",
@@ -2606,24 +3427,32 @@ Benchmark：
     skillsEmptyHint: "暂无已装技能，去技能库添加",
     /** Auto-generated invocation text when skills are selected and the body is empty (wrapped in [use_skills] before sending). */
     skillsAutoMessage: (names: string[]): string => `使用 ${names.join("、")} 技能`,
+    /** The handoff note's back-link, as one sentence: its accessible name. */
     handoffFrom: (agent: string) => `由 ${agent} 的对话交接而来`,
+    /** The handoff note's fixed phrase; the agent follows it as the note's subject. */
+    handoffLabel: "交接自",
     handoffBack: (title?: string) => (title ? `回到原对话：${title}` : "回到原对话"),
-    /** `/model` switch: command description, picker title, the staged target's description and remove button, the switch-origin banner, and the empty-body auto message. */
-    switchModel: "切换模型，发送时开启新会话延续本对话",
-    switchModelTitle: "切换模型",
-    modelSwitchTargetTitle: (model: string) => `发送后换用 ${model} 延续本对话`,
-    modelSwitchRemove: "移除切换模型",
+    /** `/model` handoff: command description, picker title, the staged target's description and remove button, the origin banner, and the empty-body auto message. Every surface says that it opens a NEW conversation and leaves this one as it is — switching inside this conversation is the toolbar's model picker (`modelSwitchInSession*`). */
+    switchModel: "换模型开新会话：发送时用所选模型新开一个会话延续本对话，本会话保持不变",
+    switchModelTitle: "换模型开新会话",
+    modelSwitchTargetTitle: (model: string) =>
+      `发送后用 ${model} 新开一个会话延续本对话，本会话保持不变`,
+    modelSwitchRemove: "移除换模型目标",
     /** Why Send is disabled with a model switch staged: the fork branches off a Trace this Session is still writing. */
-    modelSwitchBusyHint: "本轮结束后才能切换模型：新会话要从当前会话的记录接续",
+    modelSwitchBusyHint: "本轮结束后才能换模型开新会话：新会话要从当前会话的记录接续",
     modelSwitchFrom: (prevModel?: string) =>
-      prevModel ? `已切换模型（原为 ${prevModel}），延续原会话` : "已切换模型，延续原会话",
+      prevModel
+        ? `换模型新开的会话（原模型 ${prevModel}），延续原会话`
+        : "换模型新开的会话，延续原会话",
+    /** The model-switch note: its fixed phrase, and the earlier model as its subject (`modelSwitchFrom` is its accessible name). */
+    modelSwitchLabel: "换模型新开的会话",
+    modelSwitchPrev: (model: string) => `原模型 ${model}`,
     /** First message body auto-sent when `/model` is staged and the composer is empty (same convention as skillsAutoMessage). */
     modelSwitchAutoMessage: "换用新模型继续这段对话",
-    /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
-    modelLockedHint: "输入 /model 切换模型",
-    scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
-    /** `[org_trigger]` banner: what the organization scheduler sent this desk or ticket session, folded into one line. */
-    orgTriggerFrom: (org: string): string => `由组织「${org}」触发`,
+    /** The scheduled-task note's fixed phrase; the task's name follows it as the note's subject. */
+    scheduledLabel: "定时任务触发",
+    /** `[org_trigger]` banner: what the organization scheduler sent this desk or ticket session, folded into one line — this fixed phrase, then the organization's name. */
+    orgTriggerLabel: "组织触发",
     orgTriggerKinds: {
       init: "初始化",
       event: "日程",
@@ -2663,6 +3492,8 @@ Benchmark：
     compactionDone: (mode: string): string => (mode === "discard" ? "清空完毕" : "压缩完毕"),
     /** The summarize row's second body section (the first reuses `thinking`): the summary the compaction request wrote. */
     compactionResult: "压缩结果",
+    /** The marker between two contexts on different models (an in-session model switch), naming both by model id. */
+    modelChanged: (from: string, to: string): string => `模型已切换 · ${from} → ${to}`,
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       const detail = errorMessage !== undefined ? `（${errorMessage}）` : "";
@@ -2692,6 +3523,81 @@ Benchmark：
     approvalWaiting: "待审批",
     copyCode: "复制代码",
     copyReply: "复制回复",
+    /**
+     * The words around a reply's A2UI blocks (a choice, a form, steps, a callout, a diagram, and
+     * the weather, clock, countdown and metrics widgets), handed to the UI package that draws
+     * them (lib/ui-strings.ts). Of the four tone names, a warning is about loss or harm and a
+     * caution about something recoverable breaking, so the two must not read as the same level.
+     */
+    a2ui: {
+      /** The language these words are in: widgets format numbers, dates and weekdays in it. */
+      lang: "zh" as "zh" | "en",
+      /** The button that puts a multi-select pick, or a form's answers, in the composer. */
+      fill: "填入输入框",
+      /** A choice's own-answer control: empties the composer for the user's own answer. */
+      other: "其他…",
+      /** The mark on the option the model recommends. */
+      recommended: "推荐",
+      note: "说明",
+      tip: "提示",
+      caution: "注意",
+      warning: "警告",
+      /** Stands in for a block while the reply is still streaming. */
+      composing: "正在生成组件…",
+      /** Over a block that cannot be drawn; its source follows. */
+      cannotShow: (reason: string) => `无法显示此组件：${reason}`,
+      /** A rendered Mermaid diagram's accessible name. */
+      diagram: "图表",
+      /** The toggle that shows a diagram's source. */
+      showSource: "查看源码",
+      /** A form's number stepper: add or subtract one step. */
+      stepUp: "增加",
+      stepDown: "减少",
+      /** The weather conditions, by the catalog's key (the same words as core's fallback). */
+      conditions: {
+        clear: "晴",
+        "partly-cloudy": "多云",
+        cloudy: "阴",
+        fog: "雾",
+        drizzle: "小雨",
+        rain: "雨",
+        "heavy-rain": "大雨",
+        thunder: "雷雨",
+        snow: "雪",
+        sleet: "雨夹雪",
+        wind: "大风",
+      },
+      /** A snapshot widget's head: when its data was read. */
+      asOf: (time: string) => `数据时间 ${time}`,
+      /** A weather widget's foot: where its data came from. */
+      source: (name: string) => `来源：${name}`,
+      feelsLike: "体感",
+      humidity: "湿度",
+      wind: "风",
+      precipitation: "降水",
+      high: "最高",
+      low: "最低",
+      hourly: "逐小时",
+      daily: "未来几天",
+      today: "今天",
+      /** The widgets' accessible names when the model gave no title. */
+      weather: "天气",
+      clock: "时钟",
+      countdown: "倒计时",
+      metrics: "指标",
+      localTime: "本地时间",
+      /** A countdown past its moment, unless the model named it. */
+      countdownDone: "时间到",
+      unitDays: "天",
+      unitHours: "时",
+      unitMinutes: "分",
+      unitSeconds: "秒",
+      /** A finished progress reading. */
+      done: "已完成",
+      /** Which way a reading moved, read out before its change. */
+      deltaUp: "上升",
+      deltaDown: "下降",
+    },
     forkSession: "从这里分叉对话",
     forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",
     forkSessionConfirmAction: "分叉",
@@ -2714,7 +3620,7 @@ Benchmark：
     unpinSession: "取消置顶",
     pinnedSession: "已置顶",
     /** The hover ellipsis button that opens the row's full context menu. */
-    moreActions: "更多",
+    moreActions: "更多操作",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
     /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
@@ -2723,10 +3629,15 @@ Benchmark：
     loadMoreSessions: "加载更多会话",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
-      subagent: (n: number) => `子智能体（${n}）`,
-      schedule: (n: number) => `定时任务（${n}）`,
-      benchmark: (n: number) => `评估任务（${n}）`,
+      background: (n: number) => `后台会话（${n}）`,
       archived: (n: number) => `已归档（${n}）`,
+    },
+    /** A Background row's source mark: the program that opened the Session, as its tooltip and hidden text. */
+    sessionSource: {
+      api: "API",
+      schedule: "定时任务",
+      subagent: "子智能体",
+      cli: "CLI",
     },
     /**
      * Tooltip of a folder-only group's header — a group with no active conversation of its
@@ -2736,9 +3647,12 @@ Benchmark：
      */
     folderOnlyGroup: (n: number, path?: string) =>
       `仅有折叠任务：${n} 个会话${path ? `（${path}）` : ""}`,
-    skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
-    /** Attached-file notice above a user message (file names only; the paths stay in the Trace). */
-    attachedFilesBanner: (names: string[]): string => `附加文件：${names.join("、")}`,
+    /** The skills note's fixed phrase (the count picks the en plural); the skill names follow it as `nameList`. */
+    skillsLabel: (_count: number): string => "使用技能",
+    /** Attached-file notice above a user message: this fixed phrase, then the file names (only the names; the paths stay in the Trace) as `nameList`. */
+    attachedFilesLabel: (_count: number): string => "附加文件",
+    /** Names listed after a note's fixed phrase (skills, files). */
+    nameList: (names: string[]): string => names.join("、"),
     /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "更多输入方式",
     uploadImage: "上传图片",
@@ -2757,6 +3671,8 @@ Benchmark：
     dropFilesDesc: "图片与文件将添加到输入框",
     /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
     dropFilesGoalHint: "目标模式仅支持附加图片，文件未添加。",
+    /** A paste too long for the text box, attached as a text file instead. */
+    longPasteAttached: (name: string): string => `粘贴的文本较长，已作为附件 ${name} 添加。`,
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",
@@ -2769,6 +3685,8 @@ Benchmark：
     goalRemove: "退出目标模式",
     /** Label of the collapsed card a harness-injected user message renders as (a stop hook's continue, a goal round's protocol, a user_prompt hook's expansion). */
     harnessInjected: "由 harness 注入",
+    /** The goal line's fixed phrase; the objective follows it as the line's subject. */
+    goalLabel: "目标",
     goalProgress: (rounds: number, tokens: string): string => `第 ${rounds} 轮 · tokens ${tokens}`,
     goalStatus: {
       active: "进行中",
@@ -2777,6 +3695,19 @@ Benchmark：
       budget_limited: "预算耗尽",
       aborted: "已中断",
     } as Record<string, string>,
+    /**
+     * The conversation's menu for a web link: a secondary click on it, or Shift+F10 / the Menu
+     * key while it has focus. The built-in browser's row shows only in the desktop app with the
+     * browser available; the external row names the system browser there, a new tab elsewhere.
+     */
+    linkMenu: {
+      openInBuiltinBrowser: "在内置浏览器中打开",
+      /** The same row while the agents drive the user's Chrome: the link opens in a tab there. */
+      openInChromeTab: "在 Agent 的 Chrome 标签页中打开",
+      openExternal: "在系统浏览器中打开",
+      openInNewTab: "在新标签页中打开",
+      copyLink: "复制链接地址",
+    },
   },
 
   /** Feishu-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
@@ -3148,7 +4079,6 @@ Benchmark：
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "自动换行",
     unsaved: "有未保存的修改",
-    saveTitle: "保存（Ctrl+S / ⌘S）",
     saveConfirmTitle: "保存文件",
     saveConfirm: (name: string): string => `保存对 ${name} 的修改？Workspace 中的该文件将被覆盖。`,
     editTooLarge: (kb: number): string => `文件超过 ${kb}KB，无法在此编辑，请下载后编辑`,
@@ -3157,6 +4087,8 @@ Benchmark：
     discardBody: (name: string): string => `${name} 有未保存的修改，放弃这些修改？`,
     discard: "放弃",
     unsavedRestored: (name: string): string => `已恢复 ${name} 的未保存修改`,
+    /** The editor's ×: back to the preview (asking first when there are unsaved changes). */
+    stopEditing: "退出编辑",
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "磁盘上已变更",
     changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
@@ -3167,7 +4099,8 @@ Benchmark：
     renameLabel: "新的路径",
     renameHint: "相对 Workspace 根目录；路径中不存在的目录会自动创建",
     renameConfirm: "移动",
-    renameTargetExists: (path: string): string => `${path} 已存在，未做改动。`,
+    /** A move or a New landed on a name that is taken: nothing was written. */
+    targetExists: (path: string): string => `${path} 已存在，未做改动。`,
     renamed: (name: string): string => `已移动到 ${name}`,
     deleteTitle: "删除文件",
     deleteBody: (name: string): string => `删除 ${name}？该文件不会进入回收站。`,
@@ -3182,6 +4115,18 @@ Benchmark：
     conflictBody: (name: string): string =>
       `${name} 在你打开之后被重写（多半是 Agent 本轮写的），本次没有保存任何内容。可以用你的版本覆盖它，也可以继续编辑、先把需要的内容取出来——两种选择都会保留你的文本。`,
     overwriteAnyway: "仍然覆盖",
+    /** The tree header's New menu, a folder's menu and the blank space under the tree. */
+    newMenu: "新建",
+    newTextFile: "新建文本文件",
+    newFolder: "新建文件夹",
+    newFileName: "文件名",
+    newFolderName: "文件夹名",
+    /** Formatting, kept on screen while typing: where the entry goes, and what a `/` does. */
+    createHint: (dir: string): string => `建在 ${dir} 下；名称里的 / 会同时建出中间的文件夹`,
+    createConfirm: "创建",
+    created: (name: string): string => `已创建 ${name}`,
+    /** The new-chat draft's Files panel and its toggle, while the Workspace is a temporary one. */
+    draftTemporary: "临时工作区在发送第一条消息时才创建。选一个文件夹，即可浏览其中的文件。",
   },
 
   usage: {
@@ -3224,11 +4169,13 @@ Benchmark：
     errorsColKind: "类型",
     errorsColMessage: "消息",
     errorsEmpty: "暂无异常",
-    /** Detail-table pager: newer/older step back through pages of the same filtered set. */
+    /** Time cell tooltip on a row that folds several of a day's records: when the first one was. */
+    errorsFirstAt: (time: string): string => `首次出现于 ${time}`,
+    /** Detail-table pager: newer/older step back through pages of the same filtered set; it counts rows, not records. */
     errorsNewer: "较新",
     errorsOlder: "更早",
-    errorsPageOf: (page: number, pages: number, total: number) =>
-      `第 ${page} / ${pages} 页 · 共 ${total} 条`,
+    errorsPageOf: (page: number, pages: number, rows: number) =>
+      `第 ${page} / ${pages} 页 · 共 ${rows} 行`,
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "清空",
     errorsClearTitle: "清空错误记录",
@@ -3267,8 +4214,10 @@ Benchmark：
     globalSummary: "全局统计",
     tasksLabel: "轮次",
     messages: "消息",
-    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
-    loadingNote: (shown: number, total: number) => `已载入 ${shown} / ${total} 条消息…`,
+    /** The control above the drawn round cards: how many earlier rounds are not drawn yet; a click draws the next page of them. */
+    earlierRounds: (n: number) => `更早的 ${n} 轮`,
+    /** Spoken by an open round's placeholder while its messages are being read. */
+    roundLoading: "正在读取本轮消息",
     zoom: "缩放",
     zoomReset: "双击复位缩放",
     zoomOut: "缩小",
@@ -3378,6 +4327,8 @@ Benchmark：
     colCase: "题目",
     colRun: "运行",
     colSession: "Session",
+    /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
+    copyTrialName: "复制 Harbor trial 名称",
     // The evaluation detail dialog, and the Ask AI dialog both detail dialogs open.
     askAi: "问 AI",
     evaluationDetailTitle: (time: string): string => `评估 · ${time}`,
@@ -3581,7 +4532,7 @@ Benchmark：
       "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
     evaluateSessionModel: "评估会话使用的模型",
     evaluateSessionModelHint:
-      "派发与汇总评测的模型，缺省为 Project 默认模型；被测智能体用的是它自己配置的模型，不在这里改",
+      "这个会话运行所用的模型，缺省为 Project 默认模型；被测智能体也在这个模型上评测，思考等级沿用它自己的配置",
     evaluateRunsHint: "每道题跑几次取平均；缺省为 Benchmark 配置的次数",
     evaluateNoteField: "说明",
     evaluateNotePlaceholder: "例如：这一轮用来确认上次优化的效果，重点看引用规范那两道题",
@@ -3591,8 +4542,10 @@ Benchmark：
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
       `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
       `- runs：\`${p.runs}\`\n\n` +
-      "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的子会话（省略 `agent_id`），并在每个子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
-      "评测 Runtime 取被测智能体当前配置的模型与思考等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
+      "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的子会话（省略 `agent_id`），并在每个子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能。" +
+      "被测模型就是本会话自己的模型：在第一次 `run_subagent` 之前从你的 Environment 读出 `Provider` 与 `Model ID`，作为每个请求的 `provider` 与 `model_id`。" +
+      "智能体不保存模型，不要到被测智能体的文件、Project 配置或服务端去找；Environment 缺其中任何一行，就停下来问我。" +
+      "思考等级取被测智能体配置的等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
       "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
       "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
       "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题分数与本条记录的标签。",
@@ -3643,12 +4596,9 @@ Benchmark：
     workMode: "工作模式",
     modeDev: "开发",
     modeCompany: "公司",
-    switchToCompany: "切换到公司模式",
-    switchToDev: "切换到开发模式",
     /**
      * Company mode is a beta, said in three shapes: the mini tag at the top-right of 「公司」 in
-     * the work-mode switch (and the suffix the collapsed rail's tooltip carries in its place),
-     * the tag's own tooltip, and the one sentence shown both under the admin's master switch
+     * the work-mode switch, the tag's own tooltip, and the one sentence shown both under the admin's master switch
      * and as the notice a person gets the first time they enter the mode.
      */
     beta: "内测版",
@@ -3676,31 +4626,39 @@ Benchmark：
     /** Create dialog. */
     createTitle: "新建组织",
     orgId: "组织 id",
-    orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；也是目录名，创建后不可修改",
+    orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线",
+    /** Behind the org id's "?": what the id is beyond its format. */
+    orgIdInfo: "组织 id 也是组织的目录名，创建后不可修改；可以点「用 AI 生成」从显示名或使命生成。",
     displayName: "显示名",
     displayNameHint: "留空则使用组织 id",
     mission: "使命",
     missionHint: "一句话说明这个组织存在的目的；CEO 的初始化会话从它开始",
     missionPlaceholder: "例如：为 PenguinHarness 维护文档站，并每周发布一期更新摘要",
-    /** The three examples under the mission field (org-examples.ts holds their order). */
-    missionExampleHint: "点一下填入使命",
+    /**
+     * The example cards on the empty landing (org-examples.ts holds their order). A card shows
+     * the name and the one-line summary; the full mission is what a click fills the dialog with.
+     */
     missionExamples: {
       research: {
         name: "科研论文公司",
+        summary: "自主跑实验，写出可投顶会的论文",
         mission:
           "新建一个公司帮我做科研，产出可以投稿顶级会议的学术论文。实验按 autoresearch 的方式跑：先固定评测脚本与指标，只改一个文件，每次实验限定时长，结果逐行记入日志，只保留有提升的改动。开始任何实验循环之前，研究员先在群里向我申请资源——机器与 GPU/CPU、并发数、总时长、磁盘与数据、付费 API——批准后在额度内自主运行，要超出就再申请。论文由作者与审稿人两类员工对抗评审：审稿人复现结果、查基线与消融、找测试集泄漏与指标作弊，给出评分与必改项；作者逐条修改或反驳，直到审稿人接受。",
       },
       agentTuning: {
         name: "Agent 优化公司",
+        summary: "提升产品 Agent 的准确度与使用体验",
         mission: "新建一个公司帮我优化产品 Agent，提高 Agent 在实际业务中的准确度和产品体验",
       },
       cloudReseller: {
         name: "云服务转售站",
+        summary: "收集低价云服务，打包加价转售",
         mission:
           "新建一个公司帮我运营一个类似云服务的网站，收集市面上所有的低价服务，并且加价以后打包出售，目的是帮我赚钱，并且要提高站点的 SEO 和曝光程度",
       },
       mirror: {
         name: "员工数字分身公司",
+        summary: "为每位同事建数字分身，代为答疑和传话",
         mission:
           "新建一个公司，作为我们现实公司的镜像：我会把现实公司的组织图告诉 CEO，CEO 为每位现实员工创建一个数字分身；每个分身的工位会话绑定到那位同事的飞书机器人。分身默认只被动接收自己同事的消息，能自己解决的就直接回答，解决不了的转给相关同事的分身、再由对方分身转给真人。CEO 不主动招募、不排日程、不开工单，公司只做传话和自主解决问题。",
       },
@@ -3710,7 +4668,6 @@ Benchmark：
     modelField: "模型",
     modelInfo:
       "工位会话与工单会话默认使用的模型；员工在组织图里另有指定时以员工的为准。改动从下一次工作轮起生效。",
-    modelHint: "留空则使用 Project 的默认模型",
     /** The picker offers models only, so the way back to the Project default is its own control. */
     modelClear: "改回 Project 默认",
     /** The stored model is no longer in the Project's model list. */
@@ -3721,21 +4678,22 @@ Benchmark：
     workspaceField: "公司工作区",
     workspaceInfo:
       "员工共同工作的目录：每位员工的工作区是它的一个子目录（或整个目录），工位会话与工单会话都在其中运行。",
-    workspaceHint: "留空则使用组织自己的 workspace/ 目录；指定时必须是服务器上已存在的目录",
     workspaceEmpty: "组织自己的 workspace/ 目录",
-    workspaceMenuHint: "选一个已存在的目录作为公司工作区",
-    workspaceClear: "改回组织自己的目录",
+    workspaceClear: "使用组织自己的目录",
     /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
     ceoBudget: "CEO 预算",
     ceoBudgetHint: "每月上限；CEO 的预算就是整家公司的预算",
     /** The create dialog's draft (org-draft.ts): restored on reopen, dropped on create or on demand. */
     draftRestored: "已恢复上次未提交的草稿",
     clearDraft: "清空草稿",
+    clearDraftConfirmLabel: "清空",
+    clearDraftConfirm: "清空草稿？表单里填写的内容与保存的草稿都会被清掉，无法恢复。",
     creating: "创建中…",
     /** Settings dialog (the switcher's entry). */
     settingsTitle: "组织设置",
     timezone: "时区",
-    timezoneHint: "IANA 时区名，如 Asia/Shanghai；预算周期（自然月）与频道日志按它划分",
+    timezoneHint: "IANA 时区名，如 Asia/Shanghai",
+    timezoneInfo: "预算周期（自然月）与频道日志按这个时区划分",
     language: "工作语言",
     languageInfo:
       "组织的工作语言：手册、员工简报、CEO 初始化会话与各工位的输出都用这个语言；创建时按使命的语言自动判断。",
@@ -3756,6 +4714,12 @@ Benchmark：
     statusPaused: "已暂停",
     pause: "暂停组织",
     resume: "恢复组织",
+    deleteOrg: "删除组织",
+    deleteOrgDesc: "把组织移入 Project 的回收目录。员工保留为 Agent，对话也保留。",
+    deleteOrgConfirm:
+      "组织会从公司模式里消失。组织的文件移入 Project 的回收目录（organizations/.trash），可以手工移回来恢复。员工仍是 Project 的 Agent；工位与工单的对话会保留，但组织不在了，就没有页面再列出它们。要再次使用这个 id，需先删除旧 CEO 的 Agent。只是想让组织停下来而不丢任何东西，请改用暂停。",
+    deleteOrgTypeId: (orgId: string) => `输入 ${orgId} 以确认`,
+    deleted: (orgId: string) => `组织 ${orgId} 已删除`,
     pauseInfo:
       "暂停后所有自动触发停止——日程不再到点、@ 不再送达员工；你仍可以打开任意工位会话直接对话。组织只会被暂停，不会被删除：它的对话、员工与工单始终可以回去看。",
     settingsLoadFailed: "组织设置读取失败",
@@ -3772,6 +4736,11 @@ Benchmark：
     /** Principals as the chat and tickets name them. */
     principalSystem: "系统",
     principalAll: "所有人",
+    /** A data path in a ticket drawn as a capsule: the hover names the whole path, a click copies it. */
+    pathCapsule: {
+      hint: (path: string): string => `${path}\n点击复制完整路径`,
+      copy: (path: string): string => `复制路径 ${path}`,
+    },
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "不限",
@@ -3790,6 +4759,13 @@ Benchmark：
       noEmployees: "这个组织还没有员工",
       untitledSession: "未命名会话",
       loadFailed: "员工列表加载失败",
+      /** The group below the desks listing the ticket sessions opened from a ticket, each kept until removed. */
+      temporary: (n: number): string => `临时（${n}）`,
+      /** A Temporary entry's name on the collapsed rail, where no group header says where it belongs. */
+      temporaryEntry: (title: string): string => `临时 · ${title}`,
+      closeTemporary: "从「临时」中移除",
+      /** The Temporary group header's action: removes every entry at once; the sessions themselves are kept. */
+      closeAllTemporary: "全部关闭",
     },
     overview: {
       title: "概览",
@@ -3831,9 +4807,6 @@ Benchmark：
       openBoard: "打开工单看板",
       openCalendar: "打开日历",
       openFinance: "打开财务",
-      /** The tooltip of an inbox row's title: the row is inert, its title is what goes there. */
-      openTicket: "查看工单",
-      openChannel: "打开频道",
       /** The counts under the board bar: each opens the board filtered to the column it counts. */
       openColumn: (column: string): string => `查看「${column}」的工单`,
       /** The three first steps of a new organization (replaces the empty sections). */
@@ -3905,9 +4878,6 @@ Benchmark：
       dutiesHint: "写进组织图，员工每次工作轮都会读到",
       workspace: "工作区",
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
-      /** Hiring: the same spec, with the default the server fills in when the field is left empty. */
-      hireWorkspaceHint:
-        "公共工作区下的子目录，或一个已存在的绝对路径；留空即以该员工的 Agent id 命名的子目录",
       budget: "月预算",
       budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
       hireConfirm: (name: string, manager: string): string =>
@@ -3946,7 +4916,6 @@ Benchmark：
       hireAgentSection: "Agent",
       hirePositionSection: "职位",
       agentHint: "只列出本 Project 中尚未加入组织的 Agent",
-      budgetPlaceholder: "例如 30",
       clearBudget: "设为不限",
       currentValue: (value: string): string => `当前：${value}`,
       manager: "上级",
@@ -4013,7 +4982,7 @@ Benchmark：
       loadFailed: (error: string): string => `日历加载失败：${error}`,
       /** The "×" that puts the empty-calendar note away for good (the same sentence stays in the page's "?"). */
       dismissHint: "知道了",
-      /** Under the start time: why two employees should not share one minute. */
+      /** Behind the start time's "?": why two employees should not share one minute. */
       staggerHint:
         "错峰安排：给每位员工各自的时刻，不要让多位员工在同一分钟触发，避免争抢预算与工单。",
       /** Heads the advisory lines a calendar write answers with (the lines themselves come from the server, in English). */
@@ -4021,7 +4990,7 @@ Benchmark：
     },
     tickets: {
       title: "工单",
-      info: "五列看板即工单的生命周期：提议 → 进行中 → 审核中 → 已完成 / 已拒绝。拖拽卡片移列，点卡片标题在原地弹出详情窗口；被阻塞的工单留在原列并带角标。工单是组织的工作单位：点右上角「新建工单」建一张并指定负责人，它的工位会话会为这张工单发起工单会话。",
+      info: "五列看板即工单的生命周期：提议 → 进行中 → 审核中 → 已完成 / 已拒绝。点卡片在原地弹出详情窗口，把卡片拖到另一列即可移列（触屏上先长按卡片再拖）；被阻塞的工单留在原列并带角标。工单是组织的工作单位：点右上角「新建工单」建一张并指定负责人，它的工位会话会为这张工单发起工单会话。",
       columns: {
         proposed: "提议",
         in_progress: "进行中",
@@ -4048,11 +5017,11 @@ Benchmark：
       noOwner: "未指定",
       /** The create dialog's default owner: whoever is filing the ticket. */
       ownerSelf: "自己",
-      ownerSelfHint: "留空则为自己",
       parent: "父工单",
       noParent: "无",
       notify: "通知人",
-      notifyHint: "逗号分隔的主体，如 agent:ceo, user:alice；状态变化时通知",
+      notifyHint: "逗号分隔的主体，如 agent:ceo, user:alice",
+      notifyInfo: "工单状态变化时通知这些主体",
       priority: "优先级",
       due: "截止",
       noDue: "无",
@@ -4068,9 +5037,6 @@ Benchmark：
       blockByHint: "等哪张工单或哪位主体",
       sessions: "关联工单会话",
       sessionsCount: (n: number): string => `${n} 个会话`,
-      openSession: "打开会话",
-      /** The row action of a child ticket, and the tooltip of every ticket title that opens one. */
-      openTicket: "打开工单",
       progress: "进度",
       progressEmpty: "还没有进度记录",
       addProgress: "追加进度",
@@ -4181,8 +5147,6 @@ Benchmark：
       saveBudget: "保存预算",
       cancelEdit: "取消",
       editBudgetOf: (name: string): string => `编辑 ${name} 的预算`,
-      /** The ticket table's owner column and row action. */
-      openTicket: "打开工单",
       /** The trend section. */
       trendInfo: "组织全部会话每天的成本合计，按组织时区分日；只画有支出的日子。",
       trendEmpty: "本周期还没有支出记录",
@@ -4379,8 +5343,9 @@ Benchmark：
       documentLoadFailed: "文档加载失败",
       /** A row's tooltip: when the file was last written, and its size. */
       updatedAt: (time: string, size: string): string => `更新于 ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the shortcut. */
-      editorHint: "Markdown · Ctrl/⌘+S 保存",
+      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
+      editorHint: (shortcut: string | null): string =>
+        shortcut === null ? "Markdown" : `Markdown · ${shortcut} 保存`,
     },
   },
   errors: {
@@ -4415,6 +5380,9 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
+      model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
+      model_not_routable:
+        "该模型 ID 无法路由：厂商分组按模型 ID 开头的厂商前缀（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由。请在自定义分组中添加该模型，并选择或检测其接口协议。",
       unknown_skill: "所选目录下没有这个技能。",
       unknown_plugin: "该插件不在插件库中。",
       goal_plugin_not_installed:
@@ -4430,6 +5398,7 @@ Benchmark：
       image_too_large: "图片过大，无法随对话发送。",
       dir_not_absolute: "目录必须是绝对路径。",
       dir_not_found: "该目录不存在或不可访问。",
+      dir_permission_denied: "没有读取该目录的权限。",
       not_a_dir: "该路径不是目录。",
       path_not_found: "该路径不存在。",
       reveal_failed: "无法打开文件夹。",
@@ -4450,6 +5419,9 @@ Benchmark：
       // own explanation here — collapsing them into one sentence would tell a user who just
       // compacted that they have never spoken.
       compaction_not_configured: "该 Agent 没有配置上下文压缩。",
+      same_model: "本会话已在使用该模型。",
+      model_not_configured: "所选模型不在本 Project 的模型配置中。",
+      model_unavailable: "所选模型暂不可用（例如还没有 API key），请先在「模型」页配置。",
       nothing_to_compact: "当前上下文还没有可压缩的内容（尚未完成一轮对话）。",
       already_compacted: "刚刚压缩过，之后还没有新的对话，无需重复压缩。",
       version_conflict: "快照版本不高于当前版本。",
@@ -4489,6 +5461,11 @@ Benchmark：
       ticket_session_failed: "无法发起工单会话。",
       handbook_file_not_found: "该文档已不存在。",
       handbook_index_required: "手册索引（README.md）不能删除。",
+      browser_unavailable:
+        "浏览器现在不可用：内置浏览器需要打开 PenguinHarness 桌面应用，你的 Chrome 需要连上 PenguinHarness Browser 扩展。",
+      source_not_found: "找不到这个浏览器配置文件。",
+      shell_unreachable: "无法联系桌面应用。",
+      timeout: "操作超时，请重试。",
     },
   },
 };

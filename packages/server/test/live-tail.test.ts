@@ -155,7 +155,7 @@ describe("live-tail", () => {
     expect(t.fragments("s2")).toHaveLength(1);
   });
 
-  it("a lenient delta without a start still opens a fragment (mirrors core PartialAggregator); a bare stop is a no-op", () => {
+  it("a lenient delta without a start still opens a fragment; a bare stop is a no-op", () => {
     const t = new LiveTailTracker();
     t.observe(SID, partialText("stop"));
     expect(t.fragments(SID)).toEqual([]);

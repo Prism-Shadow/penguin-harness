@@ -1,17 +1,48 @@
 /**
- * Integration tests for the hook package routes: the installed list, the zip archive install
- * (layouts, manifest validation, zip-slip, 409 hook_exists + overwrite) and the byte-identical
- * export round-trip. Whether Sessions run hooks at all is the Agent-level `hooks.enabled`
- * switch, tested with the rest of the Agent config (prompt-sections.test.ts).
+ * Hook packages: the routes that list, install, export and remove them, and what an installed
+ * package does to a conversation. Whether Sessions run hooks at all is the Agent-level
+ * `hooks.enabled` switch, tested with the rest of the Agent config (prompt-sections.test.ts).
+ *
+ * - The list shows what a library install wrote (with no switch written into the manifest) and
+ *   a package written by hand whose manifest names only the hook point it uses.
+ * - A zip installs under its top directory's name, or the manifest's for a root layout, and
+ *   uninstalls; a manifest the loader or a Session could not run is refused, writing nothing; a
+ *   user_prompt command's trigger is kept.
+ * - Zip-slip paths, malformed bodies, an entry over the per-file cap (however small the
+ *   archive) and an entry lying about its size are refused, writing nothing.
+ * - Installing over an installed package is a 409 hook_exists; overwrite replaces the whole
+ *   directory.
+ * - An export round-trips byte-identically and re-imports on another Agent; a package not
+ *   installed is a 404.
+ * - In a real conversation, an every-prompt package's context follows the user's message,
+ *   stamped harness, live and in the history; a package installed or removed through the
+ *   routes reaches the open conversation on its next Task.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { hooksDir } from "@prismshadow/penguin-core";
-import type { AgentHooksResponse, ProjectCreateResponse } from "../src/api/types.js";
-import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import type { OmniMessage } from "@prismshadow/penguin-core";
+import type {
+  AgentHooksResponse,
+  MessagesResponse,
+  ProjectCreateResponse,
+  SessionCreateResponse,
+} from "../src/api/types.js";
+import type { ChannelEvent } from "../src/runtime/channel.js";
+import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import {
+  MOCK_MODEL_ID,
+  clockContext,
+  clockPackageFiles,
+  requestText,
+  startMockLLM,
+  userTexts,
+  writeClockPackage,
+} from "./live-session.js";
+import type { MockLLM } from "./live-session.js";
 
 describe("hooks api", () => {
   let t: TestApp;
@@ -24,7 +55,8 @@ describe("hooks api", () => {
   const manifestFile = (agentId: string, name: string) =>
     path.join(hooksDir(t.root, projectId, agentId), name, "hooks.json");
 
-  beforeEach(async () => {
+  // Every case works on an Agent of its own, so one app serves them all.
+  beforeAll(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner_h");
     const b = await provisionUser(t.app, "member_h");
@@ -40,7 +72,7 @@ describe("hooks api", () => {
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_h" })).status,
     ).toBe(201);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
   });
 
@@ -112,6 +144,16 @@ describe("hooks api", () => {
     expect(list.hooks.map((h) => [h.name, h.events])).toEqual([["goal", ["user_prompt", "stop"]]]);
     const manifest = JSON.parse(await fs.readFile(manifestFile("sw_agent", "goal"), "utf8"));
     expect("enabled" in manifest).toBe(false);
+  });
+
+  it("lists a package written by hand whose manifest names only the hook point it uses", async () => {
+    await createPlainAgent("hand_agent");
+    await writeClockPackage(hooksDir(t.root, projectId, "hand_agent"));
+    const res = await member.get(base("hand_agent"));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as AgentHooksResponse).hooks).toEqual([
+      { name: "clock", description: "", version: "", events: ["user_prompt"] },
+    ]);
   });
 
   it("archive: the single-top-dir layout installs under the directory name, the root layout under the manifest's; uninstall works on it", async () => {
@@ -217,6 +259,17 @@ describe("hooks api", () => {
       ],
       ["no commands at all", packageFiles("h", { ...MANIFEST, stop: [] })],
       ["a non-string description", packageFiles("h", { ...MANIFEST, description: 1 })],
+      [
+        "an unknown trigger",
+        packageFiles("h", {
+          ...MANIFEST,
+          user_prompt: [{ command: "stop.mjs", trigger: "later" }],
+        }),
+      ],
+      [
+        "a non-string trigger",
+        packageFiles("h", { ...MANIFEST, user_prompt: [{ command: "stop.mjs", trigger: true }] }),
+      ],
     ];
     for (const [label, files] of cases) {
       const res = await member.post(url, { dataBase64: zipB64(files) });
@@ -226,6 +279,31 @@ describe("hooks api", () => {
       await member.get(base("zip_manifest_agent"))
     ).json()) as AgentHooksResponse;
     expect(list.hooks).toEqual([]);
+  });
+
+  it("archive: a user_prompt command's trigger, host or prompt, is kept in the written manifest", async () => {
+    await createPlainAgent("zip_trigger_agent");
+    const userPrompt = [
+      { command: "start.mjs", timeout: 60, trigger: "host" },
+      { command: "note.mjs", trigger: "prompt" },
+    ];
+    const res = await member.post(`${base("zip_trigger_agent")}/archive`, {
+      dataBase64: zipB64({
+        "flow/hooks.json": strToU8(
+          manifestText({ ...MANIFEST, name: "flow", stop: [], user_prompt: userPrompt }),
+        ),
+        "flow/start.mjs": strToU8(STOP_MJS),
+        "flow/note.mjs": strToU8(STOP_MJS),
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as AgentHooksResponse).hooks).toMatchObject([
+      { name: "flow", events: ["user_prompt"] },
+    ]);
+    const written = JSON.parse(
+      await fs.readFile(manifestFile("zip_trigger_agent", "flow"), "utf8"),
+    );
+    expect(written.user_prompt).toEqual(userPrompt);
   });
 
   it("archive: zip-slip entry paths and malformed bodies are rejected with 400, nothing written", async () => {
@@ -385,5 +463,119 @@ describe("hooks api", () => {
     expect(plain.headers.get("content-disposition")).toBe(
       "attachment; filename*=UTF-8''nover-hook.zip",
     );
+  });
+});
+
+describe("hook packages in a conversation", { timeout: 30_000 }, () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  let projectId: string;
+  let mock: MockLLM;
+  const hooks = () => `/api/projects/${projectId}/agents/default_agent/hooks`;
+
+  beforeEach(async () => {
+    mock = await startMockLLM();
+    // The app's own loader builds a real core Session per conversation. Titles stay off, so
+    // the model is asked for the Tasks alone.
+    t = await createTestApp({ titles: { maybeGenerate: () => {} } });
+    const { cookie } = await provisionUser(t.app, "clock_user");
+    api = apiClient(t.app, cookie);
+    const created = (await (
+      await api.post("/api/projects", { projectId: "clock_user-hooks", name: "clock project" })
+    ).json()) as ProjectCreateResponse;
+    projectId = created.project.projectId;
+    const models = await api.put(`/api/projects/${projectId}/models`, {
+      defaultModel: { provider: "custom", modelId: MOCK_MODEL_ID },
+      models: [
+        {
+          provider: "custom",
+          modelId: MOCK_MODEL_ID,
+          apiKey: "sk-mock",
+          baseUrl: mock.url,
+          contextWindow: 200_000,
+        },
+      ],
+    });
+    expect(models.status).toBe(200);
+  });
+  afterEach(async () => {
+    await t.deps.manager.shutdown();
+    await t.cleanup();
+    await mock.close();
+  });
+
+  /** Opens a conversation with default_agent and collects what its channel publishes. */
+  async function openConversation(): Promise<{ sessionId: string; events: ChannelEvent[] }> {
+    const res = await api.post(`/api/projects/${projectId}/agents/default_agent/sessions`, {});
+    expect(res.status).toBe(201);
+    const { session } = (await res.json()) as SessionCreateResponse;
+    const events: ChannelEvent[] = [];
+    t.deps.channels.get(session.sessionId).subscribe((e) => events.push(e));
+    return { sessionId: session.sessionId, events };
+  }
+
+  async function runTask(sessionId: string, text: string): Promise<void> {
+    const res = await api.post(`/api/sessions/${sessionId}/tasks`, {
+      input: [{ type: "text", text }],
+    });
+    expect(res.status).toBe(202);
+    await waitFor(() => t.deps.manager.statusOf(sessionId) === "idle", 20_000);
+  }
+
+  const streamed = (events: ChannelEvent[]): OmniMessage[] =>
+    events.filter((e) => e.event === undefined).map((e) => JSON.parse(e.data) as OmniMessage);
+
+  it("an ordinary task: a hand-written every-prompt package's context follows the user's message, stamped harness, live and in the history", async () => {
+    await writeClockPackage(hooksDir(t.root, projectId, "default_agent"));
+    const { sessionId, events } = await openConversation();
+
+    await runTask(sessionId, "what time is it");
+
+    const expected = [
+      { sender: "user", text: "what time is it" },
+      { sender: "harness", text: clockContext("what time is it") },
+    ];
+    expect(userTexts(streamed(events))).toEqual(expected);
+    const history = (await (
+      await api.get(`/api/sessions/${sessionId}/messages`)
+    ).json()) as MessagesResponse;
+    expect(userTexts(history.messages)).toEqual(expected);
+    // And the model read it right behind the question.
+    expect(mock.requests).toHaveLength(1);
+    const sent = requestText(mock.requests[0]!);
+    expect(sent.indexOf("what time is it")).toBeGreaterThan(-1);
+    expect(sent.indexOf("what time is it")).toBeLessThan(
+      sent.indexOf(clockContext("what time is it")),
+    );
+  });
+
+  it("a package installed or uninstalled through the routes reaches the open conversation on its next task", async () => {
+    const { sessionId, events } = await openConversation();
+    await runTask(sessionId, "first");
+
+    const install = await api.post(`${hooks()}/archive`, {
+      dataBase64: Buffer.from(
+        zipSync(
+          Object.fromEntries(
+            Object.entries(clockPackageFiles()).map(([rel, text]) => [
+              `clock/${rel}`,
+              strToU8(text),
+            ]),
+          ),
+        ),
+      ).toString("base64"),
+    });
+    expect(install.status).toBe(201);
+    await runTask(sessionId, "second");
+
+    expect((await api.delete(`${hooks()}/clock`)).status).toBe(204);
+    await runTask(sessionId, "third");
+
+    expect(userTexts(streamed(events))).toEqual([
+      { sender: "user", text: "first" },
+      { sender: "user", text: "second" },
+      { sender: "harness", text: clockContext("second") },
+      { sender: "user", text: "third" },
+    ]);
   });
 });

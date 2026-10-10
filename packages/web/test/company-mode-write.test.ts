@@ -1,12 +1,11 @@
 /**
- * company-mode-write.ts unit tests: the master switch in System settings › Server applies on the
- * flip, so the write is the whole save path and there is no Save button to retry with. Both
- * outcomes are pinned here — the request a flip sends and the value it settles on, and the
- * revert-with-a-reason that a rejected write has to produce, since a switch left showing a state
- * the server does not hold is the failure mode this replaced.
+ * The company-mode master switch in System settings › Server (features/settings/
+ * company-mode-write.ts): it applies on the flip, so the write is the whole save path.
  *
- * vitest runs node-only in this package (`environment: "node"`, no jsdom), which is why the
- * sequence lives in its own module and the component is the thin caller.
+ * - A flip either way sends that one field alone and settles on what the server answers, even
+ *   when the server stored something other than what was asked.
+ * - A failed write reverts the switch to the stored value (on stays on, off stays off) and
+ *   carries the described reason.
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -23,6 +22,8 @@ const settings = (companyMode: boolean): ServerSettings => ({
   attachmentMaxMb: 100,
   attachmentTotalMb: 500,
   companyMode,
+  browserExtensionsEnabled: true,
+  agentApiEnabled: true,
 });
 
 /** Records what the switch sent and answers with the server's stored settings. */
@@ -40,19 +41,14 @@ const recorder = (answer: boolean) => {
 const describeError = (error: unknown) => `described: ${String(error)}`;
 
 describe("writeCompanyMode", () => {
-  it("sends the flipped value alone and settles on what the server answers", async () => {
-    const api = recorder(true);
-    const result = await writeCompanyMode(true, false, { put: api.put, describeError });
-    // Only the one field: every other server setting keeps its stored value.
-    expect(api.sent).toEqual([{ companyMode: true }]);
-    expect(result).toEqual({ status: "applied", companyMode: true });
-  });
-
-  it("turning it off is the same single write", async () => {
-    const api = recorder(false);
-    const result = await writeCompanyMode(false, true, { put: api.put, describeError });
-    expect(api.sent).toEqual([{ companyMode: false }]);
-    expect(result).toEqual({ status: "applied", companyMode: false });
+  it("sends the flipped value alone, either way, and settles on what the server answers", async () => {
+    for (const next of [true, false]) {
+      const api = recorder(next);
+      const result = await writeCompanyMode(next, !next, { put: api.put, describeError });
+      // Only the one field: every other server setting keeps its stored value.
+      expect(api.sent).toEqual([{ companyMode: next }]);
+      expect(result).toEqual({ status: "applied", companyMode: next });
+    }
   });
 
   it("adopts the server's answer rather than the value that was asked for", async () => {
@@ -73,15 +69,12 @@ describe("writeCompanyMode", () => {
       revertTo: false,
       error: "described: Error: 403",
     });
-  });
-
-  it("reverts to on, not to off, when turning it off fails", async () => {
     // The revert target is the stored value, never a default: a failed turn-off on an enabled
     // server has to leave the switch on.
-    const result = await writeCompanyMode(false, true, {
+    const off = await writeCompanyMode(false, true, {
       put: () => Promise.reject(new Error("boom")),
       describeError,
     });
-    expect(result).toMatchObject({ status: "failed", revertTo: true });
+    expect(off).toMatchObject({ status: "failed", revertTo: true });
   });
 });

@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { UserInfo } from "@prismshadow/penguin-server/api";
+import { Badge, Button, Input, Modal, PasswordInput } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -14,11 +15,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { USERNAME_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime } from "../../lib/format";
 import { useAuth } from "../../state/auth";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { PasswordInput } from "../../components/ui/password-input";
-import { Modal } from "../../components/ui/modal";
 
 export function AdminUsersSection() {
   const { user, desktopMode } = useAuth();
@@ -76,7 +72,7 @@ export function AdminUsersSection() {
                     {u.userId}
                     {u.passwordIsInitial && (
                       <span className="ml-2 align-middle">
-                        <Badge tone="gray">{S.admin.initialPasswordFlag}</Badge>
+                        <Badge>{S.admin.initialPasswordFlag}</Badge>
                       </span>
                     )}
                     {/* The nickname under the id, not instead of it: every other control on the
@@ -89,7 +85,7 @@ export function AdminUsersSection() {
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
-                    <Badge tone="gray">{u.isAdmin ? S.admin.roleAdmin : S.admin.roleUser}</Badge>
+                    <Badge>{u.isAdmin ? S.admin.roleAdmin : S.admin.roleUser}</Badge>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-gray-500 dark:text-gray-400">
                     {formatDateTime(u.createdAt)}

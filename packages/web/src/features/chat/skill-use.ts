@@ -9,12 +9,12 @@
  * part: icon path, UI-language text selection, dropdown filtering and slash command items.
  */
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
+import { ICONS } from "@prismshadow/penguin-ui";
 
 export { buildSkillsMessage, parseSkillsMessage } from "@prismshadow/penguin-core/markers";
 
 /** Book icon (24×24 line path): the mark of skills as a kind — the composer's skills button, the "using skills" banner, the agents page's skill count, and what a skill draws when it carries no plugin icon (skill-icon-view.tsx). */
-export const BOOK_ICON =
-  "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z";
+export const BOOK_ICON = ICONS.bookOpen;
 
 /**
  * Picks copy based on the UI language: uses the Chinese value when locale is zh and one is

@@ -227,7 +227,7 @@ export interface VisionDescriberService {
  */
 export interface EnvironmentServices {
   subagentRunner?: SubagentRunner;
-  /** Injected when (and only when) the session model doesn't support images: read_file then describes an image through it instead of returning image content. */
+  /** Injected when (and only when) the running context's model doesn't support images: read_file then describes an image through it instead of returning image content. Follows the model across an in-session switch (`Environment.reconfigure` re-injects or removes it as each context opens). */
   visionDescriber?: VisionDescriberService;
   /** Registry of long-running command sessions (shared by `exec_command` / `input_command`); constructed and injected internally by Environment. */
   commandSessions?: CommandSessionManager;
@@ -325,12 +325,14 @@ export interface EnvironmentConfig {
    */
   pathPrepend?: () => string[];
   /**
-   * Sandbox-confinement seam for exec_command / input_command subprocesses (see
-   * {@link SpawnConfiner}). Like {@link EnvironmentConfig.proxyEnv} it is a getter
-   * re-read at every spawn, so the hosting server can change the active confiner at
-   * runtime (e.g. via a platform hot push) and reach Sessions that are already
-   * running. Absent, or a getter returning null = commands spawn unconfined (the
-   * default for SDK/CLI standalone use).
+   * Sandbox-confinement seam for everything the Environment spawns for the Session: the
+   * exec_command / input_command subprocesses, the stdio MCP Servers, and the helper the
+   * file tools work through when the Session is confined (see {@link SpawnConfiner} and
+   * tools/fs-worker.ts). Like {@link EnvironmentConfig.proxyEnv} it is a getter re-read
+   * at every spawn, so the hosting server can change the active confiner at runtime
+   * (e.g. via a platform hot push) and reach Sessions that are already running. Absent,
+   * or a getter returning null = everything spawns unconfined (the default for SDK/CLI
+   * standalone use).
    */
   confineSpawn?: () => SpawnConfiner | null;
 }
@@ -366,13 +368,15 @@ export type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; 
  * @param opts - spawn context: `cwd` is the working directory of THIS command (per-call,
  *   may differ from the workspace); `workspaceDir` is the Session's Workspace root — the
  *   directory a workspace-scoped confinement policy should treat as writable, never
- *   inferred from `cwd` (a command may run in a workdir outside the Workspace).
+ *   inferred from `cwd` (a command may run in a workdir outside the Workspace);
+ *   `scratchpadDir` is the Session's scratchpad, writable beside the workspace under
+ *   that policy (absent for a Session without one).
  * @returns what to spawn instead: the argv, and any environment entries the runner
  *   itself needs (see {@link ConfinedSpawn}).
  */
 export type SpawnConfiner = (
   argv: readonly string[],
-  opts: { cwd: string; workspaceDir: string },
+  opts: { cwd: string; workspaceDir: string; scratchpadDir?: string },
 ) => ConfinedSpawn;
 
 /**
@@ -384,6 +388,13 @@ export type SpawnConfiner = (
 export interface ConfinedSpawn {
   argv: readonly string[];
   env?: Readonly<Record<string, string>>;
+  /**
+   * Whole lines the runner itself prints at the head of stderr before it execs the command
+   * (a report, not an error — the Landlock launcher's "partial enforcement" on an older
+   * kernel). The spawn drops them from the head of the command's stderr, matched by exact
+   * line, case-insensitively; the command's own output is never examined past its first line.
+   */
+  runnerLines?: readonly string[];
 }
 
 /**

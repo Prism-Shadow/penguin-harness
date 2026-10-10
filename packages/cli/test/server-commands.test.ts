@@ -1,13 +1,21 @@
 /**
  * Server-backed command wiring, driven through `cli()` in-process against the fake
- * server: run (foreground/background/json/goal exit codes), ls, input (steer vs task),
- * logs, agent ls/create, project ls, cost, schedule ls.
+ * server: run (foreground/background/json, goal exit codes and round lines, the `cli` source
+ * of every Session it creates and the retired `--source`, `--title`), session ls, session
+ * input (steer vs task), session log, agent ls/create, project ls, cost, schedule ls.
  */
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { assistantText, partialText, type OmniMessage } from "@prismshadow/penguin-core";
+import {
+  assistantText,
+  hookEvent,
+  partialText,
+  userText,
+  type OmniMessage,
+} from "@prismshadow/penguin-core";
 import { cli } from "../src/index.js";
 import { getMessages } from "../src/i18n.js";
+import { SESSION_TITLE_MAX } from "../src/server-session.js";
 import { FakeServer } from "./fake-server.js";
 
 /** What the engine really streams for one text reply: the partial stream, then the complete message. */
@@ -66,6 +74,25 @@ describe("penguin run", () => {
     expect(out()).toContain("hello from the model");
   });
 
+  it("records every Session it creates as a cli Session", async () => {
+    expect(await cli(["run", "-m", "q", "--background"])).toBe(0);
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect(create?.body?.source).toBe("cli");
+  });
+
+  it("accepts the retired --source benchmark as a no-op with a note, and refuses any other value", async () => {
+    expect(await cli(["run", "-m", "q", "--background", "--source", "benchmark"])).toBe(0);
+    expect(stderr.join("")).toContain(t.run.sourceIgnored());
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect(create?.body?.source).toBe("cli");
+
+    stderr.length = 0;
+    expect(await cli(["run", "-m", "q", "--source", "schedule"])).toBe(1);
+    expect(stderr.join("")).toContain("--source");
+    // Refused before anything reached the server: still the one Session from above.
+    expect(server.sessions.size).toBe(1);
+  });
+
   it("--background posts and exits with the session id, no stream", async () => {
     const code = await cli(["run", "-m", "long job", "--background"]);
     expect(code).toBe(0);
@@ -105,15 +132,67 @@ describe("penguin run", () => {
     expect(session.tasks[0]!.goal).toEqual({ budget: 500_000 });
   });
 
+  it("a goal run prints one line per round: another package's context riding round 1 is not a round", async () => {
+    // The stream of a goal on an Agent with a second user_prompt package: the objective and
+    // the goal protocol (both published by the server), the other package's context (core
+    // sends it right behind them), round 1's work, the goal hook's `continue`, round 2.
+    server.onTask = () => [
+      userText("raise coverage"),
+      userText("goal protocol for the first pass", "harness"),
+      userText("The local time is 10:00.", "harness"),
+      ...streamedText("first pass done"),
+      hookEvent({ hook: "stop", name: "goal", decision: "continue" }),
+      userText("goal protocol for the second pass", "harness"),
+      ...streamedText("second pass done"),
+    ];
+    await cli(["run", "-m", "raise coverage", "--goal", "500k"]);
+    const printed = (round: number) => out().split(t.goalRound(round)).length - 1;
+    expect([1, 2, 3].map(printed)).toEqual([1, 1, 0]);
+  });
+
   it("--thinking pins the Session before the task (a PATCH); the task body carries no level", async () => {
     await cli(["run", "-m", "q", "--thinking", "high"]);
     const session = [...server.sessions.values()][0]!;
     expect(session.patches).toContainEqual({ thinkingLevel: "high" });
     expect("thinkingLevel" in (session.tasks[0] as object)).toBe(false);
   });
+
+  it("--title names the new Session with a PATCH (the manual rename; nothing else is affected)", async () => {
+    await cli(["run", "-m", "q", "--title", "Quarterly report"]);
+    const session = [...server.sessions.values()][0]!;
+    expect(session.patches).toContainEqual({ title: "Quarterly report" });
+    expect(session.title).toBe("Quarterly report");
+    // The title is not part of the creation body — the POST stays as before.
+    const create = server.requests.find((r) => r.method === "POST" && r.path.endsWith("/sessions"));
+    expect("title" in (create?.body ?? {})).toBe(false);
+  });
+
+  it("--title with --background renames before the early exit; --session renames the reused Session", async () => {
+    await cli(["run", "-m", "long job", "--background", "--title", "Batch 1"]);
+    const created = [...server.sessions.values()][0]!;
+    expect(created.patches).toContainEqual({ title: "Batch 1" });
+    expect(created.tasks).toHaveLength(1); // the task still posted
+
+    const existing = server.addSession({ sessionId: "session-2026-08-25-11-00-00-feed0002" });
+    expect(await cli(["run", "-m", "again", "--session", "feed0002", "--title", "Rework"])).toBe(0);
+    expect(existing.patches).toContainEqual({ title: "Rework" });
+    expect(server.sessions.size).toBe(2); // no new Session was created
+  });
+
+  it("--title is checked client-side before any Session is created", async () => {
+    for (const bad of ["  ", "x".repeat(121)]) {
+      const code = await cli(["run", "-m", "q", "--title", bad]);
+      expect(code).toBe(1);
+      expect(stderr.join("")).toContain(
+        t.common.titleInvalid(bad.trim().length, SESSION_TITLE_MAX),
+      );
+    }
+    expect(server.sessions.size).toBe(0); // a bad title leaves no orphaned Session
+    expect(server.requests.some((r) => r.method === "PATCH")).toBe(false);
+  });
 });
 
-describe("penguin ls", () => {
+describe("penguin session ls", () => {
   it("lists sessions of every agent with short id / state / workspace tail; -a includes archived", async () => {
     server.addSession({ sessionId: "session-2026-08-25-10-00-00-11110000", title: "First" });
     server.addSession({
@@ -121,33 +200,33 @@ describe("penguin ls", () => {
       archived: true,
       workspace: "/repos/deep/path",
     });
-    const code = await cli(["ls"]);
+    const code = await cli(["session", "ls"]);
     expect(code).toBe(0);
     expect(out()).toContain("11110000");
     expect(out()).toContain("First");
     expect(out()).not.toContain("22220000");
 
     stdout.length = 0;
-    await cli(["ls", "-a"]);
+    await cli(["session", "ls", "-a"]);
     expect(out()).toContain("22220000");
     expect(out()).toContain("path"); // workspace tail, not the whole path column value
   });
 
   it("--json prints the raw rows", async () => {
     server.addSession({});
-    await cli(["ls", "--json"]);
+    await cli(["session", "ls", "--json"]);
     const rows = JSON.parse(out()) as Array<{ sessionId: string }>;
     expect(rows).toHaveLength(1);
   });
 });
 
-describe("penguin input", () => {
+describe("penguin session input", () => {
   it("running session -> steer; idle -> task; --timeout 0 returns right after delivery", async () => {
     const running = server.addSession({
       sessionId: "session-2026-08-25-10-00-00-abcd0001",
       status: "running",
     });
-    let code = await cli(["input", "abcd0001", "-m", "note this", "--timeout", "0"]);
+    let code = await cli(["session", "input", "abcd0001", "-m", "note this", "--timeout", "0"]);
     expect(code).toBe(0);
     expect(running.steers).toHaveLength(1);
     expect(running.tasks).toHaveLength(0);
@@ -156,7 +235,16 @@ describe("penguin input", () => {
 
     stdout.length = 0;
     const idle = server.addSession({ sessionId: "session-2026-08-25-10-00-00-abcd0002" });
-    code = await cli(["input", "abcd0002", "-m", "new turn", "--timeout", "0s", "--json"]);
+    code = await cli([
+      "session",
+      "input",
+      "abcd0002",
+      "-m",
+      "new turn",
+      "--timeout",
+      "0s",
+      "--json",
+    ]);
     expect(code).toBe(0);
     expect(idle.tasks).toHaveLength(1);
     expect(JSON.parse(out())).toEqual({ sessionId: idle.sessionId, status: "running" });
@@ -165,23 +253,23 @@ describe("penguin input", () => {
   it("default waits and renders the turn; steer on an idle session falls back to a task", async () => {
     server.onTask = () => streamedText("turn output");
     const idle = server.addSession({ sessionId: "session-2026-08-25-10-00-00-abcd0003" });
-    const code = await cli(["input", "abcd0003", "-m", "hello"]);
+    const code = await cli(["session", "input", "abcd0003", "-m", "hello"]);
     expect(code).toBe(0);
     expect(idle.tasks).toHaveLength(1);
     expect(out()).toContain("turn output");
   });
 });
 
-describe("penguin logs", () => {
+describe("penguin session log", () => {
   it("renders history through the history renderer; --tail keeps the last n entries", async () => {
     server.history = [assistantText("one"), assistantText("two"), assistantText("three")];
     const s = server.addSession({ sessionId: "session-2026-08-25-10-00-00-10990001" });
-    await cli(["logs", s.sessionId]);
+    await cli(["session", "log", s.sessionId]);
     expect(out()).toContain("one");
     expect(out()).toContain("three");
 
     stdout.length = 0;
-    await cli(["logs", s.sessionId, "--tail", "1"]);
+    await cli(["session", "log", s.sessionId, "--tail", "1"]);
     expect(out()).not.toContain("one");
     expect(out()).toContain("three");
   });
@@ -405,28 +493,28 @@ describe("--timeout soft yield", () => {
     expect(server.sessions.size).toBe(0); // validated before anything touches the server
   });
 
-  it("input -m detaches at expiry the same way", async () => {
+  it("session input -m detaches at expiry the same way", async () => {
     server.hangTasks = true;
     const idle = server.addSession({ sessionId: "session-2026-08-25-10-00-00-51ee0001" });
-    const code = await cli(["input", "51ee0001", "-m", "go", "--timeout", "1"]);
+    const code = await cli(["session", "input", "51ee0001", "-m", "go", "--timeout", "1"]);
     expect(code).toBe(0);
     expect(idle.tasks).toHaveLength(1);
     expect(idle.aborts).toBe(0);
     expect(out()).toContain("still running");
   });
 
-  it("logs -f stops following at expiry, exit 0", async () => {
+  it("session log -f stops following at expiry, exit 0", async () => {
     server.history = [assistantText("old line")];
     const s = server.addSession({ sessionId: "session-2026-08-25-10-00-00-10f00001" });
-    const code = await cli(["logs", s.sessionId, "-f", "--timeout", "1"]);
+    const code = await cli(["session", "log", s.sessionId, "-f", "--timeout", "1"]);
     expect(code).toBe(0);
     expect(out()).toContain("old line");
-    const bad = await cli(["logs", s.sessionId, "--timeout", "1"]); // no -f: nothing waits
+    const bad = await cli(["session", "log", s.sessionId, "--timeout", "1"]); // no -f: nothing waits
     expect(bad).toBe(1);
   });
 });
 
-describe("penguin input (bare poll form)", () => {
+describe("penguin session input (bare poll form)", () => {
   it("idle: prints the most recent complete assistant text (skipping user/nested messages)", async () => {
     server.history = [
       assistantText("first answer"),
@@ -437,7 +525,7 @@ describe("penguin input (bare poll form)", () => {
     // Mark the third entry as a subagent-expanded message: it must be skipped.
     (server.history[2] as { origin?: string[] }).origin = ["session-child"];
     const s = server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110001" });
-    const code = await cli(["input", "b0110001"]);
+    const code = await cli(["session", "input", "b0110001"]);
     expect(code).toBe(0);
     expect(out().trim()).toBe("final answer");
     expect(s.tasks).toHaveLength(0); // nothing queued
@@ -447,7 +535,7 @@ describe("penguin input (bare poll form)", () => {
   it("running + --timeout: waits out the window, then prints the latest text plus the still-running note", async () => {
     server.history = [assistantText("latest so far")];
     server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110002", status: "running" });
-    const code = await cli(["input", "b0110002", "--timeout", "1"]);
+    const code = await cli(["session", "input", "b0110002", "--timeout", "1"]);
     expect(code).toBe(0);
     expect(out()).toContain("latest so far");
     expect(out()).toContain("still running");
@@ -456,7 +544,7 @@ describe("penguin input (bare poll form)", () => {
   it("running + --timeout --json reports status running with the snapshot", async () => {
     server.history = [assistantText("snapshot")];
     server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110003", status: "running" });
-    const code = await cli(["input", "b0110003", "--timeout", "1", "--json"]);
+    const code = await cli(["session", "input", "b0110003", "--timeout", "1", "--json"]);
     expect(code).toBe(0);
     const parsed = JSON.parse(out()) as { status: string; text: string };
     expect(parsed.status).toBe("running");
@@ -466,11 +554,11 @@ describe("penguin input (bare poll form)", () => {
   it("no reply yet prints the dim placeholder; --json carries an empty text", async () => {
     server.history = [];
     server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110004" });
-    let code = await cli(["input", "b0110004"]);
+    let code = await cli(["session", "input", "b0110004"]);
     expect(code).toBe(0);
     expect(out()).toContain(t.input.noReplyYet());
     stdout.length = 0;
-    code = await cli(["input", "b0110004", "--json"]);
+    code = await cli(["session", "input", "b0110004", "--json"]);
     expect(code).toBe(0);
     expect(JSON.parse(out())).toMatchObject({ status: "idle", text: "" });
   });
@@ -478,7 +566,7 @@ describe("penguin input (bare poll form)", () => {
   it("poll with --timeout 0 snapshots a running session immediately (no subscription)", async () => {
     server.history = [assistantText("instant snapshot")];
     server.addSession({ sessionId: "session-2026-08-25-10-00-00-b0110005", status: "running" });
-    const code = await cli(["input", "b0110005", "--timeout", "0"]);
+    const code = await cli(["session", "input", "b0110005", "--timeout", "0"]);
     expect(code).toBe(0);
     expect(out()).toContain("instant snapshot");
     expect(out()).toContain("still running");
@@ -486,7 +574,7 @@ describe("penguin input (bare poll form)", () => {
   });
 });
 
-describe("logs / input without a session id (the agent's most recent)", () => {
+describe("session log / input without a session id (the agent's most recent)", () => {
   /** Two sessions of the same agent, the second one newer. */
   function twoSessions(): { older: string; newer: string } {
     const older = "session-2026-08-24-09-00-00-1a7e0001";
@@ -496,10 +584,10 @@ describe("logs / input without a session id (the agent's most recent)", () => {
     return { older, newer };
   }
 
-  it("logs renders the newest session and names it in a dim stderr note", async () => {
+  it("log renders the newest session and names it in a dim stderr note", async () => {
     server.history = [assistantText("what happened last")];
     const { newer } = twoSessions();
-    const code = await cli(["logs"]);
+    const code = await cli(["session", "log"]);
     expect(code).toBe(0);
     expect(out()).toContain("what happened last");
     // The note goes to stderr, so stdout stays exactly what the command renders.
@@ -510,7 +598,7 @@ describe("logs / input without a session id (the agent's most recent)", () => {
   it("bare input polls the newest session's last answer, queueing nothing", async () => {
     server.history = [assistantText("the last thing I said")];
     const { newer } = twoSessions();
-    const code = await cli(["input"]);
+    const code = await cli(["session", "input"]);
     expect(code).toBe(0);
     expect(out().trim()).toBe("the last thing I said");
     expect(stderr.join("")).toContain(t.client.latestSession(newer));
@@ -522,7 +610,7 @@ describe("logs / input without a session id (the agent's most recent)", () => {
   it("--json stays parseable: the note never lands on stdout", async () => {
     server.history = [assistantText("snapshot")];
     const { newer } = twoSessions();
-    const code = await cli(["input", "--json"]);
+    const code = await cli(["session", "input", "--json"]);
     expect(code).toBe(0);
     expect(JSON.parse(out())).toMatchObject({ sessionId: newer, status: "idle" });
   });
@@ -542,7 +630,7 @@ describe("logs / input without a session id (the agent's most recent)", () => {
       agentId: "helper",
       createdAt: "2026-08-20T08:00:00.000Z",
     });
-    const code = await cli(["logs", "--agent-id", "helper"]);
+    const code = await cli(["session", "log", "--agent-id", "helper"]);
     expect(code).toBe(0);
     expect(stderr.join("")).toContain(t.client.latestSession(helperSession.sessionId));
   });
@@ -550,14 +638,17 @@ describe("logs / input without a session id (the agent's most recent)", () => {
   it("an explicit session id still wins over the default", async () => {
     server.history = [assistantText("history")];
     const { older } = twoSessions();
-    const code = await cli(["logs", "1a7e0001"]);
+    const code = await cli(["session", "log", "1a7e0001"]);
     expect(code).toBe(0);
     expect(stderr.join("")).not.toContain("[latest]");
     expect(server.requests.some((r) => r.path === `/api/sessions/${older}/messages`)).toBe(true);
   });
 
   it("no sessions at all: one line pointing at run/chat, non-zero exit, no commander noise", async () => {
-    for (const argv of [["logs"], ["input"]]) {
+    for (const argv of [
+      ["session", "log"],
+      ["session", "input"],
+    ]) {
       stderr.length = 0;
       const code = await cli(argv);
       expect(code).toBe(1);
@@ -570,7 +661,7 @@ describe("logs / input without a session id (the agent's most recent)", () => {
   });
 });
 
-describe("penguin ls --days", () => {
+describe("penguin session ls --days", () => {
   it("keeps sessions last active within the trailing calendar window (today = day 1) and combines with -a", async () => {
     const now = new Date();
     const at = (daysAgo: number) =>
@@ -593,24 +684,24 @@ describe("penguin ls --days", () => {
       archived: true, // only visible with -a
     });
 
-    await cli(["ls", "--days", "2"]);
+    await cli(["session", "ls", "--days", "2"]);
     expect(out()).toContain("da150001");
     expect(out()).toContain("da150002");
     expect(out()).not.toContain("da150003");
     expect(out()).not.toContain("da150004");
 
     stdout.length = 0;
-    await cli(["ls", "--days", "2", "-a", "--json"]);
+    await cli(["session", "ls", "--days", "2", "-a", "--json"]);
     const ids = (JSON.parse(out()) as Array<{ sessionId: string }>).map((r) => r.sessionId);
     expect(ids.some((id) => id.endsWith("da150004"))).toBe(true);
     expect(ids.some((id) => id.endsWith("da150003"))).toBe(false);
 
     stdout.length = 0;
-    await cli(["ls", "--days", "3"]);
+    await cli(["session", "ls", "--days", "3"]);
     expect(out()).toContain("da150003");
 
-    expect(await cli(["ls", "--days", "0"])).toBe(1);
-    expect(await cli(["ls", "--days", "x"])).toBe(1);
+    expect(await cli(["session", "ls", "--days", "0"])).toBe(1);
+    expect(await cli(["session", "ls", "--days", "x"])).toBe(1);
   });
 });
 

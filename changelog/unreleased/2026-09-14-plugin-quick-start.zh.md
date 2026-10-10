@@ -1,0 +1,14 @@
+# 每个技能库插件都能快速开始，发送之前什么都不运行
+
+- **Date:** 2026-09-14
+- **Type:** feature
+- **Scope:** `core`, `server`, `web`, `plugins`, `docs`
+- **PR:** [#726](https://github.com/Prism-Shadow/penguin-harness/pull/726)
+
+[English](2026-09-14-plugin-quick-start.md)
+
+插件页的快速开始原本只对「当前 Agent 已安装了某个技能」的技能库插件可用。现在每个技能库插件都有，而且它是一段演示：一条发出后就能看到插件起作用的提示词。
+
+- **只写草稿，不发起运行。** 快速开始以当前 Agent 打开一份新对话草稿，按界面语言填好演示，按演示预选技能、打开目标模式。在你点发送之前，不调用任何模型、不消耗 Token。
+- **先确认、再安装。** 当前 Agent 没装的插件，确认后安装到它上面，装好后再打开草稿。
+- **由各插件自己声明。** 技能库插件在 `plugin.json` 的 `quick_start` 里声明（`prompt`、`prompt_zh`、`skills`、`goal`），经 `GET /api/plugins` 列出。每个内置技能库插件都声明了，目标插件会启动一个小目标。未声明的第三方插件取它的第一个技能。

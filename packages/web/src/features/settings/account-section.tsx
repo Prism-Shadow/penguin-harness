@@ -5,24 +5,25 @@
  * offersChangePassword for the full rule).
  */
 import { useState } from "react";
+import { Button, PrefRow, SettingsGroup } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { Button } from "../../components/ui/button";
 import { ChangePasswordDialog } from "../../components/account/change-password-dialog";
-import { PrefRow } from "./setting-row";
 
 export function AccountSection() {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   return (
-    <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
-      <PrefRow label={S.account.changePassword} info={S.settings.changePasswordInfo}>
-        <Button size="sm" variant="secondary" onClick={() => setChangePasswordOpen(true)}>
-          {S.account.changePassword}
-        </Button>
-      </PrefRow>
+    <>
+      <SettingsGroup>
+        <PrefRow label={S.account.changePassword} info={S.settings.changePasswordInfo}>
+          <Button size="sm" variant="secondary" onClick={() => setChangePasswordOpen(true)}>
+            {S.account.changePassword}
+          </Button>
+        </PrefRow>
+      </SettingsGroup>
       <ChangePasswordDialog
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
       />
-    </div>
+    </>
   );
 }

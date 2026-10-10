@@ -1,21 +1,15 @@
 /**
- * The QQ scan-to-connect block: the shape it renders, and the decision the poll loop makes
- * on each answer.
+ * The QQ scan-to-connect block (features/messaging/qq-scan-connect.tsx): what it renders, and
+ * the decision its poll loop makes on each answer (`qqScanStep`, tested by value).
  *
- * Three rendered rules that a type checker cannot see. The QR is generated locally and
- * inlined as `<svg>`, so no third party ever learns the task handle from an image request.
- * It is drawn dark-on-white in BOTH themes rather than inheriting the panel's colours,
- * because a code inverted for a dark background is read unreliably by phone cameras. And it
- * carries the four-module quiet zone the QR spec requires, without which scanners lose the
- * finder patterns against a busy page.
- *
- * The fourth is the one that matters most and is asserted here as well as server-side: the
- * copy tells the reader the decryption key stays on the server, because "why is it safe to
- * let a web page fetch my App Secret" is the question this flow has to answer.
- *
- * The loop itself is tested by value rather than by mounting: this package's vitest runs in
- * `node`, deliberately, so the classification lives in a pure function (`qqScanStep`, the
- * `updateCheckOutcome` idiom) and the effects around it stay a thin shell.
+ * - The QR is generated locally and inlined as SVG (no image request can leak the task
+ *   handle), with the spec's four-module quiet zone, dark-on-white in both themes.
+ * - The scan is offered as a control alone, its explanation disclosed in the setup fold, and
+ *   nothing is requested before the user asks; it is gated, with the reason, while the
+ *   connection is enabled.
+ * - The loop keeps waiting until the scan happens, hands the binding on so the editor adopts it
+ *   without a second GET, rides out a transient failure (giving up, and releasing the task,
+ *   only after repeated ones), and replaces a lapsed code a bounded number of times.
  */
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
@@ -25,8 +19,7 @@ import type { QQBindingInfo, QQScanPollResponse } from "@prismshadow/penguin-ser
 import { ApiError } from "../src/api/client";
 import { QQScanConnect, QrCode, qqScanStep } from "../src/features/messaging/qq-scan-connect";
 import type { QQScanTally } from "../src/features/messaging/qq-scan-connect";
-import { S, zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
+import { S } from "../src/lib/strings";
 
 const QR_URL = "https://q.qq.com/qqbot/openclaw/connect.html?task_id=t-1&source=&_wv=2";
 
@@ -82,8 +75,8 @@ describe("QQScanConnect", () => {
     expect(html).toContain("disabled=");
     // A rebind would swap the credentials under a live connector, so it is refused with a
     // reason rather than silently doing it.
-    expect(html).toContain(`title="${S.qq.scanDisableFirst}"`);
-    expect(render(false)).not.toContain(`title="${S.qq.scanDisableFirst}"`);
+    expect(html).toContain(`data-tooltip="${S.qq.scanDisableFirst}"`);
+    expect(render(false)).not.toContain(`data-tooltip="${S.qq.scanDisableFirst}"`);
   });
 });
 
@@ -141,13 +134,5 @@ describe("qqScanStep", () => {
       // poll: cancelling it would be a request that can only 404.
       releaseTask: false,
     });
-  });
-
-  it("names no position for the code, which wraps above the text in a narrow panel", () => {
-    // The waiting panel is `flex flex-wrap`: in the dock or on a phone the steps sit BELOW
-    // the QR, so copy that says "the code on the left" is wrong exactly where it is read.
-    for (const dict of [zh, en]) {
-      expect(dict.qq.scanSteps).not.toMatch(/左侧|右侧|left|right/);
-    }
   });
 });

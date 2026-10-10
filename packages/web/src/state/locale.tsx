@@ -2,12 +2,15 @@
  * Language context: zh / en / system (tracks navigator.language, listens for languagechange).
  * On switch, first synchronously calls setActiveStrings (assigned during render, idempotent),
  * then remounts the whole tree keyed on locale so every `S.x` read immediately reflects the
- * new language; the preference persists to localStorage.
+ * new language; the preference persists to localStorage. The shared UI package's accessibility
+ * fallbacks (a close cross's name, a "Copied" announcement) are handed the same language here.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { UiStringsProvider } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../lib/strings";
 import { en } from "../lib/strings-en";
+import { uiStringsFor } from "../lib/ui-strings";
 
 export type LangPref = "zh" | "en" | "system";
 export type Locale = "zh" | "en";
@@ -68,7 +71,9 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <LocaleContext.Provider value={{ lang, locale, setLang }}>{children}</LocaleContext.Provider>
+    <LocaleContext.Provider value={{ lang, locale, setLang }}>
+      <UiStringsProvider strings={uiStringsFor(locale)}>{children}</UiStringsProvider>
+    </LocaleContext.Provider>
   );
 }
 

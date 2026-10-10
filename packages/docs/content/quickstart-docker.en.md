@@ -177,7 +177,7 @@ docker compose pull && docker compose up -d
 ```
 
 > [!WARNING]
-> Do not update from inside the container. The update dialog reports that this install cannot update itself, and anything `penguin update` installs there is lost when the container is recreated.
+> Do not update from inside the container. The About dialog's **Software Update** section reports that this install cannot update itself, and anything `penguin update` installs there is lost when the container is recreated.
 
 Stopping is graceful. On `SIGTERM` the server interrupts running Tasks, waits for them to wrap up, then closes the database. An idle server stops in well under a second, and a busy one can take several seconds, which is why the compose example raises Docker's 10-second grace period.
 

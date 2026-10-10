@@ -1,17 +1,20 @@
 /**
- * Integration tests for POST /api/sessions/:id/steer (mid-run steering):
- *   - 202 while a Task is running, forwarding the trimmed text and its images to the core session;
- *   - 400 when neither text nor images nor files carry a message, and for malformed
- *     image URLs / file parts;
- *   - file attachments land in the Session scratchpad and ride the steering text as
- *     `[attached file: <path>]` lines (a 409 cleans them up again);
- *   - the SSE subscribe snapshot carries the pending-steering mirror (task_state), which is
- *     what keeps the composer's "steering queued" hint alive across reloads;
- *   - 409 not_running when the Session is idle (the frontend then falls back to a
- *     normal task POST);
- *   - 404 for foreign/unknown sessions (via the shared resolveSession lookup).
+ * POST /api/sessions/:id/steer: mid-run steering, and its recall.
+ *
+ * - Given an idle Session, a steer is a 409 not_running (the composer falls back to a task).
+ * - Given a running one, the trimmed text reaches the core Session; a message with nothing in
+ *   it, and malformed image URLs or file parts, are 400s.
+ * - Images ride along with the text, or carry the message alone.
+ * - File attachments land in the Session's scratchpad and ride the text as
+ *   `[attached file: <path>]` lines; a refused steer cleans them up again.
+ * - The SSE subscribe snapshot carries the pending-steering mirror, which keeps the composer's
+ *   "steering queued" hint alive across reloads.
+ * - A foreign or unknown Session is a 404.
+ * - A queued steer can be recalled with its content until core takes it; steering the run
+ *   never delivered is handed back to the composer when it ends, once; steering it did deliver
+ *   is not; a recall after delivery is a 409 not_pending.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -23,14 +26,13 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
-import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-const SID = "session-2026-07-06-10-00-00-ccdd0001";
+const PROJECT = "steerer-default_project";
 
-/** One recorded steer call: the trimmed text plus the images that rode along with it. */
 /** A recorded steering input, one `text:`/`img:` line per message, in delivered order. */
 const shape = (input: OmniMessage[]): string[] =>
   input.map((m) => {
@@ -40,11 +42,7 @@ const shape = (input: OmniMessage[]): string[] =>
 
 /** Fake Session that parks on one approval (keeps the Task running) and records steer calls. */
 function steeringFakeSession(sessionId: string, steered: OmniMessage[][]): RuntimeSession {
-  return {
-    sessionId,
-    toolPermission: () => "rw",
-    generateTitle: async () => ({ title: null, usage: null }),
-    compactability: () => "ok" as const,
+  return fakeSession(sessionId, {
     steer: (input: OmniMessage[]) => {
       steered.push(input);
       return true;
@@ -57,45 +55,35 @@ function steeringFakeSession(sessionId: string, steered: OmniMessage[][]): Runti
       steered.splice(i, 1);
       return true;
     },
-    skipReconnectWait: () => false,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-steer" });
       yield tc;
-      const decision = await opts.approve(tc);
-      yield approvalDecision(decision, "tc-steer");
+      yield approvalDecision(await opts.approve(tc), "tc-steer");
       yield assistantText("done");
     },
-    async *compact() {},
-  };
+  });
 }
 
 describe("steer route", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
+  let SID: string;
   let steered: OmniMessage[][];
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     t = await createTestApp();
-    const { cookie } = await provisionUser(t.app, "steerer");
-    api = apiClient(t.app, cookie);
-    const row: SessionRow = {
-      sessionId: SID,
-      projectId: "steerer-default_project",
-      agentId: "default_agent",
-      modelId: "m1",
-      provider: "custom",
-      workspace: "/tmp/w",
-      approvalMode: "always-ask",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    };
-    t.deps.sessionsRepo.insert(row);
-    steered = [];
-    t.deps.manager.adopt(row, steeringFakeSession(SID, steered));
+    api = apiClient(t.app, (await provisionUser(t.app, "steerer")).cookie);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await t.cleanup();
+  });
+  beforeEach(() => {
+    SID = uniqueSessionId();
+    steered = [];
+    adoptSession(t.deps, steeringFakeSession(SID, steered), {
+      projectId: PROJECT,
+      approvalMode: "always-ask",
+    });
   });
 
   it("idle → 409 not_running (the frontend falls back to a normal task POST)", async () => {
@@ -207,10 +195,7 @@ describe("steer route", () => {
     // realpath, not string prefixes: on the Windows CI runner the temp root mixes 8.3
     // short and long name forms, so two spellings of the same directory are expected.
     const written = /\[attached file: (.*)\]/.exec(first[0]!)![1]!;
-    const expectedDir = path.join(
-      scratchpadDir(t.root, "steerer-default_project", "default_agent"),
-      SID,
-    );
+    const expectedDir = path.join(scratchpadDir(t.root, PROJECT, "default_agent"), SID);
     expect(await realpath(path.dirname(written))).toBe(await realpath(expectedDir));
     expect(path.basename(written)).toBe("notes.txt");
     expect(await readFile(written, "utf8")).toBe("hello notes");
@@ -248,7 +233,7 @@ describe("steer route", () => {
       files: [{ fileName: "orphan.txt", dataUrl: data }],
     });
     expect(res.status).toBe(409);
-    const dir = path.join(scratchpadDir(t.root, "steerer-default_project", "default_agent"), SID);
+    const dir = path.join(scratchpadDir(t.root, PROJECT, "default_agent"), SID);
     expect(await readdir(dir).catch(() => [])).toEqual([]);
   });
 
@@ -307,7 +292,7 @@ describe("steer route", () => {
     // Withdrawn everywhere: core's queue (the fake's unsteer), the mirror, and the disk copy.
     expect(steered).toHaveLength(0);
     expect(t.deps.manager.pendingSteeringOf(SID)).toEqual([]);
-    const dir = path.join(scratchpadDir(t.root, "steerer-default_project", "default_agent"), SID);
+    const dir = path.join(scratchpadDir(t.root, PROJECT, "default_agent"), SID);
     expect(await readdir(dir).catch(() => [])).toEqual([]);
 
     // Nothing left under that id: a second recall (double click, another tab) is a 409.
@@ -370,32 +355,23 @@ describe("steer route", () => {
     // handback runs after that stream is drained. A delivered message must therefore not
     // return to the composer as though the user still owed it.
     const delivering: OmniMessage[][] = [];
-    const sid2 = "session-2026-07-06-10-00-00-ccdd0002";
-    const row: SessionRow = {
-      sessionId: sid2,
-      projectId: "steerer-default_project",
-      agentId: "default_agent",
-      modelId: "m1",
-      provider: "custom",
-      workspace: "/tmp/w",
-      approvalMode: "always-ask",
-      title: null,
-      createdAt: new Date().toISOString(),
-      lastActiveAt: new Date().toISOString(),
-    };
-    t.deps.sessionsRepo.insert(row);
-    t.deps.manager.adopt(row, {
-      ...steeringFakeSession(sid2, delivering),
-      async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
-        const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-steer" });
-        yield tc;
-        const decision = await opts.approve(tc);
-        yield approvalDecision(decision, "tc-steer");
-        // The delivery itself: core emits one such message per queued entry.
-        yield userText(userSteeringText("already gone"));
-        yield assistantText("done");
+    const sid2 = uniqueSessionId();
+    const session = steeringFakeSession(sid2, delivering);
+    adoptSession(
+      t.deps,
+      {
+        ...session,
+        async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+          const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-steer" });
+          yield tc;
+          yield approvalDecision(await opts.approve(tc), "tc-steer");
+          // The delivery itself: core emits one such message per queued entry.
+          yield userText(userSteeringText("already gone"));
+          yield assistantText("done");
+        },
       },
-    });
+      { projectId: PROJECT, approvalMode: "always-ask" },
+    );
 
     await t.deps.manager.startTask(sid2, [userText("go")]);
     await waitFor(() => t.deps.manager.pendingApprovalCount(sid2) === 1);

@@ -1,18 +1,22 @@
 /**
- * GET|PUT /api/projects/:p/chat-defaults — per-Project new-chat defaults (the
- * `[default_chat]` block of .project_config.toml) — and PUT /api/projects/:p/models/default,
- * the narrow default-model switch project settings uses.
+ * A Project's new-chat defaults (GET|PUT /api/projects/:p/chat-defaults, the `[default_chat]`
+ * block of .project_config.toml) and the narrow default-model switch (PUT
+ * /api/projects/:p/models/default).
  *
- * Pins the contract's load-bearing corners: who may read (any member) and write (owner
- * only, with a non-member unable to tell the Project exists), that PUT is a declarative
- * whole-block replace (an omitted key clears it; an empty body removes the block), that a
- * defaults write is a read-modify-write of the same toml — models, credentials and the
- * display name must survive — and that agentId / enum values are validated (the model
- * default stays the SAME top-level `default_model` the models page maintains, so the
- * narrow route must reject a pair outside the models table exactly like the whole-table
- * PUT does).
+ * - Any member reads (an absent block is an empty object); only the owner writes, and a
+ *   non-member cannot tell the Project exists.
+ * - A PUT replaces the whole block: an omitted key clears it, an empty body removes it.
+ * - The write is read-modify-write: models, credentials and the name survive, and a config
+ *   carrying the block still parses back whole.
+ * - agentId must name an Agent of the Project; enum values are validated (thinkingLevel
+ *   `none` included).
+ * - The default-model switch writes the same top-level `default_model` the models page keeps:
+ *   the response mirrors GET models, credentials survive, a pair outside the models table is
+ *   a 400, and it is owner-only.
+ *
+ * One app for the file; every case works in a Project of its own.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -27,37 +31,57 @@ import type { TestApp } from "./helpers.js";
 
 /** What GET serves beside the block: the sandbox policy a new Session starts with (read-only). */
 const SERVED = {
-  sandbox: { mode: "danger-full-access", network: "open", localNetworkSupported: false },
+  sandbox: {
+    mode: "danger-full-access",
+    network: "open",
+    confinementSupported: false,
+    noNetworkSupported: false,
+    localNetworkSupported: false,
+    maskPathsSupported: false,
+    unavailableBackends: [],
+    // The Sandbox card's presets table rides beside it (session-sandbox.test.ts pins its rows).
+    presets: expect.any(Array),
+    // Nothing saved: the Sandbox card's switch is off.
+    switchOn: false,
+  },
 };
 
+/** The file's app and its three users; every case below works in a Project of its own. */
+let t: TestApp;
+let owner: ReturnType<typeof apiClient>;
+let member: ReturnType<typeof apiClient>;
+let outsider: ReturnType<typeof apiClient>;
+
+beforeAll(async () => {
+  t = await createTestApp();
+  const a = await provisionUser(t.app, "owner_a");
+  const b = await provisionUser(t.app, "member_b");
+  const c = await provisionUser(t.app, "outsider_c");
+  owner = apiClient(t.app, a.cookie);
+  member = apiClient(t.app, b.cookie);
+  outsider = apiClient(t.app, c.cookie);
+});
+afterAll(async () => {
+  await t.cleanup();
+});
+
 describe("project chat defaults", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
-  let member: ReturnType<typeof apiClient>;
-  let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
   let url: string;
 
+  // Every case works in a Project of its own.
+  let projects = 0;
   beforeEach(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner_a");
-    const b = await provisionUser(t.app, "member_b");
-    const c = await provisionUser(t.app, "outsider_c");
-    owner = apiClient(t.app, a.cookie);
-    member = apiClient(t.app, b.cookie);
-    outsider = apiClient(t.app, c.cookie);
+    projects += 1;
     // createProject provisions the built-in default_agent, so a valid agentId exists.
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-shared", name: "Shared" })
+      await owner.post("/api/projects", { projectId: `owner_a-shared_${projects}`, name: "Shared" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     url = `/api/projects/${projectId}/chat-defaults`;
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
     ).toBe(201);
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("any member reads; an absent block is an empty object; a non-member gets 404", async () => {
@@ -161,23 +185,15 @@ describe("project chat defaults", () => {
 });
 
 describe("models default (narrow default-model switch)", () => {
-  let t: TestApp;
-  let owner: ReturnType<typeof apiClient>;
-  let member: ReturnType<typeof apiClient>;
-  let outsider: ReturnType<typeof apiClient>;
   let projectId: string;
   let url: string;
 
+  // Every case works in a Project of its own.
+  let projects = 0;
   beforeEach(async () => {
-    t = await createTestApp();
-    const a = await provisionUser(t.app, "owner_a");
-    const b = await provisionUser(t.app, "member_b");
-    const c = await provisionUser(t.app, "outsider_c");
-    owner = apiClient(t.app, a.cookie);
-    member = apiClient(t.app, b.cookie);
-    outsider = apiClient(t.app, c.cookie);
+    projects += 1;
     const created = (await (
-      await owner.post("/api/projects", { projectId: "owner_a-models", name: "Models" })
+      await owner.post("/api/projects", { projectId: `owner_a-models_${projects}`, name: "Models" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     url = `/api/projects/${projectId}/models/default`;
@@ -196,9 +212,6 @@ describe("models default (narrow default-model switch)", () => {
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
     ).toBe(201);
-  });
-  afterEach(async () => {
-    await t.cleanup();
   });
 
   it("owner flips the default; the response mirrors GET models' defaultModel; credentials survive", async () => {

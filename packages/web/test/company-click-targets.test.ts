@@ -3,8 +3,10 @@
  *
  * A card, a row, a heading or a panel is never itself the link — but a row's or a card's *title*
  * is: the title renders as a text button that opens what it names, and the surface around it
- * stays inert (on the ticket board it stays the drag handle). A row with no title of its own
- * carries a small named icon button instead. What the rule rules out is the silently clickable
+ * stays inert. A row with no title of its own carries a small named icon button instead. The one
+ * deliberate exception is the ticket board's card, which is a `<button>` over its whole face: a
+ * click anywhere opens the ticket and a drag moves it, and it holds no control of its own
+ * that the whole-card target could swallow. What the rule rules out is the silently clickable
  * surface, which swallows the controls living inside it and leaves a reader guessing what a
  * click will do. It came out of the company pages, where a whole card, a whole row and a bare
  * heading had each grown a click of its own.
@@ -19,14 +21,14 @@
  * A `<button>` around a title is a control host and passes, which is the point — the check is
  * about where the handler sits, not about whether a surface navigates at all. Out of its reach,
  * and still on the rule: a `<button>` that wraps a whole row (nothing in the syntax says how much
- * of the row it covers), and a click handler passed down as a prop. Those are on the reviewer.
+ * of the row it covers — the ticket card is the declared one), and a click handler passed down as
+ * a prop. Those are on the reviewer.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { expectEveryRootScanned, scanSources, sourceFile } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
+const SCAN = scanSources();
 
 /**
  * The company modules swept for the rule, relative to `src`. Every page whose surfaces have been
@@ -42,6 +44,7 @@ const MODULES = [
   "features/company/handbook-page.tsx",
   "features/company/org-chart-page.tsx",
   "features/company/org-layout.tsx",
+  "features/company/org-session-groups.tsx",
   "features/company/overview-page.tsx",
   "features/company/shared.tsx",
   "features/company/ticket-dialog.tsx",
@@ -108,10 +111,10 @@ function literalChunks(node: ts.Node, out: string[] = []): string[] {
 function findWholeAreaTargets(): string[] {
   const found: string[] = [];
   for (const rel of MODULES) {
-    const path = `${SRC}/${rel}`;
+    const file = sourceFile(SCAN, `packages/web/src/${rel}`);
     const source = ts.createSourceFile(
-      path,
-      readFileSync(path, "utf8"),
+      file.path,
+      file.text,
       ts.ScriptTarget.Latest,
       /* setParentNodes */ true,
       ts.ScriptKind.TSX,
@@ -152,6 +155,12 @@ function findWholeAreaTargets(): string[] {
 }
 
 describe("company pages", () => {
+  it("scans every source root, and finds every swept module", () => {
+    expectEveryRootScanned(SCAN);
+    // A swept page that was renamed or moved must fail here rather than drop out of the sweep.
+    for (const rel of MODULES) sourceFile(SCAN, `packages/web/src/${rel}`);
+  });
+
   it("navigate through named controls, never through a whole card, row or panel", () => {
     expect(findWholeAreaTargets()).toEqual([]);
   });

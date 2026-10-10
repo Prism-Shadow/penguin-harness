@@ -1,10 +1,10 @@
 /**
- * The LLM stream drops mid-way through writing tool arguments (AgentHub judges the "stream
- * incomplete" → malformed): that tool_call was never committed into AgentHub's history — the
- * engine never dispatches it and never emits a paired output; reconnect resends the same input
- * verbatim. The frontend settles the broken tool card as soon as the settle reason arrives (no
- * more running timer) and shows a retry hint line (with the attempt count). After a successful
- * retry, subsequent tool calls appear and complete as normal.
+ * The LLM stream drops mid-way through writing tool arguments (MMSP cannot parse the
+ * half-streamed arguments when the stream ends → malformed): that tool_call was never committed
+ * into MMSP's history — the engine never dispatches it and never emits a paired output;
+ * reconnect resends the same input verbatim. The frontend settles the broken tool card as soon
+ * as the settle reason arrives (no more running timer) and shows a retry hint line (with the
+ * attempt count). After a successful retry, subsequent tool calls appear and complete as normal.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -53,7 +53,7 @@ test("a malformed tool_call settles unpaired; the retry line shows and the retry
   await expect(page.getByText(/已发起第 1 次重试/)).toBeVisible();
 
   // Trace: the broken tool_call is persisted (stop_reason=malformed) but **no paired output is
-  // added** — it never entered AgentHub's history, so there's nothing to pair; the retry is
+  // added** — it never entered MMSP's history, so there's nothing to pair; the retry is
   // represented by a request_end(malformed) event.
   const msgs = await (await page.request.get(`${BASE}/api/sessions/${sessionId}/messages`)).json();
   const broken = msgs.messages.find(

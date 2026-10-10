@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import { comparePluginVersions } from "@prismshadow/penguin-core";
 import type { OrgCalendarOutcome, OrgChannelMessage, OrgTicketChange } from "../../api/types.js";
+import type { SessionRow } from "../../db/repos/sessions.js";
 import type { ChannelConfig, TicketDoc } from "../../organization/files.js";
 import { parseChannelMessageLine, serializeChannelMessageLine } from "../../organization/files.js";
 import { agentPrincipal, parsePrincipal, principalAgentId } from "../../organization/principal.js";
@@ -97,6 +98,39 @@ export async function listTickets(deps: OrgDeps, org: LoadedOrg): Promise<Ticket
 }
 
 /**
+ * The session rows an organization's files name as its own: every desk in the ledger, current
+ * and previous, then every session a ticket's `sessions` lists, with that ticket's id. Both
+ * files are hand-editable and what is written through the result outlives the caches (the
+ * `client` stamp, the approval mode), so a name with no row, or naming a row of another
+ * Project, is not the organization's and is left out.
+ */
+function ownedSessions(
+  deps: OrgDeps,
+  org: LoadedOrg,
+  tickets: readonly LoadedTicket[],
+): { desks: SessionRow[]; tickets: Array<{ ticketId: string; row: SessionRow }> } {
+  const rowOf = (sessionId: string): SessionRow | null => {
+    const row = deps.sessions.findById(sessionId);
+    return row !== null && row.projectId === org.projectId ? row : null;
+  };
+  const desks: SessionRow[] = [];
+  for (const desk of Object.values(org.desks)) {
+    for (const sessionId of [desk.sessionId, ...desk.previous]) {
+      const row = rowOf(sessionId);
+      if (row !== null) desks.push(row);
+    }
+  }
+  const ticketRows: Array<{ ticketId: string; row: SessionRow }> = [];
+  for (const t of tickets) {
+    for (const sessionId of t.doc.sessions) {
+      const row = rowOf(sessionId);
+      if (row !== null) ticketRows.push({ ticketId: t.ticketId, row });
+    }
+  }
+  return { desks, tickets: ticketRows };
+}
+
+/**
  * Projects the ledger and the tickets' `sessions` fields into the two session caches, and
  * stamps `client = "org"` on every session row those files name. The caches are rebuilt from
  * the files on every pass and vanish with the organization; the stamp is written once per row
@@ -107,28 +141,40 @@ export async function listTickets(deps: OrgDeps, org: LoadedOrg): Promise<Ticket
  */
 export function syncCaches(deps: OrgDeps, org: LoadedOrg, tickets: readonly LoadedTicket[]): void {
   syncDeskCache(deps, org);
-  // The stamp is durable, unlike the caches beside it, so a hand-edited ledger naming a
-  // session of another Project must not mark it as this organization's.
-  const owned: string[] = [];
-  const own = (sessionId: string): void => {
-    if (deps.sessions.findById(sessionId)?.projectId === org.projectId) owned.push(sessionId);
-  };
-  for (const desk of Object.values(org.desks)) {
-    own(desk.sessionId);
-    for (const prev of desk.previous) own(prev);
+  const owned = ownedSessions(deps, org, tickets);
+  deps.cache.syncTicketSessions(
+    org.projectId,
+    org.orgId,
+    owned.tickets.map(({ ticketId, row }) => ({
+      ticketId,
+      sessionId: row.sessionId,
+      agentId: row.agentId,
+    })),
+  );
+  deps.sessions.markOrgClient(
+    [...owned.desks, ...owned.tickets.map((t) => t.row)].map((row) => row.sessionId),
+  );
+}
+
+/**
+ * Carries the organization's approval mode onto every session it owns (see `ownedSessions`)
+ * that is not archived. A desk or ticket session takes the mode of the moment it is opened and
+ * its approvals read its own row, so without this a changed mode would reach only the sessions
+ * opened after the change. A session mid-run applies it from its next approval decision, which
+ * re-reads the row; an archived session keeps the mode it had. Run only when the mode actually
+ * changed: until then, a session whose own mode was changed from its composer keeps it.
+ */
+export function syncApprovalMode(
+  deps: OrgDeps,
+  org: LoadedOrg,
+  tickets: readonly LoadedTicket[],
+): void {
+  const mode = org.config.approvalMode;
+  const owned = ownedSessions(deps, org, tickets);
+  for (const row of [...owned.desks, ...owned.tickets.map((t) => t.row)]) {
+    if ((row.archivedAt ?? null) !== null || row.approvalMode === mode) continue;
+    deps.sessions.updateApprovalMode(row.sessionId, mode);
   }
-  const rows: Array<{ ticketId: string; sessionId: string; agentId: string }> = [];
-  for (const t of tickets) {
-    for (const sessionId of t.doc.sessions) {
-      const row = deps.sessions.findById(sessionId);
-      if (row && row.projectId === org.projectId) {
-        rows.push({ ticketId: t.ticketId, sessionId, agentId: row.agentId });
-        owned.push(sessionId);
-      }
-    }
-  }
-  deps.cache.syncTicketSessions(org.projectId, org.orgId, rows);
-  deps.sessions.markOrgClient(owned);
 }
 
 /**

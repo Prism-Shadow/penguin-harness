@@ -3,6 +3,21 @@
  * commit together with the booting platform's own interface table, under
  * <root>/harness-history/ — so the record is complete on any runtime old enough to boot
  * the platform, and never depends on the runtime knowing about it.
+ *
+ * Scenarios:
+ * - Given a boot, one line is recorded per version with this platform's table, newest first;
+ *   the same version booting again is the same line.
+ * - Given another platform's line for the committed version, the boot leaves it alone.
+ * - Given two committed versions, rolling back hands the runtime's upgrade channel the kept
+ *   body and tells live clients to reload; a refused push is reported on the next read.
+ * - Given a boot whose commit has not landed, nothing is recorded until it has, and a
+ *   generation put back never records.
+ * - Given concurrent records, one line is written; an unchanged line is not rewritten.
+ * - Given more versions than kept, the newest KEEP_VERSIONS keep their artifacts and the newest
+ *   HISTORY_KEEP keep their lines; a corrupt file degrades to what still parses.
+ * - Given two interface tables, the diff names what appeared, vanished or changed.
+ * - Given the route, a fresh root already shows this boot, and a committed version is shown
+ *   current with the runtime's provenance.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
@@ -94,8 +109,20 @@ function bootedAt(root: string) {
 }
 
 describe("harness history store", () => {
-  it("records a boot once per version, with this platform's own table, newest first", async () => {
+  const roots: string[] = [];
+  const tempRoot = async () => {
     const root = await makeTempRoot();
+    roots.push(root);
+    return root;
+  };
+  afterEach(async () => {
+    await Promise.all(
+      roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true, maxRetries: 10 })),
+    );
+  });
+
+  it("records a boot once per version, with this platform's own table, newest first", async () => {
+    const root = await tempRoot();
     const store = storeAt(root);
     // Nothing committed yet: a packaged boot, identified by its table.
     await store.record();
@@ -128,7 +155,7 @@ describe("harness history store", () => {
   });
 
   it("never overwrites another platform's line: the boot before a push sees the previous commit", async () => {
-    const root = await makeTempRoot();
+    const root = await tempRoot();
     // The previous platform recorded version 1 with ITS table …
     await commit(root, 1);
     await fs.mkdir(path.join(root, "harness-history"), { recursive: true });
@@ -161,7 +188,7 @@ describe("harness history store", () => {
   });
 
   it("keeps a committed version's body and hands it back to the runtime's own upgrade channel", async () => {
-    const root = await makeTempRoot();
+    const root = await tempRoot();
     const store = storeAt(root);
     await commit(root, 1, { repo: "r", revision: "v1" });
     await store.record();
@@ -204,7 +231,7 @@ describe("harness history store", () => {
   });
 
   it("a push the runtime refuses is reported on the next read, in the runtime's words", async () => {
-    const root = await makeTempRoot();
+    const root = await tempRoot();
     const store = storeAt(root);
     await commit(root, 1);
     await store.record();
@@ -231,7 +258,7 @@ describe("harness history store", () => {
   it("records a boot only once the runtime's commit has landed, and never after being put back", async () => {
     // Version 1 is committed and the platform booting is version 2's: while its boot is in
     // flight harness.json still names version 1, and no line may be written for it.
-    const root = await makeTempRoot();
+    const root = await tempRoot();
     await commit(root, 1);
     let commitLanded!: () => void;
     landed = () =>
@@ -260,7 +287,7 @@ describe("harness history store", () => {
   });
 
   it("writes one record at a time, and rewrites nothing when the line is unchanged", async () => {
-    const root = await makeTempRoot();
+    const root = await tempRoot();
     const store = storeAt(root);
     await commit(root, 1);
     await Promise.all([store.record(), store.record(), store.list(), store.record()]);
@@ -274,7 +301,7 @@ describe("harness history store", () => {
   });
 
   it("keeps the newest KEEP_VERSIONS versions' artifacts", async () => {
-    const root = await makeTempRoot();
+    const root = await tempRoot();
     const store = storeAt(root);
     for (let i = 0; i < KEEP_VERSIONS + 2; i++) {
       await commit(root, i);
@@ -286,18 +313,38 @@ describe("harness history store", () => {
     expect(dirs).toContain(`p${KEEP_VERSIONS + 1}-c${KEEP_VERSIONS + 1}-w${KEEP_VERSIONS + 1}`);
   });
 
-  it("keeps HISTORY_KEEP entries and degrades a corrupt file to what still parses", async () => {
-    const root = await makeTempRoot();
+  it("keeps the newest HISTORY_KEEP entries, and degrades a corrupt file to what still parses", async () => {
+    const root = await tempRoot();
     const store = storeAt(root);
-    for (let i = 0; i < HISTORY_KEEP + 3; i++) {
+    const file = path.join(root, "harness-history", "history.json");
+    await commit(root, 0);
+    await store.record();
+    // A history already at the cap, in the store's own format: its one line, then older
+    // versions under bundles of their own.
+    const [line] = JSON.parse(await fs.readFile(file, "utf8")) as Array<Record<string, unknown>>;
+    const older = Array.from({ length: HISTORY_KEEP - 1 }, (_, i) => ({
+      ...line,
+      bundles: { platform: `store/platform/old${i}.mjs`, cli: null, web: null },
+    }));
+    await fs.writeFile(file, JSON.stringify([line, ...older]));
+    for (let i = 1; i <= 3; i++) {
       await commit(root, i);
       await store.record();
     }
-    expect(await store.entries()).toHaveLength(HISTORY_KEEP);
-    await fs.writeFile(path.join(root, "harness-history", "history.json"), "{ not json");
+    const platforms = (await store.entries()).map((e) => e.bundles.platform);
+    expect(platforms).toHaveLength(HISTORY_KEEP);
+    expect(platforms.slice(0, 4)).toEqual([
+      "store/platform/p3.mjs",
+      "store/platform/p2.mjs",
+      "store/platform/p1.mjs",
+      "store/platform/p0.mjs",
+    ]);
+    // The three oldest lines made room for them.
+    expect(platforms.at(-1)).toBe(`store/platform/old${HISTORY_KEEP - 5}.mjs`);
+    await fs.writeFile(file, "{ not json");
     expect(await store.entries()).toEqual([]);
     await fs.writeFile(
-      path.join(root, "harness-history", "history.json"),
+      file,
       JSON.stringify([{ pushedAt: "x" }, { bundles: { platform: "store/platform/z.mjs" } }]),
     );
     expect((await store.entries()).map((e) => e.bundles.platform)).toEqual([

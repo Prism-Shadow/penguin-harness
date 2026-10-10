@@ -3,17 +3,19 @@
  * backend that implements the dimensions it requires, and produces the SpawnConfiner
  * closure the runtime transports into core's command-session seam.
  *
- * Routing is by CAPABILITY, not by registration order alone: a policy requiring only
- * `fs-write` goes to the first backend that covers it (the DSH adaptor, which works on
- * Linux/macOS/Windows alike), while a policy also requiring `network` or `mask-paths`
- * goes to the first backend implementing those (penguin-bwrap). Registration order
- * only breaks ties between backends that both cover the request. A request nothing
- * covers fails closed — never a silent unconfined run, and never a silently dropped
- * dimension.
+ * Routing is by CAPABILITY, not by registration order: of the mounted backends covering
+ * every dimension a policy requires, the one implementing the most dimensions wins, so a
+ * native backend (penguin-bwrap) serves every policy it covers even when the portable DSH
+ * adaptor is mounted beside it, and the adaptor serves only where it is the one left — a
+ * Linux host refusing bubblewrap's user namespaces, where it confines files through
+ * Landlock. Registration order only breaks ties. A request nothing covers fails closed —
+ * never a silent unconfined run, and never a silently dropped dimension.
  */
+import fs from "node:fs";
 import type { SpawnConfiner } from "@prismshadow/penguin-core";
 import type {
   SandboxDimension,
+  SandboxLimit,
   SandboxPolicy,
   SandboxProvider,
   SandboxProviderSource,
@@ -186,11 +188,23 @@ export class SandboxService {
     return [...this.declinedNames];
   }
 
-  /** The mounted backends and what each implements (diagnostics / the config surface). */
-  backends(): Array<{ name: string; dimensions: readonly SandboxDimension[] }> {
-    return this.mounted.map(({ name, provider }) => ({
+  /**
+   * The mounted backends and what each implements, in routing preference: the one a policy
+   * goes to first (diagnostics / the config surface).
+   */
+  backends(): Array<{
+    name: string;
+    dimensions: readonly SandboxDimension[];
+    mechanism?: string;
+    limits?: readonly SandboxLimit[];
+  }> {
+    return byPreference(this.mounted).map(({ name, provider }) => ({
       name,
       dimensions: providerDimensions(provider),
+      ...(provider.mechanism !== undefined ? { mechanism: provider.mechanism } : {}),
+      ...(provider.limits !== undefined && provider.limits.length > 0
+        ? { limits: provider.limits }
+        : {}),
     }));
   }
 
@@ -217,11 +231,23 @@ export class SandboxService {
       // short-circuit is "no confinement dimension beyond fs-write", not "mode is full".
       if (settings.mode === "danger-full-access" && required.length === 1) return { argv };
       const provider = this.pick(required, settings.mode);
+      // Only workspace-write binds further writable roots; under read-only (or full access
+      // with a network cut) every backend ignores them, so neither the field nor the
+      // directory is made there.
+      const scratchpadDir = settings.mode === "workspace-write" ? opts.scratchpadDir : undefined;
+      // The Session's scratchpad is created lazily (on the first thing written into it), and a
+      // command, an agent or the user can remove it mid-Session, but a backend binding it needs
+      // it on disk: bubblewrap refuses to start on a missing bind source. Ensured on every
+      // spawn, here, where every confined spawn meets — see SandboxPolicy.writableRoots.
+      if (scratchpadDir !== undefined) ensureScratchpad(scratchpadDir);
       // workspaceRoot is the Session's Workspace, never the per-command cwd: a command
       // running in a workdir outside the Workspace must not widen the writable roots.
       const policy: SandboxPolicy = {
         mode: settings.mode,
         workspaceRoot: opts.workspaceDir,
+        // The Session's scratchpad is writable beside the Workspace: the plan file, a goal's
+        // state file and the attachments live there, and hooks and commands both write it.
+        ...(scratchpadDir !== undefined ? { writableRoots: [scratchpadDir] } : {}),
         ...(settings.network !== undefined ? { network: settings.network } : {}),
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0
           ? { maskPaths: settings.maskPaths }
@@ -230,17 +256,25 @@ export class SandboxService {
         ...(settings.writableTemp !== false ? { writableTemp: true } : {}),
       };
       // ConfinedArgv also carries enforcement / denialSignatures / runnerFailureRules;
-      // the classification consumer (denial vs runner failure) lands with escalation.
+      // the classification consumer (denial vs runner failure) lands with escalation. The
+      // rules' informational lines are what the runner reports on every run (the Landlock
+      // launcher on an older kernel): the spawn drops them from the command's stderr.
       const confined = provider.confine(argv, policy);
-      return confined.env === undefined
-        ? { argv: confined.argv }
-        : { argv: confined.argv, env: confined.env };
+      const runnerLines = confined.runnerFailureRules.flatMap((r) => r.informationalLines ?? []);
+      return {
+        argv: confined.argv,
+        ...(confined.env !== undefined ? { env: confined.env } : {}),
+        ...(runnerLines.length > 0 ? { runnerLines } : {}),
+      };
     };
   }
 
-  /** The first mounted backend implementing every required dimension, or a fail-closed throw. */
+  /**
+   * The preferred mounted backend implementing every required dimension (byPreference), or a
+   * fail-closed throw.
+   */
   private pick(required: readonly SandboxDimension[], mode: string): SandboxProvider {
-    const match = this.mounted.find(({ provider }) => {
+    const match = byPreference(this.mounted).find(({ provider }) => {
       const implemented = providerDimensions(provider);
       return required.every((dimension) => implemented.includes(dimension));
     });
@@ -262,6 +296,40 @@ export class SandboxService {
       parts.push(`${this.declinedNames.join(", ")} (not for this host)`);
     }
     return parts.length === 0 ? "" : `; backends not in use: ${parts.join("; ")}`;
+  }
+}
+
+/**
+ * Backends in routing preference: more implemented dimensions first, registration order among
+ * equals (the sort is stable). Bubblewrap and the DSH adaptor both cover a files-only policy;
+ * the one that could also have cut the network or masked a path is the one that serves it, on
+ * whatever order the Projects' plugin lists name them in.
+ */
+function byPreference(mounted: readonly MountedProvider[]): MountedProvider[] {
+  const size = (m: MountedProvider) => providerDimensions(m.provider).length;
+  return [...mounted].sort((a, b) => size(b) - size(a));
+}
+
+/**
+ * Creates the Session's scratchpad if it is missing (a no-op when it exists). A failure
+ * throws, fail-closed: dropping the root and confining without it would start the command
+ * but leave it unable to write the directory it was told it may write.
+ *
+ * Known race, left as is: deleting a Session removes its scratchpad, and a run that outlives
+ * the delete (a command still being spawned for it) recreates the directory here. The cost is
+ * an empty, orphaned directory under the Agent's scratchpad that nothing cleans up; it holds
+ * only what that last run writes, and no access outlives the Session.
+ */
+function ensureScratchpad(dir: string): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    // A filesystem error's message leads with its errno (`EACCES: permission denied, …`).
+    throw new Error(
+      `cannot prepare the Session scratchpad ${dir} for the sandbox ` +
+        `(${err instanceof Error ? err.message : String(err)}); refusing to run the command without it.`,
+      { cause: err },
+    );
   }
 }
 

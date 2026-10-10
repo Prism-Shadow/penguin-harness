@@ -112,6 +112,8 @@ Scripts and the CLI never need a password, because local ownership already outra
 
 When a CLI command runs against a server on this machine, it authenticates with the local API token, which the server writes to `<root>/api-token` at every start. See [CLI Reference](/cli#server-connection).
 
+The local API token cannot change an agent's exposure: turning an agent's API on, keyless access, its approval mode, its keys and the server-wide Agent API switch take a person's sign-in, because every agent's commands carry that token. The server refuses the token on them with `403` `human_required`, and outside a Session the CLI then sends the request once more with your stored sign-in, if you have one; `penguin auth token`, below, gives the CLI that sign-in. This keeps an agent from exposing itself through the credential the harness hands it; it is not a boundary, since a process running as the data root's OS account can mint a session too. The sandbox is what bounds an agent.
+
 A script that needs a session of its own mints one. A session is a row in the data root's `web.db`, so the CLI writes one:
 
 ```bash

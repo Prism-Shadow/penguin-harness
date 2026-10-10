@@ -19,7 +19,6 @@ import path from "node:path";
 import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
-import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
 import { bootAppDeps, createApp } from "./app.js";
 import { HmrHost, hmrMain } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
@@ -35,6 +34,8 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { PluginHost } from "./plugin/host.js";
 import { loadPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
+import { attachExtensionWebSocket } from "./builtin-browser/extension-ws.js";
+import type { ExtensionGate } from "./builtin-browser/extension-ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -229,10 +230,18 @@ class PenguinServer {
   buildApp(): void {
     this.app = createApp(this.deps);
     attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
+    attachExtensionWebSocket(
+      this.httpServer as unknown as HttpServer,
+      this.extensionWebSocketDeps(),
+    );
     if (this.ipv6Loopback !== null) {
       attachTerminalWebSocket(
         this.ipv6Loopback as unknown as HttpServer,
         this.terminalWebSocketDeps(),
+      );
+      attachExtensionWebSocket(
+        this.ipv6Loopback as unknown as HttpServer,
+        this.extensionWebSocketDeps(),
       );
     }
   }
@@ -313,14 +322,6 @@ class PenguinServer {
     // shutdown as the signals, reachable over HTTP because a Windows child kill is a hard
     // TerminateProcess with no signal delivery.
     this.deps.desktop?.onShutdownRequest(() => void this.shutdown("desktop-shutdown"));
-
-    // Restart-to-update: POST /api/version/restart lands here once a self-update is
-    // installed — the same graceful shutdown, exiting with the code the supervising
-    // `penguin server|web` respawns on, so the relaunch runs the new release. The
-    // lifecycle service only fires it when a supervisor is actually there.
-    this.deps.lifecycle.onRestartRequest(
-      () => void this.shutdown("restart", SERVER_RESTART_EXIT_CODE),
-    );
 
     // Client-update relay: under the shell this process is an Electron utilityProcess and
     // carries process.parentPort; wire it to the desktop service so the update routes can
@@ -457,7 +458,30 @@ class PenguinServer {
     // loopback opened after buildApp() (never in practice — binding is quick) gets it here.
     if (this.app !== undefined) {
       attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
+      attachExtensionWebSocket(loopback as unknown as HttpServer, this.extensionWebSocketDeps());
     }
+  }
+
+  /**
+   * The Chrome extension's WebSocket wiring, beside the terminal's on every listener: the
+   * upgrade is checked here, and the socket handed to the current generation's browser module.
+   */
+  private extensionWebSocketDeps() {
+    const hmr = this.deps.hmr;
+    return {
+      gate: async (): Promise<ExtensionGate | null> => {
+        const platform = await hmr.ensure();
+        const tree = typeof platform.api.business === "function" ? platform.api.business() : null;
+        if (tree === null || !tree.has("BuiltinBrowserModule")) return null;
+        try {
+          return tree.api<ExtensionGate>("BuiltinBrowserModule", "BrowserExtensionGate");
+        } catch {
+          // A pushed platform from before the extension: no gate, so the upgrade is a 503.
+          return null;
+        }
+      },
+      log: (line: string) => console.log(line),
+    };
   }
 
   /** Terminal WebSocket wiring, shared by every listener this process opens. */
@@ -478,7 +502,12 @@ class PenguinServer {
    * active runs (pending approvals converge to deny), wait ≤5s for wrap-up, then close
    * HTTP and SQLite.
    */
-  private async shutdown(signal: string, exitCode = 0): Promise<void> {
+  /**
+   * `exitCode` undefined leaves the code to `process.exitCode`: the platform's restart step
+   * presets core's SERVER_RESTART_EXIT_CODE there and raises SIGTERM, so this same shutdown
+   * is how the process leaves for its supervisor to relaunch (services/process-restart.ts).
+   */
+  private async shutdown(signal: string, exitCode?: number): Promise<void> {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
     console.log(`Received ${signal}, shutting down…`);

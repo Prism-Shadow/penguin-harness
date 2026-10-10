@@ -8,12 +8,13 @@
  * means no budget (UNLIMITED_BUDGET).
  */
 
+import { ICONS } from "@prismshadow/penguin-ui";
+
 /** Mirrors core's UNLIMITED_BUDGET (kept local: the constant is not part of the omnimessage bundle). */
 export const UNLIMITED_BUDGET = -1;
 
-/** Bullseye/arrow icon (24×24 line path): goal-mode UI (chip, plus-menu item, banner). */
-export const GOAL_ICON =
-  "M21 12A9 9 0 1 1 12 3M17 12A5 5 0 1 1 12 7M12 12L15 9V5L18 2V6H22L19 9H15";
+/** The bullseye with an arrow in it: goal-mode UI (chip, plus-menu item, banner). */
+export const GOAL_ICON = ICONS.targetArrow;
 
 /** What the goal banner shows (fed from goal_* server events, or the Session's GOAL.json via GET /goal on load). */
 export interface GoalBannerState {

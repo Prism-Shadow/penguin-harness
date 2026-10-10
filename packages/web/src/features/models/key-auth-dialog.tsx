@@ -6,10 +6,10 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { KeyAuthEndpoints } from "../../api/endpoints";
 import { ApiError } from "../../api/client";
-import { Button } from "../../components/ui/button";
-import { Modal } from "../../components/ui/modal";
 import { apiErrorText } from "../../lib/api-error";
+import { isElectronRenderer } from "../../lib/desktop-renderer";
 import { S } from "../../lib/strings";
+import { Button, Modal, Spinner } from "@prismshadow/penguin-ui";
 
 const POLL_MS = 3_000;
 
@@ -31,7 +31,8 @@ export interface KeyAuthTexts {
  * "authorize a key" action. The wire protocol behind it is a device-style start/poll rather
  * than OAuth/PKCE, and which one applies is the `endpoints` prop's business: Penguin Go polls
  * its own relay, ModelScope polls the harness's authorization bridge. Account metadata never
- * enters this component; a completed flow only reports how many preset rows took the key.
+ * enters this component; a completed flow writes the group key and only reports how many models
+ * use it (those without a key of their own).
  */
 export function KeyAuthDialog({
   projectId,
@@ -50,6 +51,13 @@ export function KeyAuthDialog({
   onClose: () => void;
   onApplied: (applied: number) => void;
 }) {
+  // A browser needs a tab opened inside the click, before the server has the URL, or its
+  // popup blocker eats the navigation. The desktop shell's window has no popup blocker and its
+  // shell refuses every blank window, so there the URL is opened once it is known and the
+  // shell hands it to the system browser. Decided by the renderer, not the session: in attach
+  // mode the shell's window is signed in to a server that was not started in desktop mode
+  // (see lib/desktop-renderer).
+  const bridge = !isElectronRenderer(navigator.userAgent);
   const [phase, setPhase] = useState<Phase>("ready");
   const [flow, setFlow] = useState<PlatformAuthStartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -160,7 +168,7 @@ export function KeyAuthDialog({
 
     // Open synchronously from the click so browsers do not treat the eventual navigation as
     // an unsolicited popup while the server creates the one-time authorization request.
-    const authorizationTab = window.open("about:blank", "_blank");
+    const authorizationTab = bridge ? window.open("about:blank", "_blank") : null;
     if (authorizationTab !== null) authorizationTab.opener = null;
     try {
       const started = await endpoints.start(projectId);
@@ -170,6 +178,11 @@ export function KeyAuthDialog({
         return;
       }
       setFlow(started);
+      if (!bridge) {
+        window.open(started.authorizeUrl, "_blank", "noopener,noreferrer");
+        setPhase("waiting");
+        return;
+      }
       if (authorizationTab === null) {
         // Popup blockers can still intervene. Keep the created request and let the next
         // explicit click open its URL without consuming another platform start quota.
@@ -273,7 +286,7 @@ export function KeyAuthDialog({
         </p>
         {(phase === "starting" || phase === "waiting" || phase === "applying") && (
           <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-            <span className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent" />
+            <Spinner size="xs" label={S.common.loading} />
             {phase === "starting"
               ? S.models.platformKeyStarting
               : phase === "applying"

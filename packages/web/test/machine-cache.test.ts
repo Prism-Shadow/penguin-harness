@@ -1,9 +1,14 @@
 /**
- * What each machine was last seen holding (lib/machine-cache.ts): replaced wholesale by the
- * machine's own answer — including with nothing, which is how a deleted Session stops coming
- * back — kept per machine, and degrading to nothing when storage refuses or holds junk.
+ * What each machine was last seen holding (lib/machine-cache.ts), kept in localStorage so a
+ * restart can show a machine's rows before it answers.
+ *
+ * - A machine's answer replaces only its own entry, per Project and machine.
+ * - An empty answer clears the entry, so something deleted over there stops coming back.
+ * - At most the placeholder's worth of rows is kept.
+ * - Junk in storage reads as nothing remembered, and rows without an id are dropped.
+ * - A storage that refuses is not an error: the answer is merely not remembered.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { AgentSummary, SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   CACHED_ROWS_PER_MACHINE,
@@ -12,21 +17,7 @@ import {
   rememberMachineAgents,
   rememberMachineSessions,
 } from "../src/lib/machine-cache";
-
-/** The browser's storage, as far as this module needs it. Node has none. */
-function memoryStorage(): Storage {
-  const map = new Map<string, string>();
-  return {
-    get length() {
-      return map.size;
-    },
-    clear: () => map.clear(),
-    getItem: (k) => map.get(k) ?? null,
-    key: (i) => [...map.keys()][i] ?? null,
-    removeItem: (k) => void map.delete(k),
-    setItem: (k, v) => void map.set(k, String(v)),
-  };
-}
+import { blockedStorage, stubLocalStorage } from "./helpers/storage";
 
 const row = (sessionId: string): SessionInfo =>
   ({
@@ -39,12 +30,8 @@ const row = (sessionId: string): SessionInfo =>
 const agent = (agentId: string): AgentSummary => ({ agentId, name: agentId }) as AgentSummary;
 
 describe("machine cache", () => {
-  const original = (globalThis as { localStorage?: Storage }).localStorage;
   beforeEach(() => {
-    (globalThis as { localStorage?: Storage }).localStorage = memoryStorage();
-  });
-  afterEach(() => {
-    (globalThis as { localStorage?: Storage }).localStorage = original;
+    stubLocalStorage();
   });
 
   it("remembers per (project, machine), and a machine's answer replaces only its own entry", () => {
@@ -82,15 +69,7 @@ describe("machine cache", () => {
   });
 
   it("storage that refuses is not an error — the answer is merely not remembered", () => {
-    (globalThis as { localStorage?: Storage }).localStorage = {
-      ...memoryStorage(),
-      setItem: () => {
-        throw new Error("QuotaExceededError");
-      },
-      getItem: () => {
-        throw new Error("SecurityError");
-      },
-    } as Storage;
+    stubLocalStorage(blockedStorage());
     expect(() => rememberMachineAgents("p", "M1", [agent("a")])).not.toThrow();
     expect(cachedMachineAgents("p", "M1")).toEqual([]);
   });

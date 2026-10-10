@@ -1,5 +1,5 @@
 /**
- * Agent settings page: nine tabs —
+ * Agent settings page: ten tabs —
  * Overview (name/description form + two ruled sections in the skills import modal's
  * family: Agent State — State version, snapshot export-import and the copyable State
  * path — and Kernel — the defaults generation with its update / restore-defaults
@@ -7,9 +7,10 @@
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
  * Hooks (hooks-tab.tsx), Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule
- * (schedules-tab.tsx).
+ * (schedules-tab.tsx), API (api-tab.tsx: the Agent's public API, kept by this server).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
- * server-side).
+ * server-side). Leaving a form tab with unsaved edits — another tab, or Back — asks to
+ * discard them first; a snapshot import asks before it replaces the Agent State.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
@@ -22,35 +23,52 @@ import type {
   AgentModelConfigDto,
 } from "@prismshadow/penguin-server/api";
 import type { ToolDefinitionConfig, ToolPermission } from "@prismshadow/penguin-core/interfaces";
+import {
+  Button,
+  Card,
+  ConfirmModal,
+  CopyButton,
+  GlyphIcon,
+  HiddenFileInput,
+  ICONS,
+  InfoPopover,
+  Input,
+  OptionMenu,
+  PageFrame,
+  PageHeader,
+  Skeleton,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  Tabs,
+  Textarea,
+  UpdateDot,
+  toastError,
+  toastInfo,
+  toastSuccess,
+} from "@prismshadow/penguin-ui";
+import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
-import { Tabs } from "../../components/ui/tabs";
-import { Button } from "../../components/ui/button";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { Input, Textarea } from "../../components/ui/input";
-import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
-import { Switch } from "../../components/ui/switch";
-import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
-import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
-import { Skeleton } from "../../components/ui/skeleton";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { UpdateDot } from "../../components/ui/update-dot";
+import { useReportDirty, useSaveConfirm } from "./save-confirm";
 import { SkillsTab } from "./skills-tab";
 import { HooksTab } from "./hooks-tab";
 import { MemoryTab } from "./memory-tab";
 import { kernelTabLabel } from "./kernel-labels";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
+import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
-import { InfoPopover } from "../../components/ui/info-popover";
-import { ICON_SIZE } from "../../lib/icon-scale";
 
 type TabKey =
   | "overview"
@@ -61,7 +79,8 @@ type TabKey =
   | "hooks"
   | "memory"
   | "vault"
-  | "schedules";
+  | "schedules"
+  | "api";
 
 /**
  * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
@@ -121,6 +140,7 @@ export function AgentSettingsPage() {
     { key: "memory", label: S.agent.tabMemory },
     { key: "vault", label: S.agent.tabVault },
     { key: "schedules", label: S.agent.tabSchedules },
+    { key: "api", label: S.agent.tabApi },
   ] as const;
   const navigate = useNavigate();
   const params = useParams<{ agentId: string }>();
@@ -151,6 +171,20 @@ export function AgentSettingsPage() {
     },
     [setSearchParams],
   );
+  /**
+   * Whether the mounted tab holds unsaved edits (each form tab reports it). Leaving the tab —
+   * another tab, or Back — unmounts it and its form state, so a leave asks to discard first.
+   * A ref: only the leave handlers read it, and a keystroke need not re-render the page.
+   */
+  const dirtyRef = useRef(false);
+  const reportDirty = useCallback((dirty: boolean) => {
+    dirtyRef.current = dirty;
+  }, []);
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
+  const guardLeave = (go: () => void) => {
+    if (dirtyRef.current) setPendingLeave(() => go);
+    else go();
+  };
   // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
   const [error, setError] = useState<string | null>(null);
 
@@ -253,68 +287,88 @@ export function AgentSettingsPage() {
   return (
     /* relative: a scroller is its own containing block (see the invariant in styles.css) —
        this page's snapshot-import control used to grow the document from below the fold. */
-    <div className="no-scrollbar relative h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-3xl">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate("/agents")}
-          className="-ml-2 mb-3 text-gray-500 dark:text-gray-400"
-        >
-          <GlyphIcon d="M15 18l-6-6 6-6M9 12h12" size={ICON_SIZE.rowLead} />
-          {S.agent.backToList}
-        </Button>
-        <h1 className="mb-1 text-xl font-semibold">{data.config.name ?? agentId}</h1>
-        <p className="mb-4 font-mono text-xs text-gray-400">{agentId}</p>
-        {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
-            from the Agents list has to cross the tab strip to reach it. */}
-        <Tabs
-          items={TABS.map((t) =>
-            t.key === "overview" && data.config.kernelOutdated
-              ? { ...t, badge: S.agent.kernelOutdatedHint }
-              : t,
-          )}
-          active={tab}
-          onChange={switchTab}
-        />
-        <div className="py-4">
-          {tab === "overview" && (
-            <OverviewTab
-              data={data}
-              agentId={agentId}
-              onSave={save}
-              onImported={onImported}
-              onConfigReset={onConfigReset}
-              onKernelUpdated={onKernelUpdated}
-            />
-          )}
-          {tab === "prompt" && <PromptTab data={data} onSave={save} />}
-          {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
-          {tab === "tools" && (
-            <div className="space-y-8">
-              <ToolsTab data={data} onSave={save} />
-              {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
-                  builtin table's Save button, so it lives beside ToolsTab, not inside it. */}
-              <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
-            </div>
-          )}
-          {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "hooks" && <HooksTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
-          {tab === "schedules" && (
-            <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />
-          )}
-        </div>
+    <PageFrame width="sm" className="no-scrollbar relative">
+      <PageHeader
+        title={data.config.name ?? agentId}
+        back={{ label: S.agent.backToList, onClick: () => guardLeave(() => navigate("/agents")) }}
+        // The id is data: mono on the small rung. A block keeps its line box at its own
+        // 16px rather than the description line's body height.
+        description={<span className="block font-mono text-xs text-gray-400">{agentId}</span>}
+      />
+      {/* The kernel update action lives in the Overview tab's Kernel section, so the trail
+          from the Agents list has to cross the tab strip to reach it. */}
+      <Tabs
+        items={TABS.map((t) =>
+          t.key === "overview" && data.config.kernelOutdated
+            ? { ...t, badge: S.agent.kernelOutdatedHint }
+            : t,
+        )}
+        active={tab}
+        onChange={(next) => {
+          if (next !== tab) guardLeave(() => switchTab(next));
+        }}
+      />
+      <div className="py-4">
+        {tab === "overview" && (
+          <OverviewTab
+            data={data}
+            agentId={agentId}
+            onSave={save}
+            onImported={onImported}
+            onConfigReset={onConfigReset}
+            onKernelUpdated={onKernelUpdated}
+            onDirtyChange={reportDirty}
+          />
+        )}
+        {tab === "prompt" && <PromptTab data={data} onSave={save} onDirtyChange={reportDirty} />}
+        {tab === "memory" && (
+          <MemoryTab
+            agentId={agentId}
+            onConfigChanged={refreshConfig}
+            onDirtyChange={reportDirty}
+          />
+        )}
+        {tab === "runtime" && <RuntimeTab data={data} onSave={save} onDirtyChange={reportDirty} />}
+        {tab === "tools" && (
+          <div className="space-y-6">
+            <ToolsTab data={data} onSave={save} onDirtyChange={reportDirty} />
+            {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
+                builtin table's Save button, so it lives beside ToolsTab, not inside it. */}
+            <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
+          </div>
+        )}
+        {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "hooks" && <HooksTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "schedules" && <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "api" && (
+          <ApiTab
+            projectId={projectId}
+            agentId={agentId}
+            isOwner={currentProject?.role === "owner"}
+          />
+        )}
       </div>
-    </div>
+      <ConfirmModal
+        open={pendingLeave !== null}
+        title={S.common.discardTitle}
+        onClose={() => setPendingLeave(null)}
+        onConfirm={() => {
+          const go = pendingLeave;
+          setPendingLeave(null);
+          dirtyRef.current = false;
+          go?.();
+        }}
+        confirmLabel={S.common.discard}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.common.discardBody}</p>
+      </ConfirmModal>
+    </PageFrame>
   );
 }
 
 type SaveFn = (update: AgentConfigUpdateRequest) => Promise<void>;
-
-/** Kernel-outdated hint icon (rotate-cw, 24×24 line path — the skill library's update glyph). */
-const KERNEL_UPDATE_ICON = "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10";
 
 function OverviewTab({
   data,
@@ -323,6 +377,7 @@ function OverviewTab({
   onImported,
   onConfigReset,
   onKernelUpdated,
+  onDirtyChange,
 }: {
   data: AgentConfigResponse;
   agentId: string;
@@ -330,6 +385,7 @@ function OverviewTab({
   onImported: (version: number) => void;
   onConfigReset: () => void;
   onKernelUpdated: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -338,6 +394,10 @@ function OverviewTab({
   const [description, setDescription] = useState(data.config.description ?? "");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  /** A picked snapshot package awaiting the overwrite confirmation: an import replaces the whole Agent State. */
+  const [pendingImport, setPendingImport] = useState<{ name: string; dataBase64: string } | null>(
+    null,
+  );
   // base64 of the snapshot package pending confirmation for a version conflict (409 version_conflict); non-null shows the confirm modal.
   const [conflict, setConflict] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
@@ -347,6 +407,12 @@ function OverviewTab({
   /** Last kernel update's merge report (kept fields listed under the section until the next full reload). */
   const [kernelResult, setKernelResult] = useState<AgentKernelUpdateResponse | null>(null);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
+  // The same comparison as `submit`: trimmed fields against the stored values.
+  useReportDirty(
+    name.trim() !== (data.config.name ?? "") ||
+      description.trim() !== (data.config.description ?? ""),
+    onDirtyChange,
+  );
 
   const runReset = async () => {
     if (!projectId) return;
@@ -420,7 +486,7 @@ function OverviewTab({
     if (!file) return;
     setImportError(null);
     fileToBase64(file).then(
-      (dataBase64) => void runImport(dataBase64, false),
+      (dataBase64) => setPendingImport({ name: file.name, dataBase64 }),
       () => setImportError(S.common.unknownError),
     );
   };
@@ -481,7 +547,7 @@ function OverviewTab({
             )}
           </div>
         </div>
-        <div className="mt-3 space-y-2.5">
+        <div className="mt-3 space-y-3">
           <div>
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
               {S.agent.stateVersion}
@@ -489,23 +555,21 @@ function OverviewTab({
             <p className="mt-0.5 font-mono text-sm font-semibold">v{data.config.version}</p>
           </div>
           {/* State path row (the chat details card's Session id convention): selectable mono
-              text with the shared CopyButton beside it; the title attribute carries the full
-              path for hover. */}
+              text with the shared CopyButton beside it; the path wraps, so it is always shown
+              whole. */}
           <div>
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
               {S.agent.stateDir}
             </p>
             <div className="flex items-start gap-1.5">
-              <span
-                title={data.stateDir}
-                className="min-w-0 flex-1 break-all font-mono text-xs leading-5"
-              >
+              <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">
                 {data.stateDir}
               </span>
               <CopyButton
                 text={data.stateDir}
                 label={S.agent.copyStateDir}
-                className={ROW_COPY_CLASS}
+                size="sm"
+                className="shrink-0"
               />
             </div>
           </div>
@@ -558,7 +622,7 @@ function OverviewTab({
             </Button>
           </div>
         </div>
-        <p className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm">
+        <p className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-sm">
           {data.config.kernelOutdated ? (
             <>
               <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -574,11 +638,11 @@ function OverviewTab({
               {/* Minimal outdated hint: icon + tooltip only (no textual alarm). */}
               <span
                 role="img"
-                title={S.agent.kernelOutdatedHint}
+                data-tooltip={S.agent.kernelOutdatedHint}
                 aria-label={S.agent.kernelOutdatedHint}
                 className="self-center text-gray-500 dark:text-gray-400"
               >
-                <GlyphIcon d={KERNEL_UPDATE_ICON} size={12} />
+                <GlyphIcon d={ICONS.rotateCw} size={12} />
               </span>
             </>
           ) : (
@@ -599,15 +663,38 @@ function OverviewTab({
         )}
       </section>
 
+      {/* Overwrite confirmation, before every import: the package replaces the whole Agent
+          State. An overwrite, not a deletion, so it takes the primary (pencil) tone. A package
+          that is not newer still meets the version-conflict prompt below. */}
+      <ConfirmModal
+        open={pendingImport !== null}
+        title={S.agent.importSnapshot}
+        tone="primary"
+        onClose={() => setPendingImport(null)}
+        onConfirm={() => {
+          if (pendingImport !== null) void runImport(pendingImport.dataBase64, false);
+          setPendingImport(null);
+        }}
+        confirmLabel={S.agent.importSnapshot}
+        cancelLabel={S.common.cancel}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {pendingImport !== null ? S.agent.importConfirmBody(pendingImport.name) : ""}
+        </p>
+      </ConfirmModal>
+
       {/* Version conflict confirmation: resend the same package with confirm: true after confirming. */}
       <ConfirmModal
         open={conflict !== null}
         title={S.agent.importConflictTitle}
         busy={importing}
+        tone="primary"
         onClose={() => setConflict(null)}
         onConfirm={() => {
           if (conflict !== null) void runImport(conflict, true);
         }}
+        confirmLabel={S.agent.importSnapshot}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
       </ConfirmModal>
@@ -623,6 +710,7 @@ function OverviewTab({
         onClose={() => setKernelOpen(false)}
         onConfirm={() => void runKernelUpdate()}
         confirmLabel={S.agent.kernelUpdateAction}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {S.agent.kernelUpdateConfirmBody}
@@ -637,6 +725,7 @@ function OverviewTab({
         onClose={() => setResetOpen(false)}
         onConfirm={() => void runReset()}
         confirmLabel={S.agent.resetConfigAction}
+        cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.resetConfigConfirmBody}</p>
       </ConfirmModal>
@@ -644,11 +733,22 @@ function OverviewTab({
   );
 }
 
-function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn }) {
+/** The props every form tab takes: the loaded config, the page's save, and its dirty report. */
+interface FormTabProps {
+  data: AgentConfigResponse;
+  onSave: SaveFn;
+  onDirtyChange?: (dirty: boolean) => void;
+}
+
+function PromptTab({ data, onSave, onDirtyChange }: FormTabProps) {
   const [agentsMd, setAgentsMd] = useState(data.agentsMd);
   const [systemPrompt, setSystemPrompt] = useState(data.config.systemPrompt);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
+  useReportDirty(
+    agentsMd !== data.agentsMd || systemPrompt !== data.config.systemPrompt,
+    onDirtyChange,
+  );
 
   const submit = () => {
     const update: AgentConfigUpdateRequest = {};
@@ -714,7 +814,7 @@ function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn
               <button
                 type="button"
                 onClick={() => insertPlaceholder(ph)}
-                title={S.agent.insertPlaceholder}
+                data-tooltip={S.agent.insertPlaceholder}
                 className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
               >
                 {ph}
@@ -732,7 +832,7 @@ function PromptTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn
   );
 }
 
-function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn }) {
+function RuntimeTab({ data, onSave, onDirtyChange }: FormTabProps) {
   const cfg = data.config;
   const [maxTurns, setMaxTurns] = useState(numToStr(cfg.maxTurns));
   const [maxTokens, setMaxTokens] = useState(numToStr(cfg.model?.maxTokens));
@@ -747,6 +847,23 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
   const [fieldErrors, setFieldErrors] = useState<{ maxTurns?: string; timeoutMs?: string }>({});
   const clearFieldErrors = () => setFieldErrors((p) => (p.maxTurns || p.timeoutMs ? {} : p));
   const { requestSave, element: saveConfirm } = useSaveConfirm();
+  // What `submit` would send, minus its validation: an empty number field means "no change",
+  // and an unpicked menu stays on the stored value.
+  const numChanged = (s: string, stored: number | undefined) => {
+    const n = parseNum(s);
+    return n !== undefined && n !== stored;
+  };
+  useReportDirty(
+    numChanged(maxTurns, cfg.maxTurns) ||
+      numChanged(maxTokens, cfg.model?.maxTokens) ||
+      (thinkingLevel !== "" && thinkingLevel !== (cfg.model?.thinkingLevel ?? "")) ||
+      numChanged(timeoutMs, cfg.model?.timeoutMs) ||
+      numChanged(maxContextLength, cfg.compaction?.maxContextLength) ||
+      numChanged(maxSessionTurns, cfg.compaction?.maxSessionTurns) ||
+      (mode !== "" && mode !== (cfg.compaction?.mode ?? "")) ||
+      prompt !== (cfg.compaction?.prompt ?? ""),
+    onDirtyChange,
+  );
 
   const submit = () => {
     setFieldErrors({});
@@ -815,7 +932,7 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
 
   return (
     <div className="space-y-4">
-      <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <Card padding="none">
         <div className="p-3">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Input
@@ -914,7 +1031,7 @@ function RuntimeTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveF
             onChange={(e) => setPrompt(e.target.value)}
           />
         </div>
-      </div>
+      </Card>
 
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
@@ -931,7 +1048,35 @@ interface ToolRowState {
   maxOutputLength: string;
 }
 
-function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn }) {
+/**
+ * Whether the tools table differs from the loaded config, column by column: an empty number
+ * cell is "not overridden", and a call_description switched back on where the stored row
+ * omits it is "not written" (missing means on).
+ */
+function toolRowsDirty(
+  rows: readonly ToolRowState[],
+  orig: readonly ToolDefinitionConfig[],
+): boolean {
+  const num = (s: string) => (s.trim() === "" ? undefined : Number(s.trim()));
+  return (
+    rows.length !== orig.length ||
+    rows.some((r, i) => {
+      const o = orig[i]!;
+      const cd =
+        r.base.call_description === true && o.call_description === undefined
+          ? undefined
+          : r.base.call_description;
+      return (
+        r.base.permission !== o.permission ||
+        num(r.timeoutMs) !== o.timeoutMs ||
+        num(r.maxOutputLength) !== o.maxOutputLength ||
+        cd !== o.call_description
+      );
+    })
+  );
+}
+
+function ToolsTab({ data, onSave, onDirtyChange }: FormTabProps) {
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
   const permissionOptions: ReadonlyArray<OptionMenuChoice<ToolPermission>> = [
     {
@@ -957,6 +1102,8 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
   // Per-cell validation errors, keyed `${rowIndex}-${column}`, shown red under the offending numeric input.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const { requestSave, element: saveConfirm } = useSaveConfirm();
+  const dirty = toolRowsDirty(rows, data.config.toolsBuiltin);
+  useReportDirty(dirty, onDirtyChange);
 
   const update = (index: number, patch: Partial<ToolRowState>) => {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
@@ -1006,20 +1153,8 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
       return;
     }
     setFieldErrors({});
-    // The table is submitted whole, so compare the editable columns against the loaded
+    // The table is submitted whole, so the editable columns are compared against the loaded
     // config to detect a no-op save (row order is stable — both sides map the same list).
-    const orig = data.config.toolsBuiltin;
-    const dirty =
-      tools.length !== orig.length ||
-      tools.some((t, i) => {
-        const o = orig[i]!;
-        return (
-          t.permission !== o.permission ||
-          t.timeoutMs !== o.timeoutMs ||
-          t.maxOutputLength !== o.maxOutputLength ||
-          t.call_description !== o.call_description
-        );
-      });
     if (!dirty) {
       toastInfo(S.common.noChangesToSave);
       return;
@@ -1036,77 +1171,73 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
 
   return (
     <div className="space-y-4">
-      <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <table className="w-full min-w-[640px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-              <th className="px-3 py-2">{S.common.name}</th>
-              <th className="px-3 py-2">{S.agent.toolPermission}</th>
-              <th className="px-3 py-2">{S.agent.toolTimeout}</th>
-              <th className="px-3 py-2">{S.agent.toolMaxOutput}</th>
-              <th className="px-3 py-2">
-                <span className="flex items-center gap-1.5">
-                  {S.agent.toolCallDescription}
-                  <InfoPopover label={S.agent.toolCallDescription}>
-                    {S.agent.callDescriptionHint}
-                  </InfoPopover>
-                </span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={row.base.name} className="border-b border-gray-100 dark:border-gray-800/60">
-                <td className="px-3 py-2 align-top font-mono text-xs">{row.base.name}</td>
-                <td className="px-3 py-2 align-top">
-                  <OptionMenu
-                    mono
-                    size="sm"
-                    aria-label={S.agent.toolPermission}
-                    placeholder={S.agent.defaultValue}
-                    options={permissionOptions}
-                    value={row.base.permission}
-                    onChange={(v) => update(i, { base: { ...row.base, permission: v } })}
+      <Table tableClassName="min-w-[640px]">
+        <TableHead>
+          <TableHeaderCell>{S.common.name}</TableHeaderCell>
+          <TableHeaderCell>{S.agent.toolPermission}</TableHeaderCell>
+          <TableHeaderCell>{S.agent.toolTimeout}</TableHeaderCell>
+          <TableHeaderCell>{S.agent.toolMaxOutput}</TableHeaderCell>
+          <TableHeaderCell>
+            <span className="flex items-center gap-1.5">
+              {S.agent.toolCallDescription}
+              <InfoPopover label={S.agent.toolCallDescription}>
+                {S.agent.callDescriptionHint}
+              </InfoPopover>
+            </span>
+          </TableHeaderCell>
+        </TableHead>
+        <TableBody>
+          {rows.map((row, i) => (
+            <TableRow key={row.base.name}>
+              <TableCell className="align-top font-mono text-xs">{row.base.name}</TableCell>
+              <TableCell className="align-top">
+                <OptionMenu
+                  mono
+                  size="sm"
+                  aria-label={S.agent.toolPermission}
+                  placeholder={S.agent.defaultValue}
+                  options={permissionOptions}
+                  value={row.base.permission}
+                  onChange={(v) => update(i, { base: { ...row.base, permission: v } })}
+                />
+              </TableCell>
+              <TableCell className="align-top">
+                <Input
+                  size="sm"
+                  value={row.timeoutMs}
+                  error={fieldErrors[`${i}-timeoutMs`]}
+                  inputMode="numeric"
+                  className="font-mono"
+                  onChange={(e) => update(i, { timeoutMs: e.target.value })}
+                />
+              </TableCell>
+              <TableCell className="align-top">
+                <Input
+                  size="sm"
+                  value={row.maxOutputLength}
+                  error={fieldErrors[`${i}-maxOutputLength`]}
+                  inputMode="numeric"
+                  className="font-mono"
+                  onChange={(e) => update(i, { maxOutputLength: e.target.value })}
+                />
+              </TableCell>
+              <TableCell className="align-top">
+                {/* Per-tool call_description switch (missing = on): shown only for tools whose
+                    config schema actually declares the description argument. */}
+                {hasDescriptionProperty(row.base) ? (
+                  <Switch
+                    checked={row.base.call_description !== false}
+                    onChange={(v) => update(i, { base: { ...row.base, call_description: v } })}
+                    aria-label={`${row.base.name} ${S.agent.toolCallDescription}`}
                   />
-                </td>
-                <td className="px-3 py-2 align-top">
-                  <Input
-                    size="sm"
-                    value={row.timeoutMs}
-                    error={fieldErrors[`${i}-timeoutMs`]}
-                    inputMode="numeric"
-                    className="font-mono"
-                    onChange={(e) => update(i, { timeoutMs: e.target.value })}
-                  />
-                </td>
-                <td className="px-3 py-2 align-top">
-                  <Input
-                    size="sm"
-                    value={row.maxOutputLength}
-                    error={fieldErrors[`${i}-maxOutputLength`]}
-                    inputMode="numeric"
-                    className="font-mono"
-                    onChange={(e) => update(i, { maxOutputLength: e.target.value })}
-                  />
-                </td>
-                <td className="px-3 py-2 align-top">
-                  {/* Per-tool call_description switch (missing = on): shown only for tools whose
-                      config schema actually declares the description argument. */}
-                  {hasDescriptionProperty(row.base) ? (
-                    <Switch
-                      checked={row.base.call_description !== false}
-                      onChange={(v) => update(i, { base: { ...row.base, call_description: v } })}
-                      aria-label={`${row.base.name} ${S.agent.toolCallDescription}`}
-                    />
-                  ) : (
-                    <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                ) : (
+                  <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
 
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}

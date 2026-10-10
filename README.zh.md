@@ -88,10 +88,13 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 | 分类        | 插件                                                                            |
 | ----------- | ------------------------------------------------------------------------------- |
-| 办公效率    | `data-analysis`、`use-firecrawl`、`use-bento-slides`、`humanizer`、`goal`、`continual-learning` |
+| 办公效率    | `a2ui`、`data-analysis`、`use-firecrawl`、`browser-automation`、`use-bento-slides`、`humanizer`、`goal`、`continual-learning` |
 | 软件开发    | `software-development`、`use-claude-code`                                |
 | AI 应用开发 | `agent-development`、`model-development`、`skill-porting`、`agent-tuning`       |
 | Agent 公司  | `agent-company`                                                                 |
+
+桌面应用的侧边停靠栏里还内置了一个浏览器。Agent 通过 `penguin browser` 和 `browser-automation` 插件驱动它：读取页面、点击和输入，并提取亚马逊订单这样的数据，登录用的是从你自己的浏览器导入的账号。
+同一套命令也能通过 PenguinHarness Browser 扩展驱动你自己的 Chrome（Web App 中即用此方式）：Agent 只操作你交给它的标签页，登录状态留在 Chrome 中。
 
 ## 支持的模型
 
@@ -102,9 +105,9 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 | GLM 5.3          | Z.AI, OpenRouter, TokenDance                                                                     |
 | Hunyuan 3        | OpenRouter                                                                                       |
 | Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance                                      |
-| GPT 5.6          | OpenAI, OpenRouter                                                                               |
-| Gemini 3.7 Flash | Google Gemini, OpenRouter                                                                        |
-| Claude 5         | Anthropic, OpenRouter                                                                            |
+| GPT 6.1          | OpenAI, OpenRouter                                                                               |
+| Gemini 3.8 Flash | Google Gemini, OpenRouter                                                                        |
+| Claude 5.5       | Anthropic, OpenRouter                                                                            |
 | Inkling          | OpenRouter, Fireworks AI                                                                         |
 
 上表每个系列只列最新一代，完整预置清单请在应用的**模型**页查看；只要是 OpenAI 协议的端点都可以接入：选择预置，或用自定义端点连接 1000+ 在线与本地模型。
@@ -124,6 +127,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 - **🖥️ 桌面端应用**——双击安装：内嵌服务端，打开即已登录，全程无需终端。
 - **⌨️ 命令行**——一行命令（或 npm / 离线包）装出 `penguin` 命令，`penguin web` 即在浏览器打开完整 Web 体验 `http://127.0.0.1:7364`（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心）。在线安装器自带 Node 运行时，解压即用；升级与重装不触碰数据。
+- **🧩 Chrome 扩展**（可选）——[PenguinHarness Browser](https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp) 让 Agent 驱动你在自己的 Chrome 中交给它的标签页：从 Chrome 应用商店安装，再在浏览器面板中配对。无法访问商店时，可在 `chrome://extensions` 以「加载已解压的扩展程序」载入每个 [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases) 附带的 `penguin-browser-extension.zip`。
 
 > [!NOTE]
 > 命令行安装后，服务端会以边框提示打印一条首次登录链接（在密码被设置之前每次启动都会重新打印）——打开即可认领内置管理员 `admin` 并设置密码；模型在应用内「模型」页配置。
@@ -280,6 +284,15 @@ pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，
   license = {Apache-2.0}
 }
 ```
+
+## 致谢
+
+本项目受益于：
+
+- [MinGit](https://github.com/git-for-windows/git)：Windows 版内置的 POSIX shell 与 Git
+- [GenericAgent](https://github.com/lsdefine/genericagent)：内置浏览器自动化
+
+许可证详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ## 协议
 
