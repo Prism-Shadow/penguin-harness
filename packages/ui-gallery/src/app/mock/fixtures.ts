@@ -700,6 +700,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             shortDescription: "Claude Code docs, with citations",
             shortDescriptionZh: "带引用的 Claude Code 文档问答",
             version: "0.2.13",
+            package: `@penguinharness/${IDS.plugins.registry}`,
             source: "builtin",
             skills: [
               skill(
@@ -719,6 +720,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             descriptionZh:
               "使用 PenguinHarness SDK 开发：Session、Agent State 与 OmniMessage 接口。",
             version: "0.2.13",
+            package: "@penguinharness/penguin-sdk",
             source: "builtin",
             skills: [
               skill("penguin-sdk", "PenguinHarness SDK 用法", "How to use the PenguinHarness SDK"),
@@ -730,6 +732,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             description: "Design and build web pages that do not read as templated defaults.",
             descriptionZh: "设计并实现不像模板默认值的网页。",
             version: "0.2.13",
+            package: "@penguinharness/web-design",
             source: "builtin",
             skills: [skill("web-design", "网页视觉设计", "Web visual design")],
             hooks: [],
@@ -747,6 +750,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
               "Run a Session round after round until an objective is met, within a token budget.",
             descriptionZh: "在 Token 预算内一轮轮推进，直到达成目标。",
             version: "0.2.13",
+            package: "@penguinharness/goal",
             source: "builtin",
             skills: [],
             hooks: ["stop"],
@@ -757,6 +761,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
             description: "Write what a Session learned into the Agent's memory when it ends.",
             descriptionZh: "会话结束时把学到的东西写进智能体记忆。",
             version: "0.2.13",
+            package: "@penguinharness/continual-learning",
             source: "builtin",
             skills: [
               skill(
@@ -774,7 +779,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
               "Turn findings into a structured report with a summary, sections and an appendix.",
             descriptionZh: "把调查结果整理成带摘要、分节和附录的报告。",
             version: "0.2.13",
-            source: "builtin",
+            package: "@acme/report-writer",
+            source: "installed",
             skills: [skill("report-writer", "撰写结构化报告", "Write structured reports")],
             hooks: [],
           },

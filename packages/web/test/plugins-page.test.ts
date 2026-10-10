@@ -135,6 +135,7 @@ const plugin = (name: string, extra: Partial<PluginItem> = {}): PluginItem => ({
   name,
   description: `${name}.`,
   version: "0.2.13",
+  package: `@penguinharness/${name}`,
   source: "builtin",
   skills: [{ name, description: "", version: "2026.10.04.1" }],
   hooks: [],
@@ -175,6 +176,22 @@ describe("the page's rows", () => {
     );
     expect(rows.map((r) => [r.key, r.category, r.library?.name, r.module?.state])).toEqual([
       ["library:both", "software-development", "both", "active"],
+    ]);
+  });
+
+  it("joins a package an admin installed with its library plugin by the package's own name", () => {
+    const rows = pluginRows(
+      [
+        {
+          id: "other",
+          title: "Other",
+          plugins: [plugin("notes", { package: "@acme/notes", source: "installed" })],
+        },
+      ],
+      [{ specifier: "@acme/notes", entry: undefined, state: "active", shipped: false }],
+    );
+    expect(rows.map((r) => [r.key, r.library?.package, r.module?.specifier])).toEqual([
+      ["library:notes", "@acme/notes", "@acme/notes"],
     ]);
   });
 

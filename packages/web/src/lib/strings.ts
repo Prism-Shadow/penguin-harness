@@ -2483,6 +2483,69 @@ export const zh = {
     detailHooks: "钩子",
     /** In place of the README of a package that is not on this server. */
     readmeAfterInstall: "安装后可查看 README",
+    /** The tag of a plugin an admin installed on this server (not shipped with the build). */
+    installedOnServer: "服务端安装",
+    installedOnServerHint: "管理员安装到本服务端的包，不随构建自带。",
+    /** The detail dialog's export (any member) and delete (admin, a package installed on the server). */
+    exportPlugin: "导出",
+    exportPluginHint: "下载插件包的 zip，可在另一台服务端的「导入插件」中原样导入",
+    deletePlugin: "删除",
+    deleteConfirmTitle: (name: string) => `从服务端删除 ${name}`,
+    deleteConfirmBody: (name: string) =>
+      `将从服务端删除 ${name}，插件库不再列出它；各 Agent 已安装的技能与钩子副本不受影响。`,
+    deletedToast: (name: string) => `已从服务端删除 ${name}`,
+    /** The import dialog (admin): a tab for each way in — npm, a link, a zip, or an Agent in a chat. */
+    importPlugin: "导入插件",
+    importServerWide: "插件安装到整个服务端，所有 Project 共用。",
+    importTabs: {
+      npm: "从 npm 安装",
+      link: "从链接安装",
+      zip: "上传 zip 包",
+      agent: "让 Agent 安装",
+    },
+    /** The npm tab: a package name, which the server installs from the registry itself. */
+    importNpmWhy: "npm 包名，可带版本、范围或标签，由服务端直接从 npm 仓库安装。",
+    importNpmLabel: "npm 包名",
+    importNpmPlaceholder: "@scope/name 或 name@1.2.0",
+    importNpmInvalid: "不是 npm 包名；链接请在「从链接安装」中填写，其他来源请让 Agent 安装。",
+    /** The link tab: an https link npm fetches, from wherever the server's network reaches. */
+    importLinkWhy:
+      "指向 git 仓库或 tarball 的 https 链接，由服务端直接获取并安装；服务端会访问你给出的任意 https 地址，包括内网地址。",
+    importLinkLabel: "链接",
+    importLinkPlaceholder: "https://github.com/… 或 github:owner/repo",
+    importLinkInvalid: "不是 https 链接；包名请在「从 npm 安装」中填写，其他来源请让 Agent 安装。",
+    importCost:
+      "插件带有服务端模块时，安装会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。",
+    /** On the npm, link and zip tabs: what installing runs, said plainly. */
+    importScriptsRun: "这个包的安装脚本会以服务端用户的身份在服务器上运行。",
+    importAgentWhy:
+      "适合网页、仓库或一段描述：Agent 先找到并审阅插件包，再用 penguin plugin install 安装。",
+    importSourceLabel: "插件来源",
+    importSourcePlaceholder: "链接、本地路径或一段描述",
+    importSourceToken: "<插件来源>",
+    importPromptLabel: "发送给 Agent 的 Prompt",
+    /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
+    importPromptLead: {
+      link: (source: string) => `把 ${source} 处的 PenguinHarness 插件安装到本服务端。`,
+      localPath: (source: string) =>
+        `把本地文件夹 ${source} 中的 PenguinHarness 插件安装到本服务端。`,
+      reference: (source: string) =>
+        `找到下面描述的 PenguinHarness 插件并安装到本服务端：${source}`,
+    },
+    importPromptTail: (projectId: string) =>
+      `插件是在服务端运行的 npm 包：安装前先读完它的 package.json、plugin.json 和随附的全部脚本，说明它做什么、会运行什么；它不是 PenguinHarness 插件（plugin.json 旁有 skills/ 或 hooks/，或带服务端模块的 ifaces.json），或其中有任何可疑之处时，停下来告诉我。确认无误后运行 \`penguin plugin install <npm 包名或 https 链接> --project-id ${projectId}\` 安装，并报告装上的包名和版本。来源是本地文件夹时不要安装：把它打成 zip（不含 node_modules），告诉我 zip 的位置，由我在「上传 zip 包」中上传。`,
+    importUploadDesc:
+      "插件包目录的 zip：package.json 在根目录或唯一的顶层目录内，不含 node_modules，例如另一台服务端「导出」的文件。只上传你信任的来源。",
+    importUploadAction: "选择 zip 文件",
+    importedToast: (name: string, version: string | null) =>
+      version === null ? `已安装 ${name}` : `已安装 ${name} ${version}`,
+    importUnchangedToast: (name: string, version: string | null) =>
+      `服务端已安装 ${name}${version === null ? "" : ` ${version}`}，无需更新`,
+    /** The confirm when the zip holds another version of a package on this server (409 plugin_exists). */
+    replaceTitle: "替换已安装的插件",
+    replaceBody: (name: string, installed: string, incoming: string) =>
+      `服务端已安装 ${name} ${installed}，zip 中是 ${incoming}。替换后，所有 Project 改用 zip 中的版本。`,
+    replaceAction: "替换",
     /** Usage count in the card metadata (shows "unused" instead of a bare 0). */
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
     /** Quick start's tooltip: what pressing it does, and what it does not. */

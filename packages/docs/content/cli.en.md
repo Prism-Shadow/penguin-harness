@@ -280,6 +280,23 @@ penguin agent api status --agent-id helper --json
 penguin project ls
 ```
 
+## penguin plugin
+
+Installs and removes the plugins on the server, which is an admin's to do: the CLI calls with the server's local API token, which is the admin's, so an agent can install a plugin it has reviewed in a conversation. Each command takes `--project-id` (defaulting to `PENGUIN_PROJECT_ID`, then `default_project`), `--json` and `--server`.
+
+- `penguin plugin install <specifier>` installs a plugin on the server: an npm package name, optionally with a version, range or tag (`@scope/name`, `name@1.2.0`), or an https link to a git repository or a tarball (`https://github.com/o/r`, `github:o/r#v1`). The server refuses anything else, such as a path or an `http:` link. A plugin of Skills or hooks joins the plugin library, and you install it on an agent from the **Plugins** page. A plugin of server modules is also listed for the Project and loaded at once, which stops the agent runs in progress on the server.
+- `penguin plugin remove <name>` removes the plugin from the Project, and from the server once no other Project lists it.
+- `penguin plugin list` (or `ls`) lists the server modules the Project lists, with their state on this server, and the plugins of Skills or hooks installed on the server.
+
+```bash
+penguin plugin install @acme/penguin-notes@1.2.0
+penguin plugin install https://github.com/acme/penguin-notes --project-id my-project
+penguin plugin list --json
+penguin plugin remove @acme/penguin-notes
+```
+
+To install a plugin from a zip, use **Import plugin** on the **Plugins** page; see [Import and export plugins](/skills#import-and-export-plugins).
+
 ## penguin cost
 
 Shows Token usage and cost from the server's usage aggregates. By default the command prints a summary card with today, the last 7 days and the total, which ignore any range options. `--by` prints a grouped table instead.

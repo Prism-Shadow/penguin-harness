@@ -280,6 +280,23 @@ penguin agent api status --agent-id helper --json
 penguin project ls
 ```
 
+## penguin plugin
+
+在服务端安装和移除插件，这是管理员的操作：CLI 用服务端的本地 API token 发起调用，这个 token 代表管理员，因此 Agent 可以在对话中审阅插件后自行安装。每个命令都支持 `--project-id`（缺省依次取 `PENGUIN_PROJECT_ID`、`default_project`）、`--json` 和 `--server`。
+
+- `penguin plugin install <specifier>` 把插件安装到服务端：npm 包名，可带版本、范围或标签（`@scope/name`、`name@1.2.0`），或指向 git 仓库或 tarball 的 https 链接（`https://github.com/o/r`、`github:o/r#v1`）。其他来源，例如路径或 `http:` 链接，服务端会拒绝。只含 Skill 或钩子的插件进入插件库，再在**插件**页把它安装到 Agent 上；带服务端模块的插件还会为该 Project 启用并立即载入，服务端上正在进行的 Agent 运行会被中止。
+- `penguin plugin remove <name>` 从 Project 中移除插件；没有其他 Project 使用时，一并从服务端删除。
+- `penguin plugin list`（或 `ls`）列出 Project 启用的服务端模块及其在本服务端上的状态，以及服务端安装的 Skill / 钩子插件。
+
+```bash
+penguin plugin install @acme/penguin-notes@1.2.0
+penguin plugin install https://github.com/acme/penguin-notes --project-id my-project
+penguin plugin list --json
+penguin plugin remove @acme/penguin-notes
+```
+
+要从 zip 安装插件，请使用**插件**页的**导入插件**，见[导入与导出插件](/skills#导入与导出插件)。
+
 ## penguin cost
 
 展示来自服务器用量聚合的 Token 用量与成本。默认打印一张摘要卡片，包含今天、最近 7 天和总计，忽略任何范围选项。`--by` 则打印分组表格。

@@ -69,8 +69,10 @@ import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { localizedText } from "../chat/skill-use";
 import { SettingsDialog } from "../settings/settings-dialog";
+import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
+import { ImportPluginModal } from "./plugin-import-modal";
 import {
   PLUGIN_GROUP_BYS,
   foldKey,
@@ -176,6 +178,10 @@ export function PluginsPage() {
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The import dialog (admin) is open. */
+  const [importOpen, setImportOpen] = useState(false);
+  /** Bumped when what the server holds changed under the page (an import, a delete): the library and the registry are read again. */
+  const [reloadKey, setReloadKey] = useState(0);
   /** Free text over names, descriptions and keywords. */
   const [query, setQuery] = useState("");
   const [groupBy, setGroupBy] = useState<PluginGroupBy>(() => initialPluginsGroupBy());
@@ -249,7 +255,7 @@ export function PluginsPage() {
     })),
   ];
 
-  // The registry, fetched once on page entry.
+  // The registry, fetched on page entry and again after an import or a delete.
   useEffect(() => {
     let cancelled = false;
     api.getPluginIndex().then(
@@ -265,7 +271,7 @@ export function PluginsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   /**
    * A server module change waiting for its confirmation (null = none). Applying one
@@ -308,7 +314,8 @@ export function PluginsPage() {
     }
   };
 
-  // Library list: readable once logged in, fetched once on page entry.
+  // Library list: readable once logged in, fetched on page entry and again after an import or a
+  // delete (an admin's packages of Skills or hooks are in it).
   useEffect(() => {
     let cancelled = false;
     setError(null);
@@ -323,7 +330,29 @@ export function PluginsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
+
+  /** What the server holds changed (an import, a delete): read the library, the registry and the Project's list again. */
+  const reloadServerPlugins = () => {
+    setReloadKey((k) => k + 1);
+    reloadDeployment();
+  };
+
+  /**
+   * Deletes a package an admin installed on the server: off this Project's list, and off the
+   * server's disk once nothing lists it — through the same route Remove takes. The copies of its
+   * skills and hooks on Agents stay where they are.
+   */
+  const deletePlugin = async (plugin: PluginItem) => {
+    if (projectId === null) return;
+    try {
+      setDeployment(await api.uninstallPlugin(projectId, plugin.package));
+      toastSuccess(S.plugins.deletedToast(plugin.package));
+      reloadServerPlugins();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
 
   // Installed skills and hook packages for every Agent in the current Project (fetched in
   // parallel, same convention as the sessions context): a single Agent's failure is silently
@@ -599,6 +628,7 @@ export function PluginsPage() {
         pendingSpecifier !== row.module.specifier
       }
       onQuickStart={quickStartLibrary}
+      onDeletePlugin={deletePlugin}
       onToggleInstall={toggleInstall}
       onUpdateOutdated={updateOutdated}
       onModuleApply={(install) => {
@@ -637,6 +667,7 @@ export function PluginsPage() {
               ) : null
             }
             onOpenSettings={() => setSettingsOpen(true)}
+            onImport={() => setImportOpen(true)}
           />
         }
       >
@@ -677,6 +708,15 @@ export function PluginsPage() {
         onClose={() => setSettingsOpen(false)}
         section="plugins"
       />
+      {isAdmin && projectId !== null && (
+        <ImportPluginModal
+          open={importOpen}
+          projectId={projectId}
+          agentId={pickDefaultAgent(agents)?.agentId ?? null}
+          onClose={() => setImportOpen(false)}
+          onInstalled={reloadServerPlugins}
+        />
+      )}
 
       {error ? (
         <div className="mt-2 flex items-center gap-3">
@@ -806,10 +846,11 @@ function CardGrid({ children }: { children: React.ReactNode }) {
  * list too): the search box, and beside it the grouping select, whose options each say what they
  * do ("Group by status") while its accessible name says what it groups; it is wide enough for its
  * longest English option. Then, for an admin, the machine picker (which machine's plugins the rows
- * show, and which table an install or a removal edits: the shared one, or that machine's own) and
- * Settings, a secondary button that opens the Settings dialog's Plugins page, its glyph before
- * words that always show. On a phone the search box and the select share the first line, the box
- * taking what the select leaves, and the admin's buttons wrap below them.
+ * show, and which table an install or a removal edits: the shared one, or that machine's own), then
+ * the pair the Agents page header has: Import plugin, the primary button, and Settings, the
+ * secondary one, which opens the Settings dialog's Plugins page — each glyph before words that
+ * always show. On a phone the search box and the select share the first line, the box taking what
+ * the select leaves, and the admin's buttons wrap below them.
  */
 export function PluginsHeaderActions({
   query,
@@ -819,6 +860,7 @@ export function PluginsHeaderActions({
   isAdmin,
   machinePicker,
   onOpenSettings,
+  onImport,
 }: {
   query: string;
   onQuery: (query: string) => void;
@@ -828,6 +870,8 @@ export function PluginsHeaderActions({
   /** The machine picker, when there is another machine to pick; null otherwise. */
   machinePicker: React.ReactNode;
   onOpenSettings: () => void;
+  /** Opens the import dialog (shown to an admin only: installing is the server's). */
+  onImport: () => void;
 }) {
   return (
     <>
@@ -859,10 +903,16 @@ export function PluginsHeaderActions({
       {isAdmin && (
         <>
           {machinePicker}
-          <Button size="sm" variant="secondary" onClick={onOpenSettings}>
-            <GlyphIcon d={ICONS.gear} />
-            {S.plugins.openSettings}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="primary" onClick={onImport}>
+              <GlyphIcon d={ICONS.upload} />
+              {S.plugins.importPlugin}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={onOpenSettings}>
+              <GlyphIcon d={ICONS.gear} />
+              {S.plugins.openSettings}
+            </Button>
+          </div>
         </>
       )}
     </>

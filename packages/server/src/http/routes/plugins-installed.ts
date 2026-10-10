@@ -5,10 +5,28 @@
  *                                 plus which plugins the build ships (any member)
  *   POST   / { specifier,         npm-install the package if this server runs it and the build
  *            machineId? }         does not ship it, add it to this Project's shared table — or
- *                                 to that machine's own table — and apply (admin)
+ *                                 to that machine's own table — and apply (admin). The specifier
+ *                                 is a registry name, or an https link to a git repository or a
+ *                                 tarball (plugin/source.ts), which installs here only
+ *   POST   /archive               install an uploaded package zip on this server (admin); 409
+ *          { dataBase64,          plugin_exists when another version is installed, unless
+ *            overwrite? }         `overwrite`
  *   PUT    / { plugins }          rewrite this Project's shared table, and apply (admin)
  *   DELETE /?specifier=…          drop it from every table of this Project — or, with
- *          [&machineId=…]         `machineId`, from that machine's own table — and apply (admin)
+ *          [&machineId=…]         `machineId`, from that machine's own table — and apply (admin);
+ *                                 the package leaves the disk once nothing lists it here
+ *
+ * WHAT A TABLE LISTS is server modules: a package of Skills or hooks alone is the library's
+ * (core lists every package of the prefix that carries them), installed into Agents rather than
+ * loaded, so installing one writes no table. And a package from a link or a zip is listed in
+ * THIS machine's own table, never the shared one: another machine handed its name would fetch
+ * whatever the registry has under that name.
+ *
+ * WHAT IS REFUSED after the fact: the prefix resolves before the shipped plugins, so a package
+ * under the name of a module the build ships would replace it for every Project — a zip saying
+ * so is refused before it installs, and a link (whose name npm reads) is removed again; so is a
+ * package that turns out to be no plugin at all. The refusal says that its install scripts have
+ * already run.
  *
  * WHERE THE LIST LIVES. In the Project's own config (the `[plugins]` table of `.project_config.toml`,
  * package name → requirement, Cargo's `[dependencies]` shape, plus a `[plugins.<machineId>]`
@@ -35,14 +53,22 @@
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { InstalledPlugin, InstalledPluginsResponse } from "../../api/types.js";
+import type {
+  InstalledPlugin,
+  InstalledPluginsResponse,
+  PluginInstallOutcome,
+} from "../../api/types.js";
 import { HttpError } from "../errors.js";
-import { readJson, requireValidId } from "../validate.js";
+import { readJson, requireString, requireValidId } from "../validate.js";
 import type { DatabaseSync } from "node:sqlite";
 import {
   effectivePluginTable,
+  isLibraryPackage,
   PLUGIN_MACHINE_ID,
+  type PluginRequirement,
   type PluginTables,
 } from "@prismshadow/penguin-core";
 import type { Config, Db, Hmr, Reassembly, ReassemblyChange } from "../../hmr/capabilities.js";
@@ -55,11 +81,16 @@ import {
   readPluginClosure,
   readPluginDeclaration,
 } from "../../plugin/loader.js";
+import type { PluginPackages } from "../../mechanisms/plugins.js";
 import {
-  installPluginPackage,
+  installedPackageDir,
   PluginInstallError,
-  removePluginPackage,
+  pluginsPrefix,
+  readInstalledVersion,
+  type InstalledPackage,
 } from "../../plugin/install.js";
+import { parsePluginSource, type PluginSource } from "../../plugin/source.js";
+import { parsePluginArchive } from "../../services/plugin-archive.js";
 import { PluginHost, pluginHostFrom, PLUGINS_RESOURCE_ID } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Machines } from "../../machines/service.js";
@@ -82,6 +113,8 @@ export interface InstalledPluginsDeps {
    * for the restart that will read it).
    */
   apply: (change: ReassemblyChange) => Promise<boolean>;
+  /** How packages reach and leave this server's prefix: npm, unless a test stands in. */
+  packages: PluginPackages;
   /**
    * Hands this Project's list to the machines it uses, strict parity. Not awaited: the
    * person editing is not the one who should wait for a set of ssh tunnels — the same rule
@@ -185,13 +218,40 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
   };
 
-  /** A package specifier, optionally with a version range — never a path or a URL. */
-  const specifierOf = (value: unknown): string => {
+  /** A package name, as a table lists it — never a version, a path or a link. */
+  const nameOf = (value: unknown): string => {
     const s = typeof value === "string" ? value.trim() : "";
-    if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(@[^\s/]+)?$/.test(s)) {
+    if (!PACKAGE_NAME.test(s)) {
       throw new HttpError(400, "bad_request", "specifier must be an npm package name.");
     }
     return s;
+  };
+
+  /** What POST may install: a registry name, or an https link (plugin/source.ts). */
+  const sourceOf = (value: unknown): PluginSource => {
+    try {
+      return parsePluginSource(value);
+    } catch (err) {
+      throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  /** npm's failure, as the answer: what it said, never a 500. */
+  const viaNpm = async (run: () => Promise<InstalledPackage>): Promise<InstalledPackage> => {
+    try {
+      return await run();
+    } catch (err) {
+      if (err instanceof PluginInstallError) {
+        throw new HttpError(400, "plugin_install_failed", `npm: ${err.message}`);
+      }
+      throw err;
+    }
+  };
+
+  /** What a package in this server's prefix carries: skills or hooks (the library's), server modules (a table's). */
+  const kindsOf = (name: string): { library: boolean; modules: boolean } => {
+    const dir = installedPackageDir(pluginsPrefix(deps.root), name);
+    return { library: isLibraryPackage(dir), modules: existsSync(path.join(dir, "ifaces.json")) };
   };
 
   /** The machine a verb is scoped to — its own table — or null for the shared table. */
@@ -252,36 +312,14 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     });
   };
 
-  app.post("/", async (c) => {
-    requireAdmin(c);
-    const projectId = scope(c);
-    const body = await readJson(c);
-    const specifier = specifierOf(body.specifier);
-    const machineId = machineOf(body.machineId);
-    // A plugin the build ships is already on the machine: asking for it is consent, not a
-    // download. Everything else goes through npm — the package first, the list second, since
-    // a listed plugin that is not on disk is exactly the state this route exists to avoid,
-    // and npm failing must leave the deployment unchanged. A plugin asked of another machine
-    // only is downloaded THERE, by that machine, when the list reaches it.
-    const runsHere = machineId === null || machineId === deps.machineId;
-    const shipped = await discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
-    if (runsHere && !shipped.includes(specifier)) {
-      try {
-        await installPluginPackage(deps.root, specifier);
-      } catch (err) {
-        if (err instanceof PluginInstallError) {
-          throw new HttpError(400, "plugin_install_failed", `npm: ${err.message}`);
-        }
-        throw err;
-      }
-    }
-    // `pkg@1.2.3` installs that version, and the table records it as what this Project asks
-    // of the package; the key is the bare name, which is what the loader resolves.
-    const at = specifier.lastIndexOf("@");
-    const name = at > 0 ? specifier.slice(0, at) : specifier;
-    const version = at > 0 ? specifier.slice(at + 1) : undefined;
-    const requirement = version === undefined ? {} : { version };
-    await edit(projectId, (tables) =>
+  /** Lists `name` in this Project's shared table, or — with `machineId` — in that machine's own. */
+  const list = (
+    projectId: string,
+    name: string,
+    requirement: PluginRequirement,
+    machineId: string | null,
+  ) =>
+    edit(projectId, (tables) =>
       machineId === null
         ? { ...tables, all: { ...tables.all, [name]: requirement } }
         : {
@@ -292,14 +330,159 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
             },
           },
     );
-    deps.syncFleet(projectId);
-    return c.json(await view(projectId));
+
+  /** The names of the server modules this build ships: a package under one of them would shadow it. */
+  const shippedNames = () => discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
+
+  /**
+   * Takes back a package an install just put in the prefix and refuses the install: one under the
+   * name of a shipped module (409 `plugin_shipped`), or one that is no plugin (400
+   * `not_a_plugin`). Its install scripts have run by now, and the refusal says so — and says so
+   * too when taking it back failed, which leaves it for the operator to remove.
+   */
+  const refuseInstalled = async (
+    name: string,
+    status: 400 | 409,
+    code: string,
+    why: string,
+  ): Promise<never> => {
+    let undone = `It was removed again, but its install scripts had already run on the server.`;
+    try {
+      await deps.packages.remove(deps.root, name);
+    } catch (err) {
+      undone = `Its install scripts had already run on the server, and removing it failed (${err instanceof Error ? err.message : String(err)}): remove it from ${pluginsPrefix(deps.root)} by hand.`;
+    }
+    throw new HttpError(status, code, `${why} ${undone}`);
+  };
+
+  /** What an install put in the prefix, checked before anything lists it (see the header). */
+  const vetInstalled = async (installed: InstalledPackage) => {
+    if ((await shippedNames()).includes(installed.name)) {
+      return refuseInstalled(
+        installed.name,
+        409,
+        "plugin_shipped",
+        `${installed.name} ships with this server: a package under its name would replace it for every Project.`,
+      );
+    }
+    const kinds = kindsOf(installed.name);
+    if (!kinds.library && !kinds.modules) {
+      return refuseInstalled(
+        installed.name,
+        400,
+        "not_a_plugin",
+        `${installed.name} is not a PenguinHarness plugin: it carries neither a plugin.json beside skills/ or hooks/ nor the ifaces.json of server modules.`,
+      );
+    }
+    return kinds;
+  };
+
+  /** The answer to an install: the Project's list, and what landed on this server. */
+  const answer = async (
+    projectId: string,
+    installed: InstalledPackage | null,
+    extra: Partial<PluginInstallOutcome> = {},
+  ): Promise<InstalledPluginsResponse> => ({
+    ...(await view(projectId)),
+    ...(installed !== null
+      ? { installed: { ...installed, ...kindsOf(installed.name), ...extra } }
+      : {}),
+  });
+
+  app.post("/", async (c) => {
+    requireAdmin(c);
+    const projectId = scope(c);
+    const body = await readJson(c);
+    const source = sourceOf(body.specifier);
+    const machineId = machineOf(body.machineId);
+    const runsHere = machineId === null || machineId === deps.machineId;
+    if (source.kind === "link") {
+      // A link names no package another machine could fetch by name: it installs here, and is
+      // listed for this machine alone.
+      if (!runsHere) {
+        throw new HttpError(
+          400,
+          "bad_request",
+          "A link installs on this server only; install it on that machine from its own Plugins page.",
+        );
+      }
+      const installed = await viaNpm(() => deps.packages.install(deps.root, source.spec));
+      if ((await vetInstalled(installed)).modules) {
+        await list(projectId, installed.name, {}, deps.machineId);
+        deps.syncFleet(projectId);
+      }
+      return c.json(await answer(projectId, installed));
+    }
+    // A plugin the build ships is already on the machine: asking for it is consent, not a
+    // download. Everything else goes through npm — the package first, the list second, since
+    // a listed plugin that is not on disk is exactly the state this route exists to avoid,
+    // and npm failing must leave the deployment unchanged. A plugin asked of another machine
+    // only is downloaded THERE, by that machine, when the list reaches it.
+    const shipped = await shippedNames();
+    const installed =
+      runsHere && !shipped.includes(source.name)
+        ? await viaNpm(() => deps.packages.install(deps.root, source.spec))
+        : null;
+    // A package of Skills or hooks alone is the library's from here on: no table loads it.
+    const kinds = installed !== null ? await vetInstalled(installed) : null;
+    if (kinds === null || kinds.modules) {
+      // `pkg@1.2.3` installs that version, and the table records it as what this Project asks
+      // of the package; the key is the bare name, which is what the loader resolves.
+      await list(
+        projectId,
+        source.name,
+        source.version === undefined ? {} : { version: source.version },
+        machineId,
+      );
+      deps.syncFleet(projectId);
+    }
+    return c.json(await answer(projectId, installed));
+  });
+
+  app.post("/archive", async (c) => {
+    requireAdmin(c);
+    const projectId = scope(c);
+    const body = await readJson(c);
+    const dataBase64 = requireString(body, "dataBase64", { minLen: 1, maxLen: 20 * 1024 * 1024 });
+    const archive = await parsePluginArchive(new Uint8Array(Buffer.from(dataBase64, "base64")));
+    // The prefix resolves first: a zip under a shipped module's name would replace it.
+    if ((await shippedNames()).includes(archive.name)) {
+      throw new HttpError(
+        409,
+        "plugin_shipped",
+        `${archive.name} ships with this server: a package under its name would replace it for every Project.`,
+      );
+    }
+    const current = await readInstalledVersion(pluginsPrefix(deps.root), archive.name);
+    if (current === archive.version) {
+      return c.json(
+        await answer(projectId, { name: archive.name, version: current }, { unchanged: true }),
+      );
+    }
+    // Another version is on this server: replacing it is the admin's to confirm. The message
+    // tail is what the dialog's question is built from (pinned by the route test).
+    if (current !== null && body.overwrite !== true) {
+      throw new HttpError(
+        409,
+        "plugin_exists",
+        `Plugin ${archive.name} is installed at ${current}; the zip holds ${archive.version}.`,
+      );
+    }
+    const installed = await viaNpm(() =>
+      deps.packages.installFiles(deps.root, Object.fromEntries(archive.files)),
+    );
+    // Uploaded, so this server's alone (see the header): listed for this machine only.
+    if (kindsOf(installed.name).modules) {
+      await list(projectId, installed.name, {}, deps.machineId);
+      deps.syncFleet(projectId);
+    }
+    return c.json(await answer(projectId, installed), 201);
   });
 
   app.delete("/", async (c) => {
     requireAdmin(c);
     const projectId = scope(c);
-    const specifier = specifierOf(c.req.query("specifier"));
+    const specifier = nameOf(c.req.query("specifier"));
     const machineId = machineOf(c.req.query("machineId"));
     const without = (table: PluginTables["all"] | undefined) => {
       const kept = { ...table };
@@ -324,7 +507,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     // break that Project at the next load.
     if (!(await readPluginClosure(deps.root, deps.machineId)).includes(specifier)) {
       try {
-        await removePluginPackage(deps.root, specifier);
+        await deps.packages.remove(deps.root, specifier);
       } catch (err) {
         if (err instanceof PluginInstallError) {
           throw new HttpError(500, "plugin_remove_failed", `npm: ${err.message}`);
@@ -392,6 +575,7 @@ export class InstalledPluginRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly machines!: Machines;
   @Use() private readonly db!: Db;
+  @Use() private readonly packages!: PluginPackages;
   @Bind("InstalledPluginRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     const hmr = this.hmr;
@@ -408,6 +592,7 @@ export class InstalledPluginRoutes {
       projectConfig: this.projectConfig,
       access: this.access,
       apply: (change) => this.reassembly.reassemble(change),
+      packages: this.packages,
       // The plugin list rides the same trip the model config takes to a Project's machines.
       syncFleet: (projectId) => void this.machines.syncModelsEverywhere(projectId),
     });

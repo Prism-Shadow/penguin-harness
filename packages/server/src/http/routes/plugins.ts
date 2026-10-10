@@ -4,8 +4,10 @@
  *   GET    /api/plugins                                   # the built-in library by category (any logged-in user)
  *   GET    /api/plugins/:plugin/files                     # the files a library plugin ships, for the detail view's browser
  *   GET    /api/plugins/:plugin/readme                    # a library plugin's README.md, from its package root (404 without one)
- *   GET    /api/plugins/registry                          # the merged plugin index: the builtin entries and the published ones
- *   GET    /api/plugins/registry/readme?name=…            # one indexed entry's long-form readme
+ *   GET    /api/plugins/:plugin/archive                   # a library plugin's package as a zip, for another server to import
+ *   GET    /api/plugins/registry                          # the merged plugin index: the builtin entries, the published ones, and the server modules an admin installed from a link or a zip
+ *   GET    /api/plugins/registry/readme?name=…            # one listed entry's long-form readme
+ *   GET    /api/plugins/registry/archive?name=…           # one listed package on this server, as a zip
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
  * Installing a plugin writes each of its skills to agent_state/skills/<name>/ and its hook
  * package to agent_state/hooks/<plugin>/ (hooks.json + scripts); reinstalling overwrites with
@@ -22,17 +24,22 @@
  * the page — see plugin/registry.ts for both rules.
  */
 import { Hono } from "hono";
+import { existsSync } from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
   installPlugin,
   listInstalledHooks,
   listInstalledSkills,
   libraryPlugin,
+  libraryPluginPackage,
   libraryPluginReadme,
   loadPluginGroups,
 } from "@prismshadow/penguin-core";
 import type {
   AgentPluginsInstallResponse,
   PluginFilesResponse,
+  PluginIndexEntry,
   PluginIndexResponse,
   PluginLibraryResponse,
   PluginReadmeResponse,
@@ -57,8 +64,14 @@ import {
   NIGHTLY_INDEX_URL,
 } from "../../plugin/registry.js";
 import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
-import { pluginBases } from "../../plugin/loader.js";
+import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
 import type { PluginBase } from "../../plugin/loader.js";
+import { installedPackageDir, pluginsPrefix, prefixDependencies } from "../../plugin/install.js";
+import {
+  pluginArchiveResponse,
+  unscopedName,
+  zipPluginPackage,
+} from "../../services/plugin-archive.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -116,6 +129,17 @@ export function pluginLibraryRoutes(): Hono<AppEnv> {
       throw new HttpError(404, "readme_not_found", `Plugin ${pluginName} ships no README.md`);
     }
     return c.json({ name: pluginName, readme } satisfies PluginReadmeResponse);
+  });
+  // The package as a zip — its directory as npm has it, without node_modules — which another
+  // server's admin imports as it is. Any member: it is what the library already shows.
+  app.get("/:plugin/archive", async (c) => {
+    const pluginName = c.req.param("plugin");
+    const pkg = libraryPluginPackage(pluginName);
+    if (pkg === undefined) {
+      throw new HttpError(404, "unknown_plugin", `Plugin is not in the library: ${pluginName}`);
+    }
+    const zip = await zipPluginPackage(pkg.dir, unscopedName(pkg.packageName));
+    return pluginArchiveResponse(zip, pkg.packageName, pkg.version);
   });
   return app;
 }
@@ -213,6 +237,58 @@ export interface PluginRoutesOptions {
   seed?: IndexSnapshot | null;
   /** Receives the published index's cache, so its document can be parked. */
   onCache?: (cache: CachedRegistry) => void;
+  /** This server's plugin prefix (`<root>/plugins`), whose server modules from a link or a zip the listing adds; none without it. */
+  prefix?: () => string | null;
+}
+
+/**
+ * The server modules an admin installed from a link or a zip: packages of the prefix carrying
+ * an `ifaces.json` that no index lists. Their row is their own package.json, described by the
+ * card plugin.json when the package has one — the listing then lets the package describe itself
+ * further, as it does every package on this machine.
+ */
+async function prefixEntries(
+  prefix: string | null,
+  listed: ReadonlySet<string>,
+): Promise<PluginIndexEntry[]> {
+  if (prefix === null) return [];
+  const entries: PluginIndexEntry[] = [];
+  for (const name of Object.keys(await prefixDependencies(prefix)).sort()) {
+    if (listed.has(name) || !PACKAGE_NAME.test(name)) continue;
+    const dir = installedPackageDir(prefix, name);
+    if (!existsSync(path.join(dir, "ifaces.json"))) continue;
+    let pkg: { version?: unknown; description?: unknown; license?: unknown; author?: unknown };
+    try {
+      pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf8")) as typeof pkg;
+    } catch {
+      continue;
+    }
+    let card: { description?: unknown } = {};
+    try {
+      card = JSON.parse(await fs.readFile(path.join(dir, "plugin.json"), "utf8")) as typeof card;
+    } catch {
+      // No card: package.json's description is the row's.
+    }
+    const author =
+      typeof pkg.author === "string"
+        ? pkg.author
+        : typeof (pkg.author as { name?: unknown } | undefined)?.name === "string"
+          ? (pkg.author as { name: string }).name
+          : null;
+    entries.push({
+      name,
+      version: typeof pkg.version === "string" ? pkg.version : "",
+      description:
+        typeof card.description === "string" && card.description !== ""
+          ? card.description
+          : typeof pkg.description === "string"
+            ? pkg.description
+            : "",
+      authors: author === null ? [] : [author],
+      license: typeof pkg.license === "string" ? pkg.license : "",
+    });
+  }
+  return entries;
 }
 
 export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<AppEnv> {
@@ -220,9 +296,17 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   // Built once per App, so the cache outlives a request rather than being rebuilt per page load.
   const registries = options.registries ?? resolveRegistries(options);
   const bases = options.bases ?? (() => []);
+  const prefix = options.prefix ?? (() => null);
+
+  /** Every entry this deployment lists: the indexes' and the prefix's own server modules. */
+  const listing = async () => {
+    const { entries, failures } = await mergeIndexes(registries);
+    const own = await prefixEntries(prefix(), new Set(entries.map((e) => e.name)));
+    return { entries: [...entries, ...own], failures };
+  };
 
   app.get("/", async (c) => {
-    const { entries, failures } = await mergeIndexes(registries);
+    const { entries, failures } = await listing();
     // A package on this machine describes itself: its own plugin.json and icon.svg win over
     // what an index row says, so an installed package's card shows its icon and both languages
     // even where its index row carries neither.
@@ -238,10 +322,11 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     if (name === undefined || name === "") {
       return c.json({ error: { code: "bad_request", message: "name is required" } }, 400);
     }
-    // Only entries this deployment actually lists: answering for an unlisted name would make
-    // the endpoint a probe of what exists.
-    const { entries } = await mergeIndexes(registries);
-    if (!entries.some((e) => e.name === name)) {
+    // Only entries this deployment actually lists, by a package name (an index row's name is
+    // not trusted to be one): answering for anything else would make the endpoint a probe of
+    // what exists, or of what a path above a prefix holds.
+    const { entries } = await listing();
+    if (!PACKAGE_NAME.test(name) || !entries.some((e) => e.name === name)) {
       return c.json({ error: { code: "not_found", message: "no such plugin" } }, 404);
     }
     // First source that has one. Only the builtin registry carries readmes today: the shared
@@ -255,6 +340,35 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     }
     const body: PluginReadmeResponse = { name, readme: null };
     return c.json(body);
+  });
+  // A listed package on this server as a zip, for another server to import: the same listing
+  // rule as the readme, and only what is here — the package as npm installed or shipped it.
+  app.get("/archive", async (c) => {
+    const name = c.req.query("name");
+    if (name === undefined || name === "") {
+      throw new HttpError(400, "bad_request", "name is required");
+    }
+    const { entries } = await listing();
+    if (!PACKAGE_NAME.test(name) || !entries.some((e) => e.name === name)) {
+      throw new HttpError(404, "not_found", "no such plugin");
+    }
+    const found = resolvePluginPackage(name, bases());
+    if (found === null) {
+      throw new HttpError(
+        404,
+        "plugin_not_here",
+        `${name} is not on this server: install it to export it.`,
+      );
+    }
+    let version = "";
+    try {
+      const raw = JSON.parse(await fs.readFile(found.manifest, "utf8")) as { version?: unknown };
+      version = typeof raw.version === "string" ? raw.version : "";
+    } catch {
+      // A package.json that will not parse still zips; the file name goes without a version.
+    }
+    const zip = await zipPluginPackage(found.dir, unscopedName(name));
+    return pluginArchiveResponse(zip, name, version);
   });
   return app;
 }
@@ -308,6 +422,7 @@ export class PluginRegistryRoutes {
       indexUrl: this.config.pluginIndexUrl,
       // Read per request: a push moves the shipped prefix to a new assets directory.
       bases: () => pluginBases(this.config.root, this.hmr.assetsDir()),
+      prefix: () => pluginsPrefix(this.config.root),
       seed: parked ?? null,
       onCache: (cache) => {
         this.cache = cache;

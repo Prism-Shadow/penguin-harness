@@ -50,9 +50,6 @@ export interface PluginRow {
   module?: ModulePart;
 }
 
-/** The package a library plugin is published as. */
-const LIBRARY_SCOPE = "@penguinharness/";
-
 /** The display name of a package: its name without the scope. */
 export function unscopedName(specifier: string): string {
   return specifier.replace(/^@[^/]+\//, "");
@@ -159,7 +156,7 @@ export function moduleParts(
 /**
  * Every row of the page: the library's plugins under the category their group gave them, and
  * the server modules under the first category of their index entry the page knows (else
- * `other`). A module published as a library plugin's package joins that plugin's row.
+ * `other`). A module whose package is a library plugin's (its `package`) joins that plugin's row.
  */
 export function pluginRows(
   groups: readonly PluginGroupItem[],
@@ -176,7 +173,7 @@ export function pluginRows(
         library: plugin,
       };
       rows.push(row);
-      byPackage.set(`${LIBRARY_SCOPE}${plugin.name}`, row);
+      byPackage.set(plugin.package, row);
     }
   }
   const known = new Set([...groups.map((g) => g.id), SANDBOX_CATEGORY]);

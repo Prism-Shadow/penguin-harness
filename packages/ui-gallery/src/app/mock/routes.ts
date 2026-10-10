@@ -1894,6 +1894,15 @@ router
     const name = query.get("name") ?? "";
     return { name, readme: store.f.readmes[name] ?? null };
   })
+  // A listed server module's package as a zip: the demo's bytes stand in for the package.
+  .get("/api/plugins/registry/archive", ({ store, query }) => {
+    const name = query.get("name") ?? "";
+    if (!store.f.pluginIndex.plugins.some((e) => e.name === name)) notFound("Plugin");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${name.replace(/^@[^/]+\//, "")}.zip"`,
+    });
+  })
   // A library plugin's own README.md: the demo's plugins ship none unless the store has one.
   .get("/api/plugins/:plugin/readme", ({ store, params }): PluginReadmeResponse => {
     const name = params.plugin!;
@@ -1901,6 +1910,13 @@ router
     const readme = store.f.readmes[name];
     if (readme === undefined) notFound("README");
     return { name, readme };
+  })
+  .get("/api/plugins/:plugin/archive", ({ store, params }) => {
+    if (!libraryPlugins(store).some((p) => p.name === params.plugin)) notFound("Plugin");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.plugin!}.zip"`,
+    });
   })
   .get("/api/plugins/:plugin/files", ({ store, params }): PluginFilesResponse => {
     const files = store.f.pluginFiles[params.plugin!];
@@ -2369,6 +2385,9 @@ router
       }
       return store.f.installedPlugins;
     },
+  )
+  .post("/api/projects/:projectId/plugins/installed/archive", () =>
+    readOnly("install a plugin archive"),
   )
   .delete(
     "/api/projects/:projectId/plugins/installed",

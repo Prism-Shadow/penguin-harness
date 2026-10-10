@@ -69,7 +69,8 @@ import type { Interfaces, MembersOf, ReassemblyChange } from "./capabilities.js"
 import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
 import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost } from "../plugin/loader.js";
-import { usePushedPluginLibrary } from "@prismshadow/penguin-core";
+import { useInstalledPluginPrefix, usePushedPluginLibrary } from "@prismshadow/penguin-core";
+import { pluginsPrefix } from "../plugin/install.js";
 import { pushedLibraryDir } from "./asset-archives.js";
 import { migrate } from "../db/migrations.js";
 import { MachinesRepo } from "../db/repos/machines.js";
@@ -299,6 +300,9 @@ async function createInner(
   // it: a machine installed before a plugin existed otherwise never offers it, and a feature
   // that seeds an Agent with it (company mode's CEO, `agent-company`) fails on every attempt.
   if (caps !== null) usePushedPluginLibrary(pushedLibraryDir(caps.hmr.assetsDir()));
+  // And it lists what an admin installed on this server: the packages of Skills or hooks in
+  // the data root's plugin prefix, beside the ones the build ships.
+  if (caps !== null) useInstalledPluginPrefix(pluginsPrefix(caps.config.root));
 
   // Plugins are modules (see ../plugin/), and WHICH ones this App runs is configuration it
   // reads for ITSELF: the closure over the root's Projects, loaded here rather than handed

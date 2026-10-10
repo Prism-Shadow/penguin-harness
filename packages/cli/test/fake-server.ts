@@ -3,7 +3,7 @@
  * handler covering exactly the endpoints the server-backed commands touch (the current
  * user, session create/get/patch, tasks/steer/compact/switch-model/abort, SSE stream,
  * messages, agents and their public API settings, projects, usage, schedules, the admin settings,
- * organizations and their channels, and — through
+ * organizations and their channels, the plugins installed on the server, and — through
  * the `builtinBrowser` handler a test sets — the built-in browser). Connection resolution is pinned via PENGUIN_API_URL
  * (a loopback URL, so no token gate) and PENGUIN_HOME points at a scratch directory so
  * nothing of the developer's real data root is read.
@@ -302,6 +302,27 @@ export class FakeServer {
       },
     },
   });
+
+  /**
+   * The plugins of the server: the server modules the Project lists (GET …/plugins/installed's
+   * rows), the library's packages of Skills or hooks installed on the server (GET /api/plugins),
+   * and what POST …/plugins/installed answers for a specifier — npm's refusal unless a test says
+   * otherwise. DELETE drops the name from both lists.
+   */
+  plugins: {
+    listed: Json[];
+    library: Json[];
+    install: (specifier: string) => { status?: number; body: unknown };
+  } = {
+    listed: [],
+    library: [],
+    install: (specifier) => ({
+      status: 400,
+      body: {
+        error: { code: "plugin_install_failed", message: `npm: 404 Not Found - ${specifier}` },
+      },
+    }),
+  };
 
   private nextSessionOrdinal = 1;
   private nextEventId = 1;
@@ -1759,6 +1780,36 @@ export class FakeServer {
       });
       const status = answer.status ?? 200;
       return status === 204 ? new Response(null, { status }) : this.json(answer.body ?? {}, status);
+    }
+
+    if (apiPath === "/api/plugins" && method === "GET") {
+      return this.json({
+        groups: [{ id: "other", title: "Other", plugins: this.plugins.library }],
+      });
+    }
+    const pluginsMatch = /^\/api\/projects\/([^/]+)\/plugins\/installed$/.exec(apiPath);
+    if (pluginsMatch) {
+      const view = () => ({
+        plugins: this.plugins.listed,
+        shipped: [],
+        file: ".project_config.toml",
+        machineId: "Self000000000000",
+        restartPending: false,
+      });
+      if (method === "POST") {
+        const answer = this.plugins.install(String(body?.specifier ?? ""));
+        const status = answer.status ?? 200;
+        return this.json(
+          status === 200 ? { ...view(), ...(answer.body as Json) } : answer.body,
+          status,
+        );
+      }
+      if (method === "DELETE") {
+        const name = url.searchParams.get("specifier");
+        this.plugins.listed = this.plugins.listed.filter((p) => p.specifier !== name);
+        this.plugins.library = this.plugins.library.filter((p) => p.package !== name);
+      }
+      return this.json(view());
     }
 
     // Session create

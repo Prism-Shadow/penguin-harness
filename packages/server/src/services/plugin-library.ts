@@ -99,7 +99,8 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
       ? { shortDescriptionZh: plugin.shortDescriptionZh }
       : {}),
     version: plugin.version,
-    source: "builtin",
+    package: plugin.packageName,
+    source: plugin.source ?? "builtin",
     skills: plugin.skills.map(({ icon: _icon, ...skill }) => toSkillItem(skill)),
     hooks: plugin.hooks ? hookEvents(plugin.hooks.manifest) : [],
     ...(plugin.hooks !== undefined ? { hookVersion: plugin.hooks.manifest.version } : {}),

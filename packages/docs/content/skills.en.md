@@ -21,7 +21,7 @@ A **Skill** is a set of reusable instructions that an agent reads when a task ca
 4. To narrow the cards, type in the search box. Every section opens while a search is active.
 5. Select a card to open its details.
 
-Each card shows the plugin's icon, name and short description, a line in the form `v<version> · <status> · used by N agents`, and tags such as **built in**, plus the category when the cards are grouped another way. The version is the plugin's npm version. The agent count, shown for a plugin with Skills or hooks, covers the agents in the current Project that have the whole plugin installed, or a copy the update check lists as behind. The status is an icon and a word; point at it for what it means for that plugin:
+Each card shows the plugin's icon, name and short description, a line in the form `v<version> · <status> · used by N agents`, and tags such as **built in**, or **installed on server** for a plugin an admin installed, plus the category when the cards are grouped another way. The version is the plugin's npm version. The agent count, shown for a plugin with Skills or hooks, covers the agents in the current Project that have the whole plugin installed, or a copy the update check lists as behind. The status is an icon and a word; point at it for what it means for that plugin:
 
 | Status | A plugin with Skills or hooks | A server plugin |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ Each card shows the plugin's icon, name and short description, a line in the for
 | **Not on this server** | — | It runs on other machines only |
 | **Available** | No agent in the Project has it | The Project has not added it |
 
-The details open in a dialog: the version, status and tags, then **About**, with the full description and, when the plugin's package ships a README, that README. Every server plugin has one; for a package that is not on this server yet, the dialog says the README shows once it is installed. A plugin with Skills or hooks also has **Files**, a file browser: the tree on the left has one folder per Skill, with its `SKILL.md` first and its reference files after it, and a **Hooks** folder for the hook scripts; the preview on the right shows the selected file. The dialog's buttons are the card's.
+The details open in a dialog: the version, status and tags, then **About**, with the full description and, when the plugin's package ships a README, that README. Every server plugin has one; for a package that is not on this server yet, the dialog says the README shows once it is installed. A plugin with Skills or hooks also has **Files**, a file browser: the tree on the left has one folder per Skill, with its `SKILL.md` first and its reference files after it, and a **Hooks** folder for the hook scripts; the preview on the right shows the selected file. The dialog's buttons are the card's, after **Export**, which downloads the plugin's package as a zip; an admin also sees **Delete** on a plugin installed on the server. See [Import and export plugins](#import-and-export-plugins).
 
 The buttons on the right of a card:
 
@@ -170,6 +170,25 @@ To remove one, select **Remove** and confirm. The plugin leaves the Project's li
 Only admins see **Install** and **Remove**; everyone else sees the cards and their details. A plugin that ships with PenguinHarness installs without a download. A change applies without restarting the server: the server rebuilds its business surface around the new list, which is why runs in progress stop. Afterwards the card's status reads **Installed**, **Restart to load** when the server could not apply the change without a restart, or **Failed to load**, with the reason when you point at it.
 
 The list is the `[plugins]` table of the Project's config; see [Configuration Reference](/configuration#plugins). For the routes, see [Server API](/server-api#plugin-registry-and-project-plugins), and for how the server loads plugins, see [Server Boot and Subsystems](/server-boot#re-assembly).
+
+## Import and export plugins
+
+Any plugin can be exported, and an admin can install more on the server: a plugin is an npm package, installed on the whole server and shared by every Project.
+
+To export a plugin, open its details and select **Export**. The download is the plugin's package as a zip, named `<name>-v<version>.zip`, which another server imports as it is. Anyone who can open the **Plugins** page can export a plugin whose package is on this server.
+
+To import a plugin, select **Import plugin** in the page header. Only admins see the button. Each tab of the dialog is one way in, and it opens on **From npm**:
+
+- **From npm**: type an npm package name, which may carry a version, range or tag, such as `@scope/name` or `name@1.2.0`, and select **Install**. The server installs it from the npm registry.
+- **From a link**: type an https link to a git repository or a tarball, such as `https://github.com/acme/penguin-notes`, and select **Install**. The server fetches and installs it with npm, from any https address you give, internal ones included. A path, an `http:` link or a link with credentials is refused before anything runs.
+- **Upload a zip**: choose a zip of a plugin's package directory, such as an exported plugin. `package.json` sits at its root or in its one top-level directory, and it holds no `node_modules`. When the server has another version of the package, the dialog asks before replacing it. Upload only what you trust.
+- **Ask an agent**: for a web page, a repository or a description, type the source. The dialog builds a prompt for the Project's default agent, which reviews the package before installing it with [`penguin plugin install`](/cli#penguin-plugin). Select **Copy prompt**, or **Open a new chat** to start a draft with it; nothing is sent until you send it.
+
+However it arrives, the package's install scripts run on the server as the server's user, as when a package is installed from npm. A package under the name of a server plugin that ships with PenguinHarness is refused, and so is a package that turns out not to be a plugin; by the time a link is refused, its install scripts have already run.
+
+What happens next depends on the plugin. A plugin of Skills or hooks joins the library, tagged **installed on server**; install it on an agent with **Manage installs**. A plugin of server modules is also added to the Project and loaded, which stops the agent runs in progress, as [installing a server plugin](#server-plugins) does. A plugin from a link or a zip is added for this server only, because another machine would fetch the package's name from the npm registry and could get a different package. To run it on another machine, import it there.
+
+To delete a plugin of Skills or hooks that an admin installed, open its details and select **Delete**. The package leaves the server and the library; the copies of its Skills and hooks installed on agents stay. A server plugin is removed with **Remove**.
 
 ## Write a Skill
 

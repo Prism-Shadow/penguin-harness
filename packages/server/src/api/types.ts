@@ -4111,8 +4111,10 @@ export interface PluginItem {
   shortDescriptionZh?: string;
   /** The plugin's npm version (its package.json, following the release) — what the card shows. Installed copies are compared part by part instead: each skill's `version`, and {@link hookVersion}. */
   version: string;
-  /** Where the plugin comes from: `builtin` — a package this build ships. */
-  source: "builtin";
+  /** The npm package the plugin is, e.g. `@penguinharness/a2ui` — what Delete and a server module's row name it by. */
+  package: string;
+  /** Where the plugin comes from: `builtin` — a package this build ships; `installed` — one an admin installed on the server (by name, link or zip). */
+  source: "builtin" | "installed";
   /** The plugin's skills (metadata only), each with its own dated `version`. */
   skills: SkillMetadataItem[];
   /** The hook points the plugin's hook package answers at (`[]` without one). */
@@ -5888,8 +5890,30 @@ export interface InstalledPlugin {
   here: boolean;
 }
 
+/** What an install put on this server (POST …/plugins/installed and …/installed/archive). */
+export interface PluginInstallOutcome {
+  /** The package name npm installed — for a link, the name its package.json carries. */
+  name: string;
+  version: string | null;
+  /** It carries skills or a hook package: the library lists it, and nothing loads it. */
+  library: boolean;
+  /** It carries server modules: the Project's list loads it. */
+  modules: boolean;
+  /** The zip held the version already installed: nothing was installed. */
+  unchanged?: boolean;
+}
+
+/** POST /api/projects/:projectId/plugins/installed/archive (admin): a plugin package zip, base64. */
+export interface PluginArchiveImportRequest {
+  dataBase64: string;
+  /** Replace another installed version of the package (the 409 `plugin_exists` question). */
+  overwrite?: boolean;
+}
+
 export interface InstalledPluginsResponse {
   plugins: InstalledPlugin[];
+  /** After an install: what landed on this server. */
+  installed?: PluginInstallOutcome;
   /**
    * Specifiers this build SHIPS (the hot push's assets, or the installation's own
    * `plugins/`): installable without a download, and not installed until listed.
