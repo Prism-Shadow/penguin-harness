@@ -166,7 +166,7 @@ The dev entry points (`pnpm penguin`, `pnpm dev`, `pnpm desktop`) default to a s
 | Item | Details |
 | --- | --- |
 | Install directory | `~/.penguin` by default; override it with the `PENGUIN_INSTALL_DIR` environment variable |
-| Command entry | A symlink, `~/.local/bin/penguin`. The script warns if `~/.local/bin` is not on `PATH`. The `--no-modify-path` flag leaves the link alone, for a second installation beside the one `penguin` belongs to |
+| Command entry | A symlink, `~/.local/bin/penguin`. Move it with the `PENGUIN_BIN_DIR=<dir>` environment variable or the `--bin-dir <dir>` flag (an absolute path); together with `PENGUIN_INSTALL_DIR` this keeps an installation inside one directory you can delete whole. The script warns if that directory is not on `PATH`. The `--no-modify-path` flag leaves the link alone, for a second installation beside the one `penguin` belongs to, and wins over a bin directory |
 | Version | The `PENGUIN_VERSION=vX.Y.Z` environment variable, or the `--version vX.Y.Z` script flag. The stable entry installs the latest Release by default; a versioned Release installer installs its own tag |
 | Download source | `PENGUIN_DOWNLOAD_SOURCE=auto` (default), `oss` or `github`. `auto` times a probe file and keeps the free GitHub download unless the OSS mirror is clearly faster, and falls back to the same version on the other source. `PENGUIN_DOWNLOAD_SPEED_PROBE=0` skips the measurement |
 | Local archive | `PENGUIN_ARCHIVE=<file>` or `--archive <file>`. Accepts a Release bundle, which verifies itself with its sealed payload checksum, or a payload or legacy program archive with a `<file>.sha256` next to it. A renamed legacy file may use the platform asset's canonical `.sha256` |
