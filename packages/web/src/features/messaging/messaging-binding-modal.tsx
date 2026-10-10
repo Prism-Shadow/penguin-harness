@@ -64,6 +64,7 @@ export function MessagingBindingModal({
             {S.common.close}
           </Button>
           <Button
+            id={b.saveButtonId}
             size="sm"
             variant="primary"
             disabled={b.busy || b.form === null}

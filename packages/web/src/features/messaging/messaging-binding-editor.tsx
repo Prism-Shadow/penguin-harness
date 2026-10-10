@@ -39,7 +39,7 @@
  * The GET is re-polled while the host shows the editor (the hook's `poll` flag) so
  * connect/error flips show up live.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type {
   MessagingBindingInfo,
@@ -83,6 +83,13 @@ import {
 
 /** How often the visible editor refreshes the runtime status (connects settle within a poll or two). */
 const STATUS_POLL_MS = 3000;
+
+/** How long the hint line holds its attention colour after a click on the gated switch. */
+const HINT_EMPHASIS_MS = 1500;
+
+/** What a focus hand-off may land on inside the scan block; the first match wins. */
+const FOCUSABLE =
+  "button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])";
 
 /**
  * Per-channel external links: the walkthrough (setup FAQ fold) and where the channel issues
@@ -221,10 +228,15 @@ export interface MessagingBindingEditorState {
   sendingTest: boolean;
   /** The credential probe needs a testable credential: the selected channel's draft or stored secret. */
   testable: boolean;
-  /** The enable switch is gated (see toggleHint for the reason shown to the user). */
-  toggleBlocked: boolean;
-  /** Why the switch is gated, when a reason is worth showing (null otherwise). */
-  toggleHint: string | null;
+  /** A save or a toggle is in flight: the switch is natively disabled until it settles. */
+  toggleBusy: boolean;
+  /**
+   * What must happen before the switch may enable the selected channel (null when nothing
+   * must). The switch only looks disabled while gated: a click explains instead of toggling.
+   */
+  enableGate: EnablePrerequisite | null;
+  /** The id hosts give their Save action, so a switch gated on unsaved edits can focus it. */
+  saveButtonId: string;
   /**
    * A flow OUTSIDE the form saved this channel's binding — either scan-to-connect, whose
    * credentials never pass through the browser. Folds the result into that channel's facts
@@ -274,6 +286,57 @@ export function telegramTestNotices(res: TelegramTestResponse): MessagingTestNot
   return notices;
 }
 
+/** Where a click on the prerequisite-gated switch moves focus. */
+export type EnableFocus = "scan" | "credential" | "save";
+
+/** The unmet prerequisite that keeps the selected channel from being enabled. */
+export interface EnablePrerequisite {
+  /** The sentence the hint line shows, and a click on the switch repeats as a toast. */
+  hint: string;
+  /**
+   * Where that click sends focus: the QR block on the scan channels, the first empty
+   * credential field on the typed ones, or the Save action. Null when the fix is turning
+   * another channel off, which is not on this form.
+   */
+  focus: EnableFocus | null;
+}
+
+/**
+ * Why the selected channel cannot be enabled yet, strongest reason first: another channel
+ * holds the connection, no credential is stored, the form has unsaved edits. Null when it can,
+ * and always while it is enabled: turning a live connection off is never gated.
+ */
+export function enablePrerequisite({
+  channel,
+  facts,
+  enabledChannel,
+  dirty,
+}: {
+  channel: MessagingChannel;
+  facts: Pick<MessagingChannelFacts, "enabled" | "secretConfigured">;
+  /** The channel enabled on this Session, if any. */
+  enabledChannel: MessagingChannel | null;
+  /** Unsaved edits on the selected channel's form. */
+  dirty: boolean;
+}): EnablePrerequisite | null {
+  if (facts.enabled) return null;
+  if (enabledChannel !== null && enabledChannel !== channel) {
+    return {
+      hint: S.messaging.otherEnabledHint(S.messaging.channelName[enabledChannel]),
+      focus: null,
+    };
+  }
+  if (!facts.secretConfigured) {
+    return {
+      hint: S.messaging.credentialMissingHint[channel],
+      // QQ's typed fields are the fallback below its QR, so the scan is where it starts too.
+      focus: channel === "qq" || channel === "wechat" ? "scan" : "credential",
+    };
+  }
+  if (dirty) return { hint: S.messaging.saveBeforeEnable, focus: "save" };
+  return null;
+}
+
 export function useMessagingBinding(
   sessionId: string,
   opts: {
@@ -300,6 +363,7 @@ export function useMessagingBinding(
   const [toggling, setToggling] = useState(false);
   const [testing, setTesting] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
+  const saveButtonId = useId();
 
   /** Which session the form was loaded for (the initial load runs once per session, not per poll flip). */
   const loadedFor = useRef<string | null>(null);
@@ -371,7 +435,6 @@ export function useMessagingBinding(
         : channels.wechat.enabled
           ? "wechat"
           : null;
-  const otherEnabled = enabledChannel !== null && enabledChannel !== selected;
   const dirty = form !== null && baseline !== null && formDirty(form, baseline);
   const unsavedAny =
     form !== null &&
@@ -488,17 +551,9 @@ export function useMessagingBinding(
     }
   };
 
-  // Enabling needs a saved credential, no unsaved edits, and the other channel dark;
-  // disabling is always allowed. The hint names the strongest reason.
-  const enableBlocked = !facts.enabled && (otherEnabled || !facts.secretConfigured || dirty);
-  const toggleHint =
-    !facts.enabled && enabledChannel !== null && otherEnabled
-      ? S.messaging.otherEnabledHint(S.messaging.channelName[enabledChannel])
-      : !facts.enabled && !facts.secretConfigured
-        ? S.messaging.credentialMissingHint
-        : !facts.enabled && dirty
-          ? S.messaging.saveBeforeEnable
-          : null;
+  // Enabling needs a saved credential, no unsaved edits, and the other channels dark;
+  // disabling is always allowed.
+  const enableGate = enablePrerequisite({ channel: selected, facts, enabledChannel, dirty });
 
   return {
     sessionId,
@@ -514,8 +569,9 @@ export function useMessagingBinding(
     testing,
     sendingTest,
     testable: form !== null && formTestable(form, facts.secretConfigured),
-    toggleBlocked: enableBlocked || toggling || busy,
-    toggleHint,
+    toggleBusy: toggling || busy,
+    enableGate,
+    saveButtonId,
     adoptBinding: (binding) =>
       applyChannel(binding.channel, binding, channels[binding.channel].status),
     save,
@@ -649,10 +705,62 @@ function DeliveryOptionRow({
  * `MessagingBindingHelp` below that.
  */
 export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) {
+  // Per-instance ids for the gated switch's focus hand-off: a dialog and a dock panel may be
+  // open on the same Session at once, and a fixed id would send one's focus into the other.
+  const idBase = useId();
+  const [hintEmphasized, setHintEmphasized] = useState(false);
+  const emphasisTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (emphasisTimer.current !== null) clearTimeout(emphasisTimer.current);
+    };
+  }, []);
   const { form } = b;
   if (!form) return null;
   const channel = form.channel;
   const facts = b.channels[channel];
+  const gate = b.enableGate;
+  const hintInk = hintEmphasized ? toneInk.attention : "text-gray-400 dark:text-gray-500";
+  const ids = {
+    hint: `${idBase}-enable-hint`,
+    scan: `${idBase}-scan`,
+    appId: `${idBase}-app-id`,
+    appSecret: `${idBase}-app-secret`,
+    botToken: `${idBase}-bot-token`,
+  };
+  /**
+   * A click on the switch while a prerequisite is unmet sends nothing. It repeats the hint as
+   * a toast, turns the hint line to the attention colour for a moment, and moves focus to
+   * where the missing step is done. A click while the line is still lit skips the toast, so a
+   * few quick presses do not stack copies of one sentence.
+   */
+  const explainGate = (prerequisite: EnablePrerequisite) => {
+    if (emphasisTimer.current === null) toastInfo(prerequisite.hint);
+    else clearTimeout(emphasisTimer.current);
+    setHintEmphasized(true);
+    emphasisTimer.current = setTimeout(() => {
+      emphasisTimer.current = null;
+      setHintEmphasized(false);
+    }, HINT_EMPHASIS_MS);
+    if (prerequisite.focus === "scan") {
+      const block = document.getElementById(ids.scan);
+      block?.scrollIntoView({ block: "nearest" });
+      block?.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true });
+    } else if (prerequisite.focus === "credential") {
+      // The first credential field still empty; with all of them typed, Save is what is left.
+      const fields: [id: string, value: string][] =
+        channel === "telegram"
+          ? [[ids.botToken, form.telegram.botToken]]
+          : [
+              [ids.appId, form.feishu.appId],
+              [ids.appSecret, form.feishu.appSecret],
+            ];
+      const empty = fields.find(([, value]) => value.trim() === "");
+      document.getElementById(empty?.[0] ?? b.saveButtonId)?.focus();
+    } else if (prerequisite.focus === "save") {
+      document.getElementById(b.saveButtonId)?.focus();
+    }
+  };
   // The delivery preferences of the selected channel, and the patch that writes one back.
   // Every sub-state carries the same three, so resolving the channel once here keeps the
   // rows at the bottom free of a selector they have nothing to say about.
@@ -711,10 +819,23 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
             className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
             data-tooltip={S.messaging.bindByEnableHint}
           >
+            {/* Natively disabled only while a request is in flight. A missing prerequisite
+                dims it the same way but leaves it clickable (aria-disabled), because a
+                control that ignores a click never says what it is waiting for. */}
             <Switch
               checked={facts.enabled}
-              disabled={b.toggleBlocked}
-              onChange={(v) => void b.toggleEnabled(v)}
+              disabled={b.toggleBusy}
+              {...(gate !== null
+                ? {
+                    "aria-disabled": true,
+                    "aria-describedby": ids.hint,
+                    className: "cursor-not-allowed opacity-60",
+                  }
+                : {})}
+              onChange={(v) => {
+                if (gate !== null) explainGate(gate);
+                else void b.toggleEnabled(v);
+              }}
             />
             {S.messaging.enabled}
           </label>
@@ -827,8 +948,10 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
       {/* The gating reason closes the control block rather than sitting under the switch:
           it comes and goes with the switch's own state, so anything below it shifts by a
           line — trailing the probes leaves both of them at a fixed offset. */}
-      {b.toggleHint !== null && (
-        <p className="text-xs text-gray-400 dark:text-gray-500">{b.toggleHint}</p>
+      {gate !== null && (
+        <p id={ids.hint} className={`text-xs transition-colors ${hintInk}`}>
+          {gate.hint}
+        </p>
       )}
       {/* The credential fields trail the controls above; explanations live in the FAQ folds
           below the save area. */}
@@ -851,6 +974,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           >
             <PasswordInput
               size="sm"
+              id={ids.botToken}
               aria-label={S.telegram.botToken}
               {...(facts.secretConfigured ? { placeholder: S.telegram.botTokenKeepHint } : {})}
               error={errorText(b.fieldErrors.botToken)}
@@ -880,11 +1004,13 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           {/* The easy path leads: scanning is what most people will do, and the fields below
               are the fallback for a bot the scan cannot reach. Both are inside this channel's
               branch, so nothing above the fields moves when the QR opens. */}
-          <QQScanConnect
-            sessionId={b.sessionId}
-            enabled={facts.enabled}
-            onBound={(binding) => b.adoptBinding(binding)}
-          />
+          <div id={ids.scan}>
+            <QQScanConnect
+              sessionId={b.sessionId}
+              enabled={facts.enabled}
+              onBound={(binding) => b.adoptBinding(binding)}
+            />
+          </div>
           <p className="text-xs text-gray-400 dark:text-gray-500">{S.qq.scanOrManual}</p>
           <CornerLinkedField
             label={S.qq.appId}
@@ -937,12 +1063,14 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
         <>
           {/* The whole credential form: there is nothing to type on this channel, so the QR
               is not the easy path but the only one. */}
-          <WeChatScanConnect
-            sessionId={b.sessionId}
-            enabled={facts.enabled}
-            bound={facts.secretConfigured}
-            onBound={(binding) => b.adoptBinding(binding)}
-          />
+          <div id={ids.scan}>
+            <WeChatScanConnect
+              sessionId={b.sessionId}
+              enabled={facts.enabled}
+              bound={facts.secretConfigured}
+              onBound={(binding) => b.adoptBinding(binding)}
+            />
+          </div>
           {facts.secretMasked !== null && (
             <StoredSecretRow
               masked={facts.secretMasked}
@@ -973,6 +1101,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           >
             <Input
               size="sm"
+              id={ids.appId}
               aria-label={S.feishu.appId}
               error={errorText(b.fieldErrors.appId)}
               value={form.feishu.appId}
@@ -984,6 +1113,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           </CornerLinkedField>
           <PasswordInput
             size="sm"
+            id={ids.appSecret}
             label={S.feishu.appSecret}
             {...(facts.secretConfigured
               ? { placeholder: S.feishu.appSecretKeepHint }

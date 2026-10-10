@@ -8,6 +8,8 @@
  * - A stored secret is removed through the clear checkbox, gated on screen while the channel
  *   holds the connection; the connection switch carries the bind/unbind sentence as its
  *   tooltip, and its gating reason when another channel holds the connection.
+ * - A gated switch stays clickable; the gate names, per channel, what is missing and where a
+ *   click sends focus to supply it.
  * - A connection error gets its own line, whole, and stays on screen after the connection
  *   recovers; arrival is reported while connecting and erroring, naming the inbound stage when
  *   a message arrived but its task never started.
@@ -26,6 +28,7 @@ import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 import {
   MessagingBindingBody,
   MessagingBindingHelp,
+  enablePrerequisite,
   telegramTestNotices,
   type MessagingBindingEditorState,
   type MessagingChannelFacts,
@@ -80,8 +83,9 @@ function stateOf(
     testing: false,
     sendingTest: false,
     testable: false,
-    toggleBlocked: false,
-    toggleHint: null,
+    toggleBusy: false,
+    enableGate: null,
+    saveButtonId: "save-under-test",
     adoptBinding: () => {},
     save: noop,
     toggleEnabled: noop,
@@ -461,16 +465,66 @@ describe("MessagingBindingBody", () => {
     );
   });
 
-  it("shows the switch's gating reason when the other channel holds the connection", () => {
+  it("shows the switch's gating reason, and leaves a gated switch clickable", () => {
     const hint = S.messaging.otherEnabledHint(S.messaging.channelName.feishu);
     const html = render(
       stateOf(
         "telegram",
         { feishu: { ...DARK, secretConfigured: true, enabled: true } },
-        { toggleBlocked: true, toggleHint: hint },
+        { enableGate: { hint, focus: null } },
       ),
     );
     expect(html).toContain(hint);
+    // Dimmed and announced as unavailable, but not natively disabled: a click has to reach
+    // the handler that explains what to do first.
+    const toggle = /<button[^>]*role="switch"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(toggle).toContain('aria-disabled="true"');
+    expect(toggle).not.toContain('disabled=""');
+  });
+});
+
+describe("enablePrerequisite", () => {
+  const stored = { enabled: false, secretConfigured: true };
+  const blank = { enabled: false, secretConfigured: false };
+
+  it("names what each channel is missing and where focus goes to supply it", () => {
+    const expected = {
+      feishu: "credential",
+      telegram: "credential",
+      qq: "scan",
+      wechat: "scan",
+    } as const;
+    for (const channel of ["feishu", "telegram", "qq", "wechat"] as MessagingChannel[]) {
+      // No stored credential: the per-channel sentence, focus on the scan or the typed field.
+      expect(
+        enablePrerequisite({ channel, facts: blank, enabledChannel: null, dirty: false }),
+      ).toEqual({ hint: S.messaging.credentialMissingHint[channel], focus: expected[channel] });
+      // Stored but edited since: save first.
+      expect(
+        enablePrerequisite({ channel, facts: stored, enabledChannel: null, dirty: true }),
+      ).toEqual({ hint: S.messaging.saveBeforeEnable, focus: "save" });
+      // Another channel holds the connection: that outranks the rest, and its fix is not on
+      // this form, so focus stays put.
+      const other: MessagingChannel = channel === "feishu" ? "telegram" : "feishu";
+      expect(
+        enablePrerequisite({ channel, facts: blank, enabledChannel: other, dirty: true }),
+      ).toEqual({
+        hint: S.messaging.otherEnabledHint(S.messaging.channelName[other]),
+        focus: null,
+      });
+      // Nothing missing; and turning a live connection off is never gated.
+      expect(
+        enablePrerequisite({ channel, facts: stored, enabledChannel: null, dirty: false }),
+      ).toBeNull();
+      expect(
+        enablePrerequisite({
+          channel,
+          facts: { enabled: true, secretConfigured: true },
+          enabledChannel: channel,
+          dirty: true,
+        }),
+      ).toBeNull();
+    }
   });
 });
 

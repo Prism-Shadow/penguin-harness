@@ -53,7 +53,7 @@ The settings run from top to bottom in this order:
 
 Below the form, three collapsed sections explain the selected channel: **Set up the bot** (the setup steps and an **Open tutorial** link), **What binding does**, and **Troubleshooting**.
 
-When the **Enable connection** switch is unavailable, a line under the test buttons says why: the credentials are not saved yet, the form has unsaved changes, or another channel of this conversation is already enabled.
+When the **Enable connection** switch is greyed out, a line under the test buttons says why: the credentials are not saved yet, the form has unsaved changes, or another channel of this conversation is already enabled. Selecting the greyed-out switch also says what is missing (a scan, the credentials, a save, or another channel to turn off first) and, for the first three, moves the focus to where you do it.
 
 A saved secret is never shown again. Leave its field empty to keep it. To delete it, turn off the connection, select the clear option under the field, such as **Clear stored App Secret** or **Clear stored Bot Token**, and select **Save**.
 

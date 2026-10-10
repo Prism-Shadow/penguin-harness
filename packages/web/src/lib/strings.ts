@@ -3927,8 +3927,16 @@ Benchmark：
     },
     /** Why the enable switch is gated while the OTHER channel holds the connection. */
     otherEnabledHint: (other: string): string => `同一会话只能启用一个渠道：先停用${other}连接`,
-    /** Why the enable switch is gated while the selected channel has no stored credential. */
-    credentialMissingHint: "先填写并保存凭证，再启用连接",
+    /**
+     * Why the enable switch is gated while the selected channel has no stored credential — one
+     * per channel, because what is missing differs: a scan, typed fields, or either.
+     */
+    credentialMissingHint: {
+      feishu: "先填写 App ID 与 App Secret 并保存，再启用连接",
+      telegram: "先填写 Bot Token 并保存，再启用连接",
+      qq: "先扫码，或填写 App ID 与 App Secret 并保存，再启用连接",
+      wechat: "先扫码绑定微信，再启用连接",
+    },
     /** Why the clear checkbox is gated while the channel's connection is enabled. */
     disableBeforeClearHint: "先停用连接，才能清除凭证",
     /** The saved delivery option: render a reply's Markdown in the channel's own markup. */

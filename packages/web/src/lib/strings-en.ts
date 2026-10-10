@@ -3801,8 +3801,16 @@ Scenarios:
     /** Why the enable switch is gated while the OTHER channel holds the connection. */
     otherEnabledHint: (other: string): string =>
       `Only one channel can be enabled per conversation: turn off the ${other} connection first`,
-    /** Why the enable switch is gated while the selected channel has no stored credential. */
-    credentialMissingHint: "Enter and save the credential first, then enable the connection",
+    /**
+     * Why the enable switch is gated while the selected channel has no stored credential — one
+     * per channel, because what is missing differs: a scan, typed fields, or either.
+     */
+    credentialMissingHint: {
+      feishu: "Enter and save the App ID and App Secret first, then enable the connection",
+      telegram: "Enter and save the Bot Token first, then enable the connection",
+      qq: "Scan the QR code, or enter and save the App ID and App Secret, then enable the connection",
+      wechat: "Scan the QR code to link WeChat first, then enable the connection",
+    },
     /** Why the clear checkbox is gated while the channel's connection is enabled. */
     disableBeforeClearHint: "Disable the connection before clearing the credential",
     /** The saved delivery option: render a reply's Markdown in the channel's own markup. */
