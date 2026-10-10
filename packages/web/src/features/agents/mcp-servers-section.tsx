@@ -400,7 +400,7 @@ export function McpServersSection({
           <TableBody>
             {servers.map((entry, index) => (
               <TableRow key={entry.name}>
-                <TableCell className="font-mono text-xs">
+                <TableCell nowrap className="font-mono text-xs">
                   <span className="inline-flex items-center gap-1.5">
                     {entry.name}
                     {entry.plugin !== undefined && (
@@ -422,8 +422,18 @@ export function McpServersSection({
                 <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">
                   {permissionOf(entry)}
                 </TableCell>
-                <TableCell className="max-w-[360px] truncate font-mono text-xs text-gray-500 dark:text-gray-400">
-                  {targetOf(entry)}
+                {/* The target takes the width the other columns leave and truncates in it: a
+                    max-width of 0 keeps the URL's own length out of the column sizing, and the
+                    100% width hands this column the remainder, so a long URL never pushes the
+                    status marks or the actions out of view. */}
+                <TableCell className="w-full max-w-0 font-mono text-xs text-gray-500 dark:text-gray-400">
+                  <span
+                    className="block truncate"
+                    data-tooltip={targetOf(entry)}
+                    data-tooltip-content="code"
+                  >
+                    {targetOf(entry)}
+                  </span>
                 </TableCell>
                 {showStatus && (
                   <TableCell align="right">
