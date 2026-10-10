@@ -7,7 +7,7 @@
 
 [中文版](2026-10-10-machines-dev-image.zh.md)
 
-A server running from a source checkout (`pnpm dev`, `pnpm desktop`) builds its own install image when an install or a use asks for one. Before, such a server had no image at all: the Machines page disabled "Add machines…" and "Enable", every install answered `409` `no_install_image`, and the notice promised an image after "the first hot push", which never produced one.
+A server running from a source checkout (`pnpm dev`, `pnpm desktop`) builds its own install image at every install or use. Before, such a server had no image at all: the Machines page disabled "Add machines…" and "Enable", every install answered `409` `no_install_image`, and the notice promised an image after "the first hot push", which never produced one.
 
 ## Details
 

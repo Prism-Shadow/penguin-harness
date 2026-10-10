@@ -50,7 +50,7 @@ export const en: Strings = {
     pageTitle: "Machines",
     imageVersion: (version: string) => `This server: ${version}`,
     noImage:
-      "This server has no install image to push. A packaged or tarball install carries one, and a source checkout builds one at its first install; this server is neither.",
+      "This server has no install image to push. A packaged or tarball install carries one, and a source checkout builds one for each install; this server is neither.",
     checkoutImageFailed:
       "This server runs from a source checkout and could not build the install image it puts on machines. The build said:",
     empty: "No host in ~/.ssh/config left to add.",

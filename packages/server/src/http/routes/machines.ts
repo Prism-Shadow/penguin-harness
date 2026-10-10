@@ -225,7 +225,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       throw new HttpError(
         409,
         "no_install_image",
-        "This server has no install image to push. A packaged or installed server carries one, and a source checkout builds one at its first install; this server is neither.",
+        "This server has no install image to push. A packaged or installed server carries one, and a source checkout builds one for each install; this server is neither.",
       );
     }
     return c.json(state(c), 202);
