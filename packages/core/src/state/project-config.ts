@@ -91,10 +91,11 @@ export interface ModelEntry {
    * catalog is never consulted. A new Project stores one here only where the catalog's row
    * differs from its group's (Penguin Go's and OpenCode Go's rows, custom's Atria).
    * Third-party endpoints use one of the generic protocol clients: `openai-responses` (OpenAI
-   * Responses API), `ant-messages` (Anthropic Messages API), or `openai-chat` (OpenAI Chat
+   * Responses API), `ant-messages` (Anthropic Messages API), `openai-chat` (OpenAI Chat
    * Completions; the bare `openai` spelling from configs saved before the client was renamed
-   * (MMSP 0.4.2) is normalized to it on read — see canonicalClientType). The Web models page
-   * can detect which one a custom base URL serves.
+   * (MMSP 0.4.2) is normalized to it on read — see canonicalClientType), `google-genai`
+   * (Google's generateContent) or `mmsp` (an MMSP server). The Web models page can detect
+   * which of the first three a custom base URL serves.
    */
   client_type?: string;
   /**

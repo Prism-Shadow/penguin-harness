@@ -22,6 +22,7 @@ import {
   DATE_PLACEHOLDER,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
+  MMSP_CLIENTS,
   MODEL_CATALOG,
   OS_VERSION_PLACEHOLDER,
   PLATFORM_PLACEHOLDER,
@@ -40,6 +41,7 @@ import {
   selectBuiltinToolsForModel,
   defaultProjectConfig,
   effectiveConnection,
+  fastModeProtocol,
   effectivePluginTable,
   parsePluginTables,
   defaultSystemConfig,
@@ -58,8 +60,10 @@ import {
   removeVaultEntry,
   renderProjectConfigToml,
   resolveEntryCredential,
+  resolveModelEnv,
   resolveModelRef,
   resolveRoot,
+  routedClientType,
   saveProjectConfig,
   setDefaultModel,
   setProviderConnection,
@@ -67,6 +71,7 @@ import {
   skillsDir,
   systemConfigPath,
   toolsDir,
+  unroutableVendorModel,
   type ModelRef,
   type ProjectConfig,
   type SystemConfig,
@@ -1037,6 +1042,58 @@ describe("project-config round trip", () => {
     expect(getModel(third, { provider: "custom", model_id: "responses-model" })?.client_type).toBe(
       "openai-responses",
     );
+  });
+
+  it('keeps a stored client_type = "gemini-official" as written, and it still reaches Google\'s official client', async () => {
+    // MMSP 0.5.2 named the official Gemini client google-official and kept its earlier name
+    // as an alias. A Project that stores the earlier name is neither migrated nor rewritten:
+    // it loads as written and is used exactly as google-official would be — the same
+    // variables, the same Interactions path, the same fast tier.
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const text = [
+      "[providers.google]",
+      'client_type = "gemini-official"',
+      "",
+      "[[models]]",
+      'provider = "google"',
+      'model_id = "gemini-3.8-flash"',
+      "",
+      "[[models]]",
+      'provider = "custom"',
+      'model_id = "gemini-direct"',
+      'client_type = "gemini-official"',
+      'base_url = "https://generativelanguage.googleapis.com"',
+      "",
+    ].join("\n");
+    await fs.writeFile(file, text, "utf8");
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(await fs.readFile(file, "utf8")).toBe(text);
+    const env = { GEMINI_API_KEY: "sk-gemini-env" };
+
+    // The group's protocol reaches its keyless row, which the client then serves from the
+    // GEMINI_* pair it reads itself.
+    const grouped = getModel(loaded, { provider: "google", model_id: "gemini-3.8-flash" })!;
+    expect(
+      resolveEntryCredential(grouped, providerConnectionShape(loaded.providers?.google), {}, env),
+    ).toEqual({ clientType: "gemini-official" });
+    // A row naming Google's own endpoint is lent GEMINI_API_KEY, as google-official's would be.
+    const pinned = getModel(loaded, { provider: "custom", model_id: "gemini-direct" })!;
+    expect(pinned.client_type).toBe("gemini-official");
+    expect(resolveEntryCredential(pinned, undefined, {}, env)).toEqual({
+      apiKey: "sk-gemini-env",
+      baseUrl: "https://generativelanguage.googleapis.com",
+      clientType: "gemini-official",
+    });
+
+    // Routed, and so accepted by the models page, the server and the CLI alike.
+    expect(unroutableVendorModel("google", "gemini-3.8-flash", "gemini-official")).toBe(false);
+    const routed = routedClientType("gemini-3.8-flash", "gemini-official")!;
+    expect(MMSP_CLIENTS[routed]).toEqual(MMSP_CLIENTS["google-official"]);
+    expect(resolveModelEnv("gemini-3.8-flash", "gemini-official")).toEqual(
+      resolveModelEnv("gemini-3.8-flash"),
+    );
+    expect(fastModeProtocol("gemini-3.8-flash", "gemini-official")).toBe("openai");
   });
 
   it("rewrites the client types of AgentHub 0.4 to MMSP's once, on load, keeping the rest of the file", async () => {

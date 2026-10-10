@@ -18,7 +18,13 @@
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
  * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
  * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, user-defined),
- * the speed test, and the group settings (provider-settings-dialog.tsx) last on every group.
+ * the speed test, and the gear last on every group: a menu with the group's sort and the group
+ * settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
+ *
+ * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
+ * unless the user picked otherwise from the gear, or by name. The choice is remembered per group
+ * in this browser, applies to search results too, and leaves the group order and the chat model
+ * picker alone.
  *
  * The groups stand in two areas (model-group-pins.ts): the favourites, always shown, then the
  * rest under one full-width bar that folds them away (folded by default). A star on each header,
@@ -102,6 +108,7 @@ import { cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { AiCreateModal } from "../ai-create";
@@ -186,6 +193,15 @@ import {
 } from "./connection";
 import type { ProviderConnections } from "./connection";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
+import { GroupSettingsControl } from "./group-settings-menu";
+import {
+  initialModelGroupSorts,
+  modelGroupSortOf,
+  sortModelGroups,
+  storeModelGroupSorts,
+  withModelGroupSort,
+} from "./model-sort";
+import type { ModelGroupSort } from "./model-sort";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
 import { toneInk } from "../../lib/tone";
@@ -927,6 +943,13 @@ export function ModelsPage() {
    * (model-group-pins.ts), per browser like the sidebar nav's, so not re-read on a Project switch.
    */
   const [groupPins, setGroupPins] = useState(initialModelGroupPins);
+  /**
+   * How each group orders its models, where the user changed it from price low to high
+   * (model-sort.ts); per browser like the pins, so not re-read on a Project switch.
+   */
+  const [groupSorts, setGroupSorts] = useState(initialModelGroupSorts);
+  /** The UI language, which a sort by name collates in. */
+  const { locale } = useLocale();
   /** Whether the collapsible groups are folded away under their bar; folded by default, remembered per browser. */
   const [groupsFolded, setGroupsFolded] = useState(initialModelGroupsFolded);
   /**
@@ -1071,9 +1094,16 @@ export function ModelsPage() {
     }
   };
 
+  /**
+   * The groups on screen, each one's models in that group's sort. `hourTick` re-sorts on the
+   * hour: a price sort reads the rate billed right now, which an off-peak tier changes.
+   */
   const groups = useMemo(
-    () => (rows ? groupModelRows(rows, query, groupOrder) : []),
-    [rows, query, groupOrder],
+    () =>
+      rows
+        ? sortModelGroups(groupModelRows(rows, query, groupOrder), groupSorts, new Date(), locale)
+        : [],
+    [rows, query, groupOrder, groupSorts, locale, hourTick],
   );
   /**
    * Every group the library could show, empty built-ins included — the sequence a drop is
@@ -1230,6 +1260,14 @@ export function ModelsPage() {
     if (next === groupPins) return;
     storeModelGroupPins(next);
     setGroupPins(next);
+  };
+
+  /** Adopts a group's sort from its gear menu (store-then-set), unless it is the current one. */
+  const chooseSort = (id: string, sort: ModelGroupSort) => {
+    const next = withModelGroupSort(groupSorts, id, sort);
+    if (next === groupSorts) return;
+    storeModelGroupSorts(next);
+    setGroupSorts(next);
   };
 
   /** Fold or unfold the collapsible groups (store-then-set, as toggleGroup). */
@@ -1438,20 +1476,18 @@ export function ModelsPage() {
           </Button>
         );
       case "settings":
-        // The group's connection, in full (base URL, key, protocol). Icon only, like the speed
-        // test it stands beside: the pair closes every header at the same right edge.
+        // The gear, icon only like the speed test it stands beside: the pair closes every header
+        // at the same right edge. Its menu holds the group's sort, which every member has and a
+        // busy page never blocks, and, for the owner, the group's connection settings in full
+        // (base URL, key, protocol).
         return (
-          <Button
-            size="icon"
-            variant="ghost"
-            className={HEADER_SQUARE}
-            disabled={busy}
-            aria-label={`${S.models.groupSettings} ${provider.label}`}
-            title={S.models.groupSettings}
-            onClick={() => setSettingsFor(group.provider.id)}
-          >
-            <GlyphIcon d={ICONS.gear} size={ICON_SIZE.groupHeaderAction} />
-          </Button>
+          <GroupSettingsControl
+            provider={provider}
+            sort={modelGroupSortOf(groupSorts, group.provider.id)}
+            onSort={(sort) => chooseSort(group.provider.id, sort)}
+            onSettings={isOwner ? () => setSettingsFor(group.provider.id) : undefined}
+            busy={busy}
+          />
         );
     }
   };
@@ -2864,7 +2900,7 @@ function ModelDialog({
   };
 
   /**
-   * Protocol detection: POST /models/detect probes the base URL for the three generic
+   * Protocol detection: POST /models/detect probes the base URL for the three detectable
    * protocols (openai-responses → ant-messages → openai-chat, first hit wins) and applies
    * the result to the form's clientType. Resolves to the detected client type, or null
    * when nothing matched / the probe failed, so the save path can decide from the same run
@@ -3055,10 +3091,10 @@ function ModelDialog({
   const baseUrlRequired =
     (form.provider === PENGUIN_GO_PROVIDER_ID || (!preset && openAiLike)) &&
     !inherited.baseUrl?.trim();
-  // Custom-like groups (custom + user-defined) pick among MMSP's generic protocol
-  // clients: the base URL field's suffix becomes the protocol picker there, unless the
-  // entry is pinned to a client outside that trio — that keeps the read-only note below
-  // instead. Gateways stay pinned to their preset protocol (their base URL is fixed too).
+  // Custom-like groups (custom + user-defined) pick among the protocol clients the picker
+  // offers (PROTOCOL_CLIENT_TYPES): the base URL field's suffix becomes the protocol picker
+  // there, unless the entry is pinned to a client outside them — that keeps the read-only note
+  // below instead. Gateways stay pinned to their preset protocol (their base URL is fixed too).
   const customLikeGroup = form.provider === "custom" || providerInfo(form.provider) === undefined;
   const showProtocolSelector =
     customLikeGroup && isGenericProtocolClientType(form.clientType) && !preset;
@@ -3892,14 +3928,15 @@ function ModelDialog({
 
         {/* Identity on a saved model: model id (renamable) + display name and group. */}
         {!isNew && identityFields}
-        {/* An entry pinned to a protocol the dialog cannot edit — a client outside the generic
-            trio (a Penguin Go row the platform added, a vLLM-adapter row in a custom group), or
-            a pin from an older config: read-only display. Compared canonically so the
-            deprecated bare "openai" spelling (pre-0.4.2 configs) is not flagged either,
-            skipped when the protocol selector above already represents it (generic protocol
-            types in custom-like groups are editable there), and skipped when the value IS
-            what the model would follow anyway — that is this group's normal protocol, not a
-            leftover from an older config, and "kept as configured" would misdescribe it. */}
+        {/* An entry pinned to a protocol the dialog cannot edit — a pin outside a custom-like
+            group or a client outside the picker's (a Penguin Go row the platform added, a
+            vLLM-adapter row in a custom group), or a pin from an older config: read-only
+            display. Compared canonically so the deprecated bare "openai" spelling (pre-0.4.2
+            configs) is not flagged either, skipped when the protocol selector above already
+            represents it (the picker's protocols in custom-like groups are editable there), and
+            skipped when the value IS what the model would follow anyway — that is this group's
+            normal protocol, not a leftover from an older config, and "kept as configured" would
+            misdescribe it. */}
         {!isNew &&
           !preset &&
           !showProtocolSelector &&

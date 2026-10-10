@@ -80,9 +80,10 @@ export interface ProviderSettingsDraft {
 
 /**
  * The protocol the picker shows checked: "Not set" (null) while the group sets none, the group's
- * pick from the generic trio, or — for a stored protocol outside the trio, written from the CLI —
- * that protocol itself, so the dialog never misstates the setting. Saving leaves such a value as
- * it is unless another row is picked (providerSettingsUpdate compares against what is stored).
+ * pick among the picker's protocols, or — for a stored protocol outside them, written from the
+ * CLI — that protocol itself, so the dialog never misstates the setting. Saving leaves such a
+ * value as it is unless another row is picked (providerSettingsUpdate compares against what is
+ * stored).
  */
 export function protocolChoice(
   draft: Pick<ProviderSettingsDraft, "clientType">,

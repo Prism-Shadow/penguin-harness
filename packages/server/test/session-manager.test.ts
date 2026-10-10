@@ -29,7 +29,7 @@
  *   heals the index; a swept channel is re-read before every publish; a Project abort hands
  *   back its in-flight runs; a loader's HttpError passes through; shutdown disposes every
  *   environment and refuses new Tasks, and a run parked on an approval is denied, winds down,
- *   and is disposed only after it has.
+ *   and is disposed only after it has, even once the database has closed under it.
  * - Idle entries are evicted (running ones, pending approvals and working subagents pin them);
  *   invalidating an Agent's or a Project's runtimes rebuilds them at next access, never
  *   mid-run, and publishes a discarded runtime's background count as cleared.
@@ -125,6 +125,29 @@ function approvalFakeSession(sessionId: string, toolName = "write_file"): Runtim
 }
 
 /**
+ * A run that parks one call on a person, logging into `order` how the call was decided, whether
+ * the run was aborted by then, when it ended, and when its environment was disposed.
+ */
+function parkedRunSession(order: string[]): RuntimeSession {
+  const fake = fakeSession("session-1", {
+    async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+      try {
+        const tc = toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
+        yield tc;
+        order.push(`decided ${await opts.approve(tc)}`);
+        order.push(`aborted ${String(opts.signal.aborted)}`);
+      } finally {
+        order.push("run ended");
+      }
+    },
+  });
+  (fake as { dispose?: () => void }).dispose = () => {
+    order.push("disposed");
+  };
+  return fake;
+}
+
+/**
  * A repo whose last-active writes always throw — the realistic failure being a
  * DatabaseSync handle closed by shutdown while a run outlived its drain window. Everything
  * else behaves normally, so a test can assert that the run's wrap-up survives it.
@@ -196,7 +219,7 @@ describe("session-manager", () => {
   });
   afterEach(() => {
     channels.dispose();
-    db.close();
+    if (db.isOpen) db.close();
   });
 
   it("unknown Session → 404", async () => {
@@ -1196,27 +1219,41 @@ describe("session-manager", () => {
     // What a hot swap or an exit meets mid-conversation: a run waiting on an approval nobody
     // in this process will ever give.
     const order: string[] = [];
-    const fake = fakeSession("session-1", {
-      async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
-        try {
-          const tc = toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
-          yield tc;
-          order.push(`decided ${await opts.approve(tc)}`);
-          order.push(`aborted ${String(opts.signal.aborted)}`);
-        } finally {
-          order.push("run ended");
-        }
-      },
-    });
-    (fake as { dispose?: () => void }).dispose = () => {
-      order.push("disposed");
-    };
+    const fake = parkedRunSession(order);
     const manager = makeManager(loaderOf(fake));
     await manager.startTask("session-1", [userText("write it")]);
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
     await manager.shutdown();
     // The environment goes only once the run has let go of it.
+    expect(order).toEqual(["decided deny", "aborted true", "run ended", "disposed"]);
+  });
+
+  it("shutdown still denies, winds down and disposes once the database has closed", async () => {
+    // The approvals count reaches the Project's users through a notifier that reads the
+    // database first (who owns and shares the Project). A handle closed under a run that
+    // outlived its drain window must not stop the shutdown that denies the call.
+    const order: string[] = [];
+    const fake = parkedRunSession(order);
+    const counts: number[] = [];
+    const manager = new SessionManager({
+      sessions,
+      channels,
+      sources,
+      loader: loaderOf(fake),
+      recorder: { record: async () => undefined },
+      notifyProjectUsers: (_projectId, event) => {
+        sessions.findById(ROW.sessionId); // the audience lookup: a database read
+        if (event.type === "session_approvals") counts.push(event.count);
+      },
+      log: () => {},
+    });
+    await manager.startTask("session-1", [userText("write it")]);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    expect(counts).toEqual([1]);
+
+    db.close();
+    await manager.shutdown();
     expect(order).toEqual(["decided deny", "aborted true", "run ended", "disposed"]);
   });
 
