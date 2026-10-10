@@ -15,9 +15,9 @@
  *
  * **A region is an element that opted in** (`data-find-region="<kind>"`), and the surfaces
  * that carry one are the conversation, the subagent panel's conversation, the sidebar and the
- * Files panel. Ctrl+F searches the region the focused element is inside; Ctrl+Shift+F searches
- * all of them and lists the hits by region. Nothing here knows which is which: the find bar
- * asks the DOM.
+ * Files panel. `find.open` searches the region the focused element is inside; `find.all`
+ * searches all of them and lists the hits by region. Nothing here knows which is which: the find
+ * bar asks the DOM.
  *
  * **Text, not elements.** The unit of a search is a *block* — the nearest block-level ancestor
  * of a text node (`<p>`, `<li>`, `<pre>`, …) — and a block's text nodes are joined for

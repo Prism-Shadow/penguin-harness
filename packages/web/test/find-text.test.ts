@@ -1,3 +1,18 @@
+/**
+ * Find-in-page text matching (src/lib/find-text.ts): what counts as a match, where it is, how
+ * the bar steps between matches, and the context line a result row shows. The DOM half (regions,
+ * highlights, collapsed groups, the backfill) is covered end to end by e2e/find.spec.mjs.
+ *
+ * - An empty query finds nothing; a query finds every occurrence, case-insensitively unless
+ *   asked, never overlapping, and as literal text rather than a pattern, newlines included.
+ * - Where lowercasing changes a string's length (Turkish İ), every match still points at the
+ *   characters that matched, before and after the character that grew.
+ * - Stepping wraps at both ends, enters the list from the end the direction implies, and finds
+ *   nothing to step through in an empty list.
+ * - A result row's context keeps the match's own casing, marks a cut with an ellipsis, drops a
+ *   half word at the cut (but keeps the cut in text without spaces), fits on one line, and
+ *   never repeats a character of the match.
+ */
 import { describe, expect, it } from "vitest";
 import { findMatches, matchAll, matchSnippet, stepMatchIndex } from "../src/lib/find-text";
 import type { FindQuery } from "../src/lib/find-text";
@@ -5,7 +20,7 @@ import type { FindQuery } from "../src/lib/find-text";
 /** A case-insensitive query, the default the find bar opens with. */
 const q = (text: string, caseSensitive = false): FindQuery => ({ text, caseSensitive });
 
-describe("findMatches", () => {
+describe("literal substring matching", () => {
   it("returns nothing for an empty query — an empty query is not a search", () => {
     expect(findMatches("anything at all", q(""))).toEqual([]);
   });
@@ -42,7 +57,7 @@ describe("findMatches", () => {
   });
 });
 
-describe("matchAll", () => {
+describe("offsets that survive case folding", () => {
   it("finds matches whose casing survives a length-preserving fold", () => {
     expect(matchAll("Okay OKAY okay", q("okay"))).toEqual([
       { start: 0, end: 4 },
@@ -72,7 +87,7 @@ describe("matchAll", () => {
   });
 });
 
-describe("stepMatchIndex", () => {
+describe("stepping between matches", () => {
   it("has nothing to step through when there are no matches", () => {
     expect(stepMatchIndex(-1, 0, 1)).toBe(-1);
     expect(stepMatchIndex(0, 0, -1)).toBe(-1);
@@ -95,7 +110,7 @@ describe("stepMatchIndex", () => {
   });
 });
 
-describe("matchSnippet", () => {
+describe("snippets for the result list", () => {
   it("keeps the whole line when it fits inside the radius", () => {
     expect(matchSnippet("hello world", { start: 6, end: 11 }, 40)).toEqual({
       before: "hello ",

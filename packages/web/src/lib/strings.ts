@@ -178,6 +178,8 @@ export const zh = {
       "palette.toggle": "命令面板",
       "sessions.search": "搜索会话",
       "chat.new": "新建对话",
+      "find.open": "页内查找",
+      "find.all": "在所有区域查找",
       "sidebar.toggle": "显示或隐藏侧栏",
       "dock.toggleRight": "显示或隐藏右侧栏",
       "dock.toggleBottom": "显示或隐藏下侧栏",
@@ -708,9 +710,9 @@ export const zh = {
     toolAliases: "工具短名",
     toolAliasesInfo:
       "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
-    notifications: "系统通知",
+    notifications: "任务完成通知",
     notificationsInfo:
-      "Task 结束、有提问等你回答、或模型请求失败正在重试时，只要窗口失焦或隐藏，就弹一条系统通知，点击回到那个 Session。打开这个开关会当场向系统申请通知权限——系统只问这一次，被拒之后不再询问，只能到系统的通知设置里改回来。",
+      "Task 在窗口失焦或隐藏时结束，弹一条系统通知，点击即回到该 Session。打开这个开关会当场向系统申请通知权限——系统只问这一次，被拒之后不再询问，只能到系统的通知设置里改回来。",
     notificationsDenied: "系统已拒绝本应用的通知权限。请先在系统的通知设置中允许，再打开这个开关。",
     notificationsDismissed:
       "权限提示被关闭、没有给出答复，通知因此保持关闭。再次打开这个开关可以重新申请。",
@@ -1012,56 +1014,17 @@ export const zh = {
     listSeparator: "、",
   },
 
-  /** System notifications, all of them (window unfocused; opt-in, see lib/system-notify.ts). */
+  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
     taskCompleteTitle: "任务完成",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `「${session}」已完成，点击查看`,
-    /** Title of the question-card notification (see features/chat/ask-notify.ts). */
-    askTitle: "有问题等待你的回答",
-    /** `session` is the Session title (defaultSessionTitle when unnamed), `count` the cards that arrived. */
-    askBody: (session: string, count: number): string =>
-      `「${session}」有 ${count} 个问题待回答，点击查看`,
-    /** Title of the retry notification (see features/chat/retry-notify.ts). */
-    retryTitle: "请求失败，正在重试",
-    /**
-     * `session` is the Session title (defaultSessionTitle when unnamed), `attempt` the retry
-     * ordinal, `seconds` the wait the engine announced — absent when it announced none, which is
-     * why the wording survives without a countdown.
-     */
-    retryBody: (session: string, attempt: number, seconds?: number): string =>
-      seconds === undefined
-        ? `「${session}」第 ${attempt} 次重试`
-        : `「${session}」第 ${attempt} 次重试，${seconds} 秒后发起`,
-  },
-
-  ask: {
-    /** Badge on a card's header when more than one option may be picked. */
-    multiSelect: "可多选",
-    /** Marks the option the author suggests — a hint, never pre-selected. */
-    recommended: "推荐",
-    /** The free-text row every card carries; the same words the author was told never to write. */
-    other: "其他（自行填写）",
-    otherPlaceholder: "输入你的答案…",
-    skip: "跳过",
-    submit: "提交",
-    /** Sends every left-unanswered card of one message as a single reply. */
-    submitAll: "全部提交",
-    /** `pending` of `total` cards in this message are still unanswered. */
-    pendingCount: (pending: number, total: number): string => `${pending}/${total} 题待回答`,
-    /** Shown when Submit is pressed with nothing chosen: Skip is the deliberate way to pass. */
-    needChoice: "请先选择一项，或点「跳过」",
-    reanswer: "重新回答",
-    /** Free-text row's label inside the composed user message (separator included). */
-    answerOther: "其他：",
-    /** What a skipped question says inside the composed user message. */
-    answerSkipped: "跳过，未作答",
   },
 
   /**
    * The find bar (components/find/find-bar.tsx) and the searchable regions it queries
-   * (lib/find-dom.ts). Region names are lowercase nouns in English because they are also read
-   * as the "only in <region>" label of the scope button.
+   * (lib/find-dom.ts). A region's name is both a result row's tag and the subject of the scope
+   * button (`scopeThisRegion`).
    */
   find: {
     placeholder: "在当前区域查找…",
@@ -1078,12 +1041,12 @@ export const zh = {
     /** Scope button while the search is limited to one region: widen it to everything on screen. */
     scopeAll: "所有区域",
     /** Scope button while searching everything: narrow it back to `region`. */
-    scopeThisRegion: (region: string) => `仅在${region}中`,
+    scopeThisRegion: (region: string): string => `仅在${region}中`,
     /** The region's own notice that it holds content this search could not reach. */
     loadMore: "更早的内容尚未加载",
     loadMoreAction: "加载并继续搜索",
     /** `count` hits past the rows the result list shows. */
-    moreRows: (count: number) => `另有 ${count} 条未显示`,
+    moreRows: (count: number): string => `另有 ${count} 条未显示`,
     /** Name of the aggregated result list (read out when it is announced). */
     resultsLabel: "查找结果",
   },

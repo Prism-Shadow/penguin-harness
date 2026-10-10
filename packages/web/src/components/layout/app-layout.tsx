@@ -444,8 +444,8 @@ export function AppLayout() {
               <Sidebar onNavigate={() => setDrawerOpen(false)} />
             </div>
           </Drawer>
-          {/* Global find bar (Ctrl+F / Ctrl+Shift+F): sits in the layout so it works on
-              every route that mounts a [data-find-region] container, not only the chat page. */}
+          {/* The find bar (`find.open` / `find.all`): in the layout, so it serves every route
+              that mounts a [data-find-region] container, not only the chat page. */}
           <FindBar />
         </>
       }

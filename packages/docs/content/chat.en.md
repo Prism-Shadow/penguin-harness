@@ -217,7 +217,6 @@ The fork is a new Session with the same agent, model, Workspace and approval mod
 - **Compaction** leaves a row whose title is its status: **Compacting** while it runs and **Compacted** when it ends (**Clearing** and **Cleared** for a context clear), with its time. While it runs, the row opens a thinking section once the request's thinking arrives, and a result section when the summary starts; both are collapsed by default, each with its own time. The row folds back to one line when the compaction ends. A failed compaction keeps the title **Compaction** (or **Clear**) over a one-line reason.
 - **MCP connect**, the first connection to the agent's MCP servers, leaves a row with the number of tools found and the names of unavailable servers. It expands into one group per server, with its status, tool count and connect time, and each group opens to its tool list or the error.
 - **Subagents** each leave a row with their avatar, name, short Session id, a spinner while running, and an amber dot while one of their tool calls awaits approval. Selecting the row opens the **Agents panel**: a call graph of that Task at the top, with each node's elapsed time, and the selected subagent's live conversation below. Nested tool cards and approvals work as in the main chat, the subagent has a composer of its own, and **Jump to this session** opens it as a full conversation. When the current Task starts a subagent, the Agents panel opens by itself, once per Task.
-- **Global find**: Ctrl+F (⌘F on macOS) searches the area that holds the focus — the conversation, a subagent's conversation, the conversation list or the Files panel — and Ctrl+Shift+F (⇧⌘F) searches all of them at once and lists every match. While a query is active, collapsed step groups open so matches inside them are found, and an unloaded earlier stretch of the conversation offers **Load and keep searching**.
 
 ### Rich output blocks
 
@@ -244,6 +243,14 @@ Outside the Web App the blocks arrive as plain text. In `penguin chat`, `penguin
 A conversation opens on its latest 20 turns. Scroll near the top to load 20 more; your reading position stays in place. A turn with a very large output can make one load hold fewer turns. Pictures load as they scroll into view. If loading fails, select "Failed to load earlier messages — click to retry". Once nothing older remains, "Beginning of conversation" marks the start. Turn numbers and header statistics count from the start of the conversation, so they match a full load.
 
 To return to the newest message, select **Jump to latest**. In a longer conversation, ticks in the left margin mark each exchange: point at a tick to preview it, and select it to jump there. Where the margin has no room, such as on a phone, an **Outline** button in the toolbar lists the same exchanges.
+
+### Find in the conversation
+
+Ctrl+F (⌘F on a Mac) opens a find bar over the area that holds the focus: the conversation, a subagent's conversation in the Agents panel, the conversation list, or the Files panel. With the focus anywhere else, it searches the conversation. Ctrl+Shift+F (⇧⌘F) searches every area on screen at once and lists each match with its area and the text around it; select a row to go there. The button at the bottom of the bar switches between one area and all of them.
+
+Typing updates the count without moving the page. Press Enter to show the selected match and again to go to the next one; Shift+Enter goes back. **Aa** matches case, and Esc closes the bar. While you search, collapsed step groups in the searched area open so that matches inside them count, and they fold again when you close the bar. Earlier messages that are not loaded cannot be found: the bar then shows **Load and keep searching**, which loads them and continues upward from the match you were on.
+
+Both keys are defaults: change them under [System settings › Keyboard shortcuts](/settings#keyboard-shortcuts). In a browser they replace the browser's own find wherever a conversation is on screen or the focus is in one of these areas; everywhere else the browser keeps them.
 
 ## Use side panels
 
@@ -392,10 +399,12 @@ A group's active conversations, and each open folder, show ten conversations at 
 | Tab | Run the highlighted slash command |
 | Backspace | At the start of the text, remove a staged `/agent` or `/model` chip |
 | Shift+F10 | Open the menu of the focused conversation row, or of the Files panel |
-| Esc | Close a menu; fold the shortcuts launcher; cancel a pending threshold change |
+| Esc | Close a menu or the find bar; fold the shortcuts launcher; cancel a pending threshold change |
 | Left / Right | Move the focused compaction threshold marker by 1,000 Tokens (10,000 with Shift) |
 | Ctrl+Alt+S | Open **Search chats** in the sidebar |
 | Ctrl+Alt+N | Start a new chat |
+| Ctrl+F | Find in the conversation, or in the area that holds the focus |
+| Ctrl+Shift+F | Find in every area on screen |
 | Ctrl+Alt+1 | Show or hide the sidebar |
 | Ctrl+Alt+2 | Show or hide the right sidebar |
 | Ctrl+Alt+3 | Show or hide the bottom panel |
@@ -404,7 +413,7 @@ A group's active conversations, and each open folder, show ten conversations at 
 | Ctrl+Alt+` | Close the focused terminal, after confirmation |
 | Ctrl+S | Save in the Files panel's editor or the handbook |
 
-On a Mac, ⌘ takes the place of Ctrl in Ctrl+S and in the Ctrl+Alt rows other than the terminal's (⌘S, ⌥⌘S); the three terminal keys use the Control key there too. Every row from Ctrl+Alt+S down is a default: change it under [System settings › Keyboard shortcuts](/settings#keyboard-shortcuts).
+On a Mac, ⌘ takes the place of Ctrl in Ctrl+S, Ctrl+F, Ctrl+Shift+F and in the Ctrl+Alt rows other than the terminal's (⌘S, ⌘F, ⌥⌘S); the three terminal keys use the Control key there too. Every row from Ctrl+Alt+S down is a default: change it under [System settings › Keyboard shortcuts](/settings#keyboard-shortcuts).
 
 ## Limits
 

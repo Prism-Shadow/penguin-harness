@@ -1,52 +1,53 @@
 /**
- * The one piece of state a search needs the transcript to know about: that a find is running,
- * so collapsed content has to be in the document to be findable.
+ * Find-in-page: which regions have their collapsed work groups opened for a search.
  *
- * The transcript deliberately withholds rendered bodies — a `work-group` mounts its rows only
- * while it is open (features/chat/work-group.tsx), and the stream itself keeps a window of the
- * most recent messages (lib/omni/stream-controller.ts). The first of those is *this* module's
- * business: what a reader searched for is usually inside the thing they collapsed, and a search
- * that came back empty because the text was never mounted would be a lie the UI tells. While
- * this flag is set, every collapsible body renders whether or not the reader opened it; clearing
- * it puts them back exactly as they were, because each one's own open/closed state is untouched
- * — it was always a separate fact from "is it rendered".
+ * A work group mounts its rows only while it is open (features/chat/work-group.tsx), so a match
+ * inside a group the reader collapsed is text the search cannot see. While a query is live, the
+ * find bar (components/find/find-bar.tsx) names the regions it searches here, and the groups
+ * inside exactly those regions render their rows whether or not the reader opened them. Each
+ * group's own open/closed state is untouched, so clearing the list folds them back as they were.
  *
- * The second (the stream window) cannot be fixed this way — old messages are gone, not hidden,
- * and the region says so with `data-find-more` (lib/find-dom.ts), which is what the find bar's
- * "load earlier messages" row is built on.
+ * The flag is per region element, not global: Ctrl+F in the Session list opens nothing in the
+ * conversation, and a search of the conversation leaves the subagent panel alone. A region's
+ * owner (message-stream.tsx) reads its own entry with `useRegionRevealed` and hands it to its
+ * groups through `FindRevealContext`, so the store has one subscriber per transcript rather than
+ * one per group.
  *
- * The store is module-level state read through `useSyncExternalStore`, following
- * lib/notification-pref.ts: the value is a primitive, so the snapshot *is* the value and the
- * subscriber set is the whole mechanism. Only the find bar writes it, and it is written once per
- * open/close or query change rather than per keystroke's result — an empty query is not a search,
- * and expanding every collapsed group to highlight nothing would be the search rearranging the
- * page for no reason.
+ * Only the rows mount, not each row's body (a tool call's output, a thinking step's text): those
+ * stay behind their own disclosure, so a reveal costs the row heads of the scoped transcript.
+ *
+ * The other thing a transcript withholds, history beyond the loaded window, is not hidden but
+ * absent; the region says so with `data-find-more` (lib/find-dom.ts).
  */
+import { createContext, useSyncExternalStore } from "react";
+import type { RefObject } from "react";
 
-let active = false;
+let revealed: ReadonlySet<Element> = new Set();
 const listeners = new Set<() => void>();
 
-export function subscribeFindActive(listener: () => void): () => void {
+function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => void listeners.delete(listener);
 }
 
-/** Whether a search is running right now (see the module header: a non-empty query). */
-export function readFindActive(): boolean {
-  return active;
-}
-
 /**
- * In tests and outside React, the flag is read and written directly; inside React it is read
- * with `useSyncExternalStore(subscribeFindActive, readFindActive)`.
+ * Opens the collapsed groups inside exactly these regions; an empty list folds every one back.
+ * Only the find bar writes this. Writing the set it already holds notifies nobody.
  */
-export function writeFindActive(value: boolean): void {
-  if (active === value) return;
-  active = value;
+export function revealCollapsedIn(regions: readonly Element[]): void {
+  if (regions.length === revealed.size && regions.every((region) => revealed.has(region))) return;
+  revealed = new Set(regions);
   for (const listener of listeners) listener();
 }
 
-/** Reset for tests: the module outlives every render, so a test that leaves it set leaks into the next one. */
-export function resetFindActive(): void {
-  writeFindActive(false);
+/** Whether the find bar has the collapsed groups inside `region` open. */
+export function useRegionRevealed(region: RefObject<Element | null>): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => region.current !== null && revealed.has(region.current),
+    () => false,
+  );
 }
+
+/** What a region's owner hands its work groups: whether the find bar has them open. */
+export const FindRevealContext = createContext(false);

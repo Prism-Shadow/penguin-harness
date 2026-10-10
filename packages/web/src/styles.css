@@ -280,21 +280,6 @@
 .dark .outline-flash {
   animation-name: outline-flash-dark;
 }
-/* Question-card reveal: clicking a question notification lands on a card the user asked to
-   see, and the card's own opaque background would swallow the outline's wash above — so this
-   one is drawn as a ring. Applied by use-ask-notifications.ts via classList, for the same
-   reason as the outline's flash. */
-@keyframes ask-card-flash {
-  from {
-    box-shadow: 0 0 0 3px var(--color-brand-400);
-  }
-  to {
-    box-shadow: 0 0 0 3px transparent;
-  }
-}
-.ask-card-flash {
-  animation: ask-card-flash 1200ms ease-out both;
-}
 /* Find-in-page highlights (lib/find-dom.ts): the CSS Custom Highlight API, so a search paints
    ranges without wrapping them in elements — nothing in the DOM changes, which is what lets
    React re-render a streaming transcript without noticing or fighting the paint. Two names:

@@ -1,11 +1,21 @@
 /**
- * The find bar, end to end in the real app: Ctrl+F scopes the search to the area the focus is
- * inside, Ctrl+Shift+F searches every area on screen and lists what it found, Escape closes, and
- * matches are painted through the CSS Custom Highlight API rather than by rewriting the DOM.
+ * The find bar, end to end in the real app.
  *
- * The reply being searched comes from the "find marker test" branch of mock-llm.mjs: four
- * occurrences of `findmarker` across two paragraphs — a token nothing else in the app writes, so
- * the hit count is exact without depending on the app's own copy.
+ * - Ctrl+F (`find.open`) scopes the search to the area the focus is inside, falling back to the
+ *   conversation; typing counts without moving the page, the first Enter shows the selected hit
+ *   and the second travels; `Aa` matches case; Escape closes the bar and its paint, which is a
+ *   CSS highlight rather than rewritten DOM.
+ * - Ctrl+Shift+F (`find.all`) searches every area on screen and lists the hits by area, and the
+ *   scope button narrows back to the area the focus was in.
+ * - A match inside a collapsed work group is found: the groups of the searched area open while
+ *   the query stands, a search of another area leaves them closed, and closing the bar folds
+ *   them back.
+ * - With earlier turns not loaded, "load and keep searching" backfills them and lands on the
+ *   nearest hit above the one the reader was on, not on the first hit of the conversation.
+ *
+ * The replies come from mock-llm.mjs: the "find marker test" branch writes `findmarker` four
+ * times across two paragraphs (a token nothing else in the app writes, so counts are exact), and
+ * any other first message takes the default path, a work group running `ls -la`.
  *
  * Standalone spec: shares one server with the other specs, so it registers its own user (which
  * auto-provisions a default Project).
@@ -20,8 +30,11 @@ const P = "password123";
 /** What mock-llm.mjs answers the title request with; the sidebar row the search is scoped to. */
 const TITLE = "Configure Tailwind theme";
 const HITS = 4;
+/** Every default-path reply ends its first paragraph with this. */
+const REPLY = "Command finished";
 
-test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async ({ page }) => {
+/** Points the user's Project at the mock LLM; returns a factory for fresh sessions in it. */
+async function setup(page) {
   await provisionAndLogin(page.request, U, P);
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
   const projectId = projects.projects[0].projectId;
@@ -40,15 +53,31 @@ test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async 
     },
   });
   expect(put.ok(), "put models").toBeTruthy();
+  return async () => {
+    const sess = await (
+      await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
+        data: { provider: "custom", modelId: "claude-4-8", approvalMode: "allow-all" },
+      })
+    ).json();
+    return sess.session.sessionId;
+  };
+}
 
-  const sess = await (
-    await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
-      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "allow-all" },
-    })
-  ).json();
-  const sessionId = sess.session.sessionId;
+/** Sends a message and waits until the page carries `replies` finished default-path replies. */
+const sender = (page, ta) => async (text, replies) => {
+  await ta.click();
+  await ta.fill(text);
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(
+    ([marker, want]) => document.body.innerText.split(marker).length - 1 >= want,
+    [REPLY, replies],
+    { timeout: 60_000 },
+  );
+};
 
-  await page.goto(`${BASE}/chat/${sessionId}`);
+test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async ({ page }) => {
+  const newSession = await setup(page);
+  await page.goto(`${BASE}/chat/${await newSession()}`);
   const ta = page.getByPlaceholder(/输入消息/);
   await ta.waitFor();
   await ta.fill("find marker test");
@@ -80,7 +109,6 @@ test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async 
   await expect(bar.getByText(`2/${HITS}`, { exact: true })).toBeVisible();
   await bar.getByRole("button", { name: "下一个" }).click();
   await expect(bar.getByText(`3/${HITS}`, { exact: true })).toBeVisible();
-  // …and it wraps back to the first hit from the last one's side.
   await bar.getByRole("button", { name: "上一个" }).click();
   await expect(bar.getByText(`2/${HITS}`, { exact: true })).toBeVisible();
 
@@ -127,4 +155,84 @@ test("Ctrl+F scopes to the focused area, Ctrl+Shift+F searches them all", async 
   await bar.getByRole("button", { name: "所有区域" }).click();
   await expect(bar.getByRole("option")).toHaveCount(HITS);
   await expect(bar.getByRole("button", { name: "仅在会话列表中" })).toBeVisible();
+});
+
+test("a match inside a collapsed work group is found, and the group folds back when the bar closes", async ({
+  page,
+}) => {
+  const newSession = await setup(page);
+  await page.goto(`${BASE}/chat/${await newSession()}`);
+  const ta = page.getByPlaceholder(/输入消息/);
+  await ta.waitFor();
+  await sender(page, ta)("list the workspace", 1);
+
+  // The settled tool group has folded itself away: the command it ran is not on the page.
+  const group = page.locator('[data-group-header][data-kind="tool"]');
+  await expect(group).toHaveAttribute("aria-expanded", "false");
+  const command = page.getByText("ls -la");
+  await expect(command).toHaveCount(0);
+
+  const bar = page.getByRole("search");
+  const input = bar.locator("input");
+
+  // A search of the Session list leaves the conversation's groups closed.
+  const sessions = page.locator('[data-find-region="sessions"]');
+  await sessions.getByRole("button").filter({ hasText: TITLE }).first().click();
+  await page.keyboard.press("Control+f");
+  await input.fill("ls -la");
+  await expect(bar.getByText("无结果", { exact: true })).toBeVisible();
+  await expect(group).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("Escape");
+  await expect(bar).toHaveCount(0);
+
+  // A search of the conversation opens the group once the query settles, and the hit is counted.
+  await ta.click();
+  await page.keyboard.press("Control+f");
+  await input.fill("ls -la");
+  await expect(group).toHaveAttribute("aria-expanded", "true");
+  await expect(bar.getByText(/^1\/\d+$/)).toBeVisible();
+
+  // Closing the bar folds it back: the reader never opened it.
+  await page.keyboard.press("Escape");
+  await expect(bar).toHaveCount(0);
+  await expect(group).toHaveAttribute("aria-expanded", "false");
+  await expect(command).toHaveCount(0);
+});
+
+test("load and keep searching backfills earlier turns and lands on the nearest hit above", async ({
+  page,
+}) => {
+  // A conversation opens on its latest 20 turns: 22 sequential exchanges leave the first two out
+  // of the loaded window. Only the first takes the mock's tool path; the rest are one-round
+  // text replies.
+  test.setTimeout(240_000);
+  const newSession = await setup(page);
+  const sessionId = await newSession();
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  const ta = page.getByPlaceholder(/输入消息/);
+  await ta.waitFor();
+  const send = sender(page, ta);
+  await send("zebracorn one", 1);
+  await send("zebracorn two", 2);
+  await send("zebracorn three", 3);
+  for (let n = 4; n <= 22; n++) await send(`filler question ${n}`, n);
+
+  // Reloaded, the conversation holds turns 3 to 22 and opens at the bottom.
+  await page.reload();
+  await expect(page.getByText("filler question 22")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("zebracorn one")).toHaveCount(0);
+
+  const bar = page.getByRole("search");
+  const input = bar.locator("input");
+  await page.keyboard.press("Control+f");
+  await input.fill("zebracorn");
+  await expect(bar.getByText("1/1", { exact: true })).toBeVisible();
+  await expect(bar.getByText("更早的内容尚未加载")).toBeVisible();
+
+  // The backfill brings turns 1 and 2. The reader was on turn 3's hit, so the search goes on to
+  // the nearest one above it (turn 2), not to the top of the conversation.
+  await bar.getByRole("button", { name: "加载并继续搜索" }).click();
+  await expect(bar.getByText("2/3", { exact: true })).toBeVisible();
+  await expect(page.getByText("zebracorn two")).toBeInViewport();
+  await expect(bar.getByText("更早的内容尚未加载")).toHaveCount(0);
 });
