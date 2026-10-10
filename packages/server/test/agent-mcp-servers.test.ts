@@ -12,7 +12,8 @@
  *   404.
  * - A server name the Agent already has from someone else refuses the whole install with 409
  *   `mcp_server_name_taken`, naming the server and the Agent; nothing is installed — not the
- *   plugin's skills either.
+ *   plugin's skills either. Creating an Agent seeded with two plugins that carry the same server
+ *   name is refused the same way, and no Agent is left behind.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -132,6 +133,45 @@ describe("a plugin's MCP servers on an Agent", () => {
     const again = await admin.delete(`${AGENT}/mcp-servers/cf-local`);
     expect(again.status).toBe(404);
     expect(await again.json()).toMatchObject({ error: { code: "unknown_mcp_server" } });
+  });
+
+  it("refuses to create an Agent seeded with two plugins that carry a server of the same name, leaving no Agent", async () => {
+    const { admin } = await boot();
+    const prefix = path.join(t.root, "plugins");
+    const twin = path.join(prefix, "node_modules", "@acme", "cf-twin");
+    await fs.mkdir(twin, { recursive: true });
+    await fs.writeFile(
+      path.join(prefix, "package.json"),
+      JSON.stringify({
+        name: "penguin-plugins",
+        private: true,
+        dependencies: { "@acme/cf": "*", "@acme/cf-twin": "*" },
+      }),
+    );
+    await fs.writeFile(
+      path.join(twin, "package.json"),
+      JSON.stringify({
+        name: "@acme/cf-twin",
+        version: "0.1.0",
+        penguin: { mcp_servers: [cloudflare] },
+      }),
+    );
+
+    const res = await admin.post("/api/projects/default_project/agents", {
+      agentId: "twin_agent",
+      plugins: ["cf", "cf-twin"],
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: {
+        code: "mcp_server_name_taken",
+        message:
+          "MCP server 'cloudflare-api' already exists on agent 'twin_agent' and belongs to plugin 'cf'; rename or remove it first. Nothing was installed.",
+      },
+    });
+    expect((await admin.get("/api/projects/default_project/agents/twin_agent/config")).status).toBe(
+      404,
+    );
   });
 
   it("refuses the whole install when the Agent already has a server by that name, installing nothing", async () => {
