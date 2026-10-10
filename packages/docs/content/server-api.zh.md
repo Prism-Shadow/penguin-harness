@@ -85,7 +85,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | PUT | `/api/me/profile` | 设置头像和昵称：`{displayName?, avatar?}` → `{user}` |
 | GET | `/api/me/prefs` | 读取 UI 偏好 |
 | PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并）；拒绝 `browserBackend`（`400`），它经由 [`PUT /api/builtin-browser/backend`](#agent-浏览器) 选择 |
-| GET | `/api/me/archived-sessions/groups` | [设置 › 已归档对话](/settings#已归档对话)的分组：`?q=&source=&projectId=` → `{groups, total}` |
+| GET | `/api/me/archived-sessions/groups` | [设置 › 已归档对话](/settings#已归档对话)的分组：`?q=&source=&projectId=` → `{groups, total, asOf}` |
 | GET | `/api/me/archived-sessions` | 一个分组中的已归档 Session：`?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |
 | POST | `/api/me/archived-sessions/unarchive` | 批量取消归档：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
 | POST | `/api/me/archived-sessions/delete` | 批量删除：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
@@ -99,9 +99,9 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
   - 任何已认证的会话都可以调用，包括桌面 shell 的 token 会话。与修改密码的接口不同，修改资料没有旧凭证需要校验。
 - `/api/me/archived-sessions` 及其三个子路由为[设置 › 已归档对话](/settings#已归档对话)提供数据。它们覆盖调用者拥有或参与的所有 Project 中已归档的 Session，只含本服务器；Project 的所有者或成员可以操作其中任何 Session，不论由谁创建。用户归档的 Session，以及 `source` 为 `api`、`schedule` 或 `cli` 且用户没有取消归档的 Session，都是已归档的；见 [Session 创建与目录浏览](#session-创建与目录浏览)。
   - 过滤参数通用。`q` 按标题做不区分大小写的匹配，最多 200 个字符；没有标题的 Session 按其 Trace 的首轮标题匹配。`source` 取 `user`（亲手归档的）、`api`、`schedule` 或 `cli`。`projectId` 只看一个 Project，不存在或调用者无权进入时返回 `404` `project_not_found`。
-  - `GET /api/me/archived-sessions/groups` 返回 `{groups: [{projectId, projectName, workspace, count, latest}], total}`，每个 Project 的每个 Workspace 一组。`workspace` 是 Workspace 路径，合并的临时 Workspace 记为 `temp`。`latest` 是组内最新的 `lastActiveAt`，分组按它从新到旧排列。`total` 是各组计数之和。
+  - `GET /api/me/archived-sessions/groups` 返回 `{groups: [{projectId, projectName, workspace, count, latest}], total, asOf}`，每个 Project 的每个 Workspace 一组。`workspace` 是 Workspace 路径，合并的临时 Workspace 记为 `temp`。`latest` 是组内最新的 `lastActiveAt`，分组按它从新到旧排列。`total` 是各组计数之和，`asOf` 是服务端取这些计数的时刻。
   - `GET /api/me/archived-sessions` 按最近活动从新到旧分页读取一个分组。`projectId`、`workspace` 和 `limit`（1–100）必填，`before=<lastActiveAt>,<sessionId>` 与 Session 列表一样从已持有的最后一行之后继续。没有标题的行带上其 Trace 的首轮标题。
-  - 两个批量路由接受 `{sessionIds: [...]}`（1–500 个 id）或 `{filter: {q?, source?, projectId?, workspace?}}`（代表过滤条件匹配的全部已归档 Session），返回 `{done, missing}`。每个 Session 都走与 `PATCH` 或 `DELETE /api/sessions/:id` 相同的路径，每个 Session 一个事件。取消归档时 `done` 只计原本已归档的 Session；删除则删除点名的每一个 Session，无论是否已归档。`missing` 列出不存在或调用者无权访问的 id；过滤形式不会产生 `missing`。
+  - 两个批量路由接受 `{sessionIds: [...]}`（1–500 个 id）或 `{filter: {q?, source?, projectId?, workspace?, until?}}`（代表过滤条件匹配的全部已归档 Session），返回 `{done, missing}`。过滤条件的 `until` 是某次分组响应的 `asOf`：此时批量操作只作用于那一刻已归档、此后没有活动的 Session，计数之后才归档、新开或运行过的 Session 不受影响。每个 Session 都走与 `PATCH` 或 `DELETE /api/sessions/:id` 相同的路径，每个 Session 一个事件。取消归档时 `done` 只计原本已归档的 Session；删除则删除点名的每一个 Session，无论是否已归档，运行中的先中止，但按过滤条件删除时会跳过运行中的 Session，也不计入 `done`。`missing` 列出不存在或调用者无权访问的 id；过滤形式不会产生 `missing`。
 
 ## 用户管理（仅管理员）
 
@@ -709,7 +709,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/workspace-files/search?workspace=&q=` | 按条目名搜索该目录 |
 | POST | `/workspace-files/reveal?workspace=&path=` | 在机器自带的文件管理器中显示文件 |
 
-- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active` 或 `archived`；`background` 返回 400）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数，与取哪一页无关）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
+- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active` 或 `archived`；`background` 返回 400）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数，与取哪一页无关）、`workspaceCounts`（按 Workspace 路径统计的同类总数）、`workspaceLatest`（每个 Workspace 最新的 Session）和 `workspaceLatestActive`（每个 Workspace 最新的 `active` Session）。不带分页参数时，返回完整列表。
 - `order` 决定列表顺序：`created`（默认）按创建时间从新到旧；`activity` 按 `lastActiveAt` 从新到旧，时间相同时按 `sessionId` 降序，两者都按码点比较而非按区域设置排序。在 `order=activity` 下，`before=<lastActiveAt>,<sessionId>` 搭配 `limit` 以游标代替 `offset` 分页：只返回严格排在这个键之后的行，通常就是客户端已显示的最后一行。两页之间变为活跃的 Session 会移到游标之前，因此不会被再次返回，也不会让其他行漏掉。`before` 未搭配 `order=activity`、与 `offset` 同时出现、缺少 `limit`，或在第一个逗号处拆开后不是日期加合法 id，均返回 400。
 - `excludeOrg=1` 会把组织的工位会话、工单会话和子 Session 一并移出这一页以及 `counts=1` 的总数，这正是开发模式的列表所要的。取其他值返回 400。
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。

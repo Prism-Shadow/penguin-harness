@@ -351,7 +351,7 @@ In **List options** (the sliders icon at the top of the list):
 
 The button beside it follows the grouping: **New workspace**, **Create agent** or **New chat**. Groups can be pinned, reordered by dragging, and have a + button that starts a new chat in them.
 
-When grouped by Workspace, the directories the system creates for itself fold into one **Temporary workspaces** group: the Workspace a conversation gets when you choose none, and the Test Workspace an evaluation creates for each case and run. Both live directly under the agent's `workspaces/` directory, and every directory there joins this group. A Workspace whose conversations are all archived has no group.
+When grouped by Workspace, the directories the system creates for itself fold into one **Temporary workspaces** group: the Workspace a conversation gets when you choose none, and the Test Workspace an evaluation creates for each case and run. Both live directly under the agent's `workspaces/` directory, and every directory there joins this group. A Workspace whose conversations are all archived has no group, and the Workspace groups come in the order of their newest active conversation: an archived run does not move one up.
 
 A group shows ten conversations at a time. **Show N more chats** reveals ten more; rows already loaded come first, and more are fetched from the server only when they run out. Once more than ten show, **Show less** folds back to the first ten. When grouped by time, **Load more chats** fetches older conversations. With more than ten groups, the list shows ten groups per page, with a pager below it.
 
@@ -359,7 +359,7 @@ A group shows ten conversations at a time. **Show N more chats** reveals ten mor
 
 - Point at a row to swap its last-active time for two buttons: **Archive** and **More** (…). Tabbing to either one shows it too.
 - Right-click the row, long-press it on a touch screen, press Shift+F10, or select **More** to open its menu: **Pin**, **Rename chat**, **Remote control** (see [Remote control](/remote-control)), **Archive**, **Copy Session ID** and **Delete chat**. Esc, a click elsewhere or scrolling the list closes it.
-- **Archive** moves the conversation out of the sidebar to [Archived chats](/settings#archived-chats). Every row in the sidebar is an active conversation, so there is no **Unarchive** here.
+- **Archive** moves the conversation out of the sidebar to [Archived chats](/settings#archived-chats). Every row in the sidebar is an active conversation, so there is no **Unarchive** here. A conversation on a connected machine has no **Archive**: the Archived chats page lists this server's conversations only.
 - **Delete chat** asks for confirmation. Deleting removes the conversation's messages and Trace for good, along with its subagent Sessions.
 
 The right-click menu replaces the browser's own menu only on conversation rows and in the Files panel. A pinned conversation sorts to the top of its group, and pins are remembered per Project in the browser.

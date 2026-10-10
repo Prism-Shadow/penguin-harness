@@ -176,7 +176,7 @@ With no archived conversations the page reads **No archived chats**; when the se
 
 - **Unarchive** on a row puts the conversation back in the sidebar at once. A conversation a program opened then stays in the sidebar through its later runs.
 - To act on several, select their rows: a row's box shows when you point at the row, and always on a touch screen. A bar above the list then reads **N selected**, with **Unarchive**, **Delete** and **Clear selection**; it stays in view, with the search and the filters, while the list scrolls.
-- **Unarchive all** and **Delete all** in a group's … menu act on every chat in that group, as many as its header counts.
+- **Unarchive all** and **Delete all** in a group's … menu act on the chats its header counted, and on no other: a chat archived or opened after the count, or one that ran since, is left alone, and **Delete all** skips a chat that is running.
 
 Unarchiving does not ask. Deleting always asks first, and a batch or group delete names how many chats it removes. Deleting removes the conversations' messages and Traces for good, along with their subagent Sessions.
 
