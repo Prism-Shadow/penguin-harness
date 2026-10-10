@@ -145,7 +145,6 @@ function NewChannelForm({
             form.patch({ channelId: next });
             setRefusedId(undefined);
           }}
-          onEnter={() => void submit()}
         />
         <Textarea
           label={S.company.channels.purpose}

@@ -313,11 +313,6 @@ function ShortcutDialog({
           autoFocus
           maxLength={SHORTCUT_TITLE_MAX}
           onChange={(e) => form.patch({ title: e.target.value })}
-          onKeyDown={(e) => {
-            // isComposing guard (the repo's IME convention): accepting a Chinese candidate
-            // fires Enter, which would otherwise save the raw pinyin.
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) void save();
-          }}
         />
         <Textarea
           label={S.chat.shortcuts.promptLabel}

@@ -14,7 +14,7 @@
  * the dialog with edits asks first; nothing closes it while the write is in flight.
  */
 import { useState } from "react";
-import type { ChangeEvent, KeyboardEvent } from "react";
+import type { ChangeEvent } from "react";
 import type {
   MachinesResponse,
   SshHostRequest,
@@ -154,10 +154,6 @@ export function SshHostDialog({
     }
   };
 
-  const onEnter = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") void submit();
-  };
-
   return (
     <Modal
       open
@@ -188,7 +184,6 @@ export function SshHostDialog({
           error={refused ?? shown("alias")}
           value={form.alias}
           onChange={set("alias")}
-          onKeyDown={onEnter}
           className="font-mono"
           placeholder="build-box"
           autoComplete="off"
@@ -203,7 +198,6 @@ export function SshHostDialog({
           error={shown("hostName")}
           value={form.hostName}
           onChange={set("hostName")}
-          onKeyDown={onEnter}
           className="font-mono"
           placeholder="192.168.1.20"
           autoComplete="off"
@@ -218,7 +212,6 @@ export function SshHostDialog({
             error={shown("user")}
             value={form.user}
             onChange={set("user")}
-            onKeyDown={onEnter}
             className="font-mono"
             placeholder="deploy"
             autoComplete="off"
@@ -231,7 +224,6 @@ export function SshHostDialog({
             error={shown("port")}
             value={form.port}
             onChange={set("port")}
-            onKeyDown={onEnter}
             className="font-mono"
             placeholder="22"
             inputMode="numeric"
@@ -246,7 +238,6 @@ export function SshHostDialog({
           error={shown("identityFile")}
           value={form.identityFile}
           onChange={set("identityFile")}
-          onKeyDown={onEnter}
           className="font-mono"
           placeholder="~/.ssh/id_ed25519"
           autoComplete="off"

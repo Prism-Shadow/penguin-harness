@@ -672,12 +672,6 @@ function CreateTicketForm({
           value={title}
           autoFocus
           onChange={(e) => form.patch({ title: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              void submit();
-            }
-          }}
         />
         <Input
           size="sm"
