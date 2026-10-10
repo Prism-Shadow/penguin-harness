@@ -354,7 +354,7 @@ penguin benchmark import <dir-or-zip> [--overwrite]
   [--project-id <id>] [--json] [--server <url>]
 ```
 
-The argument is a package folder, holding `benchmark.json` and its `CASE-*` folders, or a zip of one. A zip is sent as it is. A folder is zipped whole first, every entry as it is: the CLI leaves nothing out and follows no link, so the server refuses what a package may not hold, such as a `scoreboard.yaml`, a `.jobs` folder or a link, and names it, as it does for an upload. The server writes the Benchmark; the command never writes under `benchmarks/` itself.
+The argument is a package folder, holding `benchmark_config.toml` and its `CASE-*` folders, or a zip of one. A zip is sent as it is. A folder is zipped whole first, every entry as it is: the CLI leaves nothing out and follows no link, so the server refuses what a package may not hold, such as a `scoreboard.yaml`, a `.jobs` folder or a link, and names it, as it does for an upload. The server writes the Benchmark; the command never writes under `benchmarks/` itself.
 
 | Option | Description | Default |
 | --- | --- | --- |

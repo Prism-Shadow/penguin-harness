@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 async function writePackage(benchDir: string, manifest: string): Promise<void> {
-  await fs.writeFile(path.join(benchDir, "benchmark.json"), manifest);
+  await fs.writeFile(path.join(benchDir, "benchmark_config.toml"), manifest);
   await fs.mkdir(path.join(benchDir, "CASE-001", "statement"), { recursive: true });
   await fs.writeFile(path.join(benchDir, "CASE-001", "statement", "README.md"), "# A case\n");
 }
@@ -42,7 +42,7 @@ describe("placing a Benchmark", () => {
     });
 
     await expect(placing).rejects.toMatchObject({ code: "EEXIST" });
-    expect(await fs.readFile(path.join(dir, ID, "benchmark.json"), "utf8")).toBe("theirs\n");
+    expect(await fs.readFile(path.join(dir, ID, "benchmark_config.toml"), "utf8")).toBe("theirs\n");
     expect(await fs.readdir(dir)).toEqual([ID]);
   });
 
@@ -53,8 +53,11 @@ describe("placing a Benchmark", () => {
 
     await placeBenchmark(dir, ID, (stage) => writePackage(stage, "new\n"), { replace: true });
 
-    expect(await fs.readFile(path.join(dir, ID, "benchmark.json"), "utf8")).toBe("new\n");
-    expect((await fs.readdir(path.join(dir, ID))).sort()).toEqual(["CASE-001", "benchmark.json"]);
+    expect(await fs.readFile(path.join(dir, ID, "benchmark_config.toml"), "utf8")).toBe("new\n");
+    expect((await fs.readdir(path.join(dir, ID))).sort()).toEqual([
+      "CASE-001",
+      "benchmark_config.toml",
+    ]);
     expect(await fs.readdir(dir)).toEqual([ID]);
   });
 });

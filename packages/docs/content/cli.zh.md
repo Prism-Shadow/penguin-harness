@@ -354,7 +354,7 @@ penguin benchmark import <dir-or-zip> [--overwrite]
   [--project-id <id>] [--json] [--server <url>]
 ```
 
-参数是一个包文件夹（含 `benchmark.json` 与各个 `CASE-*` 文件夹），或它的 zip。zip 原样发送。文件夹先整个打成 zip，每个条目保持原样：CLI 不略去任何东西，也不跟随链接，所以包里不该有的东西（例如 `scoreboard.yaml`、`.jobs` 文件夹或链接）会由服务器拒收并点名，与上传时一样。Benchmark 由服务器写入；这个命令自己从不往 `benchmarks/` 下写东西。
+参数是一个包文件夹（含 `benchmark_config.toml` 与各个 `CASE-*` 文件夹），或它的 zip。zip 原样发送。文件夹先整个打成 zip，每个条目保持原样：CLI 不略去任何东西，也不跟随链接，所以包里不该有的东西（例如 `scoreboard.yaml`、`.jobs` 文件夹或链接）会由服务器拒收并点名，与上传时一样。Benchmark 由服务器写入；这个命令自己从不往 `benchmarks/` 下写东西。
 
 | 选项 | 说明 | 默认值 |
 | --- | --- | --- |

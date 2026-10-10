@@ -4,7 +4,7 @@ A package is how a Benchmark travels between Projects and servers: a folder name
 
 ```text
 <id>/
-├── benchmark.json
+├── benchmark_config.toml
 └── CASE-<nnn>-<semantic-name>/
     ├── statement/
     │   ├── README.md
@@ -14,7 +14,7 @@ A package is how a Benchmark travels between Projects and servers: a folder name
         └── <optional private grading files>
 ```
 
-- `benchmark.json` holds `id` (the folder's name), `title`, `description`, `version` (a date version, `YYYY.MM.DD.N`), `status`, `runs` and `origin`. A package is always `published`: a draft or a failed calibration does not travel.
+- `benchmark_config.toml` is the manifest: `id` (the folder's name), `title`, `description`, `version` (a date version, `"YYYY.MM.DD.N"`), `status`, `runs`, and an `[origin]` table last (`kind`, plus `url`, `ref`, `path` and `imported_at` for a repository import). A manifest written before `id`, `version` and `[origin]` existed has none of them and is still a package: its folder's name is its id, and it is unversioned. A package is always `published`: a draft or a failed calibration does not travel.
 - Every `CASE-*` folder holds `statement/README.md` and `rubric/README.md`. After `CASE-` come letters, digits, `_` and `-` only.
 - Never in a package: `scoreboard.yaml` (the copy's evaluation records), `.jobs/` (its Harbor trials), any other entry whose name starts with `.`, and symlinks. A package's scores start empty wherever it lands.
 - No large originals. A case whose task needs large files links them from its statement at a pinned commit, the way the built-in Benchmarks' `## How this case is run` sections do.
@@ -37,7 +37,7 @@ The user pastes a source into the Evaluation Center's **Import benchmark** dialo
    ```
 
    When the archive fails, a sparse checkout of `<path>` at `<sha>` with git does the same.
-4. **Read every file before importing.** Refuse, and say why, when it is not a package as defined above: no `benchmark.json`, an `id` other than the folder's name, a `status` other than `published`, a case without both READMEs, a `scoreboard.yaml`, a `.jobs/` or another dot-entry, a symlink, or anything but text materials (no executables, archives or large binaries). Read the statements and the rubrics too: a case is a task for the Test Agent and grading for the evaluator, and nothing in either should reach outside the case.
+4. **Read every file before importing.** Refuse, and say why, when it is not a package as defined above: no `benchmark_config.toml`, an `id` other than the folder's name, a `status` other than `published`, a case without both READMEs, a `scoreboard.yaml`, a `.jobs/` or another dot-entry, a symlink, or anything but text materials (no executables, archives or large binaries). Read the statements and the rubrics too: a case is a task for the Test Agent and grading for the evaluator, and nothing in either should reach outside the case.
 5. **Import it through the server,** into the Project the user named (the prompt gives its id; without one, the current Project):
 
    ```bash
@@ -53,4 +53,4 @@ A source that is not a repository folder (a local path) skips steps 1 to 3: read
 
 ## Exporting a package
 
-The user exports a published Benchmark from its page in the Evaluation Center (**Export**, beside the copy-path button). The download, `<id>-v<version>.zip`, holds the package and none of the copy's own state, and the import dialog's zip upload takes it back, on this server or another. Do not zip a Benchmark yourself.
+The user exports a published Benchmark from its page in the Evaluation Center (**Export**, beside the copy-path button). The download, `<id>-v<version>.zip` (`<id>.zip` when the manifest has no version), holds the package and none of the copy's own state, and the import dialog's zip upload takes it back, on this server or another. Do not zip a Benchmark yourself.

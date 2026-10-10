@@ -6,6 +6,8 @@
  * - A member imports a package: it lists with its cases and the package's version, an empty
  *   scoreboard and origin `zip`; its files land byte for byte, and a dot-entry inside a case is
  *   left out. A package zipped at its root imports under the id its manifest declares. A package
+ *   whose manifest predates `id`, `version` and `origin` imports under its directory's name,
+ *   unversioned, and its copy's manifest names the id from then on. A package
  *   an Agent fetched from a repository folder (`penguin benchmark import --origin-…`) lists with
  *   that folder as its git origin; an origin that is not a git folder at a commit is refused. A
  *   folder zipped as that command uploads it (benchmark-package.ts) imports as its zip would, and
@@ -16,20 +18,22 @@
  *   the Test Agent's State packed for one), which is a 409 `benchmark_busy` that changes nothing
  *   until the evaluation ends. Overwrites of one id sent at once each land or answer that 409,
  *   never a failure, and leave one whole copy.
- * - An export carries `benchmark.json` as the file reads and the cases, and none of the copy's
- *   own state (scoreboard, `.jobs/`, dot-entries, symlinks, stray files); it imports back as the
- *   same package with no scores. Exporting an unchanged Benchmark again, later, gives the same
- *   bytes.
+ * - An export carries `benchmark_config.toml` as the file reads and the cases, and none of the
+ *   copy's own state (scoreboard, `.jobs/`, dot-entries, symlinks, stray files); it imports back
+ *   as the same package with no scores. A Benchmark without a version exports as `<id>.zip`.
+ *   Exporting an unchanged Benchmark again, later, gives the same bytes.
  * - A zip that is not a package is refused before anything is written: entries that climb out
  *   (zip-slip), absolute or backslashed paths, names holding a control character, names a disk
  *   that ignores letter case would take for one, a link, the copy's own state, anything else at
- *   the top level, a draft, a case without both READMEs, a directory named other than its id, a
- *   manifest that is not JSON, two top-level directories, bytes that are not a zip, an empty
+ *   the top level, a draft, a case without both READMEs, a directory named other than its id or
+ *   by no id at all, a manifest at the root that names no id, a manifest that is not TOML, one
+ *   past the create form's limits, two top-level directories, bytes that are not a zip, an empty
  *   upload. So is one past the caps — over 14MB zipped, more than 1000 files, an entry declaring
  *   more than it may inflate to — with 413.
- * - Only a published Benchmark has a package to export: a draft or a failed one, and one whose
- *   manifest cannot be read, answer 409 with the reason; a missing one 404; one holding a file
- *   past the caps 413; an outsider 404.
+ * - Only a published Benchmark has a package to export: a draft or a failed one, one whose
+ *   manifest cannot be read, and one whose hand-edited manifest is past what an import takes,
+ *   answer 409 with the reason; a missing one 404; one holding a file past the caps 413; an
+ *   outsider 404.
  *
  * One app for the file; every case works in a Project of its own, with `benchmarks/` emptied of
  * the Benchmarks a new Project is seeded with.
@@ -39,6 +43,7 @@ import os from "node:os";
 import path from "node:path";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import type { Zippable } from "fflate";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { parse as parseYaml } from "yaml";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { benchmarksDir } from "@prismshadow/penguin-core";
@@ -55,7 +60,7 @@ import type { TestApp } from "./helpers.js";
 const SHA = "c12d65bc20beb5130ed57b3b7983c62d497b7d2f";
 const FOLDER = `https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/${SHA}/packages/report-writing-v1`;
 
-/** A manifest as the package carries it. */
+/** A manifest as the package carries it; a key `over` sets to undefined is left out of the file. */
 function manifest(id: string, over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id,
@@ -87,7 +92,7 @@ function packageFiles(
 ): Record<string, Uint8Array> {
   const at = (rel: string) => (dir === "" ? rel : `${dir}/${rel}`);
   const files: Record<string, Uint8Array> = {
-    [at("benchmark.json")]: strToU8(`${JSON.stringify(manifest(id, over), null, 2)}\n`),
+    [at("benchmark_config.toml")]: strToU8(stringifyToml(manifest(id, over))),
   };
   for (const [rel, text] of Object.entries(CASES)) files[at(rel)] = strToU8(text);
   return files;
@@ -258,6 +263,24 @@ describe("benchmark packages", () => {
       expect((await list()).map((b) => [b.id, b.caseCount])).toEqual([["report-writing-v1", 2]]);
     });
 
+    it("a package whose manifest predates id, version and origin imports under its directory's name, unversioned, and its copy names the id", async () => {
+      const old = { id: undefined, version: undefined, origin: undefined };
+
+      const res = await member.post(`${base}/archive`, {
+        dataBase64: zipB64(packageFiles("report-writing-v1", "report-writing-v1", old)),
+      });
+
+      expect(res.status).toBe(201);
+      const { benchmark } = (await res.json()) as BenchmarkArchiveImportResponse;
+      expect(benchmark).toMatchObject({ id: "report-writing-v1", origin: { kind: "zip" } });
+      expect(benchmark).not.toHaveProperty("version");
+      const written = parseToml(
+        await fs.readFile(path.join(dir, "report-writing-v1", "benchmark_config.toml"), "utf8"),
+      );
+      expect(written).toMatchObject({ id: "report-writing-v1", origin: { kind: "zip" } });
+      expect(written).not.toHaveProperty("version");
+    });
+
     it("a package fetched from a repository folder, named as its origin, lists with that git origin", async () => {
       const origin = { kind: "git", url: FOLDER, ref: SHA, path: "packages/report-writing-v1" };
 
@@ -270,8 +293,8 @@ describe("benchmark packages", () => {
       const { benchmark } = (await res.json()) as BenchmarkArchiveImportResponse;
       expect(benchmark.origin).toMatchObject(origin);
       expect(Date.parse(benchmark.origin!.importedAt!)).not.toBeNaN();
-      const manifestOnDisk = JSON.parse(
-        await fs.readFile(path.join(dir, "report-writing-v1", "benchmark.json"), "utf8"),
+      const manifestOnDisk = parseToml(
+        await fs.readFile(path.join(dir, "report-writing-v1", "benchmark_config.toml"), "utf8"),
       ) as { origin: Record<string, string> };
       expect(manifestOnDisk.origin).toMatchObject(origin);
     });
@@ -596,8 +619,8 @@ describe("benchmark packages", () => {
         "a package with no case",
         () =>
           zipB64({
-            "report-writing-v1/benchmark.json": strToU8(
-              JSON.stringify(manifest("report-writing-v1")),
+            "report-writing-v1/benchmark_config.toml": strToU8(
+              stringifyToml(manifest("report-writing-v1")),
             ),
           }),
         400,
@@ -610,12 +633,30 @@ describe("benchmark packages", () => {
         "benchmark_id_mismatch",
       ],
       [
-        "a manifest that is not JSON",
+        "a directory whose name is no id, around a manifest that names none",
+        () => zipB64(packageFiles("report-writing-v1", "report writing (copy)", { id: undefined })),
+        400,
+        "benchmark_archive_invalid",
+      ],
+      [
+        "a manifest at the root that names no id",
+        () => zipB64(packageFiles("report-writing-v1", "", { id: undefined })),
+        400,
+        "benchmark_manifest_invalid",
+      ],
+      [
+        "a manifest that is not TOML",
         () =>
           zipB64({
             ...packageFiles("report-writing-v1"),
-            "report-writing-v1/benchmark.json": strToU8("{ not json"),
+            "report-writing-v1/benchmark_config.toml": strToU8('title = "unterminated\n'),
           }),
+        400,
+        "benchmark_manifest_invalid",
+      ],
+      [
+        "a manifest past the create form's limits",
+        () => zipB64(packageFiles("report-writing-v1", "report-writing-v1", { runs: 5000 })),
         400,
         "benchmark_manifest_invalid",
       ],
@@ -683,7 +724,7 @@ describe("benchmark packages", () => {
     /** A published Benchmark on disk, as an Agent's import from the repository leaves one, with this copy's own state beside its package. */
     async function seedBenchmark(over: Record<string, unknown> = {}): Promise<string> {
       const benchDir = path.join(dir, "report-writing-v1");
-      const manifestText = `${JSON.stringify(
+      const manifestText = stringifyToml(
         manifest("report-writing-v1", {
           origin: {
             kind: "git",
@@ -694,10 +735,8 @@ describe("benchmark packages", () => {
           },
           ...over,
         }),
-        null,
-        2,
-      )}\n`;
-      await write(benchDir, "benchmark.json", manifestText);
+      );
+      await write(benchDir, "benchmark_config.toml", manifestText);
       for (const [rel, text] of Object.entries(CASES)) await write(benchDir, rel, text);
       await write(benchDir, "scoreboard.yaml", SCOREBOARD);
       await write(benchDir, ".jobs/trial-1/result.json", "{}");
@@ -725,9 +764,11 @@ describe("benchmark packages", () => {
       const zip = new Uint8Array(await res.arrayBuffer());
       const entries = unzipSync(zip);
       expect(Object.keys(entries).sort()).toEqual(
-        ["benchmark.json", ...Object.keys(CASES)].map((rel) => `report-writing-v1/${rel}`).sort(),
+        ["benchmark_config.toml", ...Object.keys(CASES)]
+          .map((rel) => `report-writing-v1/${rel}`)
+          .sort(),
       );
-      expect(strFromU8(entries["report-writing-v1/benchmark.json"]!)).toBe(manifestText);
+      expect(strFromU8(entries["report-writing-v1/benchmark_config.toml"]!)).toBe(manifestText);
 
       // Back in, where the Benchmark no longer is.
       await fs.rm(path.join(dir, "report-writing-v1"), { recursive: true });
@@ -743,7 +784,7 @@ describe("benchmark packages", () => {
       expect((await fs.readdir(benchDir)).sort()).toEqual([
         "CASE-001-contradictions",
         "CASE-002-format",
-        "benchmark.json",
+        "benchmark_config.toml",
         "scoreboard.yaml",
       ]);
       const [listed] = await list();
@@ -759,6 +800,31 @@ describe("benchmark packages", () => {
       });
       // The repository the first copy came from is not this copy's origin.
       expect(listed!.origin).not.toHaveProperty("url");
+    });
+
+    it("names the zip by the id alone for a Benchmark whose manifest predates versions, and it imports back", async () => {
+      const benchDir = path.join(dir, "report-writing-v1");
+      // As an earlier release's create form wrote it: no id, no version, no origin.
+      const old = 'title = "Report writing"\nruns = 2\nstatus = "published"\n\n';
+      await write(benchDir, "benchmark_config.toml", old);
+      for (const [rel, text] of Object.entries(CASES)) await write(benchDir, rel, text);
+
+      const res = await member.get(`${base}/report-writing-v1/archive`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-disposition")).toBe(
+        "attachment; filename*=UTF-8''report-writing-v1.zip",
+      );
+      const zip = new Uint8Array(await res.arrayBuffer());
+      expect(strFromU8(unzipSync(zip)["report-writing-v1/benchmark_config.toml"]!)).toBe(old);
+      await fs.rm(benchDir, { recursive: true });
+      const imported = await member.post(`${base}/archive`, {
+        dataBase64: Buffer.from(zip).toString("base64"),
+      });
+      expect(imported.status).toBe(201);
+      expect((await list()).map((b) => [b.id, b.title, b.version])).toEqual([
+        ["report-writing-v1", "Report writing", undefined],
+      ]);
     });
 
     const unexportable: Array<[string, (benchDir: string) => Promise<void>, number, string]> = [
@@ -780,10 +846,10 @@ describe("benchmark packages", () => {
         "benchmark_not_published",
       ],
       [
-        "a manifest that is not JSON",
+        "a manifest that is not TOML",
         async (benchDir) => {
           await seedBenchmark();
-          await write(benchDir, "benchmark.json", "{ not json");
+          await write(benchDir, "benchmark_config.toml", 'title = "unterminated\n');
         },
         409,
         "benchmark_manifest_invalid",
@@ -795,6 +861,14 @@ describe("benchmark packages", () => {
         },
         409,
         "benchmark_id_mismatch",
+      ],
+      [
+        "a hand-edited manifest past what an import takes",
+        async () => {
+          await seedBenchmark({ runs: 5000 });
+        },
+        409,
+        "benchmark_manifest_invalid",
       ],
       [
         "a file over 5MB",

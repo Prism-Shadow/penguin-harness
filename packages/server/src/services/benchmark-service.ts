@@ -31,6 +31,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   BenchmarkManifestError,
   benchmarksDir,
+  checkBenchmarkManifest,
   nextDateVersion,
   placeBenchmark,
   readBenchmarkManifest,
@@ -449,9 +450,10 @@ export class BenchmarkService implements Benchmarks {
   /**
    * Writes the package an uploaded zip holds as `benchmarks/<id>/` (benchmark-archive.ts says what
    * is refused and why). What lands is the package as a new copy: its cases byte for byte; its
-   * manifest with the origin rewritten to `zip` and the time of this import, or to `git` with the
-   * repository folder `options.origin` names for a package fetched from one (the version stays
-   * the package's: it names the content, not the copy); and a `scoreboard.yaml` with no
+   * manifest, written with its id, with the origin rewritten to `zip` and the time of this import,
+   * or to `git` with the repository folder `options.origin` names for a package fetched from one
+   * (the version stays the package's, or none when it has none: it names the content, not the
+   * copy); and a `scoreboard.yaml` with no
    * evaluations, since a package carries none. A taken id is a 409 unless `overwrite`, which
    * replaces the whole directory, its scoreboard and `.jobs/` included — except while an
    * evaluation of it is still running (`runningTrial`), which would go on writing its trials and
@@ -522,10 +524,13 @@ export class BenchmarkService implements Benchmarks {
   }
 
   /**
-   * The Benchmark's package as a zip for download (benchmark-archive.ts says what it holds). Only
-   * a published Benchmark has one to give: a draft is still being written, a failed one never
-   * finished calibrating, and one whose manifest cannot be read has no manifest to give (409, with
-   * the reason). As for `remove`, only a real directory counts: a symlink is not followed.
+   * The Benchmark's package as a zip for download (benchmark-archive.ts says what it holds), named
+   * `<id>-v<version>.zip`, or `<id>.zip` when the manifest has no version. Only a published
+   * Benchmark has one to give: a draft is still being written, a failed one never finished
+   * calibrating, one whose manifest cannot be read has no manifest to give, and one whose manifest
+   * is past the limits an import holds a package to (a hand-edited title, description or run
+   * count) would not import anywhere (409, with the reason). As for `remove`, only a real
+   * directory counts: a symlink is not followed.
    */
   async exportArchive(projectId: string, benchmarkId: string): Promise<BenchmarkArchive> {
     const benchDir = path.join(benchmarksDir(this.root, projectId), benchmarkId);
@@ -553,8 +558,23 @@ export class BenchmarkService implements Benchmarks {
         `Only a published Benchmark can be exported; ${benchmarkId} is ${manifest.status}.`,
       );
     }
+    // The list reads a hand-edited manifest leniently; a package holds to what an import takes.
+    try {
+      checkBenchmarkManifest(manifest);
+    } catch (error) {
+      if (!(error instanceof BenchmarkManifestError)) throw error;
+      throw new HttpError(
+        409,
+        error.code,
+        `The Benchmark's manifest is past what a package may hold, so no import would take it: ${error.message}`,
+      );
+    }
     return {
-      fileName: `${benchmarkId}-v${manifest.version}.zip`,
+      // An id and a date version; a Benchmark whose manifest predates versions goes by its id.
+      fileName:
+        manifest.version !== undefined
+          ? `${benchmarkId}-v${manifest.version}.zip`
+          : `${benchmarkId}.zip`,
       data: await packBenchmark(benchDir, manifest),
     };
   }

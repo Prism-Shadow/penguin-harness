@@ -1387,7 +1387,7 @@ const en: Messages = {
   benchmark: {
     desc: "Bring Benchmark packages into the Project's Evaluation Center",
     importDesc:
-      "Import a Benchmark package (a folder holding benchmark.json and its CASE-* folders, or a zip of one) through the server, which checks it as it checks an uploaded zip",
+      "Import a Benchmark package (a folder holding benchmark_config.toml and its CASE-* folders, or a zip of one) through the server, which checks it as it checks an uploaded zip",
     overwrite:
       "Replace a Benchmark of the same id whole: its evaluation records and run results are deleted",
     originUrl:
@@ -2463,7 +2463,7 @@ const zh: Messages = {
   benchmark: {
     desc: "把 Benchmark 包导入 Project 的评估中心",
     importDesc:
-      "经服务端导入一个 Benchmark 包（含 benchmark.json 与各个 CASE-* 文件夹的文件夹，或它的 zip），服务端按检查上传 zip 的规则检查它",
+      "经服务端导入一个 Benchmark 包（含 benchmark_config.toml 与各个 CASE-* 文件夹的文件夹，或它的 zip），服务端按检查上传 zip 的规则检查它",
     overwrite: "整体替换同 id 的 Benchmark：它的评估记录与运行结果会被删除",
     originUrl: "包所取自的仓库文件夹链接，按原样填写（与 --origin-ref、--origin-path 一起给出）",
     originRef: "该链接解析到的 40 位提交号",

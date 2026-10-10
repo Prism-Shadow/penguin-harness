@@ -2,28 +2,32 @@
  * A Benchmark package as a zip, both ways: reading the one a member uploads to the Evaluation
  * Center, and packing a Benchmark's directory for the Export button on its page.
  *
- * The package is what core's benchmark-manifest.ts defines: `benchmark.json` and every `CASE-*`
- * tree. Everything else in a Benchmark's directory belongs to that copy and never travels:
+ * The package is what core's benchmark-manifest.ts defines: `benchmark_config.toml` and every
+ * `CASE-*` tree. Everything else in a Benchmark's directory belongs to that copy and never travels:
  * `scoreboard.yaml` (its evaluation records), the `.jobs/` Harbor trials, any other entry whose
  * name starts with a dot, and symlinks. Packing leaves them out. An upload carrying one of them at
- * its top level — or anything else that is neither `benchmark.json` nor a `CASE-*` directory — is
- * refused, naming the entry, rather than trimmed: such a zip is a copy of someone's directory, not
- * a package. A dot-entry inside a case (a `.DS_Store`) is no part of the package either; it is
- * skipped on the way in, as it is on the way out. A link or other special file is refused
- * wherever it is: fflate hands every entry back as plain bytes, so the type is read from the
- * central directory.
+ * its top level — or anything else that is neither `benchmark_config.toml` nor a `CASE-*`
+ * directory — is refused, naming the entry, rather than trimmed: such a zip is a copy of
+ * someone's directory, not a package. A dot-entry inside a case (a `.DS_Store`) is no part of the
+ * package either; it is skipped on the way in, as it is on the way out. A link or other special
+ * file is refused wherever it is: fflate hands every entry back as plain bytes, so the type is
+ * read from the central directory.
  *
  * Both directions hold the same caps — 1000 files, 5MB a file and 20MB inflated (the declared
- * sizes, checked before anything inflates), 14MB zipped — so whatever Export produces, Import
+ * sizes, checked before anything inflates), 14MB zipped — and the same manifest rules (core's
+ * checkBenchmarkManifest on top of what the list reads), so whatever Export produces, Import
  * takes back. Nothing in a package is ever executed: it is Markdown and the small files its cases
  * name.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { strFromU8, strToU8, zipSync } from "fflate";
+import { strFromU8, zipSync } from "fflate";
+import { parse as parseToml } from "smol-toml";
 import {
   BENCHMARK_MANIFEST,
   BenchmarkManifestError,
+  checkBenchmarkManifest,
+  isValidId,
   parseBenchmarkManifest,
   type BenchmarkManifest,
 } from "@prismshadow/penguin-core";
@@ -77,15 +81,15 @@ function archiveInvalid(message: string): HttpError {
   return new HttpError(400, "benchmark_archive_invalid", message);
 }
 
-/** The `id` a manifest declares, for a zip whose `benchmark.json` sits at the root and has no directory to be named by. */
+/**
+ * The `id` a manifest declares, for a zip whose `benchmark_config.toml` sits at the root and has
+ * no directory to be named by: "" when it names none, which the manifest's parser then refuses as
+ * a missing id — and text that is not TOML is the parser's to refuse too.
+ */
 function declaredId(text: string): string {
   try {
-    const raw = JSON.parse(text) as unknown;
-    return raw !== null &&
-      typeof raw === "object" &&
-      typeof (raw as { id?: unknown }).id === "string"
-      ? (raw as { id: string }).id
-      : "";
+    const { id } = parseToml(text);
+    return typeof id === "string" ? id : "";
   } catch {
     return "";
   }
@@ -132,12 +136,13 @@ function specialEntries(zip: Uint8Array): string[] {
  * Reads an uploaded zip as a Benchmark package, or refuses it. In order: the zipped size (413
  * `benchmark_too_large` over 14MB; an empty upload is 400 `benchmark_archive_invalid`), the caps
  * read off the central directory before inflating (413), every entry's path (zip-slip, control
- * characters) and type (no links), the layout (`benchmark.json` at the root, or exactly one
- * top-level directory holding it, whose name must then be the manifest's id), what the package
- * may hold (above), names a disk that ignores letter case would take for one, the manifest
- * (core's parser; its error code and message, 400), its status (400 `benchmark_not_published`
- * unless `published`: a draft or a failed calibration is not a package anyone can use) and the
- * cases (400 `benchmark_case_invalid`: at least one, each with both READMEs).
+ * characters) and type (no links), the layout (`benchmark_config.toml` at the root, where it must
+ * then name its id, or exactly one top-level directory holding it, whose name must then be the
+ * manifest's id), what the package may hold (above), names a disk that ignores letter case would
+ * take for one, the manifest (core's parser, then the limits a written manifest keeps; their
+ * error code and message, 400), its status (400 `benchmark_not_published` unless `published`: a
+ * draft or a failed calibration is not a package anyone can use) and the cases (400
+ * `benchmark_case_invalid`: at least one, each with both READMEs).
  */
 export function readBenchmarkArchive(archive: Uint8Array): BenchmarkPackage {
   if (archive.byteLength === 0) throw archiveInvalid("The zip archive is empty.");
@@ -181,7 +186,13 @@ export function readBenchmarkArchive(archive: Uint8Array): BenchmarkPackage {
     dirName = topLevels.size === 1 ? [...topLevels][0] : undefined;
     if (dirName === undefined || !names.includes(`${dirName}/${BENCHMARK_MANIFEST}`)) {
       throw archiveInvalid(
-        "The zip must contain benchmark.json at its root, or exactly one top-level directory containing it.",
+        `The zip must contain ${BENCHMARK_MANIFEST} at its root, or exactly one top-level directory containing it.`,
+      );
+    }
+    // The directory names the Benchmark whenever its manifest does not.
+    if (!isValidId(dirName)) {
+      throw archiveInvalid(
+        `The top-level directory must be named by the Benchmark's id (letters, digits, "_" and "-"): ${dirName}`,
       );
     }
     prefix = `${dirName}/`;
@@ -206,7 +217,7 @@ export function readBenchmarkArchive(archive: Uint8Array): BenchmarkPackage {
     }
     if (!CASE_DIR.test(top) || segments.length < 2) {
       throw archiveInvalid(
-        `A package holds only benchmark.json and CASE-* directories (letters, digits, "_" and "-" after CASE-): ${name}`,
+        `A package holds only ${BENCHMARK_MANIFEST} and CASE-* directories (letters, digits, "_" and "-" after CASE-): ${name}`,
       );
     }
     if (segments.some((segment) => segment.startsWith("."))) continue;
@@ -240,6 +251,9 @@ export function readBenchmarkArchive(archive: Uint8Array): BenchmarkPackage {
   let manifest: BenchmarkManifest;
   try {
     manifest = parseBenchmarkManifest(manifestText, dirName ?? declaredId(manifestText));
+    // What the copy's manifest will be written to: the list reads an older, hand-edited file
+    // leniently, but a package that crosses servers holds to the create form's limits.
+    checkBenchmarkManifest(manifest);
   } catch (error) {
     if (error instanceof BenchmarkManifestError)
       throw new HttpError(400, error.code, error.message);
@@ -273,11 +287,10 @@ export function readBenchmarkArchive(archive: Uint8Array): BenchmarkPackage {
 
 /**
  * The package of the Benchmark in `benchDir` as a zip under one top-level `<id>/` directory: its
- * `benchmark.json` as the file reads (origin included, so the receiver can tell where it came
- * from) and every `CASE-*` tree, minus dot-entries, symlinks and other special files. A manifest
- * the read could not write back — a legacy TOML adopted on a disk that refused the write — is
- * packed as `manifest` says. Over the import's caps it is a 413, since the zip could not be
- * imported anywhere.
+ * `benchmark_config.toml` as the file reads (origin included, so the receiver can tell where it
+ * came from) and every `CASE-*` tree, minus dot-entries, symlinks and other special files. Over
+ * the import's caps it is a 413, since the zip could not be imported anywhere; a manifest gone
+ * since `manifest` was read is a 404, since the Benchmark went with it.
  */
 export async function packBenchmark(
   benchDir: string,
@@ -313,7 +326,7 @@ export async function packBenchmark(
     manifestBytes = new Uint8Array(await fs.readFile(path.join(benchDir, BENCHMARK_MANIFEST)));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    manifestBytes = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
+    throw new HttpError(404, "not_found", `Benchmark does not exist: ${manifest.id}`);
   }
   add(BENCHMARK_MANIFEST, manifestBytes);
   const top = await fs.readdir(benchDir, { withFileTypes: true });

@@ -4122,11 +4122,12 @@ export interface BenchmarkCreateResponse {
 
 /**
  * POST /api/projects/:p/benchmarks/archive (any Project member): import a Benchmark package from
- * a zip. The zip holds `benchmark.json` and the `CASE-*` directories, at its root or inside
- * exactly one top-level directory named by the manifest's id — the shape
- * `GET …/benchmarks/:benchmarkId/archive` exports. A zip carrying `scoreboard.yaml`, `.jobs/` or
- * anything else at its top level, a link, a package that is not `published` or a case without
- * both READMEs is refused (400); so is a zip past the caps (413 `benchmark_too_large`: 14MB
+ * a zip. The zip holds `benchmark_config.toml` and the `CASE-*` directories, at its root (where the
+ * manifest must name its `id`) or inside exactly one top-level directory named by the Benchmark's
+ * id — the shape `GET …/benchmarks/:benchmarkId/archive` exports. A zip carrying
+ * `scoreboard.yaml`, `.jobs/` or anything else at its top level, a link, a manifest past the
+ * create form's limits, a package that is not `published` or a case without both READMEs is
+ * refused (400); so is a zip past the caps (413 `benchmark_too_large`: 14MB
  * zipped, 1000 files, 5MB a file, 20MB inflated). The copy is written with origin `zip` and an
  * empty scoreboard — or origin `git`, when the request says the package is a repository folder
  * fetched at a commit. An id already taken is 409 `benchmark_exists` (`details.benchmarkId` names

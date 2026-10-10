@@ -31,7 +31,7 @@ const AGENTS = [agent("report_writer"), agent("default_agent")];
 
 /** What the Agent has to be told, whichever language the tail is in. */
 const CONTRACT = [
-  "benchmark.json",
+  "benchmark_config.toml",
   "YYYY.MM.DD.N",
   "statement/README.md",
   "rubric/README.md",

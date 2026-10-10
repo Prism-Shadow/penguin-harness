@@ -100,22 +100,23 @@ You do not choose an owning agent. A manual Benchmark is published at once but h
 
 ## Import a Benchmark
 
-A Benchmark can also come in as a **package**: its `benchmark.json` and its cases, without anyone's scores. Any member of the Project can import one.
+A Benchmark can also come in as a **package**: its `benchmark_config.toml` and its cases, without anyone's scores. Any member of the Project can import one.
 
 1. At the top right of the Evaluation Center, select **Import benchmark**.
 2. Take one of the dialog's two ways:
    - **Recommended: import it by chatting with the agent.** In **Benchmark source**, paste a link to one package folder in a GitHub repository, a local path or a description. Each built-in Benchmark has its package folder under `packages/` in [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark). The dialog shows the prompt it builds for the Project's default agent. Select **Open a new chat**, review the prompt, and send it; **Copy prompt** copies it instead.
-   - **Upload a Benchmark zip.** Select **Choose zip file** and pick a zip a Benchmark page exported, or one with `benchmark.json` and the `CASE-*` folders at its root or inside its only top-level folder.
+   - **Upload a Benchmark zip.** Select **Choose zip file** and pick a zip a Benchmark page exported, or one with `benchmark_config.toml` and the `CASE-*` folders at its root or inside its only top-level folder.
 3. If a Benchmark with the same id already exists, a confirmation asks before overwriting. Overwriting replaces all of its files and deletes its evaluation records and run results, and cannot be undone. While an evaluation of that Benchmark still has a trial running under its `.jobs` folder, the overwrite is refused, because the evaluation would go on writing into the new copy: wait for it to end, then import again.
 
 The agent resolves the link to a fixed commit, fetches only that folder into a temporary directory and reads every file. It then imports the folder with [`penguin benchmark import`](/cli#penguin-benchmark), which puts it through the same checks as an uploaded zip, and the server writes the Benchmark. The agent asks you before it overwrites a Benchmark. The server never fetches the link itself.
 
 A package carries no scores: an imported Benchmark starts without evaluations, so [evaluate an agent](#evaluate-an-agent) on it first. An upload is refused, with the reason, when the zip is not a package:
 
-- it holds a `scoreboard.yaml`, a `.jobs` folder or another entry starting with `.`, or anything at the top level besides `benchmark.json` and the `CASE-*` folders;
+- it holds a `scoreboard.yaml`, a `.jobs` folder or another entry starting with `.`, or anything at the top level besides `benchmark_config.toml` and the `CASE-*` folders;
 - it holds a symbolic link, a name with a control character in it, or two names that differ only in letter case;
 - its `status` is not `published`, or a case lacks `statement/README.md` or `rubric/README.md`;
-- its top-level folder is named differently from the manifest's `id`;
+- its top-level folder is named differently from the manifest's `id`, or, with the manifest at the zip's root, the manifest names no `id`;
+- its manifest goes past what the create form allows: a title over 200 characters, a description over 2,000, or more than 1,000 runs;
 - it is larger than 14 MB, or unpacks to more than 1,000 files, 5 MB in one file or 20 MB in all.
 
 > [!NOTE]
@@ -126,7 +127,7 @@ A package carries no scores: an imported Benchmark starts without evaluations, s
 1. Open the Benchmark's page.
 2. In the header, beside the directory path, select the **Export** icon.
 
-The download, `<benchmark>-v<version>.zip`, is the Benchmark's package: `benchmark.json` as it is on disk, its origin included, and every case. It leaves out the scoreboard, the `.jobs` folder, other entries starting with `.` and symbolic links, so it can be imported again, on this server or another. Only a published Benchmark has a package: one that is being built, whose creation failed, or whose manifest can't be read shows no **Export**.
+The download, `<benchmark>-v<version>.zip` (`<benchmark>.zip` for a Benchmark without a version), is the Benchmark's package: `benchmark_config.toml` as it is on disk, its origin included, and every case. It leaves out the scoreboard, the `.jobs` folder, other entries starting with `.` and symbolic links, so it can be imported again, on this server or another. Only a published Benchmark has a package: one that is being built, whose creation failed, or whose manifest can't be read shows no **Export**.
 
 ## Read a Benchmark
 
@@ -239,7 +240,7 @@ Only the Project owner can delete a Benchmark, and only from its card in the lis
 2. Read the confirmation: every case and evaluation record will be removed, and this cannot be undone.
 3. Select **Delete**.
 
-Let any evaluation of the Benchmark finish before you delete it. Deleting does not stop a running evaluation, which goes on writing into the Benchmark's directory: the directory comes back without a `benchmark.json`, is not listed, and has to be deleted by hand.
+Let any evaluation of the Benchmark finish before you delete it. Deleting does not stop a running evaluation, which goes on writing into the Benchmark's directory: the directory comes back without a `benchmark_config.toml`, is not listed, and has to be deleted by hand.
 
 > [!NOTE]
 > Deleting `example-benchmark` or a [built-in Benchmark](#built-in-benchmarks) is final too: they are written only when the Project is created, never again.
@@ -250,8 +251,8 @@ Let any evaluation of the Benchmark finish before you delete it. Deleting does n
 - **Status.** `status` in `benchmark_config.toml` drives the mask: `draft` shows **Being built**, `failed` shows **Creation failed**, and `published` lifts the mask. A Benchmark whose manifest cannot be read is masked too, as **Manifest can't be read**, with the reason on the icon beside it.
 - **Creating with AI.** The prompt's fixed ending hands the `benchmark-design` Skill the Test Agent's id, a desired baseline score and a pilot-iteration limit, and asks for the baseline to be taken.
 - **Creating manually.** The server writes the form to disk in the layout the Skills read (`POST …/benchmarks`, owner only), with the status `published`.
-- **Importing.** An upload goes to `POST …/benchmarks/archive` (any member), which checks the zip and writes the package to `benchmarks/<id>/` with the origin `zip`, the time of the import and an empty scoreboard; the version stays the package's. It refuses an overwrite with `409` `benchmark_busy` while `.jobs/` holds a trial without its `result.json` or a Test Agent State packed for a trial (`*.agent-state.tar.gz`), the marks of an evaluation still running. An agent's import from a repository folder goes through the same route with `penguin benchmark import`, which also passes the link, the commit and the folder, and the server records them as the origin `git`; the `benchmark-design` Skill's `reference/package.md` describes that procedure.
-- **Exporting.** `GET …/benchmarks/:id/archive` (any member) packs a published Benchmark's `benchmark.json` and cases into a zip.
+- **Importing.** An upload goes to `POST …/benchmarks/archive` (any member), which checks the zip and writes the package to `benchmarks/<id>/` with its `id`, the origin `zip`, the time of the import and an empty scoreboard; the version stays the package's, or stays absent. It refuses an overwrite with `409` `benchmark_busy` while `.jobs/` holds a trial without its `result.json` or a Test Agent State packed for a trial (`*.agent-state.tar.gz`), the marks of an evaluation still running. An agent's import from a repository folder goes through the same route with `penguin benchmark import`, which also passes the link, the commit and the folder, and the server records them as the origin `git`; the `benchmark-design` Skill's `reference/package.md` describes that procedure.
+- **Exporting.** `GET …/benchmarks/:id/archive` (any member) packs a published Benchmark's `benchmark_config.toml` and cases into a zip.
 - **Evaluating.** The prompt asks for the full Case × runs matrix through self-spawned `agent-evaluation` subagents, on the conversation's own model, which the evaluator agent reads from the `Provider` and `Model ID` lines of its system prompt. Every result must report the same agent, model and thinking level, and exactly one labelled evaluation is appended to `scoreboard.yaml`. The tested agent and the Benchmark are left untouched.
 - **Deleting.** The server removes the directory whole (`DELETE …/benchmarks/:id`). Deleting a Benchmark while an evaluation is still running can leave a directory behind, because the evaluation keeps writing into it. That directory has no `benchmark_config.toml`, so it is not listed, and you can delete it by hand.
 - **The example and the built-in Benchmarks.** Written when the Project is created; never written again. A Project from an earlier release keeps what it has and is not given the built-in Benchmarks.

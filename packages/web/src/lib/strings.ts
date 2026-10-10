@@ -4575,7 +4575,7 @@ Benchmark：
     /** The fixed tail: the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
     importPromptTail: (projectId: string): string =>
       [
-        "包是一个文件夹：根下有 `benchmark.json`（字段：id、title、description、version（`YYYY.MM.DD.N`）、status、runs、origin），每题一个 `CASE-*/`，内含 `statement/README.md` 与 `rubric/README.md`。",
+        "包是一个文件夹：根下有 `benchmark_config.toml`（键：id、title、description、version（`YYYY.MM.DD.N`）、status、runs 与 `[origin]` 表），每题一个 `CASE-*/`，内含 `statement/README.md` 与 `rubric/README.md`。",
         "只取这一个文件夹，固定在一个提交上，放进临时目录：先把链接里的分支或标签解析成 40 位提交号（`git ls-remote`），再下载它（codeload 的 tarball 或 sparse checkout）；导入之前读完每个文件——不是 Benchmark 包、`status` 不是 `published`、或含有文本材料以外的东西，就拒绝导入。不要拷贝上游的大文件，题干里有它们的链接。",
         `用 \`penguin benchmark import <那个文件夹> --project-id ${projectId} --origin-url <原样的链接> --origin-ref <40 位提交号> --origin-path <仓库里的文件夹路径>\` 导入（来源不是仓库文件夹时不带 \`--origin-*\` 选项）。服务端按检查上传 zip 的规则检查它，并自己写入 \`benchmarks/<id>/\`：来源记为 git，版本保持包里的值，\`scoreboard.yaml\` 只含 \`evaluations: []\`；你自己不要往 \`benchmarks/\` 下写任何东西。`,
         "命令提示该 Benchmark 已存在时，先停下问我再覆盖——覆盖（`--overwrite`）会替换整个目录，连同 `scoreboard.yaml` 与 `.jobs/`；该 Benchmark 还有评估在运行时，服务端也会拒绝覆盖。最后报告命令输出的 id、标题、版本与题数；评估中心随即列出它。",
@@ -4585,7 +4585,7 @@ Benchmark：
     importOpenChat: "打开新对话",
     importUploadTitle: "上传 Benchmark zip 包",
     importUploadDesc:
-      "从评估中心导出的 zip，或根目录（或唯一的顶层目录）里有 benchmark.json 与各题 CASE-*/ 的 zip。导入的是题目，不带评估记录：记录从空开始。只导入你信任的来源。",
+      "从评估中心导出的 zip，或根目录（或唯一的顶层目录）里有 benchmark_config.toml 与各题 CASE-*/ 的 zip。导入的是题目，不带评估记录：记录从空开始。只导入你信任的来源。",
     importUploadAction: "选择 zip 文件",
     importUploading: "上传中…",
     importDoneToast: "Benchmark 已导入",

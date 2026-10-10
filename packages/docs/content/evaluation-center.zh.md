@@ -100,22 +100,23 @@ Builder 试测题目和记录基线分时，都用这个新对话的模型来运
 
 ## 导入 Benchmark
 
-Benchmark 也可以以**包**的形式导入：它的 `benchmark.json` 和全部题目，不带任何人的分数。Project 的任何成员都能导入。
+Benchmark 也可以以**包**的形式导入：它的 `benchmark_config.toml` 和全部题目，不带任何人的分数。Project 的任何成员都能导入。
 
 1. 在评估中心右上角，选择**导入评估集**。
 2. 从弹窗的两种方式中选一种：
    - **推荐：让 Agent 在对话中导入。**在 **Benchmark 来源**中粘贴 GitHub 仓库里一个包文件夹的链接、一个本地路径或一段描述。每个内置 Benchmark 的包文件夹都在 [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) 的 `packages/` 下。弹窗会显示为 Project 默认 Agent 生成的提示词。选择**打开新对话**，检查提示词后发送；也可以用**复制 Prompt** 复制它。
-   - **上传 Benchmark zip 包。**选择**选择 zip 文件**，挑一个从 Benchmark 页面导出的 zip，或者根目录（或唯一的顶层目录）里有 `benchmark.json` 和各个 `CASE-*` 文件夹的 zip。
+   - **上传 Benchmark zip 包。**选择**选择 zip 文件**，挑一个从 Benchmark 页面导出的 zip，或者根目录（或唯一的顶层目录）里有 `benchmark_config.toml` 和各个 `CASE-*` 文件夹的 zip。
 3. 如果已有同 id 的 Benchmark，会先弹出确认再覆盖。覆盖会替换它的全部文件，并删除它的评估记录与运行结果，无法撤销。这个 Benchmark 的评估还有 trial 在它的 `.jobs` 文件夹里运行时，覆盖会被拒绝，因为评估会接着往新副本里写：等评估结束后再导入。
 
 Agent 会把链接解析到一个固定提交，只把那一个文件夹取回到临时目录并读完每个文件，再用 [`penguin benchmark import`](/cli#penguin-benchmark) 导入它：这个命令让它经过与上传 zip 相同的检查，由服务端写入 Benchmark。覆盖已有的 Benchmark 之前，Agent 会先问你。服务端自己从不抓取这个链接。
 
 包里不带分数：导入的 Benchmark 没有评估记录，先用它[评估 Agent](#评估-agent)。zip 不是包时，上传会被拒绝并说明原因：
 
-- 里面有 `scoreboard.yaml`、`.jobs` 文件夹或其他以 `.` 开头的条目，或者顶层除了 `benchmark.json` 和 `CASE-*` 文件夹还有别的东西；
+- 里面有 `scoreboard.yaml`、`.jobs` 文件夹或其他以 `.` 开头的条目，或者顶层除了 `benchmark_config.toml` 和 `CASE-*` 文件夹还有别的东西；
 - 里面有符号链接、含控制字符的名字，或者只有大小写不同的两个名字；
 - `status` 不是 `published`，或者某道题缺少 `statement/README.md` 或 `rubric/README.md`；
-- 顶层文件夹的名字与清单的 `id` 不同；
+- 顶层文件夹的名字与清单的 `id` 不同，或者清单放在 zip 根目录却没有写明 `id`；
+- 清单超出手动创建表单允许的范围：标题超过 200 个字符、描述超过 2,000 个字符，或每题运行次数超过 1,000；
 - zip 超过 14 MB，或者解开后超过 1,000 个文件、单个文件超过 5 MB 或合计超过 20 MB。
 
 > [!NOTE]
@@ -126,7 +127,7 @@ Agent 会把链接解析到一个固定提交，只把那一个文件夹取回�
 1. 打开 Benchmark 的页面。
 2. 在页头目录路径旁边，选择**导出**图标。
 
-下载的 `<benchmark>-v<version>.zip` 就是这个 Benchmark 的包：磁盘上原样的 `benchmark.json`（含来源）和全部题目。它不含记分板、`.jobs` 文件夹、其他以 `.` 开头的条目和符号链接，可以在本服务器或其他服务器上再次导入。只有已发布的 Benchmark 才有包：构建中、创建失败或清单无法读取的 Benchmark 没有**导出**。
+下载的 `<benchmark>-v<version>.zip`（没有版本的 Benchmark 为 `<benchmark>.zip`）就是这个 Benchmark 的包：磁盘上原样的 `benchmark_config.toml`（含来源）和全部题目。它不含记分板、`.jobs` 文件夹、其他以 `.` 开头的条目和符号链接，可以在本服务器或其他服务器上再次导入。只有已发布的 Benchmark 才有包：构建中、创建失败或清单无法读取的 Benchmark 没有**导出**。
 
 ## 查看 Benchmark
 
@@ -239,7 +240,7 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 2. 阅读确认提示：它的全部题目和评估记录都将删除，无法恢复。
 3. 选择**删除**。
 
-删除前，先等这个 Benchmark 的评估都结束。删除不会停止正在运行的评估，它会接着往 Benchmark 的目录里写：目录会重新出现，但没有 `benchmark.json`，不会出现在列表里，只能手动删除。
+删除前，先等这个 Benchmark 的评估都结束。删除不会停止正在运行的评估，它会接着往 Benchmark 的目录里写：目录会重新出现，但没有 `benchmark_config.toml`，不会出现在列表里，只能手动删除。
 
 > [!NOTE]
 > 删掉 `example-benchmark` 或[内置 Benchmark](#内置-benchmark) 同样是最终的：它们只在 Project 创建时写入，此后不再写入。
@@ -250,8 +251,8 @@ Benchmark 一经创建，题目就冻结了。Web App 和服务端接口都不�
 - **状态。** `benchmark_config.toml` 中的 `status` 决定遮罩：`draft` 显示**构建中**，`failed` 显示**创建失败**，`published` 解除遮罩。清单读不了的 Benchmark 同样遮罩，显示**清单无法读取**，旁边图标的悬停提示说明原因。
 - **用 AI 创建。** 提示词的固定结尾把被测智能体的 id、期望的基线分和 Pilot 迭代上限交给 `benchmark-design` Skill，并要求取得基线分。
 - **手动创建。** 服务端按 Skill 读取的目录结构，把表单内容写入磁盘（`POST …/benchmarks`，仅 owner），状态为 `published`。
-- **导入。** 上传的 zip 交给 `POST …/benchmarks/archive`（任意成员），服务端检查后把包写入 `benchmarks/<id>/`，来源记为 `zip` 并带导入时间，记分板为空；版本保持包里的值。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，说明评估仍在运行，覆盖会以 `409` `benchmark_busy` 拒绝。Agent 从仓库文件夹导入时用 `penguin benchmark import` 走同一个路由，并带上链接、提交与文件夹，服务端把它们记为来源 `git`；做法见 `benchmark-design` Skill 的 `reference/package.md`。
-- **导出。** `GET …/benchmarks/:id/archive`（任意成员）把已发布 Benchmark 的 `benchmark.json` 与题目打成 zip。
+- **导入。** 上传的 zip 交给 `POST …/benchmarks/archive`（任意成员），服务端检查后把包写入 `benchmarks/<id>/`，清单写明 `id`，来源记为 `zip` 并带导入时间，记分板为空；版本保持包里的值，包里没有就仍不带版本。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，说明评估仍在运行，覆盖会以 `409` `benchmark_busy` 拒绝。Agent 从仓库文件夹导入时用 `penguin benchmark import` 走同一个路由，并带上链接、提交与文件夹，服务端把它们记为来源 `git`；做法见 `benchmark-design` Skill 的 `reference/package.md`。
+- **导出。** `GET …/benchmarks/:id/archive`（任意成员）把已发布 Benchmark 的 `benchmark_config.toml` 与题目打成 zip。
 - **评估。** 提示词要求通过自行派生的 `agent-evaluation` 子 Agent，在本会话自己的模型上跑完完整的 Case × runs 矩阵；执行评估的 Agent 从系统提示词的 `Provider` 与 `Model ID` 两行读出这个模型。每条结果报告的 Agent、模型和思考等级都必须一致，最后只向 `scoreboard.yaml` 追加一条带标签的评估。被测的 Agent 和 Benchmark 都保持不变。
 - **删除。** 服务端整目录删除（`DELETE …/benchmarks/:id`）。评估还在运行时删除 Benchmark，可能留下一个目录，因为运行中的评估还在往里写。这个目录没有 `benchmark_config.toml`，不会出现在列表里，可以手动删除。
 - **示例与内置 Benchmark。** 在 Project 创建时写入，此后不再写入。早先版本的 Project 保留已有的内容，不会得到内置 Benchmark。

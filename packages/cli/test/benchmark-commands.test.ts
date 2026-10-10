@@ -30,7 +30,7 @@ const LINK =
 
 /** The package folder the scenarios import, by path inside it. */
 const PACKAGE: Record<string, string> = {
-  "benchmark.json": `${JSON.stringify({ id: "report-writing-v1", title: "Report writing" })}\n`,
+  "benchmark_config.toml": 'id = "report-writing-v1"\ntitle = "Report writing"\n',
   "CASE-001-contradictions/statement/README.md": "# Two briefs\n\nWrite the report.\n",
   "CASE-001-contradictions/rubric/README.md": "- 100 pts: names the conflict.\n",
   ".DS_Store": "x",
