@@ -12,7 +12,8 @@
  * lifts the card, which follows the pointer and, released over another column, asks to move
  * there. A finger has to hold the card still for a moment before it lifts, so a finger that moves
  * scrolls the page as usual (ticket-press.ts, ticket-drag.ts). The dialog's move control is the
- * way to move a ticket without dragging.
+ * way to move a ticket without dragging. The create form's Create is live once a title is typed
+ * and the slug, if any, keeps its rule; closing it with anything typed asks first.
  * The priority rides on the title's line, one size under it. What a card deliberately does
  * not carry is the session count, the cost and any live session status — those are the
  * dialog's, and a ticket is not the place to watch a session run.
@@ -53,10 +54,13 @@ import {
   Textarea,
   toastError,
   toastSuccess,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { closeUnlessBusy } from "../../lib/busy-close";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
@@ -561,15 +565,7 @@ function ColumnSkeleton({ status }: { status: OrgTicketStatus }) {
   );
 }
 
-function CreateTicketDialog({
-  open,
-  projectId,
-  orgId,
-  employees,
-  tickets,
-  onClose,
-  onCreated,
-}: {
+interface CreateTicketDialogProps {
   open: boolean;
   projectId: string;
   orgId: string;
@@ -577,44 +573,54 @@ function CreateTicketDialog({
   tickets: readonly OrgTicketItem[];
   onClose: () => void;
   onCreated: (ticketId: string) => void;
-}) {
-  const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
-  const [goal, setGoal] = useState("");
-  const [acceptance, setAcceptance] = useState("");
-  const [owner, setOwner] = useState("");
-  const [parent, setParent] = useState("");
-  const [notify, setNotify] = useState("");
-  const [priority, setPriority] = useState<OrgTicketPriority>("P1");
-  const [due, setDue] = useState("");
-  const [titleError, setTitleError] = useState<string | undefined>(undefined);
-  const [slugError, setSlugError] = useState<string | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
+}
 
-  useEffect(() => {
-    if (!open) return;
-    setTitle("");
-    setSlug("");
-    setGoal("");
-    setAcceptance("");
-    setOwner("");
-    setParent("");
-    setNotify("");
-    setPriority("P1");
-    setDue("");
-    setTitleError(undefined);
-    setSlugError(undefined);
-  }, [open]);
+/** The create form, mounted per opening. Exported for test/company-dialogs-guard.test.ts. */
+export function CreateTicketDialog({ open, ...props }: CreateTicketDialogProps) {
+  // Mounted only while open, so every opening starts blank.
+  return open ? <CreateTicketForm {...props} /> : null;
+}
+
+function CreateTicketForm({
+  projectId,
+  orgId,
+  employees,
+  tickets,
+  onClose,
+  onCreated,
+}: Omit<CreateTicketDialogProps, "open">) {
+  const form = useFormDraft(
+    {
+      title: "",
+      slug: "",
+      goal: "",
+      acceptance: "",
+      owner: "",
+      parent: "",
+      notify: "",
+      priority: "P1" as OrgTicketPriority,
+      due: "",
+    },
+    {
+      normalize: (d) => ({
+        ...d,
+        title: d.title.trim(),
+        slug: d.slug.trim(),
+        goal: d.goal.trim(),
+        acceptance: d.acceptance.trim(),
+        notify: d.notify.trim(),
+      }),
+    },
+  );
+  const { title, slug, goal, acceptance, owner, parent, notify, priority, due } = form.draft;
+  const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  // The rule sits behind the "?", so a slug that breaks it says so as it is typed.
+  const slugBroken = slug.trim() !== "" && !isTicketSlug(slug.trim());
+  const valid = title.trim() !== "" && !slugBroken;
 
   const submit = async () => {
-    if (!title.trim()) {
-      setTitleError(S.common.requiredField);
-      return;
-    }
-    if (slug.trim() !== "" && !isTicketSlug(slug.trim())) {
-      setSlugError(S.company.tickets.slugInvalid);
-      return;
-    }
+    if (!valid || busy) return;
     setBusy(true);
     try {
       const detail = await api.createOrgTicket(projectId, orgId, {
@@ -639,16 +645,21 @@ function CreateTicketDialog({
 
   return (
     <Modal
-      open={open}
+      open
       title={S.company.tickets.createTitle}
-      onClose={onClose}
+      onClose={requestClose}
       widthClass="sm:max-w-lg"
       footer={
         <>
-          <Button size="sm" onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={requestClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy || !valid}
+            onClick={() => void submit()}
+          >
             {S.common.create}
           </Button>
         </>
@@ -660,12 +671,8 @@ function CreateTicketDialog({
           label={S.company.tickets.ticketTitle}
           required
           value={title}
-          error={titleError}
           autoFocus
-          onChange={(e) => {
-            setTitle(e.target.value);
-            setTitleError(undefined);
-          }}
+          onChange={(e) => form.patch({ title: e.target.value })}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               e.preventDefault();
@@ -678,18 +685,9 @@ function CreateTicketDialog({
           label={S.company.tickets.slug}
           value={slug}
           info={S.company.tickets.slugHint}
-          error={slugError}
+          {...(slugBroken ? { error: S.company.tickets.slugInvalid } : {})}
           className="font-mono"
-          onChange={(e) => {
-            const next = e.target.value;
-            setSlug(next);
-            // The rule sits behind the "?", so a slug that breaks it says so as it is typed.
-            setSlugError(
-              next.trim() === "" || isTicketSlug(next.trim())
-                ? undefined
-                : S.company.tickets.slugInvalid,
-            );
-          }}
+          onChange={(e) => form.patch({ slug: e.target.value })}
         />
         <Textarea
           size="sm"
@@ -697,7 +695,7 @@ function CreateTicketDialog({
           rows={3}
           value={goal}
           info={S.company.tickets.goalHint}
-          onChange={(e) => setGoal(e.target.value)}
+          onChange={(e) => form.patch({ goal: e.target.value })}
         />
         <Textarea
           size="sm"
@@ -705,14 +703,14 @@ function CreateTicketDialog({
           rows={3}
           value={acceptance}
           info={S.company.tickets.acceptanceHint}
-          onChange={(e) => setAcceptance(e.target.value)}
+          onChange={(e) => form.patch({ acceptance: e.target.value })}
         />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Select
             size="sm"
             label={S.company.tickets.owner}
             value={owner}
-            onChange={(e) => setOwner(e.target.value)}
+            onChange={(e) => form.patch({ owner: e.target.value })}
           >
             <option value="">{S.company.tickets.ownerSelf}</option>
             {employees.map((e) => (
@@ -725,7 +723,7 @@ function CreateTicketDialog({
             size="sm"
             label={S.company.tickets.parent}
             value={parent}
-            onChange={(e) => setParent(e.target.value)}
+            onChange={(e) => form.patch({ parent: e.target.value })}
           >
             <option value="">{S.company.tickets.noParent}</option>
             {tickets.map((t) => (
@@ -739,7 +737,7 @@ function CreateTicketDialog({
             <Segmented
               options={PRIORITIES.map((p) => ({ value: p, label: p }))}
               value={priority}
-              onChange={setPriority}
+              onChange={(next) => form.patch({ priority: next })}
               cols={3}
             />
           </div>
@@ -749,7 +747,7 @@ function CreateTicketDialog({
             type="date"
             value={due}
             className="font-mono"
-            onChange={(e) => setDue(e.target.value)}
+            onChange={(e) => form.patch({ due: e.target.value })}
           />
         </div>
         <Input
@@ -759,7 +757,7 @@ function CreateTicketDialog({
           hint={S.company.tickets.notifyHint}
           info={S.company.tickets.notifyInfo}
           className="font-mono"
-          onChange={(e) => setNotify(e.target.value)}
+          onChange={(e) => form.patch({ notify: e.target.value })}
         />
       </div>
     </Modal>

@@ -23,7 +23,9 @@
  * - Given an unmanaged Trace, the startup sweep adopts it once as a client:'cli' row.
  * - Given a client hint, 'cli' or 'web' is stored and listed; 'org' cannot be claimed.
  * - Given a PATCH, the answer is the row after the write; approval mode and thinking level
- *   persist; bad values are 400s.
+ *   persist; bad values are 400s. A title has its runs of whitespace stored as one space; a
+ *   control or bidi-override character in it is a 400 that leaves the stored title as it
+ *   was, while an emoji held together by a zero-width joiner is kept.
  * - Given a DELETE, the row and every Trace shard go and the list does not resurrect it; the
  *   Workspace directory stays.
  * - Given a Trace, the single GET names its latest shard; list rows do not.
@@ -852,6 +854,48 @@ describe("session-index", () => {
       (await api.patch(`/api/sessions/${session.sessionId}`, { thinkingLevel: "ultra" })).status,
     ).toBe(400);
     expect((await api.patch(`/api/sessions/${session.sessionId}`, {})).status).toBe(400);
+  });
+
+  describe("PATCH title", () => {
+    async function namedSession(): Promise<string> {
+      await configureModels();
+      const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
+      const res = await api.patch(`/api/sessions/${session.sessionId}`, { title: "Before" });
+      expect(res.status).toBe(200);
+      return session.sessionId;
+    }
+    const storedTitle = async (sessionId: string) =>
+      ((await (await api.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse).session
+        .title;
+
+    it("stores runs of whitespace, newlines and tabs included, as one space", async () => {
+      const sessionId = await namedSession();
+      const res = await api.patch(`/api/sessions/${sessionId}`, {
+        title: "  Q3\n\trelease   prep  ",
+      });
+      expect(res.status).toBe(200);
+      expect(await storedTitle(sessionId)).toBe("Q3 release prep");
+    });
+
+    it.each([
+      ["an ANSI escape", "\x1b[2Jfake prompt"],
+      ["a bell", "ding\x07"],
+      ["a right-to-left override", "invoice\u202Etxt.exe"],
+      ["a directional isolate", "\u2066isolated\u2069"],
+    ])("refuses %s with 400 invalid_title and keeps the stored title", async (_case, title) => {
+      const sessionId = await namedSession();
+      const res = await api.patch(`/api/sessions/${sessionId}`, { title });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("invalid_title");
+      expect(await storedTitle(sessionId)).toBe("Before");
+    });
+
+    it("keeps an emoji sequence held together by a zero-width joiner", async () => {
+      const sessionId = await namedSession();
+      const title = "Pairing \u{1F469}\u200D\u{1F4BB}";
+      expect((await api.patch(`/api/sessions/${sessionId}`, { title })).status).toBe(200);
+      expect(await storedTitle(sessionId)).toBe(title);
+    });
   });
 
   it("insertOrIgnore is idempotent: concurrent first discovery of one Session doesn't throw on the UNIQUE constraint", async () => {

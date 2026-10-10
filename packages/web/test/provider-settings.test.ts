@@ -31,8 +31,10 @@
  *   table leaves blank is the client's default — never the catalog's value.
  * - A group key reaches a model with no base URL of its own or one on the group's origin; a
  *   model on another origin (Atria in custom, one re-pointed at a proxy) gets none.
- * - Given a group protocol stored outside the picker's three (set from the CLI), the picker
- *   shows that protocol, never "Not set", and saving untouched leaves it as it is.
+ * - Given a group protocol stored as one of the picker's five (an older spelling included), the
+ *   picker shows it checked; given one stored outside them (set from the CLI), the picker shows
+ *   that protocol, never "Not set". Either way saving untouched leaves it as it is, and picking
+ *   Google GenAI or MMSP sends it.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -146,6 +148,45 @@ describe("saving the group settings sends what changed, and only that", () => {
       const draft = { ...initialDraft(group), clientType: "openai-chat" };
       expect(providerSettingsUpdate(group, draft), id).toEqual({ clientType: "openai-chat" });
     }
+  });
+});
+
+describe("the protocol the group settings show", () => {
+  it.each([
+    ["openai-responses", "openai-responses"],
+    ["ant-messages", "ant-messages"],
+    ["openai-chat", "openai-chat"],
+    ["google-genai", "google-genai"],
+    ["mmsp", "mmsp"],
+    ["openai", "openai-chat"],
+    ["gemini-generate-content", "google-genai"],
+  ])(
+    "a group stored on %s shows %s checked, and saving untouched sends nothing",
+    (stored, shown) => {
+      const group = { clientType: stored };
+      const draft = initialDraft(group);
+      expect(protocolChoice(draft)).toBe(shown);
+      expect(providerSettingsUpdate(group, draft)).toBeNull();
+    },
+  );
+
+  it("a protocol stored outside the picker shows as itself, never Not set, and stays as it is", () => {
+    for (const stored of ["openai-chat-vllm-adapter", "google-official", "gemini-official"]) {
+      const group = { clientType: stored };
+      const draft = initialDraft(group);
+      expect(protocolChoice(draft), stored).toBe(stored);
+      expect(providerSettingsUpdate(group, draft), stored).toBeNull();
+    }
+  });
+
+  it("picking Google GenAI or MMSP sends it", () => {
+    const draft = initialDraft(STORED);
+    expect(providerSettingsUpdate(STORED, { ...draft, clientType: "google-genai" })).toEqual({
+      clientType: "google-genai",
+    });
+    expect(providerSettingsUpdate(STORED, { ...draft, clientType: "mmsp" })).toEqual({
+      clientType: "mmsp",
+    });
   });
 });
 

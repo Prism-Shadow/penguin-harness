@@ -21,9 +21,7 @@
  *    ×, the scrim and Cancel all arrive there — unless `EXCUSED_DIALOGS` names its component with
  *    a reason.
  *
- * Adding a module to `FORM_MODULES` is how a new settings form joins check 3. The `PENDING_*`
- * lists name what has not been converted yet and who converts it; a pending entry that no
- * longer breaks the rule fails by name, so the list only ever shrinks.
+ * Adding a module to `FORM_MODULES` is how a new settings form joins check 3.
  *
  * What the parser cannot follow is on the reviewer: a handler built in a variable, a Save
  * button that is a component of its own, a dialog in a module outside `FORM_MODULES`.
@@ -38,6 +36,7 @@ const SCAN = scanSources([".tsx", ".ts"]);
 /** Modules under packages/web/src whose forms follow the model; check 3 runs on each. */
 const FORM_MODULES: readonly string[] = [
   "components/account/change-password-dialog.tsx",
+  "components/layout/project-dialogs.tsx",
   "features/admin/admin-users-page.tsx",
   "features/agents/agent-settings-page.tsx",
   "features/agents/api-tab.tsx",
@@ -46,6 +45,22 @@ const FORM_MODULES: readonly string[] = [
   "features/agents/memory-tab.tsx",
   "features/agents/prompt-injection-controls.tsx",
   "features/agents/vault-add-dialog.tsx",
+  "features/benchmark/create-benchmark-modal.tsx",
+  "features/builtin-browser/homepage-dialog.tsx",
+  "features/chat/shortcuts-folder.tsx",
+  "features/company/calendar-page.tsx",
+  "features/company/channel-dialogs.tsx",
+  "features/company/employee-dialogs.tsx",
+  "features/company/finance-page.tsx",
+  "features/company/handbook-page.tsx",
+  "features/company/org-dialogs.tsx",
+  "features/company/ticket-dialog.tsx",
+  "features/company/tickets-page.tsx",
+  "features/machines/ssh-host-dialog.tsx",
+  "features/messaging/messaging-binding-modal.tsx",
+  "features/messaging/messaging-panel.tsx",
+  "features/models/models-page.tsx",
+  "features/models/provider-settings-dialog.tsx",
   "features/schedules/schedule-form-modal.tsx",
   "features/settings/plugin-config-card.tsx",
   "features/settings/profile-section.tsx",
@@ -66,30 +81,17 @@ const EXCUSED_DIALOGS: ReadonlyArray<readonly [string, string, string]> = [
     "MemoryTab",
     "its dialogs build a chat prompt (edit, add) or pick an import mode; none of them writes config",
   ],
-];
-
-/** Modules that offer Save or Create but do not register yet, with the package converting them. */
-const PENDING_SAVE_FORMS: ReadonlyArray<readonly [string, "WP-B" | "WP-C"]> = [
-  ["components/layout/project-dialogs.tsx", "WP-C"],
-  ["features/builtin-browser/homepage-dialog.tsx", "WP-C"],
-  ["features/chat/shortcuts-folder.tsx", "WP-C"],
-  ["features/company/calendar-page.tsx", "WP-C"],
-  ["features/company/channel-dialogs.tsx", "WP-C"],
-  ["features/company/employee-dialogs.tsx", "WP-C"],
-  ["features/company/handbook-page.tsx", "WP-C"],
-  ["features/company/org-dialogs.tsx", "WP-C"],
-  ["features/company/ticket-dialog.tsx", "WP-C"],
-  ["features/company/tickets-page.tsx", "WP-C"],
-  ["features/machines/ssh-host-dialog.tsx", "WP-C"],
-  ["features/messaging/messaging-binding-modal.tsx", "WP-C"],
-  ["features/messaging/messaging-panel.tsx", "WP-C"],
-  ["features/models/provider-settings-dialog.tsx", "WP-C"],
-];
-
-/** Typed controls that still commit from their own handler, with the package fixing them. */
-const PENDING_HANDLER_COMMITS: ReadonlyArray<readonly [string, "WP-B" | "WP-C"]> = [
-  // The finance budget editor writes when focus leaves it.
-  ["features/company/finance-page.tsx", "WP-C"],
+  [
+    "features/company/org-dialogs.tsx",
+    "CreateOrganizationDialog",
+    "its draft is kept in the browser on every keystroke and restored on reopen (spec 06), so a close loses nothing",
+  ],
+  ["features/models/models-page.tsx", "ModelsPage", "the speed-test confirmation: nothing typed"],
+  [
+    "features/models/models-page.tsx",
+    "ModelOAuthDialog",
+    "an authorization flow: closing abandons the flow, and its one code field is submitted by its own button",
+  ],
 ];
 
 /** Modules outside the model, each with the reason. */
@@ -267,7 +269,7 @@ describe("the settings commit model in the source", () => {
   it("never commits typed input from the control's own handler", () => {
     const found = SCAN.files
       .filter(inReach)
-      .filter((f) => !listed(EXCUSED_FILES, f.rel) && !listed(PENDING_HANDLER_COMMITS, f.rel))
+      .filter((f) => !listed(EXCUSED_FILES, f.rel))
       .flatMap(handlerCommits);
     expect(found).toEqual([]);
   });
@@ -275,7 +277,7 @@ describe("the settings commit model in the source", () => {
   it("registers every form that offers Save or Create", () => {
     const found = SCAN.files
       .filter(inReach)
-      .filter((f) => !listed(EXCUSED_FILES, f.rel) && !listed(PENDING_SAVE_FORMS, f.rel))
+      .filter((f) => !listed(EXCUSED_FILES, f.rel))
       .filter((f) => {
         const sf = parse(f);
         return offersSave(sf) && !callsAny(sf, REGISTERS);
@@ -298,21 +300,5 @@ describe("the settings commit model in the source", () => {
       return file === undefined ? [] : unguardedDialogs(file);
     });
     expect(found).toEqual([]);
-  });
-
-  it("lets the pending lists only shrink: an entry that is fixed must go", () => {
-    const fixed = [
-      ...PENDING_SAVE_FORMS.filter(([rel]) => {
-        const file = webFile(rel);
-        if (file === undefined) return true;
-        const sf = parse(file);
-        return !offersSave(sf) || callsAny(sf, REGISTERS);
-      }),
-      ...PENDING_HANDLER_COMMITS.filter(([rel]) => {
-        const file = webFile(rel);
-        return file === undefined || handlerCommits(file).length === 0;
-      }),
-    ].map(([rel, owner]) => `${rel} (${owner})`);
-    expect(fixed).toEqual([]);
   });
 });

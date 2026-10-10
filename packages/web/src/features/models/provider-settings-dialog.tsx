@@ -13,8 +13,10 @@
  * quote it (Restore defaults puts the catalog's values back). Where the catalog names the
  * vendor's model list, a link to it closes the dialog's body.
  *
- * Saving refuses a base URL that is set but is not an absolute http(s) URL (the field says so),
- * sends the fields that changed and nothing else (`PUT …/models/providers/:id`), and never probes
+ * Save is live once a field differs from what the group stores and the base URL is acceptable:
+ * one that is set but is not an absolute http(s) URL, or a blank one the group needs, is said
+ * under the field as it is typed. Closing the dialog with edits asks before they are dropped.
+ * Saving sends the fields that changed and nothing else (`PUT …/models/providers/:id`), and never probes
  * the endpoint, with one exception: a custom or user-defined group given a base URL and left on
  * "Not set", with a model that has no protocol of its own (or no model yet), has nothing that
  * decides how that model is spoken to, so the endpoint is asked once first (a miss saves on Chat
@@ -43,11 +45,14 @@ import {
   toastError,
   toastInfo,
   toastSuccess,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import { providerEnvFallbackKey } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
+import { closeUnlessBusy } from "../../lib/busy-close";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
@@ -80,9 +85,10 @@ export interface ProviderSettingsDraft {
 
 /**
  * The protocol the picker shows checked: "Not set" (null) while the group sets none, the group's
- * pick from the generic trio, or — for a stored protocol outside the trio, written from the CLI —
- * that protocol itself, so the dialog never misstates the setting. Saving leaves such a value as
- * it is unless another row is picked (providerSettingsUpdate compares against what is stored).
+ * pick among the picker's protocols, or — for a stored protocol outside them, written from the
+ * CLI — that protocol itself, so the dialog never misstates the setting. Saving leaves such a
+ * value as it is unless another row is picked (providerSettingsUpdate compares against what is
+ * stored).
  */
 export function protocolChoice(
   draft: Pick<ProviderSettingsDraft, "clientType">,
@@ -306,8 +312,11 @@ export function ProviderSettingsDialog({
   /** The table the server answered with, once the group's connection is written. */
   onSaved: (res: ModelsResponse) => void;
 }) {
-  const [draft, setDraft] = useState<ProviderSettingsDraft>(() => initialDraft(group));
-  const [baseUrlError, setBaseUrlError] = useState<string | null>(null);
+  // Dirty means a Save would send something: the draft is compared as the update it makes.
+  const form = useFormDraft(initialDraft(group), {
+    normalize: (value) => providerSettingsUpdate(group, value),
+  });
+  const draft = form.draft;
   const [detecting, setDetecting] = useState(false);
   /** Tints the protocol suffix amber after a probe that found nothing (its words go in a toast). */
   const [detectFailed, setDetectFailed] = useState(false);
@@ -334,9 +343,11 @@ export function ProviderSettingsDialog({
       ? S.models.apiKeyEnvHint(envKey)
       : undefined;
   const required = providerBaseUrlRequired(id, rows);
+  /** Why the base URL as typed cannot be saved, or null; said under the field once something changed. */
+  const urlProblem = providerBaseUrlError(id, rows, draft);
+  const baseUrlError = form.dirty ? urlProblem : null;
 
-  const set = (patch: Partial<ProviderSettingsDraft>) =>
-    setDraft((prev) => ({ ...prev, ...patch }));
+  const set = form.patch;
 
   const choice = protocolChoice(draft);
   // The suffix reads the path the group's models will be sent to: the picked protocol's. "Not
@@ -402,8 +413,9 @@ export function ProviderSettingsDialog({
         probe: () => detect("save"),
         dismissed: () => dismissed.current,
       });
-      if (result.kind === "invalid") setBaseUrlError(result.baseUrlError);
-      else if (result.kind === "unchanged") toastInfo(S.common.noChangesToSave);
+      // Save waits for a valid base URL, so `invalid` cannot come back from it; `unchanged` is a
+      // probe that settled the draft on what the group already stores — nothing to write, done.
+      if (result.kind === "unchanged") close();
       else if (result.kind === "saved") {
         toastSuccess(S.common.saved);
         // Taken down mid-write (the page switched Project): the write landed, but the table it
@@ -417,28 +429,33 @@ export function ProviderSettingsDialog({
     }
   };
 
-  /** Every way out of the dialog (Cancel, Esc, the backdrop, ×); none while a save is in flight. */
   const close = () => {
-    if (saving) return;
     dismissed.current = true;
     onClose();
   };
+  /** Every way out of the dialog (Cancel, Esc, the backdrop, ×); none while a save is in flight. */
+  const requestClose = useGuardedClose(...closeUnlessBusy(saving, close, form.scope));
 
   const busy = saving || detecting;
   return (
     <Modal
       open
       title={S.models.groupSettingsTitle(provider.label)}
-      onClose={close}
+      onClose={requestClose}
       // Wide enough for the longest catalog endpoint and its protocol path to read whole in
       // the base URL field (66 + 17 monospace columns, plus the suffix menu's chevron).
       widthClass="sm:max-w-3xl"
       footer={
         <>
-          <Button size="sm" disabled={saving} onClick={close}>
+          <Button size="sm" disabled={saving} onClick={requestClose}>
             {S.common.cancel}
           </Button>
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => void save()}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!form.dirty || urlProblem !== null || busy}
+            onClick={() => void save()}
+          >
             {detecting ? S.models.detecting : S.common.save}
           </Button>
         </>
@@ -524,7 +541,6 @@ export function ProviderSettingsDialog({
                 detectSeq.current++;
                 setDetecting(false);
                 setDetectFailed(false);
-                setBaseUrlError(null);
                 set({ baseUrl: e.target.value });
               }}
               className="font-mono"

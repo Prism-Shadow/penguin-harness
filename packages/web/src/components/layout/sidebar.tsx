@@ -2172,6 +2172,8 @@ export function Sidebar({
   return (
     <SidebarFrame
       rootRef={rootRef}
+      // The page nav and the Session list are one find-in-page region (components/find/).
+      findRegion="sessions"
       // The work-mode switch, above the Project switcher: 开发 | 公司. Rendered only while
       // company mode is available (the admin master switch and the user's own switch both on);
       // the choice persists per user. The 内测版 tag rides on 公司 — the switch is the one

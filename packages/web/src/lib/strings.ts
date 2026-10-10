@@ -12,6 +12,7 @@
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
 import type { PeakWindows } from "../features/models/model-grouping";
+import type { ModelGroupSort } from "../features/models/model-sort";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -178,6 +179,8 @@ export const zh = {
       "palette.toggle": "命令面板",
       "sessions.search": "搜索会话",
       "chat.new": "新建对话",
+      "find.open": "页内查找",
+      "find.all": "在所有区域查找",
       "sidebar.toggle": "显示或隐藏侧栏",
       "dock.toggleRight": "显示或隐藏右侧栏",
       "dock.toggleBottom": "显示或隐藏下侧栏",
@@ -1021,6 +1024,36 @@ export const zh = {
     taskCompleteBody: (session: string): string => `「${session}」已完成，点击查看`,
   },
 
+  /**
+   * The find bar (components/find/find-bar.tsx) and the searchable regions it queries
+   * (lib/find-dom.ts). A region's name is both a result row's tag and the subject of the scope
+   * button (`scopeThisRegion`).
+   */
+  find: {
+    placeholder: "在当前区域查找…",
+    next: "下一个",
+    prev: "上一个",
+    close: "关闭",
+    caseSensitive: "区分大小写",
+    /** Counter line when the query matches nothing. */
+    noResults: "无结果",
+    regionConversation: "对话",
+    regionSubagent: "子会话",
+    regionSessions: "会话列表",
+    regionFiles: "文件",
+    /** Scope button while the search is limited to one region: widen it to everything on screen. */
+    scopeAll: "所有区域",
+    /** Scope button while searching everything: narrow it back to `region`. */
+    scopeThisRegion: (region: string): string => `仅在${region}中`,
+    /** The region's own notice that it holds content this search could not reach. */
+    loadMore: "更早的内容尚未加载",
+    loadMoreAction: "加载并继续搜索",
+    /** `count` hits past the rows the result list shows. */
+    moreRows: (count: number): string => `另有 ${count} 条未显示`,
+    /** Name of the aggregated result list (read out when it is announced). */
+    resultsLabel: "查找结果",
+  },
+
   common: {
     save: "保存",
     cancel: "取消",
@@ -1803,6 +1836,8 @@ export const zh = {
       "openai-responses": "OpenAI Responses",
       "ant-messages": "Anthropic Messages",
       "openai-chat": "OpenAI Chat Completions",
+      "google-genai": "Google GenAI (generateContent)",
+      mmsp: "MMSP",
     } as Record<string, string | undefined>,
     /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
     protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
@@ -1824,7 +1859,7 @@ export const zh = {
     detectFellBack: "未检测到协议，已按 OpenAI Chat Completions 保存",
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
     addProtocolHintDetect:
-      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可点“检测协议”探测端点；未选协议时保存会先自动检测",
+      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions / Google GenAI / MMSP），也可点“检测协议”探测端点是否为前三种之一；未选协议时保存会先自动检测",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
     /** Detect action beside the vision switch. */
@@ -1922,9 +1957,21 @@ export const zh = {
     getModelIds: "获取模型 id",
     /** The group settings' link to the vendor's model list (the catalog's modelsUrl). */
     modelList: "前往模型列表",
-    // —— Group settings (the gear at the end of every group header) ——
-    /** The header action and its accessible name. */
+    // —— The gear at the end of every group header: the group's sort, then its settings ——
+    /** The gear's accessible name (followed by the group's name). */
     groupSettings: "设置",
+    /** The gear's hover hint, naming how the group's models are ordered now. */
+    groupMenuTitle: (sort: string): string => `设置 · 排序：${sort}`,
+    /** The gear menu's first section: how the group's models are ordered (radio rows). */
+    sortHeading: "排序",
+    /** The three orders; price is the blended rate billed right now. */
+    sortModes: {
+      "price-asc": "价格（从低到高）",
+      "price-desc": "价格（从高到低）",
+      name: "名称（A→Z）",
+    } satisfies Record<ModelGroupSort, string>,
+    /** The gear menu's last row, under the sort (owner only): opens the group settings dialog. */
+    groupSettingsEntry: "分组设置…",
     groupSettingsTitle: (label: string): string => `${label} 分组设置`,
     /** The clear box under a stored group key. */
     clearGroupKey: "清除分组密钥",
@@ -2059,8 +2106,12 @@ export const zh = {
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
-    confirmSaveTitle: "保存模型配置",
-    confirmSave: (name: string): string => `确定保存对「${name}」的配置修改？`,
+    /** The add-model dialog's footer verb (the settings dialog's is the common Save). */
+    addAction: "添加",
+    /** A save that changes a promoted row's price or identity: the server then drops the promotion. */
+    confirmCancelPromotionTitle: "取消促销",
+    confirmCancelPromotion: (name: string, pct: number): string =>
+      `保存后「${name}」当前省 ${pct}% 的促销将被取消：修改价格或模型标识会结束促销。确定保存？`,
     confirmDefaultTitle: "设为默认模型",
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
@@ -4841,16 +4892,10 @@ Benchmark：
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
       budget: "月预算",
       budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
-      hireConfirm: (name: string, manager: string): string =>
-        `将 ${name} 加入组织，汇报给 ${manager}？会改写组织图文件。`,
       hired: (name: string): string => `已招募 ${name}`,
       /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `设置 ${name} 的预算`,
-      budgetConfirm: (name: string, budget: string): string =>
-        `将 ${name} 的月预算改为 ${budget}？超过 80% 告警，达到 100% 暂停其自动触发。`,
       reportsToTitle: (name: string): string => `调整 ${name} 的汇报线`,
-      reportsToConfirm: (name: string, manager: string): string =>
-        `让 ${name} 改为汇报给 ${manager}？其下属随之一起移动。`,
       reportsToCycle: "不能汇报给自己或自己的下属",
       renewDeskTitle: (name: string): string => `为 ${name} 换工位`,
       renewDeskExplain: "换工位会开一个新的工位会话并重置上下文；改了工作区就写入员工树。",
@@ -4880,7 +4925,7 @@ Benchmark：
       clearBudget: "设为不限",
       currentValue: (value: string): string => `当前：${value}`,
       manager: "上级",
-      reportsToHint: "只列出不在其下属范围内的员工",
+      reportsToHint: "只列出不在其下属范围内的员工；其下属随之一起移动",
     },
     calendar: {
       title: "日历",
@@ -4907,7 +4952,6 @@ Benchmark：
       periodHint: "30m / 12h / 7d，留空为一次性；最短 5m",
       delete: "删除日程",
       deleteConfirm: (name: string): string => `确认删除日程「${name}」？`,
-      saveConfirm: (name: string): string => `保存日程「${name}」？会改写它的日程文件。`,
       outcome: "结果",
       lastFired: "最近触发",
       nextFire: "下次触发",
@@ -5016,7 +5060,6 @@ Benchmark：
       invalid: "该工单无效：状态与所在列不符，或 id 重复",
       invalidFiles: "无法解析的工单文件",
       edit: "编辑字段",
-      saveConfirm: (title: string): string => `保存对「${title}」的修改？会改写工单文件。`,
       saved: "工单已保存",
       created: "工单已创建",
       detail: "工单详情",

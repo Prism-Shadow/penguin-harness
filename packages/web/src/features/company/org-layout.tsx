@@ -53,7 +53,8 @@ export interface OrgContextValue {
   org: OrganizationSummary | null;
 }
 
-const OrgContext = createContext<OrgContextValue | null>(null);
+/** Which organization the routed page is in. Exported so a page's suite can stand in for the route. */
+export const OrgContext = createContext<OrgContextValue | null>(null);
 
 export function useOrg(): OrgContextValue {
   const ctx = useContext(OrgContext);

@@ -8,8 +8,10 @@
  * has no events yet — dismissible, and repeated in the page's "?" so it stays reachable —
  * the grid plus an error strip when a refetch fails. A month cell shows a few chips and folds
  * the rest into a button that opens the whole day in a popover rather than the create dialog.
- * Past instances carry the outcome the scheduler recorded; every write confirms first, and
- * reports back whatever the server has to say about the rota.
+ * Past instances carry the outcome the scheduler recorded. The event dialog's Save (Create)
+ * writes at once — it is live once a field changed and every required one is filled — and
+ * reports back whatever the server has to say about the rota; deleting confirms first, and
+ * closing the dialog with unsaved edits asks first.
  *
  * An empty slot — a month cell, an hour row — is itself the control that creates there, and it
  * says so: a real button (CREATE_SLOT_CLASS) that tints with the theme's accent and spells out
@@ -45,11 +47,14 @@ import {
   toastAttention,
   toastError,
   toastSuccess,
+  useFormDraft,
+  useGuardedClose,
   usePortalPanel,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { closeUnlessBusy } from "../../lib/busy-close";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { employeeColor } from "../../lib/category-colors";
@@ -201,11 +206,8 @@ export function CalendarPage() {
   const [anchor, setAnchor] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
   const [employeeFilter, setEmployeeFilter] = useState("");
-  const [form, setForm] = useState<FormState | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<
-    Partial<Record<"name" | "prompt" | "startAt" | "agentId", string>>
-  >({});
-  const [confirmSave, setConfirmSave] = useState(false);
+  /** What the event dialog opened on (null while it is closed); the dialog holds the edits. */
+  const [opened, setOpened] = useState<FormState | null>(null);
   const [deleting, setDeleting] = useState<{ agentId: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -270,8 +272,7 @@ export function CalendarPage() {
   const byDay = useMemo(() => instancesByDay(instances), [instances]);
 
   const openCreate = (atMs?: number) => {
-    setFieldErrors({});
-    setForm({
+    setOpened({
       editing: null,
       agentId: employeeFilter || (employees[0]?.agentId ?? ""),
       name: "",
@@ -284,8 +285,7 @@ export function CalendarPage() {
     });
   };
   const openEdit = (ev: OrgCalendarItem) => {
-    setFieldErrors({});
-    setForm({
+    setOpened({
       editing: { agentId: ev.agentId, name: ev.name },
       agentId: ev.agentId,
       name: ev.name,
@@ -297,21 +297,8 @@ export function CalendarPage() {
       period: ev.period ?? "",
     });
   };
-  const set = (patch: Partial<FormState>) => setForm((f) => (f === null ? f : { ...f, ...patch }));
-
-  const validate = (): boolean => {
-    if (form === null) return false;
-    const next: typeof fieldErrors = {};
-    if (!form.agentId) next.agentId = S.common.requiredField;
-    if (!form.name.trim()) next.name = S.common.requiredField;
-    if (!form.prompt.trim()) next.prompt = S.common.requiredField;
-    if (!form.startAt) next.startAt = S.common.requiredField;
-    setFieldErrors(next);
-    return Object.keys(next).length === 0;
-  };
-
-  const save = async () => {
-    if (form === null) return;
+  /** Writes the dialog's event; resolves with whether it landed (the dialog then closes). */
+  const save = async (form: FormState): Promise<boolean> => {
     setBusy(true);
     try {
       const body = {
@@ -343,12 +330,12 @@ export function CalendarPage() {
       if (warnings.length > 0) {
         toastAttention(`${S.company.calendar.warningsPrefix} · ${warnings.join(" · ")}`);
       }
-      setConfirmSave(false);
-      setForm(null);
+      setOpened(null);
       void load();
+      return true;
     } catch (e) {
-      setConfirmSave(false);
       toastError(apiErrorText(e));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -360,7 +347,7 @@ export function CalendarPage() {
     try {
       await api.deleteOrgCalendarEvent(projectId, orgId, deleting.agentId, deleting.name);
       setDeleting(null);
-      setForm(null);
+      setOpened(null);
       void load();
     } catch (e) {
       toastError(apiErrorText(e));
@@ -701,9 +688,9 @@ export function CalendarPage() {
     );
 
   const editingEvent =
-    form?.editing != null
+    opened?.editing != null
       ? (events ?? []).find(
-          (e) => e.agentId === form.editing?.agentId && e.name === form.editing?.name,
+          (e) => e.agentId === opened.editing?.agentId && e.name === opened.editing?.name,
         )
       : undefined;
 
@@ -846,183 +833,18 @@ export function CalendarPage() {
       )}
 
       {/* Create / edit dialog: the scheduled-task form minus its target, the employee as a select. */}
-      <Modal
-        open={form !== null}
-        title={
-          form?.editing != null
-            ? S.company.calendar.editTitle(form.name)
-            : S.company.calendar.createTitle
-        }
-        onClose={() => setForm(null)}
-        widthClass="sm:max-w-lg"
-        footer={
-          <>
-            {form?.editing != null && (
-              <Button
-                size="sm"
-                variant="danger"
-                className="mr-auto"
-                disabled={busy}
-                onClick={() => setDeleting(form.editing)}
-              >
-                {S.company.calendar.delete}
-              </Button>
-            )}
-            <Button size="sm" onClick={() => setForm(null)} disabled={busy}>
-              {S.common.cancel}
-            </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={busy}
-              onClick={() => {
-                if (validate()) setConfirmSave(true);
-              }}
-            >
-              {form?.editing != null ? S.common.save : S.common.create}
-            </Button>
-          </>
-        }
-      >
-        {form !== null && (
-          <div className="space-y-3">
-            {editingEvent !== undefined && (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-                {editingEvent.nextFireAt !== undefined && (
-                  <span>
-                    {S.company.calendar.nextFire}{" "}
-                    <span className="font-mono tabular-nums">
-                      {formatDateTime(editingEvent.nextFireAt)}
-                    </span>
-                  </span>
-                )}
-                {editingEvent.lastFiredAt !== undefined && (
-                  <span className="inline-flex items-center gap-1">
-                    {S.company.calendar.lastFired}{" "}
-                    <span className="font-mono tabular-nums">
-                      {formatDateTime(editingEvent.lastFiredAt)}
-                    </span>
-                    {editingEvent.lastOutcome !== undefined && (
-                      <span className={toneInk[OUTCOME_TONE[editingEvent.lastOutcome]]}>
-                        {S.company.calendarOutcomes[editingEvent.lastOutcome] ??
-                          editingEvent.lastOutcome}
-                      </span>
-                    )}
-                    {editingEvent.lastOutcome === "fired" && (
-                      <button
-                        type="button"
-                        className="whitespace-nowrap underline"
-                        onClick={() => void openDesk(editingEvent.agentId)}
-                      >
-                        {S.company.openDesk}
-                      </button>
-                    )}
-                  </span>
-                )}
-                {editingEvent.paused && (
-                  <span className={toneInk.attention}>{S.company.calendar.pausedNote}</span>
-                )}
-                {editingEvent.invalidReason !== undefined && (
-                  <span className={toneInk.danger}>{editingEvent.invalidReason}</span>
-                )}
-              </div>
-            )}
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Select
-                size="sm"
-                label={S.company.calendar.employee}
-                required
-                value={form.agentId}
-                disabled={form.editing !== null}
-                {...(fieldErrors.agentId !== undefined ? { error: fieldErrors.agentId } : {})}
-                onChange={(e) => set({ agentId: e.target.value })}
-              >
-                {employees.map((e) => (
-                  <option key={e.agentId} value={e.agentId}>
-                    {e.name}
-                  </option>
-                ))}
-              </Select>
-              <Input
-                size="sm"
-                label={S.company.calendar.name}
-                required
-                info={S.company.calendar.nameHint}
-                {...(fieldErrors.name !== undefined ? { error: fieldErrors.name } : {})}
-                value={form.name}
-                disabled={form.editing !== null}
-                onChange={(e) => set({ name: e.target.value })}
-                className="font-mono"
-                placeholder="daily_sweep"
-              />
-            </div>
-            <Input
-              size="sm"
-              label={S.common.name}
-              value={form.title}
-              onChange={(e) => set({ title: e.target.value })}
-            />
-            <Textarea
-              label={S.company.calendar.prompt}
-              required
-              size="sm"
-              rows={4}
-              info={S.company.calendar.promptHint}
-              {...(fieldErrors.prompt !== undefined ? { error: fieldErrors.prompt } : {})}
-              value={form.prompt}
-              onChange={(e) => set({ prompt: e.target.value })}
-            />
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Input
-                size="sm"
-                label={S.company.calendar.startAt}
-                required
-                type="datetime-local"
-                info={S.company.calendar.staggerHint}
-                {...(fieldErrors.startAt !== undefined ? { error: fieldErrors.startAt } : {})}
-                value={form.startAt}
-                onChange={(e) => set({ startAt: e.target.value })}
-                className="font-mono"
-              />
-              <Input
-                size="sm"
-                label={S.company.calendar.period}
-                value={form.period}
-                hint={S.company.calendar.periodHint}
-                onChange={(e) => set({ period: e.target.value })}
-                className="font-mono"
-                placeholder="1d"
-              />
-              <Input
-                size="sm"
-                label={S.company.calendar.endAt}
-                type="datetime-local"
-                value={form.endAt}
-                onChange={(e) => set({ endAt: e.target.value })}
-                className="font-mono"
-              />
-              <label className="flex items-center gap-2 self-end pb-1.5 text-xs text-gray-600 dark:text-gray-300">
-                <Switch checked={form.enabled} onChange={(v) => set({ enabled: v })} />
-                {S.company.calendar.enabled}
-              </label>
-            </div>
-          </div>
-        )}
-      </Modal>
-      <ConfirmModal
-        open={confirmSave}
-        title={S.common.confirmSaveTitle}
-        tone="primary"
-        confirmLabel={S.common.save}
-        cancelLabel={S.common.cancel}
-        busy={busy}
-        onClose={() => (busy ? undefined : setConfirmSave(false))}
-        onConfirm={() => void save()}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {S.company.calendar.saveConfirm(form?.name ?? "")}
-        </p>
-      </ConfirmModal>
+      {opened !== null && (
+        <CalendarEventDialog
+          opening={opened}
+          event={editingEvent}
+          employees={employees}
+          busy={busy}
+          onClose={() => setOpened(null)}
+          onSave={save}
+          onDelete={setDeleting}
+          onOpenDesk={(agentId) => void openDesk(agentId)}
+        />
+      )}
       <ConfirmModal
         open={deleting !== null}
         title={S.company.calendar.delete}
@@ -1037,6 +859,208 @@ export function CalendarPage() {
         </p>
       </ConfirmModal>
     </OrgPage>
+  );
+}
+
+/**
+ * The event dialog, mounted once per opening: its fields are a draft of the event it opened on
+ * (a blank one at the clicked time, or the stored event). Save — Create for a new event — is
+ * live once a field changed and every required one is filled, and writes at once; closing with
+ * unsaved edits asks first, and nothing closes it while a write is in flight. Delete hands the
+ * event to the page's own confirmation. Exported for test/company-dialogs-guard.test.ts.
+ */
+export function CalendarEventDialog({
+  opening,
+  event,
+  employees,
+  busy,
+  onClose,
+  onSave,
+  onDelete,
+  onOpenDesk,
+}: {
+  opening: FormState;
+  /** The stored event being edited, for its run facts; undefined when creating. */
+  event: OrgCalendarItem | undefined;
+  employees: OrgChartResponse["employees"];
+  busy: boolean;
+  onClose: () => void;
+  /** Writes the draft; resolves with whether it landed. */
+  onSave: (form: FormState) => Promise<boolean>;
+  onDelete: (target: { agentId: string; name: string }) => void;
+  onOpenDesk: (agentId: string) => void;
+}) {
+  const form = useFormDraft(opening, {
+    normalize: (f) => ({
+      ...f,
+      name: f.name.trim(),
+      title: f.title.trim(),
+      period: f.period.trim(),
+    }),
+  });
+  const draft = form.draft;
+  const set = form.patch;
+  const requestClose = useGuardedClose(...closeUnlessBusy(busy, onClose, form.scope));
+  // Each required field is marked by its asterisk; Save waits until all are filled.
+  const valid =
+    draft.agentId !== "" &&
+    draft.name.trim() !== "" &&
+    draft.prompt.trim() !== "" &&
+    draft.startAt !== "";
+
+  return (
+    <Modal
+      open
+      title={
+        draft.editing !== null
+          ? S.company.calendar.editTitle(draft.name)
+          : S.company.calendar.createTitle
+      }
+      onClose={requestClose}
+      widthClass="sm:max-w-lg"
+      footer={
+        <>
+          {draft.editing !== null && (
+            <Button
+              size="sm"
+              variant="danger"
+              className="mr-auto"
+              disabled={busy}
+              onClick={() => {
+                if (draft.editing !== null) onDelete(draft.editing);
+              }}
+            >
+              {S.company.calendar.delete}
+            </Button>
+          )}
+          <Button size="sm" onClick={requestClose} disabled={busy}>
+            {S.common.cancel}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy || !form.dirty || !valid}
+            onClick={() => void onSave(draft)}
+          >
+            {draft.editing !== null ? S.common.save : S.common.create}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {event !== undefined && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+            {event.nextFireAt !== undefined && (
+              <span>
+                {S.company.calendar.nextFire}{" "}
+                <span className="font-mono tabular-nums">{formatDateTime(event.nextFireAt)}</span>
+              </span>
+            )}
+            {event.lastFiredAt !== undefined && (
+              <span className="inline-flex items-center gap-1">
+                {S.company.calendar.lastFired}{" "}
+                <span className="font-mono tabular-nums">{formatDateTime(event.lastFiredAt)}</span>
+                {event.lastOutcome !== undefined && (
+                  <span className={toneInk[OUTCOME_TONE[event.lastOutcome]]}>
+                    {S.company.calendarOutcomes[event.lastOutcome] ?? event.lastOutcome}
+                  </span>
+                )}
+                {event.lastOutcome === "fired" && (
+                  <button
+                    type="button"
+                    className="whitespace-nowrap underline"
+                    onClick={() => onOpenDesk(event.agentId)}
+                  >
+                    {S.company.openDesk}
+                  </button>
+                )}
+              </span>
+            )}
+            {event.paused && (
+              <span className={toneInk.attention}>{S.company.calendar.pausedNote}</span>
+            )}
+            {event.invalidReason !== undefined && (
+              <span className={toneInk.danger}>{event.invalidReason}</span>
+            )}
+          </div>
+        )}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Select
+            size="sm"
+            label={S.company.calendar.employee}
+            required
+            value={draft.agentId}
+            disabled={draft.editing !== null}
+            onChange={(e) => set({ agentId: e.target.value })}
+          >
+            {employees.map((e) => (
+              <option key={e.agentId} value={e.agentId}>
+                {e.name}
+              </option>
+            ))}
+          </Select>
+          <Input
+            size="sm"
+            label={S.company.calendar.name}
+            required
+            info={S.company.calendar.nameHint}
+            value={draft.name}
+            disabled={draft.editing !== null}
+            onChange={(e) => set({ name: e.target.value })}
+            className="font-mono"
+            placeholder="daily_sweep"
+          />
+        </div>
+        <Input
+          size="sm"
+          label={S.common.name}
+          value={draft.title}
+          onChange={(e) => set({ title: e.target.value })}
+        />
+        <Textarea
+          label={S.company.calendar.prompt}
+          required
+          size="sm"
+          rows={4}
+          info={S.company.calendar.promptHint}
+          value={draft.prompt}
+          onChange={(e) => set({ prompt: e.target.value })}
+        />
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Input
+            size="sm"
+            label={S.company.calendar.startAt}
+            required
+            type="datetime-local"
+            info={S.company.calendar.staggerHint}
+            value={draft.startAt}
+            onChange={(e) => set({ startAt: e.target.value })}
+            className="font-mono"
+          />
+          <Input
+            size="sm"
+            label={S.company.calendar.period}
+            value={draft.period}
+            hint={S.company.calendar.periodHint}
+            onChange={(e) => set({ period: e.target.value })}
+            className="font-mono"
+            placeholder="1d"
+          />
+          <Input
+            size="sm"
+            label={S.company.calendar.endAt}
+            type="datetime-local"
+            value={draft.endAt}
+            onChange={(e) => set({ endAt: e.target.value })}
+            className="font-mono"
+          />
+          <label className="flex items-center gap-2 self-end pb-1.5 text-xs text-gray-600 dark:text-gray-300">
+            <Switch checked={draft.enabled} onChange={(v) => set({ enabled: v })} />
+            {S.company.calendar.enabled}
+          </label>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

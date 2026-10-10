@@ -9,8 +9,9 @@
  * test: a new model follows its group's connection, so those are overrides. The settings dialog
  * keeps the API key and base URL in view.
  *
- * The fold starts closed every time a dialog opens; nothing remembers it. Saving with a missing
- * or invalid field inside it opens it and focuses that field, so an error is never hidden.
+ * The fold starts closed every time a dialog opens; nothing remembers it. The dialog's Save stays
+ * disabled while a field is wrong, so a wrong field inside the closed fold opens it: Save is never
+ * held back by an error the reader cannot see.
  */
 import { useId } from "react";
 import type { ReactNode } from "react";
@@ -74,22 +75,19 @@ export function foldedSlots(isNew: boolean): ReadonlySet<ModelDialogSlot> {
 }
 
 /**
- * What a refused save does about the fold: open it when any field with an error sits inside it,
- * and focus the first field with an error in the dialog's order (null when there is none).
+ * The fields with an error that sit inside the fold, in the dialog's order. The dialog opens the
+ * fold whenever this list gains a field, so the reason Save is disabled is on screen.
  */
-export function revealOnSave(
+export function foldedErrors(
   errors: Partial<Record<ModelDialogField, string>>,
   isNew: boolean,
-): { openDetails: boolean; focus: ModelDialogField | null } {
+): ModelDialogField[] {
   const folded = foldedSlots(isNew);
-  const failing = FIELD_ORDER.filter((field) => errors[field] !== undefined);
-  return {
-    openDetails: failing.some((field) => {
-      const slot = FIELD_SLOT[field];
-      return slot !== null && folded.has(slot);
-    }),
-    focus: failing[0] ?? null,
-  };
+  return FIELD_ORDER.filter((field) => {
+    if (errors[field] === undefined) return false;
+    const slot = FIELD_SLOT[field];
+    return slot !== null && folded.has(slot);
+  });
 }
 
 /**
