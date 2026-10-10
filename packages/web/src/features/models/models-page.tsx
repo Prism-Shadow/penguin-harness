@@ -18,7 +18,13 @@
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
  * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
  * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, user-defined),
- * the speed test, and the group settings (provider-settings-dialog.tsx) last on every group.
+ * the speed test, and the gear last on every group: a menu with the group's sort and the group
+ * settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
+ *
+ * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
+ * unless the user picked otherwise from the gear, or by name. The choice is remembered per group
+ * in this browser, applies to search results too, and leaves the group order and the chat model
+ * picker alone.
  *
  * The groups stand in two areas (model-group-pins.ts): the favourites, always shown, then the
  * rest under one full-width bar that folds them away (folded by default). A star on each header,
@@ -101,6 +107,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { AiCreateModal } from "../ai-create";
@@ -185,6 +192,15 @@ import {
 } from "./connection";
 import type { ProviderConnections } from "./connection";
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
+import { GroupSettingsControl } from "./group-settings-menu";
+import {
+  initialModelGroupSorts,
+  modelGroupSortOf,
+  sortModelGroups,
+  storeModelGroupSorts,
+  withModelGroupSort,
+} from "./model-sort";
+import type { ModelGroupSort } from "./model-sort";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
 import { toneInk } from "../../lib/tone";
@@ -926,6 +942,13 @@ export function ModelsPage() {
    * (model-group-pins.ts), per browser like the sidebar nav's, so not re-read on a Project switch.
    */
   const [groupPins, setGroupPins] = useState(initialModelGroupPins);
+  /**
+   * How each group orders its models, where the user changed it from price low to high
+   * (model-sort.ts); per browser like the pins, so not re-read on a Project switch.
+   */
+  const [groupSorts, setGroupSorts] = useState(initialModelGroupSorts);
+  /** The UI language, which a sort by name collates in. */
+  const { locale } = useLocale();
   /** Whether the collapsible groups are folded away under their bar; folded by default, remembered per browser. */
   const [groupsFolded, setGroupsFolded] = useState(initialModelGroupsFolded);
   /**
@@ -1070,9 +1093,16 @@ export function ModelsPage() {
     }
   };
 
+  /**
+   * The groups on screen, each one's models in that group's sort. `hourTick` re-sorts on the
+   * hour: a price sort reads the rate billed right now, which an off-peak tier changes.
+   */
   const groups = useMemo(
-    () => (rows ? groupModelRows(rows, query, groupOrder) : []),
-    [rows, query, groupOrder],
+    () =>
+      rows
+        ? sortModelGroups(groupModelRows(rows, query, groupOrder), groupSorts, new Date(), locale)
+        : [],
+    [rows, query, groupOrder, groupSorts, locale, hourTick],
   );
   /**
    * Every group the library could show, empty built-ins included — the sequence a drop is
@@ -1229,6 +1259,14 @@ export function ModelsPage() {
     if (next === groupPins) return;
     storeModelGroupPins(next);
     setGroupPins(next);
+  };
+
+  /** Adopts a group's sort from its gear menu (store-then-set), unless it is the current one. */
+  const chooseSort = (id: string, sort: ModelGroupSort) => {
+    const next = withModelGroupSort(groupSorts, id, sort);
+    if (next === groupSorts) return;
+    storeModelGroupSorts(next);
+    setGroupSorts(next);
   };
 
   /** Fold or unfold the collapsible groups (store-then-set, as toggleGroup). */
@@ -1437,20 +1475,18 @@ export function ModelsPage() {
           </Button>
         );
       case "settings":
-        // The group's connection, in full (base URL, key, protocol). Icon only, like the speed
-        // test it stands beside: the pair closes every header at the same right edge.
+        // The gear, icon only like the speed test it stands beside: the pair closes every header
+        // at the same right edge. Its menu holds the group's sort, which every member has and a
+        // busy page never blocks, and, for the owner, the group's connection settings in full
+        // (base URL, key, protocol).
         return (
-          <Button
-            size="icon"
-            variant="ghost"
-            className={HEADER_SQUARE}
-            disabled={busy}
-            aria-label={`${S.models.groupSettings} ${provider.label}`}
-            title={S.models.groupSettings}
-            onClick={() => setSettingsFor(group.provider.id)}
-          >
-            <GlyphIcon d={ICONS.gear} size={ICON_SIZE.groupHeaderAction} />
-          </Button>
+          <GroupSettingsControl
+            provider={provider}
+            sort={modelGroupSortOf(groupSorts, group.provider.id)}
+            onSort={(sort) => chooseSort(group.provider.id, sort)}
+            onSettings={isOwner ? () => setSettingsFor(group.provider.id) : undefined}
+            busy={busy}
+          />
         );
     }
   };

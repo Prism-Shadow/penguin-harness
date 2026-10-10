@@ -21,6 +21,7 @@ In the sidebar, select **Models**. Models are listed in groups, one per provider
 - **Open and close groups.** Select a group's header to open or close it. On your first visit only the TokenDance group is open. The browser remembers which groups you opened, per Project.
 - **Reorder groups.** Drag a group's header to move it. The order is saved in this browser, per Project, and the model picker in the chat uses the same order. Dragging is not available on touch screens or while searching.
 - **Search.** Type in **Search models: id / name / provider** to show only the matching models. While you search, every matching group is open.
+- **Order within a group.** A group lists its models by price, low to high. The price compared is the one billed right now, after a running promotion or off-peak rate, with input weighed three times as much as output: (cache write × 3 + output) ÷ 4. Free models come first, models without a price come last, and equal prices are ordered by name. To change it, select the gear at the end of the group's header and choose **Price (low to high)**, **Price (high to low)** or **Name (A→Z)**; the current choice is checked. Each group keeps its own order, saved in this browser. Search results follow it; the order of the groups and the model picker in the chat do not change.
 
 Each model card shows the model's display name, tags, context window, prices, key status, and the Tokens the model has used so far.
 
@@ -42,13 +43,13 @@ A group's header shows the provider's logo, the group's name, its model count an
 - the group's balance, for TokenDance and DeepSeek once the group has a key; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
 - the connection, for TokenDance, Penguin Go and ModelScope: **Not connected**, which you select to connect, or **Connected**, a menu with **Sync models** (Penguin Go only), **Reconnect** and **Disconnect**; see [Connect an account](#connect-an-account);
 - **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow** and groups you created; see [Add a model](#add-a-model);
-- the speed test and **Settings** (a gear), which end every group, **Custom** included, so the two stand at the same right edge on every group; see [Measure speed](#measure-speed) and [Group settings](#group-settings).
+- the speed test and **Settings** (a gear), which end every group, **Custom** included, so the two stand at the same right edge on every group; see [Measure speed](#measure-speed). The gear opens a menu: the group's sort, then **Group settings…**; see [Group settings](#group-settings).
 
 While the TokenDance group has no key, a banner above the groups offers to connect your TokenDance wallet, so the models there need no key set by hand. Its **Connect** runs the same flow as the group's. Select × to hide the banner in this browser.
 
 The header has no button for entering a key: the group key is set in [Group settings](#group-settings) or written when the group connects.
 
-Only the Project owner can change models and credentials. Members can search, open and close groups, reorder them and mark favorites in their own browser, see, pin and refresh balances, see the connection status as plain text, and open **Model settings** read-only.
+Only the Project owner can change models and credentials. Members can search, open and close groups, reorder them, mark favorites and sort a group's models in their own browser (their gear menu holds the sort alone), see, pin and refresh balances, see the connection status as plain text, and open **Model settings** read-only.
 
 ## Add a model group
 
@@ -271,7 +272,7 @@ The balance is read with `GET /api/projects/:id/models/balance?provider=<group>`
 
 ## Group settings
 
-Every group's header ends with **Settings** (a gear), **Custom** included; only the Project owner sees it. It opens "{group} group settings", which edits the connection the group's models share: an API key, a base URL and a protocol, stored in the group's `[providers.<group>]` table.
+Every group's header ends with **Settings** (a gear), **Custom** included. Its menu ends with **Group settings…**, which only the Project owner sees. It opens "{group} group settings", which edits the connection the group's models share: an API key, a base URL and a protocol, stored in the group's `[providers.<group>]` table.
 
 The Project config file is the only source of these values. Each field resolves on its own, and the first value found wins: the model's own, then the group's, then none, which leaves it to the client: its default endpoint, routing by model id, and the environment key where [Set API keys](#set-api-keys) allows it. The built-in catalog is a reference, not a layer: a new Project's file already stores each gateway's endpoint and protocol in these settings, and the catalog is never read when a request is built. A model that leaves a field empty therefore follows the group, and a value set on the model applies to that model only. The group key goes only to the models on the group's endpoint; see [Set API keys](#set-api-keys).
 
