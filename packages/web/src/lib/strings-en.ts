@@ -156,6 +156,8 @@ export const en: Strings = {
       "palette.toggle": "Command palette",
       "sessions.search": "Search sessions",
       "chat.new": "New chat",
+      "find.open": "Find in page",
+      "find.all": "Find in all areas",
       "sidebar.toggle": "Show or hide the sidebar",
       "dock.toggleRight": "Show or hide the right sidebar",
       "dock.toggleBottom": "Show or hide the bottom panel",
@@ -953,6 +955,31 @@ export const en: Strings = {
     taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
   },
 
+  find: {
+    placeholder: "Find in this area…",
+    next: "Next match",
+    prev: "Previous match",
+    close: "Close",
+    caseSensitive: "Match case",
+    /** Counter line when the query matches nothing. */
+    noResults: "No results",
+    regionConversation: "Conversation",
+    regionSubagent: "Subagent",
+    regionSessions: "Sessions",
+    regionFiles: "Files",
+    /** Scope button while the search is limited to one region: widen it to everything on screen. */
+    scopeAll: "All areas",
+    /** Scope button while searching everything: narrow it back to `region`. */
+    scopeThisRegion: (region: string): string => `${region} only`,
+    /** The region's own notice that it holds content this search could not reach. */
+    loadMore: "Earlier content is not loaded",
+    loadMoreAction: "Load and keep searching",
+    /** `count` hits past the rows the result list shows. */
+    moreRows: (count: number): string => `${count} more not shown`,
+    /** Name of the aggregated result list (read out when it is announced). */
+    resultsLabel: "Find results",
+  },
+
   common: {
     save: "Save",
     cancel: "Cancel",
@@ -1733,6 +1760,8 @@ export const en: Strings = {
       "openai-responses": "OpenAI Responses",
       "ant-messages": "Anthropic Messages",
       "openai-chat": "OpenAI Chat Completions",
+      "google-genai": "Google GenAI (generateContent)",
+      mmsp: "MMSP",
     } as Record<string, string | undefined>,
     protocolTriggerTitle: (name: string): string => `Protocol: ${name}. Click to change it.`,
     /** Suffix placeholder while no protocol is selected — never a protocol name, so nothing looks pre-chosen. */
@@ -1750,7 +1779,7 @@ export const en: Strings = {
     /** Save-time detection came back empty: the save proceeds on the compatible client. */
     detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
     addProtocolHintDetect:
-      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or press Detect to probe the endpoint — saving without one detects it first",
+      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions / Google GenAI / MMSP), or press Detect to probe the endpoint for one of the first three — saving without one detects it first",
     vision: "Vision support",
     /** Detect action beside the vision switch. */
     detectVision: "Detect",
@@ -1834,6 +1863,14 @@ export const en: Strings = {
     getModelIds: "Get model IDs",
     modelList: "Model list",
     groupSettings: "Settings",
+    groupMenuTitle: (sort: string): string => `Settings · Sort: ${sort}`,
+    sortHeading: "Sort",
+    sortModes: {
+      "price-asc": "Price (low to high)",
+      "price-desc": "Price (high to low)",
+      name: "Name (A→Z)",
+    },
+    groupSettingsEntry: "Group settings…",
     groupSettingsTitle: (label: string): string => `${label} group settings`,
     clearGroupKey: "Clear the group key",
     baseUrlNone: "Not set: the client's default endpoint",
@@ -2571,8 +2608,6 @@ export const en: Strings = {
   },
 
   chat: {
-    thinkingLevelChangeNote:
-      "Applies right away. Changing it invalidates the model's cached context — compacting first is recommended.",
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",

@@ -82,7 +82,7 @@ describe("Fold", () => {
   it("mounted open, is a settled layout-motion track whose body neither clips nor goes inert", () => {
     const html = fold(true);
     expect(html).toBe(
-      '<div data-layout-motion="true" data-fold="settled" class="grid"><div class="min-h-0"><p>rows</p></div></div>',
+      '<div data-layout-motion="true" data-fold="settled" class="grid"><div class="min-h-0 min-w-0"><p>rows</p></div></div>',
     );
   });
 
@@ -104,6 +104,6 @@ describe("Fold", () => {
   it("carries its slot on the track and the list's own layout on the body", () => {
     const html = fold(true, { "data-slot": "body", bodyClassName: "ui-tree divide-y" });
     expect(html).toMatch(/^<div data-layout-motion="true" data-fold="settled" data-slot="body"/);
-    expect(html).toContain('<div class="min-h-0 ui-tree divide-y"><p>rows</p></div>');
+    expect(html).toContain('<div class="min-h-0 min-w-0 ui-tree divide-y"><p>rows</p></div>');
   });
 });

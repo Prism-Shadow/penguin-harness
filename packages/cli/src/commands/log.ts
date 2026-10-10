@@ -1,17 +1,18 @@
 /**
- * `penguin logs` — render a session's history (and optionally follow it live).
+ * `penguin session log` — render a session's history (and optionally follow it live).
  *
- *   penguin logs [session_id] [--tail <n>] [-f|--follow] [--json] [--server <url>]
+ *   penguin session log [session_id] [--tail <n>] [-f|--follow] [--timeout <duration>]
+ *                       [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
  *
  * `[session_id]` is a full id or a unique fragment; omitted, it is the agent's most
  * recent session (announced as a dim `[latest]` line on stderr — see
- * resolveSessionTarget), so a bare `penguin logs` shows what just happened.
+ * resolveSessionTarget), so a bare `penguin session log` shows what just happened.
  *
  * History comes from GET /messages and renders through the same history renderer the
  * REPL's `--resume` uses; `--tail n` keeps the last n entries. `-f` keeps the command
  * attached: after the history it subscribes to the session's SSE stream and renders new
  * messages as they arrive (read-only — Ctrl-C detaches without touching the session).
- * Docs: /docs/cli § "penguin logs".
+ * Docs: /docs/cli § "penguin session log".
  */
 import type { Command } from "commander";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
@@ -28,12 +29,13 @@ import { SessionStream, nextFrameOrDeadline } from "../server-task.js";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { Messages } from "../i18n.js";
 
-export function registerLogsCommand(program: Command, t: Messages): void {
-  program
-    .command("logs [sessionId]")
-    .description(t.logs.desc)
-    .option("--tail <n>", t.logs.tail)
-    .option("-f, --follow", t.logs.follow)
+/** Registers `log` under the `penguin session` group (see session.ts). */
+export function registerLogCommand(session: Command, t: Messages): void {
+  session
+    .command("log [sessionId]")
+    .description(t.log.desc)
+    .option("--tail <n>", t.log.tail)
+    .option("-f, --follow", t.log.follow)
     .option("--timeout <duration>", t.common.timeout)
     .option("--project-id <id>", t.common.projectId)
     .option("--agent-id <id>", t.common.latestAgentId)
@@ -44,7 +46,7 @@ export function registerLogsCommand(program: Command, t: Messages): void {
       if (opts.tail !== undefined) {
         tail = Number(opts.tail);
         if (!Number.isInteger(tail) || tail <= 0) {
-          process.stderr.write(`${t.error(t.logs.tailInvalid(String(opts.tail)))}\n`);
+          process.stderr.write(`${t.error(t.log.tailInvalid(String(opts.tail)))}\n`);
           process.exitCode = 1;
           return;
         }
@@ -53,7 +55,7 @@ export function registerLogsCommand(program: Command, t: Messages): void {
       let timeoutMs: number | undefined;
       if (opts.timeout !== undefined) {
         if (opts.follow !== true) {
-          process.stderr.write(`${t.error(t.logs.timeoutNeedsFollow())}\n`);
+          process.stderr.write(`${t.error(t.log.timeoutNeedsFollow())}\n`);
           process.exitCode = 1;
           return;
         }
