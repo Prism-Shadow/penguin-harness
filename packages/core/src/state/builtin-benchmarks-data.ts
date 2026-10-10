@@ -12,7 +12,8 @@
  * A Project keeps the case list it was created with (project-benchmarks.ts writes a Benchmark
  * once, when the Project is created). Summaries say what a task asks and what it delivers, never
  * how to solve it: they are public to every agent that reads the Benchmark, an optimizer
- * included.
+ * included. Each row's `version` is its manifest's date version: an edit to a row, or to anything
+ * this file holds that its statements repeat, moves the version of every Benchmark it changes.
  */
 import type { BuiltinBenchmark } from "./builtin-benchmarks.js";
 
@@ -61,6 +62,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
       "Sec A is rag-bench-essential (Data Analysis Bench): data analysis over long reports, " +
       "hierarchical tables, spreadsheets, document libraries, a 144 MB survey microdata file and " +
       `a Formula 1 SQLite database, scored pass or fail by each case's own scorer. ${BUILT_IN}`,
+    version: "2026.10.09.1",
     repoDir: "rag-bench-essential",
     source: "rag-bench-essential, Data Analysis Bench (converted to Harbor tasks)",
     upstream: {
@@ -172,6 +174,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     description:
       "Sec B is DeepSWE v1.1: features and fixes in real open-source repositories, graded by the " +
       `projects' own tests on what the agent commits. ${BUILT_IN}`,
+    version: "2026.10.09.1",
     repoDir: "deep-swe",
     source: "DeepSWE v1.1 (Harbor Hub `datacurve/deep-swe-1-1`, revision 1)",
     upstream: { url: "https://github.com/datacurve-ai/deep-swe", license: "Apache-2.0" },
@@ -281,6 +284,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     description:
       "Sec C is AutomationBench: business workflows across simulated SaaS apps, driven through " +
       `a command-line tool and graded by the upstream rubric. ${BUILT_IN}`,
+    version: "2026.10.09.1",
     repoDir: "automation-bench",
     source: "AutomationBench 1.0.6 (converted to Harbor tasks)",
     upstream: { url: "https://github.com/zapier/AutomationBench", license: "MIT" },
@@ -390,6 +394,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     description:
       "Sec D is Terminal-Bench-Science 0.1: research-grade scientific computing done in a " +
       `terminal. ${BUILT_IN}`,
+    version: "2026.10.09.1",
     repoDir: "terminal-bench-science",
     source:
       "Terminal-Bench-Science 0.1 (Harbor Hub `terminal-bench-science/terminal-bench-science`, revision 10)",
@@ -520,6 +525,7 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     description:
       "Sec E is Terminal-Bench 4.0: hard, realistic tasks done in a terminal, across software, " +
       `security, science, machine learning, operations, hardware and media. ${BUILT_IN}`,
+    version: "2026.10.09.1",
     repoDir: "terminal-bench",
     source: "Terminal-Bench 4.0 (Harbor Hub `terminal-bench/terminal-bench`, revision 4)",
     upstream: { url: "https://github.com/harbor-framework/terminal-bench", license: "Apache-2.0" },

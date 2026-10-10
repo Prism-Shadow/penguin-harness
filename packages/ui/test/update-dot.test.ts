@@ -44,16 +44,18 @@ describe("UpdateDot", () => {
 });
 
 describe("UpdatePill", () => {
-  it("is a real button in the danger tint and ink, on the badge's type and the pill radius", () => {
+  it("is a real button in the attention tint and ink, on the badge's type and the pill radius", () => {
     const html = renderStatic(
       createElement(UpdatePill, { onClick: () => undefined, children: "Update available" }),
     );
     expect(html).toMatch(/^<button type="button"/);
     expect(html).toContain(">Update available</button>");
+    // Being behind is not a failure: the pill never takes the danger tone.
+    expect(html).not.toMatch(/tone-danger/);
     expect(classTokens(html)).toEqual(
       expect.arrayContaining([
-        "bg-tone-danger-bg",
-        "text-tone-danger-fg",
+        "bg-tone-attention-bg",
+        "text-tone-attention-fg",
         "text-[length:var(--ui-badge-size)]",
         "leading-[var(--ui-badge-lh)]",
         "rounded-[var(--ui-radius-pill)]",

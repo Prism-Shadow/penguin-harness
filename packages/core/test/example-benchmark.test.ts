@@ -2,8 +2,8 @@
  * The example Benchmark, as a new Project's provisioning writes it.
  *
  * - A new Project's provisioning writes the Project-level benchmarks/example-benchmark/: a
- *   parseable config (runs = 2), and a scoreboard with three self-consistent evaluations
- *   labelled with the Agent they tested.
+ *   manifest (runs = 2, published, seeded as builtin, a date version), and a scoreboard with
+ *   three self-consistent evaluations labelled with the Agent they tested.
  * - Benchmarks of the user's own, and a copy at the retired per-agent location, do not stand in
  *   for it, and are left as they are.
  * - No Agent writes it: initializing or loading default_agent leaves a deleted example deleted,
@@ -77,14 +77,18 @@ describe("example benchmark provisioning", () => {
     await provisionProjectBenchmarks(tmpRoot, DEFAULT_PROJECT_ID);
     const dir = path.join(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID), EXAMPLE_BENCHMARK_ID);
 
-    // benchmark_config.toml: title/description/runs=2/status=published; contains no model
-    // reference (the model is recorded on each evaluation instead).
+    // benchmark_config.toml: id/title/description/runs=2/status=published, seeded as builtin
+    // with a date version; contains no model reference (the model is recorded on each
+    // evaluation instead).
     const config = parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8"));
+    expect(config.id).toBe(EXAMPLE_BENCHMARK_ID);
     expect(config.title).toBe("Example Benchmark");
     expect(String(config.description)).toContain("built-in example");
     expect(String(config.description)).toContain("Replace it with your own");
     expect(Number(config.runs)).toBe(2);
     expect(config.status).toBe("published");
+    expect(config.origin).toEqual({ kind: "builtin" });
+    expect(config.version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
     expect(config).not.toHaveProperty("provider");
     expect(config).not.toHaveProperty("model_id");
 

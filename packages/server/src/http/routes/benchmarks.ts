@@ -9,8 +9,8 @@
  *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/files/content
  *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/rubric/files
  *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content
- * Returns the Project's Benchmark list (title/description from benchmark_config.toml)
- * along with the evaluations[] from scoreboard.yaml.
+ * Returns the Project's Benchmark list (title, description, version and the rest from each
+ * benchmark_config.toml) along with the evaluations[] from scoreboard.yaml.
  */
 import { Hono, type Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
