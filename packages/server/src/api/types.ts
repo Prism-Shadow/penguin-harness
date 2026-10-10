@@ -1258,6 +1258,24 @@ export interface AgentSummary {
   memoryCount: number;
   /** Whether the Agent's API tab switch is on (this server's web.db, see AgentApiSettings.enabled): the list card's API mark. */
   apiEnabled: boolean;
+  /**
+   * The organizations of this Project that employ the Agent, one entry per organization:
+   * every organization directory the Project holds, paused ones included, plus the CEO id of
+   * an organization whose chart does not parse. Absent or empty = not an employee. An
+   * employed Agent cannot be deleted (`DELETE` answers 409 `agent_employed`) until it leaves
+   * every one of them; development mode lists employees in a section of their own.
+   */
+  employments?: Employment[];
+}
+
+/** One organization employing an Agent, as the Agent list carries it (see {@link AgentSummary.employments}). */
+export interface Employment {
+  orgId: string;
+  /** The organization's display name (`org_config.toml`), the id when the config does not parse. */
+  orgName: string;
+  /** The Agent's title in that organization's chart; "CEO" for the CEO of a chart that does not parse. */
+  title: string;
+  status: OrgStatus;
 }
 
 export interface AgentsResponse {
@@ -4897,11 +4915,22 @@ export interface OrgEmployeeItem {
   budget?: number;
   model?: { provider: string; modelId: string };
   state: OrgEmployeeState;
+  /**
+   * The employee's current desk. Absent while the ledger names none, and while the Session
+   * it names no longer exists (deleted by hand, or with its Agent): a desk is listed only
+   * once it can be opened, and the reconcile pass re-opens a missing one when it can.
+   */
   desk?: { sessionId: string; workspace: string; openedAt: string };
   /** Period spend: own sessions, and cumulative (own + every subordinate). */
   spend: { own: number; cumulative: number; ratio?: number };
   /** Why the entry cannot be triggered (missing Agent, missing workspace directory). */
   invalid?: string;
+  /**
+   * The entry's Agent no longer exists (`invalid` carries the sentence). Its desk cannot be
+   * opened; the entry stays until a person makes the employee leave, or until an Agent with
+   * the same id is created again (which is how a deleted CEO is restored).
+   */
+  agentMissing?: true;
 }
 
 export interface OrgChartResponse {
@@ -5207,6 +5236,7 @@ export interface OrgDeskItem {
 }
 
 export interface OrgSessionsResponse {
+  /** One per employee whose current desk Session exists; a desk the ledger names but the server no longer has is left out. */
   desks: OrgDeskItem[];
   tickets: Array<{
     ticketId: string;

@@ -134,6 +134,7 @@ import { SkillPickList } from "../skills/skill-pick-list";
 import { toggleSkillName } from "../skills/skill-selection";
 import { sameModelRef } from "../models/model-grouping";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
+import { employeesLast, isEmployee } from "../agents/agent-employment";
 import { ModelCatalogSelect, modelLabel } from "./model-select";
 import { ModelPickerModal } from "./model-picker-modal";
 import { sessionModelPickerDisabled } from "./model-switch";
@@ -167,7 +168,8 @@ import { ReferenceChip } from "./reference-chip";
  * tile the draft Agent picker uses), the agentId in monospace — the id is what identifies an Agent
  * everywhere else in the app — and the display name after it when it differs. The conversation's
  * own Agent is marked like the model list marks the session's model; picking it is still a real
- * action (a fresh conversation with the same Agent), not a no-op.
+ * action (a fresh conversation with the same Agent), not a no-op. The organizations' employees
+ * come last, under a label of their own (agent-employment.ts).
  */
 function AgentMenuList({
   agents,
@@ -182,7 +184,8 @@ function AgentMenuList({
   const [query, setQuery] = useState("");
   return (
     <PickerList
-      items={filterAgents(agents, query)}
+      items={employeesLast(filterAgents(agents, query))}
+      groupLabel={(a) => (isEmployee(a) ? S.agent.employeesSection : null)}
       itemKey={(a) => a.agentId}
       isCurrent={(a) => a.agentId === currentAgentId}
       query={query}

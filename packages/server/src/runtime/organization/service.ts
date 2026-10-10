@@ -22,6 +22,7 @@ import type {
   OrgChannelMessage,
   OrgChannelMessageSendRequest,
   OrgChannelMessagesResponse,
+  Employment,
   OrgChartResponse,
   OrgDeskResponse,
   OrgEmployeeItem,
@@ -300,6 +301,39 @@ export class OrganizationService {
   // ---------------------------------------------------------------------------
   // Organizations
   // ---------------------------------------------------------------------------
+
+  /**
+   * Which organizations of the Project employ which Agents, by Agent id: every chart entry of
+   * every organization directory the store lists — paused ones included, since a paused
+   * organization keeps every desk reachable — plus each organization's CEO id, which stands
+   * even while the chart does not parse (the CEO is the one employee an organization cannot be
+   * without, and its id is fixed by the organization's). The Agent list marks employees with
+   * it, and an employee's Agent cannot be deleted. A directory removed by hand is not listed,
+   * so it employs nobody. A record rather than a Map, since it crosses the service interface;
+   * read it with `Object.hasOwn`, as an Agent id may be any word, `constructor` included.
+   */
+  async employments(projectId: string): Promise<Record<string, Employment[]>> {
+    const out: Record<string, Employment[]> = {};
+    const add = (agentId: string, employment: Employment) => {
+      if (Object.hasOwn(out, agentId)) out[agentId]!.push(employment);
+      else out[agentId] = [employment];
+    };
+    for (const orgId of await this.deps.store.listOrgIds(projectId)) {
+      const org = await loadOrg(this.deps, projectId, orgId);
+      if (org === null) continue;
+      const base = { orgId, orgName: org.config.name, status: org.config.status };
+      for (const e of org.chart.employees) add(e.agentId, { ...base, title: e.title });
+      const ceo = ceoAgentId(orgId);
+      if (!org.byId.has(ceo)) add(ceo, { ...base, title: "CEO" });
+    }
+    return out;
+  }
+
+  /** The organizations employing one Agent (see `employments`); empty when none does. */
+  async employersOf(projectId: string, agentId: string): Promise<Employment[]> {
+    const all = await this.employments(projectId);
+    return Object.hasOwn(all, agentId) ? all[agentId]! : [];
+  }
 
   async list(projectId: string): Promise<OrganizationSummary[]> {
     const out: OrganizationSummary[] = [];
@@ -741,7 +775,14 @@ export class OrganizationService {
             : undefined;
       const own = spend.own.get(e.agentId) ?? 0;
       const cumulative = spend.cumulative.get(e.agentId) ?? 0;
-      const desk = org.desks[e.agentId];
+      // A desk is listed only while its Session exists: the ledger keeps naming one that was
+      // deleted (by hand, or with its Agent) until the pass re-opens it, and handing that id
+      // out is what sent a click to a conversation the server no longer has.
+      const ledgerDesk = org.desks[e.agentId];
+      const desk =
+        ledgerDesk !== undefined && this.deps.sessions.findById(ledgerDesk.sessionId) !== null
+          ? ledgerDesk
+          : undefined;
       out.push({
         agentId: e.agentId,
         name: exists ? await this.deps.agents.displayName(org.projectId, e.agentId) : e.agentId,
@@ -772,6 +813,7 @@ export class OrganizationService {
           ...(e.budget !== undefined ? { ratio: budgetRatio(cumulative, e.budget) } : {}),
         },
         ...(invalid !== undefined ? { invalid } : {}),
+        ...(!exists ? { agentMissing: true as const } : {}),
       });
     }
     return out;
@@ -2479,6 +2521,9 @@ export class OrganizationService {
       const desk = org.desks[e.agentId];
       if (!desk) continue;
       const row = this.deps.sessions.findById(desk.sessionId);
+      // The ledger still names a Session that is gone (see employeeItems): not a desk anyone
+      // can open, so not a row — until the pass opens a new one.
+      if (row === null) continue;
       const messagingChannel = this.deps.messagingChannel(desk.sessionId);
       desks.push({
         agentId: e.agentId,
@@ -2486,10 +2531,10 @@ export class OrganizationService {
           ? await this.deps.agents.displayName(projectId, e.agentId)
           : e.agentId,
         sessionId: desk.sessionId,
-        ...(row?.title ? { title: row.title } : {}),
+        ...(row.title ? { title: row.title } : {}),
         status: this.deps.runner.statusOf(desk.sessionId),
         workspace: desk.workspace,
-        ...(row?.lastActiveAt ? { lastActiveAt: row.lastActiveAt } : {}),
+        ...(row.lastActiveAt ? { lastActiveAt: row.lastActiveAt } : {}),
         ...(messagingChannel !== null ? { messagingChannel } : {}),
       });
     }
@@ -2687,11 +2732,14 @@ function calendarStatus(
 
 /**
  * What the organization routes need of the runtime — declared where they consume it, so
- * the route group names one node instead of reaching into a bag.
+ * the route group names one node instead of reaching into a bag. The Agent routes read the
+ * two employment views (the list's marks, the delete guard).
  */
 export abstract class OrgService extends Interface<
   Pick<
     OrganizationService,
+    | "employments"
+    | "employersOf"
     | "list"
     | "create"
     | "detail"

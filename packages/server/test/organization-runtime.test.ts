@@ -2,7 +2,8 @@
  * Organization runtime semantics with doubles and a controlled clock — no real LLM, no
  * core Session: creation writes the files and opens the CEO's desk with an init run; a hire
  * opens the newcomer's desk and the reconcile pass opens the desks nothing else did (a
- * hand-added employee, a session deleted from under the ledger); a
+ * hand-added employee, a session deleted from under the ledger, which is listed nowhere until
+ * then); an employee whose Agent is gone is marked, offers no desk and stays until it leaves; a
  * calendar event registered after its time is not backfilled and fires on its next slot to
  * the employee's desk (queued when busy, held when the organization or the employee is
  * paused, held silently when the master switch is off); ticket changes are noticed once;
@@ -2775,7 +2776,7 @@ describe("organization runtime", () => {
       });
     });
 
-    it("provisions a desk the chart names but the ledger does not, and re-opens one whose session is gone", async () => {
+    it("provisions a desk the chart names but the ledger does not, and re-opens one whose session is gone, listing it nowhere in between", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
       const hired = (await service.chart(P, ORG)).employees.find((e) => e.agentId === HR)!;
@@ -2813,15 +2814,17 @@ describe("organization runtime", () => {
       });
       expect(started).toHaveLength(runs);
 
-      // A desk session deleted by hand (or with its Agent) leaves the ledger naming a Session
-      // the server cannot find — which is exactly what the row's messaging binding asks for,
-      // and what answered "Session does not exist". The pass opens a fresh one.
+      // A desk session deleted by hand leaves the ledger naming a Session the server cannot
+      // find. Until the pass replaces it the desk is listed nowhere: a row handing out that id
+      // is what sent a click into somebody else's conversation, and what a messaging binding
+      // answered "Session does not exist" for. The pass opens a fresh one.
       const gone = hired.desk!.sessionId;
       sessions.deleteByAgent(P, HR);
       expect(sessions.findById(gone)).toBeNull();
-      expect((await service.sessions(P, ORG)).desks.find((d) => d.agentId === HR)?.sessionId).toBe(
-        gone,
-      );
+      expect((await service.sessions(P, ORG)).desks.map((d) => d.agentId)).not.toContain(HR);
+      const stale = (await service.chart(P, ORG)).employees.find((e) => e.agentId === HR);
+      expect(stale).not.toHaveProperty("desk");
+      expect(stale).not.toHaveProperty("agentMissing");
       await scheduler.tickOnce();
       const healed = (await service.sessions(P, ORG)).desks.find((d) => d.agentId === HR);
       expect(healed?.sessionId).not.toBe(gone);
@@ -2873,6 +2876,42 @@ describe("organization runtime", () => {
       const desks = (await service.sessions(P, ORG)).desks.map((d) => d.agentId);
       expect(desks).toContain(dev);
       expect(desks).not.toContain(ghost);
+    });
+
+    it("marks an employee whose Agent is gone, offers no desk for it, and keeps it until it leaves", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      // Deleted the way the Agent route deletes one: the Agent, and every Session row it had.
+      existingAgents.delete(HR);
+      sessions.deleteByAgent(P, HR);
+
+      const chart = await service.chart(P, ORG);
+      const orphan = chart.employees.find((e) => e.agentId === HR);
+      expect(orphan).toMatchObject({ agentMissing: true, invalid: expect.any(String) });
+      expect(orphan).not.toHaveProperty("desk");
+      const ceo = chart.employees.find((e) => e.agentId === CEO);
+      expect(ceo).not.toHaveProperty("agentMissing");
+      expect(ceo?.desk).toBeDefined();
+
+      // Each pass says once that the desk cannot be opened, and opens nothing for it.
+      errors.length = 0;
+      const opened = created.length;
+      await scheduler.tickOnce();
+      expect(
+        errors.filter((e) => e.code === "org_desk_unavailable" && e.ctx?.agentId === HR),
+      ).toHaveLength(1);
+      expect(created).toHaveLength(opened);
+      expect((await service.sessions(P, ORG)).desks.map((d) => d.agentId)).not.toContain(HR);
+      // Asked for directly, the desk is refused rather than answered with a dead id.
+      await expect(service.desk(P, ORG, HR, {})).rejects.toMatchObject({
+        status: 409,
+        code: "desk_unavailable",
+      });
+
+      // Nothing takes the entry out on its own; leaving does.
+      expect((await service.chart(P, ORG)).employees.map((e) => e.agentId)).toContain(HR);
+      await service.leave(P, ORG, HR);
+      expect((await service.chart(P, ORG)).employees.map((e) => e.agentId)).not.toContain(HR);
     });
 
     it("pausing keeps every desk session open, and nothing removes an organization", async () => {

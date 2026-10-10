@@ -1563,6 +1563,18 @@ export const zh = {
     livesOnMachine: (machine: string) => `该 Agent 在 ${machine} 上，请到那台机器上管理`,
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
+    /** The Agents page's section of organization employees, and its "?" (what an employee is here). */
+    employeesSection: "公司模式员工",
+    employeesSectionInfo:
+      "这些 Agent 是组织的员工，在公司模式里工作。这里照样可以和它们对话、修改设置；员工在公司模式离任后才能删除。",
+    /** One organization an employee works in, on its card: `<organization> · <title>`. */
+    employmentLine: (orgName: string, title: string): string => `${orgName} · ${title}`,
+    /** The disabled delete button's tooltip on an employee: every organization it works in. */
+    employedUndeletable: (employments: ReadonlyArray<{ orgName: string; title: string }>): string =>
+      `该 Agent 是${employments.map((e) => `组织「${e.orgName}」的员工（${e.title}）`).join("、")}，请先在公司模式让其离任`,
+    /** The sidebar's Agent group header tooltip, when the Agent is an employee. */
+    employeeMark: (employments: ReadonlyArray<{ orgName: string; title: string }>): string =>
+      `公司模式员工：${employments.map((e) => `${e.orgName} · ${e.title}`).join("、")}`,
     deleteConfirm: (name: string): string =>
       `确认删除 Agent「${name}」？其目录（含全部 Trace）将被递归删除，不可恢复。`,
     /** Agent State section: the State version with the snapshot transfer actions, plus the copyable State path. */
@@ -3336,6 +3348,9 @@ Benchmark：
     sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
     sessionOnOfflineMachineUnknown: "这个对话在某台机器上，当前没有连接。",
     sessionOfflineHint: "连接恢复后会自动打开。",
+    /** The routed conversation does not exist (a stale link, or deleted elsewhere): said in place, never swapped for another conversation. */
+    sessionNotFound: "会话不存在或已被删除",
+    sessionNotFoundHint: "这个链接指向的会话已经不在了，或者你没有访问它的权限。",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",
     statsLabel: "统计信息",
@@ -4623,6 +4638,8 @@ Benchmark：
     orgGoneTitle: "组织不存在",
     orgGoneBody: "它可能已被删除，或者你不再能访问它所属的 Project。",
     backToOrgs: "回到组织列表",
+    /** A missing conversation opened in company mode: the way back. */
+    backToOverview: "回到组织概览",
     /** Create dialog. */
     createTitle: "新建组织",
     orgId: "组织 id",
@@ -4766,6 +4783,8 @@ Benchmark：
       closeTemporary: "从「临时」中移除",
       /** The Temporary group header's action: removes every entry at once; the sessions themselves are kept. */
       closeAllTemporary: "全部关闭",
+      /** A desk row whose employee's Agent was deleted: dimmed, never opened. */
+      agentMissing: "Agent 已删除，无法打开工位",
     },
     overview: {
       title: "概览",
@@ -4852,6 +4871,11 @@ Benchmark：
       renewDesk: "换工位",
       leave: "离任",
       ceoCannotLeave: "CEO 不能离任",
+      setThinkingLevel: "设思考等级",
+      /** An entry whose Agent no longer exists: the card's flag, and the chart's notice when it is the CEO. */
+      agentMissing: "Agent 已删除",
+      ceoMissing: (ceoId: string): string =>
+        `CEO 的 Agent 已删除，组织无法运行：重新创建 id 为 ${ceoId} 的 Agent 即可恢复。`,
       invalidEntry: "该条目无效",
       workspaceTail: "工作区",
       /** Hire dialog. */
@@ -4920,6 +4944,16 @@ Benchmark：
       currentValue: (value: string): string => `当前：${value}`,
       manager: "上级",
       reportsToHint: "只列出不在其下属范围内的员工",
+      /** The thinking-level edit: it writes the employee's Agent config, the place a desk reads it from. */
+      thinkingLevelTitle: (name: string): string => `设置 ${name} 的思考等级`,
+      thinkingLevelInfo:
+        "写入该员工 Agent 的配置，与开发模式里这个 Agent 的设置是同一处。工位会话自下一个模型上下文起使用它，新开的工单会话直接使用；在工位会话里选的思考等级只固定那一个会话。",
+      /** No level of the Agent's own: the Project default applies, and this is what it resolves to. */
+      thinkingLevelDefault: (level: string): string => `Project 默认（${level}）`,
+      thinkingLevelConfirm: (name: string, level: string): string =>
+        `将 ${name} 的思考等级改为「${level}」？会写入该 Agent 的配置。`,
+      thinkingLevelPinned: (level: string): string =>
+        `当前工位会话已单独固定为「${level}」，此设置自下次换工位起对工位生效。`,
     },
     calendar: {
       title: "日历",
@@ -5456,6 +5490,7 @@ Benchmark：
       calendar_event_exists: "已存在同名日程。",
       calendar_event_not_found: "该日程已不存在。",
       desk_unavailable: "无法打开工位会话。",
+      agent_employed: "该 Agent 仍是组织的员工：先在公司模式让其离任，再删除。",
       ticket_not_found: "该工单已不存在。",
       ticket_invalid: "该工单文件需要修复，修好前不接受改动。",
       ticket_session_failed: "无法发起工单会话。",

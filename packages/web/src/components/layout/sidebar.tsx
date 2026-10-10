@@ -222,6 +222,7 @@ import { CompanyBetaBadge } from "../../features/company/company-beta";
 import { ChannelSidebar } from "../../features/company/channel-sidebar";
 import { OrgSessionGroups } from "../../features/company/org-session-groups";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
+import { dropsEmployeeGroup, employmentsOf } from "../../features/agents/agent-employment";
 import {
   COMPANY_NAV_KEYS,
   isOrgRoute,
@@ -735,9 +736,26 @@ export function Sidebar({
    * hides rows rather than emptying a group, and a list that folded and reshuffled itself as
    * the user typed would be unreadable.
    */
+  /**
+   * The Agents that get a group: every Agent but an organization's employee with no
+   * development conversation of its own (agent-employment.ts). Its desk and ticket sessions
+   * are company mode's and never counted here, so its group would only ever be empty; it
+   * comes back the moment a development conversation with it exists.
+   */
+  const groupAgents = useMemo(
+    () =>
+      agents.filter(
+        (agent) =>
+          !dropsEmployeeGroup(
+            agent,
+            groupShares(countsByAgent.get(agent.agentId), byAgent.get(agent.agentId) ?? []),
+          ),
+      ),
+    [agents, countsByAgent, byAgent],
+  );
   const folderOnlyAgents = useMemo(() => {
     const out = new Map<string, number>();
-    for (const agent of agents) {
+    for (const agent of groupAgents) {
       const shares = groupShares(
         countsByAgent.get(agent.agentId),
         byAgent.get(agent.agentId) ?? [],
@@ -745,7 +763,7 @@ export function Sidebar({
       if (isFolderOnly(shares.active, shares.folded)) out.set(agent.agentId, shares.folded);
     }
     return out;
-  }, [agents, countsByAgent, byAgent]);
+  }, [groupAgents, countsByAgent, byAgent]);
   const folderOnlyWorkspaceGroups = useMemo(() => {
     const out = new Map<string, number>();
     for (const group of workspaceGroups) {
@@ -765,12 +783,12 @@ export function Sidebar({
   // collide, and it costs the empty-order fast path on every render of the other mode.
   const orderedAgents = useMemo(
     () =>
-      orderGroups(agents, (a) => a.agentId, {
+      orderGroups(groupAgents, (a) => a.agentId, {
         pinned: pinnedGroups,
         order: groupMode === "agent" ? groupOrder : [],
         demote: (a) => folderOnlyAgents.has(a.agentId),
       }),
-    [agents, pinnedGroups, groupOrder, groupMode, folderOnlyAgents],
+    [groupAgents, pinnedGroups, groupOrder, groupMode, folderOnlyAgents],
   );
   const orderedWorkspaceGroups = useMemo(
     () =>
@@ -2560,6 +2578,10 @@ export function Sidebar({
                       : !expandedFolderOnlyGroups.has(agent.agentId));
                   const pinned = pinnedGroups.has(agent.agentId);
                   const drag = groupDragProps(agent.agentId, agentGroupSequence);
+                  /** An organization's employee says so in its header's tooltip. */
+                  const employments = employmentsOf(agent);
+                  const employeeNote =
+                    employments.length === 0 ? null : S.agent.employeeMark(employments);
                   return (
                     <GroupBlock key={agent.agentId} dropEdge={drag.dropEdge}>
                       {/* Group header: collapse toggle (Agent name) + pin + new chat + Agent settings; also the group's drag handle. */}
@@ -2578,13 +2600,18 @@ export function Sidebar({
                         label={agentDisplayName(agent)}
                         uppercase
                         {...(foldedOnly === undefined
-                          ? {}
+                          ? employeeNote === null
+                            ? {}
+                            : { title: employeeNote }
                           : {
                               // An Agent header carries no count otherwise; a folder-only one says
                               // what it holds, because everything it holds is behind its folders.
                               count: foldedOnly,
                               muted: true,
-                              title: S.chat.folderOnlyGroup(foldedOnly),
+                              title:
+                                employeeNote === null
+                                  ? S.chat.folderOnlyGroup(foldedOnly)
+                                  : `${S.chat.folderOnlyGroup(foldedOnly)} · ${employeeNote}`,
                             })}
                         actions={
                           <>

@@ -13,6 +13,10 @@
  * Every status colour is a tone picked by meaning; running and on-desk share emerald and
  * are told apart by motion (the running dot pulses) and by their labels.
  *
+ * An entry whose Agent was deleted says so where the workspace would be — 「Agent 已删除」
+ * beside the invalid glyph, since the workspace means nothing without an Agent to work in it —
+ * and its menu leaves out whatever needs the Agent (org-chart-page.tsx).
+ *
  * Three ways into that one menu, all of them the same panel: the kebab in the top-right
  * corner (the only focusable thing on the card, and the pointer's discoverable route), a
  * secondary click anywhere on the card, and Shift+F10 from the focused kebab. The sidebar's
@@ -149,8 +153,13 @@ export function ChartCard({
   }`;
   const fill =
     employee.spend.ratio === undefined ? 0 : Math.min(100, Math.max(0, employee.spend.ratio * 100));
+  const missing = employee.agentMissing === true;
   const flagged = employee.invalid !== undefined || detached;
-  const flag = employee.invalid ?? (detached ? S.company.chart.detached : undefined);
+  // The server's sentence is English and names the id; a deleted Agent is said in the reader's
+  // language instead.
+  const flag = missing
+    ? S.company.chart.agentMissing
+    : (employee.invalid ?? (detached ? S.company.chart.detached : undefined));
   return (
     <div
       ref={ctx.rowRef}
@@ -189,7 +198,7 @@ export function ChartCard({
         <span className="mt-2 flex items-center gap-1.5 text-xs leading-4 text-gray-600 dark:text-gray-300">
           <ChartStateDot state={state} />
           <span
-            className="flex min-w-0 flex-1 items-center gap-1 font-mono text-fg-subtle"
+            className={`flex min-w-0 flex-1 items-center gap-1 text-fg-subtle${missing ? "" : " font-mono"}`}
             data-tooltip={flag ?? employee.resolvedWorkspace ?? employee.workspace}
           >
             {flag !== undefined ? (
@@ -199,7 +208,9 @@ export function ChartCard({
             ) : (
               <GlyphIcon d={ICONS.folder} size={10} />
             )}
-            <span className="truncate">{workspaceTail(employee.workspace)}</span>
+            <span className="truncate">
+              {missing ? S.company.chart.agentMissing : workspaceTail(employee.workspace)}
+            </span>
           </span>
           <span
             className={`shrink-0 tabular-nums ${

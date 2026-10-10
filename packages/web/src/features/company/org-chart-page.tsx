@@ -2,9 +2,12 @@
  * The org chart: the reporting line as a top-down tree with the CEO at the top centre
  * (layout in org-chart-tree.ts), each node an employee card (chart-card.tsx). The card has
  * one menu and no other action: it opens the desk session, and holds the personnel actions
- * below that — hire a subordinate, set budget, change the reporting line, renew the desk (a
- * fresh desk session, and the workspace it runs in), leave. Every one of the personnel actions
- * confirms before it writes the chart file. The card owns when that menu is open (three
+ * below that — hire a subordinate, set budget, set the thinking level (the employee's Agent
+ * config, which its desk reads), change the reporting line, renew the desk (a fresh desk
+ * session, and the workspace it runs in), leave. Every one of the personnel actions confirms
+ * before it writes. An employee whose Agent was deleted keeps only what needs no Agent — no
+ * desk to open or renew, no config to write — so 「离任」 is how it is removed; a deleted CEO
+ * cannot leave, and the page says how to restore it instead. The card owns when that menu is open (three
  * gestures reach it — see chart-card.tsx); this page only supplies the rows, against the
  * panel's own close, and bumps `viewEpoch` whenever the canvas moves the cards out from under
  * an open one.
@@ -72,11 +75,12 @@ import { ChartCard, ChartLegend } from "./chart-card";
 import { DeskRenewDialog, EmployeeEditDialog, HireDialog } from "./employee-dialogs";
 import type { EmployeeEdit } from "./employee-dialogs";
 
-/** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
+/** Node-menu glyphs: the open door of a desk session, a plus person for hiring, a coin for budget, the composer's spark for the thinking level, an arrow for the line, a turning arrow for a fresh desk, a door out for leaving. */
 const MENU_ICONS = {
   openDesk: DESK_ICON,
   hire: ICONS.userPlus,
   budget: ICONS.dollarCircle,
+  thinkingLevel: ICONS.sparkle,
   reportsTo: ICONS.letterMArrow,
   renewDesk: ICONS.rotateCw,
   leave: ICONS.signOut,
@@ -354,6 +358,8 @@ export function OrgChartPage() {
   }
 
   const byId = new Map(chart.employees.map((e) => [e.agentId, e]));
+  /** The CEO's Agent was deleted: the organization cannot run until it is created again. */
+  const ceoMissing = byId.get(chart.ceoAgentId)?.agentMissing === true;
 
   const menuRow = (
     close: () => void,
@@ -378,29 +384,44 @@ export function OrgChartPage() {
   /* Opening the desk sits first and apart: it is where the reader goes, while everything
      below it rewrites the chart file. `close` is the card's own panel dismissal — the card
      owns the menu, since only it sees the gesture that opened one. */
-  const nodeMenu = (employee: OrgEmployeeItem, isCeo: boolean, close: () => void) => (
-    <Menu density="sm">
-      {menuRow(close, MENU_ICONS.openDesk, S.company.openDesk, () => void openDesk(employee))}
-      <MenuSeparator />
-      {menuRow(close, MENU_ICONS.hire, S.company.chart.hire, () => setHireFor(employee))}
-      {menuRow(close, MENU_ICONS.budget, S.company.chart.setBudget, () =>
-        setEditFor({ employee, edit: "budget" }),
-      )}
-      {!isCeo &&
-        menuRow(close, MENU_ICONS.reportsTo, S.company.chart.changeReportsTo, () =>
-          setEditFor({ employee, edit: "reportsTo" }),
+  const nodeMenu = (employee: OrgEmployeeItem, isCeo: boolean, close: () => void) => {
+    /** The entry's Agent is gone: nothing that opens a desk or writes the Agent's config. */
+    const missing = employee.agentMissing === true;
+    return (
+      <Menu density="sm">
+        {!missing && (
+          <>
+            {menuRow(close, MENU_ICONS.openDesk, S.company.openDesk, () => void openDesk(employee))}
+            <MenuSeparator />
+          </>
         )}
-      {menuRow(close, MENU_ICONS.renewDesk, S.company.chart.renewDesk, () => setRenewFor(employee))}
-      <MenuSeparator />
-      {isCeo ? (
-        <span className="block px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">
-          {S.company.chart.ceoCannotLeave}
-        </span>
-      ) : (
-        menuRow(close, MENU_ICONS.leave, S.company.chart.leave, () => setLeaveFor(employee), true)
-      )}
-    </Menu>
-  );
+        {menuRow(close, MENU_ICONS.hire, S.company.chart.hire, () => setHireFor(employee))}
+        {menuRow(close, MENU_ICONS.budget, S.company.chart.setBudget, () =>
+          setEditFor({ employee, edit: "budget" }),
+        )}
+        {!missing &&
+          menuRow(close, MENU_ICONS.thinkingLevel, S.company.chart.setThinkingLevel, () =>
+            setEditFor({ employee, edit: "thinkingLevel" }),
+          )}
+        {!isCeo &&
+          menuRow(close, MENU_ICONS.reportsTo, S.company.chart.changeReportsTo, () =>
+            setEditFor({ employee, edit: "reportsTo" }),
+          )}
+        {!missing &&
+          menuRow(close, MENU_ICONS.renewDesk, S.company.chart.renewDesk, () =>
+            setRenewFor(employee),
+          )}
+        <MenuSeparator />
+        {isCeo ? (
+          <span className="block px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">
+            {S.company.chart.ceoCannotLeave}
+          </span>
+        ) : (
+          menuRow(close, MENU_ICONS.leave, S.company.chart.leave, () => setLeaveFor(employee), true)
+        )}
+      </Menu>
+    );
+  };
 
   const zoomControl = (
     <div className="flex items-center" role="group" aria-label={S.company.chart.zoom}>
@@ -455,6 +476,11 @@ export function OrgChartPage() {
           retry={{ label: S.common.retry, onClick: () => void load() }}
         >
           {S.company.chart.refreshFailed(error)}
+        </Notice>
+      )}
+      {ceoMissing && (
+        <Notice tone="attention" className="mb-3">
+          {S.company.chart.ceoMissing(chart.ceoAgentId)}
         </Notice>
       )}
       {layout.detached.length > 0 && (

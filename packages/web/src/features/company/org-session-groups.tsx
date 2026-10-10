@@ -13,6 +13,10 @@
  * desks, newest first, until the reader removes one with its ✕ or all of them with the header's
  * "Close all"; the group shows only while it lists something (temp-session.ts).
  *
+ * An employee whose Agent was deleted keeps its row, dimmed and inert, its tooltip saying why:
+ * the employee is still in the chart until a person makes it leave, and there is no desk to
+ * open — a click must never land in somebody else's conversation instead.
+ *
  * A row that names a desk session carries the development list's row menu (right-click, and
  * the hover ellipsis), pared down to the two actions an organization leaves to the reader:
  * copy the Session id, and bind the desk to a messaging bot. A desk's title and its lifecycle are
@@ -165,8 +169,12 @@ function DeskRow({
   const messagingChannel = row.messagingChannel;
   const activity = orgRowActivity(row.status);
   const deskName = S.company.sessionList.deskOf(row.name);
-  const label =
-    activity === "running" ? `${deskName} · ${S.company.sessionList.running}` : deskName;
+  const missing = row.agentMissing === true;
+  const label = missing
+    ? `${deskName} · ${S.company.sessionList.agentMissing}`
+    : activity === "running"
+      ? `${deskName} · ${S.company.sessionList.running}`
+      : deskName;
 
   /** Run one action on this desk's Session, closing the menu first if it was open. */
   const run = (action: SessionRowAction) => {
@@ -205,15 +213,24 @@ function DeskRow({
           type="button"
           aria-current={active ? "true" : undefined}
           disabled={opening}
-          data-tooltip={row.jobTitle !== "" ? `${row.name} · ${row.jobTitle}` : row.name}
+          // Inert rather than disabled, so the pointer still reaches the tooltip saying why.
+          {...(missing ? { "aria-disabled": true } : {})}
+          data-tooltip={
+            missing
+              ? `${row.name} · ${S.company.sessionList.agentMissing}`
+              : row.jobTitle !== ""
+                ? `${row.name} · ${row.jobTitle}`
+                : row.name
+          }
           aria-label={label}
           // A press-and-hold that opened the menu must not also open the desk: touch screens
           // replay the held press as a click once the finger lifts.
           onClick={() => {
             if (ctx.consumeLongPressClick()) return;
+            if (missing) return;
             onOpen();
           }}
-          className={rowButton(active)}
+          className={`${rowButton(active)}${missing ? " cursor-default opacity-60" : ""}`}
         >
           <AgentAvatar
             id={row.agentId}
@@ -534,10 +551,13 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
   return (
     <>
       {desks.map((d) => {
+        const missing = d.agentMissing === true;
         const running = orgRowActivity(d.status) !== null;
-        const name = running
-          ? `${S.company.sessionList.deskOf(d.name)} · ${S.company.sessionList.running}`
-          : S.company.sessionList.deskOf(d.name);
+        const name = missing
+          ? `${S.company.sessionList.deskOf(d.name)} · ${S.company.sessionList.agentMissing}`
+          : running
+            ? `${S.company.sessionList.deskOf(d.name)} · ${S.company.sessionList.running}`
+            : S.company.sessionList.deskOf(d.name);
         return (
           <button
             key={d.agentId}
@@ -545,8 +565,11 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
             data-tooltip={name}
             aria-label={name}
             disabled={opening === d.agentId}
-            onClick={() => void openDesk(d.agentId, d.sessionId)}
-            className={`${railItemClass()} disabled:opacity-60`}
+            {...(missing ? { "aria-disabled": true } : {})}
+            onClick={() => {
+              if (!missing) void openDesk(d.agentId, d.sessionId);
+            }}
+            className={`${railItemClass()} disabled:opacity-60${missing ? " opacity-60" : ""}`}
           >
             <AgentAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
             {running && (
