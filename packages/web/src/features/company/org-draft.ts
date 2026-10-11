@@ -25,6 +25,8 @@ export interface OrgCreateDraft {
   name: string;
   mission: string;
   workspace: string;
+  /** The machine the organization is to live on — and so the one `workspace` is a path on. Null = this server. */
+  machineId: string | null;
   model: ModelRefDto | null;
   ceoBudget: string;
 }
@@ -34,6 +36,7 @@ export const EMPTY_ORG_DRAFT: OrgCreateDraft = {
   name: "",
   mission: "",
   workspace: "",
+  machineId: null,
   model: null,
   ceoBudget: "",
 };
@@ -75,6 +78,7 @@ export function parseOrgDraft(raw: string | null): OrgCreateDraft | null {
     name: str(d.name),
     mission: str(d.mission),
     workspace: str(d.workspace),
+    machineId: typeof d.machineId === "string" && d.machineId !== "" ? d.machineId : null,
     model: parseModel(d.model),
     ceoBudget: str(d.ceoBudget),
   };

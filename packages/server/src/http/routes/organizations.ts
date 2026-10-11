@@ -205,6 +205,7 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const name = optionalString(body, "name", { minLen: 1, maxLen: 100 });
     const timezone = optionalString(body, "timezone", { minLen: 1, maxLen: 64 });
     const workspace = optionalString(body, "workspace", { minLen: 1, maxLen: 4096 });
+    const workspaceMachine = optionalString(body, "workspaceMachine", { minLen: 1, maxLen: 200 });
     const ceoBudget = optionalNumber(body, "ceoBudget", { nonNegative: true });
     const language = optionalEnum(body, "language", LANGUAGES);
     const model = parseModel(body);
@@ -216,13 +217,35 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
         ...(name !== undefined ? { name } : {}),
         ...(timezone !== undefined ? { timezone } : {}),
         ...(workspace !== undefined ? { workspace } : {}),
+        ...(workspaceMachine !== undefined ? { workspaceMachine } : {}),
         ...(ceoBudget !== undefined ? { ceoBudget } : {}),
         ...(language !== undefined ? { language } : {}),
         ...(model !== undefined && model !== null ? { model } : {}),
       },
       c.var.user.userId,
+      { admin: c.var.user.isAdmin === true },
     );
     return c.json(detail, 201);
+  });
+
+  // An organization that runs on another machine is answered THERE (the Web App sends its
+  // requests through `/server/<machineId>/…`). What this server holds is a mirror: a write to
+  // it would be undone by the next copy, so it is refused with where to send it instead. The
+  // mirror's own two routes are the exception — they are how a mirror is read.
+  app.use("/:orgId/*", async (c, next) => {
+    if (c.req.method === "GET" || c.req.method === "HEAD") return next();
+    const projectId = c.req.param("projectId") ?? "";
+    const machineId = await Promise.resolve(
+      deps.orgService.runsOn(projectId, c.req.param("orgId")),
+    ).catch(() => null);
+    if (typeof machineId === "string") {
+      throw new HttpError(
+        409,
+        "org_runs_elsewhere",
+        `This organization runs on machine ${machineId}; send the request there.`,
+      );
+    }
+    return next();
   });
 
   app.get("/:orgId", async (c) => {
@@ -276,6 +299,24 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
   });
 
   // ---- employees ----
+
+  // What a server holding this organization's mirror copies: the file list by content hash,
+  // and one file's bytes (runtime/organization/mirror.ts).
+  app.get("/:orgId/mirror", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    member(c, projectId);
+    const orgId = requireValidId(c, "orgId");
+    return c.json({ files: await deps.orgService.mirrorFiles(projectId, orgId) });
+  });
+
+  app.get("/:orgId/mirror/file", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    member(c, projectId);
+    const orgId = requireValidId(c, "orgId");
+    const rel = c.req.query("path") ?? "";
+    const bytes = await deps.orgService.mirrorFile(projectId, orgId, rel);
+    return c.json({ base64: bytes.toString("base64") });
+  });
 
   // Deleting is a Project-level management operation, like deleting an Agent: owner only.
   // The organization itself is what goes (to the Project's trash); its employees' Agents and

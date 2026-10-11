@@ -62,6 +62,7 @@ import type { AvatarCrop } from "../../lib/avatar-image";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
+import { machineForOrg } from "../../lib/org-machines";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
@@ -159,7 +160,23 @@ function HireForm({
   onHired,
   library,
 }: Omit<HireDialogProps, "open"> & { library: HirePluginItem[] | null }) {
-  const { agents } = useProject();
+  const project = useProject();
+  // An Agent is per server: an organization on another machine hires THAT machine's Agents.
+  const orgMachine = machineForOrg(projectId, orgId);
+  const [machineAgents, setMachineAgents] = useState<typeof project.agents | null>(null);
+  useEffect(() => {
+    if (orgMachine === null) return;
+    let cancelled = false;
+    setMachineAgents(null);
+    api.listAgents(projectId, orgMachine).then(
+      (res) => !cancelled && setMachineAgents(res.agents),
+      () => !cancelled && setMachineAgents([]),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, orgMachine]);
+  const agents = orgMachine === null ? project.agents : (machineAgents ?? []);
   const { currency } = useTheme();
   const company = useCompany();
 

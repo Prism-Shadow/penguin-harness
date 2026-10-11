@@ -30,6 +30,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { channelIdProblem } from "./channel-list";
 import type { ChannelIdProblem } from "./channel-list";
+import { machineForOrg } from "../../lib/org-machines";
 import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { ErrorLine } from "./shared";
 
@@ -137,6 +138,7 @@ function NewChannelForm({
         />
         <SemanticIdField
           projectId={projectId}
+          machineId={machineForOrg(projectId, orgId)}
           kind="channel"
           label={S.company.channels.idField}
           hint={S.company.channels.idHint}
