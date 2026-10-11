@@ -1,5 +1,5 @@
 /**
- * Opening a link a terminal printed (features/terminal/terminal-links.ts).
+ * Opening a link a terminal printed (terminal-links.ts).
  *
  * Terminal output is a program's, not the reader's, so the scheme check is the load-bearing
  * part: a `javascript:` or `data:` link is as easy to print as an `https:` one, and this is
@@ -15,7 +15,7 @@ import {
   openTerminalLink,
   positionFromPointer,
   rangeContains,
-} from "../src/features/terminal/terminal-links";
+} from "../terminal-links";
 
 afterEach(() => {
   vi.unstubAllGlobals();

@@ -52,7 +52,7 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { AppInfoDialog } from "../account/app-info-dialog";
-import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { TerminalDockRuntime } from "../../features/terminal";
 import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
 import { dispatchBrowser } from "../../features/builtin-browser/browser-store";

@@ -9,10 +9,12 @@ import { onCommand } from "../../lib/shortcuts/dispatcher";
 import {
   HttpStatusError,
   fetchJson,
+  liveTerminals,
+  noteTerminalCreated,
   probeJson,
+  refreshTerminals,
   type TerminalInfo,
-} from "../terminal/terminal-view";
-import { liveTerminals, noteTerminalCreated, refreshTerminals } from "../terminal/terminal-list";
+} from "../terminal";
 import { machineForTerminal, rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   addTerminalTab,

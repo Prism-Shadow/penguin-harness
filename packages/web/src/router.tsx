@@ -40,7 +40,7 @@ import { ModelsPage } from "./features/models/models-page";
 import { UsagePage } from "./features/usage/usage-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { BenchmarkDetailPage } from "./features/benchmark/benchmark-detail-page";
-import { TerminalPage } from "./features/terminal/terminal-page";
+import { TerminalPage } from "./features/terminal";
 import { OrgIndexRedirect, OrgLayout } from "./features/company/org-layout";
 import { OverviewPage } from "./features/company/overview-page";
 import { OrgChartPage } from "./features/company/org-chart-page";
