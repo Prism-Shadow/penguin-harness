@@ -434,6 +434,8 @@ export type DesktopApi = Pick<
   | "requestFolderAccess"
   | "onPrivacySettingsCommand"
   | "requestPrivacySettings"
+  | "onOpenWindowCommand"
+  | "requestOpenWindow"
 >;
 
 /** The desktop shell's service, or null when this server is not the shell's child. */

@@ -986,6 +986,7 @@ export const en: Strings = {
         ? "↑↓ to select · Enter to run"
         : `${toggle} to toggle · ↑↓ to select · Enter to run`,
     harnessHistory: "Harness history",
+    newWindow: "New Window",
   },
   modelPicker: {
     groups: "Model groups",

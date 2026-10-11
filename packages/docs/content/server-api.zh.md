@@ -1276,6 +1276,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | POST | `/api/desktop/update/check`、`/api/desktop/update/download`、`/api/desktop/update/install` | 把命令转发给桌面 shell；202 |
 | GET / PUT | `/api/desktop/tray` | 读取系统托盘图标偏好：`{status}` / 转发更改：`{showTrayIcon?, locale?}` → 202 |
 | POST | `/api/desktop/privacy-settings` | 请 shell 打开 macOS「隐私与安全性」的某个面板：`{pane}`（`files` 或 `fullDisk`）→ 202 |
+| POST | `/api/desktop/window` | 请 shell 再打开一个桌面应用的窗口，显示 App → 202 |
 | POST | `/api/hmr/assets/probe` | 热更新：报告存储缺少哪些 blob |
 | PUT | `/api/hmr/blobs/:sha` | 热更新：按 sha256 上传一个 blob |
 | POST | `/api/hmr/upgrade` | 热更新：把 platform、CLI 和 web bundle 一并升到新版本。构建无法完整运行全部已装插件时返回 `409` `plugins_unsatisfied`，`error.plugins` 逐个列出 `{specifier, disabled, reason}`；带上请求头 `x-penguin-unsatisfied-plugins: leave-out` 重发，推送照常完成，应答里以 `unsatisfiedPlugins` 附上同一份清单 |
@@ -1283,7 +1284,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 
 - 非桌面模式下，桌面路由返回 `404` `not_found`。
 - `POST /api/desktop/shutdown` 不使用 cookie 会话。它用桌面 shell 专有的 Bearer token 认证（否则返回 `401` `unauthorized`），先应答，再立即开始优雅关闭。
-- update、tray 和 privacy-settings 路由只响应桌面 shell 自己的窗口：其他任何会话都会得到 `403` `desktop_shell_only`。shell 未监听时，返回 `503` `shell_unreachable`。`showTrayIcon` 不是布尔值时，`PUT /api/desktop/tray` 返回 `400` `invalid_show_tray_icon`；`locale` 不是 `zh` 或 `en` 时返回 `400` `invalid_locale`；两个字段都未提供时返回 `400` `empty_tray_patch`。PUT 只确认收到更改；请用 GET 读回实际结果。
+- update、tray、privacy-settings 和 window 路由只响应桌面 shell 自己的窗口：其他任何会话都会得到 `403` `desktop_shell_only`。shell 未监听时，返回 `503` `shell_unreachable`。`showTrayIcon` 不是布尔值时，`PUT /api/desktop/tray` 返回 `400` `invalid_show_tray_icon`；`locale` 不是 `zh` 或 `en` 时返回 `400` `invalid_locale`；两个字段都未提供时返回 `400` `empty_tray_patch`。PUT 只确认收到更改；请用 GET 读回实际结果。
 - `pane` 不是 `files`（文件与文件夹）或 `fullDisk`（完全磁盘访问权限）时，`POST /api/desktop/privacy-settings` 返回 `400` `invalid_privacy_pane`。shell 只在 macOS 上打开面板。
 - `/api/hmr` 路由仅限管理员（`403` `forbidden`）。绑定在非环回地址上时还要求 HTTPS，否则返回 `403` `hmr_disabled`。只有 `PENGUIN_TRUST_PROXY=1` 时 `X-Forwarded-Proto` 才生效。升级完成后，每个已连接的客户端都会收到 `web_updated` 并重新加载。
 

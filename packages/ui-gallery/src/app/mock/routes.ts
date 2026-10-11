@@ -2470,7 +2470,8 @@ router
   .post("/api/desktop/update/install", () => notFound("Desktop updater"))
   .get("/api/desktop/tray", (): DesktopTrayStatusResponse => ({ status: null }))
   .put("/api/desktop/tray", () => empty())
-  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"));
+  .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"))
+  .post("/api/desktop/window", () => notFound("Desktop mode"));
 
 // ---------------------------------------------------------------------------------------------
 // The agent browser: the demo answers as a server with no desktop shell does, where the only

@@ -83,6 +83,7 @@ import type { SignInFailure } from "./attach-session.js";
 import { embeddedCliEntry } from "./launcher.js";
 import { webDistEntry, webDistFor } from "./web-dist.js";
 import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
+import { openAppWindow, parseOpenWindowRequest } from "./app-window.js";
 import { createBuiltinBrowserShell } from "./builtin-browser.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { logLine, logServerOutput, startDesktopLog, stopDesktopLog } from "./desktop-log.js";
@@ -604,6 +605,18 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
   child.on("message", (message: unknown) => {
     if (builtinBrowser.handle(message)) return;
     if (handleFolderAccessFrame(message, folderAccess)) return;
+    if (parseOpenWindowRequest(message)) {
+      const iconPath = resolveWindowIcon(app.getAppPath(), process.platform);
+      openAppWindow({
+        origin: appOrigin,
+        iconPath,
+        create: (options) => new BrowserWindow(options),
+        guard: (child) => guardOpenedWindow(child, iconPath),
+        load: (child, url) => child.loadURL(url),
+        log: logLine,
+      });
+      return;
+    }
     const action = parseUpdaterCommand(message);
     if (action !== null) {
       handleUpdaterCommand(action);

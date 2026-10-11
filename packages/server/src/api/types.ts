@@ -5064,6 +5064,11 @@ export interface DesktopOpenPrivacySettingsMessage {
   pane: DesktopPrivacyPane;
 }
 
+/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/window). No reply. */
+export interface DesktopOpenWindowMessage {
+  type: "desktop-open-window";
+}
+
 /**
  * The outcome of one self-update run (`penguin update --yes` on the server host), carried
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via

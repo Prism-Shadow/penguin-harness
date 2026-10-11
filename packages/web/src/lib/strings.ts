@@ -1102,6 +1102,7 @@ export const zh = {
     hint: (toggle: string | null): string =>
       toggle === null ? "↑↓ 选择 · Enter 执行" : `${toggle} 切换 · ↑↓ 选择 · Enter 执行`,
     harnessHistory: "Harness 历史",
+    newWindow: "新建窗口",
   },
   modelPicker: {
     /** Accessible name of the dialog's provider-group rail. */

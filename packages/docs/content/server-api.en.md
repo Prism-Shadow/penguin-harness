@@ -1276,6 +1276,7 @@ Routes that serve the desktop shell, hot updates and the Web App's own module sy
 | POST | `/api/desktop/update/check`, `/api/desktop/update/download`, `/api/desktop/update/install` | Relays the command to the desktop shell; 202 |
 | GET / PUT | `/api/desktop/tray` | Reads the tray-icon preference: `{status}` / relays a change: `{showTrayIcon?, locale?}` → 202 |
 | POST | `/api/desktop/privacy-settings` | Has the shell open a macOS Privacy & Security pane: `{pane}` (`files` or `fullDisk`) → 202 |
+| POST | `/api/desktop/window` | Has the shell open another window of the desktop app on the App → 202 |
 | POST | `/api/hmr/assets/probe` | Hot update: reports which blobs the store lacks |
 | PUT | `/api/hmr/blobs/:sha` | Hot update: uploads one blob under its sha256 |
 | POST | `/api/hmr/upgrade` | Hot update: moves the platform, CLI and web bundles to a new version together. A build that cannot fully run every installed plugin is refused with `409` `plugins_unsatisfied`, and `error.plugins` lists each as `{specifier, disabled, reason}`; sent again with the header `x-penguin-unsatisfied-plugins: leave-out`, the push goes through and its outcome carries the same list as `unsatisfiedPlugins` |
@@ -1283,7 +1284,7 @@ Routes that serve the desktop shell, hot updates and the Web App's own module sy
 
 - Outside desktop mode, the desktop routes return `404` `not_found`.
 - `POST /api/desktop/shutdown` does not use the cookie session. It authenticates with the desktop shell's own Bearer token (`401` `unauthorized` otherwise), answers first, and starts the graceful shutdown right after.
-- The update, tray and privacy-settings routes answer only the desktop shell's own window: any other session gets `403` `desktop_shell_only`. When the shell is not listening, they return `503` `shell_unreachable`. `PUT /api/desktop/tray` returns `400` `invalid_show_tray_icon` for a non-boolean `showTrayIcon`, `400` `invalid_locale` for a `locale` other than `zh` or `en`, and `400` `empty_tray_patch` when neither field is given. The PUT only acknowledges the change; read the result back with GET.
+- The update, tray, privacy-settings and window routes answer only the desktop shell's own window: any other session gets `403` `desktop_shell_only`. When the shell is not listening, they return `503` `shell_unreachable`. `PUT /api/desktop/tray` returns `400` `invalid_show_tray_icon` for a non-boolean `showTrayIcon`, `400` `invalid_locale` for a `locale` other than `zh` or `en`, and `400` `empty_tray_patch` when neither field is given. The PUT only acknowledges the change; read the result back with GET.
 - `POST /api/desktop/privacy-settings` returns `400` `invalid_privacy_pane` for a `pane` other than `files` (Files and Folders) or `fullDisk` (Full Disk Access). The shell opens the pane on macOS only.
 - The `/api/hmr` routes are admin only (`403` `forbidden`). On a non-loopback bind they also require HTTPS and otherwise return `403` `hmr_disabled`. `X-Forwarded-Proto` counts only when `PENGUIN_TRUST_PROXY=1`. A completed upgrade sends `web_updated` to every connected client, so they reload.
 
