@@ -14,6 +14,7 @@
  *   markers are dropped, and the stored markers are capped, evicting the least recently seen.
  * - The first note in a Project seeds it; notes are scoped per Project, need a Project, and a
  *   deleted Session's marker is pruned.
+ * - Seeding alone stamps the baseline of an unseeded Project and leaves a seeded one alone.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -23,7 +24,11 @@ import {
   markSessionSeen,
   noteSessionSeen,
   parseSessionSeen,
+  dropSessionSeenCache,
+  readSessionSeen,
+  refreshSessionSeenCache,
   resetSessionSeenCache,
+  seedSessionSeen,
   serializeSessionSeen,
   sessionSeenKey,
 } from "../src/lib/session-seen";
@@ -135,6 +140,53 @@ describe("storage round-trip", () => {
   });
 });
 
+describe("another tab's write", () => {
+  beforeEach(resetSessionSeenCache);
+
+  it("is served once its key is dropped from the cache, and not before", () => {
+    const storage = memoryStorage();
+    const key = sessionSeenKey("proj");
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T1) })));
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T1));
+    // The other tab opened `a` later; this tab's parsed copy does not know.
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T2) })));
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T1));
+    // What the storage event does for that key.
+    dropSessionSeenCache(key);
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T2));
+    expect(isSessionUnread(readSessionSeen("proj", storage), "a", T2)).toBe(false);
+  });
+});
+
+describe("coming back to the tab", () => {
+  beforeEach(resetSessionSeenCache);
+
+  it("re-reads what storage holds", () => {
+    const storage = memoryStorage();
+    const key = sessionSeenKey("proj");
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T1) })));
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T1));
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T2) })));
+    refreshSessionSeenCache();
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T2));
+  });
+
+  it("keeps markers storage refused: the copy in memory is the only one", () => {
+    const backing = memoryStorage();
+    const full = {
+      getItem: (key: string) => backing.getItem(key),
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+    };
+    noteSessionSeen("proj", "a", T1, full);
+    expect(isSessionUnread(readSessionSeen("proj", full), "a", T1)).toBe(false);
+    refreshSessionSeenCache();
+    dropSessionSeenCache(sessionSeenKey("proj"));
+    expect(isSessionUnread(readSessionSeen("proj", full), "a", T1)).toBe(false);
+  });
+});
+
 describe("noteSessionSeen", () => {
   beforeEach(resetSessionSeenCache);
 
@@ -166,5 +218,37 @@ describe("noteSessionSeen", () => {
     noteSessionSeen("proj", "a", T1, storage);
     forgetSession("proj", "a", storage);
     expect(parseSessionSeen(storage.getItem(sessionSeenKey("proj"))).seen.has("a")).toBe(false);
+  });
+});
+
+describe("seedSessionSeen", () => {
+  beforeEach(resetSessionSeenCache);
+
+  it("stamps a Project's baseline without marking a Session, so its history reads as read", () => {
+    const storage = memoryStorage();
+    expect(isSessionUnread(readSessionSeen("proj", storage), "old", T0)).toBe(true);
+    seedSessionSeen("proj", storage);
+    const stored = parseSessionSeen(storage.getItem(sessionSeenKey("proj")));
+    expect(stored.seededAt).toBeGreaterThan(0);
+    expect(stored.seen.size).toBe(0);
+    expect(isSessionUnread(readSessionSeen("proj", storage), "old", T0)).toBe(false);
+  });
+
+  it("leaves a seeded Project alone, markers included", () => {
+    const storage = memoryStorage();
+    const key = sessionSeenKey("proj");
+    const blob = serializeSessionSeen(state(AT(T0), { a: AT(T1) }));
+    storage.setItem(key, blob);
+    seedSessionSeen("proj", storage);
+    expect(storage.getItem(key)).toBe(blob);
+    expect(readSessionSeen("proj", storage).seededAt).toBe(AT(T0));
+  });
+
+  it("is a no-op without a Project, and scoped to the Project it names", () => {
+    const storage = memoryStorage();
+    seedSessionSeen(null, storage);
+    seedSessionSeen("one", storage);
+    expect(storage.getItem(sessionSeenKey("one"))).not.toBeNull();
+    expect(storage.getItem(sessionSeenKey("two"))).toBeNull();
   });
 });

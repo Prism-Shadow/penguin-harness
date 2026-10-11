@@ -22,6 +22,7 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
+  SessionsOverviewResponse,
   FilesStatResponse,
   GoalResponse,
   GoalStateView,
@@ -821,6 +822,26 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 }
 
 /** Session-level entry point: /api/sessions/:sessionId/*. */
+/**
+ * `GET /api/projects/:projectId/sessions/overview` — the dashboard's read: every non-archived
+ * Session of the Project over every Agent, less an organization's, as the facts the page
+ * counts from. Its own group,
+ * since no existing prefix covers `/sessions` directly under a Project.
+ */
+export function sessionOverviewRoutes(
+  deps: Pick<SessionsRouteDeps, "access" | "sessionService">,
+): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  app.get("/overview", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    return c.json({
+      sessions: await deps.sessionService.sessionsOverview(projectId),
+    } satisfies SessionsOverviewResponse);
+  });
+  return app;
+}
+
 export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -1892,6 +1913,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 255,
       },
       {
+        id: "session-api.session-overview",
+        prefix: "/api/projects/:projectId/sessions",
+        auth: "user",
+        order: 255,
+      },
+      {
         id: "session-api.usage",
         prefix: "/api/projects/:projectId/usage",
         auth: "user",
@@ -1963,6 +1990,7 @@ export class SessionApiRoutes {
   @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions-batch") sessionsBatchRoutes!: Hono<AppEnv>;
+  @Bind("session-api.session-overview") sessionOverviewRoutes!: Hono<AppEnv>;
   @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
   @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
@@ -2062,6 +2090,7 @@ export class SessionApiRoutes {
     this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
     this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
     this.sessionsBatchRoutes = sessionsBatchRoutes(sessionsDeps);
+    this.sessionOverviewRoutes = sessionOverviewRoutes(sessionsDeps);
     this.usageRoutes = usageRoutes({ access, usageService: this.usage });
     this.workspaceFilesRoutes = workspaceFilesRoutes({
       access,

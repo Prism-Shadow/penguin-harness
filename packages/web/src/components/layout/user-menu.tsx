@@ -1,7 +1,7 @@
 /**
  * The account menu, shared by both avatars that open one: the pinned sidebar's user row and
  * the collapsed rail's avatar. One component rather than a copy per anchor — the rows
- * (Settings, App info, sign out) and the dialog behind the first of them must
+ * (Settings, the dashboard, App info, sign out) and the dialog behind the first of them must
  * stay the same menu from either side, and a second copy is how two menus drift apart.
  *
  * Only the trigger differs, so the trigger is the caller's: it is handed the menu's own open
@@ -119,6 +119,16 @@ export function UserMenu({
                 setOpen(false);
                 setSettingsSection(undefined);
                 setSettingsOpen(true);
+              }}
+            />
+            {/* The dashboard: a phone-sized overview of where Sessions run and where one waits
+                on a person. A row under the settings entry rather than a nav group — it is
+                opened deliberately, on a phone, not lived in. */}
+            <MenuItem
+              label={S.settings.dashboard}
+              onSelect={() => {
+                setOpen(false);
+                navigate("/dashboard");
               }}
             />
             {/* App info entry: version, links, release notes, licences, and the update flow for

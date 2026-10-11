@@ -37,6 +37,7 @@ import type {
   SessionSandboxPreset,
   SessionSource,
   ServerEvent,
+  SessionActivityInfo,
   UnavailableSandboxBackend,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
@@ -154,6 +155,16 @@ const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2
 
 /** Stands in for the organization map when company mode is not wired in (tests, older assemblies). */
 const EMPTY_ORG_IDS: ReadonlyMap<string, string> = new Map();
+
+/**
+ * Whether an organization owns a row — the one rule behind the list's `excludeOrg` and the
+ * dashboard's overview. The durable `client` stamp answers first: it survives the
+ * organization and is inherited by sub-sessions, which no cache names. `orgIds` (the
+ * Project's organization map) catches a row the reconcile pass has not stamped yet.
+ */
+function isOrgOwned(row: SessionRow, orgIds: ReadonlyMap<string, string>): boolean {
+  return row.client === "org" || orgIds.has(row.sessionId);
+}
 
 /** Derives creation time from the local timestamp embedded in session_id; returns null if it doesn't match. */
 export function sessionIdCreatedAt(sessionId: string): string | null {
@@ -365,6 +376,42 @@ export class SessionService {
   /** Stores one Session's policy (`pickSandbox`'s): its next command runs under it. */
   updateSandbox(sessionId: string, policy: SandboxSettings): void {
     this.deps.sessions.updateSandbox(sessionId, policy);
+  }
+
+  /**
+   * The dashboard's read: every non-archived Session of the Project over every Agent, as the
+   * facts it counts from and the lines it lists. Off the index and the manager and nothing
+   * else — no Trace discovery: `hasTrace` is the row's own flag, and the counts are about
+   * this moment. Read versus unread is the client's (a per-browser marker), which is
+   * why this hands over facts rather than totals.
+   *
+   * An organization's rows are left out by the same rule as the sidebar's list (which always
+   * asks with `excludeOrg`): the page counts the sidebar's dots, so a Session it names must
+   * be one the sidebar draws.
+   */
+  async sessionsOverview(projectId: string): Promise<SessionActivityInfo[]> {
+    const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
+    const rows = this.deps.sessions
+      .listByProject(projectId)
+      .filter((row) => (row.archivedAt ?? null) === null && !isOrgOwned(row, orgIds));
+    return Promise.all(
+      rows.map(async (row) => {
+        const hasTrace = row.hasTrace === true;
+        // The origin comes from the same registry the list classifies with (sourceOf: the
+        // in-process entry, else the index's registration-time facts — no file is read).
+        const source = await this.sourceOf(row, hasTrace);
+        return {
+          sessionId: row.sessionId,
+          agentId: row.agentId,
+          workspace: row.workspace,
+          status: this.deps.manager.statusOf(row.sessionId),
+          hasTrace,
+          lastActiveAt: row.lastActiveAt,
+          ...(row.title !== null ? { title: row.title } : {}),
+          ...(source !== undefined ? { source } : {}),
+        };
+      }),
+    );
   }
 
   /**

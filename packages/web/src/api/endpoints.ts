@@ -189,6 +189,7 @@ import type {
   LanguageIndexResponse,
   PluginReadmeResponse,
   SessionsResponse,
+  SessionsOverviewResponse,
   SessionSwitchModelRequest,
   SessionBatchPageRequest,
   SessionsBatchRequest,
@@ -855,6 +856,18 @@ export const batchSessions = (
     body: { requests } satisfies SessionsBatchRequest,
     server: machineId ?? null,
   });
+
+/**
+ * The dashboard's read: every non-archived Session of the Project over every Agent, as
+ * per-Session facts (status, last activity, origin) the page counts from against this
+ * browser's seen markers. Asked of one server at a time, like the list — this one with no
+ * machine, or a machine by its id.
+ */
+export const getSessionsOverview = (projectId: string, machineId?: string | null) =>
+  apiFetch<SessionsOverviewResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/sessions/overview`,
+    { server: machineId ?? null },
+  );
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**

@@ -106,6 +106,7 @@ import type {
   SessionCreateResponse,
   SessionForkResponse,
   SessionInfo,
+  SessionsOverviewResponse,
   SessionProcessesResponse,
   SessionResponse,
   SessionsBatchResponse,
@@ -1085,6 +1086,21 @@ router
     });
     return { results };
   })
+  // The dashboard's read: every non-archived Session of the Project, over every Agent.
+  .get("/api/projects/:projectId/sessions/overview", ({ store }): SessionsOverviewResponse => ({
+    sessions: store.f.sessions
+      .filter((s) => !s.archived)
+      .map((s) => ({
+        sessionId: s.sessionId,
+        agentId: s.agentId,
+        workspace: s.workspace,
+        status: s.status,
+        hasTrace: s.hasTrace,
+        lastActiveAt: s.lastActiveAt,
+        ...(s.title !== undefined ? { title: s.title } : {}),
+        ...(s.source !== undefined ? { source: s.source } : {}),
+      })),
+  }))
   .get("/api/projects/:projectId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
     const listing = store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
