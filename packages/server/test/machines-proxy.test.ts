@@ -95,6 +95,7 @@ describe("the report", () => {
       port,
       cookie: "penguin_session=minted",
       adoptedAt: null,
+      session: 1,
     }));
     await proxy(
       new Request(`http://app.local${SERVER_PROXY_PREFIX}${A}/api/me`, {
@@ -125,6 +126,7 @@ describe("the report", () => {
       port,
       cookie: "penguin_session=x",
       adoptedAt: "2026-10-15T08:00:00.000Z",
+      session: 1,
     }));
     await adopted(new Request(`http://app.local${SERVER_PROXY_PREFIX}${A}/api/me`, forged));
     const unrecorded = machinesProxy(async () => ({
@@ -132,6 +134,7 @@ describe("the report", () => {
       port,
       cookie: "penguin_session=x",
       adoptedAt: null,
+      session: 1,
     }));
     await unrecorded(new Request(`http://app.local${SERVER_PROXY_PREFIX}${A}/api/me`, forged));
 
@@ -142,7 +145,13 @@ describe("the report", () => {
     const port = await listen();
     const seen: [string, { ok: boolean }][] = [];
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", adoptedAt: null }),
+      async () => ({
+        agent: new http.Agent(),
+        port,
+        cookie: "penguin_session=x",
+        adoptedAt: null,
+        session: 1,
+      }),
       (machineId, outcome) => seen.push([machineId, outcome]),
     );
     const response = await proxy(request(A));
@@ -156,7 +165,13 @@ describe("the report", () => {
     upstream = null;
     const seen: [string, { ok: boolean; detail?: string }][] = [];
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", adoptedAt: null }),
+      async () => ({
+        agent: new http.Agent(),
+        port,
+        cookie: "penguin_session=x",
+        adoptedAt: null,
+        session: 1,
+      }),
       (machineId, outcome) => seen.push([machineId, outcome]),
     );
     const response = await proxy(request(A));

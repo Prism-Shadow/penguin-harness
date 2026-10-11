@@ -1,14 +1,15 @@
 /**
- * SSE (EventSource) wrapper.
+ * Event streams: a Session's output and the user-level server events.
  *
  * - OmniMessage uses the default event (no `event:` line); data is the message envelope as
  *   raw JSON;
  * - Server events use `event: server_event` (approval_request / task_state / resync_required /
  *   credentials_updated / hello);
- * - EventSource can't set custom request headers, so auth relies on same-origin cookies; on
- *   disconnect, the browser auto-reconnects and attaches a `Last-Event-ID` header (the server
- *   replays from its ring buffer; if the event was already evicted, it pushes resync_required
- *   instead).
+ * - A stream is a call on the page's one API socket (api/socket.ts, PRFC-0011), which
+ *   re-issues it with `last-event-id` after any interruption (the server replays from its
+ *   ring buffer; if the event was already evicted, it pushes resync_required instead). When
+ *   the socket is not to be had, the same stream is an EventSource: the browser then
+ *   auto-reconnects with the same header, and auth rides the same-origin cookie either way.
  * - Liveness: a connection can die without any error (half-open TCP, a stuck proxy or NAT).
  *   Once a stream has sent a `ping` (the server's heartbeat, every 20 s), {@link SILENCE_MS}
  *   without any event closes it and opens a new one with `?lastEventId=` set to the last id
@@ -20,6 +21,7 @@ import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import { apiUrl } from "../lib/server-context";
 import { machineForSession } from "../lib/session-machines";
+import { apiSocket } from "./socket";
 
 /** The server pings every 20 s: this much silence means the connection is gone. */
 const SILENCE_MS = 50_000;
@@ -49,6 +51,11 @@ export interface StreamConnection {
 }
 
 function subscribe(url: string, handlers: StreamHandlers): StreamConnection {
+  return apiSocket.stream(url, handlers, () => subscribeEventSource(url, handlers));
+}
+
+/** The EventSource fallback retains its heartbeat watchdog. */
+function subscribeEventSource(url: string, handlers: StreamHandlers): StreamConnection {
   let source: EventSource | undefined;
   /** The newest event id seen on any of this subscription's connections. */
   let lastEventId = "";

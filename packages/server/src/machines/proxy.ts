@@ -15,6 +15,7 @@
 import http from "node:http";
 import { Readable } from "node:stream";
 import { ADOPTED_AT_HEADER } from "../runtime/session-sources.js";
+import { MachineSocketRelay } from "./socket-relay.js";
 
 /** Path prefix of the proxy: `/server/<id>/api/…`. */
 export const SERVER_PROXY_PREFIX = "/server/";
@@ -33,6 +34,11 @@ export interface ProxyTarget {
    * time was recorded, which sends nothing.
    */
   adoptedAt: string | null;
+  /**
+   * The ssh session the agent dials through (its pid): a socket is only ever reused within
+   * one (socket-relay.ts).
+   */
+  session: number;
 }
 
 /** A parsed proxy path: which machine, and the remote-side path to request. */
@@ -174,9 +180,12 @@ export type ProxyReport = (
 export function machinesProxy(
   resolve: (machineId: string) => Promise<ProxyTarget | null>,
   report?: ProxyReport,
+  log: (line: string) => void = () => undefined,
 ): (request: Request) => Promise<Response | null> {
+  const relay = new MachineSocketRelay(log);
   return async (request) => {
-    const path = parseProxyPath(new URL(request.url).pathname);
+    const url = new URL(request.url);
+    const path = parseProxyPath(url.pathname);
     if (path === null) return null;
     const target = await resolve(path.machineId);
     if (target === null) {
@@ -189,6 +198,21 @@ export function machinesProxy(
         },
         { status: 503 },
       );
+    }
+    // A stream rides the one socket held to the machine (PRFC-0011) and ONLY that: a stream
+    // forwarded over HTTP is a channel held open for good, and across many machines those
+    // pile up. Without a socket the stream is answered with the reason, and the browser
+    // re-issues it on its backoff (socket-relay.ts).
+    const wantsStream =
+      request.method === "GET" &&
+      (request.headers.get("accept") ?? "").includes("text/event-stream");
+    if (wantsStream) {
+      const relayed = await relay.stream(path.machineId, target, {
+        path: `${path.remotePath}${url.search}`,
+        lastEventId: request.headers.get("last-event-id"),
+      });
+      if (relayed.status < 500) report?.(path.machineId, { ok: true });
+      return relayed;
     }
     return proxyThroughSession(request, path, target, report);
   };
