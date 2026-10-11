@@ -29,7 +29,7 @@ import type { ServerEvent } from "../api/types.js";
 import type { Channel, ChannelEvent, ChannelListener } from "../runtime/channel.js";
 import type { LiveStreams } from "../auth/live-streams.js";
 import type { Auth } from "../mechanisms/identity.js";
-import { SESSION_COOKIE, bearerToken } from "../auth/middleware.js";
+import { bearerToken, sessionCookies } from "../auth/middleware.js";
 
 /** The beat both the named ping and the `heartbeat` server event are written on (machines/event-hub.ts times the hub's silence by it). */
 export const HEARTBEAT_MS = 20_000;
@@ -79,10 +79,17 @@ export function streamRevocation(
   // session row at all: its credential is the boot's local API token, which lives as long
   // as the process does. There is nothing for the heartbeat to re-check there, so it
   // leaves that connection alone instead of ending it on a lookup that can only miss.
-  const token =
+  // A browser's cookie carries the port it reached this server on (sessionCookieName), and a
+  // plain one may ride beside it; the session this stream watches is the first one that is
+  // live, as authMiddleware picked it.
+  const cookies =
     bearerToken(c.req.header("authorization")) !== null
-      ? null
-      : (getCookie(c, SESSION_COOKIE) ?? null);
+      ? []
+      : sessionCookies(getCookie(c), c.req.header("host"));
+  const token =
+    cookies.find((cookie) => deps.auth.sessionIsLive(cookie.token))?.token ??
+    cookies[0]?.token ??
+    null;
   return {
     userId: user.userId,
     streams: deps.liveStreams,
