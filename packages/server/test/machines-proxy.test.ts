@@ -93,6 +93,7 @@ describe("the report", () => {
       agent: new http.Agent(),
       port,
       cookie: "penguin_session=minted",
+      session: 1,
     }));
     await proxy(
       new Request(`http://app.local${SERVER_PROXY_PREFIX}${A}/api/me`, {
@@ -109,7 +110,7 @@ describe("the report", () => {
     const port = await listen();
     const seen: [string, { ok: boolean }][] = [];
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x" }),
+      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 }),
       (machineId, outcome) => seen.push([machineId, outcome]),
     );
     const response = await proxy(request(A));
@@ -123,7 +124,7 @@ describe("the report", () => {
     upstream = null;
     const seen: [string, { ok: boolean; detail?: string }][] = [];
     const proxy = machinesProxy(
-      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x" }),
+      async () => ({ agent: new http.Agent(), port, cookie: "penguin_session=x", session: 1 }),
       (machineId, outcome) => seen.push([machineId, outcome]),
     );
     const response = await proxy(request(A));

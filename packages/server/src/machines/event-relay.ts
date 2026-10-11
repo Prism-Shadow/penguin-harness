@@ -27,6 +27,8 @@ export interface RelayDial {
   port: number;
   /** A session on that machine, as its own cookie. */
   cookie: string;
+  /** The ssh session the dial rides (its pid): a socket is only ever reused within one. */
+  session: number;
 }
 
 export interface EventRelayDeps {

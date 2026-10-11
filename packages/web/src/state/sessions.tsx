@@ -107,6 +107,10 @@ import type { ActivityKey, StreamPosition } from "../lib/session-grouping";
 import { noteScheduleEvent } from "../features/schedules/schedule-store";
 import { useProject } from "./project";
 
+/** A reload this server answered nothing to is tried again after this, doubling up to the ceiling. */
+const RELOAD_RETRY_MIN_MS = 2_000;
+const RELOAD_RETRY_MAX_MS = 30_000;
+
 interface SessionsContextValue {
   /**
    * Loaded rows, most recently active first: the sidebar's pages (paged per Agent and Workspace
@@ -483,6 +487,8 @@ type PageAnswer = {
     hasMore: boolean;
   }>;
   answered: boolean;
+  /** Why nothing was answered, when the source failed — said out loud by the reload retry. */
+  reason?: string;
 };
 
 /**
@@ -555,6 +561,8 @@ export function createSessionsStore() {
   let listingTimer: ReturnType<typeof setTimeout> | null = null;
   /** Reloads started and not yet settled: a flush that invalidates one asks again. */
   let reloadsInFlight = 0;
+  /** Consecutive reloads this server answered nothing to (the retry backs off on it). */
+  let retries = 0;
 
   return createStore<SessionsStoreState>((set, get) => {
     /**
@@ -773,7 +781,7 @@ export function createSessionsStore() {
                     source,
                   );
                   answered = wanted.map((w, i) => oneAnswer(w, source, res.results[i]));
-                } catch {
+                } catch (err) {
                   // The whole SOURCE failed to answer — this server mid-swap, a connection
                   // held to a server that is not serving, the network. Nothing is applied
                   // for it below, which is the point: an empty result standing in for a
@@ -783,6 +791,7 @@ export function createSessionsStore() {
                     source,
                     pages: [],
                     answered: false,
+                    reason: err instanceof Error ? err.message : String(err),
                   }));
                 }
                 return answered;
@@ -805,7 +814,24 @@ export function createSessionsStore() {
           // nothing: the rows stand, `loading` is left as it was, and the next one tries
           // again. This is the ordinary state during a hot swap and for the moment after a
           // reconnect.
-          if (unanswered.size === agentIds.length && agentIds.length > 0) return;
+          if (unanswered.size === agentIds.length && agentIds.length > 0) {
+            // Said out loud, and asked again on a timer: a page that opened during a swap or
+            // a hiccup used to sit on the skeleton until some event happened to fire.
+            const reasons = results
+              .filter((r) => r.source === null && !r.answered)
+              .map((r) => `${r.agentId}: ${r.reason ?? "no answer"}`);
+            const delay = Math.min(RELOAD_RETRY_MAX_MS, RELOAD_RETRY_MIN_MS * 2 ** retries);
+            retries += 1;
+            console.warn(
+              `[sessions] this server answered for none of the Agents (${reasons.join("; ")}); ` +
+                `the list on screen is kept and asked again in ${delay} ms`,
+            );
+            setTimeout(() => {
+              if (g === gen) void get().reload();
+            }, delay);
+            return;
+          }
+          retries = 0;
           // Machines that did not answer are treated exactly like machines that were never
           // asked: their rows come from the cache below, and their cache is left alone.
           const silent = new Set(
