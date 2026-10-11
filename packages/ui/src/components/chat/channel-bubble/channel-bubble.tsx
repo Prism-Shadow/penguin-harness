@@ -174,7 +174,7 @@ export function ChannelBubble({
     <div
       id={id}
       data-side={own ? "own" : "other"}
-      className={`channel-bubble relative max-w-[88%] px-3 py-1.5 text-[15px] leading-relaxed sm:max-w-[75%] sm:text-sm ${corners(own, last)} ${own ? SURFACE.own : SURFACE.other}`}
+      className={`channel-bubble relative max-w-[88%] px-3 py-1.5 text-base leading-relaxed sm:max-w-[75%] sm:text-sm ${corners(own, last)} ${own ? SURFACE.own : SURFACE.other}`}
     >
       <div className="min-w-0">
         <div className="md-body md-compact">{children}</div>
@@ -187,7 +187,7 @@ export function ChannelBubble({
       </div>
       <span
         data-tooltip={timeTooltip}
-        className="absolute bottom-1.5 right-3 text-[11px] tabular-nums text-tone-neutral-fg"
+        className="absolute bottom-1.5 right-3 text-xs tabular-nums text-tone-neutral-fg"
       >
         <span className="sr-only">{timeLabel}</span>
         <span aria-hidden>{time}</span>
