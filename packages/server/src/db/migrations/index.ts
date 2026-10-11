@@ -65,6 +65,9 @@ import { modelProviderAuthTokens } from "./steps/model-provider-auth-tokens.js";
 import { sessionsKeptAt } from "./steps/sessions-kept-at.js";
 import { sessionsSandbox } from "./steps/sessions-sandbox.js";
 import { userProfile } from "./steps/user-profile.js";
+import { portForwards } from "./steps/port-forwards.js";
+import { portForwardsAdoption } from "./steps/port-forwards-adoption.js";
+import { portForwardsDirection } from "./steps/port-forwards-direction.js";
 
 export type { Migration } from "./migration.js";
 export { IrreversibleMigrationError, UnknownMigrationError, appliedMigrations } from "./runner.js";
@@ -90,6 +93,9 @@ export const MIGRATIONS: readonly Migration[] = [
   machinesColumns,
   browserExtensions,
   agentApi,
+  portForwards,
+  portForwardsAdoption,
+  portForwardsDirection,
   messagingConversations,
   sessionsKeptAt,
   agentApiSessionSettings,

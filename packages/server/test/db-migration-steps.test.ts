@@ -299,7 +299,14 @@ describe("machines-columns → current: browser-extensions", () => {
   it("creates the pairings table, which holds one row per token and cascades with its user", () => {
     const db = openMachinesColumns();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["browser-extensions", "messaging-conversations"]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "browser-extensions",
+        "agent-api",
+        "port-forwards",
+        "port-forwards-adoption",
+        "port-forwards-direction",
+        "messaging-conversations",
+      ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +

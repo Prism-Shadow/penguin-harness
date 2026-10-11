@@ -208,6 +208,8 @@ export interface MachineCardProps {
   onSyncConfig: () => void;
   /** Asks to take the machine off this Project (the page confirms first). */
   onDelete: () => void;
+  /** Opens this machine's Ports page when it has an addressable id. */
+  onPorts?: (() => void) | null;
 }
 
 /** One stat on the card's third line: a glyph and a value. The dialog says what each one means. */
@@ -250,6 +252,7 @@ export function MachineCard({
   onUse,
   onSyncConfig,
   onDelete,
+  onPorts = null,
 }: MachineCardProps) {
   const reading = machine.local ? null : readMachine(machine, job, imageVersion);
   const mark = machineMark(reading);
@@ -354,6 +357,12 @@ export function MachineCard({
           <GlyphIcon d={ICONS.gear} />
           {card.settings}
         </Button>
+        {onPorts !== null && (
+          <Button size="sm" variant="secondary" title={S.ports.verbTitle} onClick={onPorts}>
+            <GlyphIcon d={ICONS.arrowsOpposed} size={ICON_SIZE.inlineGlyph} />
+            {S.ports.verb}
+          </Button>
+        )}
         {machine.local ? (
           // This server cannot be taken off its own page: a placeholder in the delete button's box,
           // so every card's buttons line up, saying why on the hint its bare icon can carry.

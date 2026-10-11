@@ -27,11 +27,18 @@ export {
   SESSION_GROUP,
   SESSION_SHAPE_ID,
   attachSessionRegistry,
+  forwardKey,
   heldSessionOf,
   onSessionChange,
   sessionOf,
+  useControlSockets,
 } from "./ssh-session.js";
-export type { HeldSession, SessionListener, ShellSession } from "./ssh-session.js";
+export type {
+  ForwardFact,
+  HeldSession,
+  SessionListener,
+  ShellSession,
+} from "./ssh-session.js";
 export { PASSWORD_ENV, forgetRefusal, passwordSignIn } from "./login.js";
 export type { AskpassPlan } from "./login.js";
 export { execFailureText } from "./exec.js";

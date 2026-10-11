@@ -369,6 +369,11 @@ export function MachinesPage() {
       onUse={() => startChat(machine)}
       onSyncConfig={() => void post((project) => api.syncMachineConfig(project, machine.id))}
       onDelete={() => setPendingVerb({ kind: "delete", id: machine.id })}
+      onPorts={
+        machine.local || machine.machineId === null
+          ? null
+          : () => navigate(`/machines/${encodeURIComponent(machine.machineId!)}/ports`)
+      }
     />
   );
 

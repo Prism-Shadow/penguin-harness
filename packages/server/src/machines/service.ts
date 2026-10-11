@@ -56,6 +56,7 @@ import type {
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
 import http from "node:http";
+import type net from "node:net";
 import {
   appendHostBlock,
   closeAllConnections,
@@ -75,6 +76,7 @@ import {
 import type {
   AskpassPlan,
   ExecResult,
+  ForwardFact,
   MachineConnection,
   SessionListener,
   ShellSession,
@@ -90,7 +92,7 @@ import {
 } from "./ssh-config.js";
 import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand, uninstallCommand } from "./commands.js";
-import type { RemoteTarget } from "./commands.js";
+import type { ForwardSpec, RemoteTarget } from "./commands.js";
 import {
   detectRemote,
   installOnRemote,
@@ -291,6 +293,11 @@ export interface MachinesEffects {
   session: (address: string) => ShellSession | null;
   /** An http.Agent that dials that machine's server through its session. */
   agent: (target: RemoteTarget, remotePort: number) => http.Agent;
+  /** One TCP connection to `127.0.0.1:<remotePort>` on that machine, as a channel of its session. */
+  dial: (target: RemoteTarget, remotePort: number) => Promise<net.Socket>;
+  /** Port forwards on the session: the wanted set, and ssh's answers. */
+  setForwards: (target: RemoteTarget, specs: readonly ForwardSpec[]) => Promise<void>;
+  forwardFacts: (target: RemoteTarget) => ReadonlyMap<string, ForwardFact>;
   stopServer: (target: RemoteTarget) => ReturnType<typeof stopRemoteServer>;
   mintToken: (
     target: RemoteTarget,
@@ -444,6 +451,9 @@ export class MachinesService {
       hold: (target) => connectionTo(target).hold(),
       session: (address) => heldSessionOf(address),
       agent: (target, remotePort) => connectionTo(target).agent(remotePort),
+      dial: (target, remotePort) => connectionTo(target).dial(remotePort),
+      setForwards: (target, specs) => connectionTo(target).setForwards(specs),
+      forwardFacts: (target) => connectionTo(target).forwardFacts(),
       stopServer: (target) => stopRemoteServer(target, layout, this.#effects.runOn),
       mintToken: (target, runOn) => mintTokenOnRemote(target, layout, runOn),
       upgrade: upgradeRemote,
@@ -978,6 +988,64 @@ export class MachinesService {
       // The socket relay reuses a socket only within one ssh session (socket-relay.ts).
       session: live.pid,
     };
+  }
+
+  /** Whether this server has a machine by that id on record, connected or not. */
+  knows(machineId: string): boolean {
+    return this.#rowFor(machineId) !== null;
+  }
+
+  /**
+   * The port forwards wanted on a machine's session — ssh's own `-L` / `-R`, added to and
+   * taken off the live session (transport/ssh-session.ts). The set is remembered by the
+   * session, so a machine that reconnects gets them back without anyone asking again; a
+   * machine not on record is refused.
+   */
+  async setForwards(
+    machineId: string,
+    specs: readonly ForwardSpec[],
+  ): Promise<{ ok: true } | { ok: false; detail: "unknown machine" }> {
+    const row = this.#rowFor(machineId);
+    if (row === null) return { ok: false, detail: "unknown machine" };
+    await this.#effects.setForwards(this.#targetOf(row.address.slice("ssh:".length)), specs);
+    return { ok: true };
+  }
+
+  /** ssh's last word on each forward of a machine (by forwardKey), and whether its session is up. */
+  forwardFacts(machineId: string): {
+    connected: boolean;
+    facts: ReadonlyMap<string, ForwardFact>;
+  } {
+    const row = this.#rowFor(machineId);
+    if (row === null) return { connected: false, facts: new Map() };
+    const target = this.#targetOf(row.address.slice("ssh:".length));
+    return {
+      connected: this.#liveSession(row.address) !== null,
+      facts: this.#effects.forwardFacts(target),
+    };
+  }
+
+  /**
+   * One TCP connection to a port on a machine's loopback, through the HELD connection — what
+   * a port forward pipes a local client into. `not-connected` rather than a dial when the
+   * machine is not held: a saved forward must not reopen ssh to a machine someone stopped
+   * using, for the same reason a read must not (listDirs).
+   */
+  async dialPort(
+    machineId: string,
+    remotePort: number,
+  ): Promise<{ ok: true; socket: net.Socket } | { ok: false; detail: string }> {
+    const row = this.#rowFor(machineId);
+    if (row === null) return { ok: false, detail: "unknown machine" };
+    if (this.#liveSession(row.address) === null) {
+      return { ok: false, detail: "machine not connected" };
+    }
+    const target = this.#targetOf(row.address.slice("ssh:".length));
+    try {
+      return { ok: true, socket: await this.#effects.dial(target, remotePort) };
+    } catch (err) {
+      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   /**
@@ -2955,6 +3023,10 @@ export abstract class Machines extends Interface<
     | "syncConfigEverywhere"
     | "proxyTarget"
     | "ownId"
+    | "knows"
+    | "dialPort"
+    | "setForwards"
+    | "forwardFacts"
     | "jobs"
     | "startUse"
     | "stopUsing"
