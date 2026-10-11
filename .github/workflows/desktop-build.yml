@@ -157,7 +157,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # The same heap the shared setup action's build step pins, and for the same reason:
+      # macos-latest defaults to a 2240 MB heap, below what the server's declaration build can
+      # need, while ubuntu and windows already default to the 4288 MB this gives. This job does
+      # not use that action, so the setting is repeated here; keep the two values equal.
       - run: pnpm -r build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       # Windows carries MinGit under resources/git so the packaged agent shell has the
       # same deterministic POSIX bash as the npm package (release.yml bundles the
