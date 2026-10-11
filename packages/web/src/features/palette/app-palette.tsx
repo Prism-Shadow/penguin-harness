@@ -7,13 +7,14 @@
  *
  * The palette also carries the host's commands — what the process hosting the server can do
  * on the page's behalf. Under the desktop shell that is installing the bundled `penguin`
- * command and checking for a desktop update, which used to live only in the application
- * menu; the menu bar is hidden there (a lone Alt used to take the keyboard), so the palette
- * is where a person finds them. The server says which commands the host offers; a plain
- * server offers none, and a non-admin is told nothing.
+ * command, checking for a desktop update, and opening DevTools — all of them application-menu
+ * items; the menu bar is hidden there (a lone Alt used to take the keyboard), so the palette
+ * is where a person finds them. The host says what it offers AND what to call it, so it can
+ * offer something this build has never heard of; a plain server offers none, and a non-admin
+ * is told nothing.
  */
 import { useEffect, useMemo, useState } from "react";
-import type { HostCommand } from "@prismshadow/penguin-server/api";
+import type { HostCommand, HostCommandOffer } from "@prismshadow/penguin-server/api";
 import { CommandPalette, toastError, toastInfo } from "@prismshadow/penguin-ui";
 import type { PaletteAction } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -23,6 +24,7 @@ import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
 import { HarnessHistoryOverlay } from "../harness/harness-history-overlay";
 
 /** A mount point with nothing to add shares one empty list, so the action memo stays put. */
@@ -30,11 +32,15 @@ const NO_EXTRA: readonly PaletteAction[] = [];
 
 const REPO_URL = "https://github.com/Prism-Shadow/penguin-harness";
 
-/** The palette action for each host command: its words, and what to say once it is handed over. */
-const HOST_ACTIONS: Record<
-  HostCommand,
-  { label: () => string; keywords: string[]; after?: () => string }
-> = {
+/** One host command's words, and what to say once it is handed over. */
+interface HostAction {
+  label: () => string;
+  keywords: string[];
+  after?: () => string;
+}
+
+/** The palette action for each host command. */
+const HOST_ACTIONS: Record<HostCommand, HostAction> = {
   "install-cli": {
     label: () => S.commandPalette.installCli,
     keywords: ["penguin", "cli", "command", "install", "path"],
@@ -44,7 +50,43 @@ const HOST_ACTIONS: Record<
     keywords: ["update", "upgrade", "version", "desktop"],
     after: () => S.commandPalette.checkingUpdates,
   },
+  "open-devtools": {
+    label: () => S.commandPalette.openDevTools,
+    // English words for a person hunting an error message, whichever language the app is in.
+    keywords: ["devtools", "developer", "console", "inspect", "debug", "error"],
+  },
 };
+
+/**
+ * What the palette shows for the host's commands.
+ *
+ * The host is a separate program on its own schedule — it reaches users through an installer,
+ * this page through a hot push — so a host offering a command this build has never heard of
+ * is the ordinary case, not the exception. It is therefore RENDERED, in the words the host
+ * sent with it. A list of ids alone would have made the whole exchange pointless: the host
+ * could never offer anything the page did not already carry, and reading words the page did
+ * not have threw inside the actions `useMemo`, which blanked the App.
+ *
+ * A command this build DOES know keeps this file's words: they are translated properly and
+ * carry search terms, and the page can improve them without waiting for an installer. The
+ * host's words are the floor, not an instruction.
+ *
+ * An offer with no words at all — an older host, which sends bare ids — is shown only if this
+ * build knows it. Such a host has nothing else to offer.
+ */
+export function hostCommandActions(
+  offers: readonly HostCommandOffer[],
+  locale: "en" | "zh",
+): { command: string; action: HostAction }[] {
+  return offers.flatMap(({ command, label, labelZh }) => {
+    const known: HostAction | undefined = HOST_ACTIONS[command as HostCommand];
+    if (known !== undefined) return [{ command, action: known }];
+    const words = (locale === "zh" ? labelZh : label) || label || labelZh;
+    if (words === "") return [];
+    // The id doubles as search terms: "open-devtools" finds it typed either way.
+    return [{ command, action: { label: () => words, keywords: command.split(/[-_.]/) } }];
+  });
+}
 
 /**
  * `extra` is what the mount point adds ahead of the standing actions — the full-page
@@ -69,14 +111,20 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
   const { desktopMode, sessionVia, user } = useAuth();
   const newWindow = offersNewWindow({ desktopMode, sessionVia });
   const isAdmin = user?.isAdmin === true;
-  const [commands, setCommands] = useState<HostCommand[]>([]);
+  const { locale } = useLocale();
+  const [offers, setOffers] = useState<HostCommandOffer[]>([]);
   useEffect(() => {
     if (!isAdmin) return;
     let cancelled = false;
     void api
       .getHostCommands()
       .then((res) => {
-        if (!cancelled) setCommands(res.commands);
+        if (cancelled) return;
+        // A server older than `offers` answers with ids alone; this build has words for
+        // every command such a server's host can offer.
+        setOffers(
+          res.offers ?? res.commands.map((command) => ({ command, label: "", labelZh: "" })),
+        );
       })
       .catch(() => {
         // An older server without the route: the host's commands simply stay out.
@@ -108,8 +156,7 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
         keywords: ["harness history", "version", "hmr", "ifaces"],
         run: () => setHistoryOpen(true),
       },
-      ...commands.map((command): PaletteAction => {
-        const action = HOST_ACTIONS[command];
+      ...hostCommandActions(offers, locale).map(({ command, action }): PaletteAction => {
         return {
           id: `host-${command}`,
           label: action.label(),
@@ -133,7 +180,7 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
         },
       },
     ],
-    [extra, commands, newWindow],
+    [extra, offers, locale, newWindow],
   );
 
   return (
