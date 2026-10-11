@@ -43,6 +43,18 @@ describe.skipIf(process.platform === "win32")(
       });
     });
 
+    it("tarball, seen from a pushed CLI: the penguin-hmr loader beside the installed entry, not the data root's store", () => {
+      // A pushed CLI runs from <root>/hmr/store/cli/…, which is no install layout; `update`
+      // reads the script the process runs, the installation's loader.
+      expect(detectInstall("/home/me/.penguin/lib/dist/penguin-hmr.js")).toEqual({
+        kind: "tarball",
+        installDir: "/home/me/.penguin",
+      });
+      expect(detectInstall("/home/me/.penguin/data/hmr/store/cli/abc.mjs")).toEqual({
+        kind: "unknown",
+      });
+    });
+
     it("tarball: a non-default PENGUIN_INSTALL_DIR is read off the path, not the environment", () => {
       expect(detectInstall("/opt/tools/penguin/lib/dist/index.js")).toEqual({
         kind: "tarball",

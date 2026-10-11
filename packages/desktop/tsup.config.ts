@@ -7,8 +7,10 @@ import { buildGitDefine } from "../../scripts/build-git-stamp.mjs";
 import { ESM_CJS_BANNER } from "../../scripts/esm-cjs-banner.mjs";
 
 /**
- * Five self-contained bundles, no shared chunks: the shell itself, the server it forks as a
- * utilityProcess, the CLI its bin/ launchers start on the app's Electron runtime, and the two
+ * Seven self-contained bundles, no shared chunks: the shell itself, the server and the entry
+ * it forks as a utilityProcess (server-launch.ts: the pushed CLI's server, else the bundled
+ * one), the CLI its bin/ launchers start on the app's Electron runtime with its `penguin-hmr`
+ * loader, and the two
  * modules scripts/build-assets.mjs imports (plain node, no Electron) to produce the rest of
  * the build — launcher.ts writes the launcher scripts, pty-payload.ts stages node-pty.
  *
@@ -29,7 +31,11 @@ export default defineConfig({
     launcher: "src/launcher.ts",
     "pty-payload": "src/pty-payload.ts",
     server: "../server/dist/index.js",
+    "server-launch": "src/server-launch.ts",
     penguin: "../cli/dist/penguin.js",
+    // The loader that runs a pushed CLI: once a push has landed, the CLI of the harness that
+    // runs, which the Agents' `penguin` and self-update use (server-launch.ts).
+    "penguin-hmr": "../cli/dist/penguin-hmr.js",
   },
   format: ["esm"],
   target: "node24",

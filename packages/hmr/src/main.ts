@@ -60,6 +60,12 @@ export interface Hmr<Api extends Park> {
     request: Request,
     onLanded?: (outcome: Extract<UpgradeOutcome, { status: "ok" }>) => void,
   ): Promise<Response>;
+  /**
+   * A stored blob by its sha256, or null when the store lacks it — what a push names as
+   * `{ sha }`. For a product that reads a push before handing it to `endpoint`
+   * (`parseUpgradeTarget` takes it as its blob reader).
+   */
+  readBlob(sha: string): Buffer | null;
 }
 
 /** The control object alone, for a product that boots its first generation some other way (tests). */
@@ -71,6 +77,7 @@ export function hmrControl<Api extends Park>(host: HmrHost<Api>, replace: Replac
       if (pathname.startsWith(`${HMR_BLOBS_PATH}/`)) return blobEndpoint(host, request);
       return upgradeEndpoint(hmr, request, onLanded, (sha) => host.readBlob(sha));
     },
+    readBlob: (sha) => host.readBlob(sha),
     current: async () => {
       await host.waitIdle();
       return host.ensure();
