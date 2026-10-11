@@ -3,7 +3,7 @@
 - **Date:** 2026-10-11
 - **Type:** process
 - **Scope:** `plugins`, `docs`
-- **PR:** TBD
+- **PR:** [#1034](https://github.com/Prism-Shadow/penguin-harness/pull/1034)
 
 [中文版](2026-10-11-harbor-cell-fanout.zh.md)
 
