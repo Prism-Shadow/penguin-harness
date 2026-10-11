@@ -4521,10 +4521,38 @@ Benchmark：
     ],
   },
 
+  /** Discord-channel strings of the messaging binding editor (channel-neutral ones live under `messaging`). */
+  discord: {
+    /** The what-binding-does FAQ fold's body (this channel's flavor). */
+    intro:
+      "绑定后，私聊 Discord 机器人的消息、以及在服务器频道或子区里 @ 它的消息会进入本对话，AI 的回复会发回同一个频道。在 Discord 开发者后台创建应用、添加机器人并粘贴其 Token 即可，无需公网地址。",
+    botToken: "Bot Token",
+    /** Shown while a saved token exists: submitting an empty field keeps it. */
+    botTokenKeepHint: "留空保持已保存的 Bot Token 不变",
+    /** The stored-token row's clear checkbox (the models-page clear idiom). */
+    clearToken: "清除已存 Bot Token",
+    /** The Bot Token field's corner link: the developer portal's application list. */
+    openPortal: "前往开发者后台",
+    invalidToken: "Bot Token 形如三段以点分隔的字符串，从开发者后台的 Bot 页复制",
+    /** Why "send test message" is disabled before the bot has ever been messaged. */
+    testMessageNoChat: "先在 Discord 中给机器人发一条消息，机器人才知道要发到哪个频道",
+    /**
+     * The rule that cannot wait for a collapsed fold: a server channel delivers only messages
+     * that @-mention the bot, so a user who writes without the mention sees nothing arrive.
+     */
+    mentionOnly: "在服务器频道或子区里，机器人只读取 @ 它的消息；私聊消息则原样送达。",
+    /** The setup FAQ fold's steps. */
+    setupSteps: [
+      "打开 Discord 开发者后台，创建应用，在其 Bot 页重置并复制 Token，填入上方表单",
+      "在 OAuth2 → URL Generator 中勾选 bot 范围与 Send Messages、Read Message History、Attach Files 权限，打开生成的链接把机器人加入你的服务器",
+      "在频道里 @ 这个机器人，或直接私聊它",
+    ],
+  },
+
   /**
    * Session ↔ messaging-bot binding: the dock panel, the row action + dialog, and the
    * channel-neutral editor strings (per-channel fields live under `feishu` / `telegram` /
-   * `qq`).
+   * `qq` / `wechat` / `discord`).
    */
   messaging: {
     panelTitle: "远程控制",
@@ -4538,6 +4566,7 @@ Benchmark：
       telegram: "Telegram",
       qq: "QQ",
       wechat: "微信",
+      discord: "Discord",
     },
     /**
      * Shared link labels: the tutorial (in the setup FAQ fold) and, at the credential field's
@@ -4581,6 +4610,7 @@ Benchmark：
     credentialMissingHint: {
       feishu: "先填写 App ID 与 App Secret 并保存，再启用连接",
       telegram: "先填写 Bot Token 并保存，再启用连接",
+      discord: "先填写 Bot Token 并保存，再启用连接",
       qq: "先扫码，或填写 App ID 与 App Secret 并保存，再启用连接",
       wechat: "先扫码绑定微信，再启用连接",
     },
@@ -4601,6 +4631,8 @@ Benchmark：
       "开启后，回复中的 Markdown 以排版形式到达，而不是显示为 `**字符**`。QQ 支持标题、粗体、斜体、删除线、列表、引用、分割线和链接；它没有代码格式，也没有表格，因此代码块按普通文本行到达，表格按其行到达。若 QQ 拒绝该排版，回复会改以纯文本发出——这会多占用 QQ 对每条消息只允许的少数几条回复中的一条。",
     renderMarkdownHelpWeChat:
       "开启后，回复中的 Markdown 以排版形式到达，而不是显示为 `**字符**`。微信自己就读 Markdown，四个渠道里它支持得最全：标题、粗体、删除线、列表、引用、分割线、链接、行内代码、代码块和表格都能渲染。它不支持的部分会被去掉标记只留文字——五级以下的标题、中文两侧的斜体星号，以及行内图片（改为链接）。",
+    renderMarkdownHelpDiscord:
+      "开启后，回复中的 Markdown 以排版形式到达，而不是显示为 `**字符**`。Discord 自己就读 Markdown：三级以内的标题、粗体、斜体、删除线、列表、引用、链接、行内代码和代码块都能渲染。它没有表格和分割线，因此表格改以代码块发送、分割线改为一行短横；四级以下的标题渲染为一行粗体。",
     /** The saved delivery option: one message per non-blank line of a reply. */
     linePerMessage: "每行一条消息",
     /** Its disclosure, beside the label: what the option does to a reply, and its two edges. */
@@ -4624,6 +4656,7 @@ Benchmark：
       telegram: "Telegram 连接已启用",
       qq: "QQ 连接已启用",
       wechat: "微信连接已启用",
+      discord: "Discord 连接已启用",
     },
     /**
      * Delivery observability under the toggle: has anything arrived, and did the last one get
@@ -4663,6 +4696,12 @@ Benchmark：
       "在 Telegram 群里发消息，机器人毫无反应？Telegram 的 Group Privacy 默认开启，此时不担任该群管理员的机器人只能收到明确指向它的命令（如 /start@your_bot）和对它自己消息的回复，普通群消息根本不会送达，连接本身也没有任何异常。把机器人设为该群的管理员即可单独解决，管理员始终收到全部消息。也可以到 @BotFather 用 /setprivacy 关闭 Group Privacy，然后把机器人移出该群再重新拉入——已在的群不会自动生效。",
     /** WeChat has no group inbound at all — the answer to "I @-ed it in a group and nothing happened". */
     troubleWeChatDirect: "微信渠道只接收单聊消息：在群里 @机器人不会有任何反应，请直接私聊它。",
+    /** Discord delivers a server-channel message only when it @-mentions the bot — the answer to "I wrote in the channel and nothing happened". */
+    troubleDiscordMention:
+      "在 Discord 服务器频道里发消息，机器人毫无反应？它在频道里只读取 @ 它的消息（这不需要在开发者后台开启任何特权 intent，无需额外设置）。消息以 @机器人 开头，或者直接私聊它。",
+    /** Direct messages to a bot need a shared server and the user's own DM setting. */
+    troubleDiscordDm:
+      "私聊机器人的消息一直没有到达，或回复失败并提示“不接受私信”？Discord 只在机器人与用户同属一个服务器时投递私信，且用户在该服务器的隐私设置里须允许来自成员的私信。",
     /** WeChat's reply budget and window — the answer to "replies arrive combined, or late". */
     troubleWeChatReplyWindow:
       "微信里的回复被合并，或迟迟不到？你每给机器人发一条消息，微信只允许它回复约 10 条，而且只在你发消息后的一段时间内有效。一次运行产生的消息更多时，会合并成更少的几条发出；微信暂时不接受的回复会先存下，在你下次给机器人发消息时补发。",
@@ -6270,6 +6309,11 @@ Benchmark：
       telegram_not_bound: "该 Session 尚未绑定 Telegram。",
       telegram_no_chat: "尚未收到 Telegram 消息：先在 Telegram 中给机器人发一条消息。",
       telegram_send_failed: "Telegram 消息发送失败。",
+      discord_token_required: "需要填写 Bot Token。",
+      discord_token_invalid: "Bot Token 格式不正确：应为三段以点分隔的字符串，从开发者后台复制。",
+      discord_not_bound: "该 Session 尚未绑定 Discord。",
+      discord_no_chat: "尚未收到 Discord 消息：先在 Discord 中给机器人发一条消息。",
+      discord_send_failed: "Discord 消息发送失败。",
       wechat_no_chat: "尚未收到微信消息：先在微信中给机器人发一条消息。",
       wechat_send_failed: "微信消息发送失败。",
       wechat_needs_recent_message:

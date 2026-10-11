@@ -22,6 +22,8 @@ export const terminalZh = {
   status: {
     connecting: "连接中",
     ready: "已连接",
+    /** The pty is fine; this page's socket dropped and is being reattached. */
+    reconnecting: "重连中",
     exited: "已退出",
     error: "连接错误",
   },
@@ -68,6 +70,8 @@ export const terminalEn: TerminalStrings = {
   status: {
     connecting: "connecting",
     ready: "ready",
+    /** The pty is fine; this page's socket dropped and is being reattached. */
+    reconnecting: "reconnecting",
     exited: "exited",
     error: "error",
   },

@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type {
+  DiscordBindingInfo,
   FeishuBindingInfo,
   QQBindingInfo,
   TelegramBindingInfo,
@@ -56,6 +57,20 @@ const STORED_TELEGRAM: TelegramBindingInfo = {
   lastChatKnown: false,
   createdAt: "2026-08-26T00:00:00.000Z",
   updatedAt: "2026-08-26T00:00:00.000Z",
+};
+
+const STORED_DISCORD: DiscordBindingInfo = {
+  channel: "discord",
+  sessionId: "session-1",
+  botId: "123456789012345678",
+  botTokenMasked: "MTIz…XXXX",
+  enabled: false,
+  linePerMessage: false,
+  finalReplyOnly: true,
+  renderMarkdown: true,
+  lastChatKnown: true,
+  createdAt: "2026-09-07T00:00:00.000Z",
+  updatedAt: "2026-09-07T00:00:00.000Z",
 };
 
 const STORED_QQ: QQBindingInfo = {
@@ -123,6 +138,13 @@ describe("emptyMessagingForm / bindingsToForm", () => {
         finalReplyOnly: false,
         renderMarkdown: true,
       },
+      discord: {
+        botToken: "",
+        clearToken: false,
+        linePerMessage: false,
+        finalReplyOnly: false,
+        renderMarkdown: true,
+      },
     });
   });
 
@@ -160,6 +182,13 @@ describe("emptyMessagingForm / bindingsToForm", () => {
         renderMarkdown: true,
       },
       wechat: {
+        clearToken: false,
+        linePerMessage: false,
+        finalReplyOnly: false,
+        renderMarkdown: true,
+      },
+      discord: {
+        botToken: "",
         clearToken: false,
         linePerMessage: false,
         finalReplyOnly: false,
@@ -575,6 +604,90 @@ describe("the QQ channel", () => {
     expect(formTestable(half, false)).toBe(false);
     half.qq.appSecret = "s";
     expect(formTestable(half, false)).toBe(true);
+  });
+});
+
+describe("the Discord channel", () => {
+  const TOKEN = "MTIzNDU2Nzg5MDEyMzQ1Njc4.GaBcDe.secret-part-XXXXXXXXXXXX";
+
+  it("loads the preferences and leaves the token empty, as Telegram does", () => {
+    const form = bindingsToForm([STORED_DISCORD]);
+    expect(form.channel).toBe("discord");
+    expect(form.discord).toEqual({
+      botToken: "",
+      clearToken: false,
+      linePerMessage: false,
+      finalReplyOnly: true,
+      renderMarkdown: true,
+    });
+  });
+
+  it("submits a trimmed token, keeps the stored one on blank, and rejects a malformed one", () => {
+    const form = emptyMessagingForm("discord");
+    form.discord.botToken = `  ${TOKEN}  `;
+    expect(formToPut(form, false)).toEqual({
+      ok: true,
+      channel: "discord",
+      body: { botToken: TOKEN, linePerMessage: false, finalReplyOnly: false, renderMarkdown: true },
+    });
+    form.discord.botToken = "";
+    expect(formToPut(form, true)).toEqual({
+      ok: true,
+      channel: "discord",
+      body: { linePerMessage: false, finalReplyOnly: false, renderMarkdown: true },
+    });
+    expect(formToPut(form, false)).toEqual({ ok: false, errors: { botToken: "required" } });
+    // A client secret or a bare id pasted in by mistake: not three dot-separated segments.
+    form.discord.botToken = "not-a-token";
+    expect(formToPut(form, false)).toEqual({ ok: false, errors: { botToken: "token_invalid" } });
+    form.discord.botToken = "123456789012345678";
+    expect(formToPut(form, false)).toEqual({ ok: false, errors: { botToken: "token_invalid" } });
+  });
+
+  it("sends the clear flag only when there is a stored token, and a typed token wins over it", () => {
+    const form = emptyMessagingForm("discord");
+    form.discord.clearToken = true;
+    expect(formToPut(form, true)).toEqual({
+      ok: true,
+      channel: "discord",
+      body: {
+        clearBotToken: true,
+        linePerMessage: false,
+        finalReplyOnly: false,
+        renderMarkdown: true,
+      },
+    });
+    form.discord.botToken = TOKEN;
+    const typed = formToPut(form, true);
+    expect(typed.ok && typed.channel === "discord" && typed.body).toEqual({
+      botToken: TOKEN,
+      linePerMessage: false,
+      finalReplyOnly: false,
+      renderMarkdown: true,
+    });
+  });
+
+  it("routes its probe and its dirty/testable checks to its own fields", () => {
+    const form = emptyMessagingForm("discord");
+    expect(formToTest(form)).toEqual({ channel: "discord", body: {} });
+    form.discord.botToken = ` ${TOKEN} `;
+    expect(formToTest(form)).toEqual({ channel: "discord", body: { botToken: TOKEN } });
+
+    const baseline = bindingsToForm([STORED_DISCORD]);
+    const same = bindingsToForm([STORED_DISCORD]);
+    expect(formDirty(same, baseline)).toBe(false);
+    same.discord.botToken = TOKEN;
+    expect(formDirty(same, baseline)).toBe(true);
+    same.discord.botToken = "";
+    same.discord.clearToken = true;
+    expect(formDirty(same, baseline)).toBe(true);
+    const pref = bindingsToForm([STORED_DISCORD]);
+    pref.discord.renderMarkdown = !pref.discord.renderMarkdown;
+    expect(formDirty(pref, baseline)).toBe(true);
+
+    expect(formTestable(emptyMessagingForm("discord"), false)).toBe(false);
+    expect(formTestable(emptyMessagingForm("discord"), true)).toBe(true);
+    expect(formTestable(form, false)).toBe(true);
   });
 });
 

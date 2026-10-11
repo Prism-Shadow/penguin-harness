@@ -33,6 +33,8 @@ export const WEB_MODULES: readonly WebModule[] = [
       "lib/shortcuts/",
       // The probe the shell list fetches with.
       "api/session-probe",
+      // The app's API channel: the shell list reads the Response itself (`apiRequest`).
+      "api/client",
       // Theme and sign-in state the view reads.
       "state/theme",
       "state/auth",

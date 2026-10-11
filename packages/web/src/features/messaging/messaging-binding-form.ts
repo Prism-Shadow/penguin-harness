@@ -9,6 +9,7 @@
  * there is nothing for a domain to switch between. WeChat's has no credential at all — its
  * token comes only from a scan, which writes it server-side — so its sub-state is the
  * delivery preferences plus the clear checkbox, and its submit can never fail validation.
+ * Discord's mirrors Telegram's: one token, whose shape is checked for immediate feedback.
  *
  * Not every field is a credential: `linePerMessage` (send a reply one message per non-blank
  * line), `finalReplyOnly` (send only a run's last reply, when the run ends) and
@@ -22,6 +23,8 @@
  * them to localized messages.
  */
 import type {
+  DiscordBindingPutRequest,
+  DiscordTestRequest,
   FeishuBindingPutRequest,
   FeishuTestRequest,
   MessagingBindingInfo,
@@ -38,6 +41,13 @@ export const FEISHU_DEFAULT_DOMAIN = "https://open.feishu.cn";
 
 /** The token shape @BotFather issues — mirrors the server's identity rule, for immediate feedback. */
 const TELEGRAM_TOKEN_RE = /^\d+:[A-Za-z0-9_-]{5,}$/;
+
+/**
+ * The token shape Discord's developer portal issues: three dot-separated base64 segments,
+ * the first encoding the bot's user id. Mirrors the server's identity rule loosely — the
+ * decode is the server's; this only catches a pasted client secret or a bare id.
+ */
+const DISCORD_TOKEN_RE = /^(?:Bot\s+)?[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{10,}$/;
 
 /**
  * The delivery preferences every channel carries — the saved fields that are not credentials,
@@ -88,6 +98,14 @@ export interface TelegramFormFields extends MessagingDeliveryFields {
   clearToken: boolean;
 }
 
+/** Discord's editable state: the Telegram shape — one token, one clear checkbox. */
+export interface DiscordFormFields extends MessagingDeliveryFields {
+  /** Always starts empty; a non-empty value replaces the stored token on save. */
+  botToken: string;
+  /** The stored-token clear checkbox (models idiom): applied on save, a typed token wins over it. */
+  clearToken: boolean;
+}
+
 /** Editable state backing the binding editor: the selected channel plus every channel's fields. */
 export interface MessagingFormState {
   channel: MessagingChannel;
@@ -95,6 +113,7 @@ export interface MessagingFormState {
   telegram: TelegramFormFields;
   qq: QQFormFields;
   wechat: WeChatFormFields;
+  discord: DiscordFormFields;
 }
 
 export type MessagingFormField = "appId" | "appSecret" | "baseDomain" | "botToken";
@@ -109,6 +128,7 @@ export type MessagingFormResult =
   | { ok: true; channel: "telegram"; body: TelegramBindingPutRequest }
   | { ok: true; channel: "qq"; body: QQBindingPutRequest }
   | { ok: true; channel: "wechat"; body: WeChatBindingPutRequest }
+  | { ok: true; channel: "discord"; body: DiscordBindingPutRequest }
   | { ok: false; errors: MessagingFormErrors };
 
 export type MessagingTestRequestByChannel =
@@ -116,7 +136,8 @@ export type MessagingTestRequestByChannel =
   | { channel: "telegram"; body: TelegramTestRequest }
   | { channel: "qq"; body: QQTestRequest }
   /** WeChat's probe carries no body: nothing on its form is a credential to send. */
-  | { channel: "wechat" };
+  | { channel: "wechat" }
+  | { channel: "discord"; body: DiscordTestRequest };
 
 export function emptyMessagingForm(channel: MessagingChannel = "feishu"): MessagingFormState {
   return {
@@ -148,6 +169,13 @@ export function emptyMessagingForm(channel: MessagingChannel = "feishu"): Messag
       renderMarkdown: true,
     },
     wechat: {
+      clearToken: false,
+      linePerMessage: false,
+      finalReplyOnly: false,
+      renderMarkdown: true,
+    },
+    discord: {
+      botToken: "",
       clearToken: false,
       linePerMessage: false,
       finalReplyOnly: false,
@@ -190,6 +218,15 @@ export function bindingsToForm(bindings: MessagingBindingInfo[]): MessagingFormS
         appId: info.appId,
         appSecret: "",
         clearSecret: false,
+        linePerMessage: info.linePerMessage,
+        finalReplyOnly: info.finalReplyOnly,
+        renderMarkdown: info.renderMarkdown,
+      };
+    } else if (info.channel === "discord") {
+      // The token is the whole credential, as on Telegram: only the preferences load.
+      form.discord = {
+        botToken: "",
+        clearToken: false,
         linePerMessage: info.linePerMessage,
         finalReplyOnly: info.finalReplyOnly,
         renderMarkdown: info.renderMarkdown,
@@ -248,6 +285,27 @@ export function formToPut(form: MessagingFormState, hasStoredSecret: boolean): M
         linePerMessage: form.telegram.linePerMessage,
         finalReplyOnly: form.telegram.finalReplyOnly,
         renderMarkdown: form.telegram.renderMarkdown,
+      },
+    };
+  }
+  if (form.channel === "discord") {
+    const botToken = form.discord.botToken.trim();
+    const clearing = botToken === "" && form.discord.clearToken && hasStoredSecret;
+    if (botToken === "" && !hasStoredSecret) errors.botToken = "required";
+    else if (botToken !== "" && !DISCORD_TOKEN_RE.test(botToken)) {
+      errors.botToken = "token_invalid";
+    }
+    if (Object.keys(errors).length > 0) return { ok: false, errors };
+    return {
+      ok: true,
+      channel: "discord",
+      body: {
+        ...(botToken !== "" ? { botToken } : {}),
+        ...(clearing ? { clearBotToken: true } : {}),
+        // Always sent, for the same reason as the other channels': an omitted flag means "keep".
+        linePerMessage: form.discord.linePerMessage,
+        finalReplyOnly: form.discord.finalReplyOnly,
+        renderMarkdown: form.discord.renderMarkdown,
       },
     };
   }
@@ -322,6 +380,10 @@ export function formToTest(form: MessagingFormState): MessagingTestRequestByChan
   }
   // No draft to send: this channel's probe reads the stored binding.
   if (form.channel === "wechat") return { channel: "wechat" };
+  if (form.channel === "discord") {
+    const botToken = form.discord.botToken.trim();
+    return { channel: "discord", body: { ...(botToken !== "" ? { botToken } : {}) } };
+  }
   if (form.channel === "qq") {
     const appId = form.qq.appId.trim();
     const appSecret = form.qq.appSecret.trim();
@@ -360,6 +422,15 @@ export function formDirty(form: MessagingFormState, baseline: MessagingFormState
       form.telegram.linePerMessage !== baseline.telegram.linePerMessage ||
       form.telegram.finalReplyOnly !== baseline.telegram.finalReplyOnly ||
       form.telegram.renderMarkdown !== baseline.telegram.renderMarkdown
+    );
+  }
+  if (form.channel === "discord") {
+    return (
+      form.discord.botToken.trim() !== "" ||
+      form.discord.clearToken ||
+      form.discord.linePerMessage !== baseline.discord.linePerMessage ||
+      form.discord.finalReplyOnly !== baseline.discord.finalReplyOnly ||
+      form.discord.renderMarkdown !== baseline.discord.renderMarkdown
     );
   }
   if (form.channel === "wechat") {
@@ -402,6 +473,9 @@ export function formTestable(form: MessagingFormState, secretConfigured: boolean
   }
   // WeChat has no draft to probe: only a stored token can be tested.
   if (form.channel === "wechat") return secretConfigured;
+  if (form.channel === "discord") {
+    return form.discord.botToken.trim() !== "" || secretConfigured;
+  }
   if (form.channel === "qq") {
     return (form.qq.appId.trim() !== "" && form.qq.appSecret.trim() !== "") || secretConfigured;
   }

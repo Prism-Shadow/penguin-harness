@@ -17,6 +17,7 @@ const MESSAGING_CHANNEL_IDS = {
   telegram: true,
   qq: true,
   wechat: true,
+  discord: true,
 } as const satisfies Record<MessagingChannel, true>;
 
 /** Whether a stored channel discriminator — untrusted text in the DB — names a known channel. */
