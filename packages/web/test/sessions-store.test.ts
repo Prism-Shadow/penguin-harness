@@ -509,7 +509,7 @@ describe("the list fetches the user's own rows only", () => {
     fetch.requests.length = 0;
     await store.getState().loadMoreFor(["a1"], "background");
     expect(fetch.requests).toHaveLength(1);
-    expect(batchEntries()[0]).toMatchObject({ category: "subagent", excludeOrg: true });
+    expect(batchEntries()[0]).toMatchObject({ category: "background", excludeOrg: true });
   });
 });
 
