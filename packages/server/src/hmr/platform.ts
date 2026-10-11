@@ -92,7 +92,7 @@ import { takePushSlip } from "./push-plugins.js";
 import type { PushSlip } from "./push-plugins.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { UnsatisfiedPlugin } from "../api/types.js";
-import { migrate } from "../db/migrations.js";
+import { migrate } from "../db/migrations/index.js";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
 
@@ -349,9 +349,15 @@ async function createInner(
   // A pushed platform carries its own migrations, which is the only way the tables its
   // business needs can reach a runtime older than they are — that runtime will never grow
   // them by restarting, because it does not have them. swapPath: this boot can be rolled
-  // back, so a restart-only migration is refused here instead of being left behind. Before
-  // any node is created: every repo below prepares its statements against this schema.
-  if (caps !== null) migrate(caps.db, { swapPath: true });
+  // back, so contract migrations stay pending for the runtime's next open instead of being
+  // applied here; the boot never fails on them. Before any node is created: every repo below
+  // prepares its statements against this schema.
+  if (caps !== null) {
+    const { deferred } = migrate(caps.db, { swapPath: true });
+    if (deferred.length > 0) {
+      console.log(`[platform] left for the runtime's next restart: ${deferred.join(", ")}`);
+    }
+  }
   // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
   // the predecessor declared at the version this build also declares, hard-stop the
   // rest — a version bump or a dropped group means this create() does not speak the

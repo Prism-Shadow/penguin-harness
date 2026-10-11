@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import type { SandboxProvider, SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { openDatabase } from "../src/db/database.js";
-import { migrate } from "../src/db/migrations.js";
+import { migrate } from "../src/db/migrations/index.js";
+import { stampThrough } from "./db-migrations-fixtures.js";
 import { SCHEMA_SQL } from "../src/db/schema.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -162,7 +163,7 @@ describe("the snapshot on the Session's row", () => {
     try {
       db.exec(SCHEMA_SQL);
       db.exec("ALTER TABLE sessions DROP COLUMN sandbox");
-      db.exec("PRAGMA user_version = 8");
+      stampThrough(db, "company-mode-desk-notices");
       migrate(db, { swapPath: true });
       const cols = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
       expect(cols.some((c) => c.name === "sandbox")).toBe(true);
