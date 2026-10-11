@@ -1,12 +1,13 @@
 /**
  * The seam under the driver: one link per backend, the same request/reply-and-events contract
- * whether the far side is the desktop shell (ShellLink, over Electron's utilityProcess port) or
+ * whether the far side is the desktop shell (ShellLink, over Electron's utilityProcess port),
  * the PenguinHarness Browser extension in the user's Chrome (ExtensionLink, over a WebSocket the
- * extension opens). The driver, the page scripts and the actions speak only this.
+ * extension opens) or a headless Chrome the server launched itself (HostedLink, over the CDP
+ * pipe). The driver, the page scripts and the actions speak only this.
  *
- * What differs between the two is declared, not discovered: `capabilities` says which commands
- * the far side answers (the shell throttles and holds a cookie store; the extension creates,
- * closes and focuses its own tabs), and the backend runtime branches on it.
+ * What differs between them is declared, not discovered: `capabilities` says which commands
+ * the far side answers (the shell throttles and holds a cookie store; the extension and the
+ * hosted Chrome create, close and focus their own tabs), and the backend runtime branches on it.
  */
 import type {
   BrowserBackend,
@@ -26,16 +27,25 @@ export interface BrowserLink {
   request(command: DesktopBrowserCommand, timeoutMs?: number): Promise<unknown>;
   /**
    * True once the far side has answered `hello`. The shell's is tried (again, with `force`); an
-   * extension's runs when its socket opens, so this answers false while there is none.
+   * extension's runs when its socket opens, so this answers false while there is none; the
+   * hosted link launches its Chrome here when it is not running.
    */
   handshake(force?: boolean): Promise<boolean>;
+  /** Why `handshake` answered false. */
+  unavailability(): LinkUnavailability;
   /** Every validated event, in order. Returns the unsubscribe. */
   onEvent(listener: (event: DesktopBrowserEvent) => void): () => void;
   /** Runs after each successful handshake (the runtime refreshes its tabs here). */
   onConnect(listener: () => Promise<void> | void): () => void;
-  /** The far side went away (an extension's socket closed); never for the shell. */
+  /** The far side went away (an extension's socket closed, the hosted Chrome exited); never for the shell. */
   onDisconnect(listener: () => void): () => void;
   dispose(): void;
+}
+
+/** Why a backend cannot be driven; `detail` is the far side's own words, when it left any. */
+export interface LinkUnavailability {
+  reason: BuiltinBrowserUnavailableReason;
+  detail?: string;
 }
 
 export const BUILTIN_CAPABILITIES: BrowserLinkCapabilities = {
@@ -45,6 +55,13 @@ export const BUILTIN_CAPABILITIES: BrowserLinkCapabilities = {
 };
 
 export const CHROME_CAPABILITIES: BrowserLinkCapabilities = {
+  createsTabs: true,
+  throttles: false,
+  cookieStore: false,
+};
+
+/** The server's own Chrome opens and closes its tabs itself; nothing measures or throttles it. */
+export const HOSTED_CAPABILITIES: BrowserLinkCapabilities = {
   createsTabs: true,
   throttles: false,
   cookieStore: false,
@@ -67,6 +84,7 @@ export class BrowserLinkError extends Error {
 
 /** How the errors name the browser the agent drives. */
 export function browserLabel(backend: BrowserBackend): string {
+  if (backend === "hosted") return "the Chrome on this machine";
   return backend === "builtin" ? "the built-in browser" : "your Chrome";
 }
 
@@ -82,12 +100,25 @@ const UNAVAILABLE: Record<BuiltinBrowserUnavailableReason, string> = {
     "Chrome is not connected. Ask the user to open Chrome with the PenguinHarness Browser extension, or to pair it again in the Browser panel.",
   extension_disabled:
     "An admin has switched off Chrome connections on this server; the user's own Chrome cannot be driven.",
+  hosted_no_chrome:
+    "No Chrome was found on this server's machine. Ask the user to install Google Chrome or Chromium there, or to set its path in the browser settings.",
+  hosted_launch_failed: "The Chrome on this server's machine did not start.",
 };
 
-/** 503 `browser_unavailable`, with the reason the routes put beside the code. */
+/**
+ * 503 `browser_unavailable`, with the reason (and Chrome's own error line, when a launch left
+ * one) the routes put beside the code.
+ */
 export class BrowserUnavailableError extends HttpError {
-  constructor(readonly reason: BuiltinBrowserUnavailableReason) {
-    super(503, "browser_unavailable", UNAVAILABLE[reason]);
+  constructor(
+    readonly reason: BuiltinBrowserUnavailableReason,
+    readonly detail?: string,
+  ) {
+    super(
+      503,
+      "browser_unavailable",
+      detail === undefined ? UNAVAILABLE[reason] : `${UNAVAILABLE[reason]} Chrome said: ${detail}`,
+    );
   }
 }
 

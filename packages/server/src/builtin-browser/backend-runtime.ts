@@ -15,6 +15,8 @@
  *   a restricted page) is `tab-released`: it leaves the registry, and an action on it answers
  *   409 `tab_released`. The registry outlives a disconnect and is replaced by the extension's
  *   tab list when it reconnects.
+ * - Hosted (`createsTabs: true`): the link opens and closes tabs in the Chrome it launched. That
+ *   Chrome exiting takes its tabs with it, so the registry is emptied (`reset`).
  *
  * Every agent action names a tab (`active` included), makes it the active one, and is
  * bracketed by `builtin_browser_activity` events so the window can show the agent at work.
@@ -30,7 +32,6 @@ import type {
   BuiltinBrowserServerEvent,
   BuiltinBrowserTab,
   BuiltinBrowserTabsResponse,
-  BuiltinBrowserUnavailableReason,
   DesktopBrowserCommand,
   DesktopBrowserEvent,
 } from "../api/types.js";
@@ -46,7 +47,7 @@ import {
   browserLabel,
   tabReleasedError,
 } from "./link.js";
-import type { BrowserLink } from "./link.js";
+import type { BrowserLink, LinkUnavailability } from "./link.js";
 import { assessLoad, systemMemory } from "./load.js";
 import { parseTab } from "./shell-link.js";
 import type { ShellLinkTiming } from "./shell-link.js";
@@ -212,9 +213,15 @@ export class BrowserBackendRuntime {
   }
 
   /** Why this backend cannot be driven now, or null. `force` retries a failed handshake. */
-  async unavailability(force: boolean): Promise<BuiltinBrowserUnavailableReason | null> {
+  async unavailability(force: boolean): Promise<LinkUnavailability | null> {
     if (await this.link.handshake(force)) return null;
-    return this.backend === "builtin" ? "shell_unsupported" : "extension_disconnected";
+    return this.link.unavailability();
+  }
+
+  /** The far side lost every tab (the hosted Chrome exited): the registry and the windows follow. */
+  reset(): void {
+    for (const id of this.tabs.ids()) this.forget(id);
+    if (this.tabs.replaceAll([])) this.schedulePublish();
   }
 
   // --- tabs ----------------------------------------------------------------------
@@ -436,12 +443,12 @@ export class BrowserBackendRuntime {
 
   /** Throws `browser_unavailable` with the reason unless this backend can be driven now. */
   async ready(): Promise<void> {
-    const reason = await this.unavailability(false);
-    if (reason !== null) throw new BrowserUnavailableError(reason);
+    const why = await this.unavailability(false);
+    if (why !== null) throw new BrowserUnavailableError(why.reason, why.detail);
   }
 
   /**
-   * What raw CDP may not do. Both backends: reach other targets (`Target.*`: open, attach to or
+   * What raw CDP may not do. Every backend: reach other targets (`Target.*`: open, attach to or
    * close pages the browser does not know), or navigate where the address bar would not go
    * (`Page.navigate` gets its rule: a web page or about:blank). Chrome also refuses the browser,
    * its cookies and stores and request interception: those are the user's real ones.
@@ -462,7 +469,7 @@ export class BrowserBackendRuntime {
       throw new HttpError(
         403,
         "cdp_refused",
-        `${method} is not available through the built-in browser; open, switch and close tabs with penguin browser open, switch and close.`,
+        `${method} is not available through ${browserLabel(this.backend)}; open, switch and close tabs with penguin browser open, switch and close.`,
       );
     }
     if (method === "Page.navigate") this.deps.url(params?.url, false);
@@ -707,7 +714,9 @@ export class BrowserBackendRuntime {
       const side =
         this.backend === "builtin"
           ? "builtin browser: the shell's"
-          : "chrome browser: the extension's";
+          : this.backend === "hosted"
+            ? "hosted browser: Chrome's"
+            : "chrome browser: the extension's";
       this.deps.log(`${side} '${event.kind}' event failed: ${messageOf(err)}`);
     }
   }

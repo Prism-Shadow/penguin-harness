@@ -16,6 +16,9 @@
  * - Only the person chooses: neither the API token nor its Remote cookie can switch backends or mint a pairing code,
  *   and a prefs write cannot set the backend.
  * - The built-in browser's history, import and data are not Chrome's: 405 on chrome.
+ * - The server's own Chrome (hosted) is offered to admins only. An admin who chose nothing gets
+ *   it when the machine has a Chrome and they have paired none of their own; on the desktop
+ *   they still start on the built-in browser, and a member still drives their own Chrome.
  */
 import { assistantText } from "@prismshadow/penguin-core";
 import { afterEach, describe, expect, it } from "vitest";
@@ -42,6 +45,7 @@ import {
   waitFor,
 } from "../helpers.js";
 import type { TestApp } from "../helpers.js";
+import { FakeChromeHost } from "./fake-cdp.js";
 import { FakeShell, tab } from "./fake-shell.js";
 
 let t: TestApp | null = null;
@@ -73,7 +77,7 @@ describe("a server without the desktop shell", () => {
     const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
     expect(
       await json<BrowserBackendResponse>(await admin.get("/api/builtin-browser/backend")),
-    ).toEqual({ backend: "chrome", choices: ["chrome"] });
+    ).toEqual({ backend: "chrome", choices: ["chrome", "hosted"] });
     const refused = await admin.put("/api/builtin-browser/backend", { backend: "builtin" });
     expect(refused.status).toBe(405);
     expect((await errorOf(refused)).error.code).toBe("not_supported");
@@ -136,11 +140,11 @@ describe("the desktop", () => {
 
     expect(
       await json<BrowserBackendResponse>(await admin.get("/api/builtin-browser/backend")),
-    ).toEqual({ backend: "builtin", choices: ["builtin", "chrome"] });
+    ).toEqual({ backend: "builtin", choices: ["builtin", "chrome", "hosted"] });
     const switched = await admin.put("/api/builtin-browser/backend", { backend: "chrome" });
     expect(await json<BrowserBackendResponse>(switched)).toEqual({
       backend: "chrome",
-      choices: ["builtin", "chrome"],
+      choices: ["builtin", "chrome", "hosted"],
     });
     expect(events).toContainEqual({ type: "builtin_browser_backend", backend: "chrome" });
     // No fallback: Chrome is not paired, and the built-in browser is not used instead.
@@ -215,6 +219,143 @@ describe("the desktop", () => {
     expect((await admin.put("/api/builtin-browser/backend", { backend: "chrome" })).status).toBe(
       200,
     );
+  });
+});
+
+describe("the server's own Chrome", () => {
+  it("is an admin's default when the machine has a Chrome and they paired none of their own", async () => {
+    const host = new FakeChromeHost();
+    t = await createTestApp({ hostedChrome: host });
+    const adminLogin = await loginAdmin(t.app);
+    const admin = apiClient(t.app, adminLogin.cookie);
+    expect(
+      await json<BrowserBackendResponse>(await admin.get("/api/builtin-browser/backend")),
+    ).toEqual({ backend: "hosted", choices: ["chrome", "hosted"] });
+    // Asking for the status starts nothing.
+    const status = await json<BuiltinBrowserStatus>(await admin.get("/api/builtin-browser/status"));
+    expect(status).toMatchObject({ backend: "hosted", available: true, tabs: [] });
+    expect(status.backends.find((b) => b.backend === "hosted")).toEqual({
+      backend: "hosted",
+      available: true,
+      chrome: { path: "/fake/bin/chrome", running: false },
+    });
+    expect(host.launched).toHaveLength(0);
+
+    // A Chrome of their own, once paired, comes before it.
+    await pair(t.app, adminLogin.cookie);
+    expect(
+      await json<BrowserBackendResponse>(await admin.get("/api/builtin-browser/backend")),
+    ).toMatchObject({ backend: "chrome" });
+    // Unless the admin switched Chrome connections off: theirs cannot be driven then.
+    await admin.put("/api/admin/settings", { browserExtensionsEnabled: false });
+    expect(
+      await json<BrowserBackendResponse>(await admin.get("/api/builtin-browser/backend")),
+    ).toMatchObject({ backend: "hosted" });
+  });
+
+  it("is not the default on a machine without a Chrome, and says so when chosen", async () => {
+    const host = new FakeChromeHost();
+    host.path = null;
+    t = await createTestApp({ hostedChrome: host });
+    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    expect(
+      await json<BrowserBackendResponse>(await admin.get("/api/builtin-browser/backend")),
+    ).toEqual({ backend: "chrome", choices: ["chrome", "hosted"] });
+
+    const chosen = await admin.put("/api/builtin-browser/backend", { backend: "hosted" });
+    expect(await json<BrowserBackendResponse>(chosen)).toMatchObject({ backend: "hosted" });
+    const status = await json<BuiltinBrowserStatus>(await admin.get("/api/builtin-browser/status"));
+    expect(status).toMatchObject({
+      backend: "hosted",
+      available: false,
+      reason: "hosted_no_chrome",
+    });
+    // Never a fallback to another backend: the action says why instead.
+    const action = await admin.post("/api/builtin-browser/tabs", {});
+    expect(action.status).toBe(503);
+    expect((await errorOf(action)).error.reason).toBe("hosted_no_chrome");
+  });
+
+  it("keeps a saved choice, whatever the machine has", async () => {
+    const host = new FakeChromeHost();
+    t = await createTestApp({ hostedChrome: host });
+    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    await admin.put("/api/builtin-browser/backend", { backend: "chrome" });
+    expect(
+      await json<BuiltinBrowserStatus>(await admin.get("/api/builtin-browser/status")),
+    ).toMatchObject({ backend: "chrome", available: false, reason: "extension_not_paired" });
+  });
+
+  it("is never a member's: not offered, not choosable, and a stored preference buys nothing", async () => {
+    const host = new FakeChromeHost();
+    t = await createTestApp({ hostedChrome: host });
+    const bob = apiClient(t.app, (await provisionUser(t.app, "bob")).cookie);
+    expect(
+      await json<BrowserBackendResponse>(await bob.get("/api/builtin-browser/backend")),
+    ).toEqual({ backend: "chrome", choices: ["chrome"] });
+    const status = await json<BuiltinBrowserStatus>(await bob.get("/api/builtin-browser/status"));
+    expect(status.backends.map((b) => b.backend)).toEqual(["chrome"]);
+    const chosen = await bob.put("/api/builtin-browser/backend", { backend: "hosted" });
+    expect(chosen.status).toBe(403);
+    expect((await errorOf(chosen)).error.code).toBe("admin_required");
+
+    t.deps.prefsRepo.set("bob", JSON.stringify({ browserBackend: "hosted" }));
+    for (const res of [
+      await bob.get("/api/builtin-browser/status"),
+      await bob.post("/api/builtin-browser/tabs", {}),
+      await bob.get("/api/builtin-browser/tabs/1/view"),
+      await bob.post("/api/builtin-browser/tabs/1/input", { events: [] }),
+    ]) {
+      expect(res.status).toBe(403);
+      expect((await errorOf(res)).error.code).toBe("admin_required");
+    }
+    expect(host.launched).toHaveLength(0);
+  });
+
+  it("leaves the desktop's results as they were: built-in for an admin, Chrome for a member", async () => {
+    const shell = new FakeShell();
+    const host = new FakeChromeHost();
+    t = await createDesktopApp({ browserShellPort: shell.port, hostedChrome: host });
+    const admin = apiClient(t.app, await desktopLoginCookie(t.app));
+    expect(
+      await json<BrowserBackendResponse>(await admin.get("/api/builtin-browser/backend")),
+    ).toEqual({ backend: "builtin", choices: ["builtin", "chrome", "hosted"] });
+    // Chosen there, it is driven there — and the built-in browser is a choice away again.
+    const chosen = await admin.put("/api/builtin-browser/backend", { backend: "hosted" });
+    expect(await json<BrowserBackendResponse>(chosen)).toMatchObject({ backend: "hosted" });
+    await admin.put("/api/builtin-browser/backend", { backend: "builtin" });
+    expect(
+      await json<BuiltinBrowserStatus>(await admin.get("/api/builtin-browser/status")),
+    ).toMatchObject({ backend: "builtin", available: true });
+  });
+
+  it("drives the server's Chrome for an agent whose session an admin runs", async () => {
+    const host = new FakeChromeHost();
+    t = await createTestApp({ hostedChrome: host });
+    const token = t.deps.authService.localApiToken();
+    const opened = await t.app.request("/api/builtin-browser/tabs", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ url: "about:blank" }),
+    });
+    expect(opened.status).toBe(200);
+    expect(host.launched).toHaveLength(1);
+    expect(host.profiles[0]).toMatch(/builtin-browser[\\/]hosted-profile$/);
+    const status = await t.app.request("/api/builtin-browser/status", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(await json<BuiltinBrowserStatus>(status)).toMatchObject({
+      backend: "hosted",
+      available: true,
+      backends: expect.arrayContaining([
+        {
+          backend: "hosted",
+          available: true,
+          chrome: { path: "/fake/bin/chrome", version: "140.0.7339.16", running: true },
+        },
+      ]),
+      tabs: [{ id: 1, url: "about:blank" }],
+    });
   });
 });
 

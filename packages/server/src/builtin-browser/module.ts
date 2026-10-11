@@ -1,19 +1,23 @@
 /**
- * The agent browser's place in the platform tree: one group, two nodes.
+ * The agent browser's place in the platform tree: one group, three nodes.
  *
  * - `ProcessShellPort` answers which port reaches the desktop shell — Electron's
  *   `process.parentPort`, absent under a plain `penguin server|web` — and is the node a test
  *   replaces with a fake shell.
+ * - `SystemChromeHost` answers where this machine's Chrome is and launches it for the hosted
+ *   backend; a test replaces it with a machine that has none, or with a fake Chrome.
  * - `BuiltinBrowserRoutes` builds the generation's BuiltinBrowser — the built-in browser over
- *   that port, and the users' own Chromes through the extension hub — mounts the routes, and
- *   provides the gate the runtime's WebSocket upgrade (extension-ws.ts) hands sockets to. The
- *   browser (and with it the port listener and every extension socket) is disposed with the
- *   App: a hot swap hands the port to the next generation's link, and the extensions reconnect
- *   to the next generation's hub (close 1012).
+ *   that port, the users' own Chromes through the extension hub, and the server's own Chrome —
+ *   mounts the routes, and provides the gate the runtime's WebSocket upgrade (extension-ws.ts)
+ *   hands sockets to. The browser (and with it the port listener, every extension socket and
+ *   the hosted Chrome's process) is disposed with the App: a hot swap hands the port to the
+ *   next generation's link, the extensions reconnect to the next generation's hub (close 1012),
+ *   and the hosted Chrome is stopped — the next generation launches its own on the same
+ *   profile with the first command that needs it.
  *
- * The built-in browser's UI events go to every admin who has the event stream open (it is the
- * admins' tool, see routes.ts); a user's Chrome's go to that user. A channel nobody listens on
- * is not opened for them.
+ * The built-in browser's and the hosted Chrome's UI events go to every admin who has the event
+ * stream open (they are the admins' tools, see routes.ts); a user's Chrome's go to that user. A
+ * channel nobody listens on is not opened for them.
  */
 import type { DatabaseSync } from "node:sqlite";
 import { buildInfo } from "@prismshadow/penguin-core";
@@ -21,19 +25,23 @@ import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/p
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import type { Hono } from "hono";
 import type { BrowserBackend, BuiltinBrowserServerEvent, UiPrefs } from "../api/types.js";
+import type { LiveStreams } from "../auth/live-streams.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { BrowserExtensionsRepo } from "../db/repos/browser-extensions.js";
 import { BROWSER_EXTENSIONS_KEY } from "../db/repos/server-settings.js";
 import type { Channels, Clock, Db, Desktop, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
+import { streamRevocation } from "../http/sse.js";
 import { ensureInstallId } from "../install-id.js";
-import type { Users } from "../mechanisms/identity.js";
+import type { Auth, Users } from "../mechanisms/identity.js";
 import type { SessionDrivers, SessionIndex } from "../mechanisms/sessions.js";
 import type { Settings, UiPrefsStore } from "../mechanisms/settings.js";
 import { shellPortOf } from "../services/desktop-update-port.js";
 import type { BrowserExtensionAdmission } from "./extension-hub.js";
 import type { ExtensionSocket } from "./extension-link.js";
 import { ExtensionPairing } from "./extension-pairing.js";
+import { systemChromeHost } from "./hosted-chrome.js";
+import type { ChromeHost } from "./hosted-chrome.js";
 import { builtinBrowserRoutes, extensionPairRoutes } from "./routes.js";
 import { BuiltinBrowser } from "./service.js";
 import type { BrowserShellPort } from "./shell-link.js";
@@ -49,6 +57,20 @@ export abstract class BuiltinBrowserPort {
 export class ProcessShellPort implements BuiltinBrowserPort {
   current(): Opaque<"BrowserShellPort", BrowserShellPort> | null {
     return shellPortOf(process) as BrowserShellPort | null;
+  }
+}
+
+/** This machine's Chrome as the hosted backend finds and launches it. */
+@Interface()
+export abstract class HostedChromeHost {
+  abstract current(): Opaque<"ChromeHost", ChromeHost>;
+}
+
+/** The real one: the machine's file system, and Chrome as a child process. */
+@Component()
+export class SystemChromeHost implements HostedChromeHost {
+  current(): Opaque<"ChromeHost", ChromeHost> {
+    return systemChromeHost;
   }
 }
 
@@ -77,7 +99,7 @@ function backendPrefs(store: UiPrefsStore) {
   return {
     get: (userId: string): BrowserBackend | null => {
       const chosen = read(userId).browserBackend;
-      return chosen === "builtin" || chosen === "chrome" ? chosen : null;
+      return chosen === "builtin" || chosen === "chrome" || chosen === "hosted" ? chosen : null;
     },
     set: (userId: string, backend: BrowserBackend): void => {
       store.set(userId, JSON.stringify({ ...read(userId), browserBackend: backend }));
@@ -107,6 +129,9 @@ function backendPrefs(store: UiPrefsStore) {
 })
 export class BuiltinBrowserRoutes {
   @Use() private readonly port!: BuiltinBrowserPort;
+  @Use() private readonly chromeHost!: HostedChromeHost;
+  @Use() private readonly liveStreams!: LiveStreams;
+  @Use() private readonly auth!: Auth;
   @Use() private readonly desktop!: Desktop;
   @Use() private readonly channels!: Channels;
   @Use() private readonly users!: Users;
@@ -159,8 +184,10 @@ export class BuiltinBrowserRoutes {
         enabled: () => settings.getBrowserExtensionsEnabled(),
         publishTo,
       },
+      hosted: { host: this.chromeHost.current() as ChromeHost },
       prefs: backendPrefs(this.prefs),
     });
+    const revocationDeps = { liveStreams: this.liveStreams, auth: this.auth };
     const pairing = new ExtensionPairing({
       store,
       user: (userId) => {
@@ -179,6 +206,7 @@ export class BuiltinBrowserRoutes {
         return user === null ? null : { userId: user.userId, isAdmin: user.isAdmin };
       },
       pairing,
+      revocation: (c) => streamRevocation(c, c.var.user, revocationDeps),
     });
     this.pairRoutes = extensionPairRoutes(pairing);
     this.gate = {
@@ -198,9 +226,9 @@ export class BuiltinBrowserRoutes {
   }
 }
 
-/** The agent browser: the built-in one (desktop) and the users' own Chromes, their tabs, the agent's actions, import and history. */
+/** The agent browser: the built-in one (desktop), the users' own Chromes and the server's own Chrome, their tabs, the agent's actions, import and history. */
 @Module({
-  children: [ProcessShellPort, BuiltinBrowserRoutes],
+  children: [ProcessShellPort, SystemChromeHost, BuiltinBrowserRoutes],
   exports: [BrowserExtensionGate],
 })
 export class BuiltinBrowserModule {}

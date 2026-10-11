@@ -96,6 +96,14 @@ export function mapLinkError(
       // Chrome's socket closed mid-request: the extension reconnects on its own, so the
       // agent's answer is the same as for a call made while it is away.
       if (backend === "chrome") return new BrowserUnavailableError("extension_disconnected");
+      if (backend === "hosted") {
+        // Chrome exited under the request; the next command launches it again.
+        return new HttpError(
+          503,
+          "browser_unavailable",
+          "The Chrome on this machine exited; retry (it starts again with the next command).",
+        );
+      }
       return new HttpError(
         503,
         "browser_unavailable",

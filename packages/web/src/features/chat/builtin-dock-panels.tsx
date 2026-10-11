@@ -3,13 +3,15 @@
  * Files, Memory, Trace, messaging, schedules) and the built-in browser. A definition names its
  * panel once — the label and glyph every surface that lists panels reads — and carries the
  * tab's body. The conversation's bodies read the chat page's state through useChatDock (the
- * page provides it around both docks); the browser needs none of it.
+ * page provides it around both docks); the browser reads only which server the conversation
+ * lives on.
  *
  * Importing the module registers the seven — chat-page.tsx does, so they are in the registry
  * before any dock renders.
  */
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { machineForSession } from "../../lib/session-machines";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { dockPanelDefinition, panelLabel, registerDockPanel } from "../dock/panel-registry";
 import type { DockPanelBodyProps, DockPanelDefinition, PanelId } from "../dock/panel-registry";
@@ -158,6 +160,18 @@ function MessagingPanelBody({ active }: DockPanelBodyProps) {
   return <MessagingPanel key={selected.sessionId} sessionId={selected.sessionId} active={active} />;
 }
 
+/**
+ * The browser of the server the conversation's Workspace lives on, found the way the Files
+ * panel finds its machine: a Session's from where it lives, a draft's from the folder picked in
+ * the composer. This server's wherever neither names a machine.
+ */
+function BrowserPanelBody({ active }: DockPanelBodyProps) {
+  const { selected, draftWorkspace } = useChatDock();
+  const server =
+    selected !== null ? machineForSession(selected.sessionId) : (draftWorkspace?.machineId ?? null);
+  return <BuiltinBrowserPanel active={active} server={server} />;
+}
+
 function SchedulesPanelBody({ active }: DockPanelBodyProps) {
   const { selected, prefillComposer } = useChatDock();
   if (!selected) return draftPlaceholder("schedules");
@@ -214,9 +228,9 @@ const BUILTIN_DOCK_PANELS: readonly DockPanelDefinition[] = [
     order: 60,
     Body: SchedulesPanelBody,
   },
-  // The browser is one set of pages shared by every conversation, not a Session's view, so it
-  // needs no Session and works on the draft page too. It exists only where this window can
-  // host it and the server can drive it (the desktop app).
+  // The browser is one set of pages per server, shared by every conversation there, not a
+  // Session's view, so it needs no Session and works on the draft page too. It is offered
+  // wherever a server this window knows offers one it can show.
   {
     id: "builtin-browser",
     label: () => S.builtinBrowser.panelTitle,
@@ -224,7 +238,7 @@ const BUILTIN_DOCK_PANELS: readonly DockPanelDefinition[] = [
     order: 70,
     offered: isBrowserOffered,
     subscribeOffered: subscribeBrowser,
-    Body: BuiltinBrowserPanel,
+    Body: BrowserPanelBody,
   },
 ];
 

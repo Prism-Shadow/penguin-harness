@@ -521,6 +521,7 @@ export const en: Strings = {
     },
     openFailed: (reason: string): string => `Could not open a tab: ${reason}`,
     closeFailed: (reason: string): string => `Could not close the tab: ${reason}`,
+    backendGroup: "Browser",
     backendBuiltin: "Built-in",
     backendChrome: "System Chrome",
     chromeConnected: (name: string | null): string =>
@@ -532,6 +533,36 @@ export const en: Strings = {
     manageChrome: "Manage…",
     switchedToChrome: "Agents now use your Chrome",
     switchedToBuiltin: "Agents now use the built-in browser",
+    backendHosted: "Chrome on this machine",
+    switchedToHosted: "Agents now use the Chrome on this machine",
+    useHosted: "Use the Chrome on this machine",
+    hostedPageInput: (title: string): string =>
+      title !== "" ? `Keyboard input for the page: ${title}` : "Keyboard input for the page",
+    hostedReading: "Checking the browser…",
+    hostedConnecting: "Connecting to the page…",
+    hostedReconnecting: "Reconnecting…",
+    hostedViewLostTitle: "The picture of this page was lost",
+    hostedViewLostBody:
+      "The page is still open on the machine; the connection that shows it here keeps ending.",
+    hostedNavFailed: (reason: string): string => `The page did not take that: ${reason}`,
+    hostedNoTabsTitle: "No page open yet",
+    hostedNoTabsBody:
+      "Pages an agent opens in the Chrome on this machine appear here. You see what it sees, and can click and type in them.",
+    hostedNotOfferedTitle: "No browser on this machine",
+    hostedNotOfferedHere: "This server does not run a Chrome of its own.",
+    hostedNotOfferedMachine:
+      "The machine this conversation's workspace is on could not be asked for its browser, or its PenguinHarness is too old to run one. Check that the machine is connected and up to date.",
+    hostedNotChosenTitle: "Agents here use another browser",
+    hostedNotChosenBody:
+      "Switch to the Chrome on this machine to see and use the pages agents open from this workspace.",
+    hostedNoChromeTitle: "No Chrome on this machine",
+    hostedNoChromeBody:
+      "Install Google Chrome or Chromium on the machine this workspace is on, or have an administrator set the path of one in the browser's settings. PenguinHarness never downloads a browser.",
+    hostedLaunchFailedTitle: "Chrome did not start on this machine",
+    hostedLaunchFailedBody:
+      "Fix what Chrome reported above on that machine (it does not start as root, or without its system libraries), then try again.",
+    hostedTryAgain: "Try again",
+    hostedCheckAgain: "Check again",
     switchRefused: "An agent is using the browser; switch once it is done",
     switchFailed: (reason: string): string => `Could not switch the browser: ${reason}`,
     chromeTabCard: "This tab is open in your Chrome",

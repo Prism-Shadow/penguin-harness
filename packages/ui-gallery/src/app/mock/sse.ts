@@ -1,5 +1,5 @@
 /**
- * The Web App's `api/sse.ts`, swapped in by the gallery's Vite config: the same two
+ * The Web App's `api/sse.ts`, swapped in by the gallery's Vite config: the same
  * subscriptions, fed by the demo store's channels instead of an EventSource. A Session
  * subscription is told the run-state snapshot and every pending approval first, as the server
  * does on connect, and a running Session's script then streams on it.
@@ -90,4 +90,21 @@ export function openMachineEvents(
       open = false;
     },
   };
+}
+
+/**
+ * Watches a hosted browser tab (GET /api/builtin-browser/tabs/:id/view). The demo store runs no
+ * browser, so the stream stays silent: no frame, and no end.
+ */
+export function openBrowserView(
+  tabId: number,
+  viewport: { width: number; height: number },
+  server: string | null,
+  handlers: { onFrame: (frame: never) => void; onEnd: () => void },
+): StreamConnection {
+  void tabId;
+  void viewport;
+  void server;
+  void handlers;
+  return { close: () => undefined };
 }

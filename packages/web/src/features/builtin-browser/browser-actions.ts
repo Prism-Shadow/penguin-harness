@@ -1,6 +1,9 @@
 /**
  * The agent browser's round trips to the server, each paired with the local change that makes
  * it feel immediate. Components call these; none of them throws.
+ *
+ * Those the Browser panel makes name the server the panel belongs to (null, the default, for
+ * this one): the request goes to that server and the local change to its state.
  */
 import type { BrowserBackend, BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import { toastAttention, toastError, toastSuccess } from "@prismshadow/penguin-ui";
@@ -8,22 +11,33 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
-import { openPanel } from "../dock/dock-state";
+import { machineForSession } from "../../lib/session-machines";
+import { currentDockScope, openPanel } from "../dock/dock-state";
 import { browserState, dispatchBrowser } from "./browser-store";
-import { NO_BROWSER_SCOPE, type BrowserGuest } from "./browser-state";
+import { NO_BROWSER_SCOPE, type BrowserGuest, type RemoteBackend } from "./browser-state";
 
 const opening = new Map<Promise<unknown>, string>();
+
+/**
+ * The server whose browser the conversation on screen uses: the machine its Session lives on,
+ * or this server (a draft, or a Session here).
+ */
+export function conversationServer(): string | null {
+  return machineForSession(currentDockScope());
+}
 
 /**
  * Reads availability and the registry. A refusal — an older server without the route, an
  * account that is not an admin — means the browser cannot be used from here; a network
  * failure says nothing either way and keeps what is known.
  */
-export async function refreshBrowserStatus(): Promise<void> {
+export async function refreshBrowserStatus(server: string | null = null): Promise<void> {
   try {
-    dispatchBrowser({ type: "status", status: await api.getBuiltinBrowserStatus() });
+    dispatchBrowser({ type: "status", status: await api.getBuiltinBrowserStatus(server) }, server);
   } catch (err) {
-    if (err instanceof ApiError && err.status !== 0) dispatchBrowser({ type: "unreachable" });
+    if (err instanceof ApiError && err.status !== 0) {
+      dispatchBrowser({ type: "unreachable" }, server);
+    }
   }
 }
 
@@ -43,12 +57,16 @@ export async function refreshBrowserSettings(): Promise<void> {
  * Opens a tab and brings it to the front: at `url`, or else at the new-tab page the server
  * picks, the homepage, or a blank page without one. The tab once it exists, else null. While
  * the request is on its way the store counts it, so the panel does not open the new-tab page
- * beside it.
+ * beside it. A browser that turned out not to run (a server's Chrome that did not start) is
+ * read again, so the panel says why.
  */
-export function openBrowserTab(url?: string): Promise<BuiltinBrowserTab | null> {
-  const scope = browserState().scope;
-  const request = openInScope(scope, browserState().projectId, url);
-  opening.set(request, scope);
+export function openBrowserTab(
+  url?: string,
+  server: string | null = null,
+): Promise<BuiltinBrowserTab | null> {
+  const state = browserState(server);
+  const request = openInScope(state.scope, state.projectId, url, server);
+  opening.set(request, state.scope);
   void request.finally(() => opening.delete(request));
   return request;
 }
@@ -57,21 +75,28 @@ async function openInScope(
   scope: string,
   projectId: string | null,
   url?: string,
+  server: string | null = null,
 ): Promise<BuiltinBrowserTab | null> {
-  dispatchBrowser({ type: "opening", delta: 1, scope });
+  dispatchBrowser({ type: "opening", delta: 1, scope }, server);
   try {
-    const { tab } = await api.openBuiltinBrowserTab({
-      activate: true,
-      ...(projectId === null ? {} : { projectId }),
-      ...(url === undefined ? {} : { url }),
-      ...(scope === NO_BROWSER_SCOPE ? {} : { sessionId: scope }),
-    });
+    const { tab } = await api.openBuiltinBrowserTab(
+      {
+        activate: true,
+        ...(projectId === null ? {} : { projectId }),
+        ...(url === undefined ? {} : { url }),
+        ...(scope === NO_BROWSER_SCOPE ? {} : { sessionId: scope }),
+      },
+      server,
+    );
     return tab;
   } catch (err) {
     toastError(S.builtinBrowser.openFailed(apiErrorText(err)));
+    if (err instanceof ApiError && err.code === "browser_unavailable") {
+      void refreshBrowserStatus(server);
+    }
     return null;
   } finally {
-    dispatchBrowser({ type: "opening", delta: -1, scope });
+    dispatchBrowser({ type: "opening", delta: -1, scope }, server);
   }
 }
 
@@ -105,38 +130,48 @@ export async function adoptBrowserSession(fromSessionId: string, sessionId: stri
  * A link from the conversation, opened in the agent browser: the Browser panel comes up in the
  * dock of the conversation on screen, and the link opens in a new tab — the same request as the
  * panel's own new tab, so the page joins this conversation's tabs (in the user's Chrome, its tab
- * comes to the front there).
+ * comes to the front there). The browser is the one that panel shows: the conversation's
+ * server's.
  */
 export function openLinkInBrowser(url: string): void {
   openPanel("builtin-browser");
-  void openBrowserTab(url);
+  void openBrowserTab(url, conversationServer());
 }
 
 /**
  * Brings a tab to the front here at once; the server's next registry snapshot confirms it. A
  * tab of the user's Chrome comes to the front in Chrome too.
  */
-export function activateBrowserTab(tabId: number, backend: BrowserBackend = "builtin"): void {
-  dispatchBrowser({ type: "activated", tabId, backend });
-  void api.activateBuiltinBrowserTab(tabId).catch(() => undefined);
+export function activateBrowserTab(
+  tabId: number,
+  backend: BrowserBackend = "builtin",
+  server: string | null = null,
+): void {
+  dispatchBrowser({ type: "activated", tabId, backend }, server);
+  void api.activateBuiltinBrowserTab(tabId, server).catch(() => undefined);
 }
 
 /**
- * Closes a tab of the user's Chrome: it leaves the strip at once, and the extension closes it in
- * Chrome. A failure says why; the next tab list puts the tab back if it is still open.
+ * Closes a tab of the user's Chrome, or of a server's own: it leaves the strip at once, and the
+ * browser it lives in closes it. A failure says why; the next tab list puts the tab back if it
+ * is still open.
  */
-export function closeChromeTab(tabId: number): void {
-  dispatchBrowser({ type: "chrome-closed", tabId });
-  void api.closeBuiltinBrowserTab(tabId).catch((err: unknown) => {
+export function closeRemoteTab(
+  tabId: number,
+  backend: RemoteBackend = "chrome",
+  server: string | null = null,
+): void {
+  dispatchBrowser({ type: "chrome-closed", tabId, backend }, server);
+  void api.closeBuiltinBrowserTab(tabId, server).catch((err: unknown) => {
     if (!(err instanceof ApiError && err.status === 404)) {
       toastError(S.builtinBrowser.closeFailed(apiErrorText(err)));
     }
   });
 }
 
-/** Loads an address in a tab of the user's Chrome (the panel hosts no page to load it in). */
-export function navigateChromeTab(tabId: number, url: string): void {
-  void api.navigateBuiltinBrowserTab(tabId, url).catch((err: unknown) => {
+/** Loads an address in a tab this window hosts no page for (the user's Chrome, a server's own). */
+export function navigateRemoteTab(tabId: number, url: string, server: string | null = null): void {
+  void api.navigateBuiltinBrowserTab(tabId, url, server).catch((err: unknown) => {
     toastError(S.builtinBrowser.openFailed(apiErrorText(err)));
   });
 }
@@ -147,9 +182,12 @@ export function navigateChromeTab(tabId: number, url: string): void {
  * server refuses, and the toast says to wait — nothing is asked, nothing changes. True once
  * switched.
  */
-export async function switchBrowserBackend(backend: BrowserBackend): Promise<boolean> {
+export async function switchBrowserBackend(
+  backend: BrowserBackend,
+  server: string | null = null,
+): Promise<boolean> {
   try {
-    await api.putBrowserBackend(backend);
+    await api.putBrowserBackend(backend, server);
   } catch (err) {
     if (err instanceof ApiError && err.code === "action_in_flight") {
       toastAttention(S.builtinBrowser.switchRefused);
@@ -158,11 +196,15 @@ export async function switchBrowserBackend(backend: BrowserBackend): Promise<boo
     }
     return false;
   }
-  dispatchBrowser({ type: "event", event: { type: "builtin_browser_backend", backend } });
+  dispatchBrowser({ type: "event", event: { type: "builtin_browser_backend", backend } }, server);
   toastSuccess(
-    backend === "chrome" ? S.builtinBrowser.switchedToChrome : S.builtinBrowser.switchedToBuiltin,
+    backend === "chrome"
+      ? S.builtinBrowser.switchedToChrome
+      : backend === "hosted"
+        ? S.builtinBrowser.switchedToHosted
+        : S.builtinBrowser.switchedToBuiltin,
   );
-  await refreshBrowserStatus();
+  await refreshBrowserStatus(server);
   return true;
 }
 

@@ -1,17 +1,19 @@
 ---
 title: 内置浏览器
-description: 侧边栏里由你和 Agent 共用的浏览器（桌面应用的内置浏览器，或你自己的 Chrome），可以用 penguin browser 自动操作。
+description: 侧边栏里由你和 Agent 共用的浏览器（桌面应用的内置浏览器、你自己的 Chrome，或服务器所在机器上的 Chrome），可以用 penguin browser 自动操作。
 ---
 
-侧边栏里的**浏览器**面板承载着 Agent 在 shell 里用 `penguin browser` 驱动的浏览器：Agent 读取页面、点击和输入，并提取亚马逊订单这样的数据，登录用的是你自己的账号。它有两种后端：
+侧边栏里的**浏览器**面板承载着 Agent 在 shell 里用 `penguin browser` 驱动的浏览器：Agent 读取页面、点击和输入，并提取亚马逊订单这样的数据，登录用的是你自己的账号。它有三种后端：
 
 - **内置浏览器**：桌面应用里的网页浏览器。你可以像使用任何浏览器一样在其中浏览，Agent 驱动的也是同一组标签页。它有自己的登录状态和历史记录，与系统浏览器互不相通，两者都可以从 Chrome、Edge、Brave、Arc、Vivaldi、Opera、Chromium 或 Firefox 导入。
 - **你自己的 Chrome**：经由 PenguinHarness Browser 扩展，桌面应用和 Web App 都能用。Agent 在你 Chrome 里名为 **Penguin** 的标签组中工作，沿用你已有的登录状态，从不触碰你的其他标签页。
+- **服务器所在机器上的 Chrome**（`hosted`）：由服务器自己启动并驱动的无头 Chrome，服务器在哪台机器上，它就在哪台机器上。Workspace 在远程机器上时用的就是它：Agent 从它的 shell 所在的机器打开网页，你在浏览器面板里看到并操作的是同一批页面。
 
 从哪里开始：
 
 - 第一次使用，见[打开浏览器面板](#打开浏览器面板)。
 - 想让 Agent 使用你的 Chrome，见[使用你自己的 Chrome](#使用你自己的-chrome)。
+- 想在远程机器或没有桌面应用的服务器上给 Agent 一个浏览器，见[使用服务器所在机器上的 Chrome](#使用服务器所在机器上的-chrome)。
 - 想让 Agent 在内置浏览器里使用你的账号，见[登录](#登录)和[从你的浏览器导入](#从你的浏览器导入)。
 - 想自己写自动化，或了解 Agent 在做什么，见[在命令行中驱动](#在命令行中驱动)。
 - 内置浏览器变得吃力或页面崩溃时，见[性能](#性能)。
@@ -20,7 +22,8 @@ description: 侧边栏里由你和 Agent 共用的浏览器（桌面应用的内
 
 - **内置浏览器**是 macOS、Windows 和 Linux 桌面应用的一部分。用浏览器登录服务器（`penguin web`）、在 Docker 中或在远程机器上都没有它。
 - **你自己的 Chrome** 在任何允许它的服务器上都能用，服务器缺省允许。它需要 Chrome 116 或更新版本，以及 PenguinHarness Browser 扩展。
-- 桌面应用缺省使用内置浏览器，直到你[切换](#在内置浏览器与-chrome-之间切换)；其他服务器只提供 Chrome。Agent 从不自行选择后端；一种后端不可用时，也不会改用另一种。
+- **服务器所在机器上的 Chrome** 需要那台机器上装有 Google Chrome 或 Chromium，只对管理员提供。
+- 桌面应用缺省使用内置浏览器，直到你[切换](#在后端之间切换)。在其他服务器上，没有配对过自己 Chrome 的管理员缺省使用服务器所在机器上的 Chrome（那台机器上有 Chrome 时）；其他人使用自己的 Chrome。Agent 从不自行选择后端；一种后端不可用时，也不会改用另一种。
 - Agent 驱动的是正在驱动其对话的那个人的浏览器：发出启动本轮运行那条消息的人；如果是定时任务，则是创建它的人。在有多个账号的服务器上，每个人各自配对自己的 Chrome，Agent 从不使用别人的 Chrome。
 
 ## 打开浏览器面板
@@ -186,11 +189,43 @@ Agent 只驱动这些标签页：
 
 扩展通过 `/api/builtin-browser/extension/ws` 上的 WebSocket 连接服务器。反向代理必须为这个路径转发 `Upgrade` 头，与终端流相同。配对请求来自扩展自己的来源，服务器只对这个来源作答。
 
-## 在内置浏览器与 Chrome 之间切换
+## 使用服务器所在机器上的 Chrome
 
-在桌面应用中，由你在**设置 › 浏览器**的 **Agent 使用的浏览器**中决定 Agent 使用哪个浏览器。浏览器面板的菜单里不提供这个选项。
+服务器可以运行一个属于它自己的 Chrome：无头运行，在服务器所在的那台机器上，不会在那台机器的屏幕上弹出窗口。Workspace 在远程机器上时，浏览器靠它才能用：Agent 的 shell 和浏览器在同一台机器上，所以浏览器里的 `http://localhost:3000` 就是 Agent 刚在那台机器上启动的开发服务器。
 
-切换后会有提示确认，例如「Agent 现在使用你的 Chrome」。Agent 正在操作浏览器时，切换会被拒绝，并提示「Agent 正在使用浏览器，等它完成后再切换」。切换不会关闭任何东西：内置浏览器的标签页在后台保持打开，Penguin 标签页也留在 Chrome 里。应用的每个窗口都会随之切换。其他服务器上只有 Chrome，不会出现这个选项。
+### 需要什么
+
+- 服务器所在的机器上装有 Google Chrome 或 Chromium。服务器先在 `PATH` 上找 `google-chrome`、`google-chrome-stable`、`chromium`、`chromium-browser` 和 `chrome`，再找 macOS、Windows 和 Linux 的标准安装位置。它从不下载浏览器。
+- 想用别的 Chrome 时，由管理员设置路径：`PUT /api/builtin-browser/settings`，请求体为 `{"chromePath": "<路径>"}`，取值是那台机器上的绝对路径（`null` 表示恢复自动查找）。
+- 管理员账号。这个 Chrome 以服务器所在机器的网络位置访问网页，与桌面上的内置浏览器一样，因此不对普通成员提供。驱动对话的人是管理员时，Agent 才会使用它；经由 hub 访问一台机器时，你就是那台机器的管理员。
+
+机器上没有 Chrome 时，浏览器不可用，原因是 `hosted_no_chrome`。找到的 Chrome 启动失败时，原因是 `hosted_launch_failed`，状态里带有 Chrome 自己的报错行。服务器从不关闭 Chrome 的沙箱，所以以 root 运行的服务器启动不了它：请以普通用户运行服务器。
+
+### 什么时候用它
+
+- 管理员没有做过选择、不在桌面应用里、也没有配对过自己的 Chrome，而机器上有 Chrome 时，缺省就用它。远程机器、Docker 和 `penguin web` 都属于这种情况。
+- 其他情况下由你自己选择，见[在后端之间切换](#在后端之间切换)。
+
+Chrome 在第一条需要它的命令到来时启动；查询状态或标签页列表不会启动它。没有任何标签页满十分钟后它会自行退出，服务器停止时也一并结束。它意外退出时，标签页随之消失，下一条命令会重新启动它。
+
+### 观看并操作它的标签页
+
+面板显示这个 Chrome 的标签页；页面区显示的是所选标签页的实时画面。像操作页面一样在画面上点击、滚动和输入：你的输入会送到服务器所在机器上的那个页面。页面按你的面板大小排版。只有有人在看时才发送画面，每秒最多 15 帧，页面不变时不发送。
+
+要替 Agent 登录某个网站，打开登录页（或让 Agent 打开），然后在画面上登录。登录状态保存在这个 Chrome 自己的 profile 里，即数据根目录下的 `builtin-browser/hosted-profile`；里面没有你在别处的登录。在 Linux 上，其中的 Cookie 不用桌面钥匙串的密钥加密（服务器上没有钥匙串）；这个目录只有运行服务器的用户可以读取。
+
+### Agent 能做什么
+
+`penguin browser` 的全部功能，与其他后端相同。导入、历史记录和清除数据属于内置浏览器，在这里返回 `not_supported`。原始 DevTools Protocol 命令除了不能越出标签页之外不设限制，因为这个 profile 里只有在这个 Chrome 中做过的事。
+
+## 在后端之间切换
+
+由你决定 Agent 使用哪个浏览器：
+
+- 在**设置 › 浏览器**的 **Agent 使用的浏览器**中设置。
+- 在一台机器的**浏览器**面板（以及本服务器 Agent 使用这台机器上的 Chrome 时的面板）的菜单里选择，面向管理员：**内置**、**系统 Chrome**、**这台机器上的 Chrome**。
+
+切换后会有提示确认，例如「Agent 现在使用你的 Chrome」。Agent 正在操作浏览器时，切换会被拒绝，并提示「Agent 正在使用浏览器，等它完成后再切换」。切换不会关闭任何东西：内置浏览器的标签页在后台保持打开，Penguin 标签页留在 Chrome 里，服务器的 Chrome 也保留它的标签页。应用的每个窗口都会随之切换。内置浏览器只在桌面应用中、只对管理员提供；服务器所在机器上的 Chrome 只对管理员提供。普通成员只有自己的 Chrome，不会出现这个选项。
 
 ## 关闭 Chrome 连接
 
@@ -198,7 +233,7 @@ Agent 只驱动这些标签页：
 
 ## 在命令行中驱动
 
-`penguin browser` 在 shell 中驱动这些标签页，Agent 也正是这样使用浏览器的，内置浏览器和你自己的 Chrome 都一样。预装的 `browser-automation` 插件教给 Agent 一个循环：打开页面、读取页面、用 JavaScript 操作，再检查页面发生了什么变化。`penguin browser status` 会说明当前使用哪个后端，Agent 无法更改它。
+`penguin browser` 在 shell 中驱动这些标签页，Agent 也正是这样使用浏览器的，每种后端都一样。预装的 `browser-automation` 插件教给 Agent 一个循环：打开页面、读取页面、用 JavaScript 操作，再检查页面发生了什么变化。`penguin browser status` 会说明当前使用哪个后端，Agent 无法更改它。
 
 ```bash
 penguin browser open https://www.amazon.com/your-orders/orders
@@ -239,17 +274,20 @@ EOF
 - 读取页面与追踪变化所用的脚本改编自 [GenericAgent](https://github.com/lsdefine/genericagent)（MIT 协议），包括它的 DOM 简化以及 `web_scan` / `web_execute_js` 的设计。
 - 历史记录和主页是数据根目录下的两个文件：`builtin-browser/history.json` 和 `builtin-browser/settings.json`。Cookie 和网站存储保存在桌面应用自己的配置目录里。
 - 使用你自己的 Chrome 时，服务器经由扩展的 WebSocket 发出同样的命令，扩展再通过 Chrome 的调试接口转给标签页。每个已配对的 Chrome 都有自己的钥匙，它放在 WebSocket 的子协议里传递，从不出现在地址中；服务器只保存它的散列。扩展本身不申请读取页面内容的权限，也不向页面注入任何东西。
-- 一切操作都经过服务器的 `/api/builtin-browser` 路由。内置浏览器、导入、历史记录和清除数据只对管理员开放；任何已登录的用户都可以配对并使用自己的 Chrome。见 [Agent 浏览器](/server-api#agent-浏览器)。
+- 使用服务器所在机器上的 Chrome 时，服务器以无头方式启动 Chrome 并带上 `--remote-debugging-pipe`，经这条管道与它说 DevTools Protocol。不开任何调试端口，机器上的其他进程接不上它。面板里的画面是 Chrome 的 screencast，以事件流发出（`GET /api/builtin-browser/tabs/:id/view`），你的输入经 `POST /api/builtin-browser/tabs/:id/input` 送回；经由 hub 时，两者走的是访问那台机器的其他请求所用的同一个代理。
+- 一切操作都经过服务器的 `/api/builtin-browser` 路由。内置浏览器、服务器所在机器上的 Chrome、导入、历史记录和清除数据只对管理员开放；任何已登录的用户都可以配对并使用自己的 Chrome。见 [Agent 浏览器](/server-api#agent-浏览器)。
 
 ## 限制
 
 | 项目 | 限制 |
 | --- | --- |
-| 可用范围 | 内置浏览器：仅桌面应用。你自己的 Chrome：任何允许它的服务器，Chrome 116 或更新版本 |
+| 可用范围 | 内置浏览器：仅桌面应用。你自己的 Chrome：任何允许它的服务器，Chrome 116 或更新版本。服务器的 Chrome：所在机器装有 Chrome 或 Chromium 的任何服务器，仅管理员 |
 | 标签页 | 每种后端最多 20 个；超出时新建标签页会被拒绝（`too_many_tabs`） |
 | 连接的 Chrome | 每个用户同一时间一个；最后连上的那个接管 |
 | Chrome 中无法驱动的页面 | `chrome://` 页面、Chrome Web Store、本地文件 |
-| 导入、清除数据、历史记录 | 仅内置浏览器（在你的 Chrome 中返回 `not_supported`） |
+| 导入、清除数据、历史记录 | 仅内置浏览器（其他后端返回 `not_supported`） |
+| 服务器的 Chrome | 始终无头运行；没有标签页满 10 分钟后退出；从不在关闭沙箱的情况下启动 |
+| 标签页的画面 | JPEG 帧，每秒最多 15 帧，只在有人观看时发送 |
 | 配对码 | 只能用一次，10 分钟内有效；输错五次即作废 |
 | 负载警告 | 标签页合计超过 1.5 GB 内存、这台电脑的可用内存不足 10%，或超过 12 个标签页 |
 | `scan` 正文 | 默认 35,000 个字符（`--max-chars`）；加 `--text` 时取其三分之一 |

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the browser/server and their dependencies, start an isolated server + mock LLM,
+# Build the browser/server/cli and their dependencies, start an isolated server + mock LLM,
 # then forward all arguments to Playwright. SKIP_BUILD=1 uses existing builds.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,10 +53,12 @@ wait_for_server() {
 }
 
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
-  echo "== build web/server and dependencies =="
+  echo "== build web/server/cli and dependencies =="
   (cd "$ROOT" \
     && pnpm --filter @prismshadow/penguin-server... \
-      --filter @prismshadow/penguin-web... -r build)
+      --filter @prismshadow/penguin-web... \
+      --filter @prismshadow/penguin-cli build \
+      -r build)
 fi
 
 mkdir -p "$LOGS"

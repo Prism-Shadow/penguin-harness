@@ -30,7 +30,7 @@ import type {
   DesktopBrowserReplyMessage,
 } from "../api/types.js";
 import { BrowserLinkError, CHROME_CAPABILITIES } from "./link.js";
-import type { BrowserLink } from "./link.js";
+import type { BrowserLink, LinkUnavailability } from "./link.js";
 import { parseBrowserEvent, parseBrowserReply } from "./shell-link.js";
 
 /** What the link needs of a socket: the `ws` server socket, or a test's fake extension. */
@@ -222,6 +222,11 @@ export class ExtensionLink implements BrowserLink {
     if (this.current === null) return Promise.resolve(false);
     if (this.current.hello !== null) return Promise.resolve(true);
     return this.current.handshake;
+  }
+
+  /** No socket, or one whose hello failed: the user's Chrome is not there now. */
+  unavailability(): LinkUnavailability {
+    return { reason: "extension_disconnected" };
   }
 
   onEvent(listener: (event: DesktopBrowserEvent) => void): () => void {

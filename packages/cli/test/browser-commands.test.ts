@@ -193,6 +193,79 @@ describe("status and tabs", () => {
     },
   );
 
+  it("status names the hosted backend, with the server's Chrome version once it has started", async () => {
+    const hosted = (chrome: Record<string, unknown>) => ({
+      body: {
+        available: true,
+        backend: "hosted",
+        backends: [{ backend: "hosted", available: true, chrome }],
+        tabs: [],
+        activeTabId: null,
+      },
+    });
+    routes["GET /status"] = () => hosted({ path: "/usr/bin/google-chrome", running: false });
+    expect(await cli(["browser", "status"])).toBe(0);
+    expect(out()).toBe("status: available · backend: hosted\ntabs: none\n");
+    stdout.length = 0;
+    routes["GET /status"] = () =>
+      hosted({ path: "/usr/bin/google-chrome", version: "140.0.7339.16", running: true });
+    expect(await cli(["browser", "status"])).toBe(0);
+    expect(out()).toBe("status: available · backend: hosted (Chrome 140.0.7339.16)\ntabs: none\n");
+  });
+
+  it.each([
+    ["hosted_no_chrome", undefined, /No Chrome was found on the machine this server runs on/],
+    [
+      "hosted_launch_failed",
+      "Running as root without --no-sandbox is not supported.",
+      /did not start\. Chrome said: Running as root without --no-sandbox is not supported\./,
+    ],
+  ])(
+    "status exits 1 when the server's own Chrome is %s, with what Chrome said",
+    async (reason, detail, note) => {
+      routes["GET /status"] = () => ({
+        body: {
+          available: false,
+          reason,
+          ...(detail !== undefined ? { detail } : {}),
+          backend: "hosted",
+          backends: [
+            {
+              backend: "hosted",
+              available: false,
+              reason,
+              ...(detail !== undefined ? { detail } : {}),
+            },
+          ],
+          tabs: [],
+          activeTabId: null,
+        },
+      });
+      expect(await cli(["browser", "status"])).toBe(1);
+      const [statusLine, noteLine] = out().split("\n");
+      expect(statusLine).toBe(`status: unavailable (${reason}) · backend: hosted`);
+      expect(noteLine).toMatch(note);
+    },
+  );
+
+  it("an action on a hosted Chrome that did not start says what Chrome printed", async () => {
+    routes["POST /tabs/active/scan"] = () => ({
+      status: 503,
+      body: {
+        error: {
+          code: "browser_unavailable",
+          message: "The Chrome on this server's machine did not start.",
+          reason: "hosted_launch_failed",
+          detail: "Running as root without --no-sandbox is not supported.",
+        },
+      },
+    });
+    expect(await cli(["browser", "scan"])).toBe(1);
+    expect(err()).toMatch(
+      /^error: browser_unavailable: .*Chrome said: Running as root without --no-sandbox is not supported\./,
+    );
+  });
+
   it("status prints the browser's memory, and the server's load warning with what to do", async () => {
     const GB = 1024 * 1024;
     routes["GET /status"] = () => ({

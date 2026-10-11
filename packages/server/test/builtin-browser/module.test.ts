@@ -27,7 +27,7 @@ async function until(ready: () => boolean, what: string): Promise<void> {
 }
 
 describe("the built-in browser in the platform tree", () => {
-  it("offers only Chrome on a plain server, to the admin and a member alike", async () => {
+  it("offers Chrome on a plain server, to the admin and a member alike", async () => {
     const t = await createTestApp();
     try {
       const unpaired: BuiltinBrowserStatus = {
@@ -41,7 +41,14 @@ describe("the built-in browser in the platform tree", () => {
       const admin = await loginAdmin(t.app);
       const res = await apiClient(t.app, admin.cookie).get("/api/builtin-browser/status");
       expect(res.status).toBe(200);
-      expect((await res.json()) as BuiltinBrowserStatus).toEqual(unpaired);
+      // An admin is also offered the server's own Chrome; the test machine has none.
+      expect((await res.json()) as BuiltinBrowserStatus).toEqual({
+        ...unpaired,
+        backends: [
+          ...unpaired.backends,
+          { backend: "hosted", available: false, reason: "hosted_no_chrome" },
+        ],
+      });
       const bob = await provisionUser(t.app, "bob");
       const own = await apiClient(t.app, bob.cookie).get("/api/builtin-browser/status");
       expect(own.status).toBe(200);
@@ -69,6 +76,7 @@ describe("the built-in browser in the platform tree", () => {
         backends: [
           { backend: "builtin", available: true },
           { backend: "chrome", available: false, reason: "extension_not_paired" },
+          { backend: "hosted", available: false, reason: "hosted_no_chrome" },
         ],
         tabs: [tab(3)],
         activeTabId: 3,

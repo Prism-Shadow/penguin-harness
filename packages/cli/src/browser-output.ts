@@ -63,7 +63,8 @@ export function tabList(
  * `status: available · backend: chrome (Chrome 130 on macOS, extension 0.2.13)` and the tab list,
  * or `status: unavailable (<reason>) · backend: …` with a `note:` saying what to tell the user. The
  * backend is the one the user chose (the agent never picks it); a server older than the second
- * backend names none, and the line then ends at the status.
+ * backend names none, and the line then ends at the status. The hosted backend names the
+ * server's Chrome by its version once it has started: `backend: hosted (Chrome 140.0.7339.16)`.
  */
 export function renderStatus(status: BuiltinBrowserStatus, t: Messages): string {
   const { label, line } = t.browser;
@@ -72,7 +73,7 @@ export function renderStatus(status: BuiltinBrowserStatus, t: Messages): string 
     const reason = status.reason ?? "not_desktop";
     return lines([
       `${line(label.status, t.browser.unavailable(reason))}${backend}`,
-      line(label.note, t.browser.unavailableHint(reason)),
+      line(label.note, t.browser.unavailableHint(reason, status.detail)),
     ]);
   }
   return lines([
@@ -82,7 +83,10 @@ export function renderStatus(status: BuiltinBrowserStatus, t: Messages): string 
   ]);
 }
 
-/** ` · backend: <backend>`, naming the user's Chrome when one is paired; empty without a backend. */
+/**
+ * ` · backend: <backend>`, naming the user's Chrome when one is paired, or the server's own by
+ * its version; empty without a backend.
+ */
 function backendSuffix(status: BuiltinBrowserStatus, t: Messages): string {
   // Both optional at runtime: an older server answers without them.
   const backend = status.backend as BrowserBackend | undefined;
@@ -92,11 +96,16 @@ function backendSuffix(status: BuiltinBrowserStatus, t: Messages): string {
     backend === "chrome"
       ? backends?.find((info) => info.backend === "chrome")?.extension
       : undefined;
+  const chrome =
+    backend === "hosted"
+      ? backends?.find((info) => info.backend === "hosted")?.chrome?.version
+      : undefined;
   const value = t.browser.backendValue(
     backend,
     extension !== undefined
       ? { name: oneLine(extension.name), version: extension.version }
       : undefined,
+    chrome,
   );
   return ` · ${t.browser.line(t.browser.label.backend, value)}`;
 }

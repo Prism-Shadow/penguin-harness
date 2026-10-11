@@ -92,6 +92,11 @@ export class ExtensionHub {
     return this.entries.get(userId)?.runtime ?? null;
   }
 
+  /** Whether the user has a Chrome of their own to drive: one paired, and Chrome connections on. */
+  paired(userId: string): boolean {
+    return this.deps.enabled() && this.deps.store.listByUser(userId).length > 0;
+  }
+
   /** Why the user's Chrome cannot be driven now, or null when it can. */
   unavailability(userId: string): BuiltinBrowserUnavailableReason | null {
     if (!this.deps.enabled()) return "extension_disabled";

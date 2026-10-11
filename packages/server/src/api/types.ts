@@ -6865,22 +6865,26 @@ export interface InstalledPluginsResponse {
 }
 
 // ---------------------------------------------------------------------------
-// The agent browser, two backends behind one link (see builtin-browser/): the desktop's
+// The agent browser, three backends behind one link (see builtin-browser/): the desktop's
 // built-in browser — Electron <webview> guests in the persist:penguin-browser partition,
-// driven over CDP by the shell on the server's behalf — and the user's own Chrome, driven
-// through the PenguinHarness Browser extension over a WebSocket the extension opens.
+// driven over CDP by the shell on the server's behalf — the user's own Chrome, driven
+// through the PenguinHarness Browser extension over a WebSocket the extension opens, and
+// `hosted`: a headless Chrome the server launches on its own machine and drives over a pipe.
 // ---------------------------------------------------------------------------
 
-/** The browser an agent drives: the desktop's built-in one, or the user's own Chrome. */
-export type BrowserBackend = "builtin" | "chrome";
+/**
+ * The browser an agent drives: the desktop's built-in one, the user's own Chrome, or the
+ * headless Chrome the server runs on its own machine (`hosted`).
+ */
+export type BrowserBackend = "builtin" | "chrome" | "hosted";
 
 /**
  * What a backend's link can do. The shell cannot create tabs (the Web App's <webview> does) and
- * throttles and measures its guests; the extension creates, closes and focuses tabs itself and
- * has no cookie store the server may touch.
+ * throttles and measures its guests; the extension and the hosted Chrome create, close and
+ * focus tabs themselves and have no cookie store the server may touch.
  */
 export interface BrowserLinkCapabilities {
-  /** `open-tab`, `close-tab` and `activate-tab` are answered (chrome). */
+  /** `open-tab`, `close-tab` and `activate-tab` are answered (chrome, hosted). */
   createsTabs: boolean;
   /** `throttle` and the `metrics` events (builtin). */
   throttles: boolean;
@@ -6892,7 +6896,8 @@ export interface BrowserLinkCapabilities {
  * One tab of the agent browser. Built-in: a guest page, `id` its webContents id. Chrome: a tab
  * the extension drives (one it created in the Penguin tab group, or one the user added), `id`
  * Chrome's tab id; `canGoBack`/`canGoForward` are always false there (the tabs API cannot read
- * them).
+ * them). Hosted: a page of the server's own Chrome, `id` a number the server gives it (it never
+ * carries a `favicon`).
  */
 export interface BuiltinBrowserTab {
   id: number;
@@ -6918,6 +6923,8 @@ export interface BuiltinBrowserTab {
  * Why the agent browser cannot be driven. Built-in: not under the desktop shell, a shell too old
  * to host it, or no app window to host a new tab. Chrome: this user has no paired extension, it
  * is paired but not connected now, or an admin switched Chrome connections off server-wide.
+ * Hosted: no Chrome is installed on the server's machine, or the one found did not start (the
+ * `detail` beside the reason is Chrome's own error line).
  */
 export type BuiltinBrowserUnavailableReason =
   | "not_desktop"
@@ -6925,13 +6932,23 @@ export type BuiltinBrowserUnavailableReason =
   | "no_window"
   | "extension_not_paired"
   | "extension_disconnected"
-  | "extension_disabled";
+  | "extension_disabled"
+  | "hosted_no_chrome"
+  | "hosted_launch_failed";
 
 /** One backend as GET /status lists it for the caller. */
 export interface BrowserBackendInfo {
   backend: BrowserBackend;
   available: boolean;
   reason?: BuiltinBrowserUnavailableReason;
+  /** `hosted_launch_failed`: what Chrome printed as it failed. */
+  detail?: string;
+  /**
+   * hosted: the Chrome found on the server's machine — where it is, its version once it has
+   * started during this server's life, and whether it is running now (it starts with the first
+   * command that needs it). Absent when none is found.
+   */
+  chrome?: { path: string; version?: string; running: boolean };
   /** chrome: the caller's connected extension, else the one seen most recently; absent when none is paired. */
   extension?: {
     id: string;
@@ -6950,11 +6967,13 @@ export interface BuiltinBrowserStatus {
   /** Whether the effective backend can be driven now. */
   available: boolean;
   reason?: BuiltinBrowserUnavailableReason;
+  /** `hosted_launch_failed`: what Chrome printed as it failed. */
+  detail?: string;
   backend: BrowserBackend;
   backends: BrowserBackendInfo[];
   tabs: BuiltinBrowserTab[];
   activeTabId: number | null;
-  /** The shell's latest measurement of the built-in browser's load; absent before its first one, and on chrome. */
+  /** The shell's latest measurement of the built-in browser's load; absent before its first one, and on the other backends. */
   metrics?: BuiltinBrowserMetrics;
 }
 
@@ -7182,7 +7201,8 @@ export interface BuiltinBrowserHistoryResponse {
 
 /**
  * GET / PUT /api/builtin-browser/settings: the browser's own settings, a file of the server's
- * that is read and written without the desktop shell. PUT takes the whole object.
+ * that is read and written without the desktop shell. PUT takes the fields to change (at least
+ * one); a field left out is kept as it is.
  */
 export interface BuiltinBrowserSettings {
   /**
@@ -7191,15 +7211,85 @@ export interface BuiltinBrowserSettings {
    * then blank). PUT takes a bare host too and answers the address as stored.
    */
   homepage: string | null;
+  /**
+   * The Chrome the hosted backend launches: an absolute path on the server's machine, or null to
+   * look for one (the known names on PATH, then the standard install locations). An answer
+   * leaves it out when none is set.
+   */
+  chromePath?: string | null;
+}
+
+/**
+ * One frame of a hosted tab's picture: a `frame` event of GET /api/builtin-browser/tabs/:id/view
+ * (an event stream). `data` is a base64 JPEG, `width` and `height` its size in pixels — the
+ * space the pointer coordinates of {@link HostedBrowserInputEvent} are given in.
+ */
+export interface HostedBrowserFrame {
+  data: string;
+  width: number;
+  height: number;
+}
+
+/** The size a hosted tab's page is laid out to, in CSS pixels: the viewer's panel. */
+export interface HostedBrowserViewport {
+  width: number;
+  height: number;
+}
+
+/**
+ * One input event for a hosted tab, as the viewer's panel captured it. `x` and `y` are in the
+ * pixels of the frame on screen (the server scales them to the page's CSS pixels); `modifiers`
+ * is CDP's bit field (Alt 1, Ctrl 2, Meta 4, Shift 8).
+ */
+export type HostedBrowserInputEvent =
+  | {
+      type: "mouse";
+      action: "move" | "down" | "up";
+      x: number;
+      y: number;
+      /** The button that changed; `none` (a move's default) for none. A press defaults to `left`. */
+      button?: "none" | "left" | "middle" | "right";
+      /** The buttons held, as MouseEvent.buttons. */
+      buttons?: number;
+      /** 1 for a click, 2 for the second press of a double click; 0 for a move. */
+      clickCount?: number;
+      modifiers?: number;
+    }
+  | { type: "wheel"; x: number; y: number; deltaX: number; deltaY: number; modifiers?: number }
+  | {
+      type: "key";
+      action: "down" | "up";
+      /** KeyboardEvent.key and .code. */
+      key: string;
+      code: string;
+      /** KeyboardEvent.keyCode (the Windows virtual key code). */
+      keyCode?: number;
+      /** The character the press types, when it types one ("\r" for Enter); absent for a key that types nothing. */
+      text?: string;
+      repeat?: boolean;
+      modifiers?: number;
+    }
+  /** Text inserted at the caret as if typed or pasted (an IME's committed text, a paste). */
+  | { type: "text"; text: string }
+  /** The toolbar: back and forward through the tab's history, reload, stop loading. */
+  | { type: "nav"; action: "back" | "forward" | "reload" | "stop" };
+
+/**
+ * POST /api/builtin-browser/tabs/:id/input: a batch of input events, applied in order (at most
+ * 200), and optionally the viewer's panel size, applied first. Answers 204.
+ */
+export interface HostedBrowserInputRequest {
+  events?: HostedBrowserInputEvent[];
+  viewport?: HostedBrowserViewport;
 }
 
 export type BuiltinBrowserAction =
   "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
 
 /**
- * User-channel events of the agent browser. The built-in backend's go to every admin; a chrome
- * backend's go to the user whose Chrome it is, as do `builtin_browser_backend` and
- * `builtin_browser_extension`.
+ * User-channel events of the agent browser. The built-in and the hosted backend's go to every
+ * admin; a chrome backend's go to the user whose Chrome it is, as do `builtin_browser_backend`
+ * and `builtin_browser_extension`.
  */
 export type BuiltinBrowserServerEvent =
   /**
@@ -7260,7 +7350,8 @@ export interface DesktopBrowserCookie {
 /**
  * Server → browser link: what the shell (built-in) or the extension (chrome) does with its tabs.
  * Mechanism only — the product logic stays on the server. The names are historical: the same
- * envelopes travel the extension's WebSocket as JSON text frames.
+ * envelopes travel the extension's WebSocket as JSON text frames, and the hosted link answers
+ * the same commands itself, by CDP on the Chrome it launched.
  */
 export type DesktopBrowserCommand =
   /** Reply: a BrowserHello. An older shell never answers. */
@@ -7292,14 +7383,14 @@ export type DesktopBrowserCommand =
    */
   | { op: "throttle"; tabIds: number[] }
   /**
-   * Chrome only (the shell answers `unknown_op`). Reply: `{ tab: BuiltinBrowserTab }`. A tab at
+   * Chrome and hosted (the shell answers `unknown_op`). Reply: `{ tab: BuiltinBrowserTab }`. A tab at
    * `url` (http(s) or about:blank, checked by the server) in the extension's Penguin tab group;
    * `activate` asks for it to be the selected tab of its window.
    */
   | { op: "open-tab"; url: string; activate: boolean }
-  /** Chrome only. Reply: `{}`. Closes a tab the extension drives. */
+  /** Chrome and hosted. Reply: `{}`. Closes a tab the extension drives. */
   | { op: "close-tab"; tabId: number }
-  /** Chrome only. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
+  /** Chrome and hosted. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
   | { op: "activate-tab"; tabId: number }
   /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
   | { op: "ping" };
@@ -7307,12 +7398,14 @@ export type DesktopBrowserCommand =
 /**
  * The `hello` reply. Built-in: `{ version: 1, partition }` (an older shell sends no `backend`).
  * Chrome: `{ version: 1, backend: "chrome", extension }`; any other version is closed 4005.
+ * Hosted: `{ version: 1, backend: "hosted", chrome }`, the launched Chrome's version.
  */
 export interface BrowserHello {
   version: 1;
   backend?: BrowserBackend;
   partition?: string;
   extension?: { version: string; chrome: string; name: string };
+  chrome?: string;
 }
 
 export interface DesktopBrowserCommandMessage {

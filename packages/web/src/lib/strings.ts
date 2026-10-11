@@ -613,6 +613,8 @@ export const zh = {
     },
     openFailed: (reason: string): string => `无法打开标签页：${reason}`,
     closeFailed: (reason: string): string => `无法关闭标签页：${reason}`,
+    /** The overflow menu's backend choice (desktop app): the group's name and its two choices. */
+    backendGroup: "浏览器",
     /** The two backends, as Settings › Browser offers them (desktop app). */
     backendBuiltin: "内置",
     backendChrome: "系统 Chrome",
@@ -628,6 +630,35 @@ export const zh = {
     /** The toast after a switch, and the one when an agent at work refuses it. */
     switchedToChrome: "Agent 现在使用你的 Chrome",
     switchedToBuiltin: "Agent 现在使用内置浏览器",
+    backendHosted: "这台机器上的 Chrome",
+    switchedToHosted: "Agent 现在使用这台机器上的 Chrome",
+    useHosted: "使用这台机器上的 Chrome",
+    hostedPageInput: (title: string): string =>
+      title !== "" ? `页面的键盘输入：${title}` : "页面的键盘输入",
+    hostedReading: "正在检查浏览器…",
+    hostedConnecting: "正在连接页面…",
+    hostedReconnecting: "正在重新连接…",
+    hostedViewLostTitle: "此页面的画面已中断",
+    hostedViewLostBody: "页面仍在那台机器上打开着，但把它显示到这里的连接一直中断。",
+    hostedNavFailed: (reason: string): string => `页面没有执行该操作：${reason}`,
+    hostedNoTabsTitle: "还没有打开的页面",
+    hostedNoTabsBody:
+      "Agent 在这台机器的 Chrome 里打开的页面会出现在这里。你看到的就是它看到的，也可以直接点击和输入。",
+    hostedNotOfferedTitle: "这台机器上没有浏览器",
+    hostedNotOfferedHere: "此服务器不运行自己的 Chrome。",
+    hostedNotOfferedMachine:
+      "无法向此对话的 Workspace 所在的机器查询浏览器，或者那里的 PenguinHarness 版本过旧。请确认机器已连接并已更新。",
+    hostedNotChosenTitle: "这里的 Agent 使用的是另一个浏览器",
+    hostedNotChosenBody:
+      "切换到这台机器上的 Chrome，即可查看并操作 Agent 在此 Workspace 中打开的页面。",
+    hostedNoChromeTitle: "这台机器上没有 Chrome",
+    hostedNoChromeBody:
+      "请在此 Workspace 所在的机器上安装 Google Chrome 或 Chromium，或由管理员在浏览器设置中指定它的路径。PenguinHarness 不会下载浏览器。",
+    hostedLaunchFailedTitle: "这台机器上的 Chrome 没有启动",
+    hostedLaunchFailedBody:
+      "请在那台机器上处理上面 Chrome 报告的问题（以 root 运行或缺少系统库时它无法启动），然后重试。",
+    hostedTryAgain: "重试",
+    hostedCheckAgain: "重新检查",
     switchRefused: "Agent 正在使用浏览器，等它完成后再切换",
     switchFailed: (reason: string): string => `无法切换浏览器：${reason}`,
     /** The Chrome surface: in place of the page, a card for a tab that lives in the user's Chrome. */

@@ -1,17 +1,19 @@
 ---
 title: Built-in Browser
-description: The browser you and your agents share, in the dock — the desktop app's built-in browser or your own Chrome — with automation through penguin browser.
+description: The browser you and your agents share, in the dock — the desktop app's built-in browser, your own Chrome, or a Chrome on the server's machine — with automation through penguin browser.
 ---
 
-The **Browser** panel in the dock holds the browser your agents drive from their shell with `penguin browser`: they read pages, click and type, and pull out data such as your Amazon orders, signed in with your own accounts. It has two backends:
+The **Browser** panel in the dock holds the browser your agents drive from their shell with `penguin browser`: they read pages, click and type, and pull out data such as your Amazon orders, signed in with your own accounts. It has three backends:
 
 - **The built-in browser**, a web browser inside the desktop app. You browse in it like in any browser, and the agents drive the same tabs. It keeps its own sign-ins and history, separate from your system browser, and can import both from Chrome, Edge, Brave, Arc, Vivaldi, Opera, Chromium or Firefox.
 - **Your own Chrome**, through the PenguinHarness Browser extension, in the desktop app and in the Web App alike. The agents work in tabs of a **Penguin** tab group in your Chrome, signed in as you already are, and never touch your other tabs.
+- **The Chrome on the server's machine** (`hosted`): a headless Chrome the server starts and drives itself, on whichever machine it runs. It is the browser for a Workspace on a remote machine: the agent opens pages from where its shell runs, and you watch and use the same pages in the Browser panel.
 
 Where to go:
 
 - To get started, see [Open the Browser panel](#open-the-browser-panel).
 - To let agents use your Chrome, see [Use your own Chrome](#use-your-own-chrome).
+- To give agents a browser on a remote machine or a server without the desktop app, see [Use the Chrome on the server's machine](#use-the-chrome-on-the-servers-machine).
 - To let an agent use your accounts in the built-in browser, see [Sign in](#sign-in) and [Import from your browser](#import-from-your-browser).
 - To automate it yourself or understand what an agent does, see [Drive it from the command line](#drive-it-from-the-command-line).
 - If the built-in browser gets heavy or a page crashes, see [Performance](#performance).
@@ -20,7 +22,8 @@ Where to go:
 
 - **The built-in browser** is part of the desktop app on macOS, Windows and Linux. A browser window signed in to a server (`penguin web`), Docker or a remote machine has none.
 - **Your own Chrome** works on any server whose administrator allows it, which is the default. It needs Chrome 116 or later and the PenguinHarness Browser extension.
-- The desktop app uses the built-in browser until you [switch](#switch-between-built-in-and-chrome); every other server offers only Chrome. Your agents never choose the backend, and a backend that is unavailable never falls back to the other.
+- **The Chrome on the server's machine** needs Google Chrome or Chromium installed on that machine, and is for administrators.
+- The desktop app uses the built-in browser until you [switch](#switch-between-backends). On any other server an administrator who has paired no Chrome of their own gets the Chrome on the server's machine when it has one; everyone else gets their own Chrome. Your agents never choose the backend, and a backend that is unavailable never falls back to another.
 - An agent drives the browser of the person driving its conversation: the one who sent the message that started the run, or, for a scheduled task, the person who created it. On a server with several accounts, everyone pairs their own Chrome, and an agent never uses anyone else's.
 
 ## Open the Browser panel
@@ -186,11 +189,43 @@ One extension can be paired with several servers, such as the desktop app and a 
 
 The extension connects to the server over a WebSocket at `/api/builtin-browser/extension/ws`. A reverse proxy must forward the `Upgrade` header for that path, as it does for the terminal stream. The pairing request comes from the extension's own origin, and the server answers it for that origin alone.
 
-## Switch between built-in and Chrome
+## Use the Chrome on the server's machine
 
-In the desktop app you choose which browser your agents use in **Settings › Browser**, under **Browser agents use**. The Browser panel's menu does not offer the choice.
+The server can run a Chrome of its own: a headless one, on the machine the server runs on, with no window on that machine's screen. It is what makes the browser work for a Workspace on a remote machine. The agent's shell and its browser are on the same machine, so `http://localhost:3000` in the browser is the dev server the agent just started there.
 
-A notice confirms the switch, such as **Agents now use your Chrome**. While an agent is acting in the browser, the switch is refused with **An agent is using the browser; switch once it is done**. Switching closes nothing: the built-in browser's tabs stay open in the background, and the Penguin tabs stay in Chrome. Every window of the app follows the switch. On any other server there is only Chrome, and the choice does not appear.
+### What it needs
+
+- Google Chrome or Chromium on the server's machine. The server looks for `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser` and `chrome` on its `PATH`, then in the standard install locations of macOS, Windows and Linux. It never downloads a browser.
+- To use another one, an administrator sets its path: `PUT /api/builtin-browser/settings` with `{"chromePath": "<path>"}`, an absolute path on that machine (`null` goes back to looking for one).
+- An administrator account. This Chrome browses from the server's own place on the network, like the built-in browser on the desktop, so members are not offered it. An agent uses it when the person driving its conversation is an administrator; through the hub, you reach a machine as its administrator.
+
+When the machine has no Chrome, the browser is unavailable with `hosted_no_chrome`. When the one found does not start, it is unavailable with `hosted_launch_failed`, and the status carries Chrome's own error line. The server never turns Chrome's sandbox off, so a server running as root cannot start it: run the server as an ordinary user.
+
+### When it is used
+
+- It is the default for an administrator who has chosen nothing, is not in the desktop app and has paired no Chrome of their own, on a machine that has a Chrome. This is the case on a remote machine, in Docker and under `penguin web`.
+- Otherwise choose it yourself: see [Switch between backends](#switch-between-backends).
+
+Chrome starts with the first command that needs it; asking for the status or the tab list does not start it. It stops by itself after ten minutes with no tab open, and with the server. If it exits unexpectedly, its tabs are gone and the next command starts it again.
+
+### Watch and use its tabs
+
+The panel shows the tabs of that Chrome, and, in place of a page, a live picture of the selected tab. Click, scroll and type on the picture as you would on the page: your input goes to the page on the server's machine. The page is laid out to the size of your panel. The picture is sent only while somebody is looking, at most 15 times a second, and only when the page changes.
+
+To sign in to a website for an agent, open the sign-in page (or let the agent open it) and sign in on the picture. The sign-in stays in this Chrome's own profile, `builtin-browser/hosted-profile` in the data root, which holds none of the sign-ins you have elsewhere. On Linux its cookies are not encrypted with a desktop keyring's key (a server has no keyring); the directory is readable by the server's user only.
+
+### What the agent can do
+
+Everything `penguin browser` does, as on the other backends. Import, history and clearing data belong to the built-in browser and answer `not_supported` here. Raw DevTools Protocol commands are not restricted beyond the tab itself, since the profile holds only what was done in this Chrome.
+
+## Switch between backends
+
+You choose which browser your agents use:
+
+- In **Settings › Browser**, under **Browser agents use**.
+- In the menu of a machine's **Browser** panel — and of this server's while its agents use the Chrome on this machine — the same choice, for an administrator: **Built-in**, **System Chrome**, **Chrome on this machine**.
+
+A notice confirms the switch, such as **Agents now use your Chrome**. While an agent is acting in the browser, the switch is refused with **An agent is using the browser; switch once it is done**. Switching closes nothing: the built-in browser's tabs stay open in the background, the Penguin tabs stay in Chrome, and the server's Chrome keeps its tabs. Every window of the app follows the switch. The built-in browser is offered only in the desktop app, and to administrators; the Chrome on the server's machine only to administrators. A member has only their own Chrome, and the choice does not appear.
 
 ## Turn Chrome connections off
 
@@ -198,7 +233,7 @@ An administrator can stop every user's Chrome from connecting: in **Settings ›
 
 ## Drive it from the command line
 
-`penguin browser` drives the tabs from a shell, and it is how agents use the browser, built-in or your own Chrome alike. The preinstalled `browser-automation` plugin teaches them the loop: open a page, read it, act with JavaScript, and check what changed. `penguin browser status` names the backend in use; agents cannot change it.
+`penguin browser` drives the tabs from a shell, and it is how agents use the browser, on every backend alike. The preinstalled `browser-automation` plugin teaches them the loop: open a page, read it, act with JavaScript, and check what changed. `penguin browser status` names the backend in use; agents cannot change it.
 
 ```bash
 penguin browser open https://www.amazon.com/your-orders/orders
@@ -239,17 +274,20 @@ Every tab is a whole web page with memory of its own: a busy shopping or news si
 - Pages are read and changes are tracked by scripts adapted from [GenericAgent](https://github.com/lsdefine/genericagent) (MIT): its DOM simplification and its `web_scan` / `web_execute_js` design.
 - The history and the homepage are files in the data root, `builtin-browser/history.json` and `builtin-browser/settings.json`. Cookies and site storage live in the desktop app's own profile directory.
 - With your own Chrome, the server sends the same commands over the extension's WebSocket, and the extension relays them through Chrome's debugger to the tab. Each paired Chrome has its own key, which travels in the WebSocket's subprotocol, never in an address; the server stores only a hash of it. The extension asks for no access to page content of its own and adds nothing to the pages.
-- Everything goes through the server's `/api/builtin-browser` routes. The built-in browser, import, history and clearing data are for administrators; any signed-in user can pair and use their own Chrome. See [Agent Browser](/server-api#agent-browser).
+- With the Chrome on the server's machine, the server starts Chrome headless with `--remote-debugging-pipe` and speaks the DevTools Protocol to it over that pipe. No debugging port is opened, so no other process on the machine can attach. The picture in the panel is Chrome's screencast, sent as an event stream (`GET /api/builtin-browser/tabs/:id/view`), and your input goes back as `POST /api/builtin-browser/tabs/:id/input`; through the hub, both travel the same proxy as every other request to the machine.
+- Everything goes through the server's `/api/builtin-browser` routes. The built-in browser, the Chrome on the server's machine, import, history and clearing data are for administrators; any signed-in user can pair and use their own Chrome. See [Agent Browser](/server-api#agent-browser).
 
 ## Limits
 
 | Limit | Value |
 | --- | --- |
-| Where it works | Built-in: the desktop app only. Your own Chrome: any server that allows it, Chrome 116 or later |
+| Where it works | Built-in: the desktop app only. Your own Chrome: any server that allows it, Chrome 116 or later. The server's Chrome: any server whose machine has Chrome or Chromium, for administrators |
 | Tabs | 20 at most per backend; a new tab beyond them is refused (`too_many_tabs`) |
 | Connected Chromes | One per user at a time; the last one to connect takes over |
 | Pages your Chrome cannot drive | `chrome://` pages, the Chrome Web Store, local files |
-| Import, clear data, history | The built-in browser only (`not_supported` in your Chrome) |
+| Import, clear data, history | The built-in browser only (`not_supported` on the other backends) |
+| The server's Chrome | Always headless; stops after 10 minutes with no tab; never started without its sandbox |
+| The picture of a tab | JPEG frames, at most 15 a second, only while somebody watches |
 | Pairing code | Works once, for 10 minutes; five wrong tries end it |
 | Load warning | Over 1.5 GB of memory in the tabs, under 10% of this computer's memory free, or over 12 tabs |
 | `scan` body | 35,000 characters by default (`--max-chars`); a third of that with `--text` |

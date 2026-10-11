@@ -1,26 +1,32 @@
 /**
- * The agent browser's live state in this window: a module-level store over the pure reducer in
- * browser-state.ts. A store rather than component state because the readers live far apart —
- * the layer in the app shell hosts the pages, the dock panel draws the strip and the toolbar,
- * the dock's menus ask whether to offer the browser at all, and the conversation's link menu
- * where a link would open.
+ * The agent browser's live state in this window: a module-level store over the pure reducers in
+ * browser-state.ts and browser-servers.ts. A store rather than component state because the
+ * readers live far apart — the layer in the app shell hosts the pages, the dock panel draws the
+ * strip and the toolbar, the dock's menus ask whether to offer the browser at all, and the
+ * conversation's link menu where a link would open.
+ *
+ * One state per server (browser-servers.ts): every read and every change names the server, null
+ * (the default) for this one.
  */
 import type { BrowserBackend } from "@prismshadow/penguin-server/api";
 import {
-  INITIAL_BROWSER_STATE,
-  browserOffered,
-  linkTarget,
-  reduceBrowser,
-  type BrowserAction,
-  type BrowserState,
-} from "./browser-state";
+  INITIAL_BROWSER_SERVERS,
+  anyBrowserOffered,
+  reduceServers,
+  serverBrowser,
+  type BrowserServers,
+} from "./browser-servers";
+import { linkTarget, type BrowserAction, type BrowserState } from "./browser-state";
 
-let state: BrowserState = INITIAL_BROWSER_STATE;
+let servers: BrowserServers = INITIAL_BROWSER_SERVERS;
 const listeners = new Set<() => void>();
 
-/** The current state; a new object after every change (the useSyncExternalStore snapshot). */
-export function browserState(): BrowserState {
-  return state;
+/**
+ * A server's current state; a new object after every change to it, and the same one while only
+ * another server's changed (the useSyncExternalStore snapshot).
+ */
+export function browserState(server: string | null = null): BrowserState {
+  return serverBrowser(servers, server);
 }
 
 export function subscribeBrowser(listener: () => void): () => void {
@@ -30,19 +36,19 @@ export function subscribeBrowser(listener: () => void): () => void {
   };
 }
 
-export function dispatchBrowser(action: BrowserAction): void {
-  const next = reduceBrowser(state, action);
-  if (next === state) return;
-  state = next;
+export function dispatchBrowser(action: BrowserAction, server: string | null = null): void {
+  const next = reduceServers(servers, server, action);
+  if (next === servers) return;
+  servers = next;
   for (const listener of [...listeners]) listener();
 }
 
-/** Whether the dock offers the browser: the server offers the user's Chrome, or this window can host the built-in one. */
+/** Whether the dock offers the browser: some server offers one this window can show. */
 export function isBrowserOffered(): boolean {
-  return browserOffered(state);
+  return anyBrowserOffered(servers);
 }
 
-/** Where a link from the conversation would open now (browser-state.ts `linkTarget`). */
-export function browserLinkTarget(): BrowserBackend | null {
-  return linkTarget(state);
+/** Where a link from a conversation on `server` would open now (browser-state.ts `linkTarget`). */
+export function browserLinkTarget(server: string | null = null): BrowserBackend | null {
+  return linkTarget(serverBrowser(servers, server));
 }

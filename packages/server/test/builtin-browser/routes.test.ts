@@ -10,6 +10,9 @@
  * claimed and pending pages without changing storage. Cookie import/clear select that Project.
  *
  * module.test.ts covers the same routes assembled in the real platform tree.
+ *
+ * And over a fake Chrome (fake-cdp.ts), the hosted backend's own two routes: a tab's picture as
+ * an event stream and a viewer's input — for admins, on hosted only (405 elsewhere).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -38,6 +41,7 @@ import {
   homepageUrl,
 } from "../../src/builtin-browser/service.js";
 import type { Importer } from "../../src/builtin-browser/service.js";
+import { FakeChromeHost, jpeg } from "./fake-cdp.js";
 import { FakeShell, evaluated, expressionOf, tab } from "./fake-shell.js";
 import type { CdpHandler } from "./fake-shell.js";
 
@@ -1164,6 +1168,302 @@ describe("settings", () => {
     await h.call("PUT", "/settings", { homepage: null });
     await h.call("POST", "/tabs", {});
     expect(opens().at(-1)).toBe("about:blank");
+  });
+});
+
+describe("the hosted backend", () => {
+  /** A server outside the desktop whose machine has a (fake) Chrome: hosted is its one backend. */
+  function mountHosted(opts: { admin?: boolean; shell?: FakeShell } = {}) {
+    const host = new FakeChromeHost();
+    const events: BuiltinBrowserServerEvent[] = [];
+    const browser = new BuiltinBrowser({
+      port: opts.shell?.port ?? null,
+      root,
+      publish: (event) => events.push(event),
+      log: () => {},
+      sleep: async () => {},
+      timing: FAST,
+      hosted: { host },
+    });
+    browsers.push(browser);
+    const app = new Hono<AppEnv>();
+    app.onError((err, c) => handleError(err, c));
+    app.use("*", async (c, next) => {
+      const isAdmin = opts.admin !== false;
+      c.set("user", { userId: isAdmin ? "admin" : "bob", isAdmin } as UserRow);
+      c.set("sessionVia", "token");
+      await next();
+    });
+    app.route("/api/builtin-browser", builtinBrowserRoutes(browser));
+    const call = (method: string, url: string, body?: unknown) =>
+      app.request(`/api/builtin-browser${url}`, {
+        method,
+        headers: body !== undefined ? { "content-type": "application/json" } : {},
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    const open = async () =>
+      (await json<{ tab: BuiltinBrowserTab }>(await call("POST", "/tabs", { url: "about:blank" })))
+        .tab;
+    return { host, browser, events, call, open };
+  }
+
+  /** The next event of an event stream, as its name and parsed data. */
+  async function nextEvent(reader: ReadableStreamDefaultReader<Uint8Array>) {
+    let text = "";
+    while (!text.includes("\n\n")) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error("the stream ended");
+      text += new TextDecoder().decode(value);
+    }
+    const lines = text.split("\n");
+    return {
+      event: lines.find((line) => line.startsWith("event: "))?.slice(7),
+      data: JSON.parse(lines.find((line) => line.startsWith("data: "))?.slice(6) ?? "null"),
+    };
+  }
+
+  it("lists no tabs and reports its status without starting Chrome", async () => {
+    const h = mountHosted();
+    expect(await json(await h.call("GET", "/tabs"))).toEqual({ tabs: [], activeTabId: null });
+    expect(await json<BuiltinBrowserStatus>(await h.call("GET", "/status"))).toEqual({
+      available: true,
+      backend: "hosted",
+      backends: [
+        {
+          backend: "hosted",
+          available: true,
+          chrome: { path: "/fake/bin/chrome", running: false },
+        },
+      ],
+      tabs: [],
+      activeTabId: null,
+    });
+    expect(h.host.launched).toHaveLength(0);
+  });
+
+  it("opens and closes its own tabs, and tells the admins' windows whose they are", async () => {
+    const h = mountHosted();
+    const tab = await h.open();
+    expect(tab).toMatchObject({ id: 1, url: "about:blank" });
+    expect(h.host.launched).toHaveLength(1);
+    await until(() => h.events.some((e) => e.type === "builtin_browser_tabs"), "the tabs event");
+    expect(h.events.find((e) => e.type === "builtin_browser_tabs")).toMatchObject({
+      backend: "hosted",
+      tabs: [{ id: 1 }],
+    });
+    expect((await h.call("DELETE", "/tabs/1")).status).toBe(204);
+    expect(h.host.chrome.methods()).toContain("Target.closeTarget");
+    expect(await json(await h.call("GET", "/tabs"))).toEqual({ tabs: [], activeTabId: null });
+  });
+
+  it("says why Chrome did not start, with what it printed beside the reason", async () => {
+    const h = mountHosted();
+    h.host.prepare = (chrome) => {
+      chrome.startup = "exit";
+      chrome.printed =
+        "[1:1:1004/1.1:ERROR:zygote.cc(1)] Running as root without --no-sandbox is not supported.\n";
+    };
+    const res = await h.call("POST", "/tabs", { url: "about:blank" });
+    expect(res.status).toBe(503);
+    expect((await res.json()) as unknown).toEqual({
+      error: {
+        code: "browser_unavailable",
+        message:
+          "The Chrome on this server's machine did not start. Chrome said: Running as root without --no-sandbox is not supported.",
+        reason: "hosted_launch_failed",
+        detail: "Running as root without --no-sandbox is not supported.",
+      },
+    });
+    expect(await json<BuiltinBrowserStatus>(await h.call("GET", "/status"))).toMatchObject({
+      available: false,
+      reason: "hosted_launch_failed",
+      detail: "Running as root without --no-sandbox is not supported.",
+    });
+  });
+
+  it("empties the tab list when Chrome exits, and starts it again with the next command", async () => {
+    const h = mountHosted();
+    await h.open();
+    h.host.chrome.exit(null, "SIGKILL");
+    expect(await json(await h.call("GET", "/tabs"))).toEqual({ tabs: [], activeTabId: null });
+    expect((await h.open()).id).toBe(2);
+    expect(h.host.launched).toHaveLength(2);
+  });
+
+  it("streams a tab's picture as frame events, and stops the screencast when the viewer leaves", async () => {
+    const h = mountHosted();
+    const tab = await h.open();
+    const res = await h.call("GET", `/tabs/${tab.id}/view?width=900&height=500`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    const chrome = h.host.chrome;
+    await until(() => chrome.methods().includes("Page.startScreencast"), "the screencast");
+    expect(
+      chrome.sent.find((c) => c.method === "Emulation.setDeviceMetricsOverride"),
+    ).toMatchObject({ params: { width: 900, height: 500 }, sessionId: "S-T1" });
+
+    const reader = res.body!.getReader();
+    chrome.emit(
+      "Page.screencastFrame",
+      { data: jpeg(900, 500), sessionId: 1, metadata: { deviceWidth: 900, deviceHeight: 500 } },
+      "S-T1",
+    );
+    expect(await nextEvent(reader)).toEqual({
+      event: "frame",
+      data: { data: jpeg(900, 500), width: 900, height: 500 },
+    });
+    await reader.cancel();
+    await until(() => chrome.methods().includes("Page.stopScreencast"), "the screencast to stop");
+  });
+
+  it("ends a viewer's stream when its tab closes", async () => {
+    const h = mountHosted();
+    const tab = await h.open();
+    const res = await h.call("GET", `/tabs/${tab.id}/view`);
+    const reader = res.body!.getReader();
+    await h.call("DELETE", `/tabs/${tab.id}`);
+    let ended = false;
+    for (let i = 0; i < 50 && !ended; i++) ended = (await reader.read()).done;
+    expect(ended).toBe(true);
+  });
+
+  it("turns a viewer's input into CDP input on the tab, laid out to the panel first", async () => {
+    const h = mountHosted();
+    const tab = await h.open();
+    const res = await h.call("POST", `/tabs/${tab.id}/input`, {
+      viewport: { width: 800, height: 600 },
+      events: [
+        { type: "mouse", action: "down", x: 10, y: 20, buttons: 1 },
+        { type: "mouse", action: "up", x: 10, y: 20 },
+        { type: "key", action: "down", key: "Enter", code: "Enter", keyCode: 13, text: "\r" },
+        { type: "text", text: "hello" },
+      ],
+    });
+    expect(res.status).toBe(204);
+    const input = h.host.chrome.sent.filter(
+      (c) => c.method.startsWith("Input.") || c.method.startsWith("Emulation."),
+    );
+    expect(input.map((c) => [c.method, c.sessionId])).toEqual([
+      ["Emulation.setDeviceMetricsOverride", "S-T1"],
+      ["Input.dispatchMouseEvent", "S-T1"],
+      ["Input.dispatchMouseEvent", "S-T1"],
+      ["Input.dispatchKeyEvent", "S-T1"],
+      ["Input.insertText", "S-T1"],
+    ]);
+    expect(input[1]?.params).toMatchObject({ type: "mousePressed", x: 10, y: 20, button: "left" });
+    // An agent's activity is not announced for a person's own input.
+    expect(h.events.some((e) => e.type === "builtin_browser_activity")).toBe(false);
+  });
+
+  it("refuses input that is not an input batch, and a tab that is not open", async () => {
+    const h = mountHosted();
+    // Chrome is not running: no tab is open, and asking does not start it.
+    for (const res of [
+      await h.call("GET", "/tabs/1/view"),
+      await h.call("POST", "/tabs/1/input", { events: [] }),
+    ]) {
+      expect(res.status).toBe(404);
+      expect((await errorOf(res)).error.code).toBe("no_such_tab");
+    }
+    expect(h.host.launched).toHaveLength(0);
+
+    const tab = await h.open();
+    for (const body of [
+      { events: "click" },
+      { events: [{ type: "mouse", action: "press", x: 1, y: 1 }] },
+      { events: [{ type: "mouse", action: "down", x: "1", y: 1 }] },
+      { events: [{ type: "key", action: "down", key: "a" }] },
+      { events: [{ type: "teleport" }] },
+      { events: Array.from({ length: 201 }, () => ({ type: "text", text: "a" })) },
+      { events: [], viewport: { width: 0, height: 600 } },
+    ]) {
+      const res = await h.call("POST", `/tabs/${tab.id}/input`, body);
+      expect(res.status).toBe(400);
+    }
+    expect((await h.call("GET", `/tabs/${tab.id}/view?width=wide&height=500`)).status).toBe(400);
+    expect((await h.call("GET", "/tabs/active/view")).status).toBe(404);
+  });
+
+  it("keeps the picture and the input to admins, and to the hosted backend", async () => {
+    const member = mountHosted({ admin: false });
+    for (const res of [
+      await member.call("GET", "/tabs/1/view"),
+      await member.call("POST", "/tabs/1/input", { events: [] }),
+      await member.call("GET", "/status"),
+      await member.call("POST", "/tabs", {}),
+    ]) {
+      expect(res.status).toBe(403);
+      expect((await errorOf(res)).error.code).toBe("admin_required");
+    }
+    expect(member.host.launched).toHaveLength(0);
+
+    // The built-in browser — with or without a Chrome on the machine — shows its tabs itself.
+    const shell = new FakeShell();
+    shell.guests.set(7, tab(7));
+    for (const h of [mount({ shell }), mountHosted({ shell: new FakeShell() })]) {
+      for (const res of [
+        await h.call("GET", "/tabs/7/view"),
+        await h.call("POST", "/tabs/7/input", { events: [] }),
+      ]) {
+        expect(res.status).toBe(405);
+        expect((await errorOf(res)).error.code).toBe("not_supported");
+      }
+    }
+  });
+
+  it("has no import, history or data to clear, and keeps raw CDP to the tab", async () => {
+    const h = mountHosted();
+    for (const res of [
+      await h.call("GET", "/history"),
+      await h.call("GET", "/import/sources"),
+      await h.call("POST", "/import", { sourceId: "chrome" }),
+      await h.call("POST", "/clear-data", { storages: ["cookies"] }),
+    ]) {
+      expect(res.status).toBe(405);
+      expect((await errorOf(res)).error.code).toBe("not_supported");
+    }
+    const tab = await h.open();
+    h.host.chrome.cdp = (method) =>
+      method === "Network.getAllCookies" ? { cookies: [] } : undefined;
+    // Its profile is its own: nothing in it is refused, as on the built-in browser.
+    const cookies = await h.call("POST", `/tabs/${tab.id}/cdp`, {
+      method: "Network.getAllCookies",
+    });
+    expect(await json(cookies)).toEqual({ result: { cookies: [] } });
+    const refused = await h.call("POST", `/tabs/${tab.id}/cdp`, { method: "Target.createTarget" });
+    expect(refused.status).toBe(403);
+    expect((await errorOf(refused)).error.message).toMatch(/the Chrome on this machine/);
+  });
+
+  it("launches the Chrome an admin named, and takes nothing but a file's absolute path", async () => {
+    const h = mountHosted();
+    const chosen = path.join(root, "my-chrome");
+    await fs.writeFile(chosen, "");
+    const put = await h.call("PUT", "/settings", { homepage: null, chromePath: chosen });
+    expect(await json<BuiltinBrowserSettings>(put)).toEqual({ homepage: null, chromePath: chosen });
+    const status = await json<BuiltinBrowserStatus>(await h.call("GET", "/status"));
+    expect(status.backends[0]?.chrome?.path).toBe(chosen);
+    // A homepage change leaves it alone.
+    const kept = await h.call("PUT", "/settings", { homepage: "https://home.test/" });
+    expect(await json<BuiltinBrowserSettings>(kept)).toEqual({
+      homepage: "https://home.test/",
+      chromePath: chosen,
+    });
+
+    // The path alone is a change too, and the homepage stays.
+    const moved = await h.call("PUT", "/settings", { chromePath: chosen });
+    expect(await json<BuiltinBrowserSettings>(moved)).toEqual({
+      homepage: "https://home.test/",
+      chromePath: chosen,
+    });
+
+    for (const chromePath of ["chrome", path.join(root, "missing"), root, 42]) {
+      const res = await h.call("PUT", "/settings", { homepage: null, chromePath });
+      expect(res.status).toBe(400);
+      expect((await errorOf(res)).error.code).toBe("invalid_path");
+    }
+    const cleared = await h.call("PUT", "/settings", { homepage: null, chromePath: null });
+    expect(await json<BuiltinBrowserSettings>(cleared)).toEqual({ homepage: null });
   });
 });
 

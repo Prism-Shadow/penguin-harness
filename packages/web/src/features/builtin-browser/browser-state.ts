@@ -1,9 +1,11 @@
 /**
  * The agent browser's state in this window, as a pure reducer.
  *
- * Two backends: the desktop's built-in browser, whose pages this window hosts as `<webview>`
- * guests, and the user's own Chrome, driven through the PenguinHarness Browser extension, whose
- * pages live in Chrome. `backend` is the one this user's agents drive (the server decides it,
+ * Three backends: the desktop's built-in browser, whose pages this window hosts as `<webview>`
+ * guests, the user's own Chrome, driven through the PenguinHarness Browser extension, whose
+ * pages live in Chrome, and the Chrome a server runs on its own machine (`hosted`), whose pages
+ * this window shows as a picture (hosted-surface.tsx). One state per server: this one, and each
+ * machine a conversation's Workspace lives on (browser-servers.ts). `backend` is the one this user's agents drive (the server decides it,
  * from the user's choice); `backends` is every one the server offers them, each with whether it
  * can be driven now and, for Chrome, the paired extension. On the desktop an admin has both, and
  * both keep their tabs whichever is chosen, so each has its own registry:
@@ -15,6 +17,7 @@
  *   by a close. The order is the DOM order of the elements and must never change: moving a
  *   webview in the DOM reloads its page, so guests are only ever appended or removed.
  * - `chrome` is the user's Chrome's registry: the tabs the extension drives.
+ * - `hosted` is the registry of the server's own Chrome.
  *
  * The user channel's `builtin_browser_tabs` names the backend whose list it carries and replaces
  * that registry whole. `builtin_browser_backend` moves the user to another backend, and
@@ -33,7 +36,6 @@
 import type {
   BrowserBackend,
   BrowserBackendInfo,
-  BrowserExtensionRecord,
   BuiltinBrowserAction,
   BuiltinBrowserMetrics,
   BuiltinBrowserServerEvent,
@@ -42,6 +44,7 @@ import type {
   BuiltinBrowserTab,
 } from "@prismshadow/penguin-server/api";
 import { BLANK_URL, isBlankUrl, tabAddress } from "./address";
+import { chromeAfter } from "./extension-news";
 
 /** One webview this window hosts. */
 export interface BrowserGuest {
@@ -101,6 +104,8 @@ export interface BrowserState {
   available: boolean;
   /** Why not, when the server said so. */
   reason: BuiltinBrowserStatus["reason"] | null;
+  /** What the server's Chrome printed as it failed to start (`hosted_launch_failed`). */
+  detail: string | null;
   /** The built-in browser's registry (see the module doc); `closing` is its own. */
   tabs: BuiltinBrowserTab[];
   activeTabId: number | null;
@@ -111,6 +116,8 @@ export interface BrowserState {
   closing: readonly number[];
   /** The user's Chrome's registry. */
   chrome: BrowserRegistry;
+  /** The registry of the server's own Chrome. */
+  hosted: BrowserRegistry;
   extension: ExtensionNews;
   /** The page a new tab and the Home button open; null for none (new tabs are blank). */
   homepage: string | null;
@@ -134,10 +141,11 @@ export type BrowserAction =
   /** The user closed a tab here (its ×, or the page called window.close()). */
   | { type: "closed"; tabId: number }
   /**
-   * The user closed a tab of the user's Chrome here (its ×); the extension closes it there. The
-   * built-in browser's own closes are `closed`, since a page in this window may close itself.
+   * The user closed a tab of the user's Chrome here (its ×); the extension closes it there. With
+   * `backend: "hosted"`, a tab of the server's own Chrome. The built-in browser's own closes are
+   * `closed`, since a page in this window may close itself.
    */
-  | { type: "chrome-closed"; tabId: number }
+  | { type: "chrome-closed"; tabId: number; backend?: RemoteBackend }
   /** The user brought a tab to the front here; the server confirms with a tabs event. */
   | { type: "activated"; tabId: number; backend?: BrowserBackend }
   /** Events may have been lost: activity marks can no longer be trusted. */
@@ -146,6 +154,9 @@ export type BrowserAction =
   | { type: "settings"; settings: BuiltinBrowserSettings }
   /** This window asked for a new tab (1), or heard the answer (-1). */
   | { type: "opening"; delta: 1 | -1; scope?: string };
+
+/** The backends whose pages live outside this window, each with a registry of its own. */
+export type RemoteBackend = Exclude<BrowserBackend, "builtin">;
 
 const NO_TABS: BrowserRegistry = { tabs: [], activeTabId: null, closing: [] };
 
@@ -161,12 +172,14 @@ export const INITIAL_BROWSER_STATE: BrowserState = {
   backends: [],
   available: false,
   reason: null,
+  detail: null,
   tabs: [],
   activeTabId: null,
   guests: [],
   activity: {},
   closing: [],
   chrome: NO_TABS,
+  hosted: NO_TABS,
   extension: { seq: 0, last: null },
   homepage: null,
   metrics: null,
@@ -233,74 +246,29 @@ function applyTabs(
 function withBackendInfo(state: BrowserState, info: BrowserBackendInfo): BrowserState {
   const backends = state.backends.map((entry) => (entry.backend === info.backend ? info : entry));
   return state.backend === info.backend
-    ? { ...state, backends, available: info.available, reason: info.reason ?? null }
+    ? {
+        ...state,
+        backends,
+        available: info.available,
+        reason: info.reason ?? null,
+        detail: info.detail ?? null,
+      }
     : { ...state, backends };
-}
-
-/** A paired Chrome as GET /status's chrome entry carries it. */
-function extensionInfo(record: BrowserExtensionRecord): BrowserBackendInfo["extension"] {
-  return {
-    id: record.id,
-    name: record.name,
-    version: record.version,
-    connected: record.connected,
-    lastSeenAt: record.lastSeenAt,
-  };
-}
-
-/**
- * The chrome entry after the server's word on the user's Chrome. A connection makes it
- * drivable; a disconnection does not, unless the admin's switch is why; a replacement names the
- * new Chrome and waits for it to connect; a revoked Chrome that was the one shown goes, and the
- * status read that follows says whether another is still paired.
- */
-function chromeAfter(
-  info: BrowserBackendInfo,
-  event: Extract<BuiltinBrowserServerEvent, { type: "builtin_browser_extension" }>,
-): BrowserBackendInfo {
-  const record = event.extension;
-  switch (event.state) {
-    case "connected": {
-      const shown =
-        record !== undefined ? extensionInfo(record) : info.extension && { ...info.extension };
-      return {
-        backend: "chrome",
-        available: true,
-        ...(shown !== undefined ? { extension: { ...shown, connected: true } } : {}),
-      };
-    }
-    case "disconnected": {
-      const shown =
-        record !== undefined ? extensionInfo(record) : info.extension && { ...info.extension };
-      return {
-        backend: "chrome",
-        available: false,
-        reason:
-          info.reason === "extension_disabled" ? "extension_disabled" : "extension_disconnected",
-        ...(shown !== undefined ? { extension: { ...shown, connected: false } } : {}),
-      };
-    }
-    case "replaced":
-      return record !== undefined ? { ...info, extension: extensionInfo(record) } : info;
-    case "revoked": {
-      if (record === undefined || info.extension?.id !== record.id) return info;
-      const { extension: _revoked, ...rest } = info;
-      return {
-        ...rest,
-        available: false,
-        reason:
-          info.reason === "extension_disabled" ? "extension_disabled" : "extension_disconnected",
-      };
-    }
-  }
 }
 
 function applyEvent(state: BrowserState, event: BuiltinBrowserServerEvent): BrowserState {
   switch (event.type) {
-    case "builtin_browser_tabs":
-      return event.backend === "chrome"
-        ? { ...state, chrome: applyRegistry(state.chrome, event.tabs, event.activeTabId) }
-        : applyTabs(state, event.tabs, event.activeTabId);
+    case "builtin_browser_tabs": {
+      const { backend } = event;
+      if (backend === "builtin") return applyTabs(state, event.tabs, event.activeTabId);
+      const registry = applyRegistry(state[backend], event.tabs, event.activeTabId);
+      // A tab of the server's own Chrome is word that it started, while it is the one chosen.
+      const running =
+        backend === "hosted" && state.backend === "hosted" && event.tabs.length > 0
+          ? { available: true, reason: null, detail: null }
+          : {};
+      return { ...state, ...running, [backend]: registry };
+    }
     case "builtin_browser_open": {
       // Only a window that can host a guest takes the request; a replayed event must not
       // create a second guest for the same request.
@@ -363,6 +331,7 @@ function applyEvent(state: BrowserState, event: BuiltinBrowserServerEvent): Brow
         backend: event.backend,
         available: info?.available === true,
         reason: info?.reason ?? null,
+        detail: info?.detail ?? null,
         activity: {},
       };
     }
@@ -420,19 +389,23 @@ export function reduceBrowser(state: BrowserState, action: BrowserAction): Brows
       const backend = status.backend ?? "builtin";
       const moved = backend === state.backend ? state : { ...state, backend, activity: {} };
       const next =
-        backend === "chrome"
-          ? { ...moved, chrome: applyRegistry(moved.chrome, status.tabs, status.activeTabId) }
-          : applyTabs(moved, status.tabs, status.activeTabId);
+        backend === "builtin"
+          ? applyTabs(moved, status.tabs, status.activeTabId)
+          : {
+              ...moved,
+              [backend]: applyRegistry(moved[backend], status.tabs, status.activeTabId),
+            };
       return {
         ...next,
         backends: status.backends ?? [],
         available: status.available,
         reason: status.reason ?? null,
+        detail: status.detail ?? null,
         metrics: status.metrics ?? next.metrics,
       };
     }
     case "unreachable":
-      return { ...state, available: false, reason: null, backends: [] };
+      return { ...state, available: false, reason: null, detail: null, backends: [] };
     case "event":
       return applyEvent(state, action.event);
     case "attached": {
@@ -456,26 +429,28 @@ export function reduceBrowser(state: BrowserState, action: BrowserAction): Brows
         : { ...next, closing: [...next.closing, action.tabId] };
     }
     case "chrome-closed": {
-      const { chrome } = state;
-      const tabs = chrome.tabs.filter((tab) => tab.id !== action.tabId);
+      const backend = action.backend ?? "chrome";
+      const registry = state[backend];
+      const tabs = registry.tabs.filter((tab) => tab.id !== action.tabId);
       const activeTabId =
-        chrome.activeTabId === action.tabId
+        registry.activeTabId === action.tabId
           ? (tabs[tabs.length - 1]?.id ?? null)
-          : chrome.activeTabId;
-      const closing = chrome.closing.includes(action.tabId)
-        ? chrome.closing
-        : [...chrome.closing, action.tabId];
+          : registry.activeTabId;
+      const closing = registry.closing.includes(action.tabId)
+        ? registry.closing
+        : [...registry.closing, action.tabId];
       return {
         ...state,
-        chrome: { tabs, activeTabId, closing },
+        [backend]: { tabs, activeTabId, closing },
         activity: withoutActivity(state.activity, action.tabId),
       };
     }
     case "activated": {
-      if ((action.backend ?? "builtin") === "chrome") {
-        return state.chrome.activeTabId === action.tabId
+      const backend = action.backend ?? "builtin";
+      if (backend !== "builtin") {
+        return state[backend].activeTabId === action.tabId
           ? state
-          : { ...state, chrome: { ...state.chrome, activeTabId: action.tabId } };
+          : { ...state, [backend]: { ...state[backend], activeTabId: action.tabId } };
       }
       const tab = state.tabs.find((tab) => tab.id === action.tabId);
       const scope =
@@ -521,27 +496,32 @@ export function chromeInfo(state: BrowserState): BrowserBackendInfo | null {
   return state.backends.find((entry) => entry.backend === "chrome") ?? null;
 }
 
+/** The hosted entry of the server's backends: whether it offers a Chrome of its own, and how that stands. */
+export function hostedInfo(state: BrowserState): BrowserBackendInfo | null {
+  return state.backends.find((entry) => entry.backend === "hosted") ?? null;
+}
+
 /** Whether this window can show the built-in browser now: it hosts pages, and it is the chosen, running backend. */
 export function builtinUsable(state: BrowserState): boolean {
   return state.supported && state.backend === "builtin" && state.available;
 }
 
 /**
- * Whether the dock offers the browser at all: wherever the server offers the user's Chrome
- * (every window, `<webview>` or not), and where this window can host the built-in browser and
- * the server can drive it.
+ * Whether the dock offers the browser at all: wherever the server offers the user's Chrome or
+ * one of its own (every window, `<webview>` or not), and where this window can host the built-in
+ * browser and the server can drive it.
  */
 export function browserOffered(state: BrowserState): boolean {
-  return chromeInfo(state) !== null || builtinUsable(state);
+  return chromeInfo(state) !== null || hostedInfo(state) !== null || builtinUsable(state);
 }
 
 /**
  * Where a link from the conversation would open now: in a new built-in tab, in a new tab of the
- * user's Chrome, or nowhere when the chosen backend cannot be driven.
+ * user's Chrome or of the server's own, or nowhere when the chosen backend cannot be driven.
  */
 export function linkTarget(state: BrowserState): BrowserBackend | null {
   if (builtinUsable(state)) return "builtin";
-  return state.backend === "chrome" && state.available ? "chrome" : null;
+  return state.backend !== "builtin" && state.available ? state.backend : null;
 }
 
 /** The built-in browser's tab on top (the one its layer lays over the panel). */
@@ -562,13 +542,13 @@ export function sessionTabs(state: BrowserState): BuiltinBrowserTab[] {
 
 /** The chosen backend's tabs: what the panel's strip lists. */
 export function shownTabs(state: BrowserState): BrowserRegistry {
-  return state.backend === "chrome"
-    ? state.chrome
-    : {
-        tabs: sessionTabs(state),
-        activeTabId: activeTab(state)?.id ?? null,
-        closing: state.closing,
-      };
+  if (state.backend === "chrome") return state.chrome;
+  if (state.backend === "hosted") return state.hosted;
+  return {
+    tabs: sessionTabs(state),
+    activeTabId: activeTab(state)?.id ?? null,
+    closing: state.closing,
+  };
 }
 
 /** The chosen backend's active tab. */

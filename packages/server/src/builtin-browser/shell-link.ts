@@ -28,7 +28,7 @@ import type {
 } from "../api/types.js";
 import type { ShellPort } from "../services/desktop-update-port.js";
 import { BUILTIN_CAPABILITIES, BrowserLinkError } from "./link.js";
-import type { BrowserLink } from "./link.js";
+import type { BrowserLink, LinkUnavailability } from "./link.js";
 
 type MessageListener = (e: { data: unknown }) => void;
 
@@ -294,6 +294,11 @@ export class ShellLink implements BrowserLink {
       this.handshaking = null;
     });
     return this.handshaking;
+  }
+
+  /** A shell that never answered `hello` is one older than the built-in browser. */
+  unavailability(): LinkUnavailability {
+    return { reason: "shell_unsupported" };
   }
 
   /** Every validated shell event, in order. Returns the unsubscribe. */

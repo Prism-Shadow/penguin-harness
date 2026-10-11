@@ -1,13 +1,15 @@
 /**
  * The agent browser as the routes drive it: one object per platform generation that owns the
  * backends — the desktop's built-in browser (a runtime over the shell link, when this server is
- * the shell's child) and the users' own Chromes (the extension hub) — plus the built-in
- * browser's history, settings and import.
+ * the shell's child), the users' own Chromes (the extension hub) and the server's own headless
+ * Chrome (hosted) — plus the built-in browser's history, settings and import.
  *
  * Every call names an actor, and the actor's backend decides which runtime answers it: the
- * backend the user chose (`ui_prefs.browserBackend`, through PUT /backend), else built-in for an
- * admin on the desktop and chrome everywhere else. A server with no shell offers only chrome. No
- * call ever falls back from one backend to the other: an unavailable backend says why.
+ * backend the user chose (`ui_prefs.browserBackend`, through PUT /backend) while this server
+ * has it. With no choice an admin gets, in order: the built-in browser on the desktop, their
+ * own Chrome when they have paired one, hosted when the machine has a Chrome, and chrome (which
+ * then says how to pair); everyone else gets chrome. No call ever falls back from one backend
+ * to another: an unavailable backend says why.
  *
  * - Built-in: admins only (the desktop window and the agents' admin token). Availability comes
  *   first: no port means this server is not the shell's child (`not_desktop`), an unanswered
@@ -16,9 +18,12 @@
  * - Chrome: any signed-in user, their own Chrome only, unless the admin switched it off
  *   (`extension_disabled`). No paired extension is `extension_not_paired`, a paired one not
  *   connected now `extension_disconnected`.
+ * - Hosted: admins only, like the built-in browser — it browses from the server's own place on
+ *   the network. No Chrome on the machine is `hosted_no_chrome`, one that did not start
+ *   `hosted_launch_failed` with what it printed.
  *
- * Import, history and clearing data belong to the built-in browser: on chrome they answer 405
- * `not_supported` (Chrome keeps its own).
+ * Import, history and clearing data belong to the built-in browser: on the other backends they
+ * answer 405 `not_supported`.
  */
 import { createHash } from "node:crypto";
 import type {
@@ -46,6 +51,10 @@ import { ExtensionHub } from "./extension-hub.js";
 import type { BrowserExtensionAdmission } from "./extension-hub.js";
 import type { ExtensionLinkTiming, ExtensionSocket } from "./extension-link.js";
 import { HistoryStore, historyFile, isWebUrl } from "./history.js";
+import { HostedBackend, chromePathSetting } from "./hosted-backend.js";
+import type { ChromeHost } from "./hosted-chrome.js";
+import type { HostedLinkTiming } from "./hosted-link.js";
+import type { TabViewOptions } from "./hosted-view.js";
 import { listImportSources, readCookies, readHistory } from "./import/index.js";
 import { BrowserUnavailableError } from "./link.js";
 import { SettingsStore, settingsFile } from "./settings.js";
@@ -104,8 +113,14 @@ function invalidUrl(url: unknown): HttpError {
   );
 }
 
-const adminRequired = () =>
-  new HttpError(403, "admin_required", "The built-in browser is for admins only.");
+const adminRequired = (backend: BrowserBackend = "builtin") =>
+  new HttpError(
+    403,
+    "admin_required",
+    backend === "hosted"
+      ? "The Chrome on this machine is for admins only."
+      : "The built-in browser is for admins only.",
+  );
 
 /**
  * The page a tab opens or navigates to: a web URL or about:blank. A bare host gets a scheme —
@@ -188,6 +203,12 @@ export interface BuiltinBrowserDeps {
     publishTo(userId: string, event: BuiltinBrowserServerEvent): void;
     linkTiming?: Partial<ExtensionLinkTiming>;
   };
+  /** The hosted backend; absent, this server launches no Chrome of its own. */
+  hosted?: {
+    host: ChromeHost;
+    linkTiming?: Partial<HostedLinkTiming>;
+    view?: TabViewOptions;
+  };
   /** The users' backend choice; absent, nobody can switch. */
   prefs?: BackendPrefs;
 }
@@ -197,6 +218,8 @@ export class BuiltinBrowser {
   readonly settings: SettingsStore;
   /** The chrome backend: every user's extension; null on a server that offers none. */
   readonly extensions: ExtensionHub | null;
+  /** The server's own Chrome; null on a server that launches none. */
+  readonly hosted: HostedBackend | null;
   /** The built-in browser; null when this server is not the desktop shell's child. */
   private readonly builtin: BrowserBackendRuntime | null;
   /** What `tabs` answers on a server without the built-in browser. */
@@ -243,6 +266,21 @@ export class BuiltinBrowser {
             log: deps.log,
             now,
           });
+    const hosted = deps.hosted;
+    this.hosted =
+      hosted === undefined
+        ? null
+        : new HostedBackend({
+            root: deps.root,
+            host: hosted.host,
+            settings: this.settings,
+            runtime: shared,
+            publish: deps.publish,
+            log: deps.log,
+            now,
+            ...(hosted.linkTiming ? { linkTiming: hosted.linkTiming } : {}),
+            ...(hosted.view ? { view: hosted.view } : {}),
+          });
   }
 
   /** The built-in browser's tab registry (an empty one on a server without it). */
@@ -252,21 +290,35 @@ export class BuiltinBrowser {
 
   // --- backends ------------------------------------------------------------------
 
-  /** The backends the actor may choose: built-in for an admin on the desktop, chrome where offered. */
+  /**
+   * The backends the actor may choose: built-in for an admin on the desktop, chrome where
+   * offered, hosted for an admin (whether or not the machine has a Chrome: choosing it says so).
+   */
   choices(actor: Actor): BrowserBackend[] {
     const choices: BrowserBackend[] = [];
     if (this.builtin !== null && actor.isAdmin) choices.push("builtin");
     if (this.extensions !== null) choices.push("chrome");
+    if (this.hosted !== null && actor.isAdmin) choices.push("hosted");
     return choices;
   }
 
   /** The backend the actor's calls go to; see the module doc. */
   backendOf(actor: Actor): BrowserBackend {
-    if (this.builtin === null) return this.extensions !== null ? "chrome" : "builtin";
-    if (this.extensions === null) return "builtin";
+    const here: Record<BrowserBackend, boolean> = {
+      builtin: this.builtin !== null,
+      chrome: this.extensions !== null,
+      hosted: this.hosted !== null,
+    };
+    const offered = Object.values(here).filter(Boolean).length;
+    // One backend (or none): it is the answer, whatever was chosen somewhere else.
+    if (offered <= 1) return here.chrome ? "chrome" : here.hosted ? "hosted" : "builtin";
     const chosen = this.deps.prefs?.get(actor.userId) ?? null;
-    if (chosen !== null) return chosen;
-    return actor.isAdmin ? "builtin" : "chrome";
+    if (chosen !== null && here[chosen]) return chosen;
+    if (!actor.isAdmin) return here.chrome ? "chrome" : "builtin";
+    if (here.builtin) return "builtin";
+    if (this.extensions?.paired(actor.userId) === true) return "chrome";
+    if (this.hosted !== null && this.hosted.chromePath() !== null) return "hosted";
+    return "chrome";
   }
 
   /** GET /backend. */
@@ -280,13 +332,16 @@ export class BuiltinBrowser {
    */
   setBackend(actor: Actor, backend: BrowserBackend): BrowserBackendResponse {
     if (!this.choices(actor).includes(backend) || this.deps.prefs === undefined) {
-      if (backend === "builtin" && this.builtin !== null && !actor.isAdmin) throw adminRequired();
+      const here = backend === "builtin" ? this.builtin : backend === "hosted" ? this.hosted : null;
+      if (here !== null && !actor.isAdmin) throw adminRequired(backend);
       throw new HttpError(
         405,
         "not_supported",
         backend === "builtin"
           ? "This server has no built-in browser; it runs outside the PenguinHarness desktop app."
-          : "This server does not offer driving your own Chrome.",
+          : backend === "hosted"
+            ? "This server does not launch a Chrome of its own."
+            : "This server does not offer driving your own Chrome.",
       );
     }
     const current = this.backendOf(actor);
@@ -304,29 +359,35 @@ export class BuiltinBrowser {
     return this.backendChoice(actor);
   }
 
-  /** GET /status: never 503 — an unavailable backend says why. Retries a failed shell handshake. */
+  /**
+   * GET /status: never 503 — an unavailable backend says why. Retries a failed shell handshake;
+   * never starts the hosted Chrome.
+   */
   async status(actor: Actor, sessionId?: string): Promise<BuiltinBrowserStatus> {
     const backend = this.backendOf(actor);
     if (backend === "builtin" && this.builtin !== null && !actor.isAdmin) throw adminRequired();
+    if (backend === "hosted" && !actor.isAdmin) throw adminRequired(backend);
     const backends: BrowserBackendInfo[] = [];
-    if (this.builtin === null && this.extensions === null) {
+    if (this.builtin === null && this.extensions === null && this.hosted === null) {
       backends.push({ backend: "builtin", available: false, reason: "not_desktop" });
     }
     if (this.builtin !== null && actor.isAdmin) {
-      const reason = await this.builtin.unavailability(true);
+      const why = await this.builtin.unavailability(true);
       backends.push({
         backend: "builtin",
-        available: reason === null,
-        ...(reason ? { reason } : {}),
+        available: why === null,
+        ...(why !== null ? { reason: why.reason } : {}),
       });
     }
     if (this.extensions !== null) backends.push(this.extensions.info(actor.userId));
+    if (this.hosted !== null && actor.isAdmin) backends.push(this.hosted.info());
     const current = backends.find((info) => info.backend === backend);
     const runtime = this.runtimeOf(actor.userId, backend);
     const metrics = runtime?.metrics ?? null;
     return {
       available: current?.available === true,
       ...(current?.reason !== undefined ? { reason: current.reason } : {}),
+      ...(current?.detail !== undefined ? { detail: current.detail } : {}),
       backend,
       backends,
       tabs: runtime?.tabs.list(backend === "builtin" ? sessionId : undefined) ?? [],
@@ -339,7 +400,24 @@ export class BuiltinBrowser {
 
   /** GET /tabs. */
   listTabs(actor: Actor, sessionId?: string): Promise<BuiltinBrowserTabsResponse> {
+    if (this.backendOf(actor) === "hosted") return this.hostedFor(actor).listTabs();
     return this.runtime(actor).listTabs(sessionId);
+  }
+
+  /**
+   * The hosted backend, for what only it has (a tab's picture and input): 405 `not_supported`
+   * when the actor's backend is another, 403 for anyone but an admin.
+   */
+  hostedFor(actor: Actor): HostedBackend {
+    if (this.hosted === null || this.backendOf(actor) !== "hosted") {
+      throw new HttpError(
+        405,
+        "not_supported",
+        "Watching a tab and sending it input belong to the Chrome on the server's machine; this browser is shown where it runs.",
+      );
+    }
+    if (!actor.isAdmin) throw adminRequired("hosted");
+    return this.hosted;
   }
 
   /** POST /tabs. */
@@ -459,9 +537,22 @@ export class BuiltinBrowser {
     return this.settings.read();
   }
 
-  /** PUT /settings: the homepage as a web address (a bare host gets a scheme), or null for none. */
-  async updateSettings(update: { homepage: unknown }): Promise<BuiltinBrowserSettings> {
-    return this.settings.write({ homepage: homepageUrl(update.homepage) });
+  /**
+   * PUT /settings: the homepage as a web address (a bare host gets a scheme) or null for none,
+   * and the Chrome the hosted backend launches (null: look for one). A field left out is kept.
+   */
+  async updateSettings(update: {
+    homepage?: unknown;
+    chromePath?: unknown;
+  }): Promise<BuiltinBrowserSettings> {
+    const saved = await this.settings.write({
+      ...(update.homepage !== undefined ? { homepage: homepageUrl(update.homepage) } : {}),
+      ...(update.chromePath !== undefined
+        ? { chromePath: chromePathSetting(update.chromePath) }
+        : {}),
+    });
+    this.hosted?.settingsChanged();
+    return saved;
   }
 
   // --- the built-in browser's import, history, data -------------------------------
@@ -565,6 +656,7 @@ export class BuiltinBrowser {
     this.disposed = true;
     this.builtin?.dispose();
     this.extensions?.dispose();
+    this.hosted?.dispose();
     this.noTabs.dispose();
     void this.history.dispose();
   }
@@ -581,6 +673,7 @@ export class BuiltinBrowser {
 
   /** The runtime of `backend` for `userId`, when there is one (no checks). */
   private runtimeOf(userId: string, backend: BrowserBackend): BrowserBackendRuntime | null {
+    if (backend === "hosted") return this.hosted?.runtime ?? null;
     return backend === "builtin" ? this.builtin : (this.extensions?.runtimeFor(userId) ?? null);
   }
 
@@ -588,6 +681,7 @@ export class BuiltinBrowser {
   private runtime(actor: Actor): BrowserBackendRuntime {
     const backend = this.backendOf(actor);
     if (backend === "builtin") return this.builtinRuntime(actor);
+    if (backend === "hosted") return this.hostedFor(actor).runtime;
     const hub = this.extensions;
     if (hub === null) throw new BrowserUnavailableError("not_desktop");
     const reason = hub.unavailability(actor.userId);
@@ -612,13 +706,16 @@ export class BuiltinBrowser {
     return this.builtin;
   }
 
-  /** What only the built-in browser has: refused on chrome (405), and to a non-admin (403). */
+  /** What only the built-in browser has: refused on the other backends (405), and to a non-admin (403). */
   private builtinOnly(actor: Actor, what: string): void {
-    if (this.backendOf(actor) === "chrome") {
+    const backend = this.backendOf(actor);
+    if (backend !== "builtin") {
       throw new HttpError(
         405,
         "not_supported",
-        `${what} belongs to the built-in browser; your agents drive your own Chrome here, which keeps its own.`,
+        backend === "hosted"
+          ? `${what} belongs to the built-in browser; your agents drive the Chrome on the server's machine here, which has a profile of its own.`
+          : `${what} belongs to the built-in browser; your agents drive your own Chrome here, which keeps its own.`,
       );
     }
     if (!actor.isAdmin) throw adminRequired();

@@ -1614,15 +1614,15 @@ export function applyUserEvent(
     store.setState({ liveStatuses: new Map() });
     void store.getState().reload();
     publishCompanyResync();
-    if (source === null) publishBuiltinBrowserResync();
+    publishBuiltinBrowserResync(source);
     return;
   }
   // The agent browser's tabs, page requests, agent activity, backend and Chrome connection go
-  // to the browser layer in the app shell. Only this server's: the built-in pages live in the
-  // desktop shell that spawned it, the user's Chrome is paired to it, and a machine's server
-  // drives no browser on this screen.
+  // to the browser layer in the app shell, named by the server they came from: a machine's
+  // server drives a browser of its own (the Chrome on that machine), which the Browser panel
+  // of a conversation there shows, and its events never touch this server's browser.
   if (isBuiltinBrowserEvent(ev)) {
-    if (source === null) publishBuiltinBrowserEvent(ev);
+    publishBuiltinBrowserEvent(ev, source);
     return;
   }
   // Company-mode notifications fan out to the company store and any mounted organization page

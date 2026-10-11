@@ -26,6 +26,17 @@
  * - Pending opens belong to their original scope, so an empty incoming Session gets its own page.
  * - Draft adoption keeps pages and Project storage, including a pending popup; closing the last
  *   page cannot reveal another Session's page.
+ *
+ * Then the third backend, a server's own Chrome (hosted), and the state kept per server:
+ *
+ * - Hosted has a registry of its own; a status and a tab list on hosted fill it and leave the
+ *   other two alone. A status that says Chrome did not start carries what it printed; a tab in
+ *   the list is word that it runs after all.
+ * - The Browser panel is offered where a server offers hosted, and a link opens in it while it
+ *   can run.
+ * - Each server has its own state: a machine's status and events land in that machine's state,
+ *   never in this server's or another machine's, and a machine nothing was heard of reads as an
+ *   empty state.
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -46,6 +57,7 @@ import {
   guestByKey,
   guestForTab,
   guestKey,
+  hostedInfo,
   linkTarget,
   reduceBrowser,
   shouldReveal,
@@ -56,6 +68,13 @@ import {
   type BrowserAction,
   type BrowserState,
 } from "../src/features/builtin-browser/browser-state";
+import {
+  INITIAL_BROWSER_SERVERS,
+  anyBrowserOffered,
+  reduceServers,
+  serverBrowser,
+} from "../src/features/builtin-browser/browser-servers";
+import { browserState, dispatchBrowser } from "../src/features/builtin-browser/browser-store";
 
 function tab(id: number, over: Partial<BuiltinBrowserTab> = {}): BuiltinBrowserTab {
   return {
@@ -903,5 +922,155 @@ describe("conversation browser scopes", () => {
     expect(state.guests.every((guest) => guest.scope === "saved")).toBe(true);
     state = run(state, { type: "scope", scope: "draft" });
     expect(wantsNewTabPage(state, true)).toBe(true);
+  });
+});
+
+/** A machine's status as its server answers the hub's admin: its own Chrome, found and not started yet. */
+const HOSTED_STATUS: BuiltinBrowserStatus = {
+  available: true,
+  backend: "hosted",
+  backends: [
+    { backend: "chrome", available: false, reason: "extension_not_paired" },
+    { backend: "hosted", available: true, chrome: { path: "/usr/bin/chromium", running: false } },
+  ],
+  tabs: [],
+  activeTabId: null,
+};
+
+const HOSTED = reduceBrowser(INITIAL_BROWSER_STATE, { type: "status", status: HOSTED_STATUS });
+
+const hostedTabs = (tabs: BuiltinBrowserTab[], activeTabId: number | null): BrowserAction =>
+  event({ type: "builtin_browser_tabs", backend: "hosted", tabs, activeTabId });
+
+describe("a server's own Chrome", () => {
+  it("is offered without a page host, and takes the links while it can run", () => {
+    expect(HOSTED.backend).toBe("hosted");
+    expect(hostedInfo(HOSTED)?.chrome?.path).toBe("/usr/bin/chromium");
+    expect(browserOffered(HOSTED)).toBe(true);
+    expect(linkTarget(HOSTED)).toBe("hosted");
+  });
+
+  it("keeps its tabs in a registry of its own", () => {
+    const listed = run(HOSTED, hostedTabs([tab(1), tab(2)], 2));
+    expect(shownTabs(listed).tabs.map((t) => t.id)).toEqual([1, 2]);
+    expect(shownActiveTab(listed)?.id).toBe(2);
+    expect(listed.tabs).toEqual([]);
+    expect(listed.chrome.tabs).toEqual([]);
+    const fromStatus = reduceBrowser(INITIAL_BROWSER_STATE, {
+      type: "status",
+      status: { ...HOSTED_STATUS, tabs: [tab(7)], activeTabId: 7 },
+    });
+    expect(fromStatus.hosted.tabs.map((t) => t.id)).toEqual([7]);
+  });
+
+  it("closes and activates a tab here at once, and keeps a stale list from bringing it back", () => {
+    const two = run(HOSTED, hostedTabs([tab(1), tab(2)], 2));
+    const front = reduceBrowser(two, { type: "activated", tabId: 1, backend: "hosted" });
+    expect(front.hosted.activeTabId).toBe(1);
+    expect(front.activeTabId).toBeNull();
+    const closed = reduceBrowser(two, { type: "chrome-closed", tabId: 2, backend: "hosted" });
+    expect(closed.hosted.tabs.map((t) => t.id)).toEqual([1]);
+    expect(closed.hosted.activeTabId).toBe(1);
+    expect(closed.chrome.closing).toEqual([]);
+    const stale = run(closed, hostedTabs([tab(1), tab(2)], 2));
+    expect(stale.hosted.tabs.map((t) => t.id)).toEqual([1]);
+  });
+
+  it("says why it cannot run, with what Chrome printed, until a tab shows it runs after all", () => {
+    const failed = reduceBrowser(INITIAL_BROWSER_STATE, {
+      type: "status",
+      status: {
+        ...HOSTED_STATUS,
+        available: false,
+        reason: "hosted_launch_failed",
+        detail: "Running as root without --no-sandbox is not supported.",
+        backends: [
+          {
+            backend: "hosted",
+            available: false,
+            reason: "hosted_launch_failed",
+            detail: "Running as root without --no-sandbox is not supported.",
+          },
+        ],
+      },
+    });
+    expect(failed.available).toBe(false);
+    expect(failed.reason).toBe("hosted_launch_failed");
+    expect(failed.detail).toBe("Running as root without --no-sandbox is not supported.");
+    expect(linkTarget(failed)).toBeNull();
+    // An empty list says nothing; a tab is a page of a Chrome that runs.
+    expect(run(failed, hostedTabs([], null)).available).toBe(false);
+    const running = run(failed, hostedTabs([tab(1)], 1));
+    expect(running.available).toBe(true);
+    expect(running.reason).toBeNull();
+    expect(running.detail).toBeNull();
+  });
+
+  it("is not opened a new-tab page just for being looked at", () => {
+    expect(wantsNewTabPage(HOSTED, true)).toBe(false);
+  });
+});
+
+describe("one state per server", () => {
+  const MACHINE = "machine-1";
+
+  it("reads a machine nothing was heard of as an empty state", () => {
+    expect(serverBrowser(INITIAL_BROWSER_SERVERS, MACHINE)).toBe(INITIAL_BROWSER_STATE);
+    expect(serverBrowser(INITIAL_BROWSER_SERVERS, null)).toBe(INITIAL_BROWSER_STATE);
+    expect(anyBrowserOffered(INITIAL_BROWSER_SERVERS)).toBe(false);
+  });
+
+  it("puts a machine's status and events in that machine's state, and nowhere else", () => {
+    const hub = reduceServers(INITIAL_BROWSER_SERVERS, null, {
+      type: "status",
+      status: { available: true, ...BUILTIN, tabs: [tab(1)], activeTabId: 1 },
+    });
+    const hubState = serverBrowser(hub, null);
+    const withMachine = [
+      { type: "status", status: HOSTED_STATUS } as const,
+      hostedTabs([tab(41), tab(42)], 42),
+      event({ type: "builtin_browser_activity", tabId: 42, busy: true, action: "scan" }),
+    ].reduce((servers, action) => reduceServers(servers, MACHINE, action), hub);
+
+    const machine = serverBrowser(withMachine, MACHINE);
+    expect(machine.backend).toBe("hosted");
+    expect(shownTabs(machine).tabs.map((t) => t.id)).toEqual([41, 42]);
+    expect(tabBusy(machine, 42)).toBe(true);
+    // This server's state is the very same object: nothing a machine says re-renders its panel.
+    expect(serverBrowser(withMachine, null)).toBe(hubState);
+    expect(serverBrowser(withMachine, "machine-2")).toBe(INITIAL_BROWSER_STATE);
+    expect(anyBrowserOffered(withMachine)).toBe(true);
+  });
+
+  it("leaves a machine's state alone when this server's changes", () => {
+    const machine = reduceServers(INITIAL_BROWSER_SERVERS, MACHINE, {
+      type: "status",
+      status: HOSTED_STATUS,
+    });
+    const before = serverBrowser(machine, MACHINE);
+    const after = reduceServers(
+      machine,
+      null,
+      event({ type: "builtin_browser_backend", backend: "chrome" }),
+    );
+    expect(serverBrowser(after, null).backend).toBe("chrome");
+    expect(serverBrowser(after, MACHINE)).toBe(before);
+  });
+
+  it("returns the same set when an action changes nothing", () => {
+    const servers = reduceServers(INITIAL_BROWSER_SERVERS, MACHINE, {
+      type: "status",
+      status: HOSTED_STATUS,
+    });
+    expect(reduceServers(servers, MACHINE, { type: "supported", supported: false })).toBe(servers);
+  });
+
+  it("keeps the window's store per server too", () => {
+    const hubBefore = browserState();
+    dispatchBrowser({ type: "status", status: HOSTED_STATUS }, "store-machine");
+    dispatchBrowser(hostedTabs([tab(5)], 5), "store-machine");
+    expect(browserState("store-machine").hosted.tabs.map((t) => t.id)).toEqual([5]);
+    expect(browserState()).toBe(hubBefore);
+    expect(browserState("another-machine")).toBe(INITIAL_BROWSER_STATE);
   });
 });

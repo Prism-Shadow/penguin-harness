@@ -1,8 +1,9 @@
 /**
  * The agent browser's user-channel events, as the one `/api/events` connection routes them
  * (state/sessions.tsx's applyUserEvent → features/builtin-browser/browser-events.ts): this
- * server's go to the browser layer, a machine's go nowhere — its server drives no browser on
- * this screen — and a resync tells the layer to re-read the registry.
+ * every one goes to the browser layer named by the server it came from — null for this one, the
+ * machine id for a machine, whose own browser the events are about — and a resync tells the
+ * layer to re-read that server's registry.
  */
 import { describe, expect, it } from "vitest";
 import type { BuiltinBrowserServerEvent, ServerEvent } from "@prismshadow/penguin-server/api";
@@ -51,28 +52,37 @@ describe("agent browser events on the user channel", () => {
     expect(seen).toEqual(EVENTS);
   });
 
-  it("ignores a machine's browser events", () => {
-    const seen: BuiltinBrowserServerEvent[] = [];
-    const stop = subscribeBuiltinBrowserEvents((ev) => seen.push(ev));
+  it("names this server as the source of its own events", () => {
+    const sources: (string | null)[] = [];
+    const stop = subscribeBuiltinBrowserEvents((_ev, server) => sources.push(server));
+    try {
+      for (const ev of EVENTS) applyUserEvent(listStore(), ev, () => undefined);
+    } finally {
+      stop();
+    }
+    expect(sources).toEqual(EVENTS.map(() => null));
+  });
+
+  it("hands a machine's browser events to the layer, named by the machine", () => {
+    const seen: [BuiltinBrowserServerEvent, string | null][] = [];
+    const stop = subscribeBuiltinBrowserEvents((ev, server) => seen.push([ev, server]));
     try {
       for (const ev of EVENTS) applyUserEvent(listStore(), ev, () => undefined, "machine-1");
     } finally {
       stop();
     }
-    expect(seen).toEqual([]);
+    expect(seen).toEqual(EVENTS.map((ev) => [ev, "machine-1"]));
   });
 
-  it("tells the layer to re-read the registry on this server's resync only", () => {
-    let resyncs = 0;
-    const stop = subscribeBuiltinBrowserResync(() => {
-      resyncs += 1;
-    });
+  it("tells the layer which server's registry to re-read on a resync", () => {
+    const resyncs: (string | null)[] = [];
+    const stop = subscribeBuiltinBrowserResync((server) => resyncs.push(server));
     try {
       applyUserEvent(listStore(), { type: "resync_required" }, () => undefined);
       applyUserEvent(listStore(), { type: "resync_required" }, () => undefined, "machine-1");
     } finally {
       stop();
     }
-    expect(resyncs).toBe(1);
+    expect(resyncs).toEqual([null, "machine-1"]);
   });
 });

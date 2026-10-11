@@ -121,7 +121,7 @@ function describeError(err: unknown, t: Messages): { code: string; message: stri
     const body = (err.body ?? {}) as { error?: unknown; message?: unknown; reason?: unknown };
     const nested =
       typeof body.error === "object" && body.error !== null
-        ? (body.error as { message?: unknown; reason?: unknown })
+        ? (body.error as { message?: unknown; reason?: unknown; detail?: unknown })
         : {};
     const code = typeof body.error === "string" ? body.error : err.code;
     // A 401's own words are the CLI's (they name the token to check); otherwise the server's.
@@ -130,7 +130,10 @@ function describeError(err: unknown, t: Messages): { code: string; message: stri
       // A reason the CLI words with what to tell the user; without one (the user paused the
       // extension, the link dropped mid-call) the server's own words say it.
       const reason = nested.reason ?? body.reason;
-      if (typeof reason === "string") return { code, message: t.browser.unavailableHint(reason) };
+      if (typeof reason === "string") {
+        const detail = typeof nested.detail === "string" ? nested.detail : undefined;
+        return { code, message: t.browser.unavailableHint(reason, detail) };
+      }
       return {
         code,
         message: typeof own === "string" ? own : t.browser.unavailableHint(undefined),

@@ -253,6 +253,7 @@ import type {
   BuiltinBrowserTab,
   BrowserBackend,
   BrowserBackendResponse,
+  HostedBrowserInputRequest,
   BrowserExtensionPairingResponse,
   BrowserExtensionsResponse,
   DesktopBrowserCommand,
@@ -2648,9 +2649,11 @@ export const registryPluginArchiveUrl = (name: string): string =>
 
 // ---- The agent browser: the desktop's built-in browser, or the user's own Chrome ----
 /**
- * Always this server's: the built-in browser's pages live in the desktop shell this server was
- * spawned by, and a user's Chrome is paired to this server, so a machine's browser routes would
- * drive a browser that is not on this screen.
+ * The agent browser of one server. The calls the Browser panel makes take the server it belongs
+ * to — null for this one, a machine id for the machine a conversation's Workspace lives on,
+ * whose own Chrome its agents drive. The rest are always this server's: the built-in browser's
+ * pages live in the desktop shell this server was spawned by, with its import, history, data
+ * and settings, and a user's Chrome is paired to this server.
  */
 const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
 
@@ -2664,17 +2667,17 @@ export type BuiltinBrowserStorage = Extract<
  * The caller's backend — whether it can be driven now, its tabs — and every backend the server
  * offers them (`backends`).
  */
-export const getBuiltinBrowserStatus = () =>
-  apiFetch<BuiltinBrowserStatus>(builtinBrowserPath("/status"), { server: null });
+export const getBuiltinBrowserStatus = (server: string | null = null) =>
+  apiFetch<BuiltinBrowserStatus>(builtinBrowserPath("/status"), { server });
 /** The caller's backend and the ones they may choose (both only on the desktop, for an admin). */
 export const getBrowserBackend = () =>
   apiFetch<BrowserBackendResponse>(builtinBrowserPath("/backend"), { server: null });
 /** Chooses the backend; 409 `action_in_flight` while an agent acts in the one being left. */
-export const putBrowserBackend = (backend: BrowserBackend) =>
+export const putBrowserBackend = (backend: BrowserBackend, server: string | null = null) =>
   apiFetch<BrowserBackendResponse>(builtinBrowserPath("/backend"), {
     method: "PUT",
     body: { backend },
-    server: null,
+    server,
   });
 /** A one-time pairing code for the signed-in user (ten minutes, one use; a new one replaces it). */
 export const createBrowserPairingCode = () =>
@@ -2696,16 +2699,14 @@ export const revokeBrowserExtension = (extensionId: string) =>
  * (over the user channel) to create the page, and answers once the page is claimed — so this
  * resolves after the tab exists.
  */
-export const openBuiltinBrowserTab = (body: {
-  url?: string;
-  activate?: boolean;
-  sessionId?: string;
-  projectId?: string;
-}) =>
+export const openBuiltinBrowserTab = (
+  body: { url?: string; activate?: boolean; sessionId?: string; projectId?: string },
+  server: string | null = null,
+) =>
   apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath("/tabs"), {
     method: "POST",
     body,
-    server: null,
+    server,
   });
 /** Transfers the built-in pages when a conversation receives a new id. */
 export const adoptBuiltinBrowserSession = (fromSessionId: string, sessionId: string) =>
@@ -2722,10 +2723,10 @@ export const claimBuiltinBrowserTab = (requestId: string, tabId: number) =>
     server: null,
   });
 /** The user brought a tab to the front: it is also the one an agent's next command acts on. */
-export const activateBuiltinBrowserTab = (tabId: number) =>
+export const activateBuiltinBrowserTab = (tabId: number, server: string | null = null) =>
   apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath(`/tabs/${tabId}/activate`), {
     method: "POST",
-    server: null,
+    server,
   });
 /** The tab this window shows on screen, or none: the server leaves that one unthrottled. */
 export const setBuiltinBrowserOnScreen = (tabId: number | null) =>
@@ -2734,18 +2735,31 @@ export const setBuiltinBrowserOnScreen = (tabId: number | null) =>
     body: { tabId },
     server: null,
   });
-export const closeBuiltinBrowserTab = (tabId: number) =>
-  apiFetch<void>(builtinBrowserPath(`/tabs/${tabId}`), { method: "DELETE", server: null });
+export const closeBuiltinBrowserTab = (tabId: number, server: string | null = null) =>
+  apiFetch<void>(builtinBrowserPath(`/tabs/${tabId}`), { method: "DELETE", server });
 /**
  * Loads `url` in a tab through the server, and answers once it loaded: the address bar of a tab
- * this window does not host (one in the user's Chrome).
+ * this window does not host (one in the user's Chrome, or in a server's own).
  */
-export const navigateBuiltinBrowserTab = (tabId: number, url: string) =>
+export const navigateBuiltinBrowserTab = (
+  tabId: number,
+  url: string,
+  server: string | null = null,
+) =>
   apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath(`/tabs/${tabId}/navigate`), {
     method: "POST",
     body: { url },
-    server: null,
+    server,
   });
+/**
+ * What the viewer did in a hosted tab's picture (mouse, wheel, keys, text, the toolbar's
+ * history buttons), in order, and optionally the size of the panel showing it.
+ */
+export const sendHostedBrowserInput = (
+  tabId: number,
+  body: HostedBrowserInputRequest,
+  server: string | null,
+) => apiFetch<void>(builtinBrowserPath(`/tabs/${tabId}/input`), { method: "POST", body, server });
 /** The system browsers' profiles on this computer that can be imported from. */
 export const getBuiltinBrowserImportSources = () =>
   apiFetch<BuiltinBrowserImportSourcesResponse>(builtinBrowserPath("/import/sources"), {

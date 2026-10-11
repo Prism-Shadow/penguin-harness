@@ -62,6 +62,29 @@ describe("SettingsStore", () => {
     expect(await store.read()).toEqual({ homepage: "https://home.test/" });
   });
 
+  it("keeps the Chrome path through a homepage write, and holds none that is not absolute", async () => {
+    const file = settingsFile(root);
+    const store = new SettingsStore(file);
+    const chrome = path.join(root, "chrome");
+    expect(await store.write({ chromePath: chrome })).toEqual({
+      homepage: null,
+      chromePath: chrome,
+    });
+    expect(await store.write({ homepage: "https://home.test/" })).toEqual({
+      homepage: "https://home.test/",
+      chromePath: chrome,
+    });
+    // Read in line where a caller cannot wait, with the same answer.
+    expect(store.readSync()).toEqual(await store.read());
+    expect(await store.write({ chromePath: null })).toEqual({ homepage: "https://home.test/" });
+
+    for (const chromePath of ["chrome", "./bin/chrome", 42, ""]) {
+      await fs.writeFile(file, JSON.stringify({ homepage: null, chromePath }));
+      expect(await store.read()).toEqual({ homepage: null });
+      expect(store.readSync()).toEqual({ homepage: null });
+    }
+  });
+
   it("keeps the last of several writes made together", async () => {
     const store = new SettingsStore(settingsFile(root));
     await Promise.all([

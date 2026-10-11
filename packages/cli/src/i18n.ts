@@ -736,17 +736,23 @@ export interface Messages {
     available(): string;
     unavailable(reason: string): string;
     /**
-     * The value of `backend:` on the status line: `builtin` or `chrome` as the API names them, then
-     * the user's Chrome when one is paired (its name and the extension's version).
+     * The value of `backend:` on the status line: `builtin`, `chrome` or `hosted` as the API names
+     * them, then the user's Chrome when one is paired (its name and the extension's version), or
+     * the version of the server's own Chrome (`chrome`) once it has started.
      */
-    backendValue(backend: string, extension?: { name: string; version: string }): string;
+    backendValue(
+      backend: string,
+      extension?: { name: string; version: string },
+      chrome?: string,
+    ): string;
     /**
      * Why the browser cannot be driven, and what to do: the built-in browser lives in the desktop
      * app, which must be open; the user's own Chrome needs the extension paired, connected and
-     * allowed on the server. Undefined: no server could be reached at all.
+     * allowed on the server; the server's own Chrome must be installed on its machine and start
+     * (`detail` is what it printed when it did not). Undefined: no server could be reached at all.
      */
-    unavailableHint(reason: string | undefined): string;
-    /** `not_supported`: what only the built-in browser has (import, history), asked of the user's Chrome. */
+    unavailableHint(reason: string | undefined, detail?: string): string;
+    /** `not_supported`: what only the built-in browser has (import, history), asked of another backend. */
     notSupported(): string;
     /**
      * The value of `memory:`: what the browser's pages hold together and how many tabs, then this
@@ -1866,11 +1872,13 @@ const en: Messages = {
     noTabs: () => "none",
     available: () => "available",
     unavailable: (reason) => `unavailable (${reason})`,
-    backendValue: (backend, extension) =>
-      extension === undefined
-        ? backend
-        : `${backend} (${extension.name}, extension ${extension.version})`,
-    unavailableHint: (reason) => {
+    backendValue: (backend, extension, chrome) =>
+      extension !== undefined
+        ? `${backend} (${extension.name}, extension ${extension.version})`
+        : chrome !== undefined
+          ? `${backend} (Chrome ${chrome})`
+          : backend,
+    unavailableHint: (reason, detail) => {
       const base =
         "The built-in browser needs the PenguinHarness desktop app, and the app must be open";
       if (reason === "shell_unsupported")
@@ -1883,10 +1891,14 @@ const en: Messages = {
         return "The user's Chrome is not connected. Ask the user to open Chrome with the PenguinHarness Browser extension enabled, or to pair it again in the Browser panel.";
       if (reason === "extension_disabled")
         return "An admin has turned off Chrome extension connections on this server, so the user's Chrome cannot be driven.";
+      if (reason === "hosted_no_chrome")
+        return "No Chrome was found on the machine this server runs on. Ask the user to install Google Chrome or Chromium on that machine, or to set its path in the browser settings; the server does not download one.";
+      if (reason === "hosted_launch_failed")
+        return `The Chrome on the machine this server runs on did not start${detail ? `. Chrome said: ${detail}` : ""}. Tell the user; a server running as root is one cause, since Chrome is never started without its sandbox.`;
       return "The browser is driven through a running PenguinHarness server, and none was reached: open the desktop app, or point --server or PENGUIN_API_URL at the server.";
     },
     notSupported: () =>
-      "This belongs to the built-in browser; this user's agents drive their own Chrome, which keeps its own sign-ins and history. Ask the user to sign in in the Penguin tab in Chrome instead.",
+      "This belongs to the built-in browser; the browser this user's agents drive here keeps its own sign-ins and history. Ask the user to sign in there instead: in the Penguin tab of their Chrome, or in the Browser panel when the backend is hosted.",
     memoryLine: (total, tabs, system) =>
       `${total} across ${tabs} ${tabs === 1 ? "tab" : "tabs"}` +
       (system !== undefined ? ` · this computer: ${system.free} free of ${system.total}` : ""),
@@ -2963,11 +2975,13 @@ const zh: Messages = {
     noTabs: () => "无",
     available: () => "可用",
     unavailable: (reason) => `不可用（${reason}）`,
-    backendValue: (backend, extension) =>
-      extension === undefined
-        ? backend
-        : `${backend}（${extension.name}，扩展 ${extension.version}）`,
-    unavailableHint: (reason) => {
+    backendValue: (backend, extension, chrome) =>
+      extension !== undefined
+        ? `${backend}（${extension.name}，扩展 ${extension.version}）`
+        : chrome !== undefined
+          ? `${backend}（Chrome ${chrome}）`
+          : backend,
+    unavailableHint: (reason, detail) => {
       const base = "内置浏览器需要 PenguinHarness 桌面应用，且应用必须处于打开状态";
       if (reason === "shell_unsupported") return `${base}：当前桌面应用版本过旧，请更新应用。`;
       if (reason === "no_window") return `${base}：应用当前没有打开的窗口，请打开它。`;
@@ -2978,10 +2992,14 @@ const zh: Messages = {
         return "该用户的 Chrome 未连接。请用户打开装有 PenguinHarness Browser 扩展的 Chrome 并确认扩展已启用，或在浏览器面板中重新配对。";
       if (reason === "extension_disabled")
         return "管理员已在本服务器上关闭 Chrome 扩展连接，无法驱动该用户的 Chrome。";
+      if (reason === "hosted_no_chrome")
+        return "服务器所在的机器上没有找到 Chrome。请用户在那台机器上安装 Google Chrome 或 Chromium，或在浏览器设置中填写它的路径；服务器不会自行下载。";
+      if (reason === "hosted_launch_failed")
+        return `服务器所在机器上的 Chrome 没有启动成功${detail ? `。Chrome 的报错：${detail}` : ""}。请告知用户；服务器以 root 运行是原因之一，因为启动 Chrome 时从不关闭它的沙箱。`;
       return "浏览器要经由正在运行的 PenguinHarness 服务器驱动，但没有连上任何服务器：请打开桌面应用，或用 --server 或 PENGUIN_API_URL 指向该服务器。";
     },
     notSupported: () =>
-      "这项功能只属于内置浏览器；该用户的 Agent 驱动的是用户自己的 Chrome，它自己保存登录状态和历史记录。需要登录时，请用户在 Chrome 的 Penguin 标签页中自行登录。",
+      "这项功能只属于内置浏览器；该用户的 Agent 在这里驱动的浏览器自己保存登录状态和历史记录。需要登录时，请用户在那个浏览器里自行登录：自己 Chrome 的 Penguin 标签页，或后端为 hosted 时的浏览器面板。",
     memoryLine: (total, tabs, system) =>
       `${total}（${tabs} 个标签页）` +
       (system !== undefined ? ` · 本机可用 ${system.free}，共 ${system.total}` : ""),

@@ -1,14 +1,16 @@
 ---
 name: browser-automation
-description: Drive the PenguinHarness agent browser — the desktop app's built-in browser or the user's own Chrome — from the shell with `penguin browser`: open pages, read them as simplified HTML or text, act with JavaScript and trusted clicks and typing, and pull structured data out of them (orders, search results, tables), signed in with the user's own accounts. Use it for any task on a website that needs a real browser or the user's sign-in, such as finding an Amazon order.
+description: Drive the PenguinHarness agent browser — the desktop app's built-in browser, the user's own Chrome, or a Chrome on the machine the Workspace is on — from the shell with `penguin browser`: open pages, read them as simplified HTML or text, act with JavaScript and trusted clicks and typing, and pull structured data out of them (orders, search results, tables), signed in with the user's own accounts. Use it for any task on a website that needs a real browser or the user's sign-in, such as finding an Amazon order.
 version: 2026.10.04.1
 ---
 
 # Browser automation
 
-`penguin browser` drives the agent browser from your shell: the desktop app's built-in browser (the **Browser** tab of the dock), or the user's own Chrome through the PenguinHarness Browser extension — whichever the user chose. The commands are the same on both. Its tabs are shared by every conversation and keep the sign-ins made in them, so a page you open is one the user can watch and take over. Every command acts on the active tab unless `--tab <id>` names another.
+`penguin browser` drives the agent browser from your shell: the desktop app's built-in browser (the **Browser** tab of the dock), the user's own Chrome through the PenguinHarness Browser extension, or a headless Chrome the server runs on its own machine (`hosted`) — whichever the user chose. The commands are the same on all three. Its tabs are shared by every conversation and keep the sign-ins made in them, so a page you open is one the user can watch and take over. Every command acts on the active tab unless `--tab <id>` names another.
 
-You do not choose the browser, and must not try to (through `/api/me/prefs` or any other route): `penguin browser status` says which one is in use, `backend: builtin` or `backend: chrome`. In the user's Chrome you reach only the tabs in its **Penguin** tab group, which are the ones you open, and tabs the user hands over with the extension's icon; the user can take a tab back at any time.
+You do not choose the browser, and must not try to (through `/api/me/prefs` or any other route): `penguin browser status` says which one is in use: `backend: builtin`, `backend: chrome` or `backend: hosted`. In the user's Chrome you reach only the tabs in its **Penguin** tab group, which are the ones you open, and tabs the user hands over with the extension's icon; the user can take a tab back at any time.
+
+On `backend: hosted` the browser runs on the machine your Workspace is on — the same machine your shell runs on. So `localhost` in a page address is that machine: a dev server you started there opens as `http://localhost:<port>`. The user sees each tab's page live in the **Browser** panel, and can click and type in it themselves at any time.
 
 ## Before you start
 
@@ -24,6 +26,8 @@ penguin browser status
 - `extension_not_paired`: no Chrome is paired. Ask the user to install the PenguinHarness Browser extension and pair it: **Browser** panel → **Connect your Chrome…**.
 - `extension_disconnected`: their Chrome is paired but not connected. Ask them to open Chrome with the extension enabled, or to pair it again in the **Browser** panel.
 - `extension_disabled`: an admin turned Chrome connections off on this server; the user's Chrome cannot be used here.
+- `hosted_no_chrome`: the machine the server runs on has no Chrome. Ask the user to install Google Chrome or Chromium on that machine (or to set its path in the browser settings). Do not download or install a browser yourself.
+- `hosted_launch_failed`: the Chrome on that machine did not start; the `note:` carries Chrome's own error line. Pass it on to the user. Never work around it by starting a Chrome of your own or by turning its sandbox off.
 
 A `warning:` line under `memory:` means the browser is using too much memory or holds too many tabs. Close the tabs you opened and no longer need (`penguin browser close <tab-id>`) before opening more, and reuse a tab (`open` without `--new-tab`) where you can.
 
@@ -81,6 +85,7 @@ A redirect to a sign-in page (`/signin`, `/ap/signin`, `accounts.google.com`, a 
 - **Never type the user's passwords, one-time codes or payment details**, and never ask for them in the conversation.
 - **Chrome** (`backend: chrome`): the user's own sign-ins usually already apply. When they do not, ask the user to sign in in the Penguin tab in their Chrome, then continue. `import` belongs to the built-in browser and answers `not_supported` here.
 - **Built-in**: ask the user to sign in in the **Browser** panel of the desktop app, then continue from where you stopped.
+- **Hosted** (`backend: hosted`): open the sign-in page, then ask the user to sign in in the **Browser** panel, where they see the page and type into it themselves; continue once they say they have. The sign-in stays in that Chrome's own profile for later tasks. `import` is not part of this backend and answers `not_supported`.
 - Or, on the built-in browser and with the user's go-ahead, import their sign-in from the browser they normally use:
 
   ```bash
@@ -114,4 +119,4 @@ Finding and listing Amazon orders — the sign-in check, searching, extracting r
 | `penguin browser history [<query>] [-n 20]` | Pages visited in the built-in browser, and imported history (built-in only) |
 | `--json` on any command | The raw response |
 
-An error is one line, `error: <code>: <message>`, with exit code 1. The codes: `browser_unavailable` (see Before you start; also when the user paused the extension in Chrome — ask them to resume it), `no_tab` (open a page first), `no_such_tab`, `tab_crashed`, `tab_released` (see Rules), `cdp_refused` (a raw command outside the tab; the user's Chrome also refuses its cookies, storage and file paths), `not_supported` (import and history on the user's Chrome), `timeout`, `invalid_url`, `script_error`, `source_not_found`, `import_failed`, and `invalid_argument` for a command typed wrong.
+An error is one line, `error: <code>: <message>`, with exit code 1. The codes: `browser_unavailable` (see Before you start; also when the user paused the extension in Chrome — ask them to resume it), `no_tab` (open a page first), `no_such_tab`, `tab_crashed`, `tab_released` (see Rules), `cdp_refused` (a raw command outside the tab; the user's Chrome also refuses its cookies, storage and file paths), `not_supported` (import and history on the user's Chrome or the hosted Chrome), `timeout`, `invalid_url`, `script_error`, `source_not_found`, `import_failed`, and `invalid_argument` for a command typed wrong.

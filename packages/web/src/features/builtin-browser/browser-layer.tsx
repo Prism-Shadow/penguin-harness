@@ -30,8 +30,9 @@
  * And it says once when the browser gets too heavy: each load warning the server starts giving
  * raises one toast, wherever the user is in the app; the toolbar's mark carries it after that.
  *
- * Every window, `<webview>` or not, follows the agent browser's state (BrowserFollower): the
- * user's own Chrome needs no page here, so a plain browser window offers the Browser panel too.
+ * Every window, `<webview>` or not, follows the agent browser's state (BrowserFollower), this
+ * server's and each machine's whose events arrive (browser-servers.ts): the user's own Chrome
+ * and a server's own need no page here, so a plain browser window offers the Browser panel too.
  * A backend switch or word on the user's Chrome is followed by a fresh status read, which brings
  * the chosen backend's tabs and settles what an event alone cannot (a revoked Chrome that was the
  * last one paired). While the agents drive Chrome the built-in pages stay hosted, out of sight.
@@ -293,7 +294,8 @@ export function BuiltinBrowserLayer() {
 /**
  * Every window: reads the status, follows the events, re-reads the status after a backend switch
  * or word on the user's Chrome, and when the channel comes back past its replay buffer (events
- * were lost, or the server restarted). An agent opening a page or starting to act for the
+ * were lost, or the server restarted) — each for the server the word came from, this one or a
+ * machine. An agent opening a page or starting to act for the
  * conversation on screen brings the Browser panel up, once per conversation. Unmounting
  * (signing out) stops offering the browser until the next status.
  */
@@ -301,10 +303,10 @@ function BrowserFollower() {
   useEffect(() => {
     void refreshBrowserStatus();
     const revealed = new Set<string>();
-    const offEvents = subscribeBuiltinBrowserEvents((event) => {
-      dispatchBrowser({ type: "event", event });
+    const offEvents = subscribeBuiltinBrowserEvents((event, server) => {
+      dispatchBrowser({ type: "event", event }, server);
       if (event.type === "builtin_browser_backend" || event.type === "builtin_browser_extension") {
-        void refreshBrowserStatus();
+        void refreshBrowserStatus(server);
       }
       const conversation = currentDockScope();
       const onScreen = { conversation, browserShown: isTabShown(BROWSER_TAB) };
@@ -313,9 +315,9 @@ function BrowserFollower() {
         openPanel(BROWSER_TAB);
       }
     });
-    const offResync = subscribeBuiltinBrowserResync(() => {
-      dispatchBrowser({ type: "resync" });
-      void refreshBrowserStatus();
+    const offResync = subscribeBuiltinBrowserResync((server) => {
+      dispatchBrowser({ type: "resync" }, server);
+      void refreshBrowserStatus(server);
     });
     return () => {
       offEvents();
@@ -340,7 +342,9 @@ function LayerHost() {
   useEffect(() => {
     dispatchBrowser({ type: "supported", supported: true });
     void refreshBrowserSettings();
-    const offResync = subscribeBuiltinBrowserResync(() => {
+    const offResync = subscribeBuiltinBrowserResync((server) => {
+      // The pages here are this server's; a machine's lost events are not about them.
+      if (server !== null) return;
       forgetOnScreenReport();
       void refreshBrowserSettings();
     });
