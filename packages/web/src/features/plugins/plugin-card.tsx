@@ -131,7 +131,7 @@ export interface PluginCardProps {
   /** Asks to install (true) or remove (false) the server module; the page confirms first. */
   onModuleApply: (install: boolean) => void;
   /** An Agent's vault changed under the plugin's MCP servers (Set up saved): its servers are read again. */
-  onRepair: (() => void) | null;
+  onRepair?: (() => void) | null;
   onMcpChanged: (agentId: string) => void;
 }
 
@@ -315,7 +315,7 @@ export function PluginCard(props: PluginCardProps) {
         </Button>,
       );
     }
-    if (props.onRepair !== null && row.module?.unsatisfied !== undefined) {
+    if (props.onRepair != null && row.module?.unsatisfied !== undefined) {
       out.push(
         <Button
           key="repair"

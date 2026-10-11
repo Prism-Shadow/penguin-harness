@@ -694,11 +694,12 @@ export function PluginsPage() {
       }}
       onRepair={
         isAdmin && row.module?.unsatisfied !== undefined
-          ? () => repair({
-              specifier: row.module!.specifier,
-              disabled: row.module!.state === "disabled",
-              reason: row.module!.unsatisfied!,
-            })
+          ? () =>
+              repair({
+                specifier: row.module!.specifier,
+                disabled: row.module!.state === "disabled",
+                reason: row.module!.unsatisfied!,
+              })
           : null
       }
       onMcpChanged={refreshAgentMcp}

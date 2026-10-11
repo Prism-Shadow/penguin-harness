@@ -14,7 +14,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { aiChatRouteState, buildAiDraft } from "../src/features/ai-create/ai-bridge";
 import { repairChatRequest } from "../src/features/plugins/plugin-repair";
-import { ModuleRow } from "../src/features/plugins/plugins-page";
+import { PluginCard } from "../src/features/plugins/plugin-card";
+import type { ModulePart } from "../src/features/plugins/plugin-groups";
+import { moduleStatus } from "../src/features/plugins/plugin-status";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";
@@ -80,25 +82,44 @@ describe("the row of a plugin the build cannot fully run", () => {
 
   const inLocale = <P extends object>(child: FunctionComponent<P>, props: P) =>
     renderToStaticMarkup(createElement(LocaleProvider, null, createElement(child, props)));
-  const row = (over: Partial<Parameters<typeof ModuleRow>[0]>) =>
-    inLocale(ModuleRow, {
+  const row = (over: Partial<ModulePart> & { onRepair?: (() => void) | null }) => {
+    const { onRepair = () => undefined, ...part } = over;
+    const module: ModulePart = {
       specifier: "@acme/unmet",
       entry: undefined,
       state: "disabled",
       unsatisfied: UNMET.reason,
       shipped: false,
+      ...part,
+    };
+    return inLocale(PluginCard, {
+      row: { key: "module:@acme/unmet", name: "@acme/unmet", category: "other", module },
+      status: moduleStatus(module.state),
+      usage: null,
+      categoryTitle: "Other",
+      showCategory: true,
+      agents: [],
+      installed: new Map(),
+      canQuickStart: false,
+      isAdmin: true,
+      isOwner: false,
+      projectId: null,
       busy: false,
       blocked: false,
-      onInstall: null,
-      onRemove: () => undefined,
-      onRepair: () => undefined,
-      ...over,
+      onQuickStart: () => undefined,
+      onDeletePlugin: async () => undefined,
+      onToggleInstall: async () => false,
+      onUpdateOutdated: async () => undefined,
+      onModuleApply: () => undefined,
+      onMcpChanged: () => undefined,
+      onRepair,
     });
+  };
   const repairButton = `aria-label="${en.plugins.repair} @acme/unmet"`;
 
   it("says it is disabled on this build, why, and offers the repair beside Remove", () => {
     const html = row({});
-    expect(html).toContain(en.plugins.stateDisabled);
+    expect(html).toContain(en.plugins.status.incompatible);
     expect(html).toContain("names interface");
     expect(html).toContain(repairButton);
     expect(html).toContain(`aria-label="${en.plugins.uninstall} @acme/unmet"`);
@@ -106,24 +127,14 @@ describe("the row of a plugin the build cannot fully run", () => {
 
   it("a running row that lost a contribution says so and offers the same repair", () => {
     const html = row({ state: "active", unsatisfied: "contributes to 'nowhere.slot'" });
-    expect(html).toContain(en.plugins.stateActive);
+    expect(html).toContain(en.plugins.status.installed);
     expect(html).toContain("Part of it is not in use on this build");
     expect(html).toContain(repairButton);
   });
 
   it("offers no repair to someone who may not change plugins, nor on a row that runs whole", () => {
     expect(row({ onRepair: null })).not.toContain(repairButton);
-    const healthy = inLocale(ModuleRow, {
-      specifier: "@acme/unmet",
-      entry: undefined,
-      state: "active",
-      shipped: false,
-      busy: false,
-      blocked: false,
-      onInstall: null,
-      onRemove: () => undefined,
-      onRepair: () => undefined,
-    });
+    const healthy = row({ state: "active", unsatisfied: undefined });
     expect(healthy).not.toContain(repairButton);
   });
 });

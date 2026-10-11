@@ -434,7 +434,6 @@ function memoryStorage() {
   };
 }
 
-
 describe("a plugin the running build cannot fully run", () => {
   const view: PluginView = { machineId: SELF, remote: null, nameOf };
   const here = { everywhere: true, machines: [], here: true };
@@ -463,14 +462,17 @@ describe("a plugin the running build cannot fully run", () => {
     const remote: InstalledPluginsResponse = {
       ...deployment,
       machineId: GPU,
-      plugins: [{
-        ...listed("@acme/gpu-only", here, false),
-        unsatisfied: { disabled: true, reason: "names interface Nope" },
-      }],
+      plugins: [
+        {
+          ...listed("@acme/gpu-only", here, false),
+          unsatisfied: { disabled: true, reason: "names interface Nope" },
+        },
+      ],
     };
     const parts = moduleParts(deployment, [], { machineId: GPU, remote, nameOf });
     expect(parts.find((m) => m.specifier === "@acme/gpu-only")).toMatchObject({
-      state: "disabled", unsatisfied: "names interface Nope",
+      state: "disabled",
+      unsatisfied: "names interface Nope",
     });
   });
 });

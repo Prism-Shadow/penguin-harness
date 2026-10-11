@@ -126,7 +126,10 @@ export function rowInstalledOnServer(row: PluginRow): boolean {
   return (
     part !== undefined &&
     !part.shipped &&
-    (part.state === "active" || part.state === "pending" || part.state === "failed" || part.state === "disabled")
+    (part.state === "active" ||
+      part.state === "pending" ||
+      part.state === "failed" ||
+      part.state === "disabled")
   );
 }
 
