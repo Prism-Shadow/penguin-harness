@@ -1018,6 +1018,10 @@ export const en: Strings = {
         : `${toggle} to toggle · ↑↓ to select · Enter to run`,
     harnessHistory: "Harness history",
     newWindow: "New Window",
+    installCli: "Install 'penguin' command…",
+    checkUpdates: "Check for desktop updates…",
+    checkingUpdates: "Checking for updates…",
+    projectOnGitHub: "Project on GitHub",
   },
   modelPicker: {
     groups: "Model groups",

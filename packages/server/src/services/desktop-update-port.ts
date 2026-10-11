@@ -10,8 +10,11 @@
  * Under a plain `penguin server|web` run the port does not exist and this module wires
  * nothing; those routes then answer 503 `shell_unreachable`.
  *
- * Wire shapes live in api/types.ts (the updater, tray and folder-access messages) so the
- * shell imports the same contract.
+ * The same port carries the host commands the page's command palette offers: one
+ * `host-commands` push saying what this host can do, and `host-command` frames back.
+ *
+ * Wire shapes live in api/types.ts (the updater, tray and folder-access messages, and
+ * HostCommandsMessage / HostCommandMessage) so the shell imports the same contract.
  */
 import { randomUUID } from "node:crypto";
 import type {
@@ -26,7 +29,11 @@ import type {
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
   DesktopUpdaterStatusMessage,
+  HostCommand,
+  HostCommandMessage,
+  HostCommandsMessage,
 } from "../api/types.js";
+import { HOST_COMMANDS } from "../api/types.js";
 import type { DesktopService } from "./desktop-service.js";
 
 /**
@@ -63,6 +70,16 @@ export function parseUpdaterStatusMessage(data: unknown): DesktopUpdateStatus | 
   if (typeof status.state !== "string" || !UPDATE_STATES.has(status.state)) return null;
   if (status.seq !== undefined && typeof status.seq !== "number") return null;
   return status as DesktopUpdateStatus;
+}
+
+/** Validates the shell's once-per-wiring push of the commands it offers; unknown names are dropped, not stored. */
+export function parseHostCommandsMessage(data: unknown): HostCommand[] | null {
+  if (typeof data !== "object" || data === null) return null;
+  const msg = data as Partial<HostCommandsMessage>;
+  if (msg.type !== "host-commands" || !Array.isArray(msg.commands)) return null;
+  return msg.commands.filter((c): c is HostCommand =>
+    (HOST_COMMANDS as readonly string[]).includes(c),
+  );
 }
 
 /** Reads Electron's injected port off `process`, absent under plain Node. */
@@ -127,7 +144,12 @@ export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): v
       }
       // A reply nobody waits for any more (its request timed out) is dropped.
       const access = parseFolderAccessResultMessage(e.data);
-      if (access !== null) awaiting.get(access.id)?.(access);
+      if (access !== null) {
+        awaiting.get(access.id)?.(access);
+        return;
+      }
+      const commands = parseHostCommandsMessage(e.data);
+      if (commands !== null) desktop.setCommands(commands);
     } catch (err) {
       console.error(`[server] dropped a frame from the desktop shell: ${String(err)}`);
     }
@@ -174,5 +196,8 @@ export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): v
   });
   desktop.onOpenWindowCommand(() => {
     port.postMessage({ type: "desktop-open-window" } satisfies DesktopOpenWindowMessage);
+  });
+  desktop.onCommand((command) => {
+    port.postMessage({ type: "host-command", command } satisfies HostCommandMessage);
   });
 }
