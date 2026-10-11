@@ -24,7 +24,7 @@ The repository's README section *Running a task (for agents)*, which the stateme
 
 ## A. The caller: shared setup once, then the cells
 
-The agent that fans out the cells performs steps 1–9 once, before its first `run_subagent` for the Benchmark, then runs the cells as "Running the cells" below says. A worker that finds no ready checkout does not race it: it takes the same lock, and either waits behind whoever holds it or, holding it, performs these steps itself. A checkout is named by the commit it holds and, once ready, is never changed or deleted — cells of this evaluation and of any other read it at the same time.
+The agent that fans out the cells performs steps 1–10 once, before its first `run_subagent` for the Benchmark, then runs the cells as "Running the cells" below says. A worker that finds no ready checkout does not race it: it takes the same lock, and either waits behind whoever holds it or, holding it, performs these steps itself. A checkout is named by the commit it holds and, once ready, is never changed or deleted, apart from the install bundle step 10 adds under its `bundles/` — cells of this evaluation and of any other read it at the same time.
 
 1. **Tools.** Require `docker info` to reach a daemon as the current user, `docker compose version` to report v2, `uv --version` (it provides `uvx`), `tar`, `python3`, and `curl` or `git`. When one is missing the evaluation cannot run on this machine: a caller says which tool is missing and stops; a worker returns `evaluation_failed`.
 2. **The checkout's place,** named by the statement's commit:
@@ -56,10 +56,28 @@ The agent that fans out the cells performs steps 1–9 once, before its first `r
    ```
 
    A create that fails because the network exists by now lost a race and is fine; one that fails because the subnet overlaps another network is repeated with another free private range, such as `10.234.0.0/16`. Never add the overlay to a launch whose statement lacks it: the repository allows it only for single-container tasks whose agent phase has a public network, and on a task without network it would bypass the egress sidecar Harbor enforces that with.
+10. **The install bundle.** Without it, the adapter downloads Node.js and installs the CLI inside every trial container: about two minutes per trial, more when several trials install at once. The run rules replace that install with one bundle, built once per checkout. Build it holding a lock; every cell's launch then passes it (§B.7):
+
+    ```bash
+    PENGUIN_VERSION="$(penguin version --json | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+    BUNDLE="$CHECKOUT/bundles/penguin-cli-$PENGUIN_VERSION-node-24.18.0-linux-$(uname -m).tar.gz"
+    mkdir -p "$CHECKOUT/bundles"
+    if [ -n "$PENGUIN_VERSION" ] && [ ! -f "$BUNDLE" ] && mkdir "$BUNDLE.lock" 2>/dev/null; then
+      (cd "$CHECKOUT" && tools/make_install_bundle.sh "$BUNDLE" "$PENGUIN_VERSION") || echo "bundle build failed: cells install from the network"
+      rmdir "$BUNDLE.lock"
+    fi
+    ```
+
+    When the lock exists, another evaluation is building the bundle: check every 10 seconds, for up to 10 minutes, until the lock is gone (the builder holds it until the file is complete), then look for the file. A lock older than 30 minutes is stale: `rmdir` it and run the block again. When there is still no file — the build failed because this host cannot reach nodejs.org or the npm registry, or the wait ran out — go on without it: each trial then installs inside its own container, as the launch does by default. The adapter refuses a bundle built for other versions than the launch asks for, `$PENGUIN_VERSION` and its Node.js 24.18.0; the file name carries both. A worker skips this step: only the caller builds the bundle.
 
 ### Running the cells
 
-Send every cell the same `provider` and `model_id` (`SKILL.md`, "For the caller"), and run **at most four cells at a time** unless the user named another limit (the README's rule): start the next only when a running one has returned (`run_subagent` with `run_in_background` keeps four going).
+Send every cell the same `provider` and `model_id` (`SKILL.md`, "For the caller"). The limit is the one the user named for this evaluation, else **four cells at a time** (the README's rule: every trial takes one Docker network, and evaluations that share a machine divide its limit among them). Never go above eight: the harness refuses a ninth running background subagent. Keep every slot filled, mechanically:
+
+1. Launch each cell with `run_subagent` and `run_in_background: true`. Its prompt's first line is `Caller agent: <your agent id> — cell <case_id> run <run>`, with the request's own `case_id` and `run`, and the request follows unchanged; the completion notice quotes that line, so it names the cell. Keep a ledger in your reply: unstarted cells; running cells with their `subagent_id`, which the notice also carries; returned cells with their result.
+2. Launch cells until the running count reaches the limit, then **end your turn**. Do not wait with `input_subagent`, do not poll, do not sleep in a shell: each completion arrives on its own as a `[background_task_done]` user message that starts your next turn.
+3. On every such notice, record the returned result, then in the same turn launch the next unstarted cells until the running count is at the limit again — one notice frees one slot, several notices in one turn free several — and end the turn. Never wait for the rest of a batch before starting the next cell.
+4. When the last cell has returned, assemble the matrix and finish as your Skill says.
 
 A cell whose trial Docker could not give a network was not measured: run it once more at lower concurrency, and never count it as a score of 0 (the README's rule). Such a cell returns `evaluation_failed`, and its trial records Docker's error in `exception_info`; this prints a file name when it does:
 
@@ -68,7 +86,7 @@ JOB="$(ls -dt "$PROJECT_DIR/benchmarks/<benchmark_id>/.jobs/<case_id>-run<run>-"
 grep -rlE --include=result.json 'non-overlapping IPv4 address pool|address pools have been fully subnetted' "$JOB"
 ```
 
-Then halve the number of cells you run at once, down to one, wait until no more than that many are running, and run the failed cell again with a new `run_subagent` and the same request. When that attempt fails as well, the cell has no score: stop and tell the user which cells are missing and why instead of recording the evaluation. Any other `evaluation_failed` is handled as the caller's own instructions say.
+Then halve the limit, down to one, and put the cell first among the unstarted cells: the loop above launches it again, with a new `run_subagent` and the same request, once fewer cells than the new limit are running. When that attempt fails as well, the cell has no score: stop and tell the user which cells are missing and why instead of recording the evaluation. Any other `evaluation_failed` is handled as the caller's own instructions say.
 
 ## B. One cell: one Harbor trial
 
@@ -96,9 +114,9 @@ Prepare as `SKILL.md` says — the request, the required files, `status`, the ve
    ```
 
    `$JOBS_DIR/$JOB_NAME` must not exist yet: Harbor resumes an existing job directory instead of running a new trial, so pick a new timestamp when it does.
-5. **The PenguinHarness version.** `PENGUIN_VERSION` is the `version` field of `penguin version --json`, the release number; the container installs `@prismshadow/penguin-cli` at that version from npm.
+5. **The PenguinHarness version.** `PENGUIN_VERSION` is the `version` field of `penguin version --json`, the release number; the container installs `@prismshadow/penguin-cli` at that version, from npm or from the install bundle (step 7).
 6. **The shared network,** only when the statement's launch has the overlay line: require `docker network inspect penguin-bench` to succeed, creating the network as §A.9 says when it does not. A launch without the line runs without it: the trial makes a network of its own.
-7. **Launch** the statement's command, in the foreground, from the checkout. Fill in its placeholders — `<provider>/<model_id>` with the request's pair, `<level>` with the configured `thinking_level`, `<penguin version>` with `$PENGUIN_VERSION`, `<model provider API host>` with `$HOST`, `<job name>` with `$JOB_NAME` and `<jobs dir>` with `$JOBS_DIR` — and insert `--ak agent_state_tar="$STATE_TAR" --ak host_penguin_home="$PENGUIN_HOME" --ak host_project_id="$PROJECT_ID"` before `--agent-setup-timeout-multiplier`. Change nothing else. Without the time-budget, host and overlay lines, it reads:
+7. **Launch** the statement's command, in the foreground, from the checkout. Fill in its placeholders — `<provider>/<model_id>` with the request's pair, `<level>` with the configured `thinking_level`, `<penguin version>` with `$PENGUIN_VERSION`, `<model provider API host>` with `$HOST`, `<job name>` with `$JOB_NAME` and `<jobs dir>` with `$JOBS_DIR` — and insert `--ak agent_state_tar="$STATE_TAR" --ak host_penguin_home="$PENGUIN_HOME" --ak host_project_id="$PROJECT_ID"` and, when `$BUNDLE` (the path §A.10 names for this `$PENGUIN_VERSION`) is a file, `--ak install_bundle="$BUNDLE"`, before `--agent-setup-timeout-multiplier`. Change nothing else. A worker never builds the bundle itself: without the file, leave that line out and the container installs from the network. Without the time-budget, host and overlay lines, it reads:
 
    ```bash
    cd "$CHECKOUT"
@@ -109,6 +127,7 @@ Prepare as `SKILL.md` says — the request, the required files, `status`, the ve
      --ak run_timeout=<RUN_TIMEOUT> --ak max_turns=<MAX_TURNS> \
      --ak agent_state_tar="$STATE_TAR" \
      --ak host_penguin_home="$PENGUIN_HOME" --ak host_project_id="$PROJECT_ID" \
+     --ak install_bundle="$BUNDLE" \
      --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name "$JOB_NAME" -o "$JOBS_DIR" -y
    rm -f "$STATE_TAR"
    ```
