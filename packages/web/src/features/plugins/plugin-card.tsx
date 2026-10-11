@@ -134,6 +134,7 @@ export interface PluginCardProps {
   onUpdateOutdated: (name: string, agentIds: string[]) => Promise<void>;
   /** Asks to install (true) or remove (false) the server module; the page confirms first. */
   onModuleApply: (install: boolean) => void;
+  moduleQuickStart?: { onStart: () => void } | { reason: string };
   /** An Agent's vault changed under the plugin's MCP servers (Set up saved): its servers are read again. */
   onRepair?: (() => void) | null;
   onMcpChanged: (agentId: string) => void;
@@ -267,6 +268,23 @@ export function PluginCard(props: PluginCardProps) {
         >
           <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.iconButton} />
           {words(S.skills.manageInstall)}
+        </Button>,
+      );
+    }
+    const moduleQuickStart = props.moduleQuickStart;
+    if (moduleQuickStart !== undefined) {
+      out.push(
+        <Button
+          key="module-quick-start"
+          size="sm"
+          className={look}
+          aria-label={`${S.skills.quickInvoke} ${row.name}`}
+          title={"reason" in moduleQuickStart ? moduleQuickStart.reason : S.plugins.quickStartHint}
+          disabled={"reason" in moduleQuickStart || props.busy || props.blocked}
+          onClick={"onStart" in moduleQuickStart ? moduleQuickStart.onStart : undefined}
+        >
+          <GlyphIcon d={ICONS.paperPlane} />
+          {words(S.skills.quickInvoke)}
         </Button>,
       );
     }

@@ -14,6 +14,8 @@ export abstract class Settings {
   abstract setProxyForAgent(value: boolean): void;
   abstract getProxyUrl(): string | null;
   abstract setProxyUrl(value: string | null): void;
+  abstract hasGithubToken(): boolean;
+  abstract setGithubToken(value: string): void;
   abstract getAttachmentMaxMb(): number;
   abstract setAttachmentMaxMb(value: number): void;
   abstract getAttachmentTotalMb(): number;

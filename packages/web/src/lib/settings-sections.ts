@@ -37,6 +37,7 @@ export type SettingsSectionKey =
   | "company"
   | "chromeExtension"
   | "agentApi"
+  | "sharing"
   | "plugins"
   | "users";
 
@@ -84,6 +85,7 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     { key: "chromeExtension", group: "server", visible: (v) => v.isAdmin },
     // Whether any Agent's public API answers at all: server-global, like the Chrome switch.
     { key: "agentApi", group: "server", visible: (v) => v.isAdmin },
+    { key: "sharing", group: "server", visible: (v) => v.isAdmin },
     // The sandbox, and the options loaded plugins declare (server-global, like the plugins themselves).
     { key: "plugins", group: "server", visible: (v) => v.isAdmin },
     // Single-user under the desktop shell: the server rejects the admin user routes there.

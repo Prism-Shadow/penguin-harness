@@ -63,6 +63,7 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { prepareNewChatDraft } from "../chat/new-chat";
+import { InstallFromGistDialog } from "./install-dialog";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { mergeAgents } from "../../lib/benchmark-merge";
@@ -219,6 +220,8 @@ export function AgentsPage() {
   const libraryPending = useRef(false);
   /** Open the create dialog. Its form mounts with it, so every opening starts empty. */
   const openCreate = () => setCreateOpen(true);
+  /** The "Install from Gist" dialog (install-dialog.tsx), opened from the page header. */
+  const [installOpen, setInstallOpen] = useState(false);
 
   // The library is fetched the first time the dialog opens, not on page load: the list itself
   // never needs it, and a failure here must not keep the dialog from creating a plain Agent —
@@ -686,6 +689,9 @@ export function AgentsPage() {
                 placeholder={S.agent.searchPlaceholder}
               />
             </div>
+            <Button size="sm" onClick={() => setInstallOpen(true)}>
+              {S.agent.installFromGist}
+            </Button>
             <AiCreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
           </>
         }
@@ -706,6 +712,14 @@ export function AgentsPage() {
           />
         )}
       </PageHeader>
+      {projectId && (
+        <InstallFromGistDialog
+          open={installOpen}
+          onClose={() => setInstallOpen(false)}
+          projectId={projectId}
+          onInstalled={() => void reloadAgents()}
+        />
+      )}
 
       {agentsLoading ? (
         /* Same single-column row styling as the real list (space-y-3 + the card's p-4), with a

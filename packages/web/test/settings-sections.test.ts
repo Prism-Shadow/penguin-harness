@@ -60,6 +60,7 @@ describe("visibleSettingsSections", () => {
       "company",
       "chromeExtension",
       "agentApi",
+      "sharing",
       "plugins",
       "users",
     ]);
@@ -97,6 +98,7 @@ describe("visibleSettingsSections", () => {
       "company",
       "chromeExtension",
       "agentApi",
+      "sharing",
       "plugins",
     ]);
   });
@@ -117,6 +119,7 @@ describe("visibleSettingsSections", () => {
       "company",
       "chromeExtension",
       "agentApi",
+      "sharing",
       "plugins",
     ]);
   });

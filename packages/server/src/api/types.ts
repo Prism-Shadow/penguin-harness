@@ -28,6 +28,11 @@ import type {
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
 import type { WorkflowInfo } from "../mechanisms/workflows.js";
+import type {
+  PackageManifest as PackageManifestType,
+  PublishedGist as PublishedGistType,
+  PublishMethod as PublishMethodType,
+} from "../mechanisms/packages.js";
 
 // ---------------------------------------------------------------------------
 // General
@@ -282,6 +287,11 @@ export interface ServerSettings {
    * Agent's API switch, approval mode and keys are kept, so turning it on again restores them.
    */
   agentApiEnabled: boolean;
+  /**
+   * Whether a GitHub token is stored for publishing Agent packages as gists. The token
+   * itself never leaves the server: this flag is all any client is told.
+   */
+  githubTokenSet: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -298,6 +308,8 @@ export interface ServerSettingsUpdateRequest {
   browserExtensionsEnabled?: boolean;
   /** Agent API switch; see `ServerSettings.agentApiEnabled`. */
   agentApiEnabled?: boolean;
+  /** GitHub token with the `gist` scope, used to publish Agent packages; "" clears it. */
+  githubToken?: string;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -4787,6 +4799,14 @@ export type VersionResponse = VersionReport;
 
 export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
 export type {
+  AgentPackage,
+  PackageFile,
+  PackageManifest,
+  PackagePreview,
+  PublishedGist,
+  PublishMethod,
+} from "../mechanisms/packages.js";
+export type {
   WorkflowInfo,
   WorkflowVersion,
   WorkflowRequest,
@@ -6434,6 +6454,44 @@ export interface ContributionsResponse {
   pages: WebContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+  /** Module demos, named by the contributing module. */
+  quickStarts: Array<QuickStartItem & { id: string; from: string }>;
+}
+
+/** GET /api/projects/:p/agents/:a/package — what publishing would send. */
+export interface AgentPackageResponse {
+  manifest: PackageManifestType;
+  bytes: number;
+  /** Whether the server has any GitHub identity; false = the publish button explains why not. */
+  canPublish: boolean;
+  /** Which identity it would publish with: the server machine's `gh` login, or a stored token. */
+  publishVia: PublishMethodType;
+  /** The gist this Agent was published to before — a republish updates it. */
+  publishedGist: PublishedGistType | null;
+}
+
+/** POST …/package/publish — the gist it landed in. */
+export interface AgentPackagePublishResponse {
+  gistId: string;
+  url: string;
+  files: number;
+  bytes: number;
+  /** The gist already held exactly this: nothing was written, and no API call was spent. */
+  unchanged: boolean;
+}
+
+/** How an Agent package source is read (see the server's packages/sources.ts). */
+export type AgentPackageSourceKind = "gist" | "npm" | "github-release" | "github" | "git" | "url";
+
+/** POST /api/agent-packages/preview — a source read and validated, nothing written. */
+export interface AgentPackagePreviewResponse {
+  manifest: PackageManifestType;
+  bytes: number;
+  /** The resolved origin, for display: `npm:<name>@<version>`, `github:o/r#ref`, a gist URL, … */
+  source: string;
+  kind: AgentPackageSourceKind;
+  /** The manifest's Agent id, or the source's name when the source carries no manifest. */
+  suggestedId: string;
 }
 
 /**

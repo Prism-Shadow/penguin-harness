@@ -230,6 +230,10 @@ import type {
   VersionHistoryResponse,
   WorkflowInfo,
   WorkflowVersion,
+  AgentPackageResponse,
+  AgentPackagePublishResponse,
+  AgentPackagePreviewResponse,
+  AgentPackageSourceKind,
   VersionRollbackResponse,
   VersionResponse,
   WeChatBindingPutRequest,
@@ -2534,6 +2538,38 @@ export const removeWorkflow = (
     method: "DELETE",
     server: machineId,
   });
+// ---- Agent packages (an Agent's definition to a gist and back) ----
+export const getAgentPackage = (projectId: string, agentId: string) =>
+  apiFetch<AgentPackageResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/package`,
+  );
+/** Owner only; `gistId` updates that gist instead of creating one. */
+export const publishAgentPackage = (
+  projectId: string,
+  agentId: string,
+  body: { gistId?: string; public: boolean },
+) =>
+  apiFetch<AgentPackagePublishResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/package/publish`,
+    { method: "POST", body },
+  );
+/**
+ * Reads and validates a source as a package; writes nothing. A source is a gist link or id,
+ * `npm:<name>[@version]`, a GitHub repository or release URL, `github:o/r[#ref]`, a git URL,
+ * or an http(s) URL of a tarball; `kind` forces one reading.
+ */
+export const previewAgentPackage = (source: string, kind?: AgentPackageSourceKind) =>
+  apiFetch<AgentPackagePreviewResponse>("/api/agent-packages/preview", {
+    method: "POST",
+    body: { source, ...(kind === undefined ? {} : { kind }) },
+  });
+/** Owner only: installs the source as a new Agent of the Project. */
+export const installAgentPackage = (body: {
+  source: string;
+  kind?: AgentPackageSourceKind;
+  projectId: string;
+  agentId: string;
+}) => apiFetch<{ agentId: string }>("/api/agent-packages/install", { method: "POST", body });
 
 // ---- The plugins a Project asks for, and the confinement agent commands run under ----
 /**
@@ -2742,5 +2778,10 @@ export const clearBuiltinBrowserData = (
   apiFetch<void>(builtinBrowserPath("/clear-data"), {
     method: "POST",
     body: { storages, ...scope },
+    server: null,
+  });
+
+export const getContributions = () =>
+  apiFetch<import("@prismshadow/penguin-server/api").ContributionsResponse>("/api/contributions", {
     server: null,
   });

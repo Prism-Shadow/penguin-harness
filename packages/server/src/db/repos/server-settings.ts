@@ -41,6 +41,13 @@ export const BROWSER_EXTENSIONS_KEY = "browserExtensionsEnabled";
 /** Key of the Agent API switch; default on (see getAgentApiEnabled). */
 const AGENT_API_KEY = "agentApiEnabled";
 
+/**
+ * Key of the GitHub token used to publish Agent packages as gists. Plaintext at rest, like
+ * the messaging connectors' credentials and the proxy address; every API surface reports
+ * only whether one is set, never the value.
+ */
+const GITHUB_TOKEN_KEY = "github_token";
+
 @Component()
 export class ServerSettingsRepo implements Settings {
   @Use() private readonly db!: Db;
@@ -134,6 +141,23 @@ export class ServerSettingsRepo implements Settings {
     } catch {
       return fallback;
     }
+  }
+
+  /** Whether a GitHub token is stored (the value itself is read by the package service). */
+  hasGithubToken(): boolean {
+    const raw = this.get(GITHUB_TOKEN_KEY);
+    if (raw === null) return false;
+    try {
+      const value = JSON.parse(raw) as unknown;
+      return typeof value === "string" && value !== "";
+    } catch {
+      return false;
+    }
+  }
+
+  /** Stores the token; an empty string clears it. */
+  setGithubToken(value: string): void {
+    this.set(GITHUB_TOKEN_KEY, JSON.stringify(value));
   }
 
   /** Per-file composer attachment cap, in whole MB. */

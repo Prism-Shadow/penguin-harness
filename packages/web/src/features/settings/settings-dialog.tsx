@@ -38,6 +38,7 @@ import { CompanySection } from "./company-section";
 import { BrowserSection } from "./browser-section";
 import { ChromeExtensionSection } from "./chrome-extension-section";
 import { AgentApiSection } from "./agent-api-section";
+import { SharingSection } from "./sharing-section";
 import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
@@ -62,6 +63,8 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   uploads: ICONS.arrowUpFromLine,
   /** The building the mode switch wears: company mode. */
   company: ICONS.building,
+  /** Two links of a chain: sharing, which hands out an address. */
+  sharing: ICONS.chainLink,
   /** Plug: whether users may connect their Chrome. */
   chromeExtension: ICONS.plug,
   /** Angle brackets: programs calling the Agents. The plug that marks the API elsewhere is taken here, by the Chrome page above. */
@@ -120,6 +123,7 @@ export function SettingsDialog({
     company: S.settings.companyModeTitle,
     chromeExtension: S.settings.chromeExtensionTitle,
     agentApi: S.settings.agentApiTitle,
+    sharing: S.settings.sharingTitle,
     plugins: S.settings.pluginsTitle,
     users: S.admin.users,
   };
@@ -137,6 +141,7 @@ export function SettingsDialog({
     company: S.settings.companyModeServerInfo,
     chromeExtension: S.settings.chromeExtensionInfo,
     agentApi: S.settings.agentApiHint,
+    sharing: S.settings.sharingInfo,
     plugins: S.settings.pluginsInfo,
   };
 
@@ -178,6 +183,7 @@ export function SettingsDialog({
       {current === "company" && <CompanySection />}
       {current === "chromeExtension" && <ChromeExtensionSection />}
       {current === "agentApi" && <AgentApiSection />}
+      {current === "sharing" && <SharingSection />}
       {current === "plugins" && (
         <PluginsSection {...(pluginFocus !== undefined ? { focus: pluginFocus } : {})} />
       )}
