@@ -144,15 +144,42 @@ for (const project of projects) {
    * on a class that declares its own abstract members, or `extends Interface<…>()` for
    * an interface that IS an existing type (see core kernel/markers.ts).
    */
+  /**
+   * The value `Interface<…>()` returns is an IfaceHandle: constructable AND callable (a base
+   * class that is also a decorator). A built package's .d.ts spells the heritage as
+   * `extends X_base` with `X_base` declared of that shape — the same interface class seen
+   * from outside, which a plugin's fields name.
+   */
+  const isIfaceHandleType = (expr) => {
+    const type = checker.getTypeAtLocation(expr);
+    return type.getCallSignatures().length > 0 && type.getConstructSignatures().length > 0;
+  };
+  /**
+   * A built package's .d.ts erases decorators, so an `@Interface()` class seen from outside
+   * (the class a plugin's field names) is a bare `declare abstract class`. What the decorator
+   * guarantees survives the erasure, though (checkDecoratedInterface): abstract, extending
+   * nothing, every member abstract. In a declaration file that shape is read as the
+   * interface class it was compiled from.
+   */
+  const isErasedInterfaceDecl = (d) =>
+    d.getSourceFile().isDeclarationFile &&
+    (ts.getModifiers(d) ?? []).some((m) => m.kind === ts.SyntaxKind.AbstractKeyword) &&
+    (d.heritageClauses ?? []).length === 0 &&
+    d.members.length > 0 &&
+    d.members.every((m) =>
+      (ts.getModifiers(m) ?? []).some((mod) => mod.kind === ts.SyntaxKind.AbstractKeyword),
+    );
   const isInterfaceClassDecl = (d) =>
     ts.isClassDeclaration(d) &&
     (hasInterfaceDecorator(d) ||
+      isErasedInterfaceDecl(d) ||
       (d.heritageClauses ?? []).some((h) =>
         h.types.some(
           (t) =>
-            ts.isCallExpression(t.expression) &&
-            ts.isIdentifier(t.expression.expression) &&
-            t.expression.expression.text === "Interface",
+            (ts.isCallExpression(t.expression) &&
+              ts.isIdentifier(t.expression.expression) &&
+              t.expression.expression.text === "Interface") ||
+            (ts.isIdentifier(t.expression) && isIfaceHandleType(t.expression)),
         ),
       ));
   /**
