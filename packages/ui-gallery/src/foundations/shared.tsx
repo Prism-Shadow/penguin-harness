@@ -132,8 +132,8 @@ export function ReplayButton({ onClick, label }: { onClick: () => void; label?: 
 /**
  * The app window through `.ui-shell`: a navigation column with three rows (the first selected) and
  * a main column with a title and a line of text, in the anatomy the recipes select on. Frost lays
- * its field behind it and floats the main column; Console rules the columns and marks the selected
- * row; Primer leaves the specimen's own classes alone.
+ * its flat field behind it under a frosted navigation column; Console rules the columns and marks
+ * the selected row; Primer leaves the specimen's own classes alone.
  */
 export function ShellSpecimen() {
   const { S, state } = useGallery();

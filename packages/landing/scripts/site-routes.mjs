@@ -5,7 +5,8 @@
  * Two consumers share this list, and they have to agree: the landing postbuild writes
  * one static shell per route (so GitHub Pages answers 200 instead of falling back to
  * 404.html), and build-site.mjs writes sitemap.xml for the assembled tree. A route that
- * gets a shell belongs in the sitemap, and a sitemap URL that has no shell is a 404.
+ * gets a shell belongs in the sitemap (the gallery's views excepted, see galleryRoutes),
+ * and a sitemap URL that has no shell is a 404.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -79,4 +80,13 @@ export function blogRoutes() {
 /** Routes served by the docs SPA, whose own postbuild already writes their shells. */
 export function docsRoutes() {
   return [{ route: "/docs/" }, ...slugsIn(DOCS_DIR).map((slug) => ({ route: `/docs/${slug}/` }))];
+}
+
+/**
+ * The component gallery's index. Its build writes a shell for each of its pages too, but those
+ * are one tool's views, reached from the index with the reader's view settings in the query, so
+ * the sitemap names only the entry point.
+ */
+export function galleryRoutes() {
+  return [{ route: "/gallery/" }];
 }

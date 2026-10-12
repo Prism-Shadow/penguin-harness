@@ -56,13 +56,13 @@
  * |                    | weather, clock, countdown or metrics tile in a reply;    |                                                       |
  * |                    | host: `WidgetSurface`                                    |                                                       |
  *
- * `ui-shell` is the one place a theme may paint a field of colour: Frost paints a soft pastel
- * field behind the window (a sky wash from the top corner, a lilac one from the bottom) and
- * sets the navigation column on it as milky, translucent glass with a lit inner edge, beside the
- * opaque near-white main column — the glass takes no backdrop filter, since the field is all
- * that lies behind it and the column must not become a stacking context; Console rules the
- * columns off each other with hairlines, full bleed; Primer changes nothing — the window's look
- * is its own classes.
+ * `ui-shell` is the one place a theme may paint a field of colour, and the field is one flat
+ * colour, never a gradient: Frost lays a flat grey field behind the window and sets the
+ * navigation column on it as milky, translucent glass with a lit inner edge, so the column comes
+ * out a step off the opaque near-white main column — the glass takes no backdrop filter, since
+ * the field is all that lies behind it and the column must not become a stacking context;
+ * Console rules the columns off each other with hairlines, full bleed; Primer changes nothing —
+ * the window's look is its own classes.
  *
  * `ui-glass` is a floating layer's frost, and in Frost it also dresses the one glass that does
  * not float: a plugin or skill tile (`SkillTile`, `data-glass="tile"`), a translucent square in
@@ -183,7 +183,7 @@
  * caret, and the host holds those back until `done`. Primer changes nothing: the host's own
  * pulsing caret glyph stays. Frost hides the caret and lets the trailing
  * lines surface through a soft veil — a gradient from nothing to the page's colour over the last
- * three lines, with a faint glow in the accent's wash behind them — drawn only while the caret is
+ * line and a half, so the newest words are the faintest — drawn only while the caret is
  * the host's last child, so the veil covers the text and never what the host appends after it;
  * on `done` the veil eases away over the reveal duration instead of snapping off. Console draws
  * the caret as a solid block cursor in the body ink, a mono cell wide, blinking in steps, and

@@ -305,14 +305,13 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
   // rungs and its own control padding, and the chrome and reading faces are two names. The
   // presence / reveal / layout motion reads tokens of its own, and the app window has a hook with
   // tokens behind it. 188 + 1 (the space unit) + 1 (the chrome face) + 9 (the shell) + 11 (motion)
-  // = 210; the structure revision below adds 5 more.
+  // = 210; the structure revision below adds 5 more. The shell group is 7 since 2026-10-11, when
+  // the field's two washes left with Frost's gradient sidebar: the field is one flat colour.
   it("adds the space unit, the chrome face, the shell group and the motion names", () => {
     for (const name of [
       "--ui-space-unit",
       "--ui-font-ui",
       "--ui-shell-field",
-      "--ui-shell-wash-1",
-      "--ui-shell-wash-2",
       "--ui-shell-nav-bg",
       "--ui-shell-main-bg",
       "--ui-shell-line",
@@ -333,15 +332,16 @@ describe("the theme-identities revision of the contract (2026-09-19)", () => {
     ]) {
       expect(TOKEN_NAMES).toContain(name);
     }
-    expect(TOKEN_GROUPS.find((group) => group.id === "shell")?.names.length).toBe(9);
+    expect(TOKEN_GROUPS.find((group) => group.id === "shell")?.names.length).toBe(7);
     // 215, plus the integration round's four (the emphasis ink and the switch's three), plus
     // the chart round's nine (two more series, the reference line, six geometry names), plus
     // the bar outline's three, plus the knob's hairline edge (2026-09-30), plus the update
     // mark's fill (W1, the same day), plus the streaming pair (the same day), plus the neutral
     // fill of bubbles and chips (W6, the same day), plus the icon sets' duotone opacity and
     // nine glyph hues and Console's one-tag badge trio (ring, weight, md padding; 2026-10-01),
-    // plus the badge's size and line-height (2026-10-02).
-    expect(TOKEN_NAMES.length).toBe(251);
+    // plus the badge's size and line-height (2026-10-02), less the field's two washes
+    // (2026-10-11).
+    expect(TOKEN_NAMES.length).toBe(249);
   });
 
   it("adds the structure group behind the tree and field hooks (round 2)", () => {

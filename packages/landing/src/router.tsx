@@ -5,7 +5,7 @@
  */
 import { useEffect } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router";
-import { DOCS_URL } from "./lib/links";
+import { DOCS_URL, GALLERY_URL } from "./lib/links";
 import { hashTargetId } from "./lib/hash";
 import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
@@ -17,13 +17,13 @@ import { BlogPostPage } from "./pages/blog-post";
 import { DownloadPage } from "./pages/download";
 
 /**
- * Deep links into the docs SPA that missed a real file (e.g. an unknown slug) land on
- * the site-root 404.html, which boots this landing SPA. Hand them to the docs index —
- * unless we are already at the docs index (landing dev serves index.html for every
- * path, so redirecting to the same URL would reload forever).
+ * Deep links into a sibling SPA (the docs, the gallery) that missed a real file (e.g. an
+ * unknown slug) land on the site-root 404.html, which boots this landing SPA. Hand them
+ * to that site's index — unless we are already there (landing dev serves index.html for
+ * every path, so redirecting to the same URL would reload forever).
  */
-function DocsRedirect() {
-  const target = new URL(DOCS_URL, window.location.origin).pathname;
+function SiblingRedirect({ url }: { url: string }) {
+  const target = new URL(url, window.location.origin).pathname;
   if (window.location.pathname !== target) {
     window.location.replace(target);
     return null;
@@ -83,8 +83,9 @@ export function AppRouter() {
           <Route path="/download" element={<DownloadPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
-        {/* Outside Layout: a pure redirect, no nav/footer flash. */}
-        <Route path="/docs/*" element={<DocsRedirect />} />
+        {/* Outside Layout: pure redirects, no nav/footer flash. */}
+        <Route path="/docs/*" element={<SiblingRedirect url={DOCS_URL} />} />
+        <Route path="/gallery/*" element={<SiblingRedirect url={GALLERY_URL} />} />
       </Routes>
     </BrowserRouter>
   );
