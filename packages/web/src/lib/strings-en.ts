@@ -224,10 +224,8 @@ export const en: Strings = {
       configSync: {
         synced: (ago: string) => `Config synced · ${ago}`,
         failed: (detail: string) => `Config sync failed: ${detail}`,
-        envOnly: (models: string) =>
-          `These models take their key from this server's environment variables, which are not synced to this machine: ${models}. Enter the key on the Models page, or set the same variable on that machine.`,
-        envModel: (model: string, variables: string[]) => `${model} (${variables.join(", ")})`,
-        joinList: (items: string[]) => items.join(", "),
+        envOnly:
+          "Model keys from environment variables can't be synced to this machine. Set the keys by hand first.",
         skippedTitle: "These models were not synced to this machine:",
         skippedModel: (model: string, reason: string) => `${model}: ${reason}`,
       },

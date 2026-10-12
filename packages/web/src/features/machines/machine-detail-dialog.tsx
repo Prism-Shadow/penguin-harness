@@ -445,13 +445,13 @@ function ConfigSync({ view }: { view: ConfigSyncView }) {
         />
         <span className="min-w-0 break-words whitespace-pre-line">{view.line}</span>
       </p>
-      {(view.envOnly !== null || view.skipped.length > 0) && (
+      {(view.envOnly || view.skipped.length > 0) && (
         <NoticeStrip
           tone="attention"
           data-config-sync-notice=""
           className="mt-3 space-y-2 rounded-md border px-3 py-2 text-sm"
         >
-          {view.envOnly !== null && <p data-env-only="">{c.envOnly(view.envOnly)}</p>}
+          {view.envOnly && <p data-env-only="">{c.envOnly}</p>}
           {view.skipped.length > 0 && (
             <div data-skipped="">
               <p>{c.skippedTitle}</p>

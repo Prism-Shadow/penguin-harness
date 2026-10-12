@@ -432,21 +432,10 @@ export interface ConfigSyncView {
   ok: boolean;
   /** 「配置已同步 · 3 分钟前」, or 「配置同步失败：…」 with the far side's words. */
   line: string;
-  /** The models that take a value from this server's environment, said as a list; null for none. */
-  envOnly: string | null;
+  /** Whether some model takes a value from this server's environment, which the sync cannot carry. */
+  envOnly: boolean;
   /** Each model the machine would not take, with why; empty for none. */
   skipped: string[];
-}
-
-/** `provider/model (VAR, VAR)` per model, in the order the server listed them. */
-function envOnlyText(rows: NonNullable<MachineInfo["configSync"]>["envOnly"]): string {
-  const c = S.machines.detail.configSync;
-  const byModel = new Map<string, string[]>();
-  for (const row of rows) {
-    const key = `${row.provider}/${row.modelId}`;
-    byModel.set(key, [...(byModel.get(key) ?? []), row.variable]);
-  }
-  return c.joinList([...byModel].map(([model, variables]) => c.envModel(model, variables)));
 }
 
 /**
@@ -468,7 +457,7 @@ export function configSyncView(
     line: sync.ok
       ? c.synced(formatRelativeLong(sync.at, locale, now))
       : c.failed(sync.detail ?? ""),
-    envOnly: sync.envOnly.length === 0 ? null : envOnlyText(sync.envOnly),
+    envOnly: sync.envOnly.length > 0,
     skipped: sync.skipped.map((one) =>
       c.skippedModel(`${one.provider}/${one.modelId}`, byCode[one.code] ?? one.reason),
     ),

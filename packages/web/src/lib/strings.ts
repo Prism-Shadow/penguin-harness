@@ -273,10 +273,7 @@ export const zh = {
       configSync: {
         synced: (ago: string) => `配置已同步 · ${ago}`,
         failed: (detail: string) => `配置同步失败：${detail}`,
-        envOnly: (models: string) =>
-          `这些模型的 Key 来自本服务端的环境变量，不会同步到这台机器：${models}。请在模型页填写 Key，或在那台机器上设置同名环境变量。`,
-        envModel: (model: string, variables: string[]) => `${model}（${variables.join("、")}）`,
-        joinList: (items: string[]) => items.join("、"),
+        envOnly: "环境变量里的模型密钥无法同步到这台机器，请先手动配置模型密钥。",
         skippedTitle: "这些模型没有同步到这台机器：",
         skippedModel: (model: string, reason: string) => `${model}：${reason}`,
       },
