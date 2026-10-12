@@ -68,6 +68,7 @@ import type { RemoteLayout } from "../src/machines/layout.js";
 import type { PushPlan, RemoteInstallOutcome } from "../src/machines/install-server.js";
 import type { RemoteIdentity } from "../src/machines/detect.js";
 import type { CheckoutPacker } from "../src/machines/checkout-image.js";
+import type { EventRelay } from "../src/machines/event-relay.js";
 import { readPushedBuild } from "../src/hmr/pushed-build.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import {
@@ -129,9 +130,29 @@ const CHECKOUT_BUILD: PushedBuild = {
   },
 };
 
+/**
+ * The event relay's stand-in: it remembers which machines it was asked to subscribe to, and
+ * opens nothing. What the relay does on the wire is machines-event-relay.test.ts's.
+ */
+export function quietRelay(): EventRelay & { subscribed: Set<string> } {
+  const subscribed = new Set<string>();
+  return {
+    subscribed,
+    start: (address) => void subscribed.add(address),
+    stop: (address) => void subscribed.delete(address),
+    stopAll: () => subscribed.clear(),
+    active: (address) => subscribed.has(address),
+  };
+}
+
 /** An effects set that names two hosts and installs successfully, with the parts a test cares about overridden. */
 function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> {
   return {
+    relay: () => quietRelay(),
+    // The transport's own registry is not this suite's: its ups and downs are told by hand.
+    watchSessions: () => () => {},
+    // What a connection check asks when the POSIX probe has no answer; never a real ssh here.
+    detect: async () => ({ error: "the fake machine said nothing" }),
     listAliases: () => ["build-box", "nas"],
     resolvePlan: () => ({ baseVersion: "9.9.9", harness: null, hmrDir: null, version: "9.9.9" }),
     now: () => new Date("2026-08-24T12:00:00.000Z"),
@@ -1788,7 +1809,7 @@ describe("machines API", () => {
 
     it("a machine whose re-hold failed waits out a backoff before the next try", async () => {
       // A host that is down costs one ssh per try; without a backoff the standing intent
-      // would knock on it every minute forever.
+      // would knock on it every few seconds forever.
       let holds = 0;
       let clock = new Date("2026-08-24T12:00:00.000Z");
       await boot({
@@ -1806,17 +1827,394 @@ describe("machines API", () => {
       machinesRepo.setMembers("default_project", ["ssh:nas"]);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(1);
-      // Within the first minute after a failure: not tried again.
+      const reconnect = () =>
+        t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas")?.reconnect;
+      expect(reconnect()).toMatchObject({
+        since: "2026-08-24T12:00:00.000Z",
+        attempts: 1,
+        nextAt: "2026-08-24T12:00:10.000Z",
+        lastError: "Connection refused",
+      });
+      // Within ten seconds after the first failure: not tried again.
+      clock = new Date(clock.getTime() + 9_000);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(1);
       // Once the wait has passed, it is.
-      clock = new Date(clock.getTime() + 61_000);
+      clock = new Date(clock.getTime() + 2_000);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(2);
-      // The second failure doubles the wait: two minutes now, so one minute later is too soon.
-      clock = new Date(clock.getTime() + 61_000);
+      // The second failure doubles the wait: twenty seconds now, so fifteen later is too soon.
+      clock = new Date(clock.getTime() + 15_000);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(2);
+      // However long it stays down, the wait stops growing at five minutes.
+      for (let i = 0; i < 8; i++) {
+        clock = new Date(clock.getTime() + 5 * 60_000);
+        await t.deps.machines.autoConnect();
+      }
+      expect(Date.parse(reconnect()!.nextAt!) - clock.getTime()).toBe(5 * 60_000);
+    });
+  });
+
+  describe("a job's steps", () => {
+    const use = (machines: string[]) =>
+      admin.post("/api/projects/default_project/machines/use", { machines });
+    const settled = () => t.deps.machines.jobs().every((job) => !job.queued && !job.running);
+    const jobOf = (id: string) => t.deps.machines.jobs().find((job) => job.machineId === id);
+
+    it("names its own steps, and moves through them forward only", async () => {
+      // Where the job stood when each piece of work ran: an install, the server started after
+      // it, the connection held. A connect behind an install is already connecting — the
+      // stepper never goes back to "check" to ask what runs there.
+      const at: Record<string, string | null> = {};
+      await boot({
+        install: async () => {
+          at.install = jobOf("ssh:nas")?.phase ?? null;
+          return { kind: "installed", output: "", identity: IDENTITY };
+        },
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        startServer: async () => {
+          at.start = jobOf("ssh:nas")?.phase ?? null;
+          return { ok: true };
+        },
+        hold: async (target) => {
+          at.hold = jobOf("ssh:nas")?.phase ?? null;
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+      });
+      await use(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobOf("ssh:nas")?.steps).toEqual([
+        "check",
+        "install",
+        "handover",
+        "restart",
+        "connect",
+        "sync",
+      ]);
+      expect(at).toEqual({ install: "install", start: "connect", hold: "connect" });
+      expect(jobOf("ssh:nas")?.phase).toBe("sync");
+    });
+
+    it("a stop and an uninstall have steps of their own", async () => {
+      await boot();
+      machinesRepo.patch("ssh:nas", { version: "9.9.9", installedAt: "2026-08-01T00:00:00Z" });
+      machinesRepo.patch("ssh:build-box", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00Z",
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/stop");
+      await admin.post("/api/projects/default_project/machines/ssh:build-box/uninstall", {});
+      await waitFor(settled);
+      expect(jobOf("ssh:nas")?.steps).toEqual(["check", "stop"]);
+      expect(jobOf("ssh:build-box")?.steps).toEqual(["check", "stop", "remove"]);
+    });
+
+    it("tells the page of every change, a burst of lines as a few", async () => {
+      let told = 0;
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await boot({
+        announce: () => {
+          told += 1;
+        },
+        install: async (opts) => {
+          // A chatty installer: fifty lines at once.
+          for (let i = 0; i < 50; i++) opts.onProgress?.(`line ${i}`);
+          await held;
+          return { kind: "installed", output: "", identity: IDENTITY };
+        },
+      });
+      await use(["ssh:nas"]);
+      await waitFor(() => jobOf("ssh:nas")?.log.includes("line 49") === true);
+      // The first change goes out at once; the burst after it is folded into one more.
+      expect(told).toBeGreaterThan(0);
+      expect(told).toBeLessThanOrEqual(3);
+      const before = told;
+      release();
+      await waitFor(settled);
+      // The end of the job is told as well — after the window, if one was open.
+      await waitFor(() => told > before);
+    });
+  });
+
+  describe("keeping machines connected", () => {
+    /** The listener the service gave the transport, to tell it of a drop by hand. */
+    let tell: ((address: string, up: boolean) => void) | null = null;
+    const watch = (listener: (address: string, up: boolean) => void) => {
+      tell = listener;
+      return () => {
+        tell = null;
+      };
+    };
+    const kept = () => {
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        sessionPid: 4242,
+        remotePort: 7364,
+        machineId: "NASmachineID0000",
+      });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+    };
+    const nas = () => t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas");
+
+    it("a connection that drops is brought back on its own, and its events taken up again", async () => {
+      const relay = quietRelay();
+      let holds = 0;
+      let clock = new Date("2026-08-24T12:00:00.000Z");
+      await boot({
+        now: () => clock,
+        relay: () => relay,
+        watchSessions: watch,
+        hold: async (target) => {
+          holds += 1;
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+      });
+      kept();
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(1);
+      expect(relay.subscribed.has("ssh:nas")).toBe(true);
+      expect(nas()?.keepConnected).toBe(true);
+      expect(nas()?.reconnect).toBeUndefined();
+
+      // The ssh session dies under it.
+      connected.delete("ssh:nas");
+      relay.stop("ssh:nas");
+      tell!("ssh:nas", false);
+      expect(nas()?.reconnect).toMatchObject({
+        since: "2026-08-24T12:00:00.000Z",
+        attempts: 0,
+        // Its first try is a few seconds out, so a server restarting itself is back by then.
+        nextAt: "2026-08-24T12:00:05.000Z",
+        lastError: null,
+        diagnosis: null,
+      });
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(1);
+      clock = new Date(clock.getTime() + 5_000);
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(2);
+      expect(nas()?.reconnect).toBeUndefined();
+      expect(nas()?.connection).not.toBeNull();
+      expect(relay.subscribed.has("ssh:nas")).toBe(true);
+    });
+
+    it("three failures in a row run the connection check, and its answer is the explanation", async () => {
+      let clock = new Date("2026-08-24T12:00:00.000Z");
+      await boot({
+        now: () => clock,
+        hold: async () => ({
+          ok: false,
+          detail: "ssh: connect to host nas port 22: Connection refused",
+        }),
+        probe: async () => ({
+          state: {
+            kind: "unreachable",
+            detail: "ssh: connect to host nas port 22: Connection refused",
+          },
+          machineId: null,
+        }),
+        runOn: async () => ({
+          code: 255,
+          stdout: "ssh: connect to host nas port 22: Connection refused",
+          stderr: "",
+          timedOut: false,
+        }),
+      });
+      kept();
+      for (let i = 0; i < 3; i++) {
+        await t.deps.machines.autoConnect();
+        expect(nas()?.reconnect?.attempts).toBe(i + 1);
+        if (i < 2) expect(nas()?.reconnect?.diagnosis).toBeNull();
+        clock = new Date(clock.getTime() + 5 * 60_000);
+      }
+      const reconnect = nas()?.reconnect;
+      expect(reconnect?.sshReason).toBe("refused");
+      expect(reconnect?.diagnosis?.checks[0]).toMatchObject({
+        id: "ssh",
+        state: "fail",
+        reason: "refused",
+      });
+    });
+
+    it("a stopped machine stays stopped: no retries, and no reconnect after a restart", async () => {
+      const relay = quietRelay();
+      let holds = 0;
+      let stops = 0;
+      let running = true;
+      await boot({
+        relay: () => relay,
+        watchSessions: watch,
+        hold: async (target) => {
+          holds += 1;
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+        probe: async () =>
+          running
+            ? { state: { kind: "running", port: 7364, pid: 4242 }, machineId: "NASmachineID0000" }
+            : { state: { kind: "stopped" }, machineId: "NASmachineID0000" },
+        stopServer: async () => {
+          stops += 1;
+          running = false;
+          return { ok: true as const };
+        },
+      });
+      kept();
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(1);
+      const res = await admin.post("/api/projects/default_project/machines/ssh:nas/stop");
+      expect(res.status).toBe(202);
+      await waitFor(() => t.deps.machines.jobs().every((job) => !job.running && !job.queued));
+      expect(t.deps.machines.jobs()[0]?.result).toEqual({ ok: true, stopped: true });
+      expect(stops).toBe(1);
+      // The held mark is gone from the record; the connection closed with it (the real
+      // transport's registry, which this suite's fake stands beside, is told by the service).
+      expect(machinesRepo.get("ssh:nas")?.sessionPid).toBeNull();
+      connected.delete("ssh:nas");
+      expect(nas()?.keepConnected).toBeUndefined();
+      expect(relay.subscribed.has("ssh:nas")).toBe(false);
+      // Its events stopping is the stop's own doing; nothing brings it back, now or at a boot.
+      tell?.("ssh:nas", false);
+      expect(nas()?.reconnect).toBeUndefined();
+      await t.deps.machines.start();
+      expect(holds).toBe(1);
+      // Started again, it is kept connected again.
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.jobs().every((job) => !job.running && !job.queued));
+      expect(holds).toBe(2);
+      expect(nas()?.keepConnected).toBe(true);
+    });
+
+    it("a deleted machine is let go: no retries", async () => {
+      await boot({ watchSessions: watch });
+      kept();
+      connected.add("ssh:nas");
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:nas"],
+      });
+      tell?.("ssh:nas", false);
+      expect(nas()?.reconnect).toBeUndefined();
+      expect(nas()?.keepConnected).toBeUndefined();
+    });
+  });
+
+  describe("stopping and uninstalling", () => {
+    const settled = () => t.deps.machines.jobs().every((job) => !job.queued && !job.running);
+    const jobOf = (id: string) => t.deps.machines.jobs().find((job) => job.machineId === id);
+    const installedNas = () => {
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        sessionPid: 4242,
+        remotePort: 7364,
+        machineId: "NASmachineID0000",
+      });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+    };
+
+    it("a machine it cannot reach is refused at its first step, with nothing changed", async () => {
+      let stops = 0;
+      await boot({
+        probe: async () => ({
+          state: {
+            kind: "unreachable",
+            detail: "ssh: connect to host nas port 22: Connection timed out",
+          },
+          machineId: null,
+        }),
+        stopServer: async () => {
+          stops += 1;
+          return { ok: true as const };
+        },
+      });
+      installedNas();
+      await admin.post("/api/projects/default_project/machines/ssh:nas/stop");
+      await waitFor(settled);
+      expect(jobOf("ssh:nas")?.result).toMatchObject({
+        ok: false,
+        step: "check",
+        sshReason: "timeout",
+        canReplaceProgram: false,
+      });
+      expect((jobOf("ssh:nas")?.result as { message: string }).message).toMatch(
+        /^could not reach that machine, so nothing was stopped: /,
+      );
+      expect(stops).toBe(0);
+      // Still kept connected: the stop did not happen.
+      expect(machinesRepo.get("ssh:nas")?.sessionPid).toBe(4242);
+    });
+
+    it("an uninstall stops the server, removes the program and keeps the data unless asked", async () => {
+      const commands: string[] = [];
+      let running = true;
+      await boot({
+        probe: async () =>
+          running
+            ? { state: { kind: "running", port: 7364, pid: 4242 }, machineId: "NASmachineID0000" }
+            : { state: { kind: "stopped" }, machineId: "NASmachineID0000" },
+        stopServer: async () => {
+          running = false;
+          return { ok: true as const };
+        },
+        runOn: async (_target, command) => {
+          commands.push(command);
+          return {
+            code: 0,
+            stdout: "removed $dir/bin, lib, web and node",
+            stderr: "",
+            timedOut: false,
+          };
+        },
+      });
+      installedNas();
+      const res = await admin.post("/api/projects/default_project/machines/ssh:nas/uninstall", {});
+      expect(res.status).toBe(202);
+      await waitFor(settled);
+      expect(jobOf("ssh:nas")?.result).toEqual({ ok: true, uninstalled: true, dataRemoved: false });
+      const removal = commands.find((c) => c.includes("rm -rf"));
+      expect(removal).toContain('"$dir/bin" "$dir/lib" "$dir/web" "$dir/node"');
+      expect(removal).not.toContain('"$dir/data"');
+      const nas = t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas");
+      // Still on the Project's list, as not installed; its id kept with its data.
+      expect(nas).toMatchObject({ member: true, installed: null, machineId: "NASmachineID0000" });
+      expect(nas?.keepConnected).toBeUndefined();
+
+      // Again, with the data: the id goes with it.
+      installedNas();
+      running = true;
+      commands.length = 0;
+      await admin.post("/api/projects/default_project/machines/ssh:nas/uninstall", {
+        removeData: true,
+      });
+      await waitFor(settled);
+      expect(jobOf("ssh:nas")?.result).toEqual({ ok: true, uninstalled: true, dataRemoved: true });
+      expect(commands.find((c) => c.includes("rm -rf"))).toContain('rm -rf "$dir/data"');
+      expect(t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas")?.machineId).toBeNull();
+    });
+
+    it("refuses what it cannot do before any ssh runs", async () => {
+      await boot();
+      const code = async (path: string) =>
+        (
+          (await (
+            await admin.post(`/api/projects/default_project/machines/${path}`, {})
+          ).json()) as {
+            error: { code: string };
+          }
+        ).error.code;
+      expect(await code("ssh:nas/stop")).toBe("not_installed");
+      expect(await code("ssh:nas/uninstall")).toBe("not_installed");
+      machinesRepo.patch("ssh:nas", { version: "9.9.9", platform: "win32" });
+      expect(await code("ssh:nas/stop")).toBe("connect_unsupported");
+      expect(await code("ssh:not-in-config/uninstall")).toBe("unknown_machine");
+      expect(t.deps.machines.jobs()).toEqual([]);
     });
   });
 
@@ -2268,7 +2666,7 @@ describe("machines API", () => {
       expect(t.deps.machines.job()).toBeNull();
     });
 
-    it("409s a second install while one is running", async () => {
+    it("409s a second install on a machine that has one running, and lets another machine's start", async () => {
       let release = () => {};
       const held = new Promise<void>((resolve) => {
         release = resolve;
@@ -2282,15 +2680,18 @@ describe("machines API", () => {
       expect(
         (await admin.post("/api/projects/default_project/machines/ssh:nas/install")).status,
       ).toBe(202);
-      const second = await admin.post(
-        "/api/projects/default_project/machines/ssh:build-box/install",
-      );
-      expect(second.status).toBe(409);
-      expect(((await second.json()) as { error: { code: string } }).error.code).toBe(
+      const again = await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      expect(again.status).toBe(409);
+      expect(((await again.json()) as { error: { code: string } }).error.code).toBe(
         "install_running",
       );
+      // Another host is not held up by it: its job runs beside the first.
+      const other = await admin.post(
+        "/api/projects/default_project/machines/ssh:build-box/install",
+      );
+      expect(other.status).toBe(202);
       release();
-      await waitFor(() => t.deps.machines.job()?.running === false);
+      await waitFor(() => t.deps.machines.jobs().every((job) => !job.running && !job.queued));
     });
 
     it("404s a host this server's config does not declare", async () => {

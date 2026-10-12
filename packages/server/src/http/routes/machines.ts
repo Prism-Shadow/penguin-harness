@@ -18,6 +18,10 @@
  * GET  /ssh-hosts/:alias        — that block read back, and whether this app wrote it.
  * PUT  /ssh-hosts/:alias        — rewrite a block this app wrote; 404 none, 409 hand-written.
  * POST /:machineId/restart      — stop that machine's server and start it again; 202, or 409.
+ * POST /:machineId/stop         — stop that machine's server and stop keeping it connected;
+ *                                 202, or 409.
+ * POST /:machineId/uninstall    — stop it and remove the program, and with `removeData` its
+ *                                 data root; 202, or 409.
  * POST /:machineId/diagnose     — check what would stop an install or a connect there, writing
  *                                 nothing on it; 200, or 409 while a job works on it.
  * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh.
@@ -35,6 +39,7 @@ import type { Context } from "hono";
 import type {
   DirListResponse,
   MachineDiagnosis,
+  MachineUninstallRequest,
   MachinesResponse,
   MachinesUseResponse,
   SshHostResponse,
@@ -237,7 +242,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       // Each refusal is its own code: the page renders a sentence per case, and "no image"
       // in particular is a property of THIS server rather than of the machine picked.
       if (started.why === "busy") {
-        throw new HttpError(409, "install_running", "An install is already running.");
+        throw new HttpError(409, "install_running", "A job is already running on that machine.");
       }
       if (started.why === "self") {
         throw new HttpError(
@@ -262,7 +267,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     const started = await deps.machines.startConnect(c.req.param("machineId"));
     if (!started.ok) {
       if (started.why === "busy") {
-        throw new HttpError(409, "connect_running", "A connect is already running.");
+        throw new HttpError(409, "connect_running", "A job is already running on that machine.");
       }
       if (started.why === "unknown-machine") {
         throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
@@ -336,7 +341,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     const started = await deps.machines.startRestart(c.req.param("machineId"));
     if (!started.ok) {
       if (started.why === "busy")
-        throw new HttpError(409, "job_running", "A job is already running.");
+        throw new HttpError(409, "job_running", "A job is already running on that machine.");
       if (started.why === "unknown-machine") {
         throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
       }
@@ -345,6 +350,54 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       }
       throw new HttpError(409, "not_installed", "Nothing is installed on that machine yet.");
     }
+    return c.json(state(c), 202);
+  });
+
+  /**
+   * The answer to a stop or an uninstall that could not start: each refusal its own code, since
+   * the page says each in a sentence of its own.
+   */
+  const refuseOnInstalled = (
+    why: "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported",
+  ): HttpError => {
+    if (why === "busy") return new HttpError(409, "job_running", "A job is already running there.");
+    if (why === "unknown-machine") {
+      return new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
+    }
+    if (why === "self")
+      return new HttpError(409, "self_machine", "That is the machine this server runs on.");
+    if (why === "unsupported") {
+      return new HttpError(
+        409,
+        "connect_unsupported",
+        "A Windows machine's server is not started or stopped from here, and its program is not removed from here.",
+      );
+    }
+    return new HttpError(409, "not_installed", "Nothing is installed on that machine.");
+  };
+
+  /**
+   * Stops that machine's server and stops keeping it connected: it stays stopped, across this
+   * server's restarts too, until it is started again (`…/connect`). The install stays. A job,
+   * 202; a machine it cannot reach fails at its first step with nothing changed.
+   */
+  app.post("/:machineId/stop", (c) => {
+    const started = deps.machines.startStop(c.req.param("machineId"));
+    if (!started.ok) throw refuseOnInstalled(started.why);
+    return c.json(state(c), 202);
+  });
+
+  /**
+   * Removes the program from that machine, its server stopped first; `removeData` takes its data
+   * root too. The machine stays in the list as not installed. A job, 202.
+   */
+  app.post("/:machineId/uninstall", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as MachineUninstallRequest;
+    const started = deps.machines.startUninstall(
+      c.req.param("machineId"),
+      body.removeData === true,
+    );
+    if (!started.ok) throw refuseOnInstalled(started.why);
     return c.json(state(c), 202);
   });
 

@@ -3163,7 +3163,30 @@ export type ServerEvent =
   | ScheduleServerEvent
   | GoalServerEvent
   | CompanyServerEvent
-  | BuiltinBrowserServerEvent;
+  | BuiltinBrowserServerEvent
+  | MachineServerEvent;
+
+/**
+ * The machines' two events on the user channel, published to admins only — the Machines page,
+ * and the `/server/<id>` proxy everything else about a machine goes through, are admin-only.
+ */
+export type MachineServerEvent =
+  /**
+   * Something the machines list reports changed — a job queued, started, moved to its next
+   * step, logged a line or ended; a connection was held or dropped; a reconnect began, failed
+   * or succeeded; a machine joined or left a Project; a checkout's install image started or
+   * finished building. No payload: a page re-reads `GET …/machines`, which is its one account
+   * of every machine. Coalesced, so a burst of log lines costs a few reads, not one per line.
+   */
+  | { type: "machines_changed" }
+  /**
+   * One of a connected machine's own user-channel events, relayed by this server from that
+   * machine's `GET /api/events` (machines/event-relay.ts). The page holds one event stream to
+   * this server whatever the number of machines: a stream per machine made five connected
+   * machines take the browser's whole HTTP/1.1 allowance of six connections to one origin, and
+   * every other request of the page then waited behind them for good.
+   */
+  | { type: "machine_event"; machineId: string; event: ServerEvent };
 
 /** Goal-mode progress on the session channel (the chat page drives its goal banner from these). */
 export type GoalServerEvent =
@@ -4928,6 +4951,19 @@ export interface MachineInfo {
    */
   connection: { pid: number } | null;
   /**
+   * Present while this server is bringing a machine it keeps connected back — the connection
+   * dropped, its server stopped or restarted, or this server itself just started — and absent
+   * otherwise. A machine is kept connected from the moment it is enabled until it is stopped
+   * (`POST …/stop`) or deleted (`POST …/stop-using`); see machines/service.ts's supervision.
+   */
+  reconnect?: MachineReconnect;
+  /**
+   * This server keeps a connection to it: it was enabled, or started, and has not been stopped
+   * or deleted since. Absent otherwise — a machine only added, one whose server was stopped
+   * here, one that never got as far as a connection.
+   */
+  keepConnected?: true;
+  /**
    * The machine's API as last seen by this server's proxy — stamped by traffic passing
    * through, never by a probe of its own. `answeredAt` when the last forwarded request got
    * an HTTP answer (any status: a server that refuses is still answering); `failedAt` and
@@ -4956,6 +4992,27 @@ export interface MachineInfo {
 }
 
 /**
+ * A machine this server keeps connected, while it is being brought back. Attempts back off
+ * from 5 s, doubling to a 5-minute cap, so a machine that is down for a day costs a probe every
+ * five minutes; after three failures in a row the connection check runs on its own, and its
+ * answer is what the page shows as the explanation.
+ */
+export interface MachineReconnect {
+  /** When this streak began: the moment the machine was found not connected. */
+  since: string;
+  /** Attempts that failed in this streak; 0 while the first is still to run or running. */
+  attempts: number;
+  /** When the next attempt runs; null while one is running. */
+  nextAt: string | null;
+  /** The last attempt's failure in the far side's words; null before the first one fails. */
+  lastError: string | null;
+  /** Why ssh refused, when the last failure was ssh's own — for the page to say in its language. */
+  sshReason?: MachineSshFailure;
+  /** The connection check run after three failures in a row; null until then. */
+  diagnosis: MachineDiagnosis | null;
+}
+
+/**
  * One machine's server state. There is deliberately no separate "ssh" status: ssh is the
  * transport, so a machine it cannot reach reads as `unreachable` with OpenSSH's own
  * diagnostic in `detail` rather than as two statuses a reader has to combine.
@@ -4977,23 +5034,42 @@ export interface MachineServerStatus {
  * refused key or an unusable Node than a paraphrase would.
  */
 export interface MachineJob {
-  /** `use` is the whole pipeline — install if needed, hand over, connect, sync — as one job. */
-  kind: "install" | "connect" | "restart" | "use";
+  /**
+   * `use` is the whole pipeline — install if needed, hand over, connect, sync — as one job;
+   * `connect` is what the page calls Start service; `stop` stops the machine's server and stops
+   * keeping it connected; `uninstall` stops it and removes the program, and the data directory
+   * when asked.
+   */
+  kind: "install" | "connect" | "restart" | "use" | "stop" | "uninstall";
   machineId: string;
   alias: string;
   /** Waiting its turn: a few machines are worked on at once, and a batch queues the rest. */
   queued: boolean;
   running: boolean;
   /**
-   * Which step of the pipeline the job is on, in `MACHINE_PHASES` order — what the page draws
-   * as a stepper. Null until the first step is named; a finished job keeps its last phase.
+   * The steps this job goes through, in order — what the page draws as its stepper. Fixed when
+   * the job is queued; a step the job turns out not to need is passed over, never revisited.
+   */
+  steps: MachinePhase[];
+  /**
+   * Which of `steps` the job is on. Only moves forward. Null until the first step is named; a
+   * finished job keeps its last phase.
    */
   phase: MachinePhase | null;
   log: string[];
+  /**
+   * The connection check run after the job failed at a step it can explain — checking,
+   * installing, connecting: running, then its answer. Absent for every other job.
+   */
+  diagnosis?: { state: "running" } | ({ state: "done" } & MachineDiagnosis);
   result:
     | null
     | { ok: true; installed: "installed" | "already-installed"; version: string | null }
     | { ok: true; connected: true }
+    /** The machine's server is stopped and stays so until it is started again. */
+    | { ok: true; stopped: true }
+    /** The program is gone from the machine; `dataRemoved` says whether its data root went too. */
+    | { ok: true; uninstalled: true; dataRemoved: boolean }
     | {
         ok: false;
         step: string;
@@ -5051,16 +5127,29 @@ export interface MachinesResponse {
   jobs: MachineJob[];
 }
 
-/** The steps of bringing a machine into use, in the order a `use` job runs them. A step not needed is skipped, never revisited. */
+/**
+ * Every step a job may name, in the order they can occur. A job lists its own subset as
+ * `MachineJob.steps`: a source checkout's enable starts by building its install image
+ * (`build`); a stop is `check`, `stop`; an uninstall `check`, `stop`, `remove`.
+ */
 export const MACHINE_PHASES = [
+  "build",
   "check",
   "install",
   "handover",
   "restart",
   "connect",
   "sync",
+  "stop",
+  "remove",
 ] as const;
 export type MachinePhase = (typeof MACHINE_PHASES)[number];
+
+/** `POST /api/projects/:projectId/machines/:machineId/uninstall`. */
+export interface MachineUninstallRequest {
+  /** Remove the machine's data root too — its Sessions, Agents and config there. Default false. */
+  removeData?: boolean;
+}
 
 /**
  * `POST /api/projects/:projectId/machines/ssh-hosts`: append a host block to this server's

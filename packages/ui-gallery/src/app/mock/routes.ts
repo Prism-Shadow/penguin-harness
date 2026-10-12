@@ -52,7 +52,6 @@ import type {
   GoalResponse,
   InstallResponse,
   InstalledPluginsResponse,
-  MachineDiagnosis,
   MachinesResponse,
   MachinesUseResponse,
   McpServerTestResponse,
@@ -2284,27 +2283,6 @@ router
     }
     return { ...machinesResponse(store), refused: [] };
   })
-  .post(
-    "/api/projects/:projectId/machines/:machineId/diagnose",
-    ({ params }): MachineDiagnosis => ({
-      machineId: params.machineId!,
-      checkedAt: new Date().toISOString(),
-      checks: [
-        { id: "ssh", state: "pass", user: "ubuntu", host: "gallery-box" },
-        { id: "platform", state: "pass", os: "linux", arch: "x64" },
-        { id: "tools", state: "pass", missing: [] },
-        {
-          id: "download",
-          state: "warn",
-          version: "0.2.13",
-          github: "unreachable",
-          oss: "unreachable",
-        },
-        { id: "disk", state: "pass", freeMb: 52_000, needMb: 800 },
-        { id: "port", state: "pass", port: 7364, holder: "free" },
-      ],
-    }),
-  )
   .get("/api/projects/:projectId/machines/ssh-hosts/:alias", ({ params }): SshHostResponse => ({
     alias: params.alias!,
     hostName: `${params.alias}.example.internal`,
@@ -2318,12 +2296,10 @@ router
     readOnly("install on a machine"),
   )
   .post("/api/projects/:projectId/machines/:machineId/connect", () => readOnly("connect a machine"))
-  .post("/api/projects/:projectId/machines/:machineId/release", ({ store }) =>
-    machinesResponse(store),
-  )
   .post("/api/projects/:projectId/machines/:machineId/restart", () => readOnly("restart a machine"))
-  .post("/api/projects/:projectId/machines/:machineId/disconnect", ({ store }) =>
-    machinesResponse(store),
+  .post("/api/projects/:projectId/machines/:machineId/stop", () => readOnly("stop a machine"))
+  .post("/api/projects/:projectId/machines/:machineId/uninstall", () =>
+    readOnly("uninstall from a machine"),
   );
 
 // ---------------------------------------------------------------------------------------------

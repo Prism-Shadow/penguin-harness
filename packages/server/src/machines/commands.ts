@@ -231,6 +231,37 @@ export function isAliveCommand(pid: number): string {
   return `kill -0 ${pid} 2>/dev/null && echo alive || echo gone`;
 }
 
+/**
+ * Removes the installed program from a POSIX machine — what install.sh put in the layout's
+ * program directory (`bin`, `lib`, `web`, `node`, and the staging and backup directories an
+ * interrupted install can leave) — and, with `removeData`, the data root inside it. Nothing
+ * else in that directory is touched, and the directory itself goes only if it is left empty.
+ * The release layout also owns the machine's `penguin` command: its symlink goes when it still
+ * points into this program directory, and is left alone when something else has taken the name.
+ *
+ * Its server must be stopped first; this does not stop it. Prints one line per thing removed.
+ */
+export function uninstallCommand(layout: RemoteLayout, removeData: boolean): string {
+  const parts = [
+    `dir="${layout.programDir.posix}"`,
+    `[ -d "$dir" ] || { echo "nothing installed at $dir"; exit 0; }`,
+    `rm -rf "$dir/bin" "$dir/lib" "$dir/web" "$dir/node" "$dir"/.staging.* "$dir"/.old.* || exit 1`,
+    `echo "removed $dir/bin, lib, web and node"`,
+  ];
+  if (layout.ownsCommand) {
+    parts.push(
+      `link="$HOME/.local/bin/penguin"`,
+      `if [ -L "$link" ] && [ "$(readlink "$link")" = "$dir/bin/penguin" ]; then rm -f "$link" && echo "removed $link"; fi`,
+    );
+  }
+  if (removeData) {
+    parts.push(`rm -rf "$dir/data" || exit 1`, `echo "removed $dir/data"`);
+  }
+  // An empty directory is all that is left when nothing else lived there.
+  parts.push(`rmdir "$dir" 2>/dev/null && echo "removed $dir"; exit 0`);
+  return parts.join("; ");
+}
+
 /** The last lines of that log, for a start that did not answer. */
 export function serverLogTail(layout: RemoteLayout): string {
   return `tail -n 20 "${layout.dataRoot.posix}/server.log" 2>/dev/null`;

@@ -2,8 +2,9 @@
  * The machines service: this server's own `~/.ssh/config` as a list of targets, and putting
  * this build on one of them, reaching it, and keeping it configured.
  *
- * ONE JOB at a time — an install or a connect — started by POST and polled by the Web App
- * for its progress lines. The job lives in this App's memory; what it achieved is in web.db
+ * ONE JOB per machine at a time — an install, a connect, a stop — started by POST, a few
+ * machines worked on at once, each job's progress pushed to the page as it goes
+ * (`machines_changed`). The job lives in this App's memory; what it achieved is in web.db
  * (MachinesRepo): which machines carry this program, the session held to each, and which
  * Project uses which. Every word to a machine leaves through its MachineConnection
  * (transport/connection.ts) — ONE ssh session per machine, carrying commands on its stdin
@@ -41,9 +42,12 @@ import type {
   MachineInfo,
   MachineJob,
   MachinePhase,
+  MachineReconnect,
   MachineServerStatus,
+  MachineSshFailure,
   MachineUseRefusal,
   MachinesCheckoutImage,
+  ServerEvent,
 } from "../api/types.js";
 import { readServerLock } from "../lock.js";
 import { SESSION_COOKIE } from "../auth/middleware.js";
@@ -56,10 +60,16 @@ import {
   heldSessionOf,
   listHostAliases,
   listHostEntries,
+  onSessionChange,
   readSshConfig,
   writeSshConfig,
 } from "./transport/index.js";
-import type { ExecResult, MachineConnection, ShellSession } from "./transport/index.js";
+import type {
+  ExecResult,
+  MachineConnection,
+  SessionListener,
+  ShellSession,
+} from "./transport/index.js";
 import {
   findHostBlock,
   machineIdentity,
@@ -68,7 +78,7 @@ import {
   validateHostEntry,
 } from "./ssh-config.js";
 import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
-import { DIR_LIST_MARK, listDirsCommand } from "./commands.js";
+import { DIR_LIST_MARK, listDirsCommand, uninstallCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { detectRemote, installOnRemote, resolvePushPlan, sameBuild } from "./install-server.js";
 import { parseProbeOutput, posixProbe } from "./detect.js";
@@ -94,28 +104,72 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
+import { MachineEventRelay } from "./event-relay.js";
+import type { EventRelay, EventRelayDeps, RelayDial } from "./event-relay.js";
 import { HttpError } from "../http/errors.js";
 import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
-import type { Db, Hmr, Paths } from "../hmr/capabilities.js";
+import type { Channels, Db, Hmr, Paths } from "../hmr/capabilities.js";
+import type { Users } from "../mechanisms/identity.js";
+import { userChannelKey } from "../http/routes/events.js";
 import { currentRemoteLayout } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
 
 /** A job's narrator: a line for the log, and optionally the step of the pipeline it begins. */
 type Say = (line: string, phase?: MachinePhase) => void;
 
-/** How often a machine recorded as held, and not held now, is tried again. */
+/** A job's outcome when it did not go through. */
+type JobFailure = Extract<NonNullable<MachineJob["result"]>, { ok: false }>;
+
+/** How often the machines this server keeps connected are looked over, as a net under the timers. */
 const KEEP_HELD_MS = 60_000;
-/** After a failed re-hold, the wait before the next try; doubles per failure up to the cap. */
-const REHOLD_BACKOFF_MIN_MS = 60_000;
-const REHOLD_BACKOFF_MAX_MS = 15 * 60_000;
+/**
+ * The first wait before a machine that was lost is tried again — long enough for a server that
+ * restarts itself (a plugin load, a hot update) to be back. Each failed attempt doubles the wait,
+ * up to the cap: a machine down for a day costs a probe every five minutes.
+ */
+const RECONNECT_FIRST_MS = 5_000;
+const RECONNECT_MAX_MS = 5 * 60_000;
+/** After this many failed attempts in a row, the connection check runs on its own. */
+const DIAGNOSE_AFTER = 3;
+/** `machines_changed` goes out at most this often: a burst of log lines is one event per window. */
+const ANNOUNCE_MS = 200;
+/**
+ * Failure steps a connection check can explain — reaching, installing on or starting the
+ * machine. A failed job at one of them gets a check of its own; one at this server's own build
+ * or at the hand-over protocol does not, since the machine is not what failed.
+ */
+const DIAGNOSABLE_STEPS = new Set([
+  "check",
+  "connect",
+  "install",
+  "copy",
+  "resolve the release",
+  "download the release",
+  "send the release",
+  "verify the install",
+  "start its server",
+]);
 
 /** Why an install was refused before any ssh ran. */
 type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
-/** Why a connect was refused before any ssh ran. */
+/** Why a connect — or a stop, a restart, an uninstall — was refused before any ssh ran. */
 type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported";
+
+/** A machine this server keeps connected, while it is brought back (MachineReconnect, in epoch ms). */
+interface Reconnecting {
+  since: number;
+  attempts: number;
+  /** When the next attempt is due; null while one runs. */
+  nextAt: number | null;
+  lastError: string | null;
+  sshReason?: MachineSshFailure;
+  diagnosis: MachineDiagnosis | null;
+  /** The failure the diagnosis was taken for: a different one is checked again. */
+  diagnosedFor: string | null;
+}
 
 /**
  * Runs a job's work with what its batch installs — a plan and where its installers are —
@@ -175,6 +229,14 @@ export interface MachinesEffects {
   packCheckout: CheckoutPacker | null;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
+  /** Tells this server's admins that the machines list changed (`machines_changed`). */
+  announce: () => void;
+  /** One of a connected machine's own events, for this server's admins (`machine_event`). */
+  publishEvent: (machineId: string, event: ServerEvent) => void;
+  /** The subscriptions to connected machines' event streams (event-relay.ts). */
+  relay: (deps: EventRelayDeps) => EventRelay;
+  /** Starts telling `listener` when a held connection comes up or goes down; returns the stop. */
+  watchSessions: (listener: SessionListener) => () => void;
 }
 
 /** The id of the entry standing for the machine this server runs on. */
@@ -231,11 +293,24 @@ export class MachinesService {
   }> = [];
   /** The latest job per machine — queued, running or finished — for the page's rows. */
   readonly #jobs = new Map<string, MachineJob>();
-  /** The standing intent: while this App lives, machines recorded as held are re-held when found dropped. */
+  /** The net under the timers: every KEEP_HELD_MS the machines kept connected are looked over. */
   #keepHeld: ReturnType<typeof setInterval> | null = null;
-  /** Per machine, when the next re-hold may be tried (epoch ms) and how many tries have failed in a row. */
-  readonly #reholdNotBefore = new Map<string, number>();
-  readonly #reholdFailures = new Map<string, number>();
+  /**
+   * The machines kept connected that are being brought back, by address. In memory: a restart
+   * starts over, bringing back every machine the record says is kept connected.
+   */
+  readonly #reconnects = new Map<string, Reconnecting>();
+  /** The timer that runs a machine's next attempt when it is due. */
+  readonly #retryTimers = new Map<string, NodeJS.Timeout>();
+  /** The subscriptions that carry each connected machine's own events to this server's admins. */
+  readonly #relay: EventRelay;
+  /** The `machines_changed` window: open while one went out recently, and whether another is owed. */
+  #announceTimer: NodeJS.Timeout | null = null;
+  #announceOwed = false;
+  /** This generation is on its way out: nothing new is scheduled. */
+  #stopped = false;
+  /** Stops listening to the held connections' ups and downs. */
+  readonly #unwatch: () => void;
   /** The image a source checkout builds for its installs; null for every other server. */
   readonly #checkout: CheckoutImage | null;
 
@@ -272,8 +347,24 @@ export class MachinesService {
       loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
       packCheckout: null,
       now: () => new Date(),
+      announce: () => {},
+      publishEvent: () => {},
+      relay: (deps) => new MachineEventRelay(deps),
+      watchSessions: onSessionChange,
       ...effects,
     };
+    this.#relay = this.#effects.relay({
+      dial: (address) => this.#dial(address),
+      publish: (machineId, event) => this.#effects.publishEvent(machineId, event),
+      lost: (address) => this.#lost(address),
+      // A refused session is a stale one: the next dial mints another.
+      refused: (address) => this.#sessions.delete(address),
+    });
+    // A held connection that drops is a machine to bring back; one that comes up is news.
+    this.#unwatch = this.#effects.watchSessions((address, up) => {
+      this.#changed();
+      if (!up) this.#lost(address);
+    });
     const pack = this.#effects.packCheckout;
     this.#checkout =
       pack === null
@@ -401,6 +492,7 @@ export class MachinesService {
       const id = `ssh:${alias}`;
       const row = this.repo.get(id);
       const session = this.#liveSession(id);
+      const reconnect = this.#reconnects.get(id);
       return {
         id,
         alias,
@@ -409,6 +501,8 @@ export class MachinesService {
           row?.version == null ? null : { version: row.version, at: row.installedAt ?? "" },
         local: false,
         connection: session === null ? null : { pid: session.pid },
+        ...(reconnect === undefined ? {} : { reconnect: this.#reconnectInfo(reconnect) }),
+        ...(row?.sessionPid != null ? { keepConnected: true as const } : {}),
         api: this.#apiSeen.get(id) ?? null,
         // The layout's own spelling, in the shell that machine speaks. Unknown platform
         // reads as POSIX: it is the majority, and an install corrects the record.
@@ -469,12 +563,14 @@ export class MachinesService {
         this.#setMember(projectId, address, true);
       }
     }
+    this.#changed();
     return { refused };
   }
 
   /** Drops a machine from a Project. The program stays installed; only the membership goes. */
   release(projectId: string, address: string): void {
     this.#setMember(projectId, address, false);
+    this.#changed();
   }
 
   /** Every Project on this server that uses a given machine — who its credentials belong to. */
@@ -511,6 +607,13 @@ export class MachinesService {
     return this.#checkout.status();
   }
 
+  /** The checkout's build, as the first step of a job that installs — on a server that builds its image. */
+  #buildStep(): MachinePhase[] {
+    return this.#effects.resolvePlan(this.dataRoot) === null && this.#checkout !== null
+      ? ["build"]
+      : [];
+  }
+
   /** What an install would put on a machine now: this install's own plan, else the checkout's last image. */
   #plan(): PushPlan | null {
     return this.#effects.resolvePlan(this.dataRoot) ?? this.#checkout?.plan() ?? null;
@@ -532,7 +635,7 @@ export class MachinesService {
     let built: CheckoutBuild | null = null;
     return async (say, work) => {
       if (built === null) {
-        say("Building the install image from this checkout…", "check");
+        say("Building the install image from this checkout…", "build");
         built = await checkout.build((line) => say(line));
       }
       if (!built.ok) {
@@ -566,6 +669,16 @@ export class MachinesService {
       return "self";
     }
     if (this.#busy.has(address)) return "busy";
+    return this.#diagnoseNow(machine);
+  }
+
+  /**
+   * The connection check itself, for a machine nothing else is working on — asked for by the API,
+   * run after a job failed at a step it can explain, and after a machine kept connected failed to
+   * come back three times in a row.
+   */
+  async #diagnoseNow(machine: MachineInfo): Promise<MachineDiagnosis> {
+    const address = machine.id;
     const target = this.#targetOf(machine.alias);
     const checkedAt = this.#effects.now().toISOString();
     const done = (checks: MachineCheck[]): MachineDiagnosis => ({
@@ -642,10 +755,18 @@ export class MachinesService {
     machineId: string,
   ): Promise<{ agent: http.Agent; port: number; cookie: string } | null> {
     const row = this.#rowFor(machineId);
-    if (row === null || row.remotePort === null || this.#liveSession(row.address) === null) {
-      return null;
-    }
-    const target = this.#targetOf(row.address.slice("ssh:".length));
+    return row === null ? null : this.#dial(row.address);
+  }
+
+  /**
+   * A dial to a machine's server by its address: through the connection held to it, to the port
+   * its server was last bound to, with a session there. Null when it is not connected — or when
+   * no session can be had, which leaves nothing to call it with either.
+   */
+  async #dial(address: string): Promise<RelayDial | null> {
+    const row = this.repo.get(address);
+    if (row === null || row.remotePort === null || this.#liveSession(address) === null) return null;
+    const target = this.#targetOf(address.slice("ssh:".length));
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) return null;
     return {
@@ -710,7 +831,11 @@ export class MachinesService {
   }
 
   async #probeRound(projectId: string): Promise<void> {
-    const queue = this.list(projectId).filter((m) => !m.local && m.installed !== null);
+    // A machine a job is working on is left to the job: its commands would queue behind the
+    // job's on its one session, and the round — and the page's request waiting on it — with them.
+    const queue = this.list(projectId).filter(
+      (m) => !m.local && m.installed !== null && !this.#busy.has(m.id),
+    );
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       for (let machine = queue.shift(); machine !== undefined; machine = queue.shift()) {
         await this.#refreshStatus(machine.id, this.#targetOf(machine.alias));
@@ -728,6 +853,7 @@ export class MachinesService {
    */
   #recordProbe(address: string, probe: Awaited<ReturnType<MachinesEffects["probe"]>>): void {
     const state = probe.state;
+    const before = this.#statuses.get(address);
     this.#statuses.set(address, {
       state: state.kind,
       checkedAt: this.#effects.now().toISOString(),
@@ -735,6 +861,8 @@ export class MachinesService {
       ...(state.kind === "unreachable" ? { detail: state.detail } : {}),
     });
     this.#rememberMachineId(address, probe.machineId);
+    const port = state.kind === "running" ? state.port : undefined;
+    if (before?.state !== state.kind || before.port !== port) this.#changed();
   }
 
   /**
@@ -848,6 +976,8 @@ export class MachinesService {
   #startJob(
     kind: MachineJob["kind"],
     machine: MachineInfo,
+    /** The steps this job goes through, in order: what the page draws as its stepper. */
+    steps: MachinePhase[],
     /**
      * Whether a failure offers installing the program anyway. Every failed install or
      * connect does — a failure that leaves no next step leaves a person stuck — except a
@@ -864,6 +994,7 @@ export class MachinesService {
       alias: machine.alias,
       queued: true,
       running: false,
+      steps,
       phase: null,
       log: [],
       result: null,
@@ -875,6 +1006,7 @@ export class MachinesService {
     if (waiting !== -1) this.#queue.splice(waiting, 1);
     this.#jobs.set(machine.id, job);
     this.#queue.push({ job, opts, work });
+    this.#changed();
     this.#drain();
   }
 
@@ -885,17 +1017,25 @@ export class MachinesService {
     return n;
   }
 
-  /** Whether any job is working — what the single-machine starters call "busy". */
-  #anyRunning(): boolean {
-    return this.#runningCount() > 0;
+  /**
+   * Whether a machine is taken — a job running or queued for it, or the automatic work (a
+   * reconnect, the boot's hand-over) on it. The single verbs refuse such a machine with 409;
+   * other machines are not held up by it.
+   */
+  #machineBusy(address: string): boolean {
+    return this.#busy.has(address) || this.#queue.some((entry) => entry.job.machineId === address);
   }
 
-  /** Starts queued jobs until CONCURRENCY are working; each one drains again as it ends. */
+  /**
+   * Starts queued jobs until CONCURRENCY are working, oldest first, passing over a job whose
+   * machine is already being worked on — it starts when that work ends, which drains again.
+   */
   #drain(): void {
     while (this.#runningCount() < CONCURRENCY) {
-      const next = this.#queue.shift();
-      if (next === undefined) return;
-      void this.#run(next.job, next.opts, next.work);
+      const index = this.#queue.findIndex((entry) => !this.#busy.has(entry.job.machineId));
+      if (index === -1) return;
+      const [next] = this.#queue.splice(index, 1);
+      void this.#run(next!.job, next!.opts, next!.work);
     }
   }
 
@@ -907,10 +1047,20 @@ export class MachinesService {
     job.queued = false;
     job.running = true;
     this.#job = job;
+    // Every line is news to whoever watches the page. A step only moves forward: work shared
+    // between verbs names the step it is on from where it stands in its own pipeline — the
+    // probe a connect opens with is "check" on its own, and behind an install it is already
+    // part of connecting.
     const say: Say = (line, phase) => {
       job.log.push(line);
-      if (phase !== undefined) job.phase = phase;
+      if (phase !== undefined) {
+        const next = job.steps.indexOf(phase);
+        const now = job.phase === null ? -1 : job.steps.indexOf(job.phase);
+        if (next > now) job.phase = phase;
+      }
+      this.#changed();
     };
+    this.#changed();
     try {
       this.#busy.add(job.machineId);
       job.result = await work(say);
@@ -930,8 +1080,46 @@ export class MachinesService {
       }
       this.#busy.delete(job.machineId);
       job.running = false;
+      this.#changed();
     }
+    this.#afterJob(job);
     this.#drain();
+  }
+
+  /**
+   * What a finished job leaves to do. A machine kept connected that the job left without its
+   * connection — a restart that did not come back, a failed update — is brought back like any
+   * machine that was lost. A job that failed at a step a connection check can explain gets one,
+   * run as soon as the machine is free.
+   */
+  #afterJob(job: MachineJob): void {
+    const address = job.machineId;
+    if (this.#keepsConnected(address) && !this.#isUp(address)) this.#lost(address, 0);
+    const result = job.result;
+    if (
+      result === null ||
+      result.ok ||
+      !["use", "install", "connect"].includes(job.kind) ||
+      !(DIAGNOSABLE_STEPS.has(result.step) || result.sshReason !== undefined)
+    ) {
+      return;
+    }
+    const machine = this.#allMachines().find((entry) => entry.id === address);
+    if (machine === undefined) return;
+    job.diagnosis = { state: "running" };
+    this.#changed();
+    void this.#withMachine(address, () => this.#diagnoseNow(machine)).then(
+      (diagnosis) => {
+        // Something else took the machine first (a retry): the check can wait for its outcome.
+        if (diagnosis === null) delete job.diagnosis;
+        else job.diagnosis = { state: "done", ...diagnosis };
+        this.#changed();
+      },
+      () => {
+        delete job.diagnosis;
+        this.#changed();
+      },
+    );
   }
 
   /** The queued, the running and the last finished job per machine — what the page lists. */
@@ -954,7 +1142,7 @@ export class MachinesService {
      */
     replaceProgram = false,
   ): Promise<{ ok: true } | { ok: false; why: InstallRefusal }> {
-    if (this.#anyRunning()) return { ok: false, why: "busy" };
+    if (this.#machineBusy(address)) return { ok: false, why: "busy" };
     const machine = this.#allMachines().find((entry) => entry.id === address);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
     // Never this machine: a server does not push this build over its own program directory
@@ -971,6 +1159,7 @@ export class MachinesService {
     this.#startJob(
       "install",
       machine,
+      [...this.#buildStep(), "check", "install", "handover", "restart"],
       { offerReplaceProgram: !replaceProgram },
       async (say) =>
         (await this.#refusedAtTheDoor(machine)) ??
@@ -1190,6 +1379,7 @@ export class MachinesService {
       this.#startJob(
         "use",
         machine,
+        [...this.#buildStep(), "check", "install", "handover", "restart", "connect", "sync"],
         { offerReplaceProgram: !replaceProgram },
         async (say) =>
           (await this.#refusedAtTheDoor(machine)) ??
@@ -1233,7 +1423,8 @@ export class MachinesService {
       return { ok: true, installed: "already-installed", version: plan.version };
     }
     const fresh = this.#allMachines().find((entry) => entry.id === address) ?? machine;
-    return this.#connect(fresh, say);
+    // Behind an install, asking what runs there is already part of connecting.
+    return this.#connect(fresh, say, needsInstall ? "connect" : "check");
   }
 
   /**
@@ -1257,7 +1448,7 @@ export class MachinesService {
    * readiness wait is minutes in the bad case. Every step is idempotent, so a repeat is safe.
    */
   async startConnect(address: string): Promise<{ ok: true } | { ok: false; why: ConnectRefusal }> {
-    if (this.#anyRunning()) return { ok: false, why: "busy" };
+    if (this.#machineBusy(address)) return { ok: false, why: "busy" };
     const machine = this.#allMachines().find((entry) => entry.id === address);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
     // The machine's own id is what settles "that is here": the alias may point back home.
@@ -1270,13 +1461,25 @@ export class MachinesService {
     // it with. Said here, in one sentence, rather than discovered as a POSIX command failing
     // under cmd.exe in the job's log.
     if (this.repo.get(address)?.platform === "win32") return { ok: false, why: "unsupported" };
-    this.#startJob("connect", machine, { offerReplaceProgram: true }, (say) =>
-      this.#connect(machine, say),
+    this.#startJob(
+      "connect",
+      machine,
+      ["check", "connect", "sync"],
+      { offerReplaceProgram: true },
+      (say) => this.#connect(machine, say, "check"),
     );
     return { ok: true };
   }
 
-  async #connect(machine: MachineInfo, say: Say): Promise<MachineJob["result"]> {
+  async #connect(
+    machine: MachineInfo,
+    say: Say,
+    /**
+     * The step asking what runs there belongs to: `check` for a connect of its own, `connect`
+     * behind an install, where the machine has already been checked.
+     */
+    askPhase: "check" | "connect",
+  ): Promise<MachineJob["result"]> {
     const address = machine.id;
     const target = this.#targetOf(machine.alias);
 
@@ -1285,7 +1488,7 @@ export class MachinesService {
     // dead server — and every caller that then found the machine silent asked for another
     // connect, which said "already connected" again, forever. Reconnecting (to retry a sync
     // that failed, or pick up a new key) now costs one probe and stays honest.
-    say("Asking what is running there…", "check");
+    say("Asking what is running there…", askPhase);
     const probed = await this.#probe(address, target);
     this.#recordProbe(address, probed);
     if (probed.state.kind === "unreachable") {
@@ -1317,7 +1520,7 @@ export class MachinesService {
       say(`Its server is already up on port ${remotePort}.`);
     } else {
       remotePort = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
-      say(`Starting its server on port ${remotePort}…`);
+      say(`Starting its server on port ${remotePort}…`, "connect");
       const started = await this.#effects.startServer(target, remotePort);
       if (!started.ok) {
         return {
@@ -1353,6 +1556,14 @@ export class MachinesService {
     // machine without our credentials is connected and unusable.
     say("Handing over the Model config…", "sync");
     await this.#syncModels(address, target, remotePort, say, this.#projectsUsing(address));
+    // Its own events, carried into this server's stream from here on (event-relay.ts). A
+    // machine whose server has minted no id yet cannot be named in them, and has none to send.
+    const machineId = this.repo.get(address)?.machineId ?? null;
+    if (machineId !== null) this.#relay.start(address, machineId);
+    // Connected, by whichever way it came — a job or the supervision's own attempt: a streak of
+    // reconnecting that was under way is over.
+    this.#settle(address);
+    this.#changed();
     return { ok: true, connected: true };
   }
 
@@ -1361,33 +1572,246 @@ export class MachinesService {
    * machine's own server, and other people may be on it.
    */
   disconnect(address: string): void {
-    closeConnectionTo(address);
-    this.#sessions.delete(address);
+    // The record first: with the mark gone, nothing below reads as a machine to bring back.
     if (this.repo.get(address) !== null) {
       this.repo.patch(address, { sessionPid: null });
+    }
+    this.#settle(address);
+    this.#relay.stop(address);
+    closeConnectionTo(address);
+    this.#sessions.delete(address);
+    this.#changed();
+  }
+
+  // --- keeping machines connected -------------------------------------------------------------
+
+  /**
+   * Whether this server keeps a machine connected: it was enabled (or started) and has not been
+   * stopped or deleted since — the record's held mark, which a disconnect clears — and it is
+   * still something to connect to: installed, not a Windows host (no shell to hold), and still
+   * in the ssh config.
+   */
+  #keepsConnected(address: string): boolean {
+    const row = this.repo.get(address);
+    if (row === null || row.sessionPid === null || row.version === null) return false;
+    if (row.platform === "win32") return false;
+    return this.#effects.listAliases().includes(address.slice("ssh:".length));
+  }
+
+  /**
+   * Whether a machine is connected as far as this server is concerned: the connection held, and
+   * its server's events coming in — a stream that ended is how a server that stopped or
+   * restarted is noticed. A machine whose server never minted an id has no events to send, so
+   * the connection alone counts.
+   */
+  #isUp(address: string): boolean {
+    if (this.#liveSession(address) === null) return false;
+    return this.repo.get(address)?.machineId == null || this.#relay.active(address);
+  }
+
+  /**
+   * A machine kept connected was lost: it is brought back after `delay`, and from then on with a
+   * backoff. A machine already on its way back keeps its own schedule — a connection that drops
+   * again while it is down is the same loss, and must not cut its wait short.
+   */
+  #lost(address: string, delay = RECONNECT_FIRST_MS): void {
+    if (this.#stopped || this.#reconnects.has(address) || !this.#keepsConnected(address)) return;
+    const now = this.#effects.now().getTime();
+    this.#reconnects.set(address, {
+      since: now,
+      attempts: 0,
+      nextAt: now + delay,
+      lastError: null,
+      diagnosis: null,
+      diagnosedFor: null,
+    });
+    this.#changed();
+    this.#schedule(address, delay);
+  }
+
+  /** Arms the timer that runs a machine's next attempt; one per machine, the later ask replacing it. */
+  #schedule(address: string, delay: number): void {
+    if (this.#stopped) return;
+    const pending = this.#retryTimers.get(address);
+    if (pending !== undefined) clearTimeout(pending);
+    const timer = setTimeout(() => {
+      this.#retryTimers.delete(address);
+      void this.#bringBack([address]);
+    }, delay);
+    timer.unref?.();
+    this.#retryTimers.set(address, timer);
+  }
+
+  /** A machine stops being brought back: it came back, or it is no longer to be kept connected. */
+  #settle(address: string): void {
+    const timer = this.#retryTimers.get(address);
+    if (timer !== undefined) clearTimeout(timer);
+    this.#retryTimers.delete(address);
+    if (this.#reconnects.delete(address)) this.#changed();
+  }
+
+  /** The reconnect state as the list reports it. */
+  #reconnectInfo(state: Reconnecting): MachineReconnect {
+    const iso = (ms: number) => new Date(ms).toISOString();
+    return {
+      since: iso(state.since),
+      attempts: state.attempts,
+      nextAt: state.nextAt === null ? null : iso(state.nextAt),
+      lastError: state.lastError,
+      ...(state.sshReason === undefined ? {} : { sshReason: state.sshReason }),
+      diagnosis: state.diagnosis,
+    };
+  }
+
+  /**
+   * Brings back each of `addresses` that this server keeps connected, is not connected, and is
+   * due — never tried in this streak, or past its wait — five machines at a time. A machine a job
+   * is working on is passed over: the job leaves it connected or it does not (#afterJob).
+   */
+  async #bringBack(addresses: readonly string[]): Promise<void> {
+    if (this.#stopped) return;
+    const now = this.#effects.now().getTime();
+    const due = addresses.filter((address) => {
+      if (!this.#keepsConnected(address)) {
+        this.#settle(address);
+        return false;
+      }
+      const state = this.#reconnects.get(address);
+      if (this.#machineBusy(address)) {
+        // A job has it: looked at again in a while, when the job may have brought it back.
+        if (state !== undefined) this.#schedule(address, RECONNECT_FIRST_MS);
+        return false;
+      }
+      if (state !== undefined) return state.nextAt !== null && state.nextAt <= now;
+      return !this.#isUp(address);
+    });
+    // Said at once for every machine on its way back, not as each one's turn comes.
+    for (const address of due) {
+      if (!this.#reconnects.has(address)) {
+        this.#reconnects.set(address, {
+          since: now,
+          attempts: 0,
+          nextAt: now,
+          lastError: null,
+          diagnosis: null,
+          diagnosedFor: null,
+        });
+      }
+    }
+    if (due.length > 0) this.#changed();
+    await this.#sweep(due, (address) => this.#attempt(address));
+  }
+
+  /**
+   * One attempt to bring a machine back — the whole connect: what runs there, its server started
+   * if it is not, the connection held, the Model config handed over. A failure waits twice as long
+   * as the one before, up to the cap; the third in a row, and any later one that fails
+   * differently, runs the connection check, whose answer the page shows as the explanation.
+   */
+  async #attempt(address: string): Promise<void> {
+    const state = this.#reconnects.get(address);
+    if (state === undefined || this.#stopped) return;
+    state.nextAt = null;
+    this.#changed();
+    const machine = this.#allMachines().find((entry) => entry.id === address);
+    const result: MachineJob["result"] =
+      machine === undefined
+        ? { ok: false, step: "connect", message: "that host is no longer in the ssh config." }
+        : await this.#connect(machine, () => {}, "check");
+    // Stopped, deleted or disposed meanwhile: what the attempt learned is nobody's now.
+    if (this.#stopped || this.#reconnects.get(address) !== state) return;
+    if (result !== null && result.ok) {
+      this.#settle(address);
+      return;
+    }
+    state.attempts += 1;
+    state.lastError = result?.message ?? "it did not come back.";
+    if (result !== null && !result.ok && result.sshReason !== undefined) {
+      state.sshReason = result.sshReason;
+    } else {
+      delete state.sshReason;
+    }
+    const wait = Math.min(RECONNECT_FIRST_MS * 2 ** state.attempts, RECONNECT_MAX_MS);
+    state.nextAt = this.#effects.now().getTime() + wait;
+    this.#schedule(address, wait);
+    this.#changed();
+    if (
+      machine !== undefined &&
+      state.attempts >= DIAGNOSE_AFTER &&
+      state.diagnosedFor !== state.lastError
+    ) {
+      state.diagnosedFor = state.lastError;
+      const diagnosis = await this.#diagnoseNow(machine).catch(() => null);
+      if (diagnosis !== null && this.#reconnects.get(address) === state) {
+        state.diagnosis = diagnosis;
+        this.#changed();
+      }
+    }
+  }
+
+  /**
+   * Tells this server's admins that the machines list changed — at once for the first change,
+   * then at most once per ANNOUNCE_MS, the last change of a burst always told.
+   */
+  #changed(): void {
+    if (this.#announceTimer !== null) {
+      this.#announceOwed = true;
+      return;
+    }
+    this.#announce();
+    this.#announceTimer = setTimeout(() => {
+      this.#announceTimer = null;
+      if (this.#announceOwed) {
+        this.#announceOwed = false;
+        this.#changed();
+      }
+    }, ANNOUNCE_MS);
+    this.#announceTimer.unref?.();
+  }
+
+  #announce(): void {
+    try {
+      this.#effects.announce();
+    } catch {
+      // Telling is best effort; the list is read again on the next change or visit.
     }
   }
 
   // --- the generation's lifetime: what an App does at boot and on its way out ------------------
 
   /**
-   * Re-holds every connection the record says was held — a restart or a hot push in between
-   * notwithstanding — five machines at a time, starting a server that is down on the way.
-   * Only those: an explicit disconnect cleared its record, and a machine merely installed on
-   * was never asked for. Called by the platform at boot and not awaited there: a host that is
-   * slow to answer must not hold up the App that serves everything else.
+   * Brings back every machine this server keeps connected — a restart or a hot push in between
+   * notwithstanding — five at a time, starting a server that is down on the way. Only those: a
+   * stop or a delete cleared the mark, and a machine merely installed on was never asked for.
+   * Called by the platform at boot and not awaited there: a host that is slow to answer must not
+   * hold up the App that serves everything else.
    */
   async start(): Promise<void> {
+    // Every machine kept connected is on its way back from the moment this server is up, and
+    // says so at once — the hand-over below can take a while, and a machine read as merely not
+    // connected meanwhile would look stopped.
+    const now = this.#effects.now().getTime();
+    for (const { address } of this.repo.all()) {
+      if (!this.#keepsConnected(address) || this.#reconnects.has(address)) continue;
+      this.#reconnects.set(address, {
+        since: now,
+        attempts: 0,
+        nextAt: now,
+        lastError: null,
+        diagnosis: null,
+        diagnosedFor: null,
+      });
+    }
+    this.#changed();
     // The build first, the connections second: a machine behind this build is brought
     // forward over a transient session and its server restarted, and only then re-held —
     // so the connection that stays is to the server that will keep running, and the Model
     // config handed over as it connects lands on the build that will read it.
     await this.syncOutOfDate();
     await this.autoConnect();
-    // Held is a standing intent, not a boot-time attempt: a machine that could not be
-    // re-held at boot — the network still settling, its server not yet up — or that drops
-    // later and whose session did not come back, is tried again on a widening wait until it
-    // is held or a person stops using it. Unref'd: a timer must not keep a process alive.
+    // Kept connected is a standing intent, not a boot-time attempt: each loss arms its own
+    // retry (#lost), and this look-over every KEEP_HELD_MS catches whatever slipped past —
+    // a drop no event reported. Unref'd: a timer must not keep a process alive.
     if (this.#keepHeld === null) {
       this.#keepHeld = setInterval(() => void this.autoConnect(), KEEP_HELD_MS);
       this.#keepHeld.unref?.();
@@ -1395,13 +1819,30 @@ export class MachinesService {
   }
 
   /**
+   * Brings back, now, every machine kept connected that is not connected and is due: never tried,
+   * or past its wait. What the boot runs, and what the look-over repeats.
+   */
+  async autoConnect(): Promise<void> {
+    await this.#bringBack(this.repo.all().map((row) => row.address));
+  }
+
+  /**
    * Closes every connection THIS generation opened — the platform's dispose effect on a hot
-   * push. The record of which were held stays, so the successor's start() brings each back.
-   * Nothing here closes by a remembered pid: the child handles are this generation's own.
+   * push — and every subscription and timer with them. The record of which machines are kept
+   * connected stays, so the successor's start() brings each back. Nothing here closes by a
+   * remembered pid: the child handles are this generation's own.
    */
   stop(): void {
+    this.#stopped = true;
     if (this.#keepHeld !== null) clearInterval(this.#keepHeld);
     this.#keepHeld = null;
+    for (const timer of this.#retryTimers.values()) clearTimeout(timer);
+    this.#retryTimers.clear();
+    this.#reconnects.clear();
+    if (this.#announceTimer !== null) clearTimeout(this.#announceTimer);
+    this.#announceTimer = null;
+    this.#unwatch();
+    this.#relay.stopAll();
     closeAllConnections();
   }
 
@@ -1586,6 +2027,7 @@ export class MachinesService {
     target: RemoteTarget,
     say: Say,
   ): Promise<{ ok: true; port: number } | { ok: false; detail: string }> {
+    say("Asking what is running there…", "check");
     const before = await this.#effects.probe(
       target,
       this.#layout,
@@ -1597,6 +2039,9 @@ export class MachinesService {
       return { ok: false, detail: "no server is running on that machine." };
     }
     const port = before.state.port;
+    // Its events end with it, and that ending is this restart's own: the stream is let go
+    // first, so it is not taken for a machine that was lost, and taken up again after.
+    this.#relay.stop(address);
     say(`Stopping its server on port ${port}…`, "restart");
     const stopped = await this.#effects.stopServer(target);
     if (!stopped.ok) return { ok: false, detail: `it would not stop — ${stopped.detail}` };
@@ -1612,6 +2057,10 @@ export class MachinesService {
     // moment ago: a machine mints its id when a server that mints one starts there.
     await this.#refreshStatus(address, target);
     this.repo.patch(address, { remotePort: port });
+    const machineId = this.repo.get(address)?.machineId ?? null;
+    if (machineId !== null && this.#liveSession(address) !== null) {
+      this.#relay.start(address, machineId);
+    }
     return { ok: true, port };
   }
 
@@ -1620,19 +2069,188 @@ export class MachinesService {
    * for the same reason: a stop plus a readiness wait is tens of seconds.
    */
   async startRestart(address: string): Promise<{ ok: true } | { ok: false; why: ConnectRefusal }> {
-    if (this.#anyRunning()) return { ok: false, why: "busy" };
+    if (this.#machineBusy(address)) return { ok: false, why: "busy" };
     const machine = this.#allMachines().find((entry) => entry.id === address);
     if (machine === undefined) return { ok: false, why: "unknown-machine" };
     if (machine.local) return { ok: false, why: "self" };
     if (machine.installed === null) return { ok: false, why: "not-installed" };
-    this.#startJob("restart", machine, { offerReplaceProgram: false }, async (say) => {
-      const target = this.#targetOf(machine.alias);
-      const done = await this.#restartServer(address, target, say);
-      if (!done.ok) return { ok: false, step: "restart", message: done.detail };
-      say(`Restarted on port ${done.port}.`);
-      return { ok: true, connected: true };
-    });
+    this.#startJob(
+      "restart",
+      machine,
+      ["check", "restart"],
+      { offerReplaceProgram: false },
+      async (say) => {
+        const target = this.#targetOf(machine.alias);
+        const done = await this.#restartServer(address, target, say);
+        if (!done.ok) return { ok: false, step: "restart", message: done.detail };
+        say(`Restarted on port ${done.port}.`);
+        return { ok: true, connected: true };
+      },
+    );
     return { ok: true };
+  }
+
+  /**
+   * Why a verb that acts on one installed machine — stop, uninstall — cannot start, or null
+   * when it can. A Windows machine is refused: this server never starts a server there (it has
+   * no shell to hold a session on), so there is none of its own to stop, and its program is
+   * not removed from here.
+   */
+  #refuseOnInstalled(address: string): ConnectRefusal | null {
+    if (this.#machineBusy(address)) return "busy";
+    const machine = this.#allMachines().find((entry) => entry.id === address);
+    if (machine === undefined) return "unknown-machine";
+    if (machine.local || (machine.machineId !== null && machine.machineId === this.#machineId)) {
+      return "self";
+    }
+    const row = this.repo.get(address);
+    if (row?.version == null) return "not-installed";
+    if (row.platform === "win32") return "unsupported";
+    return null;
+  }
+
+  /**
+   * Stops a machine's server and stops keeping it connected — the page's Stop service. It then
+   * stays stopped, this server's own restarts included, until it is started again
+   * (startConnect). Nothing is touched when the machine cannot be reached.
+   */
+  startStop(address: string): { ok: true } | { ok: false; why: ConnectRefusal } {
+    const refused = this.#refuseOnInstalled(address);
+    if (refused !== null) return { ok: false, why: refused };
+    const machine = this.#allMachines().find((entry) => entry.id === address)!;
+    this.#startJob("stop", machine, ["check", "stop"], { offerReplaceProgram: false }, (say) =>
+      this.#stopWork(machine, say),
+    );
+    return { ok: true };
+  }
+
+  /**
+   * Asks what runs there, refusing — with nothing changed — when the machine cannot be reached;
+   * otherwise stops keeping it connected and stops its server if one runs. The shared start of
+   * a stop and an uninstall; `nothing` says what was left alone, in the refusal's words.
+   */
+  async #stopServerFor(
+    machine: MachineInfo,
+    say: Say,
+    nothing: string,
+  ): Promise<{ ok: true } | JobFailure> {
+    const address = machine.id;
+    const target = this.#targetOf(machine.alias);
+    say("Asking what is running there…", "check");
+    const probed = await this.#probe(address, target);
+    this.#recordProbe(address, probed);
+    if (probed.state.kind === "unreachable") {
+      return {
+        ok: false,
+        step: "check",
+        message: `could not reach that machine, so ${nothing}: ${probed.state.detail}`,
+        canReplaceProgram: false,
+        ...this.#sshCause(target, probed.state.detail),
+      };
+    }
+    // From here the machine is to stay stopped: nothing may bring it back while its server goes
+    // away, so the mark goes first. The commands below open a passing session of their own.
+    this.disconnect(address);
+    if (probed.state.kind !== "running") {
+      say("Its server was not running.", "stop");
+      return { ok: true };
+    }
+    say(`Stopping its server on port ${probed.state.port}…`, "stop");
+    const stopped = await this.#effects.stopServer(target);
+    if (!stopped.ok) {
+      return {
+        ok: false,
+        step: "stop",
+        message: `its server would not stop — ${stopped.detail}`,
+        canReplaceProgram: false,
+      };
+    }
+    const after = await this.#probe(address, target);
+    this.#recordProbe(address, after);
+    if (after.state.kind === "running") {
+      return {
+        ok: false,
+        step: "stop",
+        message: "its server is still running after it was told to stop.",
+        canReplaceProgram: false,
+      };
+    }
+    say("Its server is stopped.");
+    return { ok: true };
+  }
+
+  async #stopWork(machine: MachineInfo, say: Say): Promise<MachineJob["result"]> {
+    const stopped = await this.#stopServerFor(machine, say, "nothing was stopped");
+    if (!stopped.ok) return stopped;
+    // The passing session the commands opened is let go too: nothing is kept open to a
+    // machine that is to stay stopped.
+    closeConnectionTo(machine.id);
+    return { ok: true, stopped: true };
+  }
+
+  /**
+   * Removes the program from a machine: its server stopped, then the program directory, and the
+   * data directory too when `removeData` says so. The machine stays in the Project's list, as
+   * not installed, and stops being kept connected.
+   */
+  startUninstall(
+    address: string,
+    removeData: boolean,
+  ): { ok: true } | { ok: false; why: ConnectRefusal } {
+    const refused = this.#refuseOnInstalled(address);
+    if (refused !== null) return { ok: false, why: refused };
+    const machine = this.#allMachines().find((entry) => entry.id === address)!;
+    this.#startJob(
+      "uninstall",
+      machine,
+      ["check", "stop", "remove"],
+      { offerReplaceProgram: false },
+      (say) => this.#uninstallWork(machine, removeData, say),
+    );
+    return { ok: true };
+  }
+
+  async #uninstallWork(
+    machine: MachineInfo,
+    removeData: boolean,
+    say: Say,
+  ): Promise<MachineJob["result"]> {
+    const address = machine.id;
+    const target = this.#targetOf(machine.alias);
+    const stopped = await this.#stopServerFor(machine, say, "nothing was removed");
+    if (!stopped.ok) return stopped;
+    const dir = this.#layout.programDir.posix;
+    say(
+      removeData
+        ? `Removing the program and its data from ${dir}…`
+        : `Removing the program from ${dir}; its data directory stays…`,
+      "remove",
+    );
+    const removed = await this.#effects.runOn(target, uninstallCommand(this.#layout, removeData));
+    const said = removed.stdout.trim();
+    if (removed.code !== 0) {
+      return {
+        ok: false,
+        step: "remove",
+        message: said === "" ? "the machine did not say why it could not remove it." : said,
+        canReplaceProgram: false,
+      };
+    }
+    for (const line of said.split("\n")) if (line.trim() !== "") say(line.trim());
+    // What this server knew about the program there is gone with it. The machine's own id lives
+    // in its data directory: kept with the data, forgotten with it.
+    this.repo.patch(address, {
+      version: null,
+      installedAt: null,
+      remotePort: null,
+      sessionPid: null,
+      ...(removeData ? { machineId: null } : {}),
+    });
+    this.#statuses.delete(address);
+    this.#apiSeen.delete(address);
+    closeConnectionTo(address);
+    this.#changed();
+    return { ok: true, uninstalled: true, dataRemoved: removeData };
   }
 
   /**
@@ -1673,6 +2291,8 @@ export class MachinesService {
       return await work();
     } finally {
       this.#busy.delete(address);
+      // A job queued while this ran was passed over by #drain; it may start now.
+      this.#drain();
     }
   }
 
@@ -1721,41 +2341,6 @@ export class MachinesService {
     // A checkout's image is held for the sweep as for a job: builds the page starts meanwhile
     // must not prune what is being handed over.
     await (this.#checkout?.holding(plan, sweep) ?? sweep());
-  }
-
-  /**
-   * Re-holds every machine recorded as held that this generation does not hold now — at
-   * boot, and every KEEP_HELD_MS after. A machine whose re-hold failed waits out a backoff
-   * that doubles per failure, so a host that is down for an hour costs a try every fifteen
-   * minutes and one that blinked is back within the minute; a success resets it.
-   */
-  async autoConnect(): Promise<void> {
-    const now = this.#effects.now().getTime();
-    const unconnected = this.#allMachines().filter(
-      (m) =>
-        !m.local &&
-        m.installed !== null &&
-        m.connection === null &&
-        this.repo.get(m.id)?.sessionPid != null &&
-        this.repo.get(m.id)?.platform !== "win32" &&
-        (this.#reholdNotBefore.get(m.id) ?? 0) <= now,
-    );
-    await this.#sweep(
-      unconnected.map((m) => m.id),
-      async (address) => {
-        const machine = unconnected.find((m) => m.id === address)!;
-        const result = await this.#connect(machine, () => {});
-        if (result !== null && result.ok) {
-          this.#reholdNotBefore.delete(address);
-          this.#reholdFailures.delete(address);
-          return;
-        }
-        const failures = (this.#reholdFailures.get(address) ?? 0) + 1;
-        this.#reholdFailures.set(address, failures);
-        const wait = Math.min(REHOLD_BACKOFF_MIN_MS * 2 ** (failures - 1), REHOLD_BACKOFF_MAX_MS);
-        this.#reholdNotBefore.set(address, this.#effects.now().getTime() + wait);
-      },
-    );
   }
 
   /** Brings every connected machine up to date with this server's Model config. */
@@ -1840,6 +2425,8 @@ export class MachinesModule {
   @Use() private readonly db!: Db;
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly access!: Access;
+  @Use() private readonly channels!: Channels;
+  @Use() private readonly users!: Users;
   @Provide() machines!: Machines;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
@@ -1852,11 +2439,30 @@ export class MachinesModule {
     // asked of this module's own file, which a packaged program or a pushed platform keeps
     // outside any checkout.
     const checkout = findCheckout(path.dirname(fileURLToPath(import.meta.url)));
+    // The machines page and the proxy are admins' alone, so their events are too: told to every
+    // admin with GET /api/events open (`peek`, never `get` — a channel opened here would be one
+    // nobody listens on). Never throws: it runs in timers and ssh events as well as requests.
+    const users = this.users;
+    const channels = this.channels;
+    const toAdmins = (event: ServerEvent) => {
+      try {
+        for (const user of users.list()) {
+          if (user.isAdmin)
+            channels.peek(userChannelKey(user.userId))?.publish(event, "server_event");
+        }
+      } catch {
+        // Best effort: a page reads the list again on its next change or visit.
+      }
+    };
     const machines = new MachinesService(
       this.paths.root,
       repo.ownId(),
       repo,
-      checkout === null ? {} : { packCheckout: deployPacker(checkout) },
+      {
+        ...(checkout === null ? {} : { packCheckout: deployPacker(checkout) }),
+        announce: () => toAdmins({ type: "machines_changed" }),
+        publishEvent: (machineId, event) => toAdmins({ type: "machine_event", machineId, event }),
+      },
       () => this.hmr.assetsDir(),
     );
     this.machines = machines;

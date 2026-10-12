@@ -6,6 +6,7 @@
  * No network, no ssh binary.
  */
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import zlib from "node:zlib";
 import os from "node:os";
 import path from "node:path";
@@ -27,6 +28,7 @@ import {
   launchedPid,
   runInstallScriptCommand,
   startServerCommand,
+  uninstallCommand,
   unpackStoreCommand,
   scpArgs,
   shQuote,
@@ -606,6 +608,82 @@ describe("startServerCommand", () => {
     expect(launchedPid("")).toBeNull();
     expect(launchedPid("nohup: ignoring input\n")).toBeNull();
     expect(launchedPid("0\n")).toBeNull();
+  });
+});
+
+// The command runs in a real POSIX shell against a home of its own: what is left on disk is the
+// behaviour. Windows machines are refused before this command is ever built (service.ts).
+describe.skipIf(process.platform === "win32")("removing the program from a machine", () => {
+  const homes: string[] = [];
+  afterEach(() => {
+    for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  /** A home with an installed program in the layout's directory, data included. */
+  const installedHome = (dir: string) => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-uninstall-"));
+    homes.push(home);
+    for (const part of ["bin", "lib", "web", "node", "data/hmr", ".old.123"]) {
+      fs.mkdirSync(path.join(home, dir, part), { recursive: true });
+      fs.writeFileSync(path.join(home, dir, part, "file"), "x");
+    }
+    fs.mkdirSync(path.join(home, ".local", "bin"), { recursive: true });
+    return home;
+  };
+  const run = (command: string, home: string) =>
+    spawnSync("sh", ["-c", command], { env: { ...process.env, HOME: home }, encoding: "utf8" });
+  const left = (home: string, dir: string) =>
+    fs.existsSync(path.join(home, dir)) ? fs.readdirSync(path.join(home, dir)).sort() : null;
+
+  it("removes the program and keeps its data", () => {
+    const home = installedHome(".penguin-dev");
+    const done = run(uninstallCommand(DEV, false), home);
+    expect(done.status).toBe(0);
+    expect(left(home, ".penguin-dev")).toEqual(["data"]);
+    expect(fs.existsSync(path.join(home, ".penguin-dev/data/hmr/file"))).toBe(true);
+    expect(done.stdout).toContain("removed");
+  });
+
+  it("removes the data too when asked, and the directory it leaves empty", () => {
+    const home = installedHome(".penguin-dev");
+    expect(run(uninstallCommand(DEV, true), home).status).toBe(0);
+    expect(left(home, ".penguin-dev")).toBeNull();
+  });
+
+  it("leaves what it did not install, and the directory that holds it", () => {
+    const home = installedHome(".penguin-dev");
+    fs.writeFileSync(path.join(home, ".penguin-dev", "notes.txt"), "mine");
+    expect(run(uninstallCommand(DEV, true), home).status).toBe(0);
+    expect(left(home, ".penguin-dev")).toEqual(["notes.txt"]);
+  });
+
+  it("takes the release's `penguin` command only while it still points at this program", () => {
+    const ours = installedHome(".penguin");
+    fs.symlinkSync(path.join(ours, ".penguin/bin/penguin"), path.join(ours, ".local/bin/penguin"));
+    expect(run(uninstallCommand(RELEASE, false), ours).status).toBe(0);
+    expect(fs.existsSync(path.join(ours, ".local/bin/penguin"))).toBe(false);
+
+    const theirs = installedHome(".penguin");
+    fs.symlinkSync("/opt/other/penguin", path.join(theirs, ".local/bin/penguin"));
+    expect(run(uninstallCommand(RELEASE, false), theirs).status).toBe(0);
+    expect(fs.readlinkSync(path.join(theirs, ".local/bin/penguin"))).toBe("/opt/other/penguin");
+
+    // The dev layout never owned the command, whatever it points at.
+    const dev = installedHome(".penguin-dev");
+    fs.symlinkSync(
+      path.join(dev, ".penguin-dev/bin/penguin"),
+      path.join(dev, ".local/bin/penguin"),
+    );
+    expect(run(uninstallCommand(DEV, false), dev).status).toBe(0);
+    expect(fs.lstatSync(path.join(dev, ".local/bin/penguin")).isSymbolicLink()).toBe(true);
+  });
+
+  it("finds nothing to remove on a machine with nothing installed, and says so", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-uninstall-"));
+    homes.push(home);
+    const done = run(uninstallCommand(DEV, false), home);
+    expect(done.status).toBe(0);
+    expect(done.stdout).toContain("nothing installed");
   });
 });
 

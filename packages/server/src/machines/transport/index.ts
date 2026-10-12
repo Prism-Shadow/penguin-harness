@@ -18,8 +18,8 @@ export {
   connectionTo,
 } from "./connection.js";
 export type { MachineChannel } from "./connection.js";
-export { heldSessionOf, sessionOf } from "./ssh-session.js";
-export type { ShellSession } from "./ssh-session.js";
+export { heldSessionOf, onSessionChange, sessionOf } from "./ssh-session.js";
+export type { SessionListener, ShellSession } from "./ssh-session.js";
 export { execFailureText } from "./exec.js";
 export type { ExecResult } from "./exec.js";
 export {

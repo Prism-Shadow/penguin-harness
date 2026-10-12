@@ -106,6 +106,34 @@ interface Pending {
   onLine: ((line: string) => void) | undefined;
 }
 
+/**
+ * Told when a HELD session comes up or goes down — the machines service's word that a machine
+ * it keeps connected needs bringing back, and that its list changed. A set rather than one slot:
+ * across a hot push the generation coming up starts listening before the one going out stops,
+ * and the one going out must not take the newcomer's listener with it.
+ */
+export type SessionListener = (machineAddress: string, up: boolean) => void;
+const sessionListeners = new Set<SessionListener>();
+
+/** Starts telling `listener` of held sessions' ups and downs; the returned function stops it. */
+export function onSessionChange(listener: SessionListener): () => void {
+  sessionListeners.add(listener);
+  return () => {
+    sessionListeners.delete(listener);
+  };
+}
+
+/** Tells every listener, without letting one break the transport: a throw there is the listener's own bug. */
+function tell(machineAddress: string, up: boolean): void {
+  for (const listener of sessionListeners) {
+    try {
+      listener(machineAddress, up);
+    } catch {
+      // The transport carries on whatever a listener does.
+    }
+  }
+}
+
 class MachineShell {
   #child: ChildProcessWithoutNullStreams | null = null;
   #socksPort: number | null = null;
@@ -122,13 +150,20 @@ class MachineShell {
   #reopen: NodeJS.Timeout | null = null;
   #backoffMs = RECONNECT_MIN_MS;
 
-  constructor(private readonly target: RemoteTarget) {}
+  constructor(
+    private readonly address: string,
+    private readonly target: RemoteTarget,
+  ) {}
 
   /** Keeps the session from here on: a session opened transiently is promoted in place. */
   hold(): void {
+    const promoted = !this.#held && this.#child !== null;
     this.#held = true;
     if (this.#idle !== null) clearTimeout(this.#idle);
     this.#idle = null;
+    // A transient session a command already opened is now a held one: it came up as far as
+    // anyone keeping it is concerned.
+    if (promoted) tell(this.address, true);
   }
 
   held(): boolean {
@@ -185,6 +220,7 @@ class MachineShell {
   }
 
   #drop(): void {
+    const wasUp = this.#child !== null;
     this.#child = null;
     this.#socksPort = null;
     this.#buffer = "";
@@ -207,7 +243,10 @@ class MachineShell {
       });
     }
     this.#stderr = "";
-    if (this.#held) this.#scheduleReopen();
+    if (this.#held) {
+      if (wasUp) tell(this.address, false);
+      this.#scheduleReopen();
+    }
   }
 
   async #open(): Promise<ChildProcessWithoutNullStreams> {
@@ -247,6 +286,7 @@ class MachineShell {
     });
     this.#child = child;
     this.#socksPort = port;
+    if (this.#held) tell(this.address, true);
     return child;
   }
 
@@ -345,7 +385,7 @@ const sessions = new Map<string, MachineShell>();
 function shellFor(machineAddress: string, target: RemoteTarget): MachineShell {
   let shell = sessions.get(machineAddress);
   if (shell === undefined) {
-    shell = new MachineShell(target);
+    shell = new MachineShell(machineAddress, target);
     sessions.set(machineAddress, shell);
   }
   return shell;

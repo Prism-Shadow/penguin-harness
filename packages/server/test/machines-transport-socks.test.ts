@@ -1,14 +1,25 @@
 /**
  * The SOCKS5 dial: a CONNECT through the session's `-D` port, answered by a small SOCKS
  * server of this test's own, reaching an HTTP server behind it.
+ *
+ * - Given a port that answers, the dial carries HTTP to it.
+ * - Given a port nothing listens on, the dial fails at once — whether the SOCKS server says so
+ *   with a failure reply, or, as ssh does for a channel the machine refused, just closes.
+ * - Given no SOCKS listener at all, the dial fails.
  */
 import http from "node:http";
 import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { dialThroughSocks } from "../src/machines/transport/socks.js";
 
-/** Just enough SOCKS5 to answer a CONNECT: greet, connect, pipe. */
-function socksServer(): Promise<{ port: number; close: () => void; requests: number[] }> {
+/**
+ * Just enough SOCKS5 to answer a CONNECT: greet, connect, pipe. A refused port is answered with
+ * a failure reply, or — `silentRefusal`, what ssh's `-D` does when the machine refuses the
+ * channel — by closing the client with no reply at all.
+ */
+function socksServer(
+  opts: { silentRefusal?: boolean } = {},
+): Promise<{ port: number; close: () => void; requests: number[] }> {
   const requests: number[] = [];
   const server = net.createServer((client) => {
     let stage = 0;
@@ -42,7 +53,8 @@ function socksServer(): Promise<{ port: number; close: () => void; requests: num
           client.pipe(upstream).pipe(client);
         });
         upstream.on("error", () => {
-          client.end(Buffer.from([5, 5, 0, 1, 0, 0, 0, 0, 0, 0]));
+          if (opts.silentRefusal === true) client.destroy();
+          else client.end(Buffer.from([5, 5, 0, 1, 0, 0, 0, 0, 0, 0]));
         });
       }
     });
@@ -97,6 +109,24 @@ describe("dialThroughSocks", () => {
     await expect(dialThroughSocks(socks.port, "127.0.0.1", free)).rejects.toThrow(
       /refused .*SOCKS reply 5/,
     );
+  });
+
+  it("fails at once when the session closes a refused channel without a word, as ssh does", async () => {
+    const socks = await socksServer({ silentRefusal: true });
+    cleanups.push(socks.close);
+    const probe = net.createServer();
+    const free = await new Promise<number>((resolve) =>
+      probe.listen(0, "127.0.0.1", () => {
+        const port = (probe.address() as net.AddressInfo).port;
+        probe.close(() => resolve(port));
+      }),
+    );
+    const started = Date.now();
+    await expect(dialThroughSocks(socks.port, "127.0.0.1", free)).rejects.toThrow(
+      /nothing answered at 127\.0\.0\.1:\d+/,
+    );
+    // Not after the handshake's own timeout: the closed channel is the answer.
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   it("fails when there is no SOCKS listener at all", async () => {
