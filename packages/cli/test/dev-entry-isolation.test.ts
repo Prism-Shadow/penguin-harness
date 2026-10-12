@@ -21,9 +21,27 @@
  * starts there, and a dev server given it would offer that CLI as its own. A packaged or
  * installed launch keeps honouring the variable — it is how `penguin server|web` and the
  * desktop app name their CLI (server cli-shim.test.ts, desktop launcher.test.ts).
+ *
+ * The globally linked `penguin` (scripts/dev-cli-link, put on PATH by `pnpm link:cli`) is the
+ * same dev CLI, built rather than from source:
+ *
+ * - Given an inherited environment, when the linked `penguin` starts the built CLI, then the CLI
+ *   sees exactly what run-with-env gives `pnpm penguin`'s command, inherited values included.
+ * - Given links of packages/cli itself on PATH, when `pnpm link:cli` runs, then the ones that
+ *   lead into this checkout's packages/cli/dist are removed and any other `penguin` is left alone.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -184,5 +202,101 @@ describe("dev entry points and an inherited PENGUIN_CLI_ENTRY", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe("the globally linked penguin", () => {
+  /** process.env without the variables the dev CLI's assignments decide. */
+  const {
+    PENGUIN_HOME: _home,
+    PENGUIN_PROFILE: _profile,
+    PORT: _port,
+    PENGUIN_CLI_ENTRY: _entry,
+    ...base
+  } = process.env;
+
+  /** A throwaway checkout: scripts/dev-cli-link beside a built CLI that prints its environment. */
+  function withCheckout(test: (dir: string, entry: string) => void): void {
+    const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "penguin-dev-cli-link-")));
+    try {
+      const link = path.join("scripts", "dev-cli-link");
+      cpSync(path.join(repoRoot, link), path.join(dir, link), { recursive: true });
+      const entry = path.join(dir, "packages", "cli", "dist", "penguin.js");
+      mkdirSync(path.dirname(entry), { recursive: true });
+      writeFileSync(
+        entry,
+        "const names = ['PENGUIN_HOME', 'PENGUIN_PROFILE', 'PORT', 'PENGUIN_CLI_ENTRY'];\n" +
+          "process.stdout.write(JSON.stringify(names.map((n) => process.env[n] ?? null)));\n",
+      );
+      test(dir, entry);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("gives the built CLI the environment pnpm penguin gives it", () => {
+    withCheckout((dir, entry) => {
+      const tokens = runWithEnvTokens(rootScripts["penguin"])!;
+      for (const inherited of [
+        { PENGUIN_HOME: "", PENGUIN_CLI_ENTRY: "/opt/installed/penguin.js" },
+        { PENGUIN_HOME: path.join(dir, "elsewhere"), PENGUIN_PROFILE: "release", PORT: "1234" },
+      ]) {
+        const env = { ...base, ...inherited };
+        const linked = spawnSync(
+          process.execPath,
+          [path.join(dir, "scripts", "dev-cli-link", "penguin.mjs")],
+          { encoding: "utf8", env },
+        );
+        const script = path.join(repoRoot, "scripts", "run-with-env.mjs");
+        const fromSource = spawnSync(
+          process.execPath,
+          [script, ...tokens, "--", process.execPath, entry],
+          { encoding: "utf8", env },
+        );
+        expect(JSON.parse(linked.stdout), linked.stderr).toEqual(JSON.parse(fromSource.stdout));
+      }
+    });
+  });
+
+  it("pnpm link:cli removes only the earlier links into this checkout's packages/cli/dist", () => {
+    withCheckout((dir, entry) => {
+      /** A pnpm 10 global shim (the sh flavour) that runs `target` relative to its directory. */
+      const shim = (file: string, target: string) => {
+        mkdirSync(path.dirname(file), { recursive: true });
+        const rel = path.relative(path.dirname(file), target).split(path.sep).join("/");
+        writeFileSync(file, `#!/bin/sh\nexec node  "$basedir/${rel}" "$@"\n`);
+      };
+      const pnpmHome = path.join(dir, "pnpm-home");
+      const elsewhere = path.join(dir, "elsewhere-bin");
+      shim(path.join(pnpmHome, "penguin"), entry);
+      shim(
+        path.join(elsewhere, "penguin"),
+        path.join(dir, "other", "packages/cli/dist/penguin.js"),
+      );
+      // Creating symlinks needs a privilege Windows runners do not grant by default.
+      const symlinks = process.platform !== "win32";
+      if (symlinks) symlinkSync(entry, path.join(elsewhere, "penguin-hmr"));
+      // A stand-in for the pnpm that runs the script, which would otherwise link for real.
+      const pnpm = path.join(dir, "pnpm.mjs");
+      writeFileSync(pnpm, "");
+      // Windows spells it Path: drop it, so the stand-in PATH is the only one.
+      const env = Object.fromEntries(
+        Object.entries(base).filter(([key]) => key.toUpperCase() !== "PATH"),
+      );
+
+      const run = spawnSync(
+        process.execPath,
+        [path.join(dir, "scripts", "dev-cli-link", "link.mjs")],
+        {
+          encoding: "utf8",
+          env: { ...env, npm_execpath: pnpm, PATH: [pnpmHome, elsewhere].join(path.delimiter) },
+        },
+      );
+
+      expect(run.status, run.stderr).toBe(0);
+      expect(existsSync(path.join(pnpmHome, "penguin"))).toBe(false);
+      expect(existsSync(path.join(elsewhere, "penguin"))).toBe(true);
+      if (symlinks) expect(existsSync(path.join(elsewhere, "penguin-hmr"))).toBe(false);
+    });
   });
 });
