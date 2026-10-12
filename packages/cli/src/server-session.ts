@@ -8,6 +8,8 @@ import type {
   AgentsResponse,
   AgentSummary,
   MessagesResponse,
+  ModelRefDto,
+  ModelsResponse,
   SessionCreateResponse,
   SessionInfo,
   SessionResponse,
@@ -76,6 +78,26 @@ export async function createServerSession(
     { ...body, client: "cli" },
   );
   return res.session;
+}
+
+/**
+ * The Project's default model (`defaultModel` of GET models): what a Session created without a
+ * model runs on. A read only — nothing is created. Null when the Project has none, or when it
+ * cannot be read; the caller then names it generically.
+ */
+export async function projectDefaultModel(
+  client: ServerClient,
+  projectId: string,
+): Promise<ModelRefDto | null> {
+  try {
+    const res = await client.request<ModelsResponse>(
+      "GET",
+      `/api/projects/${enc(projectId)}/models`,
+    );
+    return res.defaultModel ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** PATCHes the Session's thinking level: the pin core applies from the Session's next LLM request. */

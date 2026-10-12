@@ -10,11 +10,25 @@
  * list snapshot racing the live SSE flip briefly resurrects "running" and would
  * otherwise double-notify the same finish.
  */
-import type { SessionStatus } from "@prismshadow/penguin-server/api";
+import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
+import { isSidebarRow } from "./session-grouping";
 
 export interface ObservedSession {
   sessionId: string;
   status: SessionStatus;
+}
+
+/**
+ * What the tracker watches out of the Session list: the sidebar's own conversations
+ * (isSidebarRow). The list also holds the archived, subagent or organization Session a page
+ * is showing, and none of them notifies: an archived Session's program reports its own runs, a
+ * subagent's run is part of its parent's Task, and an organization's Sessions are company
+ * mode's — so a notification's click never lands on a stub or on a conversation no list shows.
+ */
+export function observedSessions(sessions: readonly SessionInfo[]): ObservedSession[] {
+  return sessions.flatMap((s) =>
+    isSidebarRow(s) ? [{ sessionId: s.sessionId, status: s.status }] : [],
+  );
 }
 
 /** Whether a status counts as an in-flight run. */

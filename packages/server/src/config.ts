@@ -14,7 +14,7 @@ import path from "node:path";
 import { NIGHTLY_INDEX_URL } from "./plugin/registry.js";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
-import { checkoutCliEntry } from "./services/cli-shim.js";
+import { resolveCliLaunch, type CliLaunch } from "./services/cli-shim.js";
 
 export interface ServerConfig {
   /** Local data root directory (shared with the SDK/CLI). */
@@ -91,12 +91,12 @@ export interface ServerConfig {
    */
   trustProxy: boolean;
   /**
-   * The CLI entry script this harness offers to the Agents it runs — the file the
-   * `<root>/bin/penguin` shim execs (see services/cli-shim.ts). `PENGUIN_CLI_ENTRY` when
-   * set: `penguin server|web` exports its own entry there, and the desktop shell passes
-   * the bundled one to the server it forks. Otherwise the entry of the checkout this
-   * server was started from, when it has a built one. Null = no CLI to offer, and no shim
-   * is written.
+   * The CLI entry script this harness offers as `penguin` to the Agents it runs and in its
+   * terminals — the file the `<root>/bin/penguin` shim runs (see services/cli-shim.ts).
+   * `PENGUIN_CLI_ENTRY` when set: `penguin server|web` exports its own entry there, and the
+   * desktop shell passes the bundled one to the server it forks. Otherwise, on a server running
+   * from a checkout, that checkout's CLI: its source while the server runs from source, else its
+   * build (resolveCliLaunch). Null = no CLI to offer; see cliLaunch for why.
    *
    * Related to but wider than the self-update endpoint's use of the same variable
    * (http/routes/version.ts), which accepts only an INSTALLED entry it can re-run as
@@ -107,6 +107,17 @@ export interface ServerConfig {
    * no CLI to offer and no shim written.
    */
   cliEntry?: string | null;
+  /**
+   * How the shim runs cliEntry and where it came from: the interpreter options before it (the
+   * TypeScript loader for a source run), the checkout this server runs from, the origin, and —
+   * when cliEntry is null on a checkout — why its CLI cannot run, which the shim and the
+   * terminals then say instead of falling through to another installation's `penguin`.
+   *
+   * OPTIONAL like cliEntry, and for the same reason: a runtime older than this field publishes
+   * none, which reads as a plain entry from an installation — no options, no checkout, nothing
+   * to report.
+   */
+  cliLaunch?: Omit<CliLaunch, "entry">;
   /**
    * The published plugin index this deployment reads (PENGUIN_PLUGIN_INDEX), or null
    * for none. Unset = the index repository's published document; `off` = builtin entries only
@@ -137,13 +148,19 @@ function defaultWebDist(): string {
 }
 
 /**
- * The CLI entry of the checkout this server module lives in, resolved from the module's
- * own location (`packages/server/src/…` under tsx, `packages/server/dist/…` when built,
- * the desktop shell's bundle in a source desktop run — all reached by the same walk to the
- * workspace root). Null outside a checkout, and null when its CLI has not been built.
+ * The CLI this server offers (services/cli-shim.ts resolveCliLaunch), looked up from this
+ * module's own location: `packages/server/src/…` under tsx — TypeScript source, so the
+ * checkout's CLI source is offered — `packages/server/dist/…` when built, the desktop shell's
+ * bundle in a source desktop run, all reached by the same walk to the workspace root.
  */
-function defaultCliEntry(): string | null {
-  return checkoutCliEntry(path.dirname(fileURLToPath(import.meta.url)));
+function cliLaunchFor(env: NodeJS.ProcessEnv): CliLaunch {
+  const here = fileURLToPath(import.meta.url);
+  return resolveCliLaunch({
+    explicit: env.PENGUIN_CLI_ENTRY,
+    moduleDir: path.dirname(here),
+    source: /\.[cm]?tsx?$/.test(here),
+    electron: process.versions.electron !== undefined,
+  });
 }
 
 /**
@@ -246,6 +263,7 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
   if (desktopToken !== null && host !== "127.0.0.1" && host !== "localhost") {
     throw new Error(`Desktop mode requires a loopback HOST (got HOST=${host})`);
   }
+  const cli = cliLaunchFor(env);
   return {
     root,
     host,
@@ -262,7 +280,13 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     desktopToken,
     portFile: env.PENGUIN_PORT_FILE?.trim() || null,
     trustProxy: env.PENGUIN_TRUST_PROXY === "1",
-    cliEntry: env.PENGUIN_CLI_ENTRY?.trim() || defaultCliEntry(),
+    cliEntry: cli.entry,
+    cliLaunch: {
+      execArgs: cli.execArgs,
+      checkout: cli.checkout,
+      origin: cli.origin,
+      unavailable: cli.unavailable,
+    },
     pluginIndexUrl: resolvePluginIndexUrl(env.PENGUIN_PLUGIN_INDEX),
   };
 }

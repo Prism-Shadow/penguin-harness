@@ -33,6 +33,8 @@ export interface FormPickerTriggerProps {
    * it, e.g. "Model: GPT-6"). Omit it when it would repeat the field label above the control.
    */
   title?: string;
+  /** `title` holds what the label leaves out (a full path, an id): it shows over the label in full. */
+  titleExtra?: boolean;
   ariaLabel: string;
   ariaHaspopup?: "listbox" | "dialog";
   /** Whether the thing it opens is open (announced as `aria-expanded`). */
@@ -54,6 +56,7 @@ export function FormPickerTrigger({
   labelClassName = "",
   muted = false,
   title,
+  titleExtra = false,
   ariaLabel,
   ariaHaspopup = "listbox",
   expanded,
@@ -65,6 +68,7 @@ export function FormPickerTrigger({
     <button
       type="button"
       data-tooltip={title}
+      data-tooltip-extra={titleExtra || undefined}
       aria-label={ariaLabel}
       aria-haspopup={ariaHaspopup}
       aria-expanded={expanded}

@@ -2,7 +2,7 @@
 /**
  * Cross-platform replacement for POSIX env-prefix script lines.
  *
- *   node scripts/run-with-env.mjs VAR=value [VAR2=value2 ...] -- <command> [args...]
+ *   node scripts/run-with-env.mjs [--unset=VAR ...] VAR=value [VAR2=value2 ...] -- <command> [args...]
  *
  * Each assignment sets VAR **only when it is unset or empty** in the current environment —
  * the JS equivalent of `VAR="${VAR:-value}" cmd`, which cmd.exe cannot parse (package.json
@@ -12,6 +12,12 @@
  * the command runs, so a shell-wide export cannot quietly redirect a dev script. A leading `~/` in the value expands to the user's
  * home directory (the `$HOME/...` defaults). Then the command runs with inherited stdio and
  * its exit code is propagated.
+ *
+ * `--unset=VAR` is the other way round: VAR reaches the command under no value at all, whatever
+ * the environment had — for a variable a dev entry point must never inherit. PENGUIN_CLI_ENTRY
+ * is one: a terminal of an installed PenguinHarness hands its CLI's path to everything started
+ * there, and a dev server given it would offer the installed CLI as its own. What it clears is
+ * named on stderr too. On Windows the name matches in any case, as the environment does there.
  *
  * On Windows the command is a pnpm-installed shim (tsx.cmd, vitest.cmd), which Node refuses
  * to spawn without a shell since CVE-2024-27980; those runs go through the shell with
@@ -24,14 +30,32 @@ import { spawn } from "node:child_process";
 const argv = process.argv.slice(2);
 const sep = argv.indexOf("--");
 if (sep === -1 || sep === argv.length - 1) {
-  console.error("usage: node scripts/run-with-env.mjs VAR=value [...] -- <command> [args...]");
+  console.error(
+    "usage: node scripts/run-with-env.mjs [--unset=VAR ...] VAR=value [...] -- <command> [args...]",
+  );
   process.exit(2);
 }
 
+const windows = process.platform === "win32";
 const env = { ...process.env };
 /** Defaults this script did not get to apply, because the environment already had a value. */
 const overridden = [];
+/** Inherited values `--unset` kept from the command. */
+const cleared = [];
 for (const assignment of argv.slice(0, sep)) {
+  if (assignment.startsWith("--unset=")) {
+    const name = assignment.slice("--unset=".length);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      console.error(`run-with-env: not a variable name: ${assignment}`);
+      process.exit(2);
+    }
+    for (const key of Object.keys(env)) {
+      if (windows ? key.toUpperCase() !== name.toUpperCase() : key !== name) continue;
+      if (env[key]) cleared.push(`${key}=${env[key]}`);
+      delete env[key];
+    }
+    continue;
+  }
   const eq = assignment.indexOf("=");
   if (eq <= 0) {
     console.error(`run-with-env: not an assignment: ${assignment}`);
@@ -59,9 +83,12 @@ if (overridden.length > 0) {
   for (const line of overridden) console.error(`  ${line}`);
   console.error("  unset them in this shell if that is not what you meant.");
 }
+if (cleared.length > 0) {
+  console.error("run-with-env: this command does not inherit:");
+  for (const line of cleared) console.error(`  ${line}`);
+}
 
 const [command, ...args] = argv.slice(sep + 1);
-const windows = process.platform === "win32";
 // cmd.exe does not unquote spawn args by itself; quote anything with spaces or cmd
 // metacharacters (best effort — cmd has no lossless general quoting, but dev-script args
 // are file paths and short flags).

@@ -1,11 +1,13 @@
 /**
  * The rule that decides which disclosure a site gets (the UI package's InfoPopover and
- * HelpFold): **the circled "?" may only appear beside a title.**
+ * HelpFold): **the circled "?" may only appear beside a title, or right of the reading it
+ * breaks down.**
  *
  * A "?" is an anchored mark — it reads as help because it modifies the title next to it. Standing
  * alone at the top of a panel it modifies nothing, and a reader has to click it to find out what
  * it even refers to. Where there is no title, the disclosure has to name itself, which is what
- * `HelpFold` is for.
+ * `HelpFold` is for. A statistic's breakdown is the other anchor: its "?" (`StatHint`) follows
+ * the total it splits.
  *
  * This is a rule rather than a preference, so it is checked rather than remembered. The check
  * parses the real JSX with the TypeScript parser instead of matching text: whether a title sits
@@ -20,6 +22,15 @@ const SCAN = scanSources();
 
 /** Components whose whole job is to render a field's or a section's title. */
 const TITLE_ELEMENTS = new Set(["FieldLabel"]);
+
+/**
+ * The "?" right of a statistic's total. Its anchor is a reading — a value in an element of its
+ * own, often with the "?" in a slot after it so the values of a column stay aligned — rather than
+ * title text, so it is held to that shape instead: something comes before it in its row. It is
+ * checked where it is placed; its own body, the bare InfoPopover it wraps, is not.
+ */
+const READING_HINT = "StatHint";
+const READING_HINT_HOME = "packages/web/src/components/ui/stat-hint.tsx";
 
 const jsxTag = (node: ts.Node): string | null => {
   if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText();
@@ -55,7 +66,34 @@ function slotIn(node: ts.Node): { host: ts.JsxElement | ts.JsxFragment; slot: ts
   return null;
 }
 
-/** Every `<InfoPopover>` in the tree that has no title among its preceding siblings. */
+/** Does this sibling render anything at all? A reading is an element of its own, not bare text. */
+function rendersAnything(node: ts.Node): boolean {
+  if (ts.isJsxText(node)) return node.text.trim() !== "";
+  return !ts.isJsxExpression(node) || node.expression !== undefined;
+}
+
+/**
+ * Is something rendered before a reading's "?" in its row? A slot holding nothing but the "?"
+ * stands in for it, so the search moves out to the row around that slot.
+ */
+function readingAnchored(node: ts.Node): boolean {
+  let here = slotIn(node);
+  while (here !== null) {
+    const { host, slot } = here;
+    if (host.children.slice(0, host.children.indexOf(slot as never)).some(rendersAnything)) {
+      return true;
+    }
+    const alone = host.children.every((child) => child === slot || !rendersAnything(child));
+    if (!alone || !ts.isJsxElement(host)) return false;
+    here = slotIn(host);
+  }
+  return false;
+}
+
+/**
+ * Every `<InfoPopover>` in the tree that has no title among its preceding siblings, and every
+ * reading's "?" with nothing before it in its row.
+ */
 function findOrphans(): string[] {
   const orphans: string[] = [];
   for (const file of SCAN.files.filter((f) => f.name.endsWith(".tsx"))) {
@@ -66,19 +104,22 @@ function findOrphans(): string[] {
       /* setParentNodes */ true,
       ts.ScriptKind.TSX,
     );
+    const orphan = (node: ts.Node): void => {
+      const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+      orphans.push(`${file.id}:${line}`);
+    };
     const visit = (node: ts.Node): void => {
-      if (jsxTag(node) === "InfoPopover") {
+      const tag = jsxTag(node);
+      if (tag === "InfoPopover" && file.id !== READING_HINT_HOME) {
         const here = slotIn(node);
         const anchored =
           here !== null &&
           here.host.children
             .slice(0, here.host.children.indexOf(here.slot as never))
             .some(rendersTitle);
-        if (!anchored) {
-          const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-          orphans.push(`${file.id}:${line}`);
-        }
+        if (!anchored) orphan(node);
       }
+      if (tag === READING_HINT && !readingAnchored(node)) orphan(node);
       ts.forEachChild(node, visit);
     };
     visit(source);
@@ -140,6 +181,23 @@ describe("disclosure anchoring", () => {
     expect(anchoredOf('<div className="space-y-4"><InfoPopover>d</InfoPopover></div>')).toBe(false);
     expect(anchoredOf("<div>{/* why */}<InfoPopover>d</InfoPopover></div>")).toBe(false);
     expect(anchoredOf("<div><InfoPopover>d</InfoPopover><Button>Import</Button></div>")).toBe(
+      false,
+    );
+    // A reading's "?": after the value, in its element or from a slot of its own; never alone.
+    const readingOf = (jsx: string): boolean => {
+      let result = false;
+      const visit = (node: ts.Node): void => {
+        if (jsxTag(node) === READING_HINT) result = readingAnchored(node);
+        ts.forEachChild(node, visit);
+      };
+      visit(parse(jsx));
+      return result;
+    };
+    expect(readingOf("<div><span>{v}</span><span>{h && <StatHint>d</StatHint>}</span></div>")).toBe(
+      true,
+    );
+    expect(readingOf("<li>{v}{h && <StatHint>d</StatHint>}</li>")).toBe(true);
+    expect(readingOf('<div className="space-y-4"><span><StatHint>d</StatHint></span></div>')).toBe(
       false,
     );
   });

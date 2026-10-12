@@ -217,17 +217,41 @@ export function defaultTargetScore(baseline: number | null): number {
  * an id evaluated by a since-deleted Agent still matches on the id itself.
  */
 export function matchesBenchmarkQuery(
-  benchmark: { id: string; title: string; description?: string; agentIds?: readonly string[] },
+  benchmark: {
+    id: string;
+    title: string;
+    description?: string;
+    descriptionZh?: string;
+    agentIds?: readonly string[];
+  },
   agents: readonly { agentId: string; name?: string }[],
   query: string,
 ): boolean {
   const q = query.trim().toLowerCase();
   if (q === "") return true;
-  const haystack = [benchmark.title, benchmark.description ?? "", benchmark.id];
+  const haystack = [
+    benchmark.title,
+    benchmark.description ?? "",
+    benchmark.descriptionZh ?? "",
+    benchmark.id,
+  ];
   for (const agentId of benchmark.agentIds ?? []) {
     haystack.push(agentId);
     const name = agents.find((a) => a.agentId === agentId)?.name;
     if (name !== undefined) haystack.push(name);
   }
   return haystack.some((s) => s.toLowerCase().includes(q));
+}
+
+/**
+ * A Benchmark's description in the reader's language: the Chinese one (`description_zh`) for a
+ * reader of the Chinese interface when the manifest gives it, else the description it gives.
+ */
+export function benchmarkDescription(
+  benchmark: { description?: string; descriptionZh?: string },
+  locale: "zh" | "en",
+): string | undefined {
+  return locale === "zh" && benchmark.descriptionZh !== undefined
+    ? benchmark.descriptionZh
+    : benchmark.description;
 }

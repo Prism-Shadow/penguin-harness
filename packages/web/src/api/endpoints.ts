@@ -169,6 +169,11 @@ import type {
   ServerSettingsUpdateRequest,
   SessionCategory,
   SessionContextResponse,
+  ArchivedSessionGroupsResponse,
+  ArchivedSessionsBatch,
+  ArchivedSessionsBatchResponse,
+  ArchivedSessionsQuery,
+  ArchivedSessionsResponse,
   SessionCreateRequest,
   SessionCreateResponse,
   SessionForkRequest,
@@ -184,6 +189,9 @@ import type {
   PluginReadmeResponse,
   SessionsResponse,
   SessionSwitchModelRequest,
+  SessionBatchPageRequest,
+  SessionsBatchRequest,
+  SessionsBatchResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
   SteerRequest,
@@ -818,6 +826,28 @@ export const listSessions = (
   );
 };
 
+/**
+ * A whole sidebar reload in one round trip: every (Agent, page) pair the sidebar wants,
+ * asked in a single POST instead of one GET each.
+ *
+ * The split matters on a Project with several Agents (and several machines): as individual
+ * requests they were fired all at once and serialised by the browser's six-connections-per-host
+ * limit, so the conversation pane's own message read queued behind dozens of list calls.
+ * One request keeps every answer separate — `results` lines up with `requests`, and an Agent
+ * this server does not host comes back as `ok: false, reason: "absent"` rather than failing
+ * the batch.
+ */
+export const batchSessions = (
+  projectId: string,
+  requests: SessionBatchPageRequest[],
+  machineId?: string | null,
+) =>
+  apiFetch<SessionsBatchResponse>(`/api/projects/${encodeURIComponent(projectId)}/sessions/batch`, {
+    method: "POST",
+    body: { requests } satisfies SessionsBatchRequest,
+    server: machineId ?? null,
+  });
+
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**
  * Browses directories. With no machine, this server's own filesystem; with one, THAT
@@ -916,6 +946,48 @@ export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
 
 export const deleteSession = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+
+// The archive page (Settings › Archived chats) -------------------------------------------
+
+/** The archive page's groups — one Workspace of one Project each — with their counts, newest first. */
+export const listArchivedSessionGroups = (query: ArchivedSessionsQuery = {}) =>
+  apiFetch<ArchivedSessionGroupsResponse>("/api/me/archived-sessions/groups", {
+    query: { q: query.q, source: query.source, projectId: query.projectId },
+  });
+
+/** One group's archived Sessions, newest activity first, continuing below `before` (the last row held). */
+export const listArchivedSessions = (
+  query: ArchivedSessionsQuery & {
+    projectId: string;
+    workspace: string;
+    limit: number;
+    before?: ActivityKey;
+  },
+) =>
+  apiFetch<ArchivedSessionsResponse>("/api/me/archived-sessions", {
+    query: {
+      q: query.q,
+      source: query.source,
+      projectId: query.projectId,
+      workspace: query.workspace,
+      limit: query.limit,
+      before: query.before ? activityCursorParam(query.before) : undefined,
+    },
+  });
+
+/** Unarchives the named Sessions, or every archived one a filter matches: they return to the sidebar for good. */
+export const unarchiveSessions = (target: ArchivedSessionsBatch) =>
+  apiFetch<ArchivedSessionsBatchResponse>("/api/me/archived-sessions/unarchive", {
+    method: "POST",
+    body: target,
+  });
+
+/** Deletes the named Sessions, or every archived one a filter matches, with their subagent children. */
+export const deleteSessions = (target: ArchivedSessionsBatch) =>
+  apiFetch<ArchivedSessionsBatchResponse>("/api/me/archived-sessions/delete", {
+    method: "POST",
+    body: target,
+  });
 
 // Messaging bindings ----------------------------------------------------------
 
@@ -1055,7 +1127,7 @@ export const testQQBinding = (sessionId: string, body: QQTestRequest) =>
     body,
   });
 
-/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to). */
+/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` / `wechat_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to, and on WeChat it answers 409 `wechat_needs_recent_message` when the platform will not take a bot message until the user messages the bot again). */
 export const sendMessagingTestMessage = (sessionId: string, channel: MessagingChannel) =>
   apiFetch<MessagingTestMessageResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/test-message`,
@@ -1130,6 +1202,13 @@ export const postAbort = (sessionId: string) =>
 /** "Retry now" on the reconnect countdown: skips the remaining backoff wait server-side (skipped:false is the benign "no wait in progress" case — e.g. the timer elapsed in a race — never an error). */
 export const postRetryNow = (sessionId: string) =>
   apiFetch<RetryNowResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/retry-now`, {
+    method: "POST",
+    body: {},
+  });
+
+/** "Retry" after a run ended on a failure: runs the Session once with no new input, so the failed turn's held input is sent on its own (409 nothing_to_retry when nothing is held, 409 while a Task runs). Same response shape as tasks. */
+export const postRetry = (sessionId: string) =>
+  apiFetch<TaskCreateResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/retry`, {
     method: "POST",
     body: {},
   });

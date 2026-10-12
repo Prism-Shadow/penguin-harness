@@ -773,8 +773,7 @@ describe("organization sessions route over the real service", () => {
         ).json()) as SessionsResponse;
       const counted = await list("?category=active&counts=1");
       expect(counted.sessions.map((s) => s.sessionId)).toEqual([own]);
-      expect(counted.counts).toEqual({ active: 1, background: 0, archived: 0 });
-      expect((await list("?category=background")).sessions).toEqual([]);
+      expect(counted.counts).toEqual({ active: 1, archived: 0 });
       expect((await list("?category=archived")).sessions).toEqual([]);
       // Both are company Sessions as the list reads them.
       const sources = new Map((await list("")).sessions.map((s) => [s.sessionId, s.source]));

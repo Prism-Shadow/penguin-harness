@@ -227,6 +227,13 @@ export interface RuntimeSession {
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
   /**
+   * Whether a run with empty input would send anything (core `Session.hasPendingInput`): the
+   * failed turn's input held as carry-over — in process, or rebuilt from the Trace after a
+   * restart — or a compaction summary waiting for the next run. Optional: test fakes may omit
+   * it, reading as nothing held.
+   */
+  hasPendingInput?(): boolean;
+  /**
    * Runs the named package's `user_prompt` hook (core `Session.runUserPromptHook` — hooks
    * run in core and nowhere else); null = the package is not installed or names no such
    * command. Optional: test fakes may omit it, reading as not installed.
@@ -738,6 +745,8 @@ export class SessionManager {
   private readonly deletingAgents = new Set<string>();
   /** Sessions currently being deleted (guards against the entry/Trace file being rebuilt and reviving it inside the deletion race window). */
   private readonly deletingSessions = new Set<string>();
+  /** Sessions whose runtime entry idle eviction leaves alone (see keepLoaded). */
+  private readonly keptLoaded = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
   private readonly agentGenerations = new Map<string, number>();
   /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
@@ -1132,6 +1141,36 @@ export class SessionManager {
   }
 
   /**
+   * Retry a failed run (`POST /retry`): a Task started with EMPTY input, so core sends the
+   * input of the turn that failed — held as carry-over since the run ended `fatal` or gave
+   * up reconnecting — and nothing else. No user message is published or recorded, and with no
+   * Prompt there is no user_prompt consult. Gated like startTask (busy is the same 409) but
+   * never queued, and refused with 409 `nothing_to_retry` when nothing is held — the user's
+   * next message already resent that input, or no run failed — since the run would end at
+   * once and the client would watch a Task start and stop with nothing sent. Not a person's
+   * input for company mode's hop accounting: the turn it resends was counted, or not, when
+   * it was first sent.
+   */
+  async retryTask(sessionId: string): Promise<{ sessionId: string }> {
+    return this.withLock(sessionId, async () => {
+      this.assertOpen();
+      this.assertAgentNotDeleting(sessionId);
+      this.assertSessionNotDeleting(sessionId);
+      const entry = await this.ensureEntry(sessionId);
+      this.assertIdle(entry);
+      if (!entry.session.hasPendingInput?.()) {
+        throw new HttpError(
+          409,
+          "nothing_to_retry",
+          "There is nothing to retry: the failed turn's input has already been sent.",
+        );
+      }
+      this.launchTask(entry, []);
+      return { sessionId: entry.sessionId };
+    });
+  }
+
+  /**
    * Start a goal run: like startTask, but the goal plugin composes the input and its stop
    * hook drives every later round inside this one `session.run` call — so the Session
    * stays `running` for the whole goal (every round), the existing abort endpoint
@@ -1308,7 +1347,12 @@ export class SessionManager {
     });
   }
 
-  /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run. Caller holds the session lock and has verified idle. */
+  /**
+   * Shared task launch (fresh tasks, auto-started follow-ups and retries): flips to running,
+   * publishes the input, and drives the run. Caller holds the session lock and has verified
+   * idle. A retry's input is empty: nothing is published or held, and drive gets no title
+   * material — the turn it resends already offered its text when it was first sent.
+   */
   private launchTask(entry: RuntimeEntry, input: OmniMessage[]): void {
     const channel = this.deps.channels.get(entry.sessionId);
     const ac = new AbortController();
@@ -1880,9 +1924,65 @@ export class SessionManager {
       // Undelivered background completion notices pin the entry too: they live in the core
       // Session object, so evicting it would silently drop them.
       if (entry.session.hasPendingBackgroundNotices?.()) continue;
+      // An enabled messaging connection pins it for latency rather than correctness: the
+      // Session is where a bot lives on this server, and the next chat message after a quiet
+      // half hour would otherwise wait for a resume from the Trace (see keepLoaded).
+      if (this.keptLoaded.has(key)) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }
+  }
+
+  /**
+   * Pins (`on`) or releases a Session's runtime entry against idle eviction (see sweepIdle).
+   * The messaging bridge holds the pin for as long as a binding's connection is enabled: that
+   * Session is where the bot lives on this server, and evicting it after half an hour of quiet
+   * makes the next chat message wait for a resume from the Trace before anything else happens.
+   *
+   * It pins only what is loaded and loads nothing itself (preload does). A stale id pins
+   * nothing: an entry a delete removed is gone from the table whatever this set says, and the
+   * bridge releases the id when its connection goes.
+   */
+  keepLoaded(sessionId: string, on: boolean): void {
+    if (on) this.keptLoaded.add(sessionId);
+    else this.keptLoaded.delete(sessionId);
+  }
+
+  /**
+   * Loads a Session's runtime into the active table ahead of its first Task, through the same
+   * get-or-resume path that Task would take, so the first message after a messaging connection
+   * comes up — an enable, a server restart — does not pay for a resume from the Trace on top of
+   * everything else. Only the load: no run starts, and the core bootstrap (session metadata,
+   * MCP connections) still happens on the first run. Under the Session lock, like startTask, so
+   * a Task arriving mid-load waits for this load instead of starting a second one.
+   *
+   * A Session that is gone or being deleted, alone or with its Agent, resolves quietly: there is
+   * nothing to warm and the caller has nothing to do about it. So does one with no Trace yet,
+   * because loading it is a self-heal REBUILD under a new session id — that would move the
+   * Session out from under the binding that asked, and earlier than any Task would. The row's
+   * `hasTrace` is a cache, so a row that has not caught up only misses the warm-up. Any other
+   * load failure rejects; the first Task meets the same failure and reports it where a person
+   * will see it.
+   */
+  async preload(sessionId: string): Promise<void> {
+    await this.withLock(sessionId, async () => {
+      if (this.closed || this.deletingSessions.has(sessionId)) return;
+      const row = this.deps.sessions.findById(sessionId);
+      if (!row || this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
+      if (!this.entries.has(sessionId) && row.hasTrace !== true) return;
+      try {
+        await this.ensureEntry(sessionId);
+      } catch (err) {
+        // A delete that began while the runtime was loading: ensureEntry re-checks after it.
+        if (
+          err instanceof HttpError &&
+          ["session_not_found", "session_deleting", "agent_deleting"].includes(err.code)
+        ) {
+          return;
+        }
+        throw err;
+      }
+    });
   }
 
   // —— Internal ——
@@ -2361,8 +2461,9 @@ export class SessionManager {
       lastActiveAt: createdAt,
       createdAt,
     });
-    // Make the subagent appear immediately in the sidebar: notify via the parent
-    // Session's channel (a frontend currently watching the parent run refreshes its list in place).
+    // Announce the child on the parent Session's channel. No list shows a subagent Session
+    // (its parent's Agent panel opens it), so the Web App reads nothing from this; it stays
+    // for any other reader of that channel.
     this.publishEvent(entry, {
       type: "session_created",
       projectId: entry.projectId,
@@ -2548,6 +2649,7 @@ export abstract class Sessions extends Interface<
     | "invalidateProjectRuntimes"
     | "assertCanAcceptTask"
     | "startTask"
+    | "retryTask"
     | "startGoal"
     | "startCompact"
     | "startSwitch"
@@ -2570,6 +2672,8 @@ export abstract class Sessions extends Interface<
     | "atIdleBoundary"
     | "shutdown"
     | "sweepIdle"
+    | "keepLoaded"
+    | "preload"
   >
 >() {}
 
@@ -2578,7 +2682,9 @@ export abstract class SessionServiceIface extends Interface<
     SessionServiceImpl,
     | "toInfo"
     | "hasTrace"
+    | "listingOf"
     | "listSessions"
+    | "archivedRows"
     | "sessionStats"
     | "createSession"
     | "defaultSandbox"
@@ -2691,8 +2797,11 @@ export class SessionsModule {
       // into. Derived from the config rather than passed along, so the platform half needs no
       // new capability — and read for truth rather than for null, because a runtime older than
       // this field publishes a config without it and wrote no shim either: no field, no
-      // directory, feature off, rather than a push declined over a PATH entry.
-      pathPrepend: (): string[] => (config.cliEntry ? [cliShimDir(config.root)] : []),
+      // directory, feature off, rather than a push declined over a PATH entry. A checkout whose
+      // CLI cannot run has a shim too — the stub that says why — and it leads PATH all the same,
+      // so no other installation's `penguin` answers in its place.
+      pathPrepend: (): string[] =>
+        config.cliEntry || config.cliLaunch?.unavailable ? [cliShimDir(config.root)] : [],
       // Each Session confines under its OWN policy — the snapshot on its row, its root's for a
       // subagent — so a settings change reaches only Sessions created after it. A row from
       // before snapshots takes the settings at its first command and keeps them from then on.

@@ -9,7 +9,9 @@
  * a phone's screen; a short label never reaches it.
  *
  * The rule: a hint shows for an element with no visible text of its own, or one whose visible
- * text is cut off — never for a label the reader can already read in full.
+ * text is cut off — never for a label the reader can already read in full. An SVG's text and
+ * anything `aria-hidden` are not read as words; a hint marked as carrying what the screen does
+ * not show (`data-tooltip-extra`) opens over visible text all the same.
  *
  * The panel itself mounts only while hovered and through a portal, which a static render cannot
  * reach; what it may be drawn with (the overlay surface, token inks, the glass hook) is pinned
@@ -27,7 +29,9 @@ import {
   hintAllowed,
   isCutOff,
   namedHint,
+  readingText,
   tooltipRequest,
+  type ReadingNode,
 } from "../src/components/overlays/tooltip/tooltip";
 import { renderStatic } from "../src/testing";
 import { SRC_DIR } from "./helpers/paths";
@@ -116,6 +120,44 @@ describe("hintAllowed", () => {
   });
 });
 
+describe("what counts as visible text, and the mark that overrides it", () => {
+  const text = (value: string): ReadingNode => ({ nodeType: 3, nodeValue: value, childNodes: [] });
+  const el = (
+    localName: string,
+    children: ReadingNode[],
+    attrs: Record<string, string> = {},
+  ): ReadingNode => ({
+    nodeType: 1,
+    nodeValue: null,
+    localName,
+    childNodes: children,
+    getAttribute: (name) => attrs[name] ?? null,
+  });
+
+  it("skips an SVG's text and anything aria-hidden: an avatar's initial or a letter icon is no label", () => {
+    const avatar = el("span", [el("svg", [el("text", [text("A")])])]);
+    const caseToggle = el("button", [el("span", [text("Aa")], { "aria-hidden": "true" })]);
+    const labelled = el("button", [text("Clear "), el("span", [text("exited")])]);
+    expect(readingText(avatar)).toBe("");
+    expect(readingText(caseToggle)).toBe("");
+    expect(readingText(labelled)).toBe("Clear exited");
+    expect(hintAllowed(readingText(avatar), [clip(16, 16)])).toBe(true);
+  });
+
+  it("opens a hint marked data-tooltip-extra over text that is fully visible, React's false left unmarked", () => {
+    const request = (extra: string) => {
+      const attrs: Record<string, string> = {
+        "data-tooltip": "Their captured output is discarded too",
+        "data-tooltip-extra": extra,
+      };
+      return tooltipRequest({ getAttribute: (name: string) => attrs[name] ?? null });
+    };
+    expect(request("true")?.extra).toBe(true);
+    expect(request("false")?.extra).toBe(false);
+    expect(hintAllowed("Clear exited", [clip(80, 80)], true)).toBe(true);
+  });
+});
+
 describe("a data-tooltip request", () => {
   const el = (attrs: Record<string, string>) => ({
     getAttribute: (name: string) => attrs[name] ?? null,
@@ -126,6 +168,7 @@ describe("a data-tooltip request", () => {
       label: "Rename",
       content: "label",
       placement: "bottom",
+      extra: false,
     });
     expect(
       tooltipRequest(
@@ -135,7 +178,7 @@ describe("a data-tooltip request", () => {
           "data-tooltip-placement": "right",
         }),
       ),
-    ).toEqual({ label: "npm run dev", content: "code", placement: "right" });
+    ).toEqual({ label: "npm run dev", content: "code", placement: "right", extra: false });
   });
 
   it("asks for nothing when the text is missing or blank", () => {

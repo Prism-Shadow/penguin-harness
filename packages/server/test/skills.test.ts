@@ -126,6 +126,7 @@ describe("skills api", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginLibraryResponse;
     expect(body.groups.map((g) => g.id)).toEqual([
+      "rsi",
       "office-productivity",
       "software-development",
       "ai-app-development",
@@ -262,8 +263,10 @@ describe("skills api", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
     expect(body.skills.map((s) => s.name)).toEqual([
+      "agent-initialization",
       "penguin-config",
       "penguin-orchestration",
+      "penguin-plugin",
       "penguin-sdk",
       "unified-llm-api",
     ]);
@@ -356,14 +359,16 @@ describe("skills api", () => {
     });
     expect(created.status).toBe(201);
     const summary = (await created.json()) as AgentCreateResponse;
-    expect(summary.agent.skillCount).toBe(6);
+    expect(summary.agent.skillCount).toBe(8);
 
     // The installed list is the same shape a library install produces (name-sorted):
     // every skill of both merged plugins.
     const listed = (await (await member.get(base("seeded_agent"))).json()) as AgentSkillsResponse;
     expect(listed.skills.map((s) => s.name)).toEqual([
+      "agent-initialization",
       "penguin-config",
       "penguin-orchestration",
+      "penguin-plugin",
       "penguin-sdk",
       "software-engineering",
       "unified-llm-api",
@@ -715,7 +720,7 @@ describe("skills api", () => {
       ).toBe(201);
 
       const fresh = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
-      expect(fresh.skillCount).toBe(4);
+      expect(fresh.skillCount).toBe(6);
       expect(fresh.pluginUpdates).toEqual([]);
 
       // Age one installed copy: the library's same skill now carries a higher version than the

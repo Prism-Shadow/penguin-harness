@@ -3,10 +3,10 @@
  * way to skip setting model keys by hand. The page shows it to the owner while the TokenDance
  * group has models and no stored key; once dismissed it stays hidden in this browser.
  *
- * Its slow highlight sweep is the one decoration on the page, asked for by name, and it crosses
- * the brand name only; the rest of the banner stands still. It is CSS only (`.banner-shimmer`
- * in styles.css), and the word's resting state is plain ink, so the global reduced-motion rule
- * leaves it plain.
+ * Its slow highlight sweep is a deliberate emphasis on the sponsor's name, the one emphasis the
+ * banner carries, and it crosses the brand name only; the rest of the banner stands still. It is
+ * CSS only (`.banner-shimmer` in styles.css), and the word's resting state is plain ink, so the
+ * global reduced-motion rule leaves it plain.
  */
 import { useState } from "react";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";

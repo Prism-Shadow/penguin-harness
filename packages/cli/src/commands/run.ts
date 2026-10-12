@@ -15,8 +15,9 @@
  *   default_project / default_agent); Workspace = the CLI's cwd (resolved locally —
  *   server and CLI share the machine in the default flow); model = the Project default;
  *   approval mode allow-all (the historical run default).
- * - Every Session it creates is recorded as a `cli` Session (`session_meta.source`), which the
- *   Web App lists in the Background folder; `penguin chat` creates `user` Sessions instead.
+ * - Every Session it creates is recorded as a `cli` Session (`session_meta.source`), which is
+ *   archived until the user unarchives it (the Web App's Settings › Archived chats, `session ls
+ *   -a`); `penguin chat` creates `user` Sessions instead.
  * - `--session` accepts a full id or a unique fragment; it excludes `--workspace` and the
  *   model pair (neither can change after creation); `--approve` PATCHes the mode.
  * - `--title` names the Session (the manual rename the Web App's "Rename chat" does —
@@ -32,13 +33,14 @@
  */
 import { Option } from "commander";
 import type { Command } from "commander";
-import { VERSION } from "@prismshadow/penguin-core";
+import { buildInfo } from "@prismshadow/penguin-core";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
 import { parseTokenBudget, UNLIMITED_BUDGET } from "../goal-command.js";
 import { resolveThinkingLevel } from "../thinking-command.js";
 import { denyActivePrompt, promptApproval, resolveApprovalMode } from "../approval.js";
 import {
+  connectionLabel,
   resolveAgentId,
   resolveConnection,
   resolveProjectId,
@@ -233,7 +235,14 @@ export function registerRunCommand(program: Command, t: Messages): void {
       const out = process.stdout;
       if (!json) {
         out.write(
-          `${t.header("run", VERSION, session.agentId, session.workspace, session.modelId)}\n`,
+          `${t.header(
+            "run",
+            buildInfo().describe,
+            session.agentId,
+            session.workspace,
+            session.modelId,
+            connectionLabel(client.conn),
+          )}\n`,
         );
       }
 

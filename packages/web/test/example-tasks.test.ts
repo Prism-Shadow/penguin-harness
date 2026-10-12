@@ -1,16 +1,19 @@
 /**
- * The draft screen's example prompts (features/chat/example-tasks.ts and the dictionaries).
+ * The start page's example prompts (features/chat/example-tasks.ts and the dictionaries).
  * They are sent to an Agent as written, so what they must carry is a contract with the skills
- * and schedules that read them, held in both languages alike.
+ * and schedules that read them, held in both languages alike. The self-evolution toolkits' demos
+ * are not among them: each toolkit's card fills its plugin's own quick start, read from the
+ * server.
  *
  * - The two agent-evolution prompts carry the ids and targets the build and optimization skills
  *   read, name the skills in the order they run, stay short, and leave out what the Agent works
  *   out itself.
- * - The folders stay within one row of each other, so the draft page's height does not jump.
+ * - The folders stay within one row of each other, so the start page's height does not jump.
  * - Every scheduled-task example says when it fires (never in cron syntax), and the two that
  *   need an answer run in the conversation the user is in.
  * - The short example prompts stay under their length ceilings and keep their core in both
- *   locales.
+ *   locales — the RAG docs expert its source and citations, the Benchmark import its Skill, its
+ *   repository and its wait for the user's pick among them.
  * - The investment Copilot example keeps its "not investment advice" framing.
  */
 import { describe, expect, it } from "vitest";
@@ -105,7 +108,7 @@ describe("draft example tasks", () => {
 });
 
 describe("draft example catalog", () => {
-  // The draft page reserves no scroll area: its height is the folder rows plus the open
+  // The start page reserves no scroll area: its height is the folder rows plus the open
   // folder's rows, so a folder much longer than its siblings makes that height jump.
   it("keeps the folders within one row of each other", () => {
     const sizes = EXAMPLE_FOLDERS.map((folder) => folder.tasks.length);
@@ -148,14 +151,24 @@ describe("scheduled-task examples", () => {
 });
 
 /**
- * These five are written to be read by the user before they run, so each is a short paragraph —
+ * These seven are written to be read by the user before they run, so each is a short paragraph —
  * around 100 Chinese characters — carrying what to build plus the constraints the result would be
  * wrong without, and none of the step-by-step detail the Agent works out or asks about. The caps
- * below are a ceiling against re-inflation, not a target. Only these five are covered: the older
+ * below are a ceiling against re-inflation, not a target. Only these seven are covered: the older
  * briefs in the catalog are still far longer and are being shortened separately.
  */
 describe("short example prompts", () => {
   const shortExamples = [
+    {
+      id: "ragDocsExpert",
+      zhMarkers: ["claude-code-docs", "RAG", "来源引用"],
+      enMarkers: ["claude-code-docs", "RAG", "citing its sources"],
+    },
+    {
+      id: "benchmarkImport",
+      zhMarkers: ["`benchmark-design`", "penguin-harness-benchmark", "选定后"],
+      enMarkers: ["`benchmark-design`", "penguin-harness-benchmark", "once I say so"],
+    },
     {
       id: "rhythmRunner",
       zhMarkers: ["喵斯快跑", "企鹅", "音符图标", "节拍", "Perfect", "Great", "Miss"],

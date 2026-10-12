@@ -121,20 +121,10 @@ export function saveGroupOrder(
  *    nothing is stored;
  * 2. the pinned cluster first, then the stored order within the pinned cluster and
  *    within the rest independently (orderWithinPinPartitions), so a drag can never move
- *    a group across the pin boundary;
- * 3. `demote`, when the caller passes one: a stable partition applied LAST and within the
- *    unpinned cluster only, moving the groups it picks behind the rest.
+ *    a group across the pin boundary.
  *
  * An empty `order` returns the pinned-first list unchanged, which is exactly what the
  * sidebar rendered before any group was ever dragged.
- *
- * Demotion is the sidebar's folder-only groups — the ones holding nothing but folded
- * conversations, which a single evaluation creates by the dozen. It runs after the manual
- * order rather than instead of it, so the arrangement still reads inside each of the two
- * resulting blocks: the demoted groups keep their relative order and so do the kept ones,
- * and a group that gains an active row simply rejoins the others where it was all along.
- * Pinned groups are never demoted — a pin is the user saying where a group goes, and it is
- * how someone who wants a folder-only group at the top of the list says so.
  */
 export function orderGroups<T>(
   groups: readonly T[],
@@ -142,19 +132,9 @@ export function orderGroups<T>(
   opts: {
     pinned: ReadonlySet<string>;
     order: readonly string[];
-    /** Groups to send behind the rest of the unpinned cluster; absent = nothing is demoted. */
-    demote?: (group: T) => boolean;
   },
 ): T[] {
-  const ordered = orderWithinPinPartitions(groups, keyOf, opts.pinned, opts.order);
-  const demote = opts.demote;
-  if (demote === undefined) return ordered;
-  const kept: T[] = [];
-  const last: T[] = [];
-  for (const group of ordered) {
-    (!opts.pinned.has(keyOf(group)) && demote(group) ? last : kept).push(group);
-  }
-  return last.length === 0 ? ordered : [...kept, ...last];
+  return orderWithinPinPartitions(groups, keyOf, opts.pinned, opts.order);
 }
 
 /**

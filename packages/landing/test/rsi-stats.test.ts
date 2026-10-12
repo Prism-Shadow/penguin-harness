@@ -1,0 +1,112 @@
+/**
+ * The hero's catalogue rows ↔ their sources. RSI_TOOLKITS must name exactly the library plugins
+ * whose package.json files them under the `rsi` category, and BENCHMARKS exactly core's built-in
+ * Benchmarks, each linked to the upstream repository core records for it, so a new toolkit or
+ * built-in, or a moved upstream, fails here instead of leaving the landing page behind. Every
+ * link is absolute https, and only the Default toolkit has none; both dictionaries carry one
+ * kind per Benchmark and no derived count in the stat tiles; and the cases section's APE prompt
+ * is that toolkit's quick start, word for word.
+ */
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { describe, expect, it } from "vitest";
+import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../src/lib/rsi-stats";
+import { zh } from "../src/lib/strings";
+import type { Strings } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
+
+const pluginsRoot = join(__dirname, "..", "..", "..", "plugins");
+
+/** The `penguin` block of a plugin's package.json: the fields this test reads. */
+interface Manifest {
+  category?: unknown;
+  quick_start?: { prompt?: string; prompt_zh?: string };
+}
+
+const manifest = (plugin: string): Manifest => {
+  const pkg = JSON.parse(readFileSync(join(pluginsRoot, plugin, "package.json"), "utf8")) as {
+    penguin?: Manifest;
+  };
+  return pkg.penguin ?? {};
+};
+
+/** Library plugins (directories with a package.json) whose `penguin.category` is `rsi`. */
+const rsiPlugins = readdirSync(pluginsRoot, { withFileTypes: true })
+  .filter(
+    (entry) => entry.isDirectory() && existsSync(join(pluginsRoot, entry.name, "package.json")),
+  )
+  .filter((entry) => manifest(entry.name).category === "rsi")
+  .map((entry) => entry.name)
+  .sort();
+
+/**
+ * Core's built-in Benchmarks. Imported at run time through a URL rather than statically: a
+ * static import would pull core's sources, and everything they import, into this package's
+ * typecheck.
+ */
+async function builtinBenchmarks(): Promise<Array<{ id: string; upstream: string }>> {
+  const file = join(__dirname, "..", "..", "core", "src", "state", "builtin-benchmarks-data.ts");
+  const data = (await import(pathToFileURL(file).href)) as {
+    BUILTIN_BENCHMARKS: ReadonlyArray<{ id: string; upstream: { url: string } }>;
+  };
+  return data.BUILTIN_BENCHMARKS.map((benchmark) => ({
+    id: benchmark.id,
+    upstream: benchmark.upstream.url,
+  }));
+}
+
+const DICTIONARIES: ReadonlyArray<{ file: string; dict: Strings }> = [
+  { file: "strings.ts", dict: zh },
+  { file: "strings-en.ts", dict: en },
+];
+
+describe("hero catalogue ↔ its sources", () => {
+  it("RSI_TOOLKITS names exactly the library's rsi plugins", () => {
+    expect(rsiPlugins.length).toBeGreaterThan(0);
+    expect(RSI_TOOLKITS.map((toolkit) => toolkit.plugin).sort()).toEqual(rsiPlugins);
+  });
+
+  it("BENCHMARKS names core's built-in Benchmarks and links their upstreams", async () => {
+    expect(BENCHMARKS.map((benchmark) => ({ id: benchmark.id, upstream: benchmark.href }))).toEqual(
+      await builtinBenchmarks(),
+    );
+  });
+
+  it("every link is absolute https; only the Default toolkit has none", () => {
+    expect(MODEL_PROVIDERS.map((provider) => provider.id)).toEqual([
+      "openai",
+      "anthropic",
+      "gemini",
+      "deepseek",
+      "zai",
+      "moonshot",
+      "qwen",
+      "openrouter",
+    ]);
+    const links = [
+      ...MODEL_PROVIDERS.map((provider) => provider.href),
+      ...RSI_TOOLKITS.flatMap((toolkit) => (toolkit.href === null ? [] : [toolkit.href])),
+      ...BENCHMARKS.map((benchmark) => benchmark.href),
+    ];
+    for (const href of links) expect(new URL(href).protocol, href).toBe("https:");
+    const unlinked = RSI_TOOLKITS.filter((toolkit) => toolkit.href === null);
+    expect(unlinked.map((toolkit) => toolkit.plugin)).toEqual(["default-rsi-toolkit"]);
+  });
+
+  for (const { file, dict } of DICTIONARIES) {
+    it(`${file} has one kind per Benchmark and no catalogue counts in the stat tiles`, () => {
+      expect(dict.hero.benchmarkKinds).toHaveLength(BENCHMARKS.length);
+      expect(dict.hero.stats).toHaveLength(4);
+      for (const stat of dict.hero.stats) {
+        expect(stat.value).not.toMatch(/算法|Benchmark|Algorithms|Reproductions/);
+      }
+    });
+  }
+
+  it("the APE case prompt is the ape-rsi-toolkit quick start, word for word", () => {
+    const quickStart = manifest("ape-rsi-toolkit").quick_start;
+    expect(zh.cases.tabs[1]?.prompt).toBe(quickStart?.prompt_zh);
+    expect(en.cases.tabs[1]?.prompt).toBe(quickStart?.prompt);
+  });
+});

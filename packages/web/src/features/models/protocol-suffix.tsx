@@ -113,6 +113,7 @@ export function ProtocolSuffixMenu({
           aria-expanded={open}
           aria-label={`${S.models.protocol}: ${name}`}
           data-tooltip={S.models.protocolTriggerTitle(name)}
+          data-tooltip-extra
           onClick={() => setOpen((v) => !v)}
           className={
             "flex items-center gap-1 rounded px-1 py-0.5 font-mono text-xs transition-colors duration-150 " +

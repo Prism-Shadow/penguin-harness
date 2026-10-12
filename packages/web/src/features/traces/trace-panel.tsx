@@ -156,6 +156,7 @@ export function TracePanel({
               type="button"
               onClick={() => setFileIndex(f.index)}
               data-tooltip={`${f.date} · ${formatBytes(f.sizeBytes)}`}
+              data-tooltip-extra
               className={`rounded-md border px-2 py-0.5 font-mono text-xs transition-colors duration-150 ${
                 f.index === activeFile.index
                   ? "border-gray-400 bg-gray-200/70 font-semibold text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"

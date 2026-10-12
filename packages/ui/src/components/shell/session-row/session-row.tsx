@@ -327,13 +327,15 @@ export function SessionRow({
           )}
           <StatusSlot activity={activity} />
           {/* A numeral in the attention ink, with no pill: a filled chip beside the title reads as
-              a second button. */}
+              a second button. The numeral is a mark, so its words reach a screen reader as hidden
+              text and a pointer as the hint. */}
           {approvals !== undefined && approvals.count > 0 && (
             <span
               data-tooltip={approvals.label}
               className="shrink-0 text-xs font-semibold tabular-nums text-tone-attention-fg"
             >
-              {approvals.count}
+              <span aria-hidden>{approvals.count}</span>
+              <span className="sr-only">{approvals.label}</span>
             </span>
           )}
         </button>

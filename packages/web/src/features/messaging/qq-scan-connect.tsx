@@ -273,7 +273,7 @@ export function QQScanConnect({
         <Button
           size="sm"
           disabled={phase.kind === "starting" || enabled}
-          {...(enabled ? { title: S.qq.scanDisableFirst } : {})}
+          {...(enabled ? { title: S.qq.scanDisableFirst, "data-tooltip-extra": true } : {})}
           onClick={() => void start(false)}
         >
           {phase.kind === "starting" ? S.qq.scanStarting : S.qq.scanStart}

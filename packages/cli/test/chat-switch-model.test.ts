@@ -5,7 +5,8 @@
  * shapes — 202 streaming an ordinary manual compaction pair and then the new context's
  * `session_meta`, 200 carrying the Session back for one that never ran, and 409 with a code
  * per refusal. The REPL renders the compaction like any other and learns the new model from
- * the Session it re-reads.
+ * the Session it re-reads. Before the first message there is no Session to switch: the chat
+ * holds the model for the Session that message creates.
  */
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -140,7 +141,14 @@ describe("chat /switch-model: parsing and display (no request)", () => {
 describe("chat /switch-model: 202 streams the switch", () => {
   it("completed: renders the switch, refreshes the Session and runs later turns on the new model", async () => {
     server.switchModel = streamedSwitch("completed");
-    const out = await driveChat(["hello", SWITCH_LINE, "/switch-model", "/clear", "/exit"]);
+    const out = await driveChat([
+      "hello",
+      SWITCH_LINE,
+      "/switch-model",
+      "/clear",
+      "after the clear",
+      "/exit",
+    ]);
 
     const [first, replacement] = [...server.sessions.values()];
     // The POST carried the pair as the API spells it.
@@ -175,10 +183,10 @@ describe("chat /switch-model: 202 streams the switch", () => {
   });
 });
 
-describe("chat /switch-model: 200 switches a Session that never ran inline", () => {
+describe("chat /switch-model: a 200 carries the switched Session back inline", () => {
   it("prints the model line without watching a stream; the Session is the one the response carries", async () => {
     server.switchModel = "inline";
-    const out = await driveChat([SWITCH_LINE, "/switch-model", "/exit"]);
+    const out = await driveChat(["hello", SWITCH_LINE, "/switch-model", "/exit"]);
     expect(out).toContain(t.switchModelDone(CURRENT, TARGET));
     expect(out).not.toContain("[compaction]");
     expect(out).toContain(t.switchModelCurrent(TARGET));
@@ -186,18 +194,40 @@ describe("chat /switch-model: 200 switches a Session that never ran inline", () 
     const log = requestLog(session.sessionId);
     // The response is the refresh: nothing is read again.
     expect(log.slice(log.indexOf("POST /switch-model"))).not.toContain("GET /");
-    // Nothing ran, so there is nothing to resume.
-    expect(out).not.toContain("--resume");
   });
 
   it("follows the id the response carries: a Session the server rebuilt answers to a new one from here on", async () => {
     server.switchModel = "inline-rebuilt";
-    const out = await driveChat([SWITCH_LINE, "hello", "/exit"]);
+    const out = await driveChat(["hello", SWITCH_LINE, "again", "/exit"]);
     expect(out).toContain(t.switchModelDone(CURRENT, TARGET));
     const [rebuilt] = [...server.sessions.values()];
     // The next turn went to the id that answers now, on the model switched to.
     expect(requestLog(rebuilt!.sessionId)).toContain("POST /tasks");
+    expect(rebuilt!.tasks.map((b) => (b.input as Array<{ text: string }>)[0]!.text)).toEqual([
+      "hello",
+      "again",
+    ]);
     expect(rebuilt!.modelId).toBe("anthropic/claude-opus-5");
+  });
+});
+
+describe("chat /switch-model before the first message", () => {
+  it("holds the model for the Session the first message creates: no switch request, the create names it", async () => {
+    const out = await driveChat([SWITCH_LINE, "/switch-model", "hello", "/exit"]);
+    expect(out).toContain(t.switchModelHeld(TARGET));
+    // Bare /switch-model shows what the conversation will start on.
+    expect(out).toContain(t.switchModelCurrent(TARGET));
+    expect(server.requests.some((r) => r.path.endsWith("/switch-model"))).toBe(false);
+    const creates = server.requests.filter(
+      (r) => r.method === "POST" && r.path.endsWith("/sessions"),
+    );
+    expect(creates).toHaveLength(1);
+    expect(creates[0]!.body).toMatchObject({
+      provider: "openrouter",
+      modelId: "anthropic/claude-opus-5",
+    });
+    const [only] = [...server.sessions.values()];
+    expect(only!.modelId).toBe("anthropic/claude-opus-5");
   });
 });
 
@@ -220,7 +250,7 @@ describe("chat /switch-model: 409 refusals print one localized line each", () =>
   for (const [code, line] of cases) {
     it(code, async () => {
       server.switchModel = { refuse: code };
-      const out = await driveChat([SWITCH_LINE, "/switch-model", "/exit"]);
+      const out = await driveChat(["hello", SWITCH_LINE, "/switch-model", "/exit"]);
       expect(out).toContain(`${line}\n`);
       expect(out).not.toContain(t.switchModelDone(CURRENT, TARGET));
       // Still on the original model; no refresh was needed.
@@ -232,7 +262,7 @@ describe("chat /switch-model: 409 refusals print one localized line each", () =>
 
   it("an unknown 409 code prints the server's error", async () => {
     server.switchModel = { refuse: "something_new" };
-    const out = await driveChat([SWITCH_LINE, "/exit"]);
+    const out = await driveChat(["hello", SWITCH_LINE, "/exit"]);
     expect(out).toContain(
       t.error(t.client.httpError(409, "something_new", "Refused: something_new.")),
     );

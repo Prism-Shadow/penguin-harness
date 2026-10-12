@@ -5,7 +5,8 @@
  * clipped by any ancestor's overflow (a Modal's scrolling body, a table's overflow-x-auto, etc.).
  *
  * Positioned once on expand: opens upward if there isn't enough room below and there's more room
- * above, and the left edge is clamped within the viewport. Closes on: outside click / Esc / a
+ * above, and the left edge is clamped within the viewport — first against the declared width,
+ * then against the width the panel actually rendered at. Closes on: outside click / Esc / a
  * scroll that moved the trigger / window resize. Esc uses capture and stops propagation — Modal
  * also listens for Esc during the window bubble phase and registers earlier, so without stopping
  * propagation it would close both the panel and the dialog together; scroll likewise uses capture
@@ -34,6 +35,14 @@ export interface PortalPanelPosition {
 
 const PANEL_GAP = 4;
 const VIEWPORT_MARGIN = 16;
+
+/** The panel's left edge: under the trigger's, moved left as far as a `width`-wide panel needs to stay in the viewport. */
+function clampLeft(triggerLeft: number, width: number): number {
+  return Math.max(
+    VIEWPORT_MARGIN,
+    Math.min(triggerLeft, window.innerWidth - width - VIEWPORT_MARGIN),
+  );
+}
 
 /**
  * Does a scroll of `target` move the content `owner` sits in — the question an anchored panel has
@@ -85,18 +94,27 @@ export function usePortalPanel({
     const spaceAbove = rect.top;
     const height = Math.min(estimatedHeight, window.innerHeight * 0.7);
     const openUpward = spaceBelow < height && spaceAbove > spaceBelow;
-    const width = panelWidth ?? rect.width;
-    const left = Math.max(
-      VIEWPORT_MARGIN,
-      Math.min(rect.left, window.innerWidth - width - VIEWPORT_MARGIN),
-    );
     setPosition({
       topPx: openUpward ? undefined : rect.bottom + PANEL_GAP,
       bottomPx: openUpward ? window.innerHeight - rect.top + PANEL_GAP : undefined,
-      left,
+      left: clampLeft(rect.left, panelWidth ?? rect.width),
       triggerWidth: rect.width,
     });
   }, [open, estimatedHeight, panelWidth]);
+
+  // The clamp above trusts `panelWidth`, but a panel sized by its content, or by a class whose
+  // length follows the theme's spacing unit or the app's root font size (`w-72` is 288px only in
+  // one theme at one text size), renders at another width and could hang off the right edge.
+  // Once the panel is in the document, clamp again against the width it really has — still
+  // inside the layout phase, so the browser never paints the first guess. `offsetWidth`, not the
+  // bounding rect: the opening animation starts the panel scaled down, and a rect read on that
+  // frame is the shrunken width, which would park the panel inside the margin.
+  useLayoutEffect(() => {
+    if (!open || position === null || !panelRef.current || !triggerRef.current) return;
+    const width = panelRef.current.offsetWidth;
+    const left = clampLeft(triggerRef.current.getBoundingClientRect().left, width);
+    if (Math.abs(left - position.left) >= 0.5) setPosition({ ...position, left });
+  }, [open, position]);
 
   useEffect(() => {
     if (!open) return;

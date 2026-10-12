@@ -520,6 +520,31 @@ export const en: Strings = {
     off: "Turn off",
   },
 
+  archivedSessions: {
+    search: "Search archived chats",
+    sourceFilter: "Source",
+    projectFilter: "Project",
+    allSources: "All sources",
+    allProjects: "All projects",
+    count: (n: number): string => (n === 1 ? "1 chat" : `${n} chats`),
+    selectAll: "Select all",
+    deselectAll: "Deselect all",
+    select: (title: string): string => `Select ${title}`,
+    selected: (n: number): string => `${n} selected`,
+    clearSelection: "Clear selection",
+    moreGroups: (n: number): string => `More groups (${n})`,
+    empty: "No archived chats",
+    noMatches: "No matching chats",
+    running: "Running",
+    loadFailed: (reason: string): string => `Could not read the archived chats: ${reason}`,
+    actionFailed: (reason: string): string => `That did not finish: ${reason}`,
+    deleteTitle: (n: number): string => (n === 1 ? "Delete chat" : `Delete ${n} chats`),
+    deleteConfirm: (n: number): string =>
+      n === 1
+        ? "Delete this chat? Its messages and Trace will be removed permanently."
+        : `Delete these ${n} chats? Their messages and Traces will be removed permanently.`,
+  },
+
   tracePanel: {
     empty: "No traces yet",
     emptyHint: "This session has not produced a Trace file yet",
@@ -551,6 +576,9 @@ export const en: Strings = {
     generalTitle: "General",
     appearanceTitle: "Appearance",
     shortcutsTitle: "Keyboard shortcuts",
+    archivedTitle: "Archived chats",
+    archivedInfo:
+      "Chats that are not in the sidebar: the ones you archived, and the ones a program opened (the API, scheduled tasks, penguin run) until you unarchive them. An archived chat shows only its title and time; unarchived, it returns to the sidebar and later runs leave it there.",
     /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
     shortcutsInfo:
       "Shortcuts follow the platform: ⌘ on macOS, Ctrl elsewhere. A change applies at once in every tab of this browser; the account's other browsers and the desktop app pick it up the next time they load. Bindings are stored per account and per platform, so a Mac and a Windows machine each keep their own. A browser tab cannot receive the chords the browser itself reserves (Ctrl+W / ⌘W, for example), so those work in the desktop app only; a chord the browser also uses (Ctrl+P / ⌘P prints) takes over that browser function in a browser tab. The list marks both.",
@@ -582,6 +610,8 @@ export const en: Strings = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
+    /** Under the two switches while the address has unsaved edits: they act on the saved address. */
+    saveProxyAddressFirst: "Save the proxy address first",
     /** Reachability test: the block's heading, and its button at rest and while probing. */
     proxyProbe: "Reachability test",
     proxyProbeRun: "Test",
@@ -611,7 +641,9 @@ export const en: Strings = {
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
-      "The options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here.",
+      "Below the switch: the options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here. The switch only changes what this browser lists on the Plugins page.",
+    /** The page's own switch, above the server's cards: a display preference of this browser. */
+    pluginsIncompatibleOnly: "Show only incompatible plugins",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",
     pluginSecretClear: "Clear stored value",
@@ -711,7 +743,7 @@ export const en: Strings = {
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
     notifications: "Task completion notifications",
     notificationsInfo:
-      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
+      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot and shows a confirmation notification — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
     notificationsDenied:
       "The system has denied notifications for this app. Allow them in your system notification settings, then turn this on again.",
     notificationsDismissed:
@@ -1021,6 +1053,9 @@ export const en: Strings = {
 
   /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
+    enabledTitle: "System notifications enabled",
+    enabledBody:
+      "You will be notified here when a Task finishes while the window is in the background.",
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
@@ -1071,10 +1106,17 @@ export const en: Strings = {
     confirmSaveTitle: "Save changes",
     confirmSaveBody:
       "Save these changes? They will be written to the configuration files on the server.",
-    /** Leaving or cancelling a form that holds unsaved edits (Agent settings tabs, the handbook editor, the binding dialog). */
+    /**
+     * The one prompt every way of leaving a form with unsaved edits shows (the shared UI
+     * package's UnsavedChangesHost): its accessible name, the question, the danger button that
+     * discards and leaves, and the button that stays with the edits.
+     */
     discardTitle: "Discard unsaved changes",
-    discardBody: "Discard your unsaved changes? They cannot be recovered.",
-    discard: "Discard",
+    discardBody: "Discard unsaved changes? What you typed will be lost.",
+    discard: "Discard changes",
+    keepEditing: "Keep editing",
+    /** A page form's button beside Save: puts every field back to what is stored, without asking. */
+    reset: "Reset",
     none: "(none)",
     retry: "Retry",
     unknownError: "Request failed, please try again later",
@@ -1511,8 +1553,8 @@ export const en: Strings = {
       ],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "prompt (summarization prompt)",
-    maxTurnsInvalid: "max_turns must be > 0 or -1",
-    timeoutInvalid: "timeoutMs must be > 0 or -1",
+    numberInvalid: "Must be a positive integer or -1",
+    numberCannotClear: "A saved value can't be cleared: enter a number, or use Reset to restore it",
     toolFieldInvalid: (name: string, field: string) =>
       `${name}: ${field} must be a positive integer or -1`,
     toolPermission: "permission",
@@ -1651,7 +1693,7 @@ export const en: Strings = {
     kernelListSeparator: ", ",
     apiEnable: "Enable API access",
     apiEnableHint:
-      "External programs can talk to this agent with the URL, a key and the Agent ID; the conversations appear in the sidebar's Background folder.",
+      "External programs can talk to this agent with the URL, a key and the Agent ID; the conversations are archived, listed in Settings › Archived chats.",
     apiOwnerOnly: "Only the Project owner can change these settings.",
     apiAdminOff:
       "An admin has turned the Agent API off for this server: every API request is refused, and the settings and keys here are kept.",
@@ -1690,7 +1732,7 @@ export const en: Strings = {
     apiOn: "API access on",
     apiTry: "Try it",
     apiTryHint:
-      "Runs the route a program calls, your sign-in in place of a key, and shows what it receives; filed under Background.",
+      "Runs the route a program calls, your sign-in in place of a key, and shows what it receives; the conversation is archived, listed in Archived chats.",
     apiTryExample: "What time is it now?",
     apiTryRun: "Run",
     apiTryStop: "Stop",
@@ -2084,8 +2126,10 @@ export const en: Strings = {
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
       `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
-    confirmSaveTitle: "Save model settings",
-    confirmSave: (name: string): string => `Save the changes to "${name}"?`,
+    addAction: "Add",
+    confirmCancelPromotionTitle: "Cancel promotion",
+    confirmCancelPromotion: (name: string, pct: number): string =>
+      `Saving ends the ${pct}% promotion on "${name}": a changed price or model identity cancels it. Save anyway?`,
     confirmDefaultTitle: "Set as default model",
     confirmDefault: (name: string): string =>
       `Make "${name}" the default model? New sessions will use it by default.`,
@@ -2221,7 +2265,6 @@ export const en: Strings = {
     readOnlyHint: "Members are read-only; only the owner can edit the vault",
     keyHint: "Letters, digits and underscores; must not start with a digit",
     keyInvalid: "Invalid name: only letters, digits and underscores, not starting with a digit",
-    valueRequired: "Value must not be empty",
     aiAddTitle: "Add secrets with AI",
     aiAddIntro:
       "A secret value typed here is sent to the model provider, recorded in the conversation's Trace, and shown again in the command the agent runs. The safer way is to let AI create only the key names and tell you what each is for, then fill in the values in the vault by hand.",
@@ -2458,6 +2501,10 @@ export const en: Strings = {
         : `This build cannot fully run ${n} installed plugins. Their rows say why.`,
     /** The notice's action: filters the list down to those rows. */
     unsatisfiedShow: "Show",
+    /** Page notice while Settings › Plugins narrows the list to the incompatible plugins. */
+    incompatibleOnlyNotice: "Only incompatible plugins are shown.",
+    /** That notice's action: turns the filter off. */
+    incompatibleOnlyShowAll: "Show all",
     repair: "Fix with AI",
     repairTitle: (name: string) => `Fix ${name} with AI?`,
     repairBody: (name: string) =>
@@ -3000,12 +3047,21 @@ export const en: Strings = {
     onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
-    draftSubtitle: "The self-evolving agent that excels at AI development tasks",
-    /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
+    draftSubtitle: "The most comprehensive agent self-evolution platform",
+    start: {
+      metrics: {
+        agents: "Agents",
+        toolkits: "RSI algorithms",
+        benchmarks: "Benchmarks",
+      },
+      examplesTitle: "Examples and shortcuts",
+    },
+    /** Folder names for the start page's collapsible examples (bookmark-style: exactly one open at a time). */
     exampleFolders: {
-      webapps: "Build web apps",
-      agents: "Build and optimize agents",
-      schedules: "Create scheduled tasks",
+      apps: "Build an AI app from one sentence",
+      webapps: "Web pages and mini games",
+      evolve: "Evaluate and optimize agents",
+      schedules: "Scheduled tasks",
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "Click to fill the composer — edit it if you like, then send",
@@ -3102,6 +3158,13 @@ When done, open index.html in a browser and self-test once.`,
           "Great / Miss for each hit, score combos, and let the difficulty climb as the track goes " +
           "on. Pure front end, one file, playable straight from file://.",
       },
+      ragDocsExpert: {
+        label: "A RAG docs expert from one sentence",
+        desc: "Collect the Claude Code docs and build a RAG Q&A app that cites its sources",
+        prompt:
+          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG " +
+          "app that answers Claude Code questions as a configuration expert, citing its sources.",
+      },
       investmentCopilot: {
         label: "Conversational investment analyst",
         desc: "A conversational market Copilot on the Penguin SDK: the home page lists what is trending, with the market factors behind every call",
@@ -3115,16 +3178,17 @@ When done, open index.html in a browser and self-test once.`,
           'stock for me": resolve a company name to its ticker itself, and when there is no match ' +
           "or the company is not listed, say so rather than inventing a quote.",
       },
-      missionControl: {
-        label: "Build a custom workflow UI: mission control",
-        desc: "A workflow tab beside the chat: dispatch a task to several agents at once and watch every Session's live status",
+      legalDesk: {
+        label: "A legal agent: upload documents, download reports",
+        desc: "A new legal agent behind a workflow tab with only an upload, a file list and report downloads — no conversation in sight",
         prompt:
-          "Build yourself a workflow: a mission-control tab beside this chat. I type a task and pick " +
-          "one or more of this Project's Agents; it opens a Session for each and runs them in " +
-          "parallel. Every run is a card with a live, animated status (queued, running, done) and " +
-          "its elapsed time, and the board survives a reload. Add a second tab with the numbers — " +
-          "runs per Agent, average duration — and a button that fills the whole app, like a wall " +
-          "display. Take every colour from the theme variables so it looks right in light and dark.",
+          "Create a legal agent that reviews contracts, agreements and other legal documents: it " +
+          "finds risky clauses, explains why, and suggests revisions. Then build yourself a " +
+          "workflow tab as its desk: when I upload a file, the legal agent analyzes it in the " +
+          "background and produces an analysis report for me to download. The page has only an " +
+          "upload, a file list (each file's processing status) and the report downloads, with no " +
+          "conversation shown. Take every colour from the theme variables so it looks right in " +
+          "light and dark.",
       },
       agentBenchmarkBuild: {
         label: "Build a general-purpose decision agent and its benchmark",
@@ -3148,7 +3212,7 @@ Scenarios:
 3. Choose investment actions from a strategy, historical markets, and current indicators.`,
       },
       agentOptimization: {
-        label: "Improve the general-purpose decision agent's accuracy",
+        label: "Default optimization: improve the decision agent's accuracy",
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
@@ -3158,6 +3222,14 @@ Scenarios:
 - runs: \`3\`
 - desired_score: \`>=95\`
 - candidate_round_limit: \`5\``,
+      },
+      benchmarkImport: {
+        label: "Import a Benchmark: list the packages in the repository",
+        desc: "List the importable Benchmark packages in penguin-harness-benchmark and import the one I pick through benchmark-design",
+        prompt:
+          "Use the `benchmark-design` Skill: list the Benchmark packages under " +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages, mark the " +
+          "ones this Project already has, and import the one I pick once I say so.",
       },
       dailyPlan: {
         label: "A 9am daily planning check-in",
@@ -3393,9 +3465,11 @@ Scenarios:
             ? "Response incomplete or unparseable"
             : kind === "network"
               ? "Network or service temporarily unavailable"
-              : kind === "failed"
-                ? "The model provider returned an error"
-                : "The request failed";
+              : kind === "image_rejected"
+                ? "The model provider rejected an image in this turn's input (replaced with a note)"
+                : kind === "failed"
+                  ? "The model provider returned an error"
+                  : "The request failed";
       const action =
         state === "gaveUp"
           ? `giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`
@@ -3413,6 +3487,10 @@ Scenarios:
     reconnectRetryNow: "Retry now",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */
     reconnectGiveUp: "Give up",
+    /** "Retry" on a failed run's last line (the error banner, or a reconnect line that gave up): sends the failed turn's input again, with no new message. */
+    retryFailedRun: "Retry",
+    /** Toast when Retry finds nothing held: the failed turn's input already went out with a later message. */
+    retryNothing: "Nothing to retry: the failed turn's input has already been sent.",
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:
@@ -3451,6 +3529,11 @@ Scenarios:
     statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
     statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}, tools ${toolMs}`,
+    statApiTime: "Model API time",
+    statToolTime: "Tool wall time",
+    costPartCacheRead: "Cached input",
+    costPartCacheWrite: "Uncached input",
+    costPartOutput: "Output",
     statInput: "Input tokens",
     statCached: "cached",
     statOutput: "Output tokens",
@@ -3738,20 +3821,15 @@ Scenarios:
     expandRestSessions: (n: number) => `Show ${n} more ${n === 1 ? "chat" : "chats"}`,
     /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
     loadMoreSessions: "Load more chats",
-    /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
-    folderGroups: {
-      background: (n: number) => `Background (${n})`,
-      archived: (n: number) => `Archived (${n})`,
-    },
     sessionSource: {
+      user: "User",
       api: "API",
       schedule: "Scheduled",
-      subagent: "Subagent",
       cli: "CLI",
     },
-    /** Tooltip of a folder-only group's header (nothing active of its own): what its folders hold, plus the Workspace path where the header has one. */
-    folderOnlyGroup: (n: number, path?: string) =>
-      `Folded tasks only: ${n} conversation${n === 1 ? "" : "s"}${path ? ` (${path})` : ""}`,
+    archivedStub: {
+      note: "This chat is archived. Unarchive it to read it; it returns to the sidebar.",
+    },
     /** The skills note's fixed phrase (the count picks the plural); the skill names follow it as `nameList`. */
     skillsLabel: (count: number): string => `Using skill${count === 1 ? "" : "s"}`,
     /** Attached-file notice above a user message: this fixed phrase, then the file names as `nameList`. */
@@ -4038,8 +4116,16 @@ Scenarios:
     /** Why the enable switch is gated while the OTHER channel holds the connection. */
     otherEnabledHint: (other: string): string =>
       `Only one channel can be enabled per conversation: turn off the ${other} connection first`,
-    /** Why the enable switch is gated while the selected channel has no stored credential. */
-    credentialMissingHint: "Enter and save the credential first, then enable the connection",
+    /**
+     * Why the enable switch is gated while the selected channel has no stored credential — one
+     * per channel, because what is missing differs: a scan, typed fields, or either.
+     */
+    credentialMissingHint: {
+      feishu: "Enter and save the App ID and App Secret first, then enable the connection",
+      telegram: "Enter and save the Bot Token first, then enable the connection",
+      qq: "Scan the QR code, or enter and save the App ID and App Secret, then enable the connection",
+      wechat: "Scan the QR code to link WeChat first, then enable the connection",
+    },
     /** Why the clear checkbox is gated while the channel's connection is enabled. */
     disableBeforeClearHint: "Disable the connection before clearing the credential",
     /** The saved delivery option: render a reply's Markdown in the channel's own markup. */
@@ -4094,6 +4180,12 @@ Scenarios:
       `A message arrived at ${when} but its task never started: ${detail}`,
     deliveryFailedSend: (when: string, detail: string) =>
       `The task ran but its reply failed to go out at ${when}: ${detail}`,
+    /**
+     * WeChat only, in the delivery-failure line's place: replies the platform would not take
+     * yet are held for the user's next WeChat message, which is not a failure.
+     */
+    repliesHeld: (when: string) =>
+      `Replies waiting since ${when}: WeChat accepts only a limited number of the bot's replies, and only for a while after you message it. They go out as soon as you next message the bot in WeChat.`,
     /** A connection failure the connection has since recovered from (lastError is gone by then). */
     lastConnectionError: (when: string, detail: string) =>
       `The connection dropped at ${when}: ${detail}`,
@@ -4104,7 +4196,7 @@ Scenarios:
     faqWhatBinding:
       "The same bot can stay saved in several conversations, but only one of them may have its connection enabled at a time. To move it, turn the connection off where it is on and enable it here — no credential has to be deleted.",
     faqTroubleTitle: "Troubleshooting",
-    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent). */
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent; WeChat direct chats only; WeChat's per-message reply budget and window). */
     troubleNoChat:
       "“Send test message” disabled? The bot must have received one message first, so it knows which chat to send to.",
     troubleConnError:
@@ -4116,6 +4208,9 @@ Scenarios:
     /** WeChat has no group inbound at all — the answer to "I @-ed it in a group and nothing happened". */
     troubleWeChatDirect:
       "The WeChat channel receives direct chats only: @-mentioning the bot in a group does nothing at all. Message it directly instead.",
+    /** WeChat's reply budget and window — the answer to "replies arrive combined, or late". */
+    troubleWeChatReplyWindow:
+      "Replies in WeChat arrive combined, or late? WeChat lets the bot send about 10 messages for each message you send it, and only for a while after your last one. A run that produces more is combined into fewer messages, and anything WeChat will not take yet is held and sent as soon as you next message the bot.",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
@@ -4371,7 +4466,7 @@ Scenarios:
       },
       {
         title: "Optimize",
-        text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves.",
+        text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves. You can also pick another self-evolution algorithm.",
       },
     ],
     /** The first step card's text for a Project member: no Create manually, which is the owner's. */
@@ -4448,7 +4543,15 @@ Scenarios:
     colDuration: "Duration",
     colCase: "Case",
     colRun: "Run",
-    colSession: "Session",
+    runOpenSession: "Open the Session this run ran in",
+    runArchivedTitle: "This run's Session is archived",
+    runArchivedBody:
+      "Archived Sessions are not in the sidebar. Find it in Settings › Archived chats by its title or ID.",
+    runArchivedSessionTitle: "Title",
+    runArchivedSessionId: "ID",
+    runArchivedCopyId: "Copy Session ID",
+    runArchivedOpen: "Open Archived chats",
+    runSessionUntitled: "(untitled Session)",
     /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
     copyTrialName: "Copy Harbor trial name",
     askAi: "Ask AI",
@@ -4656,7 +4759,7 @@ Scenarios:
     evaluatorAgentHint:
       "The one that spawns the evaluation subagents, scores against the rubric and writes the scoreboard; needs the agent-evaluation Skill",
     evaluatorMissingSkill:
-      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
+      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-evaluation plugin (Agent Evaluation) on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
       "The model this conversation runs on, the Project's default model unless changed; the tested agent is evaluated on this same model, at the thinking level it is configured with",
@@ -4684,7 +4787,7 @@ Scenarios:
     optimizerAgentHint:
       "The one that reads the scores and Traces and edits the Test Agent; needs the agent-optimization Skill",
     optimizerMissingSkill:
-      "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the agent-tuning plugin on it first.",
+      "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the default-rsi-toolkit plugin (Default RSI Toolkit) on it first.",
     testedAgentHint:
       "The agent whose Agent State is edited; its scores are recorded under it and compared only against its own same-label history",
     sessionModel: "Model of the optimizer's conversation",
@@ -4719,11 +4822,66 @@ Scenarios:
       "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
       "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
       "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
+    methodField: "Method",
+    methodHint:
+      "The self-evolution algorithm that improves the agent; each one is a toolkit from the plugin library",
+    methods: {
+      default: {
+        label: "Default (trial → reflect → improve)",
+        blurb:
+          "The default loop: one falsifiable hypothesis and one bounded change per round; kept only when the score strictly improves",
+      },
+      opro: {
+        label: "OPRO",
+        blurb: "Proposes instructions from the scored history (Yang et al., 2023)",
+      },
+      ape: {
+        label: "APE",
+        blurb: "Induces an instruction from input/output examples (Zhou et al., 2022)",
+      },
+      ace: { label: "ACE", blurb: "Evolves a playbook from training Traces (Zhang et al., 2025)" },
+      awm: {
+        label: "AWM",
+        blurb: "Induces workflow memory from successful trajectories (Wang et al., 2024)",
+      },
+    },
+    methodBudgetHint:
+      "This method sets its own budget: the paper's defaults reduced to a smoke profile, unless Focus says otherwise",
+    methodOptimizerHint: (skill: string): string =>
+      `The one that runs the method and edits the Test Agent; needs the ${skill} Skill`,
+    methodMissingSkill: (plugin: string, skill: string): string =>
+      `This agent does not have the ${skill} Skill installed and cannot run this method — install the ${plugin} plugin on it from the plugin library, or switch to the default agent.`,
+    rsiOptimizeTail: (p: {
+      skill: string;
+      label: string;
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      provider?: string;
+      modelId?: string;
+    }): string => {
+      const pinned =
+        p.provider && p.modelId
+          ? `- provider: \`${p.provider}\`\n- model_id: \`${p.modelId}\`\n`
+          : "";
+      return (
+        `Use the \`${p.skill}\` Skill to reproduce ${p.label} on the Test Agent against its frozen Benchmark.\n\n` +
+        `- test_agent_id: \`${p.targetAgentId}\`\n` +
+        `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
+        `- runs: \`${p.runs}\`\n` +
+        pinned +
+        "\n" +
+        (pinned !== "" ? "Evaluate with exactly this provider and model. " : "") +
+        "Run the method the way its paper does, at the Skill's smoke budget unless I set one above; ask me only for inputs the method requires and I have not given. " +
+        "Measure the baseline and every candidate through the Skill's own evaluation reference, keep the Test Agent's runtime fixed, record every complete evaluation in `scoreboard.yaml` under the same label, " +
+        "and finish by reporting the baseline score, the final score, the retained version and what the method changed."
+      );
+    },
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     importBenchmark: "Import benchmark",
     importChatTitle: "Recommended: import it by chatting with the agent",
     importChatWhy:
-      "The agent pins the link to one commit, fetches only that folder and reads every file before writing it to the Evaluation Center — more reliable than a bare upload.",
+      "The agent follows the benchmark-design Skill's import procedure: it pins the link to a commit, fetches only that folder and reads every file before anything is written — more dependable than a raw upload.",
     importSourceLabel: "Benchmark source",
     importSourceHint:
       "A folder link in a GitHub repository (such as …/tree/<commit>/packages/<id>), a local path, or a description",
@@ -4739,11 +4897,11 @@ Scenarios:
     },
     importPromptTail: (projectId: string): string =>
       [
+        'If the `benchmark-design` Skill is installed, follow its `reference/package.md`, section "Importing a package" — source resolution, the pinned commit, companion train/test packages, the post-import check and the optional smoke probe are all there; without that Skill, the rules below are enough:',
         "The package is a folder with `benchmark_config.toml` (keys: id, title, description, version `YYYY.MM.DD.N`, status, runs, and an `[origin]` table) and one `CASE-*/` per case, holding `statement/README.md` and `rubric/README.md`.",
         "Fetch only that folder, at a commit, into a temporary directory: resolve the link's branch or tag to its 40-hex commit (`git ls-remote`), download it (a codeload tarball or a sparse checkout), and read every file before importing anything — refuse if it is not a Benchmark package, if its `status` is not `published`, or if it holds anything but text materials. Do not copy large upstream materials; the statements link them.",
         `Import it with \`penguin benchmark import <the folder> --project-id ${projectId} --origin-url <the link as given> --origin-ref <the 40-hex commit> --origin-path <the folder inside the repository>\` (without the \`--origin-*\` options for a source that is not a repository folder). The server checks it as it checks an uploaded zip and writes \`benchmarks/<id>/\` itself, with the git origin, the package's \`version\` and a \`scoreboard.yaml\` holding \`evaluations: []\`; never write under \`benchmarks/\` yourself.`,
         "If the command says the Benchmark already exists, stop and ask me before overwriting — an overwrite (`--overwrite`) replaces the whole directory, its `scoreboard.yaml` and `.jobs/` included, and the server refuses it while an evaluation of that Benchmark is still running. Then report the id, title, version and case count the command printed; the Evaluation Center lists it from then on.",
-        'If the `benchmark-design` skill is installed, read its `reference/package.md` ("Importing a package") first.',
       ].join("\n"),
     importCopyPrompt: "Copy prompt",
     importOpenChat: "Open a new chat",
@@ -5068,16 +5226,11 @@ Scenarios:
       budget: "Monthly budget",
       budgetHint:
         "A monthly cap, leave empty for unbounded; counts the employee plus every subordinate",
-      hireConfirm: (name: string, manager: string): string =>
-        `Add ${name} to the organization, reporting to ${manager}? This rewrites the chart file.`,
+      hireStdioQuestion: (name: string): string => `Hire ${name}?`,
       hired: (name: string): string => `Hired ${name}`,
       /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `Set the budget of ${name}`,
-      budgetConfirm: (name: string, budget: string): string =>
-        `Set the monthly budget of ${name} to ${budget}? Past 80% warns; at 100% its automatic triggers pause.`,
       reportsToTitle: (name: string): string => `Change who ${name} reports to`,
-      reportsToConfirm: (name: string, manager: string): string =>
-        `Have ${name} report to ${manager}? Its subordinates move along with it.`,
       reportsToCycle: "Cannot report to itself or to one of its own subordinates",
       renewDeskTitle: (name: string): string => `A new desk session for ${name}`,
       renewDeskExplain:
@@ -5109,13 +5262,12 @@ Scenarios:
       clearBudget: "Set unbounded",
       currentValue: (value: string): string => `Current: ${value}`,
       manager: "Manager",
-      reportsToHint: "Only employees outside its own subtree are listed",
+      reportsToHint:
+        "Only employees outside its own subtree are listed; its subordinates move along with it",
       thinkingLevelTitle: (name: string): string => `Set ${name}'s thinking level`,
       thinkingLevelInfo:
         "Written to the employee's Agent config, the same setting as this Agent's in development mode. The desk session uses it from its next model context and new ticket sessions open on it; a level picked inside the desk session pins only that session.",
       thinkingLevelDefault: (level: string): string => `Project default (${level})`,
-      thinkingLevelConfirm: (name: string, level: string): string =>
-        `Change ${name}'s thinking level to "${level}"? This writes the Agent's config.`,
       thinkingLevelPinned: (level: string): string =>
         `The current desk session is pinned to "${level}" on its own; this setting reaches the desk from its next desk session.`,
     },
@@ -5144,8 +5296,6 @@ Scenarios:
       periodHint: "30m / 12h / 7d, empty for a one-off; 5m at the shortest",
       delete: "Delete event",
       deleteConfirm: (name: string): string => `Delete event "${name}"?`,
-      saveConfirm: (name: string): string =>
-        `Save event "${name}"? This rewrites its calendar file.`,
       outcome: "Outcome",
       lastFired: "Last fired",
       nextFire: "Next fire",
@@ -5271,8 +5421,6 @@ Scenarios:
         "This ticket is invalid: its status disagrees with its column, or its id is duplicated",
       invalidFiles: "Ticket files that failed to parse",
       edit: "Edit fields",
-      saveConfirm: (title: string): string =>
-        `Save the changes to "${title}"? This rewrites the ticket file.`,
       saved: "Ticket saved",
       created: "Ticket created",
       detail: "Ticket detail",
@@ -5655,6 +5803,10 @@ Scenarios:
       telegram_no_chat:
         "No Telegram message received yet — message the bot once in Telegram first.",
       telegram_send_failed: "Sending the Telegram message failed.",
+      wechat_no_chat: "No WeChat message received yet — message the bot once in WeChat first.",
+      wechat_send_failed: "Sending the WeChat message failed.",
+      wechat_needs_recent_message:
+        "WeChat is not accepting messages from the bot right now — message the bot in WeChat first, then send the test message.",
       another_channel_enabled:
         "Another channel's connection is enabled on this conversation: disable it first.",
       // Deliberately names nothing about the other conversation: it may live in a Project

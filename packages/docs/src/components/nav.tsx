@@ -1,9 +1,10 @@
 /**
  * Sticky top bar, landing-parity: logo + site name, then the SAME link row as the
- * landing page's nav (section anchors on the landing home, blog, docs) with the same
- * sliding hover pill — so the two sites render an identical navbar. Section/blog links
- * are plain anchors into the landing SPA one level up; "Docs" routes to this site's
- * own root and is always the active link. The right cluster also matches the landing
+ * landing page's nav (section anchors on the landing home, blog, download, docs,
+ * gallery) with the same sliding hover pill — so the two sites render an identical
+ * navbar. Section/blog/download links are plain anchors into the landing SPA one level
+ * up and the gallery link one into its sibling SPA; "Docs" routes to this site's own
+ * root and is always the active link. The right cluster also matches the landing
  * nav (language + theme toggles, GitHub) and ends with the sidebar toggle on <lg
  * screens — the same slot where the landing nav keeps its mobile-menu button on <md.
  *
@@ -15,7 +16,8 @@ import { useEffect, useRef, useState } from "react";
 import type { MouseEvent, RefObject } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { REPO_API_URL, REPO_URL, SITE_URL } from "../lib/links";
+import { galleryUrl, REPO_API_URL, REPO_URL, SITE_URL } from "../lib/links";
+import { useLocale } from "../state/locale";
 import { GitHubIcon, MenuIcon, XIcon } from "./icons";
 import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
@@ -74,6 +76,9 @@ export function Nav({
 }) {
   const pillRef = useRef<HTMLSpanElement | null>(null);
   const pillVisible = useRef(false);
+  const { locale } = useLocale();
+  // The gallery opens in the language the reader has the docs in.
+  const gallery = galleryUrl(locale);
 
   const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
     highlights: S.nav.highlights,
@@ -143,6 +148,10 @@ export function Nav({
       <Link to="/" className={deskLinkCls(true)} onMouseEnter={slideTo} aria-current="page">
         {S.nav.docs}
       </Link>
+      {/* The gallery is a sibling SPA under /gallery/ — a plain anchor, as on the landing nav. */}
+      <a href={gallery} className={deskLinkCls(false)} onMouseEnter={slideTo}>
+        {S.nav.gallery}
+      </a>
     </>
   );
 

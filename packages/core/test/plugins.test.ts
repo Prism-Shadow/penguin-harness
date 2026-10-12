@@ -89,7 +89,7 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name: its npm version, a category, and a dated version on every part", async () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    expect(plugins.length).toBe(15);
+    expect(plugins.length).toBe(20);
     for (const plugin of plugins) {
       const pkg = JSON.parse(
         await fs.readFile(path.join(pluginsRoot, plugin.name, "package.json"), "utf8"),
@@ -203,6 +203,27 @@ describe("loadLibraryPlugins", () => {
     expect(Object.keys(files).some((rel) => rel.startsWith("reference/"))).toBe(true);
   });
 
+  it("every RSI toolkit other than the default ships the same evaluation reference", () => {
+    // Each algorithm toolkit evaluates through its own copy of one reference, so that it needs
+    // no other plugin; the copies must not drift apart.
+    const toolkits = loadLibraryPlugins().filter(
+      (p) => p.category === "rsi" && p.name !== "default-rsi-toolkit",
+    );
+    expect(toolkits.length).toBeGreaterThan(1);
+    const references = toolkits.map((plugin) => {
+      // One Skill per algorithm toolkit, named like the plugin.
+      expect(
+        plugin.skills.map((s) => s.name),
+        plugin.name,
+      ).toEqual([plugin.name]);
+      return plugin.skills[0]!.files?.["references/evaluation.md"] ?? "";
+    });
+    for (const [i, reference] of references.entries()) {
+      expect(reference.length, toolkits[i]!.name).toBeGreaterThan(0);
+      expect(reference, `${toolkits[i]!.name} vs ${toolkits[0]!.name}`).toBe(references[0]);
+    }
+  });
+
   it("a hook plugin carries a manifest naming its scripts and the hooks/ files to install; goal's start runs only when the host starts a goal", async () => {
     const goal = libraryPlugin("goal");
     const pkg = JSON.parse(
@@ -232,6 +253,15 @@ describe("loadLibraryPlugins", () => {
     expect(librarySkill("unified-llm-api")?.plugin.name).toBe("agent-development");
     expect(librarySkill("penguin-config")?.plugin.name).toBe("agent-development");
     expect(librarySkill("plugin-porting")?.plugin.name).toBe("skill-porting");
+    // The default loop's steps sit with their audience: setting up an agent is agent
+    // development, measuring one is Agent Evaluation, and the toolkit keeps only the loop.
+    expect(librarySkill("agent-initialization")?.plugin.name).toBe("agent-development");
+    expect(librarySkill("penguin-plugin")?.plugin.name).toBe("agent-development");
+    expect(librarySkill("agent-evaluation")?.plugin.name).toBe("agent-evaluation");
+    expect(librarySkill("benchmark-design")?.plugin.name).toBe("agent-evaluation");
+    expect(libraryPlugin("default-rsi-toolkit")?.skills.map((s) => s.name)).toEqual([
+      "agent-optimization",
+    ]);
   });
 });
 
@@ -290,6 +320,13 @@ describe("groupPlugins / loadPluginGroups", () => {
       PLUGIN_CATEGORIES.map((c) => c.id).filter((id) => id !== "sandbox"),
     );
     const names = (id: string) => groups.find((g) => g.id === id)?.plugins.map((p) => p.name);
+    expect(names("rsi")).toEqual([
+      "ace-rsi-toolkit",
+      "ape-rsi-toolkit",
+      "awm-rsi-toolkit",
+      "default-rsi-toolkit",
+      "opro-rsi-toolkit",
+    ]);
     expect(names("office-productivity")).toEqual([
       "a2ui",
       "agent-company",
@@ -303,7 +340,7 @@ describe("groupPlugins / loadPluginGroups", () => {
     ]);
     expect(names("ai-app-development")).toEqual([
       "agent-development",
-      "agent-tuning",
+      "agent-evaluation",
       "model-development",
       "skill-porting",
     ]);

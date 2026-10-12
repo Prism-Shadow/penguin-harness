@@ -6,13 +6,16 @@
  * the registry:
  *
  * - **Its rows are server state**, per user (`ui_prefs.draftShortcuts`), fetched on mount and
- *   written back on every change. Optimistic: the list updates first and rolls back with a toast
- *   if the write fails, because the value being written is already on screen.
+ *   written back on every change. A delete is optimistic: the list updates first and rolls back
+ *   with a toast if the write fails, because the value being written is already on screen. The
+ *   create / edit dialog waits instead: it closes once its write landed, and a refused one leaves
+ *   it open with what was typed. Its Save is live once the shortcut is valid and (when editing)
+ *   changed; closing it with typing of the user's own asks first.
  * - **Its length is the user's**, not the registry's — but bounded to SHORTCUT_MAX_COUNT, chosen
  *   so the folder plus its New-shortcut row stays within a row of a built-in folder's height. The
  *   examples block reserves no scroll area, and rather than pinning a height and scrolling inside
- *   it, the cap is what keeps this folder the same shape as its siblings: no scrollbar, and the
- *   block below moves by at most one row.
+ *   it, the cap is what keeps this folder the same shape as its siblings: no scrollbar, and its
+ *   rows never outgrow the folder column they stand beside.
  * - **Its rows carry their own actions.** Edit and delete are plain icon buttons that are always
  *   visible, deliberately not the sidebar's hover-revealed pair: those rows have a long-press menu
  *   behind them on touch, and these have nothing, so hover-gating would put a user's own prompts
@@ -24,17 +27,26 @@ import {
   ConfirmModal,
   GlyphIcon,
   ICONS,
+  ICON_GAP,
   ICON_SIZE,
   Input,
   Modal,
   PlusIcon,
   Textarea,
   toastError,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
+import {
+  ExampleFolderRow,
+  ExampleRowGlyph,
+  ExampleRowGo,
+  examplePanelClass,
+  exampleRowClass,
+} from "./example-folder-row";
 import {
   SHORTCUT_MAX_COUNT,
   SHORTCUT_PROMPT_MAX,
@@ -56,7 +68,7 @@ import type { ShortcutDraft, UserShortcut } from "./user-shortcuts";
 export const SHORTCUTS_FOLDER_ID = "shortcuts";
 
 /**
- * The lightning bolt: the folder's mark. Not the bookmark it might suggest — the folders
+ * The lightning bolt: the folder's mark, and each of its rows'. Not the bookmark it might suggest — the folders
  * themselves already behave bookmark-style (exactly one open), so that glyph would name the
  * mechanism every folder shares instead of what this one holds.
  */
@@ -80,10 +92,8 @@ function RowAction({
       data-tooltip={label}
       aria-label={label}
       onClick={onClick}
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 dark:text-gray-500 ${
-        danger
-          ? "hover:text-red-600 dark:hover:text-red-400"
-          : "hover:text-gray-700 dark:hover:text-gray-200"
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-fg-subtle transition-colors duration-150 ${
+        danger ? "hover:text-tone-danger-fg" : "hover:text-fg"
       }`}
     >
       <GlyphIcon d={glyph} size={ICON_SIZE.rowLead} />
@@ -145,17 +155,24 @@ export function ShortcutsFolder({
     setDraft({ id: null, title: defaultShortcutTitle(text), prompt: text });
   };
 
-  const saveDraft = () => {
-    if (draft === null || shortcutDraftError(draft) !== null) return;
-    persist(upsertShortcut(shortcuts, draft));
+  /** The dialog's write: resolves with whether it landed; the list changes only once it has. */
+  const saveDraft = async (next: ShortcutDraft): Promise<boolean> => {
+    const list = upsertShortcut(shortcuts, next);
+    try {
+      await api.putPrefs({ draftShortcuts: list });
+    } catch (e) {
+      toastError(apiErrorText(e));
+      return false;
+    }
+    setShortcuts(list);
     setDraft(null);
+    return true;
   };
 
-  const draftError = draft === null ? null : shortcutDraftError(draft);
-  const editing = draft !== null && draft.id !== null;
-
+  // A fragment, not a wrapper: the row and the panel are cells of the examples grid, placed by
+  // it like a built-in folder's (the dialogs are portals and take no cell).
   return (
-    <div>
+    <>
       <ExampleFolderRow
         open={open}
         glyph={SHORTCUTS_GLYPH}
@@ -167,7 +184,7 @@ export function ShortcutsFolder({
       {open && (
         /* No fixed height and no scroll: SHORTCUT_MAX_COUNT bounds this folder to a built-in
            folder's height plus the New-shortcut row. */
-        <div className="mt-0.5 pl-4">
+        <div className={examplePanelClass}>
           {loaded && (
             <ul className="space-y-1">
               {shortcuts.map((shortcut) => (
@@ -176,9 +193,11 @@ export function ShortcutsFolder({
                     type="button"
                     data-tooltip={`${shortcut.title}\n${S.chat.exampleFillHint}`}
                     onClick={() => onFill(shortcut.prompt)}
-                    className={`flex min-w-0 flex-1 items-center gap-2 ${exampleRowClass}`}
+                    className={`flex min-w-0 flex-1 items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                   >
+                    <ExampleRowGlyph glyph={SHORTCUTS_GLYPH} />
                     <span className="min-w-0 flex-1 truncate">{shortcut.title}</span>
+                    <ExampleRowGo />
                   </button>
                   <RowAction
                     label={S.common.edit}
@@ -201,9 +220,12 @@ export function ShortcutsFolder({
                     type="button"
                     data-tooltip={S.chat.shortcuts.newFromComposer}
                     onClick={startCreate}
-                    className={`flex w-full items-center gap-2 ${exampleRowClass}`}
+                    className={`flex w-full items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                   >
-                    <PlusIcon size={ICON_SIZE.inlineGlyph} />
+                    {/* In a row glyph's box, so its title starts where the shortcuts' do. */}
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center text-fg-muted">
+                      <PlusIcon size={ICON_SIZE.inlineGlyph} />
+                    </span>
                     <span className="min-w-0 flex-1 truncate">{S.chat.shortcuts.new}</span>
                   </button>
                 </li>
@@ -215,63 +237,10 @@ export function ShortcutsFolder({
 
       {/* Create and edit share one dialog — the fields and the rules are identical, and only the
           dialog's name says which one is happening (the same Modal + Input idiom as the sidebar's
-          rename dialogs). */}
-      <Modal
-        open={draft !== null}
-        title={editing ? S.chat.shortcuts.editTitle : S.chat.shortcuts.createTitle}
-        onClose={() => setDraft(null)}
-        widthClass="sm:max-w-lg"
-        footer={
-          <>
-            <Button size="sm" onClick={() => setDraft(null)}>
-              {S.common.cancel}
-            </Button>
-            <Button size="sm" variant="primary" disabled={draftError !== null} onClick={saveDraft}>
-              {S.common.save}
-            </Button>
-          </>
-        }
-      >
-        {draft !== null && (
-          <div className="space-y-3">
-            <Input
-              size="sm"
-              label={S.chat.shortcuts.titleLabel}
-              hint={S.chat.shortcuts.titleHint(SHORTCUT_TITLE_MAX)}
-              error={
-                draftError === "titleTooLong"
-                  ? S.chat.shortcuts.titleTooLong(SHORTCUT_TITLE_MAX)
-                  : undefined
-              }
-              value={draft.title}
-              autoFocus
-              maxLength={SHORTCUT_TITLE_MAX}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-              onKeyDown={(e) => {
-                // isComposing guard (the repo's IME convention): accepting a Chinese candidate
-                // fires Enter, which would otherwise save the raw pinyin.
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) saveDraft();
-              }}
-            />
-            <Textarea
-              label={S.chat.shortcuts.promptLabel}
-              info={S.chat.shortcuts.promptInfo}
-              infoLabel={S.common.moreInfoAbout(S.chat.shortcuts.promptLabel)}
-              hint={S.chat.shortcuts.promptHint(SHORTCUT_PROMPT_MAX)}
-              error={
-                draftError === "promptTooLong"
-                  ? S.chat.shortcuts.promptTooLong(SHORTCUT_PROMPT_MAX)
-                  : undefined
-              }
-              value={draft.prompt}
-              rows={8}
-              size="sm"
-              maxLength={SHORTCUT_PROMPT_MAX}
-              onChange={(e) => setDraft({ ...draft, prompt: e.target.value })}
-            />
-          </div>
-        )}
-      </Modal>
+          rename dialogs). Mounted per opening, so it starts from what it was opened with. */}
+      {draft !== null && (
+        <ShortcutDialog opening={draft} onClose={() => setDraft(null)} onSave={saveDraft} />
+      )}
 
       <ConfirmModal
         open={deleting !== null}
@@ -284,10 +253,96 @@ export function ShortcutsFolder({
           setDeleting(null);
         }}
       >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
+        <p className="text-sm text-fg-muted">
           {deleting !== null ? S.chat.shortcuts.deleteConfirm(deleting.title) : ""}
         </p>
       </ConfirmModal>
-    </div>
+    </>
+  );
+}
+
+/**
+ * The create / edit dialog. It opens on the shortcut being edited, or on a new one already
+ * filled from the composer — that prefill is where it starts, so closing it untouched asks
+ * nothing, and a valid new shortcut can be saved as it stands. Save waits for its write: a
+ * refused one leaves the dialog open with what was typed.
+ */
+function ShortcutDialog({
+  opening,
+  onClose,
+  onSave,
+}: {
+  opening: ShortcutDraft;
+  onClose: () => void;
+  onSave: (draft: ShortcutDraft) => Promise<boolean>;
+}) {
+  const form = useFormDraft(opening, {
+    normalize: (d) => ({ id: d.id, title: d.title.trim(), prompt: d.prompt.trim() }),
+  });
+  const draft = form.draft;
+  const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
+  const editing = draft.id !== null;
+  const draftError = shortcutDraftError(draft);
+  // A new shortcut is a change on its own; an edit has to change something.
+  const canSave = draftError === null && (!editing || form.dirty) && !busy;
+
+  const save = async () => {
+    if (!canSave) return;
+    setBusy(true);
+    // On success the host closes the dialog; a refused write leaves the typing as it was.
+    if (!(await onSave(draft))) setBusy(false);
+  };
+
+  return (
+    <Modal
+      open
+      title={editing ? S.chat.shortcuts.editTitle : S.chat.shortcuts.createTitle}
+      onClose={requestClose}
+      widthClass="sm:max-w-lg"
+      footer={
+        <>
+          <Button size="sm" disabled={busy} onClick={requestClose}>
+            {S.common.cancel}
+          </Button>
+          <Button size="sm" variant="primary" disabled={!canSave} onClick={() => void save()}>
+            {S.common.save}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <Input
+          size="sm"
+          label={S.chat.shortcuts.titleLabel}
+          hint={S.chat.shortcuts.titleHint(SHORTCUT_TITLE_MAX)}
+          error={
+            draftError === "titleTooLong"
+              ? S.chat.shortcuts.titleTooLong(SHORTCUT_TITLE_MAX)
+              : undefined
+          }
+          value={draft.title}
+          autoFocus
+          maxLength={SHORTCUT_TITLE_MAX}
+          onChange={(e) => form.patch({ title: e.target.value })}
+        />
+        <Textarea
+          label={S.chat.shortcuts.promptLabel}
+          info={S.chat.shortcuts.promptInfo}
+          infoLabel={S.common.moreInfoAbout(S.chat.shortcuts.promptLabel)}
+          hint={S.chat.shortcuts.promptHint(SHORTCUT_PROMPT_MAX)}
+          error={
+            draftError === "promptTooLong"
+              ? S.chat.shortcuts.promptTooLong(SHORTCUT_PROMPT_MAX)
+              : undefined
+          }
+          value={draft.prompt}
+          rows={8}
+          size="sm"
+          maxLength={SHORTCUT_PROMPT_MAX}
+          onChange={(e) => form.patch({ prompt: e.target.value })}
+        />
+      </div>
+    </Modal>
   );
 }

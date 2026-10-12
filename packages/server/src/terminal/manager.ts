@@ -20,6 +20,7 @@ import {
   TerminalSession,
   expandHomePath,
   type CreateTerminalSessionOptions,
+  type TerminalNotice,
   type TerminalSessionInfo,
 } from "./session.js";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
@@ -28,6 +29,7 @@ import type { Hono } from "hono";
 import { Config, Hmr, ResourceGroups } from "../hmr/capabilities.js";
 import type { SessionEnv } from "../runtime/session-manager.js";
 import { shellStartupDir, type TerminalPathFirst } from "./shell-startup.js";
+import { shimNamesDataRoot, terminalCliNotice } from "./cli-notice.js";
 import { terminalRoutes } from "./routes.js";
 import { identityFrom } from "./identity.js";
 import type { Auth } from "../mechanisms/identity.js";
@@ -70,6 +72,17 @@ export class TerminalManager {
        * shim directory, see shell-startup.ts); read per terminal. Absent or null: nothing.
        */
       pathFirst?: () => TerminalPathFirst | null;
+      /**
+       * The line each new terminal shows first (see cli-notice.ts); read per terminal, so it
+       * says what holds when that terminal opens. Absent or null: none.
+       */
+      notice?: () => TerminalNotice | null;
+      /**
+       * Whether new shells keep the server's PENGUIN_HOME / PENGUIN_WEB_DB because no shim
+       * names the data root for `penguin` (CreateTerminalSessionOptions.inheritDataRoot).
+       * Absent: false.
+       */
+      inheritDataRoot?: () => boolean;
     } = {},
   ) {}
 
@@ -114,6 +127,8 @@ export class TerminalManager {
     while (usedSeqs.has(seq)) seq += 1;
 
     const pathFirst = this.opts.pathFirst?.() ?? null;
+    const notice = this.opts.notice?.() ?? null;
+    const inheritDataRoot = this.opts.inheritDataRoot?.() ?? false;
     const options: CreateTerminalSessionOptions = {
       cwd,
       ownerUserId: request.ownerUserId,
@@ -121,6 +136,8 @@ export class TerminalManager {
       name,
       ...(this.opts.assets !== undefined ? { assets: this.opts.assets } : {}),
       ...(pathFirst !== null ? { pathFirst } : {}),
+      ...(notice !== null ? { notice } : {}),
+      ...(inheritDataRoot ? { inheritDataRoot } : {}),
       ...(request.cols !== undefined ? { cols: request.cols } : {}),
       ...(request.rows !== undefined ? { rows: request.rows } : {}),
       ...(request.shell !== undefined ? { shell: request.shell } : {}),
@@ -352,6 +369,10 @@ export class TerminalModule {
         const dirs = this.sessionEnv.pathPrepend();
         return dirs.length === 0 ? null : { dirs, startupDir: shellStartupDir(this.config.root) };
       },
+      // And the terminal says which one that is on a development instance, or why it is not.
+      notice: () => terminalCliNotice(this.config, this.sessionEnv.pathPrepend()),
+      // The shell keeps the server's data root only where no shim names it for `penguin`.
+      inheritDataRoot: () => !shimNamesDataRoot(this.config, this.sessionEnv.pathPrepend()),
     });
     // Shells started before this App existed are still running in the registry: claim
     // them back so a push is invisible to whoever was typing in one — unless their group

@@ -100,10 +100,13 @@ const taskTexts = (s: FakeSessionState): string[] =>
   s.tasks.map((b) => (b.input as Array<{ text: string }>)[0]!.text);
 const steerTexts = (s: FakeSessionState): string[] => s.steers.map((b) => String(b.text));
 
-/** Starts the chat and its first Task; returns once that Task runs on the server. */
+/**
+ * Starts the chat and its first Task; returns once that Task runs on the server. The Session
+ * is created by that first message, so the chat is ready once its prompt is drawn.
+ */
 async function chatWithRunningTask(): Promise<Tty> {
   const tty = startChat();
-  await vi.waitFor(() => expect(tty.session()).toBeDefined());
+  await vi.waitFor(() => expect(tty.printed()).toContain("> "));
   tty.type(`first task${ENTER}`);
   await vi.waitFor(() => expect(tty.session().status).toBe("running"));
   return tty;

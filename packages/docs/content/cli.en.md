@@ -15,7 +15,7 @@ A CLI that talks to the server on the local machine needs no login, except to ch
 
 1. `--server <url>`: an explicit target.
 2. `PENGUIN_API_URL`: the same, from the environment. Server-driven sessions inject it into every tool subprocess, together with `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID`, so an agent's own `penguin` calls reach the server that runs them.
-3. A live `server.lock` at the data root (`PENGUIN_HOME`, else `~/.penguin/data`): the CLI attaches to the running local server.
+3. A live `server.lock` at the data root (`PENGUIN_HOME`, else `~/.penguin/data`): the CLI attaches to the running local server. A `penguin` run in a PenguinHarness terminal or in an agent's command starts through that server's own `<root>/bin/penguin`, which sets `PENGUIN_HOME` to that server's data root when you have not set it yourself, so it reaches the server it runs under rather than the one on `~/.penguin/data`. `penguin run` and `penguin chat` name the server they talk to in their opening banner.
 4. Auto-start: the CLI spawns a detached local server on an ephemeral port, waits for it and attaches. The server's output goes to `<root>/logs/server-auto-<date>.log`. If two CLIs race, the losing spawn exits and both attach to the winner.
 
 The CLI authenticates with the local API token. The server writes a fresh token to `<root>/api-token` on every boot (owner-only), and the CLI sends it as `Authorization: Bearer`. `PENGUIN_API_TOKEN` overrides the file. The CLI reads the file only for loopback targets, so a remote `--server` needs `PENGUIN_API_TOKEN` set explicitly. Holding the file grants admin authority by design, because local filesystem access to the data root already does. `penguin server reset-admin-password` relies on the same rule.
@@ -33,7 +33,7 @@ A few writes take a person's sign-in instead, such as those that change an agent
 - Caller-context defaults: inside a harness agent (`PENGUIN_SESSION_ID` is set), a Session created by `run` or `chat` takes each unspecified field from the calling Session's live values: the Workspace, the model pair, the approval mode and the thinking level. `run_subagent` applies the same inheritance to the children it spawns, so both surfaces follow one convention. For each field, an explicit flag wins over the caller's value, which wins over the plain fallback. A failed lookup prints a dim warning and uses the plain fallback. Outside an agent nothing changes, and `--project-id` / `--agent-id` keep their environment-variable defaults.
 - Timeouts: `--timeout <duration>` on `run`, `session input` and `session log -f` bounds the wait with soft-yield semantics, the `exec_command` yield-window model applied to the CLI. At expiry the command detaches cleanly and exits 0. The Task keeps running on the server, and a later `penguin session input` or `penguin session log` can pick it up. Accepted values are `30s`, `5m`, `2h`, or a bare integer meaning seconds; anything else is rejected. `--timeout 0` returns immediately after delivery (`{sessionId, status: "running"}` under `--json`), so the same option also covers "don't wait". Without the option, the command waits indefinitely. For new Tasks, `run --background` remains the usual fire-and-forget: it prints the bare session id for scripts and detaches as soon as the Task is created.
 - Argument errors: a missing argument, a missing required option, an unknown option or a mistyped command prints one line in the interface language, the command's own usage and a pointer to its `--help`, then exits non-zero.
-- Data root: `--root <dir>` sets the data root for the commands that read it directly: `config`, `auth`, `version`, `server status` and `server stop`. A relative path resolves against the working directory. Priority: `--root`, then the `PENGUIN_HOME` environment variable, then `~/.penguin/data`.
+- Data root: `--root <dir>` sets the data root for the commands that read it directly: `config`, `auth`, `version`, `server status` and `server stop`. A relative path resolves against the working directory. Priority: `--root`, then the `PENGUIN_HOME` environment variable (which a server's own `penguin` sets to that server's data root when you have not, see [Server connection](#server-connection)), then `~/.penguin/data`.
 
 ## penguin run
 
@@ -61,7 +61,7 @@ penguin run -m <message> [options]
 | `--json` | Prints a final `{sessionId, status, text}` object instead of the rendered stream. `text` joins the main Session's assistant text messages. | — |
 | `--server <url>` | Target server; see [Server connection](#server-connection). | — |
 
-Every Session `run` creates is a CLI Session (`source: "cli"`), which the Web App lists in the **Background** folder of its session list rather than among the agent's conversations. `penguin chat` creates ordinary conversations. The `--source benchmark` that older evaluation skills pass is accepted and ignored, with a note.
+Every Session `run` creates is a CLI Session (`source: "cli"`), which is archived by rule: the Web App lists it under [Settings › Archived chats](/settings#archived-chats) rather than among the agent's conversations, and unarchiving it there keeps it in the sidebar. `penguin session ls` likewise shows it only with `-a` until it is unarchived. `penguin chat` creates ordinary conversations. The `--source benchmark` that older evaluation skills pass is accepted and ignored, with a note.
 
 When `--timeout` expires, `run` prints what has rendered so far and a dim still-running line with the session id, then exits 0 without aborting the Task. Under `--json` it prints `{sessionId, status: "running", text}`. `--timeout 0` returns right after the POST, and under `--json` prints `{sessionId, status: "running"}` with no `text`. For a goal run, the `status` in the final JSON object is the goal outcome.
 
@@ -80,6 +80,8 @@ Starts an interactive REPL, where each input line starts a Task.
 ```bash
 penguin chat [options]
 ```
+
+A new chat creates its Session when you send the first message, not when it starts. Until then the banner shows the agent, Workspace and model the Session will have, and leaving the chat (`/exit`, Ctrl-C, the end of the input) leaves nothing on the server: no Session, no Trace, no entry in the sidebar. `/thinking` and `/switch-model` typed before the first message set what the Session is created with, and `/compact` and `/clear` say there is no conversation yet. If creating the Session fails, for example because the server is down or a sign-in has lapsed, the message is not lost: the error is shown, the message goes back into the input line (from a pipe, an empty line sends it), and Enter sends it again.
 
 | Option | Description | Default |
 | --- | --- | --- |
@@ -103,11 +105,11 @@ On a terminal, the REPL marks its prompts with OSC 133 semantic prompt sequences
 | Any text while a Task runs, typed or pasted | Mid-run steering. Enter sends it, a multi-line paste as one message; the text is queued and reaches the model between turns as a `[user_steering]` user message, and a `»` acknowledgment echoes the text. Rendering pauses while you type, so streamed output does not overwrite the line. If the Task finishes first, the text is sent as the next normal prompt: a line already entered at once, a paste not yet entered by the next Enter. |
 | `/goal[:<budget>] <objective>` | Runs goal mode on the objective. The optional budget is a token budget, such as `/goal:500k`. Ctrl-C aborts the whole goal. See [Goal mode](/goal-mode). |
 | `/compact` | Compacts the current context now. |
-| `/clear` | Starts a fresh blank Session in place, on the same Workspace and model. The old Session stays on the server and can be resumed with `--resume`. |
+| `/clear` | Starts a fresh blank Session in place, on the same Workspace and model; your next message creates it. The old Session stays on the server and can be resumed with `--resume`. |
 | `/thinking` | Shows this Session's thinking level: the level pinned by `--thinking` or `/thinking`, else the agent's configured level. |
-| `/thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`). The level is never written back to the agent config. |
+| `/thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`); before the first message, the Session is created pinned to it. The level is never written back to the agent config. |
 | `/switch-model` | Shows this Session's current model. |
-| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model; a compaction that fails or is interrupted keeps the current model. A Session that has not run yet switches without compacting. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
+| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model; a compaction that fails or is interrupted keeps the current model. A Session that has not run yet switches without compacting, and before the first message the Session is created on the target. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
 | `/verbose` | Switches between collapsed and full tool output. |
 | `/exit`, `/quit` | Quits. |
 
@@ -143,7 +145,7 @@ penguin session rename [session_id] -t <title> [options]
 
 ### penguin session ls
 
-Lists the Project's Sessions, for all agents or for one with `--agent-id`. Columns: short id (the 8-hex tail other commands accept as a fragment), agent, title, running/idle, last active and the end of the Workspace path. Archived Sessions appear only with `-a`.
+Lists the Project's Sessions, for all agents or for one with `--agent-id`. Columns: short id (the 8-hex tail other commands accept as a fragment), agent, title, running/idle, last active and the end of the Workspace path. Archived Sessions appear only with `-a`: the ones you archived, and, until you unarchive them in the Web App, the ones a program opened, such as those `run` creates, Agent API conversations and the new Sessions of scheduled tasks.
 
 ```bash
 penguin session ls [options]
@@ -742,7 +744,7 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - The CLI never derives `--provider` from the model id. Gateways resell vendor models under their upstream ids, so a guessed group could write the credential onto another vendor's endpoint. Use `custom` for any endpoint outside the built-in groups.
 - A new entry stores `--client-type`, `--base-url` and `--api-key` only when you pass them. Left out, each follows the group, and with no group value the client's default; the built-in catalog is not read. A new Project's file already holds the gateways' endpoints and protocols, Penguin Go's relay URL and `vllm`'s `openai-chat-vllm-adapter` on their groups. A `custom` or user-defined entry whose group sets no protocol gets `openai-chat`. Updating an existing entry changes these fields only when you pass the flags; a `--clear-*` flag removes the entry's own value, after which it follows the group.
 - Re-adding a removed preset this way stores only what you pass; **Add new models** on the Models page brings it back with its catalog protocol and endpoint.
-- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
+- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `atlascloud` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
 - Turning on `--fast-mode` for a model whose MMSP client rejects the parameter still writes the entry, but prints a warning on stderr.
 - In both forms, a field you do not name is left as it is, each set/clear pair is exclusive, and an empty value is refused: remove a value with its `--clear-*` flag.
 

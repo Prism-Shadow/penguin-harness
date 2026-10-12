@@ -75,7 +75,11 @@ export interface FileTreeProps<Row extends FileTreeRow> {
   scrollTo?: { path: string } | null;
   /** The directory last opened or closed, whose subtree animates. Null: nothing to animate. */
   toggled?: TreeToggle | null;
-  /** A row's tooltip; the path by default. */
+  /**
+   * A row's tooltip, when it says more than the row shows (a size, an exact time): it then shows
+   * over the row's name in full. Without it the tooltip is the path, shown only over a name cut
+   * short.
+   */
   rowTitle?: (row: Row) => string;
   /**
    * A row's accessible name, for the row whose visible text leaves out what the row means — the
@@ -240,6 +244,7 @@ export function FileTree<Row extends FileTreeRow>({
         // resolve a row by this attribute, and neither may land on one that is on its way out.
         {...(retained ? {} : { "data-tree-path": row.path, "data-tree-kind": row.kind })}
         data-tooltip={rowTitle?.(row) ?? row.path}
+        data-tooltip-extra={rowTitle !== undefined || undefined}
         aria-label={rowLabel?.(row)}
         {...(retained ? {} : { onClick: () => activate(row), onFocus: () => setFocused(row.path) })}
         style={{ paddingLeft: TREE_PAD_PX + row.depth * TREE_INDENT_PX }}

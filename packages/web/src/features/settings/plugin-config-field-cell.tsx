@@ -118,6 +118,7 @@ export function Cell({
     // without a role is not announced.
     <span
       data-tooltip={S.settings.pluginCellLocked}
+      data-tooltip-extra
       className="block px-1.5 text-xs break-words text-fg-muted"
     >
       {shown}

@@ -216,7 +216,7 @@ The fork is a new Session with the same agent, model, Workspace and approval mod
 - **Tool cards** expand to show arguments and output, with a live timer while running. A card is headed by the description the model wrote or a shortened file path. Built-in tools go by short names (`read_file` reads as "read", with the full name in the tooltip); turn this off with **Tool short names** under [Settings › Appearance](/settings#appearance). Other tools, MCP tools included, always use their own names.
 - **Compaction** leaves a row whose title is its status: **Compacting** while it runs and **Compacted** when it ends (**Clearing** and **Cleared** for a context clear), with its time. While it runs, the row opens a thinking section once the request's thinking arrives, and a result section when the summary starts; both are collapsed by default, each with its own time. The row folds back to one line when the compaction ends. A failed compaction keeps the title **Compaction** (or **Clear**) over a one-line reason.
 - **MCP connect**, the first connection to the agent's MCP servers, leaves a row with the number of tools found and the names of unavailable servers. It expands into one group per server, with its status, tool count and connect time, and each group opens to its tool list or the error.
-- **Subagents** each leave a row with their avatar, name, short Session id, a spinner while running, and an amber dot while one of their tool calls awaits approval. Selecting the row opens the **Agents panel**: a call graph of that Task at the top, with each node's elapsed time, and the selected subagent's live conversation below. Nested tool cards and approvals work as in the main chat, the subagent has a composer of its own, and **Jump to this session** opens it as a full conversation. When the current Task starts a subagent, the Agents panel opens by itself, once per Task.
+- **Subagents** each leave a row with their avatar, name, short Session id, a spinner while running, and an amber dot while one of their tool calls awaits approval. Selecting the row opens the **Agents panel**: a call graph of that Task at the top, with each node's elapsed time, and the selected subagent's live conversation below. Nested tool cards and approvals work as in the main chat, the subagent has a composer of its own, and **Jump to this session** opens it as a full conversation. Subagent Sessions are not listed in the sidebar or under archived chats, so this panel is the way to reach one. When the current Task starts a subagent, the Agents panel opens by itself, once per Task.
 
 ### Rich output blocks
 
@@ -342,7 +342,7 @@ A value above the model's window is accepted, with a note that the window's size
 
 ## Organize the conversation list
 
-The sidebar lists the Project's conversations. **Search chats** filters the titles of the conversations already loaded.
+The sidebar lists the Project's active conversations. Archived ones, including the conversations a program opens, are listed under [Settings › Archived chats](/settings#archived-chats) instead; see [Archived conversations](#archived-conversations). **Search chats** filters the titles of the conversations already loaded.
 
 In **List options** (the sliders icon at the top of the list):
 
@@ -351,15 +351,18 @@ In **List options** (the sliders icon at the top of the list):
 
 The button beside it follows the grouping: **New workspace**, **Create agent** or **New chat**. Groups can be pinned, reordered by dragging, and have a + button that starts a new chat in them.
 
-When grouped by Workspace, the directories the system creates for itself fold into one **Temporary workspaces** group: the Workspace a conversation gets when you choose none, and the Test Workspace an evaluation creates for each case and run. Both live directly under the agent's `workspaces/` directory, and every directory there joins this group.
+When grouped by Workspace, the directories the system creates for itself fold into one **Temporary workspaces** group: the Workspace a conversation gets when you choose none, and the Test Workspace an evaluation creates for each case and run. Both live directly under the agent's `workspaces/` directory, and every directory there joins this group. A Workspace whose conversations are all archived has no group, and the Workspace groups come in the order of their newest active conversation: an archived run does not move one up.
+
+A group shows ten conversations at a time. **Show N more chats** reveals ten more; rows already loaded come first, and more are fetched from the server only when they run out. Once more than ten show, **Show less** folds back to the first ten. When grouped by time, **Load more chats** fetches older conversations. With more than ten groups, the list shows ten groups per page, with a pager below it.
 
 ### Row actions
 
 - Point at a row to swap its last-active time for two buttons: **Archive** and **More** (…). Tabbing to either one shows it too.
 - Right-click the row, long-press it on a touch screen, press Shift+F10, or select **More** to open its menu: **Pin**, **Rename chat**, **Remote control** (see [Remote control](/remote-control)), **Archive**, **Copy Session ID** and **Delete chat**. Esc, a click elsewhere or scrolling the list closes it.
-- **Delete chat** asks for confirmation. Deleting removes the conversation's messages and Trace for good.
+- **Archive** moves the conversation out of the sidebar to [Archived chats](/settings#archived-chats). Every row in the sidebar is an active conversation, so there is no **Unarchive** here. A conversation on a connected machine has no **Archive**: the Archived chats page lists this server's conversations only.
+- **Delete chat** asks for confirmation. Deleting removes the conversation's messages and Trace for good, along with its subagent Sessions.
 
-The right-click menu replaces the browser's own menu only on conversation rows and in the Files panel. A pinned conversation sorts to the top of its group. Pinning is offered only in the active list, and pins are remembered per Project in the browser.
+The right-click menu replaces the browser's own menu only on conversation rows and in the Files panel. A pinned conversation sorts to the top of its group, and pins are remembered per Project in the browser.
 
 ### Row marks
 
@@ -367,27 +370,33 @@ The right-click menu replaces the browser's own menu only on conversation rows a
 | --- | --- |
 | Turning hourglass | The Session is running |
 | Squeezing bar | The Session is compacting |
-| Green dot | A run finished that you have not looked at yet; only on your own conversations, never in **Background** |
+| Green dot | A run finished that you have not looked at yet; only on conversations you started, never on one a program opened |
 | Small green activity trace | The Session still has background tasks: commands running past their wait time, or background subagents mid-round. The tooltip counts them, such as "2 background tasks" |
 | Amber count | Tool calls waiting for approval |
 | Pin | The conversation is pinned |
 | Remote control icon | A messaging connection is enabled for the conversation |
 | Alarm clock | A scheduled task bound to the conversation will still fire; see [Scheduled tasks](/schedules) |
-| Plug, calendar, two robots or `>_` prompt | In the **Background** folder: what opened the Session, the Agent API, a scheduled task's run, a parent agent or `penguin run` |
+| Plug, calendar or `>_` prompt | A conversation a program opened, in the sidebar because you unarchived it: what opened it, the Agent API, a scheduled task's run or `penguin run`. Point at the mark to see which |
 
 The background-task mark does not depend on the others: an idle conversation whose dev server is still running keeps it, and it disappears as soon as the last task ends, without a refresh.
 
-### Folders
+### Archived conversations
 
-Below each group's active conversations are its two folders, **Background** and **Archived**, each loading its rows only when opened. When grouped by time, one set of folders covers the whole Project, and **Load more chats** fetches older conversations.
+A conversation is archived when you archive it, or when a program opened it and you have not unarchived it. A program's conversations are archived from the start:
 
-- **Background** holds the Sessions a program opened rather than you: those an external program opened through the Agent API, a scheduled task's runs, subagent Sessions, and those `penguin run` created, including the Test Sessions an evaluation starts for every case and run. Each row carries a mark naming its source (API, Scheduled, Subagent or CLI), shown on hover.
-- **Archived** holds every archived conversation, whatever its source.
-- Company mode's desk and ticket Sessions are in none of these, archived or not, in either mode: they are listed only in [company mode](/company-mode)'s own views.
-- Opening a background conversation opens its folder. **Last conversation** and a deleted conversation's successor are only ever your own conversations, never background or company ones.
-- A group with nothing but folder rows, such as an agent that has only run evaluations, starts collapsed and sorts after the other groups (pinned groups excepted), with a dimmed header counting the folded rows. Once you open it, it stays open for that Project.
+- those an external program opens through the [Agent API](/agent-api);
+- the new Session a scheduled task opens on each run;
+- the Sessions `penguin run` creates, including the Test Sessions an evaluation starts for every case and run.
 
-A group's active conversations, and each open folder, show ten conversations at a time. **Show N more chats** reveals ten more; rows already loaded come first, and more are fetched from the server only when they run out. Once more than ten show, **Show less** folds back to the first ten. With more than ten groups, the list shows ten groups per page, with a pager below it.
+Archived conversations are listed under [Settings › Archived chats](/settings#archived-chats), where you can search and filter them, and unarchive or delete them one at a time or in batches.
+
+- Unarchiving brings a conversation back to the sidebar. One that a program opened then stays there through its later runs, until you archive it again.
+- A program can keep working in an archived conversation: an Agent API call or a scheduled task continues it, and it stays archived.
+- Archiving the conversation on screen takes you to a new chat, as **New chat** does.
+- Opening an archived conversation's link shows only its title, its last-active time and its source (**User** for one you started), with "This chat is archived. Unarchive it to read it; it returns to the sidebar.", an **Unarchive** button and a **Delete** icon. Its messages are not loaded, and it has no composer or side panels. **Unarchive** loads the conversation in place and puts it back in the sidebar; **Delete** asks first.
+- Subagent Sessions are listed neither in the sidebar nor under Archived chats. Open one from its parent conversation's Agents panel with **Jump to this session**. While the parent is archived, its Agents panel is not shown, so its subagents are out of reach until you unarchive the parent.
+- Company mode's desk and ticket Sessions are not listed in either place, in either mode: they are listed only in [company mode](/company-mode)'s own views.
+- **Last conversation**, the conversation that opens after you delete the one on screen, and [Task completion notifications](/settings#general) consider only the conversations in the sidebar.
 
 ## Keyboard shortcuts
 
@@ -424,7 +433,7 @@ On a Mac, ⌘ takes the place of Ctrl in Ctrl+S, Ctrl+F, Ctrl+Shift+F and in the
 | Attachment size | 100MB per file and 120MB per message by default; set by an admin under [Upload limits](/settings#upload-limits) |
 | Shortcuts | 3 per user; name up to 40 characters, prompt up to 4000 |
 | History | The latest 20 turns on opening, then 20 more per load; at most 4 MiB of messages per load, but always at least one turn |
-| Conversation list | 10 conversations at a time per group or folder; 10 groups per page |
+| Conversation list | 10 conversations at a time per group; 10 groups per page |
 | Send to background | Offered after a call has run for 10 seconds |
 | Retry countdown | Shown for waits of 2s or more |
 | Context ring | Amber past 80%, red past 95% |

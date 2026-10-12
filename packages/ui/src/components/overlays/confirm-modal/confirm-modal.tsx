@@ -66,6 +66,12 @@ export interface ConfirmModalProps {
    */
   glyph?: string;
   busy?: boolean;
+  /**
+   * The card's width from the small breakpoint up. A confirmation is narrow by default; one whose
+   * details are a list of names beside values (an update's `name  old → new` lines) widens it
+   * so the names are read whole rather than cut short.
+   */
+  widthClass?: string;
   children: ReactNode;
 }
 
@@ -82,10 +88,11 @@ export function ConfirmModal({
   tone = "danger",
   glyph,
   busy = false,
+  widthClass = "sm:max-w-sm",
   children,
 }: ConfirmModalProps) {
   return (
-    <Modal open={open} title={title} onClose={onClose} headerless widthClass="sm:max-w-sm">
+    <Modal open={open} title={title} onClose={onClose} headerless widthClass={widthClass}>
       <div className="flex items-start gap-3">
         <ToneMark tone={tone} {...(glyph !== undefined ? { glyph } : {})} />
         <div className="min-w-0 flex-1 pt-1.5">{children}</div>

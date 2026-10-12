@@ -102,7 +102,7 @@ const rowButton = (active: boolean) =>
  * A desk is neither archivable nor pinnable, so the two toggles the shared menu labels read
  * are constant here — it offers neither action (DESK_ROW_ACTIONS).
  */
-const DESK_ROW_STATE: SessionRowState = { archived: false, pinned: false };
+const DESK_ROW_STATE: SessionRowState = { pinned: false };
 
 /**
  * Opening a desk: the store's row when one exists, and otherwise the desk endpoint, which

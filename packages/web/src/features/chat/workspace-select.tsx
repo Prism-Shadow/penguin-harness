@@ -93,6 +93,8 @@ export function WorkspaceSelect({
   const label = trimmed ? baseName(trimmed) : (emptyLabel ?? S.chat.workspaceAuto);
   // The field and its value, the whole path where the label shows only its last segment.
   const title = `${fieldName}：${trimmed || label}`;
+  // The label keeps only the last segment: the tooltip is where the rest of the path shows.
+  const pathHidden = trimmed !== "" && trimmed !== label;
 
   const finder = (
     <WorkspaceFinder
@@ -151,6 +153,7 @@ export function WorkspaceSelect({
           label={label}
           {...(trimmed ? { labelClassName: "font-mono" } : {})}
           title={title}
+          titleExtra={pathHidden}
           ariaLabel={fieldName}
           ariaHaspopup="dialog"
         />
@@ -165,6 +168,7 @@ export function WorkspaceSelect({
       <button
         type="button"
         data-tooltip={title}
+        data-tooltip-extra={pathHidden}
         aria-label={fieldName}
         aria-haspopup="dialog"
         aria-expanded={open}

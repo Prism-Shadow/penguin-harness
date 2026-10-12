@@ -253,6 +253,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.pluginsIncompatibleOnly",
+    scope: "browser",
+    why: "Whether the Plugins page lists only the plugins this build cannot fully run; a view preference that names no plugin, valid against any root.",
+  },
+  {
+    kind: "exact",
     key: "penguin.steerMode",
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",

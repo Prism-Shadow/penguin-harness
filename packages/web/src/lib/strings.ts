@@ -13,6 +13,7 @@
  */
 import type { PeakWindows } from "../features/models/model-grouping";
 import type { ModelGroupSort } from "../features/models/model-sort";
+import type { RsiMethodId } from "../features/benchmark/rsi-methods";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -615,6 +616,39 @@ export const zh = {
     off: "关闭",
   },
 
+  /** Settings › Personal › Archived chats (features/settings/archived-sessions-section.tsx). */
+  archivedSessions: {
+    search: "搜索已归档对话",
+    /** The two filters' accessible names. */
+    sourceFilter: "来源",
+    projectFilter: "项目",
+    allSources: "全部来源",
+    allProjects: "全部项目",
+    /** A group's count beside its header. */
+    count: (n: number): string => `${n} 条对话`,
+    /** A group header's button: choose every Session of the group, loaded or not; and its undo once all of it is chosen. */
+    selectAll: "全选",
+    deselectAll: "取消全选",
+    /** A row's checkbox, named by the conversation's title. */
+    select: (title: string): string => `选择「${title}」`,
+    selected: (n: number): string => `已选 ${n} 项`,
+    clearSelection: "清除选择",
+    /** The reveal row under the groups shown: how many groups are still hidden. */
+    moreGroups: (n: number): string => `更多分组（${n}）`,
+    empty: "没有已归档的对话",
+    noMatches: "没有匹配的对话",
+    /** The busy glyph's tooltip on a row whose Session is running. */
+    running: "运行中",
+    loadFailed: (reason: string): string => `无法读取已归档对话：${reason}`,
+    actionFailed: (reason: string): string => `操作没有完成：${reason}`,
+    /** The confirm before a batch or group delete (a single row uses the chat's own confirm). */
+    deleteTitle: (n: number): string => (n === 1 ? "删除对话" : `删除 ${n} 个对话`),
+    deleteConfirm: (n: number): string =>
+      n === 1
+        ? "确定删除这个对话？它的消息与 Trace 将被移除，且不可恢复。"
+        : `确定删除这 ${n} 个对话？它们的消息与 Trace 将被移除，且不可恢复。`,
+  },
+
   /** The Trace dock panel (the current conversation's Trace files). */
   tracePanel: {
     empty: "暂无轨迹",
@@ -648,6 +682,10 @@ export const zh = {
     generalTitle: "通用",
     appearanceTitle: "外观",
     shortcutsTitle: "快捷键",
+    /** Settings › Personal › Archived chats, and the "?" beside its heading. */
+    archivedTitle: "已归档对话",
+    archivedInfo:
+      "这里是不在左侧列表里的对话：你归档的，以及由程序开启、你还没有取消归档的（API、定时任务和 penguin run 开启的对话）。归档的对话只显示标题和时间；取消归档后它回到左侧列表，之后的运行也不会再把它移走。",
     /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
     shortcutsInfo:
       "快捷键随平台：macOS 用 ⌘，其余平台用 Ctrl。改动即刻生效，本浏览器的其他标签页同步跟随；本账号的其他浏览器与桌面应用在下次加载时取得。按账号并按平台分别保存，Mac 与 Windows 各有一套。浏览器自身保留的组合（如 Ctrl+W / ⌘W）在浏览器标签页里收不到，只在桌面应用里生效；浏览器本身也用的组合（如打印的 Ctrl+P / ⌘P）在浏览器标签页里会取代它的那个功能。两者都在列表中标出。",
@@ -676,6 +714,8 @@ export const zh = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
+    /** Under the two switches while the address has unsaved edits: they act on the saved address. */
+    saveProxyAddressFirst: "先保存代理地址",
     /** Reachability test: the block's heading, and its button at rest and while probing. */
     proxyProbe: "连通性测速",
     proxyProbeRun: "测速",
@@ -704,7 +744,9 @@ export const zh = {
     pluginPositionOn: "开启",
     pluginPositionOff: "关闭",
     pluginsInfo:
-      "各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。",
+      "开关下方是各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。顶部的开关只影响本浏览器在插件页列出哪些插件。",
+    /** The page's own switch, above the server's cards: a display preference of this browser. */
+    pluginsIncompatibleOnly: "只显示不兼容的插件",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "留空保持已保存的值不变",
     pluginSecretClear: "清除已存值",
@@ -801,7 +843,7 @@ export const zh = {
       "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
     notifications: "任务完成通知",
     notificationsInfo:
-      "Task 在窗口失焦或隐藏时结束，弹一条系统通知，点击即回到该 Session。打开这个开关会当场向系统申请通知权限——系统只问这一次，被拒之后不再询问，只能到系统的通知设置里改回来。",
+      "Task 在窗口失焦或隐藏时结束，弹一条系统通知，点击即回到该 Session。打开这个开关会当场向系统申请通知权限并弹出一条确认通知——系统只问这一次，被拒之后不再询问，只能到系统的通知设置里改回来。",
     notificationsDenied: "系统已拒绝本应用的通知权限。请先在系统的通知设置中允许，再打开这个开关。",
     notificationsDismissed:
       "权限提示被关闭、没有给出答复，通知因此保持关闭。再次打开这个开关可以重新申请。",
@@ -1105,6 +1147,8 @@ export const zh = {
 
   /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
+    enabledTitle: "系统通知已开启",
+    enabledBody: "当窗口在后台时，Task 完成会通过这里通知你。",
     taskCompleteTitle: "任务完成",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `「${session}」已完成，点击查看`,
@@ -1159,10 +1203,17 @@ export const zh = {
     /** Confirm-before-save dialog shared by the settings forms (writes go to server-side config files). */
     confirmSaveTitle: "保存修改",
     confirmSaveBody: "确定保存这些修改吗？修改将写入服务器上的配置文件。",
-    /** Leaving or cancelling a form that holds unsaved edits (Agent settings tabs, the handbook editor, the binding dialog). */
+    /**
+     * The one prompt every way of leaving a form with unsaved edits shows (the shared UI
+     * package's UnsavedChangesHost): its accessible name, the question, the danger button that
+     * discards and leaves, and the button that stays with the edits.
+     */
     discardTitle: "放弃未保存的修改",
-    discardBody: "放弃尚未保存的修改？放弃后无法找回。",
-    discard: "放弃",
+    discardBody: "放弃未保存的修改？未保存的内容将丢失。",
+    discard: "放弃修改",
+    keepEditing: "继续编辑",
+    /** A page form's button beside Save: puts every field back to what is stored, without asking. */
+    reset: "重置",
     none: "（无）",
     retry: "重试",
     unknownError: "请求失败，请稍后重试",
@@ -1577,8 +1628,8 @@ export const zh = {
       ["discard", "不生成摘要，直接丢弃旧上下文，下一轮从新窗口重新开始。"],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "prompt（摘要提示词）",
-    maxTurnsInvalid: "max_turns 必须 > 0 或为 -1",
-    timeoutInvalid: "timeoutMs 必须 > 0 或为 -1",
+    numberInvalid: "必须是 > 0 的整数或 -1",
+    numberCannotClear: "已保存的值不能清空：请填写数值，或点「重置」还原",
     toolFieldInvalid: (name: string, field: string) => `${name}: ${field} 必须是 > 0 的整数或 -1`,
     toolPermission: "permission",
     permissionReadLabel: "Read-only",
@@ -1725,7 +1776,7 @@ export const zh = {
     /** The API tab: this server's switch for the Agent's public API, its approval mode, keys and examples. */
     apiEnable: "开启 API 访问",
     apiEnableHint:
-      "外部程序可通过 URL、密钥与 Agent ID 与此 Agent 对话；对话归入侧栏的「后台会话」。",
+      "外部程序可通过 URL、密钥与 Agent ID 与此 Agent 对话；对话默认归档，列在设置的「已归档对话」中。",
     apiOwnerOnly: "只有 Project 所有者可以更改这些设置。",
     apiAdminOff:
       "管理员已在服务器设置中关闭 Agent API：所有 API 请求都会被拒绝，这里的设置与密钥保留。",
@@ -1766,7 +1817,7 @@ export const zh = {
     /** The tab's Try it: one real API run on the owner's sign-in, shown as a program receives it. */
     apiTry: "试一试",
     apiTryHint:
-      "以你的登录身份走程序用的同一条运行路由，收到的就是程序会收到的事件流；开出的会话归入侧栏的「后台会话」。",
+      "以你的登录身份走程序用的同一条运行路由，收到的就是程序会收到的事件流；开出的会话默认归档，列在「已归档对话」中。",
     apiTryExample: "现在几点了？",
     apiTryRun: "运行",
     apiTryStop: "停止",
@@ -2216,8 +2267,12 @@ export const zh = {
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
-    confirmSaveTitle: "保存模型配置",
-    confirmSave: (name: string): string => `确定保存对「${name}」的配置修改？`,
+    /** The add-model dialog's footer verb (the settings dialog's is the common Save). */
+    addAction: "添加",
+    /** A save that changes a promoted row's price or identity: the server then drops the promotion. */
+    confirmCancelPromotionTitle: "取消促销",
+    confirmCancelPromotion: (name: string, pct: number): string =>
+      `保存后「${name}」当前省 ${pct}% 的促销将被取消：修改价格或模型标识会结束促销。确定保存？`,
     confirmDefaultTitle: "设为默认模型",
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
@@ -2351,7 +2406,6 @@ export const zh = {
     readOnlyHint: "member 只读；Vault 修改仅 owner 可执行",
     keyHint: "字母、数字与下划线，不能以数字开头",
     keyInvalid: "键名不合法：仅字母、数字与下划线，且不能以数字开头",
-    valueRequired: "值不能为空",
     /**
      * The tab's "add with AI" entry: the dialog's title and lead (an honest warning — a value
      * typed into the prompt reaches the provider, the Trace and the agent's own command line),
@@ -2579,6 +2633,10 @@ export const zh = {
     unsatisfiedNotice: (n: number) => `当前构建无法完整运行 ${n} 个已装插件，原因见各自的条目。`,
     /** The notice's action: filters the list down to those rows. */
     unsatisfiedShow: "查看",
+    /** Page notice while Settings › Plugins narrows the list to the incompatible plugins. */
+    incompatibleOnlyNotice: "当前只显示不兼容的插件。",
+    /** That notice's action: turns the filter off. */
+    incompatibleOnlyShowAll: "显示全部",
     repair: "用 AI 修复",
     repairTitle: (name: string) => `用 AI 修复 ${name}？`,
     repairBody: (name: string) =>
@@ -3131,12 +3189,23 @@ export const zh = {
     /** The same mark on its own, for a row that is attributed to a machine rather than named after one. */
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
-    draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
-    /** Collapsed group names for the home-page examples (bookmark style; only one open at a time). */
+    draftSubtitle: "最全面的 Agent 自进化平台",
+    /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
+    start: {
+      /** What each count counts; the label and the number open the page that lists it. Short: the three share the brand's line. */
+      metrics: {
+        agents: "智能体",
+        toolkits: "自进化算法",
+        benchmarks: "评估集",
+      },
+      examplesTitle: "示例与快捷指令",
+    },
+    /** Collapsed group names for the start page's examples (bookmark style; only one open at a time). */
     exampleFolders: {
-      webapps: "搭建网页应用",
-      agents: "搭建和优化智能体",
-      schedules: "创建定时任务",
+      apps: "一句话生成 AI 应用",
+      webapps: "网页与小游戏",
+      evolve: "评测与优化智能体",
+      schedules: "定时任务",
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "点击填入输入框，可修改后自行发送",
@@ -3243,6 +3312,13 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "音符画成音符图标，严格踩着节拍飞来，玩家按键击打，判定显示 Perfect / Great / Miss 三档，" +
           "连击计分，难度随曲子推进。纯前端单文件，file:// 直接打开即玩。",
       },
+      ragDocsExpert: {
+        label: "一句话生成 RAG 文档专家",
+        desc: "收集 Claude Code 文档，生成一个带来源引用的 RAG 问答应用",
+        prompt:
+          "收集 https://github.com/ericbuess/claude-code-docs 的文档，" +
+          "做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
+      },
       investmentCopilot: {
         label: "对话式投资分析助理",
         desc: "用 Penguin SDK 做对话式看盘 Copilot：首页列出近期走势较好的股票，每个判断都说清市场因素",
@@ -3253,14 +3329,14 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "只做分析不是投资建议。它的查股工具要能答「帮我查一下智谱的股票」这类问题：" +
           "按公司名（中文也行）自己对应到股票代码，查不到或没上市就直说，不要编。",
       },
-      missionControl: {
-        label: "搭建自定义工作流界面：Agent 指挥台",
-        desc: "聊天旁的 Workflow 标签页：把一个任务同时派给多个 Agent，实时看每个 Session 的状态",
+      legalDesk: {
+        label: "法务智能体：上传文件，下载分析报告",
+        desc: "新建一个法务 Agent，配一个 Workflow 标签页：只有上传、文件列表和报告下载，看不到对话过程",
         prompt:
-          "给你自己做一个 Workflow：聊天旁边的一张「指挥台」标签页。我输入一个任务、勾选本 Project 里的一个或多个 Agent，" +
-          "它就为每个 Agent 开一个 Session 并行跑起来。每次运行是一张卡片，带实时的动态状态（排队、运行中、完成）和耗时，" +
-          "刷新页面后看板仍在。再加第二张标签页放统计——各 Agent 的运行次数与平均耗时——以及一个占满整个应用的按钮，当作大屏来用。" +
-          "颜色一律取自主题变量，明暗两种主题下都要好看。",
+          "新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。" +
+          "再给你自己做一个 Workflow 标签页，当作它的工作台：我上传文件后，交给法务智能体在后台分析，" +
+          "完成后生成一份分析报告供我下载。页面上只要上传、文件列表（每个文件的处理状态）和报告下载，" +
+          "不显示任何对话过程；颜色一律取自主题变量，明暗两种主题下都要好看。",
       },
       agentBenchmarkBuild: {
         label: "构建通用决策智能体和评测基准",
@@ -3284,7 +3360,7 @@ Benchmark：
 3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
-        label: "优化通用决策智能体的准确率",
+        label: "Default 优化：提升决策智能体的准确率",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
@@ -3294,6 +3370,13 @@ Benchmark：
 - runs：\`3\`
 - desired_score：\`>=95\`
 - candidate_round_limit：\`5\``,
+      },
+      benchmarkImport: {
+        label: "导入评测集：看看仓库里有哪些 Benchmark 包",
+        desc: "列出 penguin-harness-benchmark 仓库里可导入的 Benchmark 包，选定后由 benchmark-design 导入",
+        prompt:
+          "使用 `benchmark-design` 技能：列出 https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages " +
+          "下可导入的 Benchmark 包，标出本 Project 已有的，等我选定后再导入。",
       },
       dailyPlan: {
         label: "每天早 9 点的计划对话",
@@ -3513,9 +3596,11 @@ Benchmark：
             ? "响应不完整或无法解析"
             : kind === "network"
               ? "网络或服务暂时不可用"
-              : kind === "failed"
-                ? "模型服务返回错误"
-                : "请求失败";
+              : kind === "image_rejected"
+                ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
+                : kind === "failed"
+                  ? "模型服务返回错误"
+                  : "请求失败";
       const action =
         state === "gaveUp"
           ? `第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`
@@ -3533,6 +3618,10 @@ Benchmark：
     reconnectRetryNow: "立即重试",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */
     reconnectGiveUp: "放弃",
+    /** "Retry" on a failed run's last line (the error banner, or a reconnect line that gave up): sends the failed turn's input again, with no new message. */
+    retryFailedRun: "重试",
+    /** Toast when Retry finds nothing held: the failed turn's input already went out with a later message. */
+    retryNothing: "没有可重试的内容：失败那一轮的输入已随后续消息发出。",
     imageAlt: "用户上传的图片",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:
@@ -3573,6 +3662,13 @@ Benchmark：
      * (approval waits, harness overhead), so this reads as two measurements, never as a split.
      */
     statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}，工具 ${toolMs}`,
+    /** The same two components as rows, behind the "?" beside an elapsed total. */
+    statApiTime: "模型 API 时间",
+    statToolTime: "工具 wall time",
+    /** The three priced parts behind the "?" beside a cost total; they sum to that total. */
+    costPartCacheRead: "缓存输入",
+    costPartCacheWrite: "未缓存输入",
+    costPartOutput: "输出",
     statInput: "输入 tokens",
     statCached: "已缓存",
     statOutput: "输出 tokens",
@@ -3885,26 +3981,21 @@ Benchmark：
     expandRestSessions: (n: number) => `展开其余 ${n} 个对话`,
     /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
     loadMoreSessions: "加载更多会话",
-    /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
-    folderGroups: {
-      background: (n: number) => `后台会话（${n}）`,
-      archived: (n: number) => `已归档（${n}）`,
-    },
-    /** A Background row's source mark: the program that opened the Session, as its tooltip and hidden text. */
+    /**
+     * Who opened a Session: a person (`user`), or the program behind it — the mark a row of one
+     * a program opened carries, as its tooltip and hidden text, and the archive page's source
+     * filter.
+     */
     sessionSource: {
+      user: "用户",
       api: "API",
       schedule: "定时任务",
-      subagent: "子智能体",
       cli: "CLI",
     },
-    /**
-     * Tooltip of a folder-only group's header — a group with no active conversation of its
-     * own, only rows inside its folders (it renders collapsed and sorts last). `n` is what
-     * those folders hold, which is also the count the dimmed header shows; the Workspace path
-     * follows where the header has one, since this sentence replaces the tooltip that carried it.
-     */
-    folderOnlyGroup: (n: number, path?: string) =>
-      `仅有折叠任务：${n} 个会话${path ? `（${path}）` : ""}`,
+    /** An archived conversation opened by its URL: what the stub in place of the transcript says. */
+    archivedStub: {
+      note: "这个对话已归档。取消归档后可以查看内容，它会回到左侧列表。",
+    },
     /** The skills note's fixed phrase (the count picks the en plural); the skill names follow it as `nameList`. */
     skillsLabel: (_count: number): string => "使用技能",
     /** Attached-file notice above a user message: this fixed phrase, then the file names (only the names; the paths stay in the Trace) as `nameList`. */
@@ -4185,8 +4276,16 @@ Benchmark：
     },
     /** Why the enable switch is gated while the OTHER channel holds the connection. */
     otherEnabledHint: (other: string): string => `同一会话只能启用一个渠道：先停用${other}连接`,
-    /** Why the enable switch is gated while the selected channel has no stored credential. */
-    credentialMissingHint: "先填写并保存凭证，再启用连接",
+    /**
+     * Why the enable switch is gated while the selected channel has no stored credential — one
+     * per channel, because what is missing differs: a scan, typed fields, or either.
+     */
+    credentialMissingHint: {
+      feishu: "先填写 App ID 与 App Secret 并保存，再启用连接",
+      telegram: "先填写 Bot Token 并保存，再启用连接",
+      qq: "先扫码，或填写 App ID 与 App Secret 并保存，再启用连接",
+      wechat: "先扫码绑定微信，再启用连接",
+    },
     /** Why the clear checkbox is gated while the channel's connection is enabled. */
     disableBeforeClearHint: "先停用连接，才能清除凭证",
     /** The saved delivery option: render a reply's Markdown in the channel's own markup. */
@@ -4241,6 +4340,12 @@ Benchmark：
       `${when} 收到过一条消息，但任务没有开始：${detail}`,
     deliveryFailedSend: (when: string, detail: string) =>
       `任务已完成，但回复于 ${when} 发送失败：${detail}`,
+    /**
+     * WeChat only, in the delivery-failure line's place: replies the platform would not take
+     * yet are held for the user's next WeChat message, which is not a failure.
+     */
+    repliesHeld: (when: string) =>
+      `${when} 起有回复暂未送达：微信只在你给机器人发消息后的一段时间内接受它的回复，条数也有限。你下次在微信里给它发消息时，会先补发这些回复。`,
     /** A connection failure the connection has since recovered from (lastError is gone by then). */
     lastConnectionError: (when: string, detail: string) => `连接曾于 ${when} 中断：${detail}`,
     /** The collapsed FAQ folds below the save area. */
@@ -4250,7 +4355,7 @@ Benchmark：
     faqWhatBinding:
       "同一个机器人可以同时保存在多个对话里，但同一时刻只能有一个对话启用它的连接。要换一个对话使用，先在原对话停用连接，再在这里启用——凭证不必删除。",
     faqTroubleTitle: "常见问题",
-    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent). */
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent; WeChat direct chats only; WeChat's per-message reply budget and window). */
     troubleNoChat: "「发送测试消息」不可用？机器人要先收到过一条消息，才知道要发到哪个会话。",
     troubleConnError:
       "连接状态显示错误？检查凭证是否正确；飞书还需确认 API 域名与事件订阅方式（长连接）。",
@@ -4260,6 +4365,9 @@ Benchmark：
       "在 Telegram 群里发消息，机器人毫无反应？Telegram 的 Group Privacy 默认开启，此时不担任该群管理员的机器人只能收到明确指向它的命令（如 /start@your_bot）和对它自己消息的回复，普通群消息根本不会送达，连接本身也没有任何异常。把机器人设为该群的管理员即可单独解决，管理员始终收到全部消息。也可以到 @BotFather 用 /setprivacy 关闭 Group Privacy，然后把机器人移出该群再重新拉入——已在的群不会自动生效。",
     /** WeChat has no group inbound at all — the answer to "I @-ed it in a group and nothing happened". */
     troubleWeChatDirect: "微信渠道只接收单聊消息：在群里 @机器人不会有任何反应，请直接私聊它。",
+    /** WeChat's reply budget and window — the answer to "replies arrive combined, or late". */
+    troubleWeChatReplyWindow:
+      "微信里的回复被合并，或迟迟不到？你每给机器人发一条消息，微信只允许它回复约 10 条，而且只在你发消息后的一段时间内有效。一次运行产生的消息更多时，会合并成更少的几条发出；微信暂时不接受的回复会先存下，在你下次给机器人发消息时补发。",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "QQ 里收不到回复？QQ 只允许机器人回复你刚发出的消息：在网页端发起的对话不会同步过去，距离你上一条 QQ 消息过去几分钟后也发不出。在 QQ 里再发一条消息即可继续。",
@@ -4510,7 +4618,7 @@ Benchmark：
       },
       {
         title: "优化",
-        text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本。",
+        text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本，也可以换一种自进化算法。",
       },
     ],
     /** The first step card's text for a Project member: no Create manually, which is the owner's. */
@@ -4593,7 +4701,16 @@ Benchmark：
     colDuration: "耗时",
     colCase: "题目",
     colRun: "运行",
-    colSession: "Session",
+    /** A run label in the evaluation dialog opens the Session the run ran in. */
+    runOpenSession: "打开这次运行的会话",
+    /** The note a run link shows instead when its Session is archived, so in no sidebar. */
+    runArchivedTitle: "这次运行的会话已归档",
+    runArchivedBody: "已归档的会话不在侧栏里。请到「设置 › 已归档对话」里按标题或 ID 找到它。",
+    runArchivedSessionTitle: "标题",
+    runArchivedSessionId: "ID",
+    runArchivedCopyId: "复制会话 ID",
+    runArchivedOpen: "打开已归档对话",
+    runSessionUntitled: "（未命名会话）",
     /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
     copyTrialName: "复制 Harbor trial 名称",
     // The evaluation detail dialog, and the Ask AI dialog both detail dialogs open.
@@ -4796,7 +4913,7 @@ Benchmark：
     evaluatorAgentHint:
       "派发评测子会话、按评分细则打分并写入记分的一方；需要装有 agent-evaluation 技能",
     evaluatorMissingSkill:
-      "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
+      "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-evaluation 插件（Agent Evaluation）。",
     evaluateSessionModel: "评估会话使用的模型",
     evaluateSessionModelHint:
       "这个会话运行所用的模型，缺省为 Project 默认模型；被测智能体也在这个模型上评测，思考等级沿用它自己的配置",
@@ -4821,7 +4938,7 @@ Benchmark：
     optimizerAgent: "执行优化的智能体",
     optimizerAgentHint: "读分数与 Trace、修改被测智能体的一方；需要装有 agent-optimization 技能",
     optimizerMissingSkill:
-      "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
+      "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 default-rsi-toolkit 插件（Default RSI Toolkit）。",
     testedAgentHint: "优化改的是它的 Agent State；分数记在它名下，只与它自己同标签的历史分数比较",
     sessionModel: "优化会话使用的模型",
     sessionModelHint:
@@ -4854,12 +4971,68 @@ Benchmark：
       "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
       "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
+    // The Optimize tab's Method select: one option per RSI toolkit (benchmark/rsi-methods.ts).
+    methodField: "方法",
+    /** Semantics behind the Method field's "?". */
+    methodHint: "改进智能体所用的自进化算法；每一种都是插件库里的一个工具包",
+    /** Each method's option label, and the line the field shows under it once it is picked. */
+    methods: {
+      default: {
+        label: "Default（试跑 → 反思 → 提升）",
+        blurb: "默认循环：每轮一个可证伪的假设、一处有界改动，分数严格提升才保留",
+      },
+      opro: { label: "OPRO", blurb: "由历史指令与分数提出新指令（Yang 等，2023）" },
+      ape: { label: "APE", blurb: "从输入 / 输出示例归纳指令（Zhou 等，2022）" },
+      ace: { label: "ACE", blurb: "从训练轨迹进化规则手册（Zhang 等，2025）" },
+      awm: { label: "AWM", blurb: "从成功轨迹归纳工作流记忆（Wang 等，2024）" },
+    } satisfies Record<RsiMethodId, { label: string; blurb: string }>,
+    /**
+     * Shown where the default's round limit and target score are: any other toolkit sets its own
+     * budget.
+     */
+    methodBudgetHint: "这个方法用它自己的预算：论文默认值降为冒烟档，除非在「优化重点」里另行指定",
+    /** The optimizer field's hint under any other toolkit: the Skill that agent must carry. */
+    methodOptimizerHint: (skill: string): string =>
+      `运行该方法、修改被测智能体的一方；需要装有 ${skill} 技能`,
+    methodMissingSkill: (plugin: string, skill: string): string =>
+      `该智能体没有安装 ${skill} 技能，无法运行这个方法——先在插件库为它安装 ${plugin} 插件，或换用默认智能体。`,
+    /**
+     * The tail for a toolkit other than the default: its own Skill, the three inputs every toolkit
+     * takes, and its paper's loop and budget. Given the baseline's provider and model, it pins the
+     * evaluations to them, as the default loop does, so they join the baseline's series.
+     */
+    rsiOptimizeTail: (p: {
+      skill: string;
+      label: string;
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      provider?: string;
+      modelId?: string;
+    }): string => {
+      const pinned =
+        p.provider && p.modelId
+          ? `- provider：\`${p.provider}\`\n- model_id：\`${p.modelId}\`\n`
+          : "";
+      return (
+        `请使用 \`${p.skill}\` 技能，在冻结的 Benchmark 上对被测智能体复现 ${p.label}。\n\n` +
+        `- test_agent_id：\`${p.targetAgentId}\`\n` +
+        `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+        `- runs：\`${p.runs}\`\n` +
+        pinned +
+        "\n" +
+        (pinned !== "" ? "评测固定使用这组 provider 与模型。" : "") +
+        "按原论文的流程运行，预算用技能的冒烟档（上文另有要求时以上文为准）；只问我方法必需而我没给的输入。" +
+        "基线与每个候选都经技能自带的评测参考测量，固定被测智能体的运行时，每条完整评估都以同一标签记入 scoreboard.yaml；" +
+        "结束时报告基线分、最终分、保留的版本与方法改了什么。"
+      );
+    },
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     /** The header button and the dialog's title: the one place the page uses the user's own word for a Benchmark. */
     importBenchmark: "导入评估集",
     importChatTitle: "推荐：让 Agent 在对话中导入",
     importChatWhy:
-      "Agent 会把链接固定到一个提交、只取这一个文件夹，读过每个文件后再写入评估中心，比直接上传更可靠。",
+      "Agent 会按 benchmark-design 技能的导入流程把链接固定到一个提交、只取这一个文件夹，读过每个文件再写入评估中心，比直接上传更可靠。",
     importSourceLabel: "Benchmark 来源",
     importSourceHint:
       "GitHub 仓库里的文件夹链接（如 …/tree/<commit>/packages/<id>）/ 本地路径 / 一段描述",
@@ -4875,14 +5048,14 @@ Benchmark：
       localPath: (s: string): string => `导入这个本地路径下的 Benchmark 包：${s}。`,
       reference: (s: string): string => `找到这个 Benchmark，并把它作为包导入：${s}。`,
     },
-    /** The fixed tail: the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
+    /** The fixed tail: the benchmark-design Skill's import procedure when the Agent has it, then the rules for one that does not — the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
     importPromptTail: (projectId: string): string =>
       [
+        "如果装有 `benchmark-design` 技能，按它的 `reference/package.md`「Importing a package」一节操作——来源解析、固定提交、配对的 train / test 包、导入后核对与可选的冒烟探测都写在那里；没有这个技能时，按下面的规则做：",
         "包是一个文件夹：根下有 `benchmark_config.toml`（键：id、title、description、version（`YYYY.MM.DD.N`）、status、runs 与 `[origin]` 表），每题一个 `CASE-*/`，内含 `statement/README.md` 与 `rubric/README.md`。",
         "只取这一个文件夹，固定在一个提交上，放进临时目录：先把链接里的分支或标签解析成 40 位提交号（`git ls-remote`），再下载它（codeload 的 tarball 或 sparse checkout）；导入之前读完每个文件——不是 Benchmark 包、`status` 不是 `published`、或含有文本材料以外的东西，就拒绝导入。不要拷贝上游的大文件，题干里有它们的链接。",
         `用 \`penguin benchmark import <那个文件夹> --project-id ${projectId} --origin-url <原样的链接> --origin-ref <40 位提交号> --origin-path <仓库里的文件夹路径>\` 导入（来源不是仓库文件夹时不带 \`--origin-*\` 选项）。服务端按检查上传 zip 的规则检查它，并自己写入 \`benchmarks/<id>/\`：来源记为 git，版本保持包里的值，\`scoreboard.yaml\` 只含 \`evaluations: []\`；你自己不要往 \`benchmarks/\` 下写任何东西。`,
         "命令提示该 Benchmark 已存在时，先停下问我再覆盖——覆盖（`--overwrite`）会替换整个目录，连同 `scoreboard.yaml` 与 `.jobs/`；该 Benchmark 还有评估在运行时，服务端也会拒绝覆盖。最后报告命令输出的 id、标题、版本与题数；评估中心随即列出它。",
-        "如果你装有 `benchmark-design` 技能，先读它的 `reference/package.md`（「Importing a package」一节）。",
       ].join("\n"),
     importCopyPrompt: "复制 Prompt",
     importOpenChat: "打开新对话",
@@ -5207,16 +5380,12 @@ Benchmark：
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
       budget: "月预算",
       budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
-      hireConfirm: (name: string, manager: string): string =>
-        `将 ${name} 加入组织，汇报给 ${manager}？会改写组织图文件。`,
+      /** The confirmation a new Agent's picked plugin with a stdio MCP server asks for before the hire: the question; the commands follow it. */
+      hireStdioQuestion: (name: string): string => `招募 ${name}？`,
       hired: (name: string): string => `已招募 ${name}`,
       /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `设置 ${name} 的预算`,
-      budgetConfirm: (name: string, budget: string): string =>
-        `将 ${name} 的月预算改为 ${budget}？超过 80% 告警，达到 100% 暂停其自动触发。`,
       reportsToTitle: (name: string): string => `调整 ${name} 的汇报线`,
-      reportsToConfirm: (name: string, manager: string): string =>
-        `让 ${name} 改为汇报给 ${manager}？其下属随之一起移动。`,
       reportsToCycle: "不能汇报给自己或自己的下属",
       renewDeskTitle: (name: string): string => `为 ${name} 换工位`,
       renewDeskExplain: "换工位会开一个新的工位会话并重置上下文；改了工作区就写入员工树。",
@@ -5246,15 +5415,13 @@ Benchmark：
       clearBudget: "设为不限",
       currentValue: (value: string): string => `当前：${value}`,
       manager: "上级",
-      reportsToHint: "只列出不在其下属范围内的员工",
+      reportsToHint: "只列出不在其下属范围内的员工；其下属随之一起移动",
       /** The thinking-level edit: it writes the employee's Agent config, the place a desk reads it from. */
       thinkingLevelTitle: (name: string): string => `设置 ${name} 的思考等级`,
       thinkingLevelInfo:
         "写入该员工 Agent 的配置，与开发模式里这个 Agent 的设置是同一处。工位会话自下一个模型上下文起使用它，新开的工单会话直接使用；在工位会话里选的思考等级只固定那一个会话。",
       /** No level of the Agent's own: the Project default applies, and this is what it resolves to. */
       thinkingLevelDefault: (level: string): string => `Project 默认（${level}）`,
-      thinkingLevelConfirm: (name: string, level: string): string =>
-        `将 ${name} 的思考等级改为「${level}」？会写入该 Agent 的配置。`,
       thinkingLevelPinned: (level: string): string =>
         `当前工位会话已单独固定为「${level}」，此设置自下次换工位起对工位生效。`,
     },
@@ -5283,7 +5450,6 @@ Benchmark：
       periodHint: "30m / 12h / 7d，留空为一次性；最短 5m",
       delete: "删除日程",
       deleteConfirm: (name: string): string => `确认删除日程「${name}」？`,
-      saveConfirm: (name: string): string => `保存日程「${name}」？会改写它的日程文件。`,
       outcome: "结果",
       lastFired: "最近触发",
       nextFire: "下次触发",
@@ -5392,7 +5558,6 @@ Benchmark：
       invalid: "该工单无效：状态与所在列不符，或 id 重复",
       invalidFiles: "无法解析的工单文件",
       edit: "编辑字段",
-      saveConfirm: (title: string): string => `保存对「${title}」的修改？会改写工单文件。`,
       saved: "工单已保存",
       created: "工单已创建",
       detail: "工单详情",
@@ -5779,6 +5944,10 @@ Benchmark：
       telegram_not_bound: "该 Session 尚未绑定 Telegram。",
       telegram_no_chat: "尚未收到 Telegram 消息：先在 Telegram 中给机器人发一条消息。",
       telegram_send_failed: "Telegram 消息发送失败。",
+      wechat_no_chat: "尚未收到微信消息：先在微信中给机器人发一条消息。",
+      wechat_send_failed: "微信消息发送失败。",
+      wechat_needs_recent_message:
+        "微信暂时不接受机器人发消息：先在微信里给机器人发一条消息，再发送测试消息。",
       another_channel_enabled: "该会话已启用另一渠道的连接：先停用它，再启用当前渠道。",
       // Deliberately names nothing about the other conversation: it may live in a Project
       // this user cannot see, and the remedy does not depend on knowing which one it is.

@@ -124,6 +124,7 @@ export function BrowserTabStrip({
                 role="tab"
                 aria-selected={active}
                 data-tooltip={title}
+                data-tooltip-extra={lines.length > 1}
                 onClick={() => onSelect(tab.id)}
                 // A middle click closes a tab, as in every browser.
                 onAuxClick={(event) => {

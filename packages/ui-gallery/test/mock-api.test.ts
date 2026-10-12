@@ -87,9 +87,9 @@ describe("the mocked API", () => {
     });
     expect(first.sessions.length).toBe(3);
     expect(first.counts?.active).toBeGreaterThan(3);
-    expect(first.counts?.archived).toBe(1);
-    // The scheduled, subagent and CLI rows share the Background folder.
-    expect(first.counts?.background).toBe(3);
+    // Archived by hand, plus the scheduled run and the evaluation nobody kept; the subagent is
+    // in no category, and the kept CLI run is one of the active rows.
+    expect(first.counts?.archived).toBe(3);
     expect(first.workspaceCounts).toBeDefined();
     const rest = await api.listSessions(project, agent, {
       offset: 3,
@@ -128,6 +128,30 @@ describe("the mocked API", () => {
     expect(plain.sessions.some((s) => s.source === "company")).toBe(true);
   });
 
+  it("lists the archived rows by group, pages a group, and unarchives and deletes them", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const groups = await api.listArchivedSessionGroups();
+    expect(groups.total).toBe(3);
+    expect(groups.groups.reduce((n, g) => n + g.count, 0)).toBe(3);
+    const temp = groups.groups.find((g) => g.workspace === "temp")!;
+    const page = await api.listArchivedSessions({
+      projectId: temp.projectId,
+      workspace: temp.workspace,
+      limit: 10,
+    });
+    expect(page.sessions.length).toBe(temp.count);
+    expect(page.sessions.every((s) => s.archived)).toBe(true);
+    const first = page.sessions[0]!.sessionId;
+    expect(await api.unarchiveSessions({ sessionIds: [first] })).toEqual({ done: 1, missing: [] });
+    expect(store.session(first)?.archived).toBe(false);
+    expect((await api.listArchivedSessionGroups()).total).toBe(2);
+    expect(await api.deleteSessions({ filter: { source: "schedule" } })).toEqual({
+      done: 1,
+      missing: [],
+    });
+    expect((await api.listArchivedSessionGroups()).total).toBe(1);
+  });
+
   it("pages the list by last activity with a cursor, as the sidebar asks for it", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const project = store.f.project.projectId;
@@ -146,6 +170,27 @@ describe("the mocked API", () => {
     );
     const stamps = all.sessions.map((s) => s.lastActiveAt);
     expect(stamps).toEqual([...stamps].sort().reverse());
+  });
+
+  it("answers the sidebar's batch entry by entry as the list would, an unknown Agent absent", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    const opts = {
+      limit: 3,
+      order: "activity" as const,
+      category: "active" as const,
+      excludeOrg: true,
+    };
+    const listed = await api.listSessions(project, agent, { ...opts, withCounts: true });
+    const batch = await api.batchSessions(project, [
+      { agentId: agent, ...opts, withCounts: true },
+      { agentId: "no_such_agent", ...opts },
+    ]);
+    expect(batch.results).toEqual([
+      { agentId: agent, ok: true, ...listed },
+      { agentId: "no_such_agent", ok: false, reason: "absent" },
+    ]);
   });
 
   it("serves a running Session's history with its live tail, and a finished one without", async () => {

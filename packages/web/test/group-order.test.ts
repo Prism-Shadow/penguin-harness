@@ -13,7 +13,6 @@
  * - A drop splices the rendered list into the stored order: an unmoved drop writes nothing,
  *   unloaded groups keep their places, pins and unpins do not fling groups, stale keys stay.
  * - The group order and each group's row order are independent.
- * - Folder-only groups sort last, never when pinned, keeping the manual order in each block.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -24,12 +23,7 @@ import {
   saveGroupOrder,
 } from "../src/lib/group-order";
 import type { GroupOrderStorage } from "../src/lib/group-order";
-import {
-  TEMP_WORKSPACE_GROUP_KEY,
-  foldedShare,
-  groupSessionsByWorkspace,
-  isFolderOnly,
-} from "../src/lib/session-grouping";
+import { TEMP_WORKSPACE_GROUP_KEY, groupSessionsByWorkspace } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const id = (x: string) => x;
@@ -333,57 +327,5 @@ describe("group order and row order are independent axes", () => {
       "s1a",
       "s1b",
     ]);
-  });
-});
-
-describe("folder-only groups sort last (demote)", () => {
-  /** Stands in for the sidebar's own predicate: these keys are the groups holding only folded rows. */
-  const isFolded = (key: string) => key.startsWith("f");
-
-  it("sends the demoted groups behind the rest, each block keeping its order", () => {
-    const out = orderGroups(["a", "f1", "b", "f2", "c"], id, {
-      ...noPins,
-      order: [],
-      demote: isFolded,
-    });
-    expect(out).toEqual(["a", "b", "c", "f1", "f2"]);
-    // Demoting nothing is the identity — what a Project with no evaluations still renders.
-    const plain = { ...noPins, order: [], demote: () => false };
-    expect(orderGroups(["a", "b", "c"], id, plain)).toEqual(["a", "b", "c"]);
-  });
-
-  it("never demotes a pinned group — a pin is how a folder-only group is kept up top", () => {
-    const out = orderGroups(["a", "f1", "pf", "b"], id, {
-      pinned: new Set(["pf"]),
-      order: [],
-      // "pf" is folder-only AND pinned: the pin wins, as it does over every other sort.
-      demote: isFolded,
-    });
-    expect(out).toEqual(["pf", "a", "b", "f1"]);
-  });
-
-  it("the manual order still applies inside each of the two blocks", () => {
-    // Stored: f2, b, f1, a. The demotion splits that sequence without reshuffling either
-    // half, so a drag survives a group becoming — or ceasing to be — folder-only.
-    const out = orderGroups(["a", "f1", "b", "f2"], id, {
-      ...noPins,
-      order: ["f2", "b", "f1", "a"],
-      demote: isFolded,
-    });
-    expect(out).toEqual(["b", "a", "f2", "f1"]);
-  });
-
-  it("is folder-only when the active share is zero and something is folded away", () => {
-    // One Workspace of an evaluation: a single Test Session, inside the Background folder.
-    const evaluation = { active: 0, background: 1, archived: 0 };
-    expect(foldedShare(evaluation)).toBe(1);
-    expect(isFolderOnly(0, foldedShare(evaluation))).toBe(true);
-    // Every folded category counts; the active one never does.
-    const mixed = { active: 7, background: 6, archived: 4 };
-    expect(foldedShare(mixed)).toBe(10);
-    // A registered but still unused Workspace has nothing folded away to fold up …
-    expect(isFolderOnly(0, 0)).toBe(false);
-    // … and one active conversation makes a group an ordinary one again.
-    expect(isFolderOnly(1, 9)).toBe(false);
   });
 });

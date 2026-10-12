@@ -39,7 +39,13 @@ import { ICONS } from "../../icons/icons";
 import { useHoverDisclosure } from "../hover-disclosure/use-hover-disclosure";
 import { usePortalPanel } from "../portal-panel/use-portal-panel";
 
-const PANEL_WIDTH = 288; // w-72, the OptionMenu panel width
+/**
+ * The widest the panel grows (18rem at the default root size), and the estimate the first clamp
+ * uses. The panel is as wide as its content up to that cap — prose wraps at it, a short
+ * breakdown stays narrow — and the portal hook re-clamps against the width it renders at.
+ */
+const PANEL_WIDTH = 288;
+const PANEL_MAX_WIDTH = "min(18rem, calc(100vw - 2rem))";
 
 export function InfoPopover({
   children,
@@ -65,7 +71,7 @@ export function InfoPopover({
   const { triggerRef, panelRef, position } = usePortalPanel({
     open,
     onClose: close,
-    // Panel geometry: a fixed 288px column whose height is two to six lines of text.
+    // Panel geometry: at most an 18rem column, whose height is two to six lines of text.
     estimatedHeight: 160,
     panelWidth: PANEL_WIDTH,
   });
@@ -99,8 +105,10 @@ export function InfoPopover({
               top: position.topPx,
               bottom: position.bottomPx,
               left: position.left,
+              width: "max-content",
+              maxWidth: PANEL_MAX_WIDTH,
             }}
-            className="ui-glass anim-pop z-[60] max-h-[70vh] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-line bg-overlay px-3 py-2 text-xs leading-relaxed text-fg-muted shadow-lg"
+            className="ui-glass anim-pop z-[60] max-h-[70vh] overflow-y-auto rounded-md border border-line bg-overlay px-3 py-2 text-xs leading-relaxed text-fg-muted shadow-lg"
           >
             {children}
           </div>,

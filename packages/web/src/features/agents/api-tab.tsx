@@ -9,7 +9,9 @@
  * Save: turning the API on writes at once, while turning it off and deleting a key ask first,
  * because a program using them is refused from then on. A new key's secret exists only in the
  * create response: it is shown once, in a panel with its copy button, until Done, and afterwards
- * the list names the key by its prefix alone.
+ * the list names the key by its prefix alone. The name typed for a new key is a one-field form:
+ * Create (or Enter) is live once a name is typed, Cancel or Esc drops it, and leaving the tab
+ * with a name typed asks first.
  *
  * The admin's server-wide switch (Settings › Server › Agent API) overrides every Agent: when it is
  * off the switch here is disabled and says so, and nothing is lost. The tab's own read carries that
@@ -41,6 +43,7 @@ import {
   SkeletonList,
   ToggleRow,
   toastError,
+  useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
@@ -326,8 +329,9 @@ export interface ApiTabViewProps {
 export function ApiTabView(p: ApiTabViewProps) {
   const serverOff = !p.serverEnabled;
   const examples = agentApiExamples(p.baseUrl, p.agentRef);
+  const nameTyped = (p.draftName ?? "").trim() !== "";
   const onDraftKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") p.onCreateKey();
+    if (e.key === "Enter" && nameTyped && !p.busy) p.onCreateKey();
     else if (e.key === "Escape") p.onCancelKey();
   };
   return (
@@ -401,7 +405,13 @@ export function ApiTabView(p: ApiTabViewProps) {
                     onKeyDown={onDraftKey}
                   />
                 </div>
-                <Button size="sm" variant="primary" loading={p.busy} onClick={p.onCreateKey}>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  loading={p.busy}
+                  disabled={!nameTyped}
+                  onClick={p.onCreateKey}
+                >
                   {S.common.create}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={p.onCancelKey}>
@@ -477,6 +487,14 @@ export function ApiTab({
   const [draftName, setDraftName] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | undefined>(undefined);
   const [secret, setSecret] = useState<string | null>(null);
+  /** Drops the name typed for a new key: Cancel, Esc, and what a confirmed leave runs. */
+  const dropDraft = () => {
+    setDraftName(null);
+    setDraftError(undefined);
+  };
+  // A typed key name is unsaved input: leaving the tab with one asks first. The row's own
+  // Cancel and Esc drop it without asking — they are the explicit discard, like a Reset.
+  useUnsavedChanges((draftName ?? "").trim() !== "", { discard: dropDraft });
 
   useEffect(() => {
     let cancelled = false;
@@ -518,10 +536,7 @@ export function ApiTab({
 
   const createKey = async () => {
     const name = (draftName ?? "").trim();
-    if (name === "") {
-      setDraftError(S.common.requiredField);
-      return;
-    }
+    if (name === "" || busy) return;
     setBusy(true);
     try {
       const res = await api.createAgentApiKey(projectId, agentId, { name });
@@ -571,10 +586,7 @@ export function ApiTab({
           setDraftError(undefined);
         }}
         onCreateKey={() => void createKey()}
-        onCancelKey={() => {
-          setDraftName(null);
-          setDraftError(undefined);
-        }}
+        onCancelKey={dropDraft}
         onSecretDone={() => setSecret(null)}
         onDeleteKey={setDeleting}
       />

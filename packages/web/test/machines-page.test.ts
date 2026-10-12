@@ -44,7 +44,7 @@
  * the same machines are behind and comes back when another falls behind or the build moves.
  *
  * vitest runs node-only here, so components are called as functions and their handlers handed
- * clicks as a browser delivers them (test/helpers/dom.ts); a few are rendered to static markup and
+ * clicks as a browser delivers them (test/helpers/fake-dom.ts); a few are rendered to static markup and
  * read back as a tree (test/helpers/markup.ts). The dialog's verbs are found by their `data-verb`,
  * its steps by their `data-step`, never by their words.
  */
@@ -75,7 +75,7 @@ import { machineChip } from "../src/features/machines/machine-detail-view";
 import { readMachine, updateNotice } from "../src/features/machines/machines-view";
 import { formatShortDateTime } from "../src/lib/format";
 import { S } from "../src/lib/strings";
-import { clickOn, fakeElement } from "./helpers/dom";
+import { clickOn, fakeElement } from "./helpers/fake-dom";
 import { elementsOf, readMarkup, seenText } from "./helpers/markup";
 
 const IMAGE = "0.2.13";

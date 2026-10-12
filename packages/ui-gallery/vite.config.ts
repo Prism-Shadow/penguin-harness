@@ -1,6 +1,7 @@
 /**
- * Vite config: the component gallery (React SPA + Tailwind CSS 4), a local dev tool, plus the
- * framed Web App as a second page.
+ * Vite config: the component gallery (React SPA + Tailwind CSS 4), plus the framed Web App as a
+ * second page. A dev tool run locally with `pnpm dev:gallery`, it is also published on the public
+ * site under `/gallery/` (scripts/build-site.mjs builds it with `BASE_PATH=<base>gallery/`).
  *
  * Three documents come out of one build: `index.html`, the gallery site; `app.html`, the real
  * Web App mounted against an in-browser mock of its API (src/app); and `lib.html`, one component
@@ -15,7 +16,8 @@
  * `@prismshadow/penguin-ui` resolves to the live `packages/ui/src` through the workspace link;
  * `penguinUi()` emits the bundled fonts' licence texts beside a build. Port 7372 is fixed and
  * strict: screenshot runs and quoted feedback links name it. BASE_PATH lets a static build be
- * served under a subpath. The vitest config stays separate (vitest's embedded vite types
+ * served under a subpath, and `pageShells()` copies the document to every page's address, so a
+ * static host serves each page. The vitest config stays separate (vitest's embedded vite types
  * conflict with vite 7's).
  *
  * The package source and the app's live outside this Vite root, which the dev server's file
@@ -31,6 +33,7 @@ import { penguinUi } from "../ui/src/vite-plugin";
 import { dropNonWoff2FontSources } from "../web/vite.config";
 import { storageSeedScript } from "./src/app/frame";
 import { mockWebNetwork } from "./src/app/mock/vite-plugin";
+import { deepPagePaths } from "./src/lib/page-paths";
 
 const at = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
@@ -78,6 +81,28 @@ function frameDocument(): Plugin {
   };
 }
 
+/**
+ * A copy of the gallery's document at every page's address (`s/chat/index.html`, …). Every route
+ * is a full page load, and a static host answers with files only: without these, a reload or a
+ * quoted link would get the host's 404 page (on the public site, the landing page's).
+ */
+function pageShells(): Plugin {
+  return {
+    name: "penguin:gallery-page-shells",
+    apply: "build",
+    // After Vite's own HTML plugin, which emits the processed documents in this same hook.
+    enforce: "post",
+    generateBundle(_options, bundle) {
+      const index = bundle["index.html"];
+      if (index?.type !== "asset") throw new Error("pageShells: no index.html in the bundle");
+      for (const path of deepPagePaths()) {
+        const fileName = `${decodeURIComponent(path.slice(1))}/index.html`;
+        this.emitFile({ type: "asset", fileName, source: index.source });
+      }
+    },
+  };
+}
+
 /** KaTeX's woff and truetype fallbacks stay out of the bundle, as in the app's own build. */
 function katexWoff2Only(): Plugin {
   return {
@@ -100,6 +125,7 @@ export default defineConfig({
     penguinUi(),
     katexWoff2Only(),
     frameDocument(),
+    pageShells(),
     watchPackageSources(),
   ],
   resolve: { dedupe: ["react", "react-dom"] },

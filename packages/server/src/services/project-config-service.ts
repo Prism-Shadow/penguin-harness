@@ -54,6 +54,7 @@ import {
   metaMaxTokens,
   migrateProjectConfigTable,
   migratePenguinGoRoutes,
+  migrationMayWriteBack,
   parseProviderTable,
   presetModelEntries,
   presetPromotions,
@@ -829,12 +830,14 @@ export class ProjectConfigService implements ProjectConfigStore {
       return null;
     }
     const table = asTable(parseToml(raw));
-    if (migrateProjectConfigTable(table)) {
-      // A file from before MMSP 0.5.0 or before group-level connections (core's
-      // migrateProjectConfigTable): rewritten once, before it is served; the next read parses
-      // the rewritten file (writeRaw drops the cache). Every file writeRaw renders carries a
-      // `[providers]` table, which is what keeps the key hoist from ever running on it again.
-      // Removed with the two migrations at the 0.3.0 release preparation.
+    // A file from before MMSP 0.5.0 or before group-level connections (core's
+    // migrateProjectConfigTable): rewritten once, before it is served; the next read parses
+    // the rewritten file (writeRaw drops the cache). Every file writeRaw renders carries a
+    // `[providers]` table, which is what keeps the key hoist from ever running on it again.
+    // While another server holds the data root (migrationMayWriteBack) the migrated table is
+    // served from memory and cached against the file as it stands. Removed with the two
+    // migrations at the 0.3.0 release preparation.
+    if (migrateProjectConfigTable(table) && (await migrationMayWriteBack(this.root))) {
       await this.writeRaw(projectId, table);
       return table;
     }
@@ -1705,8 +1708,8 @@ export class ProjectConfigService implements ProjectConfigStore {
       );
     }
 
-    // Only custom, vLLM, OpenRouter, TokenDance, SiliconFlow and user-defined groups take
-    // models added by hand (core's isAddableGroup); every other built-in group, the other
+    // Only custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and user-defined groups
+    // take models added by hand (core's isAddableGroup); every other built-in group, the other
     // gateways included, carries its catalog presets and the rows it already stores. The
     // same grandfathering as above: a stored row is written as it stands, hand-added
     // ones from before this rule included, and so is a row renamed inside its own group. A row

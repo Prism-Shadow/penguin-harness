@@ -34,6 +34,8 @@ export interface ChipProps {
   meta?: ReactNode;
   /** The whole of what the chip stands for, on hover (a path, a description). */
   tooltip?: string;
+  /** `tooltip` says what the label does not (a full path, what sending does): it shows over the label in full. */
+  tooltipExtra?: boolean;
   /** Set the chip in the mono face: it names an id, a file or a command. */
   mono?: boolean;
   variant?: ChipVariant;
@@ -49,6 +51,12 @@ const VARIANT: Record<ChipVariant, string> = {
   outline: "border border-line bg-surface-muted py-1",
 };
 
+/** A chip's tooltip attributes, marked as adding to the label when the caller says it does. */
+const hint = (tooltip: string, extra: boolean) => ({
+  "data-tooltip": tooltip,
+  ...(extra ? { "data-tooltip-extra": true } : {}),
+});
+
 /** How wide a chip may grow before its label truncates. */
 const WIDTH: Record<ChipVariant, string> = { soft: "max-w-48", outline: "max-w-56" };
 
@@ -58,6 +66,7 @@ export function Chip({
   suffix,
   meta,
   tooltip,
+  tooltipExtra = false,
   mono = false,
   variant = "soft",
   control,
@@ -67,13 +76,13 @@ export function Chip({
   const inline = control !== undefined && control !== null;
   return (
     <span
-      {...(tooltip !== undefined && !inline ? { "data-tooltip": tooltip } : {})}
+      {...(tooltip !== undefined && !inline ? hint(tooltip, tooltipExtra) : {})}
       className={`anim-pop flex ${inline ? "max-w-full" : WIDTH[variant]} items-center gap-1 rounded-md ${VARIANT[variant]} pl-2 pr-1 text-xs text-fg ${mono ? "font-mono" : ""}`}
     >
       {inline ? (
         <>
           <span
-            {...(tooltip !== undefined ? { "data-tooltip": tooltip } : {})}
+            {...(tooltip !== undefined ? hint(tooltip, tooltipExtra) : {})}
             className="flex shrink-0 items-center gap-1"
           >
             {glyph}
@@ -103,7 +112,7 @@ export function Chip({
           onClick={onRemove}
           className="flex h-5 shrink-0 items-center rounded px-0.5 text-fg-subtle transition-colors duration-150 hover:text-fg"
         >
-          ×
+          <span aria-hidden>×</span>
         </button>
       )}
     </span>
