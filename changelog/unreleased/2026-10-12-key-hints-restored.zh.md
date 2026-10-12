@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** fix
 - **Scope:** `ui`, `web`
+- **PR:** [#1051](https://github.com/Prism-Shadow/penguin-harness/pull/1051)
 
 [English](2026-10-12-key-hints-restored.md)
 
