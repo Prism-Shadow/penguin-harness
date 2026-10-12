@@ -1744,43 +1744,19 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome2.errorMessage).toContain("insufficient_user_quota");
   });
 
-  // The provider's wording singles out one definitive rejection, a request past the context
-  // window — wherever it rides: the error's message, the parsed body's code, the Anthropic
-  // body's nested message. Only a 4xx is read this way: a 5xx stays retryable whatever it
-  // says. No image is read out of the wording: a 400 worded like an image refusal is a plain
-  // `rejected` here, and the engine decides from the input it sent whether to strip images
-  // and retry (see engine.test.ts).
+  // Nothing is read out of the provider's wording: a 400 is `rejected` whatever it says, an
+  // image refusal and a context overflow included, and a 5xx stays retryable whatever it
+  // says. The engine decides from the input it sent whether a rejection is an image's (see
+  // engine.test.ts); the provider's text reaches the model and the user verbatim.
   it.each([
     {
-      name: "llama.cpp past its context size",
+      name: "a 400 worded like a context overflow (llama.cpp)",
       status: 400,
       message:
         "request (100091 tokens) exceeds the available context size (98304 tokens), try increasing it",
       body: undefined,
       stopReason: "fatal",
-      code: "context_overflow",
-    },
-    {
-      name: "OpenAI context_length_exceeded",
-      status: 400,
-      message: "400 Bad Request",
-      body: { code: "context_length_exceeded", type: "invalid_request_error" },
-      stopReason: "fatal",
-      code: "context_overflow",
-    },
-    {
-      name: "Anthropic prompt is too long",
-      status: 400,
-      message: "400 invalid_request_error",
-      body: {
-        type: "error",
-        error: {
-          type: "invalid_request_error",
-          message: "prompt is too long: 210000 tokens > 200000 maximum",
-        },
-      },
-      stopReason: "fatal",
-      code: "context_overflow",
+      code: "rejected",
     },
     {
       name: "a 400 worded like an image refusal (DeepSeek)",

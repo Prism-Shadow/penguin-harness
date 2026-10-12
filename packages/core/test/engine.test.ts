@@ -12,13 +12,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  REJECTED_IMAGE_NOTE,
   assistantText,
   emptyTokenCounts,
   imageUrlMessage,
   isCompleteModelMessage,
   partialText,
   partialToolCallOutput,
+  rejectedImageNote,
   sessionMeta,
   thinkingMessage,
   toolCall,
@@ -1990,75 +1990,70 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(all.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(false);
   });
 
-  it.each(["rejected", "context_overflow"] as const)(
-    "a provider 4xx (%s) on an input holding images retries at once with them replaced by the note",
-    async (code) => {
-      // GenerativeModel reports a definitive provider 4xx as fatal (see llm.test.ts) and reads
-      // no image out of its wording. While the turn's input holds images, the engine takes the
-      // rejection as theirs, replaces them and sends the turn again — no backoff: the 60s base
-      // would time this test out if it waited.
-      const inputs: OmniMessage[][] = [];
-      const llm: LLMInterface = {
-        async *streamGenerate(params) {
-          inputs.push(params.newMessages);
-          if (inputs.length === 1) {
-            return {
-              status: "fatal",
-              errorCode: code,
-              errorMessage: "400 You have uploaded an unsupported image.",
-            };
-          }
-          yield assistantText("I could not see the image.");
-          yield tokenUsage(emptyTokenCounts(), {
-            cache_read: 0,
-            cache_write: 0,
-            output: 1,
-            total: 1,
-          });
-          return { status: "completed" };
-        },
-      };
-      const environment = new Environment({
-        workspaceDir: workspace,
-        toolConfig: execCommandToolConfig(),
-      });
-      const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 60_000 });
+  it("a provider 4xx on an input holding images retries at once with them replaced by the note", async () => {
+    // GenerativeModel reports a definitive provider 4xx as fatal/rejected (see llm.test.ts) and
+    // reads nothing out of its wording. While the turn's input holds images, the engine takes
+    // the rejection as theirs, replaces them and sends the turn again — no backoff: the 60s
+    // base would time this test out if it waited.
+    const inputs: OmniMessage[][] = [];
+    const providerError = "400 You have uploaded an unsupported image.";
+    const llm: LLMInterface = {
+      async *streamGenerate(params) {
+        inputs.push(params.newMessages);
+        if (inputs.length === 1) {
+          return { status: "fatal", errorCode: "rejected", errorMessage: providerError };
+        }
+        yield assistantText("I could not see the image.");
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 1,
+        });
+        return { status: "completed" };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, reconnectBackoffMs: 60_000 });
 
-      // A read_file result carrying an image, handed in the way a carry-over hands it back.
-      const readImage = toolCallOutput({
-        output: "image/png, 70 B",
-        toolCallId: "call_img",
-        images: [PNG_DATA_URL],
-      });
-      const { all, cutoff } = await collectRunWithReturn(engine, [readImage], allowAll);
+    // A read_file result carrying an image, handed in the way a carry-over hands it back.
+    const readImage = toolCallOutput({
+      output: "image/png, 70 B",
+      toolCallId: "call_img",
+      images: [PNG_DATA_URL],
+    });
+    const { all, cutoff } = await collectRunWithReturn(engine, [readImage], allowAll);
 
-      expect(cutoff).toBeNull();
-      expect(inputs).toHaveLength(2);
-      expect((inputs[0]![0]!.payload as { images?: string[] }).images).toEqual([PNG_DATA_URL]);
-      // The retry carries no image: the tool output keeps its text and pairing id, the fixed
-      // note appended in place of the picture.
-      expect(inputs[1]).toHaveLength(1);
-      const retried = inputs[1]![0]!.payload as {
-        output?: string;
-        images?: string[];
-        tool_call_id?: string;
-      };
-      expect(retried.images).toBeUndefined();
-      expect(retried.output).toBe(`image/png, 70 B\n${REJECTED_IMAGE_NOTE}`);
-      expect(retried.tool_call_id).toBe("call_img");
-      // The rejected attempt is recorded as retried, announcing an immediate retry.
-      const ends = all
-        .filter((m) => (m.payload as { type?: string }).type === "request_end")
-        .map((m) => m.payload as { status?: string; error_code?: string; retry_in_ms?: number });
-      expect(ends).toHaveLength(2);
-      expect(ends[0]).toMatchObject({
-        status: "retryable",
-        error_code: "image_rejected",
-        retry_in_ms: 0,
-      });
-      expect(ends[1]!.status).toBe("completed");
-    },
-  );
+    expect(cutoff).toBeNull();
+    expect(inputs).toHaveLength(2);
+    expect((inputs[0]![0]!.payload as { images?: string[] }).images).toEqual([PNG_DATA_URL]);
+    // The retry carries no image: the tool output keeps its text and pairing id, the note
+    // appended in place of the picture with the provider's text in it.
+    expect(inputs[1]).toHaveLength(1);
+    const retried = inputs[1]![0]!.payload as {
+      output?: string;
+      images?: string[];
+      tool_call_id?: string;
+    };
+    expect(retried.images).toBeUndefined();
+    expect(retried.output).toBe(`image/png, 70 B\n${rejectedImageNote(providerError)}`);
+    expect(retried.output).toContain(`Provider error: ${providerError}`);
+    expect(retried.tool_call_id).toBe("call_img");
+    // The rejected attempt is recorded as retried, announcing an immediate retry.
+    const ends = all
+      .filter((m) => (m.payload as { type?: string }).type === "request_end")
+      .map((m) => m.payload as { status?: string; error_code?: string; retry_in_ms?: number });
+    expect(ends).toHaveLength(2);
+    expect(ends[0]).toMatchObject({
+      status: "retryable",
+      error_code: "image_rejected",
+      retry_in_ms: 0,
+    });
+    expect(ends[1]!.status).toBe("completed");
+  });
 
   it("a provider 4xx on an input with no image ends the run as fatal, whatever it says", async () => {
     // Nothing to strip: the request's parameters or the committed history are what the

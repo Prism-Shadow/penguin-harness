@@ -17,12 +17,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  REJECTED_IMAGE_NOTE,
   assistantText,
   compactionBegin,
   compactionEnd,
   emptyTokenCounts,
   imageUrlMessage,
+  rejectedImageNote,
   replaceInputImages,
   requestBegin,
   requestEnd,
@@ -159,9 +159,11 @@ describe("resumeTrace", () => {
       requestEnd("completed", { attempt: 2 }),
       tokenUsage(usage(20), usage(20)),
     ]);
-    // The fixed note stands in for the image, as the engine sent it.
-    const [resent] = textsOf(replaceInputImages([readImage]));
-    expect(resent).toBe(`image/png, 8 B\n${REJECTED_IMAGE_NOTE}`);
+    // The note is rebuilt from the recorded error_message: the text the engine sent, quoting
+    // the provider.
+    const [resent] = textsOf(replaceInputImages([readImage], errorMessage));
+    expect(resent).toBe(`image/png, 8 B\n${rejectedImageNote(errorMessage)}`);
+    expect(resent).toContain(`Provider error: ${errorMessage}`);
     expect(textsOf(retried.history)).toEqual([
       "look at the screenshot",
       "read_file",

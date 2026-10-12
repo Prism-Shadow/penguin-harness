@@ -3235,9 +3235,6 @@ Benchmark：
     /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
     llmError: (errorMessage?: string) =>
       `[错误]：模型请求错误${errorMessage ? `：${errorMessage}` : ""}`,
-    /** The error banner's second line when a request exceeds the model's context window. */
-    llmContextOverflowHint:
-      "请求超出了模型的上下文窗口。可以用 /model 换一个上下文更大的模型，开新会话继续本对话；也请到「模型库」检查这个模型的「上下文窗口」是否大于服务端实际支持的长度——设置偏大时，自动压缩会来不及触发。",
     /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
     reconnectRetryNow: "立即重试",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */

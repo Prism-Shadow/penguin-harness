@@ -3143,9 +3143,6 @@ Scenarios:
     /** Run-ending LLM failure banner (request_end status fatal); the provider's error text rides verbatim. */
     llmError: (errorMessage?: string) =>
       `[Error]: llm request error${errorMessage ? `: ${errorMessage}` : ""}`,
-    /** The error banner's second line when a request exceeds the model's context window. */
-    llmContextOverflowHint:
-      "The request is larger than the model's context window. Use /model to continue this conversation in a new session on a model with a larger context window, and check in Models that this model's Context window is not larger than what its server actually supports: set too large, automatic compaction starts too late.",
     /** "Retry now" on the reconnect countdown (skips the remaining backoff wait). */
     reconnectRetryNow: "Retry now",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */

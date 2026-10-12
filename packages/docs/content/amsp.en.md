@@ -188,8 +188,7 @@ data: [DONE]
 | `malformed` | The model's response failed to parse or was cut short |
 | `auth` | The provider refused the credentials |
 | `rejected` | The provider refused the request for good (parameters, quota) |
-| `context_overflow` | The request was larger than the model's context window |
-| `image_rejected` | The provider rejected (4xx) a request whose input holds images; the engine takes any such rejection as the images' and reads nothing out of the wording. The images are replaced with a fixed note and the request retried at once (`retryable` with `retry_in_ms: 0`) |
+| `image_rejected` | The provider rejected (4xx) a request whose input holds images; the engine takes any such rejection as the images' and reads nothing out of the wording. The images are replaced with a note quoting the provider's error and the request retried at once (`retryable` with `retry_in_ms: 0`) |
 | `unsupported` | The request asked for something the model cannot do |
 | `invalid_input` | The input could not be assembled into a request |
 | `connect_failed` | An MCP server failed to connect (on `mcp_connect.done`) |

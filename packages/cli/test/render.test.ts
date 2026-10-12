@@ -351,7 +351,7 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toContain("[abort]: aborted by user");
   });
 
-  it("an image rejection's retry names its cause; a context overflow prints a hint under the error", () => {
+  it("an image rejection's retry names its cause", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);
     r.handle(requestBegin());
@@ -368,17 +368,6 @@ describe("StreamRenderer", () => {
     expect(stripAnsi(text())).toBe(
       "[retry] the model provider rejected an image in this turn's input (replaced with a note); sending retry #1…\n",
     );
-    r.handle(
-      requestEnd("fatal", {
-        errorCode: "context_overflow",
-        errorMessage: "400 prompt is too long: 210000 tokens > 200000 maximum",
-      }),
-    );
-    expect(stripAnsi(text()).split("\n").slice(1)).toEqual([
-      "[error] llm request error: 400 prompt is too long: 210000 tokens > 200000 maximum",
-      t.llmContextOverflowHint(),
-      "",
-    ]);
   });
 
   it("prints the retry line for legacy-trace spellings too, straight from the stamped ordinal", () => {

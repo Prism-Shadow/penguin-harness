@@ -633,72 +633,6 @@ export function isFatalProviderRejection(error: unknown): boolean {
   });
 }
 
-/**
- * Provider wordings of a request larger than the model's context window (matched
- * case-insensitively against the provider's message and its error code/type).
- */
-const CONTEXT_OVERFLOW_PATTERNS: readonly RegExp[] = [
-  // OpenAI's `context_length_exceeded` code, which compatible servers repeat in the message.
-  /context[_ ]length[_ ]exceeded/i,
-  // OpenAI / vLLM "This model's maximum context length is 131072 tokens. However, …".
-  /maximum context length/i,
-  // llama.cpp "request (100091 tokens) exceeds the available context size (98304 tokens)".
-  /exceeds? the (available |maximum )?context (size|length|window)/i,
-  // Anthropic "prompt is too long: 210000 tokens > 200000 maximum".
-  /prompt is too long/i,
-  // Gemini "The input token count (1200000) exceeds the maximum number of tokens allowed".
-  /input token count.{0,40}exceeds the maximum/i,
-  // Moonshot "Your request exceeded model token limit: 131072".
-  /exceeded model token limit/i,
-  // Mistral "Prompt contains 40000 tokens, too large for model with 32768 maximum context length".
-  /too large for model with \d+ maximum context length/i,
-  // Qwen (DashScope) "Range of input length should be [1, 129024]".
-  /range of input length should be/i,
-  // "Input length exceeds the maximum", "input tokens exceed the model's context window".
-  /input (length|tokens?) exceeds? (the )?(model'?s? )?(context|max)/i,
-];
-
-/**
- * The provider's own words at one level of an error: its `message`, the string `code` /
- * `type` fields (see providerSignals), and the message of the parsed body under `error` — the
- * OpenAI SDK shape (`err.error.message`) and the Anthropic one, whose `error` holds the whole
- * body (`err.error.error.message`).
- */
-function providerWording(level: object): string[] {
-  const err = level as {
-    message?: unknown;
-    error?: { message?: unknown; error?: { message?: unknown } };
-  };
-  const body = typeof err.error === "object" && err.error !== null ? err.error : undefined;
-  const inner = typeof body?.error === "object" && body.error !== null ? body.error : undefined;
-  const messages = [err.message, body?.message, inner?.message].filter(
-    (v): v is string => typeof v === "string",
-  );
-  return [...messages, ...providerSignals(level)];
-}
-
-/** Whether any level of the error's `cause` chain words itself like one of `patterns`. */
-function matchesProviderWording(error: unknown, patterns: readonly RegExp[]): boolean {
-  return anyInCauseChain(error, (level) =>
-    providerWording(level).some((text) => patterns.some((pattern) => pattern.test(text))),
-  );
-}
-
-/**
- * Determines whether a provider rejection says the request exceeds the model's context window.
- * Read off the provider's wording (CONTEXT_OVERFLOW_PATTERNS) and consulted only for an error
- * `isFatalProviderRejection` already holds definitive, so a transient failure that happens to
- * mention the context keeps its retries. Still `fatal` — the same context overflows again on
- * every retry — but coded `context_overflow` so frontends can point at the fix: a model with a
- * larger window, or a configured context window no larger than what the server supports (set
- * too large, compaction triggers too late to keep the context under the real limit). This is
- * the only outcome read off the provider's wording, and it only changes a hint: nothing here
- * reads the message for an image — see the engine's `image_rejected`.
- */
-export function isContextOverflowRejection(error: unknown): boolean {
-  return matchesProviderWording(error, CONTEXT_OVERFLOW_PATTERNS);
-}
-
 // ---------------------------------------------------------------------------
 // GenerativeModel
 // ---------------------------------------------------------------------------
@@ -882,8 +816,7 @@ export class GenerativeModel implements LLMInterface {
    *     (only in this case) → `completed`;
    *   - **User interruption**: `finishInterrupted("aborted")` closes out, produces no usage →
    *     `aborted`;
-   *   - **Fatal failure** — a definitive provider 4xx rejection (`isFatalProviderRejection`;
-   *     coded `context_overflow` when its wording says so, see `isContextOverflowRejection`),
+   *   - **Fatal failure** — a definitive provider 4xx rejection (`isFatalProviderRejection`),
    *     a credentials failure (`isAuthenticationError`), a fast-mode rejection
    *     (`isFastModeUnsupportedError`, thrown deterministically before any network I/O when
    *     this config enables `fast_mode` on a model without a fast tier), or input that never
@@ -1061,13 +994,12 @@ export class GenerativeModel implements LLMInterface {
         };
       } else if (isFatalProviderRejection(error)) {
         // A definitive provider 4xx rejection (408/429 excluded): the identical request
-        // fails identically on every retry, so stop now with the provider's own message. A
-        // request past the context window gets a code of its own, read off that message, so
-        // frontends can point at the fix. Nothing here reads the message for an image:
-        // whether the request carried one is the engine's knowledge, and it treats any 4xx
-        // on such a request as the image's (`image_rejected`) and sends the rest again.
-        const errorCode = isContextOverflowRejection(error) ? "context_overflow" : "rejected";
-        outcome = { status: "fatal", errorCode, errorMessage: describeError(error) };
+        // fails identically on every retry, so stop now with the provider's own message.
+        // Nothing here reads that message: whether the request carried an image is the
+        // engine's knowledge, and it treats any 4xx on such a request as the image's
+        // (`image_rejected`) and sends the rest again with the provider's text in place of
+        // the image, for the model to judge.
+        outcome = { status: "fatal", errorCode: "rejected", errorMessage: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)
       } else {

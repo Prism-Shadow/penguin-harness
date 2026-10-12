@@ -895,10 +895,11 @@ export class ContextEngine {
         // 4xx `retryable` because this input holds images (checked again here, so an LLM that
         // reports the code as retryable itself, with nothing to strip, takes the ordinary
         // ladder below). The provider refused a request the engine can change, so the retry
-        // is not the identical request repeated: every image in the turn's input becomes the
-        // fixed note that tells the model the picture was dropped because this model does not
-        // accept it. The stripped input replaces the turn's input from here on, not just this
-        // attempt's — an interruption, a later failure or an exhausted budget builds its
+        // is not the identical request repeated: every image in the turn's input becomes a
+        // note that tells the model the picture was dropped and quotes the provider's text,
+        // for the model to judge what went wrong. The stripped input replaces the turn's input
+        // from here on, not just this attempt's — an interruption, a later failure or an
+        // exhausted budget builds its
         // carry-over from it, and resending the image would only be refused again. Nothing
         // transient is being waited out, so there is no backoff and no rung on the ladder; the
         // ceiling still counts the attempt. A second rejection finds no image left and ends
@@ -908,7 +909,7 @@ export class ContextEngine {
           turn.outcome.errorCode === "image_rejected" &&
           hasInputImages(nextInput)
         ) {
-          nextInput = replaceInputImages(nextInput);
+          nextInput = replaceInputImages(nextInput, turn.outcome.errorMessage);
           failedTurns.push(turn);
           attemptInput = this.withRetriedTurns(nextInput, failedTurns);
           if (attempts >= this.maxTurnAttempts) {
@@ -1341,14 +1342,15 @@ export class ContextEngine {
             // A provider's 4xx on an input that holds images is taken as a rejection of the
             // images, whatever the message says: providers word these refusals too many ways
             // to match, and a wrong match would end the run on something a retry can fix. The
-            // reconnect loop answers it: it replaces the images and sends the turn again at
-            // once. The rejection is recorded as what it turns out to be — a retried attempt,
-            // `retryable`, coded `image_rejected` — while the same 4xx on an input with no
-            // image keeps the LLM layer's code and stays `fatal`: whatever it refuses is in the
-            // committed history or the request's parameters, beyond the reach of a retry.
+            // reconnect loop answers it: it replaces the images with a note quoting the
+            // provider and sends the turn again at once. The rejection is recorded as what it
+            // turns out to be — a retried attempt, `retryable`, coded `image_rejected` — while
+            // the same 4xx on an input with no image stays `fatal` as `rejected`: whatever it
+            // refuses is in the committed history or the request's parameters, beyond the
+            // reach of a retry.
             const imageRetry =
               outcome.status === "fatal" &&
-              (outcome.errorCode === "rejected" || outcome.errorCode === "context_overflow") &&
+              outcome.errorCode === "rejected" &&
               hasInputImages(input);
             if (imageRetry) {
               outcome = {

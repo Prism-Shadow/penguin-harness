@@ -97,15 +97,6 @@ describe("MessageStream error banner", () => {
       }),
     );
 
-  it("a context overflow carries the hint under the error; a plain rejection does not", () => {
-    const overflow = banner("context_overflow");
-    expect(overflow).toContain(S.chat.llmError("400 Bad Request"));
-    expect(overflow).toContain(S.chat.llmContextOverflowHint);
-    const rejected = banner("rejected");
-    expect(rejected).toContain(S.chat.llmError("400 Bad Request"));
-    expect(rejected).not.toContain(S.chat.llmContextOverflowHint);
-  });
-
   it("the last banner offers Retry while no Task runs; a banner something follows does not", () => {
     const stream = (items: ChatItem[]) =>
       renderToStaticMarkup(

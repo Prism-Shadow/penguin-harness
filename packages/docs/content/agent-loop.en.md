@@ -266,14 +266,13 @@ The fatal detector is a deterministic allowlist. A gateway that phrases a transi
 A `fatal` failure stops the run at once, without retrying. It covers:
 
 - a definitive provider `4xx` rejection, such as invalid parameters or an exhausted quota (`rejected`); `408` and `429` are excluded from this class;
-- a request larger than the model's context window (`context_overflow`), which the chat follows with a hint: continue on a model with a larger context window, and check that this model's context window setting is not larger than what its server supports;
 - a credential failure (`auth`);
 - a deterministic client-side rejection, such as fast mode on a model without a fast tier (`unsupported`);
 - input that cannot be assembled into a request (`invalid_input`).
 
 An identical request can only fail the same way, so the ladder would only delay the actionable error.
 
-One rejection is retried anyway: a provider 4xx on a request whose input carries images. Providers word such refusals too many ways to match reliably, so the engine takes any 4xx on an image-bearing input as a rejection of the images (`image_rejected`): it replaces each image with a fixed note telling the model that the current model does not accept the image, records that attempt as `retryable` with `retry_in_ms: 0`, and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement. A 4xx on an input with no image is fatal like any other: a refused image already in the committed history is beyond the reach of a retry.
+One rejection is retried anyway: a provider 4xx on a request whose input carries images. Providers word such refusals too many ways to match reliably, so the engine takes any 4xx on an image-bearing input as a rejection of the images (`image_rejected`): it replaces each image with a note that says the request was rejected while it carried the image and quotes the provider's error verbatim, so the model judges for itself what went wrong; it records that attempt as `retryable` with `retry_in_ms: 0`, and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement. A 4xx on an input with no image is fatal like any other: a refused image already in the committed history is beyond the reach of a retry.
 
 ### How a turn is retried
 

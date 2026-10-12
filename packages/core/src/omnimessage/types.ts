@@ -45,9 +45,9 @@ export type Role = "user" | "assistant";
  *     client-side rejection (fast mode on a model without a fast tier). The engine stops
  *     the run and surfaces the error; the fix is a config/credential change, then a new
  *     request. The one exception is a provider 4xx on an input that holds images: the
- *     engine takes it as a rejection of the images, replaces them with a fixed note and
- *     retries at once, recording that attempt's `request_end` as `retryable` with the
- *     code `image_rejected`.
+ *     engine takes it as a rejection of the images, replaces them with a note quoting the
+ *     provider and retries at once, recording that attempt's `request_end` as `retryable`
+ *     with the code `image_rejected`.
  *
  * The one vocabulary every stop_reason-carrying record shares — model messages, tool
  * results, request and compaction terminals alike. Tool executions rarely have a
@@ -350,7 +350,6 @@ export type ErrorCode =
   | "malformed" // response failed parsing/validation, or the stream was truncated
   | "auth" // the provider rejected the credentials
   | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
-  | "context_overflow" // a provider 4xx: the request exceeds the model's context window
   | "image_rejected" // a provider 4xx on an input holding images, retried with them replaced
   | "unsupported" // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input" // the input failed to assemble into a request

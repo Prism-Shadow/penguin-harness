@@ -407,8 +407,6 @@ export function MessageItem({
     case "abort":
       return <MessageBubble variant="notice">{S.chat.aborted(item)}</MessageBubble>;
     case "llm_error": {
-      // A request over the model's context window gets a second, quieter line saying what to
-      // do: the provider's text names the overflow but not the way out of it.
       const retry = retryOffer(ctx, last);
       return (
         <MessageBubble
@@ -416,9 +414,6 @@ export function MessageItem({
           actions={retry ? <RetryRunButton onRetry={retry} /> : undefined}
         >
           {S.chat.llmError(item.errorMessage)}
-          {item.errorCode === "context_overflow" && (
-            <span className="mt-0.5 block text-fg-subtle">{S.chat.llmContextOverflowHint}</span>
-          )}
         </MessageBubble>
       );
     }
