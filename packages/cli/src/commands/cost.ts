@@ -1,7 +1,7 @@
 /**
  * `penguin cost` — token/cost aggregates from GET /api/projects/:p/usage.
  *
- *   penguin cost [--days <n>] [--from <d> --to <d>] [--by date|agent|model|session]
+ *   penguin cost [--days <n>] [--from <d> --to <d>] [--by date|agent|model|session|squad]
  *                [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
  *
  * Default prints the summary card (today / last 7 days / total — the endpoint computes
@@ -18,7 +18,7 @@ import { resolveConnection, resolveProjectId, ServerClient } from "../client.js"
 import { renderTable } from "../table.js";
 import type { Messages } from "../i18n.js";
 
-const GROUP_BYS = ["date", "agent", "model", "session"] as const;
+const GROUP_BYS = ["date", "agent", "model", "session", "squad"] as const;
 type GroupBy = (typeof GROUP_BYS)[number];
 
 /** yyyy-mm-dd of a local date. */

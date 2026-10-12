@@ -201,6 +201,12 @@ export interface SubagentRunner {
      * tool restricts its `thinking_level` argument to {@link SUBAGENT_THINKING_LEVELS}.
      */
     thinkingLevel?: ThinkingLevelName;
+    /**
+     * Squad tag recorded on the child Session's session_meta (absent = no squad);
+     * `run_subagent`'s `squad` argument. A short free-text label (the tool caps it at
+     * 64 chars); cost attribution and parentage group on it, never on prompt parsing.
+     */
+    squad?: string;
   }): Promise<SubagentHandle>;
   /**
    * Revives a released child Session by id (`resumeSession` semantics: its own history,

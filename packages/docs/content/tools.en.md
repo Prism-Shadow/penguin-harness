@@ -277,6 +277,7 @@ A message is a user input to the child, whatever its state: steering while it ru
   model_id?: string;       // the child Session's model, paired with provider; omit both to inherit the parent Session's model
   provider?: string;       // the provider group model_id belongs to; required whenever model_id is given
   thinking_level?: string; // "low" | "medium" | "high" | "xhigh" | "max"; omit to inherit the parent Session's level
+  squad?: string;          // squad tag (1-64 chars); recorded on the child's session_meta for cost attribution (`cost --by squad`) and parentage; omit for no squad
   yield_time_ms?: number;  // foreground wait; default 300000
   run_in_background?: boolean; // true = return subagent_id immediately; completion arrives as a user message
   description: string;     // required while call_description is on

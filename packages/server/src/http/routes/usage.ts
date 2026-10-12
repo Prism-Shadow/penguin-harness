@@ -33,7 +33,7 @@ export interface UsageRouteDeps {
   usageService: UsageQueries;
 }
 
-const GROUP_BYS: readonly UsageGroupBy[] = ["date", "agent", "model", "session"];
+const GROUP_BYS: readonly UsageGroupBy[] = ["date", "agent", "model", "session", "squad"];
 
 const GRANULARITIES: readonly UsageGranularity[] = ["minute", "hour", "day", "week", "month"];
 

@@ -117,6 +117,20 @@ export function createSubagentTool(
         return { stopReason: "fatal" };
       }
       const thinkingLevel = rawThinkingLevel as ThinkingLevelName | undefined;
+      // Squad tag: a short free-text label recorded on the child Session's session_meta
+      // for cost attribution and parentage (never parsed out of the prompt). JSON `null`
+      // counts as omitted, like a missing key; over-long values fail loudly.
+      const rawSquad = args.squad ?? undefined;
+      if (
+        rawSquad !== undefined &&
+        (typeof rawSquad !== "string" || rawSquad.trim().length === 0 || rawSquad.length > 64)
+      ) {
+        yield* fail(
+          "[run_subagent error: invalid `squad` — use a short label (1-64 chars), or omit it for no squad]",
+        );
+        return { stopReason: "fatal" };
+      }
+      const squad = rawSquad as string | undefined;
       const background = args.run_in_background === true;
       const yieldMs = clampYield(
         args.yield_time_ms,
@@ -144,6 +158,7 @@ export function createSubagentTool(
           ...(modelId !== undefined ? { modelId } : {}),
           ...(provider !== undefined ? { provider } : {}),
           ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+          ...(squad !== undefined ? { squad } : {}),
         });
         session = new ManagedSubagentSession(handle, {
           // Spawn-time owner for the revival tombstone (undefined = a self-spawn of this Agent).

@@ -83,6 +83,7 @@ function runnerOf(
     modelId?: string;
     provider?: string;
     thinkingLevel?: string;
+    squad?: string;
   }) => void,
 ): SubagentRunner {
   return {
@@ -299,6 +300,55 @@ describe("run_subagent tool (foreground)", () => {
       expect(result?.stopReason).toBe("completed");
       expect(seen).toHaveLength(1);
       expect("thinkingLevel" in seen[0]!).toBe(false);
+    }
+  });
+
+  it("rejects an invalid squad tag, and never spawns", async () => {
+    // A squad tag is a short label (1-64 chars); anything else fails loudly rather than
+    // recording a junk tag the cost grouping would then have to explain.
+    for (const squad of ["", "   ", "x".repeat(65), 3]) {
+      const spawned: unknown[] = [];
+      const runner = runnerOf(
+        async function* () {},
+        (input) => spawned.push(input),
+      );
+      const { services } = makeServices(runner);
+      const tool = createSubagentTool(DEF, services);
+      const { out, result } = await collectWithReturn(tool.execute({ prompt: "x", squad }, CTX));
+      expect(result?.stopReason).toBe("fatal");
+      expect(ownDeltas(out)).toContain("invalid `squad`");
+      expect(spawned).toHaveLength(0);
+    }
+  });
+
+  it("forwards the squad tag when given, nothing when omitted or null", async () => {
+    const seen: Array<{ squad?: string }> = [];
+    const runner = runnerOf(
+      async function* () {
+        yield withOrigin(partialText("delta", "ok"), HOP);
+      },
+      (input) => seen.push(input),
+    );
+    const { services } = makeServices(runner);
+    const tool = createSubagentTool(DEF, services);
+    const { result } = await collectWithReturn(
+      tool.execute({ prompt: "x", squad: "bench-1" }, CTX),
+    );
+    expect(result?.stopReason).toBe("completed");
+    expect(seen[0]?.squad).toBe("bench-1");
+    for (const args of [{ prompt: "x" }, { prompt: "x", squad: null }]) {
+      const seen2: Array<{ squad?: string }> = [];
+      const runner2 = runnerOf(
+        async function* () {
+          yield withOrigin(partialText("delta", "ok"), HOP);
+        },
+        (input) => seen2.push(input),
+      );
+      const { services: services2 } = makeServices(runner2);
+      const tool2 = createSubagentTool(DEF, services2);
+      const again = await collectWithReturn(tool2.execute(args, CTX));
+      expect(again.result?.stopReason).toBe("completed");
+      expect("squad" in seen2[0]!).toBe(false);
     }
   });
 

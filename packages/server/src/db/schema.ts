@@ -92,8 +92,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   fork_count    INTEGER NOT NULL DEFAULT 0,          -- monotonically allocated child-fork number for this source Session; never decremented when a fork is deleted
   sandbox       TEXT,                                -- the Session's sandbox policy snapshot (JSON SandboxSettings); NULL = legacy row, snapshotted at its next command
   last_active_at TEXT,                               -- last activity this server drove for the session (ISO; stamped once when a run starts and once when it ends, initialized to created_at); monotonic, never moves backwards; NULL only before openDatabase's one-time backfill
-  created_at    TEXT NOT NULL
-);                                            -- the Session's SOURCE (user/api/schedule/subagent/cli/company) is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row), read for the source only where the Trace records none ('org' → company)
+  created_at    TEXT NOT NULL,
+  parent_session_id TEXT,                          -- direct parent that spawned this Session (NULL = top-level / legacy); written at subagent registration, single source for squad parentage
+  squad         TEXT                               -- multi-agent work group tag from the child's session_meta (run_subagent squad arg); NULL = no squad; cost groups on it via usage_records.origin_session_id
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_agent_created ON sessions(project_id, agent_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS usage_records (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,

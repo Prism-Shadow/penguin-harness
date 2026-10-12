@@ -2390,6 +2390,18 @@ export class SessionManager {
     const root = this.rootSessionOf(entry.sessionId);
     this.childRoots.set(childSid, root);
     const createdAt = this.now().toISOString();
+    // Direct parent: the origin chain's second-to-last hop when nested (a grandchild's
+    // meta carries [.., parent, child]), else the runtime entry that drove the spawn.
+    const origin = msg.origin ?? [];
+    const parentSessionId =
+      origin.length >= 2 ? origin[origin.length - 2]! : entry.sessionId;
+    // Squad tag from the child's session_meta (`run_subagent` squad arg): short
+    // free-text label; anything else (missing / over-long / non-string) = no squad.
+    const rawSquad = (p as { squad?: unknown }).squad;
+    const squad =
+      typeof rawSquad === "string" && rawSquad.trim().length > 0 && rawSquad.length <= 64
+        ? rawSquad
+        : null;
     // A sub-session of an organization's Session is company mode's own as much as the desk
     // or ticket session that spawned it: it inherits the durable "org" stamp, which is the
     // only mark it can carry — the organization caches name desks and ticket sessions, never
@@ -2414,6 +2426,8 @@ export class SessionManager {
       ...(parentClient === "org" ? { client: "org" as const } : {}),
       // Its Trace exists by construction.
       hasTrace: true,
+      parentSessionId,
+      squad,
       // A subagent's own runs are driven through the PARENT entry's drive, so nothing ever
       // stamps this row: it stays at its registration time (see SessionRow.lastActiveAt).
       lastActiveAt: createdAt,

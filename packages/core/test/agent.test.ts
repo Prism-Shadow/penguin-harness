@@ -387,6 +387,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     model_id: string;
     workspace: string;
     source?: string;
+    squad?: string;
     llm: { thinkingLevel?: string };
   }> {
     const handle = await runner.spawn(input);
@@ -414,6 +415,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
           model_id: string;
           workspace: string;
           source?: string;
+          squad?: string;
         }),
         llm: llm!,
       };
@@ -446,6 +448,22 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       // The spawn site marks the child's own session_meta as subagent-created — the single
       // source of truth the server derives from (its registration fallback cannot mask this).
       expect(child.source).toBe("subagent");
+    } finally {
+      parent.dispose();
+    }
+  });
+
+  it("records the spawn squad tag in the child's session_meta; omitted means no key", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-squad");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({ workspaceDir: ws });
+    const runner = lastSpawnedRunner();
+    try {
+      const tagged = await spawnedChildMeta(runner, { squad: "bench-1" });
+      expect(tagged.squad).toBe("bench-1");
+      const untagged = await spawnedChildMeta(runner, {});
+      expect("squad" in untagged).toBe(false);
     } finally {
       parent.dispose();
     }
