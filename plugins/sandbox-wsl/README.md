@@ -15,7 +15,7 @@ WSL keeps the generated `resolv.conf` outside the distro's root, at `/mnt/wsl/re
 
 ## Setup
 
-Everything happens on the WSL card under **Settings → Plugins → Sandbox**, with its progress shown there:
+Everything happens on the WSL card under **Settings → Plugins → Agent Sandbox**, with its progress shown there:
 
 1. **Install WSL**: raises the Windows consent prompt for `setup/install-wsl.ps1`, which runs `wsl --install --no-distribution`. Some machines need a restart afterwards. This is the only step that needs an administrator.
 2. **Initialize sandbox distro**: downloads the base rootfs (checked against its published sha256), imports it as its own distro, installs bubblewrap and the **Packages** list, creates the `penguin` account, and switches Windows interop off.

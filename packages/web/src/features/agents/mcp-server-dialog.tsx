@@ -2,7 +2,11 @@
  * The add / edit dialog of one MCP Server entry (mcp-servers-section.tsx lists them). Its fields
  * follow the chosen transport; the permission menu and the three budgets sit beside them. A
  * standalone "test connection" button probes the entry as typed (nothing saved; the result is a
- * toast, the models dialog idiom).
+ * toast, the models dialog idiom). The server fills vault values only into an entry saved as it
+ * is: while the form still says what the saved entry says, the test sends the saved entry itself
+ * (mcp-servers-form.ts `entryToTest`), and a new or changed entry that reads the vault is
+ * answered "save first", a muted note beside the button rather than a failure. An entry a plugin
+ * installed says so at the top: reinstalling the plugin replaces it.
  *
  * A record dialog under the settings commit model: the dialog is one form, Save is live only
  * while the entry as Save would write it (mcp-servers-form.ts `formToServer`) differs from the
@@ -17,6 +21,10 @@ import { useState } from "react";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import {
   Button,
+  GlyphIcon,
+  ICONS,
+  ICON_GAP,
+  ICON_SIZE,
   Input,
   Modal,
   OptionMenu,
@@ -31,8 +39,10 @@ import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { toneInk } from "../../lib/tone";
 import {
   emptyMcpForm,
+  entryToTest,
   formToServer,
   serverToForm,
   type McpFormError,
@@ -96,6 +106,8 @@ export interface McpServerDialogProps {
   takenNames: readonly string[];
   projectId: string;
   agentId: string;
+  /** A plugin's title in the UI language, by its name: who installed an entry that says so. */
+  pluginTitle: (name: string) => string;
   /** Writes the entry; resolves with null when stored, else with why it was refused. */
   onSubmit: (server: MCPServerConfig) => Promise<string | null>;
   onClose: () => void;
@@ -106,6 +118,7 @@ export function McpServerDialog({
   takenNames,
   projectId,
   agentId,
+  pluginTitle,
   onSubmit,
   onClose,
 }: McpServerDialogProps) {
@@ -118,6 +131,9 @@ export function McpServerDialog({
   // Connectivity probe: runs the current form through POST /config/mcp-test (server-side
   // connect + discovery, nothing saved); the result pops as a toast.
   const [testing, setTesting] = useState(false);
+  // The probe's "save first" answer (an unsaved entry that reads the vault), shown beside the
+  // test button until the form changes.
+  const [saveFirst, setSaveFirst] = useState(false);
   /** A test was asked for an entry that cannot be built: every error shows, untouched or not. */
   const [revealAll, setRevealAll] = useState(false);
 
@@ -173,18 +189,27 @@ export function McpServerDialog({
   const patch = (next: Partial<McpServerFormState>) => {
     form.patch(next);
     setRefused(null);
+    setSaveFirst(false);
   };
 
-  /** Probes the form as typed (unsaved values on purpose: verify before persisting). */
+  /**
+   * Probes the form as typed (unsaved values on purpose: verify before persisting). An untouched
+   * saved entry goes as saved; a new or changed one that reads the vault is answered "save
+   * first" — no vault value is filled into an unsaved entry — which shows beside the button as a
+   * note, not as a failure.
+   */
   const testConnection = async () => {
-    if (!built.ok) {
+    const tested = entryToTest(draft, entry ?? undefined);
+    if (!tested.ok) {
       setRevealAll(true);
       return;
     }
     setTesting(true);
+    setSaveFirst(false);
     try {
-      const res = await api.testAgentMcpServer(projectId, agentId, built.server);
+      const res = await api.testAgentMcpServer(projectId, agentId, tested.server);
       if (res.ok) toastSuccess(S.agent.mcpTestOk(res.tools?.length ?? 0, res.latencyMs));
+      else if (res.saveFirst === true) setSaveFirst(true);
       else toastError(S.agent.mcpTestFail(res.error ?? S.common.unknownError));
     } catch (e) {
       toastError(S.agent.mcpTestFail(apiErrorText(e)));
@@ -232,6 +257,11 @@ export function McpServerDialog({
       }
     >
       <div className="space-y-3">
+        {draft.plugin !== undefined && (
+          <p className="text-xs text-fg-muted">
+            {S.agent.mcpFromPlugin(pluginTitle(draft.plugin))}
+          </p>
+        )}
         {/* Transport first, as tab-style switches — the choice decides every field below. A
             field of the entry, so it saves with it. */}
         <div className="space-y-1">
@@ -255,6 +285,18 @@ export function McpServerDialog({
           >
             {testing ? S.agent.mcpTesting : S.agent.mcpTest}
           </Button>
+          {/* Not a failure: the entry reads the vault and is not saved as it is, so the test
+              fills nothing in — a muted line with the key in the attention tone, no red. */}
+          {saveFirst && (
+            <span className={`inline-flex items-center ${ICON_GAP.row} text-xs text-fg-muted`}>
+              <GlyphIcon
+                d={ICONS.key}
+                size={ICON_SIZE.inlineGlyph}
+                className={`shrink-0 ${toneInk.attention}`}
+              />
+              {S.agent.mcpTestSaveFirst}
+            </span>
+          )}
         </div>
         <Input
           size="sm"

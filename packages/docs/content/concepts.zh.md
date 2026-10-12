@@ -98,7 +98,7 @@ Skill 是一套可复用的指令：一个包含 `SKILL.md` 及其引用文件�
 
 ### 插件
 
-插件是插件库安装的单位，包含 Skill、钩子包，或两者都有。把插件装到某个 Agent 上，这些内容就会放进这个 Agent 的 Agent State。服务端插件是另一类插件：由服务端模块组成的 npm 包，例如沙箱后端，由 Project 要求服务器运行。
+插件是插件库安装的单位，包含 Skill、钩子包、MCP Server，或其中几样。把插件装到某个 Agent 上，这些内容就会放进这个 Agent 的 Agent State。服务端插件是另一类插件：由服务端模块组成的 npm 包，例如沙箱后端，由 Project 要求服务器运行。
 
 见[技能与插件](/skills)。
 
@@ -110,7 +110,7 @@ Skill 是一套可复用的指令：一个包含 `SKILL.md` 及其引用文件�
 
 ### MCP Server
 
-MCP Server 是通过 Model Context Protocol 提供工具的程序或服务。它提供的工具会加入 Agent 的工具集，和内置工具走同样的审批。
+MCP Server 是通过 Model Context Protocol 提供工具的程序或服务。它提供的工具会加入 Agent 的工具集，和内置工具走同样的审批。你可以在 Agent 设置中添加，也可以由插件带来，安装插件时一并加上。
 
 见[工具与审批](/tools#mcp-server)。
 
@@ -122,7 +122,7 @@ MCP Server 是通过 Model Context Protocol 提供工具的程序或服务。它
 
 ### Vault
 
-Vault 以环境变量的形式保存 Agent 的密钥等机密。变量值只会注入 Agent 的工具启动的进程，绝不会进入模型或 Trace；模型最多只能看到变量名。
+Vault 以环境变量的形式保存 Agent 的密钥等机密。变量值只会注入 Agent 的工具启动的进程，以及条目引用了它们的 MCP Server，绝不会进入模型或 Trace；模型最多只能看到变量名。
 
 见[配置参考](/configuration#vault)。
 

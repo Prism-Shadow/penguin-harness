@@ -507,13 +507,21 @@ export function ChatPage() {
     probeKey !== null && probeFailedKey === probeKey,
   );
   const selected = draft ? null : heldSession.current;
+  /**
+   * The Agent this page renders under: the routed Session's own, else the current Agent (a
+   * draft has no Session). The current Agent is resolved against THIS server's Agent list and
+   * is adopted from the Session only when that list carries it — an organization's employee
+   * whose Agent lives on a machine is never in it, so going by the current Agent alone left
+   * that conversation on the placeholder for good, with nothing to say why.
+   */
+  const pageAgentId = selected?.agentId ?? agentId;
   // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
   // workflows live on: a Session on a machine runs a copy of the Agent there, and the workflows
   // it built are in that copy. The current Agent is always one of this server's, so going by
   // it listed the wrong Agent's workflows (or none) for every Session on a machine.
   const workflowTabs = useWorkflowTabs(
     projectId,
-    selected?.agentId ?? agentId,
+    pageAgentId,
     selected === null ? null : machineForSession(selected.sessionId),
   );
   // New shells start in this conversation's Workspace — its files are what a terminal
@@ -561,14 +569,18 @@ export function ChatPage() {
   } = useSessionDraft(selected?.sessionId ?? null);
 
   // The rendered transcript: backfilled older windows (frozen items, negative ids) ahead
-  // of the live tail model's items. Version keys the memo — a prepend bumps it.
+  // of the live tail model's items. Keyed on the prefix's identity as well as the stream
+  // version: the controller prepends synchronously and its repaint signal is throttled, so
+  // a render forced by anything else in between must not pair the NEW prepend count (read
+  // live below) with the OLD item list — the stream would anchor against a layout that has
+  // not changed yet and leave the commit that does change it unanchored.
   const allItems = useMemo(
     () =>
       stream.prefixItems.length > 0
         ? [...stream.prefixItems, ...stream.model.items]
         : stream.model.items,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stream.version, routeSessionId],
+    [stream.version, stream.prefixItems, routeSessionId],
   );
   // Derivations over the stream items (the model mutates in place, so `version` — its own
   // repaint signal — keys the memos; the session id covers a switch racing a same-valued
@@ -673,6 +685,10 @@ export function ChatPage() {
   useEffect(() => {
     if (selectedSessionId && selectedAgentId && selectedAgentKnown)
       setCurrentAgentId(selectedAgentId);
+    else if (selectedSessionId && selectedAgentId)
+      console.warn(
+        `[chat] the Agent ${selectedAgentId} of ${selectedSessionId} is not in this server's Agent list; the conversation renders under the Session's own Agent id`,
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, selectedAgentId, selectedAgentKnown, setCurrentAgentId]);
 
@@ -2037,7 +2053,7 @@ export function ChatPage() {
     prefillComposer,
   };
 
-  if (!projectId || !agentId) {
+  if (!projectId || !pageAgentId) {
     return (
       <div className="p-6">
         <Skeleton className="h-6 w-64" />
@@ -2190,14 +2206,14 @@ export function ChatPage() {
         active={workflowTabs.active}
         onSelect={workflowTabs.setActive}
       />
-      {workflowTabs.activeTab !== null && projectId !== null && agentId !== null && (
+      {workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null && (
         <div className="absolute inset-x-0 bottom-0 top-9 z-10">
           <WorkflowFrame
             // Per tab: the frame keeps this workflow's history fold, its error and its
             // armed Remove, and none of that belongs to the next tab.
             key={workflowTabs.activeTab.tabId}
             projectId={projectId}
-            agentId={selected?.agentId ?? agentId}
+            agentId={pageAgentId}
             tab={workflowTabs.activeTab}
             onChanged={() => void workflowTabs.refresh()}
             onRemoved={() => {

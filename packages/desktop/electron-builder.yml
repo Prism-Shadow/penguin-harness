@@ -51,6 +51,17 @@ files:
   - package.json
   - from: ../web/dist
     to: web-dist
+# The compiler's default library files (scripts/build-assets.mjs stages them beside its entry,
+# in dist/node_modules/typescript/lib). They are `.d.ts`, and electron-builder appends an
+# exclusion of every `*.d.ts` AFTER the `files` patterns above, so nothing there can keep them:
+# the packed app would carry `typescript.js` alone, and every workflow would fail for want of
+# `lib.es2022.full.d.ts`. Extra resources are not filtered that way; asar is off, so `app/…`
+# under the resources directory is the app's own tree and they land beside the entry again.
+extraResources:
+  - from: dist/node_modules/typescript/lib
+    to: app/dist/node_modules/typescript/lib
+    filter:
+      - "lib.*.d.ts"
 # The app's own metadata, which the workspace package.json cannot carry: deb and AppImage
 # derive package and executable names from `name`, where "@prismshadow/…" is invalid, and
 # fpm refuses to build without a homepage. It does NOT decide the app data directory: the

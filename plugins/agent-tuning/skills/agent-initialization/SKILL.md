@@ -1,6 +1,7 @@
 ---
 name: agent-initialization
 description: Initialize or extend an Agent from a user requirement - write AGENTS.md, set identity metadata, and create, install or import Skills and hook packages (scripts the harness runs on every prompt, before tool calls, or after a task). For an agent that a program will use, it first asks whether the program embeds the agent with the SDK or calls it over the Agent API.
+version: 2026.10.09.5
 ---
 
 # Agent Initialization

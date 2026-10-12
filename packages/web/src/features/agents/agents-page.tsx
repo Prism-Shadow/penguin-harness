@@ -16,8 +16,9 @@
  * non-interactive light gray placeholder with an undeletable tooltip) are square icon buttons
  * (tooltip shows the full name); "Create Agent" (create-agent-dialog.tsx) fills in name +
  * description and picks what the new Agent starts with — plugins from the library (each one's
- * skills and hook package), and Skills from a project directory's .agents/skills or
- * .claude/skills. A plain new Agent otherwise starts with none.
+ * skills, hook package and MCP servers), and Skills from a project directory's .agents/skills or
+ * .claude/skills. A plain new Agent otherwise starts with none. A picked plugin with a stdio MCP
+ * server asks before the Agent is created, showing the command it runs on this server.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -62,7 +63,6 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { prepareNewChatDraft } from "../chat/new-chat";
-import type { PickableItem } from "../skills/skill-pick-list";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { mergeAgents } from "../../lib/benchmark-merge";
@@ -70,6 +70,7 @@ import type { AgentSource } from "../../lib/benchmark-merge";
 import { useSessions } from "../../state/sessions";
 import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog } from "./create-agent-dialog";
+import type { PluginPickItem } from "./create-agent-dialog";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
 const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
@@ -177,7 +178,7 @@ export function AgentNameLink({
  * already carries (name, descriptions, icon, version); a plugin without an icon.svg draws the
  * puzzle piece rather than the book.
  */
-function pluginPickItems(plugins: readonly PluginItem[]): PickableItem[] {
+function pluginPickItems(plugins: readonly PluginItem[]): PluginPickItem[] {
   return plugins.map((plugin) => ({ ...plugin, fallbackIcon: ICONS.puzzle }));
 }
 
@@ -211,7 +212,7 @@ export function AgentsPage() {
    * flat searchable list (the same panel the composer uses), so the grouping the library page
    * renders carries no meaning here. `null` until a fetch succeeds.
    */
-  const [library, setLibrary] = useState<PickableItem[] | null>(null);
+  const [library, setLibrary] = useState<PluginPickItem[] | null>(null);
   const [libraryError, setLibraryError] = useState<string | null>(null);
   /** In-flight guard for that fetch (StrictMode runs the effect twice), released on failure so reopening retries. */
   const libraryPending = useRef(false);

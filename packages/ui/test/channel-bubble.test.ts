@@ -75,11 +75,23 @@ describe("ChannelBubble", () => {
     expect(html).toMatch(/^<div id="m-1" data-side="other" class="channel-bubble /);
     expect(html).toContain('<div class="md-body md-compact"><p>body</p></div><span>refs</span>');
     expect(html).toContain(
-      '<span data-tooltip="9/30 14:05" class="shrink-0 text-xs tabular-nums ' +
+      '<span data-tooltip="9/30 14:05" class="absolute bottom-1.5 right-3 text-xs tabular-nums ' +
         'text-tone-neutral-fg"><span class="sr-only">发送于 9/30 14:05</span>' +
         '<span aria-hidden="true">14:05</span></span>',
     );
-    expect(classTokens(html)).toEqual(expect.arrayContaining(["bg-fill-neutral", "text-fg"]));
+    expect(classTokens(html)).toEqual(
+      expect.arrayContaining([
+        "bg-fill-neutral",
+        "text-fg",
+        "relative",
+        "max-w-[88%]",
+        "sm:max-w-[75%]",
+        "text-base",
+        "sm:text-sm",
+      ]),
+    );
+    expect(html).toContain('<span aria-hidden="true" class="channel-time-gap"></span>');
+    expect(bubble()).not.toContain("channel-time-gap");
   });
 
   it("squares the corner nearest the run's tail, on the last bubble only", () => {

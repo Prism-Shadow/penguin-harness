@@ -258,6 +258,51 @@ export interface Messages {
     colName(): string;
     colRole(): string;
   };
+  /** `penguin plugin`: the plugins installed on the server (an admin's, via the local API token). */
+  plugin: {
+    desc: string;
+    listDesc: string;
+    installDesc: string;
+    /** `install --overwrite`: replace another version of an uploaded package directory. */
+    overwriteOpt: string;
+    removeDesc: string;
+    colName(): string;
+    colKind(): string;
+    colState(): string;
+    /** What a row is: a package of server modules the Project lists, or a package of Skills, hooks or MCP servers in the library. */
+    kindModules(): string;
+    kindLibrary(): string;
+    active(): string;
+    pending(): string;
+    failed(reason: string): string;
+    /** Listed for other machines of the Project only. */
+    elsewhere(): string;
+    none(): string;
+    installed(name: string, version: string | null): string;
+    /** The server already has this version of an uploaded package directory: nothing was installed. */
+    unchanged(name: string, version: string | null): string;
+    /** A package directory the plugin library would refuse, with the reader's reason; nothing was sent. */
+    dirRefused(dir: string, reason: string): string;
+    /** A package directory with neither skills/, hooks/, MCP servers nor ifaces.json; nothing was sent. */
+    dirNotPlugin(dir: string): string;
+    /** A package directory past the server's upload caps; nothing was sent. */
+    dirTooLarge(dir: string): string;
+    /** On stderr while a package directory goes up as a zip. */
+    uploading(name: string, version: string, files: number): string;
+    /** After the server's 409 `plugin_exists` (its message comes first). */
+    overwriteHint(): string;
+    /** A plugin the build ships: listing it is all an install does. */
+    listedOnly(specifier: string, projectId: string): string;
+    /** After installing a package of Skills, hooks or MCP servers. */
+    libraryNext(): string;
+    /** After installing a package directory: one line per MCP server it carries. */
+    mcpServerLine(name: string, transport: string, target: string): string;
+    /** After installing a package of server modules, applied without a restart. */
+    modulesLoaded(projectId: string): string;
+    /** After installing a package of server modules this server could not apply in place. */
+    restartNext(): string;
+    removed(name: string): string;
+  };
   /** `penguin cost`: token/cost aggregates. */
   cost: {
     desc: string;
@@ -355,6 +400,12 @@ export interface Messages {
     hireDesc: string;
     employeeDesc: string;
     employeeSetDesc: string;
+    /** `employee avatar`: set or clear an employee's picture. */
+    employeeAvatarDesc: string;
+    /** `employee avatar --file`. */
+    avatarFile: string;
+    /** `employee avatar --clear`. */
+    avatarClear: string;
     leaveDesc: string;
     deskDesc: string;
     deskShowDesc: string;
@@ -412,6 +463,7 @@ export interface Messages {
     title: string;
     reportsTo: string;
     /** Employee workspace: a sub-directory of the shared workspace (`.` = all of it) or an absolute path, written as given. */
+    employeeName: string;
     employeeWorkspace: string;
     /** hire's --workspace: the same spec, with the default the employee's own sub-directory. */
     hireWorkspace: string;
@@ -501,6 +553,15 @@ export interface Messages {
     created(orgId: string, ceoDeskSessionId: string | undefined): string;
     hired(agentId: string, title: string, reportsTo: string | null): string;
     employeeUpdated(agentId: string): string;
+    /** `employee avatar` takes exactly one of --file and --clear. */
+    avatarNeedsOne(): string;
+    /** `employee avatar` without an id outside a desk or ticket session. */
+    avatarNoAgent(): string;
+    avatarUnreadable(file: string, reason: string): string;
+    avatarFormat(file: string): string;
+    avatarTooLarge(file: string, kib: number, maxKib: number): string;
+    avatarSet(agentId: string): string;
+    avatarCleared(agentId: string): string;
     left(agentId: string): string;
     desk(
       agentId: string,
@@ -1358,6 +1419,46 @@ const en: Messages = {
     colName: () => "NAME",
     colRole: () => "ROLE",
   },
+  plugin: {
+    desc: "Manage the plugins installed on the server (admin)",
+    listDesc:
+      "List the server modules the Project lists and the plugins of Skills, hooks or MCP servers installed on the server",
+    installDesc:
+      "Install a plugin on the server: an npm package name (@scope/name, name@1.2.3), an https link to a git repository or a tarball, or a local package directory, which is read with the plugin library's reader, zipped without node_modules and uploaded. A plugin of server modules is loaded at once, which stops the agent runs in progress",
+    overwriteOpt:
+      "Replace another version of the package already on the server (a package directory only)",
+    removeDesc: "Remove a plugin from the Project, and from the server once nothing else lists it",
+    colName: () => "PLUGIN",
+    colKind: () => "KIND",
+    colState: () => "STATE",
+    kindModules: () => "server modules",
+    kindLibrary: () => "skills / hooks / MCP",
+    active: () => "running",
+    pending: () => "waits for a restart",
+    failed: (reason) => `failed to load: ${reason}`,
+    elsewhere: () => "on other machines only",
+    none: () => "No plugins installed on the server.",
+    installed: (name, version) =>
+      version === null ? `Installed ${name}.` : `Installed ${name} ${version}.`,
+    unchanged: (name, version) =>
+      `${name}${version === null ? "" : ` ${version}`} is already installed on the server; nothing changed.`,
+    dirRefused: (dir, reason) =>
+      `${dir} is not a package the plugin library can read, so nothing was sent: ${reason}`,
+    dirNotPlugin: (dir) =>
+      `${dir} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor MCP servers (penguin.mcp_servers) nor the ifaces.json of server modules. Nothing was sent.`,
+    dirTooLarge: (dir) =>
+      `${dir} exceeds what a plugin package may hold (2000 files, 5MB per file, 50MB in all, a 14MB zip). Nothing was sent.`,
+    uploading: (name, version, files) => `Uploading ${name} ${version} (${files} files)…`,
+    overwriteHint: () => "Re-run with --overwrite to replace it.",
+    listedOnly: (specifier, projectId) =>
+      `${specifier} ships with this server; listed for Project ${projectId}.`,
+    libraryNext: () =>
+      "It is in the plugin library: install it on an agent from the Plugins page (Manage installs).",
+    mcpServerLine: (name, transport, target) => `MCP server: ${name} (${transport}) ${target}`,
+    modulesLoaded: (projectId) => `Listed for Project ${projectId} on this server and loaded.`,
+    restartNext: () => "Listed; restart the server to load it.",
+    removed: (name) => `Removed ${name}.`,
+  },
   cost: {
     desc: "Show token usage and cost (summary card by default; --by prints a grouped table)",
     days: "Trailing window in days (sets --from/--to)",
@@ -1450,6 +1551,10 @@ const en: Messages = {
       "Employ an Agent: an existing one (--agent-id) or a new one (--new-agent), under --reports-to",
     employeeDesc: "Manage employees",
     employeeSetDesc: "Update an employee's entry in the tree (only the given fields change)",
+    employeeAvatarDesc:
+      "Set or clear an employee's avatar (the employee defaults to PENGUIN_AGENT_ID, so an employee can set its own)",
+    avatarFile: "Image file to use: PNG, JPEG or WebP, at most about 96 KiB",
+    avatarClear: "Remove the avatar",
     leaveDesc: "Remove an employee from the organization (not the CEO); the Agent itself stays",
     deskDesc: "Desk sessions (one standing session per employee)",
     deskShowDesc: "The employee's desk session id and Workspace (opens the desk if it has none)",
@@ -1512,6 +1617,8 @@ const en: Messages = {
       "Extra library plugins for the new Agent, comma-separated (added to agent-company,agent-development)",
     title: "Job title",
     reportsTo: "Agent id of the manager",
+    employeeName:
+      "What the organization calls the employee — any language, works after @ like the id; an empty value clears it",
     employeeWorkspace:
       "Workspace: a sub-directory of the shared workspace (. = all of it) or an absolute path, written as given",
     hireWorkspace:
@@ -1587,6 +1694,15 @@ const en: Messages = {
     hired: (agentId, title, reportsTo) =>
       `Employee ${agentId} hired as ${title}${reportsTo !== null ? `, reporting to ${reportsTo}` : ""}.`,
     employeeUpdated: (agentId) => `Employee ${agentId} updated.`,
+    avatarNeedsOne: () => "Give exactly one of --file <path> and --clear.",
+    avatarNoAgent: () =>
+      "Name the employee: pass <agent_id>, or run inside a desk or ticket session (PENGUIN_AGENT_ID).",
+    avatarUnreadable: (file, reason) => `Cannot read ${file}: ${reason}`,
+    avatarFormat: (file) => `${file} is not a PNG, JPEG or WebP image.`,
+    avatarTooLarge: (file, kib, maxKib) =>
+      `${file} is ${kib} KiB; an avatar is at most ${maxKib} KiB. Scale it down (256×256 is plenty) and try again.`,
+    avatarSet: (agentId) => `Avatar of ${agentId} set.`,
+    avatarCleared: (agentId) => `Avatar of ${agentId} removed.`,
     left: (agentId) => `Employee ${agentId} left the organization.`,
     desk: (agentId, sessionId, workspace, openedAt, created) =>
       `Desk of ${agentId}: session ${sessionId} (workspace ${workspace}, opened ${openedAt})${created ? " — opened just now" : ""}`,
@@ -2447,6 +2563,42 @@ const zh: Messages = {
     colName: () => "名称",
     colRole: () => "角色",
   },
+  plugin: {
+    desc: "管理服务端安装的插件（管理员）",
+    listDesc: "列出 Project 启用的服务端模块，以及服务端安装的 Skill / 钩子 / MCP Server 插件",
+    installDesc:
+      "把插件安装到服务端：npm 包名（@scope/name、name@1.2.3）、指向 git 仓库或 tarball 的 https 链接，或本地插件包目录（先用插件库的读取器校验，去掉 node_modules 打成 zip 后上传）。服务端模块插件会立即载入，正在进行的 Agent 运行会被中止",
+    overwriteOpt: "替换服务端上已安装的该包的其他版本（仅用于插件包目录）",
+    removeDesc: "从 Project 中移除插件；没有其他 Project 使用时一并从服务端删除",
+    colName: () => "插件",
+    colKind: () => "类型",
+    colState: () => "状态",
+    kindModules: () => "服务端模块",
+    kindLibrary: () => "技能 / 钩子 / MCP",
+    active: () => "运行中",
+    pending: () => "待重启",
+    failed: (reason) => `加载失败：${reason}`,
+    elsewhere: () => "只在其他机器上",
+    none: () => "服务端没有安装插件。",
+    installed: (name, version) =>
+      version === null ? `已安装 ${name}。` : `已安装 ${name} ${version}。`,
+    unchanged: (name, version) =>
+      `服务端已安装 ${name}${version === null ? "" : ` ${version}`}，没有任何改动。`,
+    dirRefused: (dir, reason) => `插件库无法读取 ${dir} 中的包，未发送任何内容：${reason}`,
+    dirNotPlugin: (dir) =>
+      `${dir} 不是 PenguinHarness 插件：既没有 skills/、hooks/ 与 MCP Server（penguin.mcp_servers），也没有服务端模块的 ifaces.json。未发送任何内容。`,
+    dirTooLarge: (dir) =>
+      `${dir} 超出插件包的上限（2000 个文件、单个文件 5MB、合计 50MB、zip 14MB）。未发送任何内容。`,
+    uploading: (name, version, files) => `正在上传 ${name} ${version}（${files} 个文件）…`,
+    overwriteHint: () => "加上 --overwrite 重新运行即可替换。",
+    listedOnly: (specifier, projectId) =>
+      `${specifier} 随本服务端自带，已为 Project ${projectId} 启用。`,
+    libraryNext: () => "它已进入插件库：请在插件页通过「管理安装」把它安装到 Agent 上。",
+    mcpServerLine: (name, transport, target) => `MCP Server：${name}（${transport}）${target}`,
+    modulesLoaded: (projectId) => `已在本服务端为 Project ${projectId} 启用并载入。`,
+    restartNext: () => "已启用；重启服务端后载入。",
+    removed: (name) => `已移除 ${name}。`,
+  },
   cost: {
     desc: "查看 Token 用量与成本（缺省打印汇总卡片；--by 打印分组表格）",
     days: "最近 n 天（自动换算为 --from/--to）",
@@ -2530,6 +2682,9 @@ const zh: Messages = {
     hireDesc: "招募员工：既有 Agent（--agent-id）或新建 Agent（--new-agent），汇报给 --reports-to",
     employeeDesc: "管理员工",
     employeeSetDesc: "更新员工树条目（只改动给出的字段）",
+    employeeAvatarDesc: "设置或清除员工头像（员工缺省为 PENGUIN_AGENT_ID，员工可以给自己设）",
+    avatarFile: "要用的图片文件：PNG、JPEG 或 WebP，最大约 96 KiB",
+    avatarClear: "清除头像",
     leaveDesc: "将员工移出组织（CEO 不可）；Agent 本身保留",
     deskDesc: "工位会话（每位员工一个常设会话）",
     deskShowDesc: "员工的工位会话 id 与 Workspace（尚无工位时开一个）",
@@ -2581,6 +2736,7 @@ const zh: Messages = {
     skills: "新 Agent 额外的插件库插件，逗号分隔（在 agent-company,agent-development 之上追加）",
     title: "头衔",
     reportsTo: "上级的 Agent id",
+    employeeName: "组织里对这位员工的称呼——可以是中文，和 id 一样可用在 @ 后面；传空值即清除",
     employeeWorkspace: "Workspace：公共工作区的子目录（. 即整个工作区）或绝对路径，原样写入",
     hireWorkspace:
       "Workspace：公共工作区的子目录或绝对路径，原样写入（缺省为以该员工命名的子目录）",
@@ -2648,6 +2804,15 @@ const zh: Messages = {
     hired: (agentId, title, reportsTo) =>
       `已招募员工 ${agentId}，头衔 ${title}${reportsTo !== null ? `，汇报给 ${reportsTo}` : ""}。`,
     employeeUpdated: (agentId) => `已更新员工 ${agentId}。`,
+    avatarNeedsOne: () => "--file <路径> 与 --clear 二者恰好给一个。",
+    avatarNoAgent: () =>
+      "请指明员工：传入 <agent_id>，或在工位 / 工单 Session 里运行（PENGUIN_AGENT_ID）。",
+    avatarUnreadable: (file, reason) => `无法读取 ${file}：${reason}`,
+    avatarFormat: (file) => `${file} 不是 PNG、JPEG 或 WebP 图片。`,
+    avatarTooLarge: (file, kib, maxKib) =>
+      `${file} 有 ${kib} KiB；头像最大 ${maxKib} KiB。请缩小后再试（256×256 足够）。`,
+    avatarSet: (agentId) => `已设置 ${agentId} 的头像。`,
+    avatarCleared: (agentId) => `已清除 ${agentId} 的头像。`,
     left: (agentId) => `员工 ${agentId} 已离开组织。`,
     desk: (agentId, sessionId, workspace, openedAt, created) =>
       `${agentId} 的工位：会话 ${sessionId}（Workspace ${workspace}，开于 ${openedAt}）${created ? "——刚刚新开" : ""}`,

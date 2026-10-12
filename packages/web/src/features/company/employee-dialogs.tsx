@@ -1,15 +1,17 @@
 /**
  * The org chart's personnel dialogs. Hire a subordinate — in two sections: the Agent (an
  * existing one of the Project, or a new one: id, name, description, plugins defaulting to
- * agent-company and agent-development) and the position (title, duties, workspace, budget)
- * — the single-field edits, each showing the current value first: budget (a monthly cap,
- * typed in the reader's own currency and stored in USD, or unbounded), reporting line
- * (anyone outside the employee's own subtree) and thinking level; and the desk renewal, which
- * writes the workspace and opens a fresh desk session in one confirm. Hire and Save write at
- * once: their button is live only once every required field is filled and nothing typed is
- * malformed (said under the field as it is typed), and Save only once the value differs from the
- * stored one. The renewal is its own confirmation. Closing any of them with unsaved edits asks
- * first.
+ * agent-company and agent-development) and the position (the employee's name, title, duties,
+ * workspace, budget); the employee's profile — the name the organization calls it, written on
+ * Save, and its picture, written as it is picked; the single-field edits, each showing the
+ * current value first: budget (a monthly cap, typed in the reader's own currency and stored in
+ * USD, or unbounded), reporting line (anyone outside the employee's own subtree) and thinking
+ * level; and the desk renewal, which writes the workspace and opens a fresh desk session in one
+ * confirm. Hire and Save write at once: their button is live only once every required field is
+ * filled and nothing typed is malformed (said under the field as it is typed), and Save only once
+ * the value differs from the stored one. A hire asks first only when a new Agent's picked plugin
+ * brings a stdio MCP server, showing the command it runs on this server. The renewal is its own
+ * confirmation. Closing any of them with unsaved edits asks first.
  *
  * The thinking level is not the chart's: a desk reads it from the employee's Agent config at
  * every new model context, and a ticket session opens on it, so that config is what the edit
@@ -18,16 +20,21 @@
  * when the current desk is pinned.
  */
 import { useEffect, useState } from "react";
+import type { ChangeEvent } from "react";
 import type {
   AgentModelConfigDto,
   OrgEmployeeItem,
   OrgHireRequest,
+  PluginItem,
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  buttonClass,
+  ConfirmModal,
   FieldError,
   FieldLabel,
   FormPicker,
+  HiddenFileInput,
   ICONS,
   Input,
   Modal,
@@ -46,17 +53,27 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import {
+  avatarDataUrlFromImage,
+  loadAvatarImage,
+  releaseAvatarImage,
+} from "../../lib/avatar-image";
+import type { AvatarCrop } from "../../lib/avatar-image";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
+import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
+import { StdioDisclosure } from "../plugins/plugin-mcp";
+import { stdioServers } from "../plugins/plugin-status";
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
+import { EmployeeAvatar } from "./employee-avatar";
 import { managerCandidates } from "./org-chart-tree";
 import {
   SELECTABLE_THINKING_LEVELS,
@@ -76,6 +93,9 @@ function CurrentValue({ value }: { value: string }) {
   );
 }
 
+/** A library plugin as a picker row, keeping what the hire confirmation reads: its title and its MCP servers. */
+type HirePluginItem = PickableItem & Pick<PluginItem, "title" | "titleZh" | "mcpServers">;
+
 /** The hire form's fields, as typed. */
 interface HireDraft {
   source: "existing" | "new";
@@ -84,6 +104,8 @@ interface HireDraft {
   newName: string;
   newDescription: string;
   plugins: string[];
+  /** What the organization calls the employee; for a new Agent its name stands in when empty. */
+  employeeName: string;
   title: string;
   duties: string;
   workspace: string;
@@ -102,7 +124,7 @@ interface HireDialogProps {
 }
 
 export function HireDialog({ open, ...props }: HireDialogProps) {
-  const [library, setLibrary] = useState<PickableItem[] | null>(null);
+  const [library, setLibrary] = useState<HirePluginItem[] | null>(null);
 
   // The plugin library is fetched the first time the dialog opens, for the picker.
   useEffect(() => {
@@ -136,7 +158,7 @@ function HireForm({
   onClose,
   onHired,
   library,
-}: Omit<HireDialogProps, "open"> & { library: PickableItem[] | null }) {
+}: Omit<HireDialogProps, "open"> & { library: HirePluginItem[] | null }) {
   const { agents } = useProject();
   const { currency } = useTheme();
   const company = useCompany();
@@ -153,6 +175,7 @@ function HireForm({
     newName: "",
     newDescription: "",
     plugins: DEFAULT_EMPLOYEE_PLUGINS,
+    employeeName: "",
     title: "",
     duties: "",
     workspace: "",
@@ -165,6 +188,7 @@ function HireForm({
       newName: d.newName.trim(),
       newDescription: d.newDescription.trim(),
       plugins: [...d.plugins].sort(),
+      employeeName: d.employeeName.trim(),
       title: d.title.trim(),
       duties: d.duties.trim(),
       workspace: d.workspace.trim(),
@@ -172,9 +196,11 @@ function HireForm({
     }),
   });
   const { source, agentId, newId, newName, newDescription, plugins } = form.draft;
-  const { title, duties, workspace, budget } = form.draft;
+  const { employeeName, title, duties, workspace, budget } = form.draft;
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Hiring waits on the confirmation a new Agent's stdio MCP server asks for: the command it runs on this server. */
+  const [stdioConfirmOpen, setStdioConfirmOpen] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
   const picked = agents.find((a) => a.agentId === agentId);
@@ -197,13 +223,29 @@ function HireForm({
     title.trim() !== "" &&
     !budgetBroken;
 
-  const hire = async () => {
+  /** The new Agent's picked plugins that carry a stdio MCP server: hiring runs their commands on this server. */
+  const stdioSeeds =
+    source === "new"
+      ? (library ?? []).filter(
+          (plugin) => plugins.includes(plugin.name) && stdioServers(plugin).length > 0,
+        )
+      : [];
+
+  /** `confirmed`: the stdio confirmation was answered, or nothing picked asks for one. */
+  const hire = async (confirmed = false) => {
     if (!valid || busy) return;
+    // A new employee's plugin with a stdio MCP server runs a command on this server whenever a
+    // session of the Agent starts: said, and confirmed, before the Agent is created.
+    if (!confirmed && stdioSeeds.length > 0) {
+      setStdioConfirmOpen(true);
+      return;
+    }
     setBusy(true);
     try {
       // The box speaks the reader's currency; the chart file holds USD.
       const budgetUsd = toStoredUsd(budget, currency);
       const body: OrgHireRequest = {
+        ...(employeeName.trim() ? { name: employeeName.trim() } : {}),
         title: title.trim(),
         reportsTo: manager.agentId,
         ...(source === "existing"
@@ -226,8 +268,10 @@ function HireForm({
       // cannot be opened or bound until some later event happens to refresh the cache.
       void company.reloadOrgSessions();
       toastSuccess(S.company.chart.hired(hireName));
+      setStdioConfirmOpen(false);
       onHired();
     } catch (e) {
+      setStdioConfirmOpen(false);
       toastError(apiErrorText(e));
     } finally {
       setBusy(false);
@@ -235,165 +279,200 @@ function HireForm({
   };
 
   return (
-    <Modal
-      open
-      title={S.company.chart.hireTitle(manager.name)}
-      onClose={requestClose}
-      widthClass="sm:max-w-lg"
-      footer={
-        <>
-          <Button size="sm" onClick={requestClose} disabled={busy}>
-            {S.common.cancel}
-          </Button>
-          <Button size="sm" variant="primary" disabled={!valid || busy} onClick={() => void hire()}>
-            {S.company.chart.hire}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-6">
-        <RuledSection level={3} title={S.company.chart.hireAgentSection}>
-          <div className="space-y-3">
-            <div>
-              <FieldLabel>{S.company.chart.hireSource}</FieldLabel>
-              <Segmented
-                options={[
-                  { value: "existing" as const, label: S.company.chart.hireExisting },
-                  { value: "new" as const, label: S.company.chart.hireNew },
-                ]}
-                value={source}
-                onChange={(next) => form.patch({ source: next })}
-                cols={2}
-              />
-            </div>
-            {source === "existing" ? (
+    <>
+      <Modal
+        open
+        title={S.company.chart.hireTitle(manager.name)}
+        onClose={requestClose}
+        widthClass="sm:max-w-lg"
+        footer={
+          <>
+            <Button size="sm" onClick={requestClose} disabled={busy}>
+              {S.common.cancel}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!valid || busy}
+              onClick={() => void hire()}
+            >
+              {S.company.chart.hire}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-6">
+          <RuledSection level={3} title={S.company.chart.hireAgentSection}>
+            <div className="space-y-3">
               <div>
-                <InfoFieldLabel
-                  label={S.company.chart.agent}
-                  info={S.company.chart.agentHint}
-                  required
+                <FieldLabel>{S.company.chart.hireSource}</FieldLabel>
+                <Segmented
+                  options={[
+                    { value: "existing" as const, label: S.company.chart.hireExisting },
+                    { value: "new" as const, label: S.company.chart.hireNew },
+                  ]}
+                  value={source}
+                  onChange={(next) => form.patch({ source: next })}
+                  cols={2}
                 />
-                <Select
-                  size="sm"
-                  aria-label={S.company.chart.agent}
-                  required
-                  value={agentId}
-                  onChange={(e) => form.patch({ agentId: e.target.value })}
-                >
-                  {candidates.length === 0 ? (
-                    <option value="">{S.company.chart.noAgentsLeft}</option>
-                  ) : (
-                    candidates.map((a) => (
-                      <option key={a.agentId} value={a.agentId}>
-                        {agentDisplayName(a)} ({a.agentId})
-                      </option>
-                    ))
-                  )}
-                </Select>
               </div>
-            ) : (
-              <>
-                <Input
-                  label={S.company.chart.agentId}
-                  required
-                  size="sm"
-                  value={newId}
-                  className="font-mono"
-                  hint={S.company.chart.agentIdHint}
-                  {...(idBroken ? { error: S.company.chart.agentIdHint } : {})}
-                  onChange={(e) => form.patch({ newId: e.target.value })}
-                />
-                <Input
-                  label={S.company.chart.agentName}
-                  size="sm"
-                  value={newName}
-                  info={S.company.chart.agentNameHint}
-                  onChange={(e) => form.patch({ newName: e.target.value })}
-                />
-                <Textarea
-                  label={S.company.chart.agentDescription}
-                  size="sm"
-                  rows={2}
-                  value={newDescription}
-                  onChange={(e) => form.patch({ newDescription: e.target.value })}
-                />
+              {source === "existing" ? (
                 <div>
                   <InfoFieldLabel
-                    label={S.company.chart.plugins}
-                    info={S.company.chart.pluginsHint}
+                    label={S.company.chart.agent}
+                    info={S.company.chart.agentHint}
+                    required
                   />
-                  <FormPicker
-                    open={pluginsOpen}
-                    setOpen={setPluginsOpen}
-                    label={
-                      plugins.length === 0
-                        ? S.company.chart.pluginsPlaceholder
-                        : S.company.chart.pluginsPicked(plugins.length)
-                    }
-                    muted={plugins.length === 0}
-                    ariaLabel={S.company.chart.plugins}
-                    disabled={busy}
-                    menuClass="w-[26rem]"
+                  <Select
+                    size="sm"
+                    aria-label={S.company.chart.agent}
+                    required
+                    value={agentId}
+                    onChange={(e) => form.patch({ agentId: e.target.value })}
                   >
-                    <SkillPickList
-                      skills={library ?? []}
-                      selected={plugins}
-                      onToggle={(name) => form.patch({ plugins: toggleSkillName(plugins, name) })}
-                      onSelectAll={(names) =>
-                        form.patch({ plugins: addSkillNames(plugins, names) })
-                      }
-                      onSelectNone={(names) =>
-                        form.patch({ plugins: removeSkillNames(plugins, names) })
-                      }
-                      emptyHint={library === null ? S.common.loading : S.company.chart.pluginsEmpty}
-                      searchPlaceholder={S.plugins.searchPlaceholder}
-                    />
-                  </FormPicker>
+                    {candidates.length === 0 ? (
+                      <option value="">{S.company.chart.noAgentsLeft}</option>
+                    ) : (
+                      candidates.map((a) => (
+                        <option key={a.agentId} value={a.agentId}>
+                          {agentDisplayName(a)} ({a.agentId})
+                        </option>
+                      ))
+                    )}
+                  </Select>
                 </div>
-              </>
-            )}
-          </div>
-        </RuledSection>
-        <RuledSection level={3} title={S.company.chart.hirePositionSection}>
-          <div className="space-y-3">
-            <Input
-              label={S.company.chart.employeeTitle}
-              required
-              size="sm"
-              value={title}
-              placeholder={S.company.chart.employeeTitlePlaceholder}
-              onChange={(e) => form.patch({ title: e.target.value })}
-            />
-            <Textarea
-              label={S.company.chart.duties}
-              size="sm"
-              rows={2}
-              value={duties}
-              info={S.company.chart.dutiesHint}
-              onChange={(e) => form.patch({ duties: e.target.value })}
-            />
-            <Input
-              label={S.company.chart.workspace}
-              size="sm"
-              value={workspace}
-              className="font-mono"
-              hint={S.company.chart.workspaceHint}
-              placeholder={hireAgentId}
-              onChange={(e) => form.patch({ workspace: e.target.value })}
-            />
-            <MoneyPerMonthInput
-              label={S.company.chart.budget}
-              currency={currency}
-              value={budget}
-              placeholder={S.company.noBudget}
-              info={S.company.chart.budgetHint}
-              {...(budgetBroken ? { error: S.company.chart.budgetHint } : {})}
-              onChange={(text) => form.patch({ budget: text })}
-            />
-          </div>
-        </RuledSection>
-      </div>
-    </Modal>
+              ) : (
+                <>
+                  <Input
+                    label={S.company.chart.agentId}
+                    required
+                    size="sm"
+                    value={newId}
+                    className="font-mono"
+                    hint={S.company.chart.agentIdHint}
+                    {...(idBroken ? { error: S.company.chart.agentIdHint } : {})}
+                    onChange={(e) => form.patch({ newId: e.target.value })}
+                  />
+                  <Input
+                    label={S.company.chart.agentName}
+                    size="sm"
+                    value={newName}
+                    info={S.company.chart.agentNameHint}
+                    onChange={(e) => form.patch({ newName: e.target.value })}
+                  />
+                  <Textarea
+                    label={S.company.chart.agentDescription}
+                    size="sm"
+                    rows={2}
+                    value={newDescription}
+                    onChange={(e) => form.patch({ newDescription: e.target.value })}
+                  />
+                  <div>
+                    <InfoFieldLabel
+                      label={S.company.chart.plugins}
+                      info={S.company.chart.pluginsHint}
+                    />
+                    <FormPicker
+                      open={pluginsOpen}
+                      setOpen={setPluginsOpen}
+                      label={
+                        plugins.length === 0
+                          ? S.company.chart.pluginsPlaceholder
+                          : S.company.chart.pluginsPicked(plugins.length)
+                      }
+                      muted={plugins.length === 0}
+                      ariaLabel={S.company.chart.plugins}
+                      disabled={busy}
+                      menuClass="w-[26rem]"
+                    >
+                      <SkillPickList
+                        skills={library ?? []}
+                        selected={plugins}
+                        onToggle={(name) => form.patch({ plugins: toggleSkillName(plugins, name) })}
+                        onSelectAll={(names) =>
+                          form.patch({ plugins: addSkillNames(plugins, names) })
+                        }
+                        onSelectNone={(names) =>
+                          form.patch({ plugins: removeSkillNames(plugins, names) })
+                        }
+                        emptyHint={
+                          library === null ? S.common.loading : S.company.chart.pluginsEmpty
+                        }
+                        searchPlaceholder={S.plugins.searchPlaceholder}
+                      />
+                    </FormPicker>
+                  </div>
+                </>
+              )}
+            </div>
+          </RuledSection>
+          <RuledSection level={3} title={S.company.chart.hirePositionSection}>
+            <div className="space-y-3">
+              <Input
+                label={S.company.chart.employeeName}
+                size="sm"
+                value={employeeName}
+                maxLength={64}
+                hint={S.company.chart.employeeNameHireHint}
+                onChange={(e) => form.patch({ employeeName: e.target.value })}
+              />
+              <Input
+                label={S.company.chart.employeeTitle}
+                required
+                size="sm"
+                value={title}
+                placeholder={S.company.chart.employeeTitlePlaceholder}
+                onChange={(e) => form.patch({ title: e.target.value })}
+              />
+              <Textarea
+                label={S.company.chart.duties}
+                size="sm"
+                rows={2}
+                value={duties}
+                info={S.company.chart.dutiesHint}
+                onChange={(e) => form.patch({ duties: e.target.value })}
+              />
+              <Input
+                label={S.company.chart.workspace}
+                size="sm"
+                value={workspace}
+                className="font-mono"
+                hint={S.company.chart.workspaceHint}
+                placeholder={hireAgentId}
+                onChange={(e) => form.patch({ workspace: e.target.value })}
+              />
+              <MoneyPerMonthInput
+                label={S.company.chart.budget}
+                currency={currency}
+                value={budget}
+                placeholder={S.company.noBudget}
+                info={S.company.chart.budgetHint}
+                {...(budgetBroken ? { error: S.company.chart.budgetHint } : {})}
+                onChange={(text) => form.patch({ budget: text })}
+              />
+            </div>
+          </RuledSection>
+        </div>
+      </Modal>
+      {/* Only a new Agent whose picked plugin brings a stdio MCP server asks before the hire: that
+          server runs a command on this server whenever a session of the Agent starts, said here
+          before the Agent is created. Any other hire writes at once. */}
+      <ConfirmModal
+        open={stdioConfirmOpen}
+        title={S.company.chart.hire}
+        tone="primary"
+        confirmLabel={S.common.confirm}
+        cancelLabel={S.common.cancel}
+        busy={busy}
+        onClose={() => (busy ? undefined : setStdioConfirmOpen(false))}
+        onConfirm={() => void hire(true)}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.company.chart.hireConfirm(hireName, manager.name)}
+        </p>
+        <StdioDisclosure className="mt-3" plugins={stdioSeeds} />
+      </ConfirmModal>
+    </>
   );
 }
 
@@ -669,6 +748,164 @@ export function EmployeeEditDialog({
         )}
       </Modal>
     </>
+  );
+}
+
+/**
+ * What the organization calls an employee, and what it looks like: the chart entry's `name`
+ * and the picture in the organization's `avatars/`. Both are the organization's, not the
+ * Agent's — the same Agent may be someone else elsewhere. The picture is written as it is
+ * picked (the picker re-encodes it to fit, like a person's own): direct manipulation, with
+ * nothing to review first. The name is typed, so it waits for Save, live only while the trimmed
+ * name differs from the stored one; closing with an unsaved name asks first, and nothing closes
+ * the dialog while a write is in flight.
+ */
+interface EmployeeProfileDialogProps {
+  open: boolean;
+  projectId: string;
+  orgId: string;
+  employee: OrgEmployeeItem;
+  onClose: () => void;
+  /** The name or the picture was written: the caller re-reads the chart. */
+  onChanged: () => void;
+}
+
+export function EmployeeProfileDialog({ open, ...props }: EmployeeProfileDialogProps) {
+  // Mounted only while open, so every opening starts from the stored name; a re-read of the
+  // chart, which a picture write triggers, leaves a name still being typed alone.
+  return open ? <EmployeeProfileForm key={props.employee.agentId} {...props} /> : null;
+}
+
+function EmployeeProfileForm({
+  projectId,
+  orgId,
+  employee,
+  onClose,
+  onChanged,
+}: Omit<EmployeeProfileDialogProps, "open">) {
+  /** The typed name against the stored one; trimmed before comparing, as Save stores it. */
+  const form = useFormDraft(employee.givenName ?? "", { normalize: (value) => value.trim() });
+  const name = form.draft;
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
+
+  const run = async (work: () => Promise<unknown>, done?: () => void) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await work();
+      onChanged();
+      done?.();
+    } catch (e) {
+      setError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** The picked image, decoded and waiting for its crop to be chosen. */
+  const [cropping, setCropping] = useState<HTMLImageElement | null>(null);
+  const endCrop = () => {
+    if (cropping !== null) releaseAvatarImage(cropping);
+    setCropping(null);
+  };
+
+  const onPickFile = (e: ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file === undefined) return;
+    setError(undefined);
+    loadAvatarImage(file).then(setCropping, () => setError(S.profile.avatarUnreadable));
+  };
+
+  const onCropped = (crop: AvatarCrop) => {
+    const image = cropping;
+    if (image === null) return;
+    void run(async () => {
+      const dataUrl = avatarDataUrlFromImage(image, crop);
+      if (dataUrl === null) throw new Error(S.profile.avatarTooLarge);
+      await api.putOrgEmployeeAvatar(projectId, orgId, employee.agentId, dataUrl);
+    }).finally(endCrop);
+  };
+
+  const save = () => {
+    if (!form.dirty || busy) return;
+    void run(
+      () =>
+        api.patchOrgEmployee(projectId, orgId, employee.agentId, {
+          name: name.trim() === "" ? null : name.trim(),
+        }),
+      () => {
+        toastSuccess(S.company.chart.saved);
+        onClose();
+      },
+    );
+  };
+
+  return (
+    <Modal
+      open
+      title={S.company.chart.profileTitle(employee.name)}
+      onClose={requestClose}
+      footer={
+        <>
+          <Button size="sm" onClick={requestClose} disabled={busy}>
+            {S.common.cancel}
+          </Button>
+          <Button size="sm" variant="primary" disabled={busy || !form.dirty} onClick={save}>
+            {S.common.save}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <EmployeeAvatar
+            id={employee.agentId}
+            name={employee.name}
+            size={48}
+            className="rounded-lg"
+          />
+          <label
+            className={`shrink-0 ${buttonClass("secondary", "sm")} ${busy ? "pointer-events-none opacity-60" : ""}`}
+          >
+            <HiddenFileInput
+              accept="image/png,image/jpeg,image/webp"
+              disabled={busy}
+              onChange={onPickFile}
+            />
+            {S.profile.changeAvatar}
+          </label>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="shrink-0"
+            disabled={busy || employee.avatarRev === undefined}
+            onClick={() =>
+              void run(() => api.putOrgEmployeeAvatar(projectId, orgId, employee.agentId, null))
+            }
+          >
+            {S.profile.restoreDefault}
+          </Button>
+        </div>
+        <AvatarCropDialog image={cropping} busy={busy} onCancel={endCrop} onConfirm={onCropped} />
+        <Input
+          label={S.company.chart.employeeName}
+          size="sm"
+          value={name}
+          maxLength={64}
+          disabled={busy}
+          placeholder={employee.agentId}
+          hint={S.company.chart.employeeNameHint(employee.agentId)}
+          {...(error !== undefined ? { error } : {})}
+          onChange={(e) => {
+            form.setDraft(e.target.value);
+            setError(undefined);
+          }}
+        />
+      </div>
+    </Modal>
   );
 }
 

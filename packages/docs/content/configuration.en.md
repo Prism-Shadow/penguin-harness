@@ -325,7 +325,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 | `schedules.prompt` | Built-in template | The `{{SCHEDULES}}` block, which teaches file-based task management; carries `{{SCHEDULE_LIST}}` |
 | `hooks.enabled` | `true` | Whether the installed hook packages run at the loop's hook points |
 | `tools.builtin` | The full default toolset when omitted | Tool entries; once written, replaces the default list wholesale |
-| `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`) |
+| `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`, and `plugin` on an entry a plugin installed) |
 
 ### Field details
 
@@ -342,7 +342,7 @@ What the policy does buy: a destructive one-liner does not run by accident, thro
 - `schedules.enabled`: when off, the server still fires tasks; the model just is not taught the task system.
 - `hooks.enabled`: the one section with no prompt half, because hook packages are scripts, not context text. When off, the packages stay installed and nothing consults them.
 - `tools.builtin`: each entry has `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`. `call_description` is the per-tool switch for the `description` call argument, which is required while on; missing means kept.
-- `tools.mcpServers`: the transport is `stdio`, `http` or `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`. `config.permission` (`auto` / `r` / `rw`, default `auto`) fixes the approval level of every tool of that server instead of trusting its `readOnlyHint`. See [MCP Servers](/tools#mcp-servers).
+- `tools.mcpServers`: the transport is `stdio`, `http` or `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`. `config.permission` (`auto` / `r` / `rw`, default `auto`) fixes the approval level of every tool of that server instead of trusting its `readOnlyHint`. A string value in `config` may hold a `${KEY}` reference to a Vault key, filled in when the server connects; see [Vault references](/tools#vault-references). `plugin` names the plugin whose install wrote the entry: reinstalling or uninstalling that plugin touches exactly the entries carrying its name, and an entry without the field is your own. Removing the field makes the entry yours, after which the plugin reads as not installed and installing it again is refused while the name is taken. See [MCP Servers](/tools#mcp-servers).
 
 The four `compaction.*` fields are the one part of this file a running conversation does not wait for. The engine re-reads the section at every compaction checkpoint (after each request reports its token usage, and on a manual `/compact`), so a saved change applies to Sessions already running. Everything else is read when a model context opens and lands at the next compaction. In the Web App you can also [change the threshold](/chat#change-the-compaction-threshold) from the context panel by dragging the dashed cutter on its bar.
 
@@ -389,7 +389,7 @@ An existing agent always runs with its on-disk config as written; newer code def
 - The config is then stamped with the current `kernel_version`.
 - Matching is **conservative**: only a tab whose hash matches a recorded generation counts as an old default. A tab from a generation too old to be recorded is kept as if customized.
 
-**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers. Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
+**Restore default configuration** works like a Skill update: it overwrites the configuration with the current defaults and keeps only `name`, `description` and `version`. Everything else is replaced, including a custom system prompt, the tool list, the model and compaction settings, and MCP Servers, the ones a plugin installed included (**Manage installs** on the **Plugins** page puts those back). Use it as the full refresh when the kernel update's conservative matching leaves fields behind.
 
 For developers:
 
@@ -528,7 +528,7 @@ A template without `{{MEMORY}}` injects no Memory; an agent created before Memor
 `agent_state/.vault.toml` is the agent-level environment-variable vault: a hidden file written with mode 0600.
 
 - Key names must match `^[A-Za-z_][A-Za-z0-9_]*$` (shell environment variable naming rules). Values are limited to 8,192 characters.
-- Values are injected only into tool subprocess environments. They never enter the model context or the Trace.
+- Values are injected only into tool subprocess environments, and into an MCP server entry wherever it references a key as `${KEY}` (see [Vault references](/tools#vault-references)). They never enter the model context or the Trace.
 - Only key names are shown in the system prompt. The template's `{{VAULT}}` placeholder expands to `vault.prompt`, which carries the `{{VAULT_KEYS}}` key-name list and is editable on the **Vault** tab. With `vault.enabled` off the block is empty: values are still injected into subprocesses, and the model just does not see the key names. A legacy template's inline `{{VAULT_KEYS}}` is still substituted under the same switch, and the tab offers one-click migration (see [System prompt placeholders](#system-prompt-placeholders)).
 - A saved change reaches new Sessions at once and a running Session at its next compaction, like any other Agent State change. This is the same whether you save in the Web App, through the API or with the CLI.
 - Manage it with `penguin config vault set/list/remove` or on the **Vault** tab.

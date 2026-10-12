@@ -1,6 +1,7 @@
 ---
 name: penguin-config
 description: Manage model API keys, default models and per-agent vault secrets with the penguin CLI.
+version: 2026.10.10.1
 ---
 
 # Penguin Config (CLI)

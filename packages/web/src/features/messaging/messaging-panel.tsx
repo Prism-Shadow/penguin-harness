@@ -54,6 +54,7 @@ export function MessagingPanel({ sessionId, active }: { sessionId: string; activ
           {/* The dialog places Save in its footer; the panel keeps it under the form. */}
           <div className="flex items-center justify-end gap-2">
             <Button
+              id={b.saveButtonId}
               variant="primary"
               size="sm"
               disabled={b.busy || !b.dirty || !b.valid}
