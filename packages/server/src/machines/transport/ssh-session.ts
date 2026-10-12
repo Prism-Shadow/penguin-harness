@@ -38,6 +38,8 @@ import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { sessionArgs } from "../commands.js";
 import type { RemoteTarget } from "../commands.js";
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { Resources } from "@prismshadow/penguin-core/kernel";
 
 /**
  * What a command in the session produced. `output` is stdout and stderr merged, with the
@@ -105,6 +107,28 @@ interface Pending {
   onLine: ((line: string) => void) | undefined;
 }
 
+export const SESSION_GROUP = "machineSession.v2";
+export const SESSION_SHAPE_ID = `${SESSION_GROUP}:shape`;
+export const MACHINE_SESSION_IFACE = "@prismshadow/penguin-server#MachineSession";
+const sessionResourceId = (address: string): string => `${SESSION_GROUP}:${address}`;
+
+@Interface()
+export abstract class MachineSession {
+  abstract hold(): void;
+  abstract held(): boolean;
+  abstract run(command: string, opts?: ShellRunOptions): Promise<ShellResult>;
+  abstract session(): ShellSession | null;
+  abstract close(): void;
+}
+export type HeldSession = MachineSession;
+
+let registry: Resources | null = null;
+let adoptDelivered = true;
+export function attachSessionRegistry(resources: Resources | null, adoptable = true): void {
+  registry = resources;
+  adoptDelivered = adoptable;
+}
+
 class MachineShell {
   #child: ChildProcessWithoutNullStreams | null = null;
   #socksPort: number | null = null;
@@ -121,13 +145,16 @@ class MachineShell {
   #reopen: NodeJS.Timeout | null = null;
   #backoffMs = RECONNECT_MIN_MS;
 
-  constructor(private readonly target: RemoteTarget) {}
+  #release: (() => void) | null = null;
+
+  constructor(private readonly target: RemoteTarget, private readonly address: string) {}
 
   /** Keeps the session from here on: a session opened transiently is promoted in place. */
   hold(): void {
     this.#held = true;
     if (this.#idle !== null) clearTimeout(this.#idle);
     this.#idle = null;
+    this.#release = registry?.register(sessionResourceId(this.address), this, () => this.close()) ?? null;
   }
 
   held(): boolean {
@@ -152,6 +179,9 @@ class MachineShell {
 
   /** Lets go for good: a held session stops being held, and nothing reopens it. */
   close(): void {
+    const release = this.#release;
+    this.#release = null;
+    release?.();
     this.#held = false;
     if (this.#reopen !== null) clearTimeout(this.#reopen);
     this.#reopen = null;
@@ -341,8 +371,9 @@ const sessions = new Map<string, MachineShell>();
 function shellFor(machineAddress: string, target: RemoteTarget): MachineShell {
   let shell = sessions.get(machineAddress);
   if (shell === undefined) {
-    shell = new MachineShell(target);
+    shell = (adoptDelivered ? registry?.claim<MachineShell>(sessionResourceId(machineAddress)) : undefined) ?? new MachineShell(target, machineAddress);
     sessions.set(machineAddress, shell);
+    if (shell.held()) shell.hold();
   }
   return shell;
 }
@@ -398,7 +429,9 @@ export function isHeld(machineAddress: string): boolean {
  * so that its successor starts with nothing of its to collect.
  */
 export function closeAllShells(): void {
-  for (const shell of sessions.values()) shell.close();
+  for (const shell of sessions.values()) {
+    if (!shell.held() || registry === null) shell.close();
+  }
   sessions.clear();
 }
 

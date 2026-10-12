@@ -10,7 +10,7 @@
  * disk, and the database, the channel hub and the auth state belong to the process.
  */
 import { Component } from "@prismshadow/penguin-core/kernel";
-import type { AgentState } from "../mechanisms/sessions.js";
+import type { AgentState, RunStarter } from "../mechanisms/sessions.js";
 import { LiveTailTracker } from "./live-tail.js";
 import type { LiveTail } from "./live-tail.js";
 import type { RuntimeEntry } from "./session-manager.js";
@@ -31,4 +31,6 @@ export class AgentStateStore implements AgentState {
   readonly agentGenerations = new Map<string, number>();
   /** Open streaming fragments of running sessions. */
   readonly liveTail: LiveTail = new LiveTailTracker();
+  /** The generation working on this state right now (see AgentState.current). */
+  current: RunStarter | null = null;
 }
