@@ -371,7 +371,15 @@ describe("Penguin Go stored projects", () => {
         e.provider === "penguin-go" && e.modelId === modelId ? { ...e, clientType } : e,
       );
     await refused(await owner.put(url, { models: withClient("user-proxy", "google-genai") }));
-    await refused(await owner.put(url, { models: withClient("deepseek-flash", "openai-chat") }));
+    const rowRefused = await owner.put(url, {
+      models: withClient("deepseek-flash", "openai-chat"),
+    });
+    expect(rowRefused.status).toBe(400);
+    // A refused row names itself, so a machine's config sync skips that row, not the table.
+    expect(((await rowRefused.json()) as { error: Record<string, unknown> }).error).toMatchObject({
+      code: "penguin_go_protocol_fixed",
+      details: { provider: "penguin-go", modelId: "deepseek-flash" },
+    });
     const rows = (await t.deps.projectConfigService.readRaw(id)).models as Record<
       string,
       unknown

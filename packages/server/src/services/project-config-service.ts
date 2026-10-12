@@ -294,13 +294,23 @@ function showRef(provider: string, modelId: string): string {
   return `(provider=${provider}, model_id=${modelId})`;
 }
 
-/** `400 penguin_go_protocol_fixed`: `what` is the refused write, said as a sentence's start. */
-function protocolFixed(provider: string, what: string): HttpError {
+/**
+ * `400 penguin_go_protocol_fixed`: `what` is the refused write, said as a sentence's start. A
+ * refused row names itself in `details`, as `model_not_addable` does, so a caller that can drop
+ * one entry (a machine's config sync) skips it rather than the whole table.
+ */
+function protocolFixed(
+  provider: string,
+  what: string,
+  entry?: { provider: string; modelId: string },
+): HttpError {
   const group = providerInfo(provider)?.label ?? provider;
   return new HttpError(
     400,
     "penguin_go_protocol_fixed",
     `${what}: the ${group} group's protocol is fixed to ${fixedClientType(provider)}.`,
+    undefined,
+    entry,
   );
 }
 
@@ -1716,6 +1726,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       throw protocolFixed(
         entry.provider,
         `Model ${showRef(entry.provider, entry.modelId)} cannot use client type ${JSON.stringify(entry.clientType)}`,
+        { provider: entry.provider, modelId: entry.modelId },
       );
     }
 
