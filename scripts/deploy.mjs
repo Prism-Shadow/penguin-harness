@@ -55,8 +55,8 @@ import {
   refusedPlugins,
   saidYes,
 } from "./deploy-unsatisfied-plugins.mjs";
-import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
-import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
+import { checkoutFacts, originUrl } from "./build-git-stamp.mjs";
+import { compilePushBundle, pushBundleOptions } from "./push-bundle.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
 import { buildBuiltinPlugins } from "./build-plugins.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
@@ -242,9 +242,8 @@ async function targetRunsThisBuild(auth, build) {
 }
 
 /**
- * Compiles one entry to a self-contained ESM file. The banner is load-bearing: bundled CJS
- * deps reference `require`, `__filename` and `__dirname` inside their own wrapper, and an
- * ESM bundle supplies none of the three — see scripts/esm-cjs-banner.mjs.
+ * Compiles one entry to a self-contained ESM file, every npm dependency inlined (see
+ * push-bundle.mjs, which holds the options).
  */
 async function compileEntry(entry, outfile) {
   if (!fs.existsSync(entry)) throw new Error(`compile entry missing: ${entry}`);
@@ -261,31 +260,7 @@ async function compileEntry(entry, outfile) {
     ],
     { stdio: "inherit" },
   );
-  const esbuild = await import("esbuild");
-  await esbuild.build({
-    entryPoints: [entry],
-    bundle: true,
-    format: "esm",
-    platform: "node",
-    // The Node that runs it (package.json engines). Without a target esbuild compiles for
-    // `esnext`, where it takes standard decorators to be supported and emits them as they
-    // were written — and no Node parses those, so the pushed bundle fails to import with
-    // "Invalid or unexpected token" and the target keeps the generation it had. The
-    // packaged build does not hit this because tsup passes a target of its own.
-    target: "node24",
-    outfile,
-    logLevel: "silent",
-    banner: { js: ESM_CJS_BANNER },
-    alias: {
-      "@prismshadow/penguin-core/kernel": require.resolve("@prismshadow/penguin-core/kernel"),
-    },
-    // The pushed bundle lands under `<root>/hmr/store/`, outside any checkout, so its own
-    // revision has to be inlined here or it can never be recovered: `penguin version` from
-    // a hot-loaded CLI would otherwise report the bare version it was compiled from. This is
-    // the same value the push records as `source`, reaching the target by a second route —
-    // in the artifact itself rather than in harness.json.
-    define: buildGitDefine(),
-  });
+  await compilePushBundle(pushBundleOptions(entry, outfile));
 }
 
 /** The built web dist as a { relPath: base64 } manifest. */
