@@ -10,9 +10,13 @@
  *   filters ride on every request.
  * - Given rows chosen across groups, unarchiving them takes them off the page at once, then
  *   reads the counts and every shown group again, keeping each group's reveal.
- * - Given a group's own action, it names the group through a filter carrying the current query
- *   and the time the count on screen was read at — the one the confirm counted, even when the
- *   page has read itself again since.
+ * - Given Select all on a group, every Session of it is chosen, loaded or not, and the action
+ *   names the group through a filter carrying the current query and the time its count was read
+ *   at — the time of the Select all, even when the page has read itself again since.
+ * - Given a row unticked after Select all, the rest stay chosen and the action leaves that row
+ *   out; Deselect all shows once every Session of the group is chosen, picked one by one or not.
+ * - Given a row's own button acting on a row of a group chosen whole, the selection counts that
+ *   row out.
  * - Given an action the server refuses, the rows stay and the failure is reported.
  * - Given a burst of user-channel events about the archive, the page reads itself again once;
  *   an event about something else does nothing.
@@ -30,9 +34,11 @@ import {
   ARCHIVE_REFRESH_DELAY_MS,
   createArchiveStore,
   groupKey,
-  groupTarget,
+  isChosen,
+  selectedCount,
   shownGroups,
   shownRows,
+  wholeGroupChosen,
 } from "../src/features/settings/archived-sessions-state";
 import type { ArchiveFilters } from "../src/features/settings/archived-sessions-state";
 import { apiError, json, stubFetch } from "./helpers/fetch";
@@ -128,9 +134,19 @@ function serve(request: FetchRequest): Response {
   }
   if (request.path.startsWith("/api/me/archived-sessions/")) {
     if (refuse) return apiError(500, "internal");
-    const body = request.body as { sessionIds?: string[]; filter?: Record<string, string> };
+    const body = request.body as { sessionIds?: string[]; filter?: Record<string, unknown> };
+    // The filter's query part matches as the listing does; its rows left out stay.
+    const exclude = (body.filter?.exclude as string[] | undefined) ?? [];
+    const query = new URLSearchParams();
+    for (const name of ["q", "source", "projectId", "workspace"]) {
+      const value = body.filter?.[name];
+      if (typeof value === "string") query.set(name, value);
+    }
     const ids =
-      body.sessionIds ?? matching(new URLSearchParams(body.filter ?? {})).map((s) => s.sessionId);
+      body.sessionIds ??
+      matching(query)
+        .map((s) => s.sessionId)
+        .filter((id) => !exclude.includes(id));
     rows = rows.filter((s) => !ids.includes(s.sessionId));
     return json({ done: ids.length, missing: [] });
   }
@@ -213,10 +229,10 @@ describe("the archive page", () => {
     await store.getState().load(ALL);
     const key = groupKey({ projectId: "p", workspace: "/a" });
     await store.getState().showMoreRows(key);
-    store.getState().toggle("a-00");
+    store.getState().toggle(key, "a-00");
     fetch.requests.length = 0;
     await store.getState().load({ q: "deploy", source: "cli", projectId: "p" });
-    expect(store.getState().selection.size).toBe(0);
+    expect(selectedCount(store.getState())).toBe(0);
     expect(shownGroups(store.getState()).map((g) => g.workspace)).toEqual(["/b"]);
     expect(shownIds(store, "/b")).toEqual(["deploy-docs"]);
     for (const request of fetch.requests) {
@@ -232,15 +248,13 @@ describe("the archive page", () => {
     await store.getState().load(ALL);
     const a = groupKey({ projectId: "p", workspace: "/a" });
     await store.getState().showMoreRows(a);
-    store.getState().toggle("a-00");
-    store.getState().toggle("b-01");
+    store.getState().toggle(a, "a-00");
+    store.getState().toggle(groupKey({ projectId: "p", workspace: "/b" }), "b-01");
     fetch.requests.length = 0;
-    const ok = await store
-      .getState()
-      .unarchive({ kind: "ids", ids: [...store.getState().selection] });
+    const ok = await store.getState().unarchive({ kind: "selection" });
     expect(ok).toBe(true);
     expect(fetch.requests[0]!.body).toEqual({ sessionIds: ["a-00", "b-01"] });
-    expect(store.getState().selection.size).toBe(0);
+    expect(selectedCount(store.getState())).toBe(0);
     // Read again: the counts, then each group as far as it was revealed.
     expect(store.getState().groups?.map((g) => [g.workspace, g.count])).toEqual([
       ["/a", 24],
@@ -255,15 +269,34 @@ describe("the archive page", () => {
     expect(shownIds(store, "/b")).toEqual(["b-00"]);
   });
 
-  it("names a whole group through a filter that carries the current query", async () => {
+  it("chooses every Session of a group with Select all, loaded or not, and acts on it through a filter", async () => {
+    rows = [...run("a", "/a", 13, 100), ...run("b", "/b", 2)];
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    const a = groupKey({ projectId: "p", workspace: "/a" });
+    const group = () => store.getState().groups!.find((g) => groupKey(g) === a)!;
+    store.getState().toggleGroup(a);
+    // Thirteen chosen, three of them not loaded yet; every row on screen is ticked.
+    expect(selectedCount(store.getState())).toBe(13);
+    expect(shownIds(store, "/a").every((id) => isChosen(store.getState(), a, id))).toBe(true);
+    expect(wholeGroupChosen(store.getState(), group())).toBe(true);
+    fetch.requests.length = 0;
+    await store.getState().remove({ kind: "selection" });
+    expect(fetch.requests[0]!.path).toBe("/api/me/archived-sessions/delete");
+    expect(fetch.requests[0]!.body).toEqual({
+      filter: { projectId: "p", workspace: "/a", until: asOf },
+    });
+    expect(rows.map((s) => s.sessionId)).toEqual(["b-00", "b-01"]);
+    expect(selectedCount(store.getState())).toBe(0);
+  });
+
+  it("carries the current query when a group is chosen whole", async () => {
     rows = [...run("a", "/a", 3, 100), row("a-x", "/a", 1, "Deploy"), ...run("b", "/b", 2)];
     const store = createArchiveStore();
     await store.getState().load({ ...ALL, q: "deploy" });
+    store.getState().toggleGroup(groupKey({ projectId: "p", workspace: "/a" }));
     fetch.requests.length = 0;
-    await store
-      .getState()
-      .remove({ kind: "group", key: groupKey({ projectId: "p", workspace: "/a" }) });
-    expect(fetch.requests[0]!.path).toBe("/api/me/archived-sessions/delete");
+    await store.getState().remove({ kind: "selection" });
     expect(fetch.requests[0]!.body).toEqual({
       filter: { q: "deploy", projectId: "p", workspace: "/a", until: asOf },
     });
@@ -271,17 +304,80 @@ describe("the archive page", () => {
     expect(rows.map((s) => s.sessionId).sort()).toEqual(["a-00", "a-01", "a-02", "b-00", "b-01"]);
   });
 
-  it("acts on a whole group as the count the confirm showed saw it, after the page read itself again", async () => {
+  it("keeps the rest chosen when a row is unticked after Select all, and leaves that row out", async () => {
+    rows = run("a", "/a", 13);
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    const a = groupKey({ projectId: "p", workspace: "/a" });
+    const group = () => store.getState().groups!.find((g) => groupKey(g) === a)!;
+    store.getState().toggleGroup(a);
+    store.getState().toggle(a, "a-03");
+    expect(isChosen(store.getState(), a, "a-03")).toBe(false);
+    expect(isChosen(store.getState(), a, "a-04")).toBe(true);
+    expect(selectedCount(store.getState())).toBe(12);
+    // Not everything is chosen any more: the button offers Select all again.
+    expect(wholeGroupChosen(store.getState(), group())).toBe(false);
+    fetch.requests.length = 0;
+    await store.getState().unarchive({ kind: "selection" });
+    expect(fetch.requests[0]!.body).toEqual({
+      filter: { projectId: "p", workspace: "/a", until: asOf, exclude: ["a-03"] },
+    });
+    expect(rows.map((s) => s.sessionId)).toEqual(["a-03"]);
+  });
+
+  it("counts a row out of a group chosen whole once the row's own button acts on it", async () => {
+    rows = run("a", "/a", 13);
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    const a = groupKey({ projectId: "p", workspace: "/a" });
+    const group = () => store.getState().groups!.find((g) => groupKey(g) === a)!;
+    store.getState().toggleGroup(a);
+    store.getState().toggle(a, "a-03");
+    // A chosen row's own Unarchive: one fewer chosen.
+    await store.getState().unarchive({ kind: "ids", ids: ["a-01"] });
+    expect(selectedCount(store.getState())).toBe(11);
+    // The unticked row's own delete: as many chosen, and nothing of the group left unticked.
+    await store.getState().remove({ kind: "ids", ids: ["a-03"] });
+    expect(selectedCount(store.getState())).toBe(11);
+    expect(wholeGroupChosen(store.getState(), group())).toBe(true);
+    fetch.requests.length = 0;
+    await store.getState().remove({ kind: "selection" });
+    expect(fetch.requests[0]!.body).toEqual({
+      filter: { projectId: "p", workspace: "/a", until: asOf },
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it("offers Deselect all once every Session of a group is chosen, picked one by one or whole", async () => {
     rows = run("a", "/a", 3);
     const store = createArchiveStore();
     await store.getState().load(ALL);
-    // The confirm is asked with the group as it stands on screen.
-    const asked = groupTarget(store.getState(), groupKey({ projectId: "p", workspace: "/a" }));
+    const a = groupKey({ projectId: "p", workspace: "/a" });
+    const group = () => store.getState().groups!.find((g) => groupKey(g) === a)!;
+    for (const id of ["a-00", "a-01"]) store.getState().toggle(a, id);
+    expect(wholeGroupChosen(store.getState(), group())).toBe(false);
+    store.getState().toggle(a, "a-02");
+    expect(wholeGroupChosen(store.getState(), group())).toBe(true);
+    // Deselect all.
+    store.getState().toggleGroup(a);
+    expect(selectedCount(store.getState())).toBe(0);
+    // Select all, then Deselect all.
+    store.getState().toggleGroup(a);
+    expect(selectedCount(store.getState())).toBe(3);
+    store.getState().toggleGroup(a);
+    expect(selectedCount(store.getState())).toBe(0);
+  });
+
+  it("acts on a group chosen whole as its count saw it, after the page read itself again", async () => {
+    rows = run("a", "/a", 3);
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    store.getState().toggleGroup(groupKey({ projectId: "p", workspace: "/a" }));
     const counted = asOf;
     asOf = "2026-10-11T10:05:00.000Z";
     await store.getState().refresh();
     fetch.requests.length = 0;
-    await store.getState().remove(asked);
+    await store.getState().remove({ kind: "selection" });
     expect(fetch.requests[0]!.body).toEqual({
       filter: { projectId: "p", workspace: "/a", until: counted },
     });

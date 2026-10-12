@@ -7,11 +7,13 @@
  *   Groups show twenty at a time, and a group shows ten rows at a time: "more" reveals ten more
  *   (fetching the next page below the last row held when the reveal runs past what is loaded),
  *   "less" folds back to ten.
+ * - The selection: rows chosen one by one, and groups chosen whole with Select all — every
+ *   Session the group's count saw, loaded or not, but the rows unticked since and those a row's
+ *   own button has acted on. A whole group is pinned to the time its count was read at, so
+ *   acting on it touches no Session archived, created or run after that.
  * - A new query or filter starts over: no rows, no reveal, no selection.
  * - An action takes its rows off the page at once, then reads the counts and every shown group
- *   again (as far as each was revealed), so what is left is the server's word. A whole group's
- *   action carries the time its count was read at, so it acts on the Sessions that count saw
- *   and on none archived, created or run after it.
+ *   again (as far as each was revealed), so what is left is the server's word.
  * - The page follows the user channel: a Session archived, unarchived, deleted or opened by a
  *   program elsewhere refreshes it the same way, debounced; a run starting or settling redraws
  *   its row's busy glyph in place, with nothing read again.
@@ -65,12 +67,32 @@ export interface GroupRows {
   loading: boolean;
 }
 
+/** What an action acts on: some rows by id (a row's own buttons), or the selection (the bar's). */
+export type ArchiveTarget = { kind: "ids"; ids: string[] } | { kind: "selection" };
+
 /**
- * What an action acts on: chosen rows, or the archived rows of one group the filters match that
- * its count, read at `until` (the groups' `asOf`), saw.
+ * A group chosen whole with Select all: every Session its count saw at `until`, loaded or not,
+ * but the rows unticked since. Its Project and Workspace ride along, so the batch names the
+ * group even if a refresh drops it from the page.
  */
-export type ArchiveTarget =
-  { kind: "ids"; ids: string[] } | { kind: "group"; key: string; until?: string };
+export interface WholeGroup {
+  projectId: string;
+  workspace: string;
+  /** The groups' `asOf` the count was read at. */
+  until: string;
+  /** How many Sessions the group held at `until`. */
+  count: number;
+  /** Rows unticked since the group was chosen: left out of every action. */
+  excluded: ReadonlySet<string>;
+}
+
+/** What is chosen: rows one by one, and groups whole (by groupKey). */
+export interface ArchiveSelection {
+  picked: ReadonlySet<string>;
+  wholes: ReadonlyMap<string, WholeGroup>;
+}
+
+const NO_SELECTION: ArchiveSelection = { picked: new Set(), wholes: new Map() };
 
 export interface ArchiveState {
   filters: ArchiveFilters;
@@ -84,8 +106,8 @@ export interface ArchiveState {
   groupLimit: number;
   /** Each shown group's rows, by groupKey. */
   rows: ReadonlyMap<string, GroupRows>;
-  /** Chosen Session ids, across groups. */
-  selection: ReadonlySet<string>;
+  /** What is chosen, across groups. */
+  selection: ArchiveSelection;
   /** An action is running: its buttons stay disabled until it settles. */
   busy: boolean;
   /** Why the last read failed; null when it did not. */
@@ -106,18 +128,44 @@ export function shownRows(rows: GroupRows | undefined): SessionInfo[] {
   return rows === undefined ? [] : rows.sessions.slice(0, rows.cap);
 }
 
+/** How many Sessions the selection names: the rows picked, and each whole group's count but its unticked rows. */
+export function selectedCount(state: ArchiveState): number {
+  let n = state.selection.picked.size;
+  for (const whole of state.selection.wholes.values()) {
+    n += Math.max(0, whole.count - whole.excluded.size);
+  }
+  return n;
+}
+
+/** Whether a row of the group `key` is chosen: picked, or in a whole group and not unticked. */
+export function isChosen(state: ArchiveState, key: string, sessionId: string): boolean {
+  const whole = state.selection.wholes.get(key);
+  return whole !== undefined
+    ? !whole.excluded.has(sessionId)
+    : state.selection.picked.has(sessionId);
+}
+
 /**
- * A whole group as an action's target, pinned to the counts on screen: what the user is shown
- * counted is what the action acts on.
+ * Whether every Session of the group is chosen — what turns its Select all into Deselect all:
+ * chosen whole with nothing unticked, or every row picked once all of them are loaded.
  */
-export function groupTarget(state: ArchiveState, key: string): ArchiveTarget {
-  return { kind: "group", key, ...(state.asOf !== null ? { until: state.asOf } : {}) };
+export function wholeGroupChosen(state: ArchiveState, group: ArchivedSessionGroup): boolean {
+  const key = groupKey(group);
+  const whole = state.selection.wholes.get(key);
+  if (whole !== undefined) return whole.excluded.size === 0;
+  const rows = state.rows.get(key);
+  return (
+    rows !== undefined &&
+    !rows.hasMore &&
+    rows.sessions.length > 0 &&
+    rows.sessions.length >= group.count &&
+    rows.sessions.every((s) => state.selection.picked.has(s.sessionId))
+  );
 }
 
 /** How many Sessions an action on `target` acts on, as the confirm before a delete counts them. */
 export function targetCount(state: ArchiveState, target: ArchiveTarget): number {
-  if (target.kind === "ids") return target.ids.length;
-  return state.groups?.find((g) => groupKey(g) === target.key)?.count ?? 0;
+  return target.kind === "ids" ? target.ids.length : selectedCount(state);
 }
 
 const query = (filters: ArchiveFilters): ArchivedSessionsQuery => ({
@@ -134,7 +182,10 @@ export interface ArchiveStoreState extends ArchiveState {
   showMoreGroups: () => Promise<void>;
   showMoreRows: (key: string) => Promise<void>;
   showLessRows: (key: string) => void;
-  toggle: (sessionId: string) => void;
+  /** Ticks or unticks one row of the group `key`. */
+  toggle: (key: string, sessionId: string) => void;
+  /** Select all on the group `key`, or Deselect all once all of it is chosen. */
+  toggleGroup: (key: string) => void;
   clearSelection: () => void;
   unarchive: (target: ArchiveTarget) => Promise<boolean>;
   remove: (target: ArchiveTarget) => Promise<boolean>;
@@ -248,53 +299,82 @@ export function createArchiveStore(onError: (message: string) => void = () => un
         keep ? (caps.get(key) ?? ARCHIVE_ROW_PAGE) : ARCHIVE_ROW_PAGE,
       );
       if (g !== gen) return;
-      // A chosen row the page no longer holds (unarchived or deleted elsewhere) is unchosen.
+      // A row picked that the page no longer holds (unarchived or deleted elsewhere) is
+      // unchosen, and so is a whole group that is gone.
       const held = new Set(
         [...get().rows.values()].flatMap((r) => r.sessions.map((s) => s.sessionId)),
       );
-      const selection = [...get().selection].filter((id) => held.has(id));
-      if (selection.length !== get().selection.size) set({ selection: new Set(selection) });
+      const { picked, wholes } = get().selection;
+      const keptPicks = [...picked].filter((id) => held.has(id));
+      const keptWholes = [...wholes].filter(([key]) => present.has(key));
+      if (keptPicks.length !== picked.size || keptWholes.length !== wholes.size) {
+        set({ selection: { picked: new Set(keptPicks), wholes: new Map(keptWholes) } });
+      }
     };
 
-    /** Takes these Sessions off the page at once (an action's own result). */
+    /**
+     * Takes these Sessions off the page at once (an action's own result). A group chosen whole
+     * counts the ones it held out, so the bar and the delete confirm count what is left of it.
+     */
     const dropRows = (ids: ReadonlySet<string>) => {
       const rows = new Map<string, GroupRows>();
       for (const [key, held] of get().rows) {
         rows.set(key, { ...held, sessions: held.sessions.filter((s) => !ids.has(s.sessionId)) });
       }
-      const selection = new Set([...get().selection].filter((id) => !ids.has(id)));
-      set({ rows, selection });
+      const { picked, wholes } = get().selection;
+      const keptWholes = new Map<string, WholeGroup>();
+      for (const [key, whole] of wholes) {
+        const gone = (get().rows.get(key)?.sessions ?? []).filter((s) => ids.has(s.sessionId));
+        const count = whole.count - gone.length;
+        const excluded = new Set([...whole.excluded].filter((id) => !ids.has(id)));
+        // Nothing of the group left chosen: it is not chosen any more.
+        if (count > excluded.size) keptWholes.set(key, { ...whole, count, excluded });
+      }
+      set({
+        rows,
+        selection: {
+          picked: new Set([...picked].filter((id) => !ids.has(id))),
+          wholes: keptWholes,
+        },
+      });
     };
 
-    /** The batch requests for a target: chunks of ids, or one filter naming the group. */
+    /**
+     * The batch requests for a target: chunks of ids for the rows named or picked, and one filter
+     * per whole group — pinned to the time its count was read at, without its unticked rows.
+     */
     const batchesOf = (target: ArchiveTarget): ArchivedSessionsBatch[] => {
-      if (target.kind === "ids") {
-        const out: ArchivedSessionsBatch[] = [];
-        for (let i = 0; i < target.ids.length; i += BATCH_MAX) {
-          out.push({ sessionIds: target.ids.slice(i, i + BATCH_MAX) });
-        }
-        return out;
+      const ids = target.kind === "ids" ? target.ids : [...get().selection.picked];
+      const out: ArchivedSessionsBatch[] = [];
+      for (let i = 0; i < ids.length; i += BATCH_MAX) {
+        out.push({ sessionIds: ids.slice(i, i + BATCH_MAX) });
       }
-      const group = get().groups?.find((g) => groupKey(g) === target.key);
-      if (group === undefined) return [];
-      const until = target.until ?? get().asOf;
-      return [
-        {
+      if (target.kind === "ids") return out;
+      for (const whole of get().selection.wholes.values()) {
+        out.push({
           filter: {
             ...query(get().filters),
-            projectId: group.projectId,
-            workspace: group.workspace,
-            ...(until !== null ? { until } : {}),
+            projectId: whole.projectId,
+            workspace: whole.workspace,
+            until: whole.until,
+            ...(whole.excluded.size > 0 ? { exclude: [...whole.excluded] } : {}),
           },
-        },
-      ];
+        });
+      }
+      return out;
     };
 
     /** The rows a target names that the page holds, to take off at once. */
-    const heldIds = (target: ArchiveTarget): Set<string> =>
-      target.kind === "ids"
-        ? new Set(target.ids)
-        : new Set((get().rows.get(target.key)?.sessions ?? []).map((s) => s.sessionId));
+    const heldIds = (target: ArchiveTarget): Set<string> => {
+      if (target.kind === "ids") return new Set(target.ids);
+      const out = new Set(get().selection.picked);
+      for (const [key, whole] of get().selection.wholes) {
+        for (const s of get().rows.get(key)?.sessions ?? []) {
+          if (!whole.excluded.has(s.sessionId)) out.add(s.sessionId);
+        }
+      }
+      return out;
+    };
 
     const act = async (
       target: ArchiveTarget,
@@ -302,8 +382,10 @@ export function createArchiveStore(onError: (message: string) => void = () => un
     ): Promise<boolean> => {
       set({ busy: true });
       try {
+        const held = heldIds(target);
         for (const batch of batchesOf(target)) await call(batch);
-        dropRows(heldIds(target));
+        dropRows(held);
+        if (target.kind === "selection") set({ selection: NO_SELECTION });
         return true;
       } catch (err) {
         onError(apiErrorText(err));
@@ -321,7 +403,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       asOf: null,
       groupLimit: ARCHIVE_GROUP_PAGE,
       rows: new Map(),
-      selection: new Set(),
+      selection: NO_SELECTION,
       busy: false,
       error: null,
 
@@ -333,7 +415,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
           asOf: null,
           groupLimit: ARCHIVE_GROUP_PAGE,
           rows: new Map(),
-          selection: new Set(),
+          selection: NO_SELECTION,
           error: null,
         });
         await read(false);
@@ -390,14 +472,49 @@ export function createArchiveStore(onError: (message: string) => void = () => un
         if (held !== undefined) setRows(key, { ...held, cap: ARCHIVE_ROW_PAGE });
       },
 
-      toggle: (sessionId) => {
-        const next = new Set(get().selection);
+      toggle: (key, sessionId) => {
+        const { picked, wholes } = get().selection;
+        const whole = wholes.get(key);
+        if (whole !== undefined) {
+          // A row of a whole group is unticked by leaving it out, and ticked again by taking it back.
+          const excluded = new Set(whole.excluded);
+          if (excluded.has(sessionId)) excluded.delete(sessionId);
+          else excluded.add(sessionId);
+          const next = new Map(wholes);
+          // Every row unticked: nothing of the group is chosen any more.
+          if (excluded.size >= whole.count) next.delete(key);
+          else next.set(key, { ...whole, excluded });
+          set({ selection: { picked, wholes: next } });
+          return;
+        }
+        const next = new Set(picked);
         if (next.has(sessionId)) next.delete(sessionId);
         else next.add(sessionId);
-        set({ selection: next });
+        set({ selection: { picked: next, wholes } });
       },
 
-      clearSelection: () => set({ selection: new Set() }),
+      toggleGroup: (key) => {
+        const state = get();
+        const group = state.groups?.find((g) => groupKey(g) === key);
+        if (group === undefined || state.asOf === null) return;
+        // The group's rows picked one by one are folded into the whole group, or dropped with it.
+        const held = new Set((state.rows.get(key)?.sessions ?? []).map((s) => s.sessionId));
+        const picked = new Set([...state.selection.picked].filter((id) => !held.has(id)));
+        const wholes = new Map(state.selection.wholes);
+        if (wholeGroupChosen(state, group)) wholes.delete(key);
+        else {
+          wholes.set(key, {
+            projectId: group.projectId,
+            workspace: group.workspace,
+            until: state.asOf,
+            count: group.count,
+            excluded: new Set(),
+          });
+        }
+        set({ selection: { picked, wholes } });
+      },
+
+      clearSelection: () => set({ selection: NO_SELECTION }),
 
       unarchive: (target) => act(target, (batch) => api.unarchiveSessions(batch)),
 

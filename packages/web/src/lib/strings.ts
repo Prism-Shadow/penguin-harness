@@ -625,10 +625,9 @@ export const zh = {
     allProjects: "全部项目",
     /** A group's count beside its header. */
     count: (n: number): string => `${n} 条对话`,
-    /** The group header's ⋯ button. */
-    groupMenu: "分组操作",
-    unarchiveAll: "全部取消归档",
-    deleteAll: "全部删除",
+    /** A group header's button: choose every Session of the group, loaded or not; and its undo once all of it is chosen. */
+    selectAll: "全选",
+    deselectAll: "取消全选",
     /** A row's checkbox, named by the conversation's title. */
     select: (title: string): string => `选择「${title}」`,
     selected: (n: number): string => `已选 ${n} 项`,

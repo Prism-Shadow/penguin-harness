@@ -3,14 +3,18 @@
  * dialog's archive page lists the rest — the conversations archived by hand, and the Sessions a
  * program opened (`penguin run`, here) that nobody kept.
  *
- * Seeded through the API: two conversations of the user and three `penguin run` Sessions,
+ * Seeded through the API: three conversations of the user and three `penguin run` Sessions,
  * every one titled.
  *
  * - The `penguin run` Sessions never reach the sidebar; the conversations do.
- * - Archiving a conversation from its row takes it out of the sidebar.
- * - The archive page lists the archived conversation and the program's Sessions; the search
- *   and the source filter narrow the list.
+ * - Archiving a conversation from its row takes it out of the sidebar; archiving the one on
+ *   screen lands on New chat, not on its stub.
+ * - The archive page lists the archived conversations and the program's Sessions, each program's
+ *   with a CLI pill; the search and the source filter narrow the list.
+ * - A row's box shows while the row is hovered, and only then: one ticked and unticked again does
+ *   not stay painted beside the hovered row's.
  * - Unarchiving a program's Session from its row puts it in the sidebar, wearing its CLI glyph.
+ * - Select all chooses the whole group; unticking one row keeps the rest; Deselect all clears it.
  * - Choosing two rows and deleting them asks first, then removes them for good.
  * - An archived Session's URL shows its stub — title, time, source — and unarchiving there loads
  *   the conversation in place and returns it to the sidebar.
@@ -60,6 +64,7 @@ test("archived chats live on the Settings page, and an archived URL shows its st
     return session.sessionId;
   };
   await create("Quarterly report");
+  const scratch = await create("Scratch notes");
   await create("Release checklist");
   await create("Nightly batch", { source: "cli" });
   await create("Index rebuild", { source: "cli" });
@@ -76,12 +81,27 @@ test("archived chats live on the Settings page, and an archived URL shows its st
   }
 
   // Archive a conversation from its row.
-  const report = sidebar.locator("li", { hasText: "Quarterly report" });
-  await report.hover();
-  await report.getByRole("button", { name: "更多操作" }).click();
-  // The menu's item carries its word; the row's own hover button only an aria-label.
-  await page.getByRole("button", { name: "归档", exact: true }).filter({ hasText: "归档" }).click();
-  await expect(sidebar.getByText("Quarterly report")).toHaveCount(0);
+  const archiveRow = async (title) => {
+    const row = sidebar.locator("li", { hasText: title });
+    await row.hover();
+    await row.getByRole("button", { name: "更多操作" }).click();
+    // The menu's item carries its word; the row's own hover button only an aria-label.
+    await page
+      .getByRole("button", { name: "归档", exact: true })
+      .filter({ hasText: "归档" })
+      .click();
+    await expect(sidebar.getByText(title)).toHaveCount(0);
+  };
+  await archiveRow("Quarterly report");
+
+  // Archiving the conversation on screen lands on New chat, not on its stub.
+  await page.goto(`${BASE}/chat/${scratch}`);
+  await expect(page).toHaveURL(new RegExp(scratch));
+  await archiveRow("Scratch notes");
+  await expect(page).toHaveURL(/\/chat\/new$/);
+  await expect(
+    page.getByText("这个对话已归档。取消归档后可以查看内容，它会回到左侧列表。"),
+  ).toHaveCount(0);
 
   // Settings › 已归档对话.
   // The account menu (the Project switcher beside it carries the same name, and no popup).
@@ -89,10 +109,44 @@ test("archived chats live on the Settings page, and an archived URL shows its st
   await page.getByRole("menuitem", { name: "设置", exact: true }).click();
   await page.getByRole("button", { name: "已归档对话" }).click();
   const dialog = page.getByRole("dialog");
-  for (const title of ["Quarterly report", "Nightly batch", "Index rebuild", "Weekly digest"]) {
+  for (const title of [
+    "Quarterly report",
+    "Scratch notes",
+    "Nightly batch",
+    "Index rebuild",
+    "Weekly digest",
+  ]) {
     await expect(dialog.getByText(title, { exact: true })).toBeVisible();
   }
   await expect(dialog.getByText("Release checklist")).toHaveCount(0);
+  // A program's Session names its source in a pill; a person's conversation carries none.
+  await expect(
+    dialog.locator("li", { hasText: "Nightly batch" }).getByText("CLI", { exact: true }),
+  ).toBeVisible();
+  await expect(dialog.locator("li", { hasText: "Quarterly report" }).getByText("用户")).toHaveCount(
+    0,
+  );
+
+  // A row's box shows while its row is hovered, and only then — not after it was ticked and
+  // unticked, beside the next hovered row's.
+  const paintedBoxes = () =>
+    dialog.evaluate(
+      (root) =>
+        [...root.querySelectorAll('input[type="checkbox"]')].filter((box) => {
+          for (let el = box; el && el !== root; el = el.parentElement) {
+            if (Number(getComputedStyle(el).opacity) < 0.5) return false;
+          }
+          return true;
+        }).length,
+    );
+  const nightlyBox = dialog.getByRole("checkbox", { name: "选择「Nightly batch」" });
+  await dialog.locator("li", { hasText: "Nightly batch" }).hover();
+  await nightlyBox.check();
+  await nightlyBox.uncheck();
+  await dialog.locator("li", { hasText: "Weekly digest" }).hover();
+  await expect.poll(paintedBoxes).toBe(1);
+  await page.mouse.move(0, 0);
+  await expect.poll(paintedBoxes).toBe(0);
 
   // The search narrows by title; the source filter by who opened it.
   const search = dialog.getByPlaceholder("搜索已归档对话");
@@ -113,6 +167,17 @@ test("archived chats live on the Settings page, and an archived URL shows its st
   await rebuild.getByRole("button", { name: "取消归档" }).click();
   await expect(dialog.getByText("Index rebuild", { exact: true })).toHaveCount(0);
   await expect(sidebar.getByText("Index rebuild")).toBeVisible();
+
+  // Select all chooses the whole group; unticking one keeps the rest; Deselect all clears it.
+  await dialog.getByRole("button", { name: "全选", exact: true }).click();
+  await expect(dialog.getByText("已选 4 项")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "取消全选", exact: true })).toBeVisible();
+  await dialog.getByRole("checkbox", { name: "选择「Scratch notes」" }).uncheck();
+  await expect(dialog.getByText("已选 3 项")).toBeVisible();
+  await expect(dialog.getByRole("checkbox", { name: "选择「Weekly digest」" })).toBeChecked();
+  await dialog.getByRole("button", { name: "全选", exact: true }).click();
+  await dialog.getByRole("button", { name: "取消全选", exact: true }).click();
+  await expect(dialog.getByText(/^已选 \d+ 项$/)).toHaveCount(0);
 
   // Choose two rows and delete them: asked first, then gone.
   await dialog.getByRole("checkbox", { name: "选择「Quarterly report」" }).check({ force: true });

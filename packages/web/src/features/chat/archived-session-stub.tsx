@@ -1,13 +1,16 @@
 /**
- * An archived Session opened by its URL: the stub the chat page shows in place of the
+ * An archived Session opened by its URL — a link or a bookmark; archiving the conversation on
+ * screen leaves it for a new chat instead — the stub the chat page shows in place of the
  * conversation. An archived conversation shows only its title and its time — the transcript is
  * not read until it is unarchived — so the stub says what it is (the title, when it was last
- * active, who opened it) and offers the two ways on: Unarchive, which loads the conversation in
- * place and returns it to the sidebar, and delete, which asks first.
+ * active, who opened it, in the archive page's words) and offers the two ways on: Unarchive,
+ * which loads the conversation in place and returns it to the sidebar, and delete, which asks
+ * first.
  */
 import { useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
+  Badge,
   Button,
   ConfirmModal,
   GlyphIcon,
@@ -18,7 +21,7 @@ import {
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
-import { backgroundSourceMark } from "../../lib/session-source-mark";
+import { programSource } from "../../lib/session-source-mark";
 import { S } from "../../lib/strings";
 
 export function ArchivedSessionStub({
@@ -35,7 +38,8 @@ export function ArchivedSessionStub({
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const title = session.title ?? S.chat.defaultSessionTitle;
-  const mark = backgroundSourceMark(session);
+  // Who opened it, in the archive page's words: the program, or a person (「用户」).
+  const source = programSource(session) ?? "user";
 
   const unarchive = async () => {
     setBusy(true);
@@ -70,10 +74,9 @@ export function ArchivedSessionStub({
         <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-fg-muted">
           <span>{formatDateTime(session.lastActiveAt)}</span>
           <span aria-hidden>·</span>
-          <span className="flex items-center gap-1">
-            {mark !== null && <GlyphIcon d={mark.sourceGlyph} size={ICON_SIZE.inlineGlyph} />}
-            {mark?.sourceLabel ?? S.chat.sessionSource.user}
-          </span>
+          <Badge tone="neutral" size="sm">
+            {S.chat.sessionSource[source]}
+          </Badge>
         </p>
         <p className="text-sm text-fg-muted">{S.chat.archivedStub.note}</p>
         <div className="mt-3 flex items-center gap-2">

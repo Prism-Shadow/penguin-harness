@@ -7,27 +7,26 @@
  * - A search box and two filters (source, Project) on top, and under them, while rows are
  *   chosen, the batch bar: both stay put while the list scrolls in its own box below, so a batch
  *   chosen far down the list is still in reach. The list holds the groups, one per Workspace of
- *   a Project, newest first, each with its count and a ⋯ menu acting on the whole group as
- *   that count saw it.
- * - A row: a box to choose it (shown on hover or focus, always on touch, and on every row while
- *   anything is chosen), the title and the time, the source's glyph, a busy glyph while it runs,
- *   then a delete icon and Unarchive. Choosing rows brings up one bar for the batch.
+ *   a Project, newest first, each with its count and Select all, which chooses every Session of
+ *   the group, loaded or not (Deselect all once all of it is chosen).
+ * - A row: a box to choose it (shown while the row is hovered or the box has keyboard focus,
+ *   always on touch, and on every row while anything is chosen), the title and the time, the
+ *   source as a word in a pill (none on a person's conversation), a busy glyph while it runs,
+ *   then a delete icon and Unarchive. Whatever is chosen, the one bar acts on it.
  * - Every delete asks first, with the count — the only red on the page; unarchive does not ask.
  *
  * The page's state and every request live in archived-sessions-state.ts; this renders it.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ArchivedSessionGroup, SessionInfo } from "@prismshadow/penguin-server/api";
 import {
+  Badge,
   Button,
   Checkbox,
   ConfirmModal,
-  Dropdown,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
-  Menu,
-  MenuItem,
   MoreRow,
   SearchInput,
   Select,
@@ -40,7 +39,7 @@ import { useStore } from "zustand/react";
 import { formatDateTime } from "../../lib/format";
 import { subscribeUserEvents } from "../../lib/omni/user-events";
 import { revealPlan, workspaceLabel } from "../../lib/session-grouping";
-import { backgroundSourceMark } from "../../lib/session-source-mark";
+import { programSource } from "../../lib/session-source-mark";
 import { S } from "../../lib/strings";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Truncated } from "../../components/ui/truncated";
@@ -48,10 +47,12 @@ import {
   ARCHIVE_ROW_PAGE,
   createArchiveStore,
   groupKey,
-  groupTarget,
+  isChosen,
+  selectedCount,
   shownGroups,
   shownRows,
   targetCount,
+  wholeGroupChosen,
 } from "./archived-sessions-state";
 import type {
   ArchiveFilters,
@@ -104,7 +105,8 @@ export function ArchivedSessionsSection() {
 
   const groups = shownGroups(state);
   const hiddenGroups = (state.groups?.length ?? 0) - groups.length;
-  const choosing = state.selection.size > 0;
+  const chosen = selectedCount(state);
+  const choosing = chosen > 0;
   const filtered =
     state.filters.q.trim() !== "" ||
     state.filters.source !== null ||
@@ -176,23 +178,19 @@ export function ArchivedSessionsSection() {
 
         {choosing && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-y border-line-muted py-2">
-            <span className="text-sm font-medium">
-              {S.archivedSessions.selected(state.selection.size)}
-            </span>
+            <span className="text-sm font-medium">{S.archivedSessions.selected(chosen)}</span>
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 disabled={state.busy}
-                onClick={() =>
-                  void store.getState().unarchive({ kind: "ids", ids: [...state.selection] })
-                }
+                onClick={() => void store.getState().unarchive({ kind: "selection" })}
               >
                 {S.chat.unarchiveSession}
               </Button>
               <Button
                 size="sm"
                 disabled={state.busy}
-                onClick={() => askDelete({ kind: "ids", ids: [...state.selection] })}
+                onClick={() => askDelete({ kind: "selection" })}
               >
                 {S.common.delete}
               </Button>
@@ -225,14 +223,15 @@ export function ArchivedSessionsSection() {
               <ArchiveGroup
                 key={groupKey(group)}
                 group={group}
-                whole={groupTarget(state, groupKey(group))}
                 rows={state.rows.get(groupKey(group))}
-                selection={state.selection}
+                allChosen={wholeGroupChosen(state, group)}
+                chosen={(id) => isChosen(state, groupKey(group), id)}
                 choosing={choosing}
                 busy={state.busy}
                 onMore={() => void store.getState().showMoreRows(groupKey(group))}
                 onLess={() => store.getState().showLessRows(groupKey(group))}
-                onToggle={(id) => store.getState().toggle(id)}
+                onToggle={(id) => store.getState().toggle(groupKey(group), id)}
+                onToggleAll={() => store.getState().toggleGroup(groupKey(group))}
                 onUnarchive={(target) => void store.getState().unarchive(target)}
                 onDelete={askDelete}
               />
@@ -273,30 +272,33 @@ export function ArchivedSessionsSection() {
   );
 }
 
-/** One group: its header (Project › Workspace, the count, the ⋯ menu) and its rows. */
+/** One group: its header (Project › Workspace, the count, Select all) and its rows. */
 function ArchiveGroup({
   group,
-  whole,
   rows,
-  selection,
+  allChosen,
+  chosen,
   choosing,
   busy,
   onMore,
   onLess,
   onToggle,
+  onToggleAll,
   onUnarchive,
   onDelete,
 }: {
   group: ArchivedSessionGroup;
-  /** The whole group as its ⋯ menu acts on it: the Sessions its count on screen saw. */
-  whole: ArchiveTarget;
   rows: GroupRows | undefined;
-  selection: ReadonlySet<string>;
+  /** Every Session of the group is chosen: its button deselects them all. */
+  allChosen: boolean;
+  /** Whether one of the group's rows is chosen. */
+  chosen: (sessionId: string) => boolean;
   choosing: boolean;
   busy: boolean;
   onMore: () => void;
   onLess: () => void;
   onToggle: (sessionId: string) => void;
+  onToggleAll: () => void;
   onUnarchive: (target: ArchiveTarget) => void;
   onDelete: (target: ArchiveTarget, title?: string) => void;
 }) {
@@ -330,11 +332,14 @@ function ArchiveGroup({
         <span className="shrink-0 text-xs text-fg-muted">
           {S.archivedSessions.count(group.count)}
         </span>
-        <GroupMenu
+        <button
+          type="button"
           disabled={busy}
-          onUnarchiveAll={() => onUnarchive(whole)}
-          onDeleteAll={() => onDelete(whole)}
-        />
+          onClick={onToggleAll}
+          className="shrink-0 text-xs text-fg-muted transition-colors duration-150 hover:text-fg disabled:opacity-60"
+        >
+          {allChosen ? S.archivedSessions.deselectAll : S.archivedSessions.selectAll}
+        </button>
       </div>
       {rows === undefined || (rows.loading && shown.length === 0) ? (
         <SkeletonList rows={Math.min(group.count, 3)} />
@@ -344,7 +349,7 @@ function ArchiveGroup({
             <ArchiveRow
               key={s.sessionId}
               s={s}
-              selected={selection.has(s.sessionId)}
+              selected={chosen(s.sessionId)}
               choosing={choosing}
               busy={busy}
               onToggle={() => onToggle(s.sessionId)}
@@ -377,6 +382,14 @@ function ArchiveGroup({
   );
 }
 
+/**
+ * A row's box at rest: hidden until the row is hovered or the box has KEYBOARD focus. Mouse focus
+ * does not count — a box clicked, or a button whose confirm returned focus to it, would otherwise
+ * keep its row's box painted beside the hovered row's after nothing is chosen any more.
+ */
+const BOX_AT_REST =
+  "opacity-0 transition-opacity duration-150 group-hover:opacity-100 has-[:focus-visible]:opacity-100 [@media(hover:none)]:opacity-100";
+
 /** A row: the box, the title and the time with its marks, then delete and Unarchive. */
 function ArchiveRow({
   s,
@@ -396,27 +409,22 @@ function ArchiveRow({
   onDelete: () => void;
 }) {
   const title = s.title ?? S.chat.defaultSessionTitle;
-  const mark = backgroundSourceMark(s);
+  const source = programSource(s);
   return (
     <li className="group flex items-center gap-3 py-2.5">
       <Checkbox
         checked={selected}
         onChange={onToggle}
         aria-label={S.archivedSessions.select(title)}
-        className={
-          selected || choosing
-            ? ""
-            : "opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
-        }
+        className={selected || choosing ? "" : BOX_AT_REST}
       />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
           <Truncated text={title} className="min-w-0" />
-          {mark !== null && (
-            <span className="shrink-0 text-fg-subtle" data-tooltip={mark.sourceLabel}>
-              <GlyphIcon d={mark.sourceGlyph} size={ICON_SIZE.inlineGlyph} />
-              <span className="sr-only">{mark.sourceLabel}</span>
-            </span>
+          {source !== null && (
+            <Badge tone="neutral" size="sm">
+              {S.chat.sessionSource[source]}
+            </Badge>
           )}
           {(s.status === "running" || s.status === "compacting") && (
             <span className="shrink-0" data-tooltip={S.archivedSessions.running}>
@@ -440,62 +448,5 @@ function ArchiveRow({
         {S.chat.unarchiveSession}
       </Button>
     </li>
-  );
-}
-
-/** A group's ⋯: unarchive or delete everything the group holds under the current filters. */
-function GroupMenu({
-  disabled,
-  onUnarchiveAll,
-  onDeleteAll,
-}: {
-  disabled: boolean;
-  onUnarchiveAll: () => void;
-  onDeleteAll: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const item = (fn: () => void) => () => {
-    setOpen(false);
-    fn();
-  };
-  const button = useMemo(
-    () => (
-      <button
-        type="button"
-        data-tooltip={S.archivedSessions.groupMenu}
-        aria-label={S.archivedSessions.groupMenu}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen(!open)}
-        className="flex h-7 w-7 shrink-0 items-center justify-center text-fg-subtle transition-colors duration-150 hover:text-fg disabled:opacity-60"
-      >
-        <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.groupHeaderAction} filled />
-      </button>
-    ),
-    [open, disabled],
-  );
-  return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      portal={{ direction: "down", align: "right" }}
-      menuClass="w-max min-w-32"
-      className="shrink-0"
-      button={button}
-    >
-      <Menu density="sm">
-        <MenuItem
-          glyph={ICONS.archiveRestore}
-          label={S.archivedSessions.unarchiveAll}
-          onSelect={item(onUnarchiveAll)}
-        />
-        <MenuItem
-          glyph={ICONS.trash}
-          label={S.archivedSessions.deleteAll}
-          onSelect={item(onDeleteAll)}
-        />
-      </Menu>
-    </Dropdown>
   );
 }
