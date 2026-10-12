@@ -13,7 +13,9 @@
  *
  * An item with `onClick` is a button that goes there; without, the item is read out and nothing
  * more — the Files panel's path is not navigable, because the tree beside it is what navigates.
- * `title` is the strip's tooltip: the whole path, however much of it is on screen.
+ * `title` is the strip's tooltip: the whole path, however much of it is on screen. It shows while
+ * leading items are folded into the "…", where it holds what the strip left out, and otherwise
+ * only over an item cut short.
  */
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import { CRUMB_ELLIPSIS, crumbItemWidth, splitFileName, visibleCrumbSegments } from "./crumb-fit";
@@ -59,6 +61,7 @@ export function Breadcrumbs({
     <div
       ref={ref}
       data-tooltip={title}
+      data-tooltip-extra={fit.collapsed || undefined}
       className={`flex min-w-0 items-center gap-1 overflow-hidden px-1 text-sm ${className}`}
     >
       {fit.collapsed && <span className="shrink-0 text-fg-subtle">{CRUMB_ELLIPSIS}</span>}

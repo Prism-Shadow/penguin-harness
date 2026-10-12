@@ -20,6 +20,8 @@
  *   ships Skills stays with the Skills.
  * - The "update all" plan is empty when no Agent is behind, sends one request per Agent with
  *   every plugin it is behind on, and counts distinct plugins as the notice does.
+ * - The incompatible-only filter is off until this browser turns it on, and a flip reaches every
+ *   reader at once — the Settings switch and the page under it.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import type {
@@ -43,6 +45,12 @@ import {
   type PluginView,
 } from "../src/features/plugins/plugin-groups";
 import { pluginStatus, type PluginStatus } from "../src/features/plugins/plugin-status";
+import {
+  PLUGINS_INCOMPATIBLE_ONLY_KEY,
+  readPluginsIncompatibleOnly,
+  subscribePluginsIncompatibleOnly,
+  writePluginsIncompatibleOnly,
+} from "../src/features/plugins/incompatible-only";
 import { pluginUpdatePlan } from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -433,6 +441,43 @@ function memoryStorage() {
     setItem: (key: string, value: string) => void data.set(key, value),
   };
 }
+
+describe("the incompatible-only filter", () => {
+  it("is off until this browser turns it on, and survives storage it cannot use", () => {
+    const storage = memoryStorage();
+    expect(readPluginsIncompatibleOnly(storage)).toBe(false);
+    writePluginsIncompatibleOnly(true, storage);
+    expect(readPluginsIncompatibleOnly(storage)).toBe(true);
+    writePluginsIncompatibleOnly(false, storage);
+    expect(readPluginsIncompatibleOnly(storage)).toBe(false);
+
+    const garbage = memoryStorage();
+    garbage.setItem(PLUGINS_INCOMPATIBLE_ONLY_KEY, "true");
+    expect(readPluginsIncompatibleOnly(garbage)).toBe(false);
+    const blocked = {
+      getItem: (): string | null => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(() => writePluginsIncompatibleOnly(true, blocked)).not.toThrow();
+    expect(readPluginsIncompatibleOnly(blocked)).toBe(false);
+  });
+
+  it("reaches every reader the moment it flips", () => {
+    const seen: boolean[] = [];
+    const stop = subscribePluginsIncompatibleOnly(() => seen.push(readPluginsIncompatibleOnly()));
+    try {
+      writePluginsIncompatibleOnly(true);
+      writePluginsIncompatibleOnly(false);
+    } finally {
+      stop();
+    }
+    expect(seen).toEqual([true, false]);
+  });
+});
 
 describe("a plugin the running build cannot fully run", () => {
   const view: PluginView = { machineId: SELF, remote: null, nameOf };

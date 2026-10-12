@@ -105,7 +105,8 @@ export function Badge({
 }: BadgeProps) {
   return (
     <span
-      {...(tooltip !== undefined ? { "data-tooltip": tooltip } : {})}
+      // The sentence says what the word cannot, so it shows over the word in full.
+      {...(tooltip !== undefined ? { "data-tooltip": tooltip, "data-tooltip-extra": true } : {})}
       className={badgeClass(tone, variant, size)}
     >
       {children}

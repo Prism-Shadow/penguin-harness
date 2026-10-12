@@ -1962,6 +1962,8 @@ export function Sidebar({
                   surface="muted"
                   label={S.chat.newSessionMenu}
                   tooltip={newChatTitle}
+                  // The title adds the shortcut when one is bound.
+                  tooltipExtra={newChatTitle !== S.chat.newSessionMenu}
                   glyph={NEW_CHAT_ICON}
                   active={activeSessionId === DRAFT_SESSION_ID}
                   onClick={() => newChat()}

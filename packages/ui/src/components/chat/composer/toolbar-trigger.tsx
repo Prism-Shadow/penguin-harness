@@ -89,7 +89,9 @@ export function ToolbarTrigger({
       {pill && <span className="hidden min-w-0 truncate @md:block">{label}</span>}
       {pill && caret && <ChevronDown size={ICON_SIZE.caretDense} />}
       {!pill && badge > 0 && (
-        <span className="absolute -right-1 -top-0.5">
+        // Hidden from assistive technology like the glyph: the count is a mark on the button,
+        // and the button's name (or its tooltip) is what says it.
+        <span aria-hidden className="absolute -right-1 -top-0.5">
           <Count n={badge} />
         </span>
       )}

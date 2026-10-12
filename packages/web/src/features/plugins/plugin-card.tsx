@@ -201,6 +201,7 @@ export function PluginCard(props: PluginCardProps) {
           className={look}
           aria-label={`${S.plugins.exportPlugin} ${row.name}`}
           title={S.plugins.exportPluginHint}
+          data-tooltip-extra
           onClick={() => void exportPlugin(archiveUrl)}
         >
           <GlyphIcon d={ICONS.download} size={ICON_SIZE.iconButton} />
@@ -240,6 +241,7 @@ export function PluginCard(props: PluginCardProps) {
           className={look}
           aria-label={`${S.skills.quickInvoke} ${plugin.name}`}
           title={S.plugins.quickStartHint}
+          data-tooltip-extra
           disabled={!props.canQuickStart}
           onClick={() => props.onQuickStart(plugin)}
         >
@@ -285,6 +287,7 @@ export function PluginCard(props: PluginCardProps) {
             aria-label={`${label} ${row.name}`}
             aria-busy={props.busy}
             title={install ? label : (mod.removeBlocked ?? label)}
+            data-tooltip-extra={!install && mod.removeBlocked !== undefined}
             disabled={props.busy || props.blocked || (!install && mod.removeBlocked !== undefined)}
             onClick={() => props.onModuleApply(install)}
           >
@@ -643,6 +646,7 @@ export function InstallRow({
       <span
         className="min-w-0 flex-1 truncate text-sm"
         data-tooltip={agentId}
+        data-tooltip-extra
         data-tooltip-content="text"
       >
         {name}

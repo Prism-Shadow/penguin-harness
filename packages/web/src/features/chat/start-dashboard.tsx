@@ -214,6 +214,7 @@ function VersionBadge() {
       type="button"
       onClick={openAppInfo}
       data-tooltip={note}
+      data-tooltip-extra
       aria-label={note}
       className={versionBadgeClass}
     >
@@ -349,6 +350,7 @@ function ExamplesSection({
                         <button
                           type="button"
                           data-tooltip={`${copy.desc}\n${S.chat.exampleFillHint}`}
+                          data-tooltip-extra
                           disabled={!ready}
                           // S is a live binding swapped on a locale change: the prompt is read
                           // at click time, not at render.

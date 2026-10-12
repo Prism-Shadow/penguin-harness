@@ -218,6 +218,7 @@ export function SkillsTab({
                   className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
                   data-tooltip={skill.description}
                   data-tooltip-content="text"
+                  data-tooltip-extra={skill.description !== localizedShortText(locale, skill)}
                 >
                   {localizedShortText(locale, skill)}
                 </p>

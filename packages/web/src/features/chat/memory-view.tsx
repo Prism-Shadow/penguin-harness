@@ -223,6 +223,7 @@ export function ChatMemoryView({
                   className="min-w-0 flex-1 truncate text-xs text-gray-500 dark:text-gray-400"
                   data-tooltip={group.workspacePath}
                   data-tooltip-content="text"
+                  data-tooltip-extra
                 >
                   {groupTitle(group)}
                 </p>

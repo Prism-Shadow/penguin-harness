@@ -147,7 +147,9 @@ export function OrgStatusPill({ org }: { org: { status: OrgStatus; invalid?: str
   const kind = orgStatusKind(org);
   return (
     <span
-      {...(org.invalid !== undefined ? { "data-tooltip": org.invalid } : {})}
+      {...(org.invalid !== undefined
+        ? { "data-tooltip": org.invalid, "data-tooltip-extra": true }
+        : {})}
       className="inline-flex"
     >
       <Badge tone={ORG_STATUS_BADGE[kind]}>{orgStatusLabel(kind)}</Badge>
@@ -450,6 +452,7 @@ export function BlockedBadge({ reason, by }: { reason: string; by?: string }) {
   return (
     <span
       data-tooltip={S.company.tickets.blockedTooltip(reason, by ?? "—")}
+      data-tooltip-extra
       className="inline-flex"
     >
       <Badge tone="attention">{S.company.tickets.blocked}</Badge>

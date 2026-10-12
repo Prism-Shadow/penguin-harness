@@ -539,7 +539,7 @@ export function FindBar() {
           data-tooltip={S.find.caseSensitive}
           className={`${ICON_BUTTON} text-xs font-semibold ${caseSensitive ? "text-accent" : ICON_INK}`}
         >
-          Aa
+          <span aria-hidden>Aa</span>
         </button>
         <button
           type="button"
@@ -615,7 +615,9 @@ export function FindBar() {
               anchorRef.current = null;
               setAllRegions((v) => !v);
             }}
-            {...(scopeChord === null ? {} : { "data-tooltip": `${scopeLabel} (${scopeChord})` })}
+            {...(scopeChord === null
+              ? {}
+              : { "data-tooltip": `${scopeLabel} (${scopeChord})`, "data-tooltip-extra": true })}
             className="rounded-sm px-1.5 py-0.5 text-xs text-fg-muted transition-colors duration-150 hover:text-fg"
           >
             {scopeLabel}

@@ -10,7 +10,12 @@
  *
  * Either way in, a hint shows only for an element with no visible text of its own or one
  * whose visible text is cut off (`hintAllowed`, checked when the hint would open): a label the
- * reader can already read in full gets no tooltip.
+ * reader can already read in full gets no tooltip. Text that is not read as words does not
+ * count — an SVG's own text (an avatar's initial) and anything `aria-hidden` (a letter or a
+ * count drawn as an icon). The one exception is a hint marked as carrying what the screen does
+ * not show — a consequence, a shortcut, the full value behind an abbreviation, what a state
+ * means: `data-tooltip-extra`, or `<Tooltip extra>`, opens it over fully visible text. A hint
+ * that only repeats the visible words is never marked, and never shows.
  *
  * Two ways in, one panel:
  * - `<Tooltip label>` wraps its trigger in a measuring span — for a trigger that needs the
@@ -19,8 +24,9 @@
  *   root, which listens once on the document. It adds no wrapper, so it is what replaces a
  *   `title` in place: a table cell, a truncated span or a flex child keeps its layout exactly.
  *   `data-tooltip-content` picks the panel's kind, `data-tooltip-placement` its side
- *   (default `bottom`). Unlike `title`, it names nothing to assistive technology, so an
- *   element whose only name was its title carries an `aria-label` with the same words.
+ *   (default `bottom`), `data-tooltip-extra` marks the hint as adding to the visible text.
+ *   Unlike `title`, it names nothing to assistive technology, so an element whose only name
+ *   was its title carries an `aria-label` with the same words.
  *
  * Portaled to document.body at fixed viewport coordinates, like every other overlay here
  * (see use-portal-panel.ts): an in-place absolute panel is a descendant of its trigger, so a
@@ -91,6 +97,14 @@ const contentMaxWidth: Record<TooltipContent, string> = {
 /** The attribute `TooltipLayer` reads; its value is the panel's text. */
 export const TOOLTIP_ATTR = "data-tooltip";
 
+/**
+ * Marks a `data-tooltip` as carrying what the screen does not show, so it opens over text the
+ * reader can see in full. Any value but `"false"` sets it, so `data-tooltip-extra={cond}`
+ * reads as written; a shared component writes `{cond || undefined}`, leaving no attribute on
+ * the instances that are not marked.
+ */
+export const TOOLTIP_EXTRA_ATTR = "data-tooltip-extra";
+
 /** A box that may clip its content: the four numbers a truncation check reads. */
 export interface ClipBox {
   scrollWidth: number;
@@ -113,14 +127,15 @@ export function isCutOff(box: ClipBox): boolean {
 /**
  * The tooltip rule: a hint shows only where its words are not already on screen — for an
  * element that shows no text of its own (an icon-only control, a chart mark, a status glyph)
- * or one whose visible text is cut off. An element whose text is fully visible gets no hint,
- * whatever it carries: a hint that repeats what the reader can see is noise, and one that
- * adds to it hides that information behind a hover. `boxes` are the element and its
- * descendants, measured when the hint would open, since a column resize can cut a label off
- * or give it back at any time.
+ * or one whose visible text is cut off. An element whose text is fully visible gets no hint:
+ * one that repeats what the reader can see is noise. The exception is `extra`, a hint the
+ * caller marked as carrying what the screen does not show (a consequence, a shortcut, the full
+ * value behind an abbreviation, what a state means), which shows whatever the text. `boxes`
+ * are the element and its descendants, measured when the hint would open, since a column
+ * resize can cut a label off or give it back at any time.
  */
-export function hintAllowed(visibleText: string, boxes: Iterable<ClipBox>): boolean {
-  if (visibleText.trim() === "") return true;
+export function hintAllowed(visibleText: string, boxes: Iterable<ClipBox>, extra = false): boolean {
+  if (extra || visibleText.trim() === "") return true;
   for (const box of boxes) if (isCutOff(box)) return true;
   return false;
 }
@@ -133,20 +148,64 @@ function unseen(node: Element | null): boolean {
   return check !== undefined && !check.call(node);
 }
 
-/** `hintAllowed`, with its inputs read off the element at the moment the hint would open. */
-export function hintAllowedFor(el: Element): boolean {
+/** The part of a DOM node `readingText` walks; structural, so a hand-built tree serves too. */
+export interface ReadingNode {
+  nodeType: number;
+  nodeValue: string | null;
+  childNodes: ArrayLike<ReadingNode>;
+  localName?: string;
+  getAttribute?(name: string): string | null;
+  classList?: { contains(token: string): boolean };
+  checkVisibility?(): boolean;
+}
+
+const ELEMENT_NODE = 1;
+const TEXT_NODE = 3;
+
+/**
+ * Whether an element's text is out of the reading: an SVG's (an avatar's initial is part of a
+ * picture), anything hidden from assistive technology (a letter or a count drawn as an icon,
+ * its control named elsewhere), screen-reader-only copy, and anything the page does not render.
+ */
+function outOfReading(el: ReadingNode): boolean {
+  return (
+    el.localName === "svg" ||
+    el.getAttribute?.("aria-hidden") === "true" ||
+    el.classList?.contains("sr-only") === true ||
+    el.checkVisibility?.() === false
+  );
+}
+
+/** The words a reader reads in a subtree: its text, minus any inside an element out of the reading. */
+export function readingText(node: ReadingNode): string {
+  if (node.nodeType === TEXT_NODE) return node.nodeValue ?? "";
+  if (node.nodeType !== ELEMENT_NODE || outOfReading(node)) return "";
   let text = "";
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    if (!unseen(node.parentElement)) text += node.textContent ?? "";
-  }
-  const boxes: ClipBox[] = [];
+  for (let i = 0; i < node.childNodes.length; i++) text += readingText(node.childNodes[i]!);
+  return text;
+}
+
+/** Whether an element's `data-tooltip` is marked as adding to its visible text. */
+function marksExtra(el: Pick<Element, "getAttribute">): boolean {
+  const value = el.getAttribute(TOOLTIP_EXTRA_ATTR);
+  return value !== null && value !== "false";
+}
+
+/** The boxes of an element and its descendants that can clip text, measured only as read. */
+function* clipBoxes(el: Element): Generator<ClipBox> {
   for (const node of [el, ...el.querySelectorAll("*")]) {
     // An inline box or a hidden one has no area to clip, and a screen-reader-only span is
     // clipped on purpose — neither says the visible text was cut.
-    if (node instanceof HTMLElement && node.clientWidth > 0 && !unseen(node)) boxes.push(node);
+    if (node instanceof HTMLElement && node.clientWidth > 0 && !unseen(node)) yield node;
   }
-  return hintAllowed(text, boxes);
+}
+
+/**
+ * `hintAllowed`, with its inputs read off the element at the moment the hint would open;
+ * `extra` is the caller's mark that the hint adds to the visible text.
+ */
+export function hintAllowedFor(el: Element, extra = false): boolean {
+  return hintAllowed(readingText(el), clipBoxes(el), extra);
 }
 
 /** The trigger's viewport box — the part of a DOMRect the geometry reads. */
@@ -209,6 +268,7 @@ export function Tooltip({
   label,
   placement = "right",
   content = "label",
+  extra = false,
   suppressed,
   className,
   children,
@@ -219,6 +279,8 @@ export function Tooltip({
   placement?: TooltipPlacement;
   /** What `label` is: a control's name (the default), or a truncated line of code shown whole. */
   content?: TooltipContent;
+  /** `label` carries what the screen does not show (a shortcut, a consequence): open it over visible text too. */
+  extra?: boolean;
   /**
    * Hold the panel closed and refuse to open it. For a trigger that owns something else on
    * screen while it is active: the rail avatar's open user menu hangs off the same corner,
@@ -249,7 +311,7 @@ export function Tooltip({
       const anchor = anchorRef.current;
       // Measured now, not when the trigger rendered: whether its label is cut off depends on
       // the width it has at this moment.
-      if (anchor === null || !hintAllowedFor(anchor)) return;
+      if (anchor === null || !hintAllowedFor(anchor, extra)) return;
       const rect = anchor.getBoundingClientRect();
       const viewport = { width: window.innerWidth, height: window.innerHeight };
       setPosition(
@@ -338,6 +400,8 @@ export interface TooltipRequest {
   label: string;
   content: TooltipContent;
   placement: TooltipPlacement;
+  /** Marked `data-tooltip-extra`: the hint adds to the visible text, so it opens over it. */
+  extra: boolean;
 }
 
 /** Reads an element's `data-tooltip` request, or null when it carries none (or an empty one). */
@@ -350,6 +414,7 @@ export function tooltipRequest(el: Pick<Element, "getAttribute">): TooltipReques
     label,
     content: content === "code" || content === "text" ? content : "label",
     placement: placement === "right" ? "right" : "bottom",
+    extra: marksExtra(el),
   };
 }
 
@@ -383,7 +448,8 @@ export function TooltipLayer() {
         timer = null;
         const el = current;
         const request = el === null ? null : tooltipRequest(el);
-        if (el === null || request === null || !el.isConnected || !hintAllowedFor(el)) return;
+        if (el === null || request === null || !el.isConnected) return;
+        if (!hintAllowedFor(el, request.extra)) return;
         const rect = el.getBoundingClientRect();
         const viewport = { width: window.innerWidth, height: window.innerHeight };
         setOpen({
