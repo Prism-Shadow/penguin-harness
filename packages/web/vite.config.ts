@@ -1,11 +1,11 @@
 /**
  * Vite config: React SPA + Tailwind CSS 4.
  *
- * Dev server listens on 7365; `/api` is proxied to the **development** backend (127.0.0.1:7368 --
- * `pnpm dev:server`, deliberately not the installed server's 7364, which is routinely running at the
- * same time). Honors PORT so overriding the backend port moves the proxy with it, and
- * PENGUIN_API_PROXY overrides the whole target. SSE (text/event-stream) passes through http-proxy
- * transparently, no special config needed.
+ * Dev server listens on 7365; `/api` and a machine's `/server/<machineId>/api` are proxied to the
+ * **development** backend (127.0.0.1:7368 -- `pnpm dev:server`, deliberately not the installed
+ * server's 7364, which is routinely running at the same time). Honors PORT so overriding the backend
+ * port moves the proxy with it, and PENGUIN_API_PROXY overrides the whole target. SSE
+ * (text/event-stream) passes through http-proxy transparently, no special config needed.
  * The vitest config is kept separate in vitest.config.ts (its embedded vite 5 types conflict with this
  * package's vite 7 plugin types, hence the separate file to avoid the clash).
  *
@@ -33,6 +33,35 @@ import { penguinUi } from "../ui/src/vite-plugin";
  */
 export function apiProxyTarget(env: Record<string, string | undefined> = process.env): string {
   return env.PENGUIN_API_PROXY || `http://127.0.0.1:${env.PORT || "7368"}`;
+}
+
+/**
+ * The calls the page addresses to one machine, `/server/<machineId>/api/…`
+ * (src/lib/server-context.ts). The backend forwards them to that machine; the dev server only has
+ * to hand them on. Without this entry Vite answered them itself: a GET came back as the SPA's
+ * index.html with status 200 and anything else as an empty 404, so every request to a machine
+ * failed with an unparseable answer under `pnpm dev` and nowhere else.
+ *
+ * A pattern rather than the `/server/` prefix, so that only API paths are taken from the SPA.
+ */
+export const MACHINE_API_PATH = "^/server/[^/]+/api(?:/|$)";
+
+/**
+ * The dev server's proxy table: the backend's own API, and its API for each machine. Takes the
+ * environment as an argument for the same reason {@link apiProxyTarget} does.
+ */
+export function devProxy(env: Record<string, string | undefined> = process.env) {
+  const target = apiProxyTarget(env);
+  return {
+    "/api": {
+      target,
+      changeOrigin: false,
+      // The terminal stream (/api/terminals/:id/stream) is a WebSocket upgrade; without
+      // this the proxy answers the handshake itself and the terminal never connects.
+      ws: true,
+    },
+    [MACHINE_API_PATH]: { target, changeOrigin: false },
+  };
 }
 
 /**
@@ -90,14 +119,6 @@ export default defineConfig({
     // rule (localhost pages only) answered its preflight itself and refused it, so the request
     // never reached the server's pairing route. Off, the preflight is proxied like everything else.
     cors: false,
-    proxy: {
-      "/api": {
-        target: apiProxyTarget(),
-        changeOrigin: false,
-        // The terminal stream (/api/terminals/:id/stream) is a WebSocket upgrade; without
-        // this the proxy answers the handshake itself and the terminal never connects.
-        ws: true,
-      },
-    },
+    proxy: devProxy(),
   },
 });
