@@ -845,6 +845,10 @@ export function DraftView({
       sandboxPick,
       modelRef,
       workspace,
+      // The machine can change while the path does not: a temporary workspace there after a
+      // temporary one here is "" both times, and a send that kept the old machine would create
+      // the Session on this server.
+      workspaceMachine,
       add,
       discardDraft,
       navigate,
