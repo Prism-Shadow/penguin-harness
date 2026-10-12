@@ -344,6 +344,42 @@ const OPENCODE_GO_MESSAGES_BASE_URL = "https://opencode.ai/zen/go";
 /** Provider id for the preconfigured Penguin Go relay group. */
 export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
 
+/**
+ * The protocol a group is fixed to, or undefined where the group's protocol is the user's to
+ * choose. Penguin Go's platform endpoint speaks MMSP alone, so neither its group nor its rows
+ * offer a protocol: the Web App shows MMSP without a picker, and the server's model writes and
+ * the CLI refuse any other value (fixedClientTypeRefuses).
+ */
+export function fixedClientType(providerId: string): string | undefined {
+  return providerId === PENGUIN_GO_PROVIDER_ID ? "mmsp" : undefined;
+}
+
+/**
+ * Whether writing `next` as the protocol of a group (`target: "group"`) or of one of its rows
+ * (`"row"`) is refused because the group's protocol is fixed (fixedClientType). `next` is the
+ * value written, blank or absent for none; `stored` is what that group, or that same row in that
+ * same group, stores now.
+ *
+ * The fixed protocol is always accepted, and so is `stored` written back unchanged: a row a user
+ * pointed at their own proxy on another protocol before the protocol was fixed (left alone by
+ * migratePenguinGoRoutes) keeps it, and a whole-table save carrying it is not refused. A row
+ * with no protocol of its own follows its group, so clearing a row's is accepted; clearing the
+ * group's would leave its rows routed by model id, and is refused.
+ */
+export function fixedClientTypeRefuses(
+  providerId: string,
+  target: "group" | "row",
+  next: string | null | undefined,
+  stored: string | undefined,
+): boolean {
+  const fixed = fixedClientType(providerId);
+  if (fixed === undefined) return false;
+  const value = next?.trim() ?? "";
+  if (value === "") return target === "group" && (stored?.trim() ?? "") !== "";
+  if (sameClientType(value, fixed)) return false;
+  return stored === undefined || !sameClientType(value, stored);
+}
+
 /** Provider id for the ModelScope group. */
 export const MODELSCOPE_PROVIDER_ID = "modelscope";
 
@@ -402,8 +438,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     label: "Penguin Go",
     // The authorization flow writes the relay key once, on the group's `[providers.penguin-go]`
     // table. Keep the env names private to this relay so the UI never suggests using a vendor
-    // credential here. Every row names the relay, so a new Project writes that endpoint on the
-    // group; its rows sit on two protocols, so each row stores its own.
+    // credential here. Every row names the relay and speaks MMSP, so a new Project writes both
+    // on the group; the protocol is fixed (fixedClientType).
     envKey: "PENGUIN_GO_API_KEY",
     envBaseUrlKey: "PENGUIN_GO_BASE_URL",
     apiKeyUrl: "https://token.penguin.ooo/",

@@ -745,13 +745,14 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - 新建条目只在显式传入时才存 `--client-type`、`--base-url` 与 `--api-key`。不传的项跟随分组，分组也没有即交给客户端缺省；不读内置模型目录。新建 Project 的文件已在各分组上存好网关的端点与协议、Penguin Go 的中转地址与 `vllm` 的 `openai-chat-vllm-adapter`。分组没有设置协议时，`custom` 或用户自定义分组的条目取 `openai-chat`。更新已有条目时，只有显式传入这些选项才会改动；`--clear-*` 选项清除条目自己的值，此后它跟随分组。
 - 用这种方式重新加回删掉的预置模型，只会存下你传入的值；模型库页面的**同步新增模型**会把它连同目录的协议与端点一起补回。
 - 只有 `custom`、`vllm`、`openrouter`、`tokendance`、`siliconflow`、`atlascloud` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
+- `penguin-go` 的协议固定为 `mmsp`，与模型库页面及其 API 一致：传入其他 `--client-type` 会被拒绝，除非它就是该条目或分组已存的值；对分组使用 `--clear-client-type` 同样被拒绝。
 - 如果模型的 MMSP 客户端不接受这个参数，开启 `--fast-mode` 仍会写入条目，但会在 stderr 上打印警告。
 - 两种形式下，没有指定的项都保持不变；每一对设置 / 清除选项互斥；取值为空会被拒绝，清除请用对应的 `--clear-*` 选项。
 
 不带 `--model-id` 时：
 
 - 只描述单个模型的选项——`--context-window`、`--max-tokens`、`--vision`、`--fast-mode`、各 `--price-*` 选项与 `--set-default`——会被拒绝，什么也不写入。一个连接字段都没指定的调用同样被拒绝。
-- 每个分组都可以设置协议：模型自己的 `client_type` 优先于分组的，因此 Penguin Go 与 OpenCode Go 的模型保留各自的协议。
+- 除 `penguin-go` 外，每个分组都可以设置协议：模型自己的 `client_type` 优先于分组的，因此 OpenCode Go 的模型保留各自的协议。
 - 分组密钥只借给访问分组端点的模型：没有自己的 base URL，或自己的 base URL 与分组的同 origin（scheme、host、port）。
 - 命令会报告组内有多少模型不受改动影响（自己设置了对应项，或分组密钥借不到它们），并在用户自定义分组还没有模型时给出提示。
 

@@ -280,7 +280,7 @@ The fields show what the group stores:
 
 - **API key**: the group key, the one connecting also writes; the header has no other place to enter it. A stored key is shown masked, with the time it was set; leave the field empty to keep it, or select **Clear the group key**. Where an environment variable covers the group (see [Set API keys](#set-api-keys)), the placeholder says it is used when the field is empty. The provider's key console link is beside the label.
 - **Custom base URL**: when empty, the placeholder says the client's default endpoint is used. **Restore defaults** brings the whole group back to the catalog's endpoint. **Detect** at the top-right probes the field's URL, else the stored one, with the key in the field, else the group key; with neither URL it is unavailable. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
-- **Protocol**: the first option, **Not set**, leaves the protocol to each model or, failing that, to routing by model id; the others are the generic protocols. A protocol stored on a model takes priority over the group's default. Penguin Go's managed connections use `mmsp`; loading the config, reconnecting or syncing models migrates their group and model-level routes to MMSP.
+- **Protocol**: the first option, **Not set**, leaves the protocol to each model or, failing that, to routing by model id; the others are the generic protocols. A protocol stored on a model takes priority over the group's default. Penguin Go has no protocol menu and no **Detect**: its protocol is fixed to MMSP, which the line under the base URL names; see [The Penguin Go group](#the-penguin-go-group).
 
 **Model list**, below the fields, opens the provider's model list in a new tab. **Custom** and groups you create have none.
 
@@ -511,6 +511,8 @@ MiniMax's official client reads `MINIMAX_API_KEY`. The built-in MiniMax preset c
 `penguin-go` is a built-in relay group. Its preset models use the `mmsp` HTTP client with base URL `https://go.penguin.ooo/api/v1`; the SDK appends `/stream`. Authorization and model sync send `x-penguin-protocol: mmsp` and use the platform's `endpoints.mmsp`. Legacy OpenAI, Google and Anthropic endpoint fields are not required.
 
 Existing Projects switch their Go-managed group and model-level routes to MMSP when loaded, without a network probe, login or new key. User-created groups and Go rows redirected to other servers retain their configuration.
+
+The group's protocol is fixed to MMSP. Neither the group settings nor a model's settings offer another one, and the server and `penguin config model add` refuse one for the group or its models, except a protocol a redirected row already stores, which saves back unchanged.
 
 The group's key comes from its header; see [Connect an account](#connect-an-account). Connecting, and **Sync models** in the **Connected** menu, also read the platform's own model catalog:
 

@@ -2148,6 +2148,8 @@ export const zh = {
     protocolEachModel: "由各模型自行设置",
     /** The model dialog's protocol menu row that drops a model's own protocol and follows its group. */
     protocolFollowGroup: "跟随分组",
+    /** Under the group settings' base URL where the group's protocol is fixed (Penguin Go), in place of the protocol menu. */
+    protocolFixedHint: (group: string, protocol: string): string => `${group} 固定使用 ${protocol}`,
     /** A model dialog's API key or base URL placeholder where the group's setting covers a blank field (no value after it). */
     inheritFromGroup: "留空继承分组设置",
     /** The API key placeholder where the group holds a key but the model's own base URL is on another origin, so the key is not sent there. */
@@ -5883,6 +5885,7 @@ Benchmark：
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
       model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
+      penguin_go_protocol_fixed: "Penguin Go 固定使用 MMSP 协议，不能改为其他协议。",
       model_not_routable:
         "该模型 ID 无法路由：厂商分组按模型 ID 开头的厂商前缀（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由。请在自定义分组中添加该模型，并选择或检测其接口协议。",
       unknown_skill: "所选目录下没有这个技能。",

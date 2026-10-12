@@ -117,8 +117,9 @@ function requireProviderId(id: string, label: string): string {
  * whole-table PUT's `providers`). Per field: omitted keeps it; `baseUrl` / `clientType` take a
  * string or `null` (null and a blank string clear); `apiKey` a non-empty string;
  * `clearApiKey` a boolean. A base URL that is set must be an absolute http(s) URL, as /detect
- * and /list require: every model of the group without one of its own is sent there. Every
- * group takes a protocol: a row's own always wins over it.
+ * and /list require: every model of the group without one of its own is sent there. A row's
+ * own protocol always wins over its group's; Penguin Go's is fixed to MMSP, which the service
+ * checks against what the group stores (`400 penguin_go_protocol_fixed`).
  */
 function parseProviderUpdate(value: unknown, label: string): ProviderConnectionUpdate {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -315,7 +316,8 @@ export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
   // One group's connection (owner): `[providers.<id>]`'s base URL, protocol and key, merged
   // per field — the group settings dialog and Disconnect (`{ clearApiKey: true }`) both land
   // here. Rows are untouched, so a model with its own value keeps it, its own protocol
-  // included: any group takes a protocol. An id that is neither a built-in group nor a
+  // included. Penguin Go's protocol is fixed: another one, or clearing it, is
+  // `400 penguin_go_protocol_fixed`. An id that is neither a built-in group nor a
   // user-group name is `400 invalid_provider`; a base URL that is not an absolute http(s) URL
   // is a 400 too (parseProviderUpdate), the same check the whole-table PUT's `providers` gets.
   app.put("/providers/:provider", async (c) => {

@@ -1162,6 +1162,8 @@ export interface Messages {
   providerBlankValue(flag: string, clearFlag: string): string;
   /** `model add` without --model-id refused: --base-url is not an absolute http(s) URL. */
   providerInvalidBaseUrl(baseUrl: string): string;
+  /** `model add` refused: a group whose protocol is fixed (Penguin Go) given another --client-type, or its group's cleared. */
+  protocolFixed(group: string, clientType: string): string;
   /** `model add` without --model-id refused: no field to set or clear. */
   providerNothingToSet(group: string): string;
   /** `model add` without --model-id done; `overriding` = the group's models a changed field passes by (their own value, or a group key that does not reach their base URL). */
@@ -1275,7 +1277,7 @@ const en: Messages = {
     addMaxTokens:
       "Per-model max output tokens (positive integer); when set it overrides the Agent's max_tokens, omit to inherit — lower it for small-context models",
     addClientType:
-      "MMSP client type (openai-responses, ant-messages, openai-chat, google-genai or mmsp, or a vendor's official client such as google-official): the model's own with --model-id, else the group's; a model without one follows its group, else MMSP routes it by id (a new custom or own-group model gets openai-chat when its group sets none)",
+      "MMSP client type (openai-responses, ant-messages, openai-chat, google-genai or mmsp, or a vendor's official client such as google-official): the model's own with --model-id, else the group's; a model without one follows its group, else MMSP routes it by id (a new custom or own-group model gets openai-chat when its group sets none); Penguin Go takes mmsp only",
     addClearClientType:
       "Remove the stored client type: the model's own with --model-id, else the group's",
     addVision: "Mark the model as supporting image input (vision)",
@@ -2341,6 +2343,8 @@ const en: Messages = {
     `${flag} is empty. Pass a value, or ${clearFlag} to remove the stored one.`,
   providerInvalidBaseUrl: (baseUrl) =>
     `Invalid --base-url "${baseUrl}": a group's base URL must be a full URL starting with http:// or https://.`,
+  protocolFixed: (group, clientType) =>
+    `${group}'s protocol is fixed to ${clientType}: --client-type takes ${clientType} only, and the group's protocol cannot be cleared.`,
   providerNothingToSet: (group) =>
     `Nothing to change for group ${group}: pass --api-key, --base-url or --client-type, or one of the --clear-* flags.`,
   providerSaved: (group, overriding) =>
@@ -2440,7 +2444,7 @@ const zh: Messages = {
     addMaxTokens:
       "该模型的最大输出长度（正整数）；设置后覆盖 Agent 的 max_tokens，缺省沿用——小上下文模型建议调低",
     addClientType:
-      "MMSP 客户端协议（openai-responses、ant-messages、openai-chat、google-genai 或 mmsp，或厂商的官方客户端，如 google-official）：带 --model-id 为该模型自己的，否则为分组的；模型没有自己的即跟随分组，分组也没有即由 MMSP 按 id 路由（custom 与自建分组的新模型在分组未设协议时取 openai-chat）",
+      "MMSP 客户端协议（openai-responses、ant-messages、openai-chat、google-genai 或 mmsp，或厂商的官方客户端，如 google-official）：带 --model-id 为该模型自己的，否则为分组的；模型没有自己的即跟随分组，分组也没有即由 MMSP 按 id 路由（custom 与自建分组的新模型在分组未设协议时取 openai-chat）；Penguin Go 只接受 mmsp",
     addClearClientType: "清除已存的协议：带 --model-id 为该模型自己的，否则为分组的",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",
@@ -3427,6 +3431,8 @@ const zh: Messages = {
     `${flag} 为空。请给出取值，或用 ${clearFlag} 清除已存的值。`,
   providerInvalidBaseUrl: (baseUrl) =>
     `--base-url「${baseUrl}」无效：分组的 base URL 须为以 http:// 或 https:// 开头的完整地址。`,
+  protocolFixed: (group, clientType) =>
+    `${group} 的协议固定为 ${clientType}：--client-type 只接受 ${clientType}，分组的协议也不能清除。`,
   providerNothingToSet: (group) =>
     `分组 ${group} 没有要修改的内容：请给出 --api-key、--base-url 或 --client-type，或其中某一项的 --clear-* 选项。`,
   providerSaved: (group, overriding) =>

@@ -2016,6 +2016,8 @@ export const en: Strings = {
     protocolRoutedById: "Routed by model ID",
     protocolEachModel: "Each model sets its own",
     protocolFollowGroup: "Follow group",
+    protocolFixedHint: (group: string, protocol: string): string =>
+      `${group} always uses ${protocol}`,
     inheritFromGroup: "Leave blank to use the group's setting",
     keyNotReachedNote:
       "The group key does not apply: this model's base URL is not on the group's endpoint",
@@ -5734,6 +5736,7 @@ Scenarios:
       schedule_not_found: "This scheduled task no longer exists.",
       model_not_addable:
         "This group carries its built-in models only; add the model under a custom group.",
+      penguin_go_protocol_fixed: "Penguin Go always uses the MMSP protocol; it cannot be changed.",
       model_not_routable:
         "This model ID cannot be routed: a vendor group routes a model by the vendor prefix its ID begins with (gpt-, claude-, gemini-, glm-, kimi-, deepseek-, minimax-). Add the model under a custom group and pick or detect its protocol.",
       unknown_skill: "This skill is not in the selected directory.",

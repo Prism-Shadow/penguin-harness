@@ -5,6 +5,8 @@
  * - Old projects migrate on read, including model overrides, and repeated reads do not rewrite.
  * - Config migration needs no network requests, keys or current-catalog membership.
  * - Other groups and redirected Go rows keep their keys, settings and routes.
+ * - The Go protocol is fixed: the group route and the whole-table PUT refuse another one, while
+ *   a redirected row's stored protocol saves back unchanged.
  * - One inference POST carries done history, base64 media and tools, and returns thinking/usage.
  * - HTTP/SSE errors, missing stop and cancellation produce outcomes without protocol retries.
  */
@@ -23,6 +25,7 @@ import {
   inlineData,
 } from "@prismshadow/penguin-core";
 import type { LLMOutcome, OmniMessage } from "@prismshadow/penguin-core";
+import type { ErrorBody, ModelsResponse } from "../src/api/types.js";
 import { PlatformAuthService, platformConnection } from "../src/services/platform-auth-service.js";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { createTestApp, provisionUser, apiClient } from "./helpers.js";
@@ -340,6 +343,43 @@ describe("Penguin Go stored projects", () => {
     migratePenguinGoRoutes(raw);
     expect(raw.models[2]).toEqual({ ...before, client_type: "openai-chat" });
     expect(migratePenguinGoRoutes(raw)).toBe(0);
+  });
+  it("refuses another protocol on the Go group and its rows, and saves a redirected row's stored one back", async () => {
+    const id = await project();
+    const url = `/api/projects/${id}/models`;
+    const refused = async (res: Response) => {
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ErrorBody).error.code).toBe("penguin_go_protocol_fixed");
+    };
+    await refused(await owner.put(`${url}/providers/penguin-go`, { clientType: "openai-chat" }));
+    await refused(await owner.put(`${url}/providers/penguin-go`, { clientType: null }));
+    expect((await owner.put(`${url}/providers/penguin-go`, { clientType: "mmsp" })).status).toBe(
+      200,
+    );
+
+    // `user-proxy` points at the user's own server on Chat Completions, as stored before.
+    await t.deps.projectConfigService.writeRaw(id, oldConfig("ep_fixed"));
+    const table = (await (await owner.get(url)).json()) as ModelsResponse;
+    const entries = table.models.map((m) => ({
+      provider: m.provider,
+      modelId: m.modelId,
+      ...(m.clientType !== undefined ? { clientType: m.clientType } : {}),
+    }));
+    expect((await owner.put(url, { models: entries })).status).toBe(200);
+    const withClient = (modelId: string, clientType: string) =>
+      entries.map((e) =>
+        e.provider === "penguin-go" && e.modelId === modelId ? { ...e, clientType } : e,
+      );
+    await refused(await owner.put(url, { models: withClient("user-proxy", "google-genai") }));
+    await refused(await owner.put(url, { models: withClient("deepseek-flash", "openai-chat") }));
+    const rows = (await t.deps.projectConfigService.readRaw(id)).models as Record<
+      string,
+      unknown
+    >[];
+    expect(rows.find((m) => m.model_id === "user-proxy")).toMatchObject({
+      client_type: "openai-chat",
+      base_url: "https://user.example/v1",
+    });
   });
   it("a redirected Go group and all other groups stay unchanged", () => {
     const raw = oldConfig("ep_scope");

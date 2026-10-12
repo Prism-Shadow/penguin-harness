@@ -372,17 +372,17 @@ describe("models preset & catalog enrichment", () => {
           // OPENAI_API_KEY under the rule, but showing the mask would list a self-hosted id in
           // the chat picker as configured and send the OpenAI key to api.openai.com.
           { provider: "vllm", modelId: "Qwen/Qwen3.8-27B", clientType: "openai-chat-vllm-adapter" },
-          // Both protocols in the relay group resolve the same provider-scoped key.
+          // Every row in the relay group resolves the same provider-scoped key.
           {
             provider: "penguin-go",
             modelId: "gemini-3.8-flash",
-            clientType: "google-genai",
+            clientType: "mmsp",
             baseUrl: PENGUIN_GO_BASE_URL,
           },
           {
             provider: "penguin-go",
             modelId: "deepseek-flash",
-            clientType: "deepseek-official",
+            clientType: "mmsp",
             baseUrl: PENGUIN_GO_BASE_URL,
           },
         ],

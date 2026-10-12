@@ -7,10 +7,13 @@
  * Three fields, in the model dialog's rhythm: the group key, the base URL, and the protocol as
  * the base URL field's in-field suffix menu, whose first row "Not set" sets none (a model with no
  * protocol of its own is then routed by its id; on custom and user-defined groups each model
- * keeps its own). Every group takes a protocol, Penguin Go and OpenCode Go included: a model's
- * own protocol always wins over its group's. The fields hold the file's values and nothing else:
- * the catalog only seeds a new Project's file and is never a fallback, so the dialog does not
- * quote it (Restore defaults puts the catalog's values back). Where the catalog names the
+ * keeps its own). Every group takes a protocol, OpenCode Go included: a model's own protocol
+ * always wins over its group's. The exception is a group whose protocol is fixed (core's
+ * fixedClientType: Penguin Go, whose platform speaks MMSP alone): its suffix is the read-only
+ * path, it has no Detect, and one short line under the field names the protocol. The fields
+ * hold the file's values and nothing else: the catalog only seeds a new Project's file and is
+ * never a fallback, so the dialog does not quote it (Restore defaults puts the catalog's values
+ * back). Where the catalog names the
  * vendor's model list, a link to it closes the dialog's body.
  *
  * Save is live once a field differs from what the group stores and the base URL is acceptable:
@@ -37,6 +40,7 @@ import {
   Button,
   Checkbox,
   FieldError,
+  FieldHint,
   FieldLabel,
   Input,
   Link,
@@ -48,7 +52,7 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import { providerEnvFallbackKey } from "@prismshadow/penguin-core/model-catalog";
+import { fixedClientType, providerEnvFallbackKey } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
@@ -349,12 +353,17 @@ export function ProviderSettingsDialog({
   const set = form.patch;
 
   const choice = protocolChoice(draft);
+  // A fixed protocol is shown, never picked: the read-only suffix reads what the group stores,
+  // or the fixed protocol where it stores none (its rows then carry it themselves).
+  const fixed = fixedClientType(id);
   // The suffix reads the path the group's models will be sent to: the picked protocol's. "Not
   // set" names no path, since each model then decides (by its own protocol, or its id).
   const suffix =
-    draft.clientType !== null
-      ? protocolPathForModel("custom", draft.clientType)
-      : S.models.protocolNone;
+    fixed !== undefined
+      ? protocolPathForModel("custom", draft.clientType ?? fixed)
+      : draft.clientType !== null
+        ? protocolPathForModel("custom", draft.clientType)
+        : S.models.protocolNone;
   // Detect needs a URL to probe: the field's, else the one the group stores.
   const detectable = providerDetectRequest(id, group, draft) !== null;
 
@@ -516,17 +525,20 @@ export function ProviderSettingsDialog({
             <FieldLabel required={required} block={false}>
               {S.models.baseUrl}
             </FieldLabel>
-            <Button
-              variant="link"
-              size="sm"
-              loading={detecting}
-              disabled={saving || !detectable}
-              onClick={() => void detectFromButton()}
-              title={detectable ? S.models.detectProtocolHint : S.models.detectNeedsBaseUrl}
-              className="shrink-0"
-            >
-              {detecting ? S.models.detecting : S.models.detectProtocol}
-            </Button>
+            {/* Detection picks a protocol, and a fixed one is not picked. */}
+            {fixed === undefined && (
+              <Button
+                variant="link"
+                size="sm"
+                loading={detecting}
+                disabled={saving || !detectable}
+                onClick={() => void detectFromButton()}
+                title={detectable ? S.models.detectProtocolHint : S.models.detectNeedsBaseUrl}
+                className="shrink-0"
+              >
+                {detecting ? S.models.detecting : S.models.detectProtocol}
+              </Button>
+            )}
           </span>
           <div className="relative">
             <Input
@@ -543,28 +555,46 @@ export function ProviderSettingsDialog({
                 set({ baseUrl: e.target.value });
               }}
               className="font-mono"
-              style={{ paddingRight: `calc(${displayWidthCh(suffix)}ch + 2.25rem)` }}
+              // The menu's trigger needs room for its padding and chevron; the read-only suffix
+              // for its right offset only (the model dialog's measure).
+              style={{
+                paddingRight: `calc(${displayWidthCh(suffix)}ch + ${fixed === undefined ? "2.25rem" : "1.25rem"})`,
+              }}
               title={S.models.baseUrlSuffixTitle}
               placeholder={S.models.baseUrlNone}
             />
-            <div className="absolute inset-y-0 right-1 flex items-center">
-              <ProtocolSuffixMenu
-                value={choice}
-                path={suffix}
-                detecting={detecting}
-                tone={detectFailed ? "warn" : null}
-                follow={{
-                  label: S.models.protocolNone,
-                  description: customLike
-                    ? S.models.protocolEachModel
-                    : S.models.protocolRoutedById,
-                  onPick: () => pickProtocol(null),
-                }}
-                onPick={pickProtocol}
-              />
-            </div>
+            {fixed === undefined ? (
+              <div className="absolute inset-y-0 right-1 flex items-center">
+                <ProtocolSuffixMenu
+                  value={choice}
+                  path={suffix}
+                  detecting={detecting}
+                  tone={detectFailed ? "warn" : null}
+                  follow={{
+                    label: S.models.protocolNone,
+                    description: customLike
+                      ? S.models.protocolEachModel
+                      : S.models.protocolRoutedById,
+                    onPick: () => pickProtocol(null),
+                  }}
+                  onPick={pickProtocol}
+                />
+              </div>
+            ) : (
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center font-mono text-xs text-gray-400">
+                {suffix}
+              </span>
+            )}
           </div>
-          {baseUrlError !== null && <FieldError>{baseUrlError}</FieldError>}
+          {baseUrlError !== null ? (
+            <FieldError>{baseUrlError}</FieldError>
+          ) : (
+            fixed !== undefined && (
+              <FieldHint>
+                {S.models.protocolFixedHint(provider.label, S.models.protocolNames[fixed] ?? fixed)}
+              </FieldHint>
+            )
+          )}
         </div>
 
         {/* The vendor's model list, for picking what to add or checking an id: the group's own
