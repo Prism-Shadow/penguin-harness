@@ -1744,6 +1744,55 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome2.errorMessage).toContain("insufficient_user_quota");
   });
 
+  // Nothing is read out of the provider's wording: a 400 is `rejected` whatever it says, an
+  // image refusal and a context overflow included, and a 5xx stays retryable whatever it
+  // says. The engine decides from the input it sent whether a rejection is an image's (see
+  // engine.test.ts); the provider's text reaches the model and the user verbatim.
+  it.each([
+    {
+      name: "a 400 worded like a context overflow (llama.cpp)",
+      status: 400,
+      message:
+        "request (100091 tokens) exceeds the available context size (98304 tokens), try increasing it",
+      body: undefined,
+      stopReason: "fatal",
+      code: "rejected",
+    },
+    {
+      name: "a 400 worded like an image refusal (DeepSeek)",
+      status: 400,
+      message:
+        "input[366].image[0]: You have uploaded an unsupported image. Please make sure your " +
+        "image is valid and has one of the following formats: webp, png, jpeg, and gif.",
+      body: undefined,
+      stopReason: "fatal",
+      code: "rejected",
+    },
+    {
+      name: "a plain parameter 400",
+      status: 400,
+      message: "unknown parameter: max_output_tokens",
+      body: undefined,
+      stopReason: "fatal",
+      code: "rejected",
+    },
+    {
+      name: "a 500 worded like an image refusal",
+      status: 500,
+      message: "Could not process image",
+      body: undefined,
+      stopReason: "retryable",
+      code: "network",
+    },
+  ])("classifies $name as $code", async ({ status, message, body, stopReason, code }) => {
+    async function* rejection(): AsyncGenerator<UniEvent> {
+      throw Object.assign(new Error(message), { status, ...(body ? { error: body } : {}) });
+    }
+    const model = new SeamModel(() => rejection());
+    const { outcome } = await drain(model.streamGenerate({ newMessages: [userText("go")] }));
+    expect(outcome).toMatchObject({ status: stopReason, errorCode: code });
+  });
+
   it("classifies an undici transport drop (TypeError terminated, cause UND_ERR_SOCKET) as retryable", async () => {
     async function* socketDrop(): AsyncGenerator<UniEvent> {
       yield delta({ type: "text.delta", text: "hi" });

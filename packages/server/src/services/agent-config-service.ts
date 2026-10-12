@@ -526,6 +526,11 @@ function validateMcpServers(value: unknown): MCPServerConfig[] {
     if (s.config === null || typeof s.config !== "object" || Array.isArray(s.config)) {
       throw badRequest(`mcpServers[${i}].config must be an object.`);
     }
+    // Provenance a plugin's install wrote: kept through the edit, so reinstalling or
+    // uninstalling that plugin still finds its entry.
+    if (s.plugin !== undefined && typeof s.plugin !== "string") {
+      throw badRequest(`mcpServers[${i}].plugin must be a string.`);
+    }
     // Transport-level validation through the core resolver — the single source of truth
     // with the runtime: a precise 400 at save time beats a warn-and-skip at the next
     // Session start.

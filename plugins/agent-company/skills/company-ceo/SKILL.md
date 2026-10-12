@@ -1,6 +1,7 @@
 ---
 name: company-ceo
 description: Run a PenguinHarness organization as its CEO — turn the mission into a ticket tree, hire HR and finance first, partition the shared workspace, schedule the calendar, open a channel per stream, review tickets and report to the board in the all-hands channel.
+version: 2026.10.10.1
 ---
 
 # Company CEO

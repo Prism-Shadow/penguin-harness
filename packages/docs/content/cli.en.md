@@ -318,6 +318,25 @@ penguin agent api status --agent-id helper --json
 penguin project ls
 ```
 
+## penguin plugin
+
+Installs and removes the plugins on the server, which is an admin's to do: the CLI calls with the server's local API token, which is the admin's, so an agent can install a plugin it has reviewed in a conversation. Each command takes `--project-id` (defaulting to `PENGUIN_PROJECT_ID`, then `default_project`), `--json` and `--server`.
+
+- `penguin plugin install <specifier>` installs a plugin on the server: an npm package name, optionally with a version, range or tag (`@scope/name`, `name@1.2.0`), or an https link to a git repository or a tarball (`https://github.com/o/r`, `github:o/r#v1`). The server refuses anything else, such as a path that is not a package directory, an `http:` link or a link to a folder inside a repository. A plugin of Skills, hooks or MCP servers joins the plugin library, and you install it on an agent from the **Plugins** page. A plugin of server modules is also listed for the Project and loaded at once, which stops the agent runs in progress on the server.
+- `penguin plugin install <directory>` installs a plugin package from a local directory that holds a `package.json` (a directory wins over an npm name spelled the same). The CLI first reads it with the plugin library's own reader and stops, sending nothing, when the library would refuse it; it then zips the directory without `node_modules`, `.git` and `.npmrc` and uploads it the way **Upload a zip** does. When the server holds another version of the package, the command says so; add `--overwrite` to replace it. A package may carry MCP servers alone, declared in `penguin.mcp_servers`; after the upload the command prints one line per server the package carries, with its name, transport and target: the URL, or the command a stdio server runs on the server. This is how an agent installs a plugin it has ported; see [Import and export plugins](/skills#import-and-export-plugins).
+- `penguin plugin remove <name>` removes the plugin from the Project, and from the server once no other Project lists it.
+- `penguin plugin list` (or `ls`) lists the server modules the Project lists, with their state on this server, and the plugins of Skills, hooks or MCP servers installed on the server.
+
+```bash
+penguin plugin install @acme/penguin-notes@1.2.0
+penguin plugin install https://github.com/acme/penguin-notes --project-id my-project
+penguin plugin install ./penguin-notes --overwrite
+penguin plugin list --json
+penguin plugin remove @acme/penguin-notes
+```
+
+To install a plugin from a zip, use **Import plugin** on the **Plugins** page; see [Import and export plugins](/skills#import-and-export-plugins).
+
 ## penguin cost
 
 Shows Token usage and cost from the server's usage aggregates. By default the command prints a summary card with today, the last 7 days and the total, which ignore any range options. `--by` prints a grouped table instead.
@@ -425,6 +444,7 @@ penguin org show [--org-id <id>] [--json]                       # overview: work
 penguin org chart [--org-id <id>] [--json]                      # the employee tree
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
 penguin org employee set <agent_id> [--title <s>] [--reports-to <agent_id>] [--workspace <path>] [--budget <usd>] [--duties <s>] [--model-id <id> --provider <p>]
+penguin org employee avatar [<agent_id>] (--file <image> | --clear)   # PNG/JPEG/WebP ≤ ~96 KiB; the id defaults to PENGUIN_AGENT_ID, so an employee sets its own
 penguin org leave <agent_id>                                    # out of the organization (not the CEO); the Agent itself stays
 penguin org desk show [<agent_id>] [--json]                     # the desk session id and Workspace (opens the desk if there is none)
 penguin org desk renew [<agent_id>]                             # a fresh desk session (resets the context)

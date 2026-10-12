@@ -1,6 +1,7 @@
 ---
 name: ace-rsi-toolkit
 description: Run ACE (Agentic Context Engineering, Zhang et al. 2025) on an agent the sequential offline way - a Reflector reads each training Trace, a Curator adds the lessons to a playbook of rules the agent reads before every task, and the final playbook is measured on a published Benchmark.
+version: 2026.10.12.1
 ---
 
 # ACE

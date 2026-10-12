@@ -112,6 +112,7 @@ import {
   restartDelayMs,
   urlForLog,
 } from "./util.js";
+import { registerWindowsAumid } from "./win-aumid.js";
 
 // Identity first: the name decides the userData directory, which also keys the
 // single-instance lock requested below — the dev profile takes a dev-suffixed identity
@@ -120,10 +121,11 @@ import {
 const profile = resolveProfile({ argv: process.argv, isPackaged: app.isPackaged });
 const identity = appIdentity(profile);
 app.setName(identity.name);
-// Windows toasts (the web app's task-completion notifications) need the AppUserModelID
-// of the installed shortcuts; electron-builder stamps them with the appId. Keep the
-// release value in sync with electron-builder.yml. Dev runs stamp the dev-suffixed id
-// so their taskbar/toast identity never claims the installed app's.
+// Windows toasts (the web app's notifications) are attributed to this AppUserModelID:
+// electron-builder stamps it (the appId) on the installed shortcuts, and win-aumid.ts
+// registers it under HKCU at startup. Keep the release value in sync with
+// electron-builder.yml. Dev runs stamp the dev-suffixed id so their taskbar/toast
+// identity never claims the installed app's.
 if (process.platform === "win32") app.setAppUserModelId(identity.appUserModelId);
 
 let win: BrowserWindow | null = null;
@@ -747,6 +749,16 @@ if (!app.requestSingleInstanceLock()) {
         platform: process.platform,
         env: process.env,
         shell: process.env.SHELL,
+        log: (line) => logLine(`[shell] ${line}`),
+      });
+      // Windows: this profile's AUMID becomes a toast sender under HKCU (see win-aumid.ts).
+      // Not awaited: startup never waits on reg.exe, and a failed or hung write only logs.
+      void registerWindowsAumid({
+        platform: process.platform,
+        env: process.env,
+        appUserModelId: identity.appUserModelId,
+        displayName: identity.name,
+        iconPath: resolveWindowIcon(app.getAppPath(), process.platform),
         log: (line) => logLine(`[shell] ${line}`),
       });
       // Standard menu plus native desktop-only actions; the window gets no IPC channel.

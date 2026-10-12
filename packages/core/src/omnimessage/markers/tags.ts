@@ -40,6 +40,8 @@ export const TRANSCRIPT_TAGS = {
   text: "text",
   toolCall: "tool_call",
   toolCallOutput: "tool_call_output",
+  /** How the last failed attempt's request ended: its error code and the error text as it came. */
+  requestError: "request_error",
 } as const;
 
 /**

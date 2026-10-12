@@ -14,14 +14,16 @@
  * - A compaction renders one banner: its summary and thinking stream onto it, each body
  *   section is timed over the window it shows itself running (retries included), history
  *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
- * - The MCP connect row sums tools, keeps per-server outcomes and its wall time.
+ * - The MCP connect row sums tools, keeps per-server outcomes and its wall time, and names a
+ *   server skipped for a vault key or a sign-in as waiting rather than failed.
  * - Retries render one ladder line per streak, with their countdown inputs, settling as
  *   gave-up on abort, exhaustion or a new Task; request events inside a compaction do not.
  * - Subagent output routes into the nearest approved, unfinished run_subagent card, one hop
  *   per level, else a standalone card; a child's tokens count toward the parent's stats.
- * - Messages carry their time; a Task starts at a user message or image and closes with a
- *   stats row (tokens, output speed, elapsed from Trace timestamps, the copy target, the
- *   fork position), compaction and approval waits attributed by position.
+ * - Messages carry their time; a Task starts at a user message or image (or, for a Retry, at
+ *   the first request after the end that stopped the run) and closes with a stats row (tokens,
+ *   output speed, elapsed from Trace timestamps, the copy target, the fork position),
+ *   compaction and approval waits attributed by position.
  * - Compaction-internal messages and steering never start a Task; background notices ride
  *   inside the running Task unless they arrived idle.
  * - Elapsed time survives a reload mid-run and never leaks the local clock.
@@ -916,10 +918,54 @@ describe("approvals and events", () => {
     expect(row.durationMs).toBe(1200);
     expect(row.toolCount).toBe(2);
     expect(row.failed).toEqual(["bad"]);
-    // Per-server outcomes back the expanded server groups (failure reasons live there).
+    // Per-server outcomes back the expanded server groups (failure reasons and causes live there).
     expect(row.results).toEqual([
       { server: "fx", status: "completed", durationMs: 180, tools: 2 },
-      { server: "bad", status: "fatal", durationMs: 60, error: "spawn nope ENOENT" },
+      {
+        server: "bad",
+        status: "fatal",
+        durationMs: 60,
+        error: "spawn nope ENOENT",
+        errorCode: "connect_failed",
+      },
+    ]);
+  });
+
+  it("mcp connect row: a server skipped for a vault key or a sign-in is named as waiting, not as failed", () => {
+    const m = createStreamModel();
+    pushMessage(m, mcpConnectBegin(["fx", "mail", "cf"]));
+    pushMessage(
+      m,
+      mcpConnectEnd({
+        status: "fatal",
+        results: [
+          { server: "fx", transport: "stdio", status: "completed", duration_ms: 90, tools: 1 },
+          {
+            server: "mail",
+            transport: "http",
+            status: "fatal",
+            duration_ms: 0,
+            error_code: "mcp_sign_in_required",
+            error_message: "requires OAuth sign-in, which this version does not support yet",
+          },
+          {
+            server: "cf",
+            transport: "http",
+            status: "fatal",
+            duration_ms: 0,
+            error_code: "mcp_needs_setup",
+            error_message: "needs setup: vault key CLOUDFLARE_API_TOKEN is not set",
+          },
+        ],
+      }),
+    );
+    const row = items(m)[0] as McpConnectItem;
+    expect(row.failed).toBeUndefined();
+    expect(row.waiting).toEqual(["mail", "cf"]);
+    expect(row.results?.map((r) => r.errorCode)).toEqual([
+      undefined,
+      "mcp_sign_in_required",
+      "mcp_needs_setup",
     ]);
   });
 
@@ -1474,6 +1520,50 @@ describe("Task segmentation and stats triggering", () => {
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(stats.stats!.elapsedDeltaMs).toBe(1_000);
     expect(stats.stats!.tokens).toBe(800);
+  });
+
+  it("a Retry's request after a failed run opens its own Task, live and rebuilt alike", () => {
+    // A Retry sends the failed turn's held input with no new message: its request_begin is the
+    // new run's first record, so the failed run keeps its stats row and the Retry gets its own.
+    const fatal = requestEnd("fatal", { errorCode: "rejected", errorMessage: "400 Bad Request" });
+    const failed = [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(tokenUsage(counts(300), counts(300)), "2026-07-05T00:00:02.000Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:02.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:03.000Z"),
+      at(fatal, "2026-07-05T00:00:04.000Z"),
+    ];
+    const retry = [
+      at(requestBegin(), "2026-07-05T00:01:00.000Z"),
+      at(assistantText("A"), "2026-07-05T00:01:01.000Z"),
+      at(tokenUsage(counts(900), counts(600)), "2026-07-05T00:01:02.000Z"),
+      at(requestEnd("completed"), "2026-07-05T00:01:02.000Z"),
+    ];
+    const live = createStreamModel();
+    for (const msg of failed) pushMessage(live, msg);
+    notifyTaskIdle(live);
+    for (const msg of retry) pushMessage(live, msg);
+    notifyTaskIdle(live);
+    // A rebuild sees no task_state:idle between the two runs.
+    const rebuilt = createStreamModel();
+    pushMessages(rebuilt, [...failed, ...retry]);
+    finalizeHistory(rebuilt);
+    for (const m of [live, rebuilt]) {
+      expect(items(m).map((i) => i.kind)).toEqual([
+        "user_text",
+        "llm_error",
+        "task_stats",
+        "assistant_text",
+        "task_stats",
+      ]);
+      const [first, second] = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
+      expect(first!.stats!.tokensDelta).toBe(300);
+      expect(first!.stats!.elapsedDeltaMs).toBe(4_000);
+      expect(second!.stats!.tokensDelta).toBe(600);
+      expect(second!.stats!.elapsedDeltaMs).toBe(2_000);
+      expect(second!.assistantText).toBe("A");
+    }
   });
 
   it("a full image_url message also starts a new Task", () => {

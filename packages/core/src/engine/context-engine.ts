@@ -37,10 +37,12 @@ import {
   compactionEnd,
   addTokenCounts,
   emptyTokenCounts,
+  hasInputImages,
   isCompleteModelMessage,
   isModelMessage,
   isSessionMeta,
   partialText,
+  replaceInputImages,
   requestBegin,
   requestEnd,
   subagentEvent,
@@ -52,6 +54,8 @@ import {
   buildTurnAbortedBlock,
   extractSummary,
   buildTurnRetriedBlock,
+  stripRequestErrorLines,
+  transcribeRequestError,
   transcribeText,
   transcribeThinking,
   transcribeToolCall,
@@ -175,7 +179,7 @@ export interface RunOptions {
   approve?: ApproveFn;
   /** Pre-tool-use hook consult, called before `approve` for each complete tool_call; its events are recorded on the stream, its decision applied (see {@link PreToolUseFn}). */
   preToolUse?: PreToolUseFn;
-  /** User-prompt hook consult, called once with this call's Prompt after it is written and before the first request; its records follow the Prompt on the stream and in the Trace, and the user texts among them join the request input (see {@link UserPromptFn}). */
+  /** User-prompt hook consult, called once with this call's Prompt after it is written and before the first request — never for a call with no new input, which has no Prompt; its records follow the Prompt on the stream and in the Trace, and the user texts among them join the request input (see {@link UserPromptFn}). */
   userPrompt?: UserPromptFn;
 }
 
@@ -541,6 +545,16 @@ export class ContextEngine {
     return this.taskRunning;
   }
 
+  /**
+   * Whether a run with no new input would still send something: the carry-over a failed or
+   * interrupted run left behind, or a Task-boundary compaction's summary waiting to lead the
+   * next request. A host's retry of a failed run is exactly such a run, so this is what it
+   * checks before starting one.
+   */
+  hasPendingInput(): boolean {
+    return this.pendingCarryOver.length > 0 || this.pendingSummary !== null;
+  }
+
   /** Background notices still waiting at the source (boundary peek; see ContextEngineDeps.backgroundNotices). */
   private pendingNoticeCount(): number {
     return this.deps.backgroundNotices?.pending() ?? 0;
@@ -598,7 +612,8 @@ export class ContextEngine {
    * Runs a Task to completion, streaming out OmniMessage. `newMessages` is this call's
    * Prompt (only the newly added input, not the full history — history is maintained by the
    * stateful GenerativeModel); `opts.signal` is the abort signal, `opts.approve` is the
-   * per-tool approval callback.
+   * per-tool approval callback. An empty `newMessages` sends only what is held (see
+   * `hasPendingInput`) — a retry of a failed run — and returns null at once when nothing is.
    * Docs: /docs/agent-loop § "The loop at a glance".
    */
   async *run(
@@ -734,6 +749,11 @@ export class ContextEngine {
     this.pendingCarryOver = [];
     const prefix = summary ? [summary, ...carryOver] : carryOver;
     let input = prefix.length ? [...prefix, ...newMessages] : newMessages;
+    // A run with no Prompt of its own (a host's retry of a failed run) sends what is held. With
+    // nothing held either — no summary, no carry-over, no background notice to ride the first
+    // request — there is no request to make: end here, before anything is written, rather than
+    // send the provider an empty input. Hosts ask `hasPendingInput` first; this is the backstop.
+    if (input.length === 0 && this.pendingNoticeCount() === 0) return null;
 
     // Input is written to Trace (Prompt record, incl. audit trail) but not replayed to
     // the render layer. carry-over is not written to Trace: real messages (tool outputs etc.)
@@ -748,8 +768,9 @@ export class ContextEngine {
     // installed hook packages): consulted once per Prompt, here, so what they answer lands
     // right behind the user's message — on the stream, in the Trace and in the request
     // input alike. A throw collapses to nothing to add: a broken hook must not cost the
-    // user their Prompt.
-    if (opts?.userPrompt && !signal?.aborted) {
+    // user their Prompt. A call with no new input has no Prompt to consult on: a retry
+    // resends a turn whose own Prompt was consulted when it was first sent.
+    if (opts?.userPrompt && newMessages.length > 0 && !signal?.aborted) {
       let expanded: UserPromptOutcome | null = null;
       try {
         expanded = await opts.userPrompt(newMessages, signal);
@@ -871,6 +892,40 @@ export class ContextEngine {
         }
         // Completed normally.
         if (turn.outcome.status === "completed") break;
+
+        // An image rejection is the one fatal outcome that retries: runTurn turned a provider
+        // 4xx `retryable` because this input holds images (checked again here, so an LLM that
+        // reports the code as retryable itself, with nothing to strip, takes the ordinary
+        // ladder below). The provider refused a request the engine can change, so the retry
+        // is not the identical request repeated: every image in the turn's input becomes the
+        // fixed note that tells the model the picture was dropped, and the provider's text
+        // reaches it through the `[request_error]` line of the retry block, like every other
+        // retried failure's. The stripped input replaces the turn's input from here on, not
+        // just this attempt's — an interruption, a later failure or an exhausted budget builds
+        // its carry-over from it, and resending the image would only be refused again. Nothing
+        // transient is being waited out, so there is no backoff and no rung on the ladder; the
+        // ceiling still counts the attempt. A second rejection finds no image left and ends
+        // the run through the fatal path above.
+        if (
+          turn.outcome.status === "retryable" &&
+          turn.outcome.errorCode === "image_rejected" &&
+          hasInputImages(nextInput)
+        ) {
+          nextInput = replaceInputImages(nextInput);
+          failedTurns.push(turn);
+          attemptInput = this.withRetriedTurns(nextInput, failedTurns);
+          if (attempts >= this.maxTurnAttempts) {
+            this.pendingCarryOver = attemptInput;
+            return {
+              kind: "llm_failure",
+              errorCode: "image_rejected",
+              ...(turn.outcome.errorMessage !== undefined
+                ? { errorMessage: turn.outcome.errorMessage }
+                : {}),
+            };
+          }
+          continue;
+        }
 
         // `retryable` remains: reconnect automatically within the same run. The class is
         // deliberately wide — the LLM interface sends every unclassifiable error here,
@@ -1286,23 +1341,49 @@ export class ContextEngine {
           const res = await gen.next();
           if (res.done) {
             outcome = res.value;
+            // A provider's 4xx on an input that holds images is taken as a rejection of the
+            // images, whatever the message says: providers word these refusals too many ways
+            // to match, and a wrong match would end the run on something a retry can fix. The
+            // reconnect loop answers it: it replaces the images with a note and sends the turn
+            // again at once, the provider's text in the retry block's `[request_error]` line
+            // for the model to judge. The rejection is recorded as what it
+            // turns out to be — a retried attempt, `retryable`, coded `image_rejected` — while
+            // the same 4xx on an input with no image stays `fatal` as `rejected`: whatever it
+            // refuses is in the committed history or the request's parameters, beyond the
+            // reach of a retry.
+            const imageRetry =
+              outcome.status === "fatal" &&
+              outcome.errorCode === "rejected" &&
+              hasInputImages(input);
+            if (imageRetry) {
+              outcome = {
+                status: "retryable",
+                errorCode: "image_rejected",
+                ...(outcome.errorMessage !== undefined
+                  ? { errorMessage: outcome.errorMessage }
+                  : {}),
+              };
+            }
             // Non-completed outcomes carry the failure detail onto the event: a retried
             // request never produces an abort, so this is the only place observability
             // (the errors panel) can learn the real reason (e.g. a quota code). When the
             // engine will retry in-run, the planned backoff rides along as retry_in_ms
             // (the frontend's live countdown); absent on final failures and completions.
             // Mirrors the reconnect loop exactly, or the announced countdown is a lie: an
-            // attempt that received content restarts the ladder at its first rung, and either
-            // budget running out means no retry is planned at all.
+            // attempt that received content restarts the ladder at its first rung, either
+            // budget running out means no retry is planned at all, and an image retry waits
+            // for nothing.
             const retryInMs =
               retry.attempts + 1 >= this.maxTurnAttempts
                 ? undefined
-                : this.plannedRetryDelayMs(
-                    outcome,
-                    receivedContent ? 0 : retry.consecutive,
-                    this.maxReconnects,
-                    RETRY_STATUSES,
-                  );
+                : imageRetry
+                  ? 0
+                  : this.plannedRetryDelayMs(
+                      outcome,
+                      receivedContent ? 0 : retry.consecutive,
+                      this.maxReconnects,
+                      RETRY_STATUSES,
+                    );
             const stopEvt = requestEnd(outcome.status, {
               ...(outcome.errorCode !== undefined ? { errorCode: outcome.errorCode } : {}),
               ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
@@ -2143,12 +2224,7 @@ export class ContextEngine {
       // written when produced.
       return backfill.length ? [...turn.toolOutputs, ...backfill] : turn.toolOutputs;
     }
-    return this.flattenCarryOver(
-      attemptInput,
-      turn.assistantSegments,
-      turn.toolCalls,
-      turn.toolOutputs,
-    );
+    return this.flattenCarryOver(attemptInput, turn);
   }
 
   /**
@@ -2158,68 +2234,71 @@ export class ContextEngine {
    * transcribed into a single `[turn_aborted]` plain-text user message (includes all
    * completed and incomplete messages, including partial thinking/text). If the input text is
    * itself already a `[turn_aborted]` block (from a previous attempt or a previous run's
-   * carry-over), its content is unwrapped and merged in, keeping a single-level structure.
+   * carry-over), its content is unwrapped and merged in, keeping a single-level structure. The
+   * block ends with one `[request_error]` line when this attempt failed (`fatal` or
+   * `retryable`): the failure's code and text, so the next request — the user's next message,
+   * or a host's Retry — tells the model why the turn is being sent again. A merged block's own
+   * request_error line is dropped first, so there is never more than one, and a user
+   * interruption (no error) leaves none.
    *
    * TODO(multimodal): only text input is currently kept — `image_url` / `inline_data` input is
    * lost during flatten (the `[turn_aborted]` structure has no corresponding transcription yet);
    * multimodal carry-over support to be added later.
    */
-  private flattenCarryOver(
-    attemptInput: OmniMessage[],
-    assistantSegments: OmniMessage[],
-    toolCalls: OmniMessage<ToolCallPayload>[],
-    toolOutputs: OmniMessage[],
-  ): OmniMessage[] {
+  private flattenCarryOver(attemptInput: OmniMessage[], turn: TurnResult): OmniMessage[] {
     const structured = attemptInput.filter(
       (m) => (m.payload as { type?: string }).type === "tool_call_output",
     );
     const textInputs = attemptInput.filter((m) => (m.payload as { type?: string }).type === "text");
-    const flattened = userText(
-      this.buildTurnAbortedText(textInputs, assistantSegments, toolCalls, toolOutputs),
-    );
+    const flattened = userText(this.buildTurnAbortedText(textInputs, turn));
     // flatten is sent to the model only and not written to Trace (synthetic carry-over isn't
     // persisted): resumption replay resends the discarded turn's **original input** as-is
     // (best-effort), with no dependency on this synthetic message.
     return [...structured, flattened];
   }
 
-  /** Transcribes the interrupted turn's input, model thinking/text, and tool calls/results into a single `[turn_aborted]` plain-text block. */
-  private buildTurnAbortedText(
-    textInputs: OmniMessage[],
-    assistantSegments: OmniMessage[],
-    toolCalls: OmniMessage<ToolCallPayload>[],
-    toolOutputs: OmniMessage[],
-  ): string {
+  /** Transcribes the interrupted turn's input, model thinking/text, tool calls/results and (after a failure) the error into a single `[turn_aborted]` plain-text block. */
+  private buildTurnAbortedText(textInputs: OmniMessage[], turn: TurnResult): string {
     const lines: string[] = [];
     for (const m of textInputs) {
       const t = (m.payload as TextPayload).text;
       // If this text is itself already a synthetic block — a previous run's `[turn_aborted]`,
       // or this turn's reconnect-appended `[turn_retried]` — extract its inner lines and merge
       // them in directly, avoiding layered nesting / unbounded growth (keeping a single-level
-      // structure).
+      // structure). Its request_error line describes an older failure: dropped, so the block
+      // carries this turn's outcome alone.
       const inner = unwrapSyntheticBlock(t);
       if (inner !== null) {
-        if (inner) lines.push(inner);
+        const kept = stripRequestErrorLines(inner);
+        if (kept) lines.push(kept);
       } else {
         lines.push(transcribeUserInput(t));
       }
     }
-    lines.push(...transcribeTurnLines(assistantSegments, toolCalls, toolOutputs));
+    lines.push(...transcribeTurnLines(turn.assistantSegments, turn.toolCalls, turn.toolOutputs));
+    const error = requestErrorLine(turn.outcome);
+    if (error !== null) lines.push(error);
     return buildTurnAbortedBlock(lines);
   }
 
   /**
    * Assembles the reconnect retry input: the original input is kept as-is (structure and
    * multimodal content preserved), with a `[turn_retried]` text appended at the end carrying
-   * each failed attempt's thinking/text and tool calls/results produced so far; if nothing has
-   * been produced yet, it's just the original input. The synthetic message is sent to the model
-   * only and not written to Trace (same rule as flatten carry-over).
+   * each failed attempt's thinking/text and tool calls/results produced so far, closed by one
+   * `[request_error]` line with the latest failure's code and text — rebuilt from scratch on
+   * every attempt, so a turn retried five times still carries one such line, not five. The
+   * model reads why the request failed before it carries on, instead of being handed the same
+   * input again with no word of what happened. The synthetic message is sent to the model only
+   * and not written to Trace (same rule as flatten carry-over).
    * Docs: /docs/agent-loop § "Automatic reconnect".
    */
   private withRetriedTurns(input: OmniMessage[], failedTurns: TurnResult[]): OmniMessage[] {
     const lines = failedTurns.flatMap((t) =>
       transcribeTurnLines(t.assistantSegments, t.toolCalls, t.toolOutputs),
     );
+    const last = failedTurns.at(-1);
+    const error = last ? requestErrorLine(last.outcome) : null;
+    if (error !== null) lines.push(error);
     if (lines.length === 0) return input;
     return [...input, userText(buildTurnRetriedBlock(lines))];
   }
@@ -2262,6 +2341,17 @@ export class ContextEngine {
 }
 
 /** Transcribes the model's produced thinking/text and tool calls/results into tagged lines (shared by `[turn_aborted]`/`[turn_retried]`). */
+/**
+ * The `[request_error]` line for a failed attempt's outcome (`fatal` or `retryable`, with
+ * whatever code and text it carries — an idle timeout has a code and no text), or null for an
+ * outcome that is no failure: a completed request, or a user interruption.
+ */
+function requestErrorLine(outcome: LLMOutcome): string | null {
+  if (outcome.status !== "fatal" && outcome.status !== "retryable") return null;
+  if (outcome.errorCode === undefined && outcome.errorMessage === undefined) return null;
+  return transcribeRequestError(outcome.errorCode, outcome.errorMessage);
+}
+
 function transcribeTurnLines(
   assistantSegments: OmniMessage[],
   toolCalls: OmniMessage<ToolCallPayload>[],

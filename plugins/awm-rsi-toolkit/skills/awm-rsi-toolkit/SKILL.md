@@ -1,6 +1,7 @@
 ---
 name: awm-rsi-toolkit
 description: Run AWM (Agent Workflow Memory, Wang et al. 2024) on an agent - induce reusable workflows from its successful trajectories, online over a training stream or offline from supplied experiences, then freeze the workflow memory and measure it on a published Benchmark.
+version: 2026.10.12.1
 ---
 
 # AWM

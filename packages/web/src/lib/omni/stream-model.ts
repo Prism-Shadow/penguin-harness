@@ -39,7 +39,9 @@
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
- *     session's user side starts a new Task; a Task ends when the live
+ *     session's user side starts a new Task, and so does the first request
+ *     after a request_end that ended the run (a Retry, which sends no new
+ *     message — see StreamModel.runEnded); a Task ends when the live
  *     stream receives task_state:idle (notifyTaskIdle), or — during history
  *     rebuild — when the next Task starts / the stream ends
  *     (finalizeHistory). Either way the duration comes from Trace timestamps
@@ -399,6 +401,8 @@ export interface McpServerOutcome {
   tools?: number;
   /** Failure detail (present on a failed connect). */
   error?: string;
+  /** The failure's cause (`connect_failed`, or `mcp_needs_setup` / `mcp_sign_in_required` for a server that was not contacted). */
+  errorCode?: string;
 }
 
 export interface McpConnectItem {
@@ -420,6 +424,8 @@ export interface McpConnectItem {
   tools?: McpToolSummary[];
   /** Servers that failed to connect (empty list omitted); reasons live in `results`. */
   failed?: string[];
+  /** Servers not contacted because they wait on the user — a vault key, a sign-in (empty list omitted); reasons live in `results`. */
+  waiting?: string[];
   /** The user aborted the run mid-connect (a fresh connect starts on the next send). */
   aborted?: boolean;
 }
@@ -640,6 +646,16 @@ export interface StreamModel {
    * ledger of its own instead of no footer at all.
    */
   reopenTaskAtSteering: boolean;
+  /**
+   * The last request_end ended the run — `fatal`, or a `retryable` the ladder gave up on (no
+   * `retry_in_ms`) — and no Task has opened since. The failed turn's input is then held, and a
+   * Retry sends it with no new message: its request_begin is the new run's first record, so it
+   * opens a Task of its own, footer and all (see startsRetryRun). Nothing else in a Trace issues
+   * a request after such an end without a user message first (a stop hook's continue writes a
+   * harness user text), so the rule reads the same live and on a history rebuild — where no
+   * task_state:idle closed the failed Task first.
+   */
+  runEnded: boolean;
   nextItemId: number;
 }
 
@@ -672,6 +688,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     taskLastReqEndMs: null,
     turnToolOutputs: false,
     reopenTaskAtSteering: false,
+    runEnded: false,
     nextItemId: 1,
   };
 }
@@ -767,6 +784,9 @@ export function pushMessage(
     return;
   }
   if (isEventMessage(msg)) {
+    // A Retry's first request opens its Task here, before anything is timed against the
+    // failed one — the same point a Prompt opens its own (see StreamModel.runEnded).
+    if (startsRetryRun(model, msg)) startTask(model, msg.timestamp, nowMs);
     touchTask(model, msg.timestamp);
     handleEvent(model, msg.payload as EventPayload, tsOf(msg.timestamp), nowMs);
     advanceLastTs(model, msg.timestamp);
@@ -813,6 +833,19 @@ export function pushMessage(
       source: normalizeSessionSource(p.source),
     };
   }
+}
+
+/**
+ * Whether the message is a Retry's first request: a `request_begin` after the request_end that
+ * ended the run, with no Task opened since (see StreamModel.runEnded). A compaction's own
+ * requests never count — compaction is housekeeping, not a run.
+ */
+function startsRetryRun(model: StreamModel, msg: OmniMessage): boolean {
+  return (
+    model.runEnded &&
+    !model.stats.compactionActive &&
+    (msg.payload as { type?: string }).type === "request_begin"
+  );
 }
 
 /** Whether the message is a complete user image — the only kind that can join an open steering chip. */
@@ -984,6 +1017,9 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   model.openApprovalWaitMs = 0;
   model.turnToolOutputs = false;
   model.reopenTaskAtSteering = false;
+  // A failed run's held input goes out with whatever opened this Task: a Prompt sends it
+  // along, and the Task's own next request belongs to it.
+  model.runEnded = false;
   model.taskOpen = true;
   model.taskModel = model.contextModel && {
     provider: model.contextModel.provider,
@@ -1716,12 +1752,19 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           durationMs: r.duration_ms,
           ...(r.tools !== undefined ? { tools: r.tools } : {}),
           ...(detail !== undefined ? { error: detail.slice(0, 500) } : {}),
+          ...(r.error_code !== undefined ? { errorCode: r.error_code } : {}),
         };
       });
+      // A server skipped before any contact waits on the user (a vault key, a sign-in): named
+      // apart from the servers that failed to connect, so the row does not read as a failure.
+      const waits = (r: (typeof p.results)[number]) =>
+        r.error_code === "mcp_needs_setup" || r.error_code === "mcp_sign_in_required";
       const failedResults = p.results.filter(
-        (r) => r.status === "fatal" || (r.status as string) === "failed",
+        (r) => (r.status === "fatal" || (r.status as string) === "failed") && !waits(r),
       );
       if (failedResults.length > 0) item.failed = failedResults.map((r) => r.server);
+      const waitingResults = p.results.filter(waits);
+      if (waitingResults.length > 0) item.waiting = waitingResults.map((r) => r.server);
       return;
     }
     case "tool_list_ready": {
@@ -1850,6 +1893,10 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // round, so the pending compaction usage never reaches this step and is discarded at finalization (not counted into this round).
       if (tsMs !== undefined) model.taskLastReqEndMs = tsMs;
       commitPendingCompaction(model.stats);
+      // Whether this end ended the run: a fatal, or a retryable the ladder gave up on (no
+      // retry_in_ms; `0` is an immediate retry). A request after it opens a new Task.
+      model.runEnded =
+        p.status === "fatal" || (p.status === "retryable" && p.retry_in_ms === undefined);
       // A fatal end stops the run — no abort event follows; this request_end is the
       // terminal record, rendered as an error banner.
       if (p.status === "fatal") {
@@ -1882,9 +1929,10 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         if (typeof p.retry_in_ms === "number" && p.retry_in_ms > 0) {
           item.plannedDelayMs = p.retry_in_ms;
           item.arrivedAtMs = nowMs ?? Date.now();
-        } else if (p.status === "retryable") {
-          // A live-protocol retryable without a planned wait is the ladder giving up —
-          // the run ends on it (an abort follows only in legacy Traces). The legacy
+        } else if (p.status === "retryable" && p.retry_in_ms === undefined) {
+          // A live-protocol retryable without `retry_in_ms` is the ladder giving up — the run
+          // ends on it (an abort follows only in legacy Traces). `retry_in_ms: 0` is a retry
+          // with no wait (a rejected image replaced with a note), not a give-up. The legacy
           // spellings never self-settle here: their era stamped no retry_in_ms mid-ladder,
           // and their exhaustion is marked by the abort event instead.
           item.gaveUp = true;

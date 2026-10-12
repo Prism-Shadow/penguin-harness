@@ -1,6 +1,7 @@
 ---
 name: opro-rsi-toolkit
 description: Reproduce OPRO (Large Language Models as Optimizers, Yang et al. 2023) on an agent and a frozen Benchmark, or on the precise-summary demo task shipped with this Skill: propose instructions from the scored history, measure each one, keep the best.
+version: 2026.10.12.1
 ---
 
 # OPRO

@@ -244,6 +244,8 @@ export class MessagingBindingsRepo implements MessagingBindings {
           args.channel,
         );
     }
+    // A changed account can leave the old bot referenced by nothing.
+    if (existing !== null && existing.accountId !== args.accountId) this.dropOrphanConversations();
     const row = this.find(args.sessionId, args.channel);
     if (!row) throw new Error("Failed to read back messaging_bindings after upsert");
     return row;
@@ -296,10 +298,33 @@ export class MessagingBindingsRepo implements MessagingBindings {
     this.db
       .prepare("DELETE FROM messaging_bindings WHERE session_id = ? AND channel = ?")
       .run(sessionId, channel);
+    this.dropOrphanConversations();
   }
 
   /** Drop every channel config of a Session (the session-delete cascade). */
   deleteSession(sessionId: string): void {
     this.db.prepare("DELETE FROM messaging_bindings WHERE session_id = ?").run(sessionId);
+    this.dropOrphanConversations();
+  }
+
+  /**
+   * Deletes the stored conversations (messaging_conversations) of every bot no binding
+   * references any more. Their lifetime is the bot's rather than a Session's — the same bot
+   * saved on two Sessions shares one conversation with each user — so they go only with the
+   * LAST binding that names the account: a context token or a held reply must not outlive
+   * every binding that could use it, and must not be carried onto a stranger who scans the
+   * same bot into a fresh binding later.
+   */
+  private dropOrphanConversations(): void {
+    this.db
+      .prepare(
+        `DELETE FROM messaging_conversations
+         WHERE NOT EXISTS (
+           SELECT 1 FROM messaging_bindings b
+           WHERE b.channel = messaging_conversations.channel
+             AND b.account_id = messaging_conversations.account_id
+         )`,
+      )
+      .run();
   }
 }

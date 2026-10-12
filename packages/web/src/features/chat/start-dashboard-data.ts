@@ -140,8 +140,8 @@ export interface ToolkitDemo {
 }
 
 /**
- * A toolkit's demo, by the Plugins page's rule: the quick start its plugin.json declares, else
- * its first Skill invoked by name (`invoke` words that request); null for a plugin with neither.
+ * A toolkit's demo, by the Plugins page's rule: the quick start its package.json declares
+ * (`penguin.quick_start`), else its first Skill invoked by name (`invoke` words that request); null for a plugin with neither.
  * A quick start that pins no Skills pins the plugin's first.
  */
 export function toolkitDemo(

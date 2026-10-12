@@ -99,6 +99,9 @@ test("in-progress tool output survives a reload: prefix back promptly, still gro
     timeout: 30_000,
   });
   const controlPre = await openToolOutput(page);
+  // The output's reveal is paced by the theme (StreamText), and the reply after it can land
+  // in the same frame: compare the output once it has settled, not the instant the reply shows.
+  await expect(controlPre).toHaveAttribute("data-state", "done");
   const controlOutput = await controlPre.textContent();
   expect(controlOutput).toContain("line 40");
 
@@ -121,7 +124,9 @@ test("in-progress tool output survives a reload: prefix back promptly, still gro
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible({
     timeout: 30_000,
   });
-  const reloadedOutput = await (await openToolOutput(page)).textContent();
+  const reloadedPre = await openToolOutput(page);
+  await expect(reloadedPre).toHaveAttribute("data-state", "done");
+  const reloadedOutput = await reloadedPre.textContent();
   expect(reloadedOutput).toBe(controlOutput);
 });
 
