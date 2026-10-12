@@ -53,7 +53,7 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 终端面板打开的终端也会在你自己的 shell 启动文件运行之后，把同一个目录放到 PATH 最前面，因此在终端里输入的 `penguin` 同样是本安装的。在 bash、zsh 和 fish 里，这个目录在每个提示符出现前都会回到最前面，排在你自己的提示符钩子之后执行，插件在启动之后才加上的钩子也不例外。要在这里运行别的 `penguin`，请使用它的完整路径，或在启动文件里定义名为 `penguin` 的 alias 或函数：shell 会先查找它们，再查 PATH。终端的环境不带服务器自己的 `PENGUIN_*`、`PORT` 和 `HOST` 变量，所以无论 `penguin` 还是你在终端里启动的服务器，都不会沿用本服务器的设置；你自己的启动文件导出的变量照常生效。其中属于你自己的设置会保留：`PENGUIN_LANG`、`PENGUIN_UPDATE_CHECK`、`PENGUIN_NO_LOGIN_SHELL_ENV`、`PENGUIN_SHELL`、`PENGUIN_INSTALL_DIR`、下载与更新源的变量（`PENGUIN_DOWNLOAD_*`、`PENGUIN_UPDATE_SOURCE`、`PENGUIN_UPDATE_SPEED_PROBE`），以及 `PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL`。没有启动脚本时，终端会保留服务器的 `PENGUIN_HOME` 和 `PENGUIN_WEB_DB`，因为此时没有别的途径让 `penguin` 找到这台服务器。
 
-从源码检出启动的服务器，其每个终端的第一行会写明 `penguin` 运行的是哪份 CLI，以及它的数据根目录。这一行由你的 shell 在第一个提示符出现前、你的启动文件运行之后打印，因此反映它们的设置：启动文件导出了 `PENGUIN_API_URL`，或指向另一个数据根目录的 `PENGUIN_HOME` 时，这一行会改为说明此处的 `penguin` 连接的是那台服务器，而不是这个实例。在 cmd，以及 bash、zsh、fish、sh 和 PowerShell 以外的 shell 里，这一行由服务器在 shell 启动前写入，内容不变。
+从源码检出启动的服务器，其每个终端的第一行会写明 `penguin` 运行的是哪份 CLI，以及它的数据根目录。这一行由你的 shell 在第一个提示符出现前、你的启动文件运行之后打印（它们输出的内容排在这一行之上），因此反映它们的设置：启动文件导出了 `PENGUIN_API_URL`，或指向另一个数据根目录的 `PENGUIN_HOME` 时，这一行会改为说明此处的 `penguin` 连接的是那台服务器，而不是这个实例。在 cmd，以及 bash、zsh、fish、sh 和 PowerShell 以外的 shell 里，这一行由服务器在 shell 启动前写入，内容不变。
 
 这个目录既前置到环境变量里，也前置到 shell 内部，因为命令通过登录 shell 运行，而登录 shell 的 profile 常常随后重写 PATH。这也让它排在[密钥保险柜](#vault)里设置的 `PATH` 之前，而保险柜里的 `PATH` 原本会整体替换继承来的值。
 

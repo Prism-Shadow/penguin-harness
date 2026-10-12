@@ -894,7 +894,9 @@ describePty("a terminal opened through the server", () => {
   /**
    * A throwaway HOME for one test: the server's shells start in it and read only its startup
    * files, which set the prompt and nothing else — not the startup files of whoever runs the
-   * suite.
+   * suite. Apple's bash is told not to print its zsh advice, as a user who keeps bash has: the
+   * shell prints a development instance's first line at its first prompt, after anything it
+   * prints itself on the way there.
    */
   async function withHome(fn: () => Promise<void>): Promise<void> {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-term-home-"));
@@ -903,13 +905,16 @@ describePty("a terminal opened through the server", () => {
       '[ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n',
     );
     fs.writeFileSync(path.join(home, ".bashrc"), `PS1='${PROMPT} '\n`);
-    const saved = process.env.HOME;
+    const saved = { HOME: process.env.HOME, quiet: process.env.BASH_SILENCE_DEPRECATION_WARNING };
     process.env.HOME = home;
+    process.env.BASH_SILENCE_DEPRECATION_WARNING = "1";
     try {
       await fn();
     } finally {
-      if (saved === undefined) delete process.env.HOME;
-      else process.env.HOME = saved;
+      if (saved.HOME === undefined) delete process.env.HOME;
+      else process.env.HOME = saved.HOME;
+      if (saved.quiet === undefined) delete process.env.BASH_SILENCE_DEPRECATION_WARNING;
+      else process.env.BASH_SILENCE_DEPRECATION_WARNING = saved.quiet;
       fs.rmSync(home, { recursive: true, force: true });
     }
   }
