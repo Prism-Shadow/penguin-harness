@@ -423,59 +423,65 @@ function SubagentComposer({
 
   return (
     <div className="shrink-0 border-t border-gray-100 px-2 pb-2 pt-2 dark:border-gray-800/60">
-      <ChatInput
-        variant="subagent"
-        controlRef={controlRef}
-        status={running ? "running" : "idle"}
-        onSend={async (input: TaskInputPart[]) => {
-          const text = input
-            .filter((p): p is { type: "text"; text: string } => p.type === "text")
-            .map((p) => p.text)
-            .join("\n\n")
-            .trim();
-          if (!text) return false;
-          try {
-            await send(text);
-            return true;
-          } catch (err) {
-            sendFailure(err);
-            return false;
-          }
-        }}
-        onSteer={async (text: string) => {
-          try {
-            await send(text);
-            // steered/started/resumed alike: the message reached the child (the race where
-            // the round settled mid-send simply started the next one). The queued hint
-            // retires when the child's stream shows the delivered input.
-            return "queued";
-          } catch (err) {
-            sendFailure(err);
-            return "failed";
-          }
-        }}
-        steeringDeliveredCount={deliveredInputs}
-        onStop={async () => {
-          await abortSubagent(sessionId, childSessionId).catch(() => undefined);
-        }}
-        modelRef={modelRef}
-        models={models}
-        // Display: the user's pick for this child, else what the child actually runs at
-        // (spawn-pinned level, else the parent's effective level it inherited). A pick is
-        // PATCHed onto the child Session and applies from its next LLM request.
-        turnThinkingLevel={turnLevel || fallbackThinkingLevel}
-        onChangeTurnThinkingLevel={pinChildLevel}
-        {...(contextWindow !== undefined ? { contextWindow } : {})}
-        contextNow={contextNow}
-        vision={false}
-        approvalMode={approvalMode}
-        approvalModes={approvalModes}
-        sandbox={sandbox}
-        onChangePermission={onChangePermission}
-        modeSaving={modeSaving}
-        agents={[]}
-        skills={skills}
-      />
+      {/* The transcript's reading column (MessageStream caps its messages at max-w-3xl), as the
+          main conversation's composer does: a dock at full screen is as wide as the chat column
+          or wider, and the composer must line up with the messages above it rather than span
+          the surface. A docked panel is narrower than the cap, so there it changes nothing. */}
+      <div className="mx-auto max-w-3xl">
+        <ChatInput
+          variant="subagent"
+          controlRef={controlRef}
+          status={running ? "running" : "idle"}
+          onSend={async (input: TaskInputPart[]) => {
+            const text = input
+              .filter((p): p is { type: "text"; text: string } => p.type === "text")
+              .map((p) => p.text)
+              .join("\n\n")
+              .trim();
+            if (!text) return false;
+            try {
+              await send(text);
+              return true;
+            } catch (err) {
+              sendFailure(err);
+              return false;
+            }
+          }}
+          onSteer={async (text: string) => {
+            try {
+              await send(text);
+              // steered/started/resumed alike: the message reached the child (the race where
+              // the round settled mid-send simply started the next one). The queued hint
+              // retires when the child's stream shows the delivered input.
+              return "queued";
+            } catch (err) {
+              sendFailure(err);
+              return "failed";
+            }
+          }}
+          steeringDeliveredCount={deliveredInputs}
+          onStop={async () => {
+            await abortSubagent(sessionId, childSessionId).catch(() => undefined);
+          }}
+          modelRef={modelRef}
+          models={models}
+          // Display: the user's pick for this child, else what the child actually runs at
+          // (spawn-pinned level, else the parent's effective level it inherited). A pick is
+          // PATCHed onto the child Session and applies from its next LLM request.
+          turnThinkingLevel={turnLevel || fallbackThinkingLevel}
+          onChangeTurnThinkingLevel={pinChildLevel}
+          {...(contextWindow !== undefined ? { contextWindow } : {})}
+          contextNow={contextNow}
+          vision={false}
+          approvalMode={approvalMode}
+          approvalModes={approvalModes}
+          sandbox={sandbox}
+          onChangePermission={onChangePermission}
+          modeSaving={modeSaving}
+          agents={[]}
+          skills={skills}
+        />
+      </div>
     </div>
   );
 }
