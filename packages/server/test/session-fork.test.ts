@@ -11,6 +11,8 @@
  * - A user message, an intermediate assistant segment and a hidden compaction summary are not
  *   fork points; a running source is a 409 task_in_progress.
  * - A missing scratchpad forks as empty, and deleting the fork leaves the source intact.
+ * - Deleting a fork takes the subagent Sessions it spawned; the ones its copied history names
+ *   are its source's, and stay.
  * - Completed earlier shards are cloned and the selected one cut, with stable positions on a
  *   tail page.
  * - Concurrent forks get unique Sessions and never overwrite the source.
@@ -29,6 +31,7 @@ import {
   requestEnd,
   scratchpadDir,
   sessionMeta,
+  subagentEvent,
   tokenUsage,
   tracesDir,
   userText,
@@ -373,6 +376,96 @@ describe("session fork", () => {
       ),
     ).toBe(true);
     expect((await api.get(`/api/sessions/${SID}`)).status).toBe(200);
+  });
+
+  it("deleting a fork takes the subagent Sessions it spawned and leaves the ones its source spawned", async () => {
+    const source = "session-2026-08-14-11-00-00-aabbcc02";
+    const sourceChild = "session-2026-08-14-11-00-02-cccc0001";
+    const forkChild = "session-2026-08-14-11-30-00-cccc0002";
+    const day = "2026-08-14";
+    const meta = (sessionId: string, from: SessionMetaPayload["source"]): SessionMetaPayload => ({
+      session_id: sessionId,
+      provider: "custom",
+      model_id: "fork-model",
+      model_context_window: 10_000,
+      system_prompt: `Session ${sessionId}`,
+      agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
+      workspace,
+      source: from,
+    });
+    const seedRow = (sessionId: string, createdAt: string) =>
+      t.deps.sessionsRepo.insert({
+        sessionId,
+        projectId,
+        agentId: "default_agent",
+        provider: "custom",
+        modelId: "fork-model",
+        workspace,
+        approvalMode: "allow-all",
+        title: null,
+        client: "web",
+        hasTrace: true,
+        lastActiveAt: createdAt,
+        createdAt,
+      });
+    const seedChild = async (sessionId: string, createdAt: string) => {
+      seedRow(sessionId, createdAt);
+      await writeTraceFile(t.root, projectId, "default_agent", day, sessionId, 1, [
+        at(createdAt, sessionMeta(meta(sessionId, "subagent"))),
+        at(createdAt, userText("look it up")),
+        at(createdAt, assistantText(`found by ${sessionId}`)),
+      ]);
+    };
+    // The source delegates to a subagent before the reply the fork is cut at, so the fork's
+    // copy of the history carries the source's pointer to that child.
+    seedRow(source, "2026-08-14T11:00:00.000Z");
+    await writeTraceFile(t.root, projectId, "default_agent", day, source, 1, [
+      at("2026-08-14T11:00:00.000Z", sessionMeta(meta(source, "user"))),
+      at("2026-08-14T11:00:01.000Z", userText("delegate the lookup")),
+      at("2026-08-14T11:00:02.000Z", requestBegin()),
+      at("2026-08-14T11:00:02.500Z", subagentEvent(sourceChild)),
+      at("2026-08-14T11:00:03.000Z", assistantText("delegated answer")),
+      at("2026-08-14T11:00:04.000Z", requestEnd("completed")),
+    ]);
+    await seedChild(sourceChild, "2026-08-14T11:00:02.500Z");
+
+    const response = await api.post(`/api/sessions/${source}/fork`, {
+      position: { fileIndex: 1, ordinal: 4 },
+    });
+    expect(response.status).toBe(201);
+    const fork = ((await response.json()) as SessionForkResponse).session.sessionId;
+    // The fork then delegates on its own.
+    const later = new Date(Date.now() + 1000).toISOString();
+    await fs.appendFile(
+      path.join(tracesDir(t.root, projectId, "default_agent"), day, `${fork}_001.jsonl`),
+      [
+        at(later, userText("delegate another")),
+        at(later, requestBegin()),
+        at(later, subagentEvent(forkChild)),
+        at(later, assistantText("second answer")),
+        at(later, requestEnd("completed")),
+      ]
+        .map((message) => JSON.stringify(message))
+        .join("\n") + "\n",
+      "utf8",
+    );
+    await seedChild(forkChild, later);
+
+    expect((await api.delete(`/api/sessions/${fork}`)).status).toBe(204);
+
+    expect(t.deps.sessionsRepo.findById(forkChild)).toBeNull();
+    expect(t.deps.sessionsRepo.findById(sourceChild)).not.toBeNull();
+    // The source still shows its subagent's conversation.
+    const history = (await (
+      await api.get(`/api/sessions/${source}/messages`)
+    ).json()) as MessagesResponse;
+    expect(
+      history.messages.some(
+        (message) =>
+          message.origin?.[0] === sourceChild &&
+          (message.payload as { text?: string }).text === `found by ${sourceChild}`,
+      ),
+    ).toBe(true);
   });
 
   it("clones completed earlier shards, cuts the selected shard, and exposes stable positions on a tail page", async () => {

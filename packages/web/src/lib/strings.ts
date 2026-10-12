@@ -615,6 +615,39 @@ export const zh = {
     off: "关闭",
   },
 
+  /** Settings › Personal › Archived chats (features/settings/archived-sessions-section.tsx). */
+  archivedSessions: {
+    search: "搜索已归档对话",
+    /** The two filters' accessible names. */
+    sourceFilter: "来源",
+    projectFilter: "项目",
+    allSources: "全部来源",
+    allProjects: "全部项目",
+    /** A group's count beside its header. */
+    count: (n: number): string => `${n} 条对话`,
+    /** A group header's button: choose every Session of the group, loaded or not; and its undo once all of it is chosen. */
+    selectAll: "全选",
+    deselectAll: "取消全选",
+    /** A row's checkbox, named by the conversation's title. */
+    select: (title: string): string => `选择「${title}」`,
+    selected: (n: number): string => `已选 ${n} 项`,
+    clearSelection: "清除选择",
+    /** The reveal row under the groups shown: how many groups are still hidden. */
+    moreGroups: (n: number): string => `更多分组（${n}）`,
+    empty: "没有已归档的对话",
+    noMatches: "没有匹配的对话",
+    /** The busy glyph's tooltip on a row whose Session is running. */
+    running: "运行中",
+    loadFailed: (reason: string): string => `无法读取已归档对话：${reason}`,
+    actionFailed: (reason: string): string => `操作没有完成：${reason}`,
+    /** The confirm before a batch or group delete (a single row uses the chat's own confirm). */
+    deleteTitle: (n: number): string => (n === 1 ? "删除对话" : `删除 ${n} 个对话`),
+    deleteConfirm: (n: number): string =>
+      n === 1
+        ? "确定删除这个对话？它的消息与 Trace 将被移除，且不可恢复。"
+        : `确定删除这 ${n} 个对话？它们的消息与 Trace 将被移除，且不可恢复。`,
+  },
+
   /** The Trace dock panel (the current conversation's Trace files). */
   tracePanel: {
     empty: "暂无轨迹",
@@ -648,6 +681,10 @@ export const zh = {
     generalTitle: "通用",
     appearanceTitle: "外观",
     shortcutsTitle: "快捷键",
+    /** Settings › Personal › Archived chats, and the "?" beside its heading. */
+    archivedTitle: "已归档对话",
+    archivedInfo:
+      "这里是不在左侧列表里的对话：你归档的，以及由程序开启、你还没有取消归档的（API、定时任务和 penguin run 开启的对话）。归档的对话只显示标题和时间；取消归档后它回到左侧列表，之后的运行也不会再把它移走。",
     /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
     shortcutsInfo:
       "快捷键随平台：macOS 用 ⌘，其余平台用 Ctrl。改动即刻生效，本浏览器的其他标签页同步跟随；本账号的其他浏览器与桌面应用在下次加载时取得。按账号并按平台分别保存，Mac 与 Windows 各有一套。浏览器自身保留的组合（如 Ctrl+W / ⌘W）在浏览器标签页里收不到，只在桌面应用里生效；浏览器本身也用的组合（如打印的 Ctrl+P / ⌘P）在浏览器标签页里会取代它的那个功能。两者都在列表中标出。",
@@ -1736,7 +1773,7 @@ export const zh = {
     /** The API tab: this server's switch for the Agent's public API, its approval mode, keys and examples. */
     apiEnable: "开启 API 访问",
     apiEnableHint:
-      "外部程序可通过 URL、密钥与 Agent ID 与此 Agent 对话；对话归入侧栏的「后台会话」。",
+      "外部程序可通过 URL、密钥与 Agent ID 与此 Agent 对话；对话默认归档，列在设置的「已归档对话」中。",
     apiOwnerOnly: "只有 Project 所有者可以更改这些设置。",
     apiAdminOff:
       "管理员已在服务器设置中关闭 Agent API：所有 API 请求都会被拒绝，这里的设置与密钥保留。",
@@ -1777,7 +1814,7 @@ export const zh = {
     /** The tab's Try it: one real API run on the owner's sign-in, shown as a program receives it. */
     apiTry: "试一试",
     apiTryHint:
-      "以你的登录身份走程序用的同一条运行路由，收到的就是程序会收到的事件流；开出的会话归入侧栏的「后台会话」。",
+      "以你的登录身份走程序用的同一条运行路由，收到的就是程序会收到的事件流；开出的会话默认归档，列在「已归档对话」中。",
     apiTryExample: "现在几点了？",
     apiTryRun: "运行",
     apiTryStop: "停止",
@@ -3905,26 +3942,21 @@ Benchmark：
     expandRestSessions: (n: number) => `展开其余 ${n} 个对话`,
     /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
     loadMoreSessions: "加载更多会话",
-    /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
-    folderGroups: {
-      background: (n: number) => `后台会话（${n}）`,
-      archived: (n: number) => `已归档（${n}）`,
-    },
-    /** A Background row's source mark: the program that opened the Session, as its tooltip and hidden text. */
+    /**
+     * Who opened a Session: a person (`user`), or the program behind it — the mark a row of one
+     * a program opened carries, as its tooltip and hidden text, and the archive page's source
+     * filter.
+     */
     sessionSource: {
+      user: "用户",
       api: "API",
       schedule: "定时任务",
-      subagent: "子智能体",
       cli: "CLI",
     },
-    /**
-     * Tooltip of a folder-only group's header — a group with no active conversation of its
-     * own, only rows inside its folders (it renders collapsed and sorts last). `n` is what
-     * those folders hold, which is also the count the dimmed header shows; the Workspace path
-     * follows where the header has one, since this sentence replaces the tooltip that carried it.
-     */
-    folderOnlyGroup: (n: number, path?: string) =>
-      `仅有折叠任务：${n} 个会话${path ? `（${path}）` : ""}`,
+    /** An archived conversation opened by its URL: what the stub in place of the transcript says. */
+    archivedStub: {
+      note: "这个对话已归档。取消归档后可以查看内容，它会回到左侧列表。",
+    },
     /** The skills note's fixed phrase (the count picks the en plural); the skill names follow it as `nameList`. */
     skillsLabel: (_count: number): string => "使用技能",
     /** Attached-file notice above a user message: this fixed phrase, then the file names (only the names; the paths stay in the Trace) as `nameList`. */

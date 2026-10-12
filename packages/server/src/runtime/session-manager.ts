@@ -2461,8 +2461,9 @@ export class SessionManager {
       lastActiveAt: createdAt,
       createdAt,
     });
-    // Make the subagent appear immediately in the sidebar: notify via the parent
-    // Session's channel (a frontend currently watching the parent run refreshes its list in place).
+    // Announce the child on the parent Session's channel. No list shows a subagent Session
+    // (its parent's Agent panel opens it), so the Web App reads nothing from this; it stays
+    // for any other reader of that channel.
     this.publishEvent(entry, {
       type: "session_created",
       projectId: entry.projectId,
@@ -2681,7 +2682,9 @@ export abstract class SessionServiceIface extends Interface<
     SessionServiceImpl,
     | "toInfo"
     | "hasTrace"
+    | "listingOf"
     | "listSessions"
+    | "archivedRows"
     | "sessionStats"
     | "createSession"
     | "defaultSandbox"

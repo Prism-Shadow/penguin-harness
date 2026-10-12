@@ -30,7 +30,11 @@ export abstract class SessionIndex {
   abstract updateTitle(sessionId: string, title: string): void;
   abstract updateTitleIfNull(sessionId: string, title: string): void;
   abstract updateModel(sessionId: string, provider: string, modelId: string): void;
-  abstract setArchived(sessionId: string, archivedAt: string | null): void;
+  abstract setListing(
+    sessionIds: readonly string[],
+    listing: "archived" | "kept",
+    at: string,
+  ): void;
   abstract replaceId(oldSessionId: string, newSessionId: string): void;
   abstract deleteByAgent(projectId: string, agentId: string): void;
   abstract deleteByProject(projectId: string): void;

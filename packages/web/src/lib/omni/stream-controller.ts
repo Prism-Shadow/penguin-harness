@@ -140,8 +140,6 @@ export interface StreamControllerDeps {
   onPendingChange: () => void;
   /** Auto-generated title pushed by the server (for updating the Session list in place). */
   onSessionTitle?: (sessionId: string, title: string) => void;
-  /** A new session has been registered (sub-sessions are pushed along the parent session's channel; used to refresh the Session list). */
-  onSessionCreated?: (sessionId: string) => void;
   /** Goal-mode progress (goal_started / goal_round / goal_finished): drives the chat page's goal banner. */
   onGoalEvent?: (ev: GoalServerEvent) => void;
   /** Local clock (injectable for tests). */
@@ -618,16 +616,15 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     handleServer: (ev, eventId = null) => {
       if (disposed) return;
       if (eventId !== null) lastEventId = eventId;
-      // session_title / session_created only affect list display (unrelated
-      // to the view model/history): forwarded immediately at any phase, never buffered.
+      // session_title only affects list display (unrelated to the view model/history):
+      // forwarded immediately at any phase, never buffered.
       if (ev.type === "session_title") {
         deps.onSessionTitle?.(ev.sessionId, ev.title);
         return;
       }
-      if (ev.type === "session_created") {
-        deps.onSessionCreated?.(ev.sessionId);
-        return;
-      }
+      // A subagent registered under this Session: no list shows a subagent Session (its
+      // parent's Agent panel opens it), and the transcript learns of it from its own records.
+      if (ev.type === "session_created") return;
       // Goal progress only affects the banner (UI state, not the transcript model): forwarded
       // immediately at any phase, never buffered — same treatment as session_title.
       if (ev.type === "goal_started" || ev.type === "goal_round" || ev.type === "goal_finished") {

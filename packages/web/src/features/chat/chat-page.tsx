@@ -120,6 +120,7 @@ import {
   heldRouteSession,
   resolveRoutedSession,
   routeSessionOutcome,
+  routedView,
   sessionForProject,
   sessionProbeKey,
 } from "./session-project";
@@ -168,6 +169,7 @@ import { DockToggles } from "./dock-toggles";
 import { toneInk } from "../../lib/tone";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
+import { ArchivedSessionStub } from "./archived-session-stub";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
@@ -321,6 +323,7 @@ export function ChatPage() {
     offlineMachineIds,
     reload: reloadSessions,
     add: addSession,
+    remove: removeSession,
     isDeleted: isSessionDeleted,
     replace,
     setStatus,
@@ -481,7 +484,12 @@ export function ChatPage() {
    * the open conversation. See resolveRoutedSession.
    */
   const [fetchedSession, setFetchedSession] = useState<SessionInfo | null>(null);
-  const listed = draft ? null : resolveRoutedSession(routeSessionId, sessions, fetchedSession);
+  // A Session this page deleted, or heard was deleted, is not shown from a stale lookup either:
+  // its route probes, fails at once on the tombstone, and moves on.
+  const listed =
+    draft || (routeSessionId !== null && isSessionDeleted(routeSessionId))
+      ? null
+      : resolveRoutedSession(routeSessionId, sessions, fetchedSession);
   /**
    * The routed Session, held across a refetch that momentarily does not list it.
    *
@@ -507,13 +515,22 @@ export function ChatPage() {
     routeSessionId ?? null,
     probeKey !== null && probeFailedKey === probeKey,
   );
-  const selected = draft ? null : heldSession.current;
+  const routed = draft ? null : heldSession.current;
   /**
-   * The Agent this page renders under: the routed Session's own, else the current Agent (a
-   * draft has no Session). The current Agent is resolved against THIS server's Agent list and
-   * is adopted from the Session only when that list carries it — an organization's employee
-   * whose Agent lives on a machine is never in it, so going by the current Agent alone left
-   * that conversation on the placeholder for good, with nothing to say why.
+   * An archived Session the route names is shown as a stub (archived-session-stub.tsx), never as
+   * a conversation (routedView). None of the conversation's machinery — its stream and history,
+   * its composer, its dock panels, its usage and processes — runs for it: `selected` is null and
+   * the stub reads `archivedRow` instead. Unarchiving swaps the row in and the conversation loads
+   * in place.
+   */
+  const { conversation: selected, archived: archivedRow } = routedView(routed);
+  /**
+   * The Agent this page renders under: the conversation's own, else the current Agent (a draft
+   * has no Session, and an archived Session's stub runs nothing of its conversation). The
+   * current Agent is resolved against THIS server's Agent list and is adopted from the Session
+   * only when that list carries it — an organization's employee whose Agent lives on a machine
+   * is never in it, so going by the current Agent alone left that conversation on the
+   * placeholder for good, with nothing to say why.
    */
   const pageAgentId = selected?.agentId ?? agentId;
   // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
@@ -547,14 +564,14 @@ export function ChatPage() {
     : null;
 
   // Tab title follows the current Session (refreshes in sync once the auto-generated title arrives).
-  useDocumentTitle(selected ? (selected.title ?? S.chat.defaultSessionTitle) : S.nav.chat);
+  useDocumentTitle(routed ? (routed.title ?? S.chat.defaultSessionTitle) : S.nav.chat);
 
+  // No handler for the sub-session registration the parent's channel announces: a subagent
+  // Session is in no list (its parent's Agent panel opens it), so nothing here has to refresh.
   const stream = useSessionStream(
     selected?.sessionId ?? null,
     selected?.status ?? "idle",
     setTitle,
-    // Sub-session registration notice (session_created is pushed over the parent session's channel): reload the list so it appears immediately.
-    () => void reloadSessions(),
   );
 
   // Chat input area draft: caches text, both staged switch chips (`/agent` target, `/model`
@@ -947,7 +964,7 @@ export function ChatPage() {
    * dead link the page owns up to in place rather than swapping in some other conversation.
    */
   const routeOutcome = routeSessionOutcome({
-    shown: selected !== null,
+    shown: routed !== null,
     pending: routeSessionPending,
     routeSessionId,
     deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
@@ -2273,6 +2290,15 @@ export function ChatPage() {
           />
         </div>
       )}
+      {/* An archived Session's toolbar: its title alone — no stats, panels or index, since
+          nothing of the conversation is read until it is unarchived. */}
+      {archivedRow && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
+          <Heading level={5} as="h1" className="flex min-w-0">
+            <Truncated text={archivedRow.title ?? S.chat.defaultSessionTitle} />
+          </Heading>
+        </div>
+      )}
       {/* Thin top toolbar */}
       {selected && (
         <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
@@ -2610,10 +2636,24 @@ export function ChatPage() {
               ) : (
                 // Keyed by Session: the whole block does a light fade-in when switching sessions.
                 <div
-                  key={selected?.sessionId ?? "empty"}
+                  key={routed?.sessionId ?? "empty"}
                   className="anim-fade flex min-h-0 flex-1 flex-col"
                 >
-                  {selected ? (
+                  {archivedRow ? (
+                    <ArchivedSessionStub
+                      session={archivedRow}
+                      onUnarchived={(row) => {
+                        // Back among the conversations: the list takes the row (and counts it),
+                        // and this page loads the conversation in its place.
+                        setFetchedSession(row);
+                        replace(row);
+                      }}
+                      onDeleted={(row) => {
+                        removeSession(row.sessionId);
+                        navigate("/chat");
+                      }}
+                    />
+                  ) : selected ? (
                     stream.error ? (
                       // History failed to load: show a clear error and a retry entry point, instead of staying on a misleading empty state.
                       <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
@@ -2736,7 +2776,7 @@ export function ChatPage() {
               )}
             </ChatDropRegion>
 
-            {rightMount.view && (
+            {archivedRow === null && rightMount.view && (
               <DockPanel
                 view={rightMount.view}
                 open={rightMount.open}
@@ -2747,7 +2787,7 @@ export function ChatPage() {
             )}
           </div>
 
-          {bottomMount.view && (
+          {archivedRow === null && bottomMount.view && (
             <DockPanel
               view={bottomMount.view}
               open={bottomMount.open}

@@ -7,13 +7,16 @@
  * - a route naming no Session, a Session deleted from this page and one of another Project
  *   (a Project switch) all open the latest conversation;
  * - a Session the server says does not exist is owned up to in place, never replaced by
- *   another conversation.
+ *   another conversation;
+ * - an archived Session is shown as its stub, never as a conversation (so nothing reads its
+ *   transcript), and the same Session unarchived is the conversation again.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   resolveRoutedSession,
   routeSessionOutcome,
+  routedView,
   sessionForProject,
   sessionProbeKey,
 } from "../src/features/chat/session-project";
@@ -74,6 +77,18 @@ describe("resolveRoutedSession", () => {
   it("ignores a fetched row for another id, and answers nothing without a route", () => {
     expect(resolveRoutedSession("session-a", [], other)).toBeNull();
     expect(resolveRoutedSession(null, [SESSION], SESSION)).toBeNull();
+  });
+});
+
+describe("routedView", () => {
+  it("shows an archived Session as its stub and never as the conversation", () => {
+    const archived: SessionInfo = { ...SESSION, archived: true };
+    expect(routedView(archived)).toEqual({ conversation: null, archived });
+  });
+
+  it("shows the same Session unarchived as the conversation, and nothing without a route", () => {
+    expect(routedView(SESSION)).toEqual({ conversation: SESSION, archived: null });
+    expect(routedView(null)).toEqual({ conversation: null, archived: null });
   });
 });
 

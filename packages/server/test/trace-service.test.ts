@@ -880,15 +880,18 @@ describe("trace-service", () => {
     withTitles.close();
   });
 
-  it("Agent-level paging: category/workspace come from the DB row (archived wins; a registry-known source fills its bucket)", async () => {
+  it("Agent-level paging: category/workspace come from the DB row (archived wins; a registry-known source fills its bucket; a subagent is in none)", async () => {
     const s2 = "session-2026-07-06-09-00-00-11112222";
     const s3 = "session-2026-07-07-08-00-00-33334444";
+    const s4 = "session-2026-07-08-08-00-00-55556666";
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("a")]);
     await writeTraceFile(root, P, A, "2026-07-06", s2, 1, [userText("b")]);
     await writeTraceFile(root, P, A, "2026-07-07", s3, 1, [userText("c")]);
+    await writeTraceFile(root, P, A, "2026-07-08", s4, 1, [userText("d")]);
     const sources = new SessionSources();
-    sources.set(s2, "subagent");
+    sources.set(s2, "cli"); // a program opened it and nobody kept it: archived by rule
     sources.set(s3, "user"); // meta seen, a person's conversation
+    sources.set(s4, "subagent"); // its parent's Agent panel opens it: in no category
     const h = makeTraceHarness(root, {
       sources,
       sessions: {
@@ -903,11 +906,12 @@ describe("trace-service", () => {
     const byId = new Map(res.sessions!.map((x) => [x.sessionId, x]));
     expect(byId.get(S)!.category).toBe("archived");
     expect(byId.get(S)!.workspace).toBe("/ws/one");
-    expect(byId.get(s2)!.category).toBe("background"); // untracked but registry-known
+    expect(byId.get(s2)!.category).toBe("archived"); // untracked but registry-known
     expect(byId.get(s3)!.category).toBe("active");
-    expect(res.counts).toEqual({ active: 1, background: 1, archived: 1 });
-    expect(res.workspaceCounts!["/ws/one"]).toEqual({ active: 0, background: 0, archived: 1 });
-    expect(res.workspaceCounts!["/ws/two"]).toEqual({ active: 1, background: 0, archived: 0 });
+    expect(byId.has(s4)).toBe(false);
+    expect(res.counts).toEqual({ active: 1, archived: 2 });
+    expect(res.workspaceCounts!["/ws/one"]).toEqual({ active: 0, archived: 1 });
+    expect(res.workspaceCounts!["/ws/two"]).toEqual({ active: 1, archived: 0 });
 
     // The category filter pages within one bucket; totalSessions is the bucket's count.
     const active = await h.service.agentTraces(
@@ -918,14 +922,14 @@ describe("trace-service", () => {
     );
     expect(active.sessions!.map((x) => x.sessionId)).toEqual([s3]);
     expect(active.totalSessions).toBe(1);
-    expect(active.counts).toEqual({ active: 1, background: 1, archived: 1 });
+    expect(active.counts).toEqual({ active: 1, archived: 2 });
     const archived = await h.service.agentTraces(
       P,
       A,
       { offset: 0, limit: 10 },
       { category: "archived" },
     );
-    expect(archived.sessions!.map((x) => x.sessionId)).toEqual([S]);
+    expect(archived.sessions!.map((x) => x.sessionId)).toEqual([s2, S]);
     h.close();
   });
 
@@ -934,32 +938,32 @@ describe("trace-service", () => {
     // earliest shard's session_meta ONCE; the listing itself then serves category /
     // workspace / title from the index with no per-request head-reads.
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
-      sessionMeta(metaPayload({ source: "subagent", workspace: "/ws/child" })),
-      userText("child prompt"),
+      sessionMeta(metaPayload({ source: "cli", workspace: "/ws/run" })),
+      userText("run prompt"),
     ]);
 
     const first = await service.agentTraces(P, A, { offset: 0, limit: 10 });
-    expect(first.sessions![0]!.category).toBe("background");
-    expect(first.sessions![0]!.workspace).toBe("/ws/child");
-    expect(first.counts).toEqual({ active: 0, background: 1, archived: 0 });
+    expect(first.sessions![0]!.category).toBe("archived");
+    expect(first.sessions![0]!.workspace).toBe("/ws/run");
+    expect(first.counts).toEqual({ active: 0, archived: 1 });
     // The observation landed in the shared registry (single source of truth) at registration.
-    expect(harness.sources.get(S)).toBe("subagent");
+    expect(harness.sources.get(S)).toBe("cli");
     const reads = harness.traceIndex.counters.headReads;
 
     const second = await service.agentTraces(P, A, { offset: 0, limit: 10 });
-    expect(second.sessions![0]!.category).toBe("background");
+    expect(second.sessions![0]!.category).toBe("archived");
     expect(harness.traceIndex.counters.headReads).toBe(reads); // classification never re-reads
   });
 
   it("Agent-level paging: every Session is listed whichever client created it (no CLI filter)", async () => {
     const cliSid = "session-2026-07-06-09-00-00-11112222"; // untracked, user-created meta (a legacy CLI-direct run)
-    const childSid = "session-2026-07-07-08-00-00-33334444"; // untracked but subagent-sourced -> Background
+    const childSid = "session-2026-07-07-08-00-00-33334444"; // untracked, a scheduled run -> archived by rule
     await writeTraceFile(root, P, A, "2026-07-06", cliSid, 1, [
       sessionMeta(metaPayload({ session_id: cliSid })),
       userText("cli run"),
     ]);
     await writeTraceFile(root, P, A, "2026-07-07", childSid, 1, [
-      sessionMeta(metaPayload({ session_id: childSid, source: "subagent" })),
+      sessionMeta(metaPayload({ session_id: childSid, source: "schedule" })),
       userText("child run"),
     ]);
     const webSid = S;
@@ -974,7 +978,7 @@ describe("trace-service", () => {
     const listed = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(listed.sessions!.map((x) => x.sessionId)).toEqual([childSid, cliSid, webSid]);
     expect(listed.totalSessions).toBe(3);
-    expect(listed.counts).toEqual({ active: 2, background: 1, archived: 0 });
+    expect(listed.counts).toEqual({ active: 2, archived: 1 });
     h.close();
   });
 

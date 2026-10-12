@@ -72,7 +72,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ## 认证与账号
 
-登录、登出、账号认领，以及当前用户的密码、资料和偏好设置。
+登录、登出、账号认领，以及当前用户的密码、资料、偏好设置和已归档对话。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -85,6 +85,10 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | PUT | `/api/me/profile` | 设置头像和昵称：`{displayName?, avatar?}` → `{user}` |
 | GET | `/api/me/prefs` | 读取 UI 偏好 |
 | PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并）；拒绝 `browserBackend`（`400`），它经由 [`PUT /api/builtin-browser/backend`](#agent-浏览器) 选择 |
+| GET | `/api/me/archived-sessions/groups` | [设置 › 已归档对话](/settings#已归档对话)的分组：`?q=&source=&projectId=` → `{groups, total, asOf}` |
+| GET | `/api/me/archived-sessions` | 一个分组中的已归档 Session：`?projectId=&workspace=&limit=&before=&q=&source=` → `{sessions, hasMore}` |
+| POST | `/api/me/archived-sessions/unarchive` | 批量取消归档：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
+| POST | `/api/me/archived-sessions/delete` | 批量删除：`{sessionIds}` 或 `{filter}` → `{done, missing}` |
 
 - `GET /api/auth/claim` 用于兑换首次登录链接或桌面 shell 的一次性 token。链接无效或已被使用时，会改为重定向到 `/login?claimFailed=…`，Web App 会在那里说明如何获取一条有效链接。
 - `GET /api/install` 无需身份验证。`installId` 是一个不透明的 id，存储在 `<root>/install-id`，在数据根目录首次使用时生成。Web App 将它与本地保存的 id 比对，不一致时清空浏览器端引用服务器实体的 UI 状态，这样替换数据根目录后就不会残留旧的 Workspace、草稿和置顶项。返回 `null` 表示服务器无法确立 id，此时客户端不得改动任何状态。
@@ -93,6 +97,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
   - `displayName` 去除首尾空白后必须在 1–32 个字符之间，按字符计数（因此中文名可以满 32 个），且不能包含控制字符。
   - `avatar` 必须是 `data:image/(png|jpeg|webp);base64,…` 形式的 URL，最长 131072 个字符，且其中的数据能够正常解码。
   - 任何已认证的会话都可以调用，包括桌面 shell 的 token 会话。与修改密码的接口不同，修改资料没有旧凭证需要校验。
+- `/api/me/archived-sessions` 及其三个子路由为[设置 › 已归档对话](/settings#已归档对话)提供数据。它们覆盖调用者拥有或参与的所有 Project 中已归档的 Session，只含本服务器；Project 的所有者或成员可以操作其中任何 Session，不论由谁创建。用户归档的 Session，以及 `source` 为 `api`、`schedule` 或 `cli` 且用户没有取消归档的 Session，都是已归档的；见 [Session 创建与目录浏览](#session-创建与目录浏览)。
+  - 过滤参数通用。`q` 按标题做不区分大小写的匹配，最多 200 个字符；没有标题的 Session 按其 Trace 的首轮标题匹配。`source` 取 `user`（亲手归档的）、`api`、`schedule` 或 `cli`。`projectId` 只看一个 Project，不存在或调用者无权进入时返回 `404` `project_not_found`。
+  - `GET /api/me/archived-sessions/groups` 返回 `{groups: [{projectId, projectName, workspace, count, latest}], total, asOf}`，每个 Project 的每个 Workspace 一组。`workspace` 是 Workspace 路径，合并的临时 Workspace 记为 `temp`。`latest` 是组内最新的 `lastActiveAt`，分组按它从新到旧排列。`total` 是各组计数之和，`asOf` 是服务端取这些计数的时刻。
+  - `GET /api/me/archived-sessions` 按最近活动从新到旧分页读取一个分组。`projectId`、`workspace` 和 `limit`（1–100）必填，`before=<lastActiveAt>,<sessionId>` 与 Session 列表一样从已持有的最后一行之后继续。没有标题的行带上其 Trace 的首轮标题。
+  - 两个批量路由接受 `{sessionIds: [...]}`（1–500 个 id）或 `{filter: {q?, source?, projectId?, workspace?, until?, exclude?}}`（代表过滤条件匹配的全部已归档 Session），返回 `{done, missing}`。过滤条件的 `until` 是某次分组响应的 `asOf`：此时批量操作只作用于那一刻已归档、此后没有活动的 Session，计数之后才归档、新开或运行过的 Session 不受影响。`exclude`（1–500 个 id）把这些 Session 排除在外，即**全选**之后又取消勾选的行。每个 Session 都走与 `PATCH` 或 `DELETE /api/sessions/:id` 相同的路径，每个 Session 一个事件。取消归档时 `done` 只计原本已归档的 Session；删除则删除点名的每一个 Session，无论是否已归档，运行中的先中止，但按过滤条件删除时会跳过运行中的 Session，也不计入 `done`。`missing` 列出不存在或调用者无权访问的 id；过滤形式不会产生 `missing`。
 
 ## 用户管理（仅管理员）
 
@@ -700,13 +709,13 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/workspace-files/search?workspace=&q=` | 按条目名搜索该目录 |
 | POST | `/workspace-files/reveal?workspace=&path=` | 在机器自带的文件管理器中显示文件 |
 
-- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`background` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数，与取哪一页无关）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
+- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active` 或 `archived`；`background` 返回 400）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数，与取哪一页无关）、`workspaceCounts`（按 Workspace 路径统计的同类总数）、`workspaceLatest`（每个 Workspace 最新的 Session）和 `workspaceLatestActive`（每个 Workspace 最新的 `active` Session）。不带分页参数时，返回完整列表。
 - `order` 决定列表顺序：`created`（默认）按创建时间从新到旧；`activity` 按 `lastActiveAt` 从新到旧，时间相同时按 `sessionId` 降序，两者都按码点比较而非按区域设置排序。在 `order=activity` 下，`before=<lastActiveAt>,<sessionId>` 搭配 `limit` 以游标代替 `offset` 分页：只返回严格排在这个键之后的行，通常就是客户端已显示的最后一行。两页之间变为活跃的 Session 会移到游标之前，因此不会被再次返回，也不会让其他行漏掉。`before` 未搭配 `order=activity`、与 `offset` 同时出现、缺少 `limit`，或在第一个逗号处拆开后不是日期加合法 id，均返回 400。
 - `excludeOrg=1` 会把组织的工位会话、工单会话和子 Session 一并移出这一页以及 `counts=1` 的总数，这正是开发模式的列表所要的。取其他值返回 400。
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
 - `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，Agent API 的运行新建的 Session 由服务器写入 `"api"`，这两个值客户端都不能发送。`excludeOrg` 用它剔除 `org` 行，Agent API 只延续 `api` 行；见 [Agent API](/agent-api#会话)。Trace 未记录 `source` 的 `"org"` 行（旧版本写下的，或尚未运行过的）读作 `company` 会话。
-- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/omni-message#sessionmeta)），类别由它决定：`company` 会话不属于任何类别，归档与否都一样，因此带 `category`、`workspaceGroup` 或 `counts=1` 的请求会把它移出这一页和所有总数，只有不带这些参数的完整列表才返回它。其余的会话，已归档的无论来源都是 `archived`；`user` 会话为 `active`，`api`、`schedule`、`subagent`、`cli` 会话为 `background`。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
+- Session 的 `source` 表示它是哪一类会话（见 [session_meta](/omni-message#sessionmeta)），它与用户的归档标记一起决定 Session 的类别。`subagent` 与 `company` 会话无论标记如何都不属于任何类别，因此带 `category`、`workspaceGroup` 或 `counts=1` 的请求会把它们移出这一页和所有总数，只有不带这些参数的完整列表才返回它们。其余的会话，用户归档的，或 `source` 为 `api`、`schedule`、`cli` 且用户没有取消归档的，为 `archived`；否则为 `active`。取消归档会写入一个保留标记，之后的运行从不清除它，所以用户取消归档过的程序会话保持 `active`，直到再次被归档。这条规则在每次读取时计算，不改写磁盘上的任何内容；Session 信息中的 `archived` 就是它的结论。Trace 开头尚未读过的行不带 `source`，按 `active` 计。
 - 创建时 `source` 只接受 `"cli"`，由 `penguin run` 发送；其他来源只由服务器自己写入，省略时创建 `user` 会话。已停用的 `"benchmark"` 仍然接受，按 `"cli"` 处理。
 - `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries, platform}`：每个条目带 `kind`（`dir` 或 `file`）与 `mtime`；在 Windows 上，系统隐藏的条目（带隐藏属性，如 `AppData`、`NTUSER.DAT`）另带 `hidden: true`，只写盘符如 `D:` 即视为其根目录 `D:\`。请求主目录并带 `places=1` 时，另附选择器左栏所需的两项：`standardFolders`（桌面、文档、下载、图片，按该机器自己的规则取得——Windows 的已知文件夹、Linux 的 XDG 用户目录；读取失败时省略）与 `locations`（Windows 的各盘符、macOS 的各卷、Linux 的根目录及 `/media`、`/run/media`、`/mnt` 下的挂载点，各带 `kind`，有名称时带 `label`）。服务无权读取的目录返回 `403 dir_permission_denied`，不再按空列表返回；在 macOS 上这通常是用户尚未授予的「文件与文件夹」权限。
 - `POST /dirs/access` 是桌面端 Workspace 选择器里的**允许访问**。macOS 只替它认定为读取责任方的应用询问桌面、文稿与下载的访问权限，因此由桌面 shell 的主进程把绝对路径 `path` 读一次，响应要等用户作答后才返回。`granted` 表示这次读取是否成功（非 macOS 平台不读取，恒为 `true`）。`packaged` 为 `false` 表示这是从终端启动的开发实例，macOS 把它的读取记在该终端名下。`path` 不是绝对路径时返回 `400` `dir_not_absolute`；服务器没有可询问的桌面 shell 时返回 `503` `shell_unreachable`；shell 在 120 秒内没有应答时返回 `504` `timeout`。只有桌面应用自己的窗口可以调用，其他会话返回 `403` `desktop_shell_only`。
@@ -742,7 +751,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `GET /usage/errors` 接受 `offset`、`limit`、同样的 `from` / `to` / `fromTs` / `toTs` / `agentId` 过滤条件，以及可选的 `kind`（`unexpected` 或 `expected`）。
 - 错误表把同一天里来源、错误码、分类和消息都相同的记录合为一行，带上次数 `count`、最近一次的时间 `ts` 和首次的时间 `firstTs`。`offset`、`limit` 和 `rows` 按行计；`total` 和仪表盘的汇总数字按记录计。`GET /usage` 与 `GET /usage/errors` 都接受可选的 `utcOffsetMinutes`，即读者所在时区相对 UTC 向东的分钟数（−840 到 840），它决定「同一天」按哪一天算；不传时按服务器自己的日期。
 - `DELETE /usage/errors` 接受与读取相同的过滤条件（`from` / `to` / `fromTs` / `toTs` / `agentId`），但不接受 `kind`，因为面板上没有这个控件。这里 `from` 和 `to` 都必填（否则返回 400），因为少一个边界，清空的就是整段历史，而不是过滤后的一部分。清空的范围与调用者读取的范围完全一致：管理员清空时，也会删掉只有管理员读取才能看到的未归属行；成员清空时则永远不会。
-- `GET /agents/:agentId/traces` 还接受 `limit` 和 `offset` 分页，以及 `category`（必须搭配 `limit`），用于只列出某一类别的 Session。分页列表不含不属于任何类别的 `company` 会话；不带 `limit` 的完整目录列出所有 Trace。
+- `GET /agents/:agentId/traces` 还接受 `limit` 和 `offset` 分页，以及 `category`（必须搭配 `limit`），用于只列出某一类别的 Session。分页列表使用与 Session 列表相同的两个类别，不含不属于任何类别的 `subagent` 与 `company` 会话；不带 `limit` 的完整目录列出所有 Trace。
 - 任何成员都可以下载 Trace。导入只有所有者能做，与 Agent State 快照导入一样，上限 14MB。导入的文件必须是有效的 Trace JSONL，首条记录必须是 `session_meta`，`session_id` 须可安全用作文件名。session id 与 Agent 已有的重复时拒绝导入（409 `trace_session_exists`），所以导入的文件总是成为新 Session 的 index 001，按首条记录的时间戳存入对应的本地日期目录。
 
 ## Session 级端点
@@ -757,7 +766,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | --- | --- | --- |
 | GET | `/` | Session 信息 |
 | PATCH | `/` | 更新 Session：`{approvalMode?, sandbox?, thinkingLevel?, archived?, title?}` |
-| DELETE | `/` | 删除 Session，连同它的 Trace 和暂存文件 |
+| DELETE | `/` | 删除 Session，连同它的 Trace、暂存文件和子 Agent Session |
 | GET | `/messages` | OmniMessage 历史，全量或按 Task 窗口 |
 | GET | `/trace-image?file=&ordinal=[&i=]` | Trace 记录中的一张图片，即分窗 `/messages` 页引用的图片 |
 | POST | `/fork` | 在一条已完成的助手回复之后分叉空闲的 Session：`{position: {fileIndex, ordinal}}` → `{session}` |
@@ -769,6 +778,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `PATCH /` 先校验全部字段再写入任何一个，`sandbox` 选择（`{mode?, network?}`）也在其中：非管理员选的档位比服务端的沙盒设置更宽时为 `403` `sandbox_forbidden`，本机没有后端能实施的档位为 `400` `sandbox_unsupported`；被拒的请求什么都不落盘，`approvalMode` 与 `title` 也不例外。Session 的 `sandbox` 视图里，`presets` 中比服务端设置更宽的行带 `aboveCeiling: true`（只出现在响应里），与这条拒绝用同一次比较：非管理员选这样的行会被拒绝。
 - `PATCH /` 带 `title` 设置手动标题，自动生成的标题不会取代它。连续空白（含换行与制表符）存为一个空格，结果须为 1–120 个字符；含控制字符，或双向嵌入、覆盖、隔离字符（U+202A–U+202E、U+2066–U+2069）时为 `400` `invalid_title`。
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
+- `PATCH /` 带 `archived: true` 归档 Session；带 `archived: false` 取消归档，并让它留在侧边栏：由程序打开的 Session 此后再运行也保持 `active`，直到再次被归档。两者都以 `session_archived` 宣告。`subagent` 与 `company` 会话不在任何列表中，对它们设置 `archived` 返回 `409` `session_not_listed`。运行、恢复、定时任务投递或消息接入都照常作用于已归档的 Session，且不会取消归档。
+- `DELETE /` 先中止运行中的 Task，再移除 Session 的 Trace 文件、暂存文件、索引行和消息渠道绑定。它派生的子 Agent Session（由其 Trace 中的 `subagent` 记录找出）按同样的方式一并删除。每删除一个 Session 都以 `session_deleted` 宣告。
 - `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。窗口还受 4 MiB 的序列化大小约束：加入某个单元会超出时就在它之前收口，但至少包含一个单元，所以窗口的单元数可能少于请求的数量，此时同样带 `before` 游标。内置 Web App 打开一段对话时先显示最近 20 轮，每次滚动到顶部再加载 20 轮。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）、此前累计的统计（`prior`），以及窗口起点所在上下文的模型（`contextModel`）：Session 可以在上下文之间切换模型，而从某个上下文中途开始的窗口并不包含记录其模型的那条 `session_meta`。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - 窗口式响应中的图片按引用下发。在带 `tracePosition` 的记录里，PNG、JPEG、GIF 或 WebP 的 `data:` URL（无论是用户的 `image_url`，还是工具输出 `images` 中的一项）会被替换为 `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`，`images` 的第 k 项再加 `&i=<k>`。这条路由返回解码后的图片，带图片自身的类型、`Cache-Control: private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。记录中没有对应图片时返回 404 `trace_image_not_found`，参数缺失或格式不对时返回 400。子 Agent 的消息、其他类型的图片以及全量读取都保留原来的 `data:` URL。
 - `GET /context` 返回当前模型上下文的各个组成部分，外加 `compactionThreshold`：上下文达到多大（以 Token 计）时，Session 的下一个请求会开始压缩。这个阈值就是 Agent 的 `compaction.max_context_length`，上限不超过模型上下文窗口的剩余空间。压缩未启用、读不到 Agent 配置，或阈值不低于窗口时，这个值是 `null`。这条路由每次调用都读取最新的 Trace 文件，所以数值是快照，不是实时计数器。
@@ -1200,7 +1211,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
-| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
+| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_created`、`session_archived`、`session_deleted`、`session_state`、`session_background`、`session_approvals`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
 
 ### 传输格式
 
@@ -1227,6 +1238,8 @@ export type ServerEvent =
   | { type: "hello" }
   | { type: "web_updated"; rev: string }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
+  | { type: "session_archived"; sessionId: string; projectId: string; agentId: string; archived: boolean }
+  | { type: "session_deleted"; sessionId: string; projectId: string }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "goal_started"; sessionId: string; objective: string; budget: number }
@@ -1251,6 +1264,8 @@ export type ServerEvent =
 | `hello` | 用户通道上的握手 |
 | `web_updated` | 热更新替换了对外提供的 web 资源；客户端需重新加载 |
 | `session_created` | 一个 Session 现在存在了：由 Web App、CLI、定时任务或 Agent 派生子 Session 创建 |
+| `session_archived` | Session 被归档或取消归档 |
+| `session_deleted` | Session 被删除 |
 | `schedule_fired` | 定时任务已触发，Prompt 已投递 |
 | `schedule_queued` | 目标 Session 正在运行，这次触发已排队 |
 | `goal_started` | 目标运行开始，在第一轮之前 |
@@ -1264,12 +1279,14 @@ export type ServerEvent =
 - `approval_request` 覆盖 `always-ask` 模式下的每个调用，以及 `read-only` 模式下带 `rw` 或未知权限的调用。待处理的审批会在重连时重新发送。
 - `task_state` 还携带排队的后续消息数量（`queued`）、仍在等待投递的插话消息（`pendingSteering`）、运行结束时没能投递的插话消息（`returnedSteering`）、排队的后续消息本身（`pendingFollowUps`）以及活跃的子 Agent（`subagents`）。字段缺失表示没有。
 - `session_title` 发送到 Session 的通道，以及 Project 所有者和成员的用户通道。
-- `session_state` 用 `sessionId` 指明是哪个 Session、用 `projectId` 指明所属 Project，因此 Session 列表的每一行都能保持实时，而不只是客户端当前打开的那个会话；列表还能据此认出本 Project 中自己尚未持有的 Session，再按 id 单独拉取。事件携带重绘这一行所需的字段，无需重新拉取：刚写入的 `lastActiveAt`，以及 `hasTrace`。状态为 `running` 或 `compacting` 时 `hasTrace` 必为 true，因为正在运行的 Session 必然已经启动过 Task。它发送到 Project 所有者和成员的用户通道。
+- `session_state` 用 `sessionId` 指明是哪个 Session、用 `projectId` 指明所属 Project，因此 Session 列表的每一行都能保持实时，而不只是客户端当前打开的那个会话；列表还能据此认出本 Project 中自己尚未持有的 Session，再按 id 单独拉取；Web App 的侧边栏只在该 Session 为活跃时才显示这一行。事件携带重绘这一行所需的字段，无需重新拉取：刚写入的 `lastActiveAt`，以及 `hasTrace`。状态为 `running` 或 `compacting` 时 `hasTrace` 必为 true，因为正在运行的 Session 必然已经启动过 Task。它发送到 Project 所有者和成员的用户通道。
 - 以下情况会触发 `session_background`：命令超过让出窗口转入后台，或以 `run_in_background` 启动；进程退出或停止；后台子 Agent 开始一轮、结束一轮或释放。事件携带 `SessionInfo.backgroundTasks` 的当前值（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转入后台、正处于一轮中的子 Agent Session 数），归零时同样发送，列表无需重新拉取就能撤下标记。两个计数都为零时，列表行和单个 Session 的 GET 会省略这个字段。受众与 `session_state` 相同。
 - 以下情况会触发 `session_approvals`：工具调用升级给人审批（`always-ask` 下的每个调用，`read-only` 下读写或权限未知的调用）；某个审批得到回答；中断拒绝了所有等待中的审批（只发一个事件）。`count` 是 Session 当前的 `pendingApprovalCount`，归零时同样发送。调用本身以 `approval_request` 出现在该 Session 自己的流上，订阅时会重放。受众与 `session_state` 相同。
 - `credentials_updated` 在 `PUT /models` 或签发 API key 的流程完成之后发送。缓存的运行时已失效，客户端应清除因认证失败而禁用的输入框状态。
 - `web_updated` 以 `rev` 携带新的 web 修订号，发送到每个用户通道。
 - `session_created` 在每次创建时发送到 Project 所有者和成员的用户通道；子 Agent Session 还会同时发送到父 Session 的通道。`source` 是新 Session 的 `session_meta` 所记录的来源。通过 `PATCH /api/sessions/:id` 设置的标题以同样方式作为 `session_title` 宣告。
+- `session_archived` 在 Session 被归档或取消归档时发送：来自 `PATCH /api/sessions/:id` 设置 `archived`，或已归档对话页的批量取消归档，每个 Session 一个事件。`archived` 是新的状态，列表据此移除已归档的行，或按 id 取回取消归档的行。它发送到 Project 所有者和成员的用户通道。
+- `session_deleted` 对每个被删除的 Session 发送：来自 `DELETE /api/sessions/:id`、随它一并删除的子 Agent Session，以及已归档对话页的批量删除，每个 Session 一个事件，各客户端据此移除这一行。受众与 `session_archived` 相同。
 - `schedule_fired` 的 `sessionId` 是接收 Prompt 的 Session，在新建 Session 模式下是一个新 Session。排队的触发会在 Session 空闲后发送。
 - `goal_round` 携带 `used`，即目前累计的 Token 数。
 - `org_*` 事件发送到 Project 成员的用户通道。`org_channel` 包含消息里的提及信息，客户端可据此判断消息是否指向自己。这些事件是尽力而为的；持久状态以组织路由为准。

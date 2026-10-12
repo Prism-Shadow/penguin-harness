@@ -520,6 +520,31 @@ export const en: Strings = {
     off: "Turn off",
   },
 
+  archivedSessions: {
+    search: "Search archived chats",
+    sourceFilter: "Source",
+    projectFilter: "Project",
+    allSources: "All sources",
+    allProjects: "All projects",
+    count: (n: number): string => (n === 1 ? "1 chat" : `${n} chats`),
+    selectAll: "Select all",
+    deselectAll: "Deselect all",
+    select: (title: string): string => `Select ${title}`,
+    selected: (n: number): string => `${n} selected`,
+    clearSelection: "Clear selection",
+    moreGroups: (n: number): string => `More groups (${n})`,
+    empty: "No archived chats",
+    noMatches: "No matching chats",
+    running: "Running",
+    loadFailed: (reason: string): string => `Could not read the archived chats: ${reason}`,
+    actionFailed: (reason: string): string => `That did not finish: ${reason}`,
+    deleteTitle: (n: number): string => (n === 1 ? "Delete chat" : `Delete ${n} chats`),
+    deleteConfirm: (n: number): string =>
+      n === 1
+        ? "Delete this chat? Its messages and Trace will be removed permanently."
+        : `Delete these ${n} chats? Their messages and Traces will be removed permanently.`,
+  },
+
   tracePanel: {
     empty: "No traces yet",
     emptyHint: "This session has not produced a Trace file yet",
@@ -551,6 +576,9 @@ export const en: Strings = {
     generalTitle: "General",
     appearanceTitle: "Appearance",
     shortcutsTitle: "Keyboard shortcuts",
+    archivedTitle: "Archived chats",
+    archivedInfo:
+      "Chats that are not in the sidebar: the ones you archived, and the ones a program opened (the API, scheduled tasks, penguin run) until you unarchive them. An archived chat shows only its title and time; unarchived, it returns to the sidebar and later runs leave it there.",
     /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
     shortcutsInfo:
       "Shortcuts follow the platform: ⌘ on macOS, Ctrl elsewhere. A change applies at once in every tab of this browser; the account's other browsers and the desktop app pick it up the next time they load. Bindings are stored per account and per platform, so a Mac and a Windows machine each keep their own. A browser tab cannot receive the chords the browser itself reserves (Ctrl+W / ⌘W, for example), so those work in the desktop app only; a chord the browser also uses (Ctrl+P / ⌘P prints) takes over that browser function in a browser tab. The list marks both.",
@@ -1663,7 +1691,7 @@ export const en: Strings = {
     kernelListSeparator: ", ",
     apiEnable: "Enable API access",
     apiEnableHint:
-      "External programs can talk to this agent with the URL, a key and the Agent ID; the conversations appear in the sidebar's Background folder.",
+      "External programs can talk to this agent with the URL, a key and the Agent ID; the conversations are archived, listed in Settings › Archived chats.",
     apiOwnerOnly: "Only the Project owner can change these settings.",
     apiAdminOff:
       "An admin has turned the Agent API off for this server: every API request is refused, and the settings and keys here are kept.",
@@ -1702,7 +1730,7 @@ export const en: Strings = {
     apiOn: "API access on",
     apiTry: "Try it",
     apiTryHint:
-      "Runs the route a program calls, your sign-in in place of a key, and shows what it receives; filed under Background.",
+      "Runs the route a program calls, your sign-in in place of a key, and shows what it receives; the conversation is archived, listed in Archived chats.",
     apiTryExample: "What time is it now?",
     apiTryRun: "Run",
     apiTryStop: "Stop",
@@ -3757,20 +3785,15 @@ Scenarios:
     expandRestSessions: (n: number) => `Show ${n} more ${n === 1 ? "chat" : "chats"}`,
     /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
     loadMoreSessions: "Load more chats",
-    /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
-    folderGroups: {
-      background: (n: number) => `Background (${n})`,
-      archived: (n: number) => `Archived (${n})`,
-    },
     sessionSource: {
+      user: "User",
       api: "API",
       schedule: "Scheduled",
-      subagent: "Subagent",
       cli: "CLI",
     },
-    /** Tooltip of a folder-only group's header (nothing active of its own): what its folders hold, plus the Workspace path where the header has one. */
-    folderOnlyGroup: (n: number, path?: string) =>
-      `Folded tasks only: ${n} conversation${n === 1 ? "" : "s"}${path ? ` (${path})` : ""}`,
+    archivedStub: {
+      note: "This chat is archived. Unarchive it to read it; it returns to the sidebar.",
+    },
     /** The skills note's fixed phrase (the count picks the plural); the skill names follow it as `nameList`. */
     skillsLabel: (count: number): string => `Using skill${count === 1 ? "" : "s"}`,
     /** Attached-file notice above a user message: this fixed phrase, then the file names as `nameList`. */

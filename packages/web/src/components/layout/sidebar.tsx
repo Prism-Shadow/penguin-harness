@@ -13,9 +13,11 @@
  * Workspace path, temporary workspaces merged into one trailing group, header "+" starts a
  * draft in that Workspace), by Agent (group header = Agent name + new chat + Agent settings;
  * shows all Agents, including empty groups), or by time (last day / last month / earlier,
- * bucketed on last activity; the buckets span every Agent, so the Subagents / Scheduled /
- * Archived folders and the paging row sit below them as one Project-wide set). Groups can
- * be pinned via the header's hover pin toggle: pinned groups sort before unpinned within
+ * bucketed on last activity; the buckets span every Agent, so the paging row sits below them
+ * as one Project-wide row). The list holds the user's active conversations only: an archived
+ * Session — one the user archived, or one a program opened that nobody kept — is listed on the
+ * Settings dialog's archive page, and a subagent Session opens from its parent's Agent panel.
+ * Groups can be pinned via the header's hover pin toggle: pinned groups sort before unpinned within
  * their mode, keeping each partition's own order — the time buckets excepted, whose order
  * IS the timeline and which therefore carry no pin. Conversations can be pinned too (row
  * context menu; persisted per Project in
@@ -30,8 +32,8 @@
  * by the organization's own 工位 group — one row per employee
  * (features/company/channel-sidebar.tsx, features/company/org-session-groups.tsx). The
  * development list is the user's OWN conversations only: an organization's desk, ticket and
- * sub-sessions are left out of its fetches and totals by the server, and out of every group,
- * bucket and folder here should one still arrive.
+ * sub-sessions are left out of its fetches and totals by the server, and out of every group
+ * and bucket here should one still arrive.
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new; a group header's "+" names its group's Agent or
  * Workspace in route state): Model / Workspace / approval mode are all chosen on the draft input
@@ -44,11 +46,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
-import type {
-  SessionCategory,
-  SessionCategoryCounts,
-  SessionInfo,
-} from "@prismshadow/penguin-server/api";
+import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
   Badge,
@@ -56,7 +54,6 @@ import {
   ConfirmModal,
   Dropdown,
   Fold,
-  FolderSection,
   GlyphIcon,
   GroupHeader,
   ICONS,
@@ -109,31 +106,24 @@ import { useLocale } from "../../state/locale";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
-  FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
-  TIME_FOLDERS_GROUP_KEY,
+  TIME_LIST_KEY,
   aggregateWorkspaceCounts,
   aggregateWorkspaceLatest,
   clampGroupPage,
   completeWorkspaceGroups,
   cutAtWatermark,
-  foldedShare,
   groupPageCount,
   groupPageOf,
   groupPageSlice,
   groupSessionsByTime,
   groupSessionsByWorkspace,
-  isFolderOnly,
+  isSidebarRow,
   matchesSessionQuery,
-  partitionSessions,
   revealPlan,
-  sessionCategory,
-  totalCategoryCounts,
-  withoutOrgSessions,
   workspaceGroupKey,
   workspaceLabel,
 } from "../../lib/session-grouping";
-import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
 import { machineForSession } from "../../lib/session-machines";
 import { backgroundSourceMark } from "../../lib/session-source-mark";
 import { nameOnMachine } from "../../lib/workspace-machines";
@@ -181,7 +171,12 @@ import {
   orderGroups,
   saveGroupOrder,
 } from "../../lib/group-order";
-import { HOVER_ROW_ACTIONS, contextMenuActions, sessionRowActions } from "../ui/session-row-menu";
+import {
+  CONTEXT_MENU_ACTIONS,
+  HOVER_ROW_ACTIONS,
+  rowActionsFor,
+  sessionRowActions,
+} from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import {
@@ -285,15 +280,6 @@ const GROUP_ACTION_CLASS =
  */
 const collapsedGroupsKey = (projectId: string) => `penguin.sidebarCollapsedGroups.${projectId}`;
 const pinnedGroupsKey = (projectId: string) => `penguin.sidebarPinnedGroups.${projectId}`;
-/**
- * Opened folder-only groups, in a set of their own because the two say opposite things: a
- * group that opens by default stores the keys the user CLOSED, while a folder-only group
- * (collapsed by default — session-grouping.ts's isFolderOnly) stores the keys the user
- * OPENED. A group that gains an active row stops being folder-only and is simply read out of
- * the other set again, which is why neither set ever has to be rewritten.
- */
-const expandedFolderOnlyGroupsKey = (projectId: string) =>
-  `penguin.sidebarExpandedFolderGroups.${projectId}`;
 /** Reads a persisted group-key set (no Project yet / corrupted storage degrade to empty). */
 function loadGroupSet(storageKey: string | null): ReadonlySet<string> {
   if (!storageKey) return new Set();
@@ -315,37 +301,8 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
   }
 }
 
-/**
- * Open-state key of a collapsed folder (background / archived) inside a group: each folder has its
- * own state. "\0" never appears in Agent ids or Workspace paths, so the composite never collides
- * across groups or with plain group keys.
- */
-const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0${groupKey}`;
-
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
-
-/**
- * One group's active and folded shares — what decides whether it is folder-only, and the
- * count its dimmed header then carries. The server's exact per-category totals are raised,
- * category by category, by the rows already in memory: the counts are taken at fetch time, so
- * a conversation created since exists only as a loaded row (the rule a workspace group's
- * header count already applies to its active share).
- */
-const groupShares = (
-  totals: SessionCategoryCounts | undefined,
-  rows: readonly SessionInfo[],
-): { active: number; folded: number } => {
-  const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
-  for (const s of rows) {
-    const category = sessionCategory(s);
-    if (category !== null) counts[category] += 1;
-  }
-  counts.active = Math.max(counts.active, totals?.active ?? 0);
-  for (const category of FOLDER_CATEGORIES)
-    counts[category] = Math.max(counts[category], totals?.[category] ?? 0);
-  return { active: counts.active, folded: foldedShare(counts) };
-};
 
 /** Standing "no Session is scheduled", so the first render has something to hold before any answer. */
 const NO_SCHEDULED_SESSIONS: ReadonlySet<string> = new Set();
@@ -377,7 +334,7 @@ export function Sidebar({
     byAgent: allByAgent,
     countsByAgent,
     workspaceCountsByAgent,
-    workspaceLatestByAgent,
+    workspaceLatestActiveByAgent,
     machineLabels,
     isLoadedFor,
     hasMoreFor,
@@ -402,23 +359,22 @@ export function Sidebar({
   const navOrg = parseOrgKey(company.currentOrgKey ?? company.lastOrgKey);
 
   /**
-   * The rows this list renders: the user's OWN conversations. An organization's desk and
-   * ticket Sessions (`company` Sessions, marked by `orgId` too, and by the durable
-   * `client === "org"` stamp that outlives the organization) are driven by its scheduler and
-   * are reached as themselves in company
-   * mode — a desk from the 工位 group, a ticket session from its ticket. The store's own
-   * fetches already leave them out, totals and Workspace stamps included (the server's
-   * `excludeOrg`), so the counts below are the list's exact share; this filter is for a row
-   * that entered by another door (the chat page's deep-link self-heal), applied once, at the
-   * source, or the dropped row would still conjure the Workspace group, Agent group or time
-   * bucket it belongs to. It applies whatever the company-mode switches say (see
-   * withoutOrgSessions): this list is the user's conversations, and a switch about the shell
-   * does not turn a scheduler's Session into one.
+   * The rows this list renders: the user's OWN active conversations (isSidebarRow). The store
+   * also holds rows the chat page handed it for the conversation it shows — an archived
+   * Session's stub, a subagent opened from the Agent panel, an organization's desk or ticket
+   * Session (`company` Sessions, marked by `orgId` too, and by the durable `client === "org"`
+   * stamp that outlives the organization). The store's own fetches already leave all of those
+   * out, totals and Workspace stamps included (`category=active`, `excludeOrg`), so the counts
+   * below are the list's exact share; this filter is for a row that entered by another door,
+   * applied once, at the source, or the dropped row would still conjure the Workspace group,
+   * Agent group or time bucket it belongs to. It applies whatever the company-mode switches say:
+   * this list is the user's conversations, and a switch about the shell does not turn a
+   * scheduler's Session into one.
    */
-  const sessions = useMemo(() => withoutOrgSessions(allSessions), [allSessions]);
+  const sessions = useMemo(() => allSessions.filter(isSidebarRow), [allSessions]);
   const byAgent = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
-    for (const [agentId, rows] of allByAgent) map.set(agentId, withoutOrgSessions(rows));
+    for (const [agentId, rows] of allByAgent) map.set(agentId, rows.filter(isSidebarRow));
     return map;
   }, [allByAgent]);
 
@@ -452,8 +408,6 @@ export function Sidebar({
   const scheduledSessions = pendingScheduled ?? lastScheduledRef.current;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
-  const folderOnlyStoreKey =
-    currentProjectId === null ? null : expandedFolderOnlyGroupsKey(currentProjectId);
   /** Folded collapsible nav area (company mode: the whole nav group); expanded by default, the choice persists across sessions. */
   const [navCollapsed, setNavCollapsed] = useState(initialNavGroupCollapsed);
   /** The user's changes to which nav entries are pinned (the defaults live in nav-group-collapse.ts); persisted like the fold. */
@@ -480,10 +434,6 @@ export function Sidebar({
   /** Pinned groups (sorted before unpinned within their mode), keyed like collapsedGroups; persisted per Project. */
   const [pinnedGroups, setPinnedGroups] = useState<ReadonlySet<string>>(() =>
     loadGroupSet(pinStoreKey),
-  );
-  /** Folder-only groups the user has opened (they render collapsed by default), keyed like collapsedGroups but persisted in their own set — the two record opposite choices (see expandedFolderOnlyGroupsKey). */
-  const [expandedFolderOnlyGroups, setExpandedFolderOnlyGroups] = useState<ReadonlySet<string>>(
-    () => loadGroupSet(folderOnlyStoreKey),
   );
   /** Pinned conversations (bubbled to the top of their group's active list), Session ids; persisted per Project frontend-side (lib/pinned-sessions.ts). */
   const [pinnedSessions, setPinnedSessions] = useState<ReadonlySet<string>>(() =>
@@ -569,7 +519,6 @@ export function Sidebar({
   useEffect(() => {
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
-    setExpandedFolderOnlyGroups(loadGroupSet(folderOnlyStoreKey));
     setPinnedSessions(loadPinnedSessions(currentProjectId));
     setSessionOrder(loadSessionOrder(currentProjectId, groupMode));
     setGroupOrder(loadGroupOrder(currentProjectId, groupMode));
@@ -577,17 +526,12 @@ export function Sidebar({
     setGroupPage(0);
     // The other Project's groups are gone, and so is any meaning their reveal state had.
     setGroupCaps(new Map());
-    setFolderCaps(new Map());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collapseStoreKey, pinStoreKey, folderOnlyStoreKey, currentProjectId]);
-  /** Expanded folders (background / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
-  const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
-  /** "More" rows with a fetch in flight, keyed `${category}\0${groupKey}` — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
+  }, [collapseStoreKey, pinStoreKey, currentProjectId]);
+  /** "More" rows with a fetch in flight, keyed by group key — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
-  /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
+  /** Per-group display cap (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
-  /** The same display cap per folder (keyed by folderKey; absent = SIDEBAR_PAGE_SIZE), so an expanded folder reveals a page at a time instead of everything a fetch returned. */
-  const [folderCaps, setFolderCaps] = useState<ReadonlyMap<string, number>>(new Map());
   /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
   const [groupPage, setGroupPage] = useState(0);
   /** Session pending delete confirmation (null = none). */
@@ -616,7 +560,6 @@ export function Sidebar({
     setGroupOrder(loadGroupOrder(currentProjectId, mode));
     setGroupPage(0);
     setGroupCaps(new Map());
-    setFolderCaps(new Map());
   };
 
   /** Collapse/expand the page-nav group (same store-then-set convention as setGroupMode). */
@@ -695,10 +638,14 @@ export function Sidebar({
     [workspaceCountsByAgent],
   );
 
-  /** Workspace-mode per-group newest-Session stamps (folded the same way): a group's recency before any of its rows are loaded. */
+  /**
+   * Workspace-mode per-group newest-active-Session stamps (folded the same way): a group's
+   * recency before any of its rows are loaded. Active only, like the rows a group shows: an
+   * archived Session — a scheduled task's run, say — does not move the group it is not in.
+   */
   const workspaceGroupLatest = useMemo(
-    () => aggregateWorkspaceLatest(workspaceLatestByAgent),
-    [workspaceLatestByAgent],
+    () => aggregateWorkspaceLatest(workspaceLatestActiveByAgent),
+    [workspaceLatestActiveByAgent],
   );
 
   /**
@@ -724,23 +671,12 @@ export function Sidebar({
   );
 
   /**
-   * The folder-only groups of each mode: group key → the conversations folded inside it. A
-   * group with no active conversation of its own but rows inside its folders — a Workspace
-   * only subagents ever ran in, an Agent that has only ever been evaluated — folds up, sorts
-   * behind the other groups of its mode and wears a dimmed header carrying that count. (The
-   * Test Workspaces an evaluation creates per Case × Run never form groups of their own: they
-   * fold into the merged temp group, see session-grouping.ts's isTempWorkspace.)
-   *
-   * Read off the group lists BEFORE they are ordered: the ordering consumes this, so it
-   * cannot be what feeds it. The search query is deliberately not part of it either — a query
-   * hides rows rather than emptying a group, and a list that folded and reshuffled itself as
-   * the user typed would be unreadable.
-   */
-  /**
    * The Agents that get a group: every Agent but an organization's employee with no
-   * development conversation of its own (agent-employment.ts). Its desk and ticket sessions
-   * are company mode's and never counted here, so its group would only ever be empty; it
-   * comes back the moment a development conversation with it exists.
+   * development conversation of its own in this list (agent-employment.ts). Its desk and
+   * ticket sessions are company mode's and never counted here, so its group would only ever
+   * be empty; it comes back the moment a development conversation with it exists. The
+   * server's active total is raised by the loaded rows, which include a conversation created
+   * since the counts were taken.
    */
   const groupAgents = useMemo(
     () =>
@@ -748,36 +684,19 @@ export function Sidebar({
         (agent) =>
           !dropsEmployeeGroup(
             agent,
-            groupShares(countsByAgent.get(agent.agentId), byAgent.get(agent.agentId) ?? []),
+            Math.max(
+              countsByAgent.get(agent.agentId)?.active ?? 0,
+              byAgent.get(agent.agentId)?.length ?? 0,
+            ),
           ),
       ),
     [agents, countsByAgent, byAgent],
   );
-  const folderOnlyAgents = useMemo(() => {
-    const out = new Map<string, number>();
-    for (const agent of groupAgents) {
-      const shares = groupShares(
-        countsByAgent.get(agent.agentId),
-        byAgent.get(agent.agentId) ?? [],
-      );
-      if (isFolderOnly(shares.active, shares.folded)) out.set(agent.agentId, shares.folded);
-    }
-    return out;
-  }, [groupAgents, countsByAgent, byAgent]);
-  const folderOnlyWorkspaceGroups = useMemo(() => {
-    const out = new Map<string, number>();
-    for (const group of workspaceGroups) {
-      const shares = groupShares(workspaceGroupCounts.get(group.key)?.totals, group.sessions);
-      if (isFolderOnly(shares.active, shares.folded)) out.set(group.key, shares.folded);
-    }
-    return out;
-  }, [workspaceGroups, workspaceGroupCounts]);
 
   // Pinned groups first within each mode, then the manual drag order within each pin
-  // partition, and the folder-only groups behind the rest of the unpinned cluster (a pinned
-  // one stays where it was pinned). Nothing dragged yet = an empty order = the automatic
-  // sort untouched (recency for Workspace groups with the temp group last, the configured
-  // Agent order for Agents), which is also what a group with no stored place falls back to.
+  // partition. Nothing dragged yet = an empty order = the automatic sort untouched (recency
+  // for Workspace groups with the temp group last, the configured Agent order for Agents),
+  // which is also what a group with no stored place falls back to.
   // The stored array belongs to the mode it was loaded for: handing an Agent list an
   // order of Workspace keys is a no-op only as long as the two key namespaces cannot
   // collide, and it costs the empty-order fast path on every render of the other mode.
@@ -786,18 +705,16 @@ export function Sidebar({
       orderGroups(groupAgents, (a) => a.agentId, {
         pinned: pinnedGroups,
         order: groupMode === "agent" ? groupOrder : [],
-        demote: (a) => folderOnlyAgents.has(a.agentId),
       }),
-    [groupAgents, pinnedGroups, groupOrder, groupMode, folderOnlyAgents],
+    [groupAgents, pinnedGroups, groupOrder, groupMode],
   );
   const orderedWorkspaceGroups = useMemo(
     () =>
       orderGroups(workspaceGroups, (g) => g.key, {
         pinned: pinnedGroups,
         order: groupMode === "workspace" ? groupOrder : [],
-        demote: (g) => folderOnlyWorkspaceGroups.has(g.key),
       }),
-    [workspaceGroups, pinnedGroups, groupOrder, groupMode, folderOnlyWorkspaceGroups],
+    [workspaceGroups, pinnedGroups, groupOrder, groupMode],
   );
 
   // The FULL displayed group sequences a drop commits — every group of the mode, not the
@@ -808,35 +725,19 @@ export function Sidebar({
     [orderedWorkspaceGroups],
   );
 
-  /** Group key a Session's FOLDERS hang off under the current mode (the archived-open state); time mode keeps one shared set for the whole Project. */
-  const sessionGroupKey = (s: SessionInfo) =>
-    groupMode === "agent"
-      ? s.agentId
-      : groupMode === "time"
-        ? TIME_FOLDERS_GROUP_KEY
-        : workspaceGroupKey(s.workspace, machineForSession(s.sessionId));
-
-  /**
-   * Collapse/expand a group. A folder-only group flips the OTHER set: it is collapsed by
-   * default, so what persists is the fact that the user opened it (expandedFolderOnlyGroupsKey).
-   */
-  const toggleGroup = (key: string, folderOnly = false) => {
+  /** Collapse/expand a group. */
+  const toggleGroup = (key: string) => {
     // Inert while searching: groups render force-opened then, so a click would change
     // nothing on screen while silently rewriting the persisted collapse state — the user
     // would find groups flipped once the query clears.
     if (searching) return;
     // Computed outside the state updater (theme.tsx convention): the persistence write is a
     // side effect, and updaters must stay pure (double-invoked in StrictMode).
-    const next = new Set(folderOnly ? expandedFolderOnlyGroups : collapsedGroups);
+    const next = new Set(collapsedGroups);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    if (folderOnly) {
-      setExpandedFolderOnlyGroups(next);
-      saveGroupSet(folderOnlyStoreKey, next);
-    } else {
-      setCollapsedGroups(next);
-      saveGroupSet(collapseStoreKey, next);
-    }
+    setCollapsedGroups(next);
+    saveGroupSet(collapseStoreKey, next);
   };
 
   /** Pin / unpin a group (same toggle-and-persist convention as toggleGroup). */
@@ -899,20 +800,17 @@ export function Sidebar({
     searching ? rows.filter((s) => matchesSessionQuery(s, searchQuery)) : rows;
 
   /**
-   * Time mode's split of the loaded rows: the buckets take the active conversations, the
-   * shared folders below take the rest. Deliberately NOT memoized — the bucket boundary is
-   * `Date.now()`, and a memo would freeze it at its last dependency change; the compact
-   * relative timestamps rendered beside these rows are recomputed every render for exactly
-   * the same reason. Null outside time mode, so no other mode pays for the two passes.
+   * Time mode's loaded rows, through the search. Deliberately NOT memoized — the bucket
+   * boundary is `Date.now()`, and a memo would freeze it at its last dependency change; the
+   * compact relative timestamps rendered beside these rows are recomputed every render for
+   * exactly the same reason. Null outside time mode, so no other mode pays for the pass.
    */
-  const timeParts = groupMode === "time" ? partitionSessions(filterRows(sessions)) : null;
+  const timeRows = groupMode === "time" ? filterRows(sessions) : null;
 
-  /** Time mode's exact server share, Project-wide: its buckets span every Agent, so the shared folders read the summed counts. */
-  const projectCounts = totalCategoryCounts(countsByAgent);
-
-  /** Agents holding rows of a category anywhere in this Project — time mode's fetch fan-out (the counts are kept in step locally, so they cover freshly added rows too). */
-  const projectAgentsFor = (category: SessionCategory) =>
-    [...countsByAgent].filter(([, counts]) => counts[category] > 0).map(([agentId]) => agentId);
+  /** Agents holding active rows anywhere in this Project — time mode's fetch fan-out (the counts are kept in step locally, so they cover freshly added rows too). */
+  const projectActiveAgents = [...countsByAgent]
+    .filter(([, counts]) => counts.active > 0)
+    .map(([agentId]) => agentId);
 
   /**
    * Time mode's rows, cut at the list's watermark BEFORE bucketing. Every Agent (on every
@@ -924,24 +822,17 @@ export function Sidebar({
    * open conversation always shows.
    */
   const timeVisible =
-    timeParts === null
+    timeRows === null
       ? []
       : cutAtWatermark(
-          timeParts.active,
-          searching ? null : activityWatermarkFor(projectAgentsFor("active"), "active"),
+          timeRows,
+          searching ? null : activityWatermarkFor(projectActiveAgents),
           activeSessionId,
         );
-  const timeGroups = timeParts === null ? [] : groupSessionsByTime(timeVisible, Date.now());
+  const timeGroups = timeRows === null ? [] : groupSessionsByTime(timeVisible, Date.now());
 
-  /** Agents with an unfetched active page left; the whole-list "More" of time mode pages all of them at once. */
-  const timeMoreAgents = projectAgentsFor("active").filter((id) => hasMoreFor(id, "active"));
-
-  /** A time bucket's rows as a group partition: the buckets carry active conversations only. */
-  const bucketPartition = (rows: SessionInfo[]): SessionPartition => ({
-    active: rows,
-    background: [],
-    archived: [],
-  });
+  /** Agents with an unfetched page left; the whole-list "More" of time mode pages all of them at once. */
+  const timeMoreAgents = projectActiveAgents.filter((id) => hasMoreFor(id));
 
   /** Close the search row and drop the filter (the toggle button, the clear ×, and Escape all land here). */
   const closeSearch = () => {
@@ -1084,11 +975,8 @@ export function Sidebar({
     (groupMode === "agent"
       ? orderedAgents.some((a) => filterRows(byAgent.get(a.agentId) ?? []).length > 0)
       : groupMode === "time"
-        ? timeParts !== null && Object.values(timeParts).some((rows) => rows.length > 0)
+        ? timeRows !== null && timeRows.length > 0
         : orderedWorkspaceGroups.some((g) => filterRows(g.sessions).length > 0));
-
-  /** In-flight key of one group's category "More" (folderKey shares the same composite for folder categories). */
-  const loadKey = (groupKey: string, category: SessionCategory) => `${category}\0${groupKey}`;
 
   /**
    * The server stream a group's fetches walk: its own, under Workspace grouping, or the
@@ -1105,75 +993,16 @@ export function Sidebar({
     groupMode === "workspace" ? groupKey : undefined;
 
   /** loadMoreFor with an in-flight marker for the triggering "More" row (disable + loading text). */
-  const trackedLoadMore = (groupKey: string, category: SessionCategory, agentIds: string[]) => {
-    const key = loadKey(groupKey, category);
-    setPendingLoads((prev) => new Set(prev).add(key));
-    void loadMoreFor(agentIds, category, fetchScope(groupKey)).finally(() => {
+  const trackedLoadMore = (groupKey: string, agentIds: string[]) => {
+    setPendingLoads((prev) => new Set(prev).add(groupKey));
+    void loadMoreFor(agentIds, fetchScope(groupKey)).finally(() => {
       setPendingLoads((prev) => {
         const next = new Set(prev);
-        next.delete(key);
+        next.delete(groupKey);
         return next;
       });
     });
   };
-
-  /**
-   * Open/close a group's folder. A folder's content is loaded on demand: the first
-   * expand fetches its category's first page for every contributing Agent that hasn't
-   * been asked yet (already-loaded rows stay put — re-expanding never refetches; the
-   * folder's own "More" row does the paging from there).
-   */
-  const toggleFolder = (groupKey: string, category: FolderCategory, agentIds: string[]) => {
-    // Inert while searching (same reason as toggleGroup): folders render force-opened,
-    // so a click would only fire a pointless category fetch and desync the open state.
-    if (searching) return;
-    const key = folderKey(groupKey, category);
-    const opening = !openFolders.has(key);
-    setOpenFolders((prev) => {
-      const next = new Set(prev);
-      if (opening) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-    if (opening) {
-      const scope = fetchScope(groupKey);
-      const unloaded = agentIds.filter((id) => !isLoadedFor(id, category, scope));
-      if (unloaded.length > 0) void loadMoreFor(unloaded, category, scope);
-    }
-  };
-
-  // The open chat is a background Session (one a program opened): expand the Background folder
-  // in its group, so the active row is never hidden inside a collapsed folder (mirrors the
-  // archived expansion on archiving the open chat; archived wins, so an archived Session is left
-  // to that folder). Auto-expansion fires ONCE per (grouping mode, active session): the ref guard
-  // keeps list mutations (status ticks, reloads) from re-opening a folder the user explicitly
-  // collapsed while that chat stays open. `sessions` must remain a dependency — the active
-  // session may not be in the list yet on first render, and the guard is only set once the
-  // row is actually found and expanded.
-  const lastAutoExpandedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!activeSessionId) return;
-    const s = sessions.find((x) => x.sessionId === activeSessionId);
-    if (!s) return;
-    const category = sessionCategory(s);
-    if (category === null || category === "active" || category === "archived") return;
-    const guard = `${groupMode}\0${activeSessionId}`;
-    if (lastAutoExpandedRef.current === guard) return;
-    lastAutoExpandedRef.current = guard;
-    const groupKey =
-      groupMode === "agent"
-        ? s.agentId
-        : groupMode === "time"
-          ? TIME_FOLDERS_GROUP_KEY
-          : workspaceGroupKey(s.workspace, machineForSession(s.sessionId));
-    const key = folderKey(groupKey, category);
-    setOpenFolders((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
-    // Same on-demand load a click-expand does, for this Session's own Agent (siblings of
-    // other contributing Agents stay behind the folder's "More"), down the same stream the
-    // folder itself pages.
-    const scope = groupMode === "workspace" ? groupKey : undefined;
-    if (!isLoadedFor(s.agentId, category, scope)) void loadMoreFor([s.agentId], category, scope);
-  }, [activeSessionId, sessions, groupMode, isLoadedFor, loadMoreFor]);
 
   /**
    * Workspace mode: give every rendered group its own first page. The initial load reads
@@ -1204,17 +1033,14 @@ export function Sidebar({
       // Counts not in yet (0): nothing is known to be missing, so nothing is asked for. What
       // the group SHOWS is what a first page has to fill: rows in memory below its watermark
       // (another Agent's stream reached further) are not on screen.
-      const loaded = cutAtWatermark(
-        group.sessions.filter((s) => sessionCategory(s) === "active"),
-        activityWatermarkFor(agents, "active", group.key),
-      ).length;
+      const loaded = cutAtWatermark(group.sessions, activityWatermarkFor(agents, group.key)).length;
       if (loaded >= Math.min(SIDEBAR_PAGE_SIZE, total)) continue;
-      const unloaded = agents.filter((id) => !isLoadedFor(id, "active", group.key));
+      const unloaded = agents.filter((id) => !isLoadedFor(id, group.key));
       if (unloaded.length === 0) continue;
-      const key = loadKey(group.key, "active");
+      const key = group.key;
       if (pendingLoads.has(key)) continue;
       setPendingLoads((prev) => new Set(prev).add(key));
-      void loadMoreFor(unloaded, "active", group.key).finally(() => {
+      void loadMoreFor(unloaded, group.key).finally(() => {
         setPendingLoads((prev) => {
           const next = new Set(prev);
           next.delete(key);
@@ -1234,14 +1060,17 @@ export function Sidebar({
     pendingLoads,
   ]);
 
-  /** Archive / unarchive: persists immediately and updates in place (fails silently; the next list refresh self-corrects). */
-  const toggleArchive = async (s: SessionInfo) => {
-    // Archiving the currently open chat: expand the "archived" folder so it doesn't silently vanish from the sidebar with no way back.
-    if (!s.archived && s.sessionId === activeSessionId) {
-      setOpenFolders((prev) => new Set(prev).add(folderKey(sessionGroupKey(s), "archived")));
-    }
+  /**
+   * Archive: persists immediately and moves the row out of the list in place (fails silently;
+   * the next list refresh self-corrects). Archiving the conversation on screen leaves it for a
+   * new chat, as the New chat button does — it is filed away, not something to read on; only
+   * its URL, opened again later, shows the archived stub.
+   */
+  const archiveSession = async (s: SessionInfo) => {
     try {
-      const res = await api.patchSession(s.sessionId, { archived: !s.archived });
+      const res = await api.patchSession(s.sessionId, { archived: true });
+      // Leave first, so the page never paints the stub for the row it is about to drop.
+      if (activeSessionId === s.sessionId) newChat();
       replace(res.session);
     } catch {
       /* Ignore: non-critical operation */
@@ -1294,13 +1123,12 @@ export function Sidebar({
       }
       setDeletingSession(null);
       // The deleted session was the one open: jump to this Agent's next conversation, otherwise
-      // fall back to the chat home page. Only a person's conversation is auto-opened — never an
-      // archived one (hidden by default — landing there would look like the chat vanished into
-      // thin air) and never a background one (a program opened it; the user was not in it),
-      // the rule latestConversation follows.
+      // fall back to the chat home page. Only a conversation of this list is auto-opened —
+      // never an archived one (filed away — landing there would look like the chat vanished
+      // into thin air), the rule latestConversation follows.
       if (activeSessionId === target.sessionId) {
         const rest = (byAgent.get(target.agentId) ?? []).filter(
-          (s) => s.sessionId !== target.sessionId && sessionCategory(s) === "active",
+          (s) => s.sessionId !== target.sessionId,
         );
         navigate(rest[0] ? `/chat/${rest[0].sessionId}` : "/chat");
       }
@@ -1494,16 +1322,14 @@ export function Sidebar({
   const renderRows = (
     rows: SessionInfo[],
     withAgentHint: boolean,
-    /** Manual sort only: the drag scope (group key) plus the group's FULL ordered active list — the drop must commit every loaded row of the partition, not the display-capped slice the user happens to see. */
+    /** Manual sort only: the drag scope (group key) plus the group's FULL ordered list — the drop must commit every loaded row of the partition, not the display-capped slice the user happens to see. */
     dragCtx?: { scope: string; fullRows: SessionInfo[] },
-    /** Whether these rows are the group's ACTIVE list (the only rows pinning can reorder). */
-    activeList = false,
   ) => (
     <ul className="space-y-px">
       {rows.map((s) => {
-        // Manual-sort drag wiring (active lists only; never while searching — a filtered
-        // view is not the real order). A drop stays within its own scope AND its own
-        // pin partition: dragging can reorder but never pin or unpin.
+        // Manual-sort drag wiring (never while searching — a filtered view is not the real
+        // order). A drop stays within its own scope AND its own pin partition: dragging can
+        // reorder but never pin or unpin.
         const dragging =
           dragCtx !== undefined && dragSession?.scope === dragCtx.scope ? dragSession : null;
         const samePartition =
@@ -1576,11 +1402,6 @@ export function Sidebar({
             background={sessionBackgroundTasks(s)}
             scheduled={scheduledSessions.has(s.sessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
-            // Pinning is an ACTIVE-list priority: folder rows (background / archived) are
-            // ordered by last activity inside their folder and never pass through
-            // orderSessionRows, so a pin there would write an id, light the glyph, move nothing
-            // — and then shift the active list's drag partition.
-            canPin={activeList}
             // Last ACTIVITY, not creation: the server stamps lastActiveAt when a run
             // starts and again when it ends, so a running row shows its run-start time
             // (it recedes while the run continues — the hourglass beside it is what says
@@ -1599,7 +1420,7 @@ export function Sidebar({
             }}
             onMessaging={(x) => setMessagingSession(x)}
             onDelete={(x) => setDeletingSession(x)}
-            onToggleArchive={(x) => void toggleArchive(x)}
+            onArchive={(x) => void archiveSession(x)}
           />
         );
       })}
@@ -1607,124 +1428,11 @@ export function Sidebar({
   );
 
   /**
-   * A folder's "Show N more chats": reveal one more page of the rows it already holds,
-   * and fetch its next server page only when the reveal actually runs past them and
-   * somewhere is left to fetch from. Mirrors the active list's showMore — a page already
-   * in memory spends no request, which in time mode is a fan-out across every
-   * contributing Agent.
-   */
-  const revealFolderMore = (
-    groupKey: string,
-    category: FolderCategory,
-    agentIds: string[],
-    loaded: number,
-  ) => {
-    const key = folderKey(groupKey, category);
-    const nextCap = (folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE;
-    setFolderCaps((prev) => {
-      const next = new Map(prev);
-      next.set(key, nextCap);
-      return next;
-    });
-    if (loaded < nextCap && agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)))) {
-      trackedLoadMore(groupKey, category, agentIds);
-    }
-  };
-
-  /** A folder's "show less": back to the first page (rows already fetched stay in memory). */
-  const collapseFolder = (key: string) => {
-    setFolderCaps((prev) => {
-      if (!prev.has(key)) return prev;
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
-  };
-
-  /**
-   * Collapsed-by-default lazy folder (background / archived): nothing is fetched until the
-   * first expand, and once open the folder reveals and pages independently with its own "More"
-   * and "show less" rows. Everything is driven by the group's **own** exact server share
-   * (`totals` — the Agent's counts in agent mode, the per-Workspace fold in workspace mode): the
-   * folder exists only while its share is non-zero, the label shows that share, and "More" shows
-   * only while something of that share is still hidden — an Agent's content in *other*
-   * Workspaces can never surface a folder here.
-   *
-   * The folder obeys the same display rule the active list does (revealPlan): one page
-   * of rows shows at a time and "More" reveals one page more, spending a fetch only when
-   * the reveal runs past what is in memory. In time mode the folders span every contributing
-   * Agent, so one fetch can return several pages at once; they stay in memory under the
-   * cap rather than all landing on screen. In workspace mode a fetched page can land rows
-   * in other groups' folders too, so one click may grow this folder by fewer than a full
-   * page — the row shows a loading state while the fetch runs.
-   */
-  const renderFolder = (
-    groupKey: string,
-    category: FolderCategory,
-    parts: SessionPartition,
-    withAgentHint: boolean,
-    /** Agents that may hold this group's rows of this category (fetch fan-out set). */
-    agentIds: string[],
-    totals: SessionCategoryCounts | undefined,
-  ) => {
-    const loadedRows = parts[category];
-    // In last-activity order, cut at the folder's watermark: a folder spanning several
-    // streams (Agents, machines) shows only what they have all reached, so its "More" adds
-    // rows below the ones on screen and never above them (the active list's rule).
-    const rows = cutAtWatermark(
-      loadedRows,
-      searching || agentIds.length === 0
-        ? null
-        : activityWatermarkFor(agentIds, category, fetchScope(groupKey)),
-      activeSessionId,
-    );
-    // While searching the folder speaks for its loaded MATCHES only: a match hidden
-    // behind a collapsed folder would look like a missing result (the models page's
-    // search-forces-open rationale), so the folder is forced open, labelled by the
-    // match count, hidden when nothing matches, and never offers "More" or "show less"
-    // (the server cannot search unloaded rows, and every match is already on screen).
-    if (searching && rows.length === 0) return null;
-    // Loaded rows win a disagreement with the totals (counts refresh only on reload).
-    const total = searching ? rows.length : Math.max(totals?.[category] ?? 0, loadedRows.length);
-    if (total === 0) return null;
-    const key = folderKey(groupKey, category);
-    const cap = folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE;
-    // The folder's whole share is in memory (every Agent that could hold a row of it is
-    // fetched out), which is when the loaded rows become the truth — the same clause the
-    // active list applies, and what keeps a count drifting above reality from leaving a
-    // reveal row with nothing behind it.
-    const fullyLoaded =
-      agentIds.length > 0 && !agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
-    const plan = revealPlan({ cap, loaded: rows.length, total, fullyLoaded });
-    const shown = searching ? rows : rows.slice(0, plan.shown);
-    const hidden = searching ? 0 : plan.hidden;
-    return (
-      <FolderSection
-        key={category}
-        label={S.chat.folderGroups[category](total)}
-        open={searching || openFolders.has(key)}
-        onToggle={() => toggleFolder(groupKey, category, agentIds)}
-        more={hidden > 0}
-        // The rows past the cap plus the unfetched remainder of this folder's own share —
-        // the same count, and the same wording, the active list's reveal row names one
-        // level up.
-        moreLabel={S.chat.expandRestSessions(hidden)}
-        pending={pendingLoads.has(loadKey(groupKey, category))}
-        onMore={() => revealFolderMore(groupKey, category, agentIds, rows.length)}
-        less={!searching && plan.canCollapse}
-        onLess={() => collapseFolder(key)}
-      >
-        {renderRows(shown, withAgentHint)}
-      </FolderSection>
-    );
-  };
-
-  /**
-   * Active-list "Show N more chats": reveal one more page of this group's already-loaded
-   * active rows, and fetch the next active server page only when the reveal actually runs
-   * past what is loaded. A group whose next page is already in memory spends no request —
-   * in workspace mode a fetch fans out to every Agent contributing to the group and its
-   * rows may land in other groups entirely, so a pointless one is not free.
+   * "Show N more chats": reveal one more page of this group's already-loaded rows, and fetch
+   * the next server page only when the reveal actually runs past what is loaded. A group
+   * whose next page is already in memory spends no request — in workspace mode a fetch fans
+   * out to every Agent contributing to the group and its rows may land in other groups
+   * entirely, so a pointless one is not free.
    */
   const showMore = (groupKey: string, agentIds: string[], loaded: number) => {
     const nextCap = (groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE;
@@ -1733,7 +1441,7 @@ export function Sidebar({
       next.set(groupKey, nextCap);
       return next;
     });
-    if (agentIds.length > 0 && loaded < nextCap) trackedLoadMore(groupKey, "active", agentIds);
+    if (agentIds.length > 0 && loaded < nextCap) trackedLoadMore(groupKey, agentIds);
   };
 
   /** "Show less": drop one group's reveal back to the first page (rows already fetched stay in memory). */
@@ -1747,25 +1455,22 @@ export function Sidebar({
   };
 
   /**
-   * Expanded group body shared by both modes: active user rows (display-capped; "More"
-   * reveals and loads further **active-only** pages — the folders below never feed it) + the
-   * collapsed-by-default background / archived folders, each loading on first expand and paging
-   * on its own. `totals` / `agentsFor` carry the group's exact server share and its fetch
-   * fan-out set per category.
+   * Expanded group body shared by every mode: the group's conversations, display-capped;
+   * "More" reveals and loads further pages. `total` is the group's exact server share of
+   * active rows and `activeAgents` the Agents that may hold one — its fetch fan-out set.
    */
   const renderGroupBody = (
     groupKey: string,
-    parts: SessionPartition,
+    rows: SessionInfo[],
     withAgentHint: boolean,
-    totals: SessionCategoryCounts | undefined,
-    agentsFor: (category: SessionCategory) => string[],
+    total: number | undefined,
+    activeAgents: string[],
   ) => {
     // Row order: the pinned cluster first, then — under manual sort — the stored order
     // within each pin partition (lib/session-order.ts). Both reorder only rows already
     // FETCHED: a pinned conversation that lives past the loaded pages does not surface
     // until "More" pulls its page in (the list has no server-side pin), so the pinned
-    // cluster leads what is loaded, not the Agent's whole history. Folder rows keep
-    // their last-activity order: pinning and manual order are active-list concerns.
+    // cluster leads what is loaded, not the Agent's whole history.
     // While searching, the display cap is bypassed — every loaded match shows, and
     // "More" hides (it pages the unfiltered list and would read as "more matches",
     // which the server cannot promise).
@@ -1776,12 +1481,11 @@ export function Sidebar({
     // of the group's activity order. The rest wait in memory, so "More" only ever adds rows
     // below the ones on screen. A time bucket has no streams of its own (its rows arrive
     // already cut), and a search sees every loaded row.
-    const activeAgents = agentsFor("active");
     const visibleActive = cutAtWatermark(
-      parts.active,
+      rows,
       searching || activeAgents.length === 0
         ? null
-        : activityWatermarkFor(activeAgents, "active", fetchScope(groupKey)),
+        : activityWatermarkFor(activeAgents, fetchScope(groupKey)),
       activeSessionId,
     );
     const orderedActive = orderSessionRows(visibleActive, (s) => s.sessionId, {
@@ -1795,32 +1499,26 @@ export function Sidebar({
       effectiveSortMode === "manual" && !searching
         ? { scope: groupKey, fullRows: orderedActive }
         : undefined;
-    // The reveal row counts THIS group's own hidden conversations and nothing else — the
-    // folders never feed it, and no other group's numbers reach it. `fullyLoaded` says the
-    // group's whole active share is already in memory (every Agent that could hold a row of
-    // it is fetched out), which is when the loaded rows become the truth: server counts
-    // refresh only on reload, so a count drifting above reality would otherwise leave a row
-    // that reveals nothing behind it.
+    // The reveal row counts THIS group's own hidden conversations and nothing else — no other
+    // group's numbers reach it. `fullyLoaded` says the group's whole active share is already in
+    // memory (every Agent that could hold a row of it is fetched out), which is when the
+    // loaded rows become the truth: server counts refresh only on reload, so a count drifting
+    // above reality would otherwise leave a row that reveals nothing behind it.
     const fullyLoaded =
-      activeAgents.length > 0 &&
-      !activeAgents.some((id) => hasMoreFor(id, "active", fetchScope(groupKey)));
+      activeAgents.length > 0 && !activeAgents.some((id) => hasMoreFor(id, fetchScope(groupKey)));
     // One page of rows at a time, what the reveal row still hides, and whether "Show less"
-    // has anything to fold away: the single rule revealPlan states, applied here and by
-    // every folder below.
+    // has anything to fold away: the single rule revealPlan states.
     const plan = revealPlan({
       cap: groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE,
       loaded: visibleActive.length,
-      total: totals?.active ?? 0,
+      total: total ?? 0,
       fullyLoaded,
     });
     const shownActive = searching ? orderedActive : orderedActive.slice(0, plan.shown);
     const hiddenActive = searching ? 0 : plan.hidden;
     const canCollapse = !searching && plan.canCollapse;
-    const folders = FOLDER_CATEGORIES.map((category) =>
-      renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
-    );
-    const empty = visibleActive.length === 0 && folders.every((f) => f === null);
-    const activePending = pendingLoads.has(loadKey(groupKey, "active"));
+    const empty = visibleActive.length === 0;
+    const activePending = pendingLoads.has(groupKey);
     // Rows the server counts that no page has loaded yet — a Workspace group known from
     // the counts alone while its own first page is on its way (or, after a failed fetch,
     // waiting on the reveal row below to be asked for again). Not "no conversations".
@@ -1839,14 +1537,12 @@ export function Sidebar({
             </p>
           )
         ) : (
-          // Drag-reorder is offered on the active list under manual sort (folders keep
-          // last-activity order), and never on a search-filtered view.
-          renderRows(shownActive, withAgentHint, dragCtx, true)
+          // Drag-reorder is offered under manual sort, and never on a search-filtered view.
+          renderRows(shownActive, withAgentHint, dragCtx)
         )}
 
-        {/* Reveal / collapse this group's own conversations (kept adjacent to the active
-            list they extend, above the folders). Both rows can stand at once: a group
-            revealed part-way still has more to show AND something to fold back. */}
+        {/* Reveal / collapse this group's own conversations. Both rows can stand at once: a
+            group revealed part-way still has more to show AND something to fold back. */}
         {hiddenActive > 0 && (
           <MoreRow
             label={S.chat.expandRestSessions(hiddenActive)}
@@ -1864,35 +1560,9 @@ export function Sidebar({
             {...(hiddenActive > 0 ? {} : { className: "mt-0.5" })}
           />
         )}
-
-        {/* Folders (collapsed by default): Background — what programs opened (API,
-            scheduled, subagent and CLI Sessions), each row marked with its source — then
-            Archived (archived wins over the source). */}
-        {folders}
       </>
     );
   };
-
-  /**
-   * Time mode's one shared, Project-wide set of folders (rendered once below the buckets):
-   * their rows load only on first expand, so an unloaded Session has no known bucket and no
-   * bucket could honestly claim a share of them. Counts and fetch fan-out are summed over
-   * every Agent. A null entry means the Project holds no rows of that category at all —
-   * which is also what tells the empty-list line whether it is telling the truth.
-   */
-  const timeFolders =
-    timeParts === null
-      ? []
-      : FOLDER_CATEGORIES.map((category) =>
-          renderFolder(
-            TIME_FOLDERS_GROUP_KEY,
-            category,
-            timeParts,
-            true,
-            projectAgentsFor(category),
-            projectCounts,
-          ),
-        );
 
   /**
    * Company mode's nav rows: the organization's six pages (COMPANY_NAV_KEYS) — channels are not
@@ -2568,14 +2238,7 @@ export function Sidebar({
                 groupsOnPage(orderedAgents).map((agent) => {
                   const groupRows = filterRows(byAgent.get(agent.agentId) ?? []);
                   if (searching && groupRows.length === 0) return null;
-                  const parts = partitionSessions(groupRows);
-                  /** Conversations folded inside a folder-only group; undefined = an ordinary group, with active rows of its own. */
-                  const foldedOnly = folderOnlyAgents.get(agent.agentId);
-                  const collapsed =
-                    !searching &&
-                    (foldedOnly === undefined
-                      ? collapsedGroups.has(agent.agentId)
-                      : !expandedFolderOnlyGroups.has(agent.agentId));
+                  const collapsed = !searching && collapsedGroups.has(agent.agentId);
                   const pinned = pinnedGroups.has(agent.agentId);
                   const drag = groupDragProps(agent.agentId, agentGroupSequence);
                   /** An organization's employee says so in its header's tooltip. */
@@ -2588,7 +2251,7 @@ export function Sidebar({
                       <GroupHeader
                         {...drag.header}
                         open={!collapsed}
-                        onToggle={() => toggleGroup(agent.agentId, foldedOnly !== undefined)}
+                        onToggle={() => toggleGroup(agent.agentId)}
                         icon={
                           <AgentAvatar
                             id={agent.agentId}
@@ -2599,20 +2262,7 @@ export function Sidebar({
                         }
                         label={agentDisplayName(agent)}
                         uppercase
-                        {...(foldedOnly === undefined
-                          ? employeeNote === null
-                            ? {}
-                            : { title: employeeNote }
-                          : {
-                              // An Agent header carries no count otherwise; a folder-only one says
-                              // what it holds, because everything it holds is behind its folders.
-                              count: foldedOnly,
-                              muted: true,
-                              title:
-                                employeeNote === null
-                                  ? S.chat.folderOnlyGroup(foldedOnly)
-                                  : `${S.chat.folderOnlyGroup(foldedOnly)} · ${employeeNote}`,
-                            })}
+                        {...(employeeNote === null ? {} : { title: employeeNote })}
                         actions={
                           <>
                             <GroupPinButton
@@ -2646,10 +2296,10 @@ export function Sidebar({
                         {() =>
                           renderGroupBody(
                             agent.agentId,
-                            parts,
+                            groupRows,
                             false,
-                            countsByAgent.get(agent.agentId),
-                            () => [agent.agentId],
+                            countsByAgent.get(agent.agentId)?.active,
+                            [agent.agentId],
                           )
                         }
                       </Fold>
@@ -2670,50 +2320,36 @@ export function Sidebar({
               groupsOnPage(orderedWorkspaceGroups).map((group) => {
                 const groupRows = filterRows(group.sessions);
                 if (searching && groupRows.length === 0) return null;
-                const parts = partitionSessions(groupRows);
-                /** Conversations folded inside a folder-only group; undefined = an ordinary group, with active rows of its own. */
-                const foldedOnly = folderOnlyWorkspaceGroups.get(group.key);
-                const collapsed =
-                  !searching &&
-                  (foldedOnly === undefined
-                    ? collapsedGroups.has(group.key)
-                    : !expandedFolderOnlyGroups.has(group.key));
+                const collapsed = !searching && collapsedGroups.has(group.key);
                 const pinned = pinnedGroups.has(group.key);
-                /**
-                 * Header tooltip: the full Workspace path, or — for a folder-only group — the
-                 * sentence that says what the dimmed header and its count mean, which carries that
-                 * same path inside it.
-                 */
+                /** Header tooltip: the full Workspace path, named on its machine. */
                 const qualifiedPath =
                   group.fullPath !== null
                     ? nameOnMachine(group.fullPath, machineNameOf(group.machineId))
                     : null;
-                const headerTitle =
-                  foldedOnly === undefined
-                    ? qualifiedPath
-                    : S.chat.folderOnlyGroup(foldedOnly, qualifiedPath ?? undefined);
                 const drag = groupDragProps(group.key, workspaceGroupSequence);
-                /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
+                /** This group's exact server share (per-Workspace fold) and its fetch fan-out. */
                 const counts = workspaceGroupCounts.get(group.key);
                 /** Read once so the registry actions below keep the narrowing (null = the merged temp group, which has no single path). */
                 const fullPath = group.fullPath;
                 /** The ssh alias qualifying this group's names, or null when it is on this server. */
                 const machineName = machineNameOf(group.machineId);
-                const contributingAgents = [...new Set(group.sessions.map((s) => s.agentId))];
-                const agentsFor = (category: SessionCategory) => [
-                  ...new Set([...(counts?.agents[category] ?? []), ...contributingAgents]),
+                const activeAgents = [
+                  ...new Set([
+                    ...(counts?.agents.active ?? []),
+                    ...group.sessions.map((s) => s.agentId),
+                  ]),
                 ];
                 return (
                   <GroupBlock key={group.key} dropEdge={drag.dropEdge}>
                     {/* Group header: collapse toggle (folder icon + directory basename + count, full
-                  path in the tooltip; the count = the group's active conversations only, exact
-                  server share, loaded rows win a disagreement — the folders never feed it,
-                  except in a folder-only group, where they are all there is to count) +
-                  pin + new chat in this Workspace; also the group's drag handle. */}
+                  path in the tooltip; the count = the group's conversations, exact server share,
+                  loaded rows win a disagreement) + pin + new chat in this Workspace; also the
+                  group's drag handle. */}
                     <GroupHeader
                       {...drag.header}
                       open={!collapsed}
-                      onToggle={() => toggleGroup(group.key, foldedOnly !== undefined)}
+                      onToggle={() => toggleGroup(group.key)}
                       // The folder opens and closes with the group.
                       glyph={collapsed ? ICONS.folder : ICONS.folderOpen}
                       label={nameOnMachine(
@@ -2721,14 +2357,11 @@ export function Sidebar({
                         machineName,
                       )}
                       count={
-                        foldedOnly !== undefined
-                          ? foldedOnly
-                          : searching
-                            ? parts.active.length
-                            : Math.max(counts?.totals.active ?? 0, parts.active.length)
+                        searching
+                          ? groupRows.length
+                          : Math.max(counts?.totals.active ?? 0, groupRows.length)
                       }
-                      muted={foldedOnly !== undefined}
-                      {...(headerTitle !== null ? { title: headerTitle } : {})}
+                      {...(qualifiedPath !== null ? { title: qualifiedPath } : {})}
                       actions={
                         <>
                           <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
@@ -2774,12 +2407,19 @@ export function Sidebar({
                       }
                     />
 
-                    {/* A workspace group can span Agents: the group body fans folder loads and "More"
-                  out per category to the Agents whose share of THIS group is non-zero (plus the
-                  Agents already contributing loaded rows) — the active list and each folder
-                  page independently. */}
+                    {/* A workspace group can span Agents: the group body fans "More" out to the
+                  Agents whose share of THIS group is non-zero (plus the Agents already
+                  contributing loaded rows). */}
                     <Fold open={!collapsed}>
-                      {() => renderGroupBody(group.key, parts, true, counts?.totals, agentsFor)}
+                      {() =>
+                        renderGroupBody(
+                          group.key,
+                          groupRows,
+                          true,
+                          counts?.totals.active,
+                          activeAgents,
+                        )
+                      }
                     </Fold>
                   </GroupBlock>
                 );
@@ -2792,10 +2432,9 @@ export function Sidebar({
           so a row can never sit under a bucket its own timestamp contradicts. Empty buckets
           are dropped, and there are at most three, so this mode never paginates its groups.
           The buckets span every Agent and every Workspace: a bucket's "More" only reveals
-          further rows already shown in it, while fetching the next page and reaching the
-          Subagents / Scheduled / Archived rows happen once for the whole Project, below. */}
-            {groupMode !== "time" || timeParts === null ? null : loading &&
-              sessions.length === 0 ? (
+          further rows already shown in it, while fetching the next page happens once for the
+          whole Project, below. */}
+            {groupMode !== "time" || timeRows === null ? null : loading && sessions.length === 0 ? (
               <SkeletonList rows={5} />
             ) : (
               <>
@@ -2812,23 +2451,13 @@ export function Sidebar({
                         count={group.sessions.length}
                       />
                       <Fold open={!collapsed}>
-                        {() =>
-                          renderGroupBody(
-                            group.key,
-                            bucketPartition(group.sessions),
-                            true,
-                            undefined,
-                            () => [],
-                          )
-                        }
+                        {() => renderGroupBody(group.key, group.sessions, true, undefined, [])}
                       </Fold>
                     </div>
                   );
                 })}
 
-                {/* Empty only when the shared folders below are empty too (renderGroupBody's own
-              rule): "no Sessions yet" over an "Archived (3)" row would contradict it. */}
-                {timeGroups.length === 0 && !searching && timeFolders.every((f) => f === null) && (
+                {timeGroups.length === 0 && !searching && (
                   <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
                     {S.chat.noSessions}
                   </p>
@@ -2843,16 +2472,11 @@ export function Sidebar({
                   <MoreRow
                     label={S.chat.loadMoreSessions}
                     ariaLabel={S.chat.loadMoreSessions}
-                    pending={pendingLoads.has(loadKey(TIME_FOLDERS_GROUP_KEY, "active"))}
-                    onClick={() =>
-                      trackedLoadMore(TIME_FOLDERS_GROUP_KEY, "active", timeMoreAgents)
-                    }
+                    pending={pendingLoads.has(TIME_LIST_KEY)}
+                    onClick={() => trackedLoadMore(TIME_LIST_KEY, timeMoreAgents)}
                     className="mt-1"
                   />
                 )}
-
-                {/* The shared, Project-wide folders (see timeFolders). */}
-                <div className="pt-2.5">{timeFolders}</div>
               </>
             )}
           </div>
@@ -3007,7 +2631,6 @@ function SidebarSessionRow({
   background,
   scheduled,
   pinned,
-  canPin = false,
   lastActive,
   locale,
   agentHint,
@@ -3023,7 +2646,7 @@ function SidebarSessionRow({
   onRename,
   onMessaging,
   onDelete,
-  onToggleArchive,
+  onArchive,
 }: {
   s: SessionInfo;
   active: boolean;
@@ -3035,8 +2658,6 @@ function SidebarSessionRow({
   scheduled: boolean;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
-  /** Whether pinning can actually reorder this row — active-list rows only; folder rows hide the action (see renderRows). */
-  canPin?: boolean;
   /** Preformatted compact last-active time ("" hides the slot's resting text). */
   lastActive: string;
   /** Interface language: decides the fixed width the time slot reserves (SessionRow's `timeSlot`). */
@@ -3057,7 +2678,7 @@ function SidebarSessionRow({
   onRename: (s: SessionInfo) => void;
   onMessaging: (s: SessionInfo) => void;
   onDelete: (s: SessionInfo) => void;
-  onToggleArchive: (s: SessionInfo) => void;
+  onArchive: (s: SessionInfo) => void;
 }) {
   /** Run one action on this Session (the row has closed its menu first). */
   const run = (action: SessionRowAction) => {
@@ -3072,12 +2693,14 @@ function SidebarSessionRow({
         void writeClipboard(x.sessionId).then((ok) => ok && toastSuccess(S.common.copied));
       },
       messaging: onMessaging,
-      archive: onToggleArchive,
+      archive: onArchive,
       delete: onDelete,
     };
     handler[action](s);
   };
-  const rowState = { archived: s.archived, pinned };
+  const rowState = { pinned };
+  // A Session on a connected machine is not archivable from here (rowActionsFor).
+  const onMachine = machineForSession(s.sessionId) !== null;
   return (
     <SessionRow
       sessionId={s.sessionId}
@@ -3089,16 +2712,15 @@ function SidebarSessionRow({
         />
       )}
       active={active}
-      archived={s.archived}
       {...(agentHint !== undefined ? { agent: { id: s.agentId, name: agentHint } } : {})}
       // The marks for the row's STANDING arrangements, all in one dim cluster: which program
-      // opened it (a Background row's source), how the row is filed (pinned — only where pinning
-      // reorders anything), where it can be reached from (the messaging relay, named by its
-      // channel), whether it runs on its own (a scheduled task still to fire; a paused or ended
-      // one draws nothing) and whether it owns work that outlives the turn (background tasks,
-      // live via session_background).
+      // opened it (a Session the user kept after a program opened it), how the row is filed
+      // (pinned), where it can be reached from (the messaging relay, named by its channel),
+      // whether it runs on its own (a scheduled task still to fire; a paused or ended one draws
+      // nothing) and whether it owns work that outlives the turn (background tasks, live via
+      // session_background).
       {...(backgroundSourceMark(s) ?? {})}
-      {...(pinned && canPin ? { pinnedLabel: S.chat.pinnedSession } : {})}
+      {...(pinned ? { pinnedLabel: S.chat.pinnedSession } : {})}
       {...(s.messagingChannel !== undefined
         ? { relayLabel: S.messaging.enabledIndicator[s.messagingChannel] }
         : {})}
@@ -3115,8 +2737,8 @@ function SidebarSessionRow({
       // Sized for the widest compact time each language produces — 「12月31日」 and 「59 分钟前」 in
       // zh, "Nov 30" in en.
       timeSlot={locale === "zh" ? "wide" : "narrow"}
-      hoverActions={sessionRowActions(HOVER_ROW_ACTIONS, rowState, run)}
-      menuActions={sessionRowActions(contextMenuActions(canPin), rowState, run)}
+      hoverActions={sessionRowActions(rowActionsFor(HOVER_ROW_ACTIONS, onMachine), rowState, run)}
+      menuActions={sessionRowActions(rowActionsFor(CONTEXT_MENU_ACTIONS, onMachine), rowState, run)}
       moreLabel={S.chat.moreActions}
       onOpen={() => onOpen(s)}
       draggable={draggable}

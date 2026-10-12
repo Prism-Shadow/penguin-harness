@@ -177,13 +177,13 @@ export function hiddenRowCount({
 }
 
 /**
- * The display window of one sidebar list — a group's active rows, or one of its
- * collapsed folders; both obey the same rule and both read it from here. The list shows
- * `SIDEBAR_PAGE_SIZE` rows, every "more" click reveals one page more, and a "show less"
- * stands beside the reveal row (not after it) from the moment the list is revealed past
- * its first page, folding it back to exactly that page. Rows beyond the cap stay in
- * memory — a fetch that returned far more than a page (a time-mode folder fans out over
- * every contributing Agent) is revealed a page at a time instead of all at once.
+ * The display window of one list — a sidebar group's rows, or a group of the archive page;
+ * both obey the same rule and both read it from here. The list shows `SIDEBAR_PAGE_SIZE`
+ * rows, every "more" click reveals one page more, and a "show less" stands beside the reveal
+ * row (not after it) from the moment the list is revealed past its first page, folding it
+ * back to exactly that page. Rows beyond the cap stay in memory — a fetch that returned far
+ * more than a page (a group fans out over every contributing Agent) is revealed a page at a
+ * time instead of all at once.
  *
  * `cap` is the list's current display cap, `loaded` the rows in memory, `total` its
  * exact server share and `fullyLoaded` whether every Agent that could hold one of its
@@ -301,19 +301,26 @@ export function splitPage<T>(fetched: T[], pageSize: number): { items: T[]; hasM
 }
 
 /**
- * The sidebar category a Session renders under — the same rule the server's `category`
- * list filter applies, so filtered fetching and client rendering can never disagree. A
- * company Session (company mode's desk and ticket Sessions) is in none, archived or not: only
- * company mode's own views list it. Otherwise archived wins regardless of `source` (archiving
- * is an explicit user action, so the Archived folder must show everything the user put there);
- * then a person's conversation (`user`, or a row the server has not classified yet) is active,
- * and every other source — API, scheduled, subagent and CLI Sessions — goes to the Background
- * folder.
+ * The list a Session belongs to — the same rule the server's `category` filter applies, so
+ * filtered fetching and client rendering can never disagree. A `subagent` Session (its
+ * parent's Agent panel opens it) and a `company` Session (company mode's own views list it)
+ * are in none. Otherwise the server's `archived` decides: it is the listing rule's answer
+ * already — the user archived the Session, or a program opened it and nobody kept it — so the
+ * archive page lists it, and every other row is the sidebar's.
  */
 export function sessionCategory(s: SessionInfo): SessionCategory | null {
-  if (s.source === "company") return null;
-  if (s.archived) return "archived";
-  return s.source === undefined || s.source === "user" ? "active" : "background";
+  if (s.source === "company" || s.source === "subagent") return null;
+  return s.archived ? "archived" : "active";
+}
+
+/**
+ * Whether a row is one of the sidebar's conversations: active, and not an organization's
+ * (company mode reaches those as themselves). The store also holds rows the sidebar never
+ * draws — the archived, subagent or organization Session the chat page is showing — so the
+ * page's writes keep reaching it; the sidebar draws only these.
+ */
+export function isSidebarRow(s: SessionInfo): boolean {
+  return sessionCategory(s) === "active" && !isOrgSession(s);
 }
 
 /**
@@ -327,63 +334,13 @@ export function matchesSessionQuery(s: SessionInfo, query: string): boolean {
   return (s.title ?? "").toLowerCase().includes(q);
 }
 
-/** The collapsed-folder categories of a group, in render order (below the active user rows). */
-export const FOLDER_CATEGORIES = ["background", "archived"] as const;
-export type FolderCategory = (typeof FOLDER_CATEGORIES)[number];
-
-/**
- * Three-way split of one sidebar group's Sessions by sessionCategory (rendered top to
- * bottom in this order): active user rows in the group body, then the collapsed
- * Background and Archived folders.
- */
-export type SessionPartition = Record<SessionCategory, SessionInfo[]>;
-
-/**
- * Partitions a group's Sessions for rendering. Input order is preserved within each part; a
- * company Session, in no category, is in no part.
- */
-export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
-  const parts: SessionPartition = { active: [], background: [], archived: [] };
-  for (const s of sessions) {
-    const category = sessionCategory(s);
-    if (category !== null) parts[category].push(s);
-  }
-  return parts;
-}
-
-/**
- * A group's FOLDED share: the conversations its collapsed folders hold (Background /
- * Archived), summed from one set of category counts. Missing keys count as zero rather than
- * poisoning the sum with NaN — the guard aggregateWorkspaceCounts applies to the same
- * numbers.
- */
-export function foldedShare(counts: SessionCategoryCounts): number {
-  let total = 0;
-  for (const category of FOLDER_CATEGORIES) {
-    const n = counts[category];
-    if (n > 0) total += n;
-  }
-  return total;
-}
-
-/**
- * Whether a group holds nothing but folded conversations: no active row of its own, and at
- * least one row inside its folders. That is the shape an evaluation leaves behind — one
- * Workspace per Case × Run, each holding a single Test Session — and the shape of an Agent
- * that has only ever been evaluated; the sidebar folds such a group up and sorts it behind
- * the others. A group with both shares at zero (a registered but still unused Workspace) is
- * NOT folder-only: it has nothing folded away to fold up.
- */
-export function isFolderOnly(activeShare: number, folded: number): boolean {
-  return activeShare === 0 && folded > 0;
-}
-
-const ALL_CATEGORIES: readonly SessionCategory[] = ["active", ...FOLDER_CATEGORIES];
+/** The list categories, in the order the counts carry them. */
+const ALL_CATEGORIES: readonly SessionCategory[] = ["active", "archived"];
 
 /** One workspace-mode group's aggregated server counts: exact totals plus which Agents hold rows of each category. */
 export interface GroupCounts {
   totals: SessionCategoryCounts;
-  /** Per category, the Agents whose share of this group is non-zero — the fetch fan-out set for the group's folders and "More". */
+  /** Per category, the Agents whose share of this group is non-zero — the fetch fan-out set for the group's "More". */
   agents: Record<SessionCategory, string[]>;
 }
 
@@ -391,10 +348,9 @@ export interface GroupCounts {
  * Folds the per-Agent per-group category counts (SessionsResponse.workspaceCounts, keyed by
  * the store into workspaceGroupKey form) into workspace-mode groups. The keys arrive
  * machine-qualified because each machine answers about its own paths: summing two machines'
- * counts for one path string would put both totals on both folders, each contradicting the
- * rows under it. The sidebar labels a group's folders and decides its "More" from its own
- * share — never from an Agent's other Workspaces, which would advertise folders whose
- * content lives in other groups.
+ * counts for one path string would put both totals on both groups, each contradicting the
+ * rows under it. The sidebar decides a group's "More" from its own share — never from an
+ * Agent's other Workspaces, which would advertise rows that live in other groups.
  */
 export function aggregateWorkspaceCounts(
   byAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>,
@@ -405,8 +361,8 @@ export function aggregateWorkspaceCounts(
       let group = out.get(key);
       if (!group) {
         group = {
-          totals: { active: 0, background: 0, archived: 0 },
-          agents: { active: [], background: [], archived: [] },
+          totals: { active: 0, archived: 0 },
+          agents: { active: [], archived: [] },
         };
         out.set(key, group);
       }
@@ -426,10 +382,10 @@ export function aggregateWorkspaceCounts(
 /**
  * The Session the UI opens as "the last conversation" (the chat home's auto-select and
  * the collapsed rail's entry): the loaded row the user was last IN — not the one created
- * last, which on a revisited conversation is a different row. Only a person's conversation
- * (an active row) qualifies: archived rows are hidden by choice, and neither a background
- * Session — one an API caller, a scheduled task, a parent agent or `penguin run` opened — nor a
- * company Session is a conversation of this list the user was in. Newest by lastActiveAt (stamped from `Date#toISOString`, so
+ * last, which on a revisited conversation is a different row. Only a conversation of the
+ * sidebar (an active row) qualifies: an archived Session — one the user filed away, or one a
+ * program opened that nobody kept — and a subagent or company Session are not conversations of
+ * this list the user was in. Newest by lastActiveAt (stamped from `Date#toISOString`, so
  * uniform ISO-8601 UTC like createdAt and comparable as a string), ties broken by sessionId —
  * the list's ordering convention. Input order doesn't matter.
  */
@@ -542,8 +498,9 @@ export function groupSessionsByWorkspace<T extends { workspace: string; createdA
  * older than an Agent's ten newest never formed a group at all, which with dozens of
  * Workspaces holding hundreds of conversations each is most of them.
  *
- * A counted key with no rows left in any category (its last conversation was deleted
- * since the counts were taken) forms no group; a key already grouped keeps its loaded rows.
+ * Only active conversations make a group: a counted key holding none (only archived rows, or
+ * its last conversation deleted since the counts were taken) forms no group; a key already
+ * grouped keeps its loaded rows.
  */
 export function completeWorkspaceGroups<T extends { createdAt: string }>(
   groups: readonly WorkspaceGroup<T>[],
@@ -554,7 +511,7 @@ export function completeWorkspaceGroups<T extends { createdAt: string }>(
   const existing = new Set(groups.map((g) => g.key));
   for (const [key, { totals }] of counts) {
     if (existing.has(key)) continue;
-    if (!ALL_CATEGORIES.some((category) => totals[category] > 0)) continue;
+    if (!(totals.active > 0)) continue;
     existing.add(key);
     // A counted key names a directory ON a machine, the way the loaded groups are keyed:
     // its path half is what the label and the tooltip show, never the whole key.
@@ -601,13 +558,8 @@ const MONTH_MS = 30 * DAY_MS;
 /** Group key of a time bucket (collapse state / React key); "\0" can never appear in a Workspace path or an Agent id, so these never collide with the other modes' keys. */
 export const timeGroupKey = (bucket: TimeBucket): string => `\0time-${bucket}`;
 
-/**
- * Group key the folders (Background / Archived) hang off in time mode. They are NOT bucketed:
- * their rows load only when a folder is first expanded, so an unloaded Session's bucket is
- * unknown and no bucket could honestly advertise a share of them. One shared, Project-wide set
- * below the buckets is what the sidebar renders instead.
- */
-export const TIME_FOLDERS_GROUP_KEY = "\0time-folders";
+/** Key the whole time-mode list pages under (its one "load more" row spans every bucket). */
+export const TIME_LIST_KEY = "\0time-list";
 
 /** The bucket an activity timestamp falls in, against `nowMs`. An unparseable stamp counts as the oldest bucket rather than jumping to the top. */
 export function timeBucketOf(lastActiveAt: string, nowMs: number): TimeBucket {
@@ -653,21 +605,6 @@ export function groupSessionsByTime<T extends ActivityKey>(
     groups.push({ key: timeGroupKey(bucket), bucket, sessions: rows });
   }
   return groups;
-}
-
-/** Sums per-Agent category totals into one Project-wide set (time mode's shared folders and its whole-list "More" read their share from it). */
-export function totalCategoryCounts(
-  byAgent: ReadonlyMap<string, SessionCategoryCounts>,
-): SessionCategoryCounts {
-  const totals: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
-  for (const counts of byAgent.values()) {
-    for (const category of ALL_CATEGORIES) {
-      const n = counts[category];
-      // Same guard as aggregateWorkspaceCounts: a missing key must not poison the sum with NaN.
-      if (n > 0) totals[category] += n;
-    }
-  }
-  return totals;
 }
 
 /**
