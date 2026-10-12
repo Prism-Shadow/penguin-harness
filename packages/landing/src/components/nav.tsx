@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { Link, useLocation } from "react-router";
 import { S } from "../lib/strings";
-import { DOCS_URL, GALLERY_URL, REPO_API_URL, REPO_URL } from "../lib/links";
+import { DOCS_URL, galleryUrl, REPO_API_URL, REPO_URL } from "../lib/links";
 import {
   getActiveNavItem,
   getNavItemForSection,
@@ -24,6 +24,7 @@ import {
 } from "../lib/nav-state";
 import type { ActiveNavItem, ObservedSectionId } from "../lib/nav-state";
 import { useScrollSpy } from "../lib/use-scroll-spy";
+import { useLocale } from "../state/locale";
 import { GitHubIcon, MenuIcon, XIcon } from "./icons";
 import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
@@ -75,6 +76,9 @@ export function Nav() {
   const [open, setOpen] = useState(false);
   const pillRef = useRef<HTMLSpanElement | null>(null);
   const pillVisible = useRef(false);
+  const { locale } = useLocale();
+  // The gallery opens in the language the reader has the site in.
+  const gallery = galleryUrl(locale);
 
   const sectionLabel: Record<(typeof NAV_SECTION_IDS)[number], string> = {
     highlights: S.nav.highlights,
@@ -161,7 +165,7 @@ export function Nav() {
       <a href={DOCS_URL} className={deskLinkCls(false)} onMouseEnter={slideTo}>
         {S.nav.docs}
       </a>
-      <a href={GALLERY_URL} className={deskLinkCls(false)} onMouseEnter={slideTo}>
+      <a href={gallery} className={deskLinkCls(false)} onMouseEnter={slideTo}>
         {S.nav.gallery}
       </a>
     </>
@@ -202,7 +206,7 @@ export function Nav() {
       <a href={DOCS_URL} className={mobileLinkCls(false)} onClick={() => setOpen(false)}>
         {S.nav.docs}
       </a>
-      <a href={GALLERY_URL} className={mobileLinkCls(false)} onClick={() => setOpen(false)}>
+      <a href={gallery} className={mobileLinkCls(false)} onClick={() => setOpen(false)}>
         {S.nav.gallery}
       </a>
     </>

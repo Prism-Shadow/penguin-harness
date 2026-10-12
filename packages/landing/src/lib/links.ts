@@ -20,6 +20,14 @@ export const DOCS_URL = `${import.meta.env.BASE_URL}docs/`;
 export const GALLERY_URL = `${import.meta.env.BASE_URL}gallery/`;
 
 /**
+ * The gallery opened in the site's language. The gallery reads `lang` from its query before the
+ * language it remembers, so a reader arrives in the language they are reading the site in.
+ */
+export function galleryUrl(locale: "zh" | "en"): string {
+  return `${GALLERY_URL}?lang=${locale}`;
+}
+
+/**
  * One-line installer (Linux / macOS, x64 / arm64, bundled Node runtime).
  * penguin.ooo/install.sh is this site's own public/install.sh — a thin forwarder
  * to the latest GitHub release installer (Pages cannot serve real redirects).

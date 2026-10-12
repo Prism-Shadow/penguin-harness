@@ -16,7 +16,8 @@ import { useEffect, useRef, useState } from "react";
 import type { MouseEvent, RefObject } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { GALLERY_URL, REPO_API_URL, REPO_URL, SITE_URL } from "../lib/links";
+import { galleryUrl, REPO_API_URL, REPO_URL, SITE_URL } from "../lib/links";
+import { useLocale } from "../state/locale";
 import { GitHubIcon, MenuIcon, XIcon } from "./icons";
 import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
@@ -75,6 +76,9 @@ export function Nav({
 }) {
   const pillRef = useRef<HTMLSpanElement | null>(null);
   const pillVisible = useRef(false);
+  const { locale } = useLocale();
+  // The gallery opens in the language the reader has the docs in.
+  const gallery = galleryUrl(locale);
 
   const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
     highlights: S.nav.highlights,
@@ -145,7 +149,7 @@ export function Nav({
         {S.nav.docs}
       </Link>
       {/* The gallery is a sibling SPA under /gallery/ — a plain anchor, as on the landing nav. */}
-      <a href={GALLERY_URL} className={deskLinkCls(false)} onMouseEnter={slideTo}>
+      <a href={gallery} className={deskLinkCls(false)} onMouseEnter={slideTo}>
         {S.nav.gallery}
       </a>
     </>
