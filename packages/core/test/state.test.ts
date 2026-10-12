@@ -51,6 +51,7 @@ import {
   loadAgentState,
   loadProjectConfig,
   memoryDir,
+  migrationMayWriteBack,
   scratchpadDir,
   projectConfigFromTable,
   projectConfigPath,
@@ -1197,6 +1198,33 @@ describe("project-config round trip", () => {
     await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect((await fs.stat(file)).mtimeMs).toBe(mtimeMs);
     expect(await fs.readFile(file, "utf8")).toBe(rewritten);
+  });
+
+  it("migrates in memory only while another live server holds the data root", async () => {
+    // A checkout's code reading the installed release's root must not rewrite its config into
+    // names that release cannot read: with the root's lock held by another live process (the
+    // parent stands in for that server), the load maps the names but leaves the file alone.
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const legacy = [
+      "[[models]]",
+      'provider = "deepseek"',
+      'model_id = "deepseek-flash"',
+      'client_type = "deepseek-v4"',
+    ].join("\n");
+    await fs.writeFile(file, legacy, "utf8");
+    const lock = path.join(tmpRoot, "server.lock");
+    await fs.writeFile(lock, JSON.stringify({ pid: process.ppid, port: 1, startedAt: "" }), "utf8");
+    const held = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(held, { provider: "deepseek", model_id: "deepseek-flash" })).toBeDefined();
+    expect(await migrationMayWriteBack(tmpRoot)).toBe(false);
+    expect(await fs.readFile(file, "utf8")).toBe(legacy);
+    // The lock naming this very process, or no lock at all, lets the rewrite through.
+    await fs.writeFile(lock, JSON.stringify({ pid: process.pid, port: 1, startedAt: "" }), "utf8");
+    expect(await migrationMayWriteBack(tmpRoot)).toBe(true);
+    await fs.rm(lock);
+    await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(await fs.readFile(file, "utf8")).toContain('client_type = "deepseek-official"');
   });
 
   it("addModel files the entry under the provider it was given, never one of its own choosing", async () => {
