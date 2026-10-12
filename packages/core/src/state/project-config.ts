@@ -35,6 +35,7 @@ import type {
 } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
+import { mayWriteBackMigration } from "./migration-write-back.js";
 import {
   canonicalClientType,
   groupKeyReaches,
@@ -365,7 +366,9 @@ const LEGACY_CLIENT_TYPES: readonly (readonly [RegExp, string])[] = [
  * the table back the moment this returns true, so a file is rewritten once and an old name
  * that reappears later (a models PUT from a page opened before the upgrade, a machine sync
  * from an older install) is repaired at its next read. Nothing is written when nothing
- * matched. Entries the catalog has since unpinned (`deepseek/deepseek-flash`,
+ * matched, nor while a server older than this code serves the data root
+ * (mayWriteBackMigration): it would fail every Session on the new names, so the loader then
+ * uses the migrated table in memory only. Entries the catalog has since unpinned (`deepseek/deepseek-flash`,
  * `minimax/MiniMax-M3`) come out pinned to their vendor's official client, which routes; the
  * Models page's "Restore defaults" puts the row and its group's table back to the catalog's,
  * which pins none. It runs first in migrateProjectConfigTable, so hoistProviderConnections
@@ -375,7 +378,9 @@ const LEGACY_CLIENT_TYPES: readonly (readonly [RegExp, string])[] = [
  * say a Project last opened before the release that shipped this migration must be opened once
  * on a 0.2.x release first. Takes out LEGACY_CLIENT_TYPES, this function, the write-back in the
  * two loaders, and their tests (core `state.test.ts`, server `models.test.ts`); see
- * changelog/unreleased/2026-10-01-backward-compatibility.md.
+ * changelog/unreleased/2026-10-01-backward-compatibility.md. The same release preparation takes
+ * out mayWriteBackMigration's branch for a lock without a version (see
+ * changelog/unreleased/2026-10-12-backward-compatibility.md).
  */
 export function migrateLegacyClientTypes(table: Record<string, unknown>): boolean {
   let changed = false;
@@ -552,7 +557,8 @@ export function hoistProviderConnections(table: Record<string, unknown>): boolea
  * hoist (hoistProviderConnections), which compares the rows' protocols with each other in
  * MMSP's names. Both loaders — `loadProjectConfig` here and the server's
  * `ProjectConfigService.readTable` — call this and write the raw table back once when it
- * returns true. Removed with the two migrations at the 0.3.0 release preparation.
+ * returns true, unless mayWriteBackMigration says an older server holds the data root.
+ * Removed with the two migrations at the 0.3.0 release preparation.
  */
 export function migrateProjectConfigTable(table: Record<string, unknown>): boolean {
   const legacy = migrateLegacyClientTypes(table);
@@ -825,7 +831,7 @@ export async function loadProjectConfig(root: string, projectId: string): Promis
   const table = (parseToml(raw) ?? {}) as Record<string, unknown>;
   // The raw table is written back, not the typed config, so every key the file carries
   // survives the rewrite (this loader keeps known keys only).
-  if (migrateProjectConfigTable(table)) {
+  if (migrateProjectConfigTable(table) && (await mayWriteBackMigration(root, file))) {
     await atomicWriteFile(file, renderProjectConfigToml(table), {
       mode: 0o600,
       followSymlinks: true,

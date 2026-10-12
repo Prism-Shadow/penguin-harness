@@ -13,6 +13,10 @@ export * from "./model-catalog.js";
 // serves both; the matcher that reads them is core-internal).
 export * from "./command-policy-defaults.js";
 export * from "./project-config.js";
+// The reader of a data root's server.lock (the server owns the writer), and the rule both
+// Project-config loaders apply before writing a one-time migration back.
+export * from "./server-lock.js";
+export { mayWriteBackMigration } from "./migration-write-back.js";
 export * from "./agent-state.js";
 export * from "./agent-vault.js";
 export * from "./memory.js";

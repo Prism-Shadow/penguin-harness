@@ -124,7 +124,10 @@ const MAX_SUBAGENT_DEPTH = 1;
 export interface CreateAgentOptions {
   agentId?: string;
   projectId?: string;
-  /** Local data root directory; defaults to `resolveRoot()` (PENGUIN_HOME or ~/.penguin/data). */
+  /**
+   * Local data root directory; defaults to `resolveRoot()`: PENGUIN_HOME, else `~/.penguin/data`
+   * (`~/.penguin/dev-data-cli` for code run from a source checkout).
+   */
   root?: string;
   /**
    * Proxy policy for exec_command subprocess environments of every Session this Agent

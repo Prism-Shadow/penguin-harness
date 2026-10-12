@@ -16,6 +16,10 @@
  * sharing one dataset when used alternately is the point), and it binds no fixed port —
  * so it is pinned to that root rather than away from it.
  *
+ * A checkout's code started outside run-with-env — the `penguin` that `pnpm build` links
+ * globally — gets core's default root for a checkout, which must stay the dev CLI's: the same
+ * CLI as `pnpm penguin`, so the same data, and never the installed root.
+ *
  * Every dev entry point that starts a server also clears an inherited PENGUIN_CLI_ENTRY
  * (run-with-env's `--unset`): a terminal of an installed app hands its own CLI's path to what
  * starts there, and a dev server given it would offer that CLI as its own. A packaged or
@@ -28,7 +32,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
+import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
 
 const cliDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(cliDir, "..", "..");
@@ -80,7 +84,7 @@ const devServer = runWithEnvDefaults(serverScripts["dev"]);
 const devCli = runWithEnvDefaults(rootScripts["penguin"]);
 const devDesktop = runWithEnvDefaults(rootScripts["desktop"]);
 
-/** The installed server/CLI root, `~/.penguin/data` (core's resolveRoot() default). */
+/** The installed server/CLI root, `~/.penguin/data` (core's resolveRoot() default outside a checkout). */
 const installedRoot = path.join(os.homedir(), ".penguin", "data");
 
 describe("dev entry point isolation (ports and data roots)", () => {
@@ -117,6 +121,16 @@ describe("dev entry point isolation (ports and data roots)", () => {
     // Two spellings of the same entry point; a root moved in one and not the other
     // would make `pnpm penguin` and `pnpm --dir packages/cli penguin` serve different data.
     expect(runWithEnvDefaults(cliScripts["penguin"])).toEqual(devCli);
+  });
+
+  it("a checkout's CLI run without PENGUIN_HOME, like the globally linked penguin, defaults to the dev CLI's root", () => {
+    const inherited = process.env.PENGUIN_HOME;
+    delete process.env.PENGUIN_HOME;
+    try {
+      expect(path.normalize(resolveRoot())).toBe(expandHome(devCli!.PENGUIN_HOME!));
+    } finally {
+      if (inherited !== undefined) process.env.PENGUIN_HOME = inherited;
+    }
   });
 
   it("the dev desktop shell stays on dev:server's root, by design", () => {

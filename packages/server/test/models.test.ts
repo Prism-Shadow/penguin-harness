@@ -17,8 +17,9 @@
  * - GET labels a row with the catalog's display name and reports the env key; a pre-rename
  *   `client_type = "openai"` reads as openai-chat; a file written before MMSP's names and group
  *   connections is rewritten once on its first read into the shape a new Project is written in
- *   (OpenCode Go's and Penguin Go's included), then served from the cache; a model the catalog
- *   dropped still loads and stays usable; one model_id under two providers is two rows.
+ *   (OpenCode Go's and Penguin Go's included), then served from the cache — while an older
+ *   server holds the data root it is served migrated and left on disk as it was; a model the
+ *   catalog dropped still loads and stays usable; one model_id under two providers is two rows.
  * - PUT persists a custom model's vision flag and max_tokens (clearing and rejecting bad values),
  *   falls back to OPENAI_API_KEY for the openai protocol, requires a provider, refuses an id a
  *   vendor group cannot route when the request introduces it (unless its group names a
@@ -58,7 +59,7 @@
  */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -82,6 +83,7 @@ import type {
   ProjectCreateResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
+import { serverLockPath } from "../src/lock.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
@@ -795,6 +797,32 @@ describe("models preset & catalog enrichment", () => {
     const { mtimeMs } = await stat(cfgFile);
     await api.get(url());
     expect((await stat(cfgFile)).mtimeMs).toBe(mtimeMs);
+  });
+
+  it("while an older server holds the data root, a file from before MMSP's names is served migrated and left on disk as it was", async () => {
+    // A live server of an older release may not read MMSP's names, so the reader migrates in
+    // memory only. Another live process stands in for it: this test's parent, on a port held
+    // open here.
+    await storeRows(t.root, projectId, [
+      { provider: "custom", modelId: "relay-flash", clientType: "deepseek-v4" },
+    ]);
+    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const before = await readFile(cfgFile, "utf8");
+    const older = createServer();
+    await new Promise<void>((resolve) => older.listen(0, "127.0.0.1", resolve));
+    const port = (older.address() as AddressInfo).port;
+    const lock = { pid: process.ppid, port, startedAt: "", version: "0.1.0" };
+    await writeFile(serverLockPath(t.root), JSON.stringify(lock));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const body = (await (await api.get(url())).json()) as ModelsResponse;
+      expect(pick(body, "custom", "relay-flash").clientType).toBe("deepseek-official");
+      expect(await readFile(cfgFile, "utf8")).toBe(before);
+    } finally {
+      warn.mockRestore();
+      await rm(serverLockPath(t.root), { force: true });
+      await new Promise<void>((resolve) => older.close(() => resolve()));
+    }
   });
 
   it("a configured model that has since been dropped from the built-in catalog still loads, keeps its data, and stays usable", async () => {

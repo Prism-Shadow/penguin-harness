@@ -41,6 +41,10 @@
       "types": "./dist/state/model-catalog.d.ts",
       "import": "./dist/state/model-catalog.js"
     },
+    "./server-lock": {
+      "types": "./dist/state/server-lock.d.ts",
+      "import": "./dist/state/server-lock.js"
+    },
     "./a2ui": {
       "types": "./dist/a2ui/index.d.ts",
       "import": "./dist/a2ui/index.js"

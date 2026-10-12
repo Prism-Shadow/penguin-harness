@@ -10,11 +10,12 @@
  * the Agent to know any paths.
  *
  * The right code is half of it; the other half is the right server. The CLI finds its server
- * through a data root — `PENGUIN_HOME`, else `~/.penguin/data`, which is the INSTALLED
- * harness's — so a launcher that only picked the code would run this checkout's CLI against
- * the installed server. The launcher therefore names this data root as the default for the one
- * process it starts: `PENGUIN_HOME` is set there unless the caller already set one, which is
- * the caller's own choice (as `--root` and `--server` stay), and nothing is exported into the
+ * through a data root — `PENGUIN_HOME`, else a default that need not be this server's:
+ * `~/.penguin/data`, the INSTALLED harness's, or `~/.penguin/dev-data-cli` for a checkout's
+ * CLI — so a launcher that only picked the code would run the CLI against another server. The
+ * launcher therefore names this data root as the default for the one process it starts:
+ * `PENGUIN_HOME` is set there unless the caller already set one, which is the caller's own
+ * choice (as `--root` and `--server` stay), and nothing is exported into the
  * shell that runs it — a terminal whose environment carried this root would hand it to every
  * `pnpm dev` typed there, over that script's own default.
  *

@@ -8,7 +8,7 @@
 import path from "node:path";
 import { resolveRoot } from "@prismshadow/penguin-core";
 
-/** Data root: `--root` first (relative paths against cwd), else PENGUIN_HOME / ~/.penguin/data. */
+/** Data root: `--root` first (relative paths against cwd), else core's resolveRoot. */
 export function resolveRootOption(root: string | undefined): string {
   return root !== undefined ? path.resolve(root) : resolveRoot();
 }

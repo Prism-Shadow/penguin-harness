@@ -52,6 +52,7 @@ import {
   groupKeyReaches,
   imageUrlMessage,
   metaMaxTokens,
+  mayWriteBackMigration,
   migrateProjectConfigTable,
   parseProviderTable,
   presetModelEntries,
@@ -828,12 +829,14 @@ export class ProjectConfigService implements ProjectConfigStore {
       return null;
     }
     const table = asTable(parseToml(raw));
-    if (migrateProjectConfigTable(table)) {
-      // A file from before MMSP 0.5.0 or before group-level connections (core's
-      // migrateProjectConfigTable): rewritten once, before it is served; the next read parses
-      // the rewritten file (writeRaw drops the cache). Every file writeRaw renders carries a
-      // `[providers]` table, which is what keeps the key hoist from ever running on it again.
-      // Removed with the two migrations at the 0.3.0 release preparation.
+    // A file from before MMSP 0.5.0 or before group-level connections (core's
+    // migrateProjectConfigTable): rewritten once, before it is served; the next read parses
+    // the rewritten file (writeRaw drops the cache). Every file writeRaw renders carries a
+    // `[providers]` table, which is what keeps the key hoist from ever running on it again.
+    // While an older server holds the data root the migrated table is served from memory and
+    // cached against the file as it stands, as an unmigrated one is. Removed with the two
+    // migrations at the 0.3.0 release preparation.
+    if (migrateProjectConfigTable(table) && (await mayWriteBackMigration(this.root, file))) {
       await this.writeRaw(projectId, table);
       return table;
     }

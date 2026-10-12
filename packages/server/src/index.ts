@@ -23,6 +23,7 @@ import { bootAppDeps, createApp } from "./app.js";
 import { HmrHost, hmrMain } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
+import { VERSION } from "@prismshadow/penguin-core";
 import { packagedPlatform } from "./hmr/platform.js";
 import { startingResponse } from "./hmr/starting.js";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
@@ -386,11 +387,14 @@ class PenguinServer {
     // (me.ts, sessions.ts) observe the update.
     this.config.port = port;
     // The root exists by now (openDatabase created it), and the pre-start check found no
-    // live owner — record ourselves as this root's server.
+    // live owner — record ourselves as this root's server. The version tells newer code
+    // reading this root (a CLI, the SDK) that this server may not read a file migrated to
+    // their shape, so they leave such files as they are while it runs.
     acquireServerLock(this.config.root, {
       pid: process.pid,
       port,
       startedAt: new Date().toISOString(),
+      version: VERSION,
     });
     if (this.config.host === "127.0.0.1" || this.config.host === "localhost") {
       this.openIpv6Loopback(port);

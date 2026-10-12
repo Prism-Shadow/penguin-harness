@@ -83,7 +83,9 @@ export function devDataRoot(homedir: string): string {
  *
  * `releaseRoot` stays a thunk (core's `resolveRoot`) so core remains the single
  * definition point of `~/.penguin/data`; it is only called when there is no explicit
- * value, which is exactly the case where `resolveRoot()` yields that default. Pure, so
+ * value, which is exactly the case where `resolveRoot()` yields its default — that root for
+ * an installed app, and the checkout's dev CLI root for a packaged build run from inside a
+ * checkout (`packages/desktop/out/`), which never touches the installed data either. Pure, so
  * the rule is unit-tested — it cannot be, inline in main.ts, which imports Electron.
  */
 export function desktopDataRoot(opts: {

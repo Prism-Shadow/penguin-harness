@@ -1,9 +1,9 @@
 /**
  * Server runtime config (ServerConfig) — parsed from environment variables.
  *
- * The data root directory is shared with the SDK / CLI (`resolveRoot()`:
- * PENGUIN_HOME or ~/.penguin/data); the SQLite index database defaults to
- * `<root>/web.db` (overridable via PENGUIN_WEB_DB, tests use ":memory:").
+ * The data root directory is shared with the SDK / CLI (`resolveRoot()`: PENGUIN_HOME, else
+ * ~/.penguin/data, or ~/.penguin/dev-data-cli from a checkout); the SQLite index database
+ * defaults to `<root>/web.db` (overridable via PENGUIN_WEB_DB, tests use ":memory:").
  * In production, the SPA is served statically once the frontend build output
  * directory (PENGUIN_WEB_DIST, the bundled web-dist/, or ../web/dist) is
  * detected to exist.

@@ -16,6 +16,9 @@ export default defineConfig({
     // without depending on whatever embeds it.
     "src/plugin/index.ts",
     "src/state/model-catalog.ts",
+    // A data root's server.lock reader: node built-ins only, so the server's `./lock` subpath
+    // re-exports it without loading the SDK barrel into the CLI and the desktop shell.
+    "src/state/server-lock.ts",
     // Window/threshold arithmetic plus its two defaults: pure numbers, no Node dependency, so
     // the web app can bundle the compaction-threshold derivation its context ring fills against.
     "src/llm/context-limits.ts",

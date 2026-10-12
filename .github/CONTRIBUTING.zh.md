@@ -66,7 +66,9 @@ Skill、改过的 SKILL.md、改过的 `package.json`——在 `pnpm dev` 与测
 自己的锁挡住而拒绝启动（正是这种共存关系也已经为它分配了 7369 端口，见
 `packages/core/src/internal/ports.ts`）。若仍要让某条开发 CLI 命令对准 `pnpm dev` 的数据集，就为该条
 命令单独声明——`PENGUIN_HOME=~/.penguin/dev-data pnpm penguin ...`，或在支持的子命令上使用
-`--root`。需要另一个根目录？只为需要它的那一条命令内联传入 `PENGUIN_HOME`
+`--root`。`pnpm build` 全局链接的 `penguin`，以及其他未设置 `PENGUIN_HOME` 而从检出运行的程序，默认
+同样使用 `~/.penguin/dev-data-cli`：core 的 `resolveRoot` 按自身的加载位置识别检出，只有安装版才默认
+使用 `~/.penguin/data`（确需访问时显式设置 `PENGUIN_HOME=~/.penguin/data`）。需要另一个根目录？只为需要它的那一条命令内联传入 `PENGUIN_HOME`
 （`PENGUIN_HOME=~/.penguin/dev-data-<topic> pnpm dev`）——绝不要把它 export 进 shell：上述默认值仅在
 该变量未设置或为空时才生效（`scripts/run-with-env.mjs`），因此一个已导出的值会静默盖过全部默认值；
 而导出 `PENGUIN_HOME=~/.penguin/data` 会把 `pnpm dev:server` 放到发行版/CLI 的根目录上，那里已经有

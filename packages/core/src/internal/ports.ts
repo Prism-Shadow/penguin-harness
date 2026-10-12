@@ -28,6 +28,11 @@
  * `~/.penguin/dev-data` (see `packages/desktop/src/app-identity.ts`). The
  * web e2e harness runs on 8930/8931 against a throwaway root (`packages/web/e2e/run.sh`).
  *
+ * A checkout's code started outside these scripts — above all the `penguin` that `pnpm build`
+ * links globally — has no PENGUIN_HOME and takes core's default for a checkout, the dev CLI's
+ * `~/.penguin/dev-data-cli` (`resolveRoot` in `state/paths.ts`), never the installed root. Its
+ * port is still the installed default unless PORT says otherwise.
+ *
  * The development backend deliberately does **not** share 7364 with an installed one: the
  * two are routinely running at once, and before they were split, `pnpm dev` either failed
  * to bind or -- worse -- the Vite proxy silently talked to the installed server instead of

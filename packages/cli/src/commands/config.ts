@@ -40,7 +40,7 @@
  * `model list` prints the groups' stored connections, then every model's effective values,
  * marking the group's with `(provider)` and an environment key with `(env)`.
  * `--root` specifies the data root directory (priority: option >
- * PENGUIN_HOME > ~/.penguin/data). The UI language is controlled by the PENGUIN_LANG
+ * PENGUIN_HOME > ~/.penguin/data, or ~/.penguin/dev-data-cli for a CLI run from a checkout). The UI language is controlled by the PENGUIN_LANG
  * environment variable; `config lang` writes it into the shell startup file and restarts
  * the shell to take effect.
  * Docs: /docs/cli § "penguin config".
