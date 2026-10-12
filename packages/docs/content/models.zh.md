@@ -127,7 +127,7 @@ TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推�
 - 服务端会拒绝往这些分组新增不属于该分组内置模型的条目：保存时提示「该分组只承载内置模型」。`penguin config model add` 同样拒绝。删掉的内置模型可以重新加回来，**同步新增模型**做的就是这件事。
 - 这些分组里已有的模型原样保留，包括此前你在网关分组里自行添加的。它们照常可用，可以编辑、在本组内改名或删除。
 - 厂商分组（DeepSeek、Google Gemini、OpenAI、Anthropic、Z.AI、Moonshot、MiniMax）只支持厂商自己的 API。如果其中某个模型的 id 无法按这种方式路由，它会带上警示，并提供**移到自定义分组**。OpenAI 兼容的端点请放进 **Custom** 分组。
-- 网关分组沿用新建 Project 时为它写入的协议：OpenRouter 使用 `openai-responses`，其余 OpenAI 兼容网关使用 OpenAI Chat Completions。聚合分组 Penguin Go 与 OpenCode Go 的内置模型各自存着自己的协议。
+- 网关分组沿用新建 Project 时为它写入的协议：OpenRouter 使用 `openai-responses`，其余 OpenAI 兼容网关使用 OpenAI Chat Completions。Penguin Go 模型共享分组的 `mmsp` 协议；OpenCode Go 的内置模型各自保存自己的协议。
 
 ### 编辑或删除模型
 
@@ -279,7 +279,7 @@ TokenDance 和 DeepSeek 可以查询 key 所属账户的余额。这两个分组
 
 - **API key**：即分组密钥，与连接时写入的是同一把；标题栏上没有别处可以填写它。已存的 key 打码显示，并附设置时间；留空即保留原值，勾选**清除分组密钥**可删除它。分组可以由环境变量兜底时（见[设置 API key](#设置-api-key)），占位文字会说明留空即使用该环境变量。供应商的密钥控制台链接在标签旁。
 - **自定义 base URL**：占位文字为「未设置：使用客户端默认端点」。整个分组回到目录的端点请用**恢复默认**。右上角的**检测协议**用所填的 base URL（未填则用已存的），以及输入框里的 key（没有则用分组密钥）探测；两个 URL 都没有时不可用。见[检测自定义模型的协议](#检测自定义模型的协议)。
-- **协议**：首项**未设置**把协议交给各模型，模型也没有时按模型 id 路由；其余选项是各通用协议。每个分组都可以设置协议，Penguin Go 和 OpenCode Go 也不例外：模型上存的协议始终优先，分组协议只作用于没有自己协议的模型。
+- **协议**：首项**未设置**把协议交给各模型，模型也没有时按模型 id 路由；其余选项是各通用协议。模型上保存的协议优先于分组默认值。Penguin Go 管理的连接使用 `mmsp`；加载配置、重新连接或同步模型时，会将其分组和模型级路由迁移到 MMSP。
 
 字段下方的**前往模型列表**在新标签页中打开供应商的模型列表；**Custom** 和你创建的分组没有这个链接。
 
@@ -476,7 +476,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | 供应商 | API key 环境变量 | 说明 |
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | 推荐分组。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为裸名称，不带供应商前缀（如 `glm-5.3`、`kimi-k3`）；价格采用网关自己的人民币费率，目前有几项在打折 |
-| penguin-go | `PENGUIN_GO_API_KEY` | 预置的中转分组，base URL `https://token.penguin.ooo/api`；分组标题栏可以为你连接取得 key，也可以在分组设置里填写。见 [Penguin Go 分组](#penguin-go-分组) |
+| penguin-go | `PENGUIN_GO_API_KEY` | 预置的 MMSP 中转分组，base URL `https://go.penguin.ooo/api/v1`；分组标题栏可以为你连接取得 key，也可以在分组设置里填写。见 [Penguin Go 分组](#penguin-go-分组) |
 | opencode-go | `OPENAI_API_KEY` | OpenCode Go 订阅网关。每个模型各自固定协议：Chat Completions 或 Responses 走 `https://opencode.ai/zen/go/v1`，Anthropic Messages 走 `https://opencode.ai/zen/go`（该客户端的变量是 `ANTHROPIC_API_KEY`）。见 [OpenCode Go 分组](#opencode-go-分组) |
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在的分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
