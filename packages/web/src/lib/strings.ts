@@ -446,6 +446,8 @@ export const zh = {
     unavailableDesktop: "内置浏览器只能在 PenguinHarness 桌面应用中使用。",
     unavailableShell: "当前桌面应用版本过旧，请更新后使用内置浏览器。",
     unavailableWindow: "没有可以显示浏览器的应用窗口。",
+    /** After the reason, where the server offers Chrome but none is paired: where to pair one. */
+    unavailablePairChrome: "要让 Agent 改用你的 Chrome，先在设置 › 浏览器中配对。",
     /** The unavailable built-in panel's way out, where the server offers the user's Chrome. */
     useChrome: "改用系统 Chrome",
     /** A new tab without a homepage: the start page's common sites, and its landmark's name. */

@@ -9,8 +9,9 @@
  * shows the start page (new-tab-page.tsx), a few common sites, rather than a white page, and the
  * address bar takes the focus to wait for an address. A tab whose page crashed shows that in the slot, with
  * Reload, instead of the dead page's blank area. Where the built-in browser cannot run (outside
- * the desktop app, an older shell) the panel says so instead, and offers the user's own Chrome
- * when the server has it.
+ * the desktop app, an older shell) the panel says so instead, and offers to switch to the user's
+ * own Chrome only when there is one: a Chrome paired to the account, connected or not right now.
+ * With none paired it says where to pair one; with the admin's switch off it offers nothing.
  *
  * While the agents drive the user's own Chrome the panel is the Chrome surface instead
  * (chrome-surface.tsx): the built-in pages stay alive out of sight, since nothing registers a
@@ -41,6 +42,7 @@ import {
 import { browserState, subscribeBrowser } from "./browser-store";
 import { BrowserTabStrip } from "./browser-tab-strip";
 import { BrowserToolbar } from "./browser-toolbar";
+import { chromeStanding } from "./chrome-status-row";
 import { ChromeSurface } from "./chrome-surface";
 import { ClearDataDialog } from "./clear-data-dialog";
 import { HomepageDialog } from "./homepage-dialog";
@@ -93,18 +95,27 @@ function unavailableDetail(state: BrowserState): string | undefined {
 
 export function BuiltinBrowserPanel({ active }: { active: boolean }) {
   const state = useSyncExternalStore(subscribeBrowser, browserState, browserState);
-  const chromeOffered = chromeInfo(state) !== null;
-  if (state.backend === "chrome" && chromeOffered) {
+  const chrome = chromeInfo(state);
+  if (state.backend === "chrome" && chrome !== null) {
     return <ChromeSurface state={state} active={active} />;
   }
   if (!builtinUsable(state)) {
-    const detail = unavailableDetail(state);
+    const standing = chrome === null ? null : chromeStanding(chrome);
+    // There is a Chrome to switch to once one is paired, even while it is not connected (the
+    // Chrome surface then says how to reconnect it). None paired: pairing is in Settings.
+    const chromePaired = standing === "connected" || standing === "disconnected";
+    const description = [
+      unavailableDetail(state),
+      standing === "unpaired" ? S.builtinBrowser.unavailablePairChrome : undefined,
+    ]
+      .filter((line) => line !== undefined)
+      .join(" ");
     return (
       <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
         <EmptyState
           title={S.builtinBrowser.unavailableTitle}
-          {...(detail !== undefined ? { description: detail } : {})}
-          {...(chromeOffered
+          {...(description !== "" ? { description } : {})}
+          {...(chromePaired
             ? {
                 action: (
                   <Button size="sm" onClick={() => void switchBrowserBackend("chrome")}>

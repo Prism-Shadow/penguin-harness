@@ -10,7 +10,9 @@
  *   a hidden panel draws none of it.
  * - Paired but not connected: which Chrome, and the reconnect help.
  * - The admin switched Chrome connections off: the panel says so.
- * - A window whose built-in browser cannot run offers the user's Chrome instead.
+ * - A window whose built-in browser cannot run offers to switch to the user's Chrome only when one
+ *   is paired, connected or not; with none paired it offers no switch and says to pair one in
+ *   Settings, and with the admin's switch off it offers neither.
  * - The menu's one row says how the user's Chrome stands, with the pairing dialog while none is
  *   paired and Settings once one is, and no action while the admin's switch is off; it offers no
  *   choice of backend, which Settings › Browser holds.
@@ -175,11 +177,38 @@ describe("the Chrome surface", () => {
     expect(html).toContain(S.builtinBrowser.chromeDisabledBody);
   });
 
-  it("offers the user's Chrome where the built-in browser cannot run in this window", () => {
-    set(status("builtin", [BUILTIN, UNPAIRED]));
+  /** The built-in backend chosen, in a window that cannot host it, beside the user's Chrome. */
+  const cannotRun = (chrome: BrowserBackendInfo) =>
+    set({ ...status("builtin", [BUILTIN, chrome]), available: false, reason: "no_window" });
+
+  it.each([
+    ["connected", CHROME],
+    ["paired but not connected", DISCONNECTED],
+  ] as const)(
+    "offers to switch to a Chrome that is %s where the built-in browser cannot run",
+    (_name, chrome) => {
+      cannotRun(chrome);
+      const html = panel();
+      expect(html).toContain(S.builtinBrowser.unavailableTitle);
+      expect(html).toContain(`>${S.builtinBrowser.useChrome}<`);
+      expect(html).not.toContain(S.builtinBrowser.unavailablePairChrome);
+    },
+  );
+
+  it("offers no switch with no Chrome paired, and says where to pair one", () => {
+    cannotRun(UNPAIRED);
     const html = panel();
     expect(html).toContain(S.builtinBrowser.unavailableTitle);
-    expect(html).toContain(`>${S.builtinBrowser.useChrome}<`);
+    expect(html).toContain(S.builtinBrowser.unavailablePairChrome);
+    expect(html).not.toContain(S.builtinBrowser.useChrome);
+  });
+
+  it("offers neither while the admin's switch is off", () => {
+    cannotRun(DISABLED);
+    const html = panel();
+    expect(html).toContain(S.builtinBrowser.unavailableTitle);
+    expect(html).not.toContain(S.builtinBrowser.useChrome);
+    expect(html).not.toContain(S.builtinBrowser.unavailablePairChrome);
   });
 });
 
