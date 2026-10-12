@@ -105,8 +105,6 @@ export function useSessionStream(
   initialStatus: SessionStatus,
   /** Notification of a server auto-generated title (for updating the list in place); held in a ref, doesn't trigger a reconnect. */
   onSessionTitle?: (sessionId: string, title: string) => void,
-  /** New session has been registered (sub-sessions are pushed over the parent session's channel); held in a ref, doesn't trigger a reconnect. */
-  onSessionCreated?: () => void,
 ): SessionStreamState {
   const [version, setVersion] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -146,8 +144,6 @@ export function useSessionStream(
   }, []);
   const onTitleRef = useRef(onSessionTitle);
   onTitleRef.current = onSessionTitle;
-  const onCreatedRef = useRef(onSessionCreated);
-  onCreatedRef.current = onSessionCreated;
 
   const controllerRef = useRef<StreamController | null>(null);
   // Empty model placeholder before the controller is established (first frame).
@@ -252,7 +248,6 @@ export function useSessionStream(
       onModelChange: bump,
       onPendingChange: () => setPendingTick((t) => t + 1),
       onSessionTitle: (sid, title) => onTitleRef.current?.(sid, title),
-      onSessionCreated: () => onCreatedRef.current?.(),
       onGoalEvent,
     });
     controllerRef.current = controller;

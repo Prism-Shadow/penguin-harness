@@ -200,7 +200,7 @@ An evaluation runs an agent on every case of a Benchmark and adds one labelled s
 
 The tested agent runs on the model of the evaluation conversation: the one set in **Model of the evaluation conversation**, or the one you pick in the composer before you send. Its thinking level is the one it is configured with; the dialog does not change it.
 
-The evaluation conversation is an ordinary conversation of yours. Every Test Session it starts is a CLI Session, filed under the **Background** folder of the session list. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
+The evaluation conversation is an ordinary conversation of yours. Every Test Session it starts is a CLI Session, archived by rule: it is listed under [Settings › Archived chats](/settings#archived-chats), and unarchiving it there keeps it in the sidebar. The finished evaluation becomes the newest row of the Benchmark's **Evaluations** table.
 
 ## Optimize an agent
 

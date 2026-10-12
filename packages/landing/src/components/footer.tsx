@@ -5,9 +5,11 @@
  */
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { DOCS_URL, LICENSE_URL, RELEASES_URL, REPO_URL } from "../lib/links";
+import { DOCS_URL, galleryUrl, LICENSE_URL, RELEASES_URL, REPO_URL } from "../lib/links";
+import { useLocale } from "../state/locale";
 
 export function Footer() {
+  const { locale } = useLocale();
   const anchor = (id: string, label: string) => (
     <Link to={`/#${id}`} className="hover:text-gray-900 dark:hover:text-gray-100">
       {label}
@@ -61,6 +63,14 @@ export function Footer() {
                 <li>
                   <a href={DOCS_URL} className="hover:text-gray-900 dark:hover:text-gray-100">
                     {S.footer.docs}
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={galleryUrl(locale)}
+                    className="hover:text-gray-900 dark:hover:text-gray-100"
+                  >
+                    {S.nav.gallery}
                   </a>
                 </li>
                 <li>

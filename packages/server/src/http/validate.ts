@@ -113,7 +113,7 @@ export function optionalPagingQuery(c: Context): { offset: number; limit: number
  * as sent: the list compares it as a string against the rows' own stamps, which is where the
  * client read it from.
  */
-function parseActivityCursor(raw: string): ActivityCursor | null {
+export function parseActivityCursor(raw: string): ActivityCursor | null {
   const comma = raw.indexOf(",");
   if (comma === -1) return null;
   const lastActiveAt = raw.slice(0, comma);

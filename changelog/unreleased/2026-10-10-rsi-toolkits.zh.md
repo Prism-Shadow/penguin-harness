@@ -18,7 +18,7 @@
 - **评测契约。** 工具包之间互不依赖。每个算法工具包自带一份 `references/evaluation.md`：沿用 `agent-evaluation` 的单格协议（发给 `run_subagent` worker 的八字段请求、纯 YAML 结果、四个失败码），写入同样的 `scoreboard.yaml` 记录，内置的 Harbor 题按题干运行。四份副本逐字节相同，由 core 测试钉住。
 - **方法。** 评估中心**使用** → **优化**标签页新增**方法**：Default、OPRO、APE、ACE 或 AWM。选 Default 以外的方法时，隐藏**最多轮数**与**目标分数**，把被测智能体、Benchmark 与每题运行次数交给该方法的 Skill，并预选这个 Skill。Web 测试把这份列表钉在插件库的 `rsi` 插件上。
 - **Benchmark 导入。** `benchmark-design` 把导入流程收为自己的一个分支：`reference/package.md` 解析来源（单个文件夹、一个包目录、一个名字）、固定提交、把配对的 train / test 包一并导入、核对写入的副本，并提议一题的冒烟探测——从不自行启动。评估中心的导入 Prompt 以该 Skill 开头并预选它。
-- **草稿页。** 草稿页的自进化算法指标卡从插件库（`GET /api/plugins`）统计 `rsi` 分类的工具包数，并提供其中一个一键开始（见[定位调整](2026-10-10-rsi-positioning.zh.md)）。
+- **草稿页。** 草稿页的自进化算法计数取自插件库（`GET /api/plugins`）`rsi` 分类的工具包数（见[定位调整](2026-10-10-rsi-positioning.zh.md)）。
 - **文档。** 「技能与插件」列出新分类与各工具包，「自我进化」新增「RSI 工具包」与「复现的 Benchmark」两节，「评估中心」介绍**方法**字段。
 - [#985](https://github.com/Prism-Shadow/penguin-harness/pull/985) 中对四个 `agent-tuning` Skill 的改写、`agent-supervision`，以及 `benchmark-reproduction` 与其 GDPevo 配方都没有并入：复现的 Benchmark 放在 penguin-harness-benchmark 仓库，不放进插件。
 

@@ -13,7 +13,7 @@
 import { THEME_IDS } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
 import { accentPresetsOf, accentSwatch, THEME_ACCENT } from "../lib/accents";
-import { BASE } from "../lib/location";
+import { BASE, SITE_ROOT } from "../lib/location";
 import { FIRST_TOPIC } from "../library/topics";
 import { HOME_SURFACE } from "../app/surfaces";
 import { fontsHref, homeHref, surfaceHref, topicHref } from "../lib/routes";
@@ -250,7 +250,8 @@ export function TopBar({
   const { S, state } = useGallery();
   return (
     <header className="g-topbar">
-      <a className="g-brand" href={homeHref(BASE, state)}>
+      {/* On the public site the brand leads back to the site; Home stays the gallery's own. */}
+      <a className="g-brand" href={SITE_ROOT ?? homeHref(BASE, state)}>
         <img src={`${BASE}/penguin-logo.svg`} alt="" width={24} height={24} />
         <strong>{S.brand.title}</strong>
       </a>

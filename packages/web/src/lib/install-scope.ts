@@ -393,12 +393,6 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
-    key: "penguin.recentToolkit",
-    scope: "browser",
-    why: "The self-evolution toolkit the start page last offered: a library plugin name, which ships with the build rather than the data root; a name the library lacks falls back to the first toolkit.",
-  },
-  {
-    kind: "exact",
     key: "penguin.lastOrgKey",
     scope: "install",
     why: "The organization last opened in company mode, as <projectId>/<orgId> of this root.",

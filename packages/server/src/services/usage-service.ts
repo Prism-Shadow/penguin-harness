@@ -17,6 +17,7 @@
  * file header.
  */
 import type {
+  CostParts,
   UsageAgentSeries,
   UsageBucket,
   UsageErrors,
@@ -165,6 +166,33 @@ export function requestCostUsd(
   );
 }
 
+/** A cost split with nothing in any bucket: where a running sum of splits starts. */
+export const ZERO_COST_PARTS: CostParts = { cacheRead: 0, cacheWrite: 0, output: 0 };
+
+/**
+ * {@link requestCostUsd} kept bucket by bucket: each bucket's Tokens at its own rate, in USD.
+ * Given the rates a cost was priced at, the parts add up to that cost.
+ */
+export function requestCostParts(
+  counts: { cacheRead: number; cacheWrite: number; output: number },
+  rates: PricingRates,
+): CostParts {
+  return {
+    cacheRead: (counts.cacheRead * rates.cacheRead) / 1e6,
+    cacheWrite: (counts.cacheWrite * rates.cacheWrite) / 1e6,
+    output: (counts.output * rates.output) / 1e6,
+  };
+}
+
+/** Two cost splits added bucket by bucket. */
+export function sumCostParts(a: CostParts, b: CostParts): CostParts {
+  return {
+    cacheRead: a.cacheRead + b.cacheRead,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    output: a.output + b.output,
+  };
+}
+
 /**
  * The rates one usage record is billed at, decided from the record's own timestamp: the
  * off-peak tier when the reference carries a catalog schedule and `at` falls outside its peak
@@ -189,6 +217,11 @@ export function ratesAt(
 /** Cost formula: sum of the three buckets at the tier these Tokens ran in, USD per million. */
 function costOf(sums: UsageModelSums, tiered: TieredRates): number {
   return requestCostUsd(sums, sums.peak ? tiered.peak : tiered.offPeak);
+}
+
+/** {@link costOf} split by bucket, at the same tier. */
+function costPartsOf(sums: UsageModelSums, tiered: TieredRates): CostParts {
+  return requestCostParts(sums, sums.peak ? tiered.peak : tiered.offPeak);
 }
 
 /** In-process Map key for a paired reference (\0-separated, the same style as session-manager's agentKey; never persisted). */
@@ -534,7 +567,7 @@ export class UsageService implements UsageQueries {
       groupBy === "model" ? refKey(r.provider, r.key) : r.key;
     const byKey = new Map<string, UsageGroupRow>();
     for (const r of rows) {
-      const acc = byKey.get(keyOf(r)) ?? {
+      const acc: UsageGroupRow = byKey.get(keyOf(r)) ?? {
         key: r.key,
         ...(groupBy === "model" ? { provider: r.provider } : {}),
         cacheRead: 0,
@@ -551,8 +584,12 @@ export class UsageService implements UsageQueries {
       acc.total += r.total;
       acc.requests += r.requests;
       const rate = rates.get(refKey(r.provider, r.modelId));
-      if (rate) acc.cost = (acc.cost ?? 0) + costOf(r, rate);
-      else acc.hasUncosted = true;
+      if (rate) {
+        acc.cost = (acc.cost ?? 0) + costOf(r, rate);
+        acc.costParts = sumCostParts(acc.costParts ?? ZERO_COST_PARTS, costPartsOf(r, rate));
+      } else {
+        acc.hasUncosted = true;
+      }
       byKey.set(keyOf(r), acc);
     }
     const out = [...byKey.values()];

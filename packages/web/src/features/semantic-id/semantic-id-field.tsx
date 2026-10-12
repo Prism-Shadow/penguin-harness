@@ -25,7 +25,7 @@
  * fills in the part after it.
  */
 import { useId, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { SemanticIdKind } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -60,7 +60,6 @@ export function SemanticIdField({
   info,
   disabled = false,
   onChange,
-  onEnter,
 }: {
   /**
    * The Project whose default model is asked — for a Project id, the Project the dialog was
@@ -91,8 +90,6 @@ export function SemanticIdField({
   info?: ReactNode;
   disabled?: boolean;
   onChange: (id: string) => void;
-  /** Enter inside the field, where the dialog submits on it. */
-  onEnter?: () => void;
 }) {
   const controlId = useId();
   const messageId = `${controlId}-message`;
@@ -140,16 +137,6 @@ export function SemanticIdField({
         setNotice(null);
         onChange(e.target.value);
       }}
-      {...(onEnter !== undefined
-        ? {
-            onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onEnter();
-              }
-            },
-          }
-        : {})}
     />
   );
 

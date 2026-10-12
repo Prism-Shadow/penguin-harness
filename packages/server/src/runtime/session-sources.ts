@@ -57,20 +57,50 @@ export function unrunSource(client: SessionRow["client"]): SessionSource | undef
 }
 
 /**
- * The list category of a Session: none for a `company` Session, which only company mode's
- * own views list (an employee's desk, a ticket's sessions), whether archived or not; otherwise
- * archived first, then a person's conversation (`user`, or a row not yet classified) is
- * `active` and every other source — API, scheduled, subagent and CLI Sessions — `background`.
- * The Web App's sidebar applies the same rule to loaded rows (`sessionCategory`), so server
- * filtering and client rendering never disagree.
+ * The sources a program opens a Session for — the Agent API, a scheduled task's new-Session
+ * run, `penguin run` — which the listing rule files away unless the user keeps them.
+ */
+export const BACKGROUND_SOURCES: ReadonlySet<SessionSource> = new Set(["api", "schedule", "cli"]);
+
+/** The two marks on a Session's row the listing rule reads (SessionRow.archivedAt / keptAt). */
+export interface ListingMarks {
+  archivedAt: string | null;
+  keptAt: string | null;
+}
+
+/** A row's marks, with the optional fields of an older-shaped row read as unset. */
+export function listingMarksOf(row: {
+  archivedAt?: string | null;
+  keptAt?: string | null;
+}): ListingMarks {
+  return { archivedAt: row.archivedAt ?? null, keptAt: row.keptAt ?? null };
+}
+
+/**
+ * Where a Session is listed — the listing rule, computed on every read, so nothing on disk is
+ * ever rewritten to move a Session between lists:
+ *
+ * - none for a `company` Session (company mode's own views list it: a desk, a ticket's
+ *   sessions) and for a `subagent` Session (its parent's Agent panel opens it), whatever their
+ *   marks;
+ * - `archived` when the user archived it;
+ * - `archived` when a program opened it (BACKGROUND_SOURCES) and the user has not kept it;
+ * - `active` otherwise — a person's conversation, a kept background Session, and a row whose
+ *   Trace has not been read yet.
+ *
+ * The Web App applies the same rule to the rows it holds (`sessionCategory`, through the
+ * effective `SessionInfo.archived`), so server filtering and client rendering never disagree.
  */
 export function listCategory(
   source: SessionSource | undefined,
-  archived: boolean,
+  marks: ListingMarks,
 ): SessionCategory | null {
-  if (source === "company") return null;
-  if (archived) return "archived";
-  return source === undefined || source === "user" ? "active" : "background";
+  if (source === "company" || source === "subagent") return null;
+  if (marks.archivedAt !== null) return "archived";
+  if (source !== undefined && BACKGROUND_SOURCES.has(source) && marks.keptAt === null) {
+    return "archived";
+  }
+  return "active";
 }
 
 @Component()

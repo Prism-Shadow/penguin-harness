@@ -22,8 +22,8 @@
  * - PUT persists a custom model's vision flag and max_tokens (clearing and rejecting bad values),
  *   falls back to OPENAI_API_KEY for the openai protocol, requires a provider, refuses an id a
  *   vendor group cannot route when the request introduces it (unless its group names a
- *   protocol), refuses a hand-added model in a group that takes none (OpenRouter, TokenDance and
- *   SiliconFlow take them, stored bare), and stores or clears a discount.
+ *   protocol), refuses a hand-added model in a group that takes none (OpenRouter, TokenDance,
+ *   SiliconFlow and Atlas Cloud take them, stored bare), and stores or clears a discount.
  * - Group connections (`[providers.<id>]`): GET reports each group's masked key and every row's
  *   effective connection with its sources; a PUT `providers` change or the group route sets and
  *   clears per field and keeps the rest, a cleared field reading as none; the group route is
@@ -566,7 +566,7 @@ describe("models preset & catalog enrichment", () => {
     expect(custom.status).toBe(200);
   });
 
-  it("PUT refuses a hand-added model where the group takes none and keeps every stored one; OpenRouter, TokenDance and SiliconFlow take one bare", async () => {
+  it("PUT refuses a hand-added model where the group takes none and keeps every stored one; OpenRouter, TokenDance, SiliconFlow and Atlas Cloud take one bare", async () => {
     // A row a user added to a gateway group while every gateway still took them.
     await storeRows(t.root, projectId, [
       { provider: "fireworks", modelId: "acme/legacy-pick", clientType: "openai-chat" },
@@ -636,7 +636,7 @@ describe("models preset & catalog enrichment", () => {
       ["custom\0mine", "fireworks\0acme/renamed-pick"].sort(),
     );
 
-    // A group's own preset is welcome back, and custom, vLLM, the three open gateways and
+    // A group's own preset is welcome back, and custom, vLLM, the four open gateways and
     // user-defined groups take anything.
     const open = await api.put(url(), {
       models: [
@@ -653,13 +653,14 @@ describe("models preset & catalog enrichment", () => {
         { provider: "openrouter", modelId: "acme/new-pick" },
         { provider: "tokendance", modelId: "acme/new-pick" },
         { provider: "siliconflow", modelId: "acme/new-pick" },
+        { provider: "atlascloud", modelId: "acme/new-pick" },
       ],
     });
     expect(open.status).toBe(200);
     // A model added to one of the open gateways is stored as sent — no endpoint and no
     // protocol of its own — and runs on the gateway's, through its group's table.
     const body = (await open.json()) as ModelsResponse;
-    for (const provider of ["openrouter", "tokendance", "siliconflow"]) {
+    for (const provider of ["openrouter", "tokendance", "siliconflow", "atlascloud"]) {
       const row = pick(body, provider, "acme/new-pick");
       expect(row.clientType, provider).toBeUndefined();
       expect(row.credential, provider).toBeUndefined();

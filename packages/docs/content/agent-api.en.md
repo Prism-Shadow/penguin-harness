@@ -3,7 +3,7 @@ title: Agent API
 description: Let a program talk to one agent over HTTP — turn on the agent's API, mint keys, and run it with curl or the @prismshadow/amsp client.
 ---
 
-The Agent API lets a program outside PenguinHarness — a script, a service, a page in a browser — talk to one agent over HTTP. The program sends its input, reads the run as it happens as an [AMSP](/amsp) event stream, and continues the conversation by its Session id. A run uses the Project's models and credentials, is recorded like any other conversation, and appears in the sidebar's **Background** folder.
+The Agent API lets a program outside PenguinHarness — a script, a service, a page in a browser — talk to one agent over HTTP. The program sends its input, reads the run as it happens as an [AMSP](/amsp) event stream, and continues the conversation by its Session id. A run uses the Project's models and credentials, is recorded like any other conversation, and is archived by rule: it is listed under [Settings › Archived chats](/settings#archived-chats), and unarchiving it there keeps it in the sidebar.
 
 Where to go:
 
@@ -48,8 +48,8 @@ API conversations have their own approval mode, separate from the one the compos
 | `always-ask` | **Ask every time** | Every tool call waits for the caller's answer |
 | `deny-all` | **Deny everything** | Every tool call is denied; the model reads the denial and carries on without it |
 
-- The mode is read when an API conversation is created and stays with that conversation. A change on the tab applies to API conversations created afterwards. To change one existing conversation, open it in the Web App and change its approval mode there.
-- A call that waits is sent to the caller and shown in the conversation in the Web App as well; whichever answers first decides. The run waits with no time limit: until an answer, an abort, or the caller disconnecting, which denies it.
+- The mode is read when an API conversation is created and stays with that conversation. A change on the tab applies to API conversations created afterwards. To change one existing conversation, unarchive it, open it in the Web App and change its approval mode there.
+- A call that waits is sent to the caller and, once you have unarchived the conversation, shown in it in the Web App as well; whichever answers first decides. The run waits with no time limit: until an answer, an abort, or the caller disconnecting, which denies it.
 - `allow-all` is the default because the sandbox already bounds what the agent can do, and a program usually has no one to ask. Choose `read-only` or `always-ask` when the program answers approvals; see [Approvals](#approvals).
 
 An API conversation's sandbox comes from the server's new-chat defaults, as for any new conversation. The Project's preselected approval mode for new conversations does not apply to it.
@@ -73,7 +73,7 @@ A browser page on another origin cannot use keyless access: the server sends no 
 
 ### Try it
 
-The **API** tab ends, for the Project's owner, with **Try it**: an input holding "What time is it now?" and **Run**. **Run** sends one real API run through `POST /api/projects/:projectId/agents/:agentId/api/try`, your sign-in standing in for a key and the same handler behind it, and shows the stream a program would receive in one output box. The box's header names the run's `session_id` and switches between two views: **Rendered**, one numbered row per item or event, with an item's fragments merged into the content they add up to (the answer, a tool call and its arguments, the tool's output), and **Raw**, one numbered line per `data:` payload exactly as received. The strip under them gives the `run.done` status with the Request count, tokens and elapsed time. The default agent can tell the time only by running `date`, so the example shows a tool call and its result. Running again continues the conversation, as a program does with `session_id`; **New conversation** starts another. **Stop** aborts the run through the Session's abort route, so the stream still ends with `run.done`, and when the approval mode asks, **Allow** and **Deny** appear on the `approval.requested` row. The conversation is an ordinary API conversation, filed in the **Background** folder. While the administrator has the Agent API off, **Run** is disabled.
+The **API** tab ends, for the Project's owner, with **Try it**: an input holding "What time is it now?" and **Run**. **Run** sends one real API run through `POST /api/projects/:projectId/agents/:agentId/api/try`, your sign-in standing in for a key and the same handler behind it, and shows the stream a program would receive in one output box. The box's header names the run's `session_id` and switches between two views: **Rendered**, one numbered row per item or event, with an item's fragments merged into the content they add up to (the answer, a tool call and its arguments, the tool's output), and **Raw**, one numbered line per `data:` payload exactly as received. The strip under them gives the `run.done` status with the Request count, tokens and elapsed time. The default agent can tell the time only by running `date`, so the example shows a tool call and its result. Running again continues the conversation, as a program does with `session_id`; **New conversation** starts another. **Stop** aborts the run through the Session's abort route, so the stream still ends with `run.done`, and when the approval mode asks, **Allow** and **Deny** appear on the `approval.requested` row. The conversation is an ordinary API conversation, archived like the others. While the administrator has the Agent API off, **Run** is disabled.
 
 ## Call it with curl
 
@@ -135,7 +135,7 @@ type InputItem =
 ### Conversations
 
 - A new API conversation uses the Project's default model, the server's new-chat sandbox and the agent's API approval mode. Its title is generated from the first input, and its usage and cost count toward the Project, as for any conversation.
-- The sidebar lists API conversations in the agent's **Background** folder, each marked with the API icon. You can open one, read it, answer its approvals and type into it.
+- API conversations are archived by rule, so they are listed under [Settings › Archived chats](/settings#archived-chats) rather than in the sidebar. Unarchive one to read it, answer its approvals and type into it; it then stays in the sidebar through later runs, marked with the API icon. A program can continue an archived conversation, and it stays archived.
 - A conversation runs one thing at a time: a run on a conversation that is still working is refused with `409`. An agent runs at most four API runs at once; the fifth is refused with `429` and `Retry-After: 2`.
 - Disconnecting aborts the run. To stop a run and still receive how it ended, `POST /sessions/:sessionId/abort`: the stream stays open and ends with `run.done` and `status: "aborted"`.
 

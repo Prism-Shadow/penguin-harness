@@ -16,10 +16,12 @@
  * Token usage here is **broken down by category** rather than given as one
  * lump sum (a total alone doesn't show where the money went): this round's
  * input (with the portion that was a **cache hit** in parentheses, target
- * icon, hover shows the hit rate = cache hit ÷ input), this round's output,
- * plus tool-call count / cost / duration / output TPS. The conversation
- * page's stats row only gives input/output totals — cache composition and
- * this kind of debugging detail belongs here. Every figure, cost included, is
+ * icon), this round's output, plus tool-call count / cost / duration / output
+ * TPS. A round shows totals only; the global summary adds the file's hit rate
+ * (cache hit ÷ input) and, behind a "?" beside each, the cost's priced parts
+ * and the duration's API / tool components. The conversation page's stats
+ * row only gives input/output totals — cache composition and this kind of
+ * debugging detail belongs here. Every figure, cost included, is
  * the server's: the analysis prices each round with the cost center's rule,
  * so the file's total is what the toolbar shows for the same requests.
  *
@@ -30,7 +32,7 @@
  * clicking a bar scrolls to the corresponding message and pins the highlight for PIN_MS.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type {
   TraceAnalysisResponse,
@@ -46,11 +48,13 @@ import {
   Chevron,
   Fold,
   GlyphIcon,
+  ICON_SIZE,
   Skeleton,
   StatChip,
   TokenDonut,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { CostPartsRows, ElapsedSplitRows, StatHint } from "../../components/ui/stat-hint";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import {
@@ -162,24 +166,22 @@ function firstRowKeyAt(
  * columns — laid out horizontally it would read as a blur of digits, while
  * giving each group a full row would waste the right half of the space.
  *
- * `detail` is the breakdown behind the value: the row shows the total alone and keeps the
- * breakdown in its hover text, the same way the per-round chips do. A reader with no hover
- * gets it from `sr-only` text rather than from an `aria-label`: this row is a bare `div`,
- * whose role is `generic`, and ARIA prohibits naming that role — a label here would be
- * dropped, while hidden text is read in place, right after the value it belongs to (the
- * same way an update hint is folded into a button elsewhere in the app). An empty detail
- * renders neither: a tooltip repeating only the visible label says nothing.
+ * `hint` is the breakdown of the value (the cost's priced parts, the elapsed time's two
+ * components), behind a "?" right of it. Not a hover hint on the row: a hint opens only where
+ * the text is cut off or absent, so one on a fully visible value would never show. The slot
+ * after the value is on every row, empty where there is no breakdown and as wide as the "?",
+ * so the values of a column stay right-aligned with or without one.
  */
-function SummaryRow({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  const hasDetail = detail !== undefined && detail !== "";
+function SummaryRow({ label, value, hint }: { label: string; value: string; hint?: ReactNode }) {
   return (
-    <div
-      data-tooltip={hasDetail ? `${label}${detail}` : undefined}
-      className="flex items-baseline justify-between gap-3 py-0.5"
-    >
+    <div className="flex items-baseline justify-between gap-3 py-0.5">
       <span className="shrink-0 text-xs text-gray-400">{label}</span>
-      <span className="truncate font-mono text-sm font-semibold tabular-nums">{value}</span>
-      {hasDetail && <span className="sr-only">{detail}</span>}
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="truncate font-mono text-sm font-semibold tabular-nums">{value}</span>
+        <span className="flex shrink-0" style={{ width: ICON_SIZE.inlineGlyph }}>
+          {hint !== undefined && <StatHint label={label}>{hint}</StatHint>}
+        </span>
+      </span>
     </div>
   );
 }
@@ -200,10 +202,11 @@ const CHIP_ROW_CLASS = "whitespace-nowrap font-mono text-xs text-gray-500 dark:t
 
 /**
  * This round's input chip: `↑ 84k (◎ 60k)` — the parenthesized number is the
- * portion that was a **cache hit** (target icon), with the hit rate shown on
- * hovering the parenthesized part. The hit rate is hover-only: cramming a
- * third number into the row would blow out this row of chips, and "how much
- * was hit" already gives a rough sense on its own — hover for the exact ratio.
+ * portion that was a **cache hit** (target icon). The round's hit rate is not
+ * on screen: a third number would blow out this row of chips, and a hover hint
+ * on a reading whose text is fully visible never opens. "How much was hit"
+ * gives a rough sense on its own, and the global summary's cache-hit row gives
+ * the file's rate; the chip's `aria-label` still carries this round's.
  */
 function InputChip({ buckets }: { buckets: Buckets }) {
   const input = inputOf(buckets);
@@ -220,7 +223,7 @@ function InputChip({ buckets }: { buckets: Buckets }) {
         {humanizeTokens(input)}
       </span>
       {/* The parentheses hug the reading they enclose; the glyph keeps a chip's gap to its figure. */}
-      <span data-tooltip={hitTitle} className="ml-1 flex items-center text-gray-400">
+      <span className="ml-1 flex items-center text-gray-400">
         <span>(</span>
         <span className="flex items-center gap-1">
           <GlyphIcon d={STAT_ICONS.cacheHit} />
@@ -230,21 +233,6 @@ function InputChip({ buckets }: { buckets: Buckets }) {
       </span>
     </span>
   );
-}
-
-/**
- * The parenthesised API / tool breakdown printed after a duration, or the empty string when
- * neither component has anything. The two are measurements of the same span, not a partition
- * of it: a tool running in the background overlaps the model's decoding, while approval waits
- * and harness overhead belong to neither — so they may exceed or fall short of the duration
- * they follow, and neither is ever derived from the other.
- */
-function durationSplit(apiMs: number, toolMs: number): string {
-  if (apiMs <= 0 && toolMs <= 0) return "";
-  return `${S.chat.statParenOpen}${S.chat.statElapsedSplit(
-    humanizeDuration(apiMs),
-    humanizeDuration(toolMs),
-  )}${S.chat.statParenClose}`;
 }
 
 /** A file's analysis and what it decided: the view's state per file, reset on a switch to another file. */
@@ -613,16 +601,32 @@ export function TraceFileBody({
             />
             <SummaryRow label={S.chat.statOutput} value={humanizeTokens(global.buckets.output)} />
           </div>
-          {/* Duration · cost · TPS (cost above duration, same order as the conversation page's stats row). */}
+          {/* Duration · cost · TPS (cost above duration, same order as the conversation page's
+              stats row). Cost and duration carry their breakdowns behind a "?": the cost's
+              priced parts whenever the file has a cost, the duration's two components once
+              either of them has any time. */}
           <div>
             <SummaryRow
               label={S.common.cost}
               value={formatMoney(analysis.cost ?? null, currency)}
+              hint={
+                analysis.costParts !== undefined ? (
+                  <CostPartsRows parts={analysis.costParts} currency={currency} />
+                ) : undefined
+              }
             />
             <SummaryRow
               label={S.chat.statElapsed}
               value={humanizeDuration(Math.max(0, globalMs))}
-              detail={durationSplit(analysis.apiMs, analysis.toolMs)}
+              hint={
+                analysis.apiMs > 0 || analysis.toolMs > 0 ? (
+                  <ElapsedSplitRows
+                    apiMs={analysis.apiMs}
+                    toolMs={analysis.toolMs}
+                    totalMs={Math.max(0, globalMs)}
+                  />
+                ) : undefined
+              }
             />
             {/* Global TPS = the output of every round (including compaction
                 rounds) ÷ the sum of LLM generation time, same scope as the
@@ -693,7 +697,9 @@ export function TraceFileBody({
                 </span>
               )}
               <span className="min-w-0 flex-1" />
-              {/* This round's stats: iconified in the top-right corner (hover gives a text explanation) */}
+              {/* This round's stats, iconified in the top-right corner: totals only, each chip
+                  named by its label. No "?" here — the head is a button, which holds no
+                  control, and the breakdowns belong to the global summary's totals. */}
               <div
                 className={`flex flex-wrap items-center justify-end gap-x-3 gap-y-1 ${CHIP_ROW_CLASS}`}
               >
@@ -719,7 +725,7 @@ export function TraceFileBody({
                 <StatChip
                   glyph={STAT_ICONS.elapsed}
                   value={humanizeDuration(durationMs)}
-                  label={`${S.chat.statElapsed}${durationSplit(st.llmMs, st.toolMs)}`}
+                  label={S.chat.statElapsed}
                 />
                 <StatChip
                   glyph={STAT_ICONS.tps}

@@ -10,7 +10,7 @@
  * request answered rather than on what was clicked.
  */
 import { useState, useSyncExternalStore } from "react";
-import { PrefRow, Segmented, SettingsGroup, ToggleRow } from "@prismshadow/penguin-ui";
+import { PrefRow, Segmented, SettingsGroup, ToggleRow, guardLeave } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
   enableNotifications,
@@ -23,14 +23,14 @@ import {
 } from "../../lib/notification-pref";
 import type { NotificationAccess } from "../../lib/notification-pref";
 import { useCompany } from "../../state/company";
-import { useLocale } from "../../state/locale";
+import { resolveSystemLocale, useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { TraceImportRow } from "./trace-import-row";
 
 export function GeneralSection() {
-  const { lang, setLang } = useLocale();
+  const { lang, locale, setLang } = useLocale();
   const { currency, setCurrency } = useTheme();
   const { serverEnabled, personalEnabled, setPersonalEnabled } = useCompany();
 
@@ -52,6 +52,16 @@ export function GeneralSection() {
     { value: "CNY", label: S.models.currencyCny },
   ];
 
+  /**
+   * A language that changes what is on screen remounts the whole tree (LocaleScope), which
+   * drops every unsaved draft in the app — so it asks first, like any other way of leaving.
+   */
+  const changeLang = (next: LangPref) => {
+    const shown = next === "system" ? resolveSystemLocale(navigator.language) : next;
+    if (shown === locale) setLang(next);
+    else void guardLeave(() => setLang(next));
+  };
+
   const hint = notificationHintFor(access, asked);
   const notificationHint =
     hint === "unsupported"
@@ -65,7 +75,7 @@ export function GeneralSection() {
   return (
     <SettingsGroup>
       <PrefRow label={S.settings.language} info={S.settings.languageInfo}>
-        <Segmented options={langOptions} value={lang} onChange={setLang} />
+        <Segmented options={langOptions} value={lang} onChange={changeLang} />
       </PrefRow>
       <PrefRow label={S.models.currency} info={S.settings.currencyInfo}>
         <Segmented options={currencyOptions} value={currency} onChange={setCurrency} cols={2} />

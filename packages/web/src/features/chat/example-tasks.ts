@@ -19,9 +19,7 @@
  * stated. Skills listed here are preselected in the composer only when the selected Agent has
  * them installed; an empty list fills the prompt alone.
  *
- * The first folder is the one open on arrival: building an AI app from one sentence. The
- * self-evolution toolkits' demos are not examples here: the toolkit tile above the composer
- * fills its plugin's own quick start, read from the server, so the two cannot drift apart.
+ * The first folder is the one open on arrival: building an AI app from one sentence.
  */
 export const EXAMPLE_FOLDERS = [
   {

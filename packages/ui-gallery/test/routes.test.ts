@@ -2,10 +2,17 @@
  * The site's addresses: a path names a route, a surface page is `/s/<surface>`, a library page
  * is `/c/<topic>`, the fonts pages are `/fonts`, `/fonts/specimens` and `/fonts/licences`, and
  * every link built for another page carries the view state.
+ *
+ * - Given a static build, every page has a copy of the document, and the address a static host
+ *   serves it at (with the trailing slash it redirects to) names that page.
+ * - Given the gallery built into the public site at `<site>/gallery/`, the brand leads back to
+ *   `<site>/`; in dev or in a build of the gallery alone, there is no site to lead back to.
  */
 import { describe, expect, it } from "vitest";
 import { SURFACE_IDS } from "../src/app/surfaces";
 import { TOPIC_IDS } from "../src/library/topics";
+import { siteRootOf } from "../src/lib/location";
+import { deepPagePaths } from "../src/lib/page-paths";
 import {
   anchorOf,
   FONTS_PAGE_IDS,
@@ -18,6 +25,7 @@ import {
   topicHref,
   topicPath,
 } from "../src/lib/routes";
+import type { Route } from "../src/lib/routes";
 import { DEFAULT_STATE } from "../src/lib/url-state";
 
 const PREFS = "theme=modern&mode=light&size=m&latin=theme&cjk=theme&lang=en&accent=neutral";
@@ -85,5 +93,32 @@ describe("links between pages", () => {
     expect(anchorOf("#%E5%AF%B9%E8%AF%9D")).toBe("对话");
     expect(anchorOf("#")).toBeNull();
     expect(anchorOf("")).toBeNull();
+  });
+});
+
+describe("on a static host", () => {
+  it("every page has a copy of the document, at an address that names it", () => {
+    const everyPage: Route[] = [
+      ...SURFACE_IDS.map((id): Route => ({ kind: "surface", id })),
+      ...TOPIC_IDS.map((id): Route => ({ kind: "topic", id })),
+      ...FONTS_PAGE_IDS.map((page): Route => ({ kind: "fonts", page })),
+    ];
+    // The host answers `/s/chat` with a redirect to `/s/chat/`, where the copy sits.
+    const served = deepPagePaths().map((path) => parseRoute(`${path}/`));
+    expect(new Set(served)).toEqual(new Set(everyPage));
+    expect(served).toHaveLength(everyPage.length);
+  });
+});
+
+describe("the brand link", () => {
+  it("leads back to the public site's root when the gallery is built at <site>/gallery/", () => {
+    expect(siteRootOf("/gallery/")).toBe("/");
+    expect(siteRootOf("/penguin-harness/gallery/")).toBe("/penguin-harness/");
+  });
+
+  it("has no site to lead back to in dev, or in a build of the gallery alone", () => {
+    expect(siteRootOf("/")).toBeNull();
+    expect(siteRootOf("/ui/")).toBeNull();
+    expect(siteRootOf("/my-gallery/")).toBeNull();
   });
 });

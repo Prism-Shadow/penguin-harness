@@ -1,7 +1,7 @@
 ---
 name: agent-initialization
 description: Initialize or extend an Agent from a user requirement - write AGENTS.md, set identity metadata, and create, install or import Skills and hook packages (scripts the harness runs on every prompt, before tool calls, or after a task). For an agent that a program will use, it first asks whether the program embeds the agent with the SDK or calls it over the Agent API.
-version: 2026.10.09.5
+version: 2026.10.10.1
 ---
 
 # Agent Initialization
@@ -19,7 +19,7 @@ One question comes first even then: when the agent is for a program to use, ask 
 A program — an app, a service, a bot, a script — reaches a Penguin agent in one of two ways, and they put the agent in different places:
 
 - **The SDK** (`@prismshadow/penguin-core`): the agent is embedded in the program and runs without the Penguin server, on the program's own model key. No Agent is created in this Project; the agent lives in the program's own data directory (see *The embedded agent of an SDK app*). The program gets no server-managed Sessions, no Web App visibility, no approvals UI and no cost center.
-- **The API** (Penguin's Agent API, over AMSP): the program calls an Agent of this Project through the running server, which keeps the conversations in the Agent's Background folder. You create or configure that Agent here as usual; the Project's owner then turns on its API access and creates a key for the program.
+- **The API** (Penguin's Agent API, over AMSP): the program calls an Agent of this Project through the running server, which keeps the conversations as archived chats (**Settings › Archived chats** in the Web App; unarchiving one moves it into the sidebar). You create or configure that Agent here as usual; the Project's owner then turns on its API access and creates a key for the program.
 
 Whenever the requested agent is for a program, ask which way before you create anything, even when the requirement is otherwise concrete. It is the one exception to the no-follow-up-questions default above. Do not ask when the user has already chosen ("embed it with the SDK", "call it over the API") or answered earlier in this conversation. An agent that people talk to, in the Web App, the CLI or a Remote-control bot, is not for a program and needs no question.
 

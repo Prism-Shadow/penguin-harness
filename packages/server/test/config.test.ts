@@ -66,19 +66,23 @@ describe("resolveServerConfig: seed password", () => {
 
 describe("resolveServerConfig: PENGUIN_CLI_ENTRY parsing", () => {
   it("keeps a value trimmed — it is what the <root>/bin/penguin shim execs", () => {
-    expect(
-      resolveServerConfig({ ...base, PENGUIN_CLI_ENTRY: " /opt/penguin/dist/penguin.js " })
-        .cliEntry,
-    ).toBe("/opt/penguin/dist/penguin.js");
+    const config = resolveServerConfig({
+      ...base,
+      PENGUIN_CLI_ENTRY: " /opt/penguin/dist/penguin.js ",
+    });
+    expect(config.cliEntry).toBe("/opt/penguin/dist/penguin.js");
+    expect(config.cliLaunch).toMatchObject({ execArgs: [], origin: "env", unavailable: null });
   });
 
   it("falls through to the checkout lookup on a blank value, like unset", () => {
-    // What the lookup finds depends on whether this checkout has built its CLI, so the
-    // claim here is only that a blank value is not treated as an entry (see cli-shim.test.ts
-    // for checkoutCliEntry itself).
-    const blank = resolveServerConfig({ ...base, PENGUIN_CLI_ENTRY: "   " }).cliEntry;
-    expect(blank).toBe(resolveServerConfig({ ...base }).cliEntry);
-    expect(blank === null || blank?.endsWith(`${path.sep}penguin.js`)).toBe(true);
+    // This test runs from the checkout's source, as `pnpm dev` runs the server, so the lookup
+    // offers the checkout's CLI source (see cli-shim.test.ts for resolveCliLaunch itself); the
+    // claim here is only that a blank value is not treated as an entry.
+    const blank = resolveServerConfig({ ...base, PENGUIN_CLI_ENTRY: "   " });
+    const unset = resolveServerConfig({ ...base });
+    expect(blank.cliEntry).toBe(unset.cliEntry);
+    expect(blank.cliLaunch).toEqual(unset.cliLaunch);
+    expect(blank.cliEntry?.endsWith(path.join("packages", "cli", "src", "penguin.ts"))).toBe(true);
   });
 });
 
