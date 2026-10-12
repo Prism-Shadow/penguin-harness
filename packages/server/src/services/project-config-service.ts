@@ -1704,8 +1704,8 @@ export class ProjectConfigService implements ProjectConfigStore {
       );
     }
 
-    // Only custom, vLLM, OpenRouter, TokenDance, SiliconFlow and user-defined groups take
-    // models added by hand (core's isAddableGroup); every other built-in group, the other
+    // Only custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and user-defined groups
+    // take models added by hand (core's isAddableGroup); every other built-in group, the other
     // gateways included, carries its catalog presets and the rows it already stores. The
     // same grandfathering as above: a stored row is written as it stands, hand-added
     // ones from before this rule included, and so is a row renamed inside its own group. A row

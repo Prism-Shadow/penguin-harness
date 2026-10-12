@@ -6,8 +6,8 @@
  * SiliconFlow / TokenDance / Qwen Token Plan / Qwen Pay-As-You-Go / Fireworks AI /
  * MiniMax use each vendor's brand mark (for recognition purposes, not under trademark license;
  * Qwen's official gradient wordmark is flattened to currentColor monochrome).
- * Z.AI uses a simplified geometric approximation of its branded glyph (not an exact reproduction
- * of the trademark); ModelScope uses its official pixel mark flattened to currentColor; vLLM uses
+ * Z.AI and Atlas Cloud use a simplified geometric approximation of their glyph (not an exact
+ * reproduction of a trademark); ModelScope uses its official pixel mark flattened to currentColor; vLLM uses
  * its official mark from the
  * project's media kit, its two brand colours flattened to currentColor like
  * Qwen's gradient; OpenCode Go uses the pixel "G" of its "go" wordmark, as OpenCode's
@@ -92,6 +92,12 @@ const GLYPHS: Record<string, Glyph> = {
     path: (
       <path d="M50.7172 0H27.6622C26.3877 0 25.3586 1.03397 25.3586 2.30358V9.21911C25.3586 10.4935 24.3294 11.5227 23.055 11.5227H2.30357C1.02914 11.5227 0 12.5567 0 13.8263V23.0502C0 24.3246 1.03395 25.3538 2.30357 25.3538H25.3586C26.633 25.3538 27.6622 24.3198 27.6622 23.0502V16.1347C27.6622 14.8602 28.6913 13.8311 29.9657 13.8311H50.7172C51.9916 13.8311 53.0207 12.7971 53.0207 11.5275V2.30358C53.0207 1.02916 51.9868 0 50.7172 0Z" />
     ),
+  },
+  // Atlas Cloud has no published vector mark, so this is a simplified geometric
+  // approximation (twin peaks, echoing "Atlas") in the same spirit as Z.AI's glyph above,
+  // not a reproduction of a trademark.
+  atlascloud: {
+    path: <path d="M2 19 8 7l4 7 3-5 7 10Z" />,
   },
   tokendance: {
     // The official TokenDance mark, taken from the brand SVG with its black rounded-square
