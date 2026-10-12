@@ -385,7 +385,7 @@
     --ui-scrollbar-thumb: rgb(0 0 0 / 0.2);
     --ui-scrollbar-thumb-hover: rgb(0 0 0 / 0.36);
     --ui-scrollbar-track: transparent;
-    --ui-scrollbar-visibility: hover;
+    --ui-scrollbar-visibility: auto;
   }
 
   /* Dark: the same cool-neutral ramp inverted — calm greys, fills rather than lines, the body
@@ -1097,11 +1097,6 @@
      than as a synthesized bold, which smears Han strokes; Frost's own weights stop at 500. */
   :root[data-theme="modern"] {
     font-synthesis-weight: none;
-  }
-
-  /* Scrollbar thumbs show only while the pointer is over their scroller (--ui-scrollbar-visibility). */
-  :root[data-theme="modern"] :not(:hover) {
-    scrollbar-color: transparent var(--ui-scrollbar-track);
   }
 }
 
