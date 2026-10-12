@@ -1214,6 +1214,240 @@ describe("machines API", () => {
     });
   });
 
+  describe("handing over only to the build installed there", () => {
+    /** This server's image: a pushed platform, named by its content sha as a real one is. */
+    const IMAGE: PushPlan = {
+      baseVersion: "9.9.9",
+      harness: '{"platform":{"bundle":"store/platform/cafe0123456789ab.mjs"}}',
+      hmrDir: "/nonexistent",
+      version: "9.9.9+hmr.cafe01234567",
+    };
+    type Runs = "the release" | "the image" | "an older image";
+    /**
+     * What a machine's server says of itself (its GET /api/version): the code answering, and the
+     * pushed build its disk holds — the image, whatever the process runs.
+     */
+    const versionReport = (runs: Runs) => ({
+      version: "9.9.9",
+      channel: runs === "the release" ? "release" : "source",
+      harness: {
+        bundles: {
+          platform:
+            runs === "an older image"
+              ? "store/platform/0123456789abcdef.mjs"
+              : "store/platform/cafe0123456789ab.mjs",
+        },
+      },
+    });
+    /** A machine's server: says what runs there, and keeps the Model config it is handed. */
+    const machineServer = async (initially: Runs) => {
+      const state = { runs: initially, puts: [] as ModelsUpdateRequest[] };
+      const server = http.createServer((req, res) => {
+        let body = "";
+        req.on("data", (chunk: Buffer) => (body += chunk.toString("utf8")));
+        req.on("end", () => {
+          if (req.method === "PUT") state.puts.push(JSON.parse(body) as ModelsUpdateRequest);
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(
+            req.url === "/api/version"
+              ? JSON.stringify(versionReport(state.runs))
+              : req.url === "/api/projects"
+                ? JSON.stringify({ projects: [{ projectId: PROJECT }] })
+                : JSON.stringify({ models: [] }),
+          );
+        });
+      });
+      const port = await new Promise<number>((resolve) =>
+        server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)),
+      );
+      return { state, port, close: () => server.close() };
+    };
+    /** A connect from the Machines page (Start), followed to its end. */
+    const connect = async () => {
+      await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/connect`);
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      return t.deps.machines.job()!;
+    };
+    const bootOn = async (
+      remote: Awaited<ReturnType<typeof machineServer>>,
+      over: Partial<MachinesEffects> = {},
+    ) => {
+      await boot({
+        resolvePlan: () => IMAGE,
+        loadConfig: async () =>
+          ({
+            models: [
+              {
+                provider: "deepseek",
+                model_id: "deepseek-v4-pro",
+                client_type: "deepseek-official",
+                api_key: "sk-x",
+              },
+            ],
+          }) as never,
+        probe: async () => ({
+          state: { kind: "running" as const, port: remote.port, pid: 4242 },
+          machineId: null,
+        }),
+        ...over,
+      });
+      machinesRepo.patch("ssh:nas", {
+        version: IMAGE.version,
+        installedAt: "2026-08-01T00:00:00.000Z",
+        remotePort: remote.port,
+      });
+      machinesRepo.setMembers(PROJECT, ["ssh:nas"]);
+    };
+
+    it("a release's own server answering on that root is restarted onto the installed build before the Model config is handed over", async () => {
+      // The user's report: "Its server is already up", the config handed over in MMSP names, and
+      // every Session there failing because a 0.2.13 runtime read them.
+      const remote = await machineServer("the release");
+      const restarts: string[] = [];
+      try {
+        await bootOn(remote, {
+          stopServer: async () => {
+            restarts.push("stop");
+            return { ok: true as const };
+          },
+          startServer: async () => {
+            restarts.push("start");
+            remote.state.runs = "the image";
+            return { ok: true };
+          },
+        });
+
+        const job = await connect();
+
+        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(restarts).toEqual(["stop", "start"]);
+        expect(job.log.join("\n")).toContain(
+          "Its server runs 9.9.9, not the build installed there; restarting it onto that build…",
+        );
+        // Handed over once, and only to the build installed there.
+        expect(remote.state.puts).toHaveLength(1);
+        expect(remote.state.puts[0]!.models.map((m) => m.clientType)).toEqual([
+          "deepseek-official",
+        ]);
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a server on another build is given this server's image first, then the Model config", async () => {
+      const remote = await machineServer("an older image");
+      const upgraded: string[] = [];
+      try {
+        await bootOn(remote, {
+          upgrade: async () => {
+            upgraded.push("ssh:nas");
+            remote.state.runs = "the image";
+            return { kind: "upgraded", detail: "Update accepted.", persisted: true };
+          },
+        });
+        machinesRepo.patch("ssh:nas", { version: "9.9.9+hmr.0123456789ab" });
+
+        const job = await connect();
+
+        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(upgraded).toEqual(["ssh:nas"]);
+        expect(job.log.join("\n")).toContain(
+          "It runs 9.9.9+hmr.0123456789ab; bringing it to 9.9.9+hmr.cafe01234567 first…",
+        );
+        expect(machinesRepo.get("ssh:nas")?.version).toBe(IMAGE.version);
+        expect(remote.state.puts).toHaveLength(1);
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a server that cannot be brought in line stops the connect with a plain sentence, and is handed nothing", async () => {
+      const remote = await machineServer("an older image");
+      try {
+        await bootOn(remote, {
+          upgrade: async () => ({
+            kind: "refused",
+            detail: "this runtime publishes no business capabilities this platform can claim",
+          }),
+        });
+
+        const job = await connect();
+
+        expect(job.result).toEqual({
+          ok: false,
+          step: "sync",
+          message:
+            "That machine runs 9.9.9+hmr.0123456789ab; it must be updated to 9.9.9+hmr.cafe01234567 before it can use this server's models. It did not take this build: this runtime publishes no business capabilities this platform can claim",
+          // Installing anyway replicates the image and restarts the server onto it: the way out.
+          canReplaceProgram: true,
+        });
+        expect(remote.state.puts).toEqual([]);
+        expect(connected.has("ssh:nas")).toBe(false);
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a release's own server that will not stop stops the connect, and is handed nothing", async () => {
+      const remote = await machineServer("the release");
+      try {
+        await bootOn(remote, {
+          stopServer: async () => ({ ok: false as const, detail: "permission denied" }),
+        });
+
+        const job = await connect();
+
+        expect(job.result).toMatchObject({ ok: false, step: "sync" });
+        expect((job.result as { message: string }).message).toBe(
+          "That machine runs 9.9.9; it must be updated before it can use this server's models. Its restart failed: it would not stop — permission denied",
+        );
+        expect(remote.state.puts).toEqual([]);
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a server on this server's image is handed the Model config with nothing done to it", async () => {
+      const remote = await machineServer("the image");
+      const touched: string[] = [];
+      try {
+        await bootOn(remote, {
+          stopServer: async () => {
+            touched.push("stop");
+            return { ok: true as const };
+          },
+          upgrade: async () => {
+            touched.push("upgrade");
+            return { kind: "upgraded", detail: "", persisted: true };
+          },
+        });
+
+        const job = await connect();
+
+        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(touched).toEqual([]);
+        expect(remote.state.puts).toHaveLength(1);
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a model edit is not handed to a connected machine left on another build", async () => {
+      const remote = await machineServer("an older image");
+      try {
+        await bootOn(remote);
+        machinesRepo.patch("ssh:nas", { version: "9.9.9+hmr.0123456789ab" });
+        connected.add("ssh:nas");
+
+        await t.deps.machines.syncModelsEverywhere(PROJECT);
+
+        expect(remote.state.puts).toEqual([]);
+      } finally {
+        remote.close();
+      }
+    });
+  });
+
   describe("syncing models outward", () => {
     /** A machine's server: counts what it is asked, keeps what it is sent, and can be made slow. */
     const machineServer = async (opts: { delayMs: number }) => {

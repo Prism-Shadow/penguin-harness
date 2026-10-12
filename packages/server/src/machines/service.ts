@@ -80,12 +80,19 @@ import {
 import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
 import { DIR_LIST_MARK, listDirsCommand, uninstallCommand } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
-import { detectRemote, installOnRemote, resolvePushPlan, sameBuild } from "./install-server.js";
+import {
+  detectRemote,
+  installOnRemote,
+  resolvePushPlan,
+  runningBuild,
+  runsPlan,
+  sameBuild,
+} from "./install-server.js";
 import { parseProbeOutput, posixProbe } from "./detect.js";
 import { explainSshFailure, sshRefusal } from "./ssh-failure.js";
 import type { SshFailureReason } from "./ssh-failure.js";
 import { diagnoseCommand, parseDiagnosis, sshFailureChecks } from "./diagnose.js";
-import type { CarryRelease, PushPlan } from "./install-server.js";
+import type { CarryRelease, PushPlan, RunningBuild } from "./install-server.js";
 import { releaseCache } from "./release-cache.js";
 import { CheckoutImage, deployPacker, findCheckout, imageAssets } from "./checkout-image.js";
 import type { CheckoutBuild, CheckoutPacker } from "./checkout-image.js";
@@ -119,6 +126,18 @@ import type { RemoteLayout } from "./layout.js";
 
 /** A job's narrator: a line for the log, and optionally the step of the pipeline it begins. */
 type Say = (line: string, phase?: MachinePhase) => void;
+
+/**
+ * Why a machine was not handed this server's Model config: what it runs, and what it must run
+ * instead. Said where the job stops, and as the reason a kept machine is still on its way back.
+ */
+function mustUpdate(running: RunningBuild | null, to?: string): string {
+  const runs = running === null ? "" : running.foreign ? running.release : running.version;
+  const target = to === undefined ? "" : ` to ${to}`;
+  return runs === ""
+    ? `That machine must be updated${target} before it can use this server's models.`
+    : `That machine runs ${runs}; it must be updated${target} before it can use this server's models.`;
+}
 
 /** A job's outcome when it did not go through. */
 type JobFailure = Extract<NonNullable<MachineJob["result"]>, { ok: false }>;
@@ -1424,7 +1443,7 @@ export class MachinesService {
     }
     const fresh = this.#allMachines().find((entry) => entry.id === address) ?? machine;
     // Behind an install, asking what runs there is already part of connecting.
-    return this.#connect(fresh, say, needsInstall ? "connect" : "check");
+    return this.#connect(fresh, say, needsInstall ? "connect" : "check", plan);
   }
 
   /**
@@ -1466,7 +1485,7 @@ export class MachinesService {
       machine,
       ["check", "connect", "sync"],
       { offerReplaceProgram: true },
-      (say) => this.#connect(machine, say, "check"),
+      (say) => this.#connect(machine, say, "check", this.#plan()),
     );
     return { ok: true };
   }
@@ -1479,6 +1498,11 @@ export class MachinesService {
      * behind an install, where the machine has already been checked.
      */
     askPhase: "check" | "connect",
+    /**
+     * What that machine must run before anything is handed to it: the image an install just put
+     * there, or this server's own plan; null when this server has none to compare with.
+     */
+    expected: PushPlan | null,
   ): Promise<MachineJob["result"]> {
     const address = machine.id;
     const target = this.#targetOf(machine.alias);
@@ -1540,6 +1564,13 @@ export class MachinesService {
       if (after.state.kind === "running") remotePort = after.state.port;
     }
 
+    // Whatever answers on that port gets this server's Model config next, and a server of
+    // another build may not read it: an Agent there then fails at its first Session. So it is
+    // asked what it runs first, and brought in line before anything is handed over.
+    const lined = await this.#inLine(address, target, remotePort, expected, say);
+    if (!lined.ok) return { ok: false, step: "sync", message: lined.message };
+    remotePort = lined.port;
+
     say("Opening the connection…", "connect");
     const connection = await this.#connection(address, target);
     if (!connection.ok) {
@@ -1555,7 +1586,11 @@ export class MachinesService {
     // An Agent started over there resolves its model against THAT machine's config, so a
     // machine without our credentials is connected and unusable.
     say("Handing over the Model config…", "sync");
-    await this.#syncModels(address, target, remotePort, say, this.#projectsUsing(address));
+    if (lined.unasked === undefined) {
+      await this.#syncModels(address, target, remotePort, say, this.#projectsUsing(address));
+    } else {
+      say(`Models not synced — ${lined.unasked}`);
+    }
     // Its own events, carried into this server's stream from here on (event-relay.ts). A
     // machine whose server has minted no id yet cannot be named in them, and has none to send;
     // a generation stopped meanwhile carries nothing — its successor subscribes for itself.
@@ -1566,6 +1601,111 @@ export class MachinesService {
     this.#settle(address);
     this.#changed();
     return { ok: true, connected: true };
+  }
+
+  /**
+   * Makes the server answering on a machine's port the one to hand this server's Model config
+   * to, or says why it is not:
+   *
+   * - a server that does not run the build on its disk ({@link RunningBuild.foreign}: say a
+   *   release's own server started on that root) is restarted onto that build, the way a
+   *   restart after an install is;
+   * - a server on a build other than `expected` is given `expected` through its update channel,
+   *   as the boot-time sweep does (syncOutOfDate).
+   *
+   * Either step that cannot be done ends here with a plain sentence, and nothing is handed over:
+   * a config written for one build and read by another is how every Session there fails. A
+   * server that cannot be asked at all is connected all the same (as it was before this check:
+   * the hand-over would fail at the same door), and `unasked` says why nothing is handed to it.
+   */
+  async #inLine(
+    address: string,
+    target: RemoteTarget,
+    port: number,
+    expected: PushPlan | null,
+    say: Say,
+  ): Promise<{ ok: true; port: number; unasked?: string } | { ok: false; message: string }> {
+    // The steps below are this connect's, not jobs of their own: their lines, not their phases.
+    const tell: Say = (line) => say(line);
+    let asked = await this.#askBuild(target, port);
+    if (!asked.ok) {
+      return {
+        ok: true,
+        port,
+        unasked: `could not ask that machine what it runs: ${asked.detail}`,
+      };
+    }
+    if (asked.build.foreign) {
+      say(
+        `Its server runs ${asked.build.release}, not the build installed there; restarting it onto that build…`,
+      );
+      const restarted = await this.#restartServer(address, target, tell);
+      if (!restarted.ok) {
+        return {
+          ok: false,
+          message: `${mustUpdate(asked.build)} Its restart failed: ${restarted.detail}`,
+        };
+      }
+      port = restarted.port;
+      asked = await this.#askBuild(target, port);
+      if (!asked.ok) {
+        return {
+          ok: false,
+          message: `${mustUpdate(null)} It did not answer after its restart: ${asked.detail}`,
+        };
+      }
+      if (asked.build.foreign) return { ok: false, message: mustUpdate(asked.build) };
+    }
+    if (expected === null || runsPlan(asked.build, expected)) return { ok: true, port };
+
+    say(`It runs ${asked.build.version}; bringing it to ${expected.version} first…`);
+    const handOver = () => this.#handOverBuild(address, target, expected, tell);
+    const outcome = await (this.#checkout?.holding(expected, handOver) ?? handOver());
+    if (outcome.kind === "upgraded" && outcome.persisted) {
+      this.repo.patch(address, {
+        version: expected.version,
+        installedAt: this.#effects.now().toISOString(),
+      });
+      asked = await this.#askBuild(target, port);
+      if (asked.ok && !asked.build.foreign && runsPlan(asked.build, expected)) {
+        return { ok: true, port };
+      }
+    }
+    const why =
+      outcome.kind === "refused" || outcome.kind === "failed"
+        ? ` It did not take this build: ${outcome.detail}`
+        : outcome.kind === "upgraded" && !outcome.persisted
+          ? " It took this build but could not write it to its disk."
+          : "";
+    return {
+      ok: false,
+      message: `${mustUpdate(asked.ok ? asked.build : null, expected.version)}${why}`,
+    };
+  }
+
+  /** What a machine's server says it runs (its GET /api/version, asked as its admin). */
+  async #askBuild(
+    target: RemoteTarget,
+    port: number,
+  ): Promise<{ ok: true; build: RunningBuild } | { ok: false; detail: string }> {
+    const session = await this.#sessionOn(target);
+    if (!("cookie" in session)) return { ok: false, detail: session.detail };
+    try {
+      const answer = await machineApi(
+        this.#effects.agent(target, port),
+        port,
+        session.cookie,
+      ).request("GET", "/api/version");
+      if (answer.status !== 200) {
+        return { ok: false, detail: `it answered ${answer.status} when asked its version` };
+      }
+      const build = runningBuild(JSON.parse(answer.text));
+      return build === null
+        ? { ok: false, detail: "its answer named no version" }
+        : { ok: true, build };
+    } catch (err) {
+      return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   /**
@@ -1718,7 +1858,7 @@ export class MachinesService {
     const result: MachineJob["result"] =
       machine === undefined
         ? { ok: false, step: "connect", message: "that host is no longer in the ssh config." }
-        : await this.#connect(machine, () => {}, "check");
+        : await this.#connect(machine, () => {}, "check", this.#plan());
     // Stopped, deleted or disposed meanwhile: what the attempt learned is nobody's now.
     if (this.#stopped || this.#reconnects.get(address) !== state) return;
     if (result !== null && result.ok) {
@@ -2363,8 +2503,16 @@ export class MachinesService {
    * interface member is a contract change a pushed platform pays for.
    */
   async syncModelsEverywhere(projectId: string): Promise<void> {
+    // A machine left on another build than this server's image keeps the config it has: what
+    // this server writes is for its own build (#inLine says the same at connect). Updating the
+    // machine is what brings it back into the sync.
+    const plan = this.#plan();
     const connected = this.list(projectId).filter(
-      (m) => !m.local && m.installed !== null && m.connection !== null,
+      (m) =>
+        !m.local &&
+        m.installed !== null &&
+        m.connection !== null &&
+        (plan === null || m.installed.version === plan.version),
     );
     await Promise.all(
       connected.map(async (machine) => {

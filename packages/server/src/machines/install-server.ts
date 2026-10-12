@@ -154,12 +154,85 @@ export interface PushPlan {
 function harnessSuffix(harnessText: string): string {
   try {
     const parsed = JSON.parse(harnessText) as { platform?: { bundle?: string } };
-    const sha = /([0-9a-f]{8,})\.mjs$/.exec(parsed.platform?.bundle ?? "")?.[1];
-    if (sha !== undefined) return `+hmr.${sha.slice(0, 12)}`;
+    return suffixOfPlatform(parsed.platform?.bundle);
   } catch {
-    /* fall through */
+    return "+hmr";
   }
-  return "+hmr";
+}
+
+/** The platform bundle's content sha, shortened, out of its path (`store/platform/<sha>.mjs`). */
+function platformSha(bundle: string | undefined): string | null {
+  return /([0-9a-f]{8,})\.mjs$/.exec(bundle ?? "")?.[1]?.slice(0, 12) ?? null;
+}
+
+/** The display suffix for a platform bundle path; see harnessSuffix. */
+function suffixOfPlatform(bundle: string | undefined): string {
+  const sha = platformSha(bundle);
+  return sha === null ? "+hmr" : `+hmr.${sha}`;
+}
+
+/** What a machine's server says it runs, read from its GET /api/version. */
+export interface RunningBuild {
+  /** The version of the code answering — what runs there, whatever its disk holds. */
+  release: string;
+  /** For a person, in the spelling a plan uses: `<release>` or `<release>+hmr.<sha12>`. */
+  version: string;
+  /** The pushed platform it names (its sha, shortened), or null when nothing is pushed there. */
+  platform: string | null;
+  /**
+   * The code answering is a release while a pushed build is committed on that machine's disk:
+   * the process is not running that build. A server started from the release's own entry on a
+   * root this server pushed to is this case — a release runtime cannot boot a newer pushed
+   * platform and falls back to the one it carries, while the report's `harness`, which is read
+   * from disk, still names the pushed build. A pushed build is never release-stamped (deploy.mjs
+   * and a checkout's image are source builds), so a release answering beside one is not it.
+   */
+  foreign: boolean;
+}
+
+/**
+ * Reads a machine's GET /api/version answer (untrusted text off a wire, so the shape is checked
+ * rather than assumed); null when it holds no version.
+ */
+export function runningBuild(report: unknown): RunningBuild | null {
+  if (report === null || typeof report !== "object") return null;
+  const { version, channel, harness } = report as {
+    version?: unknown;
+    channel?: unknown;
+    harness?: unknown;
+  };
+  if (typeof version !== "string" || version === "") return null;
+  if (harness === null || harness === undefined || typeof harness !== "object") {
+    return { release: version, version, platform: null, foreign: false };
+  }
+  const bundles = (harness as { bundles?: { platform?: unknown } }).bundles;
+  const bundle = typeof bundles?.platform === "string" ? bundles.platform : undefined;
+  return {
+    release: version,
+    version: version + suffixOfPlatform(bundle),
+    platform: platformSha(bundle) ?? "",
+    foreign: channel === "release",
+  };
+}
+
+/**
+ * Whether a machine's server runs what `plan` installs: the same pushed platform (its content
+ * sha), or — for a plan with nothing pushed — the same release with nothing pushed either. The
+ * release half of a pushed build's version is not compared: it is the VERSION of the checkout
+ * the build came from, which need not be the release a packaged server stands on.
+ */
+export function runsPlan(running: RunningBuild, plan: PushPlan): boolean {
+  if (plan.harness === null)
+    return running.platform === null && running.version === plan.baseVersion;
+  let ours: string | null = null;
+  try {
+    ours = platformSha(
+      (JSON.parse(plan.harness) as { platform?: { bundle?: string } }).platform?.bundle,
+    );
+  } catch {
+    /* a record this build cannot read: compared by its display version below */
+  }
+  return ours === null ? running.version === plan.version : running.platform === ours;
 }
 
 /**
