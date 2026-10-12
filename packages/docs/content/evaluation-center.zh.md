@@ -211,9 +211,9 @@ Agent 会把链接解析到一个固定提交，只把那一个文件夹取回�
 - 使用默认方法时，这个 Agent 在当前 Benchmark 上已有一次完整的评估。用 AI 创建的 Benchmark 已经为它的被测智能体测过一次；其他情况下，先[评估这个 Agent](#评估-agent)。其他方法会自己先测出 Agent 的起点分数。
 
 1. 在 Benchmark 卡片或 Benchmark 页面的页头上，选择**使用**，再切到**优化**标签页。
-2. 在**方法**中选择 **Default（试跑 → 反思 → 提升）**、**OPRO**、**APE**、**ACE** 或 **AWM**。字段下方的提示说明所选方法做什么。
+2. 在**方法**中选择一个工具包。列表在每次打开对话框时从插件库读取，包含 **Agent 自进化**分类里的所有工具包，`default-rsi-toolkit`（Default，试跑 → 反思 → 提升）排在最前；管理员在**插件市场**装上的工具包，下次打开对话框就会出现。字段下方的提示是该工具包自己的简介。插件库还在读取或读取失败时，这一项不可选，标签页按 Default 优化。
 3. 在**被测智能体**中，选择要改进的 Agent。标签页上会显示它当前的基线分和目标分数。
-4. 在**执行优化的智能体**中，选择实际执行优化的 Agent。它需要装有该方法的 Skill：Default 为 `agent-optimization`，其他方法为与其插件同名的 Skill（`opro-rsi-toolkit`、`ape-rsi-toolkit`、`ace-rsi-toolkit` 或 `awm-rsi-toolkit`）。没装时对话框会提醒你。
+4. 在**执行优化的智能体**中，选择实际执行优化的 Agent。它需要装有该方法的 Skill：Default 为 `agent-optimization`，其他方法为该工具包自己的 Skill，即与插件同名的那个（`opro-rsi-toolkit`、`ape-rsi-toolkit`、`ace-rsi-toolkit` 或 `awm-rsi-toolkit`）；没有同名 Skill 的工具包，取它快速开始预选的 Skill，或它唯一的 Skill。没装时对话框会提醒你。
 5. 设置**每题运行次数**。使用 Default 时，还要设置**最多轮数**（默认 3）和**目标分数**；目标分数默认是基线分向上取整后加 10，最高 100。
 6. 可选：修改**优化会话使用的模型**（预设为 Project 的默认模型），并填写**优化重点**。
 7. 选择**在新对话中编辑**，检查提示词，然后发送。

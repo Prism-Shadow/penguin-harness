@@ -4824,27 +4824,11 @@ Scenarios:
       "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
     methodField: "Method",
     methodHint:
-      "The self-evolution algorithm that improves the agent; each one is a toolkit from the plugin library",
-    methods: {
-      default: {
-        label: "Default (trial → reflect → improve)",
-        blurb:
-          "The default loop: one falsifiable hypothesis and one bounded change per round; kept only when the score strictly improves",
-      },
-      opro: {
-        label: "OPRO",
-        blurb: "Proposes instructions from the scored history (Yang et al., 2023)",
-      },
-      ape: {
-        label: "APE",
-        blurb: "Induces an instruction from input/output examples (Zhou et al., 2022)",
-      },
-      ace: { label: "ACE", blurb: "Evolves a playbook from training Traces (Zhang et al., 2025)" },
-      awm: {
-        label: "AWM",
-        blurb: "Induces workflow memory from successful trajectories (Wang et al., 2024)",
-      },
-    },
+      "The self-evolution algorithm that improves the agent: each toolkit in the plugin library's Agent Self-Evolution category is one, and a toolkit installed from the Plugins page shows up here",
+    methodsLoading: "Reading the plugin library…",
+    methodsFailed: "Could not read the plugin library; optimizing with the default loop for now",
+    methodsNone:
+      "The plugin library has no self-evolution toolkit; optimizing with the default loop",
     methodBudgetHint:
       "This method sets its own budget: the paper's defaults reduced to a smoke profile, unless Focus says otherwise",
     methodOptimizerHint: (skill: string): string =>
@@ -4853,7 +4837,6 @@ Scenarios:
       `This agent does not have the ${skill} Skill installed and cannot run this method — install the ${plugin} plugin on it from the plugin library, or switch to the default agent.`,
     rsiOptimizeTail: (p: {
       skill: string;
-      label: string;
       targetAgentId: string;
       benchmarkId: string;
       runs: number;
@@ -4865,7 +4848,7 @@ Scenarios:
           ? `- provider: \`${p.provider}\`\n- model_id: \`${p.modelId}\`\n`
           : "";
       return (
-        `Use the \`${p.skill}\` Skill to reproduce ${p.label} on the Test Agent against its frozen Benchmark.\n\n` +
+        `Use the \`${p.skill}\` Skill to run its method on the Test Agent against its frozen Benchmark.\n\n` +
         `- test_agent_id: \`${p.targetAgentId}\`\n` +
         `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
         `- runs: \`${p.runs}\`\n` +

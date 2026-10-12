@@ -13,7 +13,6 @@
  */
 import type { PeakWindows } from "../features/models/model-grouping";
 import type { ModelGroupSort } from "../features/models/model-sort";
-import type { RsiMethodId } from "../features/benchmark/rsi-methods";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -4971,21 +4970,18 @@ Benchmark：
       "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
       "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
-    // The Optimize tab's Method select: one option per RSI toolkit (benchmark/rsi-methods.ts).
+    // The Optimize tab's Method select, built from the plugin library (benchmark/rsi-methods.ts).
     methodField: "方法",
     /** Semantics behind the Method field's "?". */
-    methodHint: "改进智能体所用的自进化算法；每一种都是插件库里的一个工具包",
-    /** Each method's option label, and the line the field shows under it once it is picked. */
-    methods: {
-      default: {
-        label: "Default（试跑 → 反思 → 提升）",
-        blurb: "默认循环：每轮一个可证伪的假设、一处有界改动，分数严格提升才保留",
-      },
-      opro: { label: "OPRO", blurb: "由历史指令与分数提出新指令（Yang 等，2023）" },
-      ape: { label: "APE", blurb: "从输入 / 输出示例归纳指令（Zhou 等，2022）" },
-      ace: { label: "ACE", blurb: "从训练轨迹进化规则手册（Zhang 等，2025）" },
-      awm: { label: "AWM", blurb: "从成功轨迹归纳工作流记忆（Wang 等，2024）" },
-    } satisfies Record<RsiMethodId, { label: string; blurb: string }>,
+    methodHint:
+      "改进智能体所用的自进化算法：插件库「Agent 自进化」分类里的每个工具包各是一种，在插件市场安装后即出现在这里",
+    /**
+     * The Method select when the library has given it nothing to offer; the tab then runs the
+     * default loop, which needs nothing from the list.
+     */
+    methodsLoading: "正在读取插件库…",
+    methodsFailed: "插件库读取失败，先按默认循环优化",
+    methodsNone: "插件库里没有自进化算法工具包，按默认循环优化",
     /**
      * Shown where the default's round limit and target score are: any other toolkit sets its own
      * budget.
@@ -5003,7 +4999,6 @@ Benchmark：
      */
     rsiOptimizeTail: (p: {
       skill: string;
-      label: string;
       targetAgentId: string;
       benchmarkId: string;
       runs: number;
@@ -5015,7 +5010,7 @@ Benchmark：
           ? `- provider：\`${p.provider}\`\n- model_id：\`${p.modelId}\`\n`
           : "";
       return (
-        `请使用 \`${p.skill}\` 技能，在冻结的 Benchmark 上对被测智能体复现 ${p.label}。\n\n` +
+        `请使用 \`${p.skill}\` 技能，在冻结的 Benchmark 上对被测智能体运行它的方法。\n\n` +
         `- test_agent_id：\`${p.targetAgentId}\`\n` +
         `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
         `- runs：\`${p.runs}\`\n` +

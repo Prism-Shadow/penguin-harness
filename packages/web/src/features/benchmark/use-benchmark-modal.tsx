@@ -19,10 +19,14 @@
  * after the prefill is still the one tested, and the text never goes stale. Optimize reuses what
  * that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
  *
- * Optimize first picks the method: one RSI toolkit per plugin of the library's `rsi` category
- * (rsi-methods.ts). The default toolkit is the form above. Any other toolkit runs its paper's
- * own loop and budget, so it takes no round limit and no target; its one Skill is the only one
- * preselected, and its tail hands it the baseline's provider and model when there is a baseline.
+ * Optimize first picks the method: one RSI toolkit per plugin of the library's `rsi` category,
+ * read from the library each time the dialog opens (rsi-methods.ts), so a toolkit an admin has
+ * just installed is offered. The default toolkit is the form above. Any other toolkit runs its
+ * paper's own loop and budget, so it takes no round limit and no target; its one Skill is the
+ * only one preselected, and its tail hands it the baseline's provider and model when there is a
+ * baseline. Until the library is read — or when the read fails, or it lists no toolkit — the
+ * select is disabled and says why, and the tab is the default loop's form: that loop is the
+ * product's own and needs nothing from the list.
  *
  * The conversation is an ordinary Session, listed with the agent's own: only the Test Sessions
  * it starts through `penguin run` (CLI Sessions) are archived, by the listing rule.
@@ -50,21 +54,21 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatScore } from "../../lib/format";
+import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
 import { ModelCatalogSelect } from "../chat/model-select";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import { MAX_RUNS, evaluateTail, optimizeTail, rsiOptimizeTail } from "./benchmark-prompts";
 import type { EvaluateParams, OptimizeParams, RsiOptimizeParams } from "./benchmark-prompts";
-import { DEFAULT_RSI_METHOD, RSI_METHODS, rsiMethod } from "./rsi-methods";
-import type { RsiMethodId } from "./rsi-methods";
-
-/** The default toolkit's row, which RSI_METHODS lists first. */
-const [DEFAULT_TOOLKIT] = RSI_METHODS;
-/** The Skill the evaluator agent must carry; the dialog warns when the chosen agent lacks it. */
-const EVALUATION_SKILL = DEFAULT_TOOLKIT.evaluationSkill;
-/** The default toolkit's optimizer Skill; the dialog warns when the chosen agent lacks it. */
-const OPTIMIZATION_SKILL = DEFAULT_TOOLKIT.skill;
+import {
+  DEFAULT_TOOLKIT_PLUGIN,
+  EVALUATION_SKILL,
+  OPTIMIZATION_SKILL,
+  pickRsiMethod,
+  rsiMethods,
+} from "./rsi-methods";
+import { useRsiToolkits } from "./use-rsi-toolkits";
 
 /** Which half of the dialog is on screen. */
 export type UseTab = "evaluate" | "optimize";
@@ -101,6 +105,8 @@ export function UseBenchmarkModal({
 }) {
   const { openAiChat } = useAiBridge();
   const { currentAgent } = useProject();
+  const { locale } = useLocale();
+  const library = useRsiToolkits();
   const [tab, setTab] = useState<UseTab>(initialTab);
   // Who was tested last here is the likeliest subject of the next round; with no evaluation at
   // all, the Agent the user came from, and failing that the Project's default. Both tabs act on
@@ -143,10 +149,13 @@ export function UseBenchmarkModal({
   /** The target follows the tested agent's baseline until the field is edited by hand. */
   const [targetTouched, setTargetTouched] = useState(false);
   const [focus, setFocus] = useState("");
-  /** The RSI toolkit the Optimize tab hands the work to. */
-  const [method, setMethod] = useState<RsiMethodId>(DEFAULT_RSI_METHOD);
-  const toolkit = rsiMethod(method);
-  const isDefaultMethod = toolkit.id === DEFAULT_RSI_METHOD;
+  /** The plugin of the RSI toolkit the Optimize tab hands the work to. */
+  const [methodPlugin, setMethodPlugin] = useState(DEFAULT_TOOLKIT_PLUGIN);
+  const methods = library.value === null ? [] : rsiMethods(library.value, locale);
+  // Null while the select has nothing to offer, which leaves the default loop's form.
+  const toolkit = pickRsiMethod(methods, methodPlugin);
+  const isDefaultMethod = toolkit === null || toolkit.kind === "default";
+  const optimizerSkill = toolkit?.skill ?? OPTIMIZATION_SKILL;
   const [skillsByAgent, setSkillsByAgent] = useState<Record<string, string[]>>({});
 
   // The installed Skills of the agents that could carry the work out, fetched once per agent,
@@ -182,7 +191,7 @@ export function UseBenchmarkModal({
   };
   const evaluatorMissingSkill = lacksSkill(evaluatorId, EVALUATION_SKILL);
   // The default toolkit's optimizer is OPTIMIZATION_SKILL; any other toolkit's is its own Skill.
-  const optimizerMissingSkill = lacksSkill(optimizerId, toolkit.skill);
+  const optimizerMissingSkill = lacksSkill(optimizerId, optimizerSkill);
 
   const runsValue = intIn(runs, 1, MAX_RUNS);
   const roundsValue = intIn(roundLimit, 1, MAX_RUNS);
@@ -199,8 +208,7 @@ export function UseBenchmarkModal({
   };
   const rsiParams: RsiOptimizeParams = {
     ...evaluateParams,
-    skill: toolkit.skill,
-    label: S.benchmark.methods[toolkit.id].label,
+    skill: optimizerSkill,
     ...(baselineRuntime ?? {}),
   };
   const text =
@@ -228,7 +236,7 @@ export function UseBenchmarkModal({
           ? [EVALUATION_SKILL]
           : isDefaultMethod
             ? [OPTIMIZATION_SKILL, EVALUATION_SKILL]
-            : [toolkit.skill],
+            : [optimizerSkill],
       ...(ref !== undefined ? { modelRef: ref } : {}),
     });
     onClose();
@@ -358,19 +366,38 @@ export function UseBenchmarkModal({
               baseline, so the round limit, the target score and the baseline they are read
               against give way to one line saying so.
             */}
-            <Select
-              label={S.benchmark.methodField}
-              info={S.benchmark.methodHint}
-              hint={S.benchmark.methods[toolkit.id].blurb}
-              value={method}
-              onChange={(e) => setMethod(e.target.value as RsiMethodId)}
-            >
-              {RSI_METHODS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {S.benchmark.methods[m.id].label}
+            {toolkit !== null ? (
+              <Select
+                label={S.benchmark.methodField}
+                info={S.benchmark.methodHint}
+                {...(toolkit.hint !== "" ? { hint: toolkit.hint } : {})}
+                value={toolkit.plugin}
+                onChange={(e) => setMethodPlugin(e.target.value)}
+              >
+                {methods.map((m) => (
+                  <option key={m.plugin} value={m.plugin}>
+                    {m.label}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              // Nothing to pick from yet: one disabled option says why, and the form below is
+              // the default loop's.
+              <Select
+                label={S.benchmark.methodField}
+                info={S.benchmark.methodHint}
+                value=""
+                disabled
+              >
+                <option value="">
+                  {library.value === null
+                    ? library.failed
+                      ? S.benchmark.methodsFailed
+                      : S.benchmark.methodsLoading
+                    : S.benchmark.methodsNone}
                 </option>
-              ))}
-            </Select>
+              </Select>
+            )}
             {isDefaultMethod && (
               <>
                 <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -397,7 +424,7 @@ export function UseBenchmarkModal({
                 hint={
                   isDefaultMethod
                     ? S.benchmark.optimizerAgentHint
-                    : S.benchmark.methodOptimizerHint(toolkit.skill)
+                    : S.benchmark.methodOptimizerHint(optimizerSkill)
                 }
                 value={optimizerId ?? ""}
                 onChange={(e) => setOptimizerId(e.target.value)}
@@ -418,7 +445,7 @@ export function UseBenchmarkModal({
               optimizerMissingSkill,
               isDefaultMethod
                 ? S.benchmark.optimizerMissingSkill
-                : S.benchmark.methodMissingSkill(toolkit.plugin, toolkit.skill),
+                : S.benchmark.methodMissingSkill(toolkit?.plugin ?? "", optimizerSkill),
             )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {runsInput(S.benchmark.optimizeRunsHint)}

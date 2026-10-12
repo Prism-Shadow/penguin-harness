@@ -8,8 +8,10 @@
  *   finds the page by) with the version after it, and the slogan under them; at the far end of
  *   the same line, one small panel of three counts — this Project's agents, the self-evolution
  *   toolkits of the library's `rsi` category, this Project's Benchmarks on this server — each
- *   opening the page that lists them. A count that has not arrived reads "—". Where the column
- *   is too narrow for both (a phone), the panel sits under the brand.
+ *   opening the page that lists them. Each is read again whenever the page mounts, so a plugin
+ *   installed or a Benchmark imported elsewhere shows on coming back; a count that has not
+ *   arrived reads "—". Where the column is too narrow for both (a phone), the panel sits under
+ *   the brand.
  * - **Examples and shortcuts.** The example folders and the user's own shortcuts, one folder
  *   open at a time (example-tasks.ts, shortcuts-folder.tsx): the folders down one column and the
  *   open folder's rows beside them, so switching folders moves nothing; stacked on a phone. Every
@@ -109,7 +111,7 @@ export function StartDashboard({
                 glyph={ICONS.refresh}
                 label={S.chat.start.metrics.toolkits}
                 to="/plugins"
-                value={toolkits?.length ?? null}
+                value={toolkits.value?.length ?? null}
               />
               <StatCount
                 glyph={NAV_ICONS.benchmark}
