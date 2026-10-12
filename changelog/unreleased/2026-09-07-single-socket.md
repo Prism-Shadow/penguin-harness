@@ -26,3 +26,4 @@ The Web App opened one never-ending HTTP response per long-lived subscription â€
 - A Session-list reload this server answered nothing to is tried again on a backoff (2 s doubling to 30 s), with a warning listing the answers it got.
 - A conversation whose history is still loading after 15 s logs where the call went (this server or which machine) and what the socket is doing.
 - The real-socket cancellation test allows an already-sent SSE ping from the cancelled call before the next call's start, and closes its socket even when the assertion fails.
+- Socket transport errors share one local frame writer; HTTP-only, missing-route, failed-call and unsupported-response statuses, dates and error bodies are unchanged.

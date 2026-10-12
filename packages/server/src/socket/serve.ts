@@ -97,6 +97,12 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
   };
 
+  const reject = (id: number, status: number, code: string, message: string): void => {
+    send({ id, status, headers: nowHeaders(), body: errorBody(code, message) });
+  };
+  const httpRequired = (id: number): void =>
+    reject(id, 421, "not_on_socket", "This endpoint is served over HTTP only.");
+
   // Liveness, both ways, on the SSE cadence. A protocol ping: a peer that answers none for
   // two beats is terminated, which releases every subscription it held — the half-dead
   // connection that used to hold an SSE slot forever is exactly what this exists for. And a
@@ -141,21 +147,11 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
   async function dispatch(frame: CallFrame, controller: AbortController): Promise<void> {
     const { id, call } = frame;
     if (!callable(call.path)) {
-      send({
-        id,
-        status: 404,
-        headers: nowHeaders(),
-        body: errorBody("not_found", "Endpoint does not exist."),
-      });
+      reject(id, 404, "not_found", "Endpoint does not exist.");
       return;
     }
     if (httpOnly(call.path)) {
-      send({
-        id,
-        status: 421,
-        headers: nowHeaders(),
-        body: errorBody("not_on_socket", "This endpoint is served over HTTP only."),
-      });
+      httpRequired(id);
       return;
     }
     const headers: Record<string, string> = {};
@@ -180,12 +176,7 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
     } catch (err) {
       if (controller.signal.aborted) return;
       deps.log(`[socket] ${call.method} ${call.path}: ${err instanceof Error ? err.message : err}`);
-      send({
-        id,
-        status: 500,
-        headers: nowHeaders(),
-        body: errorBody("internal", "Internal server error."),
-      });
+      reject(id, 500, "internal", "Internal server error.");
       return;
     }
     if (controller.signal.aborted) {
@@ -194,12 +185,7 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
     }
     if (isDeclined(res)) {
       // Not the platform's to answer: not this transport's to carry either.
-      send({
-        id,
-        status: 421,
-        headers: nowHeaders(),
-        body: errorBody("not_on_socket", "This endpoint is served over HTTP only."),
-      });
+      httpRequired(id);
       return;
     }
 
@@ -220,15 +206,12 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       } else if (type.startsWith("text/")) {
         parsed = text;
       } else {
-        send({
+        reject(
           id,
-          status: 415,
-          headers: nowHeaders(),
-          body: errorBody(
-            "unsupported_transport",
-            "This response does not ride the socket; use HTTP.",
-          ),
-        });
+          415,
+          "unsupported_transport",
+          "This response does not ride the socket; use HTTP.",
+        );
         return;
       }
     }
