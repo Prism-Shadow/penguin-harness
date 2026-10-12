@@ -11,11 +11,11 @@
 
 ## Rows
 
-Ids, context windows, input modalities and prices were read from the gateway's public catalog API (`GET https://api.atlascloud.ai/v1/models`, no credential required) on 2026-10-11. Its prices are USD per token; the pricing page (`https://www.atlascloud.ai/pricing/models`) states the same rates per million tokens. The rows are Atlas Cloud's ids for the DeepSeek and Qwen models that the SiliconFlow and OpenRouter groups both preset. Atlas Cloud publishes no cache-write price for them, so `cache_write` carries the input price, as the TokenDance and Qwen rows do. Model ids keep their vendor prefix, as on SiliconFlow and ModelScope.
+Ids, context windows, input modalities, quantization and prices were read from the gateway's public catalog API (`GET https://api.atlascloud.ai/v1/models`, no credential required) on 2026-10-11. Its prices are USD per token; the pricing page (`https://www.atlascloud.ai/pricing/models`) states the same rates per million tokens. The rows are DeepSeek and Qwen models the other gateway groups preset. For DeepSeek they are the releases TokenDance presets rather than the bare V4 ids, taken only where Atlas Cloud serves them at fp8: V4.1 Flash and V4 Pro 0813. Its V4 Flash 0731 is served at fp4, like the bare `deepseek-ai/deepseek-v4-flash` and `deepseek-ai/deepseek-v4-pro`, and none of the three became a preset. Atlas Cloud publishes no cache-write price for these rows, so `cache_write` carries the input price, as the TokenDance and Qwen rows do. Both DeepSeek rows bill one fixed rate around the clock, with no off-peak schedule. Model ids keep their vendor prefix, as on SiliconFlow and ModelScope.
 
-- `deepseek-ai/deepseek-v4-flash` (**DeepSeek V4 Flash**) at USD 0.028 / 0.14 / 0.28, 1,048,576-token context window, text only.
-- `deepseek-ai/deepseek-v4-pro` (**DeepSeek V4 Pro**) at USD 0.13 / 1.68 / 3.38, 1,048,576-token context window, text only.
-- `qwen/qwen3.6-35b-a3b` (**Qwen 3.6 35B A3B**) at a list price of USD 0.248 / 0.248 / 1.485 with a 25% promotion, billed 0.186 / 0.186 / 1.11375; 262,144-token context window, image input. Atlas Cloud publishes no cache-hit price for this row, so the cache-hit and input buckets match.
+- `deepseek-ai/deepseek-v4.1-flash` (**DeepSeek V4.1 Flash**, fp8) at USD 0.03 / 0.3 / 1.2, 1,048,576-token context window, image input.
+- `deepseek-ai/deepseek-v4-pro-0813` (**DeepSeek V4 Pro 0813**, fp8) at USD 0.132 / 1.32 / 3.96, 1,048,576-token context window, text only.
+- `qwen/qwen3.6-35b-a3b` (**Qwen 3.6 35B A3B**, fp8) at a list price of USD 0.248 / 0.248 / 1.485 with a 25% promotion, billed 0.186 / 0.186 / 1.11375; 262,144-token context window, image input. Atlas Cloud publishes no cache-hit price for this row, so the cache-hit and input buckets match.
 
 ## Existing Projects
 
