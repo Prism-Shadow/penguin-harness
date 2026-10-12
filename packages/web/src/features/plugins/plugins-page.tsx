@@ -6,8 +6,10 @@
  * collapsible sections, by category unless the reader picks another grouping — status,
  * contents, or none — in the select beside the header's search box, which narrows the cards.
  * The grouping and which sections are folded are remembered per browser (plugin-groups.ts); the
- * search is not. Clicking a card opens its detail dialog (plugin-detail.tsx); the status rules
- * are plugin-status.ts.
+ * search is not. Settings › Plugins can narrow the list to the plugins this build cannot fully
+ * run, also per browser (incompatible-only.ts), and while it does a notice under the title says
+ * so. Clicking a card opens its detail dialog (plugin-detail.tsx); the status rules are
+ * plugin-status.ts.
  *
  * - A library plugin is installed per Agent, by any member, through its card's "manage
  *   installs" dialog; the update nudge appears when the server lists some Agent's copy as
@@ -77,6 +79,7 @@ import { toneInk } from "../../lib/tone";
 import { ModuleApplyBody, PluginCard, libraryQuickStart } from "./plugin-card";
 import { StdioDisclosure, StdioInstallBody } from "./plugin-mcp";
 import { ImportPluginModal } from "./plugin-import-modal";
+import { usePluginsIncompatibleOnly, writePluginsIncompatibleOnly } from "./incompatible-only";
 import {
   PLUGIN_GROUP_BYS,
   foldKey,
@@ -193,7 +196,8 @@ export function PluginsPage() {
   const [reloadKey, setReloadKey] = useState(0);
   /** Free text over names, descriptions and keywords. */
   const [query, setQuery] = useState("");
-  const [incompatibleOnly, setIncompatibleOnly] = useState(false);
+  /** Only the plugins this build cannot fully run: switched in Settings › Plugins. */
+  const incompatibleOnly = usePluginsIncompatibleOnly();
   const [groupBy, setGroupBy] = useState<PluginGroupBy>(() => initialPluginsGroupBy());
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => initialFoldedGroups());
 
@@ -769,23 +773,7 @@ export function PluginsPage() {
             {S.plugins.restartPending}
           </Notice>
         )}
-        {unsatisfiedCount > 0 && (
-          <Notice
-            tone="attention"
-            className="mt-4"
-            action={{ label: S.plugins.unsatisfiedShow, onClick: () => setIncompatibleOnly(true) }}
-          >
-            {S.plugins.unsatisfiedNotice(unsatisfiedCount)}
-          </Notice>
-        )}
-        <label className="mt-4 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={incompatibleOnly}
-            onChange={(e) => setIncompatibleOnly(e.target.checked)}
-          />
-          {S.plugins.status.incompatible}
-        </label>
+        <IncompatibleNotice filtered={incompatibleOnly} unsatisfied={unsatisfiedCount} />
       </PageHeader>
       <SettingsDialog
         open={settingsOpen}
@@ -930,6 +918,50 @@ export function PluginsPage() {
         </ConfirmModal>
       )}
     </PageFrame>
+  );
+}
+
+/**
+ * The notice about incompatible plugins, one at a time. While the list holds only them it says
+ * so and offers the whole list back: a filtered list that did not say so would read as plugins
+ * gone missing. Otherwise, while this build cannot fully run some listed plugins, it counts them
+ * and offers to show only those. Both actions flip the stored preference the Settings switch
+ * shows.
+ */
+export function IncompatibleNotice({
+  filtered,
+  unsatisfied,
+}: {
+  filtered: boolean;
+  /** How many listed plugins this build cannot fully run. */
+  unsatisfied: number;
+}) {
+  if (filtered) {
+    return (
+      <Notice
+        tone="info"
+        className="mt-4"
+        action={{
+          label: S.plugins.incompatibleOnlyShowAll,
+          onClick: () => writePluginsIncompatibleOnly(false),
+        }}
+      >
+        {S.plugins.incompatibleOnlyNotice}
+      </Notice>
+    );
+  }
+  if (unsatisfied === 0) return null;
+  return (
+    <Notice
+      tone="attention"
+      className="mt-4"
+      action={{
+        label: S.plugins.unsatisfiedShow,
+        onClick: () => writePluginsIncompatibleOnly(true),
+      }}
+    >
+      {S.plugins.unsatisfiedNotice(unsatisfied)}
+    </Notice>
   );
 }
 

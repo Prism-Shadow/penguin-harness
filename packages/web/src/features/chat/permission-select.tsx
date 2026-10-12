@@ -109,6 +109,7 @@ function Choice({
       checked={selected}
       disabled={unavailable}
       data-tooltip={hint}
+      data-tooltip-extra
       trailing={unavailable ? (note ?? S.chat.permission.unsupported) : undefined}
       onSelect={onPick}
     />
@@ -261,6 +262,7 @@ export function PermissionSelect({
             <div
               role="presentation"
               data-tooltip={P.advancedHint}
+              data-tooltip-extra
               className="px-3 pt-1 pb-1.5 text-xs font-medium text-fg-subtle"
             >
               {P.advancedActive}

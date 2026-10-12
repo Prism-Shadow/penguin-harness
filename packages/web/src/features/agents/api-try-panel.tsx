@@ -291,6 +291,7 @@ function renderedRows(p: ApiTryViewProps) {
           <span
             className="font-mono text-xs leading-5 text-fg-muted sm:pr-4"
             data-tooltip={row.origin}
+            data-tooltip-extra
           >
             {row.origin !== undefined && "↳ "}
             {rowLabel(row)}
@@ -373,6 +374,7 @@ export function ApiTryView(p: ApiTryViewProps) {
               className="shrink-0"
               disabled={!canRun}
               data-tooltip={p.disabledReason}
+              data-tooltip-extra
               onClick={p.onRun}
             >
               {S.agent.apiTryRun}

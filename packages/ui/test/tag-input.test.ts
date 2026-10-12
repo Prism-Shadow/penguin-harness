@@ -15,7 +15,7 @@ describe("Chip", () => {
       createElement(Chip, { label: "notes.md", removeLabel: "Remove notes.md" }),
     );
     expect(removable).toContain('aria-label="Remove notes.md"');
-    expect(removable).toContain(">×</button>");
+    expect(removable).toContain('<span aria-hidden="true">×</span></button>');
     const fixed = renderStatic(createElement(Chip, { label: "notes.md" }));
     expect(fixed).not.toContain("<button");
   });

@@ -49,6 +49,7 @@ export function StatusMark({ status, hint }: { status: PluginStatus; hint: strin
       className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`}
       data-tooltip={hint}
       data-tooltip-content="text"
+      data-tooltip-extra
     >
       <GlyphIcon
         d={STATUS_GLYPH[status]}

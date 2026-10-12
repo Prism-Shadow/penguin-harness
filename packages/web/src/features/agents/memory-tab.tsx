@@ -649,6 +649,7 @@ export function MemoryTab({
                       size="sm"
                       variant="ghost"
                       title={S.memory.exportScopeHint}
+                      data-tooltip-extra
                       aria-label={S.memory.exportScopeLabel(scopeTitle(scope))}
                       onClick={() => void exportScope(scope)}
                     >
@@ -659,6 +660,7 @@ export function MemoryTab({
                       <label
                         className={`${GHOST_LABEL_CLASS} shrink-0`}
                         data-tooltip={S.memory.importScopeHint}
+                        data-tooltip-extra
                         aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
                       >
                         <HiddenFileInput
@@ -745,6 +747,7 @@ export function MemoryTab({
                         )
                   }
                   data-tooltip={S.memory.insertToken}
+                  data-tooltip-extra
                   className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
                 >
                   {token}

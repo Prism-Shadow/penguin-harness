@@ -74,8 +74,11 @@ dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
 
 ### Tooltips: when a mark gets one
 
-A hover hint shows only where its words are not on screen (`hintAllowedFor` in the UI package's
-tooltip.tsx): an icon-only control, a wordless mark, an input, or text that is cut off. Three
+A hover hint shows where its words are not on screen (`hintAllowedFor` in the UI package's
+tooltip.tsx): an icon-only control, a wordless mark, an input, or text that is cut off. Text that
+is not read as words does not count — an SVG's own text (an avatar's initial) and anything
+`aria-hidden` — so a letter or a count drawn as an icon (the find bar's `Aa`, a corner count) sits
+in an `aria-hidden` span while the control keeps its name in `aria-label` or `sr-only` text. Three
 glyphs are read without one — the circled "?" beside a title (`InfoPopover`, whose hover opens
 the explanation itself), a close or clear ×
 beside the thing it dismisses, and a fold chevron under the rows it folds — so they carry no
@@ -86,12 +89,25 @@ banner's × and a browser tab's × have none. Either way the mark keeps its `ari
 is for assistive technology, not a panel. A hint on text that may truncate shows that text whole
 (plus an id when one helps), never the verb of the click — the underline already says it opens.
 
-So a hint never carries information that is not on screen: written onto a reading whose text is
-fully visible (a cost, an elapsed time), it simply never opens. A total's breakdown — the cost's
-priced parts, the elapsed time's API / tool components — goes behind a circled "?" right of the
-total instead (`StatHint` in `components/ui/stat-hint.tsx`), and only totals carry one: a
-per-round reading shows its total alone, and a reading that is itself a button (the chat header's
-chips) gets no "?" — its breakdown lives in what it opens.
+**A hint that says what the screen does not is marked, and then shows over visible text** (owner,
+2026-10-12): `data-tooltip-extra`, `<Tooltip extra>`, or the `tooltipExtra` / `titleExtra` prop of
+a component that takes its hint as a prop (`NavRow`, `Chip`, `FormPickerTrigger`; a `Badge`'s
+`tooltip` is always one). Mark only what is not on screen: what a click does or discards ("the
+captured output is discarded too"), why a control is disabled, a keyboard shortcut ("New chat
+(⌘N)"), the full value behind an abbreviation where nothing else on that screen shows it (a path
+behind its last segment, a full id behind a short one, an exact time behind "3 min ago", a model
+id behind its name), and what a state means ("Failed" and why, "Blocked" and on what). Mark a
+conditional hint conditionally (`data-tooltip-extra={!folder}`; `"false"` reads as unmarked). A
+hint that repeats the visible words, or only names the glyph a figure sits beside (`StatChip`),
+is never marked and never shows; a data row's detail goes unmarked when it is one click away (the
+dialog its title opens).
+
+A total's breakdown is never a marked hint: the cost's priced parts and the elapsed time's API /
+tool components go behind a circled "?" right of the total (`StatHint` in
+`components/ui/stat-hint.tsx`), and only totals carry one: a per-round reading shows its total
+alone, and a reading that is itself a button (the chat header's chips) gets no "?" — its breakdown
+lives in what it opens. Nor does a marked hint earn a "?" of its own: the "?" stays with titles and
+totals.
 
 ### Which disclosure — the "?" or the fold
 

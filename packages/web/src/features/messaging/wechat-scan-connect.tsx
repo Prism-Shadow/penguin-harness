@@ -296,7 +296,7 @@ export function WeChatScanConnect({
         <Button
           size="sm"
           disabled={phase.kind === "starting" || enabled}
-          {...(enabled ? { title: S.wechat.scanDisableFirst } : {})}
+          {...(enabled ? { title: S.wechat.scanDisableFirst, "data-tooltip-extra": true } : {})}
           onClick={() => void start(false)}
         >
           {phase.kind === "starting"

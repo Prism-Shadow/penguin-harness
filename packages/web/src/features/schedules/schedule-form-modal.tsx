@@ -154,6 +154,7 @@ function SessionSelect({
       label={label}
       muted={!value}
       title={value ? `${S.schedule.sessionId}：${value}` : S.schedule.chooseSession}
+      titleExtra={selected !== null}
       ariaLabel={S.schedule.chooseSession}
       ariaHaspopup="listbox"
       menuClass="w-80 origin-top-left"

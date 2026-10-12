@@ -83,7 +83,7 @@ describe("SessionRow", () => {
     expect(html).toContain('role="img" aria-label="定时任务"');
     expect(html).toContain('role="img" aria-label="2 个后台任务"');
     expect(html).toMatch(
-      /data-tooltip="3 个待审批" class="[^"]*tabular-nums text-tone-attention-fg">3</,
+      /data-tooltip="3 个待审批" class="[^"]*tabular-nums text-tone-attention-fg"><span aria-hidden="true">3<\/span><span class="sr-only">3 个待审批<\/span>/,
     );
   });
 

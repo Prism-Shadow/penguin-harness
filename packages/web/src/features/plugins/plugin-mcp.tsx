@@ -339,6 +339,7 @@ export function McpSetUpModal({
                 className={`flex items-center ${ICON_GAP.row} text-xs`}
                 data-tooltip={S.plugins.setUpKeySetHint}
                 data-tooltip-content="text"
+                data-tooltip-extra
               >
                 <span className="font-mono text-fg">{item.key}</span>
                 <span className="text-fg-muted">{S.plugins.setUpKeySet}</span>

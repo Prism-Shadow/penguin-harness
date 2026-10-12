@@ -2533,6 +2533,7 @@ export function ChatPage() {
                       <button
                         type="button"
                         data-tooltip={S.chat.processClearExitedHint}
+                        data-tooltip-extra
                         disabled={procBusy !== null}
                         onClick={() => void onClearExitedProcesses()}
                         className="shrink-0 cursor-pointer whitespace-nowrap text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
@@ -2601,6 +2602,7 @@ export function ChatPage() {
                             <button
                               type="button"
                               data-tooltip={S.chat.processRemoveHint}
+                              data-tooltip-extra
                               disabled={procBusy !== null}
                               onClick={() => void onRemoveProcess(p.processId)}
                               className="shrink-0 whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"

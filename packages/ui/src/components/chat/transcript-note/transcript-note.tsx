@@ -127,6 +127,8 @@ export function TranscriptNote({
           type="button"
           aria-label={action.name}
           data-tooltip={action.hint}
+          // Where the note leads (the conversation it goes back to) is not in its words.
+          data-tooltip-extra
           onClick={action.onClick}
           className={`${head} ${ACTIVITY_HEAD_HOVER_CLASS} hover:text-fg`}
           data-slot="head"

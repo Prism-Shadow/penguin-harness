@@ -314,6 +314,7 @@ export function ErrorsPanel({
                       data-tooltip={
                         e.count > 1 ? S.usage.errorsFirstAt(formatDateTime(e.firstTs)) : undefined
                       }
+                      data-tooltip-extra={e.count > 1}
                     >
                       {formatDateTime(e.ts)}
                     </td>

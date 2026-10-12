@@ -840,6 +840,7 @@ export function MessagingBindingBody({ b }: { b: MessagingBindingEditorState }) 
           <label
             className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
             data-tooltip={S.messaging.bindByEnableHint}
+            data-tooltip-extra
           >
             {/* Natively disabled only while a request is in flight. A missing prerequisite
                 dims it the same way but leaves it clickable (aria-disabled), because a

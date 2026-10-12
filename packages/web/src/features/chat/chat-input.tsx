@@ -124,6 +124,7 @@ import {
 import type { MenuSelectOption, TagInputChip } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatBytes, humanizeTokens } from "../../lib/format";
+import { fitTextarea } from "../../lib/textarea-fit";
 import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
@@ -308,6 +309,7 @@ function SteerModeRow({
     <button
       type="button"
       data-tooltip={hint}
+      data-tooltip-extra
       aria-pressed={steerMode === mode}
       onClick={() => onChangeSteerMode(mode)}
       className={`h-5 whitespace-nowrap rounded px-1.5 text-xs transition-colors duration-150 ${
@@ -1553,12 +1555,15 @@ export function ChatInput({
     return () => window.removeEventListener("resize", measure);
   }, [slashOpen, agentSwitchOpen]);
 
-  /** Auto-grow the textarea (caps at roughly 6 lines, scrolls internally beyond that). */
+  /**
+   * Auto-grow the textarea (caps at roughly 6 lines, scrolls internally beyond that). The
+   * measurement holds the card's height (see textarea-fit.ts): the transcript above is sized by
+   * what the composer leaves, and a collapse it could see would slide it on every keystroke.
+   */
   const autoGrow = () => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 176)}px`;
+    fitTextarea(el, (box) => Math.min(box.scrollHeight, 176));
   };
 
   /**
@@ -2026,6 +2031,7 @@ export function ChatInput({
               />
             ),
             tooltip: S.chat.handoffTargetTitle(agentDisplayName(target)),
+            tooltipExtra: true,
             removeLabel: S.chat.handoffRemove,
           },
         ]
@@ -2039,6 +2045,7 @@ export function ChatInput({
               <ProviderLogo provider={pendingModel.provider} className="h-3.5 w-3.5 shrink-0" />
             ),
             tooltip: S.chat.modelSwitchTargetTitle(modelLabel(pendingModel)),
+            tooltipExtra: true,
             removeLabel: S.chat.modelSwitchRemove,
           },
         ]
@@ -2050,7 +2057,7 @@ export function ChatInput({
         label: name,
         mono: true,
         glyph: <SkillIcon icon={meta?.icon} size={13} className="shrink-0 text-fg-muted" />,
-        ...(meta ? { tooltip: localizedShortText(locale, meta) } : {}),
+        ...(meta ? { tooltip: localizedShortText(locale, meta), tooltipExtra: true } : {}),
         removeLabel: `${S.chat.skillRemove} ${name}`,
       };
     }),
@@ -2396,6 +2403,7 @@ export function ChatInput({
                     label={S.chat.goalMode}
                     glyph={<GlyphIcon d={GOAL_ICON} size={13} className="text-fg-muted" />}
                     tooltip={S.chat.goalModeDesc}
+                    tooltipExtra
                     removeLabel={S.chat.goalRemove}
                     onRemove={() => toggleGoal(false)}
                     control={goalBudgetPicker}
@@ -2598,6 +2606,7 @@ export function ChatInput({
                  fields (no prefix parsing). */
               <span
                 data-tooltip={modelRef?.modelId ?? ""}
+                data-tooltip-extra={lockedModelLabel !== modelRef?.modelId}
                 className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-md px-1 text-gray-400 dark:text-gray-500"
               >
                 <ProviderLogo

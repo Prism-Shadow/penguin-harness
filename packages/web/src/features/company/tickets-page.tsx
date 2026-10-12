@@ -268,6 +268,7 @@ export function TicketsPage() {
                 data-tooltip={
                   overdue ? `${S.company.tickets.overdue} · ${t.due}` : S.company.tickets.due
                 }
+                data-tooltip-extra={overdue}
               >
                 <GlyphIcon d={ICONS.clockCompact} size={ICON_SIZE.inlineGlyph} />
                 {t.due}
