@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** feature
 - **Scope:** `core`, `landing`, `docs`, `skills`
+- **PR:** [#1064](https://github.com/Prism-Shadow/penguin-harness/pull/1064)
 
 [中文版](2026-10-12-builtin-gdpevo.zh.md)
 
