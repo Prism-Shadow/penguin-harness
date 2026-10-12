@@ -11,6 +11,9 @@
  * - A leave that finds a dirty form asks; on "discard" every form in the scope is reset and
  *   forgotten before the leave runs, and the forms of another scope keep their edits.
  * - On "keep editing" nothing runs and the form stays dirty.
+ * - While a save is in flight in its scope, a leave does nothing and asks nothing, the dirty form
+ *   untouched; once the save has answered, the leave goes. A save in another scope does not hold
+ *   it, and a leave of every form (no scope, a route change's kind) is never held.
  * - Two leaves asking at once share one prompt and one answer.
  * - With no host mounted there is nobody to ask, and the leave goes; a host that unmounts while
  *   asking answers "keep editing".
@@ -135,6 +138,37 @@ describe("a guarded leave", () => {
     expect(action).not.toHaveBeenCalled();
     expect(reset).not.toHaveBeenCalled();
     expect(hasUnsaved("settings")).toBe(true);
+  });
+
+  it("does nothing while a save is in flight in its scope, and goes once the save has answered", async () => {
+    mountHost();
+    const reset = vi.fn();
+    markUnsaved("settings", reset);
+    const save = startSave("settings");
+    const action = vi.fn();
+    const left = guardLeave(action, "settings");
+    // Synchronously: a held leave never puts the question up.
+    expect(unsavedStore.getState().asking).toBe(false);
+    await expect(left).resolves.toBe(false);
+    expect(action).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+    expect(hasUnsaved("settings")).toBe(true);
+
+    // The save landed: its form is clean, and the leave goes at once.
+    clearSaving(save);
+    discardUnsaved("settings");
+    await expect(guardLeave(action, "settings")).resolves.toBe(true);
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  it("is held only by a save in its own scope, and a leave of every form is never held", async () => {
+    mountHost();
+    startSave("project-settings");
+    const action = vi.fn();
+    await expect(guardLeave(action, "settings")).resolves.toBe(true);
+    startSave("settings");
+    await expect(guardLeave(action)).resolves.toBe(true);
+    expect(action).toHaveBeenCalledTimes(2);
   });
 
   it("shares one prompt and one answer between two leaves asking at once", async () => {

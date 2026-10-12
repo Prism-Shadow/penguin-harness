@@ -15,9 +15,10 @@
  * page unload ask about every form.
  *
  * **Saves in flight.** Beside the dirty forms the registry holds the saves still running, by the
- * same scopes. A dialog's close does nothing while one runs in its scope: a close then would offer
- * to discard edits the request is about to store. A dialog whose pages save on their own (the
- * Settings and Project settings dialogs) cannot see those saves, so the pages register them here.
+ * same scopes. A leave of a scope — a dialog's close, a rail or tab switch — does nothing while
+ * one runs there: leaving then would offer to discard edits the request is about to store. A
+ * dialog whose pages save on their own (the Settings and Project settings dialogs) cannot see
+ * those saves, so the pages register them here. A route change and a page unload are not held.
  */
 import { createStore } from "zustand/vanilla";
 
@@ -82,7 +83,7 @@ interface SavingEntry {
 }
 
 /**
- * The saves in flight. A plain list rather than a store: it is read only when a close is
+ * The saves in flight. A plain list rather than a store: it is read only when a leave is
  * attempted, and nothing on screen follows it (a Save button shows its own request).
  */
 let saving: readonly SavingEntry[] = [];
@@ -156,10 +157,13 @@ export function answerDiscard(ok: boolean): void {
  * The leave every path but a route change takes (a dialog's close, a rail or tab switch, a
  * picker that replaces a form): with nothing dirty in `scope`, `action` runs at once; otherwise
  * the prompt asks, and on "discard" every dirty form in `scope` is reset before `action` runs.
- * "Keep editing" runs nothing. Resolves with whether the leave happened; `action` runs at most
- * once per call.
+ * "Keep editing" runs nothing. While a save is in flight in `scope` (`markSaving`) the leave
+ * does nothing at all, and asks nothing: the surface stays until the request answers. A leave
+ * without a scope is one of every form, like a route change, and is not held. Resolves with
+ * whether the leave happened; `action` runs at most once per call.
  */
 export async function guardLeave(action: () => void, scope?: string): Promise<boolean> {
+  if (scope !== undefined && isSaving(scope)) return false;
   if (!hasUnsaved(scope)) {
     action();
     return true;

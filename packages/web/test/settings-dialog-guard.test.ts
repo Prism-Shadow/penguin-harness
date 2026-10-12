@@ -12,6 +12,8 @@
  * - A clean page closes at once, and a flipped switch does not make it dirty.
  * - While the page's Save is in flight, Escape, the × and a press on the scrim do nothing, and no
  *   question is asked; once the save has answered, the dialog closes at once.
+ * - While the page's Save is in flight, the rail does not switch pages either, and asks nothing;
+ *   once the save has answered, it switches at once.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h, useState } from "react";
@@ -159,5 +161,23 @@ describe("leaving a Settings page with unsaved edits", () => {
     await pressEscape();
     expect(promptOpen()).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the page while its Save is in flight, and the rail switches once the save has answered", async () => {
+    const { server } = await openProxyPage();
+    server.hold();
+    await type(field(PROXY), "http://other:3128");
+    await click(button("Save"));
+    await click(button("Upload limits"));
+    expect(promptOpen()).toBe(false);
+    expect(heading()).toContain("Proxy options");
+    expect(field(PROXY).value).toBe("http://other:3128");
+
+    await run(server.release);
+    await waitFor(() => !hasUnsaved());
+    expect(server.stored().proxyUrl).toBe("http://other:3128");
+    await click(button("Upload limits"));
+    expect(promptOpen()).toBe(false);
+    expect(heading()).toContain("Upload limits");
   });
 });

@@ -8,6 +8,9 @@
  * - {@link useGuardedClose} turns a dialog's `onClose` into one that asks first while its forms
  *   hold unsaved edits, and does nothing while a save of the dialog's is in flight.
  *
+ * A dialog's rail or tab switch leaves through `guardLeave` with the dialog's scope, which a save
+ * registered there holds the same way.
+ *
  * A route change asks through the app's router blocker and a page unload through the host's
  * `beforeunload`; neither needs anything from the form beyond being registered.
  */
@@ -17,7 +20,6 @@ import {
   clearSaving,
   clearUnsaved,
   guardLeave,
-  isSaving,
   markSaving,
   markUnsaved,
   sameDraft,
@@ -46,10 +48,11 @@ export function useUnsavedChanges(dirty: boolean, options: UnsavedChangesOptions
 }
 
 /**
- * Holds an in-flight-save entry under `scope` while `saving` is true, so the close of the dialog
- * the form sits in (`useGuardedClose` with the same scope) does nothing until the save answers.
- * For a page whose save the dialog around it cannot see: the Settings and Project settings
- * dialogs host pages that save on their own. A dialog that runs its own save passes `locked`.
+ * Holds an in-flight-save entry under `scope` while `saving` is true, so the dialog the form sits
+ * in neither closes (`useGuardedClose` with the same scope) nor switches pages (`guardLeave` with
+ * it) until the save answers. For a page whose save the dialog around it cannot see: the Settings
+ * and Project settings dialogs host pages that save on their own. A dialog that runs its own save
+ * passes `locked` to its close.
  */
 export function useSaving(saving: boolean, scope: string): void {
   useEffect(() => {
@@ -173,9 +176,9 @@ export interface GuardedCloseOptions {
  * PagedDialog, Drawer, Sheet) **and** to its Cancel button: Esc, the ×, a scrim click and Cancel
  * all arrive there. While a form in `scope` holds unsaved edits it asks first; on "discard" the
  * forms reset and `onClose` runs, on "keep editing" nothing happens. While a save is in flight —
- * `locked`, or a save registered in `scope` (`useSaving`), checked when the close is attempted —
- * it does nothing at all. After a successful save call the raw `onClose` — nothing is dirty by
- * then anyway.
+ * `locked`, or a save registered in `scope` (`useSaving`, which `guardLeave` checks when the
+ * close is attempted) — it does nothing at all. After a successful save call the raw `onClose` —
+ * nothing is dirty by then anyway.
  */
 export function useGuardedClose(
   onClose: () => void,
@@ -187,7 +190,7 @@ export function useGuardedClose(
   const lockedRef = useRef(false);
   lockedRef.current = options.locked === true;
   return useCallback(() => {
-    if (lockedRef.current || isSaving(scope)) return;
+    if (lockedRef.current) return;
     void guardLeave(() => onCloseRef.current(), scope);
   }, [scope]);
 }

@@ -269,16 +269,18 @@ mode, machines, workflows:
   button, which covers Esc, the ×, the scrim and Cancel — and while its save is in flight
   (`locked`) none of them does anything, since a close then would "discard" what the request is
   about to store. A dialog whose pages save on their own (the Settings and Project settings
-  dialogs) cannot see those saves: each page holds the close with `useSaving(busy, scope)` on the
-  dialog's scope while its Save is in flight (a switch's write holds nothing). Any other state
-  switch that would replace a form (a
-  rail, a local tab strip, a machine picker, a document switch) goes through
-  `guardLeave(action, scope)`. The card is `UnsavedChangesHost` in `App`: 「放弃未保存的修改？」,
-  danger 「放弃修改」, 「继续编辑」. Never render a second discard dialog, never offer "save and
-  leave", never ask when the form is clean, and never make a switch count as dirty. Mount a
-  dialog's form only while the dialog is open — a closed dialog that keeps a dirty draft keeps the
-  router asking about a form nobody can see. `beforeunload` is the host's job (the browser's own
-  words); the desktop shell answers `will-prevent-unload` with a native box.
+  dialogs) cannot see those saves: each page registers its Save in flight with
+  `useSaving(busy, scope)` on the dialog's scope (a switch's write holds nothing), and that holds
+  the close and the dialog's rail or tab switch alike. Any other state switch that would replace a
+  form (a rail, a local tab strip, a machine picker, a document switch) goes through
+  `guardLeave(action, scope)`, which does nothing while a save is registered in `scope`; a route
+  change and a page unload are never held. The card is `UnsavedChangesHost` in `App`:
+  「放弃未保存的修改？」, danger 「放弃修改」, 「继续编辑」. Never render a second discard dialog,
+  never offer "save and leave", never ask when the form is clean, and never make a switch count
+  as dirty. Mount a dialog's form only while the dialog is open — a closed dialog that keeps a
+  dirty draft keeps the router asking about a form nobody can see. `beforeunload` is the host's
+  job (the browser's own words); the desktop shell answers `will-prevent-unload` with a native
+  box.
 
 Checklist for a new settings surface:
 
@@ -289,7 +291,8 @@ Checklist for a new settings surface:
    for a record dialog, which gets its own); Save gated on dirty **and** valid; Reset or Cancel;
    errors inline; `adopt` on success only.
 3. Dialog → `useGuardedClose` on `onClose` and Cancel, `locked` while its save is in flight; a
-   page inside a dialog it shares a scope with → `useSaving(busy, scope)` around its Save.
+   page inside a dialog it shares a scope with → `useSaving(busy, scope)` around its Save, which
+   holds the dialog's close and its rail or tab switch.
    Page tabs in `?tab=` need nothing more. Non-router switches → `guardLeave`. A dialog whose
    success hands off to a navigation (open the new record, switch Project, re-read the session)
    calls `discardUnsaved(form.scope)` once the write lands: its form is still mounted and dirty

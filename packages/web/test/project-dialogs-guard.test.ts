@@ -8,6 +8,8 @@
  * - Esc asks while a page holds edits; an untouched dialog closes at once.
  * - While a page's Save is in flight (the rule list's), Esc, the × and a press outside do
  *   nothing, and no question is asked; once the save has answered, the dialog closes at once.
+ * - While that Save is in flight the tab rail does not switch tabs either, and asks nothing; once
+ *   the save has answered, it switches at once.
  * - The display name's Save waits for a name other than the stored one; typing the stored name
  *   back is no change.
  * - The create dialog waits for an id that keeps the rule, says a broken one under the field as
@@ -137,6 +139,24 @@ describe("the Project settings dialog", () => {
     await pressEscape();
     expect(promptOpen()).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the tab while a page's Save is in flight, and the tab rail switches once it has answered", async () => {
+    const { server } = await openSettings();
+    await click(button(en.project.settingsTabSecurity));
+    await waitFor(() => hasButton(en.common.delete));
+    await click(button(en.common.delete));
+    server.hold();
+    await click(button(en.common.save));
+    await click(button(en.project.settingsTabGeneral));
+    expect(promptOpen()).toBe(false);
+    expect(heading()).toContain(en.project.settingsTabSecurity);
+
+    await run(server.release);
+    await waitFor(() => !hasUnsaved());
+    await click(button(en.project.settingsTabGeneral));
+    expect(promptOpen()).toBe(false);
+    expect(heading()).toContain(en.project.settingsTabGeneral);
   });
 
   it("offers Save for the name only once it differs from the stored one", async () => {
