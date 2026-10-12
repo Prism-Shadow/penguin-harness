@@ -5098,8 +5098,7 @@ Scenarios:
       budget: "Monthly budget",
       budgetHint:
         "A monthly cap, leave empty for unbounded; counts the employee plus every subordinate",
-      hireConfirm: (name: string, manager: string): string =>
-        `Add ${name} to the organization, reporting to ${manager}? This rewrites the chart file.`,
+      hireStdioQuestion: (name: string): string => `Hire ${name}?`,
       hired: (name: string): string => `Hired ${name}`,
       /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `Set the budget of ${name}`,

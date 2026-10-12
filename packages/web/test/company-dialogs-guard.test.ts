@@ -18,8 +18,8 @@
  * - A new ticket (features/company/tickets-page.tsx) waits for a title and a slug that keeps
  *   its rule, said under the field as it is typed.
  * - A hire writes at once, the employee's name with it; a new Agent whose picked plugin runs a
- *   stdio MCP server asks first, showing the command it runs on this server, and hires on
- *   confirm.
+ *   stdio MCP server asks first, showing the command it runs on this server, and the question's
+ *   own Hire hires.
  * - An employee's name is written by its Save alone, once it differs from the stored one, and
  *   Esc asks before a typed name is dropped.
  */
@@ -49,6 +49,7 @@ import { LocaleProvider } from "../src/state/locale";
 import { ProjectProvider } from "../src/state/project";
 import { SessionsProvider } from "../src/state/sessions";
 import { ADMIN_ME } from "./helpers/admin-settings";
+import { buttonIn, topDialog } from "./helpers/agent-app";
 import { PROJECT } from "./helpers/project-settings";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import type { FakeFetch } from "./helpers/fetch";
@@ -597,7 +598,7 @@ describe("hiring", () => {
     ]);
   });
 
-  it("asks before a new Agent whose picked plugin runs a stdio server is hired, and hires on confirm", async () => {
+  it("asks before a new Agent whose picked plugin runs a stdio server is hired, and the question's Hire hires", async () => {
     const { network, onHired } = await openHire();
     await type(field(en.company.chart.agentId), "writer");
     await type(field(en.company.chart.employeeTitle), "Docs engineer");
@@ -607,10 +608,10 @@ describe("hiring", () => {
     );
     await click(row!);
     await click(button(en.company.chart.hire));
-    expect(document.body.textContent).toContain("node mail-server.js");
+    expect(topDialog().textContent).toContain("node mail-server.js");
     expect(hires(network)).toEqual([]);
 
-    await click(button(en.common.confirm));
+    await click(buttonIn(topDialog(), en.company.chart.hire));
     await waitFor(() => onHired.mock.calls.length === 1);
     expect(
       hires(network).map((r) => (r.body as { newAgent: { plugins: string[] } }).newAgent.plugins),

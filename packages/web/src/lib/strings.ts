@@ -5238,8 +5238,8 @@ Benchmark：
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
       budget: "月预算",
       budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
-      hireConfirm: (name: string, manager: string): string =>
-        `将 ${name} 加入组织，汇报给 ${manager}？会改写组织图文件。`,
+      /** The confirmation a new Agent's picked plugin with a stdio MCP server asks for before the hire: the question; the commands follow it. */
+      hireStdioQuestion: (name: string): string => `招募 ${name}？`,
       hired: (name: string): string => `已招募 ${name}`,
       /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `设置 ${name} 的预算`,

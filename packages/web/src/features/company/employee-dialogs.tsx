@@ -456,21 +456,23 @@ function HireForm({
       </Modal>
       {/* Only a new Agent whose picked plugin brings a stdio MCP server asks before the hire: that
           server runs a command on this server whenever a session of the Agent starts, said here
-          before the Agent is created. Any other hire writes at once. */}
+          before the Agent is created, as Create Agent asks. Any other hire writes at once. The
+          compact card has no title bar, so the body asks. */}
       <ConfirmModal
         open={stdioConfirmOpen}
-        title={S.company.chart.hire}
+        title={S.company.chart.hireStdioQuestion(hireName)}
         tone="primary"
-        confirmLabel={S.common.confirm}
+        glyph={ICONS.terminalPrompt}
+        confirmLabel={S.company.chart.hire}
         cancelLabel={S.common.cancel}
         busy={busy}
         onClose={() => (busy ? undefined : setStdioConfirmOpen(false))}
         onConfirm={() => void hire(true)}
       >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {S.company.chart.hireConfirm(hireName, manager.name)}
-        </p>
-        <StdioDisclosure className="mt-3" plugins={stdioSeeds} />
+        <div className="space-y-3">
+          <p className="text-sm font-medium">{S.company.chart.hireStdioQuestion(hireName)}</p>
+          <StdioDisclosure plugins={stdioSeeds} />
+        </div>
       </ConfirmModal>
     </>
   );
