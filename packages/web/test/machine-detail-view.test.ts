@@ -232,8 +232,8 @@ describe("the toolbar", () => {
     expect(heldOf(machine(), running)).toEqual(["stop", "restart", "syncConfig", "uninstall"]);
     const behind = machine({ installed: { version: "0.2.12", at: "2026-09-20T08:00:00.000Z" } });
     expect(heldOf(behind, running)).toEqual(["update", "stop", "restart", "uninstall"]);
-    expect(machineToolbar(behind, running, IMAGE, false).sentence).toContain(
-      S.machines.detail.toolbar.update,
+    expect(machineToolbar(behind, running, IMAGE, false).sentence).toBe(
+      S.machines.detail.held.moving,
     );
   });
 
