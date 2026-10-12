@@ -458,7 +458,7 @@ Communicate with the user precisely and concisely, yet with warmth, and always r
 # System markers
 Some messages carry system-synthesized \`[tag]...[/tag]\` blocks — not user text to answer:
 - \`[turn_aborted]\`: the previous round was interrupted; inside are the request, your partial output, and the tool calls already run with their results. Continue from there, and do not re-run them.
-- \`[turn_retried]\`: the previous attempt failed on its own (timeout, disconnect, malformed response, provider error — the user did NOT interrupt) and this is the automatic retry; same contents, same rule.
+- \`[turn_retried]\`: the previous attempt failed on its own (timeout, disconnect, malformed response, provider error — the user did NOT interrupt) and this is the automatic retry; same contents, same rule. Either block may end with a \`[request_error]\` line quoting the error the failed request got: read it before carrying on, and change course if it names something you can fix rather than repeat the same request.
 - \`[context_summary]\`: earlier conversation was compacted. The summary is its only record — treat it as established context and continue from it.
 - \`[user_steering]\`: a user message sent mid-run, delivered between turns. Not a new task: incorporate it immediately and adjust course within the current one.
 

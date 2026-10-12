@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-10-10";
+export const KERNEL_VERSION = "2026-10-11";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -210,12 +210,16 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   system — links never in code formatting, a final answer that stands on its own, a
  *   one-sentence refusal), one specific question with options, and doing the work rather than
  *   pasting it. The prompt tab moved.
- * - `2026-10-10` (current) — `read_file`'s description stopped naming `prompt`: assembly now
- *   hands that argument to text-only models only (see selectBuiltinToolsForModel), so the
- *   description leaves it to its own schema entry. The tools tab moved.
+ * - `2026-10-10` — `read_file`'s description stopped naming `prompt`: assembly now hands that
+ *   argument to text-only models only (see selectBuiltinToolsForModel), so the description
+ *   leaves it to its own schema entry. The tools tab moved.
+ * - `2026-10-11` (current) — the # System markers section explains the `[request_error]` line
+ *   that closes a `[turn_retried]` or `[turn_aborted]` block after a failed request: read the
+ *   quoted error before carrying on, change course if it names something fixable. The prompt
+ *   tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
-  prompt: "9b2b54a241c7b8ac92faf7177d6f42c9c87b54f2e6d89411b37c53e5061ca515",
+  prompt: "07392a2f034d869c4e1d42a1668378d267dca68a10a84605441d9c2afb4d038e",
   runtime: "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346",
   tools: "3ee93edff7292412e9b0bbaff6cc64ee53127299450e6738fbd2e7448e148d5b",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
@@ -242,6 +246,7 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
     "99b8babb72d95c636a2c2893b657ac9c92d60c270a2e04e346b35b1fb720c932", // the pre-toggles template, with the hardcoded # Vault / # Skills sections (before #257)
     "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254", // the toggles template, before the # File system search-scope rule
     "f9576833f73192d69c962bf21bd2049d0c8f5389ba4b9700ca9bd95ea545d3b0", // the search-scope template, before the 2026-09-11 guardrails and interaction rules
+    "9b2b54a241c7b8ac92faf7177d6f42c9c87b54f2e6d89411b37c53e5061ca515", // the guardrails template, before # System markers explained the [request_error] line
   ],
   runtime: [
     "808ae1d1b544f46daff4f59f1e62357b89a61f60803061e86b10635616e0102c", // compaction.max_context_length was 128000, before the rise to 256000

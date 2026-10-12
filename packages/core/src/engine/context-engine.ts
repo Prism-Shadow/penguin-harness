@@ -54,6 +54,8 @@ import {
   buildTurnAbortedBlock,
   extractSummary,
   buildTurnRetriedBlock,
+  stripRequestErrorLines,
+  transcribeRequestError,
   transcribeText,
   transcribeThinking,
   transcribeToolCall,
@@ -895,12 +897,12 @@ export class ContextEngine {
         // 4xx `retryable` because this input holds images (checked again here, so an LLM that
         // reports the code as retryable itself, with nothing to strip, takes the ordinary
         // ladder below). The provider refused a request the engine can change, so the retry
-        // is not the identical request repeated: every image in the turn's input becomes a
-        // note that tells the model the picture was dropped and quotes the provider's text,
-        // for the model to judge what went wrong. The stripped input replaces the turn's input
-        // from here on, not just this attempt's — an interruption, a later failure or an
-        // exhausted budget builds its
-        // carry-over from it, and resending the image would only be refused again. Nothing
+        // is not the identical request repeated: every image in the turn's input becomes the
+        // fixed note that tells the model the picture was dropped, and the provider's text
+        // reaches it through the `[request_error]` line of the retry block, like every other
+        // retried failure's. The stripped input replaces the turn's input from here on, not
+        // just this attempt's — an interruption, a later failure or an exhausted budget builds
+        // its carry-over from it, and resending the image would only be refused again. Nothing
         // transient is being waited out, so there is no backoff and no rung on the ladder; the
         // ceiling still counts the attempt. A second rejection finds no image left and ends
         // the run through the fatal path above.
@@ -909,7 +911,7 @@ export class ContextEngine {
           turn.outcome.errorCode === "image_rejected" &&
           hasInputImages(nextInput)
         ) {
-          nextInput = replaceInputImages(nextInput, turn.outcome.errorMessage);
+          nextInput = replaceInputImages(nextInput);
           failedTurns.push(turn);
           attemptInput = this.withRetriedTurns(nextInput, failedTurns);
           if (attempts >= this.maxTurnAttempts) {
@@ -1342,8 +1344,9 @@ export class ContextEngine {
             // A provider's 4xx on an input that holds images is taken as a rejection of the
             // images, whatever the message says: providers word these refusals too many ways
             // to match, and a wrong match would end the run on something a retry can fix. The
-            // reconnect loop answers it: it replaces the images with a note quoting the
-            // provider and sends the turn again at once. The rejection is recorded as what it
+            // reconnect loop answers it: it replaces the images with a note and sends the turn
+            // again at once, the provider's text in the retry block's `[request_error]` line
+            // for the model to judge. The rejection is recorded as what it
             // turns out to be — a retried attempt, `retryable`, coded `image_rejected` — while
             // the same 4xx on an input with no image stays `fatal` as `rejected`: whatever it
             // refuses is in the committed history or the request's parameters, beyond the
@@ -2221,12 +2224,7 @@ export class ContextEngine {
       // written when produced.
       return backfill.length ? [...turn.toolOutputs, ...backfill] : turn.toolOutputs;
     }
-    return this.flattenCarryOver(
-      attemptInput,
-      turn.assistantSegments,
-      turn.toolCalls,
-      turn.toolOutputs,
-    );
+    return this.flattenCarryOver(attemptInput, turn);
   }
 
   /**
@@ -2236,68 +2234,71 @@ export class ContextEngine {
    * transcribed into a single `[turn_aborted]` plain-text user message (includes all
    * completed and incomplete messages, including partial thinking/text). If the input text is
    * itself already a `[turn_aborted]` block (from a previous attempt or a previous run's
-   * carry-over), its content is unwrapped and merged in, keeping a single-level structure.
+   * carry-over), its content is unwrapped and merged in, keeping a single-level structure. The
+   * block ends with one `[request_error]` line when this attempt failed (`fatal` or
+   * `retryable`): the failure's code and text, so the next request — the user's next message,
+   * or a host's Retry — tells the model why the turn is being sent again. A merged block's own
+   * request_error line is dropped first, so there is never more than one, and a user
+   * interruption (no error) leaves none.
    *
    * TODO(multimodal): only text input is currently kept — `image_url` / `inline_data` input is
    * lost during flatten (the `[turn_aborted]` structure has no corresponding transcription yet);
    * multimodal carry-over support to be added later.
    */
-  private flattenCarryOver(
-    attemptInput: OmniMessage[],
-    assistantSegments: OmniMessage[],
-    toolCalls: OmniMessage<ToolCallPayload>[],
-    toolOutputs: OmniMessage[],
-  ): OmniMessage[] {
+  private flattenCarryOver(attemptInput: OmniMessage[], turn: TurnResult): OmniMessage[] {
     const structured = attemptInput.filter(
       (m) => (m.payload as { type?: string }).type === "tool_call_output",
     );
     const textInputs = attemptInput.filter((m) => (m.payload as { type?: string }).type === "text");
-    const flattened = userText(
-      this.buildTurnAbortedText(textInputs, assistantSegments, toolCalls, toolOutputs),
-    );
+    const flattened = userText(this.buildTurnAbortedText(textInputs, turn));
     // flatten is sent to the model only and not written to Trace (synthetic carry-over isn't
     // persisted): resumption replay resends the discarded turn's **original input** as-is
     // (best-effort), with no dependency on this synthetic message.
     return [...structured, flattened];
   }
 
-  /** Transcribes the interrupted turn's input, model thinking/text, and tool calls/results into a single `[turn_aborted]` plain-text block. */
-  private buildTurnAbortedText(
-    textInputs: OmniMessage[],
-    assistantSegments: OmniMessage[],
-    toolCalls: OmniMessage<ToolCallPayload>[],
-    toolOutputs: OmniMessage[],
-  ): string {
+  /** Transcribes the interrupted turn's input, model thinking/text, tool calls/results and (after a failure) the error into a single `[turn_aborted]` plain-text block. */
+  private buildTurnAbortedText(textInputs: OmniMessage[], turn: TurnResult): string {
     const lines: string[] = [];
     for (const m of textInputs) {
       const t = (m.payload as TextPayload).text;
       // If this text is itself already a synthetic block — a previous run's `[turn_aborted]`,
       // or this turn's reconnect-appended `[turn_retried]` — extract its inner lines and merge
       // them in directly, avoiding layered nesting / unbounded growth (keeping a single-level
-      // structure).
+      // structure). Its request_error line describes an older failure: dropped, so the block
+      // carries this turn's outcome alone.
       const inner = unwrapSyntheticBlock(t);
       if (inner !== null) {
-        if (inner) lines.push(inner);
+        const kept = stripRequestErrorLines(inner);
+        if (kept) lines.push(kept);
       } else {
         lines.push(transcribeUserInput(t));
       }
     }
-    lines.push(...transcribeTurnLines(assistantSegments, toolCalls, toolOutputs));
+    lines.push(...transcribeTurnLines(turn.assistantSegments, turn.toolCalls, turn.toolOutputs));
+    const error = requestErrorLine(turn.outcome);
+    if (error !== null) lines.push(error);
     return buildTurnAbortedBlock(lines);
   }
 
   /**
    * Assembles the reconnect retry input: the original input is kept as-is (structure and
    * multimodal content preserved), with a `[turn_retried]` text appended at the end carrying
-   * each failed attempt's thinking/text and tool calls/results produced so far; if nothing has
-   * been produced yet, it's just the original input. The synthetic message is sent to the model
-   * only and not written to Trace (same rule as flatten carry-over).
+   * each failed attempt's thinking/text and tool calls/results produced so far, closed by one
+   * `[request_error]` line with the latest failure's code and text — rebuilt from scratch on
+   * every attempt, so a turn retried five times still carries one such line, not five. The
+   * model reads why the request failed before it carries on, instead of being handed the same
+   * input again with no word of what happened. The synthetic message is sent to the model only
+   * and not written to Trace (same rule as flatten carry-over).
    * Docs: /docs/agent-loop § "Automatic reconnect".
    */
   private withRetriedTurns(input: OmniMessage[], failedTurns: TurnResult[]): OmniMessage[] {
     const lines = failedTurns.flatMap((t) =>
       transcribeTurnLines(t.assistantSegments, t.toolCalls, t.toolOutputs),
     );
+    const last = failedTurns.at(-1);
+    const error = last ? requestErrorLine(last.outcome) : null;
+    if (error !== null) lines.push(error);
     if (lines.length === 0) return input;
     return [...input, userText(buildTurnRetriedBlock(lines))];
   }
@@ -2340,6 +2341,17 @@ export class ContextEngine {
 }
 
 /** Transcribes the model's produced thinking/text and tool calls/results into tagged lines (shared by `[turn_aborted]`/`[turn_retried]`). */
+/**
+ * The `[request_error]` line for a failed attempt's outcome (`fatal` or `retryable`, with
+ * whatever code and text it carries — an idle timeout has a code and no text), or null for an
+ * outcome that is no failure: a completed request, or a user interruption.
+ */
+function requestErrorLine(outcome: LLMOutcome): string | null {
+  if (outcome.status !== "fatal" && outcome.status !== "retryable") return null;
+  if (outcome.errorCode === undefined && outcome.errorMessage === undefined) return null;
+  return transcribeRequestError(outcome.errorCode, outcome.errorMessage);
+}
+
 function transcribeTurnLines(
   assistantSegments: OmniMessage[],
   toolCalls: OmniMessage<ToolCallPayload>[],
