@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1050](https://github.com/Prism-Shadow/penguin-harness/pull/1050)
 
 [English](2026-10-12-agents-panel-fullscreen-composer.md)
 
