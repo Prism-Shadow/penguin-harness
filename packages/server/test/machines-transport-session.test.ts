@@ -17,7 +17,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { closeConnectionTo, connectionTo, sessionOf } from "../src/machines/transport/index.js";
+import type { Resources } from "@prismshadow/penguin-core/kernel";
+import { closeConnectionTo, connectionTo, sessionOf, attachSessionRegistry } from "../src/machines/transport/index.js";
 
 // The stub `ssh` below is a shell script, which execFile cannot run on Windows; what stays
 // unmeasured on Windows is listed in ci.yml's test-windows note.
@@ -182,4 +183,37 @@ exit 1
     await conn.exec("true");
     expect(spawns()).toHaveLength(2);
   });
+  it("does not claim a delivered session the platform judged another contract — it opens its own", async () => {
+    const store = new Map<string, { resource: unknown; dispose?: () => void }>();
+    const registry: Resources = {
+      register(id, resource, dispose) {
+        const entry = { resource, dispose };
+        store.delete(id);
+        store.set(id, entry);
+        return () => {
+          if (store.get(id) !== entry) return;
+          store.delete(id);
+          entry.dispose?.();
+        };
+      },
+      claim: <T>(id: string) => store.get(id)?.resource as T | undefined,
+    } as Resources;
+    attachSessionRegistry(registry);
+    try {
+      const held = await connectionTo({ alias: "nas", user: "deploy" }).hold();
+      expect(held.ok).toBe(true);
+      closeAllConnections(); // the generation leaves; its held session stays in the registry
+      // The next generation was told the contract differs: it opens a session of its own…
+      attachSessionRegistry(registry, false);
+      const again = await connectionTo({ alias: "nas", user: "deploy" }).hold();
+      expect(again.ok && held.ok && again.session.pid !== held.session.pid).toBe(true);
+      expect(spawns().filter((line) => line.endsWith(" nas sh"))).toHaveLength(2);
+      // …and the platform's disposal of the doomed group ends the old one.
+      store.get("machineSession.v2:ssh:nas")?.dispose?.();
+    } finally {
+      closeConnectionTo("ssh:nas");
+      attachSessionRegistry(null);
+    }
+  });
+
 });

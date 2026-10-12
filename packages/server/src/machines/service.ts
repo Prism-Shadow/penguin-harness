@@ -45,6 +45,8 @@ import http from "node:http";
 import {
   appendHostBlock,
   closeAllConnections,
+  SESSION_GROUP,
+  attachSessionRegistry,
   closeConnectionTo,
   connectionTo,
   listHostAliases,
@@ -84,7 +86,7 @@ import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
-import type { Db, Hmr, Paths } from "../hmr/capabilities.js";
+import type { Db, Hmr, Paths, ResourceGroups } from "../hmr/capabilities.js";
 import { currentRemoteLayout } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
 
@@ -1528,6 +1530,7 @@ export class MachinesModule {
   @Use() private readonly db!: Db;
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly access!: Access;
+  @Use() private readonly resourceGroups!: ResourceGroups;
   @Provide() machines!: Machines;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
@@ -1536,6 +1539,7 @@ export class MachinesModule {
     // after — every stored reference to this machine, here and on the machines it reaches,
     // points at it. A test that supplies its own service mints none.
     const repo = new MachinesRepo(this.db as unknown as DatabaseSync);
+    attachSessionRegistry(this.hmr.resources, this.resourceGroups.adoptable(SESSION_GROUP));
     const machines = new MachinesService(this.paths.root, repo.ownId(), repo, {}, () =>
       this.hmr.assetsDir(),
     );

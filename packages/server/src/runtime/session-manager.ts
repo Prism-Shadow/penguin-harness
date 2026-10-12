@@ -81,17 +81,18 @@ import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/
 import type { SessionRow } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
-import type { PendingApproval } from "./approvals.js";
+import type { Approvals, PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
-import { LiveTailTracker } from "./live-tail.js";
+import { AgentStateStore } from "./agent-state.js";
+import type { LiveTail } from "./live-tail.js";
 import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
 import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
-import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
 import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
 import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
@@ -104,7 +105,7 @@ import { mergedNoProxy } from "../net/proxy.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
 import type { ProjectConfigStore, ProjectEvents } from "../mechanisms/projects.js";
-import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
+import type { AgentState, SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { Errors, UsageRecording } from "../mechanisms/observability.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { Settings } from "../mechanisms/settings.js";
@@ -176,15 +177,15 @@ function runtimeModelOf(session: RuntimeSession): ModelRefDto | null {
 }
 
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
+/** What one run is started with: the approval callback and the interrupt signal. */
+export type RunOpts = {
+  approve: ApproveFn;
+  signal: AbortSignal;
+};
+
 export interface RuntimeSession {
   readonly sessionId: string;
-  run(
-    newMessages: OmniMessage[],
-    opts: {
-      approve: ApproveFn;
-      signal: AbortSignal;
-    },
-  ): AsyncGenerator<OmniMessage>;
+  run(newMessages: OmniMessage[], opts: RunOpts): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
   /**
    * The running context's model (core `Session.provider` / `Session.modelId`, getters over
@@ -418,6 +419,8 @@ export interface UsageRecorderLike {
 }
 
 export interface SessionManagerDeps {
+  /** The in-memory state this manager works on (see agent-state.ts). Optional: a manager built without one — unit tests — gets an empty state of its own. */
+  state?: AgentState;
   sessions: SessionIndex;
   channels: ChannelHub;
   loader: SessionLoader;
@@ -504,7 +507,7 @@ interface PendingSteeringEntry {
 }
 
 /** Active-table entry: a loaded runtime Session plus its running state. */
-interface RuntimeEntry {
+export interface RuntimeEntry {
   sessionId: string;
   projectId: string;
   agentId: string;
@@ -517,7 +520,7 @@ interface RuntimeEntry {
   modelId: string;
   session: RuntimeSession;
   status: SessionStatus;
-  approvals: ApprovalRegistry;
+  approvals: Approvals;
   abort: AbortController | null;
   /** The in-flight drive Promise (awaited during graceful shutdown). */
   running: Promise<void> | null;
@@ -724,38 +727,56 @@ function isPlainText(role: "user" | "assistant") {
 }
 
 export class SessionManager {
-  private readonly entries = new Map<string, RuntimeEntry>();
+  // The state fields below are the AgentState component's (see agent-state.ts): this
+  // class keeps its logic and its names, the component keeps the memory.
+  private readonly state: AgentState;
+  private readonly entries: Map<string, RuntimeEntry>;
   /**
    * Each registered subagent Session's ROOT Session: a subagent runs under its root's
    * sandbox policy, as it runs under its root's approval mode, so a change the person makes
    * in the composer reaches the children already running.
    */
-  private readonly childRoots = new Map<string, string>();
+  private readonly childRoots: Map<string, string>;
 
   /** The Session whose policy governs `sessionId`: its root for a subagent, else itself. */
   rootSessionOf(sessionId: string): string {
     return this.childRoots.get(sessionId) ?? sessionId;
   }
   /** Per-Session mutex (serializes get-or-load and status flips); auto-cleaned once the chain drains. */
-  private readonly locks = new Map<string, Promise<unknown>>();
+  private readonly locks: Map<string, Promise<unknown>>;
   private readonly log: (line: string) => void;
   /** Graceful-shutdown flag: once set, new Tasks/compactions are rejected (503). */
   private closed = false;
   /** Agents currently being deleted (key = agentKey): new Tasks/compactions are always rejected with 409 during this window. */
-  private readonly deletingAgents = new Set<string>();
+  private readonly deletingAgents: Set<string>;
   /** Sessions currently being deleted (guards against the entry/Trace file being rebuilt and reviving it inside the deletion race window). */
-  private readonly deletingSessions = new Set<string>();
+  private readonly deletingSessions: Set<string>;
   /** Sessions whose runtime entry idle eviction leaves alone (see keepLoaded). */
   private readonly keptLoaded = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
-  private readonly agentGenerations = new Map<string, number>();
+  private readonly agentGenerations: Map<string, number>;
   /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
-  private readonly liveTail = new LiveTailTracker();
+  private readonly liveTail: LiveTail;
   private readonly sweepTimer: NodeJS.Timeout;
   /** Clock for persisted timestamps (see SessionManagerDeps.now); wall clock unless injected. */
   private readonly now: () => Date;
 
   constructor(private readonly deps: SessionManagerDeps) {
+    const state = deps.state ?? new AgentStateStore();
+    this.state = state;
+    // This generation works on the state from here on: whatever a run that is still going
+    // under an earlier generation starts when it ends, it starts through this one.
+    state.current = {
+      startQueuedFollowUp: (sessionId) => this.startQueuedFollowUp(sessionId),
+      startBackgroundNoticeTask: (sessionId) => this.startBackgroundNoticeTask(sessionId),
+    };
+    this.entries = state.entries;
+    this.childRoots = state.childRoots;
+    this.locks = state.locks;
+    this.deletingAgents = state.deletingAgents;
+    this.deletingSessions = state.deletingSessions;
+    this.agentGenerations = state.agentGenerations;
+    this.liveTail = state.liveTail;
     this.log = deps.log ?? ((line) => console.error(line));
     this.now = deps.now ?? (() => new Date());
     this.sweepTimer = setInterval(() => this.sweepIdle(), ENTRY_SWEEP_INTERVAL_MS);
@@ -953,7 +974,9 @@ export class SessionManager {
    *   channel so every Session list shows which rows still own background work.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
-    session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(sessionId));
+    session.onBackgroundNotice?.(
+      () => void this.state.current?.startBackgroundNoticeTask(sessionId),
+    );
     session.onBackgroundMessage?.((msg) => this.forwardBackgroundMessage(sessionId, msg));
     session.onSubagentState?.(() => {
       const entry = this.entries.get(sessionId);
@@ -1872,6 +1895,21 @@ export class SessionManager {
     this.deletingSessions.delete(sessionId);
   }
 
+  /**
+   * The hand-over's half of a swap: this generation stops working on the state and leaves
+   * everything in it as it is — running Tasks keep running, pending approvals keep waiting —
+   * for the next generation to take over (PRFC-0015). Only what is this instance's own stops:
+   * the idle sweep. `shutdown` is the other ending, for a state nobody takes over.
+   */
+  detach(): void {
+    clearInterval(this.sweepTimer);
+  }
+
+  /** The Sessions with a Task in flight right now — what a swap parks, so that a successor that cannot take the state over knows which ones to start again. */
+  runningSessionIds(): string[] {
+    return [...this.entries.values()].filter((e) => e.status === "running").map((e) => e.sessionId);
+  }
+
   /** Graceful shutdown: reject new tasks (503), interrupt all active runs, and wait for them to finish (default ≤5s). */
   async shutdown(timeoutMs = 5000): Promise<void> {
     this.closed = true;
@@ -2394,11 +2432,11 @@ export class SessionManager {
       // Queued follow-ups: whenever a run finishes (Task or compaction, abort included),
       // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
       // revalidates under the session lock.
-      if (entry.followUps.length > 0) void this.startQueuedFollowUp(entry.sessionId);
+      if (entry.followUps.length > 0) void this.state.current?.startQueuedFollowUp(entry.sessionId);
       // Background completion notices that raced this run's exit (arrived after its last
       // input-assembly boundary): start their delivery task now. No-op when a follow-up
       // just launched — that run's engine drains the same queue.
-      else void this.startBackgroundNoticeTask(entry.sessionId);
+      else void this.state.current?.startBackgroundNoticeTask(entry.sessionId);
     }
   }
 
@@ -2671,6 +2709,8 @@ export abstract class Sessions extends Interface<
     | "endSessionDeletion"
     | "atIdleBoundary"
     | "shutdown"
+    | "detach"
+    | "runningSessionIds"
     | "sweepIdle"
     | "keepLoaded"
     | "preload"
@@ -2705,7 +2745,14 @@ export abstract class SessionEnv {
   abstract confineSpawn(ctx: ControlEnvContext): SpawnConfiner | null;
 }
 
-@Module()
+@Module({
+  context: {
+    version: 1,
+    schema: {
+      "running?": "string[]",
+    },
+  },
+})
 export class SessionsModule {
   @Use() private readonly config!: Config;
   @Use() private readonly channels!: Channels;
@@ -2717,6 +2764,7 @@ export class SessionsModule {
   @Use() private readonly settings!: Settings;
   @Use() private readonly sessionsRepo!: SessionIndex;
   @Use() private readonly sources!: SessionOrigins;
+  @Use() private readonly state!: AgentState;
   @Use() private readonly recorder!: UsageRecording;
   @Use() private readonly errors!: Errors;
   @Use() private readonly modelScopeAuth!: ModelScopeAuth;
@@ -2827,6 +2875,7 @@ export class SessionsModule {
       notifyProjectUsers,
     });
     const manager = new SessionManager({
+      state: this.state,
       sessions: sessionsRepo,
       channels,
       loader: this.sessionLoaders.create(config.root, sources, {
@@ -2888,6 +2937,15 @@ export class SessionsModule {
     this.manager = manager;
     this.sessionService = sessionService;
     this.env = env;
+  }
+
+  /**
+   * The Sessions with a Task in flight. The state itself crosses a swap as a live object
+   * (hmr/platform.ts); this is for the successor that cannot take it over — it never reads
+   * the state, so the ids travel as data.
+   */
+  park(): Json {
+    return { running: this.manager.runningSessionIds() };
   }
 }
 

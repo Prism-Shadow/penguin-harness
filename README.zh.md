@@ -246,10 +246,10 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 
 ## 路线图
 
-- [ ] Benchmark 套件正式发布
+- [x] Benchmark 套件正式发布
 - [x] 桌面端应用
 - [x] Windows 系统支持
-- [ ] Agent 公司与模板
+- [x] Agent 公司与模板
 - [ ] 公司级自进化能力
 - [ ] 集成 OpenShell（带权限管控的 shell）
 - 更多规划，敬请期待……

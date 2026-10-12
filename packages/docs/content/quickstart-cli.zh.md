@@ -157,7 +157,7 @@ pnpm install && pnpm build
 
 构建完成后，可以在仓库内用 `pnpm penguin <args>` 以开发方式运行，也可以使用全局链接的 `penguin` 命令。
 
-开发入口（`pnpm penguin`、`pnpm dev`、`pnpm desktop`）默认使用独立的数据目录 `~/.penguin/dev-data`，全局链接或正式安装的 `penguin` 仍使用 `~/.penguin/data`，设置 `PENGUIN_HOME` 可以覆盖。桌面应用的开发运行还使用独立的应用标识（`PenguinHarness-Dev`），因此可以和已安装的桌面应用同时运行，互不冲突。
+开发入口的数据与正式安装的 `penguin`（使用 `~/.penguin/data`）分开存放：`pnpm dev` 与 `pnpm desktop` 默认使用 `~/.penguin/dev-data`，`pnpm penguin` 与全局链接的 `penguin` 默认使用 `~/.penguin/dev-data-cli`，其 `penguin web` 使用端口 7369。设置 `PENGUIN_HOME` 可以覆盖，例如 `PENGUIN_HOME=~/.penguin/data penguin <args>` 让链接的命令使用正式安装的数据目录。桌面应用的开发运行还使用独立的应用标识（`PenguinHarness-Dev`），因此可以和已安装的桌面应用同时运行，互不冲突。
 
 Agent 命令和终端面板里的 `penguin` 都是这个检出的 CLI，连接的也是这个检出启动的服务器，而不是机器上安装的那一套：`pnpm dev` 直接从源码运行 CLI，改了 CLI 不必重启；`pnpm desktop` 运行它构建出的版本。即使从已安装应用的终端里启动，开发入口用的仍是这个检出的 CLI：这类终端可能传下来的 `PENGUIN_CLI_ENTRY` 会被忽略。
 

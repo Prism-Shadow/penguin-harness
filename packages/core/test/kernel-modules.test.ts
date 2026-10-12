@@ -11,6 +11,7 @@ import {
   checkTree,
   Component,
   defineModule,
+  closedShape,
   extendsExpr,
   Interface,
   Module,
@@ -190,6 +191,59 @@ describe("extendsExpr", () => {
     expect(extendsExpr({ iface: "a#A" }, { oneOf: [{ iface: "a#B" }, { iface: "a#B" }] }, t)).toBe(
       false,
     );
+  });
+
+  it("a Map or a Set is compared by its element types, like an array", () => {
+    expect(extendsExpr({ map: [str, num] }, { map: [str, num] })).toBe(true);
+    expect(extendsExpr({ map: [str, num] }, { map: [str, str] })).toBe(false);
+    expect(extendsExpr({ map: [num, str] }, { map: [str, str] })).toBe(false);
+    expect(extendsExpr({ set: str }, { set: str })).toBe(true);
+    expect(extendsExpr({ set: str }, { set: num })).toBe(false);
+    // Neither is the other, nor an array of the same element.
+    expect(extendsExpr({ set: str }, { array: str })).toBe(false);
+    expect(extendsExpr({ map: [str, str] }, { set: str })).toBe(false);
+  });
+
+  it("a Map's value may be a live object, checked through the table", () => {
+    const t: IfaceTable = {
+      "a#A": { name: "A", methods: { x: { params: [], returns: str } }, slots: {} },
+      "a#B": { name: "B", methods: { x: { params: [], returns: num } }, slots: {} },
+    };
+    expect(extendsExpr({ map: [str, { iface: "a#A" }] }, { map: [str, { iface: "a#A" }] }, t)).toBe(
+      true,
+    );
+    expect(extendsExpr({ map: [str, { iface: "a#A" }] }, { map: [str, { iface: "a#B" }] }, t)).toBe(
+      false,
+    );
+  });
+});
+
+describe("closedShape", () => {
+  const table = (returns: typeof str | typeof num): IfaceTable => ({
+    "a#State": {
+      name: "State",
+      methods: {},
+      fields: { entries: { map: [str, { iface: "a#Session" }] } },
+      slots: {},
+    },
+    "a#Session": { name: "Session", methods: { run: { params: [], returns } }, slots: {} },
+    "a#Unrelated": { name: "Unrelated", methods: { x: { params: [], returns } }, slots: {} },
+  });
+
+  it("is the same string for the same interface, whatever order the table was written in", () => {
+    const t = table(str);
+    const reversed = Object.fromEntries(Object.entries(t).reverse()) as IfaceTable;
+    expect(closedShape(t, "a#State")).toBe(closedShape(reversed, "a#State"));
+  });
+
+  it("changes when an interface it reaches changes, and only then", () => {
+    expect(closedShape(table(str), "a#State")).not.toBe(closedShape(table(num), "a#State"));
+    const grown = { ...table(str), "a#New": table(str)["a#Unrelated"]! };
+    expect(closedShape(grown, "a#State")).toBe(closedShape(table(str), "a#State"));
+  });
+
+  it("is null for an interface the table does not have", () => {
+    expect(closedShape(table(str), "a#Missing")).toBeNull();
   });
 });
 
