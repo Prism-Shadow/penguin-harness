@@ -37,7 +37,8 @@ async function rootWith(shim = true): Promise<{ root: string; dirs: string[] }> 
   return { root, dirs: [dir] };
 }
 
-const HOME = "/home/anne";
+/** A home directory spelled the way this platform spells paths, as `os.homedir()` would. */
+const HOME = path.join(path.sep, "home", "anne");
 
 describe("a terminal's first line", () => {
   it("is nothing on an installation", async () => {
@@ -52,20 +53,21 @@ describe("a terminal's first line", () => {
 
   it("names a dev instance's CLI and data root, for each origin", async () => {
     const { root, dirs } = await rootWith();
-    const checkout = `${HOME}/work/penguin-harness`;
+    const checkout = path.join(HOME, "work", "penguin-harness");
+    const shown = path.join("~", "work", "penguin-harness");
     const notice = (origin: "source" | "build" | "env", cliEntry: string) =>
       terminalCliNotice(
         { root, cliEntry, cliLaunch: { execArgs: [], checkout, origin, unavailable: null } },
         dirs,
         HOME,
       );
-    const source = notice("source", `${checkout}/packages/cli/src/penguin.ts`);
+    const source = notice("source", path.join(checkout, "packages", "cli", "src", "penguin.ts"));
     expect(source?.tone).toBe("info");
-    expect(source?.text).toContain("the CLI of ~/work/penguin-harness (source)");
+    expect(source?.text).toContain(`the CLI of ${shown} (source)`);
     expect(source?.text).toContain(`on data root ${root}`);
-    expect(notice("build", `${checkout}/packages/cli/dist/penguin.js`)?.text).toContain(
-      "~/work/penguin-harness (built)",
-    );
+    expect(
+      notice("build", path.join(checkout, "packages", "cli", "dist", "penguin.js"))?.text,
+    ).toContain(`${shown} (built)`);
     expect(notice("env", "/opt/other/penguin.js")?.text).toContain(
       "/opt/other/penguin.js (PENGUIN_CLI_ENTRY)",
     );
