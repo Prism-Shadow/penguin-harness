@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#1068](https://github.com/Prism-Shadow/penguin-harness/pull/1068)
 
 [English](2026-10-12-browser-menu-newtab.md)
 
