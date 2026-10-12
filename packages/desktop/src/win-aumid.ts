@@ -1,42 +1,46 @@
 /**
- * Windows AppUserModelID (AUMID) registry registration — pure command construction plus
- * an injected runner so every branch unit-tests without Electron or a Windows host.
+ * Registers the shell's Windows AppUserModelID (AUMID) as a toast sender under HKCU.
  *
- * Windows routes toast notifications (`ToastNotificationManager`) and populates the
- * System → Notifications app list by matching the process's `AppUserModelID`
- * (`app.setAppUserModelId`) against either a Start Menu `.lnk` shortcut carrying that
- * property or `HKCU\Software\Classes\AppUserModelId\<AUMID>`. Relying on the shortcut
- * alone fails in three real cases:
+ * Windows attributes a toast to the sending process's AUMID (`app.setAppUserModelId`, see
+ * main.ts) and takes the sender's name and icon from a Start Menu shortcut stamped with that
+ * AUMID, or from `HKCU\Software\Classes\AppUserModelId\<AUMID>`. The installer's shortcut
+ * covers an installed release build; the key also covers the launches that have no such
+ * shortcut: the dev profile (`pnpm desktop`, `--dev`), a build run without the installer, a
+ * shortcut the user removed. Writing it needs no elevation and repeats harmlessly, so it
+ * happens on every launch.
  *
- * 1. A dev run (`pnpm desktop` or `--dev`) uses `com.prismshadow.penguinharness.dev`,
- *    which no installer ever creates a Start Menu shortcut for.
- * 2. A user who removed the Start Menu shortcut, or ran an unpackaged/portable build,
- *    has no `.lnk` for Windows to inspect.
- * 3. An all-users NSIS shortcut under `%ProgramData%` without a per-user activator entry
- *    can leave `ToastNotificationManager` unable to resolve the sender identity.
- *
- * Writing `DisplayName` and `IconUri` under `HKCU\Software\Classes\AppUserModelId\<AUMID>`
- * requires no elevation, is idempotent across launches, and satisfies Windows' unpackaged
- * toast sender contract for both the release and dev identities.
+ * main.ts starts it without waiting for it. A reg.exe still running after REG_TIMEOUT_MS is
+ * killed, and every failure ends in one log line, never in a rejection. The process boundary
+ * (`execFile`) is injectable, so every branch unit-tests without Electron or a Windows host.
  */
-import { execFile } from "node:child_process";
+import { execFile as nodeExecFile } from "node:child_process";
+import path from "node:path";
 
-/** Registry key Windows inspects for a toast sender's display name and icon. */
-export function winAumidRegistryKey(appUserModelId: string): string {
-  return `HKCU\\Software\\Classes\\AppUserModelId\\${appUserModelId}`;
-}
+/** How long one reg.exe write may run before it is killed. */
+const REG_TIMEOUT_MS = 5_000;
+
+/** The slice of `child_process.execFile` used here; the callback carries only the outcome. */
+export type ExecFile = (
+  file: string,
+  args: string[],
+  options: { windowsHide: boolean; timeout: number },
+  callback: (error: Error | null) => void,
+) => void;
+
+const runExecFile: ExecFile = (file, args, options, callback) => {
+  nodeExecFile(file, args, options, (error) => callback(error));
+};
 
 /**
- * The `reg.exe` argument vectors that register `appUserModelId` for Windows notifications.
- * `IconUri` is written only when the icon asset exists on disk; without it the display name
- * still registers the sender so toasts are not dropped.
+ * The `reg add` argument vectors: the display name always, the icon only when there is one on
+ * disk to point at. `/f` overwrites without asking, which every launch after the first needs.
  */
-export function winAumidRegCommands(opts: {
+function regAddCommands(opts: {
   appUserModelId: string;
   displayName: string;
   iconPath: string | null;
 }): string[][] {
-  const key = winAumidRegistryKey(opts.appUserModelId);
+  const key = `HKCU\\Software\\Classes\\AppUserModelId\\${opts.appUserModelId}`;
   const commands: string[][] = [
     ["add", key, "/v", "DisplayName", "/t", "REG_SZ", "/d", opts.displayName, "/f"],
   ];
@@ -46,41 +50,43 @@ export function winAumidRegCommands(opts: {
   return commands;
 }
 
-/** Runs one `reg.exe` command without flashing a console window. */
-function defaultRunReg(args: readonly string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    execFile("reg.exe", [...args], { windowsHide: true }, (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
-}
-
 /**
- * Ensures the current profile's `AppUserModelID` is registered under `HKCU` on Windows.
- * No-op off Windows; best-effort on Windows so a locked-down registry logs one line and
- * never prevents the shell from booting.
+ * Writes this profile's display name and icon under its AUMID's HKCU key, one reg.exe at a
+ * time. A no-op off Windows. Resolves once the writes are done, or once one has failed or been
+ * killed, which is logged and ends the attempt; it never rejects, so main.ts can fire it and
+ * carry on.
  */
 export async function registerWindowsAumid(opts: {
   platform: NodeJS.Platform;
+  /** The process environment, for `SystemRoot`. */
+  env: NodeJS.ProcessEnv;
   appUserModelId: string;
   displayName: string;
+  /** The window icon on disk, or null when there is none. */
   iconPath: string | null;
-  runReg?: (args: readonly string[]) => Promise<void>;
   log: (line: string) => void;
-}): Promise<boolean> {
-  if (opts.platform !== "win32") return false;
-  const run = opts.runReg ?? defaultRunReg;
-  const commands = winAumidRegCommands(opts);
+  /** The process boundary: Node's `execFile` unless a test injects one. */
+  execFile?: ExecFile;
+}): Promise<void> {
+  if (opts.platform !== "win32") return;
+  const execFile = opts.execFile ?? runExecFile;
+  // The system's own reg.exe, by absolute path: a reg.exe earlier on PATH is never the one
+  // run. path.win32, because this is a Windows path whichever platform computes it.
+  const regExe = path.win32.join(opts.env.SystemRoot ?? "C:\\Windows", "System32", "reg.exe");
   try {
-    for (const args of commands) {
-      await run(args);
+    for (const args of regAddCommands(opts)) {
+      await new Promise<void>((resolve, reject) => {
+        execFile(regExe, args, { windowsHide: true, timeout: REG_TIMEOUT_MS }, (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
     }
-    return true;
   } catch (err) {
-    opts.log(
-      `Windows AppUserModelID '${opts.appUserModelId}' could not be registered: ${String(err)}`,
-    );
-    return false;
+    // Node's message spans lines (the command, then reg.exe's stderr); the log takes one.
+    const reason = (err as { killed?: boolean }).killed
+      ? `reg.exe did not exit within ${REG_TIMEOUT_MS} ms and was stopped`
+      : String(err).replace(/\s+/g, " ").trim();
+    opts.log(`Windows AppUserModelID '${opts.appUserModelId}' could not be registered: ${reason}`);
   }
 }
