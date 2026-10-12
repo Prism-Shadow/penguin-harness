@@ -120,6 +120,7 @@ interface StreamClient {
   restoreText(): string;
   sendInput(text: string): void;
   sendResize(cols: number, rows: number, intent: "claim" | "update"): void;
+  sendPing(payload: string): void;
   waitFor(predicate: () => boolean, what: string, timeoutMs?: number): Promise<void>;
   close(): Promise<void>;
 }
@@ -169,6 +170,8 @@ function attach(
           payload: JSON.stringify({ cols, rows, intent }),
         }),
       ),
+    sendPing: (payload) =>
+      ws.send(encodeTerminalFrame({ opcode: TerminalStreamOpcode.Ping, payload })),
     waitFor: async (predicate, what, timeoutMs = 15_000) => {
       const deadline = Date.now() + timeoutMs;
       while (!predicate()) {
@@ -317,15 +320,50 @@ describePty("terminal stream handshake", () => {
 });
 
 /**
- * The line the backpressure flood is made of, and the marker its resync assertion reads.
- * It fills every row of the screen for the whole burst, so it is there whichever instant
- * the resync snapshot is taken at — unlike a marker printed once at the end of a round,
- * which megabytes of scrolling carry off the screen again.
+ * What the backpressure flood is made of: random bytes, not repeated ones.
+ *
+ * The stream is compressed on the wire (terminal/ws.ts), and repeated text leaves the
+ * socket a hundred times smaller than it entered — a `yes`-style burst is delivered as fast
+ * as a shell can produce it and never puts a viewer behind at all. base64 of /dev/urandom
+ * is the cheapest output a shell can produce that compresses to nothing, so what the viewer
+ * is behind on is real.
  */
-const FLOOD_LINE = "0123456789abcdef";
+const FLOOD_COMMAND = "head -c 4000000 /dev/urandom | base64";
+/**
+ * A screenful of that flood: base64 runs on two consecutive rows. The restore stream writes
+ * the grid row by row, so this holds whichever instant the resync snapshot is taken at —
+ * unlike a marker printed once per round, which megabytes of scrolling carry off the screen.
+ */
+const FLOOD_ROWS = /[A-Za-z0-9+/]{40}\r\n[A-Za-z0-9+/]{40}/;
 
 /** Every Restore opens with this self-contained repaint (see snapshot.ts). */
 const RESTORE_PREAMBLE = "\x1b[0m\x1b[?1049l\x1b[H\x1b[2J\x1b[3J";
+
+describePty("terminal stream heartbeat", () => {
+  it(
+    "echoes a client's probe, so a client can tell a live socket from a dead one",
+    async () => {
+      const terminal = await createTerminal();
+      const client = await attach(terminal.id);
+      try {
+        client.sendPing("42");
+        await client.waitFor(
+          () => client.frames.some((f) => f.opcode === TerminalStreamOpcode.Pong),
+          "pong",
+        );
+
+        const pong = client.frames.find((f) => f.opcode === TerminalStreamOpcode.Pong);
+        // Echoed untouched: the payload is the CLIENT's clock reading, and only the client
+        // can make a round trip out of it.
+        expect(pong?.text).toBe("42");
+      } finally {
+        await client.close();
+        await api.delete(`/api/terminals/${terminal.id}`);
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
 
 describePty("terminal stream backpressure", () => {
   it("resyncs a lagging viewer with a fresh Restore instead of disconnecting it", async () => {
@@ -342,9 +380,9 @@ describePty("terminal stream backpressure", () => {
       client.ws.pause();
       // Flood until the server itself reports this viewer as lagging. A fixed burst is a
       // coin flip: a paused reader still lets the kernel absorb megabytes into its socket
-      // buffers (autotuned), so the server's own send queue — the thing the watermark
-      // measures — may never cross 1 MiB however much the shell wrote. This suite failed
-      // that way roughly one run in three, locally and on CI.
+      // buffers (autotuned), so the viewer's backlog — the thing the watermark measures —
+      // may never cross 1 MiB however much the shell wrote. This suite failed that way
+      // roughly one run in three, locally and on CI.
       //
       // Only lines logged from here on count. `serverLogs` outlives one attempt and vitest
       // retries this file on macOS, so a second attempt reading the first one's line would
@@ -354,7 +392,7 @@ describePty("terminal stream backpressure", () => {
       const isLagging = (): boolean =>
         serverLogs.slice(loggedBefore).some((l) => l.includes("pausing for resync"));
       for (let round = 1; round <= 8 && !isLagging(); round += 1) {
-        client.sendInput(`yes ${FLOOD_LINE} | head -n 400000; echo BURST-DONE-${round}\r`);
+        client.sendInput(`${FLOOD_COMMAND}; echo BURST-DONE-${round}\r`);
         await waitForCapture(terminal.id, `BURST-DONE-${round}`, 60_000);
       }
       expect(isLagging(), "server never marked the paused viewer as lagging").toBe(true);
@@ -375,7 +413,7 @@ describePty("terminal stream backpressure", () => {
       // repaint an attach sends, and it carries the flooded screen rather than the empty
       // one the attach Restore captured.
       expect(resync.text.slice(0, RESTORE_PREAMBLE.length)).toBe(RESTORE_PREAMBLE);
-      expect(resync.text).toContain(`${FLOOD_LINE}\r\n${FLOOD_LINE}`);
+      expect(resync.text).toMatch(FLOOD_ROWS);
       await runAndWait(client, "echo LIVE-$((40+2))", "LIVE-42");
     } finally {
       // Closed here rather than after the assertions: a socket a failed assertion left open
