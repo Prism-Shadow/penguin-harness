@@ -3,7 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** feature
 - **Scope:** `web`, `docs`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#1073](https://github.com/Prism-Shadow/penguin-harness/pull/1073)
 
 [中文版](2026-10-12-plugin-import-agent-first.zh.md)
 
