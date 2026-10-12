@@ -246,10 +246,10 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 
 ## Roadmap
 
-- [ ] Public release of the benchmark suite
+- [x] Public release of the benchmark suite
 - [x] Desktop app
 - [x] Windows support
-- [ ] Agent company and templates
+- [x] Agent company and templates
 - [ ] Company-level self evolving
 - [ ] OpenShell integration (permission-governed shell)
 - More to come…
