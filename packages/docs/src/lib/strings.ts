@@ -11,14 +11,7 @@ export const zh = {
   nav: {
     // Landing-parity labels: the top bar mirrors the landing page's nav exactly
     // (same items, same order) so the two sites link into each other seamlessly.
-    highlights: "特色",
-    selfImprove: "自进化",
-    quickstart: "快速开始",
-    cases: "案例",
-    scenarios: "应用场景",
-    benchmark: "评测",
-    contract: "CONTRACT.md",
-    features: "功能",
+    home: "主页",
     blog: "博客",
     download: "下载",
     docs: "文档",

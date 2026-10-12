@@ -1,12 +1,11 @@
 /**
  * Sticky top bar, landing-parity: logo + site name, then the SAME link row as the
- * landing page's nav (section anchors on the landing home, blog, download, docs,
- * gallery) with the same sliding hover pill — so the two sites render an identical
- * navbar. Section/blog/download links are plain anchors into the landing SPA one level
- * up and the gallery link one into its sibling SPA; "Docs" routes to this site's own
- * root and is always the active link. The right cluster also matches the landing
- * nav (language + theme toggles, GitHub) and ends with the sidebar toggle on <lg
- * screens — the same slot where the landing nav keeps its mobile-menu button on <md.
+ * landing page's nav (Home, Blog, Download, Docs, Gallery) with the same sliding hover
+ * pill — so the two sites render an identical navbar. Home, Blog and Download are plain
+ * anchors into the landing SPA one level up and the gallery link one into its sibling
+ * SPA; "Docs" routes to this site's own root and is always the active link. The right
+ * cluster also matches the landing nav (language + theme toggles, GitHub) and ends with
+ * the sidebar toggle on <lg screens — where the landing nav keeps its mobile-menu button.
  *
  * The markup and class strings are duplicated verbatim from the landing nav
  * (packages/landing/src/components/nav.tsx — the two sites share no package, as with
@@ -21,15 +20,6 @@ import { useLocale } from "../state/locale";
 import { GitHubIcon, MenuIcon, XIcon } from "./icons";
 import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
-
-const SECTION_IDS = [
-  "highlights",
-  "quickstart",
-  "scenarios",
-  "benchmark",
-  "contract",
-  "features",
-] as const;
 
 function GitHubStarsLink() {
   const [stars, setStars] = useState<number | null>(null);
@@ -80,15 +70,6 @@ export function Nav({
   // The gallery opens in the language the reader has the docs in.
   const gallery = galleryUrl(locale);
 
-  const sectionLabel: Record<(typeof SECTION_IDS)[number], string> = {
-    highlights: S.nav.highlights,
-    quickstart: S.nav.quickstart,
-    scenarios: S.nav.scenarios,
-    benchmark: S.nav.benchmark,
-    contract: S.nav.contract,
-    features: S.nav.features,
-  };
-
   const activeLinkCls =
     "bg-black text-white hover:bg-black hover:text-white dark:bg-black dark:text-white dark:ring-1 dark:ring-gray-600 dark:hover:bg-black dark:hover:text-white";
   const inactiveLinkCls = "text-gray-600 dark:text-gray-400";
@@ -128,16 +109,9 @@ export function Nav({
 
   const desktopLinks = (
     <>
-      {SECTION_IDS.map((id) => (
-        <a
-          key={id}
-          href={`${SITE_URL}#${id}`}
-          className={deskLinkCls(false)}
-          onMouseEnter={slideTo}
-        >
-          {sectionLabel[id]}
-        </a>
-      ))}
+      <a href={SITE_URL} className={deskLinkCls(false)} onMouseEnter={slideTo}>
+        {S.nav.home}
+      </a>
       <a href={`${SITE_URL}blog`} className={deskLinkCls(false)} onMouseEnter={slideTo}>
         {S.nav.blog}
       </a>
@@ -166,7 +140,7 @@ export function Nav({
         </a>
 
         <nav
-          className="relative ml-4 hidden items-center gap-0.5 xl:flex"
+          className="relative ml-4 hidden items-center gap-0.5 md:flex"
           aria-label="Primary"
           onMouseLeave={hidePill}
         >

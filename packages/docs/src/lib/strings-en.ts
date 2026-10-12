@@ -5,14 +5,7 @@ export const en: Strings = {
   siteName: "PenguinHarness",
 
   nav: {
-    highlights: "Highlights",
-    selfImprove: "Self-evolution",
-    quickstart: "Quick start",
-    cases: "Cases",
-    scenarios: "Scenarios",
-    benchmark: "Benchmark",
-    contract: "CONTRACT.md",
-    features: "Features",
+    home: "Home",
     blog: "Blog",
     download: "Download",
     docs: "Docs",
