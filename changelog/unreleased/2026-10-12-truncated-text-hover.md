@@ -2,7 +2,8 @@
 
 - **Date:** 2026-10-12
 - **Type:** fix
-- **Scope:** `web`
+- **Scope:** `ui`, `web`
+- **PR:** [#1069](https://github.com/Prism-Shadow/penguin-harness/pull/1069)
 
 [中文版](2026-10-12-truncated-text-hover.zh.md)
 
