@@ -15,6 +15,6 @@
 - **派格循环。** `reference/harbor.md` §A「Running the cells」：每一格都以 `run_subagent` 加 `run_in_background: true` 派出，Prompt 首行写 `Caller agent: <id> — cell <case_id> run <run>`，完成通知因此能点出是哪一格。调用方维护一张台账，记下未派、运行中与已返回的格子，把空位派满后结束本回合，再在每条 `[background_task_done]` 通知开启的回合里补派，既不轮询，也不等整批返回。Docker 分不出网络的格子回到队首，上限减半后重跑。
 - **安装包。** §A 新增第 10 步：调用方用仓库的 `tools/make_install_bundle.sh` 在检出里构建 `bundles/penguin-cli-<penguin version>-node-24.18.0-linux-<arch>.tar.gz`，构建期间持有一把 `mkdir` 锁，另一个评测最多等它 10 分钟；构建失败时不带安装包继续。§B.7 在文件存在时给启动命令加上 `--ak install_bundle="$BUNDLE"`；worker 从不自行构建。
 - **Skill。** `agent-evaluation` 的 `SKILL.md` 为调用方概述了派格循环与安装包，`agent-optimization` 按「Running the cells」运行每个 Candidate 的格子。
-- **工具包。** `rsi-opro`、`rsi-ape`、`rsi-ace` 与 `rsi-awm` 逐字节相同的 `references/evaluation.md` 以后台方式运行 Harbor 格子，上限相同，返回一格即派下一格；检出里有安装包时一并传入。
-- **版本。** `rsi-default`、`rsi-opro`、`rsi-ape`、`rsi-ace` 与 `rsi-awm` 升至 `2026.10.11.1`。
+- **工具包。** `opro-rsi-toolkit`、`ape-rsi-toolkit`、`ace-rsi-toolkit` 与 `awm-rsi-toolkit` 逐字节相同的 `references/evaluation.md` 以后台方式运行 Harbor 格子，上限相同，返回一格即派下一格；检出里有安装包时一并传入。
+- **版本。** `default-rsi-toolkit`、`opro-rsi-toolkit`、`ape-rsi-toolkit`、`ace-rsi-toolkit` 与 `awm-rsi-toolkit` 升至 `2026.10.11.2`。
 - **文档。** 「评估中心」页的内置 Benchmark 一节写明了上限及其原因、一个 trial 结束即开始下一个，以及安装包。
