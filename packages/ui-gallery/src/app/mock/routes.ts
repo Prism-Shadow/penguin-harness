@@ -2406,6 +2406,9 @@ router
   )
   .post("/api/projects/:projectId/machines/:machineId/connect", () => readOnly("connect a machine"))
   .post("/api/projects/:projectId/machines/:machineId/restart", () => readOnly("restart a machine"))
+  .post("/api/projects/:projectId/machines/:machineId/sync", () =>
+    readOnly("sync a machine's config"),
+  )
   .post("/api/projects/:projectId/machines/:machineId/stop", () => readOnly("stop a machine"))
   .post("/api/projects/:projectId/machines/:machineId/uninstall", () =>
     readOnly("uninstall from a machine"),
