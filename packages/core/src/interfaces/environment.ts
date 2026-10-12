@@ -354,7 +354,9 @@ export interface EnvironmentConfig {
  *   HTTP_PROXY / HTTPS_PROXY (plus their lowercase twins) are set to `url` and
  *   NO_PROXY / no_proxy to `noProxy`, overriding inherited values; an inherited
  *   ALL_PROXY (any casing) is removed for the same reason. The caller supplies `noProxy`
- *   pre-merged (the hosting server includes the loopback names).
+ *   pre-merged: the hosting server includes the loopback names, and the private and
+ *   link-local ranges as CIDR entries plus `.local`, so commands bypass the proxy for the
+ *   same local destinations its own traffic does.
  * - `null` (or no getter at all) — pass through unchanged.
  * The Agent vault still overrides whichever of these the policy produced: a per-Agent
  * explicit variable outranks the host-level policy.

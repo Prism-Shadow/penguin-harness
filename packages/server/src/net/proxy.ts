@@ -31,6 +31,22 @@
  * would take the whole App down. `localhost,127.0.0.1,::1` is therefore ALWAYS appended
  * to the effective NO_PROXY, regardless of what the environment declares.
  *
+ * Local destinations go direct in both switch-on states, whatever the proxy settings say:
+ * loopback, the private ranges and link-local ({@link LOCAL_NETWORKS}), and `localhost` /
+ * `*.local` names. A desktop proxy (Clash, Surge, a corporate gateway) usually cannot reach
+ * a LAN address at all and answers 502 for it, so a model endpoint at 192.168.x.y would
+ * fail only because a proxy was set. undici's own NO_PROXY parser matches names and exact
+ * addresses but not CIDR ranges, so the choice is made per request in front of
+ * EnvHttpProxyAgent ({@link LocalFirstDispatcher}), and the user's own NO_PROXY keeps
+ * working inside it as before. Names are matched as written, not resolved: a name that
+ * resolves to a private address goes the way its NO_PROXY entry, if any, says.
+ *
+ * Machines are not reached through any of this. A connected machine's API, events and
+ * terminals are channels inside the one ssh session this server holds to it, dialled through
+ * that session's loopback SOCKS port by node:http with an agent of its own
+ * (machines/transport), so neither the proxy variables nor the global dispatcher ever see
+ * that traffic.
+ *
  * The values persisted in server_settings stay authoritative (the routes read/write the
  * repo); this module only mirrors them into the process-global dispatcher. The command
  * subprocess side — keyed on the agent-environment switch: strip the proxy variables
@@ -38,17 +54,112 @@
  * in core (CommandSessionManager, threaded through the session loader as a
  * ProxyEnvPolicy getter), not here.
  */
+import net from "node:net";
 import {
   Agent,
+  Dispatcher,
   EnvHttpProxyAgent,
   ProxyAgent,
   fetch as undiciFetch,
   setGlobalDispatcher,
 } from "undici";
-import type { Dispatcher } from "undici";
 
 /** Loopback names every effective NO_PROXY must contain (see module doc). */
 export const LOOPBACK_NO_PROXY = ["localhost", "127.0.0.1", "::1"] as const;
+
+/**
+ * Loopback, the private ranges and link-local, IPv4 and IPv6: the destinations no proxy is
+ * used for (see module doc). Spelled as CIDR ranges because that is also how they reach a
+ * command's NO_PROXY ({@link agentNoProxy}), which curl (7.86 and later), Python and Go read.
+ */
+export const LOCAL_NETWORKS = [
+  "127.0.0.0/8",
+  "10.0.0.0/8",
+  "172.16.0.0/12",
+  "192.168.0.0/16",
+  "169.254.0.0/16",
+  "::1/128",
+  "fc00::/7",
+  "fe80::/10",
+] as const;
+
+const localNetworks = new net.BlockList();
+for (const range of LOCAL_NETWORKS) {
+  const [address, prefix] = range.split("/") as [string, string];
+  localNetworks.addSubnet(address, Number(prefix), net.isIPv6(address) ? "ipv6" : "ipv4");
+}
+
+/**
+ * Whether a destination host — a URL's hostname, IPv6 brackets and all — is local: a literal
+ * address in {@link LOCAL_NETWORKS} (an IPv4-mapped IPv6 one included), or a `localhost` or
+ * `.local` name. Names are not resolved.
+ */
+export function isLocalDestination(host: string): boolean {
+  let name = host.trim().toLowerCase();
+  if (name.startsWith("[") && name.endsWith("]")) name = name.slice(1, -1);
+  if (name.endsWith(".")) name = name.slice(0, -1);
+  if (name === "localhost" || name.endsWith(".localhost") || name.endsWith(".local")) return true;
+  // A zone id (`fe80::1%en0`) names the interface, not the address.
+  const address = name.split("%")[0]!;
+  const family = net.isIP(address);
+  if (family === 0) return false;
+  return localNetworks.check(address, family === 6 ? "ipv6" : "ipv4");
+}
+
+/**
+ * Sends each request to `direct` when its destination is local ({@link isLocalDestination})
+ * and to `proxied` otherwise. A dispatcher of its own because undici's NO_PROXY cannot express
+ * an address range (see module doc).
+ */
+export class LocalFirstDispatcher extends Dispatcher {
+  readonly #direct: Dispatcher;
+  readonly #proxied: Dispatcher;
+
+  constructor(direct: Dispatcher, proxied: Dispatcher) {
+    super();
+    this.#direct = direct;
+    this.#proxied = proxied;
+  }
+
+  override dispatch(
+    options: Dispatcher.DispatchOptions,
+    handler: Dispatcher.DispatchHandler,
+  ): boolean {
+    const origin = options.origin;
+    let host = "";
+    try {
+      host = origin === undefined ? "" : new URL(String(origin)).hostname;
+    } catch {
+      // No origin to read: the proxied side decides, as it would have alone.
+    }
+    return (isLocalDestination(host) ? this.#direct : this.#proxied).dispatch(options, handler);
+  }
+
+  override close(): Promise<void>;
+  override close(callback: () => void): void;
+  override close(callback?: () => void): Promise<void> | void {
+    const closed = Promise.all([this.#direct.close(), this.#proxied.close()]).then(() => {});
+    if (callback === undefined) return closed;
+    void closed.then(callback, callback);
+  }
+
+  override destroy(): Promise<void>;
+  override destroy(err: Error | null): Promise<void>;
+  override destroy(callback: () => void): void;
+  override destroy(err: Error | null, callback: () => void): void;
+  override destroy(
+    errOrCallback?: Error | null | (() => void),
+    callback?: () => void,
+  ): Promise<void> | void {
+    const err = typeof errOrCallback === "function" ? null : (errOrCallback ?? null);
+    const done = typeof errOrCallback === "function" ? errOrCallback : callback;
+    const destroyed = Promise.all([this.#direct.destroy(err), this.#proxied.destroy(err)]).then(
+      () => {},
+    );
+    if (done === undefined) return destroyed;
+    void destroyed.then(done, done);
+  }
+}
 
 /** The slice of the admin proxy settings the dispatcher mirrors (persisted in server_settings). */
 export interface ProxySettings {
@@ -71,6 +182,21 @@ export function mergedNoProxy(env: NodeJS.ProcessEnv = process.env): string {
   const present = new Set(entries.map((e) => e.toLowerCase()));
   for (const name of LOOPBACK_NO_PROXY) {
     if (!present.has(name)) entries.push(name);
+  }
+  return entries.join(",");
+}
+
+/**
+ * The NO_PROXY a command an Agent runs is given when the explicit proxy address is injected
+ * (app.ts's command-subprocess policy): {@link mergedNoProxy}, then the local ranges of
+ * {@link LOCAL_NETWORKS} as CIDR entries and `.local`, so a command bypasses the proxy for the
+ * same destinations this server does. A tool that does not read CIDR entries skips them.
+ */
+export function agentNoProxy(env: NodeJS.ProcessEnv = process.env): string {
+  const entries = mergedNoProxy(env).split(",");
+  const present = new Set(entries.map((e) => e.toLowerCase()));
+  for (const entry of [...LOCAL_NETWORKS.filter((range) => range !== "::1/128"), ".local"]) {
+    if (!present.has(entry)) entries.push(entry);
   }
   return entries.join(",");
 }
@@ -140,12 +266,21 @@ export function envProxyAgentOptions(
 
 /**
  * Builds the global dispatcher for a settings state (pure choice, exported for tests):
- * app switch off → direct-connect Agent, on → EnvHttpProxyAgent (env-driven, or pinned
- * to the explicit address; see {@link envProxyAgentOptions}).
+ * app switch off → direct-connect Agent, on → local destinations direct and the rest through
+ * EnvHttpProxyAgent (env-driven, or pinned to the explicit address; see
+ * {@link envProxyAgentOptions}). `direct` is the dispatcher local destinations take; a test
+ * hands in one that can reach a private address it cannot bind.
  */
-export function buildProxyDispatcher(settings: ProxySettings, env?: NodeJS.ProcessEnv): Dispatcher {
-  if (!settings.proxyForApp) return new Agent();
-  return new EnvHttpProxyAgent(envProxyAgentOptions(settings.proxyUrl, env));
+export function buildProxyDispatcher(
+  settings: ProxySettings,
+  env?: NodeJS.ProcessEnv,
+  direct: Dispatcher = new Agent(),
+): Dispatcher {
+  if (!settings.proxyForApp) return direct;
+  return new LocalFirstDispatcher(
+    direct,
+    new EnvHttpProxyAgent(envProxyAgentOptions(settings.proxyUrl, env)),
+  );
 }
 
 /** Current settings mirrored for the dispatcher (the DB rows are the persisted truth). */
