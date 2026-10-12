@@ -17,7 +17,7 @@
  * directory, the `~/.local/bin/penguin` symlink on POSIX, and the data root's hmr/ state.
  * No sudo, no service units, no profile edits, and the rest of the data root is untouched.
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -146,18 +146,55 @@ export interface PushPlan {
 }
 
 /**
- * The pushed-state suffix for a display version: the platform bundle's content sha out of a
- * harness.json (`store/platform/<sha>.mjs`), shortened. Falls back to a bare marker for a
- * manifest whose shape this build does not recognize — the suffix is display, not identity;
- * equality checks compare the harness text itself.
+ * The pushed-state suffix of a version: which HARNESS this is — the platform bundle, the CLI
+ * bundle and the web artifact, by the content shas a harness.json names them with
+ * (`store/platform/<sha>.mjs`, `store/cli/<sha>.mjs`, `store/web/<sha>.webz`), folded into one
+ * and shortened. It is what `syncOutOfDate` compares, so it has to move whenever any of the
+ * three does: read off the platform bundle alone, a push that changed only the web app or the
+ * CLI left every machine "up to date" and was never handed over.
+ *
+ * The assets are deliberately no part of it. They are what a harness loads — plugins, the
+ * native modules it pins — not the harness, and are pushed on their own.
+ *
+ * A manifest that names the platform bundle alone keeps that bundle's sha; one whose shape
+ * this build does not recognize gets a bare marker.
  */
 function harnessSuffix(harnessText: string): string {
   try {
-    const parsed = JSON.parse(harnessText) as { platform?: { bundle?: string } };
-    return suffixOfPlatform(parsed.platform?.bundle);
+    const parsed = JSON.parse(harnessText) as {
+      platform?: { bundle?: string };
+      cli?: { bundle?: string };
+      web?: { manifest?: string };
+    };
+    return suffixOfHarness(parsed.platform?.bundle, parsed.cli?.bundle, parsed.web?.manifest);
   } catch {
     return "+hmr";
   }
+}
+
+/**
+ * The suffix for a harness named by its three files, as harnessSuffix describes it: read off a
+ * harness.json here, and off a machine's GET /api/version (runningBuild), whose `bundles` are the
+ * same three paths — so what a machine says it runs is spelled the way a plan's version is.
+ */
+function suffixOfHarness(
+  platformBundle: string | undefined,
+  cliBundle: string | undefined,
+  webManifest: string | undefined,
+): string {
+  const shaOf = (file: string | undefined) => /([0-9a-f]{8,})\.[a-z]+$/.exec(file ?? "")?.[1];
+  const platform = shaOf(platformBundle);
+  if (platform === undefined) return "+hmr";
+  const rest = [shaOf(cliBundle), shaOf(webManifest)].filter(
+    (sha): sha is string => sha !== undefined,
+  );
+  const id =
+    rest.length === 0
+      ? platform
+      : createHash("sha256")
+          .update([platform, ...rest].join("\n"))
+          .digest("hex");
+  return `+hmr.${id.slice(0, 12)}`;
 }
 
 /** The platform bundle's content sha, shortened, out of its path (`store/platform/<sha>.mjs`). */
@@ -165,17 +202,11 @@ function platformSha(bundle: string | undefined): string | null {
   return /([0-9a-f]{8,})\.mjs$/.exec(bundle ?? "")?.[1]?.slice(0, 12) ?? null;
 }
 
-/** The display suffix for a platform bundle path; see harnessSuffix. */
-function suffixOfPlatform(bundle: string | undefined): string {
-  const sha = platformSha(bundle);
-  return sha === null ? "+hmr" : `+hmr.${sha}`;
-}
-
 /** What a machine's server says it runs, read from its GET /api/version. */
 export interface RunningBuild {
   /** The version of the code answering — what runs there, whatever its disk holds. */
   release: string;
-  /** For a person, in the spelling a plan uses: `<release>` or `<release>+hmr.<sha12>`. */
+  /** For a person, in the spelling a plan uses: `<release>` or `<release>+hmr.<id12>`. */
   version: string;
   /** The pushed platform it names (its sha, shortened), or null when nothing is pushed there. */
   platform: string | null;
@@ -205,11 +236,13 @@ export function runningBuild(report: unknown): RunningBuild | null {
   if (harness === null || harness === undefined || typeof harness !== "object") {
     return { release: version, version, platform: null, foreign: false };
   }
-  const bundles = (harness as { bundles?: { platform?: unknown } }).bundles;
-  const bundle = typeof bundles?.platform === "string" ? bundles.platform : undefined;
+  const bundles = (harness as { bundles?: { platform?: unknown; cli?: unknown; web?: unknown } })
+    .bundles;
+  const text = (value: unknown) => (typeof value === "string" ? value : undefined);
+  const bundle = text(bundles?.platform);
   return {
     release: version,
-    version: version + suffixOfPlatform(bundle),
+    version: version + suffixOfHarness(bundle, text(bundles?.cli), text(bundles?.web)),
     platform: platformSha(bundle) ?? "",
     foreign: channel === "release",
   };

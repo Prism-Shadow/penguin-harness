@@ -6,10 +6,15 @@
  * - A source build beside the pushed harness on its disk is that build; a release answering
  *   beside one is not running it, whatever its disk says.
  * - A build is compared by its pushed platform, not by the release half of its version.
+ * - What a machine runs is spelled as the plan for the same harness is: its platform, CLI and web
+ *   bundles together, so a page and a log name one build by one version.
  * - A report that names no version reads as nothing.
  */
-import { describe, expect, it } from "vitest";
-import { runningBuild, runsPlan } from "../src/machines/install-server.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import { planOver, runningBuild, runsPlan } from "../src/machines/install-server.js";
 import type { PushPlan } from "../src/machines/install-server.js";
 
 const HARNESS = {
@@ -40,18 +45,25 @@ const RELEASE_RUNNING = {
   commit: "691ae72f423581e2be145210a942715c79a667ba",
   harness: HARNESS,
 };
-const IMAGE: PushPlan = {
-  baseVersion: "0.2.13",
-  harness: JSON.stringify({ platform: { bundle: "store/platform/9bb5205fcae4ec76.mjs" } }),
-  hmrDir: "/data/machines/checkout-image/x/hmr",
-  version: "0.2.13+hmr.9bb5205fcae4",
-};
+/** The plan that installs HARNESS, made as a server whose store holds it makes one. */
+const store = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-running-build-"));
+fs.writeFileSync(
+  path.join(store, "harness.json"),
+  JSON.stringify({
+    platform: { bundle: HARNESS.bundles.platform },
+    cli: { bundle: HARNESS.bundles.cli },
+    web: { manifest: HARNESS.bundles.web },
+    assets: { dir: HARNESS.assets },
+  }),
+);
+const IMAGE: PushPlan = planOver("0.2.13", store);
+afterAll(() => fs.rmSync(store, { recursive: true, force: true }));
 
 describe("runningBuild", () => {
-  it("reads a machine running its pushed image as that image", () => {
+  it("reads a machine running its pushed image as that image, spelled as its plan", () => {
     expect(runningBuild(IMAGE_RUNNING)).toEqual({
       release: "0.2.13",
-      version: "0.2.13+hmr.9bb5205fcae4",
+      version: IMAGE.version,
       platform: "9bb5205fcae4",
       foreign: false,
     });
