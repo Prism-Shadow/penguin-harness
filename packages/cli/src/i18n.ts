@@ -2183,9 +2183,11 @@ const en: Messages = {
           ? "response incomplete or unparseable"
           : kind === "network"
             ? "network or service temporarily unavailable"
-            : kind === "failed"
-              ? "the model provider returned an error"
-              : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
+            : kind === "image_rejected"
+              ? "the model provider rejected an image in this turn's input (replaced with a note)"
+              : kind === "failed"
+                ? "the model provider returned an error"
+                : "the request failed")(errorCode ?? status)}; sending retry #${attempt}…`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
@@ -3270,9 +3272,11 @@ const zh: Messages = {
           ? "响应不完整或无法解析"
           : kind === "network"
             ? "网络或服务暂时不可用"
-            : kind === "failed"
-              ? "模型服务返回错误"
-              : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
+            : kind === "image_rejected"
+              ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
+              : kind === "failed"
+                ? "模型服务返回错误"
+                : "请求失败")(errorCode ?? status)}，正在发起第 ${attempt} 次重试……`,
   compactionStart: (mode, reason) =>
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`

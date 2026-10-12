@@ -590,7 +590,8 @@ export class Agent {
     // subagent_id produced by the former, so exposing it alone is meaningless). Tool entries
     // are also selected by the context model's type through their forModel annotation
     // (entries without it are unaffected — the built-in set carries none; read_file decides
-    // per model at runtime through the injected vision describer).
+    // per model at runtime through the injected vision describer), and a model that views
+    // images gets read_file without the `prompt` it would put to the vision model.
     const canSpawn = spec.subagentDepth < MAX_SUBAGENT_DEPTH;
     const baseToolConfig = buildToolConfig(state);
     const modelVision = modelEntry.vision !== false;

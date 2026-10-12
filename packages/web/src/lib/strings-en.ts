@@ -3406,9 +3406,11 @@ Scenarios:
             ? "Response incomplete or unparseable"
             : kind === "network"
               ? "Network or service temporarily unavailable"
-              : kind === "failed"
-                ? "The model provider returned an error"
-                : "The request failed";
+              : kind === "image_rejected"
+                ? "The model provider rejected an image in this turn's input (replaced with a note)"
+                : kind === "failed"
+                  ? "The model provider returned an error"
+                  : "The request failed";
       const action =
         state === "gaveUp"
           ? `giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`
@@ -3426,6 +3428,10 @@ Scenarios:
     reconnectRetryNow: "Retry now",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */
     reconnectGiveUp: "Give up",
+    /** "Retry" on a failed run's last line (the error banner, or a reconnect line that gave up): sends the failed turn's input again, with no new message. */
+    retryFailedRun: "Retry",
+    /** Toast when Retry finds nothing held: the failed turn's input already went out with a later message. */
+    retryNothing: "Nothing to retry: the failed turn's input has already been sent.",
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:

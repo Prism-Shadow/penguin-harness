@@ -3527,9 +3527,11 @@ Benchmark：
             ? "响应不完整或无法解析"
             : kind === "network"
               ? "网络或服务暂时不可用"
-              : kind === "failed"
-                ? "模型服务返回错误"
-                : "请求失败";
+              : kind === "image_rejected"
+                ? "模型服务拒绝了本轮输入中的图片（已换成文字说明）"
+                : kind === "failed"
+                  ? "模型服务返回错误"
+                  : "请求失败";
       const action =
         state === "gaveUp"
           ? `第 ${attempt} 次尝试后放弃${errorMessage ? `：${errorMessage}` : ""}`
@@ -3547,6 +3549,10 @@ Benchmark：
     reconnectRetryNow: "立即重试",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */
     reconnectGiveUp: "放弃",
+    /** "Retry" on a failed run's last line (the error banner, or a reconnect line that gave up): sends the failed turn's input again, with no new message. */
+    retryFailedRun: "重试",
+    /** Toast when Retry finds nothing held: the failed turn's input already went out with a later message. */
+    retryNothing: "没有可重试的内容：失败那一轮的输入已随后续消息发出。",
     imageAlt: "用户上传的图片",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:

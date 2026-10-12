@@ -265,16 +265,18 @@ The fatal detector is a deterministic allowlist. A gateway that phrases a transi
 
 A `fatal` failure stops the run at once, without retrying. It covers:
 
-- a definitive provider `4xx` rejection, such as invalid parameters or an exhausted quota; `408` and `429` are excluded from this class;
+- a definitive provider `4xx` rejection, such as invalid parameters or an exhausted quota (`rejected`); `408` and `429` are excluded from this class;
 - a credential failure (`auth`);
 - a deterministic client-side rejection, such as fast mode on a model without a fast tier (`unsupported`);
 - input that cannot be assembled into a request (`invalid_input`).
 
 An identical request can only fail the same way, so the ladder would only delay the actionable error.
 
+One rejection is retried anyway: a provider 4xx on a request whose input carries images. Providers word such refusals too many ways to match reliably, so the engine takes any 4xx on an image-bearing input as a rejection of the images (`image_rejected`): it replaces each image with a fixed note saying the request was rejected while it carried the image (the provider's error reaches the model through the retry's `[request_error]` line, see below), records that attempt as `retryable` with `retry_in_ms: 0`, and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement. A 4xx on an input with no image is fatal like any other: a refused image already in the committed history is beyond the reach of a retry.
+
 ### How a turn is retried
 
-On a reconnect, the engine re-sends the original input plus a `[turn_retried]` block carrying the previous partial output. The block carries the accumulated output into every retry. Tools are never re-executed.
+On a reconnect, the engine re-sends the original input plus a `[turn_retried]` block carrying the previous partial output. The block carries the accumulated output into every retry. Tools are never re-executed. The block ends with one `[request_error code=…]…[/request_error]` line quoting the latest failure's error code and message as they came. It is rebuilt on every attempt, so a turn retried five times still carries one such line, and the model can read why the request failed instead of being handed the same input again with no word of it. A `[turn_aborted]` block built after a failed request carries the same single line, so the next message or a Retry tells the model why the turn is being sent again.
 
 ### The backoff ladder
 
