@@ -4701,7 +4701,16 @@ Benchmark：
     colDuration: "耗时",
     colCase: "题目",
     colRun: "运行",
-    colSession: "Session",
+    /** A run label in the evaluation dialog opens the Session the run ran in. */
+    runOpenSession: "打开这次运行的会话",
+    /** The note a run link shows instead when its Session is archived, so in no sidebar. */
+    runArchivedTitle: "这次运行的会话已归档",
+    runArchivedBody: "已归档的会话不在侧栏里。请到「设置 › 已归档对话」里按标题或 ID 找到它。",
+    runArchivedSessionTitle: "标题",
+    runArchivedSessionId: "ID",
+    runArchivedCopyId: "复制会话 ID",
+    runArchivedOpen: "打开已归档对话",
+    runSessionUntitled: "（未命名会话）",
     /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
     copyTrialName: "复制 Harbor trial 名称",
     // The evaluation detail dialog, and the Ask AI dialog both detail dialogs open.

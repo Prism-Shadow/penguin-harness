@@ -448,7 +448,6 @@ export function BenchmarkDetail({
           benchmarkId={bm.id}
           evaluation={openEvaluation}
           caseTitles={caseTitles}
-          onOpenCase={setOpenCaseId}
           currency={currency}
           onClose={() => setOpenEvaluationIndex(null)}
         />
