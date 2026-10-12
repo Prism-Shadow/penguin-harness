@@ -23,7 +23,7 @@ export interface PlatformCatalogModel {
   /** Fraction off `pricing` the platform is running (0.5 = half price); absent when none. */
   discount?: number;
   baseUrl: string;
-  clientType: "google-genai" | "deepseek-official";
+  clientType: "mmsp";
 }
 
 /** Validated snapshot returned by Penguin Go's client-model catalog. */
@@ -32,8 +32,7 @@ export interface PlatformModelCatalog {
 }
 
 /**
- * Catalog merge result. `updated` is always 0: a merge adds what is new and never rewrites a row
- * the Project already holds (its price, routing and promotion may be the user's own).
+ * Catalog merge result. `updated` counts route migrations; existing metadata is preserved.
  */
 export interface PlatformModelApplyResult {
   added: number;

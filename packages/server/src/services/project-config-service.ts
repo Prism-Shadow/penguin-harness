@@ -53,6 +53,7 @@ import {
   imageUrlMessage,
   metaMaxTokens,
   migrateProjectConfigTable,
+  migratePenguinGoRoutes,
   parseProviderTable,
   presetModelEntries,
   presetPromotions,
@@ -2096,14 +2097,13 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the table holds is followed, the row storing only where it differs from the platform's
    * group value (the relay URL every model shares); a field the table lacks is written on the
    * row in full. A row the group
-   * already holds is never rewritten — not its price, not its protocol, not its promotion: the
-   * user may have changed them, and only "Restore defaults", behind its confirmation, puts
-   * existing rows back.
+   * already holds keeps its metadata and promotion. Go-managed routes switch to MMSP,
+   * including model overrides; user-redirected endpoints retain their configuration.
    *
    * Authorization (`applyKeyToExisting`) also writes the delivered key once, as the group's
    * key (`[providers.penguin-go]`); new rows carry no key of their own and follow it.
    *
-   * Returns how many rows were added, `updated` (always 0 — nothing existing is refreshed),
+   * Returns how many rows were added, `updated` (routes changed),
    * and `applied`: on authorization, how many of the group's rows now use the group key;
    * otherwise the rows added.
    */
@@ -2114,7 +2114,11 @@ export class ProjectConfigService implements ProjectConfigStore {
     apiKey: string,
     applyKeyToExisting: boolean,
   ): Promise<PlatformModelApplyResult> {
-    const raw = await this.readRaw(projectId);
+    const raw = structuredClone(await this.readRaw(projectId));
+    const updated =
+      provider === PENGUIN_GO_PROVIDER_ID && catalog.models.length > 0
+        ? migratePenguinGoRoutes(raw, catalog.models[0]!.baseUrl)
+        : 0;
     const current = asArray(raw.models);
     const known = new Set(
       current.flatMap((model) =>
@@ -2161,7 +2165,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
 
     const nextModels = [...current, ...added];
-    if (added.length > 0 || applyKeyToExisting) {
+    if (added.length > 0 || updated > 0 || applyKeyToExisting) {
       const providers = applyKeyToExisting
         ? patchProviderTable(asTable(raw.providers), provider, { apiKey }).table
         : raw.providers;
@@ -2188,7 +2192,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     const applied = applyKeyToExisting
       ? rowsFollowingGroupKey({ providers: raw.providers, models: nextModels }, provider)
       : added.length;
-    return { added: added.length, updated: 0, applied };
+    return { added: added.length, updated, applied };
   }
 
   /**

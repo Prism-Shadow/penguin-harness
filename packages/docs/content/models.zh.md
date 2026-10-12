@@ -506,12 +506,14 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 ### Penguin Go 分组
 
-`penguin-go` 和 TokenDance 一样是内置分组：一个中转服务，base URL 为 `https://token.penguin.ooo/api`，新建 Project 时写进分组设置。组内模型使用两种协议，因此各自存着自己的协议。新建的 Project 立即带上这个分组的目录模型；在该分组之前创建的 Project，用**同步新增模型**把它们补上。
+`penguin-go` 是内置中转分组。预设模型直接使用 `mmsp` HTTP 客户端，base URL 为 `https://go.penguin.ooo/api/v1`，SDK 自行追加 `/stream`。授权和目录同步发送 `x-penguin-protocol: mmsp`，使用平台下发的 `endpoints.mmsp`，无需 OpenAI、Google 或 Anthropic 旧端点字段。
+
+已有 Project 加载时直接将 Go 管理的分组和模型级路由切换到 MMSP，无需网络探测、重新登录或签发 key。用户自建分组及改为其他服务器的 Go 模型保留原配置。
 
 分组的 key 从标题栏取得，见[连接账户](#连接账户)。连接以及**已连接**菜单里的**同步模型**还会读取平台自己的模型目录：
 
 - 平台提供而 Project 没有的模型会被添加进来，连同协议、显示名、上下文窗口、视觉能力、牌价和促销折扣。分组设置里有 base URL 时，端点只在与平台的中转地址不同时写在条目上，因此指向代理的分组会把新模型一并带过去；分组设置里没有 base URL 时，条目带上平台的完整地址。它们不带 key，使用分组密钥。纯向量（embedding）模型不收录。
-- Project 已有的模型原样保留，价格、协议和折扣都不动；任何模型都不会被删除。
+- 已有模型保留 ID、显示名、价格、折扣、上下文、视觉设置、key 和当前选择；仅更新 Go 管理的路由，不删除模型。详细目录仍使用 `/api/client/models`，因为 `/api/v1/models` 只有基础模型列表。
 - 和其他分组一样，`.project_config.toml` 里存的是牌价，促销存在服务端的数据库里。**恢复默认**保留这个分组的促销，它们归平台所有。这条记录丢失后，用量按牌价计价。
 
 平台报的是高峰档费率，单位是每百万 Token 多少美元。分组里的 DeepSeek 条目跟随 DeepSeek 当前的模型阵容，只有 `deepseek-flash` 和 `deepseek-v4-pro`，并声明与直连 DeepSeek 分组相同的空闲时段，因此在北京时间工作日 9:00–12:00、14:00–18:00 之外，卡片和成本记录都按半价计算。

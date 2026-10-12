@@ -507,12 +507,14 @@ MiniMax's official client reads `MINIMAX_API_KEY`. The built-in MiniMax preset c
 
 ### The Penguin Go group
 
-`penguin-go` is a built-in group like TokenDance: a relay behind the base URL `https://token.penguin.ooo/api`, which a new Project stores in the group's settings. Its models use two protocols, so each stores its own. A new Project gets the group's catalog models right away; a Project created before the group adds them with **Add new models**.
+`penguin-go` is a built-in relay group. Its preset models use the `mmsp` HTTP client with base URL `https://go.penguin.ooo/api/v1`; the SDK appends `/stream`. Authorization and model sync send `x-penguin-protocol: mmsp` and use the platform's `endpoints.mmsp`. Legacy OpenAI, Google and Anthropic endpoint fields are not required.
+
+Existing Projects switch their Go-managed group and model-level routes to MMSP when loaded, without a network probe, login or new key. User-created groups and Go rows redirected to other servers retain their configuration.
 
 The group's key comes from its header; see [Connect an account](#connect-an-account). Connecting, and **Sync models** in the **Connected** menu, also read the platform's own model catalog:
 
 - Models the platform offers and the Project does not have are added, with their protocol, display name, context window, vision flag, list price and promotion. While the group's settings hold a base URL, an added model stores an endpoint only where it differs from the platform's relay URL, so a group you pointed at a proxy takes it along; with no base URL there, the model stores the platform's in full. They carry no key and use the group key. Pure embedding models are left out.
-- Models the Project already has are left exactly as they are, prices, protocol and promotion included, and nothing is ever deleted.
+- Existing models retain their ids, display names, prices, promotions, context and vision settings, keys and current selections. Only Go-managed routing changes; nothing is deleted. The detailed catalog remains `/api/client/models`, because `/api/v1/models` contains only the basic model list.
 - As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database. **Restore defaults** keeps this group's promotions, which belong to the platform. If that record is lost, usage is priced at the list price.
 
 The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their cards and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.

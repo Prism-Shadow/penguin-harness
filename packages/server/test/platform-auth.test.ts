@@ -50,6 +50,7 @@ const deliveryBody = {
   connection: {
     apiKey: "sk-penguin-go-secret-0001",
     endpoints: {
+      mmsp: "https://go.penguin.ooo/api/v1",
       openai: "https://token.penguin.ooo/api",
       google: "https://token.penguin.ooo/api",
       anthropic: "https://token.penguin.ooo/api/anthropic",
@@ -118,7 +119,7 @@ describe("Penguin Go key delivery validation", () => {
         models: [
           {
             modelId: "gemini-3.8-flash",
-            clientType: "google-genai",
+            clientType: "mmsp",
             // A promoted model normalizes to its list price, which is what a Project stores,
             // and the fraction off it; the billed price is only checked against the two.
             pricing: {
@@ -131,7 +132,7 @@ describe("Penguin Go key delivery validation", () => {
           },
           {
             modelId: "deepseek-future",
-            clientType: "deepseek-official",
+            clientType: "mmsp",
             pricing: { unit: "usd_per_mtok", cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
           },
         ],
@@ -294,10 +295,13 @@ describe("Penguin Go key authorization routes", () => {
     ]).size;
     expect(
       initialPenguinGoModels.every(
-        (model) => model.effective.baseUrl === "https://token.penguin.ooo/api",
+        (model) => model.effective.baseUrl === "https://go.penguin.ooo/api/v1",
       ),
     ).toBe(true);
-    expect(initial.providers["penguin-go"]).toEqual({ baseUrl: "https://token.penguin.ooo/api" });
+    expect(initial.providers["penguin-go"]).toEqual({
+      baseUrl: "https://go.penguin.ooo/api/v1",
+      clientType: "mmsp",
+    });
     expect((await member.post(`${base()}/start`, {})).status).toBe(403);
     const unauthorizedSync = await owner.post(`${base()}/sync`, {});
     expect(unauthorizedSync.status).toBe(409);
@@ -337,16 +341,19 @@ describe("Penguin Go key authorization routes", () => {
       ),
     ).toBe(true);
     // A model the built-in catalog does not know arrives with the platform's facts, and with
-    // its routing where it differs from the group's table: the protocol (the group sets none),
-    // not the relay endpoint the group's table already holds.
+    // its routing inherited from the group's shared MMSP connection.
     const deepseekFuture = penguinGoModels.find((model) => model.modelId === "deepseek-future");
     expect(deepseekFuture).toMatchObject({
       displayName: "DeepSeek Future",
       contextWindow: 1_000_000,
-      clientType: "deepseek-official",
       vision: false,
       pricing: { cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
-      effective: { baseUrl: "https://token.penguin.ooo/api", baseUrlSource: "provider" },
+      effective: {
+        baseUrl: "https://go.penguin.ooo/api/v1",
+        baseUrlSource: "provider",
+        clientType: "mmsp",
+        clientTypeSource: "provider",
+      },
     });
     expect(deepseekFuture).not.toHaveProperty("credential");
     expect(deepseekFuture).not.toHaveProperty("maxTokens");
@@ -452,12 +459,13 @@ describe("Penguin Go key authorization routes", () => {
     expect(future).toMatchObject({
       displayName: "Gemini Future",
       contextWindow: 1_048_576,
-      clientType: "google-genai",
       vision: true,
       pricing: { cacheRead: 0.1, cacheWrite: 0.5, output: 2 },
       discount: 0.5,
       effective: {
-        baseUrl: "https://token.penguin.ooo/api",
+        clientType: "mmsp",
+        clientTypeSource: "provider",
+        baseUrl: "https://go.penguin.ooo/api/v1",
         baseUrlSource: "provider",
         apiKeySource: "provider",
         apiKeyMasked: "sk-p…0001",
@@ -481,9 +489,9 @@ describe("Penguin Go key authorization routes", () => {
     ).toBe(200);
     expect((await authorize()).status).toBe("completed");
     const future = (await models()).models.find((model) => model.modelId === "deepseek-future")!;
-    // Stored bare of an endpoint, so it runs on the proxy with the group key; its protocol is
-    // its own (the group sets none).
-    expect(future.clientType).toBe("deepseek-official");
+    // Stored bare of an endpoint and protocol, following the proxy and MMSP group defaults.
+    expect(future.clientType).toBeUndefined();
+    expect(future.effective.clientType).toBe("mmsp");
     expect(future).not.toHaveProperty("credential");
     expect(future.effective).toMatchObject({
       baseUrl: "https://relay-proxy.example/api",
@@ -514,8 +522,9 @@ describe("Penguin Go key authorization routes", () => {
     const synced = await sync();
     expect(synced.added).toBe(1);
     const gemini = synced.models.find((model) => model.modelId === "gemini-future")!;
-    expect(gemini.clientType).toBe("google-genai");
-    expect(gemini.credential).toEqual({ baseUrl: "https://token.penguin.ooo/api" });
+    expect(gemini.clientType).toBeUndefined();
+    expect(gemini.effective.clientType).toBe("mmsp");
+    expect(gemini.credential).toEqual({ baseUrl: "https://go.penguin.ooo/api/v1" });
     // The model the proxy took along is unchanged.
     expect(synced.models.find((model) => model.modelId === "deepseek-future")).not.toHaveProperty(
       "credential",
@@ -530,7 +539,10 @@ describe("Penguin Go key authorization routes", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as ModelsResponse;
-    expect(body.providers["penguin-go"]).toEqual({ baseUrl: "https://token.penguin.ooo/api" });
+    expect(body.providers["penguin-go"]).toEqual({
+      baseUrl: "https://go.penguin.ooo/api/v1",
+      clientType: "mmsp",
+    });
     const rows = body.models.filter((model) => model.provider === "penguin-go");
     expect(rows.map((model) => model.modelId)).toEqual(
       authorized.models.filter((m) => m.provider === "penguin-go").map((m) => m.modelId),
