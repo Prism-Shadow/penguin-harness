@@ -13,6 +13,11 @@
  * Settings dialog's rail) registers its forms under a scope name and asks about that scope
  * alone: closing a dialog must not discard a draft on the page beneath it. A route change and a
  * page unload ask about every form.
+ *
+ * **Saves in flight.** Beside the dirty forms the registry holds the saves still running, by the
+ * same scopes. A dialog's close does nothing while one runs in its scope: a close then would offer
+ * to discard edits the request is about to store. A dialog whose pages save on their own (the
+ * Settings and Project settings dialogs) cannot see those saves, so the pages register them here.
  */
 import { createStore } from "zustand/vanilla";
 
@@ -34,7 +39,7 @@ export interface UnsavedState {
 /** The dirty forms and whether the prompt is up. Written only through the functions below. */
 export const unsavedStore = createStore<UnsavedState>(() => ({ entries: [], asking: false }));
 
-const inScope = (entry: UnsavedEntry, scope: string | undefined): boolean =>
+const inScope = (entry: { scope: string | null }, scope: string | undefined): boolean =>
   scope === undefined || entry.scope === scope;
 
 /** Registers one dirty form; the handle is what {@link clearUnsaved} takes. */
@@ -67,6 +72,36 @@ export function discardUnsaved(scope?: string): void {
   if (dropped.length === 0) return;
   unsavedStore.setState({ entries: entries.filter((e) => !inScope(e, scope)) });
   for (const entry of dropped) entry.discard?.();
+}
+
+/** One save in flight. */
+interface SavingEntry {
+  id: symbol;
+  /** The surface whose edits the request is storing. */
+  scope: string;
+}
+
+/**
+ * The saves in flight. A plain list rather than a store: it is read only when a close is
+ * attempted, and nothing on screen follows it (a Save button shows its own request).
+ */
+let saving: readonly SavingEntry[] = [];
+
+/** Registers one save in flight under `scope`; the handle is what {@link clearSaving} takes. */
+export function markSaving(scope: string): symbol {
+  const id = Symbol("saving");
+  saving = [...saving, { id, scope }];
+  return id;
+}
+
+/** Forgets one save: it answered, or its form unmounted. A handle already gone is a no-op. */
+export function clearSaving(id: symbol): void {
+  saving = saving.filter((e) => e.id !== id);
+}
+
+/** Whether a save is in flight — in `scope` when one is named, anywhere otherwise. */
+export function isSaving(scope?: string): boolean {
+  return saving.some((e) => inScope(e, scope));
 }
 
 /** The question on screen, shared by every caller that asks while it is up. */

@@ -6,8 +6,8 @@
  * dialog's Create), which is live only once something changed and nothing is wrong; the command
  * policy's master switch writes the moment it is flipped. Leaving with unsaved edits asks first,
  * once, whichever way: the settings dialog's own tab rail, Esc, the ×, a press outside, or
- * Cancel. Each dialog's forms are mounted only while it is open, so every opening starts from
- * what is stored.
+ * Cancel; while a save is in flight neither dialog closes. Each dialog's forms are mounted only
+ * while it is open, so every opening starts from what is stored.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -40,6 +40,7 @@ import {
   toastSuccess,
   useFormDraft,
   useGuardedClose,
+  useSaving,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -217,8 +218,10 @@ type SettingsTab = keyof typeof TAB_ICON_PATHS;
  * single-user desktop app (the server answers desktop_single_user on those routes), so the
  * tab is hidden there outright. Each page component owns its data and save flow, and every
  * form on them registers under PROJECT_SETTINGS_SCOPE: a tab switch unmounts the page it
- * leaves, so it asks first while that page holds unsaved edits, as the dialog's close does. The
- * body is mounted only while the dialog is open, so it starts on General every time.
+ * leaves, so it asks first while that page holds unsaved edits, as the dialog's close does. A
+ * page's Save registers there too while it is in flight (`useSaving`), and the dialog's close
+ * does nothing until it answers. The body is mounted only while the dialog is open, so it starts
+ * on General every time.
  */
 export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return open ? <ProjectSettingsBody onClose={onClose} /> : null;
@@ -322,6 +325,7 @@ function GeneralSection({
   });
   const name = form.draft;
   const [nameBusy, setNameBusy] = useState(false);
+  useSaving(nameBusy, PROJECT_SETTINGS_SCOPE);
   const [nameError, setNameError] = useState<string | undefined>(undefined);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -584,6 +588,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
   const [models, setModels] = useState<ModelsResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useSaving(busy, PROJECT_SETTINGS_SCOPE);
   // The selects are fields of this form (they save with it), and the default-model pick is a
   // paired reference seeded from the models response's defaultModel.
   const form = useFormDraft(chatDefaultsDraft(saved, models?.defaultModel ?? null), {
@@ -1004,7 +1009,9 @@ export function RuleEditor({
 function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
   const [saved, setSaved] = useState<CommandPolicyDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** The list's Save is in flight, which holds the dialog's close (the switch's write does not). */
   const [busy, setBusy] = useState(false);
+  useSaving(busy, PROJECT_SETTINGS_SCOPE);
   const form = useFormDraft<CommandPolicyRuleDto[]>(saved?.rules ?? [], {
     scope: PROJECT_SETTINGS_SCOPE,
     normalize: (list) =>

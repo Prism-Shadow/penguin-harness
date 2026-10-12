@@ -2,7 +2,8 @@
  * A server behind the package's fetch fake ({@link stubFetch}) for the Settings dialog's suites:
  * the signed-in admin (`/api/me`) and the server-global settings (`/api/admin/settings`), which
  * a PUT merges into and echoes, the way the real route does. A test can refuse the next PUT
- * with {@link AdminSettingsServer.refuseNext}.
+ * with {@link AdminSettingsServer.refuseNext}, or keep writes in flight with
+ * {@link AdminSettingsServer.hold}.
  */
 import type { MeResponse, ServerSettings } from "@prismshadow/penguin-server/api";
 import { apiError, json, stubFetch } from "./fetch";
@@ -48,6 +49,9 @@ export interface AdminSettingsServer {
   puts(): unknown[];
   /** The next settings PUT answers this error instead of storing. */
   refuseNext(status: number, code: string): void;
+  /** Writes wait until {@link AdminSettingsServer.release} is called (a save in flight). */
+  hold(): void;
+  release(): void;
 }
 
 export function adminSettingsServer(
@@ -55,6 +59,7 @@ export function adminSettingsServer(
 ): AdminSettingsServer {
   let settings = { ...initial };
   let refusal: { status: number; code: string } | null = null;
+  let held: Array<() => void> | null = null;
   const answer = (request: FetchRequest): Response => {
     if (request.path === "/api/me") return json(ADMIN_ME);
     if (request.path === "/api/admin/settings/proxy-probe") return json({ targets: [] });
@@ -87,7 +92,12 @@ export function adminSettingsServer(
     }
     return apiError(404, "not_found");
   };
-  const fetch = stubFetch(answer);
+  const fetch = stubFetch(async (request) => {
+    if (held !== null && request.method !== "GET") {
+      await new Promise<void>((resolve) => held!.push(resolve));
+    }
+    return answer(request);
+  });
   return {
     fetch,
     stored: () => settings,
@@ -97,6 +107,14 @@ export function adminSettingsServer(
         .map((r) => r.body),
     refuseNext: (status, code) => {
       refusal = { status, code };
+    },
+    hold: () => {
+      held = [];
+    },
+    release: () => {
+      const waiting = held ?? [];
+      held = null;
+      for (const resume of waiting) resume();
     },
   };
 }

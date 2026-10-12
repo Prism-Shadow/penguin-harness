@@ -13,9 +13,9 @@
  * differs from the stored one and both are whole numbers — a box left empty or holding anything
  * else is marked inline, with Save held, rather than refused after the click — and Reset puts
  * the stored values back. Leaving the page, or the dialog, with unsaved values asks first
- * (settings-dialog.tsx). Saving takes effect immediately — the attachment validators and the
- * request body cap both read the setting per request — so there is nothing to restart and
- * nothing to warn about.
+ * (settings-dialog.tsx), and the dialog does not close while Save is in flight. Saving takes
+ * effect immediately — the attachment validators and the request body cap both read the setting
+ * per request — so there is nothing to restart and nothing to warn about.
  */
 import { useEffect, useState } from "react";
 import type { ServerSettings } from "@prismshadow/penguin-server/api";
@@ -26,6 +26,7 @@ import {
   toastError,
   toastSuccess,
   useFormDraft,
+  useSaving,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -63,7 +64,9 @@ export function UploadsSection() {
    * about the pair, so it marks both boxes. Cleared by the next keystroke.
    */
   const [rangeError, setRangeError] = useState<string | null>(null);
+  /** Save is in flight, which holds the dialog's close until it answers. */
   const [busy, setBusy] = useState(false);
+  useSaving(busy, SETTINGS_SCOPE);
 
   const adopt = (next: ServerSettings) => {
     setSettings(next);

@@ -1,9 +1,11 @@
 /**
  * The unsaved-changes registry (src/components/forms/unsaved-changes/unsaved-changes.ts): which
- * forms a leave finds dirty, what a leave does when it finds one, and the unload guard.
+ * forms a leave finds dirty and which saves a dialog's close finds in flight, what a leave does
+ * when it finds a dirty form, and the unload guard.
  *
  * - A dirty form is found by its own scope and by an unscoped question, never by another scope;
  *   cleared, it is gone.
+ * - A save in flight is found the same way; once it has answered it is gone.
  * - A leave with nothing dirty in its scope goes at once, without asking — a dirty form in
  *   another scope does not hold it.
  * - A leave that finds a dirty form asks; on "discard" every form in the scope is reset and
@@ -18,11 +20,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   answerDiscard,
+  clearSaving,
   clearUnsaved,
   confirmDiscard,
   discardUnsaved,
   guardLeave,
   hasUnsaved,
+  isSaving,
+  markSaving,
   markUnsaved,
   registerUnsavedHost,
   sameDraft,
@@ -36,12 +41,21 @@ const mountHost = (): void => {
   hosts.push(registerUnsavedHost());
 };
 
+/** Saves a test started, answered after it. */
+const saves: symbol[] = [];
+const startSave = (scope: string): symbol => {
+  const id = markSaving(scope);
+  saves.push(id);
+  return id;
+};
+
 /** Lets the awaited prompt answer reach `guardLeave`'s continuation. */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 afterEach(() => {
   answerDiscard(false);
   for (const unregister of hosts.splice(0)) unregister();
+  for (const id of saves.splice(0)) clearSaving(id);
   discardUnsaved();
 });
 
@@ -58,6 +72,23 @@ describe("which forms are dirty", () => {
     clearUnsaved(id);
     clearUnsaved(id);
     expect(hasUnsaved()).toBe(false);
+  });
+});
+
+describe("which saves are in flight", () => {
+  it("finds a save by its scope and by an unscoped question, never by another scope", () => {
+    startSave("settings");
+    expect(isSaving("settings")).toBe(true);
+    expect(isSaving()).toBe(true);
+    expect(isSaving("project-settings")).toBe(false);
+  });
+
+  it("forgets a save once it has answered, and clearing it twice is harmless", () => {
+    const id = startSave("settings");
+    clearSaving(id);
+    clearSaving(id);
+    expect(isSaving("settings")).toBe(false);
+    expect(isSaving()).toBe(false);
   });
 });
 

@@ -19,11 +19,12 @@
  *   against the new baseline (`useFormDraft`).
  *
  * The draft registers under the Settings dialog's scope, so switching pages, closing the dialog
- * or picking another machine with a dirty card asks first.
+ * or picking another machine with a dirty card asks first; while the card's Save is in flight
+ * the dialog does not close.
  */
 import { useState } from "react";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
-import { Button, toastError, toastSuccess, useFormDraft } from "@prismshadow/penguin-ui";
+import { Button, toastError, toastSuccess, useFormDraft, useSaving } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -165,6 +166,8 @@ export function PluginCard({
     scope: SETTINGS_SCOPE,
     normalize: (draft) => sentForm(members, draft),
   });
+  // The card's Save holds the dialog's close until it answers; a switch's write does not.
+  useSaving(busy === card.name, SETTINGS_SCOPE);
   /** Fields the server refused at the last save, by `<plugin>\0<field>` (a table's cells by `.row.column`). */
   const [refused, setRefused] = useState<Record<string, string>>({});
   /** Switches mid-write, at the position they were flipped to. */

@@ -6,6 +6,8 @@
  *   editing" stays on the page with the text, "discard" switches and the text is gone. That
  *   holds for the display name and for a rule half typed in the security page's rule editor.
  * - Esc asks while a page holds edits; an untouched dialog closes at once.
+ * - While a page's Save is in flight (the rule list's), Esc, the × and a press outside do
+ *   nothing, and no question is asked; once the save has answered, the dialog closes at once.
  * - The display name's Save waits for a name other than the stored one; typing the stored name
  *   back is no change.
  * - The create dialog waits for an id that keeps the rule, says a broken one under the field as
@@ -32,13 +34,15 @@ import {
   hasButton,
   mount,
   pressEscape,
+  pressScrim,
+  run,
   type,
   unmountAll,
   waitFor,
 } from "./helpers/dom";
 
 async function openSettings() {
-  projectSettingsServer();
+  const server = projectSettingsServer();
   const onClose = vi.fn();
   await mount(
     h(
@@ -50,7 +54,7 @@ async function openSettings() {
   await waitFor(
     () => document.querySelector(`input[aria-label="${en.project.displayName}"]`) !== null,
   );
-  return onClose;
+  return { server, onClose };
 }
 
 const promptOpen = () => hasButton(en.common.discard);
@@ -99,7 +103,7 @@ describe("the Project settings dialog", () => {
   });
 
   it("asks on Esc while a page holds edits, and closes an untouched dialog at once", async () => {
-    const onClose = await openSettings();
+    const { onClose } = await openSettings();
     await type(nameField(), "Research lab");
     await pressEscape();
     expect(promptOpen()).toBe(true);
@@ -107,6 +111,29 @@ describe("the Project settings dialog", () => {
     expect(onClose).not.toHaveBeenCalled();
 
     await type(nameField(), "Research");
+    await pressEscape();
+    expect(promptOpen()).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds every close while a page's Save is in flight, and closes once it has answered", async () => {
+    const { server, onClose } = await openSettings();
+    await click(button(en.project.settingsTabSecurity));
+    await waitFor(() => hasButton(en.common.delete));
+    await click(button(en.common.delete));
+    server.hold();
+    await click(button(en.common.save));
+    // One close at a time: a prompt opened by one would be answered by a later press on its scrim.
+    for (const close of [pressEscape, () => click(button("Close")), pressScrim]) {
+      await close();
+      expect(promptOpen()).toBe(false);
+    }
+    expect(onClose).not.toHaveBeenCalled();
+    expect(dialogs()).toHaveLength(1);
+
+    await run(server.release);
+    await waitFor(() => !hasUnsaved());
+    expect(server.policy().rules).toEqual([]);
     await pressEscape();
     expect(promptOpen()).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(1);

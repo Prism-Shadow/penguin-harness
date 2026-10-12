@@ -11,10 +11,11 @@
  * is the kind of edit people set and then lose by closing the dialog. Typed text is the one
  * thing here that still needs an explicit commit, so the nickname keeps a Save — beside the
  * field, not under the page, live only while the trimmed text differs from the stored nickname.
- * Leaving the page or the dialog with an unsaved nickname asks first (settings-dialog.tsx).
- * Restore default is a write like any other on both rows, so the
- * two buttons next to one control never disagree about when they act. The avatar's asks first:
- * it deletes the uploaded picture, which only a fresh upload brings back.
+ * Leaving the page or the dialog with an unsaved nickname asks first (settings-dialog.tsx), and
+ * the dialog does not close while a nickname write is in flight. Restore default is a write like
+ * any other on both rows, so the two buttons next to one control never disagree about when they
+ * act. The avatar's asks first: it deletes the uploaded picture, which only a fresh upload brings
+ * back.
  *
  * Both control rows are rigid and the field is what gives: the buttons carry `shrink-0` and the
  * nickname field `min-w-0`, so a narrow dialog takes width from the field rather than from the
@@ -43,6 +44,7 @@ import {
   buttonClass,
   toastSuccess,
   useFormDraft,
+  useSaving,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -78,6 +80,9 @@ export function ProfileSection() {
   });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingWrite | null>(null);
+  // A nickname write (Save, or Restore default) holds the dialog's close until it answers; an
+  // avatar write is direct manipulation with no draft to lose, so it holds nothing.
+  useSaving(pending === "nickname", SETTINGS_SCOPE);
   const [confirmAvatarReset, setConfirmAvatarReset] = useState(false);
 
   /**

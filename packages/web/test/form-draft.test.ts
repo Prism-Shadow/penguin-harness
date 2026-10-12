@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * A typed form's draft against its baseline (`useFormDraft`) and a dialog's guarded close
- * (`useGuardedClose`), from the shared UI package, driven through a rendered form.
+ * A typed form's draft against its baseline (`useFormDraft`), a dialog's guarded close
+ * (`useGuardedClose`) and a page's save in flight (`useSaving`), from the shared UI package,
+ * driven through a rendered form.
  *
  * - Typing makes the form dirty; typing the stored value back makes it clean again, and so does
  *   a value that differs only in what Save would normalise away (surrounding spaces).
@@ -15,10 +16,19 @@
  *   beneath neither holds the close nor gets discarded by it.
  * - While the dialog's save is in flight (`locked`), Esc, the ×, the scrim and Cancel do nothing;
  *   once the save has failed, the close asks again.
+ * - A dialog whose page saves on its own: while the page's save is in flight in the dialog's
+ *   scope (`useSaving`), Esc, the × and the scrim do nothing; once the save has failed, the close
+ *   asks again.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Fragment, createElement as h, useState } from "react";
-import { Modal, hasUnsaved, useFormDraft, useGuardedClose } from "@prismshadow/penguin-ui";
+import {
+  Modal,
+  hasUnsaved,
+  useFormDraft,
+  useGuardedClose,
+  useSaving,
+} from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
@@ -192,6 +202,48 @@ function SavingDialog({ onClose, write }: { onClose: () => void; write: () => Pr
   });
 }
 
+/** The scope a dialog shares with the pages inside it, as the Settings dialog does. */
+const SHELL = "shell";
+
+/** A dialog around a page that saves on its own: the dialog cannot see the page's save. */
+function ShellDialog({ onClose, write }: { onClose: () => void; write: () => Promise<void> }) {
+  const requestClose = useGuardedClose(onClose, SHELL);
+  return h(Modal, {
+    open: true,
+    title: "Settings",
+    onClose: requestClose,
+    children: h(SavingPage, { write }),
+  });
+}
+
+/** A page whose Save waits on `write`, holding its dialog's close while it does. */
+function SavingPage({ write }: { write: () => Promise<void> }) {
+  const form = useFormDraft("", { scope: SHELL });
+  const [busy, setBusy] = useState(false);
+  useSaving(busy, SHELL);
+  const save = async () => {
+    setBusy(true);
+    try {
+      await write();
+      form.adopt(form.draft);
+    } catch {
+      // A refused save keeps the page's form dirty.
+    } finally {
+      setBusy(false);
+    }
+  };
+  return h(
+    Fragment,
+    null,
+    h("input", {
+      "aria-label": "Address",
+      value: form.draft,
+      onChange: (e: { target: { value: string } }) => form.setDraft(e.target.value),
+    }),
+    h("button", { type: "button", onClick: () => void save() }, "Save"),
+  );
+}
+
 /** A write that waits until the test refuses it. */
 function pendingWrite() {
   let refuse = (): void => {};
@@ -256,6 +308,26 @@ describe("a dialog's guarded close", () => {
     await mount(h("div", null, h(SavingDialog, { onClose, write }), h(UnsavedPrompt)));
     await type(field("Key"), "OPENAI_API_KEY");
     await click(button("Save"));
+    await run(refuse);
+    await pressEscape();
+    expect(hasButton("Discard changes")).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("does nothing while a page's save is in flight in its scope, and asks again once it failed", async () => {
+    const onClose = vi.fn();
+    const { write, refuse } = pendingWrite();
+    await mount(h("div", null, h(ShellDialog, { onClose, write }), h(UnsavedPrompt)));
+    await type(field("Address"), "http://proxy.local:3128");
+    await click(button("Save"));
+    // One close at a time: a prompt opened by one would be answered by a later press on its scrim.
+    for (const close of [pressEscape, () => click(button("Close")), pressScrim]) {
+      await close();
+      expect(hasButton("Discard changes")).toBe(false);
+    }
+    expect(onClose).not.toHaveBeenCalled();
+    expect(dialogs()).toHaveLength(1);
+
     await run(refuse);
     await pressEscape();
     expect(hasButton("Discard changes")).toBe(true);

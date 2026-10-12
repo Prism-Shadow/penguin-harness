@@ -10,6 +10,8 @@
  * - Escape while the prompt is up answers "keep editing": the prompt goes, the dialog stays.
  * - "Discard" on a close closes the dialog, and nothing is left dirty.
  * - A clean page closes at once, and a flipped switch does not make it dirty.
+ * - While the page's Save is in flight, Escape, the × and a press on the scrim do nothing, and no
+ *   question is asked; once the save has answered, the dialog closes at once.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h, useState } from "react";
@@ -29,6 +31,7 @@ import {
   mount,
   pressEscape,
   pressScrim,
+  run,
   settle,
   switchNamed,
   type,
@@ -132,6 +135,27 @@ describe("leaving a Settings page with unsaved edits", () => {
     expect(server.stored().proxyForApp).toBe(false);
     await type(field(PROXY), "http://other:3128");
     await type(field(PROXY), STORED);
+    await pressEscape();
+    expect(promptOpen()).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds every close while the page's Save is in flight, and closes once it has answered", async () => {
+    const { server, onClose } = await openProxyPage();
+    server.hold();
+    await type(field(PROXY), "http://other:3128");
+    await click(button("Save"));
+    // One close at a time: a prompt opened by one would be answered by a later press on its scrim.
+    for (const close of [pressEscape, () => click(button("Close")), pressScrim]) {
+      await close();
+      expect(promptOpen()).toBe(false);
+    }
+    expect(onClose).not.toHaveBeenCalled();
+    expect(dialogs()).toHaveLength(1);
+
+    await run(server.release);
+    await waitFor(() => !hasUnsaved());
+    expect(server.stored().proxyUrl).toBe("http://other:3128");
     await pressEscape();
     expect(promptOpen()).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(1);

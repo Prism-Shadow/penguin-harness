@@ -18,7 +18,8 @@
  * controls and Save stay disabled until they arrive. A saved response is adopted as the new
  * baseline, including the address in the exact form the server stored, so the page reflects
  * what is on the server rather than what was typed at it. Leaving the page, or the dialog, with
- * an unsaved address asks first (settings-dialog.tsx).
+ * an unsaved address asks first (settings-dialog.tsx), and the dialog does not close while the
+ * address's Save is in flight.
  *
  * The reachability test sits BELOW the save row, in its own block, because it measures the
  * SAVED configuration: only a PUT moves the server's outbound dispatcher, so a typed-but-unsaved
@@ -55,6 +56,7 @@ import {
   toastError,
   toastSuccess,
   useFormDraft,
+  useSaving,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -86,7 +88,9 @@ export function ProxySection() {
   });
   /** Inline error under the address input (the server's invalid_proxy_url rejection). */
   const [addressError, setAddressError] = useState<string | null>(null);
+  /** The address's Save is in flight; it holds the dialog's close (a switch's write does not). */
   const [busy, setBusy] = useState(false);
+  useSaving(busy, SETTINGS_SCOPE);
   /** What the probe would request, listed before it is run (null until it arrives). */
   const [targets, setTargets] = useState<ProxyProbeTargetDto[] | null>(null);
   /** Results by provider (null until a run starts, then filled one at a time), and the probe's own busy flag. */

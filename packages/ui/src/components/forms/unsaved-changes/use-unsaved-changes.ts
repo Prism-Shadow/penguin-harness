@@ -4,15 +4,24 @@
  * - {@link useFormDraft} holds a form's draft against the value it was loaded from, says whether
  *   it is dirty, and registers the form while it is;
  * - {@link useUnsavedChanges} registers a dirtiness the caller computes itself;
+ * - {@link useSaving} registers a save in flight, for a page whose dialog cannot see its save;
  * - {@link useGuardedClose} turns a dialog's `onClose` into one that asks first while its forms
- *   hold unsaved edits, and does nothing while the dialog's save is in flight.
+ *   hold unsaved edits, and does nothing while a save of the dialog's is in flight.
  *
  * A route change asks through the app's router blocker and a page unload through the host's
  * `beforeunload`; neither needs anything from the form beyond being registered.
  */
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { clearUnsaved, guardLeave, markUnsaved, sameDraft } from "./unsaved-changes";
+import {
+  clearSaving,
+  clearUnsaved,
+  guardLeave,
+  isSaving,
+  markSaving,
+  markUnsaved,
+  sameDraft,
+} from "./unsaved-changes";
 
 export interface UnsavedChangesOptions {
   /** The surface the edits belong to (see `unsaved-changes.ts`); none = only a route change or unload leaves it. */
@@ -34,6 +43,20 @@ export function useUnsavedChanges(dirty: boolean, options: UnsavedChangesOptions
     const id = markUnsaved(scope, () => discardRef.current?.());
     return () => clearUnsaved(id);
   }, [dirty, scope]);
+}
+
+/**
+ * Holds an in-flight-save entry under `scope` while `saving` is true, so the close of the dialog
+ * the form sits in (`useGuardedClose` with the same scope) does nothing until the save answers.
+ * For a page whose save the dialog around it cannot see: the Settings and Project settings
+ * dialogs host pages that save on their own. A dialog that runs its own save passes `locked`.
+ */
+export function useSaving(saving: boolean, scope: string): void {
+  useEffect(() => {
+    if (!saving) return;
+    const id = markSaving(scope);
+    return () => clearSaving(id);
+  }, [saving, scope]);
 }
 
 export interface FormDraftOptions<T> {
@@ -137,9 +160,10 @@ export function useFormDraft<T>(initial: T, options: FormDraftOptions<T> = {}): 
 
 export interface GuardedCloseOptions {
   /**
-   * The dialog's save is in flight. Every way of closing does nothing until it answers: a close
-   * then would offer to discard edits the request is about to store — a "discard" the server
-   * would contradict a moment later.
+   * The dialog's own save is in flight. Every way of closing does nothing until it answers: a
+   * close then would offer to discard edits the request is about to store — a "discard" the
+   * server would contradict a moment later. A save the dialog cannot see, run by a page inside
+   * it, holds the close the same way through `useSaving` on the dialog's scope.
    */
   locked?: boolean;
 }
@@ -148,9 +172,10 @@ export interface GuardedCloseOptions {
  * A dialog's close through the guard. Pass the result as the dialog's `onClose` (Modal,
  * PagedDialog, Drawer, Sheet) **and** to its Cancel button: Esc, the ×, a scrim click and Cancel
  * all arrive there. While a form in `scope` holds unsaved edits it asks first; on "discard" the
- * forms reset and `onClose` runs, on "keep editing" nothing happens. While `locked` (a save in
- * flight) it does nothing at all. After a successful save call the raw `onClose` — nothing is
- * dirty by then anyway.
+ * forms reset and `onClose` runs, on "keep editing" nothing happens. While a save is in flight —
+ * `locked`, or a save registered in `scope` (`useSaving`), checked when the close is attempted —
+ * it does nothing at all. After a successful save call the raw `onClose` — nothing is dirty by
+ * then anyway.
  */
 export function useGuardedClose(
   onClose: () => void,
@@ -162,7 +187,7 @@ export function useGuardedClose(
   const lockedRef = useRef(false);
   lockedRef.current = options.locked === true;
   return useCallback(() => {
-    if (lockedRef.current) return;
+    if (lockedRef.current || isSaving(scope)) return;
     void guardLeave(() => onCloseRef.current(), scope);
   }, [scope]);
 }

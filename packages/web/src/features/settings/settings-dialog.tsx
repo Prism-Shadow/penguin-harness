@@ -10,7 +10,9 @@
  * A page with a typed form registers it under the dialog's scope while it holds unsaved
  * edits, and both ways of leaving that page ask first: switching pages on the rail (which
  * unmounts the page and its drafts) and closing the dialog by Esc, the ×, or a press on the
- * scrim. Switches, selects and other instant controls never make a page dirty.
+ * scrim. Switches, selects and other instant controls never make a page dirty. A page's Save
+ * registers under the same scope while it is in flight (`useSaving`), and the dialog's close
+ * does nothing until it answers; an instant control's write holds nothing.
  */
 import { useEffect, useState } from "react";
 import { ICONS, PagedDialog, guardLeave, useGuardedClose } from "@prismshadow/penguin-ui";

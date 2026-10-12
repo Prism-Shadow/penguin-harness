@@ -20,11 +20,16 @@
  *    `<Modal>` and `<PagedDialog>` gets an `onClose` declared from `useGuardedClose(` — Esc, the
  *    ×, the scrim and Cancel all arrive there — unless `EXCUSED_DIALOGS` names its component with
  *    a reason.
+ * 4. **A page's save holds the dialog it sits in.** The Settings and Project settings dialogs
+ *    cannot see their pages' saves, so a component that registers a form under one of their
+ *    scopes (`SHELL_SCOPES`, named in its `useFormDraft` / `useUnsavedChanges` options) and offers
+ *    `S.common.save` also calls `useSaving(…, <that scope>)`.
  *
  * Adding a module to `FORM_MODULES` is how a new settings form joins check 3.
  *
  * What the parser cannot follow is on the reviewer: a handler built in a variable, a Save
- * button that is a component of its own, a dialog in a module outside `FORM_MODULES`.
+ * button that is a component of its own, a dialog in a module outside `FORM_MODULES`, a scope
+ * passed down as a prop.
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
@@ -211,6 +216,9 @@ const callsAny = (sf: ts.SourceFile, names: ReadonlySet<string>): boolean => {
 const REGISTERS = new Set(["useFormDraft", "useUnsavedChanges"]);
 const TAKES_PART = new Set(["useFormDraft", "useUnsavedChanges", "useGuardedClose"]);
 
+/** The scopes of the dialogs whose pages save on their own: Settings, and Project settings. */
+const SHELL_SCOPES = new Set(["SETTINGS_SCOPE", "PROJECT_SETTINGS_SCOPE"]);
+
 /** Check 2's trigger: the module offers Save or Create. */
 function offersSave(sf: ts.SourceFile): boolean {
   let hit = false;
@@ -253,6 +261,53 @@ function unguardedDialogs(file: SourceFile): string[] {
     const onClose = attributeValue(attribute(node, "onClose"));
     if (onClose !== undefined && ts.isIdentifier(onClose) && guarded.has(onClose.text)) return;
     found.push(`${file.rel}:${lineOf(sf, node)} <${tag}> in ${component}`);
+  });
+  return found;
+}
+
+/** The shell scope a registering call names in its options (`{ scope: SETTINGS_SCOPE }`). */
+function shellScopeOf(call: ts.CallExpression): string | null {
+  const options = call.arguments[1];
+  if (options === undefined || !ts.isObjectLiteralExpression(options)) return null;
+  for (const property of options.properties) {
+    if (
+      ts.isPropertyAssignment(property) &&
+      property.name.getText() === "scope" &&
+      ts.isIdentifier(property.initializer) &&
+      SHELL_SCOPES.has(property.initializer.text)
+    ) {
+      return property.initializer.text;
+    }
+  }
+  return null;
+}
+
+/** Check 4: each component that saves a form in a shell scope, and whether it holds the close. */
+function shellScopeSaves(file: SourceFile): Array<{ where: string; held: boolean }> {
+  const sf = parse(file);
+  const found: Array<{ where: string; held: boolean }> = [];
+  visit(sf, (node) => {
+    if (!ts.isFunctionDeclaration(node) || node.body === undefined) return;
+    const scopes = new Set<string>();
+    const holds = new Set<string>();
+    let offers = false;
+    visit(node.body, (inner) => {
+      if (ts.isCallExpression(inner)) {
+        const callee = inner.expression.getText();
+        const scope = REGISTERS.has(callee) ? shellScopeOf(inner) : null;
+        if (scope !== null) scopes.add(scope);
+        const held = inner.arguments[1];
+        if (callee === "useSaving" && held !== undefined && ts.isIdentifier(held)) {
+          holds.add(held.text);
+        }
+      }
+      if (ts.isPropertyAccessExpression(inner) && inner.getText() === "S.common.save") {
+        offers = true;
+      }
+    });
+    if (!offers) return;
+    const at = `${file.rel}:${lineOf(sf, node)} ${node.name?.text ?? "(anonymous)"}`;
+    for (const scope of scopes) found.push({ where: `${at} in ${scope}`, held: holds.has(scope) });
   });
   return found;
 }
@@ -300,5 +355,12 @@ describe("the settings commit model in the source", () => {
       return file === undefined ? [] : unguardedDialogs(file);
     });
     expect(found).toEqual([]);
+  });
+
+  it("holds the Settings and Project settings dialogs' close while a page's Save is in flight", () => {
+    const saves = SCAN.files.filter(inReach).flatMap(shellScopeSaves);
+    // The pages exist and are found: a renamed scope must not turn this check into a no-op.
+    expect(saves.length).toBeGreaterThan(0);
+    expect(saves.filter((s) => !s.held).map((s) => s.where)).toEqual([]);
   });
 });
