@@ -35,7 +35,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ActivityIcon,
-  AgentAvatar,
   Button,
   CloseIcon,
   Dropdown,
@@ -62,6 +61,7 @@ import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { writeClipboard } from "../../lib/clipboard";
 import { Icon } from "../../components/ui/group-list";
+import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,
@@ -72,7 +72,7 @@ import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
 import { orgKey } from "./company-nav";
 import { INVALID_ICON } from "./shared";
-import { deskRows, orgRowActivity, ticketSessionTitles } from "./org-sessions";
+import { deskRowLabel, deskRows, orgRowActivity, ticketSessionTitles } from "./org-sessions";
 import type { OrgDeskRow } from "./org-sessions";
 import {
   dismissAllTempSessions,
@@ -201,6 +201,7 @@ function DeskRow({
     run(action);
   };
 
+  const shown = deskRowLabel(row);
   return (
     <li>
       <div
@@ -227,13 +228,22 @@ function DeskRow({
           }}
           className={`${rowButton(active)}${missing ? " cursor-default opacity-60" : ""}`}
         >
-          <AgentAvatar
+          <EmployeeAvatar
             id={row.agentId}
             name={row.name}
-            size={ICON_SIZE.rowLead}
-            className="shrink-0 rounded"
+            size={FACE_PX.row}
+            className="shrink-0 rounded-md"
           />
-          <Truncated text={row.name} className="min-w-0 flex-1" />
+          {/* Who, then the note that tells them apart (deskRowLabel); the note yields first
+              when the row runs out of room. */}
+          <span className="flex min-w-0 flex-1 items-baseline gap-1">
+            <Truncated text={shown.primary} className="min-w-0" />
+            {shown.note !== "" && (
+              <span className="max-w-[45%] shrink-[9999] truncate text-xs font-normal text-gray-400 dark:text-gray-500">
+                ({shown.note})
+              </span>
+            )}
+          </span>
           {/* Enabled-messaging indicator, the development row's own mark: one glyph for every
               channel, the channel named in the tooltip and the screen-reader text. */}
           {messagingChannel !== undefined && (
@@ -367,7 +377,7 @@ function TempRow({
           onClick={onOpen}
           className={rowButton(row.active)}
         >
-          <AgentAvatar
+          <EmployeeAvatar
             id={row.agentId}
             name={row.name}
             size={ICON_SIZE.rowLead}
@@ -420,7 +430,7 @@ export function TempSessionRailRows({ projectId, orgId }: { projectId: string; o
             onClick={() => openSession(row.sessionId, row.agentId)}
             className={railItemClass()}
           >
-            <AgentAvatar id={row.agentId} name={row.name} size={18} className="rounded" />
+            <EmployeeAvatar id={row.agentId} name={row.name} size={18} className="rounded" />
             {row.activity !== null && (
               <span
                 aria-hidden
@@ -577,7 +587,12 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
             }}
             className={`${railItemClass()} disabled:opacity-60${missing ? " opacity-60" : ""}`}
           >
-            <AgentAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
+            <EmployeeAvatar
+              id={d.agentId}
+              name={d.name}
+              size={FACE_PX.rail}
+              className="rounded-md"
+            />
             {running && (
               <span
                 aria-hidden

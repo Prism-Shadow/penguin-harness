@@ -1,6 +1,6 @@
 /**
  * The hero's catalogue rows ↔ their sources. RSI_TOOLKITS must name exactly the library plugins
- * whose plugin.json files them under the `rsi` category, and BENCHMARK_REPRODUCTIONS exactly core's
+ * whose package.json files them under the `rsi` category, and BENCHMARK_REPRODUCTIONS exactly core's
  * built-in Benchmarks, each linked to the upstream repository core records for it, so a new
  * toolkit or built-in, or a moved upstream, fails here instead of leaving the landing page behind.
  * Every link that leaves the site is absolute https; both dictionaries carry one Benchmark kind per
@@ -18,18 +18,23 @@ import { en } from "../src/lib/strings-en";
 
 const pluginsRoot = join(__dirname, "..", "..", "..", "plugins");
 
+/** The `penguin` block of a plugin's package.json: the fields this test reads. */
 interface Manifest {
   category?: unknown;
   quick_start?: { prompt?: string; prompt_zh?: string };
 }
 
-const manifest = (plugin: string): Manifest =>
-  JSON.parse(readFileSync(join(pluginsRoot, plugin, "plugin.json"), "utf8")) as Manifest;
+const manifest = (plugin: string): Manifest => {
+  const pkg = JSON.parse(readFileSync(join(pluginsRoot, plugin, "package.json"), "utf8")) as {
+    penguin?: Manifest;
+  };
+  return pkg.penguin ?? {};
+};
 
-/** Library plugins (directories with a plugin.json) whose category is `rsi`. */
+/** Library plugins (directories with a package.json) whose `penguin.category` is `rsi`. */
 const rsiPlugins = readdirSync(pluginsRoot, { withFileTypes: true })
   .filter(
-    (entry) => entry.isDirectory() && existsSync(join(pluginsRoot, entry.name, "plugin.json")),
+    (entry) => entry.isDirectory() && existsSync(join(pluginsRoot, entry.name, "package.json")),
   )
   .filter((entry) => manifest(entry.name).category === "rsi")
   .map((entry) => entry.name)

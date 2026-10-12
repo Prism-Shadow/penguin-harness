@@ -6,7 +6,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { InstalledPluginsResponse } from "../src/api/types.js";
+import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
+import { parseManifest } from "@prismshadow/penguin-core/kernel";
+import type { InstalledPluginsResponse, UsageErrorsPage } from "../src/api/types.js";
+import { PluginHost } from "../src/plugin/host.js";
+import { openPushSlip } from "../src/hmr/push-plugins.js";
 import { decorators, lower, writeClassPackage } from "./plugin-fixtures.js";
 import type { ClassPackage } from "./plugin-fixtures.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
@@ -139,10 +143,11 @@ describe("installed plugins", () => {
     expect(kept.status).toBe(200);
   });
 
-  it("installs a package before listing it, and refuses a specifier that is not a package name", async () => {
+  it("installs a package before listing it, and refuses a specifier that is neither a package name nor an https link", async () => {
     // npm is not driven in a unit test: what is pinned here is that the route validates the
-    // specifier and does not write the list when nothing was installed.
-    for (const bad of ["../evil", "https://example.com/x.tgz", "", "Has Spaces"]) {
+    // specifier and does not write the list when nothing was installed. (What it installs from
+    // a link or a zip is plugin-archive.test.ts's.)
+    for (const bad of ["../evil", "http://example.com/x.tgz", "", "Has Spaces"]) {
       expect(
         (await admin.post("/api/projects/default_project/plugins/installed", { specifier: bad }))
           .status,
@@ -248,6 +253,101 @@ describe("installed plugins", () => {
     expect(body.plugins[0]).toMatchObject({ specifier: "@acme/broken", active: false });
     expect(body.plugins[0]!.error).toMatch(/deliberately broken/);
     expect(body.restartPending).toBe(false);
+  });
+
+  it("says a plugin this build cannot fully run is disabled, or runs without part of itself — not waiting for a restart", async () => {
+    // Loaded, as a push leaves installed plugins loaded, but built against what this build
+    // does not have: one contributes to a slot nothing declares, the other stands in for a
+    // node under an interface no table carries.
+    const partial: ModuleDef = {
+      manifest: parseManifest({
+        name: "ext-partial",
+        requires: {},
+        provides: {},
+        contributes: { "nowhere.slot": [{ id: "ext-partial.x" }] },
+        children: [],
+      }),
+      create: () => ({ api: {} }),
+    };
+    const unmet: ModuleDef = {
+      manifest: parseManifest({
+        name: "ServerSettingsRepo",
+        requires: {},
+        provides: { Settings: "@prismshadow/penguin-server#Nope" },
+        contributes: {},
+        children: [],
+      }),
+      create: () => ({ api: { Settings: {} } }),
+    };
+    const host = new PluginHost();
+    host.use({ specifier: "@acme/partial", modules: [partial], replaces: [] });
+    host.use({ specifier: "@acme/unmet", modules: [], replaces: [unmet] });
+    await t.cleanup();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    t = await createTestApp({ plugins: host });
+    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    await ship({ name: "@acme/partial", module: "Partial" });
+    await ship({ name: "@acme/unmet", module: "Unmet" });
+    await fs.writeFile(
+      listFile(),
+      'models = []\n[plugins]\n"@acme/partial" = "*"\n"@acme/unmet" = "*"\n',
+    );
+
+    const res = await view();
+    const row = (specifier: string) => res.plugins.find((p) => p.specifier === specifier)!;
+    expect(row("@acme/partial")).toMatchObject({ active: true, unsatisfied: { disabled: false } });
+    expect(row("@acme/partial").unsatisfied!.reason).toMatch(/nowhere\.slot/);
+    expect(row("@acme/unmet")).toMatchObject({ active: false, unsatisfied: { disabled: true } });
+    expect(row("@acme/unmet").unsatisfied!.reason).toMatch(/Nope/);
+    expect(row("@acme/unmet").error).toBeUndefined();
+    // A restart boots the same build, so it is not what this is waiting for.
+    expect(res.restartPending).toBe(false);
+
+    // Each is one unexpected error an admin finds in the Cost Center, under the plugin's own code.
+    const errors = (await (
+      await admin.get("/api/projects/default_project/usage/errors?offset=0&limit=50")
+    ).json()) as UsageErrorsPage;
+    const recorded = errors.items.filter((e) => e.source === "plugin");
+    expect(recorded.map((e) => [e.code, e.kind]).sort()).toEqual([
+      ["unsatisfied:@acme/partial", "unexpected"],
+      ["unsatisfied:@acme/unmet", "unexpected"],
+    ]);
+    expect(recorded.find((e) => e.code.endsWith("unmet"))!.message).toMatch(
+      /^Disabled on this build: .*Nope/,
+    );
+    warn.mockRestore();
+  });
+
+  it("a re-assembly is not a push: it never refuses for a plugin the build cannot run", async () => {
+    const partial: ModuleDef = {
+      manifest: parseManifest({
+        name: "ext-partial",
+        requires: {},
+        provides: {},
+        contributes: { "nowhere.slot": [{ id: "ext-partial.x" }] },
+        children: [],
+      }),
+      create: () => ({ api: {} }),
+    };
+    const host = new PluginHost();
+    host.use({ specifier: "@acme/partial", modules: [partial], replaces: [] });
+    await t.cleanup();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    t = await createTestApp({ plugins: host });
+    admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    await ship({ name: "@acme/fine", module: "Fine" });
+    // A push's slip with no acceptance on it, left registered: only the boot a push makes
+    // may take it, and the re-assembly below is not one.
+    const { slip, close } = openPushSlip(t.deps.hmr.resources, false);
+    const saved = await admin.put("/api/projects/default_project/plugins/installed", {
+      plugins: ["@acme/fine"],
+    });
+    close();
+    warn.mockRestore();
+    expect(saved.status).toBe(200);
+    const body = (await saved.json()) as InstalledPluginsResponse;
+    expect(body.plugins[0]).toMatchObject({ specifier: "@acme/fine", active: true });
+    expect(slip).toMatchObject({ taken: false, refused: false });
   });
 
   it("a plugin that breaks the boot is undone, and the previous App keeps serving", async () => {

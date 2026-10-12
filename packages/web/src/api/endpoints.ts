@@ -18,6 +18,7 @@ import type {
   AgentCreateRequest,
   AgentCreateResponse,
   AgentHooksResponse,
+  AgentMcpServersResponse,
   AgentImportRequest,
   AgentImportResponse,
   AgentKernelUpdateResponse,
@@ -184,6 +185,9 @@ import type {
   PluginReadmeResponse,
   SessionsResponse,
   SessionSwitchModelRequest,
+  SessionBatchPageRequest,
+  SessionsBatchRequest,
+  SessionsBatchResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
   SteerRequest,
@@ -216,6 +220,7 @@ import type {
   VaultResponse,
   VaultUpdateRequest,
   InstalledPluginsResponse,
+  PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
   WorkflowInfo,
@@ -817,6 +822,28 @@ export const listSessions = (
   );
 };
 
+/**
+ * A whole sidebar reload in one round trip: every (Agent, page) pair the sidebar wants,
+ * asked in a single POST instead of one GET each.
+ *
+ * The split matters on a Project with several Agents (and several machines): as individual
+ * requests they were fired all at once and serialised by the browser's six-connections-per-host
+ * limit, so the conversation pane's own message read queued behind dozens of list calls.
+ * One request keeps every answer separate — `results` lines up with `requests`, and an Agent
+ * this server does not host comes back as `ok: false, reason: "absent"` rather than failing
+ * the batch.
+ */
+export const batchSessions = (
+  projectId: string,
+  requests: SessionBatchPageRequest[],
+  machineId?: string | null,
+) =>
+  apiFetch<SessionsBatchResponse>(`/api/projects/${encodeURIComponent(projectId)}/sessions/batch`, {
+    method: "POST",
+    body: { requests } satisfies SessionsBatchRequest,
+    server: machineId ?? null,
+  });
+
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**
  * Browses directories. With no machine, this server's own filesystem; with one, THAT
@@ -1054,7 +1081,7 @@ export const testQQBinding = (sessionId: string, body: QQTestRequest) =>
     body,
   });
 
-/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to). */
+/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` / `wechat_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to, and on WeChat it answers 409 `wechat_needs_recent_message` when the platform will not take a bot message until the user messages the bot again). */
 export const sendMessagingTestMessage = (sessionId: string, channel: MessagingChannel) =>
   apiFetch<MessagingTestMessageResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/test-message`,
@@ -1129,6 +1156,13 @@ export const postAbort = (sessionId: string) =>
 /** "Retry now" on the reconnect countdown: skips the remaining backoff wait server-side (skipped:false is the benign "no wait in progress" case — e.g. the timer elapsed in a race — never an error). */
 export const postRetryNow = (sessionId: string) =>
   apiFetch<RetryNowResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/retry-now`, {
+    method: "POST",
+    body: {},
+  });
+
+/** "Retry" after a run ended on a failure: runs the Session once with no new input, so the failed turn's held input is sent on its own (409 nothing_to_retry when nothing is held, 409 while a Task runs). Same response shape as tasks. */
+export const postRetry = (sessionId: string) =>
+  apiFetch<TaskCreateResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/retry`, {
     method: "POST",
     body: {},
   });
@@ -1650,6 +1684,10 @@ export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plug
 export const getPluginFiles = (plugin: string) =>
   apiFetch<PluginFilesResponse>(`/api/plugins/${encodeURIComponent(plugin)}/files`);
 
+/** A library plugin's README.md, from its package root, for the detail dialog; 404 when the package ships none. */
+export const getLibraryPluginReadme = (plugin: string) =>
+  apiFetch<PluginReadmeResponse>(`/api/plugins/${encodeURIComponent(plugin)}/readme`);
+
 /** The self-evolution catalogue (any logged-in user): the library's RSI toolkits and the built-in Benchmark reproductions, which the start page's metric tiles count. */
 export const getRsiCatalog = () => apiFetch<RsiCatalogResponse>("/api/rsi");
 
@@ -1670,6 +1708,7 @@ export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/
 /** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
 export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
 
+/** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
 export const getPluginReadme = (name: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
 
@@ -1681,6 +1720,20 @@ export const getAgentSkills = (projectId: string, agentId: string) =>
 export const getAgentHooks = (projectId: string, agentId: string) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/hooks`,
+  );
+
+/** The Agent's MCP servers in config order: target, the plugin that installed each, the vault keys still missing and whether a sign-in is needed (never a value). */
+export const getAgentMcpServers = (projectId: string, agentId: string) =>
+  apiFetch<AgentMcpServersResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/mcp-servers`,
+  );
+
+/** Removes one MCP server entry from the Agent, whoever added it; 204, 404 unknown_mcp_server when it is not there. */
+export const uninstallAgentMcpServer = (projectId: string, agentId: string, name: string) =>
+  apiFetch<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/mcp-servers/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
   );
 
 /** Uninstalls one hook package (deletes agent_state/hooks/<name>/ whole); 204, 404 not_found when it is not installed. */
@@ -2052,6 +2105,27 @@ export const getOrgChart = (projectId: string, orgId: string) =>
 
 export const hireOrgEmployee = (projectId: string, orgId: string, body: OrgHireRequest) =>
   apiFetch<OrgEmployeeItem>(`${orgBase(projectId, orgId)}/employees`, { method: "POST", body });
+
+/** Where an employee's avatar is served from; `rev` (its `avatarRev`) makes the URL the image's own, so it is cached for good. */
+export const orgEmployeeAvatarUrl = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  rev: string,
+): string =>
+  `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}/avatar?rev=${encodeURIComponent(rev)}`;
+
+/** Sets the employee's avatar from a data URL (png, jpeg or webp); `null` removes it. */
+export const putOrgEmployeeAvatar = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  avatar: string | null,
+) =>
+  apiFetch<OrgEmployeeItem>(
+    `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}/avatar`,
+    { method: "PUT", body: { avatar } },
+  );
 
 export const patchOrgEmployee = (
   projectId: string,
@@ -2430,6 +2504,26 @@ export const uninstallPlugin = (
     }`,
     { method: "DELETE" },
   );
+
+/**
+ * Admin only: installs a plugin package from an uploaded zip on this server — 409
+ * plugin_exists while another version is installed, unless `overwrite`. A package of server
+ * modules is listed for this machine and applied; a package of Skills or hooks joins the
+ * library. `installed` says which.
+ */
+export const importPluginArchive = (projectId: string, body: PluginArchiveImportRequest) =>
+  apiFetch<InstalledPluginsResponse>(`${pluginsPath(projectId)}/archive`, {
+    method: "POST",
+    body,
+  });
+
+/** Zip download URL of a library plugin's package (any member; the server names the file, `<name>-v<version>.zip`). */
+export const libraryPluginArchiveUrl = (plugin: string): string =>
+  `/api/plugins/${encodeURIComponent(plugin)}/archive`;
+
+/** Zip download URL of a listed server module's package on this server (any member). */
+export const registryPluginArchiveUrl = (name: string): string =>
+  `/api/plugins/registry/archive?name=${encodeURIComponent(name)}`;
 
 // ---- The agent browser: the desktop's built-in browser, or the user's own Chrome ----
 /**

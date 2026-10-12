@@ -1,6 +1,7 @@
 ---
 name: agent-evaluation
 description: Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.
+version: 2026.10.09.5
 ---
 
 # Agent Evaluation

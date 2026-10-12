@@ -501,6 +501,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           "ollama",
           "llamafactory",
           "skill-porting",
+          "plugin-porting",
         ],
       },
       {

@@ -18,6 +18,14 @@
  * `permission` sets the approval level PenguinHarness applies to every tool of the server —
  * `"auto"` (the default) trusts each tool's own `readOnlyHint`, `"r"` or `"rw"` overrides it.
  *
+ * Values the entry must not hold in plain text — a token in a header, a key in `env` — are
+ * written as `${KEY}` references to the Agent's vault and substituted when the server
+ * connects: the YAML, the config API and the Trace only ever carry the reference. A server
+ * whose references the vault cannot fill is not connected but skipped as "needs setup", and
+ * one that declares OAuth sign-in (`config.oauth`) without an `Authorization` header is
+ * skipped as "sign-in required" — sign-in itself is not supported yet. `${PLUGIN_ROOT}` is
+ * not a vault key: installing a plugin's server replaces it with the package's directory.
+ *
  * Invalid entries never break Session creation: each problem is reported as a warning and
  * the entry is skipped (the same stance Environment takes on unrecognized builtin tool
  * names), so one typo in a hand-edited YAML cannot take the whole Agent down.
@@ -68,19 +76,147 @@ export interface ResolvedMCPServer {
    * the permission its own `readOnlyHint` annotation implies.
    */
   permission?: ToolPermission;
+  /**
+   * The vault keys whose values were filled into this server's fields (names only). A failure
+   * the server answers with can repeat what it was sent — a request line, a header, its own
+   * environment on stderr — so the provider puts these references back in place of the values
+   * in every error text it reports for the server.
+   */
+  vaultKeys?: string[];
 }
 
-/** Result of resolving a full `mcpServers` list: valid servers plus human-readable warnings for the skipped rest. */
+/**
+ * Why a valid entry is not connected: vault keys it references are missing (`keys`, names
+ * only), or it wants an OAuth sign-in.
+ */
+export type MCPServerSkip =
+  { reason: "needs_setup"; keys: string[] } | { reason: "sign_in_required" };
+
+/** A valid entry that cannot connect yet: reported per server at every connect phase, never contacted. */
+export interface SkippedMCPServer {
+  name: string;
+  transport: ResolvedMCPTransport["kind"];
+  skip: MCPServerSkip;
+}
+
+/** Result of resolving a full `mcpServers` list: the servers to connect, the valid ones that cannot connect yet, and human-readable warnings for the invalid rest. */
 export interface ResolveMCPServersResult {
   servers: ResolvedMCPServer[];
+  skipped: SkippedMCPServer[];
   warnings: string[];
 }
 
 /** Server names embed into tool names (`mcp__<name>__<tool>`), so they stay in a filename-safe alphabet. */
-const SERVER_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+export const MCP_SERVER_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const SERVER_NAME_PATTERN = MCP_SERVER_NAME_PATTERN;
+
+/** A `${KEY}` reference to a vault value in an entry's string values; `KEY` follows the vault's key rule. Global: use it with `matchAll` / `replace`, never `test`. */
+export const VAULT_REF_PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+
+/** Reserved reference to the directory of the plugin package that installed the entry, replaced at install time — never a vault key. */
+export const PLUGIN_ROOT_REF = "${PLUGIN_ROOT}";
+const PLUGIN_ROOT_KEY = "PLUGIN_ROOT";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** `value` with `fn` applied to every string inside it (object values and array items, at any depth; keys untouched). */
+export function mapConfigStrings(value: unknown, fn: (text: string) => string): unknown {
+  if (typeof value === "string") return fn(value);
+  if (Array.isArray(value)) return value.map((item) => mapConfigStrings(item, fn));
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, mapConfigStrings(item, fn)]),
+    );
+  }
+  return value;
+}
+
+/** Every distinct `${KEY}` referenced by any string value of `config`, in first-seen order (`${PLUGIN_ROOT}` excluded). */
+export function collectVaultRefs(config: Record<string, unknown>): string[] {
+  const keys: string[] = [];
+  mapConfigStrings(config, (text) => {
+    for (const match of text.matchAll(VAULT_REF_PATTERN)) {
+      const key = match[1]!;
+      if (key !== PLUGIN_ROOT_KEY && !keys.includes(key)) keys.push(key);
+    }
+    return text;
+  });
+  return keys;
+}
+
+/**
+ * `config` with every `${KEY}` replaced by the vault's value, or the keys the vault does not
+ * hold (then nothing is substituted: a server never connects with a literal placeholder). One
+ * pass: a value that itself contains `${…}` is not read again. A config without references
+ * comes back as the same object.
+ */
+export function substituteVaultRefs(
+  config: Record<string, unknown>,
+  vault: Readonly<Record<string, string>>,
+): { config: Record<string, unknown> } | { missing: string[] } {
+  const refs = collectVaultRefs(config);
+  if (refs.length === 0) return { config };
+  const missing = refs.filter((key) => !Object.hasOwn(vault, key));
+  if (missing.length > 0) return { missing };
+  return {
+    config: mapConfigStrings(config, (text) =>
+      text.replace(VAULT_REF_PATTERN, (whole, key: string) =>
+        key === PLUGIN_ROOT_KEY ? whole : vault[key]!,
+      ),
+    ) as Record<string, unknown>,
+  };
+}
+
+/**
+ * Whether an entry's string values are read as `${KEY}` vault references. Every entry, the
+ * hand-written ones included: one rule wherever the entry came from (a plugin's install or
+ * the user's own edit).
+ */
+export function readsVaultReferences(_entry: MCPServerConfig): boolean {
+  return true;
+}
+
+/**
+ * Whether an entry needs an OAuth sign-in before it can connect: it declares `oauth` and sends
+ * no `Authorization` header of its own (a bearer token in the vault is the alternative a
+ * server may offer). Sign-in is not supported yet, so such an entry is skipped.
+ */
+export function needsSignIn(config: Record<string, unknown>): boolean {
+  if (config["oauth"] === undefined) return false;
+  const headers = config["headers"];
+  return !(
+    isRecord(headers) && Object.keys(headers).some((key) => key.toLowerCase() === "authorization")
+  );
+}
+
+/** The human-readable reason of a skip — key names only, never a value. */
+export function mcpSkipMessage(skip: MCPServerSkip): string {
+  if (skip.reason === "sign_in_required") {
+    return "requires OAuth sign-in, which this version does not support yet";
+  }
+  return skip.keys.length === 1
+    ? `needs setup: vault key ${skip.keys[0]} is not set`
+    : `needs setup: vault keys ${skip.keys.join(", ")} are not set`;
+}
+
+/**
+ * Whether a URL's `${KEY}` references reach its authority — the user info, the host or the
+ * port — rather than its path, query or fragment. Decided the way the connection reads the
+ * address: by the URL parser, given two different stand-ins for every reference, so no spelling
+ * slips past (`https:${KEY}` without slashes, backslashes, a tab or a space the parser drops).
+ */
+function referencesReachAuthority(url: string): boolean {
+  const authority = (standIn: string): string | null => {
+    try {
+      const parsed = new URL(url.replace(VAULT_REF_PATTERN, standIn));
+      return `${parsed.username}:${parsed.password}@${parsed.host}`;
+    } catch {
+      return null;
+    }
+  };
+  return authority("a") !== authority("b");
 }
 
 /** Reads an optional string-to-string map field (env / headers); null = invalid. */
@@ -188,6 +324,11 @@ export function resolveMCPServer(entry: MCPServerConfig): ResolvedMCPServer {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       throw new Error(`"url" must use http(s), got ${JSON.stringify(parsed.protocol)}`);
     }
+    // A vault reference decides a value sent to the server, never which server is contacted:
+    // the address stays as written (a path or a query may still take one).
+    if (referencesReachAuthority(url)) {
+      throw new Error(`"url" cannot take a \${KEY} vault reference in its host`);
+    }
     const headers = readStringMap(config["headers"]);
     if (headers === null) throw new Error(`"headers" must be a map of string values`);
     transport = { kind, url, ...(headers !== undefined ? { headers } : {}) };
@@ -217,11 +358,19 @@ export function resolveMCPServer(entry: MCPServerConfig): ResolvedMCPServer {
 }
 
 /**
- * Resolves a whole `mcpServers` list: invalid entries and duplicate names become warnings
- * and are skipped; the rest come back typed and ready to connect.
+ * Resolves a whole `mcpServers` list against the Agent's vault: invalid entries and duplicate
+ * names become warnings and are dropped; a valid entry whose references the vault cannot fill,
+ * or that needs an OAuth sign-in, is `skipped`; the rest come back typed — references
+ * substituted — and ready to connect. An entry is validated with its references as written (a
+ * reference belongs in a header, `env`, `args` or `oauth`, never in the address), then
+ * resolved again with the values.
  */
-export function resolveMCPServers(entries: MCPServerConfig[]): ResolveMCPServersResult {
+export function resolveMCPServers(
+  entries: MCPServerConfig[],
+  vault: Readonly<Record<string, string>> = {},
+): ResolveMCPServersResult {
   const servers: ResolvedMCPServer[] = [];
+  const skipped: SkippedMCPServer[] = [];
   const warnings: string[] = [];
   const seen = new Set<string>();
   for (const entry of entries) {
@@ -235,12 +384,45 @@ export function resolveMCPServers(entries: MCPServerConfig[]): ResolveMCPServers
       );
       continue;
     }
-    if (seen.has(resolved.name)) {
-      warnings.push(`MCP server "${resolved.name}" skipped: duplicate server name`);
+    const { name } = resolved;
+    if (seen.has(name)) {
+      warnings.push(`MCP server "${name}" skipped: duplicate server name`);
       continue;
     }
-    seen.add(resolved.name);
+    seen.add(name);
+    const transport = resolved.transport.kind;
+    let config = entry.config;
+    if (readsVaultReferences(entry)) {
+      const substituted = substituteVaultRefs(entry.config, vault);
+      if ("missing" in substituted) {
+        skipped.push({
+          name,
+          transport,
+          skip: { reason: "needs_setup", keys: substituted.missing },
+        });
+        continue;
+      }
+      config = substituted.config;
+    }
+    if (needsSignIn(config)) {
+      skipped.push({ name, transport, skip: { reason: "sign_in_required" } });
+      continue;
+    }
+    if (config !== entry.config) {
+      try {
+        resolved = {
+          ...resolveMCPServer({ ...entry, config }),
+          vaultKeys: collectVaultRefs(entry.config),
+        };
+      } catch {
+        // The resolver's reason would quote the value it refused, a vault value among them.
+        warnings.push(
+          `MCP server "${name}" skipped: invalid once its vault references are filled in`,
+        );
+        continue;
+      }
+    }
     servers.push(resolved);
   }
-  return { servers, warnings };
+  return { servers, skipped, warnings };
 }

@@ -77,6 +77,7 @@ import { UsageRepo } from "./db/repos/usage.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { TraceIndexRepo } from "./db/repos/trace-index.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
+import { MessagingConversationsRepo } from "./db/repos/messaging-conversations.js";
 import { OrgCacheRepo } from "./db/repos/organizations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { SessionSources } from "./runtime/session-sources.js";
@@ -130,6 +131,7 @@ import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
 import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { RsiRoutes } from "./http/routes/rsi.js";
+import { NpmPluginPackages } from "./plugin/install.js";
 import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { LanguageRoutes } from "./http/routes/languages.js";
 import { Languages, LanguagesModule } from "./languages/service.js";
@@ -415,6 +417,7 @@ export class WorkspaceModule {}
     WeChatScanTransportProvider,
     DefaultMessagingTuning,
     MessagingBindingsRepo,
+    MessagingConversationsRepo,
     MessagingModule,
   ],
   exports: [Messaging, QQScan, MessagingBindings],
@@ -449,6 +452,7 @@ export class CompanyModule {}
     DesktopPrivacySettingsRoutes,
     PluginRoutes,
     PluginRegistryRoutes,
+    NpmPluginPackages,
     InstalledPluginRoutes,
     RsiRoutes,
     SuggestIdRoutes,

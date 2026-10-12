@@ -15,15 +15,17 @@ import { REPO_ROOT } from "./helpers/roots";
 
 const PLUGINS = join(REPO_ROOT, "plugins");
 
-/** The library's plugins whose manifest files them under the `rsi` category, by name. */
+/** The library's plugins whose package.json (`penguin.category`) files them under `rsi`, by name. */
 function rsiPlugins(): string[] {
   return readdirSync(PLUGINS, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .filter((entry) => {
-      const file = join(PLUGINS, entry.name, "plugin.json");
+      const file = join(PLUGINS, entry.name, "package.json");
       if (!existsSync(file)) return false;
-      const manifest = JSON.parse(readFileSync(file, "utf8")) as { category?: string };
-      return manifest.category === "rsi";
+      const manifest = JSON.parse(readFileSync(file, "utf8")) as {
+        penguin?: { category?: string };
+      };
+      return manifest.penguin?.category === "rsi";
     })
     .map((entry) => entry.name)
     .sort();

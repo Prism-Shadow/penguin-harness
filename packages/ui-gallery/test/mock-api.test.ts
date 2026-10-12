@@ -148,6 +148,27 @@ describe("the mocked API", () => {
     expect(stamps).toEqual([...stamps].sort().reverse());
   });
 
+  it("answers the sidebar's batch entry by entry as the list would, an unknown Agent absent", async () => {
+    const store = resetStore({ lang: "en", signedIn: true });
+    const project = store.f.project.projectId;
+    const agent = store.f.agents[0]!.agentId;
+    const opts = {
+      limit: 3,
+      order: "activity" as const,
+      category: "active" as const,
+      excludeOrg: true,
+    };
+    const listed = await api.listSessions(project, agent, { ...opts, withCounts: true });
+    const batch = await api.batchSessions(project, [
+      { agentId: agent, ...opts, withCounts: true },
+      { agentId: "no_such_agent", ...opts },
+    ]);
+    expect(batch.results).toEqual([
+      { agentId: agent, ok: true, ...listed },
+      { agentId: "no_such_agent", ok: false, reason: "absent" },
+    ]);
+  });
+
   it("serves a running Session's history with its live tail, and a finished one without", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const running = store.f.sessions.find((s) => s.status === "running")!;

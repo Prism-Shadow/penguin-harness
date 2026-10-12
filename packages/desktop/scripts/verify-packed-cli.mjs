@@ -60,6 +60,27 @@ function namesThisBuild(printed) {
   return printed === `v${version}` || printed.startsWith(`v${version}-`);
 }
 
+// The TypeScript compiler the build staged (scripts/build-assets.mjs): its entry and the default
+// library files it reads from its own directory. electron-builder leaves every `*.d.ts` out of
+// `files`, so the library files travel as extra resources (electron-builder.yml); an app packed
+// without them resolves the compiler and then fails every workflow it compiles.
+const compilerDir = path.join(pkgDir, "dist", "node_modules", "typescript");
+const compilerFiles = fs.existsSync(path.join(compilerDir, "lib"))
+  ? [
+      "package.json",
+      ...fs
+        .readdirSync(path.join(compilerDir, "lib"))
+        .sort()
+        .map((name) => `lib/${name}`),
+    ].map((rel) => `dist/node_modules/typescript/${rel}`)
+  : [];
+if (compilerFiles.length === 0) {
+  console.error(
+    `[verify-packed-cli] no staged compiler under ${compilerDir} — run the desktop build first.`,
+  );
+  process.exit(1);
+}
+
 const problems = [];
 let ran = 0;
 
@@ -79,14 +100,21 @@ for (const app of dirs) {
   // The plugin library travels as electron-builder's collected dependencies, at the app root's
   // node_modules: the packed server resolves each package by name from there, and a plugin
   // that did not make it in is simply absent from every Agent's library, with nothing else
-  // failing.
-  const pluginFiles = pluginNames.map((name) => `node_modules/${name}/plugin.json`);
+  // failing. Each one is its manifest (package.json) beside the skills or hooks it ships.
+  const pluginFiles = pluginNames.map((name) => `node_modules/${name}/package.json`);
+  for (const name of pluginNames) {
+    const content = ["skills", "hooks"].map((sub) => path.join(app, "node_modules", name, sub));
+    if (!content.some((dir) => fs.existsSync(dir))) {
+      problems.push(`${app}: node_modules/${name} carries neither skills/ nor hooks/.`);
+    }
+  }
   for (const rel of [
     "bin/penguin",
     "bin/penguin.cmd",
     "dist/penguin.js",
     "web-dist/index.html",
     ...pluginFiles,
+    ...compilerFiles,
   ]) {
     const file = path.join(app, ...rel.split("/"));
     if (!fs.existsSync(file)) {

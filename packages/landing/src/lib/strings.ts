@@ -481,6 +481,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
           "ollama",
           "llamafactory",
           "skill-porting",
+          "plugin-porting",
         ],
       },
       {

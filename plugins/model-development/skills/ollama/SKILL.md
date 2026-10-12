@@ -1,6 +1,7 @@
 ---
 name: ollama
 description: Deploy and serve local models with Ollama — pull and run them, then expose the OpenAI-compatible endpoint to apps and agents.
+version: 2026.10.04.1
 ---
 
 # Ollama Serving

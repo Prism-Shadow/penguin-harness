@@ -44,7 +44,10 @@ export type Role = "user" | "assistant";
  *     quota, and the credential failures of `isAuthenticationError`) or a deterministic
  *     client-side rejection (fast mode on a model without a fast tier). The engine stops
  *     the run and surfaces the error; the fix is a config/credential change, then a new
- *     request.
+ *     request. The one exception is a provider 4xx on an input that holds images: the
+ *     engine takes it as a rejection of the images, replaces them with a note quoting the
+ *     provider and retries at once, recording that attempt's `request_end` as `retryable`
+ *     with the code `image_rejected`.
  *
  * The one vocabulary every stop_reason-carrying record shares — model messages, tool
  * results, request and compaction terminals alike. Tool executions rarely have a
@@ -347,10 +350,15 @@ export type ErrorCode =
   | "malformed" // response failed parsing/validation, or the stream was truncated
   | "auth" // the provider rejected the credentials
   | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
+  | "image_rejected" // a provider 4xx on an input holding images, retried with them replaced
   | "unsupported" // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input" // the input failed to assemble into a request
-  // MCP connect failures.
-  | "connect_failed";
+  // MCP connect failures: a server that could not connect, and a server that was not
+  // contacted because the Agent's vault lacks a key its entry references or because it needs
+  // an OAuth sign-in (per-server results of mcp_connect_end).
+  | "connect_failed"
+  | "mcp_needs_setup"
+  | "mcp_sign_in_required";
 
 /** The shared error-reporting block (see ErrorCode). */
 export interface ErrorInfo {
@@ -415,7 +423,8 @@ export interface RetryDetail extends ErrorInfo {
    * Planned in-run retry wait (ms) — present ONLY when the engine will retry this failure
    * within the same run (status `retryable` with attempts remaining under the
    * applicable cap). Computed by the same formula as the actual backoff sleep
-   * (`reconnectDelayMs`), so the announced wait and the real one cannot drift; the Web App
+   * (`reconnectDelayMs`), so the announced wait and the real one cannot drift — except
+   * `image_rejected`, retried at once with the images replaced, which announces 0; the Web App
    * renders it as a live countdown to the next attempt. Absent on completed requests and on
    * final failures — a non-completed request_end without `retry_in_ms` is the run's
    * terminal record (no abort event follows: abort marks a user interruption).
@@ -533,7 +542,7 @@ export interface ToolListReadyPayload {
 export interface McpServerConnectResult {
   server: string;
   transport: "stdio" | "http" | "sse";
-  /** `completed` / `fatal` (connect or discovery failed; not retried within the run) / `aborted`. Legacy Traces spell the failure `failed`. */
+  /** `completed` / `fatal` (connect or discovery failed, or the server was skipped — see `error_code`; not retried within the run) / `aborted`. Legacy Traces spell the failure `failed`. */
   status: StopReason;
   duration_ms: number;
   /** Number of tools discovered (present on completed). */

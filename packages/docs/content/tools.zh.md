@@ -200,14 +200,14 @@ WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进
 
 `edit_file` 和 `write_file` 在服务器进程内按文件串行执行，串行键取文件的真实路径，因此符号链接与其目标算作同一个文件。并行编辑同一文件时，会依次应用各次修改；如果前一次编辑已经移除了某个 `old_string`，后续编辑将匹配失败，而不是覆盖前面的修改。其他进程的写入不受这把锁约束。
 
-`read_file` 除文本外还能读取图片。图片分支接受不超过 5MB 的 png、jpeg、gif 或 webp 文件（先按魔数识别，再按扩展名识别），也接受 `file_path` 中给出的 http(s) URL。URL 只能用作图片来源，且会先检查响应的 content-type。
+`read_file` 除文本外还能读取图片。魔数或扩展名表明是图片的文件走图片分支，`file_path` 中给出的 http(s) URL 也一样；URL 只能用作图片来源。格式只按文件字节（魔数）判定：不超过 5MB 的 png、jpeg、gif 或 webp 才会被读取，其余格式（如 SVG、HEIC 照片、改了扩展名的网页）一律拒绝，并提示先转换为 PNG 或 JPEG。扩展名和响应的 content-type 都不决定格式。
 
 返回什么取决于 Session 模型的 vision 标志：
 
-- 支持图片的模型会直接拿到图片内容，文字输出只有一行，例如 `image/png, 123.4 kB`。
-- 纯文本模型则由 Project 的 `vision_model` 回答 `prompt`（默认是一段详细描述），以工具文字输出的形式流式返回。图片本身不会进入这个 Session 的历史。未配置 `vision_model` 时，在纯文本 Session 中读取图片会失败，并提示用户到模型设置中选择一个。参见[模型与供应商](/models)。
+- 支持图片的模型会直接拿到图片内容，文字输出只有一行，给出格式和字节大小，例如 `image/png, 123.4 kB`。供应商随后拒绝这次请求时，引擎会去掉图片重发（见[可重试失败与致命失败](/agent-loop#可重试失败与致命失败)），并在工具输出中留下一句固定说明，写明图片已去掉；供应商的报错原文经重试输入的 `[request_error]` 行到达模型（见[自动重连](/agent-loop#自动重连)）。
+- 纯文本模型则由 Project 的 `vision_model` 回答 `prompt`（默认是一段详细描述），以工具文字输出的形式流式返回。图片本身不会进入这个 Session 的历史。视觉模型拒收图片时，工具输出会附上同样的原因与建议。未配置 `vision_model` 时，在纯文本 Session 中读取图片会失败，并提示用户到模型设置中选择一个。参见[模型与供应商](/models)。
 
-走哪个分支由 `VisionDescriberService` 决定；SDK 只在纯文本 Session 时才向 Environment 注入它，因此一条配置（不带 `forModel`）即可同时服务两类模型。
+走哪个分支由 `VisionDescriberService` 决定；SDK 只在纯文本 Session 时才向 Environment 注入它，因此一条配置（不带 `forModel`）即可同时服务两类模型。支持图片的模型拿到的 `read_file` 不带 `prompt`：组装时在内存中把这个参数从 schema 里移除，与 `call_description: false` 移除 `description` 的做法相同，YAML 文件本身不会改动。
 
 ```ts
 // read_file — cat -n style output (line number, tab, content) for text; overlong single lines
@@ -218,7 +218,7 @@ WSL 后端下，助手在发行版内运行，初始化时已把 `nodejs` 装进
   file_path: string;       // required: absolute, or relative to the Workspace; an http(s) URL for an image
   offset?: number;         // 1-based line to start from; default 1
   limit?: number;          // max lines returned; default 2000 — a trailing note points at the continuation
-  prompt?: string;         // a question about an image, answered by the vision_model for a text-only model; default: a detailed description
+  prompt?: string;         // text-only models only: a question about an image, answered by the vision_model; default: a detailed description
 }
 
 // edit_file — the file must exist; old_string must occur exactly once (or set replace_all);
@@ -394,9 +394,9 @@ tools:
 
 ## MCP Server
 
-`tools.mcpServers` 的每一项都是 `{ name, config }`。`name` 会成为工具名的前缀：必须以字母或数字开头，且只能包含字母、数字、`_` 和 `-`；名称重复的条目直接跳过。`config` 描述传输方式，支持三种：
+`tools.mcpServers` 的每一项都是 `{ name, config }`，插件安装的条目另带 `plugin`（见[技能与插件](/skills#插件中的-mcp-server)）。`name` 会成为工具名的前缀：必须以字母或数字开头，且只能包含字母、数字、`_` 和 `-`；名称重复的条目直接跳过。`config` 描述传输方式，支持三种：
 
-- `stdio`：本地进程（`command` / `args` / `env` / `cwd`）。进程环境变量由 SDK 的安全继承默认值和条目的 `env` 合并而成，`env` 优先。与命令子进程不同，MCP Server 进程**不会**拿到 Agent 的 Vault：Server 需要的任何变量都要列在条目的 `env` 里。`cwd` 默认为当前 Session 的 Workspace。该进程与命令一样在 Session 的[沙盒](/settings#沙盒)下启动：同一个 confiner 改写它的 argv，没有后端能实施的策略会让该 Server 连接失败，而不是脱离封禁启动。
+- `stdio`：本地进程（`command` / `args` / `env` / `cwd`）。进程环境变量由 SDK 的安全继承默认值和条目的 `env` 合并而成，`env` 优先。与命令子进程不同，MCP Server 进程**不会**拿到 Agent 的整个 Vault：Server 需要的任何变量都要列在条目的 `env` 里，其中的机密写成 [Vault 引用](#vault-引用)。`cwd` 默认为当前 Session 的 Workspace。该进程与命令一样在 Session 的[沙盒](/settings#沙盒)下启动：同一个 confiner 改写它的 argv，没有后端能实施的策略会让该 Server 连接失败，而不是脱离封禁启动。
 - `http`：Streamable HTTP，当前规范的远程传输方式（`url` / `headers`）。
 - `sse`：旧式 HTTP+SSE 传输方式，为尚未迁移的 Server 保留（`url` / `headers`）。
 
@@ -424,17 +424,31 @@ tools:
       config:
         transport: http
         url: https://mcp.linear.app/mcp
-        headers: { Authorization: "Bearer ..." }
+        headers: { Authorization: "Bearer ${LINEAR_API_KEY}" }   # read from the agent's Vault
         permission: r        # auto (default) | r | rw
 ```
+
+### Vault 引用
+
+条目 `config` 中的任意字符串值（请求头、`env` 的值、参数、`oauth` 字段）都可以写 `${KEY}`，`KEY` 遵循 Vault 的键名规则：以字母或 `_` 开头，其后只能是字母、数字和 `_`。Server 连接时，每个引用都会替换为 Agent 的 Vault 中同名键的值。`system_config.yaml`、配置 API 和 Trace 里始终只有引用；送到 Server 的也只有条目引用的那几个键，Vault 的其余内容不会给它。这条规则对每个条目都成立，无论是你手写的，还是插件安装的。
+
+- `url` 的主机部分不能使用引用：Vault 决定发给 Server 什么，而不决定连接哪个 Server。无论 URL 怎样书写主机，判断都按连接时解析地址的方式进行。路径或查询参数中可以使用。
+- 替换只做一次：本身含有 `${…}` 的 Vault 值不会再被解析。
+- 连接测试只为与 Agent 上已保存条目完全一致的条目填入引用。新的或改动过、又引用了 Vault 的条目既不填值也不连接，测试会提示先保存：否则任何能测试条目的人都可以把 Vault 中的值发往自己指定的地址。
+- Server 出错时可能复述它收到的内容，例如拒绝请求时引用请求行或请求头，或进程在 stderr 打印自己的环境。这类错误文本出现在警告、Trace 的连接结果或模型读到的工具结果里时，其中的 Vault 值会换回对应的引用。不足六个字符的值保持原样：它们算不上机密，替换反而会打乱错误文本。
+- `${PLUGIN_ROOT}` 不是 Vault 键。安装插件的 Server 时，它会替换为插件包所在的目录。
+- Vault 补不全引用的 Server 不会被连接，而是按「待设置」跳过；它的警告和连接结果会列出缺少的键名，从不包含值。这些键写进 Vault 后，该 Server 在 Agent 的下一个模型上下文连接。
+- 带 `config.oauth` 的条目表示该 Server 用 OAuth 登录；替换之后仍没有 `Authorization` 请求头时，它按「需登录」跳过：本版本还不能登录。同时接受 token 的 Server，可以写成 `Authorization: Bearer ${KEY}`。
+
+已有条目的某个值里若写着字面的 `${…}`，同样会被当作引用读取；在 Vault 有这个键之前，该 Server 按「待设置」跳过。
 
 ### 连接与工具发现
 
 - 连接是**惰性**的。创建 Session 立即返回；第一次 `run()` 会并行连接所有 Server，并一次性完成工具发现。
 - 这段等待以一对 `mcp_connect_begin` / `mcp_connect_end` 事件流式发出：前端据此显示「连接中」状态，结束事件携带总体状态和每个 Server 的结果。完整的工具定义随后以 `tool_list_ready` 事件发出（见 [OmniMessage](/omni-message)）。在 Trace 中，这三个事件都落在这次运行的输入之后，属于新的一轮。
 - 连接期间中断会**取消**这次尝试，下一次 `run()` 会重新连接。
-- 发现的工具是模型上下文的一份快照：`tools/list_changed` 通知一律忽略。压缩开启下一个上下文时，配置条目未变的 Server 保留现有连接和工具；已移除或已变更的 Server 会断开连接，新增、变更或此前连接失败的 Server 会重新连接。连接事件对只在有 Server 需要连接时才出现，而 `tool_list_ready` 总是会发出（见[上下文压缩](/agent-loop)）。
-- Server 连不上或条目无效时，只会在 stderr 上输出一条警告并跳过。**Session 绝不会因此阻塞。**
+- 发现的工具是模型上下文的一份快照：`tools/list_changed` 通知一律忽略。压缩开启下一个上下文时，配置条目未变的 Server 保留现有连接和工具，条目引用的 Vault 值也算条目的一部分；已移除或已变更的 Server 会断开连接，新增、变更或此前连接失败的 Server 会重新连接。连接事件对只在有 Server 需要连接时才出现，而 `tool_list_ready` 总是会发出（见[上下文压缩](/agent-loop)）。
+- Server 连不上或条目无效时，只会在 stderr 上输出一条警告并跳过。**Session 绝不会因此阻塞。** 按「待设置」或「需登录」跳过的 Server 从不会被连接，它的连接结果是一次失败，错误码为 `mcp_needs_setup` 或 `mcp_sign_in_required`。
 - 发现的工具以 `mcp__<server>__<tool>` 的形式加入扁平的工具命名空间。全名不符合 LLM 工具名规范（字母、数字、`_` 和 `-`，最多 128 个字符），或者 Server 重复列出的工具，会跳过并给出警告。其余工具与内置工具一样，走相同的[执行契约](#执行契约)（超时、截断、中断）和[审批](#审批)流程。
 
 ### 权限映射

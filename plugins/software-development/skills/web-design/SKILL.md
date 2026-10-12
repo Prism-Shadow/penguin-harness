@@ -1,6 +1,7 @@
 ---
 name: web-design
 description: Penguin visual language for generated web pages and app UIs — GitHub-style simplicity with a single blue accent, light and pure-black dark themes, design tokens, component and chat-interface recipes, plus an opt-in warm paper editorial theme.
+version: 2026.10.04.1
 ---
 
 # Web Design
