@@ -403,7 +403,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       "--provider",
       "penguin-go",
       "--client-type",
-      "google-genai",
+      "mmsp",
       "--root",
       tmpRoot,
     ]);
@@ -468,7 +468,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     ) as { models: Array<Record<string, unknown>> };
     const by = (p: string, id: string) =>
       parsed.models.find((m) => m.provider === p && m.model_id === id)!;
-    expect(by("penguin-go", "gemini-3.8-flash").client_type).toBe("google-genai");
+    expect(by("penguin-go", "gemini-3.8-flash").client_type).toBe("mmsp");
     expect(by("penguin-go", "gemini-3.8-flash").base_url).toBeUndefined();
     expect(by("deepseek", "deepseek-flash").client_type).toBeUndefined();
     expect(by("deepseek", "deepseek-flash").base_url).toBeUndefined();
@@ -480,8 +480,8 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     const line = (re: RegExp) => list.out.split("\n").find((l) => re.test(l));
     // The relay endpoint is the group's; the protocol is the row's own.
     const gemini = line(/penguin-go\s+gemini-3\.8-flash\s/);
-    expect(gemini).toContain("base_url=https://token.penguin.ooo/api (provider)");
-    expect(gemini).toMatch(/client_type=google-genai(\s|$)/);
+    expect(gemini).toContain("base_url=https://go.penguin.ooo/api/v1 (provider)");
+    expect(gemini).toMatch(/client_type=mmsp(\s|$)/);
     // No table, nothing stored: no endpoint and no protocol, MMSP routes the id.
     const direct = line(/deepseek\s+deepseek-flash\s/);
     expect(direct).not.toContain("base_url=");

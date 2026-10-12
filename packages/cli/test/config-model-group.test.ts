@@ -211,8 +211,8 @@ describe("penguin config model add without --model-id: the group's connection", 
     }
     // The Penguin Go presets store their own protocol, which the group's does not override.
     const gemini = await listLine("penguin-go", "gemini-3.8-flash");
-    expect(gemini).toContain("client_type=google-genai");
-    expect(gemini).not.toContain("client_type=google-genai (provider)");
+    expect(gemini).toContain("client_type=mmsp");
+    expect(gemini).not.toContain("client_type=mmsp (provider)");
   });
 
   it("a group of the user's own takes its connection first, and the models added to it follow", async () => {
