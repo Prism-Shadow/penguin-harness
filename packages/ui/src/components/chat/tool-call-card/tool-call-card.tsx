@@ -63,6 +63,11 @@ export interface ToolCallCardProps {
   nameTooltip?: string;
   /** The human-readable line beside the name (the call's description, a file path). */
   subtitle?: string | null;
+  /**
+   * The whole value behind a subtitle the caller shortened (a file path shown as
+   * `…/parent/file`): the subtitle's hover hint, shown even while the short form fits.
+   */
+  subtitleFull?: string | null;
   duration?: ToolCallDuration;
   /** A word at the row's right end saying where the call's work went. */
   marker?: string;
@@ -92,6 +97,7 @@ export function ToolCallCard({
   name,
   nameTooltip,
   subtitle,
+  subtitleFull,
   duration,
   marker,
   action,
@@ -126,7 +132,17 @@ export function ToolCallCard({
             {name}
           </span>
           {subtitle && (
-            <span data-slot="detail" className="min-w-0 shrink truncate text-xs text-fg-muted">
+            <span
+              data-slot="detail"
+              {...(subtitleFull && subtitleFull !== subtitle
+                ? {
+                    "data-tooltip": subtitleFull,
+                    "data-tooltip-content": "code",
+                    "data-tooltip-extra": true,
+                  }
+                : {})}
+              className="min-w-0 shrink truncate text-xs text-fg-muted"
+            >
               {subtitle}
             </span>
           )}

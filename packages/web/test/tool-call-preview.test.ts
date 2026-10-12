@@ -9,6 +9,8 @@
  * - The header subtitle shows the model's description for command and subagent tools and the
  *   file path for file tools, on one line, holding a still-streaming field back until it
  *   closes (#137) and showing whatever is there once the arguments settle.
+ * - A file path the subtitle shortened keeps its whole form for the hover hint; a description,
+ *   or a path short enough to show whole, has none.
  * - A pending file-tool approval decodes the rewrite, the content or the read window.
  * - A call launched with the background flag is marked; one moved to the background later is
  *   marked from the note its output carries.
@@ -18,6 +20,7 @@
 import { describe, expect, it } from "vitest";
 import {
   headerSubtitle,
+  headerSubtitlePath,
   isBackgroundCall,
   isDetachedCall,
   pendingFilePayload,
@@ -78,6 +81,25 @@ describe("shortenPath", () => {
     expect(shortenPath("packages/core/src/state/default-config.ts")).toBe(
       "…/state/default-config.ts",
     );
+  });
+});
+
+describe("headerSubtitlePath", () => {
+  it("gives the whole path behind a shortened file-tool subtitle", () => {
+    const args = '{"file_path":"packages/core/src/state/default-config.ts"}';
+    expect(headerSubtitle("read_file", args)).toBe("…/state/default-config.ts");
+    expect(headerSubtitlePath("read_file", args)).toBe("packages/core/src/state/default-config.ts");
+  });
+
+  it("gives nothing for a path shown whole, a description, or a path still streaming", () => {
+    expect(headerSubtitlePath("read_file", '{"file_path":"src/app.py"}')).toBeNull();
+    expect(
+      headerSubtitlePath("read_file", '{"description":"Check the config","file_path":"/a/b/c.ts"}'),
+    ).toBeNull();
+    expect(
+      headerSubtitlePath("exec_command", '{"cmd":"ls","description":"List files"}'),
+    ).toBeNull();
+    expect(headerSubtitlePath("read_file", '{"file_path":"/home/us', false)).toBeNull();
   });
 });
 

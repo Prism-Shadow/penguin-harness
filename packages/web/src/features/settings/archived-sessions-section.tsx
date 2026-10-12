@@ -323,7 +323,9 @@ function ArchiveGroup({
         />
         <h3
           className="min-w-0 flex-1 truncate text-sm font-medium"
-          {...(temp ? {} : { "data-tooltip": group.workspace })}
+          // The heading names the directory by its basename; the path behind it is nowhere else
+          // on this page.
+          {...(temp ? {} : { "data-tooltip": group.workspace, "data-tooltip-extra": true })}
         >
           {group.projectName}
           <span className="px-1.5 text-fg-subtle">›</span>

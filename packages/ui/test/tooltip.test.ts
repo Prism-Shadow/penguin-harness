@@ -13,6 +13,18 @@
  * anything `aria-hidden` are not read as words; a hint marked as carrying what the screen does
  * not show (`data-tooltip-extra`) opens over visible text all the same.
  *
+ * A shortened line nobody wrote a hint for still shows its whole text:
+ * - Given a line shortened by an ellipsis or a line clamp, when the pointer rests on it (or on
+ *   an ancestor-held span inside it), then it is the line asked about.
+ * - Given a row control holding a title and a description, when the pointer rests anywhere on
+ *   the row, then both lines are candidates, in order, so whichever is cut off can show.
+ * - Given a panel that merely contains shortened rows, when the pointer rests on its padding,
+ *   then nothing is asked about: a panel is not one line.
+ * - Given a `<Tooltip>` wrapper or a title that scrolls its own tail into view
+ *   (`data-tooltip-owned`), then no full-text hint is added inside it.
+ * - The whole text shows in the code panel for a monospace line (a path), the text panel
+ *   otherwise, and a blank line asks for nothing.
+ *
  * The panel itself mounts only while hovered and through a portal, which a static render cannot
  * reach; what it may be drawn with (the overlay surface, token inks, the glass hook) is pinned
  * against the source. Where the app may still use a native `title` is the web app's
@@ -23,14 +35,20 @@ import { join } from "node:path";
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import {
+  TOOLTIP_OWNED_ATTR,
   Tooltip,
   belowTrigger,
   besideTrigger,
   hintAllowed,
   isCutOff,
+  lineRequest,
   namedHint,
   readingText,
+  shortenedLines,
+  shortensText,
   tooltipRequest,
+  type LineNode,
+  type LineStyle,
   type ReadingNode,
 } from "../src/components/overlays/tooltip/tooltip";
 import { renderStatic } from "../src/testing";
@@ -187,6 +205,87 @@ describe("a data-tooltip request", () => {
   });
 });
 
+describe("a shortened line with no hint of its own", () => {
+  const plain: LineStyle = { textOverflow: "clip", lineClamp: "none", fontFamily: "Inter" };
+  const ellipsis: LineStyle = { ...plain, textOverflow: "ellipsis" };
+
+  /** A hand-built element: a tag, its attributes, how it sets its text, and its children. */
+  interface FakeNode extends LineNode {
+    name: string;
+    style: LineStyle;
+    children: FakeNode[];
+  }
+  const node = (
+    name: string,
+    style: LineStyle,
+    children: FakeNode[] = [],
+    attrs: string[] = [],
+  ): FakeNode => {
+    const self: FakeNode = {
+      name,
+      style,
+      children,
+      parentElement: null,
+      hasAttribute: (attr) => attrs.includes(attr),
+      matches: (selector) => selector.split(",").some((s) => s.trim().split(/[[.]/)[0] === name),
+      querySelectorAll: () => descendants(self),
+    };
+    for (const child of children) child.parentElement = self;
+    return self;
+  };
+  const descendants = (n: FakeNode): FakeNode[] =>
+    n.children.flatMap((child) => [child, ...descendants(child)]);
+  const styleOf = (n: FakeNode) => n.style;
+
+  it("counts an ellipsis or a line clamp as shortening, plain clipping as not", () => {
+    expect(shortensText(ellipsis)).toBe(true);
+    expect(shortensText({ ...plain, lineClamp: "2" })).toBe(true);
+    expect(shortensText(plain)).toBe(false);
+    expect(shortensText({ ...plain, lineClamp: "" })).toBe(false);
+  });
+
+  it("asks about the line the pointer rests on, or the shortened line around it", () => {
+    const text = node("span", plain);
+    const line = node("p", ellipsis, [text]);
+    node("div", plain, [line]);
+    expect(shortenedLines(line, styleOf)).toEqual({ at: line, lines: [line] });
+    expect(shortenedLines(text, styleOf)).toEqual({ at: line, lines: [line] });
+  });
+
+  it("offers every line of a row control, title and description in order", () => {
+    const title = node("span", ellipsis);
+    const description = node("p", ellipsis);
+    const row = node("button", plain, [node("div", plain, [title, description])]);
+    expect(shortenedLines(row, styleOf)).toEqual({ at: row, lines: [title, description] });
+  });
+
+  it("asks about nothing on a panel that merely holds shortened rows", () => {
+    const panel = node("div", plain, [node("button", plain, [node("span", ellipsis)])]);
+    expect(shortenedLines(panel, styleOf)).toBeNull();
+  });
+
+  it("adds nothing inside a subtree whose hint someone else decides", () => {
+    const scrolling = node("span", ellipsis, [node("span", plain)], [TOOLTIP_OWNED_ATTR]);
+    expect(shortenedLines(scrolling, styleOf)).toBeNull();
+    expect(shortenedLines(scrolling.children[0]!, styleOf)).toBeNull();
+    const wrapped = node("span", plain, [node("span", ellipsis)], [TOOLTIP_OWNED_ATTR]);
+    const row = node("button", plain, [wrapped, node("span", ellipsis)]);
+    expect(shortenedLines(row, styleOf)?.lines).toEqual([row.children[1]]);
+  });
+
+  it("shows the whole text in the code panel for a monospace line, the text panel otherwise", () => {
+    const mono = { ...ellipsis, fontFamily: 'ui-monospace, "JetBrains Mono", monospace' };
+    expect(lineRequest("  feedback/review-style.md ", mono)).toEqual({
+      label: "feedback/review-style.md",
+      content: "code",
+      placement: "bottom",
+      extra: false,
+    });
+    expect(lineRequest("A long memory description", ellipsis)?.content).toBe("text");
+    expect(lineRequest("   ", ellipsis)).toBeNull();
+  });
+});
+
 describe("namedHint", () => {
   it("names a wordless mark with the words its hint shows", () => {
     expect(namedHint("Bar 3")).toEqual({
@@ -198,11 +297,11 @@ describe("namedHint", () => {
 });
 
 describe("Tooltip", () => {
-  it("wraps its trigger in the measuring span and renders no panel until hovered", () => {
+  it("wraps its trigger in the measuring span, which owns the hints inside, and renders no panel until hovered", () => {
     const html = renderStatic(
       createElement(Tooltip, { label: "Settings", className: "mt-auto", children: "gear" }),
     );
-    expect(html).toBe('<span class="flex mt-auto">gear</span>');
+    expect(html).toBe('<span data-tooltip-owned="" class="flex mt-auto">gear</span>');
     // Deliberately no tooltip role or description: the trigger's own name is the one name.
     expect(html).not.toContain('role="tooltip"');
     expect(html).not.toContain("aria-describedby");

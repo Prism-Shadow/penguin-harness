@@ -100,6 +100,9 @@ export function Truncated({
       {...(disclosure === "tooltip" && !codeTooltip
         ? { "data-tooltip": text, "data-tooltip-content": "text" }
         : {})}
+      // While the tail scrolls into view, the scroll is the disclosure: the app-wide full-text
+      // hint for a cut-off line must not sit over the very text sliding past underneath it.
+      {...(disclosure === "scroll" ? { "data-tooltip-owned": "" } : {})}
     >
       {/* The scroll needs a child the keyframes can turn into an inline-block and
           transform; at rest it renders inline, i.e. exactly like the bare text node

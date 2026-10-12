@@ -42,6 +42,22 @@ describe("GroupHeader", () => {
       }),
     );
 
+  it("shows the full value behind its label on hover, marked as adding to the visible text", () => {
+    // A workspace group is labelled by its directory's basename; the path is nowhere else on
+    // screen, so its hint must open even when the basename fits.
+    const html = inZh(
+      createElement(GroupHeader, {
+        open: true,
+        onToggle: () => {},
+        label: "penguin-harness",
+        title: "/home/me/dev/penguin-harness",
+      }),
+    );
+    expect(html).toContain('data-tooltip="/home/me/dev/penguin-harness"');
+    expect(html).toContain('data-tooltip-content="text" data-tooltip-extra="true"');
+    expect(header(true, false)).not.toContain("data-tooltip");
+  });
+
   it("names its toggle by what pressing it does, in the interface's words", () => {
     expect(header(true, false)).toContain('aria-expanded="true" aria-label="折叠"');
     expect(header(false, false)).toContain('aria-expanded="false" aria-label="展开"');

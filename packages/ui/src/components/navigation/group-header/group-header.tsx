@@ -197,7 +197,11 @@ export function GroupHeader({
   muted?: boolean;
   /** An optional trailing count (a workspace group's active total). */
   count?: number;
-  /** An optional tooltip (a workspace group's full path). */
+  /**
+   * A hint that says what the label does not (a workspace group's full path behind its
+   * basename, an employee's organizations): marked as adding to the visible text, so it shows
+   * on hover even when the label fits.
+   */
   title?: string;
   /** Trailing header actions (pin, new chat, settings, import). */
   actions?: ReactNode;
@@ -239,7 +243,10 @@ export function GroupHeader({
         onClick={onToggle}
         aria-expanded={open}
         aria-label={open ? strings.collapse : strings.expand}
-        {...(title !== undefined ? { "data-tooltip": title } : {})}
+        // The text panel: a full path is wider than a label and wraps at its separators.
+        {...(title !== undefined
+          ? { "data-tooltip": title, "data-tooltip-content": "text", "data-tooltip-extra": true }
+          : {})}
         className="flex min-w-0 flex-1 items-center gap-1 self-stretch rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-fg/5"
       >
         {glyph !== undefined ? (

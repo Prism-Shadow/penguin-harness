@@ -17,7 +17,7 @@
  * means: `data-tooltip-extra`, or `<Tooltip extra>`, opens it over fully visible text. A hint
  * that only repeats the visible words is never marked, and never shows.
  *
- * Two ways in, one panel:
+ * Three ways in, one panel:
  * - `<Tooltip label>` wraps its trigger in a measuring span — for a trigger that needs the
  *   wrapper's extras (`suppressed`, a placement beside a rail).
  * - `data-tooltip="…"` on any element, read by the one `<TooltipLayer />` mounted at the app
@@ -27,6 +27,11 @@
  *   (default `bottom`), `data-tooltip-extra` marks the hint as adding to the visible text.
  *   Unlike `title`, it names nothing to assistive technology, so an element whose only name
  *   was its title carries an `aria-label` with the same words.
+ * - Nothing at all, for a line the page shortens with an ellipsis or a line clamp: hovered or
+ *   focused while it is actually cut off, and with no hint of its own around it, it shows its
+ *   whole text, so no shortened text is out of reach. A subtree whose hint someone else decides
+ *   — a `<Tooltip>` wrapper, a title that scrolls its own tail into view — carries
+ *   `data-tooltip-owned` and gets none.
  *
  * Portaled to document.body at fixed viewport coordinates, like every other overlay here
  * (see use-portal-panel.ts): an in-place absolute panel is a descendant of its trigger, so a
@@ -104,6 +109,12 @@ export const TOOLTIP_ATTR = "data-tooltip";
  * the instances that are not marked.
  */
 export const TOOLTIP_EXTRA_ATTR = "data-tooltip-extra";
+
+/**
+ * Marks a subtree whose hover hint someone else decides (a `<Tooltip>` wrapper, a title that
+ * scrolls its own tail into view), so the layer shows no full-text hint for a line inside it.
+ */
+export const TOOLTIP_OWNED_ATTR = "data-tooltip-owned";
 
 /** A box that may clip its content: the four numbers a truncation check reads. */
 export interface ClipBox {
@@ -206,6 +217,111 @@ function* clipBoxes(el: Element): Generator<ClipBox> {
  */
 export function hintAllowedFor(el: Element, extra = false): boolean {
   return hintAllowed(readingText(el), clipBoxes(el), extra);
+}
+
+/** The computed styles that say how an element sets its text: the part of a CSSStyleDeclaration read here. */
+export interface LineStyle {
+  textOverflow: string;
+  /** `-webkit-line-clamp`: `none`, or the number of lines kept. */
+  lineClamp: string;
+  fontFamily: string;
+}
+
+/** Whether an element shortens its own text: an ellipsis (`truncate`) or a line clamp. */
+export function shortensText(style: LineStyle): boolean {
+  return (
+    style.textOverflow === "ellipsis" || (style.lineClamp !== "" && style.lineClamp !== "none")
+  );
+}
+
+/** The part of a DOM element the search for a shortened line walks; structural, so a hand-built tree serves too. */
+export interface LineNode {
+  parentElement: LineNode | null;
+  hasAttribute(name: string): boolean;
+  matches(selector: string): boolean;
+  querySelectorAll(selector: string): ArrayLike<LineNode>;
+}
+
+/** How far up from the hovered node a shortened line is looked for. */
+const LINE_SEARCH_DEPTH = 4;
+
+/**
+ * How many of a control's descendants are looked through for its shortened line: a row button
+ * holds a title, a description and a few marks, never a whole panel.
+ */
+const LINE_SEARCH_WITHIN = 40;
+
+/** A control a pointer or focus rests on as a whole, so the line inside it is what is asked about. */
+const CONTROL_SELECTOR =
+  "button, a[href], [role='button'], [role='menuitem'], [role='option'], [role='tab'], summary";
+
+/** What a hovered or focused node asks about when it carries no hint: where it rests, and the lines that may be cut off there. */
+export interface LineSubject<T> {
+  /** The element the pointer or focus rests on as far as the hint goes: the line, or the control holding the lines. */
+  at: T;
+  /** The shortened lines, in document order; the first one cut off when the hint would open is shown. */
+  lines: T[];
+}
+
+/**
+ * The shortened lines a hovered or focused node stands for, or null: the node or one of its
+ * nearest ancestors when that one shortens its text, else — for a control, which is asked about
+ * as a whole — every line inside it that does (a row's title and its description). Nothing
+ * inside a subtree marked `data-tooltip-owned` counts. Whether a line is actually cut off is
+ * measured later, when the hint would open, since a resize can cut it off or give it back.
+ */
+export function shortenedLines<T extends LineNode>(
+  start: T,
+  styleOf: (node: T) => LineStyle,
+): LineSubject<T> | null {
+  let node: T | null = start;
+  for (let depth = 0; node !== null && depth <= LINE_SEARCH_DEPTH; depth++) {
+    if (node.hasAttribute(TOOLTIP_OWNED_ATTR)) return null;
+    if (shortensText(styleOf(node))) return { at: node, lines: [node] };
+    node = node.parentElement as T | null;
+  }
+  if (!start.matches(CONTROL_SELECTOR)) return null;
+  const inside = start.querySelectorAll("*");
+  const lines: T[] = [];
+  for (let i = 0; i < inside.length && i < LINE_SEARCH_WITHIN; i++) {
+    const candidate = inside[i] as T;
+    if (shortensText(styleOf(candidate)) && !ownedWithin(candidate, start)) lines.push(candidate);
+  }
+  return lines.length === 0 ? null : { at: start, lines };
+}
+
+/** Whether `node`, or an ancestor of it up to and including `root`, is marked `data-tooltip-owned`. */
+function ownedWithin(node: LineNode, root: LineNode): boolean {
+  for (let at: LineNode | null = node; at !== null; at = at.parentElement) {
+    if (at.hasAttribute(TOOLTIP_OWNED_ATTR)) return true;
+    if (at === root) return false;
+  }
+  return false;
+}
+
+/** The computed `LineStyle` of a DOM element. */
+function lineStyleOf(el: Element): LineStyle {
+  const style = getComputedStyle(el);
+  return {
+    textOverflow: style.textOverflow,
+    lineClamp: style.getPropertyValue("-webkit-line-clamp"),
+    fontFamily: style.fontFamily,
+  };
+}
+
+/**
+ * The request for a shortened line's whole text: its reading text, in the code panel when the
+ * line is set in a monospace face (a path, a command), in the text panel otherwise.
+ */
+export function lineRequest(text: string, style: LineStyle): TooltipRequest | null {
+  const label = text.trim();
+  if (label === "") return null;
+  return {
+    label,
+    content: /mono/i.test(style.fontFamily) ? "code" : "text",
+    placement: "bottom",
+    extra: false,
+  };
 }
 
 /** The trigger's viewport box — the part of a DOMRect the geometry reads. */
@@ -351,6 +467,7 @@ export function Tooltip({
   return (
     <span
       ref={anchorRef}
+      {...{ [TOOLTIP_OWNED_ATTR]: "" }}
       className={`flex ${className ?? ""}`}
       onPointerEnter={show}
       onPointerLeave={hide}
@@ -424,12 +541,17 @@ export function tooltipRequest(el: Pick<Element, "getAttribute">): TooltipReques
  * of handlers per element. The innermost element carrying the attribute wins, the delay is
  * `<Tooltip>`'s, and the panel closes on leave, blur, Escape, any scroll, a resize and a press
  * — a press because the element is being used now, not asked about.
+ *
+ * Where no element carries a hint, a shortened line (`shortenedLines`) that is cut off when the
+ * hint would open shows its whole text: a hint nobody wrote, so that no ellipsis hides text
+ * for good.
  */
 export function TooltipLayer() {
   const [open, setOpen] = useState<(TooltipRequest & { position: PanelPosition }) | null>(null);
 
   useEffect(() => {
-    let current: Element | null = null;
+    /** What the pointer or focus rests on: an element carrying a hint (no lines), or a line subject. */
+    let current: LineSubject<Element> | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const close = () => {
       if (timer !== null) clearTimeout(timer);
@@ -439,18 +561,43 @@ export function TooltipLayer() {
     };
     const holder = (node: EventTarget | null): Element | null =>
       node instanceof Element ? node.closest(`[${TOOLTIP_ATTR}]`) : null;
-    const start = (el: Element | null) => {
-      if (el === current) return;
+    /** What a node asks about: the element carrying a hint around it, else its shortened lines. */
+    const subject = (node: EventTarget | null): LineSubject<Element> | null => {
+      if (!(node instanceof Element)) return null;
+      const hinted = holder(node);
+      return hinted !== null ? { at: hinted, lines: [] } : shortenedLines(node, lineStyleOf);
+    };
+    /**
+     * The hint the subject shows now, and the element it hangs under: its own request where it
+     * carries one, else the whole text of its first line that is cut off at this moment.
+     */
+    const requestFor = (
+      subject: LineSubject<Element>,
+    ): { request: TooltipRequest; under: Element } | null => {
+      const own = tooltipRequest(subject.at);
+      if (own !== null) {
+        return hintAllowedFor(subject.at, own.extra) ? { request: own, under: subject.at } : null;
+      }
+      for (const line of subject.lines) {
+        if (!(line instanceof HTMLElement) || !isCutOff(line)) continue;
+        const request = lineRequest(readingText(line), lineStyleOf(line));
+        if (request !== null) return { request, under: line };
+      }
+      return null;
+    };
+    const start = (next: LineSubject<Element> | null) => {
+      if (next !== null && next.at === current?.at) return;
       close();
-      if (el === null || tooltipRequest(el) === null) return;
-      current = el;
+      if (next === null) return;
+      current = next;
       timer = setTimeout(() => {
         timer = null;
-        const el = current;
-        const request = el === null ? null : tooltipRequest(el);
-        if (el === null || request === null || !el.isConnected) return;
-        if (!hintAllowedFor(el, request.extra)) return;
-        const rect = el.getBoundingClientRect();
+        const subject = current;
+        if (subject === null || !subject.at.isConnected) return;
+        const found = requestFor(subject);
+        if (found === null) return;
+        const { request } = found;
+        const rect = found.under.getBoundingClientRect();
         const viewport = { width: window.innerWidth, height: window.innerHeight };
         setOpen({
           ...request,
@@ -461,14 +608,14 @@ export function TooltipLayer() {
         });
       }, HOVER_OPEN_DELAY_MS);
     };
-    const onOver = (e: PointerEvent) => start(holder(e.target));
+    const onOver = (e: PointerEvent) => start(subject(e.target));
     const onOut = (e: PointerEvent) => {
       if (current === null) return;
       const next = e.relatedTarget;
-      if (next instanceof Node && current.contains(next)) return;
+      if (next instanceof Node && current.at.contains(next)) return;
       close();
     };
-    const onFocusIn = (e: FocusEvent) => start(holder(e.target));
+    const onFocusIn = (e: FocusEvent) => start(subject(e.target));
     const onKey = (e: KeyboardEvent) => {
       // Heard, not stopped: the panel is not a dismissible layer, so the same press still
       // reaches the dialog or menu behind it.

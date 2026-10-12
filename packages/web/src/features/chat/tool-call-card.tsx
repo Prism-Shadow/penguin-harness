@@ -136,6 +136,18 @@ export function headerSubtitle(name: string, argsJson: string, settled = true): 
 }
 
 /**
+ * The whole path behind a subtitle `headerSubtitle` shortened (`…/parent/file`), for its hover
+ * hint; null when the subtitle is a description, or a path short enough to show whole.
+ */
+export function headerSubtitlePath(name: string, argsJson: string, settled = true): string | null {
+  const shown = headerSubtitle(name, argsJson, settled);
+  const pathArg = pathArgument(name);
+  if (shown === null || pathArg === null) return null;
+  const full = extractStringField(argsJson, pathArg)?.value.replace(/\s+/g, " ").trim() ?? "";
+  return full !== "" && full !== shown && shortenPath(full) === shown ? full : null;
+}
+
+/**
  * Whether this call was launched with `run_in_background: true` — the argument `exec_command`
  * and `run_subagent` share, and the one that leaves work running after the tool has returned.
  * The row marks those calls the way the session list marks their conversation.
@@ -384,6 +396,8 @@ export function SessionToolCall({ item, ctx }: { item: ToolCallItem; ctx: Stream
       // Settled once argument streaming stopped (or the complete call arrived): the subtitle's
       // completeness gate is lifted — whatever is there is final.
       subtitle={headerSubtitle(item.name, item.argumentsText, !item.callStreaming)}
+      // A file path the subtitle shortened keeps its whole form one hover away.
+      subtitleFull={headerSubtitlePath(item.name, item.argumentsText, !item.callStreaming)}
       duration={duration}
       // A call made with run_in_background, or moved there: the row says where its work went.
       marker={

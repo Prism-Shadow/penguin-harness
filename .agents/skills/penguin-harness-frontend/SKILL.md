@@ -89,6 +89,16 @@ banner's × and a browser tab's × have none. Either way the mark keeps its `ari
 is for assistive technology, not a panel. A hint on text that may truncate shows that text whole
 (plus an id when one helps), never the verb of the click — the underline already says it opens.
 
+**No ellipsis hides text for good** (owner, 2026-10-12: "缩略的路径或者文字…至少 hover 可以显示"). A
+line shortened by `truncate` or a line clamp needs no attribute: when it is actually cut off and
+nothing around it carries a `data-tooltip`, `TooltipLayer` shows its whole text on hover or
+focus (the code panel for a monospace line), and a pointer resting on a row control picks the
+row's first cut-off line. Write a `data-tooltip` only when the hint should say more than the line
+itself. A subtree that decides its own hint opts out with `data-tooltip-owned` — `<Tooltip>`'s
+wrapper does, and so does a title while it scrolls its tail into view (`Truncated`). A value the
+code shortens before it reaches the DOM (a basename, `…/parent/file`, a short id) is not covered
+by this — its whole form is not on the page — so it carries the full value as a marked hint.
+
 **A hint that says what the screen does not is marked, and then shows over visible text** (owner,
 2026-10-12): `data-tooltip-extra`, `<Tooltip extra>`, or the `tooltipExtra` / `titleExtra` prop of
 a component that takes its hint as a prop (`NavRow`, `Chip`, `FormPickerTrigger`; a `Badge`'s

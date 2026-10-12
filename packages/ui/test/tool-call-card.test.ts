@@ -37,6 +37,18 @@ describe("ToolCallCard", () => {
     expect(html).toContain('data-slot="progress"');
   });
 
+  it("hangs the whole path behind a shortened subtitle on it, and nothing on a subtitle shown whole", () => {
+    const shortened = card({
+      subtitle: "…/state/config.ts",
+      subtitleFull: "/repo/src/state/config.ts",
+    });
+    expect(shortened).toMatch(
+      /data-slot="detail" data-tooltip="\/repo\/src\/state\/config.ts" data-tooltip-content="code" data-tooltip-extra="true"[^>]*>…\/state\/config.ts</,
+    );
+    const whole = card({ subtitle: "List the files" });
+    expect(whole).toMatch(/<span data-slot="detail" class="[^"]*">List the files</);
+  });
+
   it("starts collapsed, its chevron named for what pressing it does", () => {
     const html = card({});
     expect(html).toContain('aria-expanded="false" aria-label="展开"');
