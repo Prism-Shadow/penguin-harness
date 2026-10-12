@@ -91,7 +91,7 @@ export function StartDashboard({
     <>
       {/* Its own query container: the brand and the counts share a line wherever the column
           holds both, the brand giving way (its slogan wraps) rather than the counts dropping. */}
-      <div className="@container mb-6">
+      <div className="@container mb-10">
         <div className="flex flex-col gap-4 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-6">
           <StartBrand />
           <Card padding="none" className="shrink-0 self-start overflow-hidden @2xl:self-auto">
@@ -122,7 +122,7 @@ export function StartDashboard({
         </div>
       </div>
       {composer}
-      <div className="@container mt-6">
+      <div className="@container mt-10">
         <ExamplesSection ready={skillsLoaded} fill={fill} readComposerText={readComposerText} />
       </div>
     </>
@@ -347,7 +347,7 @@ function ExamplesSection({
                 onOpen={() => setOpenFolder(folder.id)}
               />
               {open && (
-                <ul className={`space-y-1 ${examplePanelClass}`}>
+                <ul className={`space-y-1.5 ${examplePanelClass}`}>
                   {folder.tasks.map((task) => {
                     const copy = S.chat.exampleTasks[task.id];
                     return (

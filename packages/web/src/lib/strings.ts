@@ -3243,14 +3243,14 @@ export const zh = {
      */
     exampleTasks: {
       game: {
-        label: "2D 企鹅雪橇越野小游戏",
-        desc: "可爱南极企鹅滑雪橇跳石头，难度由易到难的 2D 纯前端小游戏",
+        label: "企鹅滑雪大冒险小游戏",
+        desc: "滑雪大冒险式的 2D 小游戏：企鹅顺着起伏的雪山下滑，冲过坡顶腾空，在空中翻滚得分",
         prompt:
-          "做一个可爱的南极企鹅滑雪橇越野 2D 小游戏：按空格键起跳，跃过冰面上迎面而来的石头；" +
-          "开局要足够简单、上手无压力，滑行速度与障碍密度随时间平滑、循序渐进地上升，避免突然变难，" +
-          "实时计分，撞上石头即结束并可一键重新开始。" +
-          "2D 横版画面、可爱卡通风，纯前端实现（单个 HTML 文件即可），界面遵循 web-design 技能。" +
-          "完成后在浏览器里自测一次，确认开局能轻松玩过几秒，并告诉我怎么打开和怎么玩。",
+          "做一个类似《滑雪大冒险》（Ski Safari）的 2D 小游戏：一只可爱的南极企鹅顺着起伏的雪山一路下滑，" +
+          "地形有高有低，冲过坡顶就会腾空；在空中按住空格键翻滚，落地时身体摆正就加分，翻得越多分越高，" +
+          "摔倒即结束并可一键重来。开局要简单，速度随时间平滑上升。" +
+          "2D 横版卡通画风，纯前端单个 HTML 文件，界面遵循 web-design 技能。" +
+          "完成后在浏览器里自测一次，并告诉我怎么打开和怎么玩。",
       },
       gamecenter: {
         label: "多智能体搭建小游戏中心",
@@ -3305,12 +3305,14 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
 完成后在浏览器打开 index.html 自测一次。`,
       },
       rhythmRunner: {
-        label: "音乐节奏跑酷小游戏",
-        desc: "喵斯快跑式的音乐节奏跑酷：企鹅主角，音符踩着节拍飞来，判定分 Perfect / Great / Miss",
+        label: "企鹅音乐节奏跑酷小游戏",
+        desc: "喵斯快跑式的节奏跑酷：接上方音符时企鹅飞起来，接下方音符时趴上雪橇贴地滑行",
         prompt:
           "做一个喵斯快跑（Muse Dash）式的音乐节奏跑酷小游戏：主角是一只企鹅，自动向前跑；" +
-          "音符画成音符图标，严格踩着节拍飞来，玩家按键击打，判定显示 Perfect / Great / Miss 三档，" +
-          "连击计分，难度随曲子推进。纯前端单文件，file:// 直接打开即玩。",
+          "音符画成音符图标，分上下两路踩着节拍飞来，玩家按键击打。接上方音符时企鹅展翅飞起来，" +
+          "接下方音符时趴上雪橇贴地滑行。判定显示 Perfect / Great / Miss 三档，连击计分。" +
+          "难度尽量简单：音符稀疏、判定宽松，漏接不会直接结束。配乐建议用纯音乐。" +
+          "纯前端单文件，file:// 直接打开即玩。",
       },
       ragDocsExpert: {
         label: "一句话生成 RAG 文档专家",
@@ -3330,7 +3332,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "按公司名（中文也行）自己对应到股票代码，查不到或没上市就直说，不要编。",
       },
       legalDesk: {
-        label: "法务智能体：上传文件，下载分析报告",
+        label: "一句话构建法务智能体应用",
         desc: "新建一个法务 Agent，配一个 Workflow 标签页：只有上传、文件列表和报告下载，看不到对话过程",
         prompt:
           "新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。" +
@@ -3360,7 +3362,7 @@ Benchmark：
 3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
-        label: "Default 优化：提升决策智能体的准确率",
+        label: "优化决策智能体",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
@@ -3372,11 +3374,12 @@ Benchmark：
 - candidate_round_limit：\`5\``,
       },
       benchmarkImport: {
-        label: "导入评测集：看看仓库里有哪些 Benchmark 包",
-        desc: "列出 penguin-harness-benchmark 仓库里可导入的 Benchmark 包，选定后由 benchmark-design 导入",
+        label: "导入 GDPevo 评测集",
+        desc: "导入 GDPevo 的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
         prompt:
-          "使用 `benchmark-design` 技能：列出 https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages " +
-          "下可导入的 Benchmark 包，标出本 Project 已有的，等我选定后再导入。",
+          "使用 `benchmark-design` 技能导入 GDPevo 评测集：" +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-train ，" +
+          "配对的测试集一并导入。本 Project 已经有了就直接告诉我，不要覆盖。",
       },
       dailyPlan: {
         label: "每天早 9 点的计划对话",

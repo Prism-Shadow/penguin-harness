@@ -3085,17 +3085,16 @@ export const en: Strings = {
     },
     exampleTasks: {
       game: {
-        label: "2D penguin sled game",
-        desc: "A cute Antarctic penguin sleds over rocks, easy start with a gentle difficulty ramp — a 2D pure-frontend mini game",
+        label: "Penguin ski safari mini game",
+        desc: "A Ski Safari-style 2D game: a penguin skis down rolling hills, launches off the crests and flips in the air for points",
         prompt:
-          "Build a cute Antarctic penguin sledding 2D game: press Space to jump over the rocks " +
-          "coming up on the ice; start easy and forgiving, with sled speed and obstacle density " +
-          "ramping up smoothly and gradually over time (no sudden spikes), live scoring, and " +
-          "hitting a rock ending the run with one-click restart. " +
-          "A 2D side-scroller with a cute cartoon look, pure frontend (a single HTML file is " +
-          "fine), styled per the web-design skill. " +
-          "When done, test it in a browser once, confirm the first few seconds are easy to " +
-          "clear, and tell me how to open it and how to play.",
+          "Build a 2D game like Ski Safari: a cute Antarctic penguin skis down rolling snowy " +
+          "hills with real height to them, and cresting a hill launches it into the air. Hold " +
+          "Space in the air to flip; landing upright scores, more flips score more, and a crash " +
+          "ends the run with one-click restart. Start easy, with speed ramping up smoothly. " +
+          "A 2D side-scroller with a cute cartoon look, pure frontend in a single HTML file, " +
+          "styled per the web-design skill. " +
+          "When done, test it in a browser once and tell me how to open it and how to play.",
       },
       gamecenter: {
         label: "A mini-game center built by multiple agents",
@@ -3150,13 +3149,16 @@ Penguin visual style (see the web-design skill), dark by default. On phones the 
 When done, open index.html in a browser and self-test once.`,
       },
       rhythmRunner: {
-        label: "Rhythm runner mini game",
-        desc: "A Muse Dash-style rhythm runner: a penguin lead, notes locked to the beat, graded Perfect / Great / Miss",
+        label: "Penguin rhythm runner mini game",
+        desc: "A Muse Dash-style rhythm runner: high notes send the penguin flying, low notes put it on a sled along the ground",
         prompt:
-          "Build a Muse Dash-style rhythm runner: a penguin runs forward on its own, and notes — " +
-          "drawn as music-note icons — fly in locked to the beat for me to hit. Show Perfect / " +
-          "Great / Miss for each hit, score combos, and let the difficulty climb as the track goes " +
-          "on. Pure front end, one file, playable straight from file://.",
+          "Build a Muse Dash-style rhythm runner: a penguin runs forward on its own, and notes, " +
+          "drawn as music-note icons, fly in on a high and a low lane locked to the beat for me " +
+          "to hit. Catching a high note makes the penguin spread its wings and fly; catching a " +
+          "low note drops it onto a sled gliding along the ground. Show Perfect / Great / Miss " +
+          "for each hit and score combos. Keep it easy: sparse notes, generous timing, and a " +
+          "missed note never ends the run. Instrumental music is a good fit. Pure front end, one " +
+          "file, playable straight from file://.",
       },
       ragDocsExpert: {
         label: "A RAG docs expert from one sentence",
@@ -3179,7 +3181,7 @@ When done, open index.html in a browser and self-test once.`,
           "or the company is not listed, say so rather than inventing a quote.",
       },
       legalDesk: {
-        label: "A legal agent: upload documents, download reports",
+        label: "A legal agent app from one sentence",
         desc: "A new legal agent behind a workflow tab with only an upload, a file list and report downloads — no conversation in sight",
         prompt:
           "Create a legal agent that reviews contracts, agreements and other legal documents: it " +
@@ -3191,7 +3193,7 @@ When done, open index.html in a browser and self-test once.`,
           "light and dark.",
       },
       agentBenchmarkBuild: {
-        label: "Build a general-purpose decision agent and its benchmark",
+        label: "Build a decision agent and its benchmark",
         desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
         prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
@@ -3212,7 +3214,7 @@ Scenarios:
 3. Choose investment actions from a strategy, historical markets, and current indicators.`,
       },
       agentOptimization: {
-        label: "Default optimization: improve the decision agent's accuracy",
+        label: "Optimize the decision agent",
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
@@ -3224,12 +3226,13 @@ Scenarios:
 - candidate_round_limit: \`5\``,
       },
       benchmarkImport: {
-        label: "Import a Benchmark: list the packages in the repository",
-        desc: "List the importable Benchmark packages in penguin-harness-benchmark and import the one I pick through benchmark-design",
+        label: "Import the GDPevo benchmark",
+        desc: "Import GDPevo's train and test sets: optimize an agent on the train tasks, then check the gain on test tasks it has not seen",
         prompt:
-          "Use the `benchmark-design` Skill: list the Benchmark packages under " +
-          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages, mark the " +
-          "ones this Project already has, and import the one I pick once I say so.",
+          "Use the `benchmark-design` Skill to import the GDPevo benchmark: " +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-train, " +
+          "together with its paired test set. If this Project already has them, just tell me " +
+          "and leave them as they are.",
       },
       dailyPlan: {
         label: "A 9am daily planning check-in",
