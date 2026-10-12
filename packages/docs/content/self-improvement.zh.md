@@ -125,7 +125,7 @@ OPRO 与 APE 各自带一个小型演示任务：只要提出来，Skill 会先�
 
 ## 复现的 Benchmark
 
-复现一个已发表的 benchmark 不是工具包的事。复现的 Benchmark 是公开仓库 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) 中 `packages/<id>/` 下的一个包，经导入进入 Project：让 Agent 导入这个包的文件夹，副本会记下它来自哪个提交（来源为 `git`，见[清单](#清单)）。导入流程属于 `benchmark-design` Skill（`reference/package.md`「Importing a package」一节）：固定提交、读完每个文件、把配对的 train / test 包一并带入、核对副本，并在运行任何东西之前先提议一题的冒烟探测。运行它的特殊流程写在 Benchmark 自身，即各题题干的 **How this case is run** 一节和仓库的 README，从不写进插件或 Skill，因此每个 RSI 工具包都以同样的方式运行它。五个内置 Benchmark 就是这样的复现，随每个新 Project 一起写入。
+复现一个已发表的 benchmark 不是工具包的事。复现的 Benchmark 是公开仓库 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) 中 `packages/<id>/` 下的一个包，经导入进入 Project：让 Agent 导入这个包的文件夹，副本会记下它来自哪个提交（来源为 `git`，见[清单](#清单)）。导入流程属于 `benchmark-design` Skill（`reference/package.md`「Importing a package」一节）：固定提交、读完每个文件、把配对的 train / test 包一并带入、核对副本，并在运行任何东西之前先提议一题的冒烟探测。运行它的特殊流程写在 Benchmark 自身，即各题题干的 **How this case is run** 一节和仓库的 README，从不写进插件或 Skill，因此每个 RSI 工具包都以同样的方式运行它。内置 Benchmark（Sec A 到 Sec E 与 GDPevo 的一对）就是这样的复现，随每个新 Project 一起写入。
 
 ## 从 Web App 发起
 
@@ -179,7 +179,7 @@ kind = "agent"
 
 凡是 Agent 可能在本地改动的东西都带日期版本，Skill 与 Benchmark 都是如此。新的 Benchmark 从当天的 `.1` 开始，同一天的下一次修订取下一个序号；`benchmark-design` 每次改题或改 `status` 都会递增版本。Benchmark 页面在目录路径旁显示它的版本。
 
-Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard.yaml`、`.jobs/` 下的 trial、其他以点开头的条目和符号链接都属于这块磁盘上的副本，永远不属于包。原始大文件同样不进包：题干以固定提交的仓库链接引用它们，内置 Benchmark 的题干就是这样写的。五个内置 Benchmark 另以同一格式发布在公开仓库 Prism-Shadow/penguin-harness-benchmark 的 `packages/` 下。
+Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard.yaml`、`.jobs/` 下的 trial、其他以点开头的条目和符号链接都属于这块磁盘上的副本，永远不属于包。原始大文件同样不进包：题干以固定提交的仓库链接引用它们，内置 Benchmark 的题干就是这样写的。内置 Benchmark 另以同一格式发布在公开仓库 Prism-Shadow/penguin-harness-benchmark 的 `packages/` 下。
 
 ### Benchmark 状态
 
@@ -209,7 +209,7 @@ Benchmark 的**包**是 `benchmark_config.toml` 加上各题目录。`scoreboard
 
 创建 Project 时，会在 Project 层级预置一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`）。它的三条示例评估都标注为 `agent_id: default_agent`，所以评估页面开箱就有数据。整个目录随时可以删除或替换。
 
-示例与五个内置 Benchmark 只在 Project 创建时写入一次（`packages/core/src/state/project-benchmarks.ts`）：服务端创建 Project 时写入，`default_project` 则在全新安装首次启动时写入。每个都先写进 `benchmarks/.seeding/` 下的临时目录，再改名就位；写入失败即 Project 创建失败，并整体回滚。目录已存在的 id 直接跳过、从不往里写，因此服务端沿用已有数据根里的 `default_project` 时，它自己的 Benchmark 原样保留，只补上缺少的。此后不再写入：初始化或加载 `default_agent` 都不碰 `benchmarks/`，删掉的不会再出现。早先版本的 Project 保持原样：不会得到内置 Benchmark，示例在的仍在，删掉的也不会回来。
+示例与内置 Benchmark 只在 Project 创建时写入一次（`packages/core/src/state/project-benchmarks.ts`）：服务端创建 Project 时写入，`default_project` 则在全新安装首次启动时写入。每个都先写进 `benchmarks/.seeding/` 下的临时目录，再改名就位；写入失败即 Project 创建失败，并整体回滚。目录已存在的 id 直接跳过、从不往里写，因此服务端沿用已有数据根里的 `default_project` 时，它自己的 Benchmark 原样保留，只补上缺少的。此后不再写入：初始化或加载 `default_agent` 都不碰 `benchmarks/`，删掉的不会再出现。早先版本的 Project 保持原样：不会得到内置 Benchmark，示例在的仍在，删掉的也不会回来。
 
 ## 快照与版本
 

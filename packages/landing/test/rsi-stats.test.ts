@@ -1,8 +1,8 @@
 /**
  * The hero's catalogue rows ↔ their sources. RSI_TOOLKITS must name exactly the library plugins
  * whose package.json files them under the `rsi` category, and BENCHMARKS exactly core's built-in
- * Benchmarks, each linked to the upstream repository core records for it, so a new toolkit or
- * built-in, or a moved upstream, fails here instead of leaving the landing page behind. Every
+ * Benchmarks, one entry per upstream repository core records for them, linked to it, so a new
+ * toolkit or built-in, or a moved upstream, fails here instead of leaving the landing page behind. Every
  * link is absolute https, and only the Default toolkit has none; both dictionaries carry one
  * kind per Benchmark and no derived count in the stat tiles; and the cases section's APE prompt
  * is that toolkit's quick start, word for word.
@@ -67,10 +67,14 @@ describe("hero catalogue ↔ its sources", () => {
     expect(RSI_TOOLKITS.map((toolkit) => toolkit.plugin).sort()).toEqual(rsiPlugins);
   });
 
-  it("BENCHMARKS names core's built-in Benchmarks and links their upstreams", async () => {
-    expect(BENCHMARKS.map((benchmark) => ({ id: benchmark.id, upstream: benchmark.href }))).toEqual(
-      await builtinBenchmarks(),
-    );
+  it("BENCHMARKS names core's built-in Benchmarks, one entry per upstream, linked to it", async () => {
+    expect(
+      BENCHMARKS.flatMap((benchmark) =>
+        benchmark.ids.map((id) => ({ id, upstream: benchmark.href })),
+      ),
+    ).toEqual(await builtinBenchmarks());
+    const hrefs = BENCHMARKS.map((benchmark) => benchmark.href);
+    expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 
   it("every link is absolute https; only the Default toolkit has none", () => {

@@ -44,7 +44,7 @@ Every Project comes with `example-benchmark`, whose sample evaluations test `def
 
 ### Built-in Benchmarks
 
-A new Project also comes with five Benchmarks built from public evaluation sets, **PenguinHarness Benchmark Sec A** to **Sec E**, each a subset chosen to run on CPU-only Docker. Each one's description names the original benchmark:
+A new Project also comes with Benchmarks built from public evaluation sets: **PenguinHarness Benchmark Sec A** to **Sec E**, each a subset chosen to run on CPU-only Docker, and **GDPevo Train** and **GDPevo Test**, the two halves of one GDPevo subset. Each one's description names the original benchmark:
 
 | Benchmark | Original benchmark: what it measures |
 | --- | --- |
@@ -53,8 +53,12 @@ A new Project also comes with five Benchmarks built from public evaluation sets,
 | `penguinharness-benchmark-sec-c` | AutomationBench: business workflows across simulated SaaS apps |
 | `penguinharness-benchmark-sec-d` | Terminal-Bench-Science 0.1: research-grade scientific computing |
 | `penguinharness-benchmark-sec-e` | Terminal-Bench 4.0: hard, realistic tasks done in a terminal |
+| `penguinharness-benchmark-gdpevo-train` | GDPevo: real-job business tasks in six company environments (CRM, ERP, finance, healthcare, legal, data analysis); the train tasks |
+| `penguinharness-benchmark-gdpevo-test` | GDPevo: held-out test tasks in the same environments |
 
-Each case runs as a [Harbor](https://github.com/harbor-framework/harbor) task in Docker. The task files are not part of PenguinHarness: they are in the public repository [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark), which also holds the rules for running them. A case's statement holds a short description of the task and the link to its folder in that repository at a pinned commit, and its **How this case is run** section links those rules and gives the command that launches the task. The task's own verifier decides the score: a pass scores 100 and a fail 0.
+GDPevo measures self-evolution, so its two Benchmarks go together: optimize an agent on GDPevo Train, then evaluate the result on GDPevo Test, whose tasks it has not seen but whose environments it has. GDPevo's answers are public, so during a GDPevo task the agent can reach only the model provider's API host, not the internet.
+
+Each case runs as a [Harbor](https://github.com/harbor-framework/harbor) task in Docker. The task files are not part of PenguinHarness: they are in the public repository [Prism-Shadow/penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark), which also holds the rules for running them. A case's statement holds a short description of the task and the link to its folder in that repository at a pinned commit, and its **How this case is run** section links those rules and gives the command that launches the task. The task's own verifier decides the score: a pass scores 100 and a fail 0, and GDPevo's grader scores a partly correct answer by the fraction it gets right.
 
 **Before you evaluate**
 
@@ -64,9 +68,9 @@ Each case runs as a [Harbor](https://github.com/harbor-framework/harbor) task in
 
 You evaluate them like any other Benchmark; see [Evaluate an agent](#evaluate-an-agent). The evaluator agent's `agent-evaluation` Skill recognizes such a case from its statement and follows the repository's rules: the evaluation fetches the repository once, at the statement's commit, then runs one Harbor trial per case and run. Every trial takes a Docker network of its own, and a host has only a limited supply, so trials run four at a time unless you name another limit (eight at most), for example in the evaluation's **Note**; evaluations that share a machine divide its limit. The next trial starts as soon as one finishes, not batch by batch. The evaluation also builds an install bundle of Node.js and the PenguinHarness CLI once per checkout, and each trial unpacks it instead of installing both in its container, which saves about two minutes per trial; when the bundle cannot be built, the containers install from the network. The tested agent runs inside the task's container with its own Agent State, and a trial takes from a few minutes to about an hour, image builds included. Each trial's files, the agent's Traces and the verifier's output, stay under the Benchmark's `.jobs/` directory. Its run is recorded under the Session id `harbor:<trial name>`, which the evaluation dialog lets you copy.
 
-What a run costs and how PenguinHarness scores on these tasks — accuracy over three attempts, cost, tokens and time — is measured in the repository's [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md). The task sets were calibrated on the model measured there, so the scores describe these 50 tasks, not the full upstream benchmarks.
+What a run of Sec A to Sec E costs and how PenguinHarness scores on those tasks — accuracy over three attempts, cost, tokens and time — is measured in the repository's [results/v0.2.13](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/v0.2.13/README.md). Those task sets were calibrated on the model measured there, so the scores describe those tasks, not the full upstream benchmarks. GDPevo's calibration, one Default RSI Toolkit round on GDPevo Train followed by an evaluation on GDPevo Test, with its cost and scores, is in [results/gdpevo-rsi-calibration](https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/main/results/gdpevo-rsi-calibration/README.md).
 
-They ship with no evaluations. Like the example, they are written when the Project is created and never again: if you delete one, it stays deleted. A Project that existed before your PenguinHarness shipped them does not get them when you upgrade; every Project created afterwards does.
+They ship with no evaluations. Like the example, they are written when the Project is created and never again: if you delete one, it stays deleted. A Project that existed before your PenguinHarness shipped them does not get them when you upgrade; every Project created afterwards does. To add a missing one to an existing Project, import it from its package folder (see [Import a Benchmark](#import-a-benchmark)).
 
 ## Create a Benchmark with AI
 

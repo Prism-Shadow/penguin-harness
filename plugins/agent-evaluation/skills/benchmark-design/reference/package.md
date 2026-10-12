@@ -19,7 +19,7 @@ A package is how a Benchmark travels between Projects and servers: a folder name
 - Never in a package: `scoreboard.yaml` (the copy's evaluation records), `.jobs/` (its Harbor trials), any other entry whose name starts with `.`, and symlinks. A package's scores start empty wherever it lands.
 - No large originals. A case whose task needs large files links them from its statement at a pinned commit, the way the built-in Benchmarks' `## How this case is run` sections do.
 
-The five built-in Benchmarks are published in this format under `packages/<id>/` of https://github.com/Prism-Shadow/penguin-harness-benchmark.
+The built-in Benchmarks are published in this format under `packages/<id>/` of https://github.com/Prism-Shadow/penguin-harness-benchmark.
 
 ## Importing a package
 

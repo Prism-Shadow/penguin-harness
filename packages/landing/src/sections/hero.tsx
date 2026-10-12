@@ -185,7 +185,7 @@ export function Hero() {
               listClassName="gap-x-5 gap-y-1.5"
             >
               {BENCHMARKS.map((benchmark, index) => (
-                <li key={benchmark.id}>
+                <li key={benchmark.href}>
                   <ExternalLink href={benchmark.href} className={ENTRY_LINK}>
                     {S.hero.benchmarkKinds[index]}
                     <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
