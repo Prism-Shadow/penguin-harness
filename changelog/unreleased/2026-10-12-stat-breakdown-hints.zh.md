@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#1047](https://github.com/Prism-Shadow/penguin-harness/pull/1047)
 
 [English](2026-10-12-stat-breakdown-hints.md)
 
