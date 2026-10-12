@@ -39,7 +39,8 @@ const EXAMPLE_BENCHMARK_MANIFEST: BenchmarkManifest = {
   description:
     "A built-in example benchmark so the evaluation charts have data out of the box. " +
     "Replace it with your own.",
-  version: "2026.10.09.1",
+  descriptionZh: "内置的示例 Benchmark，让评估图表开箱就有数据。换成你自己的吧。",
+  version: "2026.10.12.1",
   status: "published",
   runs: 2,
   origin: { kind: "builtin" },

@@ -83,6 +83,11 @@ export interface BenchmarkManifest {
   title: string;
   /** Absent rather than empty. Written: up to 2000 characters. */
   description?: string;
+  /**
+   * The description in Chinese (`description_zh`), shown in place of `description` to a reader
+   * of the Chinese interface, as a plugin's is. Absent rather than empty; same limit.
+   */
+  descriptionZh?: string;
   /** `YYYY.MM.DD.N`; absent in a file written before versions, which is unversioned. */
   version?: string;
   /** A file that says neither `draft` nor `failed` is published. */
@@ -220,10 +225,12 @@ export function parseBenchmarkManifest(text: string, dirId: string): BenchmarkMa
   const version = versionOf(config.version);
   const origin = originOf(config.origin);
   const { title, description, runs, status } = config;
+  const descriptionZh = config.description_zh;
   return {
     id,
     title: typeof title === "string" && title !== "" ? title : id,
     ...(typeof description === "string" && description !== "" ? { description } : {}),
+    ...(typeof descriptionZh === "string" && descriptionZh !== "" ? { descriptionZh } : {}),
     ...(version !== undefined ? { version } : {}),
     // The two states that make a Benchmark unusable are literal: "draft" while it is still being
     // built, "failed" when its calibration never produced a result to freeze. A file written
@@ -244,7 +251,7 @@ export function checkBenchmarkManifest(manifest: BenchmarkManifest): void {
   if (!isValidId(manifest.id)) {
     throw invalid(`"id" must be the directory name: letters, digits, "_" and "-".`);
   }
-  const { title, description, runs } = manifest;
+  const { title, description, descriptionZh, runs } = manifest;
   if (typeof title !== "string" || title.trim() === "" || title.length > MAX_TITLE) {
     throw invalid(`"title" must be text of 1 to ${MAX_TITLE} characters.`);
   }
@@ -253,6 +260,12 @@ export function checkBenchmarkManifest(manifest: BenchmarkManifest): void {
     (typeof description !== "string" || description.length > MAX_DESCRIPTION)
   ) {
     throw invalid(`"description" must be text of at most ${MAX_DESCRIPTION} characters.`);
+  }
+  if (
+    descriptionZh !== undefined &&
+    (typeof descriptionZh !== "string" || descriptionZh.length > MAX_DESCRIPTION)
+  ) {
+    throw invalid(`"description_zh" must be text of at most ${MAX_DESCRIPTION} characters.`);
   }
   versionOf(manifest.version);
   if (!STATUSES.includes(manifest.status)) {
@@ -274,6 +287,9 @@ function serializeBenchmarkManifest(manifest: BenchmarkManifest): string {
     title: manifest.title,
     ...(manifest.description !== undefined && manifest.description !== ""
       ? { description: manifest.description }
+      : {}),
+    ...(manifest.descriptionZh !== undefined && manifest.descriptionZh !== ""
+      ? { description_zh: manifest.descriptionZh }
       : {}),
     ...(manifest.version !== undefined ? { version: manifest.version } : {}),
     status: manifest.status,

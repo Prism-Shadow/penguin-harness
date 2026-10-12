@@ -13,8 +13,9 @@
  * - **Examples and shortcuts.** The example folders and the user's own shortcuts, one folder
  *   open at a time (example-tasks.ts, shortcuts-folder.tsx): the folders down one column and the
  *   open folder's rows beside them, so switching folders moves nothing; stacked on a phone. Every
- *   row is led by a glyph of its own and closed by a forward arrow, so the rows read as things to
- *   press — each takes its prompt into the composer — rather than as a list of titles.
+ *   row is led by a glyph of its own and closed by a chevron at its right edge, so the rows read
+ *   as things to press — each takes its prompt into the composer — rather than as a list of
+ *   titles.
  *
  * Nothing moves while it loads and nothing scrolls inside the page — the draft view's column is
  * the one scroll container, and at a laptop viewport the page needs none. The examples block's
@@ -94,8 +95,9 @@ export function StartDashboard({
         <div className="flex flex-col gap-4 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-6">
           <StartBrand />
           <Card padding="none" className="shrink-0 self-start overflow-hidden @2xl:self-auto">
-            {/* The hairlines between the counts are the list's own dividers. */}
-            <ul className="flex divide-x divide-line-muted">
+            {/* The hairlines between the counts are the list's own dividers. Three equal columns,
+                each as wide as the widest count needs, so the panel reads as one even strip. */}
+            <ul className="grid grid-cols-3 divide-x divide-line-muted">
               <StatCount
                 glyph={NAV_ICONS.agents}
                 label={S.chat.start.metrics.agents}
@@ -140,10 +142,12 @@ function StartBrand() {
   return (
     <div className={`flex min-w-0 items-center ${ICON_GAP.card}`}>
       {/* Square asset on a white tile of its own; the hairline keeps the tile's edge on a light
-          page, where white meets white. */}
+          page, where white meets white. Its corner is the asset's own (the drawing clips at 24% of
+          the side), not the theme's radius scale, which would make it a circle in Frost and a
+          square in Console: the mark keeps one shape everywhere. */}
       <PenguinLogo
         src={PENGUIN_LOGO_URL}
-        className="h-14 w-14 shrink-0 rounded-2xl ring-1 ring-line-muted"
+        className="h-14 w-14 shrink-0 rounded-[24%] ring-1 ring-line-muted"
       />
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-2">
@@ -359,7 +363,7 @@ function ExamplesSection({
                           className={`flex w-full items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                         >
                           <ExampleRowGlyph glyph={TASK_GLYPHS[task.id]} />
-                          <span className="min-w-0 truncate">{copy.label}</span>
+                          <span className="min-w-0 flex-1 truncate">{copy.label}</span>
                           <ExampleRowGo />
                         </button>
                       </li>

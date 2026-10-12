@@ -39,6 +39,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { FileBrowserPreview, FileTreeRow, TreeToggle } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { linkSegments } from "../../lib/link-segments";
 import { apiErrorText } from "../../lib/api-error";
 import { baseName } from "../../lib/workspace-tree";
 import { useLocale } from "../../state/locale";
@@ -312,7 +313,7 @@ export function PluginDetailSections({
         <p
           className={`text-sm leading-relaxed ${rowHasDescription(row, locale) ? "" : "text-fg-muted"}`}
         >
-          {rowDescription(row, locale)}
+          <LinkedText text={rowDescription(row, locale)} />
         </p>
         {readme.kind === "loading" && <Skeleton className="mt-4 h-24 w-full" />}
         {readme.kind === "text" && (
@@ -362,6 +363,33 @@ export function MetaLine({ children }: { children: ReactNode }) {
         </Fragment>
       ))}
     </div>
+  );
+}
+
+/**
+ * A description as the package wrote it, with each web address in it a link that opens in a new
+ * tab — an algorithm toolkit names its paper that way. The rest stays plain text: a description
+ * is not Markdown.
+ */
+function LinkedText({ text }: { text: string }) {
+  return (
+    <>
+      {linkSegments(text).map((segment, i) =>
+        segment.kind === "text" ? (
+          <Fragment key={i}>{segment.text}</Fragment>
+        ) : (
+          <a
+            key={i}
+            href={segment.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="break-all text-link underline-offset-2 transition-colors duration-150 hover:text-link-hover hover:underline"
+          >
+            {segment.href}
+          </a>
+        ),
+      )}
+    </>
   );
 }
 

@@ -90,15 +90,15 @@ export function ExampleRowGlyph({ glyph }: { glyph: string }) {
 }
 
 /**
- * The arrow right after a row's title inside an open folder: the row takes the user somewhere —
- * its prompt into the composer — so the title reads like a "go to" link, in the muted ink at rest
- * and the full ink while the row is hovered or focused. Beside the title, not at the row's far
- * end, where a short title would leave it stranded. It does not move: no hover transforms.
+ * The chevron closing a row inside an open folder, at the row's right edge so the rows' marks
+ * stand in one column: the row takes the user somewhere — its prompt into the composer — so it
+ * says "go" in the muted ink at rest and in the full ink while the row is hovered or focused. It
+ * does not move: no hover transforms.
  */
 export function ExampleRowGo() {
   return (
     <span className="shrink-0 text-fg-muted transition-colors duration-150 group-hover:text-fg group-focus-visible:text-fg">
-      <GlyphIcon d={ICONS.arrowRightCentered} size={ICON_SIZE.inlineGlyph} />
+      <GlyphIcon d={ICONS.chevronRight} size={ICON_SIZE.chevron} />
     </span>
   );
 }

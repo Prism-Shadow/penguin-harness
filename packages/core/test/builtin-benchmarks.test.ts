@@ -147,7 +147,12 @@ describe("built-in Benchmarks", () => {
       expect(manifest?.id, id).toBe(id);
       expect(manifest?.version, id).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
       expect(manifest?.origin, id).toEqual({ kind: "builtin" });
-      expect(await readConfig(id), id).toEqual(manifest);
+      // The file spells the Chinese description `description_zh`; the reader calls it descriptionZh.
+      const { descriptionZh, ...rest } = manifest!;
+      expect(await readConfig(id), id).toEqual({
+        ...rest,
+        ...(descriptionZh !== undefined ? { description_zh: descriptionZh } : {}),
+      });
     }
   });
 
@@ -158,6 +163,7 @@ describe("built-in Benchmarks", () => {
       const config = await readConfig(id);
       expect(Object.keys(config).sort(), id).toEqual([
         "description",
+        "description_zh",
         "id",
         "origin",
         "runs",

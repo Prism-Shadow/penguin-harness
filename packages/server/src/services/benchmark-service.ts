@@ -713,6 +713,9 @@ export class BenchmarkService implements Benchmarks {
         : {
             title: manifest.title,
             ...(manifest.description !== undefined ? { description: manifest.description } : {}),
+            ...(manifest.descriptionZh !== undefined
+              ? { descriptionZh: manifest.descriptionZh }
+              : {}),
             ...(manifest.runs !== undefined ? { runs: manifest.runs } : {}),
             status: manifest.status,
             ...(manifest.version !== undefined ? { version: manifest.version } : {}),

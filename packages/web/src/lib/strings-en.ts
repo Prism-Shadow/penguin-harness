@@ -4543,7 +4543,15 @@ Scenarios:
     colDuration: "Duration",
     colCase: "Case",
     colRun: "Run",
-    colSession: "Session",
+    runOpenSession: "Open the Session this run ran in",
+    runArchivedTitle: "This run's Session is archived",
+    runArchivedBody:
+      "Archived Sessions are not in the sidebar. Find it in Settings › Archived chats by its title or ID.",
+    runArchivedSessionTitle: "Title",
+    runArchivedSessionId: "ID",
+    runArchivedCopyId: "Copy Session ID",
+    runArchivedOpen: "Open Archived chats",
+    runSessionUntitled: "(untitled Session)",
     /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
     copyTrialName: "Copy Harbor trial name",
     askAi: "Ask AI",
