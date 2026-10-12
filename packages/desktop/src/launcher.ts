@@ -58,6 +58,7 @@ export const LINUX_EXECUTABLE = "penguin-harness";
  * executable at the platform's fixed position relative to the app directory:
  * - macOS: app dir is `<bundle>/Contents/Resources/app` → `../../MacOS/PenguinHarness`
  * - Linux: app dir is `<install>/resources/app` → `../../penguin-harness`
+ * - Windows: app dir is `<install>/resources/app` → `../../PenguinHarness.exe`
  */
 export function posixLauncherScript(): string {
   return `#!/bin/sh
@@ -82,8 +83,9 @@ APP_DIR=$(dirname "$BIN_DIR")
 CLI_ENTRY="$APP_DIR/${CLI_ENTRY_RELPATH}"
 # The Electron executable sits at a fixed location relative to the app directory:
 # macOS <bundle>/Contents/Resources/app -> ../../MacOS/${MAC_EXECUTABLE};
-# Linux <install>/resources/app -> ../../${LINUX_EXECUTABLE}.
-for CANDIDATE in "$APP_DIR/../../MacOS/${MAC_EXECUTABLE}" "$APP_DIR/../../${LINUX_EXECUTABLE}"; do
+# Linux <install>/resources/app -> ../../${LINUX_EXECUTABLE};
+# Windows <install>/resources/app -> ../../${WIN_EXECUTABLE}.
+for CANDIDATE in "$APP_DIR/../../MacOS/${MAC_EXECUTABLE}" "$APP_DIR/../../${LINUX_EXECUTABLE}" "$APP_DIR/../../${WIN_EXECUTABLE}"; do
   if [ -x "$CANDIDATE" ]; then
     export ELECTRON_RUN_AS_NODE=1
     exec "$CANDIDATE" "$CLI_ENTRY" "$@"

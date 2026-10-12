@@ -29,11 +29,13 @@ describe("posixLauncherScript", () => {
     expect(script).toContain("readlink");
   });
 
-  it("targets the bundled CLI entry and both platform runtime locations", () => {
+  it("targets the bundled CLI entry and all three platform runtime locations", () => {
     expect(script).toContain(`CLI_ENTRY="$APP_DIR/${CLI_ENTRY_RELPATH}"`);
     // macOS: resources/app -> ../../MacOS/<executable>; Linux: -> ../../<executableName>.
     expect(script).toContain(`"$APP_DIR/../../MacOS/${MAC_EXECUTABLE}"`);
     expect(script).toContain(`"$APP_DIR/../../${LINUX_EXECUTABLE}"`);
+    // Windows: resources/app -> ../../<productName>.exe (same shape as Linux).
+    expect(script).toContain(`"$APP_DIR/../../${WIN_EXECUTABLE}"`);
   });
 
   it("execs as Node and forwards all arguments", () => {
