@@ -402,7 +402,7 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 ## Agent
 
-下面的路径省略了 `/api/projects/:projectId` 前缀，全局的 `/api/plugins` 与 `/api/rsi` 路由是例外。
+下面的路径省略了 `/api/projects/:projectId` 前缀，全局的 `/api/plugins` 路由是例外。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -441,7 +441,6 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 | GET | `/api/plugins/:plugin/files`（全局） | 单个插件库插件自带的所有文件，以路径为键返回文本（任何已登录用户） |
 | GET | `/api/plugins/:plugin/readme`（全局） | 插件库插件包根目录的 `README.md`：`{name, readme}`；没有时返回 404（任何已登录用户） |
 | GET | `/api/plugins/:plugin/archive`（全局） | 将插件库插件的包导出为 zip（任何已登录用户） |
-| GET | `/api/rsi`（全局） | 自进化目录：插件库里的 RSI 工具包与内置的 Benchmark 复现（任何已登录用户） |
 
 ### Agent 路由
 
@@ -471,7 +470,6 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 - `GET /api/plugins/:plugin/files` 返回单个插件库插件自带的全部文件，以路径为键返回文本：`skills/<name>/` 下是每个 Skill 可安装的 `SKILL.md` 和参考文件，`hooks/` 下是钩子脚本。插件详情弹窗的文件浏览器用的就是这个路由。
 - `GET /api/plugins/:plugin/readme` 返回插件库插件包根目录的 `README.md`，供详情弹窗使用。插件不带 README 时返回 404 `readme_not_found`，插件库里没有的名字返回 404 `unknown_plugin`。
 - `GET /api/plugins/:plugin/archive` 把插件库插件的包目录打成 zip 下载：不含 `node_modules/`，放在顶层目录 `<name>/` 下，文件名为 `<name>-v<version>.zip`，另一台服务端可以原样导入。超出导入上限的包返回 413 `plugin_too_large`，插件库里没有的名字返回 404 `unknown_plugin`。
-- `GET /api/rsi` 返回 `{toolkits, benchmarks}`：插件库 `rsi` 分类的每个插件一条（`plugin`、它的 `skills`，以及是否预装），每个内置 Benchmark 一条（`id`、`title`）。草稿页的数据卡片读取它。
 
 ### Agent API 设置
 

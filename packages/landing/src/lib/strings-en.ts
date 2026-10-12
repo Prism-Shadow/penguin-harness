@@ -59,12 +59,12 @@ export const en: Strings = {
     supportedModelsLabel: "Supported models",
     supportedModelsMore: "and more",
     algorithmsLabel: "Self-evolution algorithms",
-    benchmarksLabel: "Benchmark reproductions",
+    benchmarksLabel: "Benchmarks",
     benchmarkKinds: [
       "Data analysis",
       "Software engineering",
       "Business automation",
-      "Scientific computing",
+      "Scientific research",
       "Terminal tasks",
     ],
     externalLink: {

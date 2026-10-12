@@ -1,11 +1,14 @@
 /**
  * What the start page shows (src/features/chat/start-dashboard-data.ts).
  *
- * - The toolkit cards follow the Method select's rows, the default loop first, and a plugin no row
- *   names comes after them, by name; before the library answers there is one card per row.
+ * - The toolkits follow the Method select's rows, the default loop first, and a plugin no row
+ *   names comes after them, by name; before the library answers there is one entry per row.
+ * - The toolkit tile offers the remembered toolkit, else the first; a name the library no longer
+ *   carries falls back the same way.
  * - A Benchmark's latest evaluation is its newest scored one, and an empty scoreboard has none.
- * - The Evaluation Center rows put the evaluated Benchmarks first, the most recently evaluated on
- *   top, then the rest by title.
+ * - The Benchmarks tile's order puts the evaluated Benchmarks first, the most recently evaluated
+ *   on top, then the rest by title.
+ * - The agents tile shows the agent whose Agent State changed last.
  * - A toolkit is the agent's only when every Skill it ships is installed.
  */
 import { describe, expect, it } from "vitest";
@@ -13,6 +16,8 @@ import {
   isInstalled,
   latestEvaluation,
   orderToolkits,
+  recentAgent,
+  recentToolkit,
   sortBenchmarks,
 } from "../src/features/chat/start-dashboard-data";
 
@@ -50,6 +55,17 @@ describe("the start page's data", () => {
     ]);
   });
 
+  it("offers the remembered toolkit, else the first, and the first again for a name the library lost", () => {
+    const entries = orderToolkits(
+      [plugin("opro-rsi-toolkit"), plugin("default-rsi-toolkit")],
+      METHODS,
+    );
+    expect(recentToolkit(entries, "opro-rsi-toolkit")?.key).toBe("opro-rsi-toolkit");
+    expect(recentToolkit(entries, null)?.key).toBe("default-rsi-toolkit");
+    expect(recentToolkit(entries, "ape-rsi-toolkit")?.key).toBe("default-rsi-toolkit");
+    expect(recentToolkit([], "opro-rsi-toolkit")).toBeNull();
+  });
+
   it("takes the newest scored evaluation as the latest, and none from an empty scoreboard", () => {
     const latest = latestEvaluation([
       { time: "2026-10-01T08:00:00Z", score: 61 },
@@ -75,6 +91,18 @@ describe("the start page's data", () => {
       benchmark("d", "Delta", ["2026-09-01T00:00:00Z", "2026-10-05T00:00:00Z"]),
     ]);
     expect(sorted.map((b) => b.id)).toEqual(["d", "a", "b", "c"]);
+  });
+
+  it("shows the agent whose Agent State changed last, the first listed among those without a time", () => {
+    expect(
+      recentAgent([
+        { agentId: "a", updatedAt: "2026-10-01T00:00:00Z" },
+        { agentId: "b", updatedAt: "2026-10-05T00:00:00Z" },
+        { agentId: "c" },
+      ])?.agentId,
+    ).toBe("b");
+    expect(recentAgent([{ agentId: "x" }, { agentId: "y" }])?.agentId).toBe("x");
+    expect(recentAgent([])).toBeNull();
   });
 
   it("counts a toolkit as installed only when every Skill it ships is", () => {

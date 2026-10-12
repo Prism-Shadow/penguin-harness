@@ -157,7 +157,6 @@ import type {
   RecalledMessageResponse,
   RestartResponse,
   RetryNowResponse,
-  RsiCatalogResponse,
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
@@ -1687,9 +1686,6 @@ export const getPluginFiles = (plugin: string) =>
 /** A library plugin's README.md, from its package root, for the detail dialog; 404 when the package ships none. */
 export const getLibraryPluginReadme = (plugin: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/${encodeURIComponent(plugin)}/readme`);
-
-/** The self-evolution catalogue (any logged-in user): the library's RSI toolkits and the built-in Benchmark reproductions, which the start page's metric tiles count. */
-export const getRsiCatalog = () => apiFetch<RsiCatalogResponse>("/api/rsi");
 
 /**
  * Installs whole library plugins — each one's skills and hook package; an already-installed

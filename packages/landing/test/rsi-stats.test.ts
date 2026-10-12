@@ -1,17 +1,17 @@
 /**
  * The hero's catalogue rows ↔ their sources. RSI_TOOLKITS must name exactly the library plugins
- * whose package.json files them under the `rsi` category, and BENCHMARK_REPRODUCTIONS exactly core's
- * built-in Benchmarks, each linked to the upstream repository core records for it, so a new
- * toolkit or built-in, or a moved upstream, fails here instead of leaving the landing page behind.
- * Every link that leaves the site is absolute https; both dictionaries carry one Benchmark kind per
- * reproduction and no derived count in the stat tiles; and the cases section's APE prompt is that
- * toolkit's quick start, word for word.
+ * whose package.json files them under the `rsi` category, and BENCHMARKS exactly core's built-in
+ * Benchmarks, each linked to the upstream repository core records for it, so a new toolkit or
+ * built-in, or a moved upstream, fails here instead of leaving the landing page behind. Every
+ * link is absolute https, and only the Default toolkit has none; both dictionaries carry one
+ * kind per Benchmark and no derived count in the stat tiles; and the cases section's APE prompt
+ * is that toolkit's quick start, word for word.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { BENCHMARK_REPRODUCTIONS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../src/lib/rsi-stats";
+import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../src/lib/rsi-stats";
 import { zh } from "../src/lib/strings";
 import type { Strings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -67,13 +67,13 @@ describe("hero catalogue ↔ its sources", () => {
     expect(RSI_TOOLKITS.map((toolkit) => toolkit.plugin).sort()).toEqual(rsiPlugins);
   });
 
-  it("BENCHMARK_REPRODUCTIONS names core's built-in Benchmarks and links their upstreams", async () => {
-    expect(
-      BENCHMARK_REPRODUCTIONS.map((benchmark) => ({ id: benchmark.id, upstream: benchmark.href })),
-    ).toEqual(await builtinBenchmarks());
+  it("BENCHMARKS names core's built-in Benchmarks and links their upstreams", async () => {
+    expect(BENCHMARKS.map((benchmark) => ({ id: benchmark.id, upstream: benchmark.href }))).toEqual(
+      await builtinBenchmarks(),
+    );
   });
 
-  it("links outside the site are absolute https; the Default toolkit links into the docs", () => {
+  it("every link is absolute https; only the Default toolkit has none", () => {
     expect(MODEL_PROVIDERS.map((provider) => provider.id)).toEqual([
       "openai",
       "anthropic",
@@ -84,20 +84,19 @@ describe("hero catalogue ↔ its sources", () => {
       "qwen",
       "openrouter",
     ]);
-    const outside = [
+    const links = [
       ...MODEL_PROVIDERS.map((provider) => provider.href),
-      ...RSI_TOOLKITS.filter((toolkit) => toolkit.external).map((toolkit) => toolkit.href),
-      ...BENCHMARK_REPRODUCTIONS.map((benchmark) => benchmark.href),
+      ...RSI_TOOLKITS.flatMap((toolkit) => (toolkit.href === null ? [] : [toolkit.href])),
+      ...BENCHMARKS.map((benchmark) => benchmark.href),
     ];
-    for (const href of outside) expect(new URL(href).protocol, href).toBe("https:");
-    const internal = RSI_TOOLKITS.filter((toolkit) => !toolkit.external);
-    expect(internal.map((toolkit) => toolkit.plugin)).toEqual(["default-rsi-toolkit"]);
-    expect(internal[0]?.href).toMatch(/docs\/self-improvement$/);
+    for (const href of links) expect(new URL(href).protocol, href).toBe("https:");
+    const unlinked = RSI_TOOLKITS.filter((toolkit) => toolkit.href === null);
+    expect(unlinked.map((toolkit) => toolkit.plugin)).toEqual(["default-rsi-toolkit"]);
   });
 
   for (const { file, dict } of DICTIONARIES) {
-    it(`${file} has one Benchmark kind per reproduction and no counts in the stat tiles`, () => {
-      expect(dict.hero.benchmarkKinds).toHaveLength(BENCHMARK_REPRODUCTIONS.length);
+    it(`${file} has one kind per Benchmark and no counts in the stat tiles`, () => {
+      expect(dict.hero.benchmarkKinds).toHaveLength(BENCHMARKS.length);
       expect(dict.hero.stats).toHaveLength(2);
       for (const stat of dict.hero.stats) {
         expect(stat.value).not.toMatch(/算法|Benchmark|Algorithms|Reproductions/);

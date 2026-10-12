@@ -862,8 +862,8 @@ export function DraftView({
   const contextWindow = modelInfo?.contextWindow;
   const vision = modelInfo?.vision !== false;
 
-  // The composer and the ownership pills under it, which the dashboard sets between its header
-  // and its sections.
+  // The composer and the ownership pills under it, which the dashboard sets between its tiles
+  // and its examples.
   const composer = (
     <>
       <ChatInput
@@ -927,8 +927,8 @@ export function DraftView({
   return (
     <div className="anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-6 md:px-4">
       {/*
-       * Vertical layout: everything visible — the dashboard's header, the input card, the
-       * ownership pills, the dashboard's sections — lives in ONE block between two empty flex-1
+       * Vertical layout: everything visible — the dashboard's brand and tiles, the input card,
+       * the ownership pills, the dashboard's examples — lives in ONE block between two empty flex-1
        * spacers, so the block is centred and the free space above and below it is exactly equal.
        * The header deliberately sits inside that block rather than in the upper spacer: keeping
        * the brand in the spacer made the upper gap shorter than the lower one by the brand's own
