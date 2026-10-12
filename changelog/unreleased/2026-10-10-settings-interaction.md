@@ -14,11 +14,11 @@ The Web App gained one interaction model for settings, and the Settings dialog w
 - The shared UI package gained an unsaved-changes registry with `useFormDraft`, `useUnsavedChanges`, `useGuardedClose` and `guardLeave`, and `UnsavedChangesHost`, the one prompt every leave asks through. While any form is dirty, the host also holds a `beforeunload` listener, so a reload or a closed tab asks in the browser's own words.
 - The Web App's router moved to a data router, so a navigation can be held: sidebar links, links and redirects anywhere in the app, `?tab=` switches, and the browser's back and forward buttons all ask while a form is dirty.
 - A form counts as changed only while what Save would send differs from what is stored: typing the stored value back makes it clean again, and a switch never makes it dirty.
-- `useGuardedClose` takes a `locked` flag: while a dialog's own save is in flight, Esc, the ×, a press outside and Cancel do nothing, so nobody "discards" edits the request is about to store.
+- `useGuardedClose` takes a `locked` flag: while a dialog's own save is in flight, Esc, the ×, a press outside and Cancel do nothing, so nobody "discards" edits the request is about to store. A page that saves on its own inside a dialog holds that dialog's close the same way: `useSaving` registers its save in flight under the dialog's scope, and the close checks for one when it is attempted.
 
 ## The Settings dialog
 
-- **Leaving:** switching pages on the rail, and closing the dialog by Esc, the ×, or a press outside it, ask while a page holds unsaved edits. Switching the interface language, which rebuilds every page, asks too.
+- **Leaving:** switching pages on the rail, and closing the dialog by Esc, the ×, or a press outside it, ask while a page holds unsaved edits. Switching the interface language, which rebuilds every page, asks too. While a page's Save is in flight (the nickname, the proxy address, the upload limits, a plugin card), the dialog does not close by any of these; a switch's write holds nothing.
 - **Proxy options:** the two switches write the moment they are flipped, one value per request, and put themselves back with a toast when the write fails. The address saves on its own Save, and is shown as the server stored it. While the address has unsaved edits, the switches are held with the hint 「先保存代理地址」.
 - **Upload limits:** Save is live only while a limit changed and both are whole numbers; a box that is not is marked under it as it is typed.
 - **Plugins:** a card's switch and its on/off fields write when flipped, each to its own entry; everything typed on the card waits for its Save. A card re-read from the server keeps what is being typed, and picking another machine asks first while a card has unsaved edits.

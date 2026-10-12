@@ -18,7 +18,7 @@ The settings commit model of the [Settings dialog](2026-10-10-settings-interacti
 
 ## Project
 
-- The settings dialog's tab rail and its close ask while a tab holds unsaved edits: the display name, the chat defaults, the rule list and a rule half typed in the rule editor.
+- The settings dialog's tab rail and its close ask while a tab holds unsaved edits: the display name, the chat defaults, the rule list and a rule half typed in the rule editor. While one of those tabs' Save is in flight, Esc, the × and a press outside do nothing; the master switch's write holds nothing.
 - The command policy's master switch writes the moment it is flipped, sending the stored rules with the flag changed; rule edits beside it stay in the list until the list's Save.
 - The create dialog waits for an id that keeps the rule, said under the field as it is typed.
 
@@ -38,7 +38,7 @@ The settings commit model of the [Settings dialog](2026-10-10-settings-interacti
 
 - **ssh hosts, the manual Benchmark form and the built-in browser's homepage** hold their verb until it can write and ask before a close drops what was typed. A Benchmark whose added case was removed again is unchanged.
 - **The chat's shortcut editor** waits for its write: a refused save leaves the dialog open with the typing, where it used to close and drop it.
-- **Enter no longer submits a form of several fields:** the ssh host dialog, the new channel's id, the new ticket's title and the shortcut's title wait for the button. One-field forms keep Enter: a channel's name, a new handbook document, the Project's display name.
+- **Enter no longer submits a form of several fields:** the ssh host dialog, the Vault's Add dialog (a name and a value), the new channel's id, the new ticket's title and the shortcut's title wait for the button. One-field forms keep Enter: a channel's name, a new handbook document, the Project's display name.
 
 ## Tooling
 
