@@ -243,6 +243,32 @@ jobs:
           node scripts/build-plugins.mjs --out out/penguin/lib/plugins
           test -f out/penguin/lib/plugins/node_modules/@penguinharness/sandbox-bwrap/package.json
 
+      # node-pty compiles its terminal binding when it is installed, for the machine installing
+      # it — this runner, linux-x64 — and publishes prebuilds for darwin and win32 only. So the
+      # lib/ every payload shares had no binding for linux-arm64, and every terminal on an arm64
+      # Linux machine failed with "Failed to load native module: pty.node". Built here once for
+      # arm64 under QEMU into prebuilds/linux-arm64, which node-pty's loader tries after
+      # build/Release, so one lib/ serves both Linux architectures (N-API: one binding for every
+      # Node). Scripts are skipped at install and node-gyp is run by name, against the image's
+      # own headers, so neither npm's script policy nor a header download decides the build.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: Build node-pty for linux-arm64
+        run: |
+          pty=out/penguin/lib/node_modules/node-pty
+          version="$(node -p "require('./$pty/package.json').version")"
+          mkdir -p "$pty/prebuilds/linux-arm64"
+          docker run --rm --platform linux/arm64 -v "$PWD/$pty/prebuilds/linux-arm64:/out" \
+            "node:${NODE_RUNTIME_VERSION#v}-bookworm" sh -c "
+              set -e
+              cd /tmp && npm init -y >/dev/null
+              npm install --ignore-scripts --no-audit --no-fund node-pty@$version
+              cd node_modules/node-pty
+              node \"\$(npm prefix -g)/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js\" rebuild --nodedir=/usr/local
+              cp build/Release/pty.node /out/pty.node"
+          file "$pty/prebuilds/linux-arm64/pty.node" | grep -q 'ARM aarch64'
+
       # Program payloads: linux runtimes use .tar.xz, darwin .tar.gz (nodejs.org naming);
       # node/ is only lightly trimmed (drop share/doc and share/man, keep the rest). Payloads
       # are intermediate files named <target>.tar.gz / win32-x64.zip: the packaging script

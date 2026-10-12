@@ -52,12 +52,12 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("myproxy", "moonshot-official")).toBe("/chat/completions");
   });
 
-  it("Penguin Go's pins: the Gemini rows speak generateContent, the DeepSeek rows DeepSeek's Responses API", () => {
+  it("Penguin Go presets display the MMSP stream path", () => {
     const rows = MODEL_CATALOG.filter((m) => m.provider === "penguin-go");
     expect(rows.length).toBeGreaterThan(0);
     for (const m of rows) {
       expect(protocolPathForModel(m.provider, m.clientType ?? "", m.modelId), m.modelId).toBe(
-        m.modelId.startsWith("gemini-") ? "/v1beta/models" : "/responses",
+        "/stream",
       );
     }
   });

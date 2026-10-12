@@ -110,6 +110,7 @@ import type {
   SessionsResponse,
   SessionTracesResponse,
   SshHostResponse,
+  SshHostsResponse,
   SubagentMessageResponse,
   TaskCreateResponse,
   TraceAnalysisResponse,
@@ -2379,6 +2380,18 @@ router
     void hostName;
     return json(machinesResponse(store), 201);
   })
+  .get("/api/projects/:projectId/machines/ssh-hosts", ({ store }): SshHostsResponse => ({
+    hosts: store.f.machines.machines
+      .filter((m) => !m.local)
+      .map((m) => ({ alias: m.alias, hostName: `${m.alias}.example.internal`, user: "ubuntu" })),
+  }))
+  .post("/api/projects/:projectId/machines/add", ({ store, body }): MachinesUseResponse => {
+    const ids = record(body).machines;
+    for (const machine of store.f.machines.machines) {
+      if (Array.isArray(ids) && ids.includes(machine.id) && !machine.local) machine.member = true;
+    }
+    return { ...machinesResponse(store), refused: [] };
+  })
   .get("/api/projects/:projectId/machines/ssh-hosts/:alias", ({ params }): SshHostResponse => ({
     alias: params.alias!,
     hostName: `${params.alias}.example.internal`,
@@ -2392,12 +2405,13 @@ router
     readOnly("install on a machine"),
   )
   .post("/api/projects/:projectId/machines/:machineId/connect", () => readOnly("connect a machine"))
-  .post("/api/projects/:projectId/machines/:machineId/release", ({ store }) =>
-    machinesResponse(store),
-  )
   .post("/api/projects/:projectId/machines/:machineId/restart", () => readOnly("restart a machine"))
-  .post("/api/projects/:projectId/machines/:machineId/disconnect", ({ store }) =>
-    machinesResponse(store),
+  .post("/api/projects/:projectId/machines/:machineId/sync", () =>
+    readOnly("sync a machine's config"),
+  )
+  .post("/api/projects/:projectId/machines/:machineId/stop", () => readOnly("stop a machine"))
+  .post("/api/projects/:projectId/machines/:machineId/uninstall", () =>
+    readOnly("uninstall from a machine"),
   );
 
 // ---------------------------------------------------------------------------------------------

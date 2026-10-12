@@ -745,13 +745,14 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - A new entry stores `--client-type`, `--base-url` and `--api-key` only when you pass them. Left out, each follows the group, and with no group value the client's default; the built-in catalog is not read. A new Project's file already holds the gateways' endpoints and protocols, Penguin Go's relay URL and `vllm`'s `openai-chat-vllm-adapter` on their groups. A `custom` or user-defined entry whose group sets no protocol gets `openai-chat`. Updating an existing entry changes these fields only when you pass the flags; a `--clear-*` flag removes the entry's own value, after which it follows the group.
 - Re-adding a removed preset this way stores only what you pass; **Add new models** on the Models page brings it back with its catalog protocol and endpoint.
 - Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `atlascloud` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
+- `penguin-go`'s protocol is fixed to `mmsp`, as on the Models page and its API: any other `--client-type` is refused, unless it is the value the entry or group already stores, and so is `--clear-client-type` on the group.
 - Turning on `--fast-mode` for a model whose MMSP client rejects the parameter still writes the entry, but prints a warning on stderr.
 - In both forms, a field you do not name is left as it is, each set/clear pair is exclusive, and an empty value is refused: remove a value with its `--clear-*` flag.
 
 Without `--model-id`:
 
 - The flags that describe one model — `--context-window`, `--max-tokens`, `--vision`, `--fast-mode`, the `--price-*` flags and `--set-default` — are refused, and nothing is written. So is a call that names no connection field.
-- Any group takes a protocol: a model's own `client_type` wins over its group's, so the Penguin Go and OpenCode Go models keep theirs.
+- Any group but `penguin-go` takes a protocol: a model's own `client_type` wins over its group's, so the OpenCode Go models keep theirs.
 - The group key reaches only the models that go to the group's endpoint: those with no base URL of their own, or one on the group's origin (scheme, host and port).
 - The command reports how many of the group's models a changed field passes by, because they set their own value or the key does not reach them, and notes a user-defined group that has no models yet.
 

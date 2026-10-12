@@ -90,6 +90,7 @@ import type {
   MachinesUseResponse,
   SshHostRequest,
   SshHostResponse,
+  SshHostsResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   PresetSyncRequest,
@@ -1951,9 +1952,9 @@ export const importAgent = (projectId: string, agentId: string, body: AgentImpor
 // Machines (admin only) ----------------------------------------------------------------
 
 /**
- * The server's ssh hosts, the version it would install, and the running or last install
- * job. The Machines page polls this while a job runs — the progress lines live on the job,
- * not on the event channel, because they belong to the one page that is waiting for them.
+ * The server's ssh hosts, the version it would install, and every machine's job. Read again
+ * whenever the server says the list changed (`machines_changed` on the user event stream, see
+ * state/machines.tsx): the one account of every machine the page and the composer share.
  */
 export const getMachines = (projectId: string) =>
   apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines`);
@@ -1987,6 +1988,21 @@ export const useMachines = (projectId: string, machineIds: string[], replaceProg
       : { machines: machineIds },
   });
 
+/**
+ * Puts machines in this Project's list without installing anything there; each gets a card whose
+ * one thing to do is enabling it. `refused` names the ones turned down (not in the ssh config, or
+ * this server's own machine).
+ */
+export const addMachines = (projectId: string, machineIds: string[]) =>
+  apiFetch<MachinesUseResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/add`, {
+    method: "POST",
+    body: { machines: machineIds },
+  });
+
+/** Every host in this server's ssh config with what its own block says: the add dialog's rows. */
+export const getSshHosts = (projectId: string) =>
+  apiFetch<SshHostsResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts`);
+
 /** Appends a host block to this server's ~/.ssh/config; answers the machines list, which now names it (201). */
 export const addSshHost = (projectId: string, host: SshHostRequest) =>
   apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts`, {
@@ -2011,7 +2027,10 @@ export const updateSshHost = (
     { method: "PUT", body: host },
   );
 
-/** Lets machines go: connections dropped, Project membership released; the install stays. */
+/**
+ * Deletes machines from this Project: connections dropped, Project membership released. The
+ * program and its data stay on each machine, and its host stays in the ssh config.
+ */
 export const stopUsingMachines = (projectId: string, machineIds: string[]) =>
   apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/stop-using`, {
     method: "POST",
@@ -2024,32 +2043,51 @@ export const installOnMachine = (projectId: string, machineId: string, replacePr
     { method: "POST", body: replaceProgram ? { replaceProgram: true } : {} },
   );
 
-/** Brings that machine's server up and holds a tunnel to it (202, long-running). */
+/**
+ * Starts that machine's server and connects to it — the page's Start service — and keeps it
+ * connected from then on (202, a job).
+ */
 export const connectMachine = (projectId: string, machineId: string) =>
   apiFetch<MachinesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/connect`,
     { method: "POST", body: {} },
   );
 
-/** Drops a machine from this Project. The install stays — another Project may be using it. */
-export const releaseMachine = (projectId: string, machineId: string) =>
-  apiFetch<MachinesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/release`,
-    { method: "POST", body: {} },
-  );
-
-/** Drops the tunnel; the remote server keeps running. */
-/** Restarts that machine's server so what runs there matches what is on its disk. */
+/** Restarts that machine's server so what runs there matches what is on its disk (202, a job). */
 export const restartMachine = (projectId: string, machineId: string) =>
   apiFetch<MachinesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/restart`,
     { method: "POST", body: {} },
   );
 
-export const disconnectMachine = (projectId: string, machineId: string) =>
+/**
+ * Stops that machine's server and stops keeping it connected; the install stays. It stays
+ * stopped until it is started again (`connectMachine`). 202, a job.
+ */
+export const stopMachine = (projectId: string, machineId: string) =>
   apiFetch<MachinesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/disconnect`,
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/stop`,
     { method: "POST", body: {} },
+  );
+
+/**
+ * Hands that connected machine the config of every Project using it now — models, command policy,
+ * new-chat defaults, plugin list (202, a job). Its `configSync` says what the sync came to.
+ */
+export const syncMachineConfig = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/sync`,
+    { method: "POST", body: {} },
+  );
+
+/**
+ * Removes the program from that machine, its server stopped first; `removeData` takes its data
+ * directory too. The machine stays in the list as not installed. 202, a job.
+ */
+export const uninstallMachine = (projectId: string, machineId: string, removeData: boolean) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/uninstall`,
+    { method: "POST", body: { removeData } },
   );
 
 // Version & self-update ----------------------------------------------------------------

@@ -87,10 +87,8 @@ export function buildOptimizePrompt(focus: string, params: OptimizeParams): stri
 
 /** What the Optimize tab hands an RSI toolkit other than the default (see rsi-methods.ts). */
 export interface RsiOptimizeParams {
-  /** The toolkit's one Skill, named like its plugin. */
+  /** The toolkit's one Skill (rsi-methods.ts says which Skill of its plugin that is). */
   skill: string;
-  /** The method as the select labels it, e.g. "OPRO". */
-  label: string;
   /** The Agent under test: the one the toolkit initializes and improves. */
   targetAgentId: string;
   benchmarkId: string;

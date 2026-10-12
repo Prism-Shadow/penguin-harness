@@ -1928,7 +1928,7 @@ describe("providers (group-level connections)", () => {
     ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" });
   });
 
-  it("any group takes a protocol, Penguin Go and OpenCode Go included, and their rows keep the protocols they store", async () => {
+  it("Go-owned routes switch to MMSP while OpenCode Go rows keep their own protocols", async () => {
     for (const provider of ["penguin-go", "opencode-go"]) {
       await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, provider, {
         client_type: "openai-chat",
@@ -1936,14 +1936,14 @@ describe("providers (group-level connections)", () => {
       });
     }
     const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-    expect(cfg.providers?.["penguin-go"]).toMatchObject({ client_type: "openai-chat" });
+    expect(cfg.providers?.["penguin-go"]).toMatchObject({ client_type: "mmsp" });
     expect(cfg.providers?.["opencode-go"]).toMatchObject({ client_type: "openai-chat" });
     const all = connections(cfg);
     expect(all["penguin-go/gemini-3.8-flash"]).toMatchObject({
       apiKey: "go-key",
-      clientType: "google-genai",
+      clientType: "mmsp",
     });
-    expect(all["penguin-go/deepseek-flash"]).toMatchObject({ clientType: "deepseek-official" });
+    expect(all["penguin-go/deepseek-flash"]).toMatchObject({ clientType: "mmsp" });
     // A Messages row on its own base, on the group's host: the group key reaches it.
     expect(all["opencode-go/minimax-m3"]).toEqual({
       apiKey: "go-key",
@@ -2064,7 +2064,7 @@ describe("providers (group-level connections)", () => {
   it("old OpenCode Go and Penguin Go files land on a new Project's shape: the common endpoint and the key on the group, each row's own protocol and other base on the row", async () => {
     // As an older release wrote them: every row a copy of its catalog entry, one key across
     // each group. OpenCode Go's rows sit on two bases (four on the Chat Completions one, two
-    // on the Messages one) and three protocols; Penguin Go's on one relay and two protocols.
+    // on the Messages one) and three protocols; Penguin Go's share one MMSP connection.
     const go = [
       "glm-5.3",
       "kimi-k3",
@@ -2098,6 +2098,7 @@ describe("providers (group-level connections)", () => {
       },
       "penguin-go": {
         base_url: fresh["penguin-go"]!.base_url,
+        client_type: "mmsp",
         api_key: "pg-key",
         created_at: "2026-09-20T00:00:00.000Z",
       },

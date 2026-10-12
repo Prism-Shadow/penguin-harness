@@ -16,11 +16,19 @@
  * `--force` is how a run that cannot be asked says yes up front. Pushed that way, the target
  * runs without those plugins and says so on its Plugins page, where they can be repaired.
  *
+ * `--out <file>` builds the same version and writes the push body to a file instead of
+ * pushing it: the body POST /api/hmr/upgrade takes, every part inline. That is how a server
+ * running from a checkout builds the install image it puts on machines
+ * (packages/server/src/machines/checkout-image.ts), so the packer is this one, not a second
+ * copy of it. It needs no target and no credential, and builds the web dist beside the file
+ * rather than in packages/web/dist, which that server may be serving (see `webDist`).
+ *
  * Usage:
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531 --skip-web-build
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531 --force
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs https://box.example.com
+ *   node scripts/deploy.mjs --out /tmp/version.gz
  *
  * A target that has already committed this exact build is left alone: the push would only make
  * it import the same platform as another generation (see deploy-same-build.mjs). `--force`
@@ -47,8 +55,8 @@ import {
   refusedPlugins,
   saidYes,
 } from "./deploy-unsatisfied-plugins.mjs";
-import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
-import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
+import { checkoutFacts, originUrl } from "./build-git-stamp.mjs";
+import { compilePushBundle, pushBundleOptions } from "./push-bundle.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
 import { buildBuiltinPlugins } from "./build-plugins.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
@@ -89,8 +97,10 @@ function usage(problem) {
     `${problem}\n\n` +
       "Usage: PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs <port|url> [--skip-web-build] [--force]\n" +
       "       PENGUIN_API_TOKEN=$(cat <root>/api-token) node scripts/deploy.mjs <port|url>\n" +
+      "       node scripts/deploy.mjs --out <file> [--skip-web-build]\n" +
       "  <port>  a port on this machine (an ssh -L tunnel to the target runtime, or a local server)\n" +
       "  <url>   a full origin, when the target is not reached over loopback\n" +
+      "  <file>  where to write the version instead of pushing it (gzipped upgrade body)\n" +
       "  --force push even if the target has this build or has plugins it cannot run; unsupported plugins are left out\n",
   );
   process.exit(1);
@@ -100,22 +110,47 @@ const args = process.argv.slice(2);
 const skipWebBuild = args.includes("--skip-web-build");
 /** Override same-build skipping and allow a push that leaves unsupported plugins out. */
 const force = args.includes("--force");
-const target = args.find((a) => !a.startsWith("--"));
-if (target === undefined) usage("[deploy] no target given.");
+const outIndex = args.indexOf("--out");
+const outFile = outIndex === -1 ? null : (args[outIndex + 1] ?? "");
+if (outFile !== null && (outFile === "" || outFile.startsWith("--"))) {
+  usage("[deploy] --out needs a file.");
+}
+const target = args.find((a, i) => !a.startsWith("--") && (outIndex === -1 || i !== outIndex + 1));
+if (outFile === null && target === undefined) usage("[deploy] no target given.");
+if (outFile !== null && target !== undefined) {
+  usage("[deploy] --out writes the version to a file; give it no target.");
+}
+
+/**
+ * Where this run's web dist is built and read back. A push builds it in place, as it always
+ * has. `--out` builds it into a directory of its own beside the out file: a server running
+ * from this checkout builds its install image this way, and that server — `pnpm desktop`, or
+ * the dev server's own static fallback — serves packages/web/dist to the page in use, so a
+ * build in place would take the page's files out from under it. `--skip-web-build` only reads
+ * the dist, so it reads it in place either way.
+ */
+const webDist =
+  outFile !== null && !skipWebBuild ? path.resolve(`${outFile}.${process.pid}.web`) : WEB_DIST;
+
 // Two credentials, either one: the admin password (exchanged for a cookie), or the
 // runtime's own local API token (`<root>/api-token`, admin-equivalent — see
 // server/src/auth/api-token.ts), sent as a Bearer. A local push needs no password.
 const ADMIN_PASSWORD = process.env.PENGUIN_ADMIN_PASSWORD;
 const API_TOKEN = process.env.PENGUIN_API_TOKEN;
-if (!ADMIN_PASSWORD && !API_TOKEN)
+if (outFile === null && !ADMIN_PASSWORD && !API_TOKEN)
   usage(
     "[deploy] set PENGUIN_ADMIN_PASSWORD or PENGUIN_API_TOKEN (the runtime's <root>/api-token).",
   );
 
 /** A bare port means this machine's loopback (typically an ssh -L tunnel to the real target). */
-const baseUrl = /^\d+$/.test(target) ? `http://127.0.0.1:${target}` : target.replace(/\/+$/, "");
+const baseUrl =
+  target === undefined
+    ? null
+    : /^\d+$/.test(target)
+      ? `http://127.0.0.1:${target}`
+      : target.replace(/\/+$/, "");
 
-const plaintextProblem = unsafePlaintextTarget(baseUrl);
+const plaintextProblem = baseUrl === null ? null : unsafePlaintextTarget(baseUrl);
 if (plaintextProblem) usage(`[deploy] ${plaintextProblem}`);
 
 /**
@@ -123,7 +158,8 @@ if (plaintextProblem) usage(`[deploy] ${plaintextProblem}`);
  * served under the canonical app host. A tunnel lands on 127.0.0.1:<port> at this end,
  * so the request must still be addressed to `localhost` by name.
  */
-const hostOverride = new URL(baseUrl).hostname === "127.0.0.1" ? "localhost" : undefined;
+const hostOverride =
+  baseUrl !== null && new URL(baseUrl).hostname === "127.0.0.1" ? "localhost" : undefined;
 
 /**
  * node:http rather than the global fetch: fetch (undici) silently derives Host from the
@@ -206,9 +242,8 @@ async function targetRunsThisBuild(auth, build) {
 }
 
 /**
- * Compiles one entry to a self-contained ESM file. The banner is load-bearing: bundled CJS
- * deps reference `require`, `__filename` and `__dirname` inside their own wrapper, and an
- * ESM bundle supplies none of the three — see scripts/esm-cjs-banner.mjs.
+ * Compiles one entry to a self-contained ESM file, every npm dependency inlined (see
+ * push-bundle.mjs, which holds the options).
  */
 async function compileEntry(entry, outfile) {
   if (!fs.existsSync(entry)) throw new Error(`compile entry missing: ${entry}`);
@@ -225,43 +260,26 @@ async function compileEntry(entry, outfile) {
     ],
     { stdio: "inherit" },
   );
-  const esbuild = await import("esbuild");
-  await esbuild.build({
-    entryPoints: [entry],
-    bundle: true,
-    format: "esm",
-    platform: "node",
-    // The Node that runs it (package.json engines). Without a target esbuild compiles for
-    // `esnext`, where it takes standard decorators to be supported and emits them as they
-    // were written — and no Node parses those, so the pushed bundle fails to import with
-    // "Invalid or unexpected token" and the target keeps the generation it had. The
-    // packaged build does not hit this because tsup passes a target of its own.
-    target: "node24",
-    outfile,
-    logLevel: "silent",
-    banner: { js: ESM_CJS_BANNER },
-    alias: {
-      "@prismshadow/penguin-core/kernel": require.resolve("@prismshadow/penguin-core/kernel"),
-    },
-    // The pushed bundle lands under `<root>/hmr/store/`, outside any checkout, so its own
-    // revision has to be inlined here or it can never be recovered: `penguin version` from
-    // a hot-loaded CLI would otherwise report the bare version it was compiled from. This is
-    // the same value the push records as `source`, reaching the target by a second route —
-    // in the artifact itself rather than in harness.json.
-    define: buildGitDefine(),
-  });
+  await compilePushBundle(pushBundleOptions(entry, outfile));
 }
 
 /** The built web dist as a { relPath: base64 } manifest. */
 async function readWebManifest() {
   const files = {};
-  for (const entry of await fsp.readdir(WEB_DIST, { recursive: true, withFileTypes: true })) {
+  for (const entry of await fsp.readdir(webDist, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const abs = path.join(entry.parentPath, entry.name);
-    files[path.relative(WEB_DIST, abs).split(path.sep).join("/")] = await fsp.readFile(abs);
+    files[path.relative(webDist, abs).split(path.sep).join("/")] = await fsp.readFile(abs);
   }
   return files;
 }
+
+/**
+ * cmd.exe gets a `shell: true` spawn's args joined into one command line, unquoted, so a path
+ * with a space in it (a data root under `C:\Users\Jane Doe`) would split in two. Quoted the way
+ * build-plugins.mjs quotes.
+ */
+const quoteForCmd = (a) => (/[\s"^&|<>;,()%!]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
 
 /**
  * Files the pushed platform needs as real files rather than bundled code. A bundle cannot carry one: it is
@@ -371,9 +389,16 @@ async function main() {
     log("reusing the existing web dist");
   } else {
     log("building the web dist…");
-    execFileSync("pnpm", ["--filter", "@prismshadow/penguin-web", "build"], {
+    // Extra args reach the package's own `vite build`. Outside the package, vite would leave
+    // the directory as it found it and warn; it is this run's own, so it is emptied.
+    const build = ["--filter", "@prismshadow/penguin-web", "build"];
+    if (webDist !== WEB_DIST) build.push("--outDir", webDist, "--emptyOutDir");
+    const windows = process.platform === "win32";
+    execFileSync("pnpm", windows ? build.map(quoteForCmd) : build, {
       cwd: ROOT,
       stdio: "inherit",
+      // pnpm is a .cmd shim on Windows, which Node refuses to spawn without a shell.
+      shell: windows,
     });
   }
 
@@ -385,9 +410,34 @@ async function main() {
   const assets = await readNativeAssets();
   const source = pushSource();
 
-  const auth = await authHeaders();
   const platform = await fsp.readFile(PLATFORM_BUNDLE);
   const cli = await fsp.readFile(CLI_BUNDLE);
+  const mapValues = (o, f) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
+  const body = (part) => ({
+    platform: part(platform, "utf8"),
+    cli: part(cli, "utf8"),
+    web: { files: mapValues(files, (b) => part(b, "base64")) },
+    assets: { files: mapValues(assets.files, (b) => part(b, "base64")), exec: assets.exec },
+    ...(source === null ? {} : { source }),
+  });
+
+  if (outFile !== null) {
+    // Every part inline: whoever reads the file has no store to resolve a name from.
+    const gz = zlib.gzipSync(
+      Buffer.from(JSON.stringify(body((bytes, encoding) => bytes.toString(encoding)))),
+    );
+    // Written beside and renamed in, so a reader never takes half a version for a whole one.
+    const tmp = `${outFile}.${process.pid}.tmp`;
+    await fsp.writeFile(tmp, gz);
+    await fsp.rename(tmp, outFile);
+    if (source !== null) log(`provenance: ${source.revision}`);
+    log(
+      `wrote ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${outFile}`,
+    );
+    return;
+  }
+
+  const auth = await authHeaders();
   if (force) {
     log("--force: pushing without asking what the target runs");
   } else {
@@ -406,14 +456,6 @@ async function main() {
     }
     log(`pushing: ${running.reason}`);
   }
-  const mapValues = (o, f) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
-  const body = (part) => ({
-    platform: part(platform, "utf8"),
-    cli: part(cli, "utf8"),
-    web: { files: mapValues(files, (b) => part(b, "base64")) },
-    assets: { files: mapValues(assets.files, (b) => part(b, "base64")), exec: assets.exec },
-    ...(source === null ? {} : { source }),
-  });
   // Content-addressed transfer, the way git pushes: name every part by its sha256, ask the
   // target which blobs it lacks, PUT only those (raw), then push a body of names. A target
   // without the probe (an older runtime) answers 404 and gets every part inline.
@@ -537,4 +579,5 @@ main()
   })
   .finally(() => {
     for (const f of [PLATFORM_BUNDLE, CLI_BUNDLE]) fs.rmSync(f, { force: true });
+    if (webDist !== WEB_DIST) fs.rmSync(webDist, { recursive: true, force: true });
   });

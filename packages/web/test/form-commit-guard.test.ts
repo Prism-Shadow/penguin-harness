@@ -64,6 +64,7 @@ const FORM_MODULES: readonly string[] = [
   "features/company/org-dialogs.tsx",
   "features/company/ticket-dialog.tsx",
   "features/company/tickets-page.tsx",
+  "features/machines/add-machine-dialog.tsx",
   "features/machines/ssh-host-dialog.tsx",
   "features/messaging/messaging-binding-modal.tsx",
   "features/messaging/messaging-panel.tsx",

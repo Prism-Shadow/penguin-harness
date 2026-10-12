@@ -7,6 +7,8 @@
  *   archive is named flat.
  * - Unpacking happens once (a marker records completion), keeps exec bits, is redone from
  *   scratch after a crash mid-extraction, and leaves a directory without archives alone.
+ * - A store copied off a Mac with its `tar` carries an AppleDouble `._<name>` beside each
+ *   archive; those are not archives, and the real ones still unpack.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -87,5 +89,23 @@ describe("asset archives", () => {
     const plain = path.join(dir, "plain");
     await fs.mkdir(plain);
     expect(unpackedAssetsDir(plain)).toBe(plain);
+  });
+
+  it("unpacks the real archives of a store that came off a Mac with AppleDouble companions", async () => {
+    const assets = path.join(dir, "assets");
+    await fs.mkdir(path.join(assets, "archives"), { recursive: true });
+    await fs.writeFile(
+      path.join(assets, "archives", "node-pty.tgz"),
+      await packArchive(await source({ "node_modules/node-pty/package.json": "{}" })),
+    );
+    // What macOS's bsdtar writes for a file carrying com.apple.provenance: attribute bytes.
+    await fs.writeFile(
+      path.join(assets, "archives", "._node-pty.tgz"),
+      Buffer.from([0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00]),
+    );
+    const out = unpackedAssetsDir(assets);
+    expect(
+      await fs.readFile(path.join(out, "node_modules", "node-pty", "package.json"), "utf8"),
+    ).toBe("{}");
   });
 });

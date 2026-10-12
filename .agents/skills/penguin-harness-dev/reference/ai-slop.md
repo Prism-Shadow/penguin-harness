@@ -46,6 +46,12 @@ entry, a PR body.
   reader something. A breakdown does not get a caveat sentence by default ("two measurements of
   the same span: they can overlap, and they need not add up") — the numbers carry it, and the
   subtlety belongs in the code comment and the spec, not under every reading.
+- A state sentence (why a control is greyed, what a machine is doing) says the reason in plain
+  words and stops. No "reason + colon + the controls it affects" template —
+  「这台机器正在处理任务，完成后可用：启用。」, "Cannot reach this machine, so these wait for now:
+  Stop, Restart." — the greyed controls already show which ones; write 「正在执行其他操作，请等它
+  完成。」 / "Another action is running on this machine." The same goes for a list glued onto a
+  notice: one sentence that says what to do beats an inventory (the full list belongs in a log).
 - zh copy follows the docs typography rules (CJK–Latin spacing, full-width punctuation, zh
   "Agent"); prose hygiene for anything published is in `authoring.md`.
 

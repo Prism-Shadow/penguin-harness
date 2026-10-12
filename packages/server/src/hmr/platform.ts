@@ -283,7 +283,7 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
   // group's NAME carries a version, because a member that exists on an old object still runs
   // the old object's code: a behavior change bumps the name, so the old group is disposed
   // here (its sessions closed) and the machines are re-held fresh.
-  [SESSION_GROUP]: ["hold", "held", "run", "session", "close"],
+  [SESSION_GROUP]: ["hold", "held", "retarget", "adopt", "run", "session", "close"],
   agent: ["state", "shape", "stopped"],
 };
 

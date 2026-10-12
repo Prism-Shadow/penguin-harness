@@ -30,7 +30,9 @@
  * connect) is kept: it never idles out, and if it dies — a network blip, keepalives giving
  * up on a dead link, a command that timed out — it is reopened on its own, with a backoff,
  * until it is explicitly closed. The proxy's dials ride the held session and never touch a
- * timer, so traffic alone is neither what keeps it nor what could lose it.
+ * timer, so traffic alone is neither what keeps it nor what could lose it. The one death it
+ * does not come back from on its own is a stored password refused (login.ts): retrying it would
+ * lock the account, so the session waits for the password to be saved again.
  */
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -40,6 +42,9 @@ import { sessionArgs } from "../commands.js";
 import type { RemoteTarget } from "../commands.js";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
+import { sshFailureText } from "../ssh-failure.js";
+import { noteSignIn, signInFor } from "./login.js";
+import type { SignIn } from "./login.js";
 
 /**
  * What a command in the session produced. `output` is stdout and stderr merged, with the
@@ -107,15 +112,78 @@ interface Pending {
   onLine: ((line: string) => void) | undefined;
 }
 
+/**
+ * Told when a HELD session comes up or goes down — the machines service's word that a machine
+ * it keeps connected needs bringing back, and that its list changed. A set rather than one slot:
+ * across a hot push the generation coming up starts listening before the one going out stops,
+ * and the one going out must not take the newcomer's listener with it.
+ */
+export type SessionListener = (machineAddress: string, up: boolean) => void;
+const sessionListeners = new Set<SessionListener>();
+
+/** Starts telling `listener` of held sessions' ups and downs; the returned function stops it. */
+export function onSessionChange(listener: SessionListener): () => void {
+  sessionListeners.add(listener);
+  return () => {
+    sessionListeners.delete(listener);
+  };
+}
+
+/** Tells every listener, without letting one break the transport: a throw there is the listener's own bug. */
+function tell(machineAddress: string, up: boolean): void {
+  for (const listener of sessionListeners) {
+    try {
+      listener(machineAddress, up);
+    } catch {
+      // The transport carries on whatever a listener does.
+    }
+  }
+}
+
+/**
+ * What a shell reaches beyond itself that is kept per generation of this module: the listeners
+ * told of its ups and downs, and login.ts's memory of refused passwords. (The resource registry it
+ * is held in is the runtime's, the same object for every generation.) Across a hot push a held
+ * shell outlives the module instance that made it; the successor adopts it (shellFor) and hands
+ * it the successor's host, so its drops reach the listeners of the generation that keeps the
+ * machine connected, and a password saved there (forgetRefusal) is one it may sign in with again.
+ */
+export interface ShellHost {
+  changed(machineAddress: string, up: boolean): void;
+  signInFor(
+    target: RemoteTarget,
+  ): Promise<{ ok: true; signIn: SignIn } | { ok: false; detail: string }>;
+  noteSignIn(target: RemoteTarget, signIn: SignIn, said: string): boolean;
+}
+
+/** This generation's host: its listeners, and its login.ts. */
+const HOST: ShellHost = { changed: tell, signInFor, noteSignIn };
+
+/**
+ * Held sessions are handed from one platform generation to the next through the runtime's
+ * resource registry. The group's NAME carries a version for a behavior change behind unchanged
+ * signatures; the closed shape of MachineSession, compared by the platform (hmr/platform.ts),
+ * catches a change in signatures — a predecessor whose sessions lack a member is never adopted.
+ */
 export const SESSION_GROUP = "machineSession.v2";
 export const SESSION_SHAPE_ID = `${SESSION_GROUP}:shape`;
 export const MACHINE_SESSION_IFACE = "@prismshadow/penguin-server#MachineSession";
 const sessionResourceId = (address: string): string => `${SESSION_GROUP}:${address}`;
 
+/**
+ * A session as a successor calls it: EVERY member it uses on a shell another generation made,
+ * which is everything this module calls on a shell. `retarget` and `adopt` are part of it so that
+ * a build whose sessions cannot be told a new password or a new host has a different shape and is
+ * never adopted — its sessions are closed with their group and the machines held afresh.
+ */
 @Interface()
 export abstract class MachineSession {
   abstract hold(): void;
   abstract held(): boolean;
+  /** The latest caller's word on how to reach the machine; read when the next session opens. */
+  abstract retarget(target: RemoteTarget): void;
+  /** From here on, reports to and signs in through `host`: the generation that keeps it. */
+  abstract adopt(host: ShellHost): void;
   abstract run(command: string, opts?: ShellRunOptions): Promise<ShellResult>;
   abstract session(): ShellSession | null;
   abstract close(): void;
@@ -124,13 +192,20 @@ export type HeldSession = MachineSession;
 
 let registry: Resources | null = null;
 let adoptDelivered = true;
+/**
+ * Where held sessions are registered for a successor, and whether this generation may claim the
+ * ones its predecessor left there: false when the platform judged their contract another.
+ */
 export function attachSessionRegistry(resources: Resources | null, adoptable = true): void {
   registry = resources;
   adoptDelivered = adoptable;
 }
 
-class MachineShell {
+class MachineShell implements MachineSession {
   #child: ChildProcessWithoutNullStreams | null = null;
+  /** How the child signed in, and whether a command has completed over it since. */
+  #signIn: SignIn | null = null;
+  #cameUp = false;
   #socksPort: number | null = null;
   #buffer = "";
   /** How far into #buffer lines have been handed to the pending command's onLine. */
@@ -145,16 +220,44 @@ class MachineShell {
   #reopen: NodeJS.Timeout | null = null;
   #backoffMs = RECONNECT_MIN_MS;
 
+  #target: RemoteTarget;
+  /** The generation this shell reports to and signs in through: its maker's, until adopted. */
+  #host: ShellHost = HOST;
+  /** Takes this shell out of the resource registry again; set while it is held there. */
   #release: (() => void) | null = null;
 
-  constructor(private readonly target: RemoteTarget, private readonly address: string) {}
+  constructor(
+    private readonly address: string,
+    target: RemoteTarget,
+  ) {
+    this.#target = target;
+  }
+
+  /**
+   * The latest caller's word on how to reach the machine — a password saved or removed since the
+   * first one asked. Read when the next session opens; a session already up stays as it is.
+   */
+  retarget(target: RemoteTarget): void {
+    this.#target = target;
+  }
+
+  adopt(host: ShellHost): void {
+    this.#host = host;
+  }
 
   /** Keeps the session from here on: a session opened transiently is promoted in place. */
   hold(): void {
+    const promoted = !this.#held && this.#child !== null;
     this.#held = true;
     if (this.#idle !== null) clearTimeout(this.#idle);
     this.#idle = null;
-    this.#release = registry?.register(sessionResourceId(this.address), this, () => this.close()) ?? null;
+    // A transient session a command already opened is now a held one: it came up as far as
+    // anyone keeping it is concerned.
+    if (promoted) this.#host.changed(this.address, true);
+    // Registered for the next generation to claim; holding again re-registers, which moves the
+    // slot (and the duty to close it at process exit) to the generation that held it last.
+    this.#release =
+      registry?.register(sessionResourceId(this.address), this, () => this.close()) ?? null;
   }
 
   held(): boolean {
@@ -214,7 +317,16 @@ class MachineShell {
   }
 
   #drop(): void {
+    const wasUp = this.#child !== null;
+    // A password refused before the session ever came up is remembered (login.ts): nothing
+    // dials this alias with it again, the reopen below included.
+    const refused =
+      this.#signIn !== null &&
+      !this.#cameUp &&
+      this.#host.noteSignIn(this.#target, this.#signIn, this.#stderr);
     this.#child = null;
+    this.#signIn = null;
+    this.#cameUp = false;
     this.#socksPort = null;
     this.#buffer = "";
     this.#emitted = 0;
@@ -222,26 +334,44 @@ class MachineShell {
     this.#pending = null;
     if (pending !== null) {
       clearTimeout(pending.timer);
-      // ssh's own last words — a refused key, an unknown host — are the diagnosis.
+      // ssh's own last words — a refused key, an unknown host — are the diagnosis, led by
+      // what they mean when ssh has a fixed diagnostic for it: nothing here can answer a
+      // question ssh would have asked a person, and the cure is rarely in its words.
       const said = this.#stderr.trim().split("\n").pop() ?? "";
       pending.resolve({
         code: 255,
         output:
-          said === ""
+          sshFailureText(this.#stderr, this.#target.alias, {
+            password: this.#target.password !== undefined,
+          }) ??
+          (said === ""
             ? "the connection to this machine ended"
-            : `the connection to this machine ended: ${said}`,
+            : `the connection to this machine ended: ${said}`),
       });
     }
     this.#stderr = "";
-    if (this.#held) this.#scheduleReopen();
+    if (this.#held) {
+      if (wasUp) this.#host.changed(this.address, false);
+      if (!refused) this.#scheduleReopen();
+    }
   }
 
-  async #open(): Promise<ChildProcessWithoutNullStreams> {
+  /** The live child, a new one, or why none may be started (login.ts) — never a throw for that. */
+  async #open(): Promise<ChildProcessWithoutNullStreams | { refused: string }> {
     if (this.#child !== null) return this.#child;
+    const target = this.#target;
+    const login = await this.#host.signInFor(target);
+    if (!login.ok) return { refused: login.detail };
     const port = await freeLocalPort();
     if (port === null) throw new Error("no free local port for the session's SOCKS listener");
     this.#mark = `--penguin-${randomBytes(9).toString("hex")}--`;
-    const child = spawn("ssh", sessionArgs(this.target, port), { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("ssh", sessionArgs(target, port), {
+      stdio: ["pipe", "pipe", "pipe"],
+      ...(login.signIn.env === undefined ? {} : { env: login.signIn.env }),
+      ...(login.signIn.detached ? { detached: true } : {}),
+    });
+    this.#signIn = login.signIn;
+    this.#cameUp = false;
     // setEncoding, not String(chunk): a multibyte character whose bytes land in two `data`
     // events would otherwise decode to two replacement characters. The stream's decoder holds
     // an incomplete sequence back until the rest of it arrives.
@@ -273,6 +403,7 @@ class MachineShell {
     });
     this.#child = child;
     this.#socksPort = port;
+    if (this.#held) this.#host.changed(this.address, true);
     return child;
   }
 
@@ -292,6 +423,8 @@ class MachineShell {
         this.#pending?.onLine?.(line);
     }
     if (at === -1) return;
+    // A mark came back: this child signed in, and whatever ssh says from here is not a refusal.
+    this.#cameUp = true;
     const rest = this.#buffer.slice(at + this.#mark.length);
     const end = rest.indexOf("\n");
     if (end === -1) return; // The exit code has not arrived yet.
@@ -309,15 +442,19 @@ class MachineShell {
 
   async #runExclusive(command: string, opts: ShellRunOptions): Promise<ShellResult> {
     if (this.#idle !== null) clearTimeout(this.#idle);
-    let child: ChildProcessWithoutNullStreams;
+    let opened: ChildProcessWithoutNullStreams | { refused: string };
     try {
-      child = await this.#open();
+      opened = await this.#open();
     } catch (err) {
       return {
         code: 255,
         output: `could not start ssh: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
+    // Refused before any ssh ran: said as the session's own failure would be, and not idling
+    // anything — there is no session to let go.
+    if ("refused" in opened) return { code: 255, output: opened.refused };
+    const child = opened;
     return new Promise<ShellResult>((resolve) => {
       const timer = setTimeout(() => {
         // A session that stopped answering is not one to keep: drop it so the next command
@@ -357,25 +494,45 @@ class MachineShell {
  * The sessions, by machine address. Module-level rather than per App, so ordinary work does
  * not reopen a connection it already has.
  *
- * A hot push DOES lose them: the platform bundle is re-imported cache-busted (hmr/host.ts),
- * so this map starts empty in the successor. The generation on its way out closes what it
- * opened — closeAllShells, from the platform's dispose effect — because it is the one that
- * holds the child handles; the successor then re-holds every connection the record says was
- * held (machines/service.ts). A transient session that was never closed that way is collected
- * by its idle timer, which belongs to the process rather than to the module that armed it.
- * Nothing is ever killed by a pid read back from a file: a pid is reused by the OS, and the
- * process at a remembered number may by then be anyone's.
+ * A hot push re-imports this module cache-busted (hmr/host.ts), so the map starts empty in the
+ * successor. A HELD session is not lost with it: the generation on its way out closes only its
+ * transient sessions (closeAllShells, from the platform's dispose effect) and leaves the held ones
+ * in the runtime's resource registry, where each was registered as it was held. The successor
+ * re-holds every connection the record says was held (machines/service.ts) and, when the platform
+ * judged the two builds' MachineSession the same, claims the live session back instead of dialling
+ * again; otherwise it opens its own, and the platform closes the predecessor's with their group.
+ * A transient session left behind is collected by its idle timer, which belongs to the process
+ * rather than to the module that armed it. Nothing is ever killed by a pid read back from a
+ * file: a pid is reused by the OS, and the process at a remembered number may by then be anyone's.
+ *
+ * Typed by the interface, not the class: a session in here may be another build's object, and
+ * only what MachineSession declares is known to exist on it.
  */
-const sessions = new Map<string, MachineShell>();
+const sessions = new Map<string, MachineSession>();
 
-function shellFor(machineAddress: string, target: RemoteTarget): MachineShell {
-  let shell = sessions.get(machineAddress);
-  if (shell === undefined) {
-    shell = (adoptDelivered ? registry?.claim<MachineShell>(sessionResourceId(machineAddress)) : undefined) ?? new MachineShell(target, machineAddress);
-    sessions.set(machineAddress, shell);
-    if (shell.held()) shell.hold();
+function shellFor(machineAddress: string, target: RemoteTarget): MachineSession {
+  const known = sessions.get(machineAddress);
+  if (known !== undefined) {
+    known.retarget(target);
+    return known;
   }
-  return shell;
+  const delivered = adoptDelivered
+    ? registry?.claim<MachineSession>(sessionResourceId(machineAddress))
+    : undefined;
+  if (delivered === undefined) {
+    const shell = new MachineShell(machineAddress, target);
+    sessions.set(machineAddress, shell);
+    return shell;
+  }
+  // A predecessor's held session, taken over as it stands — its ssh child and SOCKS port stay —
+  // but from now on telling THIS generation's listeners of its drops and signing in through this
+  // generation's login.ts, whose refusals a saved password clears: left on its maker's host, a
+  // drop would reach no one and the machine would never be brought back.
+  delivered.adopt(HOST);
+  delivered.retarget(target);
+  if (delivered.held()) delivered.hold();
+  sessions.set(machineAddress, delivered);
+  return delivered;
 }
 
 /** Runs a command on a machine over its session. */
@@ -425,8 +582,9 @@ export function isHeld(machineAddress: string): boolean {
 }
 
 /**
- * Every session this module opened, closed — what a platform generation does on its way out,
- * so that its successor starts with nothing of its to collect.
+ * What a platform generation does on its way out: every transient session it opened is closed,
+ * and every held one is left in the resource registry for the successor to claim — or closed
+ * too when no registry is attached. Either way this generation's map is emptied.
  */
 export function closeAllShells(): void {
   for (const shell of sessions.values()) {
@@ -435,9 +593,18 @@ export function closeAllShells(): void {
   sessions.clear();
 }
 
-/** The session held to a machine, while it is up. */
+/** The session to a machine, while it is up — held, or opened by a command and idling out. */
 export function sessionOf(machineAddress: string): ShellSession | null {
   return sessions.get(machineAddress)?.session() ?? null;
+}
+
+/**
+ * The session HELD to a machine, while it is up: what "connected" means. A session a job's
+ * commands opened stays up until its idle timer closes it, and is not a connection — an
+ * install that failed would otherwise read as connected for as long as its session idles.
+ */
+export function heldSessionOf(machineAddress: string): ShellSession | null {
+  return isHeld(machineAddress) ? sessionOf(machineAddress) : null;
 }
 
 /** Lets go of a machine's session — for a disconnect, or a machine that went away. */

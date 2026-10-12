@@ -1,18 +1,30 @@
 /**
  * Unit tests for the outbound-proxy module's pure parts — the NO_PROXY loopback merge,
- * proxy-address normalization, and the dispatcher choice per settings state — plus one
- * behavioral check that an explicit address actually routes traffic through that proxy
- * while loopback stays direct. No global install — installGlobalProxyDispatcher (fetch
- * replacement) runs only in the production entry.
+ * proxy-address normalization, and the dispatcher choice per settings state — plus
+ * behavioral checks that an explicit address actually routes traffic through that proxy
+ * while loopback stays direct, and that local destinations go direct whatever the proxy
+ * settings say:
+ *
+ * - Given proxy variables (or an explicit address) and a proxy that tunnels whatever it is
+ *   asked for, a request to a private, link-local or `.local` destination, or to a forwarded
+ *   local port, never reaches the proxy, and a request to a public host does.
+ * - The NO_PROXY a command is given when the explicit address is injected carries the local
+ *   ranges as CIDR entries, beside the environment's own and the loopback names.
+ *
+ * No global install — installGlobalProxyDispatcher (fetch replacement) runs only in the
+ * production entry.
  */
 import http from "node:http";
 import net from "node:net";
 import type { AddressInfo } from "node:net";
-import { describe, expect, it } from "vitest";
-import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Agent, fetch as undiciFetch } from "undici";
 import {
+  LocalFirstDispatcher,
+  agentNoProxy,
   buildProxyDispatcher,
   envProxyAgentOptions,
+  isLocalDestination,
   mergedNoProxy,
   normalizeProxyUrl,
 } from "../src/net/proxy.js";
@@ -139,7 +151,7 @@ describe("envProxyAgentOptions", () => {
 });
 
 describe("buildProxyDispatcher", () => {
-  it("app switch off → plain Agent; on → EnvHttpProxyAgent, with or without an explicit address", async () => {
+  it("app switch off → plain Agent; on → local destinations first, with or without an explicit address", async () => {
     const off = buildProxyDispatcher({ proxyForApp: false, proxyUrl: null }, {});
     const onEnv = buildProxyDispatcher({ proxyForApp: true, proxyUrl: null }, {});
     const onExplicit = buildProxyDispatcher(
@@ -148,9 +160,8 @@ describe("buildProxyDispatcher", () => {
     );
     try {
       expect(off).toBeInstanceOf(Agent);
-      expect(off).not.toBeInstanceOf(EnvHttpProxyAgent);
-      expect(onEnv).toBeInstanceOf(EnvHttpProxyAgent);
-      expect(onExplicit).toBeInstanceOf(EnvHttpProxyAgent);
+      expect(onEnv).toBeInstanceOf(LocalFirstDispatcher);
+      expect(onExplicit).toBeInstanceOf(LocalFirstDispatcher);
     } finally {
       await off.close();
       await onEnv.close();
@@ -252,5 +263,179 @@ describe("buildProxyDispatcher", () => {
       await dispatcher.close();
       proxy.close();
     }
+  });
+});
+
+describe("isLocalDestination", () => {
+  it("takes loopback, the private ranges, link-local and local names as local", () => {
+    for (const host of [
+      "127.0.0.1",
+      "127.12.0.9",
+      "10.1.2.3",
+      "172.16.0.1",
+      "172.31.255.254",
+      "192.168.124.47",
+      "169.254.10.10",
+      "[::1]",
+      "[fd12:3456::1]",
+      "[fe80::1]",
+      "fe80::1%en0",
+      "[::ffff:192.168.1.10]",
+      "[::ffff:c0a8:10a]",
+      "localhost",
+      "api.localhost",
+      "printer.local",
+      "Printer.Local.",
+    ]) {
+      expect(isLocalDestination(host), host).toBe(true);
+    }
+  });
+
+  it("leaves public addresses and every other name to the proxy settings", () => {
+    for (const host of [
+      "172.32.0.1",
+      "8.8.8.8",
+      "100.64.0.1",
+      "[2001:db8::1]",
+      "api.deepseek.com",
+      "local.example.com",
+      "localhost.example.com",
+      "",
+    ]) {
+      expect(isLocalDestination(host), host).toBe(false);
+    }
+  });
+});
+
+describe("local destinations and the proxy", () => {
+  const cleanups: Array<() => void | Promise<void>> = [];
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+    vi.unstubAllEnvs();
+  });
+
+  /**
+   * A proxy that tunnels whatever it is asked for and answers as the origin, counting what it
+   * was asked; a local server; and a direct dispatcher whose connector reaches that server
+   * whatever address it is handed — a private address this test cannot bind still has to be
+   * dialled to prove it went direct — recording the address it was asked for.
+   */
+  async function rig() {
+    const listen = (server: net.Server) =>
+      new Promise<number>((resolve) =>
+        server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)),
+      );
+    const viaProxy: string[] = [];
+    const proxy = http.createServer((_req, res) => res.end());
+    proxy.on("connect", (req, socket) => {
+      viaProxy.push(req.url ?? "");
+      socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      let head = "";
+      socket.on("data", (chunk: Buffer) => {
+        head += chunk.toString("utf8");
+        if (!head.includes("\r\n\r\n")) return;
+        socket.end("HTTP/1.1 200 OK\r\ncontent-length: 9\r\nconnection: close\r\n\r\nvia-proxy");
+      });
+    });
+    const local = http.createServer((_req, res) => res.end("direct"));
+    const proxyPort = await listen(proxy);
+    const localPort = await listen(local);
+    const direct: string[] = [];
+    const directAgent = new Agent({
+      connect: (opts, callback) => {
+        // As the connector sees them: a default port arrives empty, an IPv6 host bracketed or not.
+        direct.push(`${opts.hostname.replace(/^\[|\]$/g, "")}:${opts.port || 80}`);
+        const socket = net.connect({ host: "127.0.0.1", port: localPort });
+        socket.once("connect", () => callback(null, socket));
+        socket.once("error", (err) => callback(err, null));
+      },
+    });
+    cleanups.push(
+      () => void proxy.close(),
+      () => void local.close(),
+    );
+    return { proxyUrl: `http://127.0.0.1:${proxyPort}`, localPort, viaProxy, direct, directAgent };
+  }
+
+  const LOCAL_URLS = [
+    "http://192.168.124.47:7371/api/version",
+    "http://10.0.0.5:8000/v1/models",
+    "http://172.20.3.4/",
+    "http://169.254.169.254/latest",
+    "http://[fd00::5]:8080/",
+    "http://printer.local:631/",
+  ];
+
+  for (const mode of ["the proxy variables", "an explicit proxy address"] as const) {
+    it(`with ${mode}, local and private destinations go direct and a public host through the proxy`, async () => {
+      const { proxyUrl, localPort, viaProxy, direct, directAgent } = await rig();
+      const fromEnv = mode === "the proxy variables";
+      if (fromEnv) {
+        for (const name of ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]) {
+          vi.stubEnv(name, proxyUrl);
+        }
+        vi.stubEnv("NO_PROXY", "");
+        vi.stubEnv("no_proxy", "");
+      }
+      const dispatcher = buildProxyDispatcher(
+        { proxyForApp: true, proxyUrl: fromEnv ? null : proxyUrl },
+        {},
+        directAgent,
+      );
+      cleanups.push(() => dispatcher.close());
+
+      for (const url of LOCAL_URLS) {
+        const res = await undiciFetch(url, { dispatcher });
+        expect(await res.text(), url).toBe("direct");
+      }
+      // A forwarded local port, the way a tunnel to a machine is reached.
+      const forwarded = await undiciFetch(`http://127.0.0.1:${localPort}/api/version`, {
+        dispatcher,
+      });
+      expect(await forwarded.text()).toBe("direct");
+      expect(viaProxy).toEqual([]);
+      expect(direct).toEqual([
+        "192.168.124.47:7371",
+        "10.0.0.5:8000",
+        "172.20.3.4:80",
+        "169.254.169.254:80",
+        "fd00::5:8080",
+        "printer.local:631",
+        `127.0.0.1:${localPort}`,
+      ]);
+
+      const remote = await undiciFetch("http://models.example.com/v1/models", { dispatcher });
+      expect(await remote.text()).toBe("via-proxy");
+      expect(viaProxy).toEqual(["models.example.com:80"]);
+    });
+  }
+});
+
+describe("agentNoProxy", () => {
+  it("gives a command the local ranges as CIDR entries, after the environment's own and the loopback names", () => {
+    expect(agentNoProxy({ NO_PROXY: "corp.example" }).split(",")).toEqual([
+      "corp.example",
+      "localhost",
+      "127.0.0.1",
+      "::1",
+      "127.0.0.0/8",
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "169.254.0.0/16",
+      "fc00::/7",
+      "fe80::/10",
+      ".local",
+    ]);
+  });
+
+  it("does not repeat a range the environment already names", () => {
+    const entries = agentNoProxy({ no_proxy: "10.0.0.0/8,.LOCAL" }).split(",");
+    expect(entries.filter((e) => e.toLowerCase() === "10.0.0.0/8")).toHaveLength(1);
+    expect(entries.filter((e) => e.toLowerCase() === ".local")).toHaveLength(1);
+  });
+
+  it("leaves the dispatcher's own NO_PROXY as it was: undici does not read CIDR entries", () => {
+    expect(envProxyAgentOptions(null, {}).noProxy).toBe("localhost,127.0.0.1,::1");
   });
 });

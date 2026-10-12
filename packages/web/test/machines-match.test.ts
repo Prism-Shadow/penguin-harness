@@ -1,13 +1,11 @@
 /**
- * The machine picker's fuzzy search: subsequence matching (a query does not have to be a
- * substring to hit), scoring that ranks contiguous and word-start hits above scattered
- * ones, and the highlight segmentation the rows render from. An ssh config with hundreds
- * of hosts is the case this exists for, so the cap and the "N more" arithmetic are pinned
- * here too.
+ * The add dialog's fuzzy search over host aliases: subsequence matching (a query does not have
+ * to be a substring to hit), scoring that ranks contiguous and word-start hits above scattered
+ * ones, and the highlight segmentation the rows render from. An ssh config with hundreds of
+ * hosts is the case this exists for: a specific query narrows it to the one host.
  */
 import { describe, expect, it } from "vitest";
 import {
-  MAX_VISIBLE_MACHINES,
   fuzzyMatch,
   highlightSegments,
   matchMachines,
@@ -74,14 +72,9 @@ describe("highlightSegments", () => {
 describe("a config with hundreds of hosts", () => {
   const many = Array.from({ length: 300 }, (_, i) => machine(`node-${String(i).padStart(3, "0")}`));
 
-  it("narrows to the visible few, and the counter names the rest honestly", () => {
-    const all = matchMachines(many, "");
-    expect(all).toHaveLength(300);
-    expect(all.length - all.slice(0, MAX_VISIBLE_MACHINES).length).toBe(300 - MAX_VISIBLE_MACHINES);
-
-    // A query specific enough to fit on screen leaves nothing hidden.
+  it("offers every host before a search, and a specific query narrows them to the one", () => {
+    expect(matchMachines(many, "")).toHaveLength(300);
     const narrowed = matchMachines(many, "node287");
     expect(narrowed.map((m) => m.machine.alias)).toEqual(["node-287"]);
-    expect(narrowed.length - narrowed.slice(0, MAX_VISIBLE_MACHINES).length).toBe(0);
   });
 });

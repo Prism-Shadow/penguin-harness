@@ -12,8 +12,9 @@
  * - Every scheduled-task example says when it fires (never in cron syntax), and the two that
  *   need an answer run in the conversation the user is in.
  * - The short example prompts stay under their length ceilings and keep their core in both
- *   locales — the RAG docs expert its source and citations, the Benchmark import its Skill, its
- *   repository and its wait for the user's pick among them.
+ *   locales — the RAG docs expert its source and citations, the Benchmark import its Skill and
+ *   the GDPevo package it imports, the rhythm runner its two penguin forms, its easy difficulty
+ *   and its instrumental music.
  * - The investment Copilot example keeps its "not investment advice" framing.
  */
 import { describe, expect, it } from "vitest";
@@ -166,13 +167,45 @@ describe("short example prompts", () => {
     },
     {
       id: "benchmarkImport",
-      zhMarkers: ["`benchmark-design`", "penguin-harness-benchmark", "选定后"],
-      enMarkers: ["`benchmark-design`", "penguin-harness-benchmark", "once I say so"],
+      zhMarkers: [
+        "`benchmark-design`",
+        "packages/penguinharness-benchmark-gdpevo-train",
+        "不要覆盖",
+      ],
+      enMarkers: [
+        "`benchmark-design`",
+        "packages/penguinharness-benchmark-gdpevo-train",
+        "leave them as they are",
+      ],
     },
     {
       id: "rhythmRunner",
-      zhMarkers: ["喵斯快跑", "企鹅", "音符图标", "节拍", "Perfect", "Great", "Miss"],
-      enMarkers: ["Muse Dash", "penguin", "music-note icons", "beat", "Perfect", "Great", "Miss"],
+      zhMarkers: [
+        "喵斯快跑",
+        "企鹅",
+        "音符图标",
+        "节拍",
+        "飞起来",
+        "雪橇",
+        "Perfect",
+        "Great",
+        "Miss",
+        "简单",
+        "纯音乐",
+      ],
+      enMarkers: [
+        "Muse Dash",
+        "penguin",
+        "music-note icons",
+        "beat",
+        "fly",
+        "sled",
+        "Perfect",
+        "Great",
+        "Miss",
+        "easy",
+        "Instrumental",
+      ],
     },
     {
       id: "investmentCopilot",

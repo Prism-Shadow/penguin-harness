@@ -4,7 +4,7 @@
  * excluded — empty AGENTS.md, cannot be deleted).
  * Specialized capabilities are now carried by Skills — agent_creator / agent_optimizer
  * are no longer built-in Agents: neither provisioned nor deletion-protected.
- * A new Project also starts with its Benchmarks — the example and the five built-ins, written
+ * A new Project also starts with its Benchmarks — the example and the seven built-ins, written
  * once when it is created — which the Benchmark API lists as plain published Benchmarks seeded
  * as builtin, each with a date version and each case statement saying how the case is run. A
  * default_project adopted at bootstrap keeps the Benchmarks it holds and is given only the
@@ -17,8 +17,8 @@ import { benchmarksDir, libraryPlugin, loadPreinstalledPlugins } from "@prismsha
 import type { BenchmarkCasesResponse, BenchmarksResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, type TestApp } from "./helpers.js";
 
-/** What every built-in Benchmark's id starts with: `penguinharness-benchmark-sec-<letter>`. */
-const BUILTIN_PREFIX = "penguinharness-benchmark-sec-";
+/** What every built-in Benchmark's id starts with: `penguinharness-benchmark-<name>`. */
+const BUILTIN_PREFIX = "penguinharness-benchmark-";
 
 interface AgentsResponse {
   agents: Array<{ agentId: string; name?: string; description?: string }>;
@@ -142,7 +142,7 @@ describe("built-in Agent provisioning", () => {
     expect(scores).toEqual([...scores].sort((a, b) => a - b));
   });
 
-  it("a new Project, initial or created, comes with the example and the five built-ins, listed as plain published Benchmarks whose statements say how each case is run", async () => {
+  it("a new Project, initial or created, comes with the example and the seven built-ins, listed as plain published Benchmarks whose statements say how each case is run", async () => {
     const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
     const created = (await (
       await owner.post("/api/projects", { projectId: "owner1-bench", name: "Bench" })
@@ -152,7 +152,7 @@ describe("built-in Agent provisioning", () => {
       const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
       const example = body.benchmarks.find((b) => b.id === "example-benchmark")!;
       const builtins = body.benchmarks.filter((b) => b.id.startsWith(BUILTIN_PREFIX));
-      expect(builtins, projectId).toHaveLength(5);
+      expect(builtins, projectId).toHaveLength(7);
       expect(body.benchmarks.map((b) => b.id)).toEqual([
         "example-benchmark",
         ...builtins.map((b) => b.id),
@@ -193,7 +193,7 @@ describe("built-in Agent provisioning", () => {
   });
 
   it("an existing default_project adopted at bootstrap keeps its own Benchmarks and is given only the missing ones", async () => {
-    const mine = `${BUILTIN_PREFIX}a`;
+    const mine = `${BUILTIN_PREFIX}sec-a`;
     const adopted = await createTestApp({
       // A data root the CLI made before the server's first start, holding a Benchmark of its
       // own under a built-in's id.
@@ -210,7 +210,7 @@ describe("built-in Agent provisioning", () => {
       ).json()) as BenchmarksResponse;
       const ids = body.benchmarks.map((b) => b.id);
       expect(ids).toContain("example-benchmark");
-      expect(ids.filter((id) => id.startsWith(BUILTIN_PREFIX))).toHaveLength(5);
+      expect(ids.filter((id) => id.startsWith(BUILTIN_PREFIX))).toHaveLength(7);
       expect(body.benchmarks.find((b) => b.id === mine)).toMatchObject({
         title: "Mine",
         caseCount: 0,

@@ -1,22 +1,26 @@
 /**
- * A machine's card on the Machines page, in the Agents list's shape: one band of "info | the
- * job's stepper | verbs".
+ * A machine's card on the Machines page, in the Agents list's shape: one band of "info | middle |
+ * quick buttons".
  *
  * The info column says which machine this is and how it stands: the alias, with the state as one
  * mark whose word is its tooltip, and the build it carries; the server root; and how this server
  * reaches it, the port its server answers on, and when it was last checked. Its title line is the
  * card's main button and opens the Machine dialog; a click anywhere else on the body opens it too
- * (lib/card-open.ts), while the verbs on the card act on their own.
+ * (lib/card-open.ts), while the buttons on the card act on their own.
  *
- * Only a mark without words carries a hint — the state mark, the gear: the tooltip layer opens
- * none on text already on screen. What a stat means, and the machine's own id, the dialog says.
+ * Only a mark without words carries a hint — the state mark, the delete icon: the tooltip layer
+ * opens none on text already on screen. What a stat means, and the machine's own id, the dialog
+ * says.
  *
- * The middle holds the pipeline's stepper while a job for the machine is queued or running and is
- * empty otherwise, so the verbs keep their place when one starts. The verbs: one primary verb —
- * Enable when the machine needs bringing up, Update in its place when it carries another build —
- * and the gear that configures its ssh host. Disable lives in the dialog: beside Enable it would
- * read as a toggle contradicting itself. This server's own card has none: it is where the page is
- * served from.
+ * The middle holds the job's stepper while a job for the machine is queued or running; while
+ * none is, and Use cannot start a conversation there, it says why in one muted line (a hint would
+ * never open on the button, which shows its word). The quick buttons are the Agents card's: Use
+ * starts a new conversation in the machine's temporary workspace, Settings opens the Machine
+ * dialog, Delete takes the machine off this Project after a confirmation. Before them, while the
+ * machine is connected on this server's build, an icon button syncs this Project's config to it
+ * now; it stands first so that the buttons after it line up across cards whether or not it is
+ * there. This server's own card keeps Use and Settings; its Delete is a placeholder that cannot
+ * be pressed.
  */
 import type { MachineInfo, MachineJob } from "@prismshadow/penguin-server/api";
 import {
@@ -37,12 +41,14 @@ import { formatRelativeShort } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import {
-  MACHINE_PHASES,
+  canSyncConfig,
+  canUse,
+  isPhase,
   outOfDate,
   readMachine,
   readingTone,
   stepLabel,
-  wantsUse,
+  useWaitsBecause,
 } from "./machines-view";
 import type { MachineReading } from "./machines-view";
 
@@ -58,6 +64,8 @@ export function reasonText(reading: MachineReading): string | null {
       return reading.detail;
     case "working":
       return reading.step;
+    case "reconnecting":
+      return reading.attempts === 0 ? null : S.machines.detail.reconnect.attempt(reading.attempts);
     default:
       return null;
   }
@@ -91,7 +99,7 @@ export function machineMark(reading: MachineReading | null): MachineMark {
     tone: readingTone(reading),
     moving: reading.kind === "queued" || reading.kind === "working",
     glyph:
-      reading.kind === "failed"
+      reading.kind === "failed" || reading.kind === "signInRefused"
         ? ICONS.xCircle
         : reading.kind === "unreachable"
           ? ICONS.alertCircle
@@ -140,18 +148,19 @@ export const jobMoving = (job: MachineJob | null): boolean =>
   job !== null && (job.queued || job.running);
 
 /**
- * The pipeline's six steps as segments, with a caption under them: what a queued or running job
- * is doing, or where a finished one ended — the step that failed in the danger fill.
+ * The job's own steps as segments, with a caption under them: what a queued or running job is
+ * doing, or where a finished one ended — the step that failed in the danger fill.
  */
 export function Stepper({ job, className = "" }: { job: MachineJob; className?: string }) {
-  const step = job.phase === null ? -1 : MACHINE_PHASES.indexOf(job.phase);
+  const step = job.phase === null ? -1 : job.steps.indexOf(job.phase);
+  const phase = step >= 0 ? job.steps[step] : undefined;
   const result = job.result;
   const failed = !job.queued && !job.running && result !== null && !result.ok;
   const caption = job.queued
     ? S.machines.queued
     : job.running
-      ? step >= 0
-        ? S.machines.phase[MACHINE_PHASES[step]!]
+      ? phase !== undefined && isPhase(phase)
+        ? S.machines.phase[phase]
         : S.machines.working
       : result !== null && !result.ok
         ? S.machines.failedAt(stepLabel(result.step))
@@ -165,7 +174,7 @@ export function Stepper({ job, className = "" }: { job: MachineJob; className?: 
   return (
     <div className={className}>
       <div className="flex gap-px" aria-hidden="true">
-        {MACHINE_PHASES.map((phase, index) => (
+        {job.steps.map((phase, index) => (
           <span
             key={phase}
             // The segment being worked on pulses as a live signal, so a theme can re-time it.
@@ -189,13 +198,16 @@ export interface MachineCardProps {
   job: MachineJob | null;
   imageVersion: string | null;
   locale: "zh" | "en";
-  /** A request from this page is in flight: the verbs wait for it. */
+  /** A request from this page is in flight: the buttons wait for it. */
   busy: boolean;
   /** Opens the Machine dialog. */
   onOpen: () => void;
-  /** Brings the machine up, or onto this server's build: the whole pipeline. */
+  /** Starts a new conversation in the machine's temporary workspace. */
   onUse: () => void;
-  onConfigure: () => void;
+  /** Hands the machine this Project's config now (a job). */
+  onSyncConfig: () => void;
+  /** Asks to take the machine off this Project (the page confirms first). */
+  onDelete: () => void;
 }
 
 /** One stat on the card's third line: a glyph and a value. The dialog says what each one means. */
@@ -208,6 +220,26 @@ function Stat({ glyph, children }: { glyph: string; children: string }) {
   );
 }
 
+/**
+ * Why Use waits, in the card's middle: a muted line with a mark that says the line is a reason —
+ * decorative, so a theme may drop it and the words still say it all.
+ */
+function UseWaits({ why }: { why: string }) {
+  return (
+    <p
+      data-use-waits=""
+      className="flex items-start gap-1.5 text-xs text-gray-500 dark:text-gray-400"
+    >
+      <GlyphIcon
+        d={ICONS.info}
+        size={ICON_SIZE.inlineGlyph}
+        className="ui-icon-decor mt-0.5 shrink-0"
+      />
+      <span>{why}</span>
+    </p>
+  );
+}
+
 export function MachineCard({
   machine,
   job,
@@ -216,36 +248,46 @@ export function MachineCard({
   busy,
   onOpen,
   onUse,
-  onConfigure,
+  onSyncConfig,
+  onDelete,
 }: MachineCardProps) {
   const reading = machine.local ? null : readMachine(machine, job, imageVersion);
   const mark = machineMark(reading);
   const moving = !machine.local && jobMoving(job);
-  // Another build than this server's: the pill says so, and Update takes Enable's place. Neither
-  // while a job is already on its way.
+  // Another build than this server's: the pill says so and opens the dialog, where the update is.
+  // Not while a job is already on its way.
   const behind = !moving && outOfDate(machine, imageVersion);
   const status = machine.status;
   const port = status?.state === "running" ? (status.port ?? null) : null;
+  const usable = canUse(machine, job);
+  const waits = useWaitsBecause(machine, job, reading, locale, Date.now());
+  const card = S.machines.card;
   return (
     <Card
       padding="md"
+      data-machine={machine.id}
       className={`flex flex-wrap items-center gap-x-6 gap-y-2 ${OPENS_DETAIL_CLASS}`}
       onClick={cardBodyClick(onOpen)}
     >
       <div className="min-w-[14rem] flex-1">
         <div className="flex min-w-0 items-center gap-2">
+          {/* Wraps rather than squeezes: on a phone the badges go under the name, which would
+              otherwise be truncated to its first letter beside a long version. The glyph stays
+              with the name. */}
           <button
             type="button"
             aria-haspopup="dialog"
             onClick={onOpen}
-            className="flex min-w-0 items-center gap-2 rounded-sm text-left"
+            className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-sm text-left"
           >
-            <GlyphIcon
-              d={ICONS.server}
-              size={ICON_SIZE.navRow}
-              className="shrink-0 text-gray-500 dark:text-gray-400"
-            />
-            <span className="min-w-0 truncate text-base font-bold">{machine.alias}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <GlyphIcon
+                d={ICONS.server}
+                size={ICON_SIZE.navRow}
+                className="shrink-0 text-gray-500 dark:text-gray-400"
+              />
+              <span className="min-w-0 truncate text-base font-bold">{machine.alias}</span>
+            </span>
             {machine.local && (
               <Badge variant="outline" size="sm">
                 {S.machines.localTitle}
@@ -254,16 +296,16 @@ export function MachineCard({
             <MachineStateMark mark={mark} />
             {machine.installed !== null && <Badge>v{machine.installed.version}</Badge>}
           </button>
-          {behind && <UpdatePill onClick={onOpen}>{S.machines.card.updateNeeded}</UpdatePill>}
+          {behind && <UpdatePill onClick={onOpen}>{card.updateNeeded}</UpdatePill>}
         </div>
         <p className="mt-1.5 min-h-4 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
           {machine.root}
         </p>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
           {machine.local ? (
-            <Stat glyph={ICONS.house}>{S.machines.card.local}</Stat>
+            <Stat glyph={ICONS.house}>{card.local}</Stat>
           ) : (
-            <Stat glyph={ICONS.terminalPrompt}>{S.machines.card.ssh}</Stat>
+            <Stat glyph={ICONS.terminalPrompt}>{card.ssh}</Stat>
           )}
           {port !== null && <Stat glyph={ICONS.network}>{String(port)}</Stat>}
           {status !== null && (
@@ -272,43 +314,70 @@ export function MachineCard({
         </div>
       </div>
 
-      {/* The stepper's slot: empty while nothing moves, and hidden on a narrow screen then, so an
-          idle card does not spend a line on it. */}
-      <div className={moving ? "w-44 shrink-0" : "hidden w-44 shrink-0 md:block"}>
-        {moving && job !== null && <Stepper job={job} />}
+      {/* The middle: the job's stepper while one moves, else why Use waits — and on a narrow
+          screen nothing, taking no line, when there is neither. */}
+      <div className={moving || waits !== null ? "w-44 shrink-0" : "hidden w-44 shrink-0 md:block"}>
+        {moving && job !== null ? (
+          <Stepper job={job} />
+        ) : (
+          waits !== null && <UseWaits why={waits} />
+        )}
       </div>
 
-      {!machine.local && (
-        <div className="flex shrink-0 items-center gap-2">
-          {behind ? (
-            <Button size="sm" variant="primary" disabled={busy} onClick={onUse}>
-              <GlyphIcon d={ICONS.refresh} />
-              {S.machines.card.update}
-            </Button>
-          ) : (
-            reading !== null &&
-            wantsUse(reading) && (
-              <Button size="sm" variant="primary" disabled={busy} onClick={onUse}>
-                <GlyphIcon d={ICONS.plug} />
-                {S.machines.use}
-              </Button>
-            )
-          )}
+      {/* The Agents card's quick buttons: the primary verb with its word, Settings with its gear
+          and word, Delete as a bare icon in the danger look. */}
+      <div className="flex shrink-0 items-center gap-2">
+        {canSyncConfig(machine, imageVersion) && (
           <Button
             size="icon"
-            title={S.machines.host.configure}
-            aria-label={S.machines.host.configure}
-            disabled={busy}
-            onClick={onConfigure}
+            data-action="sync-config"
+            title={card.syncConfig}
+            aria-label={card.syncConfig}
+            disabled={busy || moving}
+            onClick={onSyncConfig}
           >
-            <GlyphIcon
-              d={ICONS.gear}
-              size={ICON_SIZE.iconButton}
-              className="text-gray-600 dark:text-gray-300"
-            />
+            <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
           </Button>
-        </div>
-      )}
+        )}
+        <Button
+          size="sm"
+          variant="primary"
+          data-action="use"
+          disabled={busy || !usable}
+          onClick={onUse}
+        >
+          <GlyphIcon d={ICONS.messagePlus} />
+          {card.use}
+        </Button>
+        <Button size="sm" data-action="settings" onClick={onOpen}>
+          <GlyphIcon d={ICONS.gear} />
+          {card.settings}
+        </Button>
+        {machine.local ? (
+          // This server cannot be taken off its own page: a placeholder in the delete button's box,
+          // so every card's buttons line up, saying why on the hint its bare icon can carry.
+          <span
+            role="img"
+            data-tooltip={card.localUndeletable}
+            aria-label={card.localUndeletable}
+            className="inline-flex cursor-not-allowed items-center justify-center rounded-md border border-transparent p-1.5 text-gray-300 dark:text-gray-600"
+          >
+            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+          </span>
+        ) : (
+          <Button
+            size="icon"
+            variant="danger"
+            data-action="delete"
+            title={card.delete}
+            aria-label={card.delete}
+            disabled={busy || moving}
+            onClick={onDelete}
+          >
+            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+          </Button>
+        )}
+      </div>
     </Card>
   );
 }

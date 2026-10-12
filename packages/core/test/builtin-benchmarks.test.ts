@@ -1,7 +1,7 @@
 /**
  * The built-in Benchmarks, as a new Project's provisioning writes them.
  *
- * - A new Project's benchmarks/ holds the example and five published built-ins, each with one
+ * - A new Project's benchmarks/ holds the example and seven published built-ins, each with one
  *   run per case, no evaluations and at least one case, and no staging left behind; each is
  *   written in the package format, a benchmark_config.toml that names its id, a date version and
  *   origin `builtin`, and that the manifest reader takes as written.
@@ -9,19 +9,24 @@
  *   version, status, runs and origin `builtin`, nothing that marks how its cases run.
  * - Every case is one Harbor task: its directory names the task after `CASE-NNN-` within the
  *   API's id rules; its statement links the task's folder in the repository, the repository's
- *   rules for running a task and the measured results, and launches that same task with its
- *   caps — the time-budget sentence word for word where the benchmark's measured runs told the
- *   agent its budget, the no-network line only for deep-swe, and the shared-network line for
- *   every other benchmark, whose tasks have a public agent phase, as the repository's rules
- *   allow; its rubric is worth 100 points.
- * - The five list in Sec A to Sec E order, and each description opens by naming the original
- *   benchmark its cases cite as their source.
+ *   rules for running a task and, where the repository has them, the measured results, and
+ *   launches that same task with its caps — the time-budget sentence word for word where the
+ *   benchmark's measured runs told the agent its budget, the no-network line only for deep-swe
+ *   and GDPevo (whose gold answers are public), and the shared-network line for every other
+ *   benchmark, whose tasks have a public agent phase, as the repository's rules allow; its
+ *   rubric is worth 100 points.
+ * - The Secs list in A to E order, each description opening by naming the original benchmark;
+ *   every built-in's description names the original its cases cite as their source.
+ * - GDPevo Train and GDPevo Test are one task directory split in two: the train Benchmark holds
+ *   only train tasks, the test Benchmark only test tasks, no task is in both, and every task
+ *   group the test Benchmark draws on is one the train Benchmark trains on.
  * - Provisioning again writes nothing; a directory already under an id, built-in or the
  *   example, is left exactly as it is.
  * - A write that fails part-way leaves neither its directory nor staging debris, and the error
  *   reaches the caller.
  * - Initializing or loading default_agent never writes into benchmarks/.
- * - Release guard: every statement links the repository at a commit, never a branch.
+ * - Release guard: every link into the repository, and the checkout every launch runs from, is at
+ *   a commit, never a branch.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -47,6 +52,8 @@ const BUILTIN_IDS = [
   "penguinharness-benchmark-sec-c",
   "penguinharness-benchmark-sec-d",
   "penguinharness-benchmark-sec-e",
+  "penguinharness-benchmark-gdpevo-train",
+  "penguinharness-benchmark-gdpevo-test",
 ];
 
 let tmpRoot: string;
@@ -63,6 +70,9 @@ afterEach(async () => {
   else process.env.PENGUIN_HOME = prevHome;
   await fs.rm(tmpRoot, { recursive: true, force: true });
 });
+
+const GDPEVO_TRAIN = "penguinharness-benchmark-gdpevo-train";
+const GDPEVO_TEST = "penguinharness-benchmark-gdpevo-test";
 
 const dir = () => benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
 const provision = (builtins?: readonly BuiltinBenchmark[]) =>
@@ -123,7 +133,7 @@ async function backdate(root: string): Promise<void> {
 }
 
 describe("built-in Benchmarks", () => {
-  it("a new Project's benchmarks/ holds the example and five published built-ins, each with one run per case, no evaluations and at least one case", async () => {
+  it("a new Project's benchmarks/ holds the example and seven published built-ins, each with one run per case, no evaluations and at least one case", async () => {
     await provision();
 
     expect(await entries()).toEqual([EXAMPLE_BENCHMARK_ID, ...BUILTIN_IDS].sort(byName));
@@ -204,15 +214,18 @@ describe("built-in Benchmarks", () => {
         // The time budget the measured runs told the agent, as one shell word, and only there.
         const budget = /^ {2}--ak time_budget_note='([^']*)' \\$/m.exec(statement)?.[1];
         expect(budget, caseId).toBe(bench.timeBudgetNote);
-        // The repository's rules for running a task, and its measured results.
+        // The repository's rules for running a task, and its measured results where it has them.
         expect(statement, caseId).toMatch(
           /https:\/\/\S+\/blob\/[^/\s]+\/README\.md#running-a-task-for-agents/,
         );
-        expect(statement, caseId).toMatch(/https:\/\/\S+\/blob\/[^/\s]+\/results\/\S+/);
-        // The network lines the repository's rules call for, and only those: the no-network
+        expect(/https:\/\/\S+\/blob\/[^/\s]+\/results\/\S+/.test(statement), caseId).toBe(
+          bench.results !== undefined,
+        );
+        // The network lines the repository's rules call for, and only those: a no-network
         // benchmark allows its model's host and never joins the shared network, which every
-        // task with a public agent phase joins.
-        const offline = repoDir === "deep-swe";
+        // task with a public agent phase joins. GDPevo's gold answers are public, so its agent
+        // phase must not reach the internet.
+        const offline = repoDir === "deep-swe" || repoDir === "gdpevo";
         expect(statement.includes("--allow-agent-host "), caseId).toBe(offline);
         expect(
           statement.includes("--extra-docker-compose tools/docker/shared-network.yaml"),
@@ -229,28 +242,55 @@ describe("built-in Benchmarks", () => {
     }
   });
 
-  it("the five list in Sec A to Sec E order, each description naming the original benchmark its cases cite", async () => {
+  it("the Secs list in A to E order, and every description names the original benchmark its cases cite", async () => {
     await provision();
 
-    const listed = (await entries()).filter((id) => id !== EXAMPLE_BENCHMARK_ID);
+    const firstWord = (text: string) => text.split(/[\s,(]/)[0]!;
     const letters: string[] = [];
-    for (const id of listed) {
+    for (const id of BUILTIN_IDS) {
       const { title, description } = await readConfig(id);
       const named = /^Sec ([A-Z]) is ([^:]+):/.exec(String(description));
-      expect(named, id).not.toBeNull();
-      const [, letter, original] = named!;
-      expect(String(title), id).toMatch(new RegExp(`Sec ${letter}$`));
-      // Every case statement cites the same original as its source.
-      const firstWord = (text: string) => text.split(/[\s,(]/)[0];
+      if (/-sec-[a-z]$/.test(id)) {
+        expect(named, id).not.toBeNull();
+        expect(String(title), id).toMatch(new RegExp(`Sec ${named![1]}$`));
+        letters.push(named![1]!);
+      }
+      // Every case statement cites as its source an original the description names.
       for (const caseId of await caseIds(id)) {
         const source = /^- Benchmark: .+? — (.+?) · Category: /m.exec(
           await readCase(id, caseId, "statement"),
         )?.[1];
-        expect(firstWord(source ?? ""), caseId).toBe(firstWord(original!));
+        expect(String(description), caseId).toContain(firstWord(source ?? ""));
       }
-      letters.push(letter!);
     }
     expect(letters.join("")).toBe("ABCDE");
+  });
+
+  it("GDPevo Train and GDPevo Test split one task directory: train tasks to optimize on, held-out test tasks of the same groups to evaluate on", async () => {
+    await provision();
+
+    /** Each case's Harbor task, `tg<group>-<split>-<n>`, and the folder its launch runs it from. */
+    const tasks = async (id: string) =>
+      Promise.all(
+        (await caseIds(id)).map(async (caseId) => {
+          const statement = await readCase(id, caseId, "statement");
+          const [, folder, task] = /harbor run -p (\S+) -i (\S+) /.exec(statement)!;
+          const [, group, split] = /^(tg\d+)-(train|test)-\d+$/.exec(task!) ?? [];
+          return { folder, task, group, split };
+        }),
+      );
+    const train = await tasks(GDPEVO_TRAIN);
+    const test = await tasks(GDPEVO_TEST);
+
+    expect(new Set([...train, ...test].map((t) => t.folder))).toEqual(
+      new Set(["benchmarks/gdpevo/tasks"]),
+    );
+    expect(new Set(train.map((t) => t.split))).toEqual(new Set(["train"]));
+    expect(new Set(test.map((t) => t.split))).toEqual(new Set(["test"]));
+    const trainTasks = new Set(train.map((t) => t.task));
+    expect(test.filter((t) => trainTasks.has(t.task))).toEqual([]);
+    const trainGroups = new Set(train.map((t) => t.group));
+    expect(test.filter((t) => !trainGroups.has(t.group))).toEqual([]);
   });
 
   it("provisioning again writes nothing", async () => {
@@ -309,17 +349,20 @@ describe("built-in Benchmarks", () => {
   });
 
   // Release guard: a statement that links a branch would follow whatever that branch holds later.
-  it("release guard: every statement links the repository at a commit", async () => {
+  it("release guard: every link into the repository, and every launch's checkout, is at a commit", async () => {
     await provision();
     for (const id of BUILTIN_IDS) {
       for (const caseId of await caseIds(id)) {
         const statement = await readCase(id, caseId, "statement");
-        const taskLine = statement.split("\n").find((line) => line.startsWith("- Task: "));
-        expect(taskLine, caseId).toMatch(/\/tree\/[0-9a-f]{40}\//);
-        const runRules = /\S+#running-a-task-for-agents/.exec(statement)?.[0];
-        const results = /\S+\/results\/\S+/.exec(statement)?.[0];
-        expect(runRules, caseId).toMatch(/\/blob\/[0-9a-f]{40}\//);
-        expect(results, caseId).toMatch(/\/blob\/[0-9a-f]{40}\//);
+        const revisions = [
+          ...statement.matchAll(/penguin-harness-benchmark\/(?:tree|blob)\/([^/\s]+)\//g),
+        ].map((m) => m[1]);
+        // The task's folder and the run rules at least.
+        expect(revisions.length, caseId).toBeGreaterThanOrEqual(2);
+        const checkout = /a checkout at commit `([^`]+)`/.exec(statement)?.[1];
+        for (const revision of [...revisions, checkout]) {
+          expect(revision, caseId).toMatch(/^[0-9a-f]{40}$/);
+        }
       }
     }
   });

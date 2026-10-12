@@ -43,7 +43,7 @@ export async function startRemoteServer(
   port: number,
   layout: RemoteLayout,
   exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
-): Promise<{ ok: true } | { ok: false; detail: string }> {
+): Promise<{ ok: true } | { ok: false; detail: string; portTaken?: boolean }> {
   const started = await exec(target, startServerCommand(port, layout));
   if (started.code !== 0) {
     return { ok: false, detail: started.stdout.trim() || "the machine could not start it." };
@@ -66,7 +66,31 @@ export async function startRemoteServer(
   }
   const tail = (await exec(target, serverLogTail(layout))).stdout.trim();
   const fallback = exited ? "it exited before answering." : "it did not answer within 30s.";
-  return { ok: false, detail: tail || fallback };
+  return tail === "" ? { ok: false, detail: fallback } : startFailure(tail, port);
+}
+
+/**
+ * Why a start died, from the last lines of its log: a node crash there is a stack trace, and
+ * the reason is its error line, not the frames under it. A port another program holds says
+ * so in a sentence — reinstalling would not free it, and the machine is otherwise fine.
+ */
+export function startFailure(
+  tail: string,
+  port: number,
+): { ok: false; detail: string; portTaken?: boolean } {
+  const lines = tail.split("\n").map((line) => line.trim());
+  const errors = lines.filter((line) => /^(?:\w*Error|error)\b.*:/.test(line));
+  const said = errors.length > 0 ? errors.slice(-2).join("\n") : lines.slice(-5).join("\n");
+  if (/EADDRINUSE/.test(tail)) {
+    return {
+      ok: false,
+      portTaken: true,
+      detail:
+        `Port ${port} on that machine is taken by another program, so its server could not ` +
+        `start there. Stop that program or free the port, then try again.\n${said}`,
+    };
+  }
+  return { ok: false, detail: said };
 }
 
 /**

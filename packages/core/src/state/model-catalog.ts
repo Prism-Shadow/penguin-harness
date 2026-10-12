@@ -308,7 +308,34 @@ const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
 const ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
-export const PENGUIN_GO_BASE_URL = "https://token.penguin.ooo/api";
+export const PENGUIN_GO_BASE_URL = "https://go.penguin.ooo/api/v1";
+
+/**
+ * Go-owned connection URLs, including stored routes from before the MMSP switch. The
+ * `token.penguin.ooo` origin and the `/api`, `/api/v1beta` and `/api/anthropic` paths are those
+ * pre-MMSP routes, recognized only so they can be migrated: removed with the migration at the
+ * 0.3.0 release preparation (see migratePenguinGoRoutes in project-config.ts).
+ */
+export function isPenguinGoEndpoint(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    const origins = ["https://go.penguin.ooo", "https://token.penguin.ooo"];
+    if (process.env.PENGUIN_GO_ORIGIN) origins.push(new URL(process.env.PENGUIN_GO_ORIGIN).origin);
+    return (
+      origins.includes(url.origin) &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      ["/api", "/api/v1", "/api/v1beta", "/api/anthropic"].includes(
+        url.pathname.replace(/\/+$/, ""),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
 /** OpenCode Go's OpenAI-protocol base: the clients append /chat/completions or /responses. */
 const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
 /** OpenCode Go's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
@@ -316,6 +343,42 @@ const OPENCODE_GO_MESSAGES_BASE_URL = "https://opencode.ai/zen/go";
 
 /** Provider id for the preconfigured Penguin Go relay group. */
 export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
+
+/**
+ * The protocol a group is fixed to, or undefined where the group's protocol is the user's to
+ * choose. Penguin Go's platform endpoint speaks MMSP alone, so neither its group nor its rows
+ * offer a protocol: the Web App shows MMSP without a picker, and the server's model writes and
+ * the CLI refuse any other value (fixedClientTypeRefuses).
+ */
+export function fixedClientType(providerId: string): string | undefined {
+  return providerId === PENGUIN_GO_PROVIDER_ID ? "mmsp" : undefined;
+}
+
+/**
+ * Whether writing `next` as the protocol of a group (`target: "group"`) or of one of its rows
+ * (`"row"`) is refused because the group's protocol is fixed (fixedClientType). `next` is the
+ * value written, blank or absent for none; `stored` is what that group, or that same row in that
+ * same group, stores now.
+ *
+ * The fixed protocol is always accepted, and so is `stored` written back unchanged: a row a user
+ * pointed at their own proxy on another protocol before the protocol was fixed (left alone by
+ * migratePenguinGoRoutes) keeps it, and a whole-table save carrying it is not refused. A row
+ * with no protocol of its own follows its group, so clearing a row's is accepted; clearing the
+ * group's would leave its rows routed by model id, and is refused.
+ */
+export function fixedClientTypeRefuses(
+  providerId: string,
+  target: "group" | "row",
+  next: string | null | undefined,
+  stored: string | undefined,
+): boolean {
+  const fixed = fixedClientType(providerId);
+  if (fixed === undefined) return false;
+  const value = next?.trim() ?? "";
+  if (value === "") return target === "group" && (stored?.trim() ?? "") !== "";
+  if (sameClientType(value, fixed)) return false;
+  return stored === undefined || !sameClientType(value, stored);
+}
 
 /** Provider id for the ModelScope group. */
 export const MODELSCOPE_PROVIDER_ID = "modelscope";
@@ -375,8 +438,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     label: "Penguin Go",
     // The authorization flow writes the relay key once, on the group's `[providers.penguin-go]`
     // table. Keep the env names private to this relay so the UI never suggests using a vendor
-    // credential here. Every row names the relay, so a new Project writes that endpoint on the
-    // group; its rows sit on two protocols, so each row stores its own.
+    // credential here. Every row names the relay and speaks MMSP, so a new Project writes both
+    // on the group; the protocol is fixed (fixedClientType).
     envKey: "PENGUIN_GO_API_KEY",
     envBaseUrlKey: "PENGUIN_GO_BASE_URL",
     apiKeyUrl: "https://token.penguin.ooo/",
@@ -2140,13 +2203,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
-  // -- Penguin Go (mixed-protocol relay). The model ids are the generation rows
-  // provisioned by Penguin Go's generic-client authorization contract. Both
-  // protocols share the /api base: the google-genai client appends /v1beta itself, while
-  // DeepSeek's Responses client appends /responses. The rows carry Penguin Go's current list
-  // prices so a new Project is complete before its first authorization, and no `discount`:
-  // the platform delivers any promotion it runs at authorization and Sync, and both stay
-  // authoritative when the relay later publishes changed metadata. The DeepSeek rows follow
+  // -- Penguin Go. All models use MMSP HTTP; the SDK appends /stream to /api/v1.
+  // List prices are preset; authorization and sync supply the platform's promotions.
+  // The DeepSeek rows follow
   // DeepSeek's own lineup (re-read 2026-09-16): V4.1 Flash as `deepseek-flash` and V4 Pro 0813
   // as `deepseek-v4-pro`; the two retired V4 Flash ids, served from V4.1 Flash, are not resold.
   // Gemini 3.7 Flash is no longer preset (2026-10-10): Google retires the id and reroutes it to
@@ -2158,7 +2217,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.075, 0.75, 3.75),
     supportsVision: true,
-    clientType: "google-genai",
+    clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -2168,7 +2227,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.075, 0.75, 3.75),
     supportsVision: true,
-    clientType: "google-genai",
+    clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -2178,7 +2237,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 9),
     supportsVision: true,
-    clientType: "google-genai",
+    clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -2188,7 +2247,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.03, 0.3, 2.5),
     supportsVision: true,
-    clientType: "google-genai",
+    clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -2198,7 +2257,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.025, 0.25, 1.5),
     supportsVision: true,
-    clientType: "google-genai",
+    clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -2208,7 +2267,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.2, 2, 12),
     supportsVision: true,
-    clientType: "google-genai",
+    clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -2219,7 +2278,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
-    clientType: "deepseek-official",
+    clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -2230,7 +2289,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.3, 9, 27),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
-    clientType: "deepseek-official",
+    clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   // -- OpenCode Go (subscription gateway). The lineup, model ids, endpoints and per-token rates

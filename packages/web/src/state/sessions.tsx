@@ -70,6 +70,7 @@ import { ApiError } from "../api/client";
 import { probeSession } from "../api/session-probe";
 import { openUserEvents } from "../api/sse";
 import { isCompanyEvent, publishCompanyEvent, publishCompanyResync } from "./company";
+import { publishMachinesChanged, useMachines } from "./machines";
 import {
   isBuiltinBrowserEvent,
   publishBuiltinBrowserEvent,
@@ -1393,6 +1394,19 @@ export function applyUserEvent(
   /** The machine the event came from; null for this server. */
   source: string | null = null,
 ): void {
+  // A connected machine's own event, carried here by this server (its machines/event-relay.ts):
+  // routed exactly as the machine's own stream used to be, as that machine's. Only this server
+  // relays; a machine's word does not carry a third machine's.
+  if (ev.type === "machine_event") {
+    if (source === null) applyUserEvent(store, ev.event, onWebUpdated, ev.machineId);
+    return;
+  }
+  // The machines list changed — a job moved, a connection came or went: every surface reading
+  // the machines reads them again (state/machines.tsx).
+  if (ev.type === "machines_changed") {
+    if (source === null) publishMachinesChanged();
+    return;
+  }
   // The served web assets were hot-swapped (dev watch-push / platform upgrade): reload so this
   // window runs the new code. Only this server's word counts: a machine's web being pushed is
   // that machine's affair, and this window is not running it.
@@ -1542,15 +1556,6 @@ export function applyUserEvent(
   if (ev.projectId === store.getState().projectId) void store.getState().reload();
 }
 
-/**
- * How often the machine list is re-read while some machine of the Project is out of reach.
- * A cheap GET — the list is config text and the server's own connection state, no ssh — so
- * the page learns that a re-held connection is back without anyone visiting the Machines
- * page. Nothing here connects: holding a connection is the server's, and re-holding one
- * that dropped is the transport's (machines/transport/ssh-session.ts).
- */
-export const OFFLINE_RECHECK_MS = 30_000;
-
 export function SessionsProvider({ children }: { children: ReactNode }) {
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -1564,101 +1569,85 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   /**
    * The Project's machines, whose Sessions belong in this list too — the ones this server
    * holds a connection to, and the ones it does not, which contribute their cached rows and
-   * mark the list as incomplete. Read from the machine list, which is the server's own word:
-   * a held connection is a fact about a process on that side, and the transport re-holds one
-   * that drops (machines/transport/ssh-session.ts). Nothing on this page connects.
+   * mark the list as incomplete. Read from the one live account of the machines
+   * (state/machines.tsx), which the server keeps current: a machine that comes back is listed
+   * the moment the server says so. A machine being brought back (`reconnect`) is asked nothing
+   * until it is: its connection may be up while its server is not. Nothing here connects.
    *
-   * Failure leaves both empty, which degrades to exactly the old behaviour: this server's
-   * Sessions, listed. That is the right failure — a partial list beats none.
+   * No account (not an admin, or the read failed) leaves both empty, which degrades to exactly
+   * the old behaviour: this server's Sessions, listed. That is the right failure — a partial
+   * list beats none.
    */
-  const [machineIdsKey, setMachineIdsKey] = useState("");
-  const [offlineMachineIdsKey, setOfflineMachineIdsKey] = useState("");
+  const machines = useMachines();
+  const machineFacts = useMemo(() => {
+    const installed = (machines.state?.machines ?? []).filter(
+      (machine) => !machine.local && machine.installed !== null && machine.machineId !== null,
+    );
+    const isHeld = (machine: (typeof installed)[number]) =>
+      machine.connection !== null && machine.reconnect === undefined;
+    const ids = (list: typeof installed) =>
+      list.map(machineIdOf).filter((id): id is string => id !== null);
+    return {
+      held: ids(installed.filter(isHeld)),
+      offline: ids(installed.filter((machine) => !isHeld(machine))),
+      /**
+       * machineId → its ssh alias. What the list is FOR: a Workspace group from another machine
+       * is named with the alias that reaches it, and an alias is the only part of a machine a
+       * person recognises.
+       */
+      labels: installed.map((machine) => [machine.machineId, machine.alias] as const),
+    };
+  }, [machines.state]);
+  // Strings, so an unchanged answer keeps its identity and effects keyed on them stay put.
+  const machineIdsKey = machineFacts.held.join(",");
+  const offlineMachineIdsKey = machineFacts.offline.join(",");
+  const machineLabelsJson = JSON.stringify(machineFacts.labels);
+  // The terminal list asks the same machines, from a module-scope timer with no React context to
+  // read them from (lib/terminal-machines.ts). Told "none" out loud when there is no account: it
+  // waits for this word before it may drop a tab whose terminal is gone, and a user who can never
+  // read the machine list would otherwise keep every dead tab in their dock forever
+  // (features/terminal/terminal-list.ts).
+  useEffect(() => {
+    if (!machines.settled) return;
+    setTerminalMachines(machineIdsKey === "" ? [] : machineIdsKey.split(","));
+  }, [machines.settled, machineIdsKey]);
   /**
-   * machineId → its ssh alias, as JSON so an unchanged answer keeps its identity (the id
-   * lists above are strings for the same reason). What the list is FOR: a Workspace group
-   * from another machine is named with the alias that reaches it, and an alias is the only
-   * part of a machine a person recognises.
-   */
-  const [machineLabelsJson, setMachineLabelsJson] = useState("[]");
-  /**
-   * machineId → its own Agent ids, as JSON for the same reason the lists above are strings.
+   * machineId → its own Agent ids, as JSON for the same reason the keys above are strings.
    * What the list is FOR: a Session started on a machine's own Agent is listed by nobody
-   * unless that machine is asked about that Agent (see `agentIdsByMachine` in the store).
+   * unless that machine is asked about that Agent (see `agentIdsByMachine` in the store). A
+   * machine that cannot answer contributes what it was last seen running — the same account
+   * the composer offers a remote draft, and better than dropping its rows.
    */
   const [machineAgentIdsJson, setMachineAgentIdsJson] = useState("{}");
-  const [machinesEpoch, setMachinesEpoch] = useState(0);
   useEffect(() => {
     if (projectId === null) {
-      setMachineIdsKey("");
-      setOfflineMachineIdsKey("");
-      setMachineLabelsJson("[]");
       setMachineAgentIdsJson("{}");
       return;
     }
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    const held = machineIdsKey === "" ? [] : machineIdsKey.split(",");
+    const offline = offlineMachineIdsKey === "" ? [] : offlineMachineIdsKey.split(",");
+    const remembered = (machineId: string) =>
+      cachedMachineAgents(projectId, machineId).map((agent) => agent.agentId);
     void (async () => {
-      try {
-        const res = await api.getMachines(projectId);
-        if (cancelled) return;
-        const installed = res.machines.filter(
-          (machine) => !machine.local && machine.installed !== null && machine.machineId !== null,
-        );
-        const held = installed.filter((m) => m.connection !== null);
-        const offline = installed.filter((m) => m.connection === null);
-        setMachineIdsKey(held.map(machineIdOf).join(","));
-        setOfflineMachineIdsKey(offline.map(machineIdOf).join(","));
-        setMachineLabelsJson(
-          JSON.stringify(installed.map((machine) => [machine.machineId, machine.alias])),
-        );
-        // The terminal list asks the same machines, from a module-scope timer with no React
-        // context to read them from (lib/terminal-machines.ts).
-        setTerminalMachines(held.map(machineIdOf).filter((id): id is string => id !== null));
-        // While something is out of reach, look again in a while: the server may be
-        // re-holding it after a restart or a push, and the list should learn so without a
-        // visit to the Machines page. Stops on its own once every machine answers.
-        if (offline.length > 0) {
-          timer = setTimeout(() => setMachinesEpoch((epoch) => epoch + 1), OFFLINE_RECHECK_MS);
-        }
-        // Then what each machine is RUNNING. An Agent is per server, so a machine's set is
-        // its own, and a Session started on one of its Agents (the Agents page offers exactly
-        // that) is listed only if the machine is asked about that Agent by name. A machine
-        // that cannot answer contributes what it was last seen running — the same account the
-        // composer offers a remote draft, and better than dropping its rows.
-        const answers = await Promise.all(
-          installed.map(async (machine) => {
-            const machineId = machineIdOf(machine);
-            if (machineId === null) return null;
-            const remembered = () =>
-              cachedMachineAgents(projectId, machineId).map((a) => a.agentId);
-            if (machine.connection === null) return [machineId, remembered()] as const;
-            try {
-              const listed = (await api.listAgents(projectId, machineId)).agents;
-              rememberMachineAgents(projectId, machineId, listed);
-              return [machineId, listed.map((a) => a.agentId)] as const;
-            } catch {
-              return [machineId, remembered()] as const;
-            }
-          }),
-        );
-        if (cancelled) return;
-        setMachineAgentIdsJson(
-          JSON.stringify(Object.fromEntries(answers.filter((entry) => entry !== null))),
-        );
-      } catch {
-        // No machine list (not an admin, or the call failed): the list is this server's alone.
-        // Said so out loud rather than left unsaid — the terminal list waits for this word
-        // before it may drop a tab whose terminal is gone, and a user who can never read the
-        // machine list would otherwise keep every dead tab in their dock forever
-        // (features/terminal/terminal-list.ts).
-        if (!cancelled) setTerminalMachines([]);
-      }
+      const answers = await Promise.all([
+        ...offline.map(async (machineId) => [machineId, remembered(machineId)] as const),
+        ...held.map(async (machineId) => {
+          try {
+            const listed = (await api.listAgents(projectId, machineId)).agents;
+            rememberMachineAgents(projectId, machineId, listed);
+            return [machineId, listed.map((agent) => agent.agentId)] as const;
+          } catch {
+            return [machineId, remembered(machineId)] as const;
+          }
+        }),
+      ]);
+      if (!cancelled) setMachineAgentIdsJson(JSON.stringify(Object.fromEntries(answers)));
     })();
     return () => {
       cancelled = true;
-      if (timer !== null) clearTimeout(timer);
     };
-  }, [projectId, machinesEpoch]);
+  }, [projectId, machineIdsKey, offlineMachineIdsKey]);
 
   /**
    * The Project and its Agent set: what the list is OF. A change here invalidates every row
@@ -1749,26 +1738,6 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
 
   const { pageState, countsByAgent, machineIds } = state;
 
-  // One more stream per connected machine: a Session there changes state on that machine's
-  // server, and this server never hears of it. Keyed on the held set, so a machine that
-  // drops out has its stream closed and one that comes up gets one. EventSource reconnects
-  // on its own while the connection behind the proxy is briefly down.
-  const heldKey = machineIds.join(",");
-  useEffect(() => {
-    const ids = heldKey === "" ? [] : heldKey.split(",");
-    const conns = ids.map((machineId) =>
-      openUserEvents(
-        {
-          onOmniMessage: () => undefined,
-          onServerEvent: (ev) => applyUserEvent(store, ev, () => undefined, machineId),
-        },
-        machineId,
-      ),
-    );
-    return () => {
-      for (const conn of conns) conn.close();
-    };
-  }, [store, heldKey]);
   const sources = useMemo<(string | null)[]>(() => [null, ...machineIds], [machineIds]);
 
   // Loaded only when EVERY source has answered: one machine's first page arriving does not

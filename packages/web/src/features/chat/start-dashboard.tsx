@@ -8,8 +8,10 @@
  *   finds the page by) with the version after it, and the slogan under them; at the far end of
  *   the same line, one small panel of three counts — this Project's agents, the self-evolution
  *   toolkits of the library's `rsi` category, this Project's Benchmarks on this server — each
- *   opening the page that lists them. A count that has not arrived reads "—". Where the column
- *   is too narrow for both (a phone), the panel sits under the brand.
+ *   opening the page that lists them. Each is read again whenever the page mounts, so a plugin
+ *   installed or a Benchmark imported elsewhere shows on coming back; a count that has not
+ *   arrived reads "—". Where the column is too narrow for both (a phone), the panel sits under
+ *   the brand.
  * - **Examples and shortcuts.** The example folders and the user's own shortcuts, one folder
  *   open at a time (example-tasks.ts, shortcuts-folder.tsx): the folders down one column and the
  *   open folder's rows beside them, so switching folders moves nothing; stacked on a phone. Every
@@ -91,7 +93,7 @@ export function StartDashboard({
     <>
       {/* Its own query container: the brand and the counts share a line wherever the column
           holds both, the brand giving way (its slogan wraps) rather than the counts dropping. */}
-      <div className="@container mb-6">
+      <div className="@container mb-10">
         <div className="flex flex-col gap-4 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-6">
           <StartBrand />
           <Card padding="none" className="shrink-0 self-start overflow-hidden @2xl:self-auto">
@@ -109,7 +111,7 @@ export function StartDashboard({
                 glyph={ICONS.refresh}
                 label={S.chat.start.metrics.toolkits}
                 to="/plugins"
-                value={toolkits?.length ?? null}
+                value={toolkits.value?.length ?? null}
               />
               <StatCount
                 glyph={NAV_ICONS.benchmark}
@@ -122,7 +124,7 @@ export function StartDashboard({
         </div>
       </div>
       {composer}
-      <div className="@container mt-6">
+      <div className="@container mt-10">
         <ExamplesSection ready={skillsLoaded} fill={fill} readComposerText={readComposerText} />
       </div>
     </>
@@ -347,7 +349,7 @@ function ExamplesSection({
                 onOpen={() => setOpenFolder(folder.id)}
               />
               {open && (
-                <ul className={`space-y-1 ${examplePanelClass}`}>
+                <ul className={`space-y-1.5 ${examplePanelClass}`}>
                   {folder.tasks.map((task) => {
                     const copy = S.chat.exampleTasks[task.id];
                     return (

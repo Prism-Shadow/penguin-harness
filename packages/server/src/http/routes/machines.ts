@@ -12,14 +12,27 @@
  * POST /:machineId/connect      — bring that machine's server up and hold a tunnel to it; 202,
  *                                 or 409 when a connect already runs.
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
- * POST /ssh-hosts               — append a host block to this server's ~/.ssh/config; 201.
- * GET  /ssh-hosts/:alias        — that block read back, and whether this app wrote it.
- * PUT  /ssh-hosts/:alias        — rewrite a block this app wrote; 404 none, 409 hand-written.
+ * POST /add                     — put machines in this Project's list, installing nothing.
+ * GET  /ssh-hosts               — every host in the ssh config, with its block's user, host, port.
+ * POST /ssh-hosts               — append a host block to this server's ~/.ssh/config, and store
+ *                                 the password it signs in with when one is given; 201.
+ * GET  /ssh-hosts/:alias        — that block read back, whether this app wrote it, and whether a
+ *                                 password is stored for it (never the password).
+ * PUT  /ssh-hosts/:alias        — rewrite a block this app wrote, and set or delete its password;
+ *                                 404 none, 409 hand-written (its password alone may be set).
  * POST /:machineId/restart      — stop that machine's server and start it again; 202, or 409.
+ * POST /:machineId/stop         — stop that machine's server and stop keeping it connected;
+ *                                 202, or 409.
+ * POST /:machineId/uninstall    — stop it and remove the program, and with `removeData` its
+ *                                 data root; 202, or 409.
+ * POST /:machineId/sync         — hand that connected machine the Project config now; 202, or
+ *                                 409 (`not_connected`, `job_running`, …).
+ * POST /:machineId/diagnose     — check what would stop an install or a connect there, writing
+ *                                 nothing on it; 200, or 409 while a job works on it.
  * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh.
  *
- * Under a Project because the page is, and because this Project's Model credentials go to
- * this Project's machines and no others (machines/models-sync.ts). The machine itself is not
+ * Under a Project because the page is, and because this Project's config, its Model
+ * credentials included, goes to this Project's machines and no others (machines/models-sync.ts). The machine itself is not
  * project-scoped: connect, disconnect and dirs act on one host, shared by every Project using
  * it; what a Project owns is the membership.
  *
@@ -30,9 +43,12 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type {
   DirListResponse,
+  MachineDiagnosis,
+  MachineUninstallRequest,
   MachinesResponse,
   MachinesUseResponse,
   SshHostResponse,
+  SshHostsResponse,
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
@@ -60,12 +76,16 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     await next();
   });
 
-  const state = (c: Context<AppEnv>): MachinesResponse => ({
-    machines: deps.machines.list(requireValidId(c, "projectId")),
-    imageVersion: deps.machines.imageVersion(),
-    job: deps.machines.job(),
-    jobs: deps.machines.jobs(),
-  });
+  const state = (c: Context<AppEnv>): MachinesResponse => {
+    const checkoutImage = deps.machines.checkoutImage();
+    return {
+      machines: deps.machines.list(requireValidId(c, "projectId")),
+      imageVersion: deps.machines.imageVersion(),
+      ...(checkoutImage === null ? {} : { checkoutImage }),
+      job: deps.machines.job(),
+      jobs: deps.machines.jobs(),
+    };
+  };
 
   /**
    * Bring machines into use — the one verb a person needs. Each is queued for the whole
@@ -113,21 +133,72 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       identityFile: str("identityFile"),
     };
   };
+  /** The password a body sets: a string stores it, null deletes it, anything else leaves it. */
+  const passwordBody = (body: Record<string, unknown>): string | null | undefined =>
+    typeof body.password === "string" ? body.password : body.password === null ? null : undefined;
   const invalid = (problem: { field: string; why: string }) =>
     new HttpError(
       400,
       "ssh_host_invalid",
       `${problem.field}: ${problem.why === "required" ? "required" : "must be one word, with no space or #"}`,
     );
+  /** The refusals a host write and its password share. */
+  const hostRefused = (
+    refused:
+      | { why: "invalid"; problem: { field: string; why: string } }
+      | { why: "password-invalid"; problem: "required" | "invalid" }
+      | { why: "password-unsupported"; detail: string; ssh: string },
+  ): HttpError => {
+    if (refused.why === "password-invalid") {
+      return new HttpError(
+        400,
+        "ssh_password_invalid",
+        refused.problem === "required"
+          ? "password: required"
+          : "password: must be one line of at most 1024 characters",
+      );
+    }
+    if (refused.why === "password-unsupported") {
+      return new HttpError(409, "ssh_password_unsupported", refused.detail, undefined, {
+        ssh: refused.ssh,
+      });
+    }
+    return invalid(refused.problem);
+  };
+
+  /** Every host in the ssh config, with what its own block says: the add dialog's rows. */
+  app.get("/ssh-hosts", (c) =>
+    c.json({ hosts: deps.machines.sshHosts() } satisfies SshHostsResponse),
+  );
+
+  /**
+   * Add machines to this Project's list without installing anything: each gets a card whose one
+   * thing to do is enabling it. Refusals by id, as `/use` answers them.
+   */
+  app.post("/add", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const machines = Array.isArray(body.machines)
+      ? body.machines.filter((m): m is string => typeof m === "string")
+      : [];
+    if (machines.length === 0) {
+      throw new HttpError(400, "bad_request", "Name at least one machine to add.");
+    }
+    const { refused } = deps.machines.addToProject(requireValidId(c, "projectId"), machines);
+    return c.json({ ...state(c), refused } satisfies MachinesUseResponse);
+  });
 
   app.post("/ssh-hosts", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const added = deps.machines.addSshHost(hostBody(body));
+    const password = passwordBody(body);
+    const added = await deps.machines.addSshHost(
+      hostBody(body),
+      typeof password === "string" ? password : undefined,
+    );
     if (!added.ok) {
       if (added.why === "exists") {
         throw new HttpError(409, "ssh_host_exists", "That alias is already in the ssh config.");
       }
-      throw invalid(added.problem);
+      throw hostRefused(added);
     }
     return c.json(state(c), 201);
   });
@@ -142,14 +213,25 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
         "No Host block for that alias in ~/.ssh/config itself; it may live in an included file.",
       );
     }
-    return c.json({ ...found.entry, editable: found.editable } satisfies SshHostResponse);
+    return c.json({
+      ...found.entry,
+      editable: found.editable,
+      ...(found.passwordSaved ? { passwordSaved: true as const } : {}),
+    } satisfies SshHostResponse);
   });
 
-  /** Rewrite a block this app wrote. 404 when there is none; 409 when it was written by hand. */
+  /**
+   * Rewrite a block this app wrote, and set or delete its password. 404 when there is none; 409
+   * when it was written by hand and the body would change it (its password alone may be set).
+   */
   app.put("/ssh-hosts/:alias", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const { alias: _ignored, ...entry } = hostBody(body);
-    const updated = deps.machines.updateSshHost(c.req.param("alias"), entry);
+    const updated = await deps.machines.updateSshHost(
+      c.req.param("alias"),
+      entry,
+      passwordBody(body),
+    );
     if (!updated.ok) {
       if (updated.why === "not-found") {
         throw new HttpError(
@@ -165,7 +247,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
           "That block was written by hand; edit it in ~/.ssh/config.",
         );
       }
-      throw invalid(updated.problem);
+      throw hostRefused(updated);
     }
     return c.json(state(c));
   });
@@ -206,7 +288,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       // Each refusal is its own code: the page renders a sentence per case, and "no image"
       // in particular is a property of THIS server rather than of the machine picked.
       if (started.why === "busy") {
-        throw new HttpError(409, "install_running", "An install is already running.");
+        throw new HttpError(409, "install_running", "A job is already running on that machine.");
       }
       if (started.why === "self") {
         throw new HttpError(
@@ -221,7 +303,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       throw new HttpError(
         409,
         "no_install_image",
-        "This server has no install image to push. A packaged or installed server carries one; a development checkout gets one from its first hot push.",
+        "This server has no install image to push. A packaged or installed server carries one, and a source checkout builds one for each install; this server is neither.",
       );
     }
     return c.json(state(c), 202);
@@ -231,7 +313,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     const started = await deps.machines.startConnect(c.req.param("machineId"));
     if (!started.ok) {
       if (started.why === "busy") {
-        throw new HttpError(409, "connect_running", "A connect is already running.");
+        throw new HttpError(409, "connect_running", "A job is already running on that machine.");
       }
       if (started.why === "unknown-machine") {
         throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
@@ -305,7 +387,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     const started = await deps.machines.startRestart(c.req.param("machineId"));
     if (!started.ok) {
       if (started.why === "busy")
-        throw new HttpError(409, "job_running", "A job is already running.");
+        throw new HttpError(409, "job_running", "A job is already running on that machine.");
       if (started.why === "unknown-machine") {
         throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
       }
@@ -315,6 +397,87 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       throw new HttpError(409, "not_installed", "Nothing is installed on that machine yet.");
     }
     return c.json(state(c), 202);
+  });
+
+  /**
+   * The answer to a stop or an uninstall that could not start: each refusal its own code, since
+   * the page says each in a sentence of its own.
+   */
+  const refuseOnInstalled = (
+    why: "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported" | "not-connected",
+  ): HttpError => {
+    if (why === "busy") return new HttpError(409, "job_running", "A job is already running there.");
+    if (why === "unknown-machine") {
+      return new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
+    }
+    if (why === "self")
+      return new HttpError(409, "self_machine", "That is the machine this server runs on.");
+    if (why === "not-connected") {
+      return new HttpError(409, "not_connected", "That machine is not connected.");
+    }
+    if (why === "unsupported") {
+      return new HttpError(
+        409,
+        "connect_unsupported",
+        "A Windows machine's server is not started or stopped from here, and its program is not removed from here.",
+      );
+    }
+    return new HttpError(409, "not_installed", "Nothing is installed on that machine.");
+  };
+
+  /**
+   * Stops that machine's server and stops keeping it connected: it stays stopped, across this
+   * server's restarts too, until it is started again (`…/connect`). The install stays. A job,
+   * 202; a machine it cannot reach fails at its first step with nothing changed.
+   */
+  app.post("/:machineId/stop", (c) => {
+    const started = deps.machines.startStop(c.req.param("machineId"));
+    if (!started.ok) throw refuseOnInstalled(started.why);
+    return c.json(state(c), 202);
+  });
+
+  /**
+   * Removes the program from that machine, its server stopped first; `removeData` takes its data
+   * root too. The machine stays in the list as not installed. A job, 202.
+   */
+  app.post("/:machineId/uninstall", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as MachineUninstallRequest;
+    const started = deps.machines.startUninstall(
+      c.req.param("machineId"),
+      body.removeData === true,
+    );
+    if (!started.ok) throw refuseOnInstalled(started.why);
+    return c.json(state(c), 202);
+  });
+
+  /**
+   * Hands that machine the config of every Project using it now — models, command policy,
+   * new-chat defaults, plugin list — as a job, 202. Only a connected machine: one on another
+   * build than this server's is refused at the job's first step, pointing at Update.
+   */
+  app.post("/:machineId/sync", (c) => {
+    const started = deps.machines.startSyncConfig(c.req.param("machineId"));
+    if (!started.ok) throw refuseOnInstalled(started.why);
+    return c.json(state(c), 202);
+  });
+
+  /**
+   * The connection check: ssh, platform, the installer's tools, the release download, disk and
+   * port, asked of the machine without writing anything there (machines/diagnose.ts). A POST
+   * because it spends ssh round trips and a few seconds of the machine's network.
+   */
+  app.post("/:machineId/diagnose", async (c) => {
+    const result = await deps.machines.diagnose(c.req.param("machineId"));
+    if (result === "unknown-machine") {
+      throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
+    }
+    if (result === "self") {
+      throw new HttpError(409, "self_diagnose", "That is the machine this server runs on.");
+    }
+    if (result === "busy") {
+      throw new HttpError(409, "job_running", "A job is working on that machine; check it after.");
+    }
+    return c.json(result satisfies MachineDiagnosis);
   });
 
   app.post("/:machineId/disconnect", (c) => {

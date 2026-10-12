@@ -13,7 +13,6 @@
  */
 import type { PeakWindows } from "../features/models/model-grouping";
 import type { ModelGroupSort } from "../features/models/model-sort";
-import type { RsiMethodId } from "../features/benchmark/rsi-methods";
 import type { StartPageSiteId } from "../features/builtin-browser/new-tab-page";
 
 export const zh = {
@@ -59,60 +58,82 @@ export const zh = {
     /** Tooltip on the version in the header: what this server would install. */
     imageVersion: (version: string) => `本服务端版本：${version}`,
     noImage:
-      "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像；源码检出则在第一次热推后获得。",
-    empty: "~/.ssh/config 中没有可添加的主机。",
-    /** The picker: an ssh config can declare hundreds of hosts, so the panel is a fuzzy search over aliases. */
-    search: "搜索主机…",
-    noMatch: "没有匹配的主机。",
+      "本服务端没有可推送的安装镜像。打包安装或 tarball 安装自带镜像，源码检出会在每次安装时自行构建；本服务端两者都不是。",
+    /** A source checkout builds the image it installs; the build's own last lines follow this sentence. */
+    checkoutImageFailed: "本服务端从源码检出运行，未能构建要装到机器上的安装镜像。构建输出：",
     /** The tag on this server's own row. */
     localTitle: "本服务端",
     noneInUse: "还没有在用的机器。",
     sshHint:
-      "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <别名>` 能直接进）。请配置 ssh 的人把它写进 ~/.ssh/config。",
-    /** The chevron row at the foot of the picker's list: the matches it has not shown yet. */
-    allHosts: (count: number) => `ssh 配置中另有 ${count} 台`,
-    expand: "展开",
-    fewer: "收起",
-    /** The form that appends a host block to this server's ~/.ssh/config. */
+      "能加的机器，是本服务端账户能 ssh 上去的主机：用密钥（在这里的终端里 `ssh <名称>` 能直接进），或用在这里保存的密码。用「添加机器」从 ssh 配置里选一台，或手动填写一台新的。",
+    /** The ssh host form — the add dialog's manual tab, and configuring a host this app wrote. */
     host: {
-      addTitle: "新建 ssh 主机",
-      /** The one-word verbs on the buttons; the titles above say what they do in full. */
-      newVerb: "新建",
       configureVerb: "配置",
-      add: "写入 ssh 配置",
-      alias: "别名（Host）",
-      aliasHint: "一个词，之后 `ssh <别名>` 和这里都用它称呼这台机器。",
-      hostName: "地址（HostName）",
+      name: "名称",
+      nameHint: "一个词。之后在这里和 `ssh <名称>` 里都用它称呼这台机器。",
+      /**
+       * Each field's placeholder: what applies when it is left empty — what ssh does with the
+       * option the server then leaves out of the host block — or, for a field that must be
+       * filled, what goes in it.
+       */
+      namePlaceholder: "这台机器的名称",
+      hostName: "主机地址",
       hostNameHint: "IP 或域名。",
-      user: "用户（User）",
-      userHint: "留空则用本服务端账户的用户名。",
-      port: "端口（Port）",
-      portHint: "留空为 22。",
-      identityFile: "密钥文件（IdentityFile）",
-      identityFileHint: "留空则用 ssh 的默认密钥。",
+      hostNamePlaceholder: "要连接的机器的地址",
+      user: "用户名",
+      userPlaceholder: "默认：本服务端账户的用户名",
+      port: "端口",
+      portPlaceholder: "默认：22",
+      identityFile: "私钥文件",
+      identityFileHint: "带口令的密钥要先加入 ssh-agent。",
+      identityFilePlaceholder: "默认：ssh 的默认密钥（~/.ssh/id_ed25519 等）",
+      /** How the machine signs in: a key (the default), or a password this server stores. */
+      signIn: "登录方式",
+      signInKey: "密钥",
+      signInPassword: "密码",
+      password: "密码",
+      passwordPlaceholder: "这个用户在那台机器上的密码",
+      /** A password is stored: the field starts empty, and empty keeps it. */
+      passwordSavedPlaceholder: "已保存，留空保持不变",
+      /** Key sign-in chosen for a host that has a stored password: what Save does to it. */
+      passwordDropped: "保存后会删除已保存的密码。",
+      passwordOneLine: "密码只能是一行，最多 1024 个字符。",
+      /** `ssh` is what this server's `ssh -V` said. */
+      passwordUnsupported: (ssh: string) =>
+        `本服务端的 ssh 用不了保存的密码：需要 OpenSSH 8.4 或更新版本，这里的是 ${ssh === "" ? "未知版本" : ssh}。`,
       oneWord: "必须是一个词：不能有空格或 #。",
       portRange: "1 到 65535 之间的整数。",
-      exists: "ssh 配置里已有这个别名。",
-      added: (alias: string) => `已写入 ${alias}。现在可以从「添加机器…」里启用它。`,
-      /** Configuring a host this app wrote: the same form, the alias fixed. */
-      configure: "配置 ssh 主机",
+      exists: "ssh 配置里已有这个名称。",
+      /** Configuring a host this app wrote: the same form, the name fixed. */
       editTitle: "配置 ssh 主机",
-      saved: (alias: string) => `已更新 ${alias} 的 ssh 配置。`,
+      saved: (alias: string) => `已保存 ${alias} 的 SSH 设置。`,
       foreign:
-        "这一段不是由 PenguinHarness 写入的，可能带有这里不认识的选项；请直接编辑 ~/.ssh/config。",
+        "这一段不是由 PenguinHarness 写入的，可能带有这里不认识的选项：主机设置请直接编辑 ~/.ssh/config，登录方式仍可在这里修改。",
+    },
+    /** The add dialog (add-machine-dialog.tsx): a host from the ssh config, or a new one by hand. */
+    addDialog: {
+      title: "添加机器",
+      intro: "本服务端会在一台能经 ssh 登录的机器上安装 PenguinHarness，并连上它。",
+      tabs: { config: "从 ssh 配置选择", manual: "手动填写" },
+      search: "搜索主机",
+      /** No host in the config that is not on the page yet: the other tab is the way in. */
+      noHosts: "本服务端的 ssh 配置里没有还没添加的主机。可以在「手动填写」里新建一台。",
+      noMatch: (query: string) => `没有匹配「${query}」的主机。`,
+      /** A host another Project of this server already installed: adding it costs no transfer. */
+      elsewhere: (version: string) => `其他 Project 已安装 v${version}`,
+      installNow: "添加后立即安装并连接",
+      submit: "添加",
+      submitCount: (count: number) => `添加 ${count} 台`,
+      added: (count: number) => (count === 1 ? "已添加 1 台机器。" : `已添加 ${count} 台机器。`),
+      addedInstalling: (count: number) =>
+        count === 1 ? "已添加 1 台机器，正在安装。" : `已添加 ${count} 台机器，正在安装。`,
     },
     /** The verbs. */
-    add: "添加机器…",
-    addSelected: (count: number) => `启用这 ${count} 台`,
-    use: "启用",
-    stopUsing: "停用",
+    add: "添加机器",
     /** One tap brings every machine behind this build forward (and reconnects it). */
     updateAll: (count: number) => `全部更新（${count}）`,
     updateAllConfirm: (count: number) =>
       `把这 ${count} 台机器更新到本服务端的版本？每台都会重装程序、重启服务并重新连接，期间正在用它的人会短暂断开。`,
-    /** Asked before letting a machine go: the connection drops, the install stays. */
-    stopUsingOne: (alias: string) =>
-      `停用 ${alias}？本 Project 会断开与它的连接并不再列出它，正在经它进行的工作会中断。程序仍留在那台机器上，之后可以重新启用。`,
     /**
      * The one word for a machine's state, keyed by its reading; `serving` is this server's. The
      * card's mark and the Machine dialog's status chip both say it.
@@ -122,61 +143,97 @@ export const zh = {
       queued: "排队中",
       working: "处理中",
       ready: "已连接",
+      reconnecting: "重新连接中",
       failed: "失败",
       installedOnly: "已安装",
       behind: "有新版本",
       notConnected: "未连接",
       unreachable: "连不上",
-      stopped: "未运行",
-      linkedStopped: "已连接，服务未运行",
+      stopped: "已停止",
+      notInstalled: "未安装",
       unknown: "未检查",
+      /** The stored password was refused (or the host takes none): nothing retries until it changes. */
+      signInRefused: "登录被拒",
     },
-    /** The stepper's steps, in pipeline order, as the caption under a working row. */
+    /** A job's steps, as the caption under a working card's stepper. */
     phase: {
-      check: "检查对端…",
+      build: "构建安装镜像…",
+      check: "检查机器…",
       install: "安装程序…",
-      handover: "交接构建…",
+      handover: "传送构建…",
       restart: "重启服务…",
       connect: "建立连接…",
-      sync: "下发模型配置…",
+      sync: "同步配置…",
+      stop: "停止服务…",
+      remove: "删除程序…",
     },
-    /** The same steps by name, in pipeline order: the Machine dialog's step list. */
+    /** The same steps by name: the Machine dialog's step list. */
     step: {
+      build: "构建安装镜像",
       check: "检查机器",
       install: "安装程序",
       handover: "传送构建",
       restart: "重启服务",
       connect: "建立连接",
-      sync: "同步模型配置",
+      sync: "同步配置",
+      stop: "停止服务",
+      remove: "删除程序",
     },
     stepOf: (step: number, total: number) => `第 ${step}/${total} 步`,
     queued: "排队中，等前面的机器处理完。",
     working: "处理中…",
     failedAt: (step: string) => `失败于「${step}」。`,
-    /** The forced install a failed job may offer, and how it differs from an install. */
+    /** The forced install a failed job may offer. */
     replaceProgram: "强制安装",
-    replaceProgramWhy: "即使版本已一致，也重新安装程序",
     replaceProgramConfirm: (alias: string) =>
       `在 ${alias} 上强制安装？无论那台机器上现在是什么，都会装上本服务端的构建并重启它的服务，正在用它的人会被打断。`,
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
     refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
-    agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
+    /**
+     * The new-chat composer's Agent picker while its workspace is on a machine and that machine's
+     * Agents cannot be listed: why, from the machine state the Machines page shows too.
+     */
+    composer: {
+      reconnecting: "那台机器正在重新连接…",
+      stopped: "那台机器的服务已停止——请在「机器管理」页面启动它",
+      notConnected: "那台机器尚未连接——请在「机器管理」页面启用它",
+      missing: "那台机器不在本 Project 的机器列表里",
+      signInRefused: "那台机器拒绝了本服务端的登录——请在「机器管理」页面修改它的 SSH 设置",
+      failed: (message: string) => `那台机器没有答复：${message}`,
+    },
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
     updateNotice: (count: number) => `${count} 台机器待更新`,
-    /** A machine's card (machine-card.tsx): the stats line and the verbs beside it. */
+    /** A machine's card (machine-card.tsx): the stats line and the quick buttons beside it. */
     card: {
       /** How this server reaches the machine; the dialog says it in full. */
       local: "本机",
       ssh: "ssh",
       /** The pill beside the version of a machine on another build. */
       updateNeeded: "需要更新",
-      update: "更新",
+      /** A new conversation in this machine's temporary workspace. */
+      use: "使用",
+      settings: "设置",
+      /** Hands the machine this Project's config now; an icon button, named by its hint. */
+      syncConfig: "同步配置",
+      delete: "删除",
+      /** This server's own card: a delete that cannot be, said on its placeholder. */
+      localUndeletable: "本服务端不能删除",
+      /** Why Use waits, in the card's middle while no job moves there. */
+      why: {
+        reconnecting: "重新连接中…",
+        reconnectingFor: (span: string) => `重新连接中… · 已 ${span}`,
+        stopped: "服务已停止",
+        notConnected: "未连接",
+        notInstalled: "尚未安装",
+        failed: "上次任务失败",
+        windows: "暂时还不能连接 Windows 机器",
+      },
     },
     /**
-     * The Machine dialog (machine-detail-dialog.tsx): a header under the alias, then Details,
-     * Progress and Actions.
+     * The Machine dialog (machine-detail-dialog.tsx): a header under the alias, the toolbar,
+     * then Reconnecting, Progress and Details.
      */
     detail: {
       /** The header's line under the status: how this server reaches the machine. */
@@ -186,7 +243,6 @@ export const zh = {
       newerAvailable: (version: string) => `有新版本 ${version}`,
       facts: "基本信息",
       progress: "处理进度",
-      actions: "操作",
       /** Details: each fact's label, and the values said in words. */
       fact: {
         connection: "连接方式",
@@ -197,7 +253,7 @@ export const zh = {
         service: "远端服务",
         serviceLocal: "服务",
         running: (port: number) => `运行中（端口 ${port}）`,
-        stopped: "未运行",
+        stopped: "已停止",
         unreachable: "连不上",
         checked: "上次检查",
         installed: "已安装",
@@ -214,52 +270,137 @@ export const zh = {
       failedAtStep: (step: string, message: string) => `在「${step}」这一步失败：${message}`,
       showLog: "查看日志",
       logLabel: "任务日志",
-      /** The one thing to do for a machine, and what it does, said beside it. */
-      primary: {
+      copyLog: "复制日志",
+      /** A failed job's way out, under the failure. */
+      retry: "重试",
+      /** The connection check the server ran after the job failed, check by check. */
+      checking: "正在检查这台机器…",
+      /** The toolbar under the header: every verb the machine takes, in one row. */
+      toolbar: {
+        label: "机器操作",
+        enable: "启用",
         update: "更新",
-        updateWhy: (version: string) => `更新到 ${version}，会重启服务并重新连接。`,
+        stop: "停止服务",
         start: "启动服务",
-        startWhy: "启动那台机器上的服务并连接。",
-        connect: "连接",
-        connectWhy: "连接到那台机器上的服务，没在运行就先启动它。",
-        tryAgain: "重试连接",
-        tryAgainWhy: "再次通过 ssh 连接；请先确认那台机器开着、网络通。",
-        retry: "重试",
-        retryWhy: "从头再跑一遍整个流程",
+        restart: "重启服务",
+        syncConfig: "同步配置",
+        configure: "配置 SSH",
+        uninstall: "卸载",
       },
-      /** The captions of the two groups of Actions: the single steps, and the ways out. */
-      maintenance: "维护",
-      leave: "退出",
-      configureSsh: "配置 ssh",
-      configureSshWhy: "修改连接这台机器用的地址、用户、端口和密钥",
+      /** The line under the toolbar on the last config sync, and the notice of what it left behind. */
+      configSync: {
+        synced: (ago: string) => `配置已同步 · ${ago}`,
+        failed: (detail: string) => `配置同步失败：${detail}`,
+        envOnly: "环境变量里的模型密钥无法同步到这台机器，请先手动配置模型密钥。",
+        skippedTitle: "这些模型没有同步到这台机器：",
+        skippedModel: (model: string, reason: string) => `${model}：${reason}`,
+      },
       /**
-       * Why a verb waits on the machine, said in its row in place of what it does. A request in
-       * flight holds every verb too, for a moment, and has no line of its own.
+       * The one sentence under the toolbar while some of its verbs wait: why, said plainly. The
+       * greyed buttons already say which, so the sentence does not list them.
        */
-      hold: {
-        moving: "这台机器正在处理任务，完成后可用",
-        noImage: "本服务端没有可安装的版本",
-        noConnection: "当前没有连接，无需断开",
-        unreachable: "上次检查时连不上这台机器",
+      held: {
+        moving: "正在执行其他操作，请等它完成。",
+        unreachable: "暂时连不上这台机器。",
+        stopped: "服务已停止。",
+        noImage: "本服务端没有可安装的版本。",
+      },
+      /** The section while the server brings a machine it keeps connected back. */
+      reconnect: {
+        title: "重新连接",
+        trying: "重新连接中…",
+        lasting: (span: string) => `已持续 ${span}`,
+        attempt: (n: number) => `第 ${n} 次尝试`,
+        next: (span: string) => `下次尝试在 ${span}后`,
+        now: "正在尝试",
+        lastError: "上次失败：",
+        checked: "自动检查的结果：",
+        /** The stored password was refused: no attempt runs until it is saved again. */
+        stopped: "已停止重试",
       },
     },
-    /** The single steps and the ways out the dialog offers, each with what it does in one line. */
-    verbs: {
-      install: "安装程序",
-      installWhy: "把本服务端的版本装到这台机器上",
-      connect: "重新连接",
-      connectWhy: "重新连上这台机器，必要时先启动它的服务",
-      restart: "重启服务",
-      restartWhy: "重启这台机器上的服务",
-      stopUsingWhy: "断开连接并移出本 Project，程序仍留在这台机器上",
-      disconnect: "断开",
-      disconnectWhy: "只断开连接，这台机器上的服务继续运行",
-      release: "移出 Project",
-      releaseWhy: "本 Project 不再列出它，连接和程序都不变",
-      disconnectConfirm: (alias: string) =>
-        `断开与 ${alias} 的连接？这条连接由使用它的所有 Project 共用，正在经它进行的工作会中断；那台机器上的服务继续运行，之后可以重新连接。`,
-      releaseConfirm: (alias: string) =>
-        `把 ${alias} 移出本 Project？它不再列在这里，本 Project 的模型配置也不再同步给它；那台机器上的程序与连接保持不变，之后可以从「添加机器…」重新启用。`,
+    /** The confirmations the page asks before a verb that stops or removes something. */
+    confirm: {
+      deleteTitle: (alias: string) => `删除 ${alias}？`,
+      /** `passwordSaved`: the machine signs in with a password this server stores. */
+      deleteBody: (alias: string, passwordSaved = false) =>
+        `${alias} 会从本 Project 移除，本服务端断开与它的连接。那台机器上的程序和数据都会保留，ssh 配置里的主机也不变；之后可以用「添加机器」把它加回来。` +
+        (passwordSaved ? "本服务端为它保存的密码会删除，除非其他 Project 还在用它。" : ""),
+      stopTitle: (alias: string) => `停止 ${alias} 上的服务？`,
+      stopBody:
+        "正在用它的人会断开，本服务端也不再自动重连这台机器；之后用「启动服务」再启动它。程序与数据都保留。",
+      uninstallTitle: (alias: string) => `卸载 ${alias} 上的 PenguinHarness？`,
+      uninstallBody: (programDir: string) =>
+        `会先停止它的服务，再删除程序目录 ${programDir}。这台机器仍留在列表中，显示「未安装」。`,
+      removeData: "同时删除这台机器上的数据目录",
+      /** Said under the data directory's path. */
+      removeDataWarning: "那台机器上的会话、Agent 与配置都在其中，删除后无法恢复。",
+    },
+    /** The connection check's results in the Machine dialog, one plain sentence per check. */
+    check: {
+      title: "连接检查",
+      skipped: (what: string) => `${what}：未检查。`,
+      /** Each check by name, for the line that says it was not asked. */
+      name: {
+        ssh: "ssh 登录",
+        platform: "系统",
+        tools: "安装工具",
+        download: "下载发布版",
+        disk: "磁盘空间",
+        port: "端口",
+      },
+      sshPass: (user: string, host: string) =>
+        user === "" ? "能经 ssh 登录。" : `能以 ${user} 登录 ${host}。`,
+      ssh: {
+        "host-key-unknown": (alias: string) =>
+          `本服务端还没连接过 ${alias}，后台连接无法确认新的主机密钥。请在本服务端的终端里运行一次 ssh ${alias}，并回答 yes。`,
+        "host-key-changed": (alias: string) =>
+          `${alias} 的主机密钥和记录的不一致，ssh 拒绝连接。如果那台机器重装过，请用 ssh-keygen -R 删掉旧密钥，再连接一次。`,
+        auth: (alias: string) =>
+          `${alias} 不接受本服务端的密钥。请把本服务端的公钥加入 ${alias} 的 ~/.ssh/authorized_keys、把密钥加入 ssh-agent，或在机器的 SSH 设置里改用密码登录。`,
+        "password-rejected": (_alias: string) =>
+          "那台机器拒绝了保存的密码——请在机器的 SSH 设置里重新填写。",
+        "password-not-offered": (_alias: string) =>
+          "那台机器不接受密码登录——请在机器的 SSH 设置里改用密钥。",
+        "key-file": (alias: string) =>
+          `为 ${alias} 设置的私钥文件用不了：不存在、读不了，或权限过宽（需要 600）。`,
+        "host-not-found": (alias: string) =>
+          `找不到 ${alias} 的主机地址，请检查 ssh 配置里的 HostName。`,
+        refused: (alias: string) => `${alias} 拒绝了连接：那个地址和端口上没有 ssh 服务。`,
+        timeout: (alias: string) =>
+          `${alias} 没有响应。请检查地址和端口，以及本服务端能否访问它（VPN、防火墙、跳板机）。`,
+        closed: (alias: string) =>
+          `与 ${alias} 的连接在登录前被断开：可能是那台机器、跳板机或防火墙断开的。`,
+        "ssh-config": (alias: string) =>
+          `本服务端的 ssh 配置有错误，ssh 无法用它连接 ${alias}。请改正 ssh 指出的那一行。`,
+        other: (alias: string) => `无法经 ssh 登录 ${alias}。`,
+      },
+      platform: (os: string, arch: string) => `系统：${os} ${arch}。`,
+      platformWindows: "Windows：可以安装，但暂时还不能连接。",
+      platformUnsupported: "这个系统或架构没有发布版。",
+      platformOldGlibc: (glibc: string, need: string) =>
+        `这台机器的 glibc 是 ${glibc}，PenguinHarness 自带的 Node 需要 ${need} 或更新：请换一台较新的 Linux 系统。`,
+      platformTerminals: (arch: string, glibc: string, need: string) =>
+        `系统：Linux ${arch}，glibc ${glibc}。PenguinHarness 可以运行，但终端需要 glibc ${need} 或更新，在这台机器上打不开。`,
+      platformMusl:
+        "这台机器用的是 musl libc（如 Alpine），PenguinHarness 自带的 Node 需要 glibc：请换一台基于 glibc 的 Linux 系统。",
+      toolsPass: "安装所需的工具齐全。",
+      toolsNoCurl: "没有 curl：那台机器无法自己下载，安装时本服务端会经 ssh 把发布版送过去。",
+      toolsMissing: (tools: string) => `缺少安装所需的工具：${tools}。请在那台机器上装好后再试。`,
+      downloadFrom: (version: string, source: "both" | "github" | "oss") =>
+        `能从${source === "both" ? " GitHub 和镜像" : source === "github" ? " GitHub " : "镜像"}下载发布版 ${version}。`,
+      downloadCarried: (version: string) =>
+        `那台机器连不上 GitHub 和镜像，下载不到发布版 ${version}；安装时本服务端会经 ssh 把它送过去（约 95 MB）。`,
+      downloadMissing: (version: string) =>
+        `发布版 ${version} 还没有这台机器用的安装包（GitHub 和镜像上都没有）。`,
+      diskPass: (free: string) => `可用空间 ${free}。`,
+      diskTight: (free: string) => `可用空间 ${free}，够装一次，余量不多。`,
+      diskLow: (free: string, need: string) => `可用空间只有 ${free}，安装需要约 ${need}。`,
+      portFree: (port: number) => `端口 ${port} 空闲。`,
+      portOurs: (port: number) => `端口 ${port} 上运行着它的 PenguinHarness 服务。`,
+      portTaken: (port: number) =>
+        `端口 ${port} 被另一个程序占用。本服务端要在这个端口启动服务，请先释放它。`,
+      sshSaid: (words: string) => `ssh：${words}`,
     },
   },
 
@@ -2162,6 +2303,8 @@ export const zh = {
     protocolEachModel: "由各模型自行设置",
     /** The model dialog's protocol menu row that drops a model's own protocol and follows its group. */
     protocolFollowGroup: "跟随分组",
+    /** Under the group settings' base URL where the group's protocol is fixed (Penguin Go), in place of the protocol menu. */
+    protocolFixedHint: (group: string, protocol: string): string => `${group} 固定使用 ${protocol}`,
     /** A model dialog's API key or base URL placeholder where the group's setting covers a blank field (no value after it). */
     inheritFromGroup: "留空继承分组设置",
     /** The API key placeholder where the group holds a key but the model's own base URL is on another origin, so the key is not sent there. */
@@ -3257,14 +3400,14 @@ export const zh = {
      */
     exampleTasks: {
       game: {
-        label: "2D 企鹅雪橇越野小游戏",
-        desc: "可爱南极企鹅滑雪橇跳石头，难度由易到难的 2D 纯前端小游戏",
+        label: "企鹅滑雪大冒险小游戏",
+        desc: "滑雪大冒险式的 2D 小游戏：企鹅顺着起伏的雪山下滑，冲过坡顶腾空，在空中翻滚得分",
         prompt:
-          "做一个可爱的南极企鹅滑雪橇越野 2D 小游戏：按空格键起跳，跃过冰面上迎面而来的石头；" +
-          "开局要足够简单、上手无压力，滑行速度与障碍密度随时间平滑、循序渐进地上升，避免突然变难，" +
-          "实时计分，撞上石头即结束并可一键重新开始。" +
-          "2D 横版画面、可爱卡通风，纯前端实现（单个 HTML 文件即可），界面遵循 web-design 技能。" +
-          "完成后在浏览器里自测一次，确认开局能轻松玩过几秒，并告诉我怎么打开和怎么玩。",
+          "做一个类似《滑雪大冒险》（Ski Safari）的 2D 小游戏：一只可爱的南极企鹅顺着起伏的雪山一路下滑，" +
+          "地形有高有低，冲过坡顶就会腾空；在空中按住空格键翻滚，落地时身体摆正就加分，翻得越多分越高，" +
+          "摔倒即结束并可一键重来。开局要简单，速度随时间平滑上升。" +
+          "2D 横版卡通画风，纯前端单个 HTML 文件，界面遵循 web-design 技能。" +
+          "完成后在浏览器里自测一次，并告诉我怎么打开和怎么玩。",
       },
       gamecenter: {
         label: "多智能体搭建小游戏中心",
@@ -3319,12 +3462,14 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
 完成后在浏览器打开 index.html 自测一次。`,
       },
       rhythmRunner: {
-        label: "音乐节奏跑酷小游戏",
-        desc: "喵斯快跑式的音乐节奏跑酷：企鹅主角，音符踩着节拍飞来，判定分 Perfect / Great / Miss",
+        label: "企鹅音乐节奏跑酷小游戏",
+        desc: "喵斯快跑式的节奏跑酷：接上方音符时企鹅飞起来，接下方音符时趴上雪橇贴地滑行",
         prompt:
           "做一个喵斯快跑（Muse Dash）式的音乐节奏跑酷小游戏：主角是一只企鹅，自动向前跑；" +
-          "音符画成音符图标，严格踩着节拍飞来，玩家按键击打，判定显示 Perfect / Great / Miss 三档，" +
-          "连击计分，难度随曲子推进。纯前端单文件，file:// 直接打开即玩。",
+          "音符画成音符图标，分上下两路踩着节拍飞来，玩家按键击打。接上方音符时企鹅展翅飞起来，" +
+          "接下方音符时趴上雪橇贴地滑行。判定显示 Perfect / Great / Miss 三档，连击计分。" +
+          "难度尽量简单：音符稀疏、判定宽松，漏接不会直接结束。配乐建议用纯音乐。" +
+          "纯前端单文件，file:// 直接打开即玩。",
       },
       ragDocsExpert: {
         label: "一句话生成 RAG 文档专家",
@@ -3344,11 +3489,11 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "按公司名（中文也行）自己对应到股票代码，查不到或没上市就直说，不要编。",
       },
       legalDesk: {
-        label: "法务智能体：上传文件，下载分析报告",
+        label: "一句话构建法务智能体应用",
         desc: "新建一个法务 Agent，配一个 Workflow 标签页：只有上传、文件列表和报告下载，看不到对话过程",
         prompt:
           "新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。" +
-          "再给你自己做一个 Workflow 标签页，当作它的工作台：我上传文件后，交给法务智能体在后台分析，" +
+          "再在法务智能体上做一个 Workflow 标签页，当作它的工作台：我上传文件后，由它在后台分析，" +
           "完成后生成一份分析报告供我下载。页面上只要上传、文件列表（每个文件的处理状态）和报告下载，" +
           "不显示任何对话过程；颜色一律取自主题变量，明暗两种主题下都要好看。",
       },
@@ -3374,7 +3519,7 @@ Benchmark：
 3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
-        label: "Default 优化：提升决策智能体的准确率",
+        label: "优化决策智能体",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
@@ -3386,11 +3531,12 @@ Benchmark：
 - candidate_round_limit：\`5\``,
       },
       benchmarkImport: {
-        label: "导入评测集：看看仓库里有哪些 Benchmark 包",
-        desc: "列出 penguin-harness-benchmark 仓库里可导入的 Benchmark 包，选定后由 benchmark-design 导入",
+        label: "导入 GDPevo 评测集",
+        desc: "导入 GDPevo 的训练集与测试集：在训练集上优化 Agent，再到没见过的测试题上检验提升",
         prompt:
-          "使用 `benchmark-design` 技能：列出 https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages " +
-          "下可导入的 Benchmark 包，标出本 Project 已有的，等我选定后再导入。",
+          "使用 `benchmark-design` 技能导入 GDPevo 评测集：" +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-gdpevo-train ，" +
+          "配对的测试集一并导入。本 Project 已经有了就直接告诉我，不要覆盖。",
       },
       dailyPlan: {
         label: "每天早 9 点的计划对话",
@@ -4985,21 +5131,18 @@ Benchmark：
       "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
       "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
-    // The Optimize tab's Method select: one option per RSI toolkit (benchmark/rsi-methods.ts).
+    // The Optimize tab's Method select, built from the plugin library (benchmark/rsi-methods.ts).
     methodField: "方法",
     /** Semantics behind the Method field's "?". */
-    methodHint: "改进智能体所用的自进化算法；每一种都是插件库里的一个工具包",
-    /** Each method's option label, and the line the field shows under it once it is picked. */
-    methods: {
-      default: {
-        label: "Default（试跑 → 反思 → 提升）",
-        blurb: "默认循环：每轮一个可证伪的假设、一处有界改动，分数严格提升才保留",
-      },
-      opro: { label: "OPRO", blurb: "由历史指令与分数提出新指令（Yang 等，2023）" },
-      ape: { label: "APE", blurb: "从输入 / 输出示例归纳指令（Zhou 等，2022）" },
-      ace: { label: "ACE", blurb: "从训练轨迹进化规则手册（Zhang 等，2025）" },
-      awm: { label: "AWM", blurb: "从成功轨迹归纳工作流记忆（Wang 等，2024）" },
-    } satisfies Record<RsiMethodId, { label: string; blurb: string }>,
+    methodHint:
+      "改进智能体所用的自进化算法：插件库「Agent 自进化」分类里的每个工具包各是一种，在插件市场安装后即出现在这里",
+    /**
+     * The Method select when the library has given it nothing to offer; the tab then runs the
+     * default loop, which needs nothing from the list.
+     */
+    methodsLoading: "正在读取插件库…",
+    methodsFailed: "插件库读取失败，先按默认循环优化",
+    methodsNone: "插件库里没有自进化算法工具包，按默认循环优化",
     /**
      * Shown where the default's round limit and target score are: any other toolkit sets its own
      * budget.
@@ -5017,7 +5160,6 @@ Benchmark：
      */
     rsiOptimizeTail: (p: {
       skill: string;
-      label: string;
       targetAgentId: string;
       benchmarkId: string;
       runs: number;
@@ -5029,7 +5171,7 @@ Benchmark：
           ? `- provider：\`${p.provider}\`\n- model_id：\`${p.modelId}\`\n`
           : "";
       return (
-        `请使用 \`${p.skill}\` 技能，在冻结的 Benchmark 上对被测智能体复现 ${p.label}。\n\n` +
+        `请使用 \`${p.skill}\` 技能，在冻结的 Benchmark 上对被测智能体运行它的方法。\n\n` +
         `- test_agent_id：\`${p.targetAgentId}\`\n` +
         `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
         `- runs：\`${p.runs}\`\n` +
@@ -5866,6 +6008,20 @@ Benchmark：
   },
   errors: {
     networkError: "网络错误，请检查连接",
+    /**
+     * An answer that is not the server's: no JSON came back. Something between the page and the
+     * server answered in its place, and the generic failure would blame the server.
+     */
+    notTheServer: {
+      /** A web page came back: a dev server or reverse proxy in front did not forward the request. */
+      page: (status: number) =>
+        `收到的是一个网页（HTTP ${status}），不是服务端的答复——页面与服务端之间的开发服务器或反向代理没有转发这个请求。`,
+      /** A proxy answered: a gateway status, or a proxy's own header on the answer. */
+      proxy: (status: number) =>
+        `中间的代理代为答复（HTTP ${status}），请求没有到达服务端。本机与局域网地址应绕过代理。`,
+      other: (status: number, type: string) =>
+        `收到的不是服务端的答复（HTTP ${status}${type === "" ? "" : `，${type}`}）。`,
+    },
     modelCredentialMissing: (modelId: string) =>
       `模型 ${modelId} 还没有可用的 API key，请先在「模型」页为它配置`,
     noDefaultModel: "该 Project 还没有默认模型，请先在「模型」页添加模型并设为默认",
@@ -5897,6 +6053,7 @@ Benchmark：
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
       model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
+      penguin_go_protocol_fixed: "Penguin Go 固定使用 MMSP 协议，不能改为其他协议。",
       model_not_routable:
         "该模型 ID 无法路由：厂商分组按模型 ID 开头的厂商前缀（gpt-、claude-、gemini-、glm-、kimi-、deepseek-、minimax-）路由。请在自定义分组中添加该模型，并选择或检测其接口协议。",
       unknown_skill: "所选目录下没有这个技能。",

@@ -3287,7 +3287,30 @@ export type ServerEvent =
   | ScheduleServerEvent
   | GoalServerEvent
   | CompanyServerEvent
-  | BuiltinBrowserServerEvent;
+  | BuiltinBrowserServerEvent
+  | MachineServerEvent;
+
+/**
+ * The machines' two events on the user channel, published to admins only — the Machines page,
+ * and the `/server/<id>` proxy everything else about a machine goes through, are admin-only.
+ */
+export type MachineServerEvent =
+  /**
+   * Something the machines list reports changed — a job queued, started, moved to its next
+   * step, logged a line or ended; a connection was held or dropped; a reconnect began, failed
+   * or succeeded; a machine joined or left a Project; a checkout's install image started or
+   * finished building. No payload: a page re-reads `GET …/machines`, which is its one account
+   * of every machine. Coalesced, so a burst of log lines costs a few reads, not one per line.
+   */
+  | { type: "machines_changed" }
+  /**
+   * One of a connected machine's own user-channel events, relayed by this server from that
+   * machine's `GET /api/events` (machines/event-relay.ts). The page holds one event stream to
+   * this server whatever the number of machines: a stream per machine made five connected
+   * machines take the browser's whole HTTP/1.1 allowance of six connections to one origin, and
+   * every other request of the page then waited behind them for good.
+   */
+  | { type: "machine_event"; machineId: string; event: ServerEvent };
 
 /** Goal-mode progress on the session channel (the chat page drives its goal banner from these). */
 export type GoalServerEvent =
@@ -5047,6 +5070,16 @@ export interface MachineInfo {
    * someone to spend a 30 MB transfer re-doing what is already done.
    */
   elsewhere?: { version: string; at: string };
+  /** This server signs in to the machine with a password it stores for the alias, not a key. */
+  passwordSaved?: true;
+  /**
+   * In this Project's list: the Machines page shows a card for it. A machine joins the list when
+   * it is added (`POST …/machines/add`, which installs nothing) or when an install or a use for
+   * this Project runs on it, and leaves it with stop-using or release. Absent for a host that is
+   * only in the ssh config, or only in another Project's list; never set on `local`, which is
+   * always shown.
+   */
+  member?: true;
   /**
    * The machine's OWN id — 16 base64url characters minted by the server that runs there,
    * stable across renames, re-aliasing and reinstalls. Null until a server has started on
@@ -5070,6 +5103,19 @@ export interface MachineInfo {
    */
   connection: { pid: number } | null;
   /**
+   * Present while this server is bringing a machine it keeps connected back — the connection
+   * dropped, its server stopped or restarted, or this server itself just started — and absent
+   * otherwise. A machine is kept connected from the moment it is enabled until it is stopped
+   * (`POST …/stop`) or deleted (`POST …/stop-using`); see machines/service.ts's supervision.
+   */
+  reconnect?: MachineReconnect;
+  /**
+   * This server keeps a connection to it: it was enabled, or started, and has not been stopped
+   * or deleted since. Absent otherwise — a machine only added, one whose server was stopped
+   * here, one that never got as far as a connection.
+   */
+  keepConnected?: true;
+  /**
    * The machine's API as last seen by this server's proxy — stamped by traffic passing
    * through, never by a probe of its own. `answeredAt` when the last forwarded request got
    * an HTTP answer (any status: a server that refuses is still answering); `failedAt` and
@@ -5079,6 +5125,12 @@ export interface MachineInfo {
    * this server answering the request that fetched this list is that measurement.
    */
   api: { answeredAt: string } | { failedAt: string; detail: string } | null;
+  /**
+   * What the last time this server handed it the Project config came to: at a connect, a Sync
+   * config job, or an automatic sync after a config edit here. Absent until the first one since
+   * this server started; kept in memory only.
+   */
+  configSync?: MachineConfigSync;
   /**
    * What the last probe found over there, or null when none has been taken. Never filled in
    * at list time: a probe costs an ssh round trip per machine, so the list reports the last
@@ -5095,6 +5147,75 @@ export interface MachineInfo {
    * already resolved to an absolute path.
    */
   root: string;
+}
+
+/**
+ * One config sync to a machine: when it ended, whether every part of it reached the machine for
+ * every Project using it, and what did not, in the far side's words.
+ */
+export interface MachineConfigSync {
+  /** ISO timestamp the sync ended. */
+  at: string;
+  ok: boolean;
+  /** The parts that did not go through, one per line; absent when `ok`. */
+  detail?: string;
+  /**
+   * The values the Project's models take from this server's environment variables rather than
+   * its config (an API key, or a base URL), which no sync can carry: one row per variable. On
+   * the list answered for a Project, that Project's rows only.
+   */
+  envOnly: MachineEnvOnly[];
+  /**
+   * The model entries the machine refused by name — a hand-added model in a group that takes
+   * only its built-in ones there — left out while the rest of the table went. On the list
+   * answered for a Project, that Project's rows only.
+   */
+  skipped: MachineSkippedModel[];
+}
+
+/** A model entry a machine would not take: its error code and its own words for why. */
+export interface MachineSkippedModel {
+  projectId: string;
+  provider: string;
+  modelId: string;
+  /** The far side's error code (`model_not_addable`, `model_not_routable`). */
+  code: string;
+  reason: string;
+}
+
+/** A model entry that takes `variable` from this server's environment. */
+export interface MachineEnvOnly {
+  projectId: string;
+  provider: string;
+  modelId: string;
+  variable: string;
+}
+
+/**
+ * A machine this server keeps connected, while it is being brought back. Attempts back off
+ * from 5 s, doubling to a 5-minute cap, so a machine that is down for a day costs a probe every
+ * five minutes; after three failures in a row the connection check runs on its own, and its
+ * answer is what the page shows as the explanation.
+ */
+export interface MachineReconnect {
+  /** When this streak began: the moment the machine was found not connected. */
+  since: string;
+  /** Attempts that failed in this streak; 0 while the first is still to run or running. */
+  attempts: number;
+  /** When the next attempt runs; null while one is running. */
+  nextAt: string | null;
+  /** The last attempt's failure in the far side's words; null before the first one fails. */
+  lastError: string | null;
+  /** Why ssh refused, when the last failure was ssh's own — for the page to say in its language. */
+  sshReason?: MachineSshFailure;
+  /** The connection check run after three failures in a row; null until then. */
+  diagnosis: MachineDiagnosis | null;
+  /**
+   * The password stored for the machine was refused, or its host takes none (`sshReason`
+   * says which): no attempt runs until a password is saved for it again or removed, since
+   * retrying could lock the account. `nextAt` is null meanwhile.
+   */
+  waitsForPassword?: true;
 }
 
 /**
@@ -5119,23 +5240,44 @@ export interface MachineServerStatus {
  * refused key or an unusable Node than a paraphrase would.
  */
 export interface MachineJob {
-  /** `use` is the whole pipeline — install if needed, hand over, connect, sync — as one job. */
-  kind: "install" | "connect" | "restart" | "use";
+  /**
+   * `use` is the whole pipeline — install if needed, hand over, connect, sync — as one job;
+   * `connect` is what the page calls Start service; `stop` stops the machine's server and stops
+   * keeping it connected; `uninstall` stops it and removes the program, and the data directory
+   * when asked; `sync` hands a connected machine the Project config.
+   */
+  kind: "install" | "connect" | "restart" | "use" | "stop" | "uninstall" | "sync";
   machineId: string;
   alias: string;
   /** Waiting its turn: a few machines are worked on at once, and a batch queues the rest. */
   queued: boolean;
   running: boolean;
   /**
-   * Which step of the pipeline the job is on, in `MACHINE_PHASES` order — what the page draws
-   * as a stepper. Null until the first step is named; a finished job keeps its last phase.
+   * The steps this job goes through, in order — what the page draws as its stepper. Fixed when
+   * the job is queued; a step the job turns out not to need is passed over, never revisited.
+   */
+  steps: MachinePhase[];
+  /**
+   * Which of `steps` the job is on. Only moves forward. Null until the first step is named; a
+   * finished job keeps its last phase.
    */
   phase: MachinePhase | null;
   log: string[];
+  /**
+   * The connection check run after the job failed at a step it can explain — checking,
+   * installing, connecting: running, then its answer. Absent for every other job.
+   */
+  diagnosis?: { state: "running" } | ({ state: "done" } & MachineDiagnosis);
   result:
     | null
     | { ok: true; installed: "installed" | "already-installed"; version: string | null }
     | { ok: true; connected: true }
+    /** The machine's server is stopped and stays so until it is started again. */
+    | { ok: true; stopped: true }
+    /** The program is gone from the machine; `dataRemoved` says whether its data root went too. */
+    | { ok: true; uninstalled: true; dataRemoved: boolean }
+    /** Every part of the Project config reached the machine (its `configSync` says the same). */
+    | { ok: true; synced: true }
     | {
         ok: false;
         step: string;
@@ -5149,18 +5291,41 @@ export interface MachineJob {
          * because it restarts a server this Project does not own alone.
          */
         canReplaceProgram?: boolean;
+        /**
+         * Why ssh refused, when the failure is ssh's own (a host key, a key, a host name, a
+         * route), for the page to say in its language; `message` says it in English, with
+         * ssh's own words after `(ssh: …)`.
+         */
+        sshReason?: MachineSshFailure;
       };
 }
+
+/**
+ * A source checkout's install image (machines/checkout-image.ts), built from the checkout
+ * again at each install or use: not built yet, building, built, or failed with the build's
+ * own last words.
+ */
+export type MachinesCheckoutImage =
+  | { state: "unbuilt" }
+  | { state: "building" }
+  | { state: "built" }
+  | { state: "failed"; detail: string };
 
 /** GET /api/machines, and the 202 body of POST /api/machines/:machineId/install. */
 export interface MachinesResponse {
   machines: MachineInfo[];
   /**
    * The version an install would leave on the remote — the base release, plus a `+hmr.<sha>`
-   * suffix when this server carries a pushed version to replicate. Null for a development
-   * checkout, which stands on no release the remote could download.
+   * suffix when this server carries a pushed version to replicate. A source checkout answers
+   * with the image it last built, and null before its first build (see `checkoutImage`).
+   * Null otherwise only for a server that carries no image and builds none.
    */
   imageVersion: string | null;
+  /**
+   * Present only when this server runs from a source checkout: it builds its install image
+   * from the checkout at each install or use, so no image yet is not a reason to refuse one.
+   */
+  checkoutImage?: MachinesCheckoutImage;
   /** The most recently started job, running or finished. */
   job: MachineJob | null;
   /**
@@ -5170,16 +5335,30 @@ export interface MachinesResponse {
   jobs: MachineJob[];
 }
 
-/** The steps of bringing a machine into use, in the order a `use` job runs them. A step not needed is skipped, never revisited. */
+/**
+ * Every step a job may name, in the order they can occur. A job lists its own subset as
+ * `MachineJob.steps`: a source checkout's enable starts by building its install image
+ * (`build`); a stop is `check`, `stop`; an uninstall `check`, `stop`, `remove`; a config sync
+ * `check`, `sync`.
+ */
 export const MACHINE_PHASES = [
+  "build",
   "check",
   "install",
   "handover",
   "restart",
   "connect",
   "sync",
+  "stop",
+  "remove",
 ] as const;
 export type MachinePhase = (typeof MACHINE_PHASES)[number];
+
+/** `POST /api/projects/:projectId/machines/:machineId/uninstall`. */
+export interface MachineUninstallRequest {
+  /** Remove the machine's data root too — its Sessions, Agents and config there. Default false. */
+  removeData?: boolean;
+}
 
 /**
  * `POST /api/projects/:projectId/machines/ssh-hosts`: append a host block to this server's
@@ -5193,6 +5372,15 @@ export interface SshHostRequest {
   user?: string;
   port?: number;
   identityFile?: string;
+  /**
+   * Sign in with this password instead of a key: stored on this server in a 0600 file under its
+   * data root, never in the ssh config, and never sent back. On a PUT, `null` deletes the stored
+   * one (back to key sign-in) and leaving it out keeps it. A PUT on a block written by hand may
+   * set it when the other fields are the block as it stands. 400 `ssh_password_invalid` for an
+   * empty or multi-line one; 409 `ssh_password_unsupported` (`details.ssh`: what `ssh -V` said)
+   * when this computer's ssh cannot be handed a password.
+   */
+  password?: string | null;
 }
 
 /**
@@ -5201,8 +5389,36 @@ export interface SshHostRequest {
  * (`PUT …/ssh-hosts/:alias`, the same fields less the alias): a hand-written one may carry
  * options this app does not know, and rewriting it would drop them.
  */
-export interface SshHostResponse extends SshHostRequest {
+export interface SshHostResponse extends Omit<SshHostRequest, "password"> {
   editable: boolean;
+  /** A password is stored for this host, which then signs in with it rather than with a key. */
+  passwordSaved?: true;
+}
+
+/**
+ * `GET /api/projects/:projectId/machines/ssh-hosts`: every host this server's ssh config declares,
+ * its included files' too, with what each one's own block says about reaching it — the literal
+ * lines, not what ssh resolves (no `ssh -G`): a `Host *` default or a `Match` block is not
+ * applied. For the add dialog's rows; an option the block leaves out is absent.
+ */
+export interface SshHostSummary {
+  alias: string;
+  hostName?: string;
+  user?: string;
+  port?: number;
+}
+
+export interface SshHostsResponse {
+  hosts: SshHostSummary[];
+}
+
+/**
+ * `POST /api/projects/:projectId/machines/add`: put these machines in this Project's list without
+ * installing anything there — each then has a card whose one thing to do is enabling it. Answers
+ * like `…/use`, refusals by id (`unknown-machine`, `self`).
+ */
+export interface MachinesAddRequest {
+  machines: string[];
 }
 
 /** `POST /api/projects/:projectId/machines/use`: bring these machines into use, as one queued batch. */
@@ -5215,6 +5431,97 @@ export interface MachinesUseRequest {
 
 /** Why one machine of a batch was not queued; the rest were. */
 export type MachineUseRefusal = "unknown-machine" | "self" | "no-image";
+
+/**
+ * Why ssh could not get a session to a machine, read from its own diagnostic
+ * (machines/ssh-failure.ts); `other` when it printed none of the ones with a fixed meaning.
+ */
+export type MachineSshFailure =
+  | "host-key-unknown"
+  | "host-key-changed"
+  | "key-file"
+  | "auth"
+  | "password-rejected"
+  | "password-not-offered"
+  | "host-not-found"
+  | "refused"
+  | "timeout"
+  | "closed"
+  | "ssh-config"
+  | "other";
+
+/** Whether a machine reaches one release source: the package is there, the source answered without it, or no answer. */
+export type MachineSourceReach = "ok" | "missing" | "unreachable";
+
+/**
+ * One check of a machine (machines/diagnose.ts), as facts for the page to word. `pass` is
+ * fine, `warn` works with a caveat, `fail` stops an install or a connect, `skip` could not be
+ * asked (an earlier check failed, or it does not apply).
+ */
+export type MachineCheck =
+  /** A session came up (keys, or the stored password), as this account on that host. */
+  | { id: "ssh"; state: "pass"; user: string; host: string }
+  /** It did not; `said` is ssh's own words, led by what they mean. */
+  | { id: "ssh"; state: "fail"; reason: MachineSshFailure; said: string }
+  /**
+   * `warn` for Windows (installable, not connectable yet), and for a Linux whose glibc runs the
+   * release but is older than `terminalsNeed`, the one its terminal binding loads on.
+   */
+  | {
+      id: "platform";
+      state: "pass" | "warn";
+      os: string;
+      arch: string;
+      glibc?: string;
+      terminalsNeed?: string;
+    }
+  /**
+   * What the release's Node cannot run on: an OS or architecture no release is published for
+   * (`unsupported`, `said` what the machine answered), a glibc older than `need` (`glibc`), or
+   * a musl libc such as Alpine's (`musl`).
+   */
+  | {
+      id: "platform";
+      state: "fail";
+      reason: "unsupported" | "glibc" | "musl";
+      os?: string;
+      arch?: string;
+      glibc?: string;
+      need?: string;
+      said?: string;
+    }
+  /**
+   * What the release installer needs and the machine lacks. `warn` when curl alone is missing:
+   * the release is then sent over ssh rather than downloaded there.
+   */
+  | { id: "tools"; state: "pass" | "warn" | "fail"; missing: string[] }
+  /**
+   * Whether the machine itself reaches release `version` for its platform. `warn`: out of
+   * reach, so an install cannot download it there; `fail`: both sources answered and neither
+   * has it (not published).
+   */
+  | {
+      id: "download";
+      state: "pass" | "warn" | "fail";
+      version: string;
+      github: MachineSourceReach;
+      oss: MachineSourceReach;
+    }
+  /** Free space in the machine's home against what an install needs, in MB. */
+  | { id: "disk"; state: "pass" | "warn" | "fail"; freeMb: number; needMb: number }
+  /** The port its server would start on: free, already its PenguinHarness server's, or taken by something else. */
+  | { id: "port"; state: "pass" | "fail"; port: number; holder: "free" | "penguin" | "other" }
+  | { id: "platform" | "tools" | "download" | "disk" | "port"; state: "skip" };
+
+/**
+ * `POST /api/projects/:projectId/machines/:machineId/diagnose`: the checks, in order. Nothing
+ * is written on the machine; 409 `job_running` while a job works on it.
+ */
+export interface MachineDiagnosis {
+  machineId: string;
+  checkedAt: string;
+  checks: MachineCheck[];
+}
 
 export interface MachinesUseResponse extends MachinesResponse {
   refused: { machineId: string; why: MachineUseRefusal }[];

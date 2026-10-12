@@ -249,8 +249,7 @@ describe("models preset & catalog enrichment", () => {
     expect(pick(body, "openrouter", "anthropic/claude-opus-4.8").clientType).toBeUndefined();
     // A row that speaks another protocol than its group, or on another path, stores exactly
     // that difference: OpenCode Go's Messages rows their protocol and endpoint, its Chat
-    // Completions rows their protocol on the group's endpoint, Penguin Go's rows their protocol
-    // on the relay's.
+    // Completions rows their protocol on the group's endpoint. Go rows follow the shared MMSP connection.
     const messagesRow = pick(body, "opencode-go", "qwen3.8-max");
     expect(messagesRow.clientType).toBe("ant-messages");
     expect(messagesRow.effective).toMatchObject({
@@ -266,8 +265,8 @@ describe("models preset & catalog enrichment", () => {
     expect(pick(body, "penguin-go", "gemini-3.8-flash").effective).toMatchObject({
       baseUrl: PENGUIN_GO_BASE_URL,
       baseUrlSource: "provider",
-      clientType: "google-genai",
-      clientTypeSource: "model",
+      clientType: "mmsp",
+      clientTypeSource: "provider",
     });
     // Custom's Atria carries its own host and protocol; no group of its table reaches it.
     expect(pick(body, "custom", "Atria-Dawn-Preview").effective).toMatchObject({
@@ -373,17 +372,17 @@ describe("models preset & catalog enrichment", () => {
           // OPENAI_API_KEY under the rule, but showing the mask would list a self-hosted id in
           // the chat picker as configured and send the OpenAI key to api.openai.com.
           { provider: "vllm", modelId: "Qwen/Qwen3.8-27B", clientType: "openai-chat-vllm-adapter" },
-          // Both protocols in the relay group resolve the same provider-scoped key.
+          // Every row in the relay group resolves the same provider-scoped key.
           {
             provider: "penguin-go",
             modelId: "gemini-3.8-flash",
-            clientType: "google-genai",
+            clientType: "mmsp",
             baseUrl: PENGUIN_GO_BASE_URL,
           },
           {
             provider: "penguin-go",
             modelId: "deepseek-flash",
-            clientType: "deepseek-official",
+            clientType: "mmsp",
             baseUrl: PENGUIN_GO_BASE_URL,
           },
         ],
@@ -745,7 +744,7 @@ describe("models preset & catalog enrichment", () => {
     // Messages rows keep theirs (another path on the same host), every row keeps its own
     // protocol, and the shared key — which reaches every row — is the group's, stamped with
     // the latest write. Penguin Go: the relay every row shares moves to the group, each row
-    // keeps its protocol (renamed to MMSP's name), the key is the group's. Exactly what a new
+    // uses the group's MMSP protocol, the key is the group's. Exactly what a new
     // Project's file holds for those rows, plus the key.
     const init = new Map(
       presetModelEntries().map((m) => [pairKey({ provider: m.provider, modelId: m.model_id }), m]),
@@ -757,6 +756,9 @@ describe("models preset & catalog enrichment", () => {
       const rows = body.models.filter((m) => m.provider === provider);
       expect(body.providers[provider], provider).toEqual({
         baseUrl: catalogGroupConnection(provider)!.base_url,
+        ...(catalogGroupConnection(provider)!.client_type
+          ? { clientType: catalogGroupConnection(provider)!.client_type }
+          : {}),
         apiKeyMasked: keyMask,
         createdAt: `2026-09-30T10:${String(rows.length - 1).padStart(2, "0")}:00.000Z`,
       });
@@ -2063,24 +2065,24 @@ describe("group connections ([providers.<id>])", () => {
     }
     expect(await readFile(cfgFile(), "utf8")).toBe(before);
 
-    // Penguin Go's models each store their protocol: a group protocol is taken and changes
+    // OpenCode Go's models each store their protocol: a group protocol is taken and changes
     // none of them.
-    const fixed = await api.put(groupUrl("penguin-go"), { clientType: "openai-chat" });
+    const fixed = await api.put(groupUrl("opencode-go"), { clientType: "openai-chat" });
     expect(fixed.status).toBe(200);
     const body = (await fixed.json()) as ModelsResponse;
-    expect(body.providers["penguin-go"]?.clientType).toBe("openai-chat");
-    for (const row of body.models.filter((m) => m.provider === "penguin-go")) {
+    expect(body.providers["opencode-go"]?.clientType).toBe("openai-chat");
+    for (const row of body.models.filter((m) => m.provider === "opencode-go")) {
       expect(row.effective.clientType, row.modelId).toBe(row.clientType);
       expect(row.effective.clientTypeSource, row.modelId).toBe("model");
     }
 
     // Clearing a protocol leaves the group's endpoint and key its own.
-    const cleared = await api.put(groupUrl("penguin-go"), {
+    const cleared = await api.put(groupUrl("opencode-go"), {
       clientType: null,
       baseUrl: "https://relay-proxy.example/api",
     });
     expect(cleared.status).toBe(200);
-    expect(((await cleared.json()) as ModelsResponse).providers["penguin-go"]).toEqual({
+    expect(((await cleared.json()) as ModelsResponse).providers["opencode-go"]).toEqual({
       baseUrl: "https://relay-proxy.example/api",
     });
   });
@@ -2441,11 +2443,11 @@ describe("preset sync: add new models / restore defaults", () => {
     const res = await sync("restore");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PresetSyncResponse;
-    // Three rows reset (the others already matched the catalog), one deleted preset back.
-    expect(body).toMatchObject({ added: 1, restored: 3 });
+    // Two rows reset (Go's shared MMSP route already matched), one deleted preset back.
+    expect(body).toMatchObject({ added: 1, restored: 2 });
     expect(body.models.some(isPair("moonshot", "kimi-k2.6"))).toBe(true);
     // The protocol and endpoint a preset stores at init are back on it.
-    expect(pick(body, "penguin-go", "gemini-3.8-flash").clientType).toBe("google-genai");
+    expect(pick(body, "penguin-go", "gemini-3.8-flash").effective.clientType).toBe("mmsp");
     expect(pick(body, "opencode-go", "qwen3.8-max").credential?.baseUrl).toBe(
       catalogEntryFor("opencode-go", "qwen3.8-max")!.baseUrl,
     );

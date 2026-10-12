@@ -6,8 +6,9 @@
  * - Given the dialog opened on a group's stored connection and saved untouched, nothing is sent;
  *   given one field changed, exactly that field is sent — a cleared base URL or protocol as
  *   `null`, a key only when typed, the clear box only on a stored key.
- * - Every group takes a protocol, Penguin Go and OpenCode Go included: their rows store their
- *   own, which a group protocol never overrides.
+ * - Every group takes a protocol, OpenCode Go included: its rows store their own, which a group
+ *   protocol never overrides. Penguin Go's is fixed: its dialog offers no protocol menu and no
+ *   Detect, and names MMSP under the base URL instead.
  * - Given Detect, the probe names the group and never a model (so the server backs it with the
  *   GROUP key), on the URL in the field or — left blank — the one the group stores; with neither
  *   there is nothing to probe, and the catalog's endpoint is never probed in their place.
@@ -142,12 +143,10 @@ describe("saving the group settings sends what changed, and only that", () => {
     ).toBeNull();
   });
 
-  it("sends a protocol for Penguin Go and OpenCode Go like any group", () => {
-    for (const id of ["penguin-go", "opencode-go"]) {
-      const group = presetGroup(id);
-      const draft = { ...initialDraft(group), clientType: "openai-chat" };
-      expect(providerSettingsUpdate(group, draft), id).toEqual({ clientType: "openai-chat" });
-    }
+  it("sends a protocol for OpenCode Go like any group", () => {
+    const group = presetGroup("opencode-go");
+    const draft = { ...initialDraft(group), clientType: "openai-chat" };
+    expect(providerSettingsUpdate(group, draft)).toEqual({ clientType: "openai-chat" });
   });
 });
 
@@ -417,6 +416,18 @@ describe("what the group settings dialog shows", () => {
       expect(list, id).toContain(`href="${providerInfo(id)!.modelsUrl}"`);
       expect(list, id).toContain('target="_blank"');
     }
+  });
+
+  it("offers Penguin Go no protocol menu and no Detect, and names its fixed protocol", () => {
+    const go = dialog("penguin-go", presetGroup("penguin-go"));
+    expect(go).not.toContain('aria-haspopup="menu"');
+    expect(go).not.toContain(S.models.detectProtocol);
+    expect(go).toContain(S.models.protocolFixedHint("Penguin Go", "MMSP"));
+    expect(go).toContain("/stream");
+    // Another built-in group keeps both.
+    const other = dialog("opencode-go", presetGroup("opencode-go"));
+    expect(other).toContain('aria-haspopup="menu"');
+    expect(other).toContain(S.models.detectProtocol);
   });
 
   it("has no model-list link where the catalog names none", () => {

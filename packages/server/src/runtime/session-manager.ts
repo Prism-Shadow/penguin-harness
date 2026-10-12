@@ -101,7 +101,7 @@ import { SessionService } from "../services/session-service.js";
 import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
 import { TitleGenerator } from "./title-generator.js";
 import { loopbackHostRoles } from "../services/preview-token.js";
-import { mergedNoProxy } from "../net/proxy.js";
+import { agentNoProxy } from "../net/proxy.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
 import type { ProjectConfigStore, ProjectEvents } from "../mechanisms/projects.js";
@@ -2819,7 +2819,7 @@ export class SessionsModule {
       proxyEnv: (): ProxyEnvPolicy | null => {
         if (!settings.getProxyForAgent()) return { mode: "strip" };
         const url = settings.getProxyUrl();
-        return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
+        return url === null ? null : { mode: "inject", url, noProxy: agentNoProxy() };
       },
       controlEnv: (ctx: ControlEnvContext): Record<string, string> => {
         const host =

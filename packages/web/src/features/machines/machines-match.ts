@@ -1,6 +1,6 @@
 /**
- * The machine picker's fuzzy search: an ssh config can declare hundreds of hosts, so the
- * picker never lists them all — a few rows render and the query reaches the rest.
+ * The add dialog's fuzzy search over host aliases: an ssh config can declare hundreds of hosts,
+ * and a few letters of the one you mean should bring it to the top of the list.
  *
  * Matching is a subsequence, not a substring, because ssh aliases are punctuated (`gpu-01`,
  * `db_prod.eu`) and the useful query is the letters you remember, not the separators you do
@@ -9,18 +9,11 @@
  * a subsequence match, a row whose hit characters are invisible looks like a wrong result.
  */
 
-/** One `Host` entry as the picker needs it: the alias is the label, the id is what installs. */
+/** One `Host` entry as the search needs it: the alias is the label, the id is what installs. */
 export interface MachineLike {
   id: string;
   alias: string;
 }
-
-/**
- * How many rows the picker shows at once. The search box reaches everything past this, and
- * a counter names how many the current view leaves out — a silent truncation would read as
- * "that host is not in my config".
- */
-export const MAX_VISIBLE_MACHINES = 6;
 
 /** One machine that survived the query, with the character positions the query hit. */
 export interface MachineMatch<T extends MachineLike = MachineLike> {

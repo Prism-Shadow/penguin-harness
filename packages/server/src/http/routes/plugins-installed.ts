@@ -615,7 +615,7 @@ export class InstalledPluginRoutes {
       apply: (change) => this.reassembly.reassemble(change),
       packages: this.packages,
       // The plugin list rides the same trip the model config takes to a Project's machines.
-      syncFleet: (projectId) => void this.machines.syncModelsEverywhere(projectId),
+      syncFleet: (projectId) => void this.machines.syncConfigEverywhere(projectId),
     });
   }
 }

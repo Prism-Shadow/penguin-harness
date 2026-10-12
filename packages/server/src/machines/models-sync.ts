@@ -15,8 +15,17 @@
  * masked. Ours win on a collision. The groups' connections (`[providers.<id>]`) travel in the
  * same PUT's `providers`, which the far side merges per group and per field: a value we hold
  * replaces theirs, and one we do not hold is left as it is there.
+ *
+ * A value this server takes from its own environment (an API key, a base URL) is not in the
+ * config and so never travels; `envSourced` names each one, for the sync to say so.
  */
 import type { MachineApi } from "./machine-api.js";
+import {
+  effectiveConnection,
+  modelEnvFallback,
+  providerConnectionShape,
+  resolveModelEnv,
+} from "@prismshadow/penguin-core";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
@@ -51,8 +60,47 @@ export type ModelSyncOutcome =
        * answer about ONE Project's boundary, and the Projects after it still get theirs.
        */
       refused: { projectId: string; detail: string }[];
+      /** Entries of ours the machine would not take; the rest of their table still went. */
+      skipped: SkippedModel[];
     }
   | { kind: "failed"; detail: string };
+
+/** An entry of ours a machine refused by name, with the machine's code and words for why. */
+export interface SkippedModel {
+  projectId: string;
+  provider: string;
+  modelId: string;
+  code: string;
+  reason: string;
+}
+
+/**
+ * The entry a refused PUT names, from the error's `details` (`model_not_addable`,
+ * `model_not_routable`, a Penguin Go row's `penguin_go_protocol_fixed`): structured, never read
+ * off the message, which is prose. Null for a refusal that names no entry.
+ */
+function refusedEntry(
+  text: string,
+): { provider: string; modelId: string; code: string; reason: string } | null {
+  try {
+    const error = (
+      JSON.parse(text) as {
+        error?: { code?: unknown; message?: unknown; details?: Record<string, unknown> };
+      }
+    ).error;
+    const provider = error?.details?.provider;
+    const modelId = error?.details?.modelId;
+    if (typeof provider !== "string" || typeof modelId !== "string") return null;
+    return {
+      provider,
+      modelId,
+      code: typeof error?.code === "string" ? error.code : "",
+      reason: typeof error?.message === "string" ? error.message : "",
+    };
+  } catch {
+    return null;
+  }
+}
 
 /** Entry key: the `(provider, model_id)` pair, joined by a byte neither half can contain. */
 const refKey = (provider: string, modelId: string): string => `${provider}\u0000${modelId}`;
@@ -159,19 +207,83 @@ export function planModelSync(local: LocalModels, remote: ModelsResponse): Model
   };
 }
 
-/** Project ids that machine has, narrowed from its own answer (it may be an older build). */
-function projectIdsIn(text: string): string[] {
+/** The Projects that machine has, with their names, narrowed from its own answer (it may be an older build). */
+function projectsIn(text: string): Array<{ projectId: string; name?: string }> {
   const body: unknown = JSON.parse(text);
   if (body === null || typeof body !== "object") return [];
   const list = (body as { projects?: unknown }).projects;
   if (!Array.isArray(list)) return [];
-  return list
-    .map((entry) =>
-      entry !== null && typeof entry === "object"
-        ? (entry as { projectId?: unknown }).projectId
-        : undefined,
-    )
-    .filter((id): id is string => typeof id === "string");
+  return list.flatMap((entry) => {
+    if (entry === null || typeof entry !== "object") return [];
+    const { projectId, name } = entry as { projectId?: unknown; name?: unknown };
+    if (typeof projectId !== "string") return [];
+    return [typeof name === "string" ? { projectId, name } : { projectId }];
+  });
+}
+
+/** One value a model entry takes from this server's environment rather than from its config. */
+export interface EnvSourced {
+  provider: string;
+  modelId: string;
+  /** The variable's name: a key's (`OPENAI_API_KEY`) or a base URL's (`OPENAI_BASE_URL`). */
+  variable: string;
+}
+
+/**
+ * The values a Project's models take from this server's environment, which no sync can carry:
+ * the config is all it sends. Core's credential rule decides, on each row's effective
+ * connection (the row's own values, then its group's):
+ *
+ * - a row that holds no key, of its own or its group's, authenticates with the variable
+ *   modelEnvFallback allows it — when that variable is set here (a relay variable only with
+ *   the base URL it belongs to, as resolveModelCredential requires);
+ * - a row with a key and no base URL goes where its routed client's `*_BASE_URL` points, when
+ *   that is set here.
+ *
+ * A variable that is not set here is not listed: the row does not run here either.
+ */
+export function envSourced(
+  local: Pick<LocalModels, "models" | "providers">,
+  env: Readonly<Record<string, string | undefined>>,
+): EnvSourced[] {
+  const set = (name: string) => (env[name]?.trim() ?? "") !== "";
+  const found: EnvSourced[] = [];
+  for (const entry of local.models) {
+    const effective = effectiveConnection(
+      {
+        provider: entry.provider,
+        modelId: entry.model_id,
+        clientType: entry.client_type,
+        baseUrl: entry.base_url,
+        apiKey: entry.api_key,
+      },
+      providerConnectionShape(local.providers?.[entry.provider]),
+    );
+    const add = (variable: string) =>
+      found.push({ provider: entry.provider, modelId: entry.model_id, variable });
+    let keyed = effective.apiKey !== undefined;
+    if (!keyed) {
+      const fallback = modelEnvFallback({
+        provider: entry.provider,
+        modelId: entry.model_id,
+        clientType: effective.clientType,
+        baseUrl: effective.baseUrl,
+      });
+      if (
+        fallback !== undefined &&
+        (fallback.readByClient || effective.baseUrl !== undefined) &&
+        set(fallback.envKey)
+      ) {
+        add(fallback.envKey);
+        keyed = true;
+      }
+    }
+    if (keyed && effective.baseUrl === undefined) {
+      const pair = resolveModelEnv(entry.model_id, effective.clientType);
+      if (pair !== undefined && set(pair.envBaseUrlKey)) add(pair.envBaseUrlKey);
+    }
+  }
+  return found;
 }
 
 /**
@@ -193,6 +305,10 @@ function projectIdsIn(text: string): string[] {
  * about a boundary, and writing models around it is not this function's call to make. Skipped
  * means exactly that — the Projects after it are still written. Only the machine being
  * unreachable, or refusing to say what Projects it has, fails the sync as a whole.
+ *
+ * An ENTRY the machine refuses by name (a hand-added model in a group that carries only its
+ * built-in ones there) is skipped and reported, and the rest of that Project's table is
+ * written; a table refused without naming an entry is that Project's refusal, as above.
  */
 export async function syncModelsToMachine(opts: {
   api: MachineApi;
@@ -201,13 +317,13 @@ export async function syncModelsToMachine(opts: {
   /** The Projects entitled to this machine — nothing outside this list is touched. */
   projects: string[];
 }): Promise<ModelSyncOutcome> {
-  let theirs: string[];
+  let theirs: Array<{ projectId: string; name?: string }>;
   try {
     const listed = await opts.api.request("GET", "/api/projects");
     if (listed.status !== 200) {
       return { kind: "failed", detail: `it answered ${listed.status} when asked its projects` };
     }
-    theirs = projectIdsIn(listed.text);
+    theirs = projectsIn(listed.text);
   } catch (err) {
     return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
   }
@@ -215,6 +331,7 @@ export async function syncModelsToMachine(opts: {
   const synced: string[] = [];
   const created: string[] = [];
   const refused: { projectId: string; detail: string }[] = [];
+  const skipped: SkippedModel[] = [];
   for (const projectId of opts.projects) {
     const local = await opts.loadLocal(projectId);
     // Nothing configured here is not a reason to touch their table: a replace built from an
@@ -229,8 +346,25 @@ export async function syncModelsToMachine(opts: {
       continue;
     }
     const path = `/api/projects/${encodeURIComponent(projectId)}/models`;
+    const there = theirs.find((entry) => entry.projectId === projectId);
     try {
-      if (!theirs.includes(projectId)) {
+      if (there !== undefined) {
+        // The name follows ours, as the models do: a rename here is a rename there. Refused,
+        // it is said, and the models still go.
+        if (local.name !== undefined && local.name !== "" && local.name !== there.name) {
+          const renamed = await opts.api.request(
+            "PATCH",
+            `/api/projects/${encodeURIComponent(projectId)}`,
+            { name: local.name },
+          );
+          if (renamed.status < 200 || renamed.status >= 300) {
+            refused.push({
+              projectId,
+              detail: `it refused the name of ${projectId}: ${renamed.status} ${renamed.text.slice(0, 200)}`,
+            });
+          }
+        }
+      } else {
         const made = await opts.api.request("POST", "/api/projects", {
           projectId,
           ...(local.name !== undefined && local.name !== "" ? { name: local.name } : {}),
@@ -252,8 +386,30 @@ export async function syncModelsToMachine(opts: {
         });
         continue;
       }
-      const plan = planModelSync(local, JSON.parse(current.text) as ModelsResponse);
-      const wrote = await opts.api.request("PUT", path, plan);
+      const remote = JSON.parse(current.text) as ModelsResponse;
+      // A whole-table PUT refused for one entry writes nothing at all. A refusal that names an
+      // entry of ours drops that entry and sends the rest again — at most once per entry, since
+      // each round has one fewer; a pointer to a dropped entry is not sent (planModelSync sends
+      // only pointers into the table it sends), so the machine keeps its own.
+      let entries = local.models;
+      let wrote = await opts.api.request("PUT", path, planModelSync(local, remote));
+      while (wrote.status < 200 || wrote.status >= 300) {
+        const named = refusedEntry(wrote.text);
+        const at =
+          named === null
+            ? -1
+            : entries.findIndex(
+                (entry) => entry.provider === named.provider && entry.model_id === named.modelId,
+              );
+        if (named === null || at === -1) break;
+        skipped.push({ projectId, ...named });
+        entries = entries.filter((_, index) => index !== at);
+        wrote = await opts.api.request(
+          "PUT",
+          path,
+          planModelSync({ ...local, models: entries }, remote),
+        );
+      }
       if (wrote.status < 200 || wrote.status >= 300) {
         refused.push({
           projectId,
@@ -267,5 +423,5 @@ export async function syncModelsToMachine(opts: {
       return { kind: "failed", detail: err instanceof Error ? err.message : String(err) };
     }
   }
-  return { kind: "synced", projects: synced, created, refused };
+  return { kind: "synced", projects: synced, created, refused, skipped };
 }

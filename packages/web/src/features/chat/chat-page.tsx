@@ -882,8 +882,8 @@ export function ChatPage() {
    * The lookup has failed and the only servers that could still answer for this Session are
    * out of reach. It is not gone — so the redirect must not fire and the row must not be
    * dropped — but it is not loading either, and a skeleton that never resolves reads as a
-   * hung page. Say what is actually the matter instead, and let the recheck open it when the
-   * connection is back (state/sessions.tsx: OFFLINE_RECHECK_MS).
+   * hung page. Say what is actually the matter instead, and let the machine list open it when
+   * the connection is back — the server says so the moment it is (state/machines.tsx).
    */
   const routeSessionOffline = routeSessionPending && probeFailedKey === probeKey;
   /** The direct lookup of the routed Session, one per page (route-probe.ts). */

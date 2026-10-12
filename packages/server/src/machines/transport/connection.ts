@@ -45,6 +45,7 @@ import {
 import type { ShellSession } from "./ssh-session.js";
 import { dialThroughSocks } from "./socks.js";
 import { inLane } from "./lane.js";
+import { noteSignIn, signInFor } from "./login.js";
 import { scpArgs, sshArgs } from "../commands.js";
 import type { ExecResult } from "./exec.js";
 import type { RemoteTarget } from "../commands.js";
@@ -144,19 +145,42 @@ export class MachineConnection implements MachineChannel {
    */
   oneShot(command: string, opts: { timeoutMs?: number; input?: Buffer } = {}): Promise<ExecResult> {
     const args = sshArgs(this.target, command);
+    const timeout = opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs };
     return inLane(this.address, () =>
-      opts.input !== undefined
-        ? runWithInput("ssh", args, {
-            input: opts.input,
-            ...(opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
-          })
-        : run("ssh", args, opts.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }),
+      this.#signedIn("ssh", (launch) =>
+        opts.input !== undefined
+          ? runWithInput("ssh", args, { input: opts.input, ...timeout, ...launch })
+          : run("ssh", args, { ...timeout, ...launch }),
+      ),
     );
   }
 
   /** WINDOWS REMOTES ONLY: local files copied into a remote directory over scp. Serialised per machine. */
   copyTo(localFiles: string[], remoteDir: string): Promise<ExecResult> {
-    return inLane(this.address, () => run("scp", scpArgs(this.target, localFiles, remoteDir)));
+    return inLane(this.address, () =>
+      this.#signedIn("scp", (launch) =>
+        run("scp", scpArgs(this.target, localFiles, remoteDir), launch),
+      ),
+    );
+  }
+
+  /**
+   * A one-off ssh or scp, signed in the way this machine signs in (login.ts): refused before it
+   * starts when it may not be, and a refused password remembered when ssh's own exit says so.
+   */
+  async #signedIn(
+    program: "ssh" | "scp",
+    start: (launch: { env?: NodeJS.ProcessEnv; detached?: boolean }) => Promise<ExecResult>,
+  ): Promise<ExecResult> {
+    const login = await signInFor(this.target);
+    if (!login.ok) return { code: 255, stdout: "", stderr: `${login.detail}\n`, timedOut: false };
+    const { env, detached } = login.signIn;
+    const result = await start({ ...(env === undefined ? {} : { env }), detached });
+    // 255 is ssh's own failure (scp passes ssh's on as 1, with ssh's words on its stderr).
+    if (result.code === 255 || (program === "scp" && result.code !== 0)) {
+      noteSignIn(this.target, login.signIn, result.stderr);
+    }
+    return result;
   }
 }
 

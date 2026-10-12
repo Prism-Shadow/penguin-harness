@@ -222,6 +222,10 @@ describe("auth", () => {
       // Rejected before any insert: no half-created privileged account to retry around.
       expect(deps.db.prepare("SELECT COUNT(*) AS n FROM users").get()?.n).toBe(0);
     } finally {
+      // The booted App goes first, as createTestApp's cleanup does: its timers outlive the
+      // case otherwise, and in a worker shared across files (isolate: false) the machines'
+      // minute look-over then reads this closed database while another file runs.
+      deps.hmr.dispose();
       deps.channels.dispose();
       deps.db.close();
       await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });

@@ -186,7 +186,7 @@ export function ShortcutsFolder({
            folder's height plus the New-shortcut row. */
         <div className={examplePanelClass}>
           {loaded && (
-            <ul className="space-y-1">
+            <ul className="space-y-1.5">
               {shortcuts.map((shortcut) => (
                 <li key={shortcut.id} className="flex items-center gap-1">
                   <button

@@ -1,17 +1,20 @@
 // @vitest-environment jsdom
 /**
- * Four record dialogs under the settings commit model: the ssh host form
- * (features/machines/ssh-host-dialog.tsx), the manual Benchmark form
+ * Record dialogs under the settings commit model: the ssh host forms — a new host filled in by
+ * hand in the add dialog (features/machines/add-machine-dialog.tsx), and a host's configure
+ * dialog (features/machines/ssh-host-dialog.tsx) — the manual Benchmark form
  * (features/benchmark/create-benchmark-modal.tsx), the chat's shortcut editor
  * (features/chat/shortcuts-folder.tsx) and the built-in browser's homepage
  * (features/builtin-browser/homepage-dialog.tsx).
  *
- * - The verb waits for what it needs: an ssh host's alias and address, a malformed value said
- *   under its field as it is typed; every required field of a Benchmark and of each of its
- *   cases; a homepage entry that opens another page than the saved one.
- * - A refused ssh write leaves the dialog open with the typing and the reason under the alias.
- * - Closing with typing asks first; a blank form, and a Benchmark whose added case was removed
- *   again, close at once.
+ * - The verb waits for what it needs: a new ssh host's name and address, a malformed value — or a
+ *   name the page already has — said under its field as it is typed; a change to a configured
+ *   host; every required field of a Benchmark and of each of its cases; a homepage entry that
+ *   opens another page than the saved one.
+ * - A name the ssh config refuses leaves the add dialog open with the typing and the reason under
+ *   the name.
+ * - Closing with typing — or, in the add dialog, a host ticked — asks first; a blank form, and a
+ *   Benchmark whose added case was removed again, close at once.
  * - A shortcut's save waits for its write: a refused one leaves the dialog open with the typing
  *   and the list as it was; a landed one closes it and lists the shortcut. A new shortcut
  *   opened from the composer's text can be saved as it stands, and closes untouched without a
@@ -23,6 +26,12 @@ import type { ReactElement } from "react";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
+import type {
+  MachineInfo,
+  MachinesResponse,
+  SshHostResponse,
+} from "@prismshadow/penguin-server/api";
+import { AddMachineDialog } from "../src/features/machines/add-machine-dialog";
 import { SshHostDialog } from "../src/features/machines/ssh-host-dialog";
 import { CreateBenchmarkModal } from "../src/features/benchmark/create-benchmark-modal";
 import { ShortcutsFolder } from "../src/features/chat/shortcuts-folder";
@@ -51,51 +60,141 @@ describe("record dialogs", () => {
     await unmountAll();
   });
 
-  describe("the ssh host form", () => {
+  describe("the ssh host forms", () => {
     const m = en.machines.host;
+    const a = en.machines.addDialog;
+    const machine = (alias: string, extra: Partial<MachineInfo> = {}): MachineInfo => ({
+      id: `ssh:${alias}`,
+      alias,
+      installed: null,
+      machineId: null,
+      local: false,
+      connection: null,
+      api: null,
+      status: null,
+      root: "$HOME/.penguin/data",
+      ...extra,
+    });
+    const state: MachinesResponse = {
+      machines: [machine("workstation", { id: "local", local: true }), machine("gpu-1")],
+      imageVersion: "0.2.13",
+      job: null,
+      jobs: [],
+    };
 
-    async function openAdd() {
+    /** The add dialog on its manual tab; the ssh config refuses every name written to it. */
+    async function openManual() {
       const network = stubFetch(() => apiError(409, "ssh_host_exists", "alias already exists"));
       const onClose = vi.fn();
       await mount(
-        withPrompt(
-          h(SshHostDialog, { mode: { kind: "add" }, projectId: "p1", onClose, onSaved: () => {} }),
-        ),
+        withPrompt(h(AddMachineDialog, { projectId: "p1", state, onClose, onAdded: () => {} })),
       );
+      await click(button(a.tabs.manual));
       return { network, onClose };
     }
 
-    it("waits for an alias and an address, and says a malformed one as it is typed", async () => {
-      await openAdd();
-      expect(button(m.add).disabled).toBe(true);
-      await type(field(m.alias), "build-box");
+    it("waits for a name and an address, and says a malformed value or a taken name as it is typed", async () => {
+      await openManual();
+      expect(button(a.submit).disabled).toBe(true);
+      await type(field(m.name), "gpu-1");
+      expect(document.body.textContent).toContain(m.exists);
+      await type(field(m.name), "build-box");
       await type(field(m.hostName), "10.0.0.5 extra");
-      expect(button(m.add).disabled).toBe(true);
+      expect(button(a.submit).disabled).toBe(true);
       expect(document.body.textContent).toContain(m.oneWord);
       await type(field(m.hostName), "10.0.0.5");
-      expect(button(m.add).disabled).toBe(false);
+      expect(button(a.submit).disabled).toBe(false);
     });
 
-    it("keeps the dialog and the typing when the write is refused, the reason under the alias", async () => {
-      const { onClose } = await openAdd();
-      await type(field(m.alias), "build-box");
+    it("keeps the dialog and the typing when the config refuses the name, the reason under it", async () => {
+      const { onClose } = await openManual();
+      await type(field(m.name), "build-box");
       await type(field(m.hostName), "10.0.0.5");
-      await click(button(m.add));
+      await click(button(a.submit));
       await waitFor(() => document.body.textContent?.includes(m.exists) === true);
       expect(onClose).not.toHaveBeenCalled();
       expect(field(m.hostName).value).toBe("10.0.0.5");
     });
 
-    it("asks before Esc drops the typing, and closes a blank form at once", async () => {
-      const { onClose } = await openAdd();
-      await type(field(m.alias), "build-box");
+    it("asks before Esc drops a host half filled in, and closes an untouched one at once", async () => {
+      const { onClose } = await openManual();
+      await type(field(m.name), "build-box");
       await pressEscape();
       expect(promptOpen()).toBe(true);
       await click(button(en.common.keepEditing));
-      await type(field(m.alias), "");
+      await type(field(m.name), "");
       await pressEscape();
       expect(promptOpen()).toBe(false);
       expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("asks before Esc drops the hosts ticked, the dialog being one form", async () => {
+      stubFetch(() => apiError(404, "not_found"));
+      const onClose = vi.fn();
+      await mount(
+        withPrompt(h(AddMachineDialog, { projectId: "p1", state, onClose, onAdded: () => {} })),
+      );
+      const box = document.querySelector<HTMLInputElement>('input[aria-label="gpu-1"]')!;
+      await click(box);
+      expect(button(a.submit).disabled).toBe(false);
+      await pressEscape();
+      expect(promptOpen()).toBe(true);
+      await click(button(en.common.keepEditing));
+      await click(box);
+      await pressEscape();
+      expect(promptOpen()).toBe(false);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("saves a configured host only once something changed, and asks before Esc drops the change", async () => {
+      stubFetch(() => apiError(404, "not_found"));
+      const host: SshHostResponse = {
+        alias: "gpu-1",
+        hostName: "10.0.0.21",
+        user: "ubuntu",
+        port: 2222,
+        editable: true,
+      };
+      const onClose = vi.fn();
+      await mount(
+        withPrompt(h(SshHostDialog, { host, projectId: "p1", onClose, onSaved: () => {} })),
+      );
+      expect(button(en.common.save).disabled).toBe(true);
+      await type(field(m.hostName), "10.0.0.99");
+      expect(button(en.common.save).disabled).toBe(false);
+      await pressEscape();
+      expect(promptOpen()).toBe(true);
+      await click(button(en.common.discard));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("on a block written by hand, changes only how it signs in: the key over a saved password deletes it", async () => {
+      const network = stubFetch(() => json(state));
+      const host: SshHostResponse = {
+        alias: "gpu-1",
+        hostName: "10.0.0.21",
+        identityFile: "~/.ssh/gpu",
+        editable: false,
+        passwordSaved: true,
+      };
+      const onClose = vi.fn();
+      await mount(
+        withPrompt(h(SshHostDialog, { host, projectId: "p1", onClose, onSaved: () => {} })),
+      );
+      // Saved, so nothing has to be typed; the block's own lines are not this form's.
+      expect(field(m.password).value).toBe("");
+      expect(field(m.password).placeholder).toBe(m.passwordSavedPlaceholder);
+      expect(button(en.common.save).disabled).toBe(true);
+      await click(button(m.signInKey));
+      expect(field(m.identityFile).disabled).toBe(true);
+      expect(document.body.textContent).toContain(m.passwordDropped);
+      await click(button(en.common.save));
+      await waitFor(() => onClose.mock.calls.length === 1);
+      expect(network.requests.at(-1)).toMatchObject({
+        method: "PUT",
+        path: "/api/projects/p1/machines/ssh-hosts/gpu-1",
+        body: { hostName: "10.0.0.21", identityFile: "~/.ssh/gpu", password: null },
+      });
     });
   });
 

@@ -3,19 +3,20 @@
  * one reading each card gives, and which machines the update notice counts.
  *
  * A row's reading follows a fixed precedence. The server's job for that machine is the
- * freshest word (queued, working, failed); a held connection settles "ready" whatever an
- * older job said, so a machine a re-hold brought back after a failed job reads as ready
- * rather than failed; only then does the last probe speak. Every reading a person can act
- * on is fixed by the same verb — use the machine — so the page never has to explain which
- * of install, update, start, connect a row needs.
+ * freshest word (queued, working); then the server bringing back a machine it keeps connected
+ * (reconnecting); then a held connection, which settles "ready" whatever an older job said, so a
+ * machine brought back after a failed job reads as ready rather than failed; only then does the
+ * last job's failure, and after it the last probe, speak.
  */
 import type {
   MachineInfo,
   MachineJob,
   MachinePhase,
+  MachineSshFailure,
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
+import { formatSpan } from "../../lib/format";
 import type { Tone } from "../../lib/tone";
 
 export type MachineReading =
@@ -28,12 +29,15 @@ export type MachineReading =
   /** Connected and answering: agents can run there. */
   | { kind: "ready"; port: number | null }
   /**
-   * A connection is held, but the last probe found no server running over there. Not a
-   * contradiction and not a corner case: the connection is an ssh process on THIS side and
-   * outlives the far server, so it says the tunnel has somewhere to go, never that anything
-   * answers. Its own reading because it needs its own action — `use` starts the server.
+   * Kept connected, and being brought back by the server: its connection dropped, its server
+   * stopped or restarted, or this server just started. `since` is when the streak began.
    */
-  | { kind: "linkedStopped" }
+  | { kind: "reconnecting"; since: string; attempts: number }
+  /**
+   * Kept connected, and its stored password refused — or its host takes none: the server does not
+   * try again until the machine's SSH settings change, since retrying could lock the account.
+   */
+  | { kind: "signInRefused"; reason: "password-rejected" | "password-not-offered" }
   /** Installed, and that is as far as this server can take it (a Windows machine). */
   | { kind: "installedOnly" }
   /** Carrying a different build from the one this server would install. */
@@ -42,35 +46,72 @@ export type MachineReading =
   | { kind: "notConnected" }
   | { kind: "unreachable"; detail: string | null }
   | { kind: "stopped" }
+  /**
+   * Added to this Project and nothing installed there yet: enabling it is the one thing to do.
+   * Also a machine whose last install was undone by hand, until an install corrects the record.
+   */
+  | { kind: "notInstalled" }
   /** Never probed. */
   | { kind: "unknown" };
 
 /**
- * The pipeline's steps in the order a `use` job runs them — the stepper's segments. Spelled
- * here rather than imported because the server's api entry reaches the web as types only;
- * the type keeps it in step with the server's `MachinePhase`, and `PHASE_COMPLETE` fails
- * the build if a step is missing.
+ * Every step a job may name. A job carries its own steps (`MachineJob.steps`); this is what a
+ * step the server names is checked against. Spelled here rather than imported because the
+ * server's api entry reaches the web as types only; the type keeps it in step with the
+ * server's `MachinePhase`, and `PHASE_COMPLETE` fails the build if a step is missing.
  */
 export const MACHINE_PHASES = [
+  "build",
   "check",
   "install",
   "handover",
   "restart",
   "connect",
   "sync",
+  "stop",
+  "remove",
 ] as const satisfies readonly MachinePhase[];
 const PHASE_COMPLETE: Record<MachinePhase, true> = {
+  build: true,
   check: true,
   install: true,
   handover: true,
   restart: true,
   connect: true,
   sync: true,
+  stop: true,
+  remove: true,
 };
 void PHASE_COMPLETE;
 
-const isPhase = (step: string): step is MachinePhase =>
+export const isPhase = (step: string): step is MachinePhase =>
   (MACHINE_PHASES as readonly string[]).includes(step);
+
+/**
+ * ssh's own lines out of what the server said: after its sentence, `(ssh: …)` — without the
+ * `ssh:` its own diagnostics begin with, since the page says "ssh:" before them itself.
+ */
+export function sshWords(said: string): string {
+  const words = /\(ssh: ([\s\S]*)\)\s*$/.exec(said)?.[1];
+  return (words ?? said).trim().replace(/^ssh:\s*/, "");
+}
+
+/**
+ * Why a job failed, as the page says it: an ssh refusal in the reader's language from the
+ * reason the server found, with ssh's own words as its detail; anything else in the far side's
+ * own words, as the server relayed them.
+ */
+export function failureText(
+  result: { message: string; sshReason?: MachineSshFailure },
+  alias: string,
+): { message: string; detail: string | null } {
+  if (result.sshReason === undefined) return { message: result.message, detail: null };
+  const c = S.machines.check;
+  return {
+    message: c.ssh[result.sshReason](alias),
+    detail: c.sshSaid(sshWords(result.message)),
+  };
+}
 
 /**
  * A step as the interface names it: one of the pipeline's six by its name in the reader's
@@ -92,16 +133,27 @@ export function readMachine(
 ): MachineReading {
   if (job?.queued) return { kind: "queued" };
   if (job?.running) return { kind: "working", step: job.log.at(-1) ?? null };
+  // The server keeps an enabled machine connected and says when it is bringing one back — a
+  // held ssh session is not liveness (#561), and a server that stopped behind one is exactly
+  // what it notices and restarts.
+  if (machine.reconnect?.waitsForPassword === true) {
+    return {
+      kind: "signInRefused",
+      reason:
+        machine.reconnect.sshReason === "password-not-offered"
+          ? "password-not-offered"
+          : "password-rejected",
+    };
+  }
+  if (machine.reconnect !== undefined) {
+    return {
+      kind: "reconnecting",
+      since: machine.reconnect.since,
+      attempts: machine.reconnect.attempts,
+    };
+  }
   if (machine.connection !== null) {
-    // A held connection is not liveness — the lesson of #561, read the other way round. It
-    // used to win outright here, so a machine whose server had stopped still read "Connected"
-    // while its own details said otherwise, and `use` (the thing that would start it again)
-    // was withheld because the row looked ready. What the last probe found now has the say.
     const status = machine.status;
-    if (status !== null && status.state === "stopped") return { kind: "linkedStopped" };
-    if (status !== null && status.state === "unreachable") {
-      return { kind: "unreachable", detail: status.detail ?? null };
-    }
     return {
       kind: "ready",
       port: status?.state === "running" ? (status.port ?? null) : null,
@@ -112,19 +164,26 @@ export function readMachine(
     return {
       kind: "failed",
       step: result.step,
-      message: result.message,
+      message: failureText(result, machine.alias).message,
       canReplaceProgram: result.canReplaceProgram === true,
     };
   }
   if (result !== null && job?.kind === "use" && "installed" in result)
     return { kind: "installedOnly" };
+  // On this Project's list, nothing installed by it: a machine added without enabling it.
+  if (!machine.local && machine.installed === null) return { kind: "notInstalled" };
+  // A server that is stopped, or out of reach, says so whatever build it carries: the build is
+  // the pill's and the version badge's to say, and a person who just stopped a machine reads
+  // "Stopped", not "Update available".
+  const status = machine.status;
+  if (status?.state === "stopped") return { kind: "stopped" };
+  if (status?.state === "unreachable") {
+    return { kind: "unreachable", detail: status.detail ?? null };
+  }
   if (outOfDate(machine, imageVersion)) {
     return { kind: "behind", version: machine.installed!.version };
   }
-  const status = machine.status;
   if (status === null) return { kind: "unknown" };
-  if (status.state === "unreachable") return { kind: "unreachable", detail: status.detail ?? null };
-  if (status.state === "stopped") return { kind: "stopped" };
   return { kind: "notConnected" };
 }
 
@@ -137,15 +196,14 @@ export function readingTone(reading: MachineReading): Tone {
   switch (reading.kind) {
     case "queued":
     case "working":
+    case "reconnecting":
       return "busy";
     case "failed":
+    case "signInRefused":
       return "danger";
     case "ready":
       // A held connection is a live link, not a verdict: blue, never green.
       return "link";
-    case "linkedStopped":
-      // The link is up and nothing is serving: something for a person to do, not a failure.
-      return "attention";
     case "installedOnly":
       // As far as this server can take it (a Windows machine): nothing waits on anyone, so the
       // mark recedes rather than asking for attention.
@@ -157,22 +215,82 @@ export function readingTone(reading: MachineReading): Tone {
   }
 }
 
-/** Whether "use" would change anything for this row — everything but ready, busy, and installed-as-far-as-it-goes. */
-export function wantsUse(reading: MachineReading): boolean {
-  return !["queued", "working", "ready", "installedOnly"].includes(reading.kind);
+/**
+ * Whether a new conversation can start on a machine now — the card's Use: this server always,
+ * another machine while it is connected and nothing is moving on it.
+ */
+export function canUse(machine: MachineInfo, job: MachineJob | null): boolean {
+  if (machine.local) return true;
+  if (job !== null && (job.queued || job.running)) return false;
+  return machine.reconnect === undefined && machine.connection !== null;
 }
 
 /**
- * The machines in use here: those this server has installed on for this Project, by name.
+ * Whether Sync config is offered: a connected machine on this server's build. One on another
+ * build is offered Update instead, which hands the config over as it reconnects.
+ */
+export function canSyncConfig(machine: MachineInfo, imageVersion: string | null): boolean {
+  return (
+    !machine.local &&
+    machine.installed !== null &&
+    machine.connection !== null &&
+    machine.reconnect === undefined &&
+    !outOfDate(machine, imageVersion)
+  );
+}
+
+/**
+ * Why Use waits, said in the card's middle while no job moves there; null when it does not
+ * wait, or when the job's stepper already says what is happening. A streak of reconnecting that
+ * has lasted a minute or more says for how long.
+ */
+export function useWaitsBecause(
+  machine: MachineInfo,
+  job: MachineJob | null,
+  reading: MachineReading | null,
+  locale: "zh" | "en",
+  now: number,
+): string | null {
+  if (reading === null || canUse(machine, job)) return null;
+  const why = S.machines.card.why;
+  switch (reading.kind) {
+    case "queued":
+    case "working":
+      return null;
+    case "reconnecting": {
+      const lasted = now - Date.parse(reading.since);
+      return Number.isFinite(lasted) && lasted >= 60_000
+        ? why.reconnectingFor(formatSpan(lasted, locale))
+        : why.reconnecting;
+    }
+    case "failed":
+      return why.failed;
+    case "signInRefused":
+      // What to do about it, not only that it happened: the one line the card has for it.
+      return S.machines.check.ssh[reading.reason](machine.alias);
+    case "notInstalled":
+      return why.notInstalled;
+    case "installedOnly":
+      return why.windows;
+    case "notConnected":
+      return why.notConnected;
+    default:
+      return why.stopped;
+  }
+}
+
+/**
+ * The machines in use here: this Project's list — machines installed for it, and machines added
+ * to it that nothing is installed on yet (one an enable is working on included) — by name.
  * By name and nothing else, because the order must not move under a person's eyes: an
  * update rewrites the install time, a probe rewrites the status, and a card that jumps to
  * the top on either is a card someone was about to click. Names compare naturally, so
  * `gpu-2` sits before `gpu-10`. The local entry is kept out: it is where you are, not
  * something you did.
  */
-export function installedMachines(state: MachinesResponse): MachineInfo[] {
+export function machinesInUse(state: MachinesResponse): MachineInfo[] {
   return state.machines
-    .filter((machine) => machine.installed != null && !machine.local)
+    .filter((machine) => !machine.local && (machine.member === true || machine.installed != null))
     .sort((a, b) =>
       a.alias.localeCompare(b.alias, undefined, { numeric: true, sensitivity: "base" }),
     );
@@ -195,7 +313,7 @@ export function outOfDate(machine: MachineInfo, imageVersion: string | null): bo
 
 /** The machines in use that carry another build — what "update all" brings forward, in list order. */
 export function behindMachines(state: MachinesResponse): MachineInfo[] {
-  return installedMachines(state).filter((machine) => outOfDate(machine, state.imageVersion));
+  return machinesInUse(state).filter((machine) => outOfDate(machine, state.imageVersion));
 }
 
 /**
@@ -220,4 +338,20 @@ export function updateNotice(
 /** Whether any job is still to come, which is when the page keeps polling. */
 export function anyJobPending(state: MachinesResponse): boolean {
   return state.jobs.some((job) => job.queued || job.running);
+}
+
+/**
+ * What the page says about this server's install image, if anything. `noImage` is the one
+ * case that stops the page: nothing to install and nothing to build it from, so adding and
+ * enabling machines are off. A source checkout builds its image when an install asks, so no
+ * image yet is no reason to stop — only a build that failed is worth a word, and the word is
+ * the build's own.
+ */
+export type ImageNotice = { kind: "noImage" } | { kind: "buildFailed"; detail: string };
+
+export function imageNotice(state: MachinesResponse): ImageNotice | null {
+  const checkout = state.checkoutImage;
+  if (checkout?.state === "failed") return { kind: "buildFailed", detail: checkout.detail };
+  if (state.imageVersion === null && checkout === undefined) return { kind: "noImage" };
+  return null;
 }

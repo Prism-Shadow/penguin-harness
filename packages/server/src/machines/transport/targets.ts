@@ -11,7 +11,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parseHostAliases } from "../ssh-config.js";
+import { parseHostAliases, parseHostEntries } from "../ssh-config.js";
+import type { SshHostLines } from "../ssh-config.js";
 
 const SSH_DIR = () => path.join(os.homedir(), ".ssh");
 
@@ -53,6 +54,15 @@ function readIncluded(pattern: string): string[] {
 export function listHostAliases(): string[] {
   try {
     return parseHostAliases(fs.readFileSync(path.join(SSH_DIR(), "config"), "utf8"), readIncluded);
+  } catch {
+    return [];
+  }
+}
+
+/** Every host the config declares, with what its own block says; empty when there is no usable config. */
+export function listHostEntries(): SshHostLines[] {
+  try {
+    return parseHostEntries(fs.readFileSync(path.join(SSH_DIR(), "config"), "utf8"), readIncluded);
   } catch {
     return [];
   }

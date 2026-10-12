@@ -37,6 +37,9 @@ import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
 import {
   canonicalClientType,
+  isPenguinGoEndpoint,
+  PENGUIN_GO_BASE_URL,
+  PENGUIN_GO_PROVIDER_ID,
   groupKeyReaches,
   presetModelEntries,
   presetProviderTable,
@@ -552,12 +555,81 @@ export function hoistProviderConnections(table: Record<string, unknown>): boolea
  * hoist (hoistProviderConnections), which compares the rows' protocols with each other in
  * MMSP's names. Both loaders — `loadProjectConfig` here and the server's
  * `ProjectConfigService.readTable` — call this and write the raw table back once when it
- * returns true. Removed with the two migrations at the 0.3.0 release preparation.
+ * returns true. Go-managed routes then switch to MMSP. All three are removed at the 0.3.0
+ * release preparation (for the Go one, only this call: see migratePenguinGoRoutes).
  */
 export function migrateProjectConfigTable(table: Record<string, unknown>): boolean {
   const legacy = migrateLegacyClientTypes(table);
   const hoisted = hoistProviderConnections(table);
-  return legacy || hoisted;
+  const go = migratePenguinGoRoutes(table);
+  return legacy || hoisted || go > 0;
+}
+
+/**
+ * Switches Go-managed routes (the group's and the rows' that point at a Penguin Go endpoint) to
+ * MMSP, without network discovery. Other fields, other groups and user-redirected endpoints are
+ * preserved.
+ *
+ * Two callers. Without `endpoint` it is a one-time migration of routes stored before the MMSP
+ * switch (`google-genai` / `deepseek-official` on `token.penguin.ooo/api`), run by
+ * migrateProjectConfigTable on every load. With `endpoint`, authorization and catalog sync apply
+ * the platform's MMSP endpoint, which also refreshes a route that is already MMSP.
+ *
+ * Removal: at the 0.3.0 release preparation, by whoever prepares it, together with
+ * migrateLegacyClientTypes (same release-notes condition). Takes out the no-`endpoint` call in
+ * migrateProjectConfigTable and the `endpoint === undefined` branch below, the pre-MMSP origin
+ * and paths in isPenguinGoEndpoint, and the migration cases in core `state.test.ts` and server
+ * `penguin-go-mmsp.test.ts` ("Penguin Go stored projects"); see
+ * changelog/unreleased/2026-10-12-backward-compatibility.md. The `endpoint` path stays.
+ */
+export function migratePenguinGoRoutes(table: Record<string, unknown>, endpoint?: string): number {
+  if (!Array.isArray(table.models)) return 0;
+  const providers = isTable(table.providers) ? table.providers : {};
+  const groupValue = providers[PENGUIN_GO_PROVIDER_ID];
+  const group = isTable(groupValue) ? groupValue : {};
+  const nextRoute = (base: unknown, client: unknown): string | undefined => {
+    if (!isPenguinGoEndpoint(base)) return undefined;
+    if (
+      endpoint === undefined &&
+      client === "mmsp" &&
+      new URL(base).pathname.replace(/\/+$/, "") === "/api/v1"
+    )
+      return undefined;
+    return endpoint ?? PENGUIN_GO_BASE_URL;
+  };
+  const groupRoute = nextRoute(group.base_url, group.client_type);
+  let updated = 0;
+  const models = table.models.map((value) => {
+    if (!isTable(value) || value.provider !== PENGUIN_GO_PROVIDER_ID) return value;
+    const base = value.base_url ?? group.base_url;
+    const target = nextRoute(base, value.client_type ?? group.client_type);
+    if (
+      target !== undefined &&
+      ((value.client_type ?? group.client_type) !== "mmsp" || base !== target)
+    ) {
+      updated++;
+      return { ...value, client_type: "mmsp", base_url: target };
+    }
+    if (
+      groupRoute !== undefined &&
+      !isPenguinGoEndpoint(base) &&
+      value.client_type === undefined &&
+      group.client_type !== undefined &&
+      group.client_type !== "mmsp"
+    ) {
+      return { ...value, client_type: group.client_type };
+    }
+    return value;
+  });
+  if (groupRoute !== undefined && (group.client_type !== "mmsp" || group.base_url !== groupRoute)) {
+    table.providers = {
+      ...providers,
+      [PENGUIN_GO_PROVIDER_ID]: { ...group, client_type: "mmsp", base_url: groupRoute },
+    };
+    if (updated === 0) updated = 1;
+  }
+  if (updated > 0) table.models = models;
+  return updated;
 }
 
 /**

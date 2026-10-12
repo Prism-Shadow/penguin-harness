@@ -19,7 +19,7 @@ import { Chevron, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/pen
 
 /** The examples block: one column on a phone, the folder column and the panel column beside. */
 export const exampleGridClass =
-  "grid grid-cols-1 gap-x-4 gap-y-1 @md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]";
+  "grid grid-cols-1 gap-x-4 gap-y-1.5 @md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]";
 
 /**
  * The open folder's panel: indented under its row on a phone; in the second column beside the
@@ -50,7 +50,7 @@ export function ExampleFolderRow({
       type="button"
       aria-expanded={open}
       onClick={onOpen}
-      className={`flex w-full items-center ${ICON_GAP.menu} rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 @md:col-start-1 ${
+      className={`flex w-full items-center ${ICON_GAP.menu} rounded-md px-2 py-2 text-left text-sm transition-colors duration-150 @md:col-start-1 ${
         open ? "bg-surface-muted text-fg" : "text-fg-muted hover:bg-surface-muted hover:text-fg"
       }`}
     >
@@ -73,7 +73,7 @@ export function ExampleFolderRow({
  * actions.
  */
 export const exampleRowClass =
-  "group rounded-md px-2 py-1.5 text-left text-sm text-fg transition-colors duration-150 " +
+  "group rounded-md px-2 py-2 text-left text-sm text-fg transition-colors duration-150 " +
   "hover:bg-surface-muted disabled:cursor-default disabled:opacity-60 " +
   "disabled:hover:bg-transparent";
 

@@ -43,11 +43,34 @@ function root() {
 /**
  * This checkout's origin remote, falling back to its directory name — the `repo` half of a
  * push's recorded provenance. Null outside a checkout of this repository.
+ *
+ * Never with the credential an https remote can carry (`https://<token>@host/…`): the
+ * provenance goes wherever the version goes — a push's target, every machine a checkout's
+ * install image is put on — and is shown there, in harness.json and the harness history.
  */
 export function originUrl() {
   const dir = root();
   if (dir === null) return null;
-  return git(dir, ["remote", "get-url", "origin"]) ?? path.basename(dir);
+  const url = git(dir, ["remote", "get-url", "origin"]);
+  return url === null ? path.basename(dir) : withoutCredentials(url);
+}
+
+/**
+ * An http(s) URL less its user and password; any other remote (`git@host:path`, `ssh://`)
+ * as it is, since the user it names is no secret.
+ */
+export function withoutCredentials(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  if (!/^https?:$/.test(parsed.protocol)) return url;
+  if (parsed.username === "" && parsed.password === "") return url;
+  parsed.username = "";
+  parsed.password = "";
+  return parsed.href;
 }
 
 /** The facts a build or a push reports about this checkout, or null outside one. */

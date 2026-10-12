@@ -1,13 +1,16 @@
 /**
  * The built-in Benchmarks: what one is, and the writer that puts it on disk.
  *
- * Five Benchmarks ship beside the example, PenguinHarness Benchmark Sec A to Sec E: subsets of
+ * Seven Benchmarks ship beside the example. PenguinHarness Benchmark Sec A to Sec E are subsets of
  * rag-bench-essential, DeepSWE v1.1, AutomationBench, Terminal-Bench-Science 0.1 and
- * Terminal-Bench 4.0, each chosen to run on CPU-only Docker. Their tasks are Harbor task
- * directories that live in the public benchmark repository, never in this one: each Case here
- * is text only — a statement that summarises the task, links its folder in the repository at
- * the pinned commit and the repository's rules for running a task, and gives the exact Harbor
- * launch with its caps; and a rubric that is the verifier's reward out of 100.
+ * Terminal-Bench 4.0, each chosen to run on CPU-only Docker; GDPevo Train and GDPevo Test are the
+ * two halves of a GDPevo subset, the train tasks to optimize an agent on and the held-out test
+ * tasks of the same environments to evaluate it on. Their tasks are Harbor task directories that
+ * live in the public benchmark repository, never in this one, and so does every large file they
+ * use: each Case here is text only — a statement that summarises the task, links its folder in
+ * the repository at the Benchmark's pinned commit and the repository's rules for running a task,
+ * and gives the exact Harbor launch with its caps; and a rubric that is the verifier's reward out
+ * of 100.
  * `benchmark_config.toml` is a plain Benchmark manifest (origin `builtin`, the built-in's own
  * version) that marks nothing: how a case is run is its statement's to say, and the
  * agent-evaluation Skill reads it there. Case directories are `CASE-NNN-<task>`, so the Harbor task name is the case id
@@ -24,8 +27,6 @@ import { stringify as stringifyYaml } from "yaml";
 import { writeBenchmarkManifest, type BenchmarkManifest } from "./benchmark-manifest.js";
 import {
   BENCHMARK_REPO,
-  BENCHMARK_REPO_REF,
-  BENCHMARK_RESULTS,
   BENCHMARK_RUN_RULES,
   HARBOR_AGENT,
   HARBOR_VERSION,
@@ -37,10 +38,15 @@ export interface BuiltinBenchmarkCase {
   task: string;
   /** The statement's first heading, which the case list shows as the case title. */
   title: string;
-  /** What the task asks and what it delivers, in two to four sentences; never a hint at a solution. */
+  /** What the task asks and what it delivers, in a few sentences; never a hint at a solution. */
   summary: string;
   /** The upstream category, "<area> / <sub-area>". */
   category: string;
+  /**
+   * Where the task sits upstream, when the source names its tasks by more than the task folder
+   * (GDPevo's task group and split): the statement's Upstream line ends with it.
+   */
+  upstreamTask?: string;
   cpus: number;
   memoryMb: number;
   /** Upstream expert time estimate in hours, where the source publishes one. */
@@ -49,11 +55,11 @@ export interface BuiltinBenchmarkCase {
 
 /** One built-in Benchmark: its card, the facts every statement repeats, and its cases. */
 export interface BuiltinBenchmark {
-  /** Directory under `benchmarks/`, which is the Benchmark id: `penguinharness-benchmark-sec-<letter>`. */
+  /** Directory under `benchmarks/`, which is the Benchmark id: `penguinharness-benchmark-<name>`. */
   id: string;
-  /** "PenguinHarness Benchmark Sec <letter>". */
+  /** "PenguinHarness Benchmark <name>", the name being "Sec <letter>" or "GDPevo Train" / "GDPevo Test". */
   title: string;
-  /** Opens with the original benchmark the section is ("Sec A is …"), then what every built-in shares. */
+  /** Names the original benchmark the Benchmark is drawn from, then what it shares with the others. */
   description: string;
   /** The same description in Chinese, for a reader of the Chinese interface. */
   descriptionZh: string;
@@ -65,6 +71,16 @@ export interface BuiltinBenchmark {
   version: string;
   /** The benchmark's directory in the benchmark repository, which keeps the source's name: its tasks are `benchmarks/<repoDir>/tasks`. */
   repoDir: string;
+  /**
+   * The 40-character commit of the benchmark repository its statements link and its evaluations
+   * fetch: the commit its task set was calibrated and measured at.
+   */
+  ref: string;
+  /**
+   * The measured results of a PenguinHarness release on these tasks, as a path in the repository
+   * at `ref`; the statements link it and the numbers stay there. Absent while no such page exists.
+   */
+  results?: string;
   /** The source as the statements name it, e.g. a Harbor Hub dataset and its revision. */
   source: string;
   /** The upstream project the tasks come from, and its licence. */
@@ -75,6 +91,12 @@ export interface BuiltinBenchmark {
   sharedNetwork: boolean;
   /** Where the task's verifier runs. */
   verifier: string;
+  /**
+   * Set when the verifier's reward is an upstream grader's score rather than the pass or fail of
+   * the task's tests: the rubric names the grader, and `scale` is the statement's account of how
+   * that score becomes points.
+   */
+  grader?: { scale: string };
   /** What the evaluating machine downloads besides nodejs.org, npm and the model provider. */
   downloads: string;
   /** Per-trial caps of the measured runs: the adapter's soft timeout and the Agent's turn cap. */
@@ -101,9 +123,9 @@ function taskPath(bench: BuiltinBenchmark): string {
   return `benchmarks/${bench.repoDir}/tasks`;
 }
 
-/** A link into the benchmark repository at the pinned revision: a folder (`tree`) or a file (`blob`). */
-function repoLink(kind: "tree" | "blob", rel: string): string {
-  return `${BENCHMARK_REPO}/${kind}/${BENCHMARK_REPO_REF}/${rel}`;
+/** A link into the benchmark repository at the Benchmark's pinned commit: a folder (`tree`) or a file (`blob`). */
+function repoLink(bench: BuiltinBenchmark, kind: "tree" | "blob", rel: string): string {
+  return `${BENCHMARK_REPO}/${kind}/${bench.ref}/${rel}`;
 }
 
 /** `text` as one single-quoted shell word. */
@@ -134,8 +156,9 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
   const facts = [
     `- Benchmark: ${bench.title} — ${bench.source} · Category: ${item.category}` +
       (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
-    `- Task: \`${item.task}\` in ${repoLink("tree", `${taskPath(bench)}/${item.task}`)}`,
-    `- Upstream: ${bench.upstream.url} (${bench.upstream.license})`,
+    `- Task: \`${item.task}\` in ${repoLink(bench, "tree", `${taskPath(bench)}/${item.task}`)}`,
+    `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
+      (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
     `- Container: ${item.cpus} CPU, ${item.memoryMb / 1024} GB RAM, CPU only · Agent network: ` +
       (offline ? "none, except the model provider's API host" : "public") +
       ` · Verifier: ${bench.verifier}`,
@@ -166,8 +189,8 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
     "",
     "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
       `with Harbor ${HARBOR_VERSION} and the PenguinHarness adapter from the repository above, ` +
-      `following that repository's rules for agents — ${repoLink("blob", BENCHMARK_RUN_RULES)} — ` +
-      `from the root of a checkout at commit \`${BENCHMARK_REPO_REF}\`:`,
+      `following that repository's rules for agents — ${repoLink(bench, "blob", BENCHMARK_RUN_RULES)} — ` +
+      `from the root of a checkout at commit \`${bench.ref}\`:`,
     "",
     "```bash",
     ...command,
@@ -181,19 +204,29 @@ function statement(bench: BuiltinBenchmark, item: BuiltinBenchmarkCase): string 
       "trial's log directory)." +
       (bench.note !== undefined ? ` ${bench.note}` : ""),
     "",
-    "The score is the verifier's reward × 100: a pass (1) scores 100, a fail (0) scores 0, and a " +
-      "fractional reward r scores 100·r. An evaluation from the Evaluation Center keeps every trial " +
-      "under this Benchmark's `.jobs/` directory and records its Session id as `harbor:<trial name>`.",
+    "The score is the verifier's reward × 100: " +
+      (bench.grader?.scale ??
+        "a pass (1) scores 100, a fail (0) scores 0, and a fractional reward r scores 100·r") +
+      ". An evaluation from the Evaluation Center keeps every trial under this Benchmark's " +
+      "`.jobs/` directory and records its Session id as `harbor:<trial name>`.",
     "",
-    `Measured results of PenguinHarness on these tasks: ${repoLink("blob", BENCHMARK_RESULTS)}`,
-    "",
+    ...(bench.results !== undefined
+      ? [
+          `Measured results of PenguinHarness on these tasks: ${repoLink(bench, "blob", bench.results)}`,
+          "",
+        ]
+      : []),
   ].join("\n");
 }
 
-const RUBRIC = `# Scoring rubric (max 100 points)
+/** The rubric README: the verifier's reward out of 100, decided by the task's tests or its grader. */
+function rubric(bench: BuiltinBenchmark): string {
+  const decides = bench.grader !== undefined ? "grader decides" : "tests decide";
+  return `# Scoring rubric (max 100 points)
 
-- 100 pts: the Harbor verifier's reward for this trial (\`/logs/verifier/reward.txt\` or the \`reward\` key of \`reward.json\`) multiplied by 100. The task's own tests decide; there is no manual judging and no partial credit beyond what the verifier itself reports.
+- 100 pts: the Harbor verifier's reward for this trial (\`/logs/verifier/reward.txt\` or the \`reward\` key of \`reward.json\`) multiplied by 100. The task's own ${decides}; there is no manual judging and no partial credit beyond what the verifier itself reports.
 `;
+}
 
 /**
  * Writes one built-in Benchmark — its manifest, an empty scoreboard, and every case's statement
@@ -221,7 +254,7 @@ export async function writeBuiltinBenchmark(
         statement(bench, item),
         "utf8",
       );
-      await fs.writeFile(path.join(caseDir, "rubric", "README.md"), RUBRIC, "utf8");
+      await fs.writeFile(path.join(caseDir, "rubric", "README.md"), rubric(bench), "utf8");
     }),
   ]);
   const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");

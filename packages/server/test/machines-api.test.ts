@@ -28,20 +28,40 @@
  *   after a disconnect.
  * - Given a model edit during a sync, it is written once afterwards, never dropped; what travels
  *   is every group connection and every row, a bare preset included.
+ * - Given a Project config sync, the command policy and the new-chat defaults travel with the
+ *   models — the machine keeps its own workspace, and its own default Agent when it lacks ours —
+ *   and a value from this server's environment is named as not carried; a part the machine refuses
+ *   is said and the rest still lands. Sync config checks the build first and refuses a machine on
+ *   another build, writing nothing, and one not connected; a command policy saved here reaches the
+ *   Project's machines.
  * - Given a connected machine, its directories are listed through the alias holding it.
  * - Given a probe, the machine's own id is learned and kept; this machine's id is minted once.
  * - Given a batch to use, machines work side by side and each ends connected; stop using keeps
  *   the install.
  * - Given an ssh-config edit, a new block is appended, this app's block is rewritten in place,
- *   and a hand-written one is refused.
+ *   and a hand-written one is refused. A password is stored beside the config, never in it or in
+ *   an answer, set even on a hand-written block, and deleted by key sign-in and with the machine.
+ * - Given a stored password the machine refuses, a machine kept connected stops retrying until a
+ *   password is saved for it again.
  * - Given a refusal decidable without ssh (self-install, a second install, an unknown host, no
- *   image), nothing runs.
+ *   image), nothing runs. Given ssh's own refusal, the job ends at the first step with why, for
+ *   the page to say, and no offer to install anyway.
+ * - Given a server running from a source checkout, nothing is refused for want of an image: an
+ *   install or a batch builds one from the checkout (once per batch), installs it under the
+ *   checkout's release with the build's own suffix, and keeps it beside — never in — the
+ *   server's own hmr store; an unchanged tree is the same image, a changed one a new version;
+ *   a failed build ends the job in the build's own words, and the page says so until a build
+ *   succeeds; an image a job is still installing outlives the builds that land meanwhile and
+ *   goes at the next build after; the image outlives a restart; an installed server's own
+ *   image wins.
  */
 import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import zlib from "node:zlib";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { VERSION } from "@prismshadow/penguin-core";
 import type {
   MachinesUseResponse,
   MachinesResponse,
@@ -54,8 +74,12 @@ import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects } from "../src/machines/service.js";
 import { remoteLayoutFor } from "../src/machines/layout.js";
 import type { RemoteLayout } from "../src/machines/layout.js";
-import type { RemoteInstallOutcome } from "../src/machines/install-server.js";
+import type { PushPlan, RemoteInstallOutcome } from "../src/machines/install-server.js";
 import type { RemoteIdentity } from "../src/machines/detect.js";
+import type { CheckoutPacker } from "../src/machines/checkout-image.js";
+import type { EventRelay } from "../src/machines/event-relay.js";
+import { readPushedBuild } from "../src/hmr/pushed-build.js";
+import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import {
   apiClient,
   createTestApp,
@@ -95,9 +119,49 @@ const PUSHED_PLAN = {
   version: "9.9.9+hmr.cafe",
 };
 
+/** What a checkout's packer leaves: a whole build, every part inline. */
+const CHECKOUT_BUILD: PushedBuild = {
+  platform: "export const hotPlatform = { id: 'checkout' };\n",
+  cli: "export async function cli() { return 0; }\n",
+  web: {
+    files: { "index.html": Buffer.from("<!doctype html><title>dev</title>").toString("base64") },
+  },
+  assets: {
+    files: {
+      "install.sh": Buffer.from("#!/bin/sh\necho install\n").toString("base64"),
+      "node_modules/node-pty/build/Release/spawn-helper": Buffer.from("helper").toString("base64"),
+    },
+    exec: ["node_modules/node-pty/build/Release/spawn-helper"],
+  },
+  source: {
+    repo: "https://github.com/Prism-Shadow/penguin-harness.git",
+    revision: "v0.2.13-1-gabc1234",
+  },
+};
+
+/**
+ * The event relay's stand-in: it remembers which machines it was asked to subscribe to, and
+ * opens nothing. What the relay does on the wire is machines-event-relay.test.ts's.
+ */
+export function quietRelay(): EventRelay & { subscribed: Set<string> } {
+  const subscribed = new Set<string>();
+  return {
+    subscribed,
+    start: (address) => void subscribed.add(address),
+    stop: (address) => void subscribed.delete(address),
+    stopAll: () => subscribed.clear(),
+    active: (address) => subscribed.has(address),
+  };
+}
+
 /** An effects set that names two hosts and installs successfully, with the parts a test cares about overridden. */
 function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> {
   return {
+    relay: () => quietRelay(),
+    // The transport's own registry is not this suite's: its ups and downs are told by hand.
+    watchSessions: () => () => {},
+    // What a connection check asks when the POSIX probe has no answer; never a real ssh here.
+    detect: async () => ({ error: "the fake machine said nothing" }),
     listAliases: () => ["build-box", "nas"],
     resolvePlan: () => ({ baseVersion: "9.9.9", harness: null, hmrDir: null, version: "9.9.9" }),
     now: () => new Date("2026-08-24T12:00:00.000Z"),
@@ -325,17 +389,17 @@ describe("machines API", () => {
       await boot({
         install: async () => ({
           kind: "failed",
-          step: "connect",
-          detail: "Permission denied (publickey).",
+          step: "install",
+          detail: "error: could not move the existing lib directory aside",
         }),
       });
       await admin.post("/api/projects/default_project/machines/ssh:nas/install");
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(t.deps.machines.job()?.result).toEqual({
         ok: false,
-        step: "connect",
-        message: "Permission denied (publickey).",
-        // Every failed install offers installing the program anyway.
+        step: "install",
+        message: "error: could not move the existing lib directory aside",
+        // A failed install offers installing the program anyway, unless ssh itself refused.
         canReplaceProgram: true,
       });
     });
@@ -489,6 +553,46 @@ describe("machines API", () => {
         ok: true,
         installed: "already-installed",
       });
+    });
+
+    it("hands a push over even though the platform boots before the push is committed", async () => {
+      // The store is written only once the pushed platform has booted, and start() runs AS
+      // that boot: its first sweep reads the previous version off the disk and finds the
+      // machine already carrying it. The push used to reach the machines one push late.
+      const previous = {
+        baseVersion: "9.9.9",
+        harness: '{"platform":{"bundle":"store/platform/0dd0.mjs"}}',
+        hmrDir: "/nonexistent",
+        version: "9.9.9+hmr.0dd0",
+      };
+      const pushed = { ...previous, version: "9.9.9+hmr.cafe" };
+      let committed = false;
+      const handed: string[] = [];
+      await boot({
+        resolvePlan: () => (committed ? pushed : previous),
+        install: async () => ({
+          kind: "already-installed",
+          version: previous.version,
+          identity: IDENTITY,
+        }),
+        upgrade: async () => {
+          handed.push(committed ? pushed.version : previous.version);
+          return { kind: "upgraded", detail: "", persisted: true };
+        },
+        lateSweepMs: 30,
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(machinesRepo.get("ssh:nas")?.version).toBe(previous.version);
+      handed.length = 0;
+
+      // The new generation boots; the commit lands a moment after.
+      const boot2 = t.deps.machines.start();
+      committed = true;
+      await boot2;
+      await waitFor(() => machinesRepo.get("ssh:nas")?.version === pushed.version);
+      expect(handed).toContain(pushed.version);
+      t.deps.machines.stop();
     });
 
     it("a server with nothing pushed to it hands nothing over: a matching machine is simply done", async () => {
@@ -844,6 +948,26 @@ describe("machines API", () => {
       expect(calls).toEqual([]);
     });
 
+    it("a port another program holds over there ends the job saying so, with no install offered", async () => {
+      await boot({
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        startServer: async () => ({
+          ok: false,
+          portTaken: true,
+          detail:
+            "Port 7364 on that machine is taken by another program, so its server could not start there.",
+        }),
+      });
+      machinesRepo.patch("ssh:nas", { version: "9.9.9", installedAt: "2026-08-01T00:00:00.000Z" });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "start its server",
+        canReplaceProgram: false,
+      });
+    });
+
     it("a restart that fails is the job's outcome, not a line in its log", async () => {
       // The files landed — the record says so — but the old process is still serving, and
       // an API reporting a clean install over that is exactly the disagreement every guard on
@@ -1139,6 +1263,242 @@ describe("machines API", () => {
     });
   });
 
+  describe("handing over only to the build installed there", () => {
+    /** This server's image: a pushed platform, named by its content sha as a real one is. */
+    const IMAGE: PushPlan = {
+      baseVersion: "9.9.9",
+      harness: '{"platform":{"bundle":"store/platform/cafe0123456789ab.mjs"}}',
+      hmrDir: "/nonexistent",
+      version: "9.9.9+hmr.cafe01234567",
+    };
+    type Runs = "the release" | "the image" | "an older image";
+    /**
+     * What a machine's server says of itself (its GET /api/version): the code answering, and the
+     * pushed build its disk holds — the image, whatever the process runs.
+     */
+    const versionReport = (runs: Runs) => ({
+      version: "9.9.9",
+      channel: runs === "the release" ? "release" : "source",
+      harness: {
+        bundles: {
+          platform:
+            runs === "an older image"
+              ? "store/platform/0123456789abcdef.mjs"
+              : "store/platform/cafe0123456789ab.mjs",
+        },
+      },
+    });
+    /** A machine's server: says what runs there, and keeps the Model config it is handed. */
+    const machineServer = async (initially: Runs) => {
+      const state = { runs: initially, puts: [] as ModelsUpdateRequest[] };
+      const server = http.createServer((req, res) => {
+        let body = "";
+        req.on("data", (chunk: Buffer) => (body += chunk.toString("utf8")));
+        req.on("end", () => {
+          if (req.method === "PUT" && req.url?.endsWith("/models")) {
+            state.puts.push(JSON.parse(body) as ModelsUpdateRequest);
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(
+            req.url === "/api/version"
+              ? JSON.stringify(versionReport(state.runs))
+              : req.url === "/api/projects"
+                ? JSON.stringify({ projects: [{ projectId: PROJECT }] })
+                : JSON.stringify({ models: [] }),
+          );
+        });
+      });
+      const port = await new Promise<number>((resolve) =>
+        server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)),
+      );
+      return { state, port, close: () => server.close() };
+    };
+    /** A connect from the Machines page (Start), followed to its end. */
+    const connect = async () => {
+      await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/connect`);
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      return t.deps.machines.job()!;
+    };
+    const bootOn = async (
+      remote: Awaited<ReturnType<typeof machineServer>>,
+      over: Partial<MachinesEffects> = {},
+    ) => {
+      await boot({
+        resolvePlan: () => IMAGE,
+        loadConfig: async () =>
+          ({
+            models: [
+              {
+                provider: "deepseek",
+                model_id: "deepseek-v4-pro",
+                client_type: "deepseek-official",
+                api_key: "sk-x",
+              },
+            ],
+          }) as never,
+        probe: async () => ({
+          state: { kind: "running" as const, port: remote.port, pid: 4242 },
+          machineId: null,
+        }),
+        ...over,
+      });
+      machinesRepo.patch("ssh:nas", {
+        version: IMAGE.version,
+        installedAt: "2026-08-01T00:00:00.000Z",
+        remotePort: remote.port,
+      });
+      machinesRepo.setMembers(PROJECT, ["ssh:nas"]);
+    };
+
+    it("a release's own server answering on that root is restarted onto the installed build before the Model config is handed over", async () => {
+      // The user's report: "Its server is already up", the config handed over in MMSP names, and
+      // every Session there failing because a 0.2.13 runtime read them.
+      const remote = await machineServer("the release");
+      const restarts: string[] = [];
+      try {
+        await bootOn(remote, {
+          stopServer: async () => {
+            restarts.push("stop");
+            return { ok: true as const };
+          },
+          startServer: async () => {
+            restarts.push("start");
+            remote.state.runs = "the image";
+            return { ok: true };
+          },
+        });
+
+        const job = await connect();
+
+        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(restarts).toEqual(["stop", "start"]);
+        expect(job.log.join("\n")).toContain(
+          "Its server runs 9.9.9, not the build installed there; restarting it onto that build…",
+        );
+        // Handed over once, and only to the build installed there.
+        expect(remote.state.puts).toHaveLength(1);
+        expect(remote.state.puts[0]!.models.map((m) => m.clientType)).toEqual([
+          "deepseek-official",
+        ]);
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a server on another build is given this server's image first, then the Model config", async () => {
+      const remote = await machineServer("an older image");
+      const upgraded: string[] = [];
+      try {
+        await bootOn(remote, {
+          upgrade: async () => {
+            upgraded.push("ssh:nas");
+            remote.state.runs = "the image";
+            return { kind: "upgraded", detail: "Update accepted.", persisted: true };
+          },
+        });
+        machinesRepo.patch("ssh:nas", { version: "9.9.9+hmr.0123456789ab" });
+
+        const job = await connect();
+
+        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(upgraded).toEqual(["ssh:nas"]);
+        expect(job.log.join("\n")).toContain(
+          "It runs 9.9.9+hmr.0123456789ab; bringing it to 9.9.9+hmr.cafe01234567 first…",
+        );
+        expect(machinesRepo.get("ssh:nas")?.version).toBe(IMAGE.version);
+        expect(remote.state.puts).toHaveLength(1);
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a server that cannot be brought in line stops the connect with a plain sentence, and is handed nothing", async () => {
+      const remote = await machineServer("an older image");
+      try {
+        await bootOn(remote, {
+          upgrade: async () => ({
+            kind: "refused",
+            detail: "this runtime publishes no business capabilities this platform can claim",
+          }),
+        });
+
+        const job = await connect();
+
+        expect(job.result).toEqual({
+          ok: false,
+          step: "sync",
+          message:
+            "That machine runs 9.9.9+hmr.0123456789ab; it must be updated to 9.9.9+hmr.cafe01234567 before it can use this server's models. It did not take this build: this runtime publishes no business capabilities this platform can claim",
+          // Installing anyway replicates the image and restarts the server onto it: the way out.
+          canReplaceProgram: true,
+        });
+        expect(remote.state.puts).toEqual([]);
+        expect(connected.has("ssh:nas")).toBe(false);
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a release's own server that will not stop stops the connect, and is handed nothing", async () => {
+      const remote = await machineServer("the release");
+      try {
+        await bootOn(remote, {
+          stopServer: async () => ({ ok: false as const, detail: "permission denied" }),
+        });
+
+        const job = await connect();
+
+        expect(job.result).toMatchObject({ ok: false, step: "sync" });
+        expect((job.result as { message: string }).message).toBe(
+          "That machine runs 9.9.9; it must be updated before it can use this server's models. Its restart failed: it would not stop — permission denied",
+        );
+        expect(remote.state.puts).toEqual([]);
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a server on this server's image is handed the Model config with nothing done to it", async () => {
+      const remote = await machineServer("the image");
+      const touched: string[] = [];
+      try {
+        await bootOn(remote, {
+          stopServer: async () => {
+            touched.push("stop");
+            return { ok: true as const };
+          },
+          upgrade: async () => {
+            touched.push("upgrade");
+            return { kind: "upgraded", detail: "", persisted: true };
+          },
+        });
+
+        const job = await connect();
+
+        expect(job.result).toEqual({ ok: true, connected: true });
+        expect(touched).toEqual([]);
+        expect(remote.state.puts).toHaveLength(1);
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a model edit is not handed to a connected machine left on another build", async () => {
+      const remote = await machineServer("an older image");
+      try {
+        await bootOn(remote);
+        machinesRepo.patch("ssh:nas", { version: "9.9.9+hmr.0123456789ab" });
+        connected.add("ssh:nas");
+
+        await t.deps.machines.syncConfigEverywhere(PROJECT);
+
+        expect(remote.state.puts).toEqual([]);
+      } finally {
+        remote.close();
+      }
+    });
+  });
+
   describe("syncing models outward", () => {
     /** A machine's server: counts what it is asked, keeps what it is sent, and can be made slow. */
     const machineServer = async (opts: { delayMs: number }) => {
@@ -1149,7 +1509,9 @@ describe("machines API", () => {
         let body = "";
         req.on("data", (chunk: Buffer) => (body += chunk.toString("utf8")));
         req.on("end", () => {
-          if (req.method === "PUT") puts.push(JSON.parse(body) as ModelsUpdateRequest);
+          if (req.method === "PUT" && req.url?.endsWith("/models")) {
+            puts.push(JSON.parse(body) as ModelsUpdateRequest);
+          }
         });
         setTimeout(() => {
           res.writeHead(200, { "content-type": "application/json" });
@@ -1192,7 +1554,7 @@ describe("machines API", () => {
         machinesRepo.setMembers(PROJECT, ["ssh:nas"]);
         connected.add("ssh:nas");
 
-        await t.deps.machines.syncModelsEverywhere(PROJECT);
+        await t.deps.machines.syncConfigEverywhere(PROJECT);
         await waitFor(() => remote.puts.length >= 1);
         const sent = remote.puts[0]!;
         expect(sent.providers).toEqual({ tokendance: { apiKey: "td-group-key-0123456789" } });
@@ -1224,21 +1586,224 @@ describe("machines API", () => {
         connected.add("ssh:nas");
 
         // Three edits in a burst: the first starts a sync, the next two land during it.
-        const first = t.deps.machines.syncModelsEverywhere(PROJECT);
+        const first = t.deps.machines.syncConfigEverywhere(PROJECT);
         await new Promise((resolve) => setTimeout(resolve, 10));
-        const second = t.deps.machines.syncModelsEverywhere(PROJECT);
-        const third = t.deps.machines.syncModelsEverywhere(PROJECT);
+        const second = t.deps.machines.syncConfigEverywhere(PROJECT);
+        const third = t.deps.machines.syncConfigEverywhere(PROJECT);
         await Promise.all([first, second, third]);
         // Give the trailing run its own round trips.
-        await waitFor(() => remote.asked.filter((a) => a.startsWith("PUT")).length >= 2);
+        const modelPuts = () =>
+          remote.asked.filter((a) => a === `PUT /api/projects/${PROJECT}/models`);
+        await waitFor(() => modelPuts().length >= 2);
 
-        const puts = remote.asked.filter((a) => a.startsWith("PUT"));
+        const puts = modelPuts();
         // Exactly two writes: the one in flight, and ONE trailing run for everything that
         // arrived during it — the config is read fresh then, so the last edit is what lands.
         expect(puts).toHaveLength(2);
       } finally {
         remote.close();
       }
+    });
+  });
+
+  describe("syncing the Project config", () => {
+    /**
+     * A machine's server on this server's build (or `runs`, another one): it records every write
+     * it is sent, answers with its own new-chat defaults, and refuses what `refuse` names.
+     */
+    const machineServer = async (
+      opts: {
+        runs?: string;
+        refuse?: (method: string, url: string, body: unknown) => unknown;
+      } = {},
+    ) => {
+      const writes: Array<{ method: string; url: string; body: unknown }> = [];
+      const server = http.createServer((req, res) => {
+        let text = "";
+        req.on("data", (chunk: Buffer) => (text += chunk.toString("utf8")));
+        req.on("end", () => {
+          const url = req.url ?? "";
+          const method = req.method ?? "GET";
+          const body: unknown = text === "" ? undefined : JSON.parse(text);
+          if (method !== "GET") writes.push({ method, url, body });
+          const refused = opts.refuse?.(method, url, body);
+          res.writeHead(refused === undefined ? 200 : 400, { "content-type": "application/json" });
+          res.end(
+            JSON.stringify(
+              refused !== undefined
+                ? refused
+                : url === "/api/version"
+                  ? { version: opts.runs ?? "9.9.9" }
+                  : url === "/api/projects"
+                    ? { projects: [{ projectId: PROJECT }] }
+                    : url.endsWith("/chat-defaults")
+                      ? { agentId: "their-agent", workspace: "/srv/theirs" }
+                      : url.endsWith("/plugins/installed")
+                        ? { plugins: [], shipped: [] }
+                        : { models: [] },
+            ),
+          );
+        });
+      });
+      const port = await new Promise<number>((resolve) =>
+        server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)),
+      );
+      return { writes, port, close: () => server.close() };
+    };
+    /** This server's Project: a model keyed from its environment, a policy and new-chat defaults of its own. */
+    const bootOn = async (remote: Awaited<ReturnType<typeof machineServer>>) => {
+      await boot({
+        loadConfig: async () =>
+          ({
+            models: [
+              { provider: "deepseek", model_id: "deepseek-v4-flash", api_key: "sk-x" },
+              { provider: "openai", model_id: "gpt-5" },
+            ],
+            command_policy: { enabled: false, rules: [{ name: "no-rm", pattern: "rm -rf" }] },
+            default_chat: { agent_id: "ours", workspace: "/home/me/here", thinking_level: "high" },
+          }) as never,
+        env: () => ({ OPENAI_API_KEY: "sk-env-0123456789" }),
+        probe: async () => ({
+          state: { kind: "running" as const, port: remote.port, pid: 4242 },
+          machineId: null,
+        }),
+      });
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        remotePort: remote.port,
+      });
+      machinesRepo.setMembers(PROJECT, ["ssh:nas"]);
+      connected.add("ssh:nas");
+    };
+    const nas = () => t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas")!;
+    /** The Machines page's Sync config, followed to its end. */
+    const syncNow = async () => {
+      const res = await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/sync`);
+      expect(res.status).toBe(202);
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      return t.deps.machines.job()!;
+    };
+
+    it("carries the command policy and the new-chat defaults, keeping the machine's own workspace and, when it lacks ours, its default Agent", async () => {
+      const remote = await machineServer({
+        refuse: (method, url, body) =>
+          method === "PUT" &&
+          url.endsWith("/chat-defaults") &&
+          (body as { agentId?: string }).agentId === "ours"
+            ? { error: { code: "unknown_agent", message: "no such Agent" } }
+            : undefined,
+      });
+      try {
+        await bootOn(remote);
+
+        await t.deps.machines.syncConfigEverywhere(PROJECT);
+
+        const base = `/api/projects/${PROJECT}`;
+        expect(remote.writes.filter((w) => w.url !== `${base}/models`)).toEqual([
+          {
+            method: "PUT",
+            url: `${base}/command-policy`,
+            body: { enabled: false, rules: [{ name: "no-rm", pattern: "rm -rf", enabled: true }] },
+          },
+          {
+            method: "PUT",
+            url: `${base}/chat-defaults`,
+            body: { agentId: "ours", thinkingLevel: "high", workspace: "/srv/theirs" },
+          },
+          {
+            method: "PUT",
+            url: `${base}/chat-defaults`,
+            body: { thinkingLevel: "high", workspace: "/srv/theirs", agentId: "their-agent" },
+          },
+        ]);
+        // A default Agent the machine lacks is not a failed sync; a key from this server's
+        // environment is what the sync says it could not carry.
+        expect(nas().configSync).toMatchObject({
+          ok: true,
+          envOnly: [
+            {
+              projectId: PROJECT,
+              provider: "openai",
+              modelId: "gpt-5",
+              variable: "OPENAI_API_KEY",
+            },
+          ],
+          skipped: [],
+        });
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("Sync config checks the build, then syncs; a part the machine refuses is said, and the rest still lands", async () => {
+      const remote = await machineServer({
+        refuse: (method, url) =>
+          method === "PUT" && url.endsWith("/command-policy")
+            ? { error: { code: "invalid_rules", message: "rules exceeds 64 entries." } }
+            : undefined,
+      });
+      try {
+        await bootOn(remote);
+
+        const job = await syncNow();
+
+        expect(job.kind).toBe("sync");
+        expect(job.steps).toEqual(["check", "sync"]);
+        expect(job.result).toMatchObject({ ok: false, step: "sync", canReplaceProgram: false });
+        const refusal = `The command policy of ${PROJECT} not synced — it answered 400`;
+        expect((job.result as { message: string }).message).toContain(refusal);
+        expect(job.log.join("\n")).toContain(`Models synced: ${PROJECT}.`);
+        expect(job.log.join("\n")).toContain(
+          "Not carried — these authenticate from this server's environment: openai/gpt-5 (OPENAI_API_KEY)",
+        );
+        expect(remote.writes.map((w) => w.url)).toEqual([
+          `/api/projects/${PROJECT}/models`,
+          `/api/projects/${PROJECT}/command-policy`,
+          `/api/projects/${PROJECT}/chat-defaults`,
+        ]);
+        expect(nas().configSync).toMatchObject({
+          ok: false,
+          detail: expect.stringContaining(refusal),
+        });
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("Sync config refuses a machine on another build at its first step, writing nothing, and one not connected up front", async () => {
+      const remote = await machineServer({ runs: "9.9.8" });
+      try {
+        await bootOn(remote);
+
+        const job = await syncNow();
+
+        expect(job.result).toEqual({
+          ok: false,
+          step: "check",
+          message:
+            "That machine runs 9.9.8; it must be updated to 9.9.9 before it can use this server's models.",
+          canReplaceProgram: false,
+        });
+        expect(remote.writes).toEqual([]);
+
+        connected.delete("ssh:nas");
+        const res = await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/sync`);
+        expect(res.status).toBe(409);
+        expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+          "not_connected",
+        );
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a command policy saved here reaches the Project's machines", async () => {
+      await boot();
+      const synced = vi.spyOn(service, "syncConfigEverywhere").mockResolvedValue();
+      const res = await admin.put(`/api/projects/${PROJECT}/command-policy`, { rules: [] });
+      expect(res.status).toBe(200);
+      expect(synced).toHaveBeenCalledWith(PROJECT);
     });
   });
 
@@ -1575,7 +2140,7 @@ describe("machines API", () => {
       await boot({
         install: async (opts) =>
           opts.target.alias === "build-box"
-            ? { kind: "failed", step: "connect", detail: "Permission denied (publickey)." }
+            ? { kind: "failed", step: "install", detail: "error: checksum mismatch for Bundle." }
             : { kind: "installed", output: "done", identity: IDENTITY },
       });
       await useBody(["ssh:build-box", "ssh:nas"]);
@@ -1583,12 +2148,60 @@ describe("machines API", () => {
       const [box, nas] = jobsOf();
       expect(box?.result).toEqual({
         ok: false,
-        step: "connect",
-        message: "Permission denied (publickey).",
+        step: "install",
+        message: "error: checksum mismatch for Bundle.",
         canReplaceProgram: true,
       });
       expect(nas?.result).toEqual({ ok: true, connected: true });
       expect(connected).toEqual(new Set(["ssh:nas"]));
+    });
+
+    it("a failure ssh itself caused does not offer installing anyway, which would stop at the same door", async () => {
+      await boot({
+        install: async () => ({
+          kind: "failed",
+          step: "connect",
+          detail:
+            "nas did not accept any key this computer offered. (ssh: Permission denied (publickey).)",
+        }),
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toMatchObject({
+        ok: false,
+        step: "connect",
+        canReplaceProgram: false,
+        sshReason: "auth",
+      });
+    });
+
+    it("a machine on this image's version whose web, CLI or assets differ is handed the build, not skipped", async () => {
+      let installs = 0;
+      await boot({
+        resolvePlan: () => PUSHED_PLAN,
+        install: async () => {
+          installs += 1;
+          return { kind: "already-installed", version: PUSHED_PLAN.version, identity: IDENTITY };
+        },
+        runOn: async (_target, command) => ({
+          code: 0,
+          // The machine's probe: same release, a harness naming another CLI bundle.
+          stdout: command.includes("uname -s -m")
+            ? 'Linux x86_64\n---penguin---\n{"version":"9.9.9"}\n---penguin---\n{"platform":{"bundle":"store/platform/cafe.mjs"},"cli":{"bundle":"store/cli/beef.mjs"}}\n'
+            : "---penguin-auth-token---\nremote-token\n",
+          stderr: "",
+          timedOut: false,
+        }),
+      });
+      machinesRepo.patch("ssh:nas", {
+        version: PUSHED_PLAN.version,
+        installedAt: "2026-08-01T00:00:00.000Z",
+      });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(installs).toBe(1);
+      expect(jobsOf()[0]?.log).not.toContain(`Already on ${PUSHED_PLAN.version}.`);
     });
 
     it("refusals that need no ssh come back by id, and the rest of the batch is still queued", async () => {
@@ -1607,6 +2220,62 @@ describe("machines API", () => {
     it("an empty batch is a bad request", async () => {
       await boot();
       expect((await useBody([])).status).toBe(400);
+    });
+
+    it("adding puts machines on this Project's list without reaching them, and stop using takes them off", async () => {
+      let reached = 0;
+      await boot({
+        install: async () => {
+          reached += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+        runOn: async () => {
+          reached += 1;
+          return { code: 0, stdout: "", stderr: "", timedOut: false };
+        },
+      });
+      const added = await admin.post("/api/projects/default_project/machines/add", {
+        machines: ["ssh:nas", "local", "ssh:nope"],
+      });
+      expect(added.status).toBe(200);
+      const body = (await added.json()) as MachinesUseResponse;
+      expect(body.refused).toEqual([
+        { machineId: "local", why: "self" },
+        { machineId: "ssh:nope", why: "unknown-machine" },
+      ]);
+      const nas = body.machines.find((machine) => machine.id === "ssh:nas");
+      expect(nas).toMatchObject({ member: true, installed: null });
+      expect(body.jobs).toEqual([]);
+      expect(reached).toBe(0);
+
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:nas"],
+      });
+      const after = (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+      expect(after.machines.find((machine) => machine.id === "ssh:nas")?.member).toBeUndefined();
+    });
+
+    it("a machine asked for is on the list at once, and stays there with its failed first enable until stop using lets both go", async () => {
+      await boot({
+        install: async () => ({ kind: "failed", step: "install", detail: "error: no space left" }),
+      });
+      const started = (await (await useBody(["ssh:nas"])).json()) as MachinesUseResponse;
+      expect(started.machines.find((machine) => machine.id === "ssh:nas")?.member).toBe(true);
+      await waitFor(settled);
+      expect(jobsOf().map((job) => job.machineId)).toEqual(["ssh:nas"]);
+      const failed = (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+      expect(failed.machines.find((machine) => machine.id === "ssh:nas")).toMatchObject({
+        member: true,
+        installed: null,
+      });
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:nas"],
+      });
+      expect(jobsOf()).toEqual([]);
     });
 
     it("stop using drops the connection and the membership, and keeps the install", async () => {
@@ -1630,7 +2299,7 @@ describe("machines API", () => {
 
     it("a machine whose re-hold failed waits out a backoff before the next try", async () => {
       // A host that is down costs one ssh per try; without a backoff the standing intent
-      // would knock on it every minute forever.
+      // would knock on it every few seconds forever.
       let holds = 0;
       let clock = new Date("2026-08-24T12:00:00.000Z");
       await boot({
@@ -1648,23 +2317,504 @@ describe("machines API", () => {
       machinesRepo.setMembers("default_project", ["ssh:nas"]);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(1);
-      // Within the first minute after a failure: not tried again.
+      const reconnect = () =>
+        t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas")?.reconnect;
+      expect(reconnect()).toMatchObject({
+        since: "2026-08-24T12:00:00.000Z",
+        attempts: 1,
+        nextAt: "2026-08-24T12:00:10.000Z",
+        lastError: "Connection refused",
+      });
+      // Within ten seconds after the first failure: not tried again.
+      clock = new Date(clock.getTime() + 9_000);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(1);
       // Once the wait has passed, it is.
-      clock = new Date(clock.getTime() + 61_000);
+      clock = new Date(clock.getTime() + 2_000);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(2);
-      // The second failure doubles the wait: two minutes now, so one minute later is too soon.
-      clock = new Date(clock.getTime() + 61_000);
+      // The second failure doubles the wait: twenty seconds now, so fifteen later is too soon.
+      clock = new Date(clock.getTime() + 15_000);
       await t.deps.machines.autoConnect();
       expect(holds).toBe(2);
+      // However long it stays down, the wait stops growing at five minutes.
+      for (let i = 0; i < 8; i++) {
+        clock = new Date(clock.getTime() + 5 * 60_000);
+        await t.deps.machines.autoConnect();
+      }
+      expect(Date.parse(reconnect()!.nextAt!) - clock.getTime()).toBe(5 * 60_000);
+    });
+  });
+
+  describe("a job's steps", () => {
+    const use = (machines: string[]) =>
+      admin.post("/api/projects/default_project/machines/use", { machines });
+    const settled = () => t.deps.machines.jobs().every((job) => !job.queued && !job.running);
+    const jobOf = (id: string) => t.deps.machines.jobs().find((job) => job.machineId === id);
+
+    it("names its own steps, and moves through them forward only", async () => {
+      // Where the job stood when each piece of work ran: an install, the server started after
+      // it, the connection held. A connect behind an install is already connecting — the
+      // stepper never goes back to "check" to ask what runs there.
+      const at: Record<string, string | null> = {};
+      await boot({
+        install: async () => {
+          at.install = jobOf("ssh:nas")?.phase ?? null;
+          return { kind: "installed", output: "", identity: IDENTITY };
+        },
+        probe: async () => ({ state: { kind: "stopped" }, machineId: null }),
+        startServer: async () => {
+          at.start = jobOf("ssh:nas")?.phase ?? null;
+          return { ok: true };
+        },
+        hold: async (target) => {
+          at.hold = jobOf("ssh:nas")?.phase ?? null;
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+      });
+      await use(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobOf("ssh:nas")?.steps).toEqual([
+        "check",
+        "install",
+        "handover",
+        "restart",
+        "connect",
+        "sync",
+      ]);
+      expect(at).toEqual({ install: "install", start: "connect", hold: "connect" });
+      expect(jobOf("ssh:nas")?.phase).toBe("sync");
+    });
+
+    it("a stop and an uninstall have steps of their own", async () => {
+      await boot();
+      machinesRepo.patch("ssh:nas", { version: "9.9.9", installedAt: "2026-08-01T00:00:00Z" });
+      machinesRepo.patch("ssh:build-box", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00Z",
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/stop");
+      await admin.post("/api/projects/default_project/machines/ssh:build-box/uninstall", {});
+      await waitFor(settled);
+      expect(jobOf("ssh:nas")?.steps).toEqual(["check", "stop"]);
+      expect(jobOf("ssh:build-box")?.steps).toEqual(["check", "stop", "remove"]);
+    });
+
+    it("tells the page of every change, a burst of lines as a few", async () => {
+      let told = 0;
+      let release = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await boot({
+        announce: () => {
+          told += 1;
+        },
+        install: async (opts) => {
+          // A chatty installer: fifty lines at once.
+          for (let i = 0; i < 50; i++) opts.onProgress?.(`line ${i}`);
+          await held;
+          return { kind: "installed", output: "", identity: IDENTITY };
+        },
+      });
+      await use(["ssh:nas"]);
+      await waitFor(() => jobOf("ssh:nas")?.log.includes("line 49") === true);
+      // The first change goes out at once; the burst after it is folded into one more.
+      expect(told).toBeGreaterThan(0);
+      expect(told).toBeLessThanOrEqual(3);
+      const before = told;
+      release();
+      await waitFor(settled);
+      // The end of the job is told as well — after the window, if one was open.
+      await waitFor(() => told > before);
+    });
+  });
+
+  describe("keeping machines connected", () => {
+    /** The listener the service gave the transport, to tell it of a drop by hand. */
+    let tell: ((address: string, up: boolean) => void) | null = null;
+    const watch = (listener: (address: string, up: boolean) => void) => {
+      tell = listener;
+      return () => {
+        tell = null;
+      };
+    };
+    const kept = () => {
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        sessionPid: 4242,
+        remotePort: 7364,
+        machineId: "NASmachineID0000",
+      });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+    };
+    const nas = () => t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas");
+
+    it("a connection that drops is brought back on its own, and its events taken up again", async () => {
+      const relay = quietRelay();
+      let holds = 0;
+      let clock = new Date("2026-08-24T12:00:00.000Z");
+      await boot({
+        now: () => clock,
+        relay: () => relay,
+        watchSessions: watch,
+        hold: async (target) => {
+          holds += 1;
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+      });
+      kept();
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(1);
+      expect(relay.subscribed.has("ssh:nas")).toBe(true);
+      expect(nas()?.keepConnected).toBe(true);
+      expect(nas()?.reconnect).toBeUndefined();
+
+      // The ssh session dies under it.
+      connected.delete("ssh:nas");
+      relay.stop("ssh:nas");
+      tell!("ssh:nas", false);
+      expect(nas()?.reconnect).toMatchObject({
+        since: "2026-08-24T12:00:00.000Z",
+        attempts: 0,
+        // Its first try is a few seconds out, so a server restarting itself is back by then.
+        nextAt: "2026-08-24T12:00:05.000Z",
+        lastError: null,
+        diagnosis: null,
+      });
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(1);
+      clock = new Date(clock.getTime() + 5_000);
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(2);
+      expect(nas()?.reconnect).toBeUndefined();
+      expect(nas()?.connection).not.toBeNull();
+      expect(relay.subscribed.has("ssh:nas")).toBe(true);
+    });
+
+    it("three failures in a row run the connection check, and its answer is the explanation", async () => {
+      let clock = new Date("2026-08-24T12:00:00.000Z");
+      await boot({
+        now: () => clock,
+        hold: async () => ({
+          ok: false,
+          detail: "ssh: connect to host nas port 22: Connection refused",
+        }),
+        probe: async () => ({
+          state: {
+            kind: "unreachable",
+            detail: "ssh: connect to host nas port 22: Connection refused",
+          },
+          machineId: null,
+        }),
+        runOn: async () => ({
+          code: 255,
+          stdout: "ssh: connect to host nas port 22: Connection refused",
+          stderr: "",
+          timedOut: false,
+        }),
+      });
+      kept();
+      for (let i = 0; i < 3; i++) {
+        await t.deps.machines.autoConnect();
+        expect(nas()?.reconnect?.attempts).toBe(i + 1);
+        if (i < 2) expect(nas()?.reconnect?.diagnosis).toBeNull();
+        clock = new Date(clock.getTime() + 5 * 60_000);
+      }
+      const reconnect = nas()?.reconnect;
+      expect(reconnect?.sshReason).toBe("refused");
+      expect(reconnect?.diagnosis?.checks[0]).toMatchObject({
+        id: "ssh",
+        state: "fail",
+        reason: "refused",
+      });
+    });
+
+    it("a stopped machine stays stopped: no retries, and no reconnect after a restart", async () => {
+      const relay = quietRelay();
+      let holds = 0;
+      let stops = 0;
+      let running = true;
+      await boot({
+        relay: () => relay,
+        watchSessions: watch,
+        hold: async (target) => {
+          holds += 1;
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+        probe: async () =>
+          running
+            ? { state: { kind: "running", port: 7364, pid: 4242 }, machineId: "NASmachineID0000" }
+            : { state: { kind: "stopped" }, machineId: "NASmachineID0000" },
+        stopServer: async () => {
+          stops += 1;
+          running = false;
+          return { ok: true as const };
+        },
+      });
+      kept();
+      await t.deps.machines.autoConnect();
+      expect(holds).toBe(1);
+      const res = await admin.post("/api/projects/default_project/machines/ssh:nas/stop");
+      expect(res.status).toBe(202);
+      await waitFor(() => t.deps.machines.jobs().every((job) => !job.running && !job.queued));
+      expect(t.deps.machines.jobs()[0]?.result).toEqual({ ok: true, stopped: true });
+      expect(stops).toBe(1);
+      // The held mark is gone from the record; the connection closed with it (the real
+      // transport's registry, which this suite's fake stands beside, is told by the service).
+      expect(machinesRepo.get("ssh:nas")?.sessionPid).toBeNull();
+      connected.delete("ssh:nas");
+      expect(nas()?.keepConnected).toBeUndefined();
+      expect(relay.subscribed.has("ssh:nas")).toBe(false);
+      // Its events stopping is the stop's own doing; nothing brings it back, now or at a boot.
+      tell?.("ssh:nas", false);
+      expect(nas()?.reconnect).toBeUndefined();
+      await t.deps.machines.start();
+      expect(holds).toBe(1);
+      // Started again, it is kept connected again.
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.jobs().every((job) => !job.running && !job.queued));
+      expect(holds).toBe(2);
+      expect(nas()?.keepConnected).toBe(true);
+    });
+
+    it("a stop while the boot is still bringing machines back leaves nothing behind it", async () => {
+      const relay = quietRelay();
+      let release!: () => void;
+      const answered = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let holds = 0;
+      await boot({
+        relay: () => relay,
+        watchSessions: watch,
+        hold: async (target) => {
+          holds += 1;
+          await answered;
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+      });
+      kept();
+      const booting = t.deps.machines.start();
+      await waitFor(() => holds === 1);
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      try {
+        // The App goes away — a hot push, a shutdown — while the machine is still on its way back.
+        t.deps.machines.stop();
+        release();
+        await booting;
+        // A boot that finishes arms a look-over that reads the list every minute. This one was
+        // cut short: a look-over armed now would read a store its App has closed.
+        expect(vi.getTimerCount()).toBe(0);
+        await t.deps.machines.autoConnect();
+        expect(holds).toBe(1);
+        // The connection that landed after the stop carries no events here: the successor
+        // subscribes for itself, and two subscriptions would say every event twice.
+        expect(relay.subscribed.has("ssh:nas")).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("a refused password stops the retries until a password is saved for the machine again", async () => {
+      let clock = new Date("2026-08-24T12:00:00.000Z");
+      const refusal =
+        "nas rejected the password saved for it. Enter it again in this machine's SSH settings. " +
+        "(ssh: deploy@nas: Permission denied (publickey,password).)";
+      let probes = 0;
+      let signedInWithPassword = false;
+      let accepts = false;
+      await boot({
+        now: () => clock,
+        passwordSignIn: async () => ({ ok: true, detached: false }),
+        readConfig: () =>
+          "# Added by PenguinHarness on 2026-08-01T00:00:00.000Z\nHost nas\n  HostName 10.0.0.2\n",
+        writeConfig: () => {},
+        probe: async (target) => {
+          probes += 1;
+          signedInWithPassword = target.password !== undefined;
+          return accepts
+            ? { state: { kind: "running", port: 7364, pid: 4242 }, machineId: null }
+            : { state: { kind: "unreachable", detail: refusal }, machineId: null };
+        },
+      });
+      kept();
+      const host = "/api/projects/default_project/machines/ssh-hosts/nas";
+      expect((await admin.put(host, { hostName: "10.0.0.2", password: "old" })).status).toBe(200);
+      await t.deps.machines.autoConnect();
+      expect(probes).toBe(1);
+      expect(signedInWithPassword).toBe(true);
+      expect(nas()?.reconnect).toMatchObject({
+        attempts: 1,
+        nextAt: null,
+        sshReason: "password-rejected",
+        waitsForPassword: true,
+        diagnosis: null,
+      });
+      // However long it waits, nothing tries the account again.
+      clock = new Date(clock.getTime() + 60 * 60_000);
+      await t.deps.machines.autoConnect();
+      expect(probes).toBe(1);
+
+      // A password saved for it: tried once, at once, and connected.
+      accepts = true;
+      expect((await admin.put(host, { hostName: "10.0.0.2", password: "new" })).status).toBe(200);
+      await waitFor(() => nas()?.reconnect === undefined);
+      expect(probes).toBeGreaterThan(1);
+      expect(nas()?.connection).not.toBeNull();
+    });
+
+    it("a deleted machine is let go: no retries", async () => {
+      await boot({ watchSessions: watch });
+      kept();
+      connected.add("ssh:nas");
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:nas"],
+      });
+      tell?.("ssh:nas", false);
+      expect(nas()?.reconnect).toBeUndefined();
+      expect(nas()?.keepConnected).toBeUndefined();
+    });
+  });
+
+  describe("stopping and uninstalling", () => {
+    const settled = () => t.deps.machines.jobs().every((job) => !job.queued && !job.running);
+    const jobOf = (id: string) => t.deps.machines.jobs().find((job) => job.machineId === id);
+    const installedNas = () => {
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        sessionPid: 4242,
+        remotePort: 7364,
+        machineId: "NASmachineID0000",
+      });
+      machinesRepo.setMembers("default_project", ["ssh:nas"]);
+    };
+
+    it("a machine it cannot reach is refused at its first step, with nothing changed", async () => {
+      let stops = 0;
+      await boot({
+        probe: async () => ({
+          state: {
+            kind: "unreachable",
+            detail: "ssh: connect to host nas port 22: Connection timed out",
+          },
+          machineId: null,
+        }),
+        stopServer: async () => {
+          stops += 1;
+          return { ok: true as const };
+        },
+      });
+      installedNas();
+      await admin.post("/api/projects/default_project/machines/ssh:nas/stop");
+      await waitFor(settled);
+      expect(jobOf("ssh:nas")?.result).toMatchObject({
+        ok: false,
+        step: "check",
+        sshReason: "timeout",
+        canReplaceProgram: false,
+      });
+      expect((jobOf("ssh:nas")?.result as { message: string }).message).toMatch(
+        /^could not reach that machine, so nothing was stopped: /,
+      );
+      expect(stops).toBe(0);
+      // Still kept connected: the stop did not happen.
+      expect(machinesRepo.get("ssh:nas")?.sessionPid).toBe(4242);
+    });
+
+    it("an uninstall stops the server, removes the program and keeps the data unless asked", async () => {
+      const commands: string[] = [];
+      let running = true;
+      await boot({
+        probe: async () =>
+          running
+            ? { state: { kind: "running", port: 7364, pid: 4242 }, machineId: "NASmachineID0000" }
+            : { state: { kind: "stopped" }, machineId: "NASmachineID0000" },
+        stopServer: async () => {
+          running = false;
+          return { ok: true as const };
+        },
+        runOn: async (_target, command) => {
+          commands.push(command);
+          return {
+            code: 0,
+            stdout: "removed $dir/bin, lib, web and node",
+            stderr: "",
+            timedOut: false,
+          };
+        },
+      });
+      installedNas();
+      const res = await admin.post("/api/projects/default_project/machines/ssh:nas/uninstall", {});
+      expect(res.status).toBe(202);
+      await waitFor(settled);
+      expect(jobOf("ssh:nas")?.result).toEqual({ ok: true, uninstalled: true, dataRemoved: false });
+      const removal = commands.find((c) => c.includes("rm -rf"));
+      expect(removal).toContain('"$dir/bin" "$dir/lib" "$dir/web" "$dir/node"');
+      expect(removal).not.toContain('"$dir/data"');
+      const nas = t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas");
+      // Still on the Project's list, as not installed; its id kept with its data.
+      expect(nas).toMatchObject({ member: true, installed: null, machineId: "NASmachineID0000" });
+      expect(nas?.keepConnected).toBeUndefined();
+
+      // Again, with the data: the id goes with it.
+      installedNas();
+      running = true;
+      commands.length = 0;
+      await admin.post("/api/projects/default_project/machines/ssh:nas/uninstall", {
+        removeData: true,
+      });
+      await waitFor(settled);
+      expect(jobOf("ssh:nas")?.result).toEqual({ ok: true, uninstalled: true, dataRemoved: true });
+      expect(commands.find((c) => c.includes("rm -rf"))).toContain('rm -rf "$dir/data"');
+      expect(t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas")?.machineId).toBeNull();
+    });
+
+    it("refuses what it cannot do before any ssh runs", async () => {
+      await boot();
+      const code = async (path: string) =>
+        (
+          (await (
+            await admin.post(`/api/projects/default_project/machines/${path}`, {})
+          ).json()) as {
+            error: { code: string };
+          }
+        ).error.code;
+      expect(await code("ssh:nas/stop")).toBe("not_installed");
+      expect(await code("ssh:nas/uninstall")).toBe("not_installed");
+      machinesRepo.patch("ssh:nas", { version: "9.9.9", platform: "win32" });
+      expect(await code("ssh:nas/stop")).toBe("connect_unsupported");
+      expect(await code("ssh:not-in-config/uninstall")).toBe("unknown_machine");
+      expect(t.deps.machines.jobs()).toEqual([]);
     });
   });
 
   describe("adding a host to the ssh config", () => {
-    const post = (body: Record<string, unknown>) =>
-      admin.post("/api/projects/default_project/machines/ssh-hosts", body);
+    it("lists every host with what its own block says, for the add dialog's rows", async () => {
+      await boot({
+        listHosts: () => [
+          { alias: "build-box", hostName: "box.example.net", user: "deploy", port: 2222 },
+          { alias: "nas" },
+        ],
+      });
+      const res = await admin.get("/api/projects/default_project/machines/ssh-hosts");
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        hosts: [
+          { alias: "build-box", hostName: "box.example.net", user: "deploy", port: 2222 },
+          { alias: "nas" },
+        ],
+      });
+    });
+
+    const HOSTS = "/api/projects/default_project/machines/ssh-hosts";
+    const post = (body: Record<string, unknown>) => admin.post(HOSTS, body);
 
     it("appends the block, and the list names the new host at once", async () => {
       const written: string[] = [];
@@ -1685,6 +2835,7 @@ describe("machines API", () => {
           "  HostName 10.0.0.9",
           "  User k",
           "  Port 2222",
+          "  StrictHostKeyChecking accept-new",
           "",
         ].join("\n"),
       ]);
@@ -1733,11 +2884,12 @@ describe("machines API", () => {
       });
       expect(ok.status).toBe(200);
       expect(written).toHaveLength(1);
-      expect(written[0]!.split("\n").slice(0, 5)).toEqual([
+      expect(written[0]!.split("\n").slice(0, 6)).toEqual([
         "# Added by PenguinHarness on 2026-08-24T12:00:00.000Z",
         "Host nas",
         "  HostName 10.0.0.3",
         "  User deploy",
+        "  StrictHostKeyChecking accept-new",
         "",
       ]);
       expect(written[0]!.endsWith("  ProxyJump bastion")).toBe(true);
@@ -1753,6 +2905,69 @@ describe("machines API", () => {
       expect(written).toHaveLength(1);
     });
 
+    it("keeps a host's password beside the config, never in it, says only that one is saved, and deletes it", async () => {
+      const written: string[] = [];
+      const aliases = ["build-box", "nas"];
+      let config = CONFIG;
+      let plan: Awaited<ReturnType<MachinesEffects["passwordSignIn"]>> = {
+        ok: true,
+        detached: false,
+      };
+      await boot({
+        listAliases: () => aliases,
+        readConfig: () => config,
+        appendHost: (block) => {
+          written.push(block);
+          aliases.push("orchid-2");
+          config += `\n${block}`;
+        },
+        writeConfig: (text) => {
+          written.push(text);
+          config = text;
+        },
+        passwordSignIn: async () => plan,
+      });
+      const stored = (alias: string) =>
+        path.join(machinesRoot, "machines", "ssh-passwords", Buffer.from(alias).toString("hex"));
+      const created = await post({ alias: "orchid-2", hostName: "10.0.0.9", password: "hunter2" });
+      expect(created.status).toBe(201);
+      expect(written.join("\n")).not.toContain("hunter2");
+      expect(fs.readFileSync(stored("orchid-2"), "utf8")).toBe("hunter2");
+      const listed = (await created.json()) as MachinesResponse;
+      expect(listed.machines.find((m) => m.alias === "orchid-2")?.passwordSaved).toBe(true);
+      const read = await (await admin.get(`${HOSTS}/orchid-2`)).text();
+      expect(read).not.toContain("hunter2");
+      expect(JSON.parse(read)).toMatchObject({ alias: "orchid-2", passwordSaved: true });
+
+      // A block written by hand keeps its lines; its password alone may still be set.
+      const theirs = await admin.put(`${HOSTS}/build-box`, {
+        hostName: "box.example.net",
+        password: "pw",
+      });
+      expect(theirs.status).toBe(200);
+      expect(written).toHaveLength(1);
+      expect(fs.existsSync(stored("build-box"))).toBe(true);
+
+      // Key sign-in deletes the password; so does deleting the machine from its last Project.
+      expect(
+        (await admin.put(`${HOSTS}/orchid-2`, { hostName: "10.0.0.9", password: null })).status,
+      ).toBe(200);
+      expect(fs.existsSync(stored("orchid-2"))).toBe(false);
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:build-box"],
+      });
+      expect(fs.existsSync(stored("build-box"))).toBe(false);
+
+      // An ssh here that cannot be handed a password: refused by name, nothing stored.
+      plan = { ok: false, detail: "needs OpenSSH 8.4", ssh: "OpenSSH_for_Windows_8.1p1" };
+      const old = await admin.put(`${HOSTS}/nas`, { hostName: "10.0.0.2", password: "pw" });
+      expect(old.status).toBe(409);
+      expect(await old.json()).toMatchObject({
+        error: { code: "ssh_password_unsupported", details: { ssh: "OpenSSH_for_Windows_8.1p1" } },
+      });
+      expect(fs.existsSync(stored("nas"))).toBe(false);
+    });
+
     it("names the field that would not survive as one config line", async () => {
       const written: string[] = [];
       await boot({ appendHost: (block) => void written.push(block) });
@@ -1762,6 +2977,322 @@ describe("machines API", () => {
       expect(body.error.code).toBe("ssh_host_invalid");
       expect(body.error.message).toContain("alias");
       expect(written).toEqual([]);
+    });
+  });
+
+  describe("a source checkout's install image", () => {
+    /**
+     * The packer's stand-in, the one boundary these scenarios fake: it leaves a build the way
+     * `deploy.mjs --out` does — a gzipped upgrade body — and says what it is doing. Laying the
+     * image down, naming it and reading it back are the real thing.
+     */
+    const packs: string[] = [];
+    /**
+     * Packs `trees` in turn, one per build and the last one again once they run out: the
+     * checkout as each build finds it.
+     */
+    const packing = (...trees: PushedBuild[]): CheckoutPacker => {
+      const builds = trees.length === 0 ? [CHECKOUT_BUILD] : trees;
+      let asked = 0;
+      return async (outFile, onLine) => {
+        const build = builds[Math.min(asked, builds.length - 1)]!;
+        asked += 1;
+        packs.push(outFile);
+        onLine("building the web dist…");
+        fs.writeFileSync(outFile, zlib.gzipSync(Buffer.from(JSON.stringify(build))));
+        return { ok: true };
+      };
+    };
+    /** A server running from a checkout: no installed release, and a packer to build with. */
+    const checkout = (over: Partial<MachinesEffects> = {}) =>
+      boot({ resolvePlan: () => null, packCheckout: packing(), ...over });
+    const listed = async () =>
+      (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+    const useBody = (machines: string[]) =>
+      admin.post("/api/projects/default_project/machines/use", { machines });
+    const jobsOf = () => t.deps.machines.jobs();
+    const settled = () => jobsOf().every((job) => !job.queued && !job.running);
+    beforeEach(() => {
+      packs.length = 0;
+    });
+
+    it("before its first build it is told to the page as built on demand, and nothing is refused", async () => {
+      await checkout();
+      const body = await listed();
+      expect(body.imageVersion).toBeNull();
+      expect(body.checkoutImage).toEqual({ state: "unbuilt" });
+      // Listing builds nothing; only an install or a use does.
+      expect(packs).toEqual([]);
+
+      const used = (await (await useBody(["ssh:nas"])).json()) as MachinesUseResponse;
+      expect(used.refused).toEqual([]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+    });
+
+    it("the first install builds the image, installs it, and records its version — the server's own store untouched", async () => {
+      const plans: PushPlan[] = [];
+      const installers: (string | null)[] = [];
+      await checkout({
+        install: async (opts) => {
+          plans.push(opts.plan);
+          installers.push(opts.assets?.() ?? null);
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+
+      const job = t.deps.machines.job()!;
+      expect(job.result).toMatchObject({ ok: true, installed: "installed" });
+      // The packer's own narration is the job's while it builds.
+      expect(job.log).toContain("building the web dist…");
+      const version = (job.result as { version: string }).version;
+      // The checkout's release, plus the build it carries: the form a hot-pushed server reports.
+      expect(version.startsWith(`${VERSION}+hmr.`)).toBe(true);
+      expect(plans).toHaveLength(1);
+      expect(plans[0]).toMatchObject({ baseVersion: VERSION, version });
+      // What is replicated is the image's own store, a whole build — never the server's live
+      // `<root>/hmr`, which a dev server would restore in place of its source.
+      const image = path.dirname(plans[0]!.hmrDir!);
+      expect(image.startsWith(path.join(machinesRoot, "machines", "checkout-image"))).toBe(true);
+      expect(readPushedBuild(image)).not.toBeNull();
+      expect(fs.existsSync(path.join(machinesRoot, "hmr"))).toBe(false);
+      // The installer the far side runs is the one packed into this image: a checkout run
+      // under tsx has no built copy of its own.
+      expect(installers[0]?.startsWith(image)).toBe(true);
+      expect(fs.readFileSync(path.join(installers[0]!, "install.sh"), "utf8")).toContain("install");
+
+      expect(recordsInStore()["ssh:nas"]?.version).toBe(version);
+      const body = await listed();
+      expect(body.imageVersion).toBe(version);
+      expect(body.checkoutImage).toEqual({ state: "built" });
+    });
+
+    it("a machine whose ssh refuses this computer fails at once, at the first step, and no image is built for it", async () => {
+      await checkout({
+        runOn: async () => ({
+          code: 255,
+          stdout:
+            "This computer has never connected to nas, and connections here cannot answer ssh's question about a new host key. (ssh: Host key verification failed.)",
+          stderr: "",
+          timedOut: false,
+        }),
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toMatchObject({
+        ok: false,
+        step: "check",
+        canReplaceProgram: false,
+        sshReason: "host-key-unknown",
+      });
+      expect((jobsOf()[0]?.result as { message: string }).message).toContain("ssh nas");
+      expect(packs).toEqual([]);
+    });
+
+    it("a batch builds once, and every machine in it gets that image", async () => {
+      await checkout();
+      await useBody(["ssh:build-box", "ssh:nas"]);
+      await waitFor(settled);
+      expect(packs).toHaveLength(1);
+      const versions = Object.values(recordsInStore()).map((record) => record.version);
+      expect(versions).toHaveLength(2);
+      expect(new Set(versions).size).toBe(1);
+    });
+
+    it("a build that fails ends the job in its own words, installs nothing, and the page says the same until a build succeeds", async () => {
+      let installs = 0;
+      const said = "vite: build failed in src/app.tsx (3:7): Unexpected token";
+      // The tree breaks, then is mended: the first build fails, the next one packs.
+      let broken = true;
+      const mended = packing();
+      await checkout({
+        packCheckout: async (outFile, onLine) =>
+          broken ? { ok: false, detail: said } : mended(outFile, onLine),
+        install: async () => {
+          installs += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      // No forced install on offer: reinstalling would send nothing this server lacks.
+      expect(jobsOf()[0]?.result).toEqual({
+        ok: false,
+        step: "build the install image",
+        message: said,
+        canReplaceProgram: false,
+      });
+      expect(installs).toBe(0);
+      expect(recordsInStore()).toEqual({});
+      expect((await listed()).checkoutImage).toEqual({ state: "failed", detail: said });
+
+      broken = false;
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      expect(jobsOf()[0]?.result).toEqual({ ok: true, connected: true });
+      expect(installs).toBe(1);
+      expect((await listed()).checkoutImage).toEqual({ state: "built" });
+    });
+
+    it("an image a job is still installing outlives the builds that land meanwhile, and goes at the next build after", async () => {
+      // The far side downloads its release before the image is copied over: minutes in which
+      // other machines get enabled, each building from the tree as it is by then.
+      let release = () => {};
+      const downloading = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let nasImage: string | null = null;
+      let copied: Buffer | null = null;
+      // A web-only edit after the first build: the dev server keeps running, and the image moves on.
+      const edited: PushedBuild = {
+        ...CHECKOUT_BUILD,
+        web: {
+          files: {
+            "index.html": Buffer.from("<!doctype html><title>edited</title>").toString("base64"),
+          },
+        },
+      };
+      await checkout({
+        packCheckout: packing(CHECKOUT_BUILD, edited),
+        install: async (opts) => {
+          if (opts.target.alias === "nas") {
+            nasImage = path.dirname(opts.plan.hmrDir!);
+            await downloading;
+            // What the copy reads, once the release is down.
+            copied = readPushedBuild(nasImage);
+          }
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      const doneOn = (machineId: string) =>
+        jobsOf().some((job) => job.machineId === machineId && !job.queued && !job.running);
+
+      await useBody(["ssh:nas"]);
+      await waitFor(() => nasImage !== null);
+      // Two more enables while nas downloads: the first builds the edited tree, the second
+      // lands on that same image again.
+      await useBody(["ssh:build-box"]);
+      await waitFor(() => doneOn("ssh:build-box"));
+      await useBody(["ssh:build-box"]);
+      await waitFor(() => doneOn("ssh:build-box"));
+      expect(packs).toHaveLength(3);
+
+      release();
+      await waitFor(settled);
+      expect(copied).not.toBeNull();
+      expect(jobsOf().find((job) => job.machineId === "ssh:nas")?.result).toEqual({
+        ok: true,
+        connected: true,
+      });
+      // Nothing holds it any more: the next build sweeps it, and keeps the image in use.
+      await useBody(["ssh:build-box"]);
+      await waitFor(settled);
+      expect(fs.existsSync(nasImage!)).toBe(false);
+      expect((await listed()).checkoutImage).toEqual({ state: "built" });
+    });
+
+    it("rebuilding an unchanged checkout lands on the image already there: the machine on it gets nothing new", async () => {
+      let installs = 0;
+      await checkout({
+        install: async () => {
+          installs += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      const first = (await listed()).imageVersion;
+
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      // Each ask builds from the checkout as it is then; the same tree is the same image.
+      expect(packs).toHaveLength(2);
+      expect(installs).toBe(1);
+      expect((await listed()).imageVersion).toBe(first);
+      expect(jobsOf()[0]?.log).toContain(`Already on ${first}.`);
+    });
+
+    it("a changed checkout is a new version, and the machine on the old one reads as behind it", async () => {
+      await checkout();
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      const first = (await listed()).imageVersion;
+
+      // The same server after an edit to the platform: its next build is another image.
+      service = new MachinesService(
+        machinesRoot,
+        LOCAL_ID,
+        machinesRepo,
+        effects({
+          resolvePlan: () => null,
+          packCheckout: packing({
+            ...CHECKOUT_BUILD,
+            platform: `${CHECKOUT_BUILD.platform}// edited\n`,
+          }),
+        }),
+      );
+      await useBody(["ssh:build-box"]);
+      await waitFor(settled);
+
+      const body = await listed();
+      expect(body.imageVersion).not.toBe(first);
+      expect(body.imageVersion?.startsWith(`${VERSION}+hmr.`)).toBe(true);
+      // What the page compares to raise "update": the record against the image, both true.
+      expect(recordsInStore()["ssh:nas"]?.version).toBe(first);
+      expect(recordsInStore()["ssh:build-box"]?.version).toBe(body.imageVersion);
+    });
+
+    it("outlives a restart: a fresh service over the same root names the image it built, without building", async () => {
+      await checkout();
+      await useBody(["ssh:nas"]);
+      await waitFor(settled);
+      const version = (await listed()).imageVersion;
+
+      const reborn = new MachinesService(
+        machinesRoot,
+        LOCAL_ID,
+        machinesRepo,
+        effects({ resolvePlan: () => null, packCheckout: packing() }),
+      );
+      expect(reborn.imageVersion()).toBe(version);
+      expect(reborn.checkoutImage()).toEqual({ state: "built" });
+      expect(packs).toHaveLength(1);
+    });
+
+    it("a machine carrying the release but not this image is handed the image through its update channel", async () => {
+      let handed: PushedBuild | null = null;
+      await checkout({
+        install: async () => ({ kind: "state-only", identity: IDENTITY }),
+        upgrade: async (opts) => {
+          const body = readPushedBuild(opts.dataRoot);
+          handed =
+            body === null ? null : (JSON.parse(zlib.gunzipSync(body).toString()) as PushedBuild);
+          return { kind: "upgraded", detail: "", persisted: true };
+        },
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true });
+      expect(handed).toMatchObject({
+        platform: CHECKOUT_BUILD.platform,
+        cli: CHECKOUT_BUILD.cli,
+        web: CHECKOUT_BUILD.web,
+      });
+    });
+
+    it("an installed server's own image wins: the checkout is neither built nor mentioned", async () => {
+      await boot({ packCheckout: packing() });
+      const body = await listed();
+      expect(body.imageVersion).toBe("9.9.9");
+      expect(body.checkoutImage).toBeUndefined();
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, version: "9.9.9" });
+      expect(packs).toEqual([]);
     });
   });
 
@@ -1775,7 +3306,7 @@ describe("machines API", () => {
       expect(t.deps.machines.job()).toBeNull();
     });
 
-    it("409s a second install while one is running", async () => {
+    it("409s a second install on a machine that has one running, and lets another machine's start", async () => {
       let release = () => {};
       const held = new Promise<void>((resolve) => {
         release = resolve;
@@ -1789,15 +3320,18 @@ describe("machines API", () => {
       expect(
         (await admin.post("/api/projects/default_project/machines/ssh:nas/install")).status,
       ).toBe(202);
-      const second = await admin.post(
-        "/api/projects/default_project/machines/ssh:build-box/install",
-      );
-      expect(second.status).toBe(409);
-      expect(((await second.json()) as { error: { code: string } }).error.code).toBe(
+      const again = await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      expect(again.status).toBe(409);
+      expect(((await again.json()) as { error: { code: string } }).error.code).toBe(
         "install_running",
       );
+      // Another host is not held up by it: its job runs beside the first.
+      const other = await admin.post(
+        "/api/projects/default_project/machines/ssh:build-box/install",
+      );
+      expect(other.status).toBe(202);
       release();
-      await waitFor(() => t.deps.machines.job()?.running === false);
+      await waitFor(() => t.deps.machines.jobs().every((job) => !job.running && !job.queued));
     });
 
     it("404s a host this server's config does not declare", async () => {

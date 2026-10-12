@@ -69,6 +69,9 @@ import type { PermissionPick } from "../../lib/permission-level";
 import { apiErrorText } from "../../lib/api-error";
 import { rememberSessionMachine } from "../../lib/session-machines";
 import { cachedMachineAgents, rememberMachineAgents } from "../../lib/machine-cache";
+import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
+import type { MachineLink } from "../../lib/machine-link";
+import { useMachines } from "../../state/machines";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -158,8 +161,8 @@ export function DraftView({
    * below already treats as "not ready" rather than "none".
    */
   const [remoteAgents, setRemoteAgents] = useState<AgentSummary[]>([]);
-  /** Why the remote list may be empty, for the composer's empty row: still asking, or beyond reach. */
-  const [remoteAgentsState, setRemoteAgentsState] = useState<"loading" | "unreachable">("loading");
+  /** Why a connected machine's list may be empty: still asking, or its answer was a failure. */
+  const [remoteAgentsFailure, setRemoteAgentsFailure] = useState<string | null>(null);
   const { add } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
@@ -200,6 +203,16 @@ export function DraftView({
   const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(cached.machineId ?? null);
   /** The Agents actually offerable for this draft: the target machine's, or this one's. */
   const agents = workspaceMachine === null ? localAgents : remoteAgents;
+  /**
+   * The workspace's machine as the Machines page sees it — connected, coming back, stopped —
+   * from the one live account of the machines, so this composer and that page never disagree:
+   * the Agents are asked for when the machine is connected, and asked again the moment it is.
+   */
+  const machines = useMachines();
+  const remoteLink: MachineLink | null =
+    workspaceMachine === null
+      ? null
+      : machineLink(machines.state, machines.settled, workspaceMachine);
   // A terminal opened while drafting starts in the Workspace chosen here; "" is the
   // temporary Workspace, whose directory the server only creates with the Session, so
   // that case falls back to home (setDockCwd's null).
@@ -696,29 +709,30 @@ export function DraftView({
   // is offered first, so the picker has something while the machine is asked — and stays on
   // offer if it cannot be: it is the best account of that machine anyone has. The machine's
   // own answer replaces it wholesale, including with nothing, so an Agent deleted over there
-  // stops being offered here. Nothing here connects: a machine with no held connection
-  // answers as unreachable, and the Machines page is where a person connects it.
+  // stops being offered here. Asked only while the machine is connected, and again each time it
+  // becomes so: nothing here connects, and the server keeps an enabled machine connected itself.
   useEffect(() => {
     if (workspaceMachine === null) {
       setRemoteAgents([]);
       return;
     }
-    let cancelled = false;
     setRemoteAgents(cachedMachineAgents(projectId, workspaceMachine));
-    setRemoteAgentsState("loading");
+    setRemoteAgentsFailure(null);
+    if (remoteLink !== "connected") return;
+    let cancelled = false;
     void (async () => {
       try {
         const answered = (await api.listAgents(projectId, workspaceMachine)).agents;
         rememberMachineAgents(projectId, workspaceMachine, answered);
         if (!cancelled) setRemoteAgents(answered);
-      } catch {
-        if (!cancelled) setRemoteAgentsState("unreachable");
+      } catch (err) {
+        if (!cancelled) setRemoteAgentsFailure(apiErrorText(err));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [workspaceMachine, projectId]);
+  }, [workspaceMachine, projectId, remoteLink]);
 
   /** User edits routed through these two so a late-arriving project default cannot clobber them. */
   const changeWorkspace = useCallback((path: string, machineId?: string | null) => {
@@ -804,6 +818,10 @@ export function DraftView({
       sandboxPick,
       modelRef,
       workspace,
+      // The machine can change while the path does not: a temporary workspace there after a
+      // temporary one here is "" both times, and a send that kept the old machine would create
+      // the Session on this server.
+      workspaceMachine,
       add,
       discardDraft,
       navigate,
@@ -877,11 +895,7 @@ export function DraftView({
           agents={agents}
           selected={selectedAgent}
           onSelect={selectAgent}
-          empty={
-            workspaceMachine !== null && remoteAgentsState === "unreachable"
-              ? S.machines.agentsUnreachable
-              : S.common.loading
-          }
+          empty={remoteAgentsEmpty(remoteLink, remoteAgentsFailure)}
         />
         <WorkspaceSelect
           projectId={projectId}

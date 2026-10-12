@@ -20,10 +20,13 @@ import type { Desktop } from "../../hmr/capabilities.js";
 import type { DesktopService } from "../../services/desktop-service.js";
 import { membersRoutes } from "./members.js";
 import type { ProjectLifecycle } from "../../mechanisms/projects.js";
+import type { Machines } from "../../machines/service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ProjectsRouteDeps {
   projectService: ProjectLifecycle;
+  /** The machines this Project uses carry its name too (machines/service.ts). */
+  machines: Pick<Machines, "syncConfigEverywhere">;
 }
 
 export function projectsRoutes(deps: ProjectsRouteDeps): Hono<AppEnv> {
@@ -52,6 +55,8 @@ export function projectsRoutes(deps: ProjectsRouteDeps): Hono<AppEnv> {
     const name = requireString(body, "name", { maxLen: 100, label: "name" }).trim();
     if (name === "") throw badRequest("name must be at least 1 characters.");
     const project = await deps.projectService.renameProject(c.var.user.userId, projectId, name);
+    // Not awaited: the person renaming is not the one who should wait for a set of ssh tunnels.
+    void deps.machines.syncConfigEverywhere(projectId);
     return c.json({ project } satisfies ProjectUpdateResponse);
   });
 
@@ -85,10 +90,14 @@ export function projectsRoutes(deps: ProjectsRouteDeps): Hono<AppEnv> {
 export class ProjectAdminRoutes {
   @Use() private readonly projectService!: ProjectLifecycle;
   @Use() private readonly desktop!: Desktop;
+  @Use() private readonly machines!: Machines;
   @Bind("project-admin.projects") projectsRoutes!: Hono<AppEnv>;
   @Bind("project-admin.members") membersRoutes!: Hono<AppEnv>;
   setup() {
-    this.projectsRoutes = projectsRoutes({ projectService: this.projectService });
+    this.projectsRoutes = projectsRoutes({
+      projectService: this.projectService,
+      machines: this.machines,
+    });
     this.membersRoutes = membersRoutes({
       projectService: this.projectService,
       desktop: this.desktop.current() as DesktopService | null,

@@ -4,11 +4,24 @@
  * - The dev server's `/api` proxy defaults to the development backend (7368, not the installed
  *   server's 7364), follows PORT, treats an empty PORT as unset rather than as port 80, and is
  *   replaced outright by PENGUIN_API_PROXY unless that is empty.
+ * - A call the page addresses to a machine (`/server/<machineId>/api/…`) is handed to the same
+ *   backend, and the SPA's own paths are not.
  * - KaTeX's stylesheet ships woff2 only: the woff and truetype fallbacks are dropped, and a
  *   stylesheet without them is left untouched.
  */
 import { describe, expect, it } from "vitest";
-import { apiProxyTarget, dropNonWoff2FontSources } from "../vite.config.js";
+import { apiProxyTarget, devProxy, dropNonWoff2FontSources } from "../vite.config.js";
+
+/**
+ * Which entry of a proxy table takes a URL, by the rule Vite's proxy middleware applies: a key
+ * that starts with `^` is a pattern, any other key a path prefix, and the first that matches wins.
+ */
+function proxiedBy(table: Record<string, { target: string }>, url: string): string | null {
+  for (const [key, entry] of Object.entries(table)) {
+    if (key.startsWith("^") ? new RegExp(key).test(url) : url.startsWith(key)) return entry.target;
+  }
+  return null;
+}
 
 describe("apiProxyTarget", () => {
   it("defaults to the development backend, not the installed server's 7364", () => {
@@ -31,6 +44,27 @@ describe("apiProxyTarget", () => {
 
   it("an empty PENGUIN_API_PROXY falls back instead of proxying to nowhere", () => {
     expect(apiProxyTarget({ PENGUIN_API_PROXY: "" })).toBe("http://127.0.0.1:7368");
+  });
+});
+
+describe("the dev server's proxy table", () => {
+  const table = devProxy({ PORT: "27480" });
+
+  it("hands a machine's API calls to the backend, as it does the backend's own", () => {
+    for (const url of [
+      "/server/Oge9N-anHqSz0x3E/api/projects/default_project/agents",
+      "/server/Oge9N-anHqSz0x3E/api/sessions/s1/events?lastEventId=7",
+      "/server/Oge9N-anHqSz0x3E/api",
+      "/api/projects/default_project/machines",
+    ]) {
+      expect(proxiedBy(table, url), url).toBe("http://127.0.0.1:27480");
+    }
+  });
+
+  it("leaves the page's own paths to the SPA", () => {
+    for (const url of ["/server", "/servers/list", "/server/Oge9N-anHqSz0x3E", "/machines"]) {
+      expect(proxiedBy(table, url), url).toBeNull();
+    }
   });
 });
 

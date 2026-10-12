@@ -69,6 +69,7 @@ export const en: Strings = {
       "Business automation",
       "Scientific research",
       "Terminal tasks",
+      "Agent self-evolution",
     ],
     externalLink: {
       title: "You're about to open an external link",

@@ -3,38 +3,33 @@
  * (features/machines/machine-card.tsx, machine-detail-dialog.tsx, machines-view.ts `updateNotice`).
  *
  * A card
- * - opens its machine's dialog on a click anywhere on its body, a stopped machine's as any;
- * - has its title as its main button, which opens the dialog and says a dialog is what it opens;
- * - lets its Enable button enable the machine without opening anything;
- * - offers Update in Enable's place for a machine on another build, and neither for one that is
- *   connected or has a job on its way, whose stepper it shows instead;
- * - never offers Disable beside them, which would read as a toggle contradicting itself: the
- *   dialog holds it;
- * - offers no verb at all on this server's own card;
- * - holds its verbs while a request is in flight.
+ * - opens its machine's dialog on a click anywhere on its body, and from its title, which says a
+ *   dialog is what it opens; Settings opens it too;
+ * - starts a conversation in the machine's temporary workspace with Use, opening nothing, while
+ *   the machine is connected; otherwise Use waits and the card says why in words, not on a hover —
+ *   and while a job moves there, its stepper says what is happening instead;
+ * - asks to delete the machine with its trash button, never while a job is on its way;
+ * - holds Use and Delete while a request is in flight;
+ * - offers Sync config only on a connected machine on this server's build;
+ * - on this server's own entry offers Use and Settings, and a delete that cannot be pressed.
  *
  * The dialog
- * - gives the one thing to do one home, or none: under the failure for a failed machine, at the
- *   top of Actions for every other machine that needs one, and nowhere for a ready machine, one
- *   installed as far as it goes, one with a job on its way, or this server's own entry;
- * - lets a failed machine reach every action — Retry, Force install, the single steps and the ways
- *   out — each asking its page for its own verb;
- * - explains a failure: the step it stopped at, in the far side's own words, with Force install
- *   only when the failure offers it;
- * - lists a failure's actions like the verbs of Actions: Retry and Force install, each with what
- *   it does beside it;
- * - says beside each single step and way out what it does;
- * - holds the single steps while a job is on its way and says why in their place, but never the
- *   ways out; says why Install, Disconnect and Restart wait when there is no build to push,
- *   nothing connected, or a machine out of reach; offers Disconnect while a connection is held;
- * - holds every verb while a request is in flight, and rewrites no line for it;
- * - offers Reconnect only where the one thing to do does not already connect;
+ * - lays its verbs out in one toolbar, each asking its page for its own verb: Enable and Update
+ *   for the whole pipeline, Stop or Start, Restart, Sync config, Configure SSH, Uninstall;
+ * - says when the config was last synced, or why that failed, and lists what it could not carry:
+ *   models keyed from this server's environment, models the machine would not take;
+ * - greys a verb that cannot run and says why in one sentence under the toolbar, never on a
+ *   hover; holds every verb while a request is in flight, the sentence unchanged;
+ * - explains a failure: the step it stopped at, in the far side's own words, what the server's
+ *   connection check found, then Retry — and Force install only when the failure offers it;
+ * - says, while the server brings a machine back, for how long and which attempt, the last
+ *   failure, and what the automatic check found;
+ * - folds a job that finished well into one line with its log closed, opens a running job's log,
+ *   and copies the whole log from a button beside it;
  * - says in Details, as text, ssh's own words for a machine out of reach and the time of the last
  *   check beside how long ago it was;
  * - repeats the page's last error, since it covers the notice that says it;
- * - is this server's record alone for its own entry: no verb, no steps, no Actions;
- * - folds a job that finished well into one line with its log closed, and opens a running job's
- *   log.
+ * - is this server's record alone for its own entry: no verb, no steps.
  *
  * Every state renders a card and a dialog, the state said by the card mark's accessible name and
  * by the dialog's status chip, and neither carries a hint that cannot open: none sits on words
@@ -46,7 +41,7 @@
  * vitest runs node-only here, so components are called as functions and their handlers handed
  * clicks as a browser delivers them (test/helpers/fake-dom.ts); a few are rendered to static markup and
  * read back as a tree (test/helpers/markup.ts). The dialog's verbs are found by their `data-verb`,
- * its steps by their `data-step`, never by their words.
+ * its steps by their `data-step`, the card's buttons by their `data-action`, never by their words.
  */
 import { createElement, isValidElement } from "react";
 import type { ReactElement, ReactNode } from "react";
@@ -96,6 +91,7 @@ const remote = (alias: string, extra: Partial<MachineInfo> = {}): MachineInfo =>
 const stopped = remote("lab-mac");
 const ready = remote("gpu-a100", {
   connection: { pid: 41226 },
+  keepConnected: true,
   status: { state: "running", checkedAt: CHECKED, port: 7364 },
 });
 const behind = remote("build-box", {
@@ -105,19 +101,46 @@ const behind = remote("build-box", {
 const readyBehind = remote("build-box-2", {
   installed: { version: "0.2.12", at: "2026-09-20T08:00:00.000Z" },
   connection: { pid: 41227 },
+  keepConnected: true,
   status: { state: "running", checkedAt: CHECKED, port: 7364 },
 });
 const notConnected = remote("office-2", {
   status: { state: "running", checkedAt: CHECKED, port: 7364 },
 });
-const linkedStopped = remote("mini", { connection: { pid: 2 } });
 /** ssh's own words for a machine it could not reach. */
 const TIMED_OUT = "ssh: connect to host 10.0.0.12 port 22: Connection timed out";
 const unreachable = remote("edge-1", {
   status: { state: "unreachable", checkedAt: CHECKED, detail: TIMED_OUT },
 });
+/** Kept connected, and being brought back by the server after its connection dropped. */
+const comingBack = remote("mini", {
+  connection: null,
+  keepConnected: true,
+  reconnect: {
+    since: new Date(Date.now() - 6 * 60_000).toISOString(),
+    attempts: 3,
+    nextAt: new Date(Date.now() + 80_000).toISOString(),
+    lastError: "mini refused. (ssh: connect to host mini port 22: Connection refused)",
+    sshReason: "refused",
+    diagnosis: {
+      machineId: "ssh:mini",
+      checkedAt: CHECKED,
+      checks: [
+        {
+          id: "ssh",
+          state: "fail",
+          reason: "refused",
+          said: "ssh: connect to host mini port 22: Connection refused",
+        },
+        { id: "platform", state: "skip" },
+      ],
+    },
+  },
+});
 const winBox = remote("win-box");
 const fresh = remote("fresh", { status: null });
+/** Added to the Project, nothing installed there yet: no record, no id, never probed. */
+const added = remote("spare", { installed: null, machineId: null, status: null, member: true });
 const here: MachineInfo = {
   ...remote("penguin-dev"),
   id: "local",
@@ -139,6 +162,7 @@ const job = (machine: MachineInfo, over: Partial<MachineJob>): MachineJob => ({
   alias: machine.alias,
   queued: false,
   running: false,
+  steps: ["check", "install", "handover", "restart", "connect", "sync"],
   phase: null,
   log: [],
   result: null,
@@ -186,14 +210,6 @@ function all(node: ReactNode): AnyElement[] {
     });
 }
 
-/** The words a tree of elements spells. */
-function text(node: ReactNode): string {
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(text).join("");
-  if (isValidElement(node)) return text((node.props as { children?: ReactNode }).children);
-  return "";
-}
-
 /** The shared package's components: the browser renders them; here they stay as they are. */
 const SHARED: ReadonlySet<unknown> = new Set(Object.values(ui));
 
@@ -205,7 +221,7 @@ const nodes = (node: ReactNode): ReactNode[] =>
  * Every element of a tree, depth first, with the dialog's own components drawn — called as
  * functions, as React would call them — so what they draw is in the list. The shared package's
  * components keep their children only, and the log fold, which holds state, is read from static
- * markup instead (`foldOpen`).
+ * markup instead (`fold`).
  */
 function drawn(node: ReactNode): AnyElement[] {
   return nodes(node)
@@ -250,22 +266,11 @@ function verbsOf(tree: AnyElement[]): Map<string, VerbButton> {
   return verbs;
 }
 
-/**
- * What a reader sees beside each verb's button, by `data-verb`: the rest of the button's row —
- * what the verb does, or why it waits — read off the markup.
- */
-function linesOf(html: string): Map<string, string> {
-  const lines = new Map<string, string>();
-  for (const el of elementsOf(readMarkup(html))) {
-    const verb = el.attrs["data-verb"];
-    if (verb === undefined || el.parent === null) continue;
-    const rest = el.parent.children.filter((node) => node !== el);
-    lines.set(verb, rest.map(seenText).join("").trim());
-  }
-  return lines;
+/** The sentence under the dialog's toolbar, read off the markup; null when there is none. */
+function heldSentence(html: string): string | null {
+  const found = elementsOf(readMarkup(html)).find((el) => "data-held" in el.attrs);
+  return found === undefined ? null : seenText(found).trim();
 }
-
-const isPrimary = (el: AnyElement) => el.type === Button && el.props.variant === "primary";
 
 /** What one of the dialog's ruled sections draws, found by its title; null when it is absent. */
 function section(tree: AnyElement[], title: string): AnyElement[] | null {
@@ -273,12 +278,17 @@ function section(tree: AnyElement[], title: string): AnyElement[] | null {
   return found === undefined ? null : drawn(found.props.children as ReactNode);
 }
 
-/** Whether the job's log fold starts open; null when the dialog draws none. */
-function foldOpen(tree: AnyElement[]): boolean | null {
-  const fold = tree.find((el) => el.type === LogFold);
-  if (fold === undefined) return null;
-  const html = renderToStaticMarkup(createElement(LogFold, fold.props as { job: MachineJob }));
-  return /aria-expanded="true"/.test(html);
+/** The job's log fold as it first renders: whether it is open, and whether it offers its copy. */
+function fold(tree: AnyElement[]): { open: boolean; copy: boolean } | null {
+  const found = tree.find((el) => el.type === LogFold);
+  if (found === undefined) return null;
+  const html = renderToStaticMarkup(createElement(LogFold, found.props as { job: MachineJob }));
+  return {
+    open: /aria-expanded="true"/.test(html),
+    copy: elementsOf(readMarkup(html)).some(
+      (el) => el.attrs["aria-label"] === S.machines.detail.copyLog,
+    ),
+  };
 }
 
 function card(machine: MachineInfo, job: MachineJob | null = null, busy = false) {
@@ -290,18 +300,28 @@ function card(machine: MachineInfo, job: MachineJob | null = null, busy = false)
     busy,
     onOpen: vi.fn(),
     onUse: vi.fn(),
-    onConfigure: vi.fn(),
+    onSyncConfig: vi.fn(),
+    onDelete: vi.fn(),
   };
   const element = MachineCard(props) as AnyElement;
   const tree = all(element);
-  /** The card's buttons by their words, or by their name when they have none. */
+  /** The card's buttons by their `data-action`. */
   const buttons = new Map(
     tree
-      .filter((el) => el.type === Button)
-      .map((el) => [String(el.props["aria-label"] ?? text(el.props.children as ReactNode)), el]),
+      .filter((el) => el.type === Button && typeof el.props["data-action"] === "string")
+      .map((el) => [String(el.props["data-action"]), el]),
   );
   const main = tree.find((el) => el.type === "button" && el.props["aria-haspopup"] === "dialog");
-  return { props, element, tree, buttons, main: main! };
+  const html = renderToStaticMarkup(createElement(MachineCard, props));
+  const waits = elementsOf(readMarkup(html)).find((el) => "data-use-waits" in el.attrs);
+  return {
+    props,
+    element,
+    tree,
+    buttons,
+    main: main!,
+    waits: waits === undefined ? null : seenText(waits).trim(),
+  };
 }
 
 /** The card's box, a line of its body, and a button inside it with its glyph. */
@@ -333,242 +353,261 @@ function dialog(
   };
   const tree = drawn(MachineDetailBody(props));
   const html = renderToStaticMarkup(createElement(MachineDetailBody, props));
-  return { props, tree, html, verbs: verbsOf(tree), lines: linesOf(html), onAct };
+  return { props, tree, html, verbs: verbsOf(tree), held: heldSentence(html), onAct };
 }
 
 describe("a machine's card", () => {
-  it("a click on a stopped machine's card opens its dialog, wherever on the body it lands", () => {
-    const { element, props } = card(stopped);
+  it("a click anywhere on its body opens its dialog, and so do its title and Settings", () => {
+    const { element, props, main, buttons } = card(stopped);
     const { box, rootLine } = layout();
     const onClick = element.props.onClick as (event: never) => void;
     onClick(clickOn(rootLine, box));
     onClick(clickOn(box, box));
-    expect(props.onOpen).toHaveBeenCalledTimes(2);
-  });
-
-  it("its title is the main button: it opens the dialog and says a dialog is what it opens", () => {
-    const { main, props } = card(stopped);
     expect(main.props["aria-haspopup"]).toBe("dialog");
     (main.props.onClick as () => void)();
-    expect(props.onOpen).toHaveBeenCalledOnce();
+    (buttons.get("settings")!.props.onClick as () => void)();
+    expect(props.onOpen).toHaveBeenCalledTimes(4);
   });
 
-  it("its Enable button enables the machine and opens nothing", () => {
-    const { element, buttons, props } = card(stopped);
+  it("Use starts a conversation on a connected machine and opens nothing", () => {
+    const { element, buttons, props, waits } = card(ready);
     const { box, glyph } = layout();
+    expect(buttons.get("use")!.props.disabled).toBe(false);
     // The browser runs the button's handler, then the card's with the click's own target.
-    (buttons.get(S.machines.use)!.props.onClick as () => void)();
+    (buttons.get("use")!.props.onClick as () => void)();
     (element.props.onClick as (event: never) => void)(clickOn(glyph, box));
     expect(props.onUse).toHaveBeenCalledOnce();
     expect(props.onOpen).not.toHaveBeenCalled();
+    expect(waits).toBeNull();
   });
 
-  it("offers Update in Enable's place on another build, and neither when connected or busy with a job", () => {
-    const old = card(behind);
-    expect(old.buttons.has(S.machines.card.update)).toBe(true);
-    expect(old.buttons.has(S.machines.use)).toBe(false);
-    (old.buttons.get(S.machines.card.update)!.props.onClick as () => void)();
-    expect(old.props.onUse).toHaveBeenCalledOnce();
+  it("Use waits on a machine that is not connected, and the card says why in words", () => {
+    const why = S.machines.card.why;
+    const cases: [MachineInfo, MachineJob | null, string][] = [
+      [stopped, null, why.stopped],
+      [added, null, why.notInstalled],
+      [stopped, failedJob(stopped, true), why.failed],
+      [comingBack, null, why.reconnectingFor("6 minutes")],
+    ];
+    for (const [machine, job, line] of cases) {
+      const shown = card(machine, job);
+      expect(shown.buttons.get("use")!.props.disabled, machine.alias).toBe(true);
+      expect(shown.waits, machine.alias).toBe(line);
+    }
+  });
 
-    const connected = card(ready);
-    expect(connected.buttons.has(S.machines.use)).toBe(false);
-    expect(connected.buttons.has(S.machines.card.update)).toBe(false);
-
+  it("while a job moves there, shows its stepper in place of a reason, and holds Use and Delete", () => {
     const updating = card(behind, runningJob(behind));
-    expect(updating.buttons.has(S.machines.use)).toBe(false);
-    expect(updating.buttons.has(S.machines.card.update)).toBe(false);
     expect(updating.tree.some((el) => el.type === Stepper)).toBe(true);
+    expect(updating.waits).toBeNull();
+    expect(updating.buttons.get("use")!.props.disabled).toBe(true);
+    expect(updating.buttons.get("delete")!.props.disabled).toBe(true);
     expect(card(behind).tree.some((el) => el.type === Stepper)).toBe(false);
+  });
 
-    for (const c of [old, connected, updating]) {
-      expect(c.buttons.has(S.machines.host.configure)).toBe(true);
+  it("asks to delete the machine with its trash button, and opens nothing", () => {
+    const { buttons, props } = card(ready);
+    (buttons.get("delete")!.props.onClick as () => void)();
+    expect(props.onDelete).toHaveBeenCalledOnce();
+    expect(props.onOpen).not.toHaveBeenCalled();
+  });
+
+  it("holds Use and Delete while a request is in flight", () => {
+    const { buttons } = card(ready, null, true);
+    expect(buttons.get("use")!.props.disabled).toBe(true);
+    expect(buttons.get("delete")!.props.disabled).toBe(true);
+  });
+
+  it("offers Sync config only on a connected machine on this server's build", () => {
+    const { buttons, props } = card(ready);
+    (buttons.get("sync-config")!.props.onClick as () => void)();
+    expect(props.onSyncConfig).toHaveBeenCalledOnce();
+    expect(props.onOpen).not.toHaveBeenCalled();
+    for (const machine of [readyBehind, stopped, comingBack, added, here]) {
+      expect(card(machine).buttons.has("sync-config"), machine.alias).toBe(false);
     }
   });
 
-  it("never offers Disable beside Enable or Update: the dialog holds it", () => {
-    for (const machine of [stopped, ready, behind, unreachable]) {
-      const { buttons } = card(machine);
-      expect(buttons.has(S.machines.stopUsing), machine.alias).toBe(false);
-      expect(dialog(machine, null).verbs.has("stopUsing"), machine.alias).toBe(true);
-    }
-  });
-
-  it("this server's own card offers no verb: it is where the page is served from", () => {
-    const { buttons, main, props } = card(here);
-    expect(buttons.size).toBe(0);
-    (main.props.onClick as () => void)();
-    expect(props.onOpen).toHaveBeenCalledOnce();
-  });
-
-  it("holds its verbs while a request is in flight", () => {
-    const { buttons } = card(stopped, null, true);
-    expect([...buttons.keys()].sort()).toEqual([S.machines.use, S.machines.host.configure].sort());
-    for (const [name, button] of buttons) expect(button.props.disabled, name).toBe(true);
+  it("this server's own card starts a conversation here, opens its dialog, and cannot be deleted", () => {
+    const { buttons, props } = card(here);
+    expect([...buttons.keys()]).toEqual(["use", "settings"]);
+    expect(buttons.get("use")!.props.disabled).toBe(false);
+    (buttons.get("use")!.props.onClick as () => void)();
+    expect(props.onUse).toHaveBeenCalledOnce();
   });
 });
 
 describe("the Machine dialog", () => {
-  /** Each state, and where its one thing to do lives: under the failure, in Actions, or nowhere. */
-  const HOMES: [string, MachineInfo, MachineJob | null, "progress" | "actions" | null][] = [
-    ["this server", here, null, null],
-    ["connected", ready, doneJob(ready), null],
-    ["connected, on another build", readyBehind, null, "actions"],
-    ["on another build", behind, null, "actions"],
-    ["not connected", notConnected, null, "actions"],
-    ["stopped", stopped, null, "actions"],
-    ["connected, its server stopped", linkedStopped, null, "actions"],
-    ["out of reach", unreachable, null, "actions"],
-    ["installed as far as it goes", winBox, installedJob(winBox), null],
-    ["never checked", fresh, null, "actions"],
-    ["queued", stopped, queuedJob(stopped), null],
-    ["working", behind, runningJob(behind), null],
-    ["failed", stopped, failedJob(stopped, true), "progress"],
-  ];
-
-  it.each(HOMES)("%s: the one thing to do has one home, or none", (_, machine, job, home) => {
-    const { tree, verbs, onAct } = dialog(machine, job);
-    const count = (els: AnyElement[] | null) => (els ?? []).filter(isPrimary).length;
-    expect(count(tree)).toBe(home === null ? 0 : 1);
-    expect(count(section(tree, S.machines.detail.progress))).toBe(home === "progress" ? 1 : 0);
-    expect(count(section(tree, S.machines.detail.actions))).toBe(home === "actions" ? 1 : 0);
-    // Whatever it says, it asks for the whole pipeline.
-    for (const primary of tree.filter(isPrimary)) {
-      expect(primary.props["data-verb"]).toBe("use");
-      (primary.props.onClick as () => void)();
-      expect(onAct).toHaveBeenLastCalledWith("use");
-    }
-    // Nothing else asks for the whole pipeline.
-    expect(verbs.has("use")).toBe(home !== null);
-  });
-
-  it("lets a failed machine reach every action — Retry, Force install, the single steps and the ways out — each asking its page for its own verb", () => {
-    const { verbs, onAct } = dialog(stopped, failedJob(stopped, true));
-    const offered: MachineVerb[] = [
-      "use",
-      "replaceProgram",
-      "install",
-      "connect",
+  it("lays its verbs out in one toolbar, each asking its page for its own verb", () => {
+    const connected = dialog(readyBehind, null);
+    expect([...connected.verbs.keys()]).toEqual([
+      "update",
+      "stop",
       "restart",
       "configure",
-      "stopUsing",
-      "release",
+      "uninstall",
+    ]);
+    const asks: [string, MachineVerb][] = [
+      ["update", "use"],
+      ["stop", "stop"],
+      ["restart", "restart"],
+      ["configure", "configure"],
+      ["uninstall", "uninstall"],
     ];
-    for (const verb of offered) {
-      const button = verbs.get(verb);
-      expect(button?.disabled, verb).toBe(false);
-      onAct.mockClear();
-      button!.press();
-      expect(onAct, verb).toHaveBeenCalledWith(verb);
+    for (const [verb, page] of asks) {
+      connected.onAct.mockClear();
+      connected.verbs.get(verb)!.press();
+      expect(connected.onAct, verb).toHaveBeenCalledWith(page);
     }
-    // Nothing is connected, so there is nothing to disconnect.
-    expect(verbs.get("disconnect")?.disabled).toBe(true);
+    expect(connected.verbs.get("update")!.variant).toBe("primary");
+    expect(connected.held).toBeNull();
+    // A stopped machine is started; one with nothing installed is enabled.
+    const start = dialog(stopped, null);
+    start.verbs.get("start")!.press();
+    expect(start.onAct).toHaveBeenCalledWith("start");
+    const enable = dialog(added, null);
+    expect([...enable.verbs.keys()]).toEqual(["enable", "configure"]);
+    enable.verbs.get("enable")!.press();
+    expect(enable.onAct).toHaveBeenCalledWith("use");
+    // On this server's build, a connected machine's config is synced from the toolbar too.
+    const inSync = dialog(ready, null);
+    inSync.verbs.get("syncConfig")!.press();
+    expect(inSync.onAct).toHaveBeenCalledWith("syncConfig");
   });
 
-  it("explains a failure: the step it stopped at, in the far side's own words, with Force install only when the failure offers it", () => {
-    const { tree, verbs } = dialog(stopped, failedJob(stopped, true));
+  it("says when the config was last synced or why it failed, and lists what it could not carry", () => {
+    const at = new Date(Date.now() - 3 * 60_000).toISOString();
+    const synced = dialog(
+      { ...ready, configSync: { at, ok: true, envOnly: [], skipped: [] } },
+      null,
+    ).html;
+    const line = elementsOf(readMarkup(synced)).find((el) => "data-config-sync" in el.attrs);
+    expect(line?.attrs["data-config-sync"]).toBe("ok");
+    expect(synced).not.toContain("data-config-sync-notice");
+
+    const failed = dialog(
+      {
+        ...ready,
+        configSync: {
+          at,
+          ok: false,
+          detail: "Plugins not synced — it answered 500",
+          envOnly: [
+            { projectId: "p", provider: "openai", modelId: "gpt-5", variable: "OPENAI_API_KEY" },
+          ],
+          skipped: [
+            {
+              projectId: "p",
+              provider: "penguin-go",
+              modelId: "gemini-3.7-flash",
+              code: "model_not_addable",
+              reason: "cannot be added",
+            },
+          ],
+        },
+      },
+      null,
+    ).html;
+    const c = S.machines.detail.configSync;
+    const seen = seenText(readMarkup(failed));
+    expect(seen).toContain(c.failed("Plugins not synced — it answered 500"));
+    expect(seen).toContain(c.envOnly);
+    expect(seen).toContain(
+      c.skippedModel("penguin-go/gemini-3.7-flash", S.errors.byCode.model_not_addable),
+    );
+  });
+
+  it("greys what cannot run, saying why once under the toolbar", () => {
+    const shown = dialog(comingBack, null);
+    expect(shown.verbs.get("stop")?.disabled).toBe(true);
+    expect(shown.verbs.get("restart")?.disabled).toBe(true);
+    expect(shown.verbs.get("uninstall")?.disabled).toBe(true);
+    expect(shown.verbs.get("configure")?.disabled).toBe(false);
+    expect(shown.held).toBe(S.machines.detail.held.unreachable);
+  });
+
+  it("holds every verb while a request is in flight, and leaves the sentence as it was", () => {
+    for (const [machine, job] of [
+      [stopped, failedJob(stopped, true)],
+      [readyBehind, null],
+      [comingBack, null],
+    ] as const) {
+      const { verbs, held } = dialog(machine, job, { busy: true });
+      expect(verbs.size, machine.alias).toBeGreaterThan(0);
+      for (const [verb, button] of verbs) expect(button.disabled, verb).toBe(true);
+      expect(held, machine.alias).toBe(dialog(machine, job).held);
+    }
+  });
+
+  it("explains a failure: the step, the far side's words, then Retry — and Force install only when offered", () => {
+    const { tree, verbs, onAct } = dialog(stopped, failedJob(stopped, true));
     expect(words(tree)).toContain(NO_ANSWER);
     const marked = tree.filter((el) => el.type === "li" && el.props["data-state"] === "failed");
     expect(marked.map((el) => el.props["data-step"])).toEqual(["restart"]);
-    expect(verbs.has("replaceProgram")).toBe(true);
+    verbs.get("retry")!.press();
+    expect(onAct).toHaveBeenCalledWith("use");
+    verbs.get("replaceProgram")!.press();
+    expect(onAct).toHaveBeenCalledWith("replaceProgram");
     expect(dialog(stopped, failedJob(stopped, false)).verbs.has("replaceProgram")).toBe(false);
   });
 
-  /** Whether a verb waits, and what a reader sees beside its button. */
-  const row = (shown: ReturnType<typeof dialog>, verb: MachineVerb) => ({
-    disabled: shown.verbs.get(verb)?.disabled,
-    line: shown.lines.get(verb),
-  });
-
-  it("lists a failure's actions like the verbs of Actions: Retry and Force install, each with what it does beside it", () => {
-    const shown = dialog(stopped, failedJob(stopped, true));
-    expect(row(shown, "use")).toEqual({
-      disabled: false,
-      line: S.machines.detail.primary.retryWhy,
+  it("says what the server's connection check found after a failure, or that it is still checking", () => {
+    const failing = (diagnosis: MachineJob["diagnosis"]) =>
+      dialog(stopped, { ...failedJob(stopped, true), diagnosis });
+    expect(seenText(readMarkup(failing({ state: "running" }).html))).toContain(
+      S.machines.detail.checking,
+    );
+    const { html } = failing({
+      state: "done",
+      machineId: stopped.id,
+      checkedAt: CHECKED,
+      checks: [
+        {
+          id: "ssh",
+          state: "fail",
+          reason: "auth",
+          said: "lab-mac did not accept any key… (ssh: ubuntu@10.0.0.12: Permission denied (publickey).)",
+        },
+        { id: "platform", state: "skip" },
+      ],
     });
-    expect(row(shown, "replaceProgram")).toEqual({
-      disabled: false,
-      line: S.machines.replaceProgramWhy,
+    const rows = elementsOf(readMarkup(html)).filter((el) => "data-check" in el.attrs);
+    expect(rows.map((el) => [el.attrs["data-check"], el.attrs["data-state"]])).toEqual([
+      ["ssh", "fail"],
+      ["platform", "skip"],
+    ]);
+    expect(seenText(rows[0]!)).toContain(S.machines.check.ssh.auth("lab-mac"));
+  });
+
+  it("says, while the server brings the machine back, for how long, which attempt, the last failure and what the check found", () => {
+    const { html, tree } = dialog(comingBack, null);
+    const section_ = section(tree, S.machines.detail.reconnect.title);
+    expect(section_).not.toBeNull();
+    const seen = seenText(readMarkup(html));
+    expect(seen).toContain(S.machines.detail.reconnect.trying);
+    expect(seen).toContain(S.machines.detail.reconnect.lasting("6 minutes"));
+    expect(seen).toContain(S.machines.detail.reconnect.attempt(4));
+    expect(seen).toContain(S.machines.check.ssh.refused("mini"));
+    const rows = elementsOf(readMarkup(html)).filter((el) => "data-check" in el.attrs);
+    expect(rows.map((el) => el.attrs["data-check"])).toEqual(["ssh", "platform"]);
+    // Not coming back, nothing of it.
+    expect(section(dialog(ready, null).tree, S.machines.detail.reconnect.title)).toBeNull();
+  });
+
+  it("folds a job that finished well into one line with its log closed, opens a running job's log, and offers to copy it", () => {
+    const done = dialog(ready, doneJob(ready));
+    expect(done.tree.some((el) => el.type === JobSteps)).toBe(false);
+    expect(words(done.tree)).toContain(S.machines.detail.lastJobDone);
+    expect(fold(done.tree)?.open).toBe(false);
+
+    const running = dialog(ready, runningJob(ready));
+    expect(running.tree.some((el) => el.type === JobSteps)).toBe(true);
+    // Open, the whole log can be copied in one press, as a code block's code can.
+    expect(fold(running.tree)).toEqual({ open: true, copy: true });
+    expect(fold(dialog(stopped, failedJob(stopped, true)).tree)).toEqual({
+      open: false,
+      copy: false,
     });
-  });
-
-  it("says beside each single step and way out what it does", () => {
-    const shown = dialog(ready, null);
-    const does: [MachineVerb, string][] = [
-      ["install", S.machines.verbs.installWhy],
-      ["connect", S.machines.verbs.connectWhy],
-      ["restart", S.machines.verbs.restartWhy],
-      ["configure", S.machines.detail.configureSshWhy],
-      ["stopUsing", S.machines.verbs.stopUsingWhy],
-      ["disconnect", S.machines.verbs.disconnectWhy],
-      ["release", S.machines.verbs.releaseWhy],
-    ];
-    for (const [verb, line] of does) {
-      expect(row(shown, verb), verb).toEqual({ disabled: false, line });
-    }
-  });
-
-  it("holds the single steps while a job is on its way, saying why in their place, and never the ways out", () => {
-    const shown = dialog(ready, runningJob(ready));
-    for (const verb of ["install", "connect", "restart"] as const) {
-      expect(row(shown, verb), verb).toEqual({
-        disabled: true,
-        line: S.machines.detail.hold.moving,
-      });
-    }
-    for (const verb of ["stopUsing", "disconnect", "release", "configure"] as const) {
-      expect(shown.verbs.get(verb)?.disabled, verb).toBe(false);
-    }
-  });
-
-  it("says why Install, Disconnect and Restart wait — no build to push, nothing connected, a machine out of reach — and offers Disconnect while a connection is held", () => {
-    const hold = S.machines.detail.hold;
-    expect(row(dialog(ready, null, { noImage: true }), "install")).toEqual({
-      disabled: true,
-      line: hold.noImage,
-    });
-    expect(row(dialog(stopped, null), "disconnect")).toEqual({
-      disabled: true,
-      line: hold.noConnection,
-    });
-    expect(row(dialog(unreachable, null), "restart")).toEqual({
-      disabled: true,
-      line: hold.unreachable,
-    });
-    const connected = dialog(ready, null);
-    connected.verbs.get("disconnect")!.press();
-    expect(connected.onAct).toHaveBeenCalledWith("disconnect");
-  });
-
-  it("holds every verb while a request is in flight, and rewrites no line for it", () => {
-    for (const [machine, job] of [
-      [stopped, failedJob(stopped, true)],
-      [behind, null],
-      [ready, runningJob(ready)],
-    ] as const) {
-      const { verbs, lines } = dialog(machine, job, { busy: true });
-      expect(verbs.size, machine.alias).toBeGreaterThan(0);
-      for (const [verb, button] of verbs) expect(button.disabled, verb).toBe(true);
-      // The request lasts a moment: what each row says stays as it was.
-      expect(lines, machine.alias).toEqual(dialog(machine, job).lines);
-    }
-  });
-
-  it("offers Reconnect only where the one thing to do does not already connect", () => {
-    // Connect and Try again run the whole pipeline, which connects and more.
-    for (const machine of [notConnected, fresh, unreachable]) {
-      const { verbs } = dialog(machine, null);
-      expect(verbs.get("use")?.variant, machine.alias).toBe("primary");
-      expect(verbs.has("connect"), machine.alias).toBe(false);
-    }
-    for (const [machine, job] of [
-      [ready, null],
-      [stopped, null],
-      [behind, null],
-      [stopped, failedJob(stopped, true)],
-      [ready, runningJob(ready)],
-    ] as const) {
-      expect(dialog(machine, job).verbs.has("connect"), machine.alias).toBe(true);
-    }
   });
 
   it("says in Details, as text, ssh's own words for a machine out of reach and the time of the last check beside how long ago it was", () => {
@@ -587,22 +626,11 @@ describe("the Machine dialog", () => {
     expect(words(dialog(stopped, null).tree)).not.toContain(refused);
   });
 
-  it("is this server's record alone for its own entry: no verb, no steps, no Actions", () => {
-    const { tree, verbs } = dialog(here, null);
+  it("is this server's record alone for its own entry: no verb, no steps", () => {
+    const { tree, verbs, held } = dialog(here, null);
     expect(verbs.size).toBe(0);
+    expect(held).toBeNull();
     expect(tree.some((el) => el.type === JobSteps)).toBe(false);
-    expect(section(tree, S.machines.detail.actions)).toBeNull();
-  });
-
-  it("folds a job that finished well into one line with its log closed, and opens a running job's log", () => {
-    const done = dialog(ready, doneJob(ready));
-    expect(done.tree.some((el) => el.type === JobSteps)).toBe(false);
-    expect(words(done.tree)).toContain(S.machines.detail.lastJobDone);
-    expect(foldOpen(done.tree)).toBe(false);
-
-    const running = dialog(ready, runningJob(ready));
-    expect(running.tree.some((el) => el.type === JobSteps)).toBe(true);
-    expect(foldOpen(running.tree)).toBe(true);
   });
 });
 
@@ -619,9 +647,10 @@ describe("every state", () => {
     ["failed", stopped, failedJob(stopped, true)],
     ["working", behind, runningJob(behind)],
     ["queued", stopped, queuedJob(stopped)],
-    ["connected, its server stopped", linkedStopped, null],
+    ["being brought back", comingBack, null],
     ["installed as far as it goes", winBox, installedJob(winBox)],
     ["never probed", fresh, null],
+    ["added, nothing installed", added, null],
   ];
 
   /** The hints in a piece of markup, each with the words of its own a reader sees. */
@@ -633,14 +662,11 @@ describe("every state", () => {
   it.each(cases)(
     "%s: neither the card nor the dialog carries a hint that cannot open — none sits on words already on screen",
     (_, machine, job) => {
-      for (const html of [
-        renderToStaticMarkup(createElement(MachineCard, card(machine, job).props)),
-        dialog(machine, job, { host: HOST, noImage: true }).html,
-      ]) {
-        const hints = hintsIn(html);
-        // The card's state mark and the dialog's copy button carry one each: the markup was read.
-        expect(hints.length).toBeGreaterThan(0);
-        expect(hints.filter((found) => found.words !== "")).toEqual([]);
+      const cardHtml = renderToStaticMarkup(createElement(MachineCard, card(machine, job).props));
+      // The card's state mark always carries one: the markup was read.
+      expect(hintsIn(cardHtml).length).toBeGreaterThan(0);
+      for (const html of [cardHtml, dialog(machine, job, { host: HOST, noImage: true }).html]) {
+        expect(hintsIn(html).filter((found) => found.words !== "")).toEqual([]);
       }
     },
   );
