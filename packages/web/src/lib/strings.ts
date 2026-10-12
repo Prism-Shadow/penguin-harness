@@ -81,7 +81,6 @@ export const zh = {
       portRange: "1 到 65535 之间的整数。",
       exists: "ssh 配置里已有这个名称。",
       /** Configuring a host this app wrote: the same form, the name fixed. */
-      configure: "配置 ssh 主机",
       editTitle: "配置 ssh 主机",
       saved: (alias: string) => `已更新 ${alias} 的 ssh 配置。`,
       foreign:
@@ -107,15 +106,10 @@ export const zh = {
     },
     /** The verbs. */
     add: "添加机器",
-    use: "启用",
-    stopUsing: "停用",
     /** One tap brings every machine behind this build forward (and reconnects it). */
     updateAll: (count: number) => `全部更新（${count}）`,
     updateAllConfirm: (count: number) =>
       `把这 ${count} 台机器更新到本服务端的版本？每台都会重装程序、重启服务并重新连接，期间正在用它的人会短暂断开。`,
-    /** Asked before letting a machine go: the connection drops, the install stays. */
-    stopUsingOne: (alias: string) =>
-      `停用 ${alias}？本 Project 会断开与它的连接并不再列出它，正在经它进行的工作会中断。程序仍留在那台机器上，之后可以重新启用。`,
     /**
      * The one word for a machine's state, keyed by its reading; `serving` is this server's. The
      * card's mark and the Machine dialog's status chip both say it.
@@ -125,62 +119,92 @@ export const zh = {
       queued: "排队中",
       working: "处理中",
       ready: "已连接",
+      reconnecting: "重新连接中",
       failed: "失败",
       installedOnly: "已安装",
       behind: "有新版本",
       notConnected: "未连接",
       unreachable: "连不上",
-      stopped: "未运行",
-      linkedStopped: "已连接，服务未运行",
+      stopped: "已停止",
       notInstalled: "未安装",
       unknown: "未检查",
     },
-    /** The stepper's steps, in pipeline order, as the caption under a working row. */
+    /** A job's steps, as the caption under a working card's stepper. */
     phase: {
-      check: "检查对端…",
+      build: "构建安装镜像…",
+      check: "检查机器…",
       install: "安装程序…",
-      handover: "交接构建…",
+      handover: "传送构建…",
       restart: "重启服务…",
       connect: "建立连接…",
-      sync: "下发模型配置…",
+      sync: "同步模型配置…",
+      stop: "停止服务…",
+      remove: "删除程序…",
     },
-    /** The same steps by name, in pipeline order: the Machine dialog's step list. */
+    /** The same steps by name: the Machine dialog's step list. */
     step: {
+      build: "构建安装镜像",
       check: "检查机器",
       install: "安装程序",
       handover: "传送构建",
       restart: "重启服务",
       connect: "建立连接",
       sync: "同步模型配置",
+      stop: "停止服务",
+      remove: "删除程序",
     },
     stepOf: (step: number, total: number) => `第 ${step}/${total} 步`,
     queued: "排队中，等前面的机器处理完。",
     working: "处理中…",
     failedAt: (step: string) => `失败于「${step}」。`,
-    /** The forced install a failed job may offer, and how it differs from an install. */
+    /** The forced install a failed job may offer. */
     replaceProgram: "强制安装",
-    replaceProgramWhy: "即使版本已一致，也重新安装程序",
     replaceProgramConfirm: (alias: string) =>
       `在 ${alias} 上强制安装？无论那台机器上现在是什么，都会装上本服务端的构建并重启它的服务，正在用它的人会被打断。`,
     /** Refusals answered by machine id when a batch is queued. */
     refusedSelf: (alias: string) => `${alias} 就是本服务端所在的机器，无需添加。`,
     refusedUnknown: (alias: string) => `${alias} 不在本服务端的 ssh 配置里。`,
-    agentsUnreachable: "那台机器尚未连接——请在「机器管理」页面使用它",
+    /**
+     * The new-chat composer's Agent picker while its workspace is on a machine and that machine's
+     * Agents cannot be listed: why, from the machine state the Machines page shows too.
+     */
+    composer: {
+      reconnecting: "那台机器正在重新连接…",
+      stopped: "那台机器的服务已停止——请在「机器管理」页面启动它",
+      notConnected: "那台机器尚未连接——请在「机器管理」页面启用它",
+      missing: "那台机器不在本 Project 的机器列表里",
+      failed: (message: string) => `那台机器没有答复：${message}`,
+    },
     adminOnly: "只有管理员可以管理机器。",
     /** The notice under the title while machines carry another build; its action updates them all. */
     updateNotice: (count: number) => `${count} 台机器待更新`,
-    /** A machine's card (machine-card.tsx): the stats line and the verbs beside it. */
+    /** A machine's card (machine-card.tsx): the stats line and the quick buttons beside it. */
     card: {
       /** How this server reaches the machine; the dialog says it in full. */
       local: "本机",
       ssh: "ssh",
       /** The pill beside the version of a machine on another build. */
       updateNeeded: "需要更新",
-      update: "更新",
+      /** A new conversation in this machine's temporary workspace. */
+      use: "使用",
+      settings: "设置",
+      delete: "删除",
+      /** This server's own card: a delete that cannot be, said on its placeholder. */
+      localUndeletable: "本服务端不能删除",
+      /** Why Use waits, in the card's middle while no job moves there. */
+      why: {
+        reconnecting: "重新连接中…",
+        reconnectingFor: (span: string) => `重新连接中… · 已 ${span}`,
+        stopped: "服务已停止",
+        notConnected: "未连接",
+        notInstalled: "尚未安装",
+        failed: "上次任务失败",
+        windows: "暂时还不能连接 Windows 机器",
+      },
     },
     /**
-     * The Machine dialog (machine-detail-dialog.tsx): a header under the alias, then Details,
-     * Progress and Actions.
+     * The Machine dialog (machine-detail-dialog.tsx): a header under the alias, the toolbar,
+     * then Reconnecting, Progress and Details.
      */
     detail: {
       /** The header's line under the status: how this server reaches the machine. */
@@ -190,7 +214,6 @@ export const zh = {
       newerAvailable: (version: string) => `有新版本 ${version}`,
       facts: "基本信息",
       progress: "处理进度",
-      actions: "操作",
       /** Details: each fact's label, and the values said in words. */
       fact: {
         connection: "连接方式",
@@ -201,7 +224,7 @@ export const zh = {
         service: "远端服务",
         serviceLocal: "服务",
         running: (port: number) => `运行中（端口 ${port}）`,
-        stopped: "未运行",
+        stopped: "已停止",
         unreachable: "连不上",
         checked: "上次检查",
         installed: "已安装",
@@ -218,63 +241,62 @@ export const zh = {
       failedAtStep: (step: string, message: string) => `在「${step}」这一步失败：${message}`,
       showLog: "查看日志",
       logLabel: "任务日志",
-      /** The one thing to do for a machine, and what it does, said beside it. */
-      primary: {
-        update: "更新",
-        updateWhy: (version: string) => `更新到 ${version}，会重启服务并重新连接。`,
-        start: "启动服务",
-        startWhy: "启动那台机器上的服务并连接。",
-        connect: "连接",
-        connectWhy: "连接到那台机器上的服务，没在运行就先启动它。",
-        tryAgain: "重试连接",
-        tryAgainWhy: "再次通过 ssh 连接；请先确认那台机器开着、网络通。",
-        retry: "重试",
-        retryWhy: "从头再跑一遍整个流程",
+      copyLog: "复制日志",
+      /** A failed job's way out, under the failure. */
+      retry: "重试",
+      /** The connection check the server ran after the job failed, check by check. */
+      checking: "正在检查这台机器…",
+      /** The toolbar under the header: every verb the machine takes, in one row. */
+      toolbar: {
+        label: "机器操作",
         enable: "启用",
-        enableWhy: "在这台机器上安装 PenguinHarness，启动服务并连接。",
+        update: "更新",
+        stop: "停止服务",
+        start: "启动服务",
+        restart: "重启服务",
+        configure: "配置 SSH",
+        uninstall: "卸载",
       },
-      /** The captions of the two groups of Actions: the single steps, and the ways out. */
-      maintenance: "维护",
-      leave: "退出",
-      configureSsh: "配置 ssh",
-      configureSshWhy: "修改连接这台机器用的地址、用户、端口和密钥",
       /**
-       * Why a verb waits on the machine, said in its row in place of what it does. A request in
-       * flight holds every verb too, for a moment, and has no line of its own.
+       * The one sentence under the toolbar while some of its verbs wait: why, and which. The list
+       * is the toolbar's own labels, joined.
        */
-      hold: {
-        moving: "这台机器正在处理任务，完成后可用",
-        noImage: "本服务端没有可安装的版本",
-        notInstalled: "这台机器上还没有安装",
-        checking: "正在检查…",
-        noConnection: "当前没有连接，无需断开",
-        unreachable: "上次检查时连不上这台机器",
+      held: {
+        moving: (verbs: string[]) => `这台机器正在处理任务，完成后可用：${verbs.join("、")}。`,
+        unreachable: (verbs: string[]) => `连不上这台机器：${verbs.join("、")}暂不可用。`,
+        stopped: (verbs: string[]) => `服务已停止：${verbs.join("、")}暂不可用。`,
+        noImage: (verbs: string[]) => `本服务端没有可安装的版本：${verbs.join("、")}暂不可用。`,
+      },
+      /** The section while the server brings a machine it keeps connected back. */
+      reconnect: {
+        title: "重新连接",
+        trying: "重新连接中…",
+        lasting: (span: string) => `已持续 ${span}`,
+        attempt: (n: number) => `第 ${n} 次尝试`,
+        next: (span: string) => `下次尝试在 ${span}后`,
+        now: "正在尝试",
+        lastError: "上次失败：",
+        checked: "自动检查的结果：",
       },
     },
-    /** The single steps and the ways out the dialog offers, each with what it does in one line. */
-    verbs: {
-      install: "安装程序",
-      installWhy: "把本服务端的版本装到这台机器上",
-      connect: "重新连接",
-      connectWhy: "重新连上这台机器，必要时先启动它的服务",
-      restart: "重启服务",
-      restartWhy: "重启这台机器上的服务",
-      check: "检查连接",
-      checkWhy: "检查登录、系统、下载、磁盘和端口，不改动那台机器",
-      stopUsingWhy: "断开连接并移出本 Project，程序仍留在这台机器上",
-      disconnect: "断开",
-      disconnectWhy: "只断开连接，这台机器上的服务继续运行",
-      release: "移出 Project",
-      releaseWhy: "本 Project 不再列出它，连接和程序都不变",
-      disconnectConfirm: (alias: string) =>
-        `断开与 ${alias} 的连接？这条连接由使用它的所有 Project 共用，正在经它进行的工作会中断；那台机器上的服务继续运行，之后可以重新连接。`,
-      releaseConfirm: (alias: string) =>
-        `把 ${alias} 移出本 Project？它不再列在这里，本 Project 的模型配置也不再同步给它；那台机器上的程序与连接保持不变，之后可以用「添加机器」把它加回来。`,
+    /** The confirmations the page asks before a verb that stops or removes something. */
+    confirm: {
+      deleteTitle: (alias: string) => `删除 ${alias}？`,
+      deleteBody: (alias: string) =>
+        `${alias} 会从本 Project 移除，本服务端断开与它的连接。那台机器上的程序和数据都会保留，ssh 配置里的主机也不变；之后可以用「添加机器」把它加回来。`,
+      stopTitle: (alias: string) => `停止 ${alias} 上的服务？`,
+      stopBody:
+        "正在用它的人会断开，本服务端也不再自动重连这台机器；之后用「启动服务」再启动它。程序与数据都保留。",
+      uninstallTitle: (alias: string) => `卸载 ${alias} 上的 PenguinHarness？`,
+      uninstallBody: (programDir: string) =>
+        `会先停止它的服务，再删除程序目录 ${programDir}。这台机器仍留在列表中，显示「未安装」。`,
+      removeData: "同时删除这台机器上的数据目录",
+      /** Said under the data directory's path. */
+      removeDataWarning: "那台机器上的会话、Agent 与配置都在其中，删除后无法恢复。",
     },
     /** The connection check's results in the Machine dialog, one plain sentence per check. */
     check: {
       title: "连接检查",
-      running: "正在检查…",
       skipped: (what: string) => `${what}：未检查。`,
       /** Each check by name, for the line that says it was not asked. */
       name: {

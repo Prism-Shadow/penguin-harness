@@ -364,6 +364,23 @@ export function formatRelativeLong(
   return formatDateTime(iso);
 }
 
+/**
+ * A span of time in words a sentence can hold — how long something has lasted, or how long until
+ * it happens: whole seconds under a minute (at least one), then whole minutes, hours and days
+ * (`3 分钟` / `3 minutes`), each rounded down. Always led by its number, so a sentence puts the
+ * same space before it in either language.
+ */
+export function formatSpan(ms: number, locale: "zh" | "en"): string {
+  const unit = (n: number, zh: string, en: string) =>
+    locale === "en" ? `${n} ${en}${n === 1 ? "" : "s"}` : `${n} ${zh}`;
+  const min = Math.floor(Math.max(0, ms) / 60_000);
+  if (min < 1) return unit(Math.max(1, Math.floor(Math.max(0, ms) / 1000)), "秒", "second");
+  if (min < 60) return unit(min, "分钟", "minute");
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return unit(hours, "小时", "hour");
+  return unit(Math.floor(hours / 24), "天", "day");
+}
+
 /** ISO timestamp → local `HH:mm:ss` (inline display in the Trace timeline); returns the input unchanged if parsing fails. */
 export function formatTime(iso: string): string {
   const d = new Date(iso);

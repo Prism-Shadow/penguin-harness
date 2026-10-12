@@ -1,7 +1,7 @@
 /**
  * What the Machine dialog says about one machine, derived without a DOM: the status chip under
- * its title, the facts with their glyphs, the job's steps, the one thing to do next, the verbs
- * Actions lists, and why a verb is held.
+ * its title, the toolbar's verbs and the one sentence on those that wait, the reconnecting
+ * section, the job's steps, and the facts with their glyphs.
  *
  * Every derivation reads the reading the card reads (`readMachine`), so the dialog and the card
  * never disagree about a machine's state: the dialog only says more of it.
@@ -19,19 +19,12 @@ import {
   formatDateTime,
   formatRelativeLong,
   formatShortDateTime,
+  formatSpan,
 } from "../../lib/format";
 import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
 import { reasonText } from "./machine-card";
-import type { MachineVerb } from "./machine-detail-dialog";
-import {
-  MACHINE_PHASES,
-  failureText,
-  isPhase,
-  readingTone,
-  sshWords,
-  stepLabel,
-} from "./machines-view";
+import { failureText, isPhase, outOfDate, readingTone, sshWords, stepLabel } from "./machines-view";
 import type { MachineReading } from "./machines-view";
 
 /** The machine's state as one chip: a glyph (or a spinner) and one plain word. */
@@ -51,9 +44,9 @@ export interface MachineChip {
  */
 const CHIP_GLYPH: Record<MachineReading["kind"], string | null> = {
   ready: ICONS.chainLink,
+  reconnecting: null,
   notConnected: ICONS.plugLifted,
   stopped: ICONS.stopCircle,
-  linkedStopped: ICONS.stopCircle,
   unreachable: ICONS.alertCircle,
   behind: ICONS.refresh,
   installedOnly: ICONS.checkCircle,
@@ -269,16 +262,16 @@ const failedResult = (job: MachineJob) =>
   !job.queued && !job.running && job.result !== null && !job.result.ok ? job.result : null;
 
 /**
- * The six steps in order, each marked by where the job stands: a queued job has every step still
- * to come, a running one is on its phase with the earlier ones done, one that finished well has
- * them all done, and a failed one is marked failed at its phase — or, when it stopped before
+ * The job's own steps in order, each marked by where the job stands: a queued job has every step
+ * still to come, a running one is on its phase with the earlier ones done, one that finished well
+ * has them all done, and a failed one is marked failed at its phase — or, when it stopped before
  * naming one (ssh refused the sign-in every job opens with), at the step its failure names.
  */
 export function jobSteps(job: MachineJob): JobStep[] {
   const failure = failedResult(job);
   const failed = failure !== null;
   const phase = job.phase ?? (failure !== null && isPhase(failure.step) ? failure.step : null);
-  const at = phase === null ? -1 : MACHINE_PHASES.indexOf(phase);
+  const at = phase === null ? -1 : job.steps.indexOf(phase);
   const stateOf = (index: number): StepState => {
     if (job.queued) return "pending";
     if (!job.running && !failed) return "done";
@@ -286,12 +279,15 @@ export function jobSteps(job: MachineJob): JobStep[] {
     if (index > at) return "pending";
     return failed ? "failed" : "current";
   };
-  return MACHINE_PHASES.map((phase, index) => ({
+  return job.steps.map((phase, index) => ({
     phase,
     name: S.machines.step[phase],
     state: stateOf(index),
   }));
 }
+
+/** The connection check the server ran after a job failed: still running, or its lines. */
+export type JobCheck = { kind: "running" } | { kind: "done"; lines: CheckLine[] };
 
 /** What the Progress section shows for a job. */
 export type JobView =
@@ -308,207 +304,165 @@ export type JobView =
       /** ssh's own words under a refusal it caused; null otherwise. */
       detail: string | null;
       canReplaceProgram: boolean;
+      /** The connection check the server ran after the failure; null when it ran none. */
+      check: JobCheck | null;
     };
 
 /**
  * The job as the Progress section shows it: its steps while it is queued or running, or after it
- * failed — with where and why — and nothing but a line once it finished well.
+ * failed — with where and why, and what the connection check found — and nothing but a line once
+ * it finished well.
  */
 export function jobView(job: MachineJob): JobView {
   if (job.queued) return { kind: "queued", steps: jobSteps(job) };
   if (job.running) return { kind: "running", steps: jobSteps(job) };
   const result = failedResult(job);
   if (result === null) return { kind: "done" };
+  const diagnosis = job.diagnosis;
   return {
     kind: "failed",
     steps: jobSteps(job),
     stepName: stepLabel(result.step),
     ...failureText(result, job.alias),
     canReplaceProgram: result.canReplaceProgram === true,
+    check:
+      diagnosis === undefined
+        ? null
+        : diagnosis.state === "running"
+          ? { kind: "running" }
+          : { kind: "done", lines: diagnosis.checks.map((one) => checkLine(one, job.alias)) },
   };
 }
 
-export type PrimaryKind = "enable" | "update" | "start" | "connect" | "tryAgain" | "retry";
+/** The toolbar's verbs, by what each one does. */
+export type ToolbarVerb =
+  "enable" | "update" | "stop" | "start" | "restart" | "configure" | "uninstall";
 
-/** The one thing to do for a machine: its button's word and glyph, and what it does. */
-export interface PrimaryAction {
-  kind: PrimaryKind;
+/** Why a toolbar verb waits: a job on its way, a machine out of reach, a stopped server, no build. */
+export type HoldReason = "moving" | "unreachable" | "stopped" | "noImage";
+
+/** One button of the toolbar: its verb, word and glyph, whether it is the primary, and why it waits. */
+export interface ToolbarItem {
+  verb: ToolbarVerb;
   label: string;
   glyph: string;
-  why: string;
+  primary: boolean;
+  /** Why it cannot run now; null when it can. */
+  held: HoldReason | null;
 }
 
+const GLYPH: Record<ToolbarVerb, string> = {
+  enable: ICONS.plug,
+  update: ICONS.refresh,
+  stop: ICONS.stopCircle,
+  start: ICONS.play,
+  restart: ICONS.rotateCw,
+  configure: ICONS.slidersHorizontal,
+  uninstall: ICONS.trash,
+};
+
+/** The order the one sentence tells the reasons in: the first that holds any verb is said. */
+const REASONS: readonly HoldReason[] = ["moving", "unreachable", "stopped", "noImage"];
+
 /**
- * The one thing to do for this machine; every kind asks for the `use` verb — the whole pipeline,
- * which installs, starts and connects as far as the machine needs. Null while a job is queued or
- * running, and for a machine that is ready or installed as far as it goes. A failed job's Retry
- * is drawn under the failure, every other kind at the top of Actions.
+ * The toolbar under the dialog's header: every verb the machine takes now, in one row, and the
+ * one sentence saying why those that wait do. A machine with nothing installed is enabled (the
+ * whole pipeline); one on another build than this server's is updated — the same pipeline,
+ * offered only while it would change something; then its server stopped or started (whichever
+ * it is not), restarted, its ssh host configured, and the program uninstalled. This server's own
+ * entry takes none.
  */
-export function primaryAction(
-  reading: MachineReading,
-  outOfDate: boolean,
+export function machineToolbar(
+  machine: MachineInfo,
+  job: MachineJob | null,
   imageVersion: string | null,
-): PrimaryAction | null {
-  const p = S.machines.detail.primary;
-  if (reading.kind === "queued" || reading.kind === "working") return null;
-  if (reading.kind === "failed") {
-    return { kind: "retry", label: p.retry, glyph: ICONS.rotateCcw, why: p.retryWhy };
+  noImage: boolean,
+): { items: ToolbarItem[]; sentence: string | null } {
+  if (machine.local) return { items: [], sentence: null };
+  const t = S.machines.detail.toolbar;
+  const moving = job !== null && (job.queued || job.running);
+  const reconnecting = machine.reconnect !== undefined;
+  const kept = machine.keepConnected === true || machine.connection !== null;
+  const item = (
+    verb: ToolbarVerb,
+    label: string,
+    held: HoldReason | null,
+    primary = false,
+  ): ToolbarItem => ({ verb, label, glyph: GLYPH[verb], primary, held });
+  const pipelineHeld: HoldReason | null = moving ? "moving" : noImage ? "noImage" : null;
+  const items: ToolbarItem[] = [];
+  if (machine.installed === null) {
+    items.push(item("enable", t.enable, pipelineHeld, true));
+    items.push(item("configure", t.configure, null));
+  } else {
+    if (outOfDate(machine, imageVersion)) items.push(item("update", t.update, pipelineHeld, true));
+    const reachHeld: HoldReason | null = moving ? "moving" : reconnecting ? "unreachable" : null;
+    items.push(
+      kept ? item("stop", t.stop, reachHeld) : item("start", t.start, moving ? "moving" : null),
+    );
+    items.push(item("restart", t.restart, reachHeld ?? (kept ? null : "stopped")));
+    items.push(item("configure", t.configure, null));
+    items.push(item("uninstall", t.uninstall, reachHeld));
   }
-  if (reading.kind === "notInstalled") {
-    return { kind: "enable", label: p.enable, glyph: ICONS.plug, why: p.enableWhy };
-  }
-  if (outOfDate && imageVersion !== null) {
-    return {
-      kind: "update",
-      label: p.update,
-      glyph: ICONS.refresh,
-      why: p.updateWhy(imageVersion),
-    };
-  }
-  switch (reading.kind) {
-    case "ready":
-    case "installedOnly":
-      return null;
-    case "stopped":
-    case "linkedStopped":
-      return { kind: "start", label: p.start, glyph: ICONS.play, why: p.startWhy };
-    case "unreachable":
-      return { kind: "tryAgain", label: p.tryAgain, glyph: ICONS.plug, why: p.tryAgainWhy };
-    default:
-      // Not connected, never checked — and a build with nothing to compare it against, which
-      // reads like a machine nobody is connected to.
-      return { kind: "connect", label: p.connect, glyph: ICONS.plug, why: p.connectWhy };
-  }
+  const held = S.machines.detail.held;
+  const sentence =
+    REASONS.map((reason) => {
+      const verbs = items.filter((one) => one.held === reason).map((one) => one.label);
+      return verbs.length === 0 ? null : held[reason](verbs);
+    }).find((line) => line !== null) ?? null;
+  return { items, sentence };
 }
 
-/** The single steps and the ways out; `use` and `replaceProgram` are the primary's. */
-export type DialogVerb = Exclude<MachineVerb, "use" | "replaceProgram">;
-
-/** One single step or way out as Actions lists it: its glyph, its word, and what it does. */
-export interface VerbRow {
-  verb: DialogVerb;
-  glyph: string;
-  label: string;
-  /** What the verb does, in one line beside its button. */
-  why: string;
+/** The Reconnecting section: how long, which attempt, when the next, why the last one failed. */
+export interface ReconnectView {
+  /** How long the streak has lasted, in words. */
+  lasting: string;
+  /** The attempt running or next to run (one past the failures so far). */
+  attempt: number;
+  /** When the next attempt runs, in words; null while one runs. */
+  next: string | null;
+  /** The last attempt's failure — ssh's refusal in the reader's language; null before one. */
+  lastError: string | null;
+  /** ssh's own words under a refusal it caused; null otherwise. */
+  detail: string | null;
+  /** What the connection check found after failures in a row; null until it ran. */
+  check: CheckLine[] | null;
 }
 
-/** A group of Actions: its caption, and its verbs in order. */
-export interface VerbGroup {
-  caption: string;
-  rows: VerbRow[];
+export function reconnectView(
+  machine: MachineInfo,
+  locale: "zh" | "en",
+  now: number,
+): ReconnectView | null {
+  const r = machine.reconnect;
+  if (r === undefined) return null;
+  const failure =
+    r.lastError === null
+      ? null
+      : failureText(
+          {
+            message: r.lastError,
+            ...(r.sshReason === undefined ? {} : { sshReason: r.sshReason }),
+          },
+          machine.alias,
+        );
+  return {
+    lasting: formatSpan(now - Date.parse(r.since), locale),
+    attempt: r.attempts + 1,
+    next: r.nextAt === null ? null : formatSpan(Date.parse(r.nextAt) - now, locale),
+    lastError: failure?.message ?? null,
+    detail: failure?.detail ?? null,
+    check:
+      r.diagnosis === null ? null : r.diagnosis.checks.map((one) => checkLine(one, machine.alias)),
+  };
 }
 
 /**
- * Actions' two groups, in order: the single steps, then the ways out. Reconnect stays out where
- * the one thing to do already connects — Connect and Try again run the whole pipeline, which
- * connects and more — so the same act is never offered twice.
+ * Where the program lives on the machine: its data root's parent — the installer lays the data
+ * root out inside the program directory — in the machine's own spelling.
  */
-export function verbGroups(primary: PrimaryKind | null): VerbGroup[] {
-  const m = S.machines;
-  const connects = primary === "connect" || primary === "tryAgain" || primary === "enable";
-  const maintenance: VerbRow[] = [
-    { verb: "install", glyph: ICONS.download, label: m.verbs.install, why: m.verbs.installWhy },
-    { verb: "connect", glyph: ICONS.chainLink, label: m.verbs.connect, why: m.verbs.connectWhy },
-    { verb: "restart", glyph: ICONS.rotateCw, label: m.verbs.restart, why: m.verbs.restartWhy },
-    { verb: "check", glyph: ICONS.gauge, label: m.verbs.check, why: m.verbs.checkWhy },
-    {
-      verb: "configure",
-      glyph: ICONS.gear,
-      label: m.detail.configureSsh,
-      why: m.detail.configureSshWhy,
-    },
-  ];
-  const leave: VerbRow[] = [
-    { verb: "stopUsing", glyph: ICONS.plugLifted, label: m.stopUsing, why: m.verbs.stopUsingWhy },
-    {
-      verb: "disconnect",
-      glyph: ICONS.signOut,
-      label: m.verbs.disconnect,
-      why: m.verbs.disconnectWhy,
-    },
-    { verb: "release", glyph: ICONS.boxArrowOut, label: m.verbs.release, why: m.verbs.releaseWhy },
-  ];
-  return [
-    {
-      caption: m.detail.maintenance,
-      rows: maintenance.filter((row) => !(connects && row.verb === "connect")),
-    },
-    { caption: m.detail.leave, rows: leave },
-  ];
-}
-
-/**
- * Why a verb waits on the machine: a job on its way, a check already running, no build, nothing
- * installed, no connection, no answer.
- */
-export type HoldReason =
-  "moving" | "checking" | "noImage" | "notInstalled" | "noConnection" | "unreachable";
-
-/** Why a verb waits: a request in flight, or a reason of the machine's own. */
-export type Hold = "busy" | HoldReason;
-
-export interface VerbContext {
-  /** A request from the page is in flight. */
-  busy: boolean;
-  /** A job for the machine is queued or running: the single steps would collide with it (409). */
-  moving: boolean;
-  /** This server has no build to push. */
-  noImage: boolean;
-  /** A connection to the machine is held. */
-  connected: boolean;
-  /** The last probe could not reach the machine. */
-  unreachable: boolean;
-  /** This Project has installed the program there (an added machine has not, yet). */
-  installed: boolean;
-  /** A connection check is running for the machine. */
-  checking: boolean;
-}
-
-/** What of the machine's own can hold each verb, in the order the reasons are told. */
-const HOLDS: Record<DialogVerb, readonly HoldReason[]> = {
-  install: ["moving", "noImage"],
-  connect: ["moving", "notInstalled"],
-  restart: ["moving", "notInstalled", "unreachable"],
-  check: ["moving", "checking"],
-  configure: [],
-  stopUsing: [],
-  disconnect: ["noConnection"],
-  release: [],
-};
-
-const holds = (hold: HoldReason, ctx: VerbContext): boolean => {
-  switch (hold) {
-    case "moving":
-      return ctx.moving;
-    case "checking":
-      return ctx.checking;
-    case "noImage":
-      return ctx.noImage;
-    case "notInstalled":
-      return !ctx.installed;
-    case "noConnection":
-      return !ctx.connected;
-    case "unreachable":
-      return ctx.unreachable;
-  }
-};
-
-/**
- * Why a verb waits on the machine, or null when nothing of the machine's holds it; the first
- * reason wins. A request in flight is not among them: it holds every verb for the moment the
- * request takes, which is no reason to rewrite what each one says.
- */
-export function holdReason(verb: DialogVerb, ctx: VerbContext): HoldReason | null {
-  return HOLDS[verb].find((hold) => holds(hold, ctx)) ?? null;
-}
-
-/**
- * Why a verb is held right now, or null when it may be pressed: a request in flight holds every
- * verb and is told before any other reason.
- */
-export function verbHold(verb: DialogVerb, ctx: VerbContext): Hold | null {
-  return ctx.busy ? "busy" : holdReason(verb, ctx);
+export function programDirOf(root: string): string {
+  return root.replace(/[\\/]data$/, "");
 }
 
 /** One line of the connection check: its mark, its sentence, and ssh's own words under it. */

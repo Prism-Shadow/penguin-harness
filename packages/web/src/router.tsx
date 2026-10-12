@@ -12,6 +12,7 @@ import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from "react-rout
 import { useAuth } from "./state/auth";
 import { useRuntimeLanguages } from "./features/chat/use-runtime-languages";
 import { ProjectProvider } from "./state/project";
+import { MachinesProvider } from "./state/machines";
 import { SessionsProvider } from "./state/sessions";
 import { CompanyProvider } from "./state/company";
 import { AppLayout } from "./components/layout/app-layout";
@@ -75,11 +76,13 @@ function RequireAuth() {
   if (user === null) return <Navigate to="/login" replace />;
   return (
     <ProjectProvider>
-      <SessionsProvider>
-        <CompanyProvider>
-          <AppLayout />
-        </CompanyProvider>
-      </SessionsProvider>
+      <MachinesProvider>
+        <SessionsProvider>
+          <CompanyProvider>
+            <AppLayout />
+          </CompanyProvider>
+        </SessionsProvider>
+      </MachinesProvider>
     </ProjectProvider>
   );
 }

@@ -3,11 +3,10 @@
  * one reading each card gives, and which machines the update notice counts.
  *
  * A row's reading follows a fixed precedence. The server's job for that machine is the
- * freshest word (queued, working, failed); a held connection settles "ready" whatever an
- * older job said, so a machine a re-hold brought back after a failed job reads as ready
- * rather than failed; only then does the last probe speak. Every reading a person can act
- * on is fixed by the same verb — use the machine — so the page never has to explain which
- * of install, update, start, connect a row needs.
+ * freshest word (queued, working); then the server bringing back a machine it keeps connected
+ * (reconnecting); then a held connection, which settles "ready" whatever an older job said, so a
+ * machine brought back after a failed job reads as ready rather than failed; only then does the
+ * last job's failure, and after it the last probe, speak.
  */
 import type {
   MachineInfo,
@@ -17,6 +16,7 @@ import type {
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
+import { formatSpan } from "../../lib/format";
 import type { Tone } from "../../lib/tone";
 
 export type MachineReading =
@@ -29,12 +29,10 @@ export type MachineReading =
   /** Connected and answering: agents can run there. */
   | { kind: "ready"; port: number | null }
   /**
-   * A connection is held, but the last probe found no server running over there. Not a
-   * contradiction and not a corner case: the connection is an ssh process on THIS side and
-   * outlives the far server, so it says the tunnel has somewhere to go, never that anything
-   * answers. Its own reading because it needs its own action — `use` starts the server.
+   * Kept connected, and being brought back by the server: its connection dropped, its server
+   * stopped or restarted, or this server just started. `since` is when the streak began.
    */
-  | { kind: "linkedStopped" }
+  | { kind: "reconnecting"; since: string; attempts: number }
   /** Installed, and that is as far as this server can take it (a Windows machine). */
   | { kind: "installedOnly" }
   /** Carrying a different build from the one this server would install. */
@@ -52,36 +50,45 @@ export type MachineReading =
   | { kind: "unknown" };
 
 /**
- * The pipeline's steps in the order a `use` job runs them — the stepper's segments. Spelled
- * here rather than imported because the server's api entry reaches the web as types only;
- * the type keeps it in step with the server's `MachinePhase`, and `PHASE_COMPLETE` fails
- * the build if a step is missing.
+ * Every step a job may name. A job carries its own steps (`MachineJob.steps`); this is what a
+ * step the server names is checked against. Spelled here rather than imported because the
+ * server's api entry reaches the web as types only; the type keeps it in step with the
+ * server's `MachinePhase`, and `PHASE_COMPLETE` fails the build if a step is missing.
  */
 export const MACHINE_PHASES = [
+  "build",
   "check",
   "install",
   "handover",
   "restart",
   "connect",
   "sync",
+  "stop",
+  "remove",
 ] as const satisfies readonly MachinePhase[];
 const PHASE_COMPLETE: Record<MachinePhase, true> = {
+  build: true,
   check: true,
   install: true,
   handover: true,
   restart: true,
   connect: true,
   sync: true,
+  stop: true,
+  remove: true,
 };
 void PHASE_COMPLETE;
 
 export const isPhase = (step: string): step is MachinePhase =>
   (MACHINE_PHASES as readonly string[]).includes(step);
 
-/** ssh's own lines out of what the server said: after its sentence, `(ssh: …)`. */
+/**
+ * ssh's own lines out of what the server said: after its sentence, `(ssh: …)` — without the
+ * `ssh:` its own diagnostics begin with, since the page says "ssh:" before them itself.
+ */
 export function sshWords(said: string): string {
   const words = /\(ssh: ([\s\S]*)\)\s*$/.exec(said)?.[1];
-  return (words ?? said).trim();
+  return (words ?? said).trim().replace(/^ssh:\s*/, "");
 }
 
 /**
@@ -121,16 +128,18 @@ export function readMachine(
 ): MachineReading {
   if (job?.queued) return { kind: "queued" };
   if (job?.running) return { kind: "working", step: job.log.at(-1) ?? null };
+  // The server keeps an enabled machine connected and says when it is bringing one back — a
+  // held ssh session is not liveness (#561), and a server that stopped behind one is exactly
+  // what it notices and restarts.
+  if (machine.reconnect !== undefined) {
+    return {
+      kind: "reconnecting",
+      since: machine.reconnect.since,
+      attempts: machine.reconnect.attempts,
+    };
+  }
   if (machine.connection !== null) {
-    // A held connection is not liveness — the lesson of #561, read the other way round. It
-    // used to win outright here, so a machine whose server had stopped still read "Connected"
-    // while its own details said otherwise, and `use` (the thing that would start it again)
-    // was withheld because the row looked ready. What the last probe found now has the say.
     const status = machine.status;
-    if (status !== null && status.state === "stopped") return { kind: "linkedStopped" };
-    if (status !== null && status.state === "unreachable") {
-      return { kind: "unreachable", detail: status.detail ?? null };
-    }
     return {
       kind: "ready",
       port: status?.state === "running" ? (status.port ?? null) : null,
@@ -149,13 +158,18 @@ export function readMachine(
     return { kind: "installedOnly" };
   // On this Project's list, nothing installed by it: a machine added without enabling it.
   if (!machine.local && machine.installed === null) return { kind: "notInstalled" };
+  // A server that is stopped, or out of reach, says so whatever build it carries: the build is
+  // the pill's and the version badge's to say, and a person who just stopped a machine reads
+  // "Stopped", not "Update available".
+  const status = machine.status;
+  if (status?.state === "stopped") return { kind: "stopped" };
+  if (status?.state === "unreachable") {
+    return { kind: "unreachable", detail: status.detail ?? null };
+  }
   if (outOfDate(machine, imageVersion)) {
     return { kind: "behind", version: machine.installed!.version };
   }
-  const status = machine.status;
   if (status === null) return { kind: "unknown" };
-  if (status.state === "unreachable") return { kind: "unreachable", detail: status.detail ?? null };
-  if (status.state === "stopped") return { kind: "stopped" };
   return { kind: "notConnected" };
 }
 
@@ -168,15 +182,13 @@ export function readingTone(reading: MachineReading): Tone {
   switch (reading.kind) {
     case "queued":
     case "working":
+    case "reconnecting":
       return "busy";
     case "failed":
       return "danger";
     case "ready":
       // A held connection is a live link, not a verdict: blue, never green.
       return "link";
-    case "linkedStopped":
-      // The link is up and nothing is serving: something for a person to do, not a failure.
-      return "attention";
     case "installedOnly":
       // As far as this server can take it (a Windows machine): nothing waits on anyone, so the
       // mark recedes rather than asking for attention.
@@ -188,9 +200,51 @@ export function readingTone(reading: MachineReading): Tone {
   }
 }
 
-/** Whether "use" would change anything for this row — everything but ready, busy, and installed-as-far-as-it-goes. */
-export function wantsUse(reading: MachineReading): boolean {
-  return !["queued", "working", "ready", "installedOnly"].includes(reading.kind);
+/**
+ * Whether a new conversation can start on a machine now — the card's Use: this server always,
+ * another machine while it is connected and nothing is moving on it.
+ */
+export function canUse(machine: MachineInfo, job: MachineJob | null): boolean {
+  if (machine.local) return true;
+  if (job !== null && (job.queued || job.running)) return false;
+  return machine.reconnect === undefined && machine.connection !== null;
+}
+
+/**
+ * Why Use waits, said in the card's middle while no job moves there; null when it does not
+ * wait, or when the job's stepper already says what is happening. A streak of reconnecting that
+ * has lasted a minute or more says for how long.
+ */
+export function useWaitsBecause(
+  machine: MachineInfo,
+  job: MachineJob | null,
+  reading: MachineReading | null,
+  locale: "zh" | "en",
+  now: number,
+): string | null {
+  if (reading === null || canUse(machine, job)) return null;
+  const why = S.machines.card.why;
+  switch (reading.kind) {
+    case "queued":
+    case "working":
+      return null;
+    case "reconnecting": {
+      const lasted = now - Date.parse(reading.since);
+      return Number.isFinite(lasted) && lasted >= 60_000
+        ? why.reconnectingFor(formatSpan(lasted, locale))
+        : why.reconnecting;
+    }
+    case "failed":
+      return why.failed;
+    case "notInstalled":
+      return why.notInstalled;
+    case "installedOnly":
+      return why.windows;
+    case "notConnected":
+      return why.notConnected;
+    default:
+      return why.stopped;
+  }
 }
 
 /**

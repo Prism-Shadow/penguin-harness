@@ -75,6 +75,7 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { machineLabel, nameOnMachine, workspaceMachines } from "../../lib/workspace-machines";
 import type { WorkspaceMachine } from "../../lib/workspace-machines";
 import { useSessions } from "../../state/sessions";
+import { useMachines } from "../../state/machines";
 import {
   EMPTY_HISTORY,
   TYPE_SELECT_RESET_MS,
@@ -221,7 +222,14 @@ export function WorkspaceFinder({
   const [machine, setMachine] = useState<string | null>(machineId ?? null);
   const machineRef = useRef(machine);
   machineRef.current = machine;
-  const [machines, setMachines] = useState<WorkspaceMachine[]>([]);
+  // The machines a workspace can live on: this Project's, from the one live account of the
+  // machines (state/machines.tsx) — the list is the local server's own, whichever server the
+  // rest of the window is using.
+  const machinesAccount = useMachines();
+  const machines = useMemo<WorkspaceMachine[]>(
+    () => (chooseMachine === true ? workspaceMachines(machinesAccount.state) : []),
+    [chooseMachine, machinesAccount.state],
+  );
   /**
    * The browsed machine's home listing, asked for with its places: Quick access, the locations,
    * and the platform the pane's copy depends on.
@@ -379,22 +387,6 @@ export function WorkspaceFinder({
   useEffect(() => {
     if (open) listRef.current?.focus();
   }, [open]);
-
-  // The machines a workspace can live on: this Project's, from the local server — the list
-  // is its own, whichever server the rest of the window is using.
-  useEffect(() => {
-    if (!open || chooseMachine !== true) return;
-    let cancelled = false;
-    void api
-      .getMachines(projectId)
-      .then((res) => {
-        if (!cancelled) setMachines(workspaceMachines(res));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [open, chooseMachine, projectId]);
 
   /**
    * The `agent_state` directory of the Agent a temporary Workspace would belong to, from that

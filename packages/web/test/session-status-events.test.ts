@@ -23,10 +23,14 @@
  *   row; a status before its row is loaded is dropped.
  * - web_updated reloads the window, resync_required and this Project's schedule_fired refetch
  *   the list, and anything else is ignored.
+ * - A machine's own event, relayed by this server, lands as that machine's: its Session's status
+ *   moves the row, a Session of its this list lacks is fetched from it, and its web being pushed
+ *   reloads nothing here. A change to the machines list tells every reader of it.
  */
 import { describe, expect, it } from "vitest";
 import type { ServerEvent, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
+import { subscribeMachinesChanged } from "../src/state/machines";
 import { isSessionUnread, markSessionSeen } from "../src/lib/session-seen";
 import type { SessionSeenState } from "../src/lib/session-seen";
 import { sessionBackgroundTasks, sessionRowActivity } from "../src/lib/session-activity";
@@ -496,5 +500,57 @@ describe("other user-channel events keep their behaviour", () => {
     expect(reloads).toBe(0);
     applyUserEvent(store, fired("proj"), neverReload);
     expect(reloads).toBe(1);
+  });
+});
+
+describe("a machine's events, relayed by this server", () => {
+  const relayed = (machineId: string, event: ServerEvent): ServerEvent => ({
+    type: "machine_event",
+    machineId,
+    event,
+  });
+
+  it("move the machine's Session like its own stream did", () => {
+    const store = storeWith(session("a"), session("b"));
+    applyUserEvent(store, relayed("gpu-box", stateEvent("a", "running", STARTED)), neverReload);
+    expect(rowOf(store, "a")).toMatchObject({ status: "running", lastActiveAt: STARTED });
+    expect(rowOf(store, "b").status).toBe("idle");
+  });
+
+  it("fetch a Session of the machine's this list lacks, from that machine", () => {
+    const store = storeWith(session("a"));
+    const adopted: [string, string | null][] = [];
+    store.setState({
+      adoptLiveSession: async (sessionId: string, source: string | null) => {
+        adopted.push([sessionId, source]);
+      },
+    });
+    applyUserEvent(store, relayed("gpu-box", stateEvent("new", "running", STARTED)), neverReload);
+    expect(adopted).toEqual([["new", "gpu-box"]]);
+  });
+
+  it("reload nothing here when the machine's own web is pushed", () => {
+    const store = storeWith(session("a"));
+    let reloaded = 0;
+    applyUserEvent(store, relayed("gpu-box", { type: "web_updated", rev: "x" }), () => {
+      reloaded += 1;
+    });
+    expect(reloaded).toBe(0);
+  });
+
+  it("a change to the machines list tells every reader of it, once, and moves no row", () => {
+    const store = storeWith(session("a"));
+    const before = store.getState().sessions;
+    let told = 0;
+    // A reader listens the way the machines provider does.
+    const stop = subscribeMachinesChanged(() => {
+      told += 1;
+    });
+    applyUserEvent(store, { type: "machines_changed" }, neverReload);
+    // Only this server speaks for the machines list: a machine's word about its own is not it.
+    applyUserEvent(store, relayed("gpu-box", { type: "machines_changed" }), neverReload);
+    stop();
+    expect(told).toBe(1);
+    expect(store.getState().sessions).toBe(before);
   });
 });
