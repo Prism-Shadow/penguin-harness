@@ -555,8 +555,8 @@ export function hoistProviderConnections(table: Record<string, unknown>): boolea
  * hoist (hoistProviderConnections), which compares the rows' protocols with each other in
  * MMSP's names. Both loaders — `loadProjectConfig` here and the server's
  * `ProjectConfigService.readTable` — call this and write the raw table back once when it
- * returns true. Go-managed routes then switch to MMSP. The first two migrations are removed
- * at the 0.3.0 release preparation; the Go migration has its own removal condition below.
+ * returns true. Go-managed routes then switch to MMSP. All three are removed at the 0.3.0
+ * release preparation (for the Go one, only this call: see migratePenguinGoRoutes).
  */
 export function migrateProjectConfigTable(table: Record<string, unknown>): boolean {
   const legacy = migrateLegacyClientTypes(table);
@@ -566,10 +566,21 @@ export function migrateProjectConfigTable(table: Record<string, unknown>): boole
 }
 
 /**
- * One-time route migration for Go-managed configuration, without network discovery.
- * Keep until supported releases have migrated stored routes; the Go integration maintainer
- * removes it then. Other fields, other groups and user-redirected endpoints are preserved.
- * An explicit endpoint from authorization/sync also refreshes an existing MMSP route.
+ * Switches Go-managed routes (the group's and the rows' that point at a Penguin Go endpoint) to
+ * MMSP, without network discovery. Other fields, other groups and user-redirected endpoints are
+ * preserved.
+ *
+ * Two callers. Without `endpoint` it is a one-time migration of routes stored before the MMSP
+ * switch (`google-genai` / `deepseek-official` on `token.penguin.ooo/api`), run by
+ * migrateProjectConfigTable on every load. With `endpoint`, authorization and catalog sync apply
+ * the platform's MMSP endpoint, which also refreshes a route that is already MMSP.
+ *
+ * Removal: at the 0.3.0 release preparation, by whoever prepares it, together with
+ * migrateLegacyClientTypes (same release-notes condition). Takes out the no-`endpoint` call in
+ * migrateProjectConfigTable and the `endpoint === undefined` branch below, the pre-MMSP origin
+ * and paths in isPenguinGoEndpoint, and the migration cases in core `state.test.ts` and server
+ * `penguin-go-mmsp.test.ts` ("Penguin Go stored projects"); see
+ * changelog/unreleased/2026-10-12-backward-compatibility.md. The `endpoint` path stays.
  */
 export function migratePenguinGoRoutes(table: Record<string, unknown>, endpoint?: string): number {
   if (!Array.isArray(table.models)) return 0;

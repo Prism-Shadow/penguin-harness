@@ -310,7 +310,12 @@ const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
 const ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
 export const PENGUIN_GO_BASE_URL = "https://go.penguin.ooo/api/v1";
 
-/** Go-owned connection URLs, including stored routes from before the MMSP switch. */
+/**
+ * Go-owned connection URLs, including stored routes from before the MMSP switch. The
+ * `token.penguin.ooo` origin and the `/api`, `/api/v1beta` and `/api/anthropic` paths are those
+ * pre-MMSP routes, recognized only so they can be migrated: removed with the migration at the
+ * 0.3.0 release preparation (see migratePenguinGoRoutes in project-config.ts).
+ */
 export function isPenguinGoEndpoint(value: unknown): value is string {
   if (typeof value !== "string") return false;
   try {

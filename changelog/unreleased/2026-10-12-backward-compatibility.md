@@ -15,4 +15,4 @@ The built-in `penguin-go` provider id and a Go-owned endpoint identify managed c
 
 ## Removal
 
-Keep the stored-route migration until supported Harness releases have migrated existing configurations. The Go integration maintainer removes it after that condition is verified. Penguin Go must support MMSP when this Harness version is used.
+At the 0.3.0 release preparation, by whoever prepares it, together with the AgentHub client-type migration (same condition: the release notes say a Project last opened before this release must be opened once on a 0.2.x release first). It takes out the load-time call in `migrateProjectConfigTable`, the no-endpoint branch of `migratePenguinGoRoutes` (the endpoint branch stays: authorization and sync apply the platform's MMSP endpoint with it), the pre-MMSP origin and paths in `isPenguinGoEndpoint`, and the migration tests. Users do nothing. Penguin Go must support MMSP when this Harness version is used.
