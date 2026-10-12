@@ -13,7 +13,9 @@
  * - Paired but not connected: which Chrome, and a fold with what to check, and pairing again.
  * - The admin switched Chrome connections off: that, and nothing to do about it here.
  *
- * The menu stays in every state, so the desktop app's choice of backend is always in reach.
+ * The menu stays in every state and holds one row, how the user's Chrome stands, with pairing
+ * or Settings › Browser behind it (chrome-status-row.tsx). Switching back to the built-in browser
+ * is done in Settings › Browser.
  */
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -36,11 +38,10 @@ import {
   closeChromeTab,
   navigateChromeTab,
   openBrowserTab,
-  switchBrowserBackend,
 } from "./browser-actions";
 import { BrowserTabStrip } from "./browser-tab-strip";
 import { AgentBusyMark, ToolButton } from "./browser-toolbar";
-import { BackendMenuRows, chromeStanding } from "./backend-menu";
+import { ChromeStatusRow, chromeStanding } from "./chrome-status-row";
 import {
   chromeInfo,
   currentActivity,
@@ -180,15 +181,13 @@ export function ChromeSurface({ state, active }: { state: BrowserState; active: 
           }
         >
           <Menu density="sm">
-            <BackendMenuRows
-              state={state}
-              onPick={(backend) => {
-                setMenuOpen(false);
-                void switchBrowserBackend(backend);
-              }}
-              onConnect={item(connect)}
-              onManage={item(() => requestSettings({ section: "browser" }))}
-            />
+            {info !== null && (
+              <ChromeStatusRow
+                info={info}
+                onConnect={item(connect)}
+                onManage={item(() => requestSettings({ section: "browser" }))}
+              />
+            )}
           </Menu>
         </Dropdown>
       </div>

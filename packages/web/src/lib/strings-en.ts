@@ -373,9 +373,19 @@ export const en: Strings = {
     unavailableShell: "This desktop app is too old for the built-in browser. Update it to use it.",
     unavailableWindow: "No app window is available to show the browser.",
     useChrome: "Use System Chrome",
+    startPage: {
+      label: "Common sites",
+      sites: {
+        google: "Google",
+        bing: "Bing",
+        baidu: "Baidu",
+        github: "GitHub",
+        stackoverflow: "Stack Overflow",
+        wikipedia: "Wikipedia",
+      },
+    },
     openFailed: (reason: string): string => `Could not open a tab: ${reason}`,
     closeFailed: (reason: string): string => `Could not close the tab: ${reason}`,
-    backendGroup: "Browser",
     backendBuiltin: "Built-in",
     backendChrome: "System Chrome",
     chromeConnected: (name: string | null): string =>

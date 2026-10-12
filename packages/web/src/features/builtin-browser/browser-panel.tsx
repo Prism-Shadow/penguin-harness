@@ -6,22 +6,21 @@
  *
  * The panel always has a tab: the layer opens the new-tab page when it shows none. A new tab
  * opens the homepage when one is set, and reads as that homepage while it loads. A blank one
- * shows the slot's own empty surface, themed, rather than a white page, and the address bar
- * takes the focus to wait for an address. A tab whose page crashed shows that in the slot, with
+ * shows the start page (new-tab-page.tsx), a few common sites, rather than a white page, and the
+ * address bar takes the focus to wait for an address. A tab whose page crashed shows that in the slot, with
  * Reload, instead of the dead page's blank area. Where the built-in browser cannot run (outside
  * the desktop app, an older shell) the panel says so instead, and offers the user's own Chrome
  * when the server has it.
  *
  * While the agents drive the user's own Chrome the panel is the Chrome surface instead
  * (chrome-surface.tsx): the built-in pages stay alive out of sight, since nothing registers a
- * slot for them.
+ * slot for them. Which of the two the agents drive is chosen in Settings › Browser; the panel's
+ * menu does not offer it.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button, EmptyState } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { requestSettings } from "../settings/settings-request";
 import { isBlankUrl, isWebUrl } from "./address";
-import { BackendMenuRows, backendRowsShown } from "./backend-menu";
 import {
   activateBrowserTab,
   closeBrowserTab,
@@ -35,6 +34,7 @@ import {
   chromeInfo,
   currentActivity,
   guestForTab,
+  startPageShown,
   tabBusy,
   type BrowserState,
 } from "./browser-state";
@@ -46,7 +46,7 @@ import { ClearDataDialog } from "./clear-data-dialog";
 import { HomepageDialog } from "./homepage-dialog";
 import { ImportDialog } from "./import-dialog";
 import { heavyTabMemory, loadWarningText } from "./load";
-import { PairingDialog } from "./pairing-dialog";
+import { NewTabPage } from "./new-tab-page";
 import { registerSlot, setSlotVisible } from "./slot-registry";
 import { webviewForTab, type WebviewElement } from "./webview-registry";
 
@@ -126,7 +126,6 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   const [importOpen, setImportOpen] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
   const [homepageOpen, setHomepageOpen] = useState(false);
-  const [pairingOpen, setPairingOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
 
@@ -204,33 +203,13 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
         onSetHomepage={() => setHomepageOpen(true)}
         onOpenExternal={openExternal}
         onDevTools={() => drive(tabId, (view) => view.openDevTools())}
-        {...(backendRowsShown(state)
-          ? {
-              menuTop: (close: () => void) => (
-                <BackendMenuRows
-                  state={state}
-                  onPick={(backend) => {
-                    close();
-                    void switchBrowserBackend(backend);
-                  }}
-                  onConnect={() => {
-                    close();
-                    setPairingOpen(true);
-                  }}
-                  onManage={() => {
-                    close();
-                    requestSettings({ section: "browser" });
-                  }}
-                />
-              ),
-            }
-          : {})}
       />
       <div
         ref={slotRef}
         data-testid="builtin-browser-viewport"
         className="relative min-h-0 flex-1 overflow-hidden"
       >
+        {startPageShown(state, tab) && <NewTabPage onOpen={navigate} />}
         {tab?.crashed !== undefined && (
           <div
             data-testid="builtin-browser-crashed"
@@ -250,7 +229,6 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
       </div>
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <ClearDataDialog open={clearOpen} onClose={() => setClearOpen(false)} />
-      <PairingDialog open={pairingOpen} onClose={() => setPairingOpen(false)} />
       {homepageOpen && (
         <HomepageDialog
           homepage={homepage}

@@ -1,10 +1,9 @@
 /**
  * The built-in browser's toolbar: back, forward, reload (stop while the page loads), Home
  * while a homepage is set, the address bar, the mark of an agent at work while one drives the
- * browser, the load warning while the server gives one, and the overflow menu — on the desktop,
- * which browser the agents drive and how the user's Chrome stands (backend-menu.tsx), then
- * import from a system browser, clear browsing data, set the homepage, open the page in the
- * system browser, developer tools.
+ * browser, the load warning while the server gives one, and the overflow menu: import from a
+ * system browser, clear browsing data, set the homepage, open the page in the system browser,
+ * developer tools. Which browser the agents drive is chosen in Settings › Browser, not here.
  *
  * Icon buttons are flat: no fill at rest or on hover, the glyph darkens instead, and each is
  * named by a tooltip below it. The agent mark and the load warning are icons with their tooltip,
@@ -87,11 +86,6 @@ export interface BrowserToolbarProps {
   /** Null when the page is not a web page the system browser could open. */
   onOpenExternal: (() => void) | null;
   onDevTools: () => void;
-  /**
-   * Rows above the menu's own (the backend choice and the Chrome row), handed the menu's close;
-   * a rule follows them.
-   */
-  menuTop?: (close: () => void) => ReactNode;
 }
 
 /** The mark of an agent at work in the browser: an icon in the busy tone, named by its tooltip. */
@@ -195,12 +189,6 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
         }
       >
         <Menu density="sm">
-          {props.menuTop !== undefined && (
-            <>
-              {props.menuTop(() => setMenuOpen(false))}
-              <MenuSeparator />
-            </>
-          )}
           <MenuItem
             glyph={ICONS.download}
             label={S.builtinBrowser.importAction}

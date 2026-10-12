@@ -41,7 +41,7 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
 } from "@prismshadow/penguin-server/api";
-import { BLANK_URL, tabAddress } from "./address";
+import { BLANK_URL, isBlankUrl, tabAddress } from "./address";
 
 /** One webview this window hosts. */
 export interface BrowserGuest {
@@ -482,6 +482,20 @@ export function guestByKey(state: BrowserState, key: string): BrowserGuest | nul
 export function guestForTab(state: BrowserState, tabId: number | null): BrowserGuest | null {
   if (tabId === null) return null;
   return state.guests.find((guest) => guest.tabId === tabId) ?? null;
+}
+
+/**
+ * Whether the panel shows the start page for `tab`: a page this window created blank, still
+ * blank and not loading, and not crashed. A tab opened at the homepage never shows it, not even
+ * in the moment before its first page starts loading, and a page that has not attached here yet
+ * cannot be told from one that is about to load something.
+ */
+export function startPageShown(state: BrowserState, tab: BuiltinBrowserTab | null): boolean {
+  if (tab === null || tab.crashed !== undefined || tab.loading || !isBlankUrl(tab.url)) {
+    return false;
+  }
+  const guest = guestForTab(state, tab.id);
+  return guest !== null && isBlankUrl(guest.src);
 }
 
 /**

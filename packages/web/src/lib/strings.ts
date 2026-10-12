@@ -14,6 +14,7 @@
 import type { PeakWindows } from "../features/models/model-grouping";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { RsiMethodId } from "../features/benchmark/rsi-methods";
+import type { StartPageSiteId } from "../features/builtin-browser/new-tab-page";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -447,13 +448,24 @@ export const zh = {
     unavailableWindow: "没有可以显示浏览器的应用窗口。",
     /** The unavailable built-in panel's way out, where the server offers the user's Chrome. */
     useChrome: "改用系统 Chrome",
+    /** A new tab without a homepage: the start page's common sites, and its landmark's name. */
+    startPage: {
+      label: "常用网站",
+      sites: {
+        google: "谷歌",
+        bing: "必应",
+        baidu: "百度",
+        github: "GitHub",
+        stackoverflow: "Stack Overflow",
+        wikipedia: "维基百科",
+      } satisfies Record<StartPageSiteId, string>,
+    },
     openFailed: (reason: string): string => `无法打开标签页：${reason}`,
     closeFailed: (reason: string): string => `无法关闭标签页：${reason}`,
-    /** The overflow menu's backend choice (desktop app): the group's name and its two choices. */
-    backendGroup: "浏览器",
+    /** The two backends, as Settings › Browser offers them (desktop app). */
     backendBuiltin: "内置",
     backendChrome: "系统 Chrome",
-    /** The status row under the choice: the user's Chrome as the server last said. */
+    /** The Chrome surface's menu row: the user's Chrome as the server last said. */
     chromeConnected: (name: string | null): string =>
       name !== null ? `Chrome：已连接 · ${name}` : "Chrome：已连接",
     chromeNotConnected: "Chrome：未连接",

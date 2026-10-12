@@ -1,7 +1,7 @@
 /**
  * The Browser panel (features/builtin-browser/browser-panel.tsx) while the agents drive the
  * user's own Chrome, rendered to static markup from the window's browser store (node env, no
- * DOM), its menu's backend rows, and the backend switch against the fetch fake.
+ * DOM), its menu's Chrome row, and the backend switch against the fetch fake.
  *
  * - Connected: the strip lists the tabs in the user's Chrome and the page area is the card saying
  *   the tab is open in Chrome, with Show in Chrome; no slot is laid out for a built-in page.
@@ -11,14 +11,14 @@
  * - Paired but not connected: which Chrome, and the reconnect help.
  * - The admin switched Chrome connections off: the panel says so.
  * - A window whose built-in browser cannot run offers the user's Chrome instead.
- * - The menu offers the choice of backend only where both are offered; the Chrome row says how
- *   the user's Chrome stands, with the pairing dialog while none is paired and Settings once one
- *   is, and no action while the admin's switch is off.
+ * - The menu's one row says how the user's Chrome stands, with the pairing dialog while none is
+ *   paired and Settings once one is, and no action while the admin's switch is off; it offers no
+ *   choice of backend, which Settings › Browser holds.
  * - Switching while an agent acts is refused: a toast says to wait, nothing asks, nothing moves.
  *   A switch that goes through moves the window, says so, and reads the new backend's status.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createElement, isValidElement } from "react";
+import { createElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type {
@@ -26,9 +26,8 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
 } from "@prismshadow/penguin-server/api";
-import { Menu } from "@prismshadow/penguin-ui";
 import { BuiltinBrowserPanel } from "../src/features/builtin-browser/browser-panel";
-import { BackendMenuRows } from "../src/features/builtin-browser/backend-menu";
+import { ChromeStatusRow } from "../src/features/builtin-browser/chrome-status-row";
 import { switchBrowserBackend } from "../src/features/builtin-browser/browser-actions";
 import { browserState, dispatchBrowser } from "../src/features/builtin-browser/browser-store";
 import { S } from "../src/lib/strings";
@@ -184,47 +183,16 @@ describe("the Chrome surface", () => {
   });
 });
 
-type Row = ReactElement<{ label: ReactNode; onSelect?: () => void; checked?: boolean }>;
+type Row = ReactElement<{ label: ReactNode; onSelect?: () => void; trailing?: ReactNode }>;
 
-/** The menu rows as BackendMenuRows returns them, to reach their handlers. */
-function rows(props: Parameters<typeof BackendMenuRows>[0]): Row[] {
-  const out = BackendMenuRows(props);
-  if (out === null) return [];
-  const walk = (node: ReactNode): Row[] =>
-    ([] as ReactNode[])
-      .concat(node)
-      .filter(isValidElement)
-      .flatMap((el) => {
-        const props = (el as ReactElement<{ children?: ReactNode; label?: ReactNode }>).props;
-        return props.label !== undefined ? [el as Row] : walk(props.children);
-      });
-  return walk(out);
-}
+describe("the Chrome surface's menu row", () => {
+  const handlers = () => ({ onConnect: vi.fn(), onManage: vi.fn() });
+  const row = (info: BrowserBackendInfo, h = handlers()) => ChromeStatusRow({ info, ...h }) as Row;
 
-describe("the menu's backend rows", () => {
-  const handlers = () => ({ onPick: vi.fn(), onConnect: vi.fn(), onManage: vi.fn() });
-
-  it("offers Built-in and System Chrome where both are offered, the chosen one checked", () => {
-    set(status("builtin", [BUILTIN, CHROME]));
-    const h = handlers();
-    const menu = renderToStaticMarkup(
-      createElement(Menu, {
-        density: "sm",
-        children: createElement(BackendMenuRows, { state: browserState(), ...h }),
-      }),
-    );
-    expect(menu).toContain(S.builtinBrowser.backendGroup);
-    const [builtin, chrome] = rows({ state: browserState(), ...h });
-    expect(builtin!.props.checked).toBe(true);
-    expect(chrome!.props.checked).toBe(false);
-    chrome!.props.onSelect!();
-    expect(h.onPick).toHaveBeenCalledExactlyOnceWith("chrome");
-  });
-
-  it("offers no choice where only the user's Chrome is offered", () => {
-    set(status("chrome", [CHROME]));
-    const labels = rows({ state: browserState(), ...handlers() }).map((r) => r.props.label);
-    expect(labels).toEqual([S.builtinBrowser.chromeConnected("Chrome 130 on macOS")]);
+  it("says how the user's Chrome stands, naming a connected one", () => {
+    expect(row(CHROME).props.label).toBe(S.builtinBrowser.chromeConnected("Chrome 130 on macOS"));
+    expect(row(UNPAIRED).props.label).toBe(S.builtinBrowser.chromeNotPaired);
+    expect(row(DISCONNECTED).props.label).toBe(S.builtinBrowser.chromeNotConnected);
   });
 
   it.each([
@@ -232,18 +200,16 @@ describe("the menu's backend rows", () => {
     ["not connected", DISCONNECTED, "onManage"],
     ["not paired", UNPAIRED, "onConnect"],
   ] as const)("acts on a Chrome %s through the right door", (_name, info, door) => {
-    set(status("chrome", [info]));
     const h = handlers();
-    const [row] = rows({ state: browserState(), ...h });
-    row!.props.onSelect!();
+    row(info, h).props.onSelect!();
     expect(h[door]).toHaveBeenCalledOnce();
+    expect(h[door === "onManage" ? "onConnect" : "onManage"]).not.toHaveBeenCalled();
   });
 
   it("gives the row no action while the admin's switch is off", () => {
-    set(status("chrome", [DISABLED]));
-    const [row] = rows({ state: browserState(), ...handlers() });
-    expect(row!.props.label).toBe(S.builtinBrowser.chromeDisabled);
-    expect(row!.props.onSelect).toBeUndefined();
+    const disabled = row(DISABLED);
+    expect(disabled.props.label).toBe(S.builtinBrowser.chromeDisabled);
+    expect(disabled.props.onSelect).toBeUndefined();
   });
 });
 

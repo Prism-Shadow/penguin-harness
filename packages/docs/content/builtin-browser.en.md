@@ -46,7 +46,7 @@ The panel follows the app's light or dark theme; the pages themselves keep their
 
 ## Set a homepage
 
-The homepage is the page every new tab opens: the one **+** opens, the one the panel opens when it has no tab, and a new tab an agent opens without an address. While it loads, the tab already shows the homepage's address. Without a homepage, a new tab is blank and the address bar is ready for an address.
+The homepage is the page every new tab opens: the one **+** opens, the one the panel opens when it has no tab, and a new tab an agent opens without an address. While it loads, the tab already shows the homepage's address. Without a homepage, a new tab shows a start page of common sites (Google, Bing, Baidu, GitHub, Stack Overflow and Wikipedia): select one to open it in that tab, or type into the address bar, which is ready for an address.
 
 1. In the toolbar's menu, select **Set homepage…**.
 2. Enter an address. It is read as the address bar reads one: a bare domain such as `example.com` opens over `https://`, and the field shows the page it will open. To take the page on screen, select **Use current page**.
@@ -137,7 +137,7 @@ The extension's pages are in English whatever Chrome's language. **EN / 中文**
 
 Pairing gives your Chrome a key to your account on one server. You need the server address and a one-time pairing code from the Web App.
 
-1. In the Web App, open the **Browser** panel. When no Chrome is paired, the panel shows the pairing steps itself; otherwise select **Connect your Chrome…** in the panel's menu, or **Connect another Chrome** in **Settings › Browser**.
+1. In the Web App, open the **Browser** panel. When the agents use your Chrome and none is paired, the panel shows the pairing steps itself; otherwise select **Connect your Chrome** or **Connect another Chrome** in **Settings › Browser**.
 2. The **Connect your Chrome** dialog shows the **Server address** and the **Pairing code**, each with a copy button. The code works once, for 10 minutes; **New code** replaces it.
 3. In Chrome, select the extension's icon, then **Settings**, which opens the pairing page. Paste the server address and the code, and select **Connect**.
 
@@ -186,10 +186,7 @@ The extension connects to the server over a WebSocket at `/api/builtin-browser/e
 
 ## Switch between built-in and Chrome
 
-In the desktop app you choose which browser your agents use:
-
-- In the **Browser** panel's menu, under **Browser**, choose **Built-in** or **System Chrome**.
-- Or, in **Settings › Browser**, set **Browser agents use**.
+In the desktop app you choose which browser your agents use in **Settings › Browser**, under **Browser agents use**. The Browser panel's menu does not offer the choice.
 
 A notice confirms the switch, such as **Agents now use your Chrome**. While an agent is acting in the browser, the switch is refused with **An agent is using the browser; switch once it is done**. Switching closes nothing: the built-in browser's tabs stay open in the background, and the Penguin tabs stay in Chrome. Every window of the app follows the switch. On any other server there is only Chrome, and the choice does not appear.
 

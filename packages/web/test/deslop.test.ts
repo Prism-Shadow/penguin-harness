@@ -75,10 +75,11 @@ const ALLOWLIST: DeslopAllowlist = {
  */
 const TOKENS_ONLY: readonly string[] = [
   "components/find/find-bar.tsx",
-  "features/builtin-browser/backend-menu.tsx",
   "features/builtin-browser/browser-tab-strip.tsx",
   "features/builtin-browser/browser-toolbar.tsx",
+  "features/builtin-browser/chrome-status-row.tsx",
   "features/builtin-browser/chrome-surface.tsx",
+  "features/builtin-browser/new-tab-page.tsx",
   "features/builtin-browser/pairing-dialog.tsx",
   "features/chat/attached-files-banner.tsx",
   "features/chat/background-done-banner.tsx",
