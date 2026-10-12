@@ -4,7 +4,6 @@
  * preserve the established casing of Workspace, Token, Task, Skill, Trace, and other terms.
  */
 import type { Strings } from "./strings";
-import { BENCHMARK_REPRODUCTIONS, RSI_TOOLKITS } from "./rsi-stats";
 
 export const en: Strings = {
   siteName: "PenguinHarness",
@@ -49,38 +48,31 @@ export const en: Strings = {
   },
 
   hero: {
-    platformLead: "Unified and Stable ",
-    platformActions: ["RSI"],
-    platformTail: " Framework",
-    automationLead: "Automatically improve ",
-    automationActions: ["model × harness", "any model", "any algorithm", "any agent"],
-    automationTail: "",
+    positioning: "Unified and Stable RSI Framework",
+    automation: "Automatically improve model × agent harness",
     downloadCta: "Download desktop",
     cliInstall: "Command-line install",
     stats: [
-      { value: "1000+ Models", label: "Support for Major Providers" },
-      {
-        value: `${RSI_TOOLKITS.length} RSI Algorithms`,
-        label: "Default · OPRO · APE · ACE · AWM",
-      },
-      {
-        value: `${BENCHMARK_REPRODUCTIONS.length} Benchmark Reproductions`,
-        label: "Data · SWE · SaaS · science · terminal",
-      },
-      { value: "100% Open Source", label: "Apache 2.0 Licensed" },
+      { value: "1000+ models", label: "From major providers, switch any time" },
+      { value: "100% open source", label: "Apache-2.0, runs locally" },
     ],
     supportedModelsLabel: "Supported models",
-    supportedModels: [
-      "OpenAI",
-      "Anthropic",
-      "Gemini",
-      "DeepSeek",
-      "Zai",
-      "MoonShot",
-      "Qwen",
-      "Openrouter",
+    supportedModelsMore: "and more",
+    algorithmsLabel: "Self-evolution algorithms",
+    benchmarksLabel: "Benchmark reproductions",
+    benchmarkKinds: [
+      "Data analysis",
+      "Software engineering",
+      "Business automation",
+      "Scientific computing",
+      "Terminal tasks",
     ],
-    supportedModelsMore: "+992 more",
+    externalLink: {
+      title: "You're about to open an external link",
+      body: "This link goes to a site outside PenguinHarness and opens in a new tab:",
+      cancel: "Cancel",
+      open: "Open link",
+    },
   },
 
   install: {
@@ -166,28 +158,28 @@ export const en: Strings = {
 
   pillars: {
     eyebrow: "Three pillars",
-    title: "Built for evolving agents — any model, any algorithm, any agent",
+    title: "A minimal harness that builds agents and lets them evolve",
     subtitle:
-      "PenguinHarness is the open-source RSI framework where model × harness improve automatically: the model stays fixed, the harness evolves, and every algorithm runs the way its paper does.",
+      "PenguinHarness is an open-source RSI framework: the model stays fixed while the harness evolves, from its prompts and Skills to its tools and hooks.",
     root: "PenguinHarness",
     concepts: ["Penguin Message", "Penguin SDK", "Penguin Skills"],
     diagramLabel:
       "PenguinHarness radiates into Penguin Message, Penguin SDK and Penguin Skills, each extending into one pillar",
     items: [
       {
-        title: "Simplest Is the Best",
+        title: "Simplest is the best",
         tag: "",
         desc: "A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, complex tasks done efficiently.",
       },
       {
         title: "Harness for building agents",
         tag: "",
-        desc: "With the PenguinHarness SDK, an agent builds complete agent applications for you — autonomously, from scratch.",
+        desc: "Describe what you need in one sentence, and an agent uses the PenguinHarness SDK to build an AI app that thinks and runs, from scratch.",
       },
       {
-        title: "Harness for Recursive Self-Improvement",
+        title: "Harness for recursive self-improvement",
         tag: "",
-        desc: "With the RSI toolkits, an agent evaluates and optimizes itself — the Default loop or OPRO, APE, ACE and AWM — improving recursively over time.",
+        desc: "One sentence starts agent self-evolution: the agent writes its own Benchmark, scores and optimizes itself with the Default loop or OPRO, APE, ACE or AWM, and snapshots each version before changing it.",
       },
     ],
   },
@@ -209,18 +201,18 @@ export const en: Strings = {
       name: "PenguinHarness",
       speed: "100×",
       mode: "agents built by agents",
-      note: "One sentence in — an agent delivers scaffold, code and run instructions end to end.",
+      note: "Describe it in one sentence, and an agent delivers the scaffold, code and run instructions end to end.",
     },
   },
 
   selfImprove: {
     eyebrow: "The RSI loop",
-    title: "Any model, any algorithm, any agent — evolution automated",
+    title: "From vN to vN+1, the score decides",
     subtitle:
-      "The Default RSI Toolkit runs trial → reflect → improve: the Optimizer scores the target agent through parallel Evaluators, finds the lost points in scores and Traces, and ships version N+1 with a snapshot before every round. The other toolkits run OPRO, APE, ACE and AWM the way their papers do — on the same Benchmarks and the same scoreboard.",
-    videoLabel: "Self-improvement demo video",
+      "The Default RSI Toolkit runs trial → reflect → improve: the Optimizer scores the target agent through parallel Evaluators, finds the lost points in scores and Traces, and ships version N+1 with a snapshot before every round. The other toolkits run OPRO, APE, ACE and AWM as their papers describe them, on the same Benchmarks and the same scoreboard.",
+    videoLabel: "Agent self-evolution demo video",
     videoCaption:
-      "The self-improvement loop end to end: run the benchmark, find the lost points, ship the next version.",
+      "One full round of agent self-evolution: run the Benchmark, find the lost points, ship the next version.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "target agent",
@@ -236,13 +228,14 @@ export const en: Strings = {
       { label: "Time", hint: "keeps shrinking" },
     ],
     diagramLabel:
-      "Self-improvement loop: the Optimizer orchestrates Evaluators to score, then upgrades the target agent from vN to vN+1 via scores and traces",
+      "The RSI loop: the Optimizer orchestrates Evaluators to score, then upgrades the target agent from vN to vN+1 via scores and Traces",
   },
 
   quickstart: {
     eyebrow: "Quick start",
     title: "Get started with PenguinHarness in two steps",
-    subtitle: "Choose how to install first. With a CLI install, then choose Web UI or CLI.",
+    subtitle:
+      "Choose how to install first; after a command-line install, choose the Web UI or the CLI.",
     stepOne: "Step one",
     chooseInstall: "Choose an installation method",
     stepTwo: "Step two",
@@ -260,7 +253,7 @@ export const en: Strings = {
       steps: [
         "Download the installer for your system",
         "Open PenguinHarness and follow the model setup",
-        "Describe your first agent app in one sentence",
+        "Describe your first AI app in one sentence",
       ],
     },
     install: {
@@ -297,24 +290,24 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
 
   cases: {
     eyebrow: "Cases",
-    title: "One sentence in, one result out",
+    title: "One sentence builds an AI app, one sentence starts self-evolution",
     subtitle:
-      "One sentence builds an AI app that thinks and runs; another reproduces an agent self-evolution algorithm — end to end, on DeepSeek Flash.",
+      "The first sentence builds a RAG app that thinks, runs and cites its sources; the second reproduces APE on the task its toolkit ships with, and the scores before and after land in the Evaluation Center.",
     tabs: [
       {
-        label: "Build an AI app",
+        label: "RAG docs expert",
         prompt:
           "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.",
         caption:
-          "The generated RAG app: a Claude Code docs expert answering with cited, clickable sources and example questions",
-        cost: "And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.",
+          "The generated RAG app: a Claude Code configuration expert whose answers cite clickable sources, with example questions built in",
+        cost: "Building the whole RAG app on DeepSeek V4 Pro cost $0.02 (¥0.2) in Tokens.",
       },
       {
-        label: "Reproduce a self-evolution algorithm",
+        label: "Reproduce APE",
         prompt:
-          "Reproduce APE (Automatic Prompt Engineer, Zhou et al. 2022) on the house-style brief task that ships with the rsi-ape Skill: a fresh agent, a 6-case Benchmark, and the score before and after.",
+          "Reproduce APE (Automatic Prompt Engineer, Zhou et al. 2022) on the house-style brief task that ships with the `ape-rsi-toolkit` Skill: a fresh agent, a 6-case Benchmark, and the score before and after.",
         caption:
-          "The Evaluation Center's score chart: the reproduction records its baseline and its final score here",
+          "The Evaluation Center's score chart: once a reproduction finishes, its baseline and final scores are recorded here",
         cost: "",
       },
     ],
@@ -349,7 +342,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     items: [
       {
         term: "Working boundary",
-        text: "Every agent runs on the same harness: Sessions are created under an agent, Tasks run inside a Session; self-improvement happens only inside Workspace and Skills, while the harness kernel and its safety mechanisms never change.",
+        text: "Every agent runs on the same harness: Sessions are created under an agent, Tasks run inside a Session; self-evolution changes only the prompts, Skills, tools and hooks in its Agent State, while the harness kernel and its safety mechanisms never change.",
       },
       {
         term: "Editable files",
@@ -429,7 +422,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         desc: "Any number of sessions per agent — streaming output, tool approvals and image paste out of the box.",
       },
       {
-        title: "agent hub",
+        title: "Agent hub",
         desc: "Create and manage agents in one click; names, descriptions and prompts stay editable.",
       },
       {
@@ -453,7 +446,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         desc: "Replay every request and tool call round by round, with Token breakdown and timing.",
       },
       {
-        title: "agent evaluation",
+        title: "Agent evaluation",
         desc: "Built-in Benchmark suites and scoreboards — scores keep climbing as agents evolve.",
       },
       {
@@ -466,7 +459,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   skills: {
     eyebrow: "Built-in Skills",
     title: "The built-in Skill library at a glance",
-    subtitle: "Five Skill groups out of the box — agents can write and optimize their own, too.",
+    subtitle:
+      "Skills from data analysis to agent self-evolution, ready out of the box. Agents can write and optimize their own, too.",
     groups: [
       {
         title: "Agent Self-Evolution",
@@ -475,10 +469,10 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           "benchmark-design",
           "agent-evaluation",
           "agent-optimization",
-          "rsi-opro",
-          "rsi-ape",
-          "rsi-ace",
-          "rsi-awm",
+          "opro-rsi-toolkit",
+          "ape-rsi-toolkit",
+          "ace-rsi-toolkit",
+          "awm-rsi-toolkit",
         ],
       },
       {
@@ -526,16 +520,17 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
 
   security: {
     eyebrow: "Security",
-    title: "Evolution within bounds, data within walls",
-    subtitle: "A runtime boundary designed for enterprise data security.",
+    title: "Evolution within bounds, data stored locally",
+    subtitle:
+      "The two questions enterprises ask first: where the data lives, and what the agent can change.",
     items: [
       {
         title: "Open source, local deployment",
-        desc: "A fully auditable open-source kernel; data lives in local directories and never passes through third-party services.",
+        desc: "A fully auditable open-source kernel; data lives in local directories and passes through no third party other than the model services you configure.",
       },
       {
         title: "Bounded evolution",
-        desc: "Self-improvement is strictly confined to Workspace and Skills — the harness core security boundary is never modified.",
+        desc: "Self-evolution changes only the prompts, Skills, tools and hooks in the Agent State; the harness kernel and its security boundary stay out of reach.",
       },
       {
         title: "Approvals & audit",
@@ -561,9 +556,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cta: {
-    title: "Any agent, evolving — automatically",
+    title: "Start your agent's self-evolution",
     subtitle:
-      "PenguinHarness keeps model × harness improving: a more efficient, more reliable, lower-hallucination and lower-cost agent, version after version.",
+      "The model stays put and the harness evolves: every version is scored and snapshotted, so you can roll back at any time.",
     download: "Download the desktop app",
     quickstart: "Get started",
     docs: "Read the docs",

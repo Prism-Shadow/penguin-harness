@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><strong>Unified and Stable RSI Framework</strong><br />Automatically improve <strong>model × harness</strong> — any model, any algorithm, any agent evolves recursively</p>
+<p align="center"><strong>Unified and Stable RSI Framework</strong><br />Automatically improve <strong>model × agent harness</strong></p>
 
 <p align="center">
   <a href="https://penguin.ooo/download">
@@ -51,7 +51,7 @@ PenguinHarness runs on your computer or server. It is the unified framework for 
 
 ### 1. 🧬 The most comprehensive agent self-evolution framework
 
-Every algorithm is a toolkit from the plugin library, and every toolkit runs the way its paper does. The **Default RSI Toolkit** (`rsi-default`) runs the trial → reflect → improve loop: run the Benchmark, find the lost points, ship version N+1 with a snapshot before every round. **OPRO**, **APE**, **ACE** and **AWM** each ship as their own toolkit (`rsi-opro`, `rsi-ape`, `rsi-ace`, `rsi-awm`), with no dependency between toolkits. Reproduced Benchmarks live in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) and import into any Project; the Evaluation Center plots every score, and every request is replayable in the Trace view.
+Every algorithm is a toolkit from the plugin library, and every toolkit runs the way its paper does. The **Default RSI Toolkit** (`default-rsi-toolkit`) runs the trial → reflect → improve loop: run the Benchmark, find the lost points, ship version N+1 with a snapshot before every round. **OPRO**, **APE**, **ACE** and **AWM** each ship as their own toolkit (`opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`), with no dependency between toolkits. Reproduced Benchmarks live in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) and import into any Project; the Evaluation Center plots every score, and every request is replayable in the Trace view.
 
 https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
@@ -88,7 +88,7 @@ Five plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills))
 
 | Category             | Plugins                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
-| Agent Self-Evolution | `rsi-default`, `rsi-opro`, `rsi-ape`, `rsi-ace`, `rsi-awm`                    |
+| Agent Self-Evolution | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit` |
 | Office Productivity  | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
 | Software Development | `software-development`, `use-claude-code`                              |
 | AI App Development   | `agent-development`, `model-development`, `skill-porting`                     |

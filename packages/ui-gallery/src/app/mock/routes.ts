@@ -1889,9 +1889,15 @@ const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) 
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
   .get("/api/rsi", (): RsiCatalogResponse => ({
-    toolkits: ["rsi-ace", "rsi-ape", "rsi-awm", "rsi-default", "rsi-opro"].map((plugin) => ({
+    toolkits: [
+      "ace-rsi-toolkit",
+      "ape-rsi-toolkit",
+      "awm-rsi-toolkit",
+      "default-rsi-toolkit",
+      "opro-rsi-toolkit",
+    ].map((plugin) => ({
       plugin,
-      skills: [plugin === "rsi-default" ? "agent-optimization" : plugin],
+      skills: [plugin === "default-rsi-toolkit" ? "agent-optimization" : plugin],
       preinstall: true,
     })),
     benchmarks: ["a", "b", "c", "d", "e"].map((sec) => ({

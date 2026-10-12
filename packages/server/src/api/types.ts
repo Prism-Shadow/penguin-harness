@@ -4281,7 +4281,7 @@ export interface PluginFilesResponse {
   files: Record<string, string>;
 }
 
-/** GET /api/rsi: the self-evolution catalogue — the RSI toolkits in the library and the built-in Benchmark reproductions (any logged-in user). */
+/** GET /api/rsi: the self-evolution catalogue — the RSI toolkits in the library and the built-in Benchmark reproductions (any logged-in user). The start page's metric tiles read it. */
 export interface RsiCatalogResponse {
   /** One per plugin of the library's `rsi` category, sorted by plugin name. */
   toolkits: Array<{ plugin: string; skills: string[]; preinstall: boolean }>;

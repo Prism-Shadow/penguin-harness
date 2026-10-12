@@ -4,7 +4,7 @@
 
 <h1 align="center">PenguinHarness</h1>
 
-<p align="center"><strong>大一统、稳定的 RSI 框架</strong><br />全自动优化<strong>模型 × Harness</strong>——任何模型、任何算法、任何 Agent 都能递归自我进化</p>
+<p align="center"><strong>统一、稳定的 Agent 自进化框架</strong><br />全自动优化<strong>模型 × Agent Harness</strong></p>
 
 <p align="center">
   <a href="https://penguin.ooo/download">
@@ -15,7 +15,7 @@
   </a>
 </p>
 
-<p align="center">1000+ 模型 · 多平台 · Apache 2.0 · 大一统 RSI 框架</p>
+<p align="center">1000+ 模型 · 多平台 · Apache 2.0 · 统一的 Agent 自进化框架</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@prismshadow/penguin-core"><img src="https://img.shields.io/npm/v/@prismshadow/penguin-core" alt="npm 版本" /></a>
@@ -47,11 +47,11 @@
 
 > 使用 LangChain，以 1 倍速度人工构建 Agent；<br />使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent；<br />再用 RSI 工具包，让 Agent 自动改进 Agent。
 
-PenguinHarness 运行在你的电脑或服务器上，是递归自我进化（RSI）的大一统框架：模型固定不动，进化的是 Harness——提示词、Skill、工具与钩子——而每一种自进化算法都跑在同一套 Benchmark、记分板与快照之上。三个递进的理由定义了这个框架：
+PenguinHarness 运行在你的电脑或服务器上，是统一、稳定的 Agent 自进化（RSI）框架：模型固定不动，进化的是 Harness——提示词、Skill、工具与钩子——而每一种自进化算法都跑在同一套 Benchmark、记分板与快照之上。三个递进的理由定义了这个框架：
 
 ### 1. 🧬 最全面的 Agent 自进化框架
 
-每一种算法都是插件库里的一个工具包，每个工具包都按原论文的流程运行。**Default RSI Toolkit**（`rsi-default`）跑「试跑 → 反思 → 提升」的循环：跑 Benchmark、找失分点、发布 N+1 版，每轮之前自动快照；**OPRO**、**APE**、**ACE**、**AWM** 各自是独立的工具包（`rsi-opro`、`rsi-ape`、`rsi-ace`、`rsi-awm`），工具包之间互不依赖。复现的 Benchmark 统一放在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)，可导入任何 Project；评估中心画出每一条分数曲线，每个请求都可在轨迹观测中回放。
+每一种算法都是插件库里的一个工具包，每个工具包都按原论文的流程运行。**Default RSI Toolkit**（`default-rsi-toolkit`）跑「试跑 → 反思 → 提升」的循环：跑 Benchmark、找失分点、发布 N+1 版，每轮之前自动快照；**OPRO**、**APE**、**ACE**、**AWM** 各自是独立的工具包（`opro-rsi-toolkit`、`ape-rsi-toolkit`、`ace-rsi-toolkit`、`awm-rsi-toolkit`），工具包之间互不依赖。复现的 Benchmark 统一放在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)，可导入任何 Project；评估中心画出每一条分数曲线，每个请求都可在轨迹观测中回放。
 
 https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
@@ -88,7 +88,7 @@ https://github.com/user-attachments/assets/604eb626-0a5d-4a62-87e3-14ebade1cd5f
 
 | 分类        | 插件                                                                            |
 | ----------- | ------------------------------------------------------------------------------- |
-| Agent 自进化 | `rsi-default`、`rsi-opro`、`rsi-ape`、`rsi-ace`、`rsi-awm`                       |
+| Agent 自进化 | `default-rsi-toolkit`、`opro-rsi-toolkit`、`ape-rsi-toolkit`、`ace-rsi-toolkit`、`awm-rsi-toolkit` |
 | 办公效率    | `a2ui`、`data-analysis`、`use-firecrawl`、`browser-automation`、`use-bento-slides`、`humanizer`、`goal`、`continual-learning` |
 | 软件开发    | `software-development`、`use-claude-code`                                |
 | AI 应用开发 | `agent-development`、`model-development`、`skill-porting`                       |

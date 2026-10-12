@@ -2984,21 +2984,50 @@ export const zh = {
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最全面的 Agent 自进化平台",
-    /**
-     * The derived counts under the slogan (GET /api/rsi). The draft screen links each half to the
-     * page that lists it, so the two halves stay joined by exactly one " · ".
-     */
-    draftStats: (toolkits: number, benchmarks: number): string =>
-      `已支持 ${toolkits} 种自进化算法 · ${benchmarks} 个 Benchmark 复现`,
-    /** Where each half of that line leads, as its accessible description. */
-    draftStatsToolkits: "查看插件库里的自进化工具包",
-    draftStatsBenchmarks: "查看评估中心",
-    /** Collapsed group names for the home-page examples (bookmark style; only one open at a time). */
+    /** The start page's dashboard (features/chat/start-dashboard.tsx): the metric tiles beside the brand and the three sections under the composer. */
+    start: {
+      /** What each metric tile counts; the tile opens the page that lists it. */
+      metrics: {
+        toolkits: "自进化算法",
+        reproductions: "Benchmark 复现",
+        agents: "智能体",
+        evaluations: "评估记录",
+      },
+      toolkitsTitle: "自进化算法",
+      /** Semantics behind the section's "?". */
+      toolkitsInfo:
+        "每种算法是插件库里的一个 RSI 工具包，按原论文的流程运行。「开始」把它的演示请求填入输入框，发送后才会运行；所选智能体没装这个工具包时，按钮是「安装并开始」，确认后先安装。",
+      /** A card's title: the method's short name (the Method select's label adds the default loop's steps). */
+      toolkitTitle: {
+        default: "Default",
+        opro: "OPRO",
+        ape: "APE",
+        ace: "ACE",
+        awm: "AWM",
+      } satisfies Record<RsiMethodId, string>,
+      /** The mark beside a card's title: the selected agent has every Skill the toolkit ships. */
+      toolkitInstalled: (agent: string): string => `已安装到 ${agent}`,
+      toolkitStart: "开始",
+      toolkitInstallStart: "安装并开始",
+      /** The install confirmation's second line, under the plugin library's own question. */
+      toolkitAfterInstall: "装好后它的演示请求会填入输入框；点发送之前什么都不会运行。",
+      benchmarksTitle: "评估中心",
+      benchmarksInfo:
+        "本 Project 在这台服务器上的 Benchmark，以及每个 Benchmark 最近一次评估的分数、被测智能体与版本；点一行进入它的页面。",
+      /** The section's link to the Evaluation Center, naming how many there are in all. */
+      benchmarksAll: (n: number): string => `全部 ${n} 个 Benchmark`,
+      /** A row's latest evaluation: the agent evaluated and its Agent State version. */
+      benchmarkLatestBy: (agent: string, version: number): string => `最近 ${agent} v${version}`,
+      benchmarksEmpty: "这个 Project 还没有 Benchmark",
+      benchmarksEmptyAction: "前往评估中心创建或导入",
+      examplesTitle: "示例与快捷指令",
+    },
+    /** Collapsed group names for the start page's examples (bookmark style; only one open at a time). */
     exampleFolders: {
-      rsi: "复现自进化算法",
-      webapps: "搭建网页应用",
-      agents: "搭建智能体",
-      schedules: "创建定时任务",
+      apps: "一句话生成 AI 应用",
+      webapps: "网页与小游戏",
+      evolve: "评测与优化智能体",
+      schedules: "定时任务",
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "点击填入输入框，可修改后自行发送",
@@ -3105,6 +3134,13 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "音符画成音符图标，严格踩着节拍飞来，玩家按键击打，判定显示 Perfect / Great / Miss 三档，" +
           "连击计分，难度随曲子推进。纯前端单文件，file:// 直接打开即玩。",
       },
+      ragDocsExpert: {
+        label: "一句话生成 RAG 文档专家",
+        desc: "收集 Claude Code 文档，生成一个带来源引用的 RAG 问答应用",
+        prompt:
+          "收集 https://github.com/ericbuess/claude-code-docs 的文档，" +
+          "做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
+      },
       investmentCopilot: {
         label: "对话式投资分析助理",
         desc: "用 Penguin SDK 做对话式看盘 Copilot：首页列出近期走势较好的股票，每个判断都说清市场因素",
@@ -3146,7 +3182,7 @@ Benchmark：
 3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
-        label: "Default RSI Toolkit：提升决策智能体的准确率",
+        label: "Default 优化：提升决策智能体的准确率",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
@@ -3157,21 +3193,12 @@ Benchmark：
 - desired_score：\`>=95\`
 - candidate_round_limit：\`5\``,
       },
-      /** The two toolkit demos: each prompt is its plugin's quick start word for word. */
-      rsiApe: {
-        label: "复现 APE：从示例归纳指令",
-        desc: "在 rsi-ape 自带的「公司格式简报」任务上跑一遍 APE，对比六道留出题在优化前后的分数",
+      benchmarkImport: {
+        label: "导入评测集：看看仓库里有哪些 Benchmark 包",
+        desc: "列出 penguin-harness-benchmark 仓库里可导入的 Benchmark 包，选定后由 benchmark-design 导入",
         prompt:
-          "在 `rsi-ape` 技能自带的「公司格式简报」任务上复现 APE（Automatic Prompt Engineer，Zhou 等，2022）：" +
-          "新建一个 Agent、一套 6 题的 Benchmark，给我看优化前后的分数。",
-      },
-      rsiOpro: {
-        label: "复现 OPRO：由分数优化指令",
-        desc: "在 rsi-opro 自带的「精确摘要」任务上跑 2 步 × 4 个提案，看指令随分数进化",
-        prompt:
-          "使用 `rsi-opro` 技能在它自带的「精确摘要」演示任务上复现 OPRO：" +
-          "创建 Target 智能体 `summary_writer` 与 Benchmark `precise-summary`，" +
-          "测量种子指令，跑 2 步 × 4 个提案，报告基线分与最佳分。",
+          "使用 `benchmark-design` 技能：列出 https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages " +
+          "下可导入的 Benchmark 包，标出本 Project 已有的，等我选定后再导入。",
       },
       dailyPlan: {
         label: "每天早 9 点的计划对话",
@@ -4668,7 +4695,7 @@ Benchmark：
     evaluatorAgentHint:
       "派发评测子会话、按评分细则打分并写入记分的一方；需要装有 agent-evaluation 技能",
     evaluatorMissingSkill:
-      "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 rsi-default 插件（Default RSI Toolkit）。",
+      "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 default-rsi-toolkit 插件（Default RSI Toolkit）。",
     evaluateSessionModel: "评估会话使用的模型",
     evaluateSessionModelHint:
       "这个会话运行所用的模型，缺省为 Project 默认模型；被测智能体也在这个模型上评测，思考等级沿用它自己的配置",
@@ -4693,7 +4720,7 @@ Benchmark：
     optimizerAgent: "执行优化的智能体",
     optimizerAgentHint: "读分数与 Trace、修改被测智能体的一方；需要装有 agent-optimization 技能",
     optimizerMissingSkill:
-      "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 rsi-default 插件（Default RSI Toolkit）。",
+      "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 default-rsi-toolkit 插件（Default RSI Toolkit）。",
     testedAgentHint: "优化改的是它的 Agent State；分数记在它名下，只与它自己同标签的历史分数比较",
     sessionModel: "优化会话使用的模型",
     sessionModelHint:
@@ -4787,7 +4814,7 @@ Benchmark：
     importBenchmark: "导入评估集",
     importChatTitle: "推荐：让 Agent 在对话中导入",
     importChatWhy:
-      "Agent 会把链接固定到一个提交、只取这一个文件夹，读过每个文件后再写入评估中心，比直接上传更可靠。",
+      "Agent 会按 benchmark-design 技能的导入流程把链接固定到一个提交、只取这一个文件夹，读过每个文件再写入评估中心，比直接上传更可靠。",
     importSourceLabel: "Benchmark 来源",
     importSourceHint:
       "GitHub 仓库里的文件夹链接（如 …/tree/<commit>/packages/<id>）/ 本地路径 / 一段描述",
@@ -4803,14 +4830,14 @@ Benchmark：
       localPath: (s: string): string => `导入这个本地路径下的 Benchmark 包：${s}。`,
       reference: (s: string): string => `找到这个 Benchmark，并把它作为包导入：${s}。`,
     },
-    /** The fixed tail: the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
+    /** The fixed tail: the benchmark-design Skill's import procedure when the Agent has it, then the rules for one that does not — the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
     importPromptTail: (projectId: string): string =>
       [
+        "如果装有 `benchmark-design` 技能，按它的 `reference/package.md`「Importing a package」一节操作——来源解析、固定提交、配对的 train / test 包、导入后核对与可选的冒烟探测都写在那里；没有这个技能时，按下面的规则做：",
         "包是一个文件夹：根下有 `benchmark_config.toml`（键：id、title、description、version（`YYYY.MM.DD.N`）、status、runs 与 `[origin]` 表），每题一个 `CASE-*/`，内含 `statement/README.md` 与 `rubric/README.md`。",
         "只取这一个文件夹，固定在一个提交上，放进临时目录：先把链接里的分支或标签解析成 40 位提交号（`git ls-remote`），再下载它（codeload 的 tarball 或 sparse checkout）；导入之前读完每个文件——不是 Benchmark 包、`status` 不是 `published`、或含有文本材料以外的东西，就拒绝导入。不要拷贝上游的大文件，题干里有它们的链接。",
         `用 \`penguin benchmark import <那个文件夹> --project-id ${projectId} --origin-url <原样的链接> --origin-ref <40 位提交号> --origin-path <仓库里的文件夹路径>\` 导入（来源不是仓库文件夹时不带 \`--origin-*\` 选项）。服务端按检查上传 zip 的规则检查它，并自己写入 \`benchmarks/<id>/\`：来源记为 git，版本保持包里的值，\`scoreboard.yaml\` 只含 \`evaluations: []\`；你自己不要往 \`benchmarks/\` 下写任何东西。`,
         "命令提示该 Benchmark 已存在时，先停下问我再覆盖——覆盖（`--overwrite`）会替换整个目录，连同 `scoreboard.yaml` 与 `.jobs/`；该 Benchmark 还有评估在运行时，服务端也会拒绝覆盖。最后报告命令输出的 id、标题、版本与题数；评估中心随即列出它。",
-        "如果你装有 `benchmark-design` 技能，先读它的 `reference/package.md`（「Importing a package」一节）。",
       ].join("\n"),
     importCopyPrompt: "复制 Prompt",
     importOpenChat: "打开新对话",

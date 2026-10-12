@@ -195,11 +195,11 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 
 | 分类 | 插件 | 用途 |
 | --- | --- | --- |
-| Agent 自进化 | `rsi-default` | Default RSI Toolkit：用四个 Skill 构成「试跑 → 反思 → 提升」的循环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent）。2026.10.09.5 及更早的版本名为 `agent-tuning`，各 Skill 名称不变 |
-| | `rsi-opro` | OPRO，出自 [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409)（Yang 等，2023）：依据历史指令与分数提出新指令，保留得分最高的一条。自成一体：自带初始化与评测参考，另附一个演示任务 |
-| | `rsi-ape` | APE，出自 [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910)（Zhou 等，2022）：从输入 / 输出示例归纳候选指令，保留最优者。自成一体：自带初始化与评测参考，另附一个演示任务 |
-| | `rsi-ace` | ACE，出自 [Agentic Context Engineering](https://arxiv.org/abs/2510.04618)（Zhang 等，2025）：从训练轨迹进化出一本规则手册（playbook）。自成一体：自带初始化与评测参考 |
-| | `rsi-awm` | AWM，出自 [Agent Workflow Memory](https://arxiv.org/abs/2409.07429)（Wang 等，2024）：从成功轨迹归纳工作流，存入 Agent 的记忆。自成一体：自带初始化与评测参考 |
+| Agent 自进化 | `default-rsi-toolkit` | Default RSI Toolkit：用四个 Skill 构成「试跑 → 反思 → 提升」的循环：`agent-initialization`（根据需求搭建 Agent）、`benchmark-design`（设计和校准能力 Benchmark）、`agent-evaluation`（隔离执行单个题目并打分）和 `agent-optimization`（根据实测结果改进 Agent）。2026.10.09.5 及更早的版本名为 `agent-tuning`，各 Skill 名称不变 |
+| | `opro-rsi-toolkit` | OPRO，出自 [Large Language Models as Optimizers](https://arxiv.org/abs/2309.03409)（Yang 等，2023）：依据历史指令与分数提出新指令，保留得分最高的一条。自成一体：自带初始化与评测参考，另附一个演示任务 |
+| | `ape-rsi-toolkit` | APE，出自 [Large Language Models are Human-Level Prompt Engineers](https://arxiv.org/abs/2211.01910)（Zhou 等，2022）：从输入 / 输出示例归纳候选指令，保留最优者。自成一体：自带初始化与评测参考，另附一个演示任务 |
+| | `ace-rsi-toolkit` | ACE，出自 [Agentic Context Engineering](https://arxiv.org/abs/2510.04618)（Zhang 等，2025）：从训练轨迹进化出一本规则手册（playbook）。自成一体：自带初始化与评测参考 |
+| | `awm-rsi-toolkit` | AWM，出自 [Agent Workflow Memory](https://arxiv.org/abs/2409.07429)（Wang 等，2024）：从成功轨迹归纳工作流，存入 Agent 的记忆。自成一体：自带初始化与评测参考 |
 | 办公效率 | `a2ui` | 让回复更易读的富文本组件——选项、表单、分步操作、提示框、Mermaid 图，以及天气、时钟、倒计时和指标小组件，以围栏代码块写在普通 Markdown 里，Web App 用自己的组件渲染（用户的选择以普通文字填入输入框），其他界面显示为可读文本——附带中英文 STE 风格写作规则、把天气查询和系统快照直接生成组件块的脚本，以及一个发送前校验、打分的检查脚本（预装） |
 | | `data-analysis` | 完成数据分析任务：有限度地检查证据，明确决定是否修改答案，原生处理产出文件，并核验最终输出 |
 | | `use-firecrawl` | 通过 Firecrawl API 搜索网页、抓取页面，输出干净的 markdown |
@@ -247,7 +247,7 @@ plugins/<plugin>/
 
 - 插件名就是目录名，必须匹配 `^[A-Za-z0-9_-]+$`。
 - 围绕他人产品打造的插件带 `use-` 前缀（如 `use-firecrawl`），名称只表明用途，而不冒充产品本身。
-- 自进化工具包带 `rsi-` 前缀（如 `rsi-default`、`rsi-ape`），同一家族在列表里排在一起。
+- 自进化工具包的名字以 `-rsi-toolkit` 结尾（`default-rsi-toolkit`、`ape-rsi-toolkit`），一看就知道它是什么；算法工具包唯一的 Skill 与插件同名。
 - 版本先按日期比较，再按序号比较：`2026.08.29.10` 排在 `2026.08.29.9` 之后。
 - 清单里的 `version` 是插件所含全部内容的版本，与 npm 包版本相互独立；npm 版本跟随产品发布。除此之外没有其他版本方案。
 - 每个插件都是一个独立的 npm 包 `@penguinharness/<name>`，位于仓库的 `plugins/<name>/`。`@prismshadow/penguin-core` 中的加载器从宿主包的依赖列表读取插件名，并通过 Node 解析各个包。桌面应用把同样的包声明为依赖，安装器会将它们打包。运行时，插件文件就是插件库内容的唯一事实来源，每次调用都直接读取。

@@ -463,7 +463,7 @@ The paths below omit the `/api/projects/:projectId` prefix, except the global `/
 - `POST …/hooks/archive` expects `hooks.json` and its scripts at the root of the zip or inside one top-level directory, and every listed command must name a file inside the package. Without `overwrite`, an installed package of the same name returns 409 `hook_exists`. The zip that `GET …/hooks/:name/archive` exports can be installed again through this route.
 - `GET /api/plugins` returns every library plugin by category, with its Skills' metadata and hook points.
 - `GET /api/plugins/:plugin/files` returns everything one library plugin ships, as text keyed by path: each Skill's installable `SKILL.md` and reference files under `skills/<name>/`, and the hook scripts under `hooks/`. The plugin detail view's file browser uses it.
-- `GET /api/rsi` returns `{toolkits, benchmarks}`: one entry per plugin of the library's `rsi` category (`plugin`, its `skills`, and whether it is preinstalled) and one per built-in Benchmark (`id`, `title`). The draft screen derives its two counts from it.
+- `GET /api/rsi` returns `{toolkits, benchmarks}`: one entry per plugin of the library's `rsi` category (`plugin`, its `skills`, and whether it is preinstalled) and one per built-in Benchmark (`id`, `title`). The draft page's metric tiles read it.
 
 ### Agent API settings
 
