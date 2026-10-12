@@ -115,7 +115,7 @@ describe("the Agent state across a swap", () => {
     await before.startTask(SID, [assistantText("first")]);
     await waitFor(() => runs.length === 1);
     // The predecessor "was another build": its state's recorded shape is not this one's.
-    const envelope = t.deps.hmr.resources.claim<{ shape: string | null }>("agentState:state")!;
+    const envelope = t.deps.hmr.resources.claim<{ shape: string | null }>("agent:state")!;
     envelope.shape = "another build's AgentState";
 
     expect(await reassemble(t)).toBe(true);

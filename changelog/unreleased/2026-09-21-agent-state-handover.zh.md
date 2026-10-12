@@ -12,7 +12,7 @@
 
 ## Details
 
-- 离开的 App 把自己的 `AgentState` 节点登记到 HMR 注册表的 `agentState:state`，同时登记自己这份
+- 离开的 App 把自己的 `AgentState` 节点登记到 HMR 注册表的 `agent:state`，同时登记自己这份
   构建所声明的 `AgentState` 接口的闭包形状——接口本身连同它经接口表触及的一切，打印成一个规范化
   字符串（core kernel 新增的 `closedShape`）。
 - 后继 App 打印出同一个字符串，就直接在这个对象之上启动。运行中的任务状态一直读作 `running`；

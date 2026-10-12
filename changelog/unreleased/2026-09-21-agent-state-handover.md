@@ -13,7 +13,7 @@ boots over the previous App's state, and the Tasks go on.
 
 ## Details
 
-- The leaving App registers its `AgentState` node in the HMR registry as `agentState:state`,
+- The leaving App registers its `AgentState` node in the HMR registry as `agent:state`,
   together with the closed shape of the `AgentState` interface as its build declares it — the
   interface and everything it reaches through the interface table, printed as one canonical
   string (`closedShape`, new in core's kernel).

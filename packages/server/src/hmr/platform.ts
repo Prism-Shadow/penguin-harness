@@ -223,7 +223,7 @@ interface ParkedInterfaces extends Interfaces {
    * beside the sessions (SESSION_SHAPE_ID) must equal this build's, or the group is doomed.
    */
   [SESSION_GROUP]: MembersOf<HeldSession>;
-  agentState: MembersOf<HandedAgentState>;
+  agent: MembersOf<HandedAgentState>;
 }
 
 /**
@@ -241,8 +241,8 @@ interface HandedAgentState {
   stopped?: Promise<void>;
 }
 
-/** Registry id of the handed-over Agent state — in the `agentState:` group, so a build that does not declare the group stops the runs behind it. */
-const AGENT_STATE_RESOURCE_ID = "agentState:state";
+/** Registry id of the handed-over Agent state — in the `agent:` group, so a build that does not declare the group stops the runs behind it. */
+const AGENT_STATE_RESOURCE_ID = "agent:state";
 /** The AgentState interface's key in the generated table. */
 const AGENT_STATE_IFACE = "@prismshadow/penguin-server#AgentState";
 /**
@@ -284,7 +284,7 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
   // the old object's code: a behavior change bumps the name, so the old group is disposed
   // here (its sessions closed) and the machines are re-held fresh.
   [SESSION_GROUP]: ["hold", "held", "run", "session", "close"],
-  agentState: ["state", "shape", "stopped"],
+  agent: ["state", "shape", "stopped"],
 };
 
 /**
@@ -363,10 +363,10 @@ async function createInner(
   const agentStateShape = closedShape(ifaceTable as unknown as IfaceTable, AGENT_STATE_IFACE);
   if (
     handed !== undefined &&
-    !doomedGroups.includes("agentState") &&
+    !doomedGroups.includes("agent") &&
     (agentStateShape === null || handed.shape !== agentStateShape)
   ) {
-    doomedGroups.push("agentState");
+    doomedGroups.push("agent");
   }
   // The delivered machine sessions, by structure too: the leaving build registered the
   // closed shape of MachineSession beside them; equal means the objects answer the calls
@@ -383,7 +383,7 @@ async function createInner(
     doomedGroups.push(SESSION_GROUP);
   }
   const adoptable = (group: string) => !doomedGroups.includes(group);
-  const takenOver = handed !== undefined && adoptable("agentState");
+  const takenOver = handed !== undefined && adoptable("agent");
 
   // The skill/hook plugin LIBRARY is the one this build was made with, when the push carried
   // it: a machine installed before a plugin existed otherwise never offers it, and a feature
@@ -523,7 +523,7 @@ async function createInner(
   //   - machine sessions    held ssh children claimed by the successor through the registry
   //   - runtime singletons  db / auth-state / channels / config / proxy / desktop —
   //                         runtime-owned, re-claimed by every App
-  //   - the Agent state     registry `agentState:state` (PRFC-0015): running Tasks, pending
+  //   - the Agent state     registry `agent:state` (PRFC-0015): running Tasks, pending
   //                         approvals, queued follow-ups, loaded Sessions and their
   //                         environments, all left as they are. A successor whose
   //                         AgentState has the same closed shape boots over it; any other
