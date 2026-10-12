@@ -137,7 +137,7 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 
 ```text
 <project>/benchmarks/<id>/
-├── benchmark_config.toml       # the manifest: id, title, description, version, status, runs (Builder runs is fixed at 1), [origin]
+├── benchmark_config.toml       # the manifest: id, title, description, description_zh, version, status, runs (Builder runs is fixed at 1), [origin]
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
 │   └── rubric/                 # private scoring rubric, isolated from the Target Agent
@@ -156,6 +156,7 @@ Benchmark 属于 Project，每个 Benchmark 存放在 `<root>/<project>/benchmar
 id = "report-writing-v1"
 title = "Report writing"
 description = "Hard cases for the report writer"
+description_zh = "给报告撰写者的难题"
 version = "2026.10.09.1"
 status = "published"
 runs = 1
@@ -168,6 +169,7 @@ kind = "agent"
 | --- | --- |
 | `id` | 目录名。`id` 与所在目录不符的清单不会被读取 |
 | `title`、`description` | 标题（缺省时以目录名代替）和可选的描述；由服务端写入时分别不超过 200 和 2,000 个字符 |
+| `description_zh` | 可选：中文描述，中文界面下代替 `description` 显示，与插件的 `description_zh` 一样；长度限制相同 |
 | `version` | 日期版本 `"YYYY.MM.DD.N"` |
 | `status` | `draft`、`published` 或 `failed`，见 [Benchmark 状态](#benchmark-状态) |
 | `runs` | 每题运行次数，正整数，缺省为 1；由服务端写入时不超过 1,000 |

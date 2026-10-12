@@ -55,7 +55,12 @@ import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
 import { AiCreateModal, pickDefaultAgent } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-import { latestWithDelta, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
+import {
+  benchmarkDescription,
+  latestWithDelta,
+  matchesBenchmarkQuery,
+  sparklineSeries,
+} from "./benchmark-metrics";
 import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
 import { ImportBenchmarkModal } from "./benchmark-import-modal";
 import { benchmarkRoute } from "./benchmark-route";
@@ -238,7 +243,7 @@ export function BenchmarkCard({
         </span>
         {/* An empty description still takes its line, so the cards keep one height. */}
         <span className="mt-1.5 block min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
-          {benchmark.description ?? ""}
+          {benchmarkDescription(benchmark, locale) ?? ""}
         </span>
         <span className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
           <span className="shrink-0">{S.benchmark.caseCount(benchmark.caseCount)}</span>

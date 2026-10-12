@@ -137,7 +137,7 @@ Benchmarks belong to the Project. Each one is stored in `<root>/<project>/benchm
 
 ```text
 <project>/benchmarks/<id>/
-├── benchmark_config.toml       # the manifest: id, title, description, version, status, runs (Builder runs is fixed at 1), [origin]
+├── benchmark_config.toml       # the manifest: id, title, description, description_zh, version, status, runs (Builder runs is fixed at 1), [origin]
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
 │   └── rubric/                 # private scoring rubric, isolated from the Target Agent
@@ -156,6 +156,7 @@ Benchmarks belong to the Project. Each one is stored in `<root>/<project>/benchm
 id = "report-writing-v1"
 title = "Report writing"
 description = "Hard cases for the report writer"
+description_zh = "给报告撰写者的难题"
 version = "2026.10.09.1"
 status = "published"
 runs = 1
@@ -168,6 +169,7 @@ kind = "agent"
 | --- | --- |
 | `id` | The directory name. A manifest whose `id` is another directory's is not read |
 | `title`, `description` | The title (without one, the directory name stands in) and an optional description; at most 200 and 2,000 characters when the server writes them |
+| `description_zh` | Optional: the description in Chinese, shown instead of `description` in the Chinese interface, as a plugin's `description_zh` is; same limit |
 | `version` | A date version, `"YYYY.MM.DD.N"` |
 | `status` | `draft`, `published` or `failed`; see [Benchmark status](#benchmark-status) |
 | `runs` | Runs per case, a positive integer, 1 when absent; at most 1,000 when the server writes it |

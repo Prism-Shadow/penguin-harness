@@ -55,6 +55,8 @@ export interface BuiltinBenchmark {
   title: string;
   /** Opens with the original benchmark the section is ("Sec A is …"), then what every built-in shares. */
   description: string;
+  /** The same description in Chinese, for a reader of the Chinese interface. */
+  descriptionZh: string;
   /**
    * The manifest's date version, `YYYY.MM.DD.N`: the revision of what this Benchmark's files say.
    * Move it on whenever its row, or anything the writer below puts in its files, changes
@@ -115,6 +117,7 @@ function builtinManifest(bench: BuiltinBenchmark): BenchmarkManifest {
     id: bench.id,
     title: bench.title,
     description: bench.description,
+    descriptionZh: bench.descriptionZh,
     version: bench.version,
     status: "published",
     runs: 1,

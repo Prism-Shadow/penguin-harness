@@ -4271,6 +4271,8 @@ export interface BenchmarkSummary {
   /** Title from benchmark_config.toml; the directory name when it gives none or the manifest cannot be read. */
   title: string;
   description?: string;
+  /** The description in Chinese (`description_zh` in benchmark_config.toml), when the manifest gives one. */
+  descriptionZh?: string;
   /** Number of runs per case (the `runs` key in benchmark_config.toml, an integer ≥ 1); absent when it gives none or the manifest cannot be read, which reads as 1. */
   runs?: number;
   /**
