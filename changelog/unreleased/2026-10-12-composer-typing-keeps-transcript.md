@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1052](https://github.com/Prism-Shadow/penguin-harness/pull/1052)
 
 [中文版](2026-10-12-composer-typing-keeps-transcript.zh.md)
 
