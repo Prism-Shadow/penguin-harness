@@ -12,6 +12,9 @@
  * - A refused save keeps the dialog open with the reason at its foot, still unsaved.
  * - An edit typed back to the stored entry is no change: Save stays held, and Cancel asks
  *   nothing.
+ * - The connection test sends an untouched saved entry as it is saved; an edited entry that reads
+ *   the vault is told to save first, said beside the button rather than as a failure, until the
+ *   next edit.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
@@ -43,6 +46,15 @@ import {
 const STORED: MCPServerConfig = {
   name: "search",
   config: { transport: "http", url: "https://search.example/mcp" },
+};
+
+/** Saved by hand: no transport named, and a header that reads the vault. */
+const READS_VAULT: MCPServerConfig = {
+  name: "search",
+  config: {
+    url: "https://search.example/mcp",
+    headers: { Authorization: "Bearer ${SEARCH_TOKEN}" },
+  },
 };
 
 async function openSection(initial: MCPServerConfig[] = []) {
@@ -132,6 +144,28 @@ describe("the MCP Server dialog", () => {
     expect(hasUnsaved()).toBe(true);
     await click(buttonIn(topDialog(), en.common.cancel));
     expect(promptOpen()).toBe(true);
+  });
+
+  it("tests a saved entry as saved, and tells an edited one that reads the vault to save first", async () => {
+    const server = await openSection([READS_VAULT]);
+    // The server's rule: vault values are filled only into an entry saved exactly as tested.
+    server.answerMcpTest((entry) =>
+      JSON.stringify(entry) === JSON.stringify(READS_VAULT)
+        ? { ok: true, tools: [], latencyMs: 3 }
+        : { ok: false, saveFirst: true },
+    );
+    const tested = () =>
+      server.fetch.requests.filter((r) => r.path.endsWith("/config/mcp-test")).map((r) => r.body);
+    await click(button(en.common.edit));
+    await click(buttonIn(topDialog(), en.agent.mcpTest));
+    expect(tested()).toEqual([READS_VAULT]);
+    expect(topDialog().textContent).not.toContain(en.agent.mcpTestSaveFirst);
+
+    await type(inDialog(en.agent.mcpUrl), "https://search.example/v2");
+    await click(buttonIn(topDialog(), en.agent.mcpTest));
+    expect(topDialog().textContent).toContain(en.agent.mcpTestSaveFirst);
+    await type(inDialog(en.agent.mcpUrl), "https://search.example/v3");
+    expect(topDialog().textContent).not.toContain(en.agent.mcpTestSaveFirst);
   });
 
   it("holds Save on an edit typed back to the stored entry, and closes without asking", async () => {

@@ -11,6 +11,8 @@
  * - A created Agent closes the dialog and the page goes on to it without asking: the form was
  *   saved, so the navigation that follows finds nothing unsaved.
  * - A refused create keeps the dialog open with the reason under the id, still unsaved.
+ * - A picked plugin with a stdio MCP server asks before anything is created, showing the command
+ *   it runs on this server; confirming creates the Agent with the plugin.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h, useState } from "react";
@@ -19,6 +21,7 @@ import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { CreateAgentDialog } from "../src/features/agents/create-agent-dialog";
+import type { PluginPickItem } from "../src/features/agents/create-agent-dialog";
 import {
   PROJECT_ID,
   agentServer,
@@ -40,14 +43,32 @@ import {
   waitFor,
 } from "./helpers/dom";
 
+/** A library plugin whose MCP server is a command this server runs. */
+const MAIL: PluginPickItem = {
+  name: "mail",
+  description: "Mail tools",
+  version: "1.0.0",
+  title: "Mail tools",
+  mcpServers: [
+    {
+      name: "mail",
+      transport: "stdio",
+      target: "node mail-server.js",
+      setup: [],
+      oauth: false,
+      signIn: false,
+    },
+  ],
+};
+
 /** The page's part: closes the dialog and goes on to the new Agent at once. */
-function Harness() {
+function Harness({ library = [] }: { library?: PluginPickItem[] }) {
   const [open, setOpen] = useState(true);
   const navigate = useNavigate();
   return h(CreateAgentDialog, {
     open,
     projectId: PROJECT_ID,
-    library: [],
+    library,
     libraryError: null,
     onClose: () => setOpen(false),
     onCreated: async () => {
@@ -57,9 +78,9 @@ function Harness() {
   });
 }
 
-async function openCreate() {
+async function openCreate(library: PluginPickItem[] = []) {
   const server = agentServer();
-  const router = await mountAgentApp(h(Harness), { route: "/create", at: "/create" });
+  const router = await mountAgentApp(h(Harness, { library }), { route: "/create", at: "/create" });
   await waitFor(() => dialogs().length === 1);
   return { server, router };
 }
@@ -123,6 +144,27 @@ describe("creating an Agent", () => {
     expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body).toEqual({
       agentId: "writer",
       name: "Writer",
+    });
+  });
+
+  it("asks before creating an Agent whose picked plugin runs a stdio server, and creates on confirm", async () => {
+    const { server, router } = await openCreate([MAIL]);
+    await type(id(), "writer");
+    await click(buttonIn(topDialog(), en.agent.createPlugins));
+    const row = [...document.querySelectorAll("[aria-pressed]")].find((b) =>
+      b.textContent?.includes("mail"),
+    );
+    await click(row!);
+    await click(create());
+    expect(dialogs()).toHaveLength(2);
+    expect(topDialog().textContent).toContain("node mail-server.js");
+    expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)).toEqual([]);
+
+    await click(buttonIn(topDialog(), en.common.create));
+    await waitFor(() => whereIs(router) === "/agents");
+    expect(server.writes(`/api/projects/${PROJECT_ID}/agents`)[0]!.body).toEqual({
+      agentId: "writer",
+      plugins: ["mail"],
     });
   });
 

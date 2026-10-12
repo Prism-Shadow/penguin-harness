@@ -19,9 +19,11 @@ import { vi } from "vitest";
 import { createElement as h } from "react";
 import type { ReactElement } from "react";
 import { Link, Outlet, RouterProvider, createMemoryRouter } from "react-router";
+import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentConfigResponse,
   AgentConfigUpdateRequest,
+  McpServerTestResponse,
   ScheduleItem,
   VaultEntryInfo,
   VaultUpdateRequest,
@@ -130,6 +132,8 @@ export interface AgentServer {
   /** Writes wait until {@link AgentServer.release} is called (to see a write in flight). */
   hold(): void;
   release(): void;
+  /** How the MCP connection test answers an entry (by default: connected, no tools). */
+  answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
 }
 
 export function agentServer(initial: AgentConfigResponse = agentConfig()): AgentServer {
@@ -138,6 +142,11 @@ export function agentServer(initial: AgentConfigResponse = agentConfig()): Agent
   let schedules: ScheduleItem[] = [];
   let refusal: { status: number; code: string; message: string } | null = null;
   let held: Array<() => void> | null = null;
+  let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
+    ok: true,
+    tools: [],
+    latencyMs: 1,
+  });
 
   /** The refusal a write meets, if one was asked for (it answers one write only). */
   const refused = (): Response | null => {
@@ -198,6 +207,9 @@ export function agentServer(initial: AgentConfigResponse = agentConfig()): Agent
     if (path === `${AGENT_PATH}/config`) {
       if (method === "PUT") stored = applyUpdate(stored, request.body as AgentConfigUpdateRequest);
       return json(stored);
+    }
+    if (path === `${AGENT_PATH}/config/mcp-test` && method === "POST") {
+      return json(mcpTest(request.body as MCPServerConfig));
     }
     if (path === `${AGENT_PATH}/vault`) {
       if (method === "PUT") {
@@ -278,6 +290,9 @@ export function agentServer(initial: AgentConfigResponse = agentConfig()): Agent
       const waiting = held ?? [];
       held = null;
       for (const resume of waiting) resume();
+    },
+    answerMcpTest: (answer) => {
+      mcpTest = answer;
     },
   };
 }

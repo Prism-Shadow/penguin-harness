@@ -17,21 +17,35 @@
  *   page is told, so the page's move to the new desk session is not held by the leave guard.
  * - A new ticket (features/company/tickets-page.tsx) waits for a title and a slug that keeps
  *   its rule, said under the field as it is typed.
+ * - A hire writes at once, the employee's name with it; a new Agent whose picked plugin runs a
+ *   stdio MCP server asks first, showing the command it runs on this server, and hires on
+ *   confirm.
+ * - An employee's name is written by its Save alone, once it differs from the stored one, and
+ *   Esc asks before a typed name is dropped.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement as h, Fragment } from "react";
+import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import type { OrgEmployeeItem, OrganizationSettings } from "@prismshadow/penguin-server/api";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
 import { OrganizationSettingsDialog } from "../src/features/company/org-dialogs";
-import { DeskRenewDialog, EmployeeEditDialog } from "../src/features/company/employee-dialogs";
+import {
+  DeskRenewDialog,
+  EmployeeEditDialog,
+  EmployeeProfileDialog,
+  HireDialog,
+} from "../src/features/company/employee-dialogs";
 import { ChannelTextDialog } from "../src/features/company/channel-dialogs";
 import { CalendarEventDialog } from "../src/features/company/calendar-page";
 import { CreateTicketDialog } from "../src/features/company/tickets-page";
 import { ThemeProvider } from "../src/state/theme";
 import { AuthProvider } from "../src/state/auth";
+import { CompanyProvider } from "../src/state/company";
+import { LocaleProvider } from "../src/state/locale";
 import { ProjectProvider } from "../src/state/project";
 import { SessionsProvider } from "../src/state/sessions";
 import { ADMIN_ME } from "./helpers/admin-settings";
@@ -429,5 +443,232 @@ describe("a desk renewal", () => {
     expect(promptOpen()).toBe(true);
     await click(button(en.common.discard));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+const ORG = "/api/projects/p1/organizations/acme";
+
+const CEO: OrgEmployeeItem = {
+  agentId: "ceo",
+  name: "Chief",
+  title: "CEO",
+  reportsTo: null,
+  workspace: ".",
+  state: "idle",
+  spend: { own: 0, cumulative: 0 },
+};
+
+/** The plugin library: one plugin whose MCP server is a command this server runs. */
+const LIBRARY = {
+  groups: [
+    {
+      id: "tools",
+      title: "Tools",
+      plugins: [
+        {
+          name: "mail",
+          description: "Mail tools",
+          version: "1.0.0",
+          title: "Mail tools",
+          skills: [],
+          mcpServers: [
+            {
+              name: "mail",
+              transport: "stdio",
+              target: "node mail-server.js",
+              setup: [],
+              oauth: false,
+              signIn: false,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+/** The org routes a personnel dialog writes, inside the shell the company surfaces sit in. */
+function companyServer(): FakeFetch {
+  return stubFetch((req) => {
+    if (req.path === "/api/me") return json(ADMIN_ME);
+    if (req.path === "/api/projects") return json({ projects: [PROJECT] });
+    if (req.path === "/api/projects/p1/agents") return json({ agents: [] });
+    if (req.path === "/api/plugins") return json(LIBRARY);
+    if (req.path === `${ORG}/employees` && req.method === "POST") {
+      return json({ ...EMPLOYEE, ...(req.body as { title: string }) });
+    }
+    if (req.path === `${ORG}/employees/writer` && req.method === "PATCH") {
+      return json({ ...EMPLOYEE, ...(req.body as object) });
+    }
+    return apiError(404, "not_found");
+  });
+}
+
+/** Mounts a personnel dialog the way the org chart does: inside the company shell. */
+async function mountInCompany(dialog: ReactElement) {
+  await mount(
+    h(
+      MemoryRouter,
+      null,
+      h(
+        LocaleProvider,
+        null,
+        h(
+          ThemeProvider,
+          null,
+          h(
+            AuthProvider,
+            null,
+            h(ProjectProvider, null, h(CompanyProvider, null, dialog, h(UnsavedPrompt))),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/** The posts a hire made, by their bodies. */
+const hires = (network: FakeFetch) =>
+  network.requests.filter((r) => r.method === "POST" && r.path === `${ORG}/employees`);
+
+describe("hiring", () => {
+  beforeAll(() => setActiveStrings(en));
+  afterAll(() => setActiveStrings(zh));
+  beforeEach(() => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener() {}
+        removeEventListener() {}
+        close() {}
+      },
+    );
+  });
+  afterEach(async () => {
+    await unmountAll();
+  });
+
+  async function openHire() {
+    const network = companyServer();
+    const onHired = vi.fn();
+    await mountInCompany(
+      h(HireDialog, {
+        open: true,
+        projectId: "p1",
+        orgId: "acme",
+        manager: CEO,
+        employees: [CEO],
+        onClose: () => {},
+        onHired,
+      }),
+    );
+    // The new-Agent half opens: the Project has no Agent left to hire.
+    await waitFor(() => document.body.textContent?.includes(en.company.chart.agentIdHint) === true);
+    await waitFor(() => network.requests.some((r) => r.path === "/api/plugins"));
+    return { network, onHired };
+  }
+
+  /** The employee's name box: the second "Name", after the new Agent's own. */
+  const employeeName = () =>
+    [...document.querySelectorAll<HTMLInputElement>("input")].filter((f) =>
+      [...(f.labels ?? [])].some((l) => l.textContent?.startsWith(en.company.chart.employeeName)),
+    )[1]!;
+
+  it("hires at once, the employee's name with it, when nothing picked runs a command here", async () => {
+    const { network, onHired } = await openHire();
+    await type(field(en.company.chart.agentId), "writer");
+    await type(employeeName(), "Wren");
+    await type(field(en.company.chart.employeeTitle), "Docs engineer");
+    await click(button(en.company.chart.hire));
+    await waitFor(() => onHired.mock.calls.length === 1);
+    expect(hires(network).map((r) => r.body)).toEqual([
+      {
+        name: "Wren",
+        title: "Docs engineer",
+        reportsTo: "ceo",
+        newAgent: { agentId: "writer", plugins: ["agent-company", "agent-development"] },
+      },
+    ]);
+  });
+
+  it("asks before a new Agent whose picked plugin runs a stdio server is hired, and hires on confirm", async () => {
+    const { network, onHired } = await openHire();
+    await type(field(en.company.chart.agentId), "writer");
+    await type(field(en.company.chart.employeeTitle), "Docs engineer");
+    await click(button(en.company.chart.plugins));
+    const row = [...document.querySelectorAll("[aria-pressed]")].find((b) =>
+      b.textContent?.includes("mail"),
+    );
+    await click(row!);
+    await click(button(en.company.chart.hire));
+    expect(document.body.textContent).toContain("node mail-server.js");
+    expect(hires(network)).toEqual([]);
+
+    await click(button(en.common.confirm));
+    await waitFor(() => onHired.mock.calls.length === 1);
+    expect(
+      hires(network).map((r) => (r.body as { newAgent: { plugins: string[] } }).newAgent.plugins),
+    ).toEqual([["agent-company", "agent-development", "mail"]]);
+  });
+});
+
+describe("an employee's name and picture", () => {
+  beforeAll(() => setActiveStrings(en));
+  afterAll(() => setActiveStrings(zh));
+  beforeEach(() => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    vi.stubGlobal(
+      "EventSource",
+      class {
+        addEventListener() {}
+        removeEventListener() {}
+        close() {}
+      },
+    );
+  });
+  afterEach(async () => {
+    await unmountAll();
+  });
+
+  it("writes a changed name with Save alone, and asks before Esc drops a typed one", async () => {
+    const network = companyServer();
+    const onClose = vi.fn();
+    const onChanged = vi.fn();
+    await mountInCompany(
+      h(EmployeeProfileDialog, {
+        open: true,
+        projectId: "p1",
+        orgId: "acme",
+        employee: EMPLOYEE,
+        onClose,
+        onChanged,
+      }),
+    );
+    expect(button(en.common.save).disabled).toBe(true);
+    await type(field(en.company.chart.employeeName), "Wren");
+    expect(button(en.common.save).disabled).toBe(false);
+    await pressEscape();
+    expect(promptOpen()).toBe(true);
+    await click(button(en.common.keepEditing));
+    expect(field(en.company.chart.employeeName).value).toBe("Wren");
+
+    await click(button(en.common.save));
+    await waitFor(() => onClose.mock.calls.length === 1);
+    expect(network.requests.filter((r) => r.method === "PATCH").map((r) => r.body)).toEqual([
+      { name: "Wren" },
+    ]);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(promptOpen()).toBe(false);
   });
 });
