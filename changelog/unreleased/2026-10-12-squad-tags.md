@@ -3,7 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** feat
 - **Scope:** `core`, `server`, `cli`, `docs`
-- **PR:** TBD
+- **PR:** [#1035](https://github.com/Prism-Shadow/penguin-harness/pull/1035)
 
 [中文版](2026-10-12-squad-tags.zh.md)
 
