@@ -711,7 +711,7 @@ export const en: Strings = {
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
     notifications: "Task completion notifications",
     notificationsInfo:
-      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot and sends a confirmation notification (registering the app in your system notification settings) — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
+      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot and shows a confirmation notification — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
     notificationsDenied:
       "The system has denied notifications for this app. Allow them in your system notification settings, then turn this on again.",
     notificationsDismissed:

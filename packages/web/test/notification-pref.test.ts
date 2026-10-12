@@ -11,8 +11,10 @@
  *   platform's own answer passes through, falling back to the live permission when the
  *   request answers with neither.
  * - Turning the preference on stores the opt-in only when the request came back granted,
- *   judged by the request's answer rather than the permission it started from; a denial, a
- *   dismissed prompt and a missing API all leave it off.
+ *   judged by the request's answer rather than the permission it started from, and then shows
+ *   one confirmation notification; a denial, a dismissed prompt and a missing API all leave it
+ *   off and show nothing. A platform that refuses to construct the confirmation still keeps
+ *   the opt-in.
  * - The hint under the switch is silent until something needs saying, names a dismissed
  *   prompt, and keeps a refusal or a missing API on screen.
  */
@@ -148,6 +150,27 @@ describe("turning the preference on", () => {
       expect(calls?.notices ?? []).toEqual([]);
     },
   );
+
+  it("keeps the opt-in when the platform refuses to construct the confirmation", async () => {
+    // Chrome on Android, for one, shows notifications only through a service worker and
+    // throws on `new Notification(...)` even with permission granted.
+    const storage = memoryStorage();
+    vi.stubGlobal(
+      "Notification",
+      class {
+        static permission: NotificationPermission = "granted";
+        static async requestPermission(): Promise<NotificationPermission> {
+          return "granted";
+        }
+        constructor() {
+          throw new TypeError("Illegal constructor");
+        }
+      },
+    );
+
+    await expect(enableNotifications(storage)).resolves.toBe("granted");
+    expect(readNotificationsEnabled(storage)).toBe(true);
+  });
 
   it("takes the answer the request gave, not the permission it started from", async () => {
     // The real sequence, which a stub answering with a fixed permission cannot express:

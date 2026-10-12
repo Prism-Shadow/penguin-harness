@@ -135,12 +135,10 @@ export async function requestNotificationPermission(): Promise<NotificationAcces
  * returned for the caller to explain, and leaves the preference off, so the switch never
  * latches on over a notification that cannot be shown.
  *
- * When granted, a confirmation notification is also shown immediately. On Windows (Electron
- * and browsers alike), `Notification.requestPermission()` resolves "granted" in memory
- * without touching the OS notification centre, and Windows only adds an app to System →
- * Notifications (`HKCU\...\Notifications\Settings\<AUMID>`) after it has actually posted its
- * first toast (`LastNotificationAddedTime`). Emitting one here registers the app on the spot
- * and gives the user immediate feedback that system notifications work.
+ * A granted request also shows one confirmation notification on the spot, on every platform:
+ * the user sees at once that notifications reach them, and Windows, which lists an app under
+ * System › Notifications only once it has shown one, lists this app from then on. Showing it
+ * is best-effort; a platform that will not construct a notification still keeps the opt-in.
  */
 export async function enableNotifications(
   storage?: NotificationStorage | null,
