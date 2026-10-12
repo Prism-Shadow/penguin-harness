@@ -66,6 +66,8 @@ const FORM_MODULES: readonly string[] = [
   "features/messaging/messaging-panel.tsx",
   "features/models/models-page.tsx",
   "features/models/provider-settings-dialog.tsx",
+  "features/plugins/plugin-import-modal.tsx",
+  "features/plugins/plugin-mcp.tsx",
   "features/schedules/schedule-form-modal.tsx",
   "features/settings/plugin-config-card.tsx",
   "features/settings/profile-section.tsx",
