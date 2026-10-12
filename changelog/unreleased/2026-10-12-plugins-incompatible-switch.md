@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1049](https://github.com/Prism-Shadow/penguin-harness/pull/1049)
 
 [中文版](2026-10-12-plugins-incompatible-switch.zh.md)
 
