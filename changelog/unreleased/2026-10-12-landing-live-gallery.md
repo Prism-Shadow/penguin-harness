@@ -3,7 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** feature
 - **Scope:** `landing`, `docs`, `gallery`
-- **PR:** TBD
+- **PR:** [#1076](https://github.com/Prism-Shadow/penguin-harness/pull/1076)
 
 [中文版](2026-10-12-landing-live-gallery.zh.md)
 
