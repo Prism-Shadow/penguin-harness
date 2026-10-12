@@ -5,7 +5,7 @@
  */
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { DOCS_URL, LICENSE_URL, RELEASES_URL, REPO_URL } from "../lib/links";
+import { DOCS_URL, GALLERY_URL, LICENSE_URL, RELEASES_URL, REPO_URL } from "../lib/links";
 
 export function Footer() {
   const anchor = (id: string, label: string) => (
@@ -61,6 +61,11 @@ export function Footer() {
                 <li>
                   <a href={DOCS_URL} className="hover:text-gray-900 dark:hover:text-gray-100">
                     {S.footer.docs}
+                  </a>
+                </li>
+                <li>
+                  <a href={GALLERY_URL} className="hover:text-gray-900 dark:hover:text-gray-100">
+                    {S.nav.gallery}
                   </a>
                 </li>
                 <li>

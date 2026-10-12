@@ -1,6 +1,7 @@
 /**
- * Sticky top navigation: logo + section anchors + blog link + language/theme toggles +
- * GitHub. Desktop links share a sliding hover pill, while the selected section or route
+ * Sticky top navigation: logo + section anchors + blog and download links + docs and gallery
+ * links (sibling sites, never the current page here) + language/theme toggles + GitHub.
+ * Desktop links share a sliding hover pill, while the selected section or route
  * keeps its own active background. On the home page the active section tracks the
  * LIVE scroll position (scroll-spy), so the highlight follows as you scroll; on other
  * routes it falls back to route state (e.g. Blog). Section links route through "/#id"
@@ -14,7 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { Link, useLocation } from "react-router";
 import { S } from "../lib/strings";
-import { DOCS_URL, REPO_API_URL, REPO_URL } from "../lib/links";
+import { DOCS_URL, GALLERY_URL, REPO_API_URL, REPO_URL } from "../lib/links";
 import {
   getActiveNavItem,
   getNavItemForSection,
@@ -156,9 +157,12 @@ export function Nav() {
       >
         {S.nav.download}
       </Link>
-      {/* Docs is a sibling SPA under /docs/ — a plain anchor, not a router Link. */}
+      {/* Docs (/docs/) and the gallery (/gallery/) are sibling SPAs: plain anchors, not Links. */}
       <a href={DOCS_URL} className={deskLinkCls(false)} onMouseEnter={slideTo}>
         {S.nav.docs}
+      </a>
+      <a href={GALLERY_URL} className={deskLinkCls(false)} onMouseEnter={slideTo}>
+        {S.nav.gallery}
       </a>
     </>
   );
@@ -197,6 +201,9 @@ export function Nav() {
       </Link>
       <a href={DOCS_URL} className={mobileLinkCls(false)} onClick={() => setOpen(false)}>
         {S.nav.docs}
+      </a>
+      <a href={GALLERY_URL} className={mobileLinkCls(false)} onClick={() => setOpen(false)}>
+        {S.nav.gallery}
       </a>
     </>
   );

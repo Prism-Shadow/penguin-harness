@@ -28,7 +28,7 @@ pnpm dev:landing # landing page (Vite) at 127.0.0.1:7366
 pnpm penguin ... # CLI from source; `penguin web` serves at 127.0.0.1:7369
 pnpm desktop     # desktop app from source (builds everything first, then Electron)
 
-BASE_PATH=/ pnpm build:site   # assemble landing + docs exactly like the Pages deploy
+BASE_PATH=/ pnpm build:site   # assemble landing + docs + gallery exactly like the Pages deploy
 ```
 
 Every dev command runs `scripts/dev-prebuild.mjs` first, which (behind a lock that

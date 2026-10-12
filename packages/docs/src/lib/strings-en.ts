@@ -16,6 +16,7 @@ export const en: Strings = {
     blog: "Blog",
     download: "Download",
     docs: "Docs",
+    gallery: "Gallery",
     github: "GitHub",
     openMenu: "Open navigation",
     closeMenu: "Close navigation",

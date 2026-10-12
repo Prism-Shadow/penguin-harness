@@ -40,6 +40,7 @@ import {
   RuledSection,
   Spinner,
 } from "@prismshadow/penguin-ui";
+import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
 import { formatMonthDay } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { stripAnsi } from "../../lib/strip-ansi";
@@ -181,7 +182,7 @@ function Identity({
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3">
       <PenguinLogo
-        src="/penguin-logo.svg"
+        src={PENGUIN_LOGO_URL}
         className="h-14 w-14 shrink-0 rounded-2xl sm:row-span-2"
       />
       <div className="min-w-0">

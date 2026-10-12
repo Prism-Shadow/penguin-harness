@@ -15,6 +15,7 @@
  */
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router";
+import { PENGUIN_LOGO_URL } from "../lib/brand-logo";
 import { S } from "../lib/strings";
 import { createCompletionTracker } from "../lib/completion-notify";
 import {
@@ -62,7 +63,7 @@ export function useCompletionNotifications(): void {
           body: S.notify.taskCompleteBody(title),
           // One notification per Session: a newer completion replaces the stale one.
           tag: `penguin-task-${sessionId}`,
-          icon: "/penguin-logo.svg",
+          icon: PENGUIN_LOGO_URL,
         });
         notification.onclick = () => {
           notification.close();
