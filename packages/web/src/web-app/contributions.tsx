@@ -11,6 +11,7 @@ import {
 
 import type { ContributionsResponse, RendererRef } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
+import { useSafeMode } from "../rescue/safe-mode";
 import { useAuth } from "../state/auth";
 import { webAppDeps } from "./deps";
 import { FramePage } from "./frame-page";
@@ -179,10 +180,11 @@ export function contributedPagesOf(
 /** Holds the signed-in user's contributions and the merged page table, for everything under the router. */
 export function WebAppPagesProvider({ children }: { children: ReactNode }) {
   const { pages: compiled, pageRenderers } = webAppDeps.useDeps();
-  const userId = useAuth().user?.userId ?? null;
+  const signedIn = useAuth().user?.userId ?? null;
+  const userId = useSafeMode() ? null : signedIn;
   const [store] = useState(() => createContributionsStore(api.getContributions));
   useEffect(() => store.setUser(userId), [store, userId]);
-  const state = useSyncExternalStore(store.subscribe, store.current);
+  const state = useSyncExternalStore(store.subscribe, store.current, store.current);
   // Until the effect above has told the store about a new user, the state is the last user's:
   // none of it is shown, and the new user's request counts as already in flight.
   const current = state.user === userId;

@@ -68,6 +68,10 @@ const BROWSER_BY_PLATFORM: Record<Platform, readonly string[]> = {
  */
 const COMMON_ALL = [
   "Mod+KeyP", // print
+  // New private window (Firefox). Firefox in fact acts on it before the page, which would make
+  // it reserved; it is listed here, among the chords a page can take, because the palette's
+  // default sits on it by decision and works in every other browser and in the desktop app.
+  "Mod+Shift+KeyP",
   "Mod+KeyS", // save page
   "Mod+KeyO", // open a file
   "Mod+KeyF", // find

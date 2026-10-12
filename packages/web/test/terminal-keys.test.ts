@@ -115,9 +115,9 @@ describe("terminalKeyAction", () => {
       "shell",
     ],
     [
-      "an unanswered chord is the shell's (Ctrl+Alt+P before the palette)",
+      "a global chord is the shell's (Ctrl+Shift+P, the palette)",
       "linux",
-      key({ code: "KeyP", ctrlKey: true, altKey: true }),
+      key({ code: "KeyP", ctrlKey: true, shiftKey: true }),
       host(),
       "shell",
     ],
