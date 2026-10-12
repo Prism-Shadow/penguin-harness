@@ -196,7 +196,7 @@ export function ShortcutsFolder({
                     className={`flex min-w-0 flex-1 items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                   >
                     <ExampleRowGlyph glyph={SHORTCUTS_GLYPH} />
-                    <span className="min-w-0 truncate">{shortcut.title}</span>
+                    <span className="min-w-0 flex-1 truncate">{shortcut.title}</span>
                     <ExampleRowGo />
                   </button>
                   <RowAction
