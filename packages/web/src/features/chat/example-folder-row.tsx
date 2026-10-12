@@ -68,9 +68,23 @@ export function ExampleFolderRow({
 /**
  * The class string of one row inside an open folder — an example, or a saved shortcut. Shared for
  * the same reason as the header: the two lists sit in the same block and must read as one list
- * shape. Layout (flex, width) is the caller's, since a shortcut row also carries its own actions.
+ * shape. The rows are what the block is for, so they take the full ink, not the closed folders'
+ * muted one. Layout (flex, width) is the caller's, since a shortcut row also carries its own
+ * actions.
  */
 export const exampleRowClass =
-  "rounded-md px-2 py-1.5 text-left text-sm text-fg-muted transition-colors duration-150 " +
-  "hover:bg-surface-muted hover:text-fg disabled:cursor-default disabled:opacity-60 " +
+  "rounded-md px-2 py-1.5 text-left text-sm text-fg transition-colors duration-150 " +
+  "hover:bg-surface-muted disabled:cursor-default disabled:opacity-60 " +
   "disabled:hover:bg-transparent";
+
+/**
+ * The glyph leading a row inside an open folder, in the folder rows' accent at their size: with
+ * it a row reads as a thing to press, where a bare title read as a caption.
+ */
+export function ExampleRowGlyph({ glyph }: { glyph: string }) {
+  return (
+    <span className="shrink-0 text-accent">
+      <GlyphIcon d={glyph} size={ICON_SIZE.navRow} />
+    </span>
+  );
+}

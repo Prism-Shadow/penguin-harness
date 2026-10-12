@@ -1,8 +1,8 @@
 /**
  * Draft view (/chat/new): the pre-persistence form of a new
  * conversation, before any Session exists. The page around the input card is the start
- * dashboard (start-dashboard.tsx: the brand and metric tiles above the card, the toolkits, the
- * Benchmarks and the examples below it); this module keeps the draft itself. Before sending,
+ * dashboard (start-dashboard.tsx: the brand and its counts above the card, the examples and
+ * shortcuts below it); this module keeps the draft itself. Before sending,
  * this is where Agent / Workspace / approval mode / Model are all
  * chosen in one place — two small dropdown pills sit right below the card (pill
  * buttons, styled after ChatGPT's project picker): Agent selection and Workspace
@@ -79,7 +79,6 @@ import { APPROVAL_MODES } from "./approval-mode";
 import { adoptDockScope } from "../dock/dock-state";
 import { setDockCwd } from "../dock/dock-terminal";
 import { StartDashboard } from "./start-dashboard";
-import type { StartFill } from "./start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import {
@@ -812,7 +811,7 @@ export function DraftView({
   );
 
   /**
-   * The start dashboard's examples, shortcuts and toolkit cards: a click FILLS the composer —
+   * The start dashboard's examples and shortcuts: a click FILLS the composer —
    * the prompt into the text body, the Skills it pins into the skills dropdown — and sends
    * nothing. The user reads what landed, edits it if they want, and presses Send, which then
    * builds the very message the card used to submit by itself (the `[use_skills]` block is the
@@ -830,31 +829,6 @@ export function DraftView({
   }, []);
   const readComposerText = useCallback(() => textRef.current, []);
 
-  /**
-   * A toolkit installed from its card fills the composer only once the Agent's Skill list holds
-   * it: the composer pins only Skills it knows the Agent has, so a fill made in the same tick as
-   * the install would drop the toolkit's own Skill. The install answers with the Agent's new
-   * list; the fill waits in state for the render that hands that list to the composer.
-   */
-  const [pendingFill, setPendingFill] = useState<StartFill | null>(null);
-  useEffect(() => {
-    if (pendingFill === null) return;
-    composerRef.current?.fillPrompt(pendingFill.prompt, pendingFill.skills);
-    setPendingFill(null);
-  }, [pendingFill]);
-  /** The live Agent, for an install that answers after the user has picked another one. */
-  const agentIdRef = useRef(agentId);
-  agentIdRef.current = agentId;
-  const onToolkitInstalled = useCallback(
-    (forAgent: string, skills: SkillMetadataItem[], demo: StartFill | null) => {
-      // A pick made meanwhile has its own Skill list on the way; this one is for another Agent.
-      if (forAgent !== agentIdRef.current) return;
-      setAgentSkills(skills);
-      if (demo !== null) setPendingFill(demo);
-    },
-    [],
-  );
-
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
 
   // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
@@ -862,7 +836,7 @@ export function DraftView({
   const contextWindow = modelInfo?.contextWindow;
   const vision = modelInfo?.vision !== false;
 
-  // The composer and the ownership pills under it, which the dashboard sets between its tiles
+  // The composer and the ownership pills under it, which the dashboard sets between its brand
   // and its examples.
   const composer = (
     <>
@@ -943,14 +917,9 @@ export function DraftView({
         <StartDashboard
           projectId={projectId}
           composer={composer}
-          agentId={agentId}
-          agentName={selectedAgent ? agentDisplayName(selectedAgent) : (agentId ?? "")}
-          agentSkills={agentSkills}
           skillsLoaded={skillsLoaded}
-          workspaceMachine={workspaceMachine}
           fill={fillComposer}
           readComposerText={readComposerText}
-          onToolkitInstalled={onToolkitInstalled}
         />
       </div>
 

@@ -1,5 +1,5 @@
 /**
- * The start page's server reads (start-dashboard.tsx).
+ * The start page's server reads (start-dashboard.tsx): what its counts count.
  *
  * The plugin library's RSI toolkits (GET /api/plugins) are the same for every Project and change
  * only with the build, so they are read once per page load and shared by every later mount: a
@@ -7,8 +7,8 @@
  * had already filled. A failed read is not kept, so the next mount asks again.
  *
  * A Project's Benchmarks change as evaluations land, so they are read again on every mount —
- * starting from the list the previous mount saw, which keeps the Benchmarks tile steady instead
- * of dropping back to a placeholder while the fresh list is on its way.
+ * starting from the list the previous mount saw, which keeps the Benchmarks count steady instead
+ * of dropping back to "—" while the fresh list is on its way.
  */
 import { useEffect, useState } from "react";
 import type { BenchmarkSummary, PluginItem } from "@prismshadow/penguin-server/api";
@@ -50,7 +50,7 @@ function readOncePerPageLoad<T>(read: () => Promise<T>): () => T | null {
   };
 }
 
-/** The library's self-evolution toolkits: the plugins of its `rsi` category (GET /api/plugins), which the toolkit tile counts and offers. */
+/** The library's self-evolution toolkits: the plugins of its `rsi` category (GET /api/plugins). */
 export const useRsiToolkits = readOncePerPageLoad<PluginItem[]>(async () => {
   const library = await api.getPluginLibrary();
   return library.groups.find((group) => group.id === RSI_CATEGORY)?.plugins ?? [];

@@ -3184,34 +3184,14 @@ export const zh = {
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最全面的 Agent 自进化平台",
-    /** The start page's dashboard (features/chat/start-dashboard.tsx): the three metric tiles under the brand, each with its most recent item, and the examples block under the composer. */
+    /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
     start: {
-      /** What each metric tile counts; the label and the number open the page that lists it. */
+      /** What each count counts; the label and the number open the page that lists it. Short: the three share the brand's line. */
       metrics: {
         agents: "智能体",
         toolkits: "自进化算法",
         benchmarks: "评估集",
       },
-      /** A toolkit's name on the tile and in its menu: the method's short name (the Method select's label adds the default loop's steps). */
-      toolkitTitle: {
-        default: "Default",
-        opro: "OPRO",
-        ape: "APE",
-        ace: "ACE",
-        awm: "AWM",
-      } satisfies Record<RsiMethodId, string>,
-      /** The menu over the toolkit tile's name: picking another one is what Start will start. */
-      toolkitPick: "切换自进化算法",
-      /** The mark beside the toolkit's name: the selected agent has every Skill the toolkit ships. */
-      toolkitInstalled: (agent: string): string => `已安装到 ${agent}`,
-      toolkitStart: "开始",
-      toolkitInstallStart: "安装并开始",
-      /** The install confirmation's second line, under the plugin library's own question. */
-      toolkitAfterInstall: "装好后它的演示请求会填入输入框；点发送之前什么都不会运行。",
-      /** The Benchmarks tile's second line when this Project has none. */
-      benchmarksEmptyAction: "前往评估中心创建或导入",
-      /** The agents tile's second line when this Project has none. */
-      agentsEmptyAction: "前往创建智能体",
       examplesTitle: "示例与快捷指令",
     },
     /** Collapsed group names for the start page's examples (bookmark style; only one open at a time). */

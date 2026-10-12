@@ -3045,18 +3045,9 @@ export const en: Strings = {
     start: {
       metrics: {
         agents: "Agents",
-        toolkits: "Self-evolution algorithms",
+        toolkits: "RSI algorithms",
         benchmarks: "Benchmarks",
       },
-      toolkitTitle: { default: "Default", opro: "OPRO", ape: "APE", ace: "ACE", awm: "AWM" },
-      toolkitPick: "Switch self-evolution algorithm",
-      toolkitInstalled: (agent: string): string => `Installed on ${agent}`,
-      toolkitStart: "Start",
-      toolkitInstallStart: "Install and start",
-      toolkitAfterInstall:
-        "Once it is installed, its demo request fills the composer; nothing runs until you send it.",
-      benchmarksEmptyAction: "Create or import one in the Evaluation Center",
-      agentsEmptyAction: "Create an agent",
       examplesTitle: "Examples and shortcuts",
     },
     /** Folder names for the start page's collapsible examples (bookmark-style: exactly one open at a time). */

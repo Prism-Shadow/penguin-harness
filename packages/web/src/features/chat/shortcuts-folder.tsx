@@ -40,7 +40,12 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ExampleFolderRow, examplePanelClass, exampleRowClass } from "./example-folder-row";
+import {
+  ExampleFolderRow,
+  ExampleRowGlyph,
+  examplePanelClass,
+  exampleRowClass,
+} from "./example-folder-row";
 import {
   SHORTCUT_MAX_COUNT,
   SHORTCUT_PROMPT_MAX,
@@ -62,7 +67,7 @@ import type { ShortcutDraft, UserShortcut } from "./user-shortcuts";
 export const SHORTCUTS_FOLDER_ID = "shortcuts";
 
 /**
- * The lightning bolt: the folder's mark. Not the bookmark it might suggest — the folders
+ * The lightning bolt: the folder's mark, and each of its rows'. Not the bookmark it might suggest — the folders
  * themselves already behave bookmark-style (exactly one open), so that glyph would name the
  * mechanism every folder shares instead of what this one holds.
  */
@@ -189,6 +194,7 @@ export function ShortcutsFolder({
                     onClick={() => onFill(shortcut.prompt)}
                     className={`flex min-w-0 flex-1 items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                   >
+                    <ExampleRowGlyph glyph={SHORTCUTS_GLYPH} />
                     <span className="min-w-0 flex-1 truncate">{shortcut.title}</span>
                   </button>
                   <RowAction
@@ -214,7 +220,10 @@ export function ShortcutsFolder({
                     onClick={startCreate}
                     className={`flex w-full items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                   >
-                    <PlusIcon size={ICON_SIZE.inlineGlyph} />
+                    {/* In a row glyph's box, so its title starts where the shortcuts' do. */}
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center text-fg-muted">
+                      <PlusIcon size={ICON_SIZE.inlineGlyph} />
+                    </span>
                     <span className="min-w-0 flex-1 truncate">{S.chat.shortcuts.new}</span>
                   </button>
                 </li>
