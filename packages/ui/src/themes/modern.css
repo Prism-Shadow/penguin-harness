@@ -1,6 +1,6 @@
 /**
  * Frost (`modern`) — soft, roomy, quiet. A cool-neutral off-white with almost no lines: the
- * navigation column is frosted glass over a soft pastel field beside a near-white main column,
+ * navigation column is frosted glass over one flat field beside a near-white main column,
  * grouping comes from soft grey fills rather than borders, a card's edge is a hairline that
  * barely exists, dialogs are opaque on a dimmed backdrop with large corners; pill controls,
  * regular-weight titles set large with negative tracking, a light frost on the small layers
@@ -194,14 +194,11 @@
     --ui-glass-line: rgb(0 0 0 / 0.06);
 
     /* Shell: the navigation column is frosted glass — milky white let through at a little over
-       half — over a soft pastel field, a cool sky wash from the top corner and a lilac one from
-       the bottom, and the main column the opaque canvas; no gap, corner or shadow. The washes
-       stop where the muted ink still clears 4.5:1 on the glass at their strongest (the contrast
-       suite measures that point), so the field stays a tint, never a colour. A faint cool rule
-       parts the column from the canvas. */
-    --ui-shell-field: #eef1f6;
-    --ui-shell-wash-1: rgb(143 189 245 / 0.38);
-    --ui-shell-wash-2: rgb(201 173 239 / 0.38);
+       half — over one flat field, the ramp's 200 step, so the column comes out at the muted
+       surface (about #f4f5f6), a shade under the opaque canvas of the main column. No gap,
+       corner or shadow, and no wash or gradient on the field (owner, 2026-10-11): the column is
+       set apart by its fill and a faint cool rule alone. */
+    --ui-shell-field: var(--color-gray-200);
     --ui-shell-nav-bg: rgb(255 255 255 / 0.55);
     --ui-shell-main-bg: var(--ui-canvas);
     --ui-shell-line: rgb(28 40 72 / 0.08);
@@ -363,7 +360,7 @@
     /* Icons: the line set at 1.6 with round ends, a soft duotone body under each glyph that has
        one, and a hue per glyph for the decorative icons (the `ui-icon-decor` recipe below) —
        low-to-mid chroma, all at one luminance so no hue outweighs another, each a 3.6:1 mark
-       or better on the glass column over its washes and on every page surface. */
+       or better on the glass column and on every page surface. */
     --ui-icon-stroke: 1.6;
     --ui-icon-cap: round;
     --ui-icon-join: round;
@@ -410,8 +407,8 @@
     --color-gray-900: #232426;
     --color-gray-950: #1b1c1e;
 
-    /* Colour — surfaces: the navigation column a step below the canvas, cards a step above,
-       grouped rows another */
+    /* Colour — surfaces: cards a step above the canvas, grouped rows another; the navigation
+       column (the shell's glass over the muted surface) comes out near the cards' step */
     --ui-canvas: #1b1c1e;
     --ui-surface: #232426;
     --ui-surface-muted: #2a2b2e;
@@ -499,11 +496,10 @@
     --ui-glass-bg: rgb(35 36 38 / 0.85);
     --ui-glass-line: rgb(255 255 255 / 0.08);
 
-    /* Shell: the same glass, smoked — the column a shade under the canvas, over a deep blue and
-       a plum wash — and a dark rule parting it from the canvas; the rest keeps its base values */
-    --ui-shell-field: #16171b;
-    --ui-shell-wash-1: rgb(64 104 168 / 0.4);
-    --ui-shell-wash-2: rgb(112 84 156 / 0.34);
+    /* Shell: the same glass, smoked, over the flat muted surface — the column comes out near
+       the card surface, a step above the canvas, the way the dark ramp inverts the light one —
+       and a dark rule parting it from the canvas; the rest keeps its base values */
+    --ui-shell-field: var(--ui-surface-muted);
     --ui-shell-nav-bg: rgb(28 29 32 / 0.5);
     --ui-shell-line: rgb(0 0 0 / 0.4);
 
@@ -773,20 +769,17 @@
 
   /* The app window: the navigation column is frosted glass over the field, the main column and
      the dock the opaque canvas — the reading surface — with no rule between those two. The field
-     is painted on the window, so the glass shows it only where the column is; the washes are
-     sized in rem rather than by the window, so the column reads the same at every width: the
-     sky from its top corner, the lilac from its bottom one. The column's edge is the host's rule
-     in the faint shell line, with a hairline highlight just inside it, the glass's lit edge.
-     The column carries no backdrop filter: the field is all that lies behind it, already soft,
+     is one flat colour painted on the window, so the glass shows it only where the column is, and
+     the column is the same colour from top to bottom at every size: no wash and no gradient, so
+     nothing in the chrome is there for atmosphere (owner, 2026-10-11). The column's edge is the
+     host's rule in the faint shell line, with a hairline highlight just inside it, the glass's
+     lit edge. The column carries no backdrop filter: the flat field is all that lies behind it,
      so a blur would change no pixel — and a backdrop filter would make the column a stacking
      context and a containing block for fixed descendants, which the window's columns must
      never be (they open menus). Under reduced transparency the column is the opaque muted
      surface. */
   :root[data-theme="modern"] .ui-shell {
     background-color: var(--ui-shell-field);
-    background-image:
-      radial-gradient(36rem 30rem at 0% 0%, var(--ui-shell-wash-1), transparent 70%),
-      radial-gradient(34rem 32rem at 0% 100%, var(--ui-shell-wash-2), transparent 70%);
   }
   :root[data-theme="modern"] .ui-shell > [data-slot="nav"] {
     background-color: var(--ui-shell-nav-bg);
@@ -953,10 +946,11 @@
   }
 
   /* A reply still arriving surfaces through a soft veil, so the newest words read as fading in
-     (the reveal paces them word by word): over the trailing three lines a gradient runs from
-     nothing to the page's own colour at a little over half strength, above a faint glow in the
-     accent's wash that fades out towards every edge — no line, no box, no band where the veil
-     stops. The text moving up through it is the only motion; each line brightens as it leaves.
+     (the reveal paces them word by word): over the trailing line and a half a gradient runs from
+     nothing to the page's own colour at four tenths, so how faint a line is says how new it is —
+     no line, no box, no band where the veil stops, and nothing under it: a glow there would sit
+     on the middle of the block whatever its newest words were, saying nothing. The text moving
+     up through it is the only motion; each line brightens as it leaves.
      The veil is the host's `::after`, drawn only while the stream's caret is the host's last
      child: the caret marks where the text ends, so what the host appends after it (a stop
      reason, a files card) is never veiled; the caret itself is not shown. On `done` — or once
@@ -986,17 +980,12 @@
   :root[data-theme="modern"]
     .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child)::after {
     opacity: 1;
-    background-image:
-      linear-gradient(
-        to bottom,
-        transparent,
-        color-mix(in srgb, var(--ui-canvas) 40%, transparent)
-      ),
-      radial-gradient(
-        closest-side,
-        color-mix(in srgb, var(--ui-overlay) 60%, transparent),
-        transparent
-      );
+    /* The veil says which lines are newest. deslop-ignore-next-line 06 */
+    background-image: linear-gradient(
+      to bottom,
+      transparent,
+      color-mix(in srgb, var(--ui-canvas) 40%, transparent)
+    );
     transition: opacity var(--ui-dur-reveal) var(--ui-ease-out);
   }
   :root[data-theme="modern"][data-motion="reduced"] .ui-stream::after {
@@ -1079,7 +1068,9 @@
     stroke-linecap: round;
   }
   :root[data-theme="modern"] .ui-chart [data-part="area"] {
+    /* The area fades towards its baseline: the data's shape. deslop-ignore-next-line 06 */
     -webkit-mask-image: linear-gradient(to bottom, #000000, transparent);
+    /* deslop-ignore-next-line 06 */
     mask-image: linear-gradient(to bottom, #000000, transparent);
   }
   :root[data-theme="modern"] .ui-chart [data-part="point"] {

@@ -197,8 +197,6 @@
        them, no field, no inset, no corner, no shadow. Every value is a reference, so dark needs
        no second copy. ---- */
     --ui-shell-field: var(--ui-canvas);
-    --ui-shell-wash-1: transparent;
-    --ui-shell-wash-2: transparent;
     --ui-shell-nav-bg: var(--ui-surface-muted);
     --ui-shell-main-bg: var(--ui-canvas);
     --ui-shell-line: var(--ui-line);

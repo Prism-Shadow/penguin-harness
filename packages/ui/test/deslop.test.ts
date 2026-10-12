@@ -532,9 +532,8 @@ describe("the rule checks, on known shapes", () => {
         ".ui-wash { background-image: radial-gradient(red, blue); }\n.hatch { background-image: repeating-linear-gradient(red, blue); }",
       ),
     ).toEqual(["18:.ui-wash { background-image: …gradient() }"]);
-    // The shell's colour field and the running activity row's highlight are the two gradients a
-    // recipe may paint (each has a job); a blur on the shell is still off, and so is a gradient
-    // on a resting activity row.
+    // The running activity row's highlight may paint a gradient (it says a step is in progress);
+    // a resting activity row may not.
     expect(
       found(
         "t.css",
@@ -565,12 +564,15 @@ describe("the rule checks, on known shapes", () => {
           ":root .ui-frame { mask-image: linear-gradient(red, blue); }",
       ),
     ).toEqual(["18::root .ui-frame { mask-image: …gradient() }"]);
+    // The app window's field is one flat colour: a wash on the shell is decoration, flagged as on
+    // any other hook, and a blur on its navigation column is off as well.
     expect(
       found(
         "t.css",
         ':root .ui-shell { background-image: radial-gradient(red, blue); }\n:root .ui-shell > [data-slot="nav"] { backdrop-filter: blur(4px); }\n:root .ui-frame { background: linear-gradient(red, blue); }',
       ),
     ).toEqual([
+      "18::root .ui-shell { background-image: …gradient() }",
       '18::root .ui-shell > [data-slot="nav"] { backdrop-filter: blur(4px) }',
       "18::root .ui-frame { background: …gradient() }",
     ]);
