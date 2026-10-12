@@ -15,8 +15,6 @@
   </a>
 </p>
 
-<p align="center">1000+ Models · Multi-Platform · Apache 2.0 · Unified RSI Framework</p>
-
 <p align="center">
   <a href="https://www.npmjs.com/package/@prismshadow/penguin-core"><img src="https://img.shields.io/npm/v/@prismshadow/penguin-core" alt="npm version" /></a>
   <a href="https://github.com/Prism-Shadow/penguin-harness/actions/workflows/ci.yml"><img src="https://github.com/Prism-Shadow/penguin-harness/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
@@ -43,35 +41,82 @@
 
 <p align="center">English | <a href="README.zh.md">简体中文</a></p>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-start-page-en.png" alt="The PenguinHarness start page: agents, RSI algorithms and Benchmarks, and the examples" width="900" />
+</p>
+
 ## Why PenguinHarness
 
-> With LangChain, you build agents by hand — at 1× speed.<br />With PenguinHarness, agents build agents — at 100×.<br />And with the RSI toolkits, agents improve agents — automatically.
+PenguinHarness is an open-source framework for agent self-evolution (recursive self-improvement, RSI). The model stays fixed; the harness evolves: prompts, Skills, tools and hooks. It runs on your computer or server as a desktop app, a Web App, a CLI and an SDK.
 
-PenguinHarness runs on your computer or server. It is the unified framework for recursive self-improvement (RSI): the model stays fixed, the harness — prompts, Skills, tools, hooks — is what evolves, and every self-evolution algorithm runs on the same Benchmarks, scoreboards and snapshots. Three reasons define the framework:
+- **Every RSI algorithm in one framework.** Default, OPRO, APE, ACE and AWM ship as plugins and run on the same built-in Benchmarks, scoreboard and snapshots.
+- **One sentence builds an agent app.** Describe what you need, and an agent writes the app, its page and its run instructions.
+- **Cheap to run.** A deliberately small toolset, tuned for open models: on our data-analysis suite, the best accuracy at 1/70 of Claude Code's cost.
 
-### 1. 🧬 The most comprehensive agent self-evolution framework
+## Self-evolution
 
-Every algorithm is a toolkit from the plugin library, and every toolkit runs the way its paper does. The **Default RSI Toolkit** (`default-rsi-toolkit`) runs the trial → reflect → improve loop: run the Benchmark, find the lost points, ship version N+1 with a snapshot before every round, measuring through the **Agent Evaluation** plugin (`agent-evaluation`), which also designs and imports Benchmarks. **OPRO**, **APE**, **ACE** and **AWM** each ship as their own toolkit (`opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit`), with no dependency between toolkits. Reproduced Benchmarks live in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark) and import into any Project; the Evaluation Center plots every score, and every request is replayable in the Trace view.
+Pick an algorithm, pick a Benchmark, and an agent improves another agent round by round. Every candidate is a new version, snapshotted before it changes, and every score lands in the Evaluation Center.
+
+| Toolkit | Algorithm |
+| --- | --- |
+| `default-rsi-toolkit` | Trial, reflect, improve: one hypothesis and one change per round |
+| `opro-rsi-toolkit` | [OPRO](https://arxiv.org/abs/2309.03409): new instructions from the history of scored ones |
+| `ape-rsi-toolkit` | [APE](https://arxiv.org/abs/2211.01910): candidate instructions induced from examples |
+| `ace-rsi-toolkit` | [ACE](https://arxiv.org/abs/2510.04618): lessons from Traces curated into a playbook |
+| `awm-rsi-toolkit` | [AWM](https://arxiv.org/abs/2409.07429): workflows induced from successful runs |
+
+Every new Project includes seven Benchmarks, run as Harbor tasks in Docker: PenguinHarness Benchmark Sec A to Sec E (from rag-bench-essential, DeepSWE, AutomationBench, Terminal-Bench-Science and Terminal-Bench) and GDPevo Train and Test. More are in [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark).
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-benchmark-detail-en.png" alt="A Benchmark's score chart: three agents climbing across versions" width="820" />
+</p>
 
 https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
 
-### 2. ⚡ One sentence generates a runnable agent app
-
-Describe what you need in one sentence. PenguinHarness builds the complete agent application — scaffold, code, and run instructions, end to end:
+## One sentence, one app
 
 ```text
 Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.
 ```
 
-And this is the finished product — a docs expert with retrieval, cited sources that link to the original files, and example questions built in:
+The result: a docs expert with retrieval and cited sources, built for $0.02 of DeepSeek V4 Pro tokens.
 
 https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
 
-**And generating this entire RAG app burned just $0.02 (¥0.2) of tokens — on DeepSeek V4 Pro.**
+## What agents can do
 
-### 3. 🏆 Outstanding results at tens of times less cost
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <b>Browser automation</b><br />
+      Agents open and work in web pages — in the desktop app's built-in browser or in your own Chrome — while you watch in the Browser panel. <a href="https://penguin.ooo/blog/let-agents-use-the-browser">Tutorial</a><br /><br />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-browser-en.png" alt="An agent reads the PenguinHarness blog in the Browser panel" />
+    </td>
+    <td width="50%" valign="top">
+      <b>Workflows</b><br />
+      Ask an agent for a page and it writes one, with its own server code. The page shows as a tab beside its chat and reloads on every change. <a href="https://penguin.ooo/blog/build-agent-apps-with-workflows">Tutorial</a><br /><br />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-workflow-en.png" alt="A legal agent's Contract desk page" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <b>Remote machines</b><br />
+      Add a machine the server reaches over ssh. Conversations in a Workspace on that machine run on it, in the same window. <a href="https://penguin.ooo/blog/run-agents-on-remote-machines">Tutorial</a><br /><br />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-machines-en.png" alt="A conversation running on the machine devbox" />
+    </td>
+    <td width="50%" valign="top">
+      <b>Agent API</b><br />
+      Call an agent from your own program over HTTP and read the run back as a stream of AMSP events. <a href="https://penguin.ooo/blog/call-agents-with-the-agent-api">Tutorial</a><br /><br />
+      <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-agent-api-en.png" alt="An agent's Try it panel after one run" />
+    </td>
+  </tr>
+</table>
 
-A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer tokens — deeply tuned for open models like DeepSeek. Each harness on the model it is normally paired with, same tasks, head-to-head:
+Replies can also carry UI: choices, forms, steps, Mermaid diagrams and live widgets ([A2UI](https://penguin.ooo/blog/penguinharness-0-2-14)).
+
+## Results
+
+Each harness on the model it is usually paired with, on the same tasks:
 
 <p align="center">
   <picture>
@@ -80,11 +125,9 @@ A deliberately minimal toolset over clean low-level interfaces: fewer tool calls
   </picture>
 </p>
 
-**Best accuracy on data analysis — at 1/70 of Claude Code's cost.**
-
 ## Built-in plugins
 
-Four plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills)) — skills, plus the session hooks that drive goal mode and continual learning; agents can also write and optimize their own skills:
+Agents can also write and optimize their own Skills ([docs](https://penguin.ooo/docs/skills)).
 
 | Category             | Plugins                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
@@ -93,10 +136,7 @@ Four plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills))
 | Software Development | `software-development`, `use-claude-code`                              |
 | AI App Development   | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
 
-The desktop app also has a built-in browser in its side dock. Agents drive it with `penguin browser` and the `browser-automation` plugin: they read pages, click and type, and pull out data such as your Amazon orders, signed in with the accounts you import from your own browser.
-The same commands can drive your own Chrome instead, through the PenguinHarness Browser extension (how the Web App does it): only the tabs you hand it, and your sign-ins stay in Chrome.
-
-## Supported Models
+## Supported models
 
 | Model            | Providers                                                                                        |
 | ---------------- | ------------------------------------------------------------------------------------------------ |
@@ -112,85 +152,31 @@ The same commands can drive your own Chrome instead, through the PenguinHarness 
 
 Each family's latest generation only — the app's **Models** page lists every built-in preset, and any OpenAI-protocol endpoint works too: pick a preset, or point a custom endpoint at any of the 1000+ online and local models.
 
-## Requirements
+## Install
 
-| Requirement  | Supported                                                                  |
-| ------------ | -------------------------------------------------------------------------- |
-| OS           | Linux, macOS, Windows 10+                                                  |
-| Architecture | x64, arm64                                                                 |
-| Runtime      | bundled by the one-line installer (npm installs need Node >= 24)           |
-| Model        | an API key for at least one model                                          |
+| | |
+| --- | --- |
+| **Desktop app** | [penguin.ooo/download](https://penguin.ooo/download): macOS 11+ (dmg), Windows 10+ (exe), Linux x64 (AppImage, deb). Opens signed in, no terminal. |
+| **Linux / macOS** | `curl -fsSL https://penguin.ooo/install.sh \| sh` then `penguin web` |
+| **Windows** | `irm https://penguin.ooo/install.ps1 \| iex` then `penguin web` |
+| **npm** (Node >= 24) | `npm install -g @prismshadow/penguin-cli` then `penguin web` |
+| **Chrome extension** (optional) | [PenguinHarness Browser](https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp) lets agents drive the tabs you hand them in your own Chrome |
 
-## Installation
+`penguin web` serves the Web App at `http://127.0.0.1:7364`. The desktop app and the CLI share `~/.penguin/data`. On a CLI install, the server prints a first-login link until a password is set; models are configured on the **Models** page.
 
-Start with the desktop app, or install the command line on a workstation or server. Both use the same `~/.penguin/data` root and can be mixed freely; a server is also one `docker run` away:
-
-- **🖥️ Desktop app** — a double-click install: it embeds the server and opens already signed in, no terminal involved.
-- **⌨️ CLI** — a one-line installer (or npm / offline package) puts the `penguin` command on the machine; `penguin web` then serves the full Web experience in your browser at `http://127.0.0.1:7364` (multi-session chat, agent / skill / model management, usage stats, Trace observability, evaluation center). The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
-- **🧩 Chrome extension** (optional) — [PenguinHarness Browser](https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp) lets agents drive the tabs you hand them in your own Chrome: install it from the Chrome Web Store, then pair it from the Browser panel. Where the store is out of reach, load `penguin-browser-extension.zip` from any [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases) unpacked at `chrome://extensions`.
-
-> [!NOTE]
-> On a CLI install, the server prints a first-login link as a framed notice on every start until a password is set — open it to claim the built-in `admin` account and choose one. Models are configured on the in-app **Models** page.
-
-### 🖥️ Desktop app
-
-The full Web experience as a standalone application: it embeds the server and opens already signed in — no terminal, no login page, no initial password to copy. It works on the same `~/.penguin/data` root as a CLI install, so the two can be used interchangeably (a data root only ever runs one server; if a CLI-started instance is already up, the app attaches to it).
-
-Download the desktop app from the [download page](https://penguin.ooo/download). The page serves the OSS-accelerated mirror when it is reachable, and every installer is also attached to each [GitHub Release](https://github.com/Prism-Shadow/penguin-harness/releases).
-
-| Platform    | Installers                  |
-| ----------- | --------------------------- |
-| macOS 11+   | dmg (Apple Silicon / Intel) |
-| Windows 10+ | installer (.exe, x64)       |
-| Linux (x64) | AppImage / deb              |
-
-The macOS builds are Developer ID signed and notarized, and the Windows installers are Authenticode signed, so neither platform needs a first-launch unblock. Linux is the one exception:
-
-<details>
-<summary><b>🐧 Linux: double-clicking the AppImage does nothing</b></summary>
-
-Browsers download AppImages without the execute permission. Grant it once and the app starts normally from then on (the deb package installs through the package manager and is not affected):
-
-```bash
-chmod +x penguin-desktop-linux-x86_64.AppImage
-```
-
-</details>
-
-### 🐧🍎 Linux / macOS (online install)
-
-```bash
-curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # start the service and open http://127.0.0.1:7364
-```
-
-### 🪟 Windows (online install, PowerShell)
-
-```powershell
-irm https://penguin.ooo/install.ps1 | iex
-penguin web        # start the service and open http://127.0.0.1:7364
-```
-
-### 📦 npm (any platform, Node >= 24)
-
-```bash
-npm install -g @prismshadow/penguin-cli
-penguin web        # start the service and open http://127.0.0.1:7364
-```
-
-### 🐳 Docker
+### Docker
 
 ```bash
 docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
 docker logs penguin       # the first-login link, openable as it stands on this machine
 ```
 
-The official image runs the same server on `0.0.0.0:7364` with its data root on the `/data` volume, as an unprivileged user, for `linux/amd64` and `linux/arm64`. It is built from this repository's source: `latest` is rebuilt on every push to `main`, and each release is published under its exact version (`hiyouga/penguinharness:0.2.13`) — there is no moving `stable` tag. The example publishes the port on the host's loopback, so the Web App answers only on the machine running Docker (`http://localhost:7364`); to reach it from a network, publish on all interfaces instead (`-p 7364:7364`), preferably behind a reverse proxy that terminates TLS. Compose file and the full deployment notes — reverse proxies, upgrades, the rescue path — are in the [Docker quickstart](https://penguin.ooo/docs/quickstart-docker).
+The image serves on port 7364 with its data on the `/data` volume, for `linux/amd64` and `linux/arm64`; `latest` follows `main`, and each release is also tagged with its version. The example listens on loopback only. For a network-facing deployment, Compose and upgrades, see the [Docker quickstart](https://penguin.ooo/docs/quickstart-docker).
 
 <details>
-<summary><b>📴 Offline install (air-gapped machines)</b></summary>
+<summary><b>Offline install (air-gapped machines)</b></summary>
 
-Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches exactly one package per target — Linux and macOS in x64 / arm64, Windows in x64, plus a runtime-less universal package — and the same file serves online and offline installation. Each package seals the program payload, its SHA256 checksum and the platform's installer: download the one file on a networked machine, copy it to the target, extract once and run the bundled installer — no network, no separate checksum file to carry (the sealed SHA256 is always verified).
+Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches exactly one package per target — Linux and macOS in x64 / arm64, Windows in x64, plus a runtime-less universal package. The same file serves online and offline installation. Each package seals the program payload, its SHA256 checksum and the platform's installer. Download the one file on a networked machine, copy it to the target, extract once and run the bundled installer — no network, no separate checksum file to carry (the sealed SHA256 is always verified).
 
 **Linux (on arm64, use `penguin-linux-arm64.tar.gz`):**
 
@@ -218,9 +204,9 @@ cd penguin-install
 
 </details>
 
-### 🤖 CLI & SDK — for agents
+## CLI and SDK
 
-The same engine, scriptable — made to be driven by agents (and agents building agents):
+The same engine, scriptable, and made to be driven by agents:
 
 ```bash
 penguin config model add --provider deepseek --model-id deepseek-flash --api-key sk-... --set-default
@@ -250,7 +236,7 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 - [x] Desktop app
 - [x] Windows support
 - [x] Agent company and templates
-- [ ] Company-level self evolving
+- [ ] Company-level self-evolution
 - [ ] OpenShell integration (permission-governed shell)
 - More to come…
 
