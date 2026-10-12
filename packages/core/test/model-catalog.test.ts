@@ -218,7 +218,7 @@ describe("model-catalog", () => {
       "deepseek-v4-pro",
     ]);
     expect(
-      penguinGoModels.every((model) => model.baseUrl === "https://token.penguin.ooo/api"),
+      penguinGoModels.every((model) => model.baseUrl === "https://go.penguin.ooo/api/v1"),
     ).toBe(true);
     expect(
       penguinGoModels.every(
@@ -228,12 +228,12 @@ describe("model-catalog", () => {
     expect(
       penguinGoModels
         .filter((model) => model.modelId.startsWith("gemini-"))
-        .every((model) => model.clientType === "google-genai"),
+        .every((model) => model.clientType === "mmsp"),
     ).toBe(true);
     expect(
       penguinGoModels
         .filter((model) => model.modelId.startsWith("deepseek-"))
-        .every((model) => model.clientType === "deepseek-official"),
+        .every((model) => model.clientType === "mmsp"),
     ).toBe(true);
     expect(catalogEntryFor("penguin-go", "deepseek-flash")?.supportsVision).toBe(true);
     expect(catalogEntryFor("penguin-go", "deepseek-v4-pro")).toMatchObject({
@@ -656,16 +656,12 @@ describe("model-catalog", () => {
       // The concatenated storage id and request_model_id have been removed and no longer appear.
       expect(Object.hasOwn(entry, "request_model_id")).toBe(false);
     }
-    // The rows that differ from their group: the two protocols of Penguin Go, the three of
-    // OpenCode Go and its Messages base, and custom's Atria, which has no group table at all.
+    // Go's MMSP rows share their group's connection. OpenCode Go has three protocols and
+    // a Messages base; custom's Atria has no group table at all.
     const differing = entries.filter(
       (e) => e.client_type !== undefined || e.base_url !== undefined,
     );
-    expect([...new Set(differing.map((e) => e.provider))]).toEqual([
-      "penguin-go",
-      "opencode-go",
-      "custom",
-    ]);
+    expect([...new Set(differing.map((e) => e.provider))]).toEqual(["opencode-go", "custom"]);
     expect(
       differing.filter((e) => e.base_url !== undefined).map((e) => [e.provider, e.base_url]),
     ).toEqual([
@@ -698,9 +694,7 @@ describe("model-catalog", () => {
     const BOTH = ["base_url", "client_type"];
     expect(fields).toEqual({
       tokendance: BOTH,
-      // Two protocols across its rows: the relay endpoint they all share goes on the group,
-      // the protocols stay on the rows.
-      "penguin-go": ["base_url"],
+      "penguin-go": BOTH,
       // Three protocols and two bases: the group takes its gateway endpoint only.
       "opencode-go": ["base_url"],
       openrouter: BOTH,
@@ -2854,11 +2848,13 @@ describe("effectiveConnection / resolveEntryCredential (a row follows its group'
     expect(providerConnectionShape(undefined)).toBeUndefined();
   });
 
-  it("a row's own protocol wins over a group protocol: Penguin Go's rows keep theirs while the group sets another", () => {
+  it("an explicitly pinned row keeps its own protocol while the group sets another", () => {
     const table: ProviderTable = {
       "penguin-go": { base_url: PENGUIN_GO_BASE_URL, client_type: "openai-chat", api_key: "pg" },
     };
-    const rows = presetModelEntries().filter((e) => e.provider === "penguin-go");
+    const rows = presetModelEntries()
+      .filter((e) => e.provider === "penguin-go")
+      .map((row) => ({ ...row, client_type: "mmsp" }));
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       const effective = storedConnection(row, table);

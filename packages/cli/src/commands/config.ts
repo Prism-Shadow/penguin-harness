@@ -32,7 +32,9 @@
  * entry's with `--model-id` and the group's without. Adding a NEW entry to a first-party
  * vendor group under a model id MMSP cannot route is refused, since nothing there would carry
  * a protocol for it, and so is adding one that is not a preset to a built-in group that takes
- * no hand-added models (isAddableGroup).
+ * no hand-added models (isAddableGroup). Penguin Go's protocol is fixed (fixedClientType): its
+ * group and entries take `--client-type mmsp` or the value they already store, and its group's
+ * protocol is not cleared.
  * For `model default` / `model vision`, core validation raises an error when the reference is
  * not found in models; `model remove` reports the same condition itself, since removal is
  * idempotent in core, and clears the default / vision pointers that named the removed entry;
@@ -62,6 +64,8 @@ import {
   addModel,
   effectiveConnection,
   fastModeProtocol,
+  fixedClientType,
+  fixedClientTypeRefuses,
   formatModelRef,
   getModel,
   groupKeyReaches,
@@ -323,6 +327,19 @@ async function addGroupConnection(
     refuse(t, t.providerNothingToSet(group));
     return;
   }
+  // The server's group routes refuse this too: Penguin Go's protocol is fixed.
+  if (
+    patch.client_type !== undefined &&
+    fixedClientTypeRefuses(
+      group,
+      "group",
+      patch.client_type,
+      (await loadProjectConfig(root, opts.projectId)).providers?.[group]?.client_type,
+    )
+  ) {
+    refuse(t, t.protocolFixed(providerInfo(group)?.label ?? group, fixedClientType(group)!));
+    return;
+  }
   // The group's models without a base URL of their own are all sent here, so a typo would
   // break every one of them at its next request: the check the server's group routes make.
   if (typeof patch.base_url === "string" && !isHttpUrl(patch.base_url.trim())) {
@@ -440,6 +457,22 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       const before = await loadProjectConfig(root, opts.projectId);
       const existed = getModel(before, ref) !== undefined;
       const group = providerConnectionShape(before.providers?.[provider]);
+      // Penguin Go's protocol is fixed: the models route refuses another one too.
+      if (
+        patch.client_type !== undefined &&
+        fixedClientTypeRefuses(
+          provider,
+          "row",
+          patch.client_type,
+          getModel(before, ref)?.client_type,
+        )
+      ) {
+        refuse(
+          t,
+          t.protocolFixed(providerInfo(provider)?.label ?? provider, fixedClientType(provider)!),
+        );
+        return;
+      }
       // A new entry stores a client_type / base_url only when one is given: left out, it
       // follows its group's [providers.<id>] (effectiveConnection), so a later change to the
       // group reaches it too, and with no group value it gets the client's default — the

@@ -127,7 +127,7 @@ Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance**
 - The server refuses a new model in one of these groups unless it is one of the group's built-in models: saving it fails with "This group carries its built-in models only". `penguin config model add` refuses it the same way. A built-in model you deleted can be added back, which is what **Add new models** does.
 - Models already in these groups stay where they are, including ones you added to a gateway group before this rule. They keep working, and you can edit them, rename them within the group, or delete them.
 - A vendor group (DeepSeek, Google Gemini, OpenAI, Anthropic, Z.AI, Moonshot, MiniMax) supports only the vendor's own API. If one of its models has an id that cannot be routed that way, the model is marked and offers **Move to Custom**. Use **Custom** for OpenAI-compatible endpoints.
-- The gateway groups keep the protocol a new Project stores for them: OpenRouter uses `openai-responses`, and the other OpenAI-compatible gateways use OpenAI Chat Completions. In the aggregate groups, Penguin Go and OpenCode Go, each built-in model stores its own.
+- The gateway groups keep the protocol a new Project stores for them: OpenRouter uses `openai-responses`, and the other OpenAI-compatible gateways use OpenAI Chat Completions. Penguin Go models share the group's `mmsp` protocol; OpenCode Go's built-in models each store their own protocol.
 
 ### Edit or delete a model
 
@@ -280,7 +280,7 @@ The fields show what the group stores:
 
 - **API key**: the group key, the one connecting also writes; the header has no other place to enter it. A stored key is shown masked, with the time it was set; leave the field empty to keep it, or select **Clear the group key**. Where an environment variable covers the group (see [Set API keys](#set-api-keys)), the placeholder says it is used when the field is empty. The provider's key console link is beside the label.
 - **Custom base URL**: when empty, the placeholder says the client's default endpoint is used. **Restore defaults** brings the whole group back to the catalog's endpoint. **Detect** at the top-right probes the field's URL, else the stored one, with the key in the field, else the group key; with neither URL it is unavailable. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
-- **Protocol**: the first option, **Not set**, leaves the protocol to each model or, failing that, to routing by model id; the others are the generic protocols. Every group takes one, Penguin Go and OpenCode Go included: a protocol stored on a model always wins, so the group's reaches only the models that store none.
+- **Protocol**: the first option, **Not set**, leaves the protocol to each model or, failing that, to routing by model id; the others are the generic protocols. A protocol stored on a model takes priority over the group's default. Penguin Go has no protocol menu and no **Detect**: its protocol is fixed to MMSP, which the line under the base URL names; see [The Penguin Go group](#the-penguin-go-group).
 
 **Model list**, below the fields, opens the provider's model list in a new tab. **Custom** and groups you create have none.
 
@@ -477,7 +477,7 @@ The table below lists the built-in groups and the environment variables their mo
 | Provider | API key env var | Notes |
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | The recommended group. OpenAI-compatible gateway, preset base URL `https://tokendance.space/gateway/v1`; model ids are bare, with no vendor prefix (e.g. `glm-5.3`, `kimi-k3`); pricing is the gateway's own CNY rates, several of them currently discounted |
-| penguin-go | `PENGUIN_GO_API_KEY` | Preset relay group, base URL `https://token.penguin.ooo/api`; its header connects for you, or set the key in its group settings. See [The Penguin Go group](#the-penguin-go-group) |
+| penguin-go | `PENGUIN_GO_API_KEY` | Preset MMSP relay group, base URL `https://go.penguin.ooo/api/v1`; its header connects for you, or set the key in its group settings. See [The Penguin Go group](#the-penguin-go-group) |
 | opencode-go | `OPENAI_API_KEY` | OpenCode Go subscription gateway. Each model pins its own protocol: Chat Completions or Responses at `https://opencode.ai/zen/go/v1`, Anthropic Messages at `https://opencode.ai/zen/go` (that client's variable is `ANTHROPIC_API_KEY`). See [The OpenCode Go group](#the-opencode-go-group) |
 | deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
 | openrouter | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
@@ -508,12 +508,16 @@ MiniMax's official client reads `MINIMAX_API_KEY`. The built-in MiniMax preset c
 
 ### The Penguin Go group
 
-`penguin-go` is a built-in group like TokenDance: a relay behind the base URL `https://token.penguin.ooo/api`, which a new Project stores in the group's settings. Its models use two protocols, so each stores its own. A new Project gets the group's catalog models right away; a Project created before the group adds them with **Add new models**.
+`penguin-go` is a built-in relay group. Its preset models use the `mmsp` HTTP client with base URL `https://go.penguin.ooo/api/v1`; the SDK appends `/stream`. Authorization and model sync send `x-penguin-protocol: mmsp` and use the platform's `endpoints.mmsp`. Legacy OpenAI, Google and Anthropic endpoint fields are not required.
+
+Existing Projects switch their Go-managed group and model-level routes to MMSP when loaded, without a network probe, login or new key. User-created groups and Go rows redirected to other servers retain their configuration.
+
+The group's protocol is fixed to MMSP. Neither the group settings nor a model's settings offer another one, and the server and `penguin config model add` refuse one for the group or its models, except a protocol a redirected row already stores, which saves back unchanged.
 
 The group's key comes from its header; see [Connect an account](#connect-an-account). Connecting, and **Sync models** in the **Connected** menu, also read the platform's own model catalog:
 
 - Models the platform offers and the Project does not have are added, with their protocol, display name, context window, vision flag, list price and promotion. While the group's settings hold a base URL, an added model stores an endpoint only where it differs from the platform's relay URL, so a group you pointed at a proxy takes it along; with no base URL there, the model stores the platform's in full. They carry no key and use the group key. Pure embedding models are left out.
-- Models the Project already has are left exactly as they are, prices, protocol and promotion included, and nothing is ever deleted.
+- Existing models retain their ids, display names, prices, promotions, context and vision settings, keys and current selections. Only Go-managed routing changes; nothing is deleted. The detailed catalog remains `/api/client/models`, because `/api/v1/models` contains only the basic model list.
 - As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database. **Restore defaults** keeps this group's promotions, which belong to the platform. If that record is lost, usage is priced at the list price.
 
 The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their cards and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.

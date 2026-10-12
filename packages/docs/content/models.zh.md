@@ -127,7 +127,7 @@ TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推�
 - 服务端会拒绝往这些分组新增不属于该分组内置模型的条目：保存时提示「该分组只承载内置模型」。`penguin config model add` 同样拒绝。删掉的内置模型可以重新加回来，**同步新增模型**做的就是这件事。
 - 这些分组里已有的模型原样保留，包括此前你在网关分组里自行添加的。它们照常可用，可以编辑、在本组内改名或删除。
 - 厂商分组（DeepSeek、Google Gemini、OpenAI、Anthropic、Z.AI、Moonshot、MiniMax）只支持厂商自己的 API。如果其中某个模型的 id 无法按这种方式路由，它会带上警示，并提供**移到自定义分组**。OpenAI 兼容的端点请放进 **Custom** 分组。
-- 网关分组沿用新建 Project 时为它写入的协议：OpenRouter 使用 `openai-responses`，其余 OpenAI 兼容网关使用 OpenAI Chat Completions。聚合分组 Penguin Go 与 OpenCode Go 的内置模型各自存着自己的协议。
+- 网关分组沿用新建 Project 时为它写入的协议：OpenRouter 使用 `openai-responses`，其余 OpenAI 兼容网关使用 OpenAI Chat Completions。Penguin Go 模型共享分组的 `mmsp` 协议；OpenCode Go 的内置模型各自保存自己的协议。
 
 ### 编辑或删除模型
 
@@ -279,7 +279,7 @@ TokenDance 和 DeepSeek 可以查询 key 所属账户的余额。这两个分组
 
 - **API key**：即分组密钥，与连接时写入的是同一把；标题栏上没有别处可以填写它。已存的 key 打码显示，并附设置时间；留空即保留原值，勾选**清除分组密钥**可删除它。分组可以由环境变量兜底时（见[设置 API key](#设置-api-key)），占位文字会说明留空即使用该环境变量。供应商的密钥控制台链接在标签旁。
 - **自定义 base URL**：占位文字为「未设置：使用客户端默认端点」。整个分组回到目录的端点请用**恢复默认**。右上角的**检测协议**用所填的 base URL（未填则用已存的），以及输入框里的 key（没有则用分组密钥）探测；两个 URL 都没有时不可用。见[检测自定义模型的协议](#检测自定义模型的协议)。
-- **协议**：首项**未设置**把协议交给各模型，模型也没有时按模型 id 路由；其余选项是各通用协议。每个分组都可以设置协议，Penguin Go 和 OpenCode Go 也不例外：模型上存的协议始终优先，分组协议只作用于没有自己协议的模型。
+- **协议**：首项**未设置**把协议交给各模型，模型也没有时按模型 id 路由；其余选项是各通用协议。模型上保存的协议优先于分组默认值。Penguin Go 没有协议菜单，也没有**检测协议**：它的协议固定为 MMSP，由 base URL 下方的一行注明，见 [Penguin Go 分组](#penguin-go-分组)。
 
 字段下方的**前往模型列表**在新标签页中打开供应商的模型列表；**Custom** 和你创建的分组没有这个链接。
 
@@ -476,7 +476,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | 供应商 | API key 环境变量 | 说明 |
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | 推荐分组。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为裸名称，不带供应商前缀（如 `glm-5.3`、`kimi-k3`）；价格采用网关自己的人民币费率，目前有几项在打折 |
-| penguin-go | `PENGUIN_GO_API_KEY` | 预置的中转分组，base URL `https://token.penguin.ooo/api`；分组标题栏可以为你连接取得 key，也可以在分组设置里填写。见 [Penguin Go 分组](#penguin-go-分组) |
+| penguin-go | `PENGUIN_GO_API_KEY` | 预置的 MMSP 中转分组，base URL `https://go.penguin.ooo/api/v1`；分组标题栏可以为你连接取得 key，也可以在分组设置里填写。见 [Penguin Go 分组](#penguin-go-分组) |
 | opencode-go | `OPENAI_API_KEY` | OpenCode Go 订阅网关。每个模型各自固定协议：Chat Completions 或 Responses 走 `https://opencode.ai/zen/go/v1`，Anthropic Messages 走 `https://opencode.ai/zen/go`（该客户端的变量是 `ANTHROPIC_API_KEY`）。见 [OpenCode Go 分组](#opencode-go-分组) |
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在的分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
@@ -507,12 +507,16 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 ### Penguin Go 分组
 
-`penguin-go` 和 TokenDance 一样是内置分组：一个中转服务，base URL 为 `https://token.penguin.ooo/api`，新建 Project 时写进分组设置。组内模型使用两种协议，因此各自存着自己的协议。新建的 Project 立即带上这个分组的目录模型；在该分组之前创建的 Project，用**同步新增模型**把它们补上。
+`penguin-go` 是内置中转分组。预设模型直接使用 `mmsp` HTTP 客户端，base URL 为 `https://go.penguin.ooo/api/v1`，SDK 自行追加 `/stream`。授权和目录同步发送 `x-penguin-protocol: mmsp`，使用平台下发的 `endpoints.mmsp`，无需 OpenAI、Google 或 Anthropic 旧端点字段。
+
+已有 Project 加载时直接将 Go 管理的分组和模型级路由切换到 MMSP，无需网络探测、重新登录或签发 key。用户自建分组及改为其他服务器的 Go 模型保留原配置。
+
+分组的协议固定为 MMSP。分组设置和模型配置都不提供其他协议，服务端与 `penguin config model add` 也会拒绝为分组或其模型设置其他协议；唯一例外是改为其他服务器的模型已存的协议，原样保存不受影响。
 
 分组的 key 从标题栏取得，见[连接账户](#连接账户)。连接以及**已连接**菜单里的**同步模型**还会读取平台自己的模型目录：
 
 - 平台提供而 Project 没有的模型会被添加进来，连同协议、显示名、上下文窗口、视觉能力、牌价和促销折扣。分组设置里有 base URL 时，端点只在与平台的中转地址不同时写在条目上，因此指向代理的分组会把新模型一并带过去；分组设置里没有 base URL 时，条目带上平台的完整地址。它们不带 key，使用分组密钥。纯向量（embedding）模型不收录。
-- Project 已有的模型原样保留，价格、协议和折扣都不动；任何模型都不会被删除。
+- 已有模型保留 ID、显示名、价格、折扣、上下文、视觉设置、key 和当前选择；仅更新 Go 管理的路由，不删除模型。详细目录仍使用 `/api/client/models`，因为 `/api/v1/models` 只有基础模型列表。
 - 和其他分组一样，`.project_config.toml` 里存的是牌价，促销存在服务端的数据库里。**恢复默认**保留这个分组的促销，它们归平台所有。这条记录丢失后，用量按牌价计价。
 
 平台报的是高峰档费率，单位是每百万 Token 多少美元。分组里的 DeepSeek 条目跟随 DeepSeek 当前的模型阵容，只有 `deepseek-flash` 和 `deepseek-v4-pro`，并声明与直连 DeepSeek 分组相同的空闲时段，因此在北京时间工作日 9:00–12:00、14:00–18:00 之外，卡片和成本记录都按半价计算。

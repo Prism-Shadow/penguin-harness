@@ -53,6 +53,7 @@ import {
   imageUrlMessage,
   metaMaxTokens,
   migrateProjectConfigTable,
+  migratePenguinGoRoutes,
   parseProviderTable,
   presetModelEntries,
   presetPromotions,
@@ -68,6 +69,8 @@ import {
 } from "@prismshadow/penguin-core";
 import {
   VENDOR_ENDPOINTS,
+  fixedClientType,
+  fixedClientTypeRefuses,
   isAddableGroup,
   providerInfo,
   sameClientType,
@@ -291,6 +294,37 @@ function showRef(provider: string, modelId: string): string {
   return `(provider=${provider}, model_id=${modelId})`;
 }
 
+/** `400 penguin_go_protocol_fixed`: `what` is the refused write, said as a sentence's start. */
+function protocolFixed(provider: string, what: string): HttpError {
+  const group = providerInfo(provider)?.label ?? provider;
+  return new HttpError(
+    400,
+    "penguin_go_protocol_fixed",
+    `${what}: the ${group} group's protocol is fixed to ${fixedClientType(provider)}.`,
+  );
+}
+
+/**
+ * Refuses a group connection change whose protocol the group's fixed protocol does not allow
+ * (core's fixedClientTypeRefuses, judged against what the group stores now). `clientType`
+ * undefined means the change leaves the protocol alone; null or blank clears it.
+ */
+function checkGroupProtocol(
+  raw: RawTable,
+  provider: string,
+  clientType: string | null | undefined,
+): void {
+  if (clientType === undefined) return;
+  const stored = optStr(asTable(asTable(raw.providers)[provider]).client_type);
+  if (!fixedClientTypeRefuses(provider, "group", clientType, stored)) return;
+  throw protocolFixed(
+    provider,
+    clientType?.trim()
+      ? `The ${provider} group cannot use client type ${JSON.stringify(clientType)}`
+      : `The ${provider} group's protocol cannot be cleared`,
+  );
+}
+
 /**
  * The `[providers]` table as the resolver reads it — core's lenient narrowing, so this service
  * and a Session can never disagree about a group's connection; `{}` when the file sets none.
@@ -384,7 +418,8 @@ function providerDto(p: ProviderConnection): ProviderConnectionDto {
  * a value sets it, `null` (or a blank string) clears it, absent keeps it; a key stamps
  * `created_at`, clearing it removes that too. A member left with nothing is dropped. Rows are
  * not touched: a model with its own value keeps it — a row's own protocol always wins over its
- * group's, so any group takes one (Penguin Go's and OpenCode Go's rows each store theirs).
+ * group's (OpenCode Go's rows each store theirs). Penguin Go's protocol is fixed, which the
+ * callers check first (checkGroupProtocol).
  *
  * Returns the new table and whether the group key was written or cleared by hand.
  */
@@ -1632,7 +1667,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    * takes no hand-added models when it is not one of that group's presets
    * (`model_not_addable`); one already stored under that key is written as it stands. Both
    * name the entry in `details` (`provider`, `modelId`). See the loops below for why the two
-   * differ.
+   * differ. A Penguin Go row or group given a protocol other than MMSP, or the group's cleared,
+   * is `penguin_go_protocol_fixed` unless that value is the one it already stores.
    *
    * `providers` changes the groups' connections, merged per group and per field like
    * `PUT /models/providers/:provider`; a group absent there keeps its table. Once the rows are
@@ -1658,6 +1694,30 @@ export class ProjectConfigService implements ProjectConfigStore {
     });
     const raw = await this.readRaw(projectId);
     const prevModels = asArray(raw.models);
+
+    // A group whose protocol is fixed (Penguin Go) takes that protocol on the group and its rows,
+    // nothing else. What is stored passes unchanged, so a row moved to the user's own proxy on
+    // another protocol before the rule round-trips; a row is judged against its own stored value
+    // (the one it was renamed from inside its group), never another group's.
+    for (const [provider, patch] of Object.entries(req.providers ?? {})) {
+      checkGroupProtocol(raw, provider, patch.clientType);
+    }
+    for (const entry of req.models) {
+      const from = entry.renamedFrom ?? entry;
+      const prev =
+        from.provider === entry.provider
+          ? prevModels.find((m) => entryMatches(m, from.provider, from.modelId))
+          : undefined;
+      if (
+        !fixedClientTypeRefuses(entry.provider, "row", entry.clientType, optStr(prev?.client_type))
+      ) {
+        continue;
+      }
+      throw protocolFixed(
+        entry.provider,
+        `Model ${showRef(entry.provider, entry.modelId)} cannot use client type ${JSON.stringify(entry.clientType)}`,
+      );
+    }
 
     // The groups' connections first: the routability rule below judges a new row on the
     // protocol it would run on, which a group's client_type in this same request decides.
@@ -1950,8 +2010,9 @@ export class ProjectConfigService implements ProjectConfigStore {
    * merged per field (see patchProviderTable). No row is touched: a model with its own base
    * URL, protocol or key keeps it. A ModelScope key set or cleared here is the user's own, so
    * the group's authorization (its refresh token) goes with the old one — "Disconnect" is
-   * `{ clearApiKey: true }` here, and for ModelScope it ends the authorization too. Returns the
-   * models view as it now stands.
+   * `{ clearApiKey: true }` here, and for ModelScope it ends the authorization too. A protocol
+   * Penguin Go's fixed one does not allow is refused before anything is written
+   * (checkGroupProtocol). Returns the models view as it now stands.
    */
   async setProviderConnection(
     projectId: string,
@@ -1960,6 +2021,7 @@ export class ProjectConfigService implements ProjectConfigStore {
   ): Promise<ModelsResponse> {
     return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, async () => {
       const raw = await this.readRaw(projectId);
+      checkGroupProtocol(raw, provider, patch.clientType);
       const { table, keyChanged } = patchProviderTable(asTable(raw.providers), provider, patch);
       await this.writeRaw(projectId, { ...raw, providers: table });
       if (keyChanged && provider === MODELSCOPE_PROVIDER_ID) {
@@ -2103,14 +2165,13 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the table holds is followed, the row storing only where it differs from the platform's
    * group value (the relay URL every model shares); a field the table lacks is written on the
    * row in full. A row the group
-   * already holds is never rewritten — not its price, not its protocol, not its promotion: the
-   * user may have changed them, and only "Restore defaults", behind its confirmation, puts
-   * existing rows back.
+   * already holds keeps its metadata and promotion. Go-managed routes switch to MMSP,
+   * including model overrides; user-redirected endpoints retain their configuration.
    *
    * Authorization (`applyKeyToExisting`) also writes the delivered key once, as the group's
    * key (`[providers.penguin-go]`); new rows carry no key of their own and follow it.
    *
-   * Returns how many rows were added, `updated` (always 0 — nothing existing is refreshed),
+   * Returns how many rows were added, `updated` (routes changed),
    * and `applied`: on authorization, how many of the group's rows now use the group key;
    * otherwise the rows added.
    */
@@ -2121,7 +2182,11 @@ export class ProjectConfigService implements ProjectConfigStore {
     apiKey: string,
     applyKeyToExisting: boolean,
   ): Promise<PlatformModelApplyResult> {
-    const raw = await this.readRaw(projectId);
+    const raw = structuredClone(await this.readRaw(projectId));
+    const updated =
+      provider === PENGUIN_GO_PROVIDER_ID && catalog.models.length > 0
+        ? migratePenguinGoRoutes(raw, catalog.models[0]!.baseUrl)
+        : 0;
     const current = asArray(raw.models);
     const known = new Set(
       current.flatMap((model) =>
@@ -2168,7 +2233,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
 
     const nextModels = [...current, ...added];
-    if (added.length > 0 || applyKeyToExisting) {
+    if (added.length > 0 || updated > 0 || applyKeyToExisting) {
       const providers = applyKeyToExisting
         ? patchProviderTable(asTable(raw.providers), provider, { apiKey }).table
         : raw.providers;
@@ -2195,7 +2260,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     const applied = applyKeyToExisting
       ? rowsFollowingGroupKey({ providers: raw.providers, models: nextModels }, provider)
       : added.length;
-    return { added: added.length, updated: 0, applied };
+    return { added: added.length, updated, applied };
   }
 
   /**
