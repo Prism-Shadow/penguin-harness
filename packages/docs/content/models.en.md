@@ -486,7 +486,7 @@ The table below lists the built-in groups and the environment variables their mo
 | openai | `OPENAI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | siliconflow | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://api.siliconflow.cn/v1` |
-| atlascloud | `OPENAI_API_KEY` | Atlas Cloud (OpenAI-compatible gateway), preset base URL `https://api.atlascloud.ai/v1`; model ids keep their vendor prefix (e.g. `deepseek-ai/deepseek-v4-flash`) |
+| atlascloud | `OPENAI_API_KEY` | Atlas Cloud (OpenAI-compatible gateway), preset base URL `https://api.atlascloud.ai/v1`; model ids keep their vendor prefix (e.g. `deepseek-ai/deepseek-v4.1-flash`) |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
 | minimax | `MINIMAX_API_KEY` | `MiniMax-M3` with a 1,000,000-token context window and vision, routed by its id to MiniMax's official Responses client (`minimax-official`); no preset base URL, so requests go to `https://api.minimax.io/v1` unless `MINIMAX_BASE_URL` names another; accepts a Token Plan Subscription Key or pay-as-you-go API key |

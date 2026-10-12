@@ -1705,34 +1705,38 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Atlas Cloud (gateway: OpenAI-compatible protocol, preset base URL). Read 2026-10-11 from
   // the public catalog API (GET https://api.atlascloud.ai/v1/models, no credential required):
-  // the ids exactly as listed, context windows, output limits, input modalities and prices.
-  // The API's `pricing` figures are USD per token; the pricing page
+  // the ids exactly as listed, context windows, output limits, input modalities, quantization
+  // and prices. The API's `pricing` figures are USD per token; the pricing page
   // (https://www.atlascloud.ai/pricing/models) states the same rates in USD per million
-  // tokens. The presets mirror the DeepSeek and Qwen models that the SiliconFlow and
-  // OpenRouter groups both preset (DeepSeek V4 Flash, DeepSeek V4 Pro, Qwen 3.6 35B A3B), under
-  // Atlas Cloud's own ids. Neither source publishes a cache-write price for them, so
-  // cache_write carries the input price, as with the TokenDance and Qwen gateways below. The
-  // DeepSeek rows are text only, with a 393,216-token output limit; Qwen 3.6 35B A3B takes
-  // image and video input, with a 65,536-token output limit.
+  // tokens. The presets are DeepSeek and Qwen models the other gateway groups preset. For
+  // DeepSeek they are the releases TokenDance presets instead of the bare V4 ids (the user's
+  // call for TokenDance on 2026-10-10, made for this group on 2026-10-11), taken only where
+  // Atlas Cloud serves them at fp8: V4.1 Flash and V4 Pro 0813. Its V4 Flash 0731 is served at
+  // fp4, like the bare deepseek-v4-flash and deepseek-v4-pro, so none of the three is a preset.
+  // Qwen 3.6 35B A3B is the one the SiliconFlow and OpenRouter groups preset. Rows run newest
+  // release first within a series (V4.1 before V4). Neither source publishes a cache-write
+  // price for these rows, so cache_write carries the input price, as with the TokenDance and
+  // Qwen gateways below. Atlas Cloud bills both DeepSeek rows at one fixed rate
+  // (`pricing_mode` fixed, no time-based overrides), so neither declares DeepSeek's off-peak
+  // schedule. The DeepSeek rows have a 393,216-token output limit; Qwen 3.6 35B A3B, which
+  // takes image and video input, has 65,536.
   {
-    modelId: "deepseek-ai/deepseek-v4-flash",
-    displayName: "DeepSeek V4 Flash",
+    // Image input, as the listing says (`text`, `image`).
+    modelId: "deepseek-ai/deepseek-v4.1-flash",
+    displayName: "DeepSeek V4.1 Flash",
     provider: "atlascloud",
     contextWindow: 1048576,
-    pricing: usd(0.028, 0.14, 0.28),
-    supportsVision: false,
+    pricing: usd(0.03, 0.3, 1.2),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: ATLASCLOUD_BASE_URL,
   },
   {
-    // The pricing page sets this rate beside DeepSeek's own USD list (1.74 input / 3.48 output
-    // / 0.145 cache hit) but declares no model discount on it, so the rate the API answers is
-    // Atlas Cloud's list price and the row stores it as is.
-    modelId: "deepseek-ai/deepseek-v4-pro",
-    displayName: "DeepSeek V4 Pro",
+    modelId: "deepseek-ai/deepseek-v4-pro-0813",
+    displayName: "DeepSeek V4 Pro 0813",
     provider: "atlascloud",
     contextWindow: 1048576,
-    pricing: usd(0.13, 1.68, 3.38),
+    pricing: usd(0.132, 1.32, 3.96),
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: ATLASCLOUD_BASE_URL,

@@ -893,12 +893,14 @@ describe("model-catalog", () => {
       expect(m.baseUrl).toBe("https://api.siliconflow.cn/v1");
     }
     const ac = MODEL_CATALOG.filter((m) => m.provider === "atlascloud");
-    // Dictionary order by upstream id, the ids exactly as the gateway's public catalog API
-    // lists them; context windows and input modalities from the same listing: the DeepSeek
-    // rows are text only, Qwen 3.6 35B A3B takes images.
+    // Dictionary order by upstream id, the newest release of a series first (V4.1 before V4),
+    // the ids exactly as the gateway's public catalog API lists them; context windows and input
+    // modalities from the same listing: V4.1 Flash and Qwen 3.6 35B A3B take images, V4 Pro
+    // 0813 is text only. The DeepSeek rows are releases TokenDance presets that this gateway
+    // serves at fp8; the bare V4 ids and V4 Flash 0731, served at fp4, are not presets.
     expect(ac.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
-      ["deepseek-ai/deepseek-v4-flash", 1048576, false],
-      ["deepseek-ai/deepseek-v4-pro", 1048576, false],
+      ["deepseek-ai/deepseek-v4.1-flash", 1048576, true],
+      ["deepseek-ai/deepseek-v4-pro-0813", 1048576, false],
       ["qwen/qwen3.6-35b-a3b", 262144, true],
     ]);
     for (const m of ac) {
@@ -914,8 +916,8 @@ describe("model-catalog", () => {
       const billed = effectivePricing(ac.find((m) => m.modelId === modelId)!)!;
       return [billed.cache_read, billed.cache_write, billed.output];
     };
-    expect(acBilled("deepseek-ai/deepseek-v4-flash")).toEqual([0.028, 0.14, 0.28]);
-    expect(acBilled("deepseek-ai/deepseek-v4-pro")).toEqual([0.13, 1.68, 3.38]);
+    expect(acBilled("deepseek-ai/deepseek-v4.1-flash")).toEqual([0.03, 0.3, 1.2]);
+    expect(acBilled("deepseek-ai/deepseek-v4-pro-0813")).toEqual([0.132, 1.32, 3.96]);
     expect(acBilled("qwen/qwen3.6-35b-a3b")).toEqual([0.186, 0.186, 1.11375]);
     expect(ac.filter((m) => m.discount !== undefined).map((m) => [m.modelId, m.discount])).toEqual([
       ["qwen/qwen3.6-35b-a3b", 0.25],
