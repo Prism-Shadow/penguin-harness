@@ -15,7 +15,7 @@
  * folder's row, which is the order a phone shows it in — one column, the panel under the row,
  * as an accordion — and the order a screen reader walks.
  */
-import { Chevron, GlyphIcon, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { Chevron, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 
 /** The examples block: one column on a phone, the folder column and the panel column beside. */
 export const exampleGridClass =
@@ -73,7 +73,7 @@ export function ExampleFolderRow({
  * actions.
  */
 export const exampleRowClass =
-  "rounded-md px-2 py-1.5 text-left text-sm text-fg transition-colors duration-150 " +
+  "group rounded-md px-2 py-1.5 text-left text-sm text-fg transition-colors duration-150 " +
   "hover:bg-surface-muted disabled:cursor-default disabled:opacity-60 " +
   "disabled:hover:bg-transparent";
 
@@ -85,6 +85,20 @@ export function ExampleRowGlyph({ glyph }: { glyph: string }) {
   return (
     <span className="shrink-0 text-accent">
       <GlyphIcon d={glyph} size={ICON_SIZE.navRow} />
+    </span>
+  );
+}
+
+/**
+ * The arrow right after a row's title inside an open folder: the row takes the user somewhere —
+ * its prompt into the composer — so the title reads like a "go to" link, in the muted ink at rest
+ * and the full ink while the row is hovered or focused. Beside the title, not at the row's far
+ * end, where a short title would leave it stranded. It does not move: no hover transforms.
+ */
+export function ExampleRowGo() {
+  return (
+    <span className="shrink-0 text-fg-muted transition-colors duration-150 group-hover:text-fg group-focus-visible:text-fg">
+      <GlyphIcon d={ICONS.arrowRightCentered} size={ICON_SIZE.inlineGlyph} />
     </span>
   );
 }

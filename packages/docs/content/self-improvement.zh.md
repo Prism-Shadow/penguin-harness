@@ -18,7 +18,7 @@ PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在
 | Evaluator | `agent-evaluation` | 通过 `run_subagent` 创建的叶子子 Agent | 让 Target Agent 在一道题目上运行一次，并为这次运行打分 |
 | Optimizer | `agent-optimization` | 另一个独立的顶层 Session | 按可证伪的假设修改 Target Agent，分数严格提升才保留新版本 |
 
-没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill，四个 Skill 都随 `default-rsi-toolkit` 插件（Default RSI Toolkit）提供。在 Web App 界面里，Target Agent 叫作**被测智能体**。
+没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill。循环本身 `agent-optimization` 就是 `default-rsi-toolkit` 插件（Default RSI Toolkit），它经由 `agent-evaluation` 插件（Agent Evaluation）测量，后者包含 `benchmark-design` 与 `agent-evaluation`；`agent-initialization` 随 `agent-development` 提供。四者都是预装的。在 Web App 界面里，Target Agent 叫作**被测智能体**。
 
 ### 角色之间的调用
 
@@ -229,9 +229,9 @@ Optimizer 改动 Reference State 之前，会先确保 Reference 版本对应的
 
 | Skill | 插件 | 用途 |
 | --- | --- | --- |
-| `agent-initialization` | `default-rsi-toolkit` | 把需求变成可用的 Agent：编写它的 `AGENTS.md`，安装它需要的 Skill |
-| `benchmark-design` | `default-rsi-toolkit` | 设计并校准包含多道题目的能力 Benchmark |
-| `agent-evaluation` | `default-rsi-toolkit` | 隔离地运行一道 Benchmark 题目一次，并为这次运行打分 |
+| `agent-initialization` | `agent-development` | 把需求变成可用的 Agent：编写它的 `AGENTS.md`，安装它需要的 Skill |
+| `benchmark-design` | `agent-evaluation` | 设计并校准包含多道题目的能力 Benchmark |
+| `agent-evaluation` | `agent-evaluation` | 隔离地运行一道 Benchmark 题目一次，并为这次运行打分 |
 | `agent-optimization` | `default-rsi-toolkit` | 根据 Benchmark 的结果改进 Agent |
 | `opro-rsi-toolkit` | `opro-rsi-toolkit` | 运行 OPRO：依据历史分数优化指令 |
 | `ape-rsi-toolkit` | `ape-rsi-toolkit` | 运行 APE：从输入 / 输出示例归纳指令 |

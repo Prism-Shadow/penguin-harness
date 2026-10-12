@@ -49,6 +49,7 @@ const SECTION_HEADER = /^(Office Productivity|办公效率)/;
 const PLUGINS = [
   "default-rsi-toolkit",
   "agent-development",
+  "agent-evaluation",
   "model-development",
   "software-development",
   "data-analysis",
@@ -65,6 +66,7 @@ const SKILLS = [
   "awm-rsi-toolkit",
   "data-analysis",
   "penguin-sdk",
+  "penguin-plugin",
   "penguin-config",
   "unified-llm-api",
   "web-design",

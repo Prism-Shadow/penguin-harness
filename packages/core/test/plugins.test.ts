@@ -89,7 +89,7 @@ describe("loadLibraryPlugins", () => {
   it("loads every plugin directory sorted by name: its npm version, a category, and a dated version on every part", async () => {
     const plugins = loadLibraryPlugins();
     expect(plugins.map((p) => p.name)).toEqual([...plugins.map((p) => p.name)].sort());
-    expect(plugins.length).toBe(19);
+    expect(plugins.length).toBe(20);
     for (const plugin of plugins) {
       const pkg = JSON.parse(
         await fs.readFile(path.join(pluginsRoot, plugin.name, "package.json"), "utf8"),
@@ -253,6 +253,15 @@ describe("loadLibraryPlugins", () => {
     expect(librarySkill("unified-llm-api")?.plugin.name).toBe("agent-development");
     expect(librarySkill("penguin-config")?.plugin.name).toBe("agent-development");
     expect(librarySkill("plugin-porting")?.plugin.name).toBe("skill-porting");
+    // The default loop's steps sit with their audience: setting up an agent is agent
+    // development, measuring one is Agent Evaluation, and the toolkit keeps only the loop.
+    expect(librarySkill("agent-initialization")?.plugin.name).toBe("agent-development");
+    expect(librarySkill("penguin-plugin")?.plugin.name).toBe("agent-development");
+    expect(librarySkill("agent-evaluation")?.plugin.name).toBe("agent-evaluation");
+    expect(librarySkill("benchmark-design")?.plugin.name).toBe("agent-evaluation");
+    expect(libraryPlugin("default-rsi-toolkit")?.skills.map((s) => s.name)).toEqual([
+      "agent-optimization",
+    ]);
   });
 });
 
@@ -331,6 +340,7 @@ describe("groupPlugins / loadPluginGroups", () => {
     ]);
     expect(names("ai-app-development")).toEqual([
       "agent-development",
+      "agent-evaluation",
       "model-development",
       "skill-porting",
     ]);

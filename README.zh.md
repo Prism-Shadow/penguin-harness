@@ -51,7 +51,7 @@ PenguinHarness 运行在你的电脑或服务器上，是统一、稳定的 Agen
 
 ### 1. 🧬 最全面的 Agent 自进化框架
 
-每一种算法都是插件库里的一个工具包，每个工具包都按原论文的流程运行。**Default RSI Toolkit**（`default-rsi-toolkit`）跑「试跑 → 反思 → 提升」的循环：跑 Benchmark、找失分点、发布 N+1 版，每轮之前自动快照；**OPRO**、**APE**、**ACE**、**AWM** 各自是独立的工具包（`opro-rsi-toolkit`、`ape-rsi-toolkit`、`ace-rsi-toolkit`、`awm-rsi-toolkit`），工具包之间互不依赖。复现的 Benchmark 统一放在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)，可导入任何 Project；评估中心画出每一条分数曲线，每个请求都可在轨迹观测中回放。
+每一种算法都是插件库里的一个工具包，每个工具包都按原论文的流程运行。**Default RSI Toolkit**（`default-rsi-toolkit`）跑「试跑 → 反思 → 提升」的循环：跑 Benchmark、找失分点、发布 N+1 版，每轮之前自动快照，测量经由 **Agent Evaluation** 插件（`agent-evaluation`），它也负责设计与导入 Benchmark；**OPRO**、**APE**、**ACE**、**AWM** 各自是独立的工具包（`opro-rsi-toolkit`、`ape-rsi-toolkit`、`ace-rsi-toolkit`、`awm-rsi-toolkit`），工具包之间互不依赖。复现的 Benchmark 统一放在 [penguin-harness-benchmark](https://github.com/Prism-Shadow/penguin-harness-benchmark)，可导入任何 Project；评估中心画出每一条分数曲线，每个请求都可在轨迹观测中回放。
 
 https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
@@ -91,7 +91,7 @@ https://github.com/user-attachments/assets/604eb626-0a5d-4a62-87e3-14ebade1cd5f
 | Agent 自进化 | `default-rsi-toolkit`、`opro-rsi-toolkit`、`ape-rsi-toolkit`、`ace-rsi-toolkit`、`awm-rsi-toolkit` |
 | 办公效率    | `a2ui`、`data-analysis`、`use-firecrawl`、`browser-automation`、`use-bento-slides`、`humanizer`、`goal`、`continual-learning`、`agent-company` |
 | 软件开发    | `software-development`、`use-claude-code`                                |
-| AI 应用开发 | `agent-development`、`model-development`、`skill-porting`                       |
+| AI 应用开发 | `agent-development`、`agent-evaluation`、`model-development`、`skill-porting` |
 
 桌面应用的侧边停靠栏里还内置了一个浏览器。Agent 通过 `penguin browser` 和 `browser-automation` 插件驱动它：读取页面、点击和输入，并提取亚马逊订单这样的数据，登录用的是从你自己的浏览器导入的账号。
 同一套命令也能通过 PenguinHarness Browser 扩展驱动你自己的 Chrome（Web App 中即用此方式）：Agent 只操作你交给它的标签页，登录状态留在 Chrome 中。

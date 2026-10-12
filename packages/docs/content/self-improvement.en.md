@@ -18,7 +18,7 @@ This loop is the Default RSI Toolkit; [RSI toolkits](#rsi-toolkits) covers the o
 | Evaluator | `agent-evaluation` | A leaf subagent created through `run_subagent` | Runs the Target Agent on one Case once and scores that run |
 | Optimizer | `agent-optimization` | A separate top-level Session | Changes the Target Agent under a falsifiable hypothesis and keeps a new version only when its score strictly improves |
 
-No built-in agent is reserved for a role: each role is a Skill, and all four Skills ship in the `default-rsi-toolkit` plugin (the Default RSI Toolkit). The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
+No built-in agent is reserved for a role: each role is a Skill. The loop itself, `agent-optimization`, is the `default-rsi-toolkit` plugin (the Default RSI Toolkit); it measures through the `agent-evaluation` plugin (Agent Evaluation), which carries `benchmark-design` and `agent-evaluation`, and `agent-initialization` ships in `agent-development`. All four are preinstalled. The Web App calls the Target Agent the **Test Agent** or the **Tested agent**.
 
 ### How the roles call each other
 
@@ -229,9 +229,9 @@ Every score can be traced back to the run that produced it.
 
 | Skill | Plugin | Purpose |
 | --- | --- | --- |
-| `agent-initialization` | `default-rsi-toolkit` | Turn a requirement into a working agent: write its `AGENTS.md` and install the Skills it needs |
-| `benchmark-design` | `default-rsi-toolkit` | Design and calibrate a multi-Case capability Benchmark |
-| `agent-evaluation` | `default-rsi-toolkit` | Run and score one isolated Benchmark Case run |
+| `agent-initialization` | `agent-development` | Turn a requirement into a working agent: write its `AGENTS.md` and install the Skills it needs |
+| `benchmark-design` | `agent-evaluation` | Design and calibrate a multi-Case capability Benchmark |
+| `agent-evaluation` | `agent-evaluation` | Run and score one isolated Benchmark Case run |
 | `agent-optimization` | `default-rsi-toolkit` | Improve an agent from Benchmark results |
 | `opro-rsi-toolkit` | `opro-rsi-toolkit` | Run OPRO: optimize an instruction from its scored history |
 | `ape-rsi-toolkit` | `ape-rsi-toolkit` | Run APE: induce an instruction from input/output demonstrations |

@@ -13,8 +13,8 @@
  * - **Examples and shortcuts.** The example folders and the user's own shortcuts, one folder
  *   open at a time (example-tasks.ts, shortcuts-folder.tsx): the folders down one column and the
  *   open folder's rows beside them, so switching folders moves nothing; stacked on a phone. Every
- *   row is led by a glyph of its own, so the rows read as things to press rather than as a list
- *   of titles.
+ *   row is led by a glyph of its own and closed by a forward arrow, so the rows read as things to
+ *   press — each takes its prompt into the composer — rather than as a list of titles.
  *
  * Nothing moves while it loads and nothing scrolls inside the page — the draft view's column is
  * the one scroll container, and at a laptop viewport the page needs none. The examples block's
@@ -55,6 +55,7 @@ import type { ExampleFolderId, ExampleTaskId } from "./example-tasks";
 import {
   ExampleFolderRow,
   ExampleRowGlyph,
+  ExampleRowGo,
   exampleGridClass,
   examplePanelClass,
   exampleRowClass,
@@ -358,7 +359,8 @@ function ExamplesSection({
                           className={`flex w-full items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                         >
                           <ExampleRowGlyph glyph={TASK_GLYPHS[task.id]} />
-                          <span className="min-w-0 flex-1 truncate">{copy.label}</span>
+                          <span className="min-w-0 truncate">{copy.label}</span>
+                          <ExampleRowGo />
                         </button>
                       </li>
                     );

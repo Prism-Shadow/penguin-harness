@@ -4,7 +4,8 @@
  *
  * The default toolkit comes first: it is the select's first option, and its two Skills are the
  * ones the Use dialog has always preselected — the evaluator on the Evaluate tab, the optimizer
- * beside it on the Optimize tab. Every other toolkit is one plugin with one Skill named like it,
+ * beside it on the Optimize tab. The toolkit ships only the optimizer; the evaluator it measures
+ * through ships in the Agent Evaluation plugin, named by the row too. Every other toolkit is one plugin with one Skill named like it,
  * which initializes, measures and records on its own. Labels and blurbs live in the dictionaries,
  * under `S.benchmark.methods[id]`.
  */
@@ -14,6 +15,7 @@ export const RSI_METHODS = [
     plugin: "default-rsi-toolkit",
     skill: "agent-optimization",
     evaluationSkill: "agent-evaluation",
+    evaluationPlugin: "agent-evaluation",
   },
   { id: "opro", plugin: "opro-rsi-toolkit", skill: "opro-rsi-toolkit" },
   { id: "ape", plugin: "ape-rsi-toolkit", skill: "ape-rsi-toolkit" },
