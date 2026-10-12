@@ -21,16 +21,21 @@ import type { TerminalNotice } from "./session.js";
 
 /**
  * Whether this server's terminals get their `penguin`'s data root from the shim: there is a
- * shim (`dirs`, the Session environment's pathPrepend, is not empty) and the runtime that wrote
- * it names the root in it — cliLaunch is how a runtime says it is that recent. A pushed platform
- * can run on an older runtime, whose shim does not; there, and where there is no shim at all,
- * the shell keeps the server's PENGUIN_HOME so that `penguin` finds this server as before.
+ * shim (`dirs`, the Session environment's pathPrepend, is not empty, and the file is there) and
+ * the runtime that wrote it names the root in it — cliLaunch is how a runtime says it is that
+ * recent. A pushed platform can run on an older runtime, whose shim does not; there, and where
+ * there is no shim at all, the shell keeps the server's PENGUIN_HOME so that whichever
+ * `penguin` it finds still reaches this server, as before.
  */
 export function shimNamesDataRoot(
   config: Pick<ServerConfig, "cliLaunch">,
   dirs: readonly string[],
 ): boolean {
-  return config.cliLaunch !== undefined && dirs.length > 0;
+  return (
+    config.cliLaunch !== undefined &&
+    dirs.length > 0 &&
+    fs.existsSync(path.join(dirs[0]!, "penguin"))
+  );
 }
 
 /** `dir` with the home directory spelled `~`, the way a person reads a path. */
