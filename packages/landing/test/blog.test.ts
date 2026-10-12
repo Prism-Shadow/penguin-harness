@@ -96,7 +96,7 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("reads the pinned flag and sorts the pinned post first", () => {
     for (const locale of ["en", "zh"] as const) {
       const posts = postsFor(locale);
-      expect(posts.length).toBe(24);
+      expect(posts.length).toBe(30);
       // The launch post stays the single pinned post; newer posts sort under it by date.
       expect(posts.filter((p) => p.pinned).map((p) => p.slug)).toEqual([
         "introducing-penguinharness",
@@ -111,7 +111,12 @@ describe("frontmatter mapping (author / pinned / category)", () => {
 
   it("filters by the practice category, newest first", () => {
     expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
-      // Both share 2026-09-16, so slug ascending is the tie-break.
+      // Posts that share a date are ordered by slug, ascending.
+      "build-agent-apps-with-workflows",
+      "call-agents-with-the-agent-api",
+      "let-agents-use-the-browser",
+      "run-agents-on-remote-machines",
+      "self-evolve-agents-with-rsi-toolkits",
       "connect-agents-to-feishu-qq-telegram-wechat",
       "create-evaluate-evolve-agents",
       "natural-language-training-loop",
@@ -123,6 +128,7 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("filters by the news category, newest first", () => {
     expect(postsFor("en", "news").map((p) => p.slug)).toEqual([
       "introducing-penguinharness",
+      "penguinharness-0-2-14",
       "penguinharness-0-2-13",
       "penguinharness-0-2-11",
       "penguinharness-0-2-6",
