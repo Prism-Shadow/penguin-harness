@@ -2,7 +2,7 @@
  * A settings card's drafts: what each field's control holds between the stored value and the
  * card's Save, and what a Save sends. Only a field whose draft differs from its stored value is
  * sent — an untouched field would store its default as a value, pinning it against a later
- * change of the default.
+ * change of the default. A `boolean` field is no part of a draft: it writes when flipped.
  */
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 
@@ -115,6 +115,18 @@ export function draftOf(entry: PluginConfigEntry): Draft {
         : field.type === "list"
           ? (Array.isArray(v) ? v : []).join("\n")
           : v;
+  }
+  return out;
+}
+
+/**
+ * The part of an entry's draft a Save writes: every field but the `boolean` ones, which write
+ * themselves the moment they are flipped and so never wait in a draft.
+ */
+export function typedDraftOf(entry: PluginConfigEntry): Draft {
+  const out = draftOf(entry);
+  for (const [name, field] of Object.entries(entry.configuration.properties)) {
+    if (field.type === "boolean") delete out[name];
   }
   return out;
 }

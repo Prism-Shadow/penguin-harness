@@ -458,7 +458,7 @@ Communicate with the user precisely and concisely, yet with warmth, and always r
 # System markers
 Some messages carry system-synthesized \`[tag]...[/tag]\` blocks — not user text to answer:
 - \`[turn_aborted]\`: the previous round was interrupted; inside are the request, your partial output, and the tool calls already run with their results. Continue from there, and do not re-run them.
-- \`[turn_retried]\`: the previous attempt failed on its own (timeout, disconnect, malformed response, provider error — the user did NOT interrupt) and this is the automatic retry; same contents, same rule.
+- \`[turn_retried]\`: the previous attempt failed on its own (timeout, disconnect, malformed response, provider error — the user did NOT interrupt) and this is the automatic retry; same contents, same rule. Either block may end with a \`[request_error]\` line quoting the error the failed request got: read it before carrying on, and change course if it names something you can fix rather than repeat the same request.
 - \`[context_summary]\`: earlier conversation was compacted. The summary is its only record — treat it as established context and continue from it.
 - \`[user_steering]\`: a user message sent mid-run, delivered between turns. Not a new task: incorporate it immediately and adjust course within the current one.
 
@@ -610,7 +610,9 @@ export const DEFAULT_COMPACTION_PROMPT =
  * and subagent spawning. No entry carries a `forModel` annotation: `read_file` serves vision
  * and text-only models alike (it reads images too, deciding at runtime whether to return
  * image content or a vision model's description), so the per-model-class filter stays a
- * config feature for entries that need it.
+ * config feature for entries that need it. Its `prompt` argument reaches only text-only
+ * models: assembly drops it for a model that views images (see selectBuiltinToolsForModel),
+ * which is why the tool description leaves the argument to its own schema entry.
  * Docs: /docs/tools § "Built-in tools".
  */
 function defaultBuiltinTools(): ToolDefinitionConfig[] {
@@ -622,8 +624,8 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
         "(cat -n style), up to 2000 lines starting at offset; for a longer file call again with " +
         "offset to continue. An image (png/jpeg/gif/webp up to 5MB; file_path may also be an " +
         "http(s) URL) is returned as image content for you to view, or — when the current model " +
-        "cannot view images — described in text by the project's vision model, which answers " +
-        "`prompt`. Other binary files are rejected: use the shell tool for those.",
+        "cannot view images — described in text by the project's vision model. Other binary " +
+        "files are rejected: use the shell tool for those.",
       parameters: {
         type: "object",
         properties: {

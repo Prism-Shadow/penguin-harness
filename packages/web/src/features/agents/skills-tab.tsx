@@ -13,6 +13,12 @@
  * as a zip that round-trips through that same endpoint. Read and mutate are both
  * member-level, matching the skills routes — no owner gating here.
  *
+ * The import dialog is mounted only while it is open, so every opening starts with nothing
+ * typed. The source is its draft under the settings commit model: closing the dialog with one
+ * typed (Esc, the ×, a press outside) asks first, and nothing closes it while an upload is in
+ * flight. Opening the chat hands the source over, so the draft is forgotten before the page
+ * moves to the conversation.
+ *
  * Prompt-injection controls (usePromptInjection): the skills.enabled switch, the
  * {{SKILLS}}-placeholder alert (with legacy-template migration) and the editable
  * skills.prompt section, mirroring the Memory tab.
@@ -38,9 +44,12 @@ import {
   SkeletonList,
   Textarea,
   buttonClass,
+  discardUnsaved,
   toastError,
   toastSuccess,
   useCopied,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -72,7 +81,6 @@ export function SkillsTab({
   /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: () => void;
 }) {
-  const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
   const { currentProject, agents, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -92,13 +100,8 @@ export function SkillsTab({
   const [busy, setBusy] = useState(false);
   // Skill name pending uninstall confirmation (non-null shows the confirm modal).
   const [removing, setRemoving] = useState<string | null>(null);
-  // Import modal: the source for the chat-install prompt + upload state travel with the modal.
+  // The import dialog; what it holds (the source, the upload) lives in it, while it is open.
   const [importOpen, setImportOpen] = useState(false);
-  const [source, setSource] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  // Non-null shows the overwrite confirm (the archive POST answered 409 skill_exists).
-  const [overwriting, setOverwriting] = useState<PendingOverwrite | null>(null);
 
   const load = useCallback(async () => {
     if (!projectId || !agentId) return;
@@ -153,82 +156,13 @@ export function SkillsTab({
     }
   };
 
-  /** Open the import modal (reset the form and upload state). */
-  const openImport = () => {
-    setSource("");
-    setUploadError(null);
-    setOverwriting(null);
-    setImportOpen(true);
-  };
-
-  // The prompt tailors its lead sentence to the source kind (URL / repo / path / command /
-  // reference — see skill-import-source.ts); the preview substitutes a placeholder token
-  // until something is entered.
-  const trimmedSource = source.trim();
-  const chatPrompt = buildImportPrompt(trimmedSource || S.skills.importSourceToken);
-
-  // Copy feedback lives at the button (the shared copy convention): its glyph flips to
-  // the check while copied — no toast, and the button label never changes.
-  const promptCopy = useCopied();
-
-  /**
-   * "Open a new chat" with this Agent: the AI bridge prefills the composer with the generated
-   * install prompt (parking typed-but-unsent draft text first) and clears a stale handoff
-   * target and skill pre-selection along with it. Disabled without a source, like the copy
-   * button — a blank chat would drop the prompt the dialog just built.
-   */
-  const openChat = () => {
-    if (trimmedSource === "") return;
-    openAiChat({ agentId, text: buildImportPrompt(trimmedSource) });
-  };
-
-  /**
-   * POST the zip to the archive endpoint. A 409 skill_exists pops the overwrite confirm
-   * (the skill name is read from the server's fixed message tail, pinned by the route
-   * tests; `fallbackName` — the picked file's stem — covers a parse miss). Success closes
-   * the modal and re-fetches the list.
-   */
-  const upload = async (dataBase64: string, fallbackName: string, overwrite: boolean) => {
-    if (!projectId) return;
-    setUploading(true);
-    setUploadError(null);
-    try {
-      await api.installAgentSkillArchive(projectId, agentId, {
-        dataBase64,
-        ...(overwrite ? { overwrite: true } : {}),
-      });
-      setOverwriting(null);
-      setImportOpen(false);
-      toastSuccess(`${S.skills.importDoneToast}${S.agent.takesEffectSuffix}`);
-      await load();
-      // The agent card's skill count changed; refresh the list provider too.
-      void reloadAgents();
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && e.code === "skill_exists") {
-        const name = /:\s*([A-Za-z0-9_-]+)$/.exec(e.message)?.[1] ?? fallbackName;
-        setOverwriting({ dataBase64, name });
-      } else {
-        setOverwriting(null);
-        setUploadError(apiErrorText(e));
-      }
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setUploadError(null);
-    const fallbackName = file.name.replace(/\.zip$/i, "");
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      void upload(dataUrl.slice(dataUrl.indexOf(",") + 1), fallbackName, false); // strip the data:...;base64, prefix
-    };
-    reader.onerror = () => setUploadError(S.common.unknownError);
-    reader.readAsDataURL(file);
+  /** An upload landed: the dialog closes and the list is read again from disk. */
+  const imported = async () => {
+    setImportOpen(false);
+    toastSuccess(`${S.skills.importDoneToast}${S.agent.takesEffectSuffix}`);
+    await load();
+    // The agent card's skill count changed; refresh the list provider too.
+    void reloadAgents();
   };
 
   /** Metadata: the installed copy's version (`YYYY.MM.DD.N`, or the legacy `YYYY-MM-DD.N` on a copy installed before that spelling; empty when the frontmatter carries none), shown bare like the library card. */
@@ -249,7 +183,12 @@ export function SkillsTab({
           state (loading, empty, populated) so the action never shifts and the dashed empty block
           keeps a header instead of standing alone; the modal carries both install paths. */}
       <div className="flex justify-end">
-        <Button size="sm" variant="primary" disabled={skills === null} onClick={openImport}>
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={skills === null}
+          onClick={() => setImportOpen(true)}
+        >
           {S.skills.importSkill}
         </Button>
       </div>
@@ -315,13 +254,133 @@ export function SkillsTab({
 
       {promptSection}
 
-      {/* Import modal: recommended chat install on top, zip upload below. */}
-      <Modal
-        open={importOpen}
-        title={S.skills.importSkill}
-        onClose={() => setImportOpen(false)}
-        widthClass="sm:max-w-lg"
+      {importOpen && (
+        <SkillImportDialog
+          projectId={projectId}
+          agentId={agentId}
+          onClose={() => setImportOpen(false)}
+          onImported={() => void imported()}
+        />
+      )}
+
+      {/* Uninstall confirmation (shared ConfirmModal, same copy as the skill library page). */}
+      <ConfirmModal
+        open={removing !== null}
+        title={removing !== null ? S.skills.uninstallConfirmTitle(removing) : ""}
+        busy={busy}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => void confirmRemove()}
+        confirmLabel={S.skills.uninstall}
+        cancelLabel={S.common.cancel}
       >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {removing !== null ? S.skills.uninstallConfirmBody(removing, agentName) : ""}
+        </p>
+      </ConfirmModal>
+
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * The "Import skill" dialog: the recommended chat install on top, the zip upload below. The
+ * source is the dialog's draft (compared without the spaces around it): closing with one typed
+ * asks first, and an upload in flight holds every way of closing until it answers.
+ */
+function SkillImportDialog({
+  projectId,
+  agentId,
+  onClose,
+  onImported,
+}: {
+  projectId: string;
+  agentId: string;
+  onClose: () => void;
+  /** A zip landed: the tab closes the dialog and reads the list again. */
+  onImported: () => void;
+}) {
+  const { openAiChat } = useAiBridge();
+  const form = useFormDraft<string>("", { normalize: (text) => text.trim() });
+  const source = form.draft;
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  // Non-null shows the overwrite confirm (the archive POST answered 409 skill_exists).
+  const [overwriting, setOverwriting] = useState<PendingOverwrite | null>(null);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: uploading });
+
+  // The prompt tailors its lead sentence to the source kind (URL / repo / path / command /
+  // reference — see skill-import-source.ts); the preview substitutes a placeholder token
+  // until something is entered.
+  const trimmedSource = source.trim();
+  const chatPrompt = buildImportPrompt(trimmedSource || S.skills.importSourceToken);
+
+  // Copy feedback lives at the button (the shared copy convention): its glyph flips to
+  // the check while copied — no toast, and the button label never changes.
+  const promptCopy = useCopied();
+
+  /**
+   * "Open a new chat" with this Agent: the AI bridge prefills the composer with the generated
+   * install prompt (parking typed-but-unsent draft text first) and clears a stale handoff
+   * target and skill pre-selection along with it. Disabled without a source, like the copy
+   * button — a blank chat would drop the prompt the dialog just built. The source goes with
+   * the chat, so nothing typed is left to lose: it is forgotten first, or the leave guard
+   * would hold the move to the conversation.
+   */
+  const openChat = () => {
+    if (trimmedSource === "") return;
+    discardUnsaved(form.scope);
+    openAiChat({ agentId, text: buildImportPrompt(trimmedSource) });
+    onClose();
+  };
+
+  /**
+   * POST the zip to the archive endpoint. A 409 skill_exists pops the overwrite confirm
+   * (the skill name is read from the server's fixed message tail, pinned by the route
+   * tests; `fallbackName` — the picked file's stem — covers a parse miss). Success hands
+   * over to the tab, which closes the dialog and re-fetches the list.
+   */
+  const upload = async (dataBase64: string, fallbackName: string, overwrite: boolean) => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      await api.installAgentSkillArchive(projectId, agentId, {
+        dataBase64,
+        ...(overwrite ? { overwrite: true } : {}),
+      });
+      setOverwriting(null);
+      onImported();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && e.code === "skill_exists") {
+        const name = /:\s*([A-Za-z0-9_-]+)$/.exec(e.message)?.[1] ?? fallbackName;
+        setOverwriting({ dataBase64, name });
+      } else {
+        setOverwriting(null);
+        setUploadError(apiErrorText(e));
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploadError(null);
+    const fallbackName = file.name.replace(/\.zip$/i, "");
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      void upload(dataUrl.slice(dataUrl.indexOf(",") + 1), fallbackName, false); // strip the data:...;base64, prefix
+    };
+    reader.onerror = () => setUploadError(S.common.unknownError);
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <>
+      <Modal open title={S.skills.importSkill} onClose={requestClose} widthClass="sm:max-w-lg">
         <div className="space-y-4">
           <section>
             <p className="text-sm font-medium">{S.skills.importChatTitle}</p>
@@ -334,7 +393,7 @@ export function SkillsTab({
                 label={S.skills.importSourceLabel}
                 hint={S.skills.importSourceHint}
                 value={source}
-                onChange={(e) => setSource(e.target.value)}
+                onChange={(e) => form.setDraft(e.target.value)}
                 placeholder={S.skills.importSourcePlaceholder}
                 autoComplete="off"
               />
@@ -403,23 +462,6 @@ export function SkillsTab({
           {overwriting !== null ? S.skills.importOverwriteBody(overwriting.name) : ""}
         </p>
       </ConfirmModal>
-
-      {/* Uninstall confirmation (shared ConfirmModal, same copy as the skill library page). */}
-      <ConfirmModal
-        open={removing !== null}
-        title={removing !== null ? S.skills.uninstallConfirmTitle(removing) : ""}
-        busy={busy}
-        onClose={() => setRemoving(null)}
-        onConfirm={() => void confirmRemove()}
-        confirmLabel={S.skills.uninstall}
-        cancelLabel={S.common.cancel}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {removing !== null ? S.skills.uninstallConfirmBody(removing, agentName) : ""}
-        </p>
-      </ConfirmModal>
-
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-    </div>
+    </>
   );
 }

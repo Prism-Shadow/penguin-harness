@@ -189,6 +189,9 @@ import type {
   PluginReadmeResponse,
   SessionsResponse,
   SessionSwitchModelRequest,
+  SessionBatchPageRequest,
+  SessionsBatchRequest,
+  SessionsBatchResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
   SteerRequest,
@@ -823,6 +826,28 @@ export const listSessions = (
   );
 };
 
+/**
+ * A whole sidebar reload in one round trip: every (Agent, page) pair the sidebar wants,
+ * asked in a single POST instead of one GET each.
+ *
+ * The split matters on a Project with several Agents (and several machines): as individual
+ * requests they were fired all at once and serialised by the browser's six-connections-per-host
+ * limit, so the conversation pane's own message read queued behind dozens of list calls.
+ * One request keeps every answer separate — `results` lines up with `requests`, and an Agent
+ * this server does not host comes back as `ok: false, reason: "absent"` rather than failing
+ * the batch.
+ */
+export const batchSessions = (
+  projectId: string,
+  requests: SessionBatchPageRequest[],
+  machineId?: string | null,
+) =>
+  apiFetch<SessionsBatchResponse>(`/api/projects/${encodeURIComponent(projectId)}/sessions/batch`, {
+    method: "POST",
+    body: { requests } satisfies SessionsBatchRequest,
+    server: machineId ?? null,
+  });
+
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
 /**
  * Browses directories. With no machine, this server's own filesystem; with one, THAT
@@ -1177,6 +1202,13 @@ export const postAbort = (sessionId: string) =>
 /** "Retry now" on the reconnect countdown: skips the remaining backoff wait server-side (skipped:false is the benign "no wait in progress" case — e.g. the timer elapsed in a race — never an error). */
 export const postRetryNow = (sessionId: string) =>
   apiFetch<RetryNowResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/retry-now`, {
+    method: "POST",
+    body: {},
+  });
+
+/** "Retry" after a run ended on a failure: runs the Session once with no new input, so the failed turn's held input is sent on its own (409 nothing_to_retry when nothing is held, 409 while a Task runs). Same response shape as tasks. */
+export const postRetry = (sessionId: string) =>
+  apiFetch<TaskCreateResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/retry`, {
     method: "POST",
     body: {},
   });

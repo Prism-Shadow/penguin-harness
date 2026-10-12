@@ -1,5 +1,5 @@
 /**
- * The sessions store's list (state/sessions.tsx), driven through the real `listSessions`
+ * The sessions store's list (state/sessions.tsx), driven through the real `batchSessions`
  * wrapper against the fetch fake: each server pages its own rows, counts are summed, and a
  * source that could not answer is never read as a source that answered nothing.
  *
@@ -8,6 +8,8 @@
  * - A refresh over rows already on screen does not raise loading.
  *
  * Several machines:
+ * - A reload asks each server once: every Agent's first page and every open Workspace group's,
+ *   in one request.
  * - Every source is merged newest first, each row remembers the machine it lives on, the
  *   counts are summed, and what a machine answered is cached for the next restart.
  * - A machine is asked about its own Agents too, and this server only about its own.
@@ -74,6 +76,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ServerEvent,
+  SessionBatchPageRequest,
   SessionCategoryCounts,
   SessionInfo,
   SessionSource,
@@ -98,7 +101,7 @@ import {
 import { forgetSessionMachines, machineForSession } from "../src/lib/session-machines";
 import { cachedMachineSessions, rememberMachineSessions } from "../src/lib/machine-cache";
 import { apiError, json, stubFetch } from "./helpers/fetch";
-import type { FakeFetch, FetchHandler } from "./helpers/fetch";
+import type { FakeFetch, FetchHandler, FetchRequest } from "./helpers/fetch";
 import { stubLocalStorage } from "./helpers/storage";
 
 /** A server's answer for one Agent: its list, or an HTTP failure. */
@@ -126,6 +129,31 @@ const serve: FetchHandler = (request) => {
       .find((s) => s.sessionId === sessionId);
     return row ? json({ session: row }) : apiError(404, "not_found");
   }
+  // The whole sidebar reload in one POST: the same per-(Agent, source) answers, one entry each.
+  if (request.method === "POST" && /^\/api\/projects\/[^/]+\/sessions\/batch$/.test(request.path)) {
+    const entries = (request.body as { requests?: BatchEntry[] }).requests ?? [];
+    const results = entries.map((entry) => {
+      const k = key(request.machine, entry.agentId);
+      const rows = served.get(k);
+      if (rows !== undefined) {
+        const page = servedBody(rows, entryQuery(entry));
+        if ("error" in page) return { agentId: entry.agentId, ok: false, reason: "error" };
+        return { agentId: entry.agentId, ok: true, ...page.body };
+      }
+      const answer = answers.get(k);
+      // The transport never throws for one entry: an Agent this server does not host (404) is
+      // an ANSWER, and anything else is a failure to answer — neither may become "no rows".
+      if (answer === undefined) throw new TypeError("fetch failed");
+      if ("status" in answer)
+        return {
+          agentId: entry.agentId,
+          ok: false,
+          reason: answer.status === 404 ? "absent" : "error",
+        };
+      return { agentId: entry.agentId, ok: true, ...answer };
+    });
+    return json({ results });
+  }
   const agentId = /\/agents\/([^/]+)\/sessions$/.exec(request.path)?.[1] ?? "";
   const k = key(request.machine, decodeURIComponent(agentId));
   const rows = served.get(k);
@@ -141,6 +169,15 @@ beforeEach(() => {
   stubLocalStorage();
   fetch = stubFetch(serve);
 });
+
+/** A batch entry's activity cursor in the list route's `before` param form. */
+const entryCursor = (entry: BatchEntry | undefined): string | undefined =>
+  entry?.before === undefined
+    ? undefined
+    : `${entry.before.lastActiveAt},${entry.before.sessionId}`;
+
+/** The page requests the batch calls carried, in order (their params live in the body). */
+const batchEntries = (): BatchEntry[] => fetch.requests.flatMap(batchEntriesOf);
 
 /** The server's activity order, written out on its own (plain `<` / `>`, as the route compares). */
 const serverRecent = (
@@ -159,12 +196,42 @@ const serverRecent = (
 
 const zeroCounts = (): SessionCategoryCounts => ({ active: 0, archived: 0 });
 
+/** One page request as the batch endpoint carries it. */
+type BatchEntry = SessionBatchPageRequest;
+
+/** One batch entry → the query the single-Agent list route would have been asked with. */
+function entryQuery(entry: BatchEntry): URLSearchParams {
+  const query = new URLSearchParams();
+  query.set("limit", String(entry.limit));
+  if (entry.order !== undefined) query.set("order", entry.order);
+  if (entry.before !== undefined) {
+    query.set("before", `${entry.before.lastActiveAt},${entry.before.sessionId}`);
+  }
+  if (entry.category !== undefined) query.set("category", entry.category);
+  if (entry.workspaceGroup !== undefined) query.set("workspaceGroup", entry.workspaceGroup);
+  if (entry.withCounts === true) query.set("counts", "1");
+  if (entry.excludeOrg === true) query.set("excludeOrg", "1");
+  return query;
+}
+
 /** One page of an Agent's rows as the list route answers it: order, cursor, filters, counts. */
 function servedPage(rows: readonly SessionInfo[], query: URLSearchParams): Response {
+  const page = servedBody(rows, query);
+  return "error" in page ? apiError(400, "bad_request") : json(page.body);
+}
+
+/**
+ * The page the list route answers with, computed apart from the Response so the batch
+ * endpoint's per-entry answers can reuse it verbatim.
+ */
+function servedBody(
+  rows: readonly SessionInfo[],
+  query: URLSearchParams,
+): { body: SessionsResponse } | { error: true } {
   const activity = query.get("order") === "activity";
   const before = query.get("before");
   if (before !== null && (!activity || query.has("offset") || !query.has("limit")))
-    return apiError(400, "bad_request");
+    return { error: true };
   let list = [...rows].sort(
     activity ? serverRecent : (a, b) => (a.createdAt < b.createdAt ? 1 : -1),
   );
@@ -191,17 +258,23 @@ function servedPage(rows: readonly SessionInfo[], query: URLSearchParams): Respo
     }
     Object.assign(body, { counts, workspaceCounts });
   }
-  return json(body);
+  return { body };
 }
 
 afterEach(() => forgetSessionMachines());
 
-/** Which servers were asked, and for which Workspace group. */
+/** What the sidebar asked, per request: the machine it went to and each page it wanted. */
 const asked = () =>
-  fetch.requests.map((r) => ({
-    machineId: r.machine,
-    ...(r.query.has("workspaceGroup") ? { workspaceGroup: r.query.get("workspaceGroup") } : {}),
-  }));
+  fetch.requests.flatMap((r) =>
+    batchEntriesOf(r).map((e) => ({
+      machineId: r.machine,
+      ...(e.workspaceGroup !== undefined ? { workspaceGroup: e.workspaceGroup } : {}),
+    })),
+  );
+
+/** The page requests one recorded request carried (its params live in a batch body). */
+const batchEntriesOf = (request: FetchRequest): BatchEntry[] =>
+  request.method === "POST" ? ((request.body as { requests?: BatchEntry[] }).requests ?? []) : [];
 
 function session(sessionId: string, over: Partial<SessionInfo> = {}): SessionInfo {
   return {
@@ -288,6 +361,38 @@ describe("the list across machines", () => {
     expect(loading).toBe(false);
     // What the machine answered is remembered for the next restart.
     expect(cachedMachineSessions("p", "M1").map((s) => s.sessionId)).toEqual(["there"]);
+  });
+
+  it("a reload asks each server once, carrying every Agent's first page and every open group's", async () => {
+    // One request per (Agent, page) was dozens fired at once on a Project with several Agents
+    // and machines, serialised behind the browser's per-host connection limit — and the open
+    // conversation's own read queued behind them.
+    for (const source of [null, "M1"]) {
+      answers.set(key(source, "a1"), { sessions: [], counts: COUNTS });
+      answers.set(key(source, "a2"), { sessions: [], counts: COUNTS });
+    }
+    const store = boot(["M1"], [], ["a1", "a2"]);
+    await store.getState().reload();
+    // A Workspace group on this server has opened its own stream.
+    await store.getState().loadMoreFor(["a1"], "/w");
+    fetch.requests.length = 0;
+    await store.getState().reload();
+    expect(fetch.requests.map((r) => r.machine)).toEqual([null, "M1"]);
+    const pages = (i: number) =>
+      batchEntriesOf(fetch.requests[i]!).map((e) => [e.agentId, e.workspaceGroup ?? ""]);
+    expect(pages(0)).toEqual([
+      ["a1", ""],
+      ["a1", "/w"],
+      ["a2", ""],
+    ]);
+    // The group is a directory on this server: the machine is asked about the whole streams only.
+    expect(pages(1)).toEqual([
+      ["a1", ""],
+      ["a2", ""],
+    ]);
+    for (const entry of batchEntries()) {
+      expect(entry).toMatchObject({ category: "active", order: "activity", excludeOrg: true });
+    }
   });
 
   it("asks a machine about ITS Agents too — an Agent that exists only there", async () => {
@@ -411,14 +516,13 @@ describe("the list fetches the user's own rows only", () => {
     answers.set(key(null, "default_agent"), { sessions: [], counts: COUNTS });
     answers.set(key(null, "acme_dev"), { sessions: [], counts: COUNTS });
     await boot([], [], ["default_agent", "acme_dev"]).getState().reload();
-    expect(fetch.requests.map((r) => r.path)).toEqual([
-      "/api/projects/p/agents/default_agent/sessions",
-      "/api/projects/p/agents/acme_dev/sessions",
-    ]);
-    for (const { query } of fetch.requests) {
-      expect(query.get("category")).toBe("active");
-      expect(query.get("counts")).toBe("1");
-      expect(query.get("excludeOrg")).toBe("1");
+    // One request for the whole reload, carrying both Agents' first pages.
+    expect(fetch.requests.map((r) => r.path)).toEqual(["/api/projects/p/sessions/batch"]);
+    expect(batchEntries().map((e) => e.agentId)).toEqual(["default_agent", "acme_dev"]);
+    for (const entry of batchEntries()) {
+      expect(entry.category).toBe("active");
+      expect(entry.withCounts).toBe(true);
+      expect(entry.excludeOrg).toBe(true);
     }
   });
 
@@ -429,8 +533,7 @@ describe("the list fetches the user's own rows only", () => {
     fetch.requests.length = 0;
     await store.getState().loadMoreFor(["a1"]);
     expect(fetch.requests).toHaveLength(1);
-    expect(fetch.requests[0]!.query.get("category")).toBe("active");
-    expect(fetch.requests[0]!.query.get("excludeOrg")).toBe("1");
+    expect(batchEntries()[0]).toMatchObject({ category: "active", excludeOrg: true });
   });
 });
 
@@ -555,20 +658,20 @@ describe("the list pages in activity order, under a cursor", () => {
     served.set(key(null, "a1"), rows);
     const store = boot();
     await store.getState().reload();
-    const first = fetch.requests[0]!.query;
-    expect(first.get("order")).toBe("activity");
-    expect(first.has("before")).toBe(false);
-    expect(first.has("offset")).toBe(false);
+    const first = batchEntries()[0]!;
+    expect(first.order).toBe("activity");
+    expect(first.before).toBeUndefined();
+    expect(first.offset).toBeUndefined();
     // The conversations used last lead, though they were created first.
     expect(ids(store)).toEqual(rows.slice(0, 10).map((s) => s.sessionId));
 
     fetch.requests.length = 0;
     await store.getState().loadMoreFor(["a1"]);
-    const next = fetch.requests[0]!.query;
-    expect(next.get("order")).toBe("activity");
+    const next = batchEntries()[0]!;
+    expect(next.order).toBe("activity");
     // The tenth row, the last one shown — not the overflow row that only said "more".
-    expect(next.get("before")).toBe(cursorOf(rows[9]!));
-    expect(next.has("offset")).toBe(false);
+    expect(entryCursor(next)).toBe(cursorOf(rows[9]!));
+    expect(next.offset).toBeUndefined();
     expect(ids(store)).toEqual(rows.slice(0, 20).map((s) => s.sessionId));
   });
 
@@ -580,8 +683,8 @@ describe("the list pages in activity order, under a cursor", () => {
     fetch.requests.length = 0;
     await store.getState().loadMoreFor(["a1"], "/w");
     expect(fetch.requests).toHaveLength(1);
-    expect(fetch.requests[0]!.query.get("workspaceGroup")).toBe("/w");
-    expect(fetch.requests[0]!.query.get("before")).toBe(cursorOf(rows[9]!));
+    expect(batchEntries()[0]!.workspaceGroup).toBe("/w");
+    expect(entryCursor(batchEntries()[0]!)).toBe(cursorOf(rows[9]!));
     // Nothing re-read, nothing skipped: the group holds its every row, in order.
     const inW = (s: SessionInfo) => s.workspace === "/w";
     expect(shown(store, ["a1"], "/w", inW)).toEqual(rows.filter(inW).map((s) => s.sessionId));
@@ -854,7 +957,7 @@ describe("archive, unarchive and delete", () => {
     }
     await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
     await vi.runAllTimersAsync();
-    expect(fetch.requests.filter((r) => r.path.endsWith("/sessions"))).toHaveLength(1);
+    expect(fetch.requests.filter((r) => r.path.endsWith("/sessions/batch"))).toHaveLength(1);
     expect(shown(store, ["a1"]).slice(0, 3)).toEqual(["u3", "u2", "u1"]);
   });
 

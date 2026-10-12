@@ -85,6 +85,7 @@ import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
 import { resolveTrayLocale } from "./tray-menu.js";
+import { afterUnloadAnswer, unloadPrompt } from "./unload-prompt.js";
 import type { TrayLocale } from "./tray-menu.js";
 import { installTray } from "./tray.js";
 import type { TrayHandle } from "./tray.js";
@@ -112,6 +113,7 @@ import {
   restartDelayMs,
   urlForLog,
 } from "./util.js";
+import { registerWindowsAumid } from "./win-aumid.js";
 
 // Identity first: the name decides the userData directory, which also keys the
 // single-instance lock requested below — the dev profile takes a dev-suffixed identity
@@ -120,10 +122,11 @@ import {
 const profile = resolveProfile({ argv: process.argv, isPackaged: app.isPackaged });
 const identity = appIdentity(profile);
 app.setName(identity.name);
-// Windows toasts (the web app's task-completion notifications) need the AppUserModelID
-// of the installed shortcuts; electron-builder stamps them with the appId. Keep the
-// release value in sync with electron-builder.yml. Dev runs stamp the dev-suffixed id
-// so their taskbar/toast identity never claims the installed app's.
+// Windows toasts (the web app's notifications) are attributed to this AppUserModelID:
+// electron-builder stamps it (the appId) on the installed shortcuts, and win-aumid.ts
+// registers it under HKCU at startup. Keep the release value in sync with
+// electron-builder.yml. Dev runs stamp the dev-suffixed id so their taskbar/toast
+// identity never claims the installed app's.
 if (process.platform === "win32") app.setAppUserModelId(identity.appUserModelId);
 
 let win: BrowserWindow | null = null;
@@ -198,7 +201,8 @@ function createWindow(url: string): void {
   win.once("ready-to-show", () => win?.show());
   // Close-to-tray: the window goes away, the app and its embedded server stay, and the tray
   // icon is the way back. Every real exit — the tray's Quit, the app menu's, an OS logout —
-  // passes through before-quit first, which is what `quitting` reports.
+  // passes through before-quit first, which is what `quitting` reports. Hiding unloads nothing,
+  // so it asks nothing; a real close of a page with unsaved edits asks (below).
   win.on("close", (event) => {
     const hide = hidesOnClose({
       quitting,
@@ -211,6 +215,21 @@ function createWindow(url: string): void {
   });
   win.on("closed", () => {
     win = null;
+  });
+  // The page refused to unload: the Web App holds unsaved edits and asked through its
+  // beforeunload listener. Electron draws nothing for that and simply cancels the close, so the
+  // shell asks in the page's place — over the window, shown first, since a Quit from the tray
+  // may find it hidden — and lets the page go only on "discard" (see unload-prompt.ts).
+  const host = win;
+  host.webContents.on("will-prevent-unload", (event) => {
+    if (host.isDestroyed()) return;
+    host.show();
+    const answer = afterUnloadAnswer(
+      dialog.showMessageBoxSync(host, unloadPrompt(trayLocale, app.name)),
+      quitting,
+    );
+    quitting = answer.quitting;
+    if (answer.unload) event.preventDefault();
   });
   // New windows, from this window and from every window it opens, go through one rule
   // (classifyWindowOpen): only the Workspace preview hand-off, a preview page and a detached
@@ -478,8 +497,8 @@ function onMainWindowNavigated(url: string): void {
  * without a tray, a headless run) simply leaves `tray` null — see installTray.
  */
 function openTray(): void {
-  // `quitting`: before-quit takes the icon down, and a frame still in flight from the
-  // page must not put one back for the seconds the graceful server stop takes.
+  // `quitting`: the app is on its way out (the icon goes at will-quit), and a frame still in
+  // flight from the page must not put one back for the seconds the graceful server stop takes.
   if (quitting || !showTrayIcon || tray !== null) return;
   tray = installTray({
     userDataDir: app.getPath("userData"),
@@ -710,8 +729,6 @@ if (!app.requestSingleInstanceLock()) {
       })}`,
     );
   });
-  app.on("will-quit", () => stopDesktopLog());
-
   app.on("window-all-closed", () => {
     // macOS keeps the app alive in the Dock; elsewhere closing the window quits.
     if (process.platform !== "darwin") app.quit();
@@ -720,13 +737,17 @@ if (!app.requestSingleInstanceLock()) {
   // Dock click: the window may be hidden in the tray rather than gone, so show before recreate.
   app.on("activate", () => showMainWindow());
 
-  // Quit path: stop the embedded server gracefully first (shutdown endpoint → kill),
-  // then let the quit proceed. Attach mode has no child to stop.
-  app.on("before-quit", (event) => {
+  // Quit path, in two steps. before-quit only marks the app as leaving, so the window's close
+  // is a real close rather than a hide into the tray; the window may still refuse (a page with
+  // unsaved edits asks first, and "keep editing" calls the quit off). will-quit comes only once
+  // every window has closed: the tray goes, the embedded server is stopped gracefully
+  // (shutdown endpoint → kill), and the quit is asked for again, which then passes through with
+  // nothing left to stop. Attach mode has no child to stop.
+  app.on("before-quit", () => {
     quitting = true;
-    // The icon goes as soon as the app is on its way out, rather than lingering through the
-    // graceful server stop; nulling it keeps the second pass (after the stop) from destroying
-    // an already destroyed tray.
+  });
+  app.on("will-quit", (event) => {
+    // Nulling the tray keeps the second pass (after the stop) from destroying it twice.
     tray?.dispose();
     tray = null;
     if (server !== null && stopPromise === null) {
@@ -734,7 +755,9 @@ if (!app.requestSingleInstanceLock()) {
       const running = server;
       server = null;
       stopPromise = stopEmbeddedServer(running).finally(() => app.quit());
+      return;
     }
+    stopDesktopLog();
   });
 
   void app.whenReady().then(() =>
@@ -747,6 +770,16 @@ if (!app.requestSingleInstanceLock()) {
         platform: process.platform,
         env: process.env,
         shell: process.env.SHELL,
+        log: (line) => logLine(`[shell] ${line}`),
+      });
+      // Windows: this profile's AUMID becomes a toast sender under HKCU (see win-aumid.ts).
+      // Not awaited: startup never waits on reg.exe, and a failed or hung write only logs.
+      void registerWindowsAumid({
+        platform: process.platform,
+        env: process.env,
+        appUserModelId: identity.appUserModelId,
+        displayName: identity.name,
+        iconPath: resolveWindowIcon(app.getAppPath(), process.platform),
         log: (line) => logLine(`[shell] ${line}`),
       });
       // Standard menu plus native desktop-only actions; the window gets no IPC channel.

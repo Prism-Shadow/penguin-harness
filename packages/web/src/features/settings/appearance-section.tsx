@@ -25,6 +25,7 @@ import { FONT_CJK_OPTIONS, FONT_LATIN_OPTIONS, TEXT_SIZES } from "@prismshadow/p
 import { S } from "../../lib/strings";
 import * as api from "../../api/endpoints";
 import { isDesktopShellWindow } from "../../lib/account-menu";
+import { useInstantSetting } from "../../lib/instant-setting";
 import {
   launcherHiddenVersion,
   readLauncherHidden,
@@ -145,12 +146,12 @@ export function AppearanceSection() {
       live = false;
     };
   }, [offersTrayIcon]);
-  // Optimistic: the switch answers the click, and a refused write snaps it back rather
-  // than leaving the row disagreeing with the icon the user is looking at.
-  const changeTrayIcon = (next: boolean): void => {
+  // Optimistic: the switch answers the click, and a refused write snaps it back — saying why,
+  // rather than leaving the user to notice that the row disagrees with the click.
+  const tray = useInstantSetting(trayIcon, async (next: boolean) => {
+    await api.setDesktopTray({ showTrayIcon: next });
     setTrayIcon(next);
-    void api.setDesktopTray({ showTrayIcon: next }).catch(() => setTrayIcon(!next));
-  };
+  });
 
   const themeOptions: ReadonlyArray<{ value: ThemeMode; label: string }> = [
     { value: "light", label: S.settings.themeLight },
@@ -232,8 +233,9 @@ export function AppearanceSection() {
         <ToggleRow
           label={S.settings.trayIcon}
           info={S.settings.trayIconInfo}
-          checked={trayIcon}
-          onChange={changeTrayIcon}
+          checked={tray.value}
+          onChange={(next) => void tray.set(next)}
+          disabled={tray.busy}
         />
       )}
     </SettingsGroup>
