@@ -485,7 +485,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | openai | `OPENAI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | siliconflow | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://api.siliconflow.cn/v1` |
-| atlascloud | `OPENAI_API_KEY` | Atlas Cloud（OpenAI 兼容网关），预置 base URL `https://api.atlascloud.ai/v1`；模型 id 带厂商前缀（如 `deepseek-ai/DeepSeek-V3.1-Terminus`） |
+| atlascloud | `OPENAI_API_KEY` | Atlas Cloud（OpenAI 兼容网关），预置 base URL `https://api.atlascloud.ai/v1`；模型 id 带厂商前缀（如 `deepseek-ai/deepseek-v4-flash`） |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
 | minimax | `MINIMAX_API_KEY` | `MiniMax-M3`，上下文窗口 1,000,000 Token，支持视觉，按 id 路由到 MiniMax 官方的 Responses 客户端（`minimax-official`）；无预置 base URL，请求发往 `https://api.minimax.io/v1`，除非 `MINIMAX_BASE_URL` 另有指定；接受 Token Plan 订阅密钥或按量付费 API key |
@@ -576,7 +576,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
   - `glm-5.2` 打 8 折
   - `glm-5.3`、`glm-5.3-flash` 和 `qwen3.8-max` 打 9 折
 
-  Gemini 3.8 Flash 和 3.6 Flash 也打 5 折，google 分组和 OpenRouter 上（`google/gemini-3.8-flash`、`google/gemini-3.6-flash`）都是如此，因为 Google 在 2026-12-31 之前对它们一律减半。Project 预置的是**牌价**：折扣率由服务端另行保存，存在它自己的数据库里，而不写入 `.project_config.toml`，计算成本时再从牌价中扣除，因此成本中心按卖家实际收取的价格计费。模型卡片用标签标出当前实际计费的费率，模型弹窗则写明**此处为牌价，当前促销在此基础上省 N%；修改价格会取消促销**。
+  Gemini 3.8 Flash 和 3.6 Flash 也打 5 折，google 分组和 OpenRouter 上（`google/gemini-3.8-flash`、`google/gemini-3.6-flash`）都是如此，因为 Google 在 2026-12-31 之前对它们一律减半。Atlas Cloud 的 `qwen/qwen3.6-35b-a3b` 打 7.5 折。Project 预置的是**牌价**：折扣率由服务端另行保存，存在它自己的数据库里，而不写入 `.project_config.toml`，计算成本时再从牌价中扣除，因此成本中心按卖家实际收取的价格计费。模型卡片用标签标出当前实际计费的费率，模型弹窗则写明**此处为牌价，当前促销在此基础上省 N%；修改价格会取消促销**。
 - **你自己的价格。** 修改条目的价格会取消它的促销，卡片上的折扣标签也随之消失：此后这个数字由你自己定，不再代表卖家。
 
 ## Project 模型表

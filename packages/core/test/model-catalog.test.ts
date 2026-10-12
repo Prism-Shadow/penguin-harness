@@ -893,17 +893,33 @@ describe("model-catalog", () => {
       expect(m.baseUrl).toBe("https://api.siliconflow.cn/v1");
     }
     const ac = MODEL_CATALOG.filter((m) => m.provider === "atlascloud");
-    // Context windows and vision flags from the gateway's public catalog API; every row is
-    // text-only, so none carries vision.
+    // Dictionary order by upstream id, the ids exactly as the gateway's public catalog API
+    // lists them; context windows and input modalities from the same listing: the DeepSeek
+    // rows are text only, Qwen 3.6 35B A3B takes images.
     expect(ac.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
-      ["deepseek-ai/DeepSeek-V3.1-Terminus", 131072, false],
-      ["deepseek-ai/DeepSeek-V3.1", 131072, false],
-      ["Qwen/Qwen3-235B-A22B-Instruct-2507", 131072, false],
+      ["deepseek-ai/deepseek-v4-flash", 1048576, false],
+      ["deepseek-ai/deepseek-v4-pro", 1048576, false],
+      ["qwen/qwen3.6-35b-a3b", 262144, true],
     ]);
     for (const m of ac) {
       expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://api.atlascloud.ai/v1");
     }
+    // What the gateway bills, USD per million tokens as cache hit / input (cache_write: no
+    // cache-write fee is published) / output. The Qwen row stores its list price and declares
+    // Atlas Cloud's 25% model discount beside it, so its billed rate is read back out of
+    // effectivePricing: change the list price or the discount alone and it stops matching
+    // what the API answers.
+    const acBilled = (modelId: string): number[] => {
+      const billed = effectivePricing(ac.find((m) => m.modelId === modelId)!)!;
+      return [billed.cache_read, billed.cache_write, billed.output];
+    };
+    expect(acBilled("deepseek-ai/deepseek-v4-flash")).toEqual([0.028, 0.14, 0.28]);
+    expect(acBilled("deepseek-ai/deepseek-v4-pro")).toEqual([0.13, 1.68, 3.38]);
+    expect(acBilled("qwen/qwen3.6-35b-a3b")).toEqual([0.186, 0.186, 1.11375]);
+    expect(ac.filter((m) => m.discount !== undefined).map((m) => [m.modelId, m.discount])).toEqual([
+      ["qwen/qwen3.6-35b-a3b", 0.25],
+    ]);
     const qtp = MODEL_CATALOG.filter((m) => m.provider === "qwen-token-plan");
     expect(qtp.map((m) => m.modelId)).toEqual([
       "deepseek-v4.1-flash",

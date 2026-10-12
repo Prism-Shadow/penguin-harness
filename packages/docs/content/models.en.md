@@ -486,7 +486,7 @@ The table below lists the built-in groups and the environment variables their mo
 | openai | `OPENAI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | siliconflow | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://api.siliconflow.cn/v1` |
-| atlascloud | `OPENAI_API_KEY` | Atlas Cloud (OpenAI-compatible gateway), preset base URL `https://api.atlascloud.ai/v1`; model ids keep their vendor prefix (e.g. `deepseek-ai/DeepSeek-V3.1-Terminus`) |
+| atlascloud | `OPENAI_API_KEY` | Atlas Cloud (OpenAI-compatible gateway), preset base URL `https://api.atlascloud.ai/v1`; model ids keep their vendor prefix (e.g. `deepseek-ai/deepseek-v4-flash`) |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
 | minimax | `MINIMAX_API_KEY` | `MiniMax-M3` with a 1,000,000-token context window and vision, routed by its id to MiniMax's official Responses client (`minimax-official`); no preset base URL, so requests go to `https://api.minimax.io/v1` unless `MINIMAX_BASE_URL` names another; accepts a Token Plan Subscription Key or pay-as-you-go API key |
@@ -577,7 +577,7 @@ The list is not exhaustive.
   - `glm-5.2` at 20%
   - `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
 
-  Gemini 3.8 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model card shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
+  Gemini 3.8 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. Atlas Cloud's `qwen/qwen3.6-35b-a3b` is 25% off. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model card shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
 - **Your own prices.** Editing a row's price cancels its promotion and takes the discount tag off the card: the figure is then yours, not the seller's.
 
 ## The per-Project model table

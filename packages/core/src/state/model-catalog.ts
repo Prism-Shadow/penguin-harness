@@ -21,12 +21,13 @@
  * groups' line-ups with their peak/off-peak DeepSeek rows: 2026-09-16; the OpenCode Go group:
  * 2026-09-18 — per each provider's docs; the ModelScope group, whose preset ids were read
  * from public model pages and endpoint listings — their windows, vision flags and prices are
- * NOT verified and say so on the rows themselves: 2026-09-18 and 2026-09-20; and the
+ * NOT verified and say so on the rows themselves: 2026-09-18 and 2026-09-20; the
  * 2026-10-10 refresh — Claude Fable 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5 and GPT-6.1 Sol
  * (direct + OpenRouter) per MMSP 0.5.2's registry and the vendor pages it carries, the whole
  * TokenDance group re-read from its public portal API, the OpenRouter Step 5 Preview, Grok 4.7
  * and MiMo-V2.6-Flash rows, SiliconFlow's GLM-5.3 Flash and Hy4 preview rows, and Gemini 3.7
- * Flash dropped from every group, Google rerouting the id to 3.8 Flash: 2026-10-10).
+ * Flash dropped from every group, Google rerouting the id to 3.8 Flash: 2026-10-10; and the
+ * Atlas Cloud group, from its public catalog API and pricing page: 2026-10-11).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -1696,38 +1697,53 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
-  // -- Atlas Cloud (gateway: OpenAI-compatible protocol, preset base URL). Context windows and
-  // USD prices from the public catalog API (GET https://api.atlascloud.ai/v1/models, no
-  // credential required; read 2026-10-03). Atlas Cloud publishes one input price and a
-  // cheaper cache-hit price with no separate cache-write fee, so cache_write carries the
-  // input price, as with the TokenDance and Qwen gateways below.
+  // -- Atlas Cloud (gateway: OpenAI-compatible protocol, preset base URL). Read 2026-10-11 from
+  // the public catalog API (GET https://api.atlascloud.ai/v1/models, no credential required):
+  // the ids exactly as listed, context windows, output limits, input modalities and prices.
+  // The API's `pricing` figures are USD per token; the pricing page
+  // (https://www.atlascloud.ai/pricing/models) states the same rates in USD per million
+  // tokens. The presets mirror the DeepSeek and Qwen models that the SiliconFlow and
+  // OpenRouter groups both preset (DeepSeek V4 Flash, DeepSeek V4 Pro, Qwen 3.6 35B A3B), under
+  // Atlas Cloud's own ids. Neither source publishes a cache-write price for them, so
+  // cache_write carries the input price, as with the TokenDance and Qwen gateways below. The
+  // DeepSeek rows are text only, with a 393,216-token output limit; Qwen 3.6 35B A3B takes
+  // image and video input, with a 65,536-token output limit.
   {
-    modelId: "deepseek-ai/DeepSeek-V3.1-Terminus",
-    displayName: "DeepSeek V3.1 Terminus",
+    modelId: "deepseek-ai/deepseek-v4-flash",
+    displayName: "DeepSeek V4 Flash",
     provider: "atlascloud",
-    contextWindow: 131072,
-    pricing: usd(0.13, 0.3, 0.95),
+    contextWindow: 1048576,
+    pricing: usd(0.028, 0.14, 0.28),
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: ATLASCLOUD_BASE_URL,
   },
   {
-    modelId: "deepseek-ai/DeepSeek-V3.1",
-    displayName: "DeepSeek V3.1",
+    // The pricing page sets this rate beside DeepSeek's own USD list (1.74 input / 3.48 output
+    // / 0.145 cache hit) but declares no model discount on it, so the rate the API answers is
+    // Atlas Cloud's list price and the row stores it as is.
+    modelId: "deepseek-ai/deepseek-v4-pro",
+    displayName: "DeepSeek V4 Pro",
     provider: "atlascloud",
-    contextWindow: 131072,
-    pricing: usd(0.13, 0.3, 0.95),
+    contextWindow: 1048576,
+    pricing: usd(0.13, 1.68, 3.38),
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: ATLASCLOUD_BASE_URL,
   },
   {
-    modelId: "Qwen/Qwen3-235B-A22B-Instruct-2507",
-    displayName: "Qwen3-235B-A22B-Instruct-2507",
+    // The API answers the rate billed today, USD 0.186 input / 1.11375 output, which the
+    // pricing page shows as a 25% model discount on a 0.248 / 1.485 list price. The row stores
+    // that list price and declares the promotion in `discount`, as every promoted row does.
+    // No cache-hit price is published (the API repeats the input price), so cache_read carries
+    // the input price too.
+    modelId: "qwen/qwen3.6-35b-a3b",
+    displayName: "Qwen 3.6 35B A3B",
     provider: "atlascloud",
-    contextWindow: 131072,
-    pricing: usd(0.2, 0.2, 0.88),
-    supportsVision: false,
+    contextWindow: 262144,
+    pricing: usd(0.248, 0.248, 1.485),
+    discount: 0.25,
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: ATLASCLOUD_BASE_URL,
   },
