@@ -4,16 +4,17 @@
  *
  * The server holds one Project the signed-in admin owns, with one Agent: its config (a PUT
  * merges the update into it and echoes the result, the way the real route does), its vault,
- * its scheduled tasks, its API settings and the Project's models. A test can refuse the next
- * write with {@link AgentServer.refuseNext}, or read back what was written with
- * {@link AgentServer.writes}.
+ * its scheduled tasks, its API settings, its skills and hooks (none installed) and the
+ * Project's models. A test can refuse the next write with {@link AgentServer.refuseNext}, or
+ * read back what was written with {@link AgentServer.writes}.
  *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
- * with the auth provider and the one discard prompt (`UnsavedPrompt`) around it. The Session list
- * opens the user's event stream, which jsdom has no `EventSource` for: a silent one stands in
- * (nothing in these suites is pushed over it). jsdom has no `matchMedia` either, which the Memory
- * tab reads for its layout breakpoint: every query answers "no match".
+ * with the auth provider and the one discard prompt (`UnsavedPrompt`) around it. Beside the
+ * mounted page, a conversation page at `/chat/:sessionId` is where a hand-off to a new chat
+ * lands. The Session list opens the user's event stream, which jsdom has no `EventSource` for:
+ * a silent one stands in (nothing in these suites is pushed over it). jsdom has no `matchMedia`
+ * either, which the Memory tab reads for its layout breakpoint: every query answers "no match".
  */
 import { vi } from "vitest";
 import { createElement as h } from "react";
@@ -259,6 +260,7 @@ export function agentServer(initial: AgentConfigResponse = agentConfig()): Agent
       return json(item);
     }
     if (path === `${AGENT_PATH}/skills`) return json({ skills: [] });
+    if (path === `${AGENT_PATH}/hooks`) return json({ hooks: [] });
     if (path === `${AGENT_PATH}/memory`) {
       return json({
         enabled: stored.config.memory.enabled,
@@ -358,6 +360,8 @@ export async function mountAgentApp(
           { path: "/chat", element: h("p", null, "Chat page") },
           { path: "/agents", element: h("p", null, "Agents list") },
           { path: route, element },
+          // After the page's own route, so a page mounted at a conversation's path still wins.
+          { path: "/chat/:sessionId", element: h("p", null, "Conversation") },
         ],
       },
     ],

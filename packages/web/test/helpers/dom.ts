@@ -28,6 +28,13 @@ globalThis.Request = class extends NodeRequest {
   }
 };
 
+// jsdom lays nothing out and has no `scrollIntoView`; a dialog that brings a message into view
+// (an upload's refusal at the foot of a scrolling body) would throw. Here it does nothing.
+if (typeof Element !== "undefined") {
+  const proto: Partial<Pick<Element, "scrollIntoView">> = Element.prototype;
+  proto.scrollIntoView ??= () => {};
+}
+
 export interface Mounted {
   /** The element the tree renders into; portaled dialogs land in `document.body` beside it. */
   container: HTMLElement;
@@ -145,6 +152,17 @@ export async function type(field: Element, value: string): Promise<void> {
   await act(async () => {
     setter.call(field, value);
     field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+/**
+ * Picks `file` in a file input the way the browser's chooser hands it over: the input's `files`
+ * hold it, then the `change` event its `onChange` listens to fires.
+ */
+export async function pickFile(input: HTMLInputElement, file: File): Promise<void> {
+  Object.defineProperty(input, "files", { configurable: true, value: [file] });
+  await act(async () => {
+    input.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
 
