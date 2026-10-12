@@ -31,8 +31,18 @@ export interface SessionRow {
   thinkingLevel?: ThinkingLevelName | null;
   /** Auto-generated session title; NULL = not yet generated (frontend shows "New Conversation"). */
   title: string | null;
-  /** Archive timestamp, ISO; NULL = not archived (omitting on insert defaults to NULL). */
+  /**
+   * When the user archived it, ISO; NULL = not archived by hand (omitting on insert defaults to
+   * NULL). Archived or not is the listing rule's answer (runtime/session-sources.ts listCategory):
+   * a background Session without `keptAt` is filed away too.
+   */
   archivedAt?: string | null;
+  /**
+   * The "keep in sidebar" mark, ISO: written when the user unarchives the Session, cleared when
+   * they archive it, never written by a run. It is what keeps a background Session (api /
+   * schedule / cli) listed among the conversations; NULL = the listing rule decides.
+   */
+  keptAt?: string | null;
   /**
    * Creating client: "web" (created via the Web App), "cli" (created through the API by
    * the CLI, or adopted from a Trace a legacy CLI-direct run left behind), "org" (opened by
@@ -101,6 +111,7 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     thinkingLevel: (r.thinking_level as ThinkingLevelName | null) ?? null,
     title: (r.title as string | null) ?? null,
     archivedAt: (r.archived_at as string | null) ?? null,
+    keptAt: (r.kept_at as string | null) ?? null,
     client: (r.client as "web" | "cli" | "org" | "api" | null) ?? null,
     hasTrace: (r.has_trace as number) === 1,
     // The open-time backfill leaves no NULLs; the coalesce only hardens against a row
@@ -302,11 +313,24 @@ export class SessionsRepo implements SessionIndex {
       .run(title, sessionId);
   }
 
-  /** Archive / unarchive (archivedAt = ISO or NULL). */
-  setArchived(sessionId: string, archivedAt: string | null): void {
-    this.db
-      .prepare("UPDATE sessions SET archived_at = ? WHERE session_id = ?")
-      .run(archivedAt, sessionId);
+  /**
+   * Writes the user's listing decision on these Sessions: `archived` stamps `archived_at` and
+   * clears the keep mark, `kept` clears `archived_at` and stamps the keep mark — at most one of
+   * the two is ever set. Chunked like markOrgClient, since a batch names up to 500 ids.
+   */
+  setListing(sessionIds: readonly string[], listing: "archived" | "kept", at: string): void {
+    const set =
+      listing === "archived"
+        ? "archived_at = ?, kept_at = NULL"
+        : "archived_at = NULL, kept_at = ?";
+    for (let i = 0; i < sessionIds.length; i += 400) {
+      const chunk = sessionIds.slice(i, i + 400);
+      this.db
+        .prepare(
+          `UPDATE sessions SET ${set} WHERE session_id IN (${chunk.map(() => "?").join(", ")})`,
+        )
+        .run(at, ...chunk);
+    }
   }
 
   /** Self-healing: after rebuilding a broken Session with no Trace, update the primary key to the new id. */

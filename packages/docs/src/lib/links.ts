@@ -11,3 +11,17 @@ export const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
  * its own dev server there.
  */
 export const SITE_URL = import.meta.env.BASE_URL.replace(/docs\/$/, "");
+
+/**
+ * The component gallery: a sibling SPA beside the docs under the main site, at
+ * "/<repo>/gallery/". In local dev it resolves under the docs root, which has no such page.
+ */
+export const GALLERY_URL = `${SITE_URL}gallery/`;
+
+/**
+ * The gallery opened in the site's language. The gallery reads `lang` from its query before the
+ * language it remembers, so a reader arrives in the language they are reading the docs in.
+ */
+export function galleryUrl(locale: "zh" | "en"): string {
+  return `${GALLERY_URL}?lang=${locale}`;
+}

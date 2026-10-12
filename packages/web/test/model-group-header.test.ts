@@ -7,9 +7,9 @@
  * - The matrix, per group kind: the balance where the catalog declares one (TokenDance, DeepSeek)
  *   and the group holds a key (or the environment lends one, or it is pinned); the connection on
  *   the three groups with a flow; Add model only where hand-added models are taken (custom,
- *   vLLM, OpenRouter, TokenDance, SiliconFlow, user-defined); Delete group only on a user-defined
- *   group; then the speed test and the gear on every group, the gear last. No group offers a
- *   separate "Enter key": the group key is set in the settings (or by Connect).
+ *   vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, user-defined); Delete group only on
+ *   a user-defined group; then the speed test and the gear on every group, the gear last. No
+ *   group offers a separate "Enter key": the group key is set in the settings (or by Connect).
  * - A member keeps the two read-only parts and the gear, and nothing that writes.
  * - "Connected" is the GROUP holding a key: a key set on one model is that model's alone.
  * - Not connected, the owner's status is one button: it shows "Not connected" and pressing it
@@ -138,7 +138,14 @@ describe("the group header's actions, in order, by group kind", () => {
     const adding = MODEL_PROVIDERS.filter((p) => owner(p.id, true).includes("addModel")).map(
       (p) => p.id,
     );
-    expect(adding.sort()).toEqual(["custom", "openrouter", "siliconflow", "tokendance", "vllm"]);
+    expect(adding.sort()).toEqual([
+      "atlascloud",
+      "custom",
+      "openrouter",
+      "siliconflow",
+      "tokendance",
+      "vllm",
+    ]);
   });
 
   it("a member keeps the balance, the connection status and the gear, and nothing that writes", () => {

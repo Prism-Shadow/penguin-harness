@@ -20,7 +20,7 @@
  * that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
  *
  * The conversation is an ordinary Session, listed with the agent's own: only the Test Sessions
- * it starts through `penguin run` (CLI Sessions) are filed under the Background folder.
+ * it starts through `penguin run` (CLI Sessions) are archived, by the listing rule.
  */
 import { useEffect, useState } from "react";
 import type {

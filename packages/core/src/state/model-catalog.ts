@@ -21,12 +21,13 @@
  * groups' line-ups with their peak/off-peak DeepSeek rows: 2026-09-16; the OpenCode Go group:
  * 2026-09-18 — per each provider's docs; the ModelScope group, whose preset ids were read
  * from public model pages and endpoint listings — their windows, vision flags and prices are
- * NOT verified and say so on the rows themselves: 2026-09-18 and 2026-09-20; and the
+ * NOT verified and say so on the rows themselves: 2026-09-18 and 2026-09-20; the
  * 2026-10-10 refresh — Claude Fable 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5 and GPT-6.1 Sol
  * (direct + OpenRouter) per MMSP 0.5.2's registry and the vendor pages it carries, the whole
  * TokenDance group re-read from its public portal API, the OpenRouter Step 5 Preview, Grok 4.7
  * and MiMo-V2.6-Flash rows, SiliconFlow's GLM-5.3 Flash and Hy4 preview rows, and Gemini 3.7
- * Flash dropped from every group, Google rerouting the id to 3.8 Flash: 2026-10-10).
+ * Flash dropped from every group, Google rerouting the id to 3.8 Flash: 2026-10-10; and the
+ * Atlas Cloud group, from its public catalog API and pricing page: 2026-10-11).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -48,19 +49,20 @@
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
  * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
- * auto-routed by MMSP and leave client_type unset; seven gateway groups (OpenRouter,
- * Fireworks AI, SiliconFlow, TokenDance, OpenCode Go, Qwen Pay-As-You-Go and Qwen Token Plan)
- * can't be auto-routed, so every gateway row **always pins an explicit client_type** and
- * names its preset base URL. ModelScope's rows pin one protocol too (see below).
+ * auto-routed by MMSP and leave client_type unset; eight gateway groups (OpenRouter,
+ * Fireworks AI, SiliconFlow, Atlas Cloud, TokenDance, OpenCode Go, Qwen Pay-As-You-Go and Qwen
+ * Token Plan) can't be auto-routed, so every gateway row **always pins an explicit
+ * client_type** and names its preset base URL. ModelScope's rows pin one protocol too (see below).
  * These are reference values, never runtime fallbacks: a new Project's file receives them
  * once — a group's shared endpoint and protocol in its `[providers.<id>]` table
  * (presetProviderTable), a row's own only where it differs from its group's
  * (catalogModelEntry) — as do "Add new models" and "Restore defaults"; from then on the file
  * alone says where a request goes (effectiveConnection reads no catalog).
- * Four groups pin at GROUP level as well (ModelProviderInfo.clientType, read
+ * Five groups pin at GROUP level as well (ModelProviderInfo.clientType, read
  * through providerClientType), so that a model the user adds there speaks the same protocol
  * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
- * OpenRouter, TokenDance and SiliconFlow, whose do — see each group's own block comment.
+ * OpenRouter, TokenDance, SiliconFlow and Atlas Cloud, whose do — see each group's own block
+ * comment.
  * That pin is load-bearing, not decoration: MMSP's AutoLLMClient routes an unpinned id by
  * the family its spelling begins with and never looks at base_url (see routedClientType), so
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
@@ -193,11 +195,12 @@ export interface ModelProviderInfo {
   balance?: ModelProviderBalance;
   /**
    * The group takes models the user adds by hand: `custom` and vLLM, whose rows point at an
-   * endpoint the catalog cannot know, and the three gateways whose catalogs list a fraction of
-   * what they serve — OpenRouter, TokenDance and SiliconFlow — where an added model follows
-   * the group's connection (its endpoint, key and protocol) exactly as the presets do. Every
-   * other built-in group carries its catalog presets and the rows it already stores, and
-   * nothing else. Read it through isAddableGroup, which also answers for user-defined groups.
+   * endpoint the catalog cannot know, and the four gateways whose catalogs list a fraction of
+   * what they serve — OpenRouter, TokenDance, SiliconFlow and Atlas Cloud — where an added
+   * model follows the group's connection (its endpoint, key and protocol) exactly as the
+   * presets do. Every other built-in group carries its catalog presets and the rows it already
+   * stores, and nothing else. Read it through isAddableGroup, which also answers for
+   * user-defined groups.
    */
   addable?: boolean;
   /**
@@ -205,10 +208,10 @@ export interface ModelProviderInfo {
    *
    * Set it where the group itself decides the answer for a row the catalog does not list:
    * every group that takes hand-added models and speaks one protocol (vLLM, OpenRouter,
-   * TokenDance, SiliconFlow). The other gateways hold catalog rows only, each carrying its own
-   * pin, and `custom` / user-defined groups deliberately declare nothing — their whole point
-   * is that the protocol is detected from the endpoint or picked by hand, and a pin here
-   * would take that choice away.
+   * TokenDance, SiliconFlow, Atlas Cloud). The other gateways hold catalog rows only, each
+   * carrying its own pin, and `custom` / user-defined groups deliberately declare nothing —
+   * their whole point is that the protocol is detected from the endpoint or picked by hand,
+   * and a pin here would take that choice away.
    *
    * Where it IS set, a new Project writes it as the group's `[providers.<id>]` protocol
    * (catalogGroupConnection), and the rows — models added by hand included — follow that
@@ -304,6 +307,7 @@ const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
 const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
+const ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
 export const PENGUIN_GO_BASE_URL = "https://token.penguin.ooo/api";
 /** OpenCode Go's OpenAI-protocol base: the clients append /chat/completions or /responses. */
 const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
@@ -327,8 +331,8 @@ export const MODELSCOPE_PROVIDER_ID = "modelscope";
  * moves when the curation changes: a Project that has ever reordered its groups has every
  * key stored already, so it keeps the arrangement its user built.
  *
- * The seven gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance, OpenCode Go,
- * Qwen Pay-As-You-Go and Qwen Token Plan — reach their models through MMSP's generic
+ * The eight gateway groups — OpenRouter, Fireworks AI, SiliconFlow, Atlas Cloud, TokenDance,
+ * OpenCode Go, Qwen Pay-As-You-Go and Qwen Token Plan — reach their models through MMSP's generic
  * protocol clients (`openai-responses` for OpenRouter, `openai-chat` for the rest, and all
  * three generic clients within OpenCode Go). Those clients read the vendor variables
  * (**OPENAI_API_KEY / OPENAI_BASE_URL**, and ANTHROPIC_* for OpenCode Go's `ant-messages`
@@ -460,6 +464,19 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     modelsUrl: "https://cloud.siliconflow.cn/models",
     gatewayBaseUrl: SILICONFLOW_BASE_URL,
     // As TokenDance: Chat Completions throughout, and models added by hand follow the group.
+    clientType: "openai-chat",
+    addable: true,
+  },
+  {
+    id: "atlascloud",
+    label: "Atlas Cloud",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    apiKeyUrl: "https://atlascloud.ai/docs/api-keys",
+    modelsUrl: "https://atlascloud.ai/models",
+    gatewayBaseUrl: ATLASCLOUD_BASE_URL,
+    // As SiliconFlow: Chat Completions throughout, and the catalog lists a fraction of what
+    // the gateway serves, so the group takes models added by hand, which follow the group.
     clientType: "openai-chat",
     addable: true,
   },
@@ -1685,6 +1702,60 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
+  },
+  // -- Atlas Cloud (gateway: OpenAI-compatible protocol, preset base URL). Read 2026-10-11 from
+  // the public catalog API (GET https://api.atlascloud.ai/v1/models, no credential required):
+  // the ids exactly as listed, context windows, output limits, input modalities, quantization
+  // and prices. The API's `pricing` figures are USD per token; the pricing page
+  // (https://www.atlascloud.ai/pricing/models) states the same rates in USD per million
+  // tokens. The presets are DeepSeek and Qwen models the other gateway groups preset. For
+  // DeepSeek they are the releases TokenDance presets instead of the bare V4 ids (the user's
+  // call for TokenDance on 2026-10-10, made for this group on 2026-10-11), taken only where
+  // Atlas Cloud serves them at fp8: V4.1 Flash and V4 Pro 0813. Its V4 Flash 0731 is served at
+  // fp4, like the bare deepseek-v4-flash and deepseek-v4-pro, so none of the three is a preset.
+  // Qwen 3.6 35B A3B is the one the SiliconFlow and OpenRouter groups preset. Rows run newest
+  // release first within a series (V4.1 before V4). Neither source publishes a cache-write
+  // price for these rows, so cache_write carries the input price, as with the TokenDance and
+  // Qwen gateways below. Atlas Cloud bills both DeepSeek rows at one fixed rate
+  // (`pricing_mode` fixed, no time-based overrides), so neither declares DeepSeek's off-peak
+  // schedule. The DeepSeek rows have a 393,216-token output limit; Qwen 3.6 35B A3B, which
+  // takes image and video input, has 65,536.
+  {
+    // Image input, as the listing says (`text`, `image`).
+    modelId: "deepseek-ai/deepseek-v4.1-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "atlascloud",
+    contextWindow: 1048576,
+    pricing: usd(0.03, 0.3, 1.2),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: ATLASCLOUD_BASE_URL,
+  },
+  {
+    modelId: "deepseek-ai/deepseek-v4-pro-0813",
+    displayName: "DeepSeek V4 Pro 0813",
+    provider: "atlascloud",
+    contextWindow: 1048576,
+    pricing: usd(0.132, 1.32, 3.96),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: ATLASCLOUD_BASE_URL,
+  },
+  {
+    // The API answers the rate billed today, USD 0.186 input / 1.11375 output, which the
+    // pricing page shows as a 25% model discount on a 0.248 / 1.485 list price. The row stores
+    // that list price and declares the promotion in `discount`, as every promoted row does.
+    // No cache-hit price is published (the API repeats the input price), so cache_read carries
+    // the input price too.
+    modelId: "qwen/qwen3.6-35b-a3b",
+    displayName: "Qwen 3.6 35B A3B",
+    provider: "atlascloud",
+    contextWindow: 262144,
+    pricing: usd(0.248, 0.248, 1.485),
+    discount: 0.25,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: ATLASCLOUD_BASE_URL,
   },
   // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Re-read in full on
   // 2026-10-10 from two public APIs that need no credential: the gateway's catalog (GET
@@ -3217,9 +3288,9 @@ export function providerInfo(providerId: string): ModelProviderInfo | undefined 
  * The protocol a group pins on every one of its entries (ModelProviderInfo.clientType), or
  * undefined when the group pins none — an unknown id (a user-defined group) included.
  *
- * Four groups pin: vLLM, whose models are served by the user's own vLLM adapter,
+ * Five groups pin: vLLM, whose models are served by the user's own vLLM adapter,
  * OpenRouter, whose models all speak the Responses API OpenRouter serves at its preset base
- * URL, and TokenDance and SiliconFlow, whose models all speak Chat Completions.
+ * URL, and TokenDance, SiliconFlow and Atlas Cloud, whose models all speak Chat Completions.
  *
  * A reference value, read when a file is written from the catalog (catalogGroupConnection:
  * a new Project, "Add new models" for a group new to the file, "Restore defaults") and by
@@ -3282,9 +3353,9 @@ export function unroutableVendorModel(
 
 /**
  * Whether models may be added to this group by hand: `custom`, vLLM, OpenRouter, TokenDance,
- * SiliconFlow (ModelProviderInfo.addable) and every user-defined group, i.e. an id this
- * catalog does not know. Every other built-in group — the first-party vendors and the other
- * gateways — carries its catalog presets and the rows it already stores: the models page
+ * SiliconFlow, Atlas Cloud (ModelProviderInfo.addable) and every user-defined group, i.e. an
+ * id this catalog does not know. Every other built-in group — the first-party vendors and the
+ * other gateways — carries its catalog presets and the rows it already stores: the models page
  * offers no add-model entry point there, and the models PUT and the CLI's `config model add`
  * refuse a new row that is not a preset (unaddableModel).
  */

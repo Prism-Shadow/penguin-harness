@@ -11,7 +11,9 @@
  *
  * Set up is the Project owner's (the vault's own rule): one masked field per missing key; a key
  * the vault already holds is named as set, not asked for, so the owner sees which values the
- * plugin's server will receive. Saving rewrites the vault with every existing key kept.
+ * plugin's server will receive. Saving rewrites the vault with every existing key kept. The
+ * values are a typed form: Save is live once one is filled in, closing with one filled in asks
+ * first, and nothing closes the dialog while the write is in flight.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -31,6 +33,8 @@ import {
   RuledSection,
   Skeleton,
   toastSuccess,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -231,11 +235,15 @@ export function setUpVaultEntries(
 /** Whether a setup help is a link to open, rather than a sentence to read. */
 const isLink = (help: string) => /^https?:\/\//i.test(help);
 
+/** The values Save writes: the keys given one, as typed (an emptied field writes nothing). */
+const givenValues = (values: Readonly<Record<string, string>>): Record<string, string> =>
+  Object.fromEntries(Object.entries(values).filter(([, value]) => value !== ""));
+
 /**
  * The Set up form (Project owner): one masked field per key the plugin's servers wait for on
  * this Agent; a key the vault already holds is named as set. Saving re-reads the vault's keys and
  * writes them back with the new values (see setUpVaultEntries), then `onSaved` refreshes the
- * Agent's servers.
+ * Agent's servers. Mount it only while it is open: its draft starts empty with every mount.
  */
 export function McpSetUpModal({
   projectId,
@@ -259,9 +267,11 @@ export function McpSetUpModal({
   const keys = pluginSetupKeys(plugin);
   /** The vault's key names (never a value), once read. */
   const [present, setPresent] = useState<ReadonlySet<string> | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({});
+  const form = useFormDraft<Record<string, string>>({}, { normalize: givenValues });
+  const values = form.draft;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
 
   useEffect(() => {
     let cancelled = false;
@@ -275,6 +285,7 @@ export function McpSetUpModal({
   }, [projectId, agentId]);
 
   const save = async () => {
+    if (!form.dirty || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -296,21 +307,20 @@ export function McpSetUpModal({
     }
   };
 
-  const filled = Object.values(values).some((value) => value !== "");
   return (
     <Modal
       open
       title={S.plugins.setUpTitle(title, agentName)}
-      onClose={onClose}
+      onClose={requestClose}
       footer={
         <>
-          <Button size="sm" onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={requestClose} disabled={busy}>
             {S.common.cancel}
           </Button>
           <Button
             size="sm"
             variant="primary"
-            disabled={busy || !filled}
+            disabled={busy || !form.dirty}
             onClick={() => void save()}
           >
             {S.common.save}
@@ -340,7 +350,7 @@ export function McpSetUpModal({
                   label={setupKeyLabel(item, locale)}
                   {...(item.help !== undefined && !isLink(item.help) ? { hint: item.help } : {})}
                   value={values[item.key] ?? ""}
-                  onChange={(e) => setValues((prev) => ({ ...prev, [item.key]: e.target.value }))}
+                  onChange={(e) => form.patch({ [item.key]: e.target.value })}
                   className="font-mono"
                   placeholder={item.key}
                   autoComplete="off"

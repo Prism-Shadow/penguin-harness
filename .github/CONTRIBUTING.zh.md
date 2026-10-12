@@ -26,7 +26,7 @@ pnpm dev:landing # 落地页（Vite），127.0.0.1:7366
 pnpm penguin ... # 从源码运行 CLI；`penguin web` 服务在 127.0.0.1:7369
 pnpm desktop     # 从源码运行桌面应用（先全量构建，再启动 Electron）
 
-BASE_PATH=/ pnpm build:site   # 完全按 Pages 部署的方式组装落地页 + 文档
+BASE_PATH=/ pnpm build:site   # 完全按 Pages 部署的方式组装落地页 + 文档 + 画廊
 ```
 
 每条 dev 命令都会先执行 `scripts/dev-prebuild.mjs`。它在一把用于串行化并发调用的锁之后，

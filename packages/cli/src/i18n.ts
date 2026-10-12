@@ -1126,7 +1126,7 @@ export interface Messages {
   modelNotConfigured(model: string): string;
   /** `model add` refused: a new entry in a first-party vendor group under a model id MMSP cannot route (it begins with no known vendor prefix). */
   modelNotRoutable(model: string): string;
-  /** A new entry in a built-in group that takes no hand-added models (every one but custom, vLLM, OpenRouter, TokenDance and SiliconFlow). */
+  /** A new entry in a built-in group that takes no hand-added models (every one but custom, vLLM, OpenRouter, TokenDance, SiliconFlow and Atlas Cloud). */
   modelNotAddable(model: string, group: string): string;
   /** Follows modelRemoved when the removed entry was also the vision model. */
   visionModelCleared(): string;
@@ -1302,7 +1302,7 @@ const en: Messages = {
     sourceInvalid: (value) =>
       `Invalid --source value "${value}". penguin run takes no --source: every Session it creates is a CLI Session.`,
     sourceIgnored: () =>
-      "--source benchmark is no longer needed and is ignored: every Session penguin run creates is a CLI Session, listed in the Web App's Background folder.",
+      "--source benchmark is no longer needed and is ignored: every Session penguin run creates is a CLI Session, archived until you unarchive it (Web App: Settings › Archived chats).",
     timeoutWithBackground: () =>
       "--timeout bounds the wait, and --background does not wait: drop one of them.",
   },
@@ -2453,7 +2453,7 @@ const zh: Messages = {
     sourceInvalid: (value) =>
       `无效的 --source 取值 "${value}"。penguin run 不再接受 --source：它创建的每个会话都是 CLI 会话。`,
     sourceIgnored: () =>
-      "--source benchmark 已不再需要，已忽略：penguin run 创建的每个会话都是 CLI 会话，列在 Web App 的「后台会话」折叠夹中。",
+      "--source benchmark 已不再需要，已忽略：penguin run 创建的每个会话都是 CLI 会话，默认归档，列在 Web App 设置的「已归档对话」中，取消归档后进入侧栏。",
     timeoutWithBackground: () => "--timeout 限定等待，而 --background 不等待：二者去其一。",
   },
   chat: {

@@ -154,6 +154,6 @@ A request refused before the stream gets an HTTP status and `{"error": {"code": 
 1. `penguin agent api status --agent-id <agentId> --json` shows `api.enabled` true and at least one key.
 2. The key is in your environment: `test -n "$PENGUIN_AGENT_KEY" && echo set`. Never print the value.
 3. Run the program once with a real input. The run ends with `status` `completed`, and the answer appears.
-4. Tell the user where to find the conversation: the Agent's **Background** folder in the sidebar, marked with the API icon.
+4. Tell the user where to find the conversation: **Settings › Archived chats** in the Web App, marked with the API icon. An API conversation stays archived until someone unarchives it, which moves it into the sidebar.
 
 When step 1 or 2 is not done, finish the program anyway, report it as **unverified**, and end your reply with the owner's steps from section 1. Report the files with relative paths, how to run the program, the Agent ID it calls, the approval mode it expects, and your assumptions.

@@ -61,7 +61,7 @@ penguin run -m <message> [options]
 | `--json` | 打印最终的 `{sessionId, status, text}` 对象，取代渲染后的流。`text` 拼接主 Session 的 助手文本消息。 | — |
 | `--server <url>` | 目标服务器；见[服务器连接](#服务器连接)。 | — |
 
-`run` 创建的每个 Session 都是 CLI 会话（`source: "cli"`），Web App 把它列在会话列表的**后台会话**折叠夹里，而不是 Agent 的对话之间。`penguin chat` 创建的是普通对话。旧版评估 Skill 传入的 `--source benchmark` 仍被接受，但会被忽略并给出提示。
+`run` 创建的每个 Session 都是 CLI 会话（`source: "cli"`），按规则归档：Web App 把它列在[设置 › 已归档对话](/settings#已归档对话)中，而不是 Agent 的对话之间，在那里取消归档后它会留在侧边栏。同样，取消归档之前，`penguin session ls` 只有加 `-a` 才显示它。`penguin chat` 创建的是普通对话。旧版评估 Skill 传入的 `--source benchmark` 仍被接受，但会被忽略并给出提示。
 
 `--timeout` 到时后，`run` 打印目前已渲染的内容和一行暗色的仍在运行提示（附 session id），然后退出 0，不中止 Task。`--json` 下则打印 `{sessionId, status: "running", text}`。`--timeout 0` 在 POST 完成后立即返回，`--json` 下打印 `{sessionId, status: "running"}`，不含 `text`。对目标模式运行，最终 JSON 对象里的 `status` 就是目标结果。
 
@@ -143,7 +143,7 @@ penguin session rename [session_id] -t <title> [options]
 
 ### penguin session ls
 
-列出 Project 的 Session，默认覆盖所有 Agent，用 `--agent-id` 可只看一个。各列依次为：短 id（即 8 位十六进制尾部，其他命令可以把它当作片段使用）、Agent、标题、运行中/空闲、最近活跃时间和 Workspace 路径的末段。已归档的 Session 只有加 `-a` 才显示。
+列出 Project 的 Session，默认覆盖所有 Agent，用 `--agent-id` 可只看一个。各列依次为：短 id（即 8 位十六进制尾部，其他命令可以把它当作片段使用）、Agent、标题、运行中/空闲、最近活跃时间和 Workspace 路径的末段。已归档的 Session 只有加 `-a` 才显示：包括你归档的，以及在 Web App 中取消归档之前由程序打开的 Session，例如 `run` 创建的 Session、Agent API 的会话和定时任务新开的 Session。
 
 ```bash
 penguin session ls [options]
@@ -742,7 +742,7 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - CLI 绝不会从模型 id 推断 `--provider`。网关会按上游模型 id 转售厂商模型，靠猜测分组可能把凭证写到另一家厂商的端点上。内置分组之外的端点一律用 `custom`。
 - 新建条目只在显式传入时才存 `--client-type`、`--base-url` 与 `--api-key`。不传的项跟随分组，分组也没有即交给客户端缺省；不读内置模型目录。新建 Project 的文件已在各分组上存好网关的端点与协议、Penguin Go 的中转地址与 `vllm` 的 `openai-chat-vllm-adapter`。分组没有设置协议时，`custom` 或用户自定义分组的条目取 `openai-chat`。更新已有条目时，只有显式传入这些选项才会改动；`--clear-*` 选项清除条目自己的值，此后它跟随分组。
 - 用这种方式重新加回删掉的预置模型，只会存下你传入的值；模型库页面的**同步新增模型**会把它连同目录的协议与端点一起补回。
-- 只有 `custom`、`vllm`、`openrouter`、`tokendance`、`siliconflow` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
+- 只有 `custom`、`vllm`、`openrouter`、`tokendance`、`siliconflow`、`atlascloud` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
 - 如果模型的 MMSP 客户端不接受这个参数，开启 `--fast-mode` 仍会写入条目，但会在 stderr 上打印警告。
 - 两种形式下，没有指定的项都保持不变；每一对设置 / 清除选项互斥；取值为空会被拒绝，清除请用对应的 `--clear-*` 选项。
 

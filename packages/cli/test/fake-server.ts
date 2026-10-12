@@ -1871,6 +1871,9 @@ export class FakeServer {
           ...(typeof body?.modelId === "string" ? { modelId: body.modelId } : {}),
           ...(typeof body?.provider === "string" ? { provider: body.provider } : {}),
           ...(typeof body?.approvalMode === "string" ? { approvalMode: body.approvalMode } : {}),
+          // The server's listing rule: a Session `penguin run` opens is archived until someone
+          // keeps it, so `session ls` shows it only with -a.
+          ...(body?.source === "cli" ? { archived: true } : {}),
         });
         return this.json({ session: this.sessionInfo(s) }, 201);
       }

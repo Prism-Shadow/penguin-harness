@@ -122,6 +122,11 @@ export abstract class TraceIndex {
 @Interface()
 export abstract class Traces {
   abstract observeShardRead?: ((path: string) => void) | undefined;
+  abstract subagentChildren(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<Array<{ sessionId: string; agentId: string | null; spawnedAt: string }>>;
   abstract deleteSessionTraces(
     projectId: string,
     agentId: string,

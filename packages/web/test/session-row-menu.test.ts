@@ -2,19 +2,21 @@
  * A Session row's two action surfaces (components/ui/session-row-menu.tsx): the hover buttons
  * and the right-click menu, and how each action labels itself.
  *
- * - A pinnable row's menu carries pin, rename, messaging, archive, copy and delete; a folder
- *   row's menu drops only pin, so every Session stays renamable, archivable and deletable.
+ * - A row's menu carries pin, rename, messaging, archive, copy and delete, so every Session in
+ *   the sidebar stays renamable, archivable and deletable.
  * - Every hover action is also in the menu, so nothing is reachable by hover alone.
+ * - A row on a connected machine offers no archive, on hover or in its menu (the archive page
+ *   lists this server's Sessions only); a row of this server keeps it.
  * - Every action has a label and a glyph of its own, and only delete is destructive.
- * - Archive flips its label and glyph on an archived row; pin flips its label on a pinned row
- *   and keeps its glyph.
+ * - Pin flips its label on a pinned row and keeps its glyph.
  * - In English no action falls back to a Chinese label (the hover buttons are icon-only, so
  *   the label is their accessible name).
  */
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  CONTEXT_MENU_ACTIONS,
   HOVER_ROW_ACTIONS,
-  contextMenuActions,
+  rowActionsFor,
   sessionRowMenuItem,
 } from "../src/components/ui/session-row-menu";
 import type { SessionRowAction } from "../src/components/ui/session-row-menu";
@@ -24,21 +26,24 @@ import { en } from "../src/lib/strings-en";
 /** Every test that switches locale puts the default (zh) back. */
 afterEach(() => setActiveStrings(zh));
 
-const RESTING = { archived: false, pinned: false };
+const RESTING = { pinned: false };
 const ALL: SessionRowAction[] = ["pin", "rename", "messaging", "archive", "copy", "delete"];
 
-describe("contextMenuActions", () => {
-  it("a pinnable row's menu carries the whole set; a folder row's drops only pin", () => {
-    expect([...contextMenuActions(true)]).toEqual(ALL);
-    expect([...contextMenuActions(false)]).toEqual(ALL.filter((action) => action !== "pin"));
+describe("the context menu", () => {
+  it("carries the whole set", () => {
+    expect([...CONTEXT_MENU_ACTIONS]).toEqual(ALL);
   });
 
   it("is a superset of the hover actions, so nothing is reachable by hover alone", () => {
-    for (const canPin of [true, false]) {
-      for (const action of HOVER_ROW_ACTIONS) {
-        expect(contextMenuActions(canPin)).toContain(action);
-      }
-    }
+    for (const action of HOVER_ROW_ACTIONS) expect(CONTEXT_MENU_ACTIONS).toContain(action);
+  });
+
+  it("offers no archive on a row of a connected machine, which the archive page could not list", () => {
+    expect(rowActionsFor(HOVER_ROW_ACTIONS, true)).toEqual([]);
+    expect(rowActionsFor(CONTEXT_MENU_ACTIONS, true)).toEqual(
+      ALL.filter((action) => action !== "archive"),
+    );
+    expect(rowActionsFor(CONTEXT_MENU_ACTIONS, false)).toEqual(ALL);
   });
 });
 
@@ -58,16 +63,9 @@ describe("sessionRowMenuItem", () => {
     expect(new Set(items.map((item) => item.label)).size).toBe(ALL.length);
   });
 
-  it("flips archive's label and glyph on an archived row", () => {
-    const archive = sessionRowMenuItem("archive", RESTING);
-    const restore = sessionRowMenuItem("archive", { archived: true, pinned: false });
-    expect(restore.label).not.toBe(archive.label);
-    expect(restore.icon).not.toBe(archive.icon);
-  });
-
   it("flips pin's label on a pinned row, keeping the one pin glyph", () => {
     const pin = sessionRowMenuItem("pin", RESTING);
-    const unpin = sessionRowMenuItem("pin", { archived: false, pinned: true });
+    const unpin = sessionRowMenuItem("pin", { pinned: true });
     expect(unpin.label).not.toBe(pin.label);
     expect(unpin.icon).toBe(pin.icon);
   });

@@ -61,7 +61,7 @@ penguin run -m <message> [options]
 | `--json` | Prints a final `{sessionId, status, text}` object instead of the rendered stream. `text` joins the main Session's assistant text messages. | — |
 | `--server <url>` | Target server; see [Server connection](#server-connection). | — |
 
-Every Session `run` creates is a CLI Session (`source: "cli"`), which the Web App lists in the **Background** folder of its session list rather than among the agent's conversations. `penguin chat` creates ordinary conversations. The `--source benchmark` that older evaluation skills pass is accepted and ignored, with a note.
+Every Session `run` creates is a CLI Session (`source: "cli"`), which is archived by rule: the Web App lists it under [Settings › Archived chats](/settings#archived-chats) rather than among the agent's conversations, and unarchiving it there keeps it in the sidebar. `penguin session ls` likewise shows it only with `-a` until it is unarchived. `penguin chat` creates ordinary conversations. The `--source benchmark` that older evaluation skills pass is accepted and ignored, with a note.
 
 When `--timeout` expires, `run` prints what has rendered so far and a dim still-running line with the session id, then exits 0 without aborting the Task. Under `--json` it prints `{sessionId, status: "running", text}`. `--timeout 0` returns right after the POST, and under `--json` prints `{sessionId, status: "running"}` with no `text`. For a goal run, the `status` in the final JSON object is the goal outcome.
 
@@ -143,7 +143,7 @@ penguin session rename [session_id] -t <title> [options]
 
 ### penguin session ls
 
-Lists the Project's Sessions, for all agents or for one with `--agent-id`. Columns: short id (the 8-hex tail other commands accept as a fragment), agent, title, running/idle, last active and the end of the Workspace path. Archived Sessions appear only with `-a`.
+Lists the Project's Sessions, for all agents or for one with `--agent-id`. Columns: short id (the 8-hex tail other commands accept as a fragment), agent, title, running/idle, last active and the end of the Workspace path. Archived Sessions appear only with `-a`: the ones you archived, and, until you unarchive them in the Web App, the ones a program opened, such as those `run` creates, Agent API conversations and the new Sessions of scheduled tasks.
 
 ```bash
 penguin session ls [options]
@@ -742,7 +742,7 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - The CLI never derives `--provider` from the model id. Gateways resell vendor models under their upstream ids, so a guessed group could write the credential onto another vendor's endpoint. Use `custom` for any endpoint outside the built-in groups.
 - A new entry stores `--client-type`, `--base-url` and `--api-key` only when you pass them. Left out, each follows the group, and with no group value the client's default; the built-in catalog is not read. A new Project's file already holds the gateways' endpoints and protocols, Penguin Go's relay URL and `vllm`'s `openai-chat-vllm-adapter` on their groups. A `custom` or user-defined entry whose group sets no protocol gets `openai-chat`. Updating an existing entry changes these fields only when you pass the flags; a `--clear-*` flag removes the entry's own value, after which it follows the group.
 - Re-adding a removed preset this way stores only what you pass; **Add new models** on the Models page brings it back with its catalog protocol and endpoint.
-- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
+- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `atlascloud` and user-defined groups take models added by hand. In every other built-in group a new entry must be one of that group's catalog rows; anything else is refused with "cannot be added", as the Models page and its API refuse it. Entries a group already holds update as usual.
 - Turning on `--fast-mode` for a model whose MMSP client rejects the parameter still writes the entry, but prints a warning on stderr.
 - In both forms, a field you do not name is left as it is, each set/clear pair is exclusive, and an empty value is refused: remove a value with its `--clear-*` flag.
 

@@ -92,6 +92,7 @@ describe("model-catalog", () => {
       "openai",
       "anthropic",
       "siliconflow",
+      "atlascloud",
       "zhipu",
       "moonshot",
       "minimax",
@@ -705,6 +706,7 @@ describe("model-catalog", () => {
       openrouter: BOTH,
       fireworks: BOTH,
       siliconflow: BOTH,
+      atlascloud: BOTH,
       "qwen-pay-as-you-go": BOTH,
       "qwen-token-plan": BOTH,
       modelscope: BOTH,
@@ -890,6 +892,36 @@ describe("model-catalog", () => {
       expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://api.siliconflow.cn/v1");
     }
+    const ac = MODEL_CATALOG.filter((m) => m.provider === "atlascloud");
+    // Dictionary order by upstream id, the newest release of a series first (V4.1 before V4),
+    // the ids exactly as the gateway's public catalog API lists them; context windows and input
+    // modalities from the same listing: V4.1 Flash and Qwen 3.6 35B A3B take images, V4 Pro
+    // 0813 is text only. The DeepSeek rows are releases TokenDance presets that this gateway
+    // serves at fp8; the bare V4 ids and V4 Flash 0731, served at fp4, are not presets.
+    expect(ac.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["deepseek-ai/deepseek-v4.1-flash", 1048576, true],
+      ["deepseek-ai/deepseek-v4-pro-0813", 1048576, false],
+      ["qwen/qwen3.6-35b-a3b", 262144, true],
+    ]);
+    for (const m of ac) {
+      expect(m.clientType).toBe("openai-chat");
+      expect(m.baseUrl).toBe("https://api.atlascloud.ai/v1");
+    }
+    // What the gateway bills, USD per million tokens as cache hit / input (cache_write: no
+    // cache-write fee is published) / output. The Qwen row stores its list price and declares
+    // Atlas Cloud's 25% model discount beside it, so its billed rate is read back out of
+    // effectivePricing: change the list price or the discount alone and it stops matching
+    // what the API answers.
+    const acBilled = (modelId: string): number[] => {
+      const billed = effectivePricing(ac.find((m) => m.modelId === modelId)!)!;
+      return [billed.cache_read, billed.cache_write, billed.output];
+    };
+    expect(acBilled("deepseek-ai/deepseek-v4.1-flash")).toEqual([0.03, 0.3, 1.2]);
+    expect(acBilled("deepseek-ai/deepseek-v4-pro-0813")).toEqual([0.132, 1.32, 3.96]);
+    expect(acBilled("qwen/qwen3.6-35b-a3b")).toEqual([0.186, 0.186, 1.11375]);
+    expect(ac.filter((m) => m.discount !== undefined).map((m) => [m.modelId, m.discount])).toEqual([
+      ["qwen/qwen3.6-35b-a3b", 0.25],
+    ]);
     const qtp = MODEL_CATALOG.filter((m) => m.provider === "qwen-token-plan");
     expect(qtp.map((m) => m.modelId)).toEqual([
       "deepseek-v4.1-flash",
@@ -1156,6 +1188,7 @@ describe("model-catalog", () => {
       "openrouter",
       "fireworks",
       "siliconflow",
+      "atlascloud",
       "tokendance",
       "opencode-go",
       "qwen-token-plan",
@@ -1177,6 +1210,7 @@ describe("model-catalog", () => {
       "https://dashscope.aliyuncs.com/compatible-mode/v1",
     );
     expect(providerInfo("fireworks")!.gatewayBaseUrl).toBe("https://api.fireworks.ai/inference/v1");
+    expect(providerInfo("atlascloud")!.gatewayBaseUrl).toBe("https://api.atlascloud.ai/v1");
     expect(providerInfo("tokendance")!.gatewayBaseUrl).toBe("https://tokendance.space/gateway/v1");
     expect(providerInfo("modelscope")!.gatewayBaseUrl).toBe(
       "https://api-inference.modelscope.cn/v1",
@@ -1185,6 +1219,7 @@ describe("model-catalog", () => {
       "openrouter",
       "fireworks",
       "siliconflow",
+      "atlascloud",
       "tokendance",
       "opencode-go",
       "qwen-token-plan",
@@ -1196,7 +1231,7 @@ describe("model-catalog", () => {
         expect(p.gatewayBaseUrl, p.id).toBeUndefined();
       }
     }
-    const gateway = [...or, ...fw, ...sf, ...td, ...qtp, ...qpayg, ...ms];
+    const gateway = [...or, ...fw, ...sf, ...ac, ...td, ...qtp, ...qpayg, ...ms];
     // Pricing (USD, per the 2026-08-03 models-API re-read): MiMo v2.5 and Hy3 publish a real
     // cache-hit price and no per-token write premium, so cache_write carries the input price.
     const mimo = MODEL_CATALOG.find((m) => m.modelId === "xiaomi/mimo-v2.5")!.pricing!;
@@ -1884,8 +1919,8 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
     expect(isVendorGroup("my-own-group")).toBe(false);
   });
 
-  it("isAddableGroup: custom, vLLM, OpenRouter, TokenDance, SiliconFlow and user-defined groups take hand-added models, no other built-in group does", () => {
-    const open = ["custom", "vllm", "openrouter", "tokendance", "siliconflow"];
+  it("isAddableGroup: custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and user-defined groups take hand-added models, no other built-in group does", () => {
+    const open = ["custom", "vllm", "openrouter", "tokendance", "siliconflow", "atlascloud"];
     for (const id of [...open, "my-own-group"]) {
       expect(isAddableGroup(id), id).toBe(true);
     }
@@ -1916,6 +1951,7 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
       "openrouter",
       "tokendance",
       "siliconflow",
+      "atlascloud",
       "my-own-group",
     ]) {
       expect(unaddableModel(id, "someone/new-model"), id).toBe(false);

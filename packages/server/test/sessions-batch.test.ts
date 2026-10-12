@@ -73,7 +73,7 @@ describe("POST /api/projects/:projectId/sessions/batch", () => {
     seed(A1, "session-b1-mid", "2026-07-02T08:00:00.000Z", "2026-07-05T08:00:00.000Z");
     seed(A1, "session-b1-new", "2026-07-03T08:00:00.000Z", "2026-07-03T08:00:00.000Z");
     seed(A1, "session-b1-arch", "2026-07-04T08:00:00.000Z", "2026-07-04T08:00:00.000Z");
-    t.deps.sessionsRepo.setArchived("session-b1-arch", "2026-07-10T08:00:00.000Z");
+    t.deps.sessionsRepo.setListing(["session-b1-arch"], "archived", "2026-07-10T08:00:00.000Z");
     seed(A2, "session-b2-one", "2026-07-01T09:00:00.000Z", "2026-07-01T09:00:00.000Z");
     seed(A2, "session-b2-two", "2026-07-02T09:00:00.000Z", "2026-07-02T09:00:00.000Z");
   });
@@ -128,7 +128,7 @@ describe("POST /api/projects/:projectId/sessions/batch", () => {
       { agentId: A1, ok: true, ...(await listed(A1, "limit=5&order=activity&category=archived")) },
     ]);
     // The pages are real ones, not empty agreements: the run-last row leads the activity order,
-    // the cursor continues below it, and the archived folder holds its one row.
+    // the cursor continues below it, and the archived category holds its one row.
     const ids = results.map((r) => (r.ok ? r.sessions.map((s) => s.sessionId) : null));
     expect(ids).toEqual([
       ["session-b1-old", "session-b1-mid"],

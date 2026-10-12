@@ -8,14 +8,15 @@
  * truncated and the edge cut off each row's time (「4 小」) and the hovered row's actions.
  *
  * Seeded: the temporary workspace holding a long mixed CJK/Latin title beside a short one, and a
- * real Workspace holding a long title in the active list, in the Background folder (a
- * CLI-opened Session) and in the Archived folder. The browser clock runs 23 hours ahead, so
- * every row's time reads 「23 小时前」, the widest relative form.
+ * real Workspace holding a long title and a long-titled CLI-opened Session the user kept (it
+ * wears its source glyph among the marks), plus an archived one the sidebar never lists. The
+ * browser clock runs 23 hours ahead, so every row's time reads 「23 小时前」, the widest relative
+ * form.
  *
  * - In each theme, at the narrowest pinned sidebar (below the `lg` breakpoint), in each
- *   grouping (Workspace, Agent, time) with both folders open and the long row hovered: every
- *   row sits inside the list's content box, the list does not overflow sideways, the long
- *   titles truncate, and each row's time and hover actions stay inside its trailing slot.
+ *   grouping (Workspace, Agent, time) with the long row hovered: every row sits inside the
+ *   list's content box, the list does not overflow sideways, the long titles truncate, and each
+ *   row's time and hover actions stay inside its trailing slot.
  * - The same holds in the drawer on a 320 px phone.
  */
 import { test, expect, request } from "@playwright/test";
@@ -35,7 +36,7 @@ const LONG_BACKGROUND = "Background run that keeps going until every check has p
 const LONG_ARCHIVED = "一个已经归档的对话，标题也很长 with a long English tail";
 const REPORTED = "审查并安装 PenguinHaradadad";
 const SHORT = "Nonsense in";
-const LONG_TITLES = [LONG, LONG_BACKGROUND, LONG_ARCHIVED];
+const LONG_TITLES = [LONG, LONG_BACKGROUND];
 
 test.beforeAll(async () => {
   const ctx = await request.newContext();
@@ -72,7 +73,10 @@ test.beforeAll(async () => {
     return session.sessionId;
   };
   await create(LONG, { workspace });
-  await create(LONG_BACKGROUND, { workspace, source: "cli" });
+  // A CLI Session is archived until kept: unarchiving keeps it in the sidebar, glyph and all.
+  const kept = await create(LONG_BACKGROUND, { workspace, source: "cli" });
+  const keep = await ctx.patch(`${BASE}/api/sessions/${kept}`, { data: { archived: false } });
+  expect(keep.ok(), "keep").toBeTruthy();
   const archived = await create(LONG_ARCHIVED, { workspace });
   const archive = await ctx.patch(`${BASE}/api/sessions/${archived}`, {
     data: { archived: true },
@@ -101,12 +105,9 @@ async function openList(page, { theme, grouping, drawer = false }) {
   // Below md the pinned column is still in the document, hidden; the drawer holds the list.
   const rows = page.locator('[data-testid="session-row"]').filter({ visible: true });
   await expect(rows.filter({ hasText: REPORTED })).toBeVisible();
-  // The folders mount closed; their rows are measured too.
-  for (const folder of [/^后台会话/, /^已归档/]) {
-    await page.getByRole("button", { name: folder, expanded: false }).click();
-  }
   await expect(rows.filter({ hasText: LONG_BACKGROUND })).toBeVisible();
-  await expect(rows.filter({ hasText: LONG_ARCHIVED })).toBeVisible();
+  // Archived: listed on the archive page, never here.
+  await expect(rows.filter({ hasText: LONG_ARCHIVED })).toHaveCount(0);
   // Hovered, the long row shows its actions and starts its title's scroll reveal.
   await rows.filter({ hasText: LONG }).hover();
 }
@@ -175,7 +176,7 @@ for (const theme of ["modern", "github", "geek"]) {
     for (const grouping of ["workspace", "agent", "time"]) {
       await openList(page, { theme, grouping });
       const { rows, report } = await misplacedRows(page, LONG_TITLES);
-      expect(rows, `${grouping}: rows rendered`).toBeGreaterThanOrEqual(5);
+      expect(rows, `${grouping}: rows rendered`).toBeGreaterThanOrEqual(4);
       expect(report, `${theme} / ${grouping}`).toEqual([]);
     }
   });
@@ -185,6 +186,6 @@ test("in the phone's drawer, every row stays inside the list", async ({ page }) 
   await page.setViewportSize({ width: 320, height: 700 });
   await openList(page, { theme: "modern", grouping: "workspace", drawer: true });
   const { rows, report } = await misplacedRows(page, LONG_TITLES);
-  expect(rows).toBeGreaterThanOrEqual(5);
+  expect(rows).toBeGreaterThanOrEqual(4);
   expect(report).toEqual([]);
 });

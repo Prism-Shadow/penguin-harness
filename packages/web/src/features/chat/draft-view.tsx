@@ -63,6 +63,7 @@ import {
   toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
 import { S } from "../../lib/strings";
 import { UNCONFINED, draftSandboxAfter } from "../../lib/permission-level";
 import type { PermissionPick } from "../../lib/permission-level";
@@ -899,7 +900,7 @@ export function DraftView({
             heading). The asset is square-cropped and the graphic already has a bit of built-in
             padding, so a small margin is enough to sit visually close to the title. */}
         <div className="mb-10 text-center">
-          <PenguinLogo src="/penguin-logo.svg" className="mx-auto mb-1 h-36 w-36 rounded-3xl" />
+          <PenguinLogo src={PENGUIN_LOGO_URL} className="mx-auto mb-1 h-36 w-36 rounded-3xl" />
           <h1 className="ui-display text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
             {S.appName}
           </h1>
