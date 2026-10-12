@@ -4,8 +4,15 @@
  * the dialog says so above its tabs: one per way in, each holding only its own form, its hint,
  * where installing runs the package's scripts, the line that says so, and the line saying what a
  * plugin's MCP servers are (a command run on this server, or an address it connects to). It
- * opens on npm.
+ * opens on the agent tab, the way in that takes any source; the direct installs follow.
  *
+ * - Ask an agent: any source — a page, a repository or a folder in one, a Codex or Claude Code
+ *   plugin, a description — becomes a prompt (previewed read-only) for the Project's default
+ *   Agent, which reviews the source, ports it into a PenguinHarness package first when it is not
+ *   one (the `plugin-porting` skill), and installs it with `penguin plugin install`; nothing is
+ *   sent until the user sends it.
+ * - Upload a zip: the package directory, what another server's Export downloads. Another version
+ *   on the server answers 409, and the replace confirm names both versions.
  * - From npm / From a link: a package name, or an https link to a git repository or a tarball
  *   (each checked here the way the server reads it, plugin-import-prompt.ts), installed by the
  *   server itself through the Project's plugin route; what it may cost the runs in progress sits
@@ -13,15 +20,8 @@
  *   never sent. A link to a folder or a file inside a repository, which npm cannot install, is
  *   said so with an "Ask an agent" action under the field: it moves to the agent tab with the
  *   link as the source.
- * - Upload a zip: the package directory, what another server's Export downloads. Another version
- *   on the server answers 409, and the replace confirm names both versions.
- * - Ask an agent: anything else — a page, a repository or a folder in one, a Codex or Claude Code
- *   plugin, a description — becomes a prompt (previewed read-only) for the Project's default
- *   Agent, which reviews the source, ports it into a PenguinHarness package first when it is not
- *   one (the `plugin-porting` skill), and installs it with `penguin plugin install`; nothing is
- *   sent until the user sends it.
  *
- * The tabs and their fields live in the dialog's body, so every opening starts on the npm tab
+ * The tabs and their fields live in the dialog's body, so every opening starts on the agent tab
  * with nothing typed; the body can be opened on another tab holding a value instead, the state
  * the link tab's hand-off leaves it in.
  *
@@ -87,7 +87,7 @@ const trimmedDraft = (draft: ImportDraft): ImportDraft => ({
 });
 
 /** The dialog's tabs, in order; the first is the one it opens on. */
-export const IMPORT_TABS = ["npm", "link", "zip", "agent"] as const;
+export const IMPORT_TABS = ["agent", "zip", "npm", "link"] as const;
 export type ImportTab = (typeof IMPORT_TABS)[number];
 /** The tabs whose source the server installs as it is. */
 export type DirectTab = Extract<ImportTab, "npm" | "link">;
@@ -175,7 +175,7 @@ export interface ImportOpening {
 
 export interface ImportPluginTabsProps {
   projectId: string;
-  /** Where the body opens; the npm tab with nothing typed when absent. */
+  /** Where the body opens; the agent tab with nothing typed when absent. */
   initial?: ImportOpening;
   /** Opens a new chat draft holding the prompt; null when there is no Agent to send it to. */
   onOpenChat: ((text: string) => void) | null;

@@ -1,8 +1,9 @@
 /**
  * The plugin import dialog: one tab per way in.
  *
- * - The dialog opens on the npm tab, with all four tabs offered, and shows only the npm tab's
- *   form: one field for the package name, and no file picker or prompt.
+ * - The dialog opens on the agent tab, with all four tabs offered — the agent tab, the zip, then
+ *   npm and the link — and shows only the agent tab's form: one field for the source and the
+ *   prompt it builds, and no file picker or package name.
  * - The link tab installs an https link through the Project's plugin route, and the npm tab a
  *   package name, each sent as typed, without the spaces around it.
  * - A value a tab does not take — a package name on the link tab, a link on the npm tab — is
@@ -48,7 +49,7 @@ const installed = (name: string) =>
 /** Each tab's words and whether it is the selected one, in order. */
 const TAB = /<button[^>]*role="tab"[^>]*aria-selected="(true|false)"[^>]*>(.*?)<\/button>/gs;
 
-/** The dialog's body as it first renders: on the npm tab with nothing typed, or where `initial` opens it. */
+/** The dialog's body as it first renders: on the agent tab with nothing typed, or where `initial` opens it. */
 const render = (initial?: ImportOpening) =>
   renderToStaticMarkup(
     createElement(
@@ -85,20 +86,21 @@ const buttons = (html: string) =>
   }));
 
 describe("the import dialog's tabs", () => {
-  it("opens on the npm tab, offering all four, and shows only the npm tab's form", () => {
+  it("opens on the agent tab, offering all four, and shows only the agent tab's form", () => {
     const html = render();
     const tabs = [...html.matchAll(TAB)].map((m) => [m[2]!.replace(/<[^>]+>/g, ""), m[1]]);
     expect(tabs).toEqual([
-      [en.plugins.importTabs.npm, "true"],
-      [en.plugins.importTabs.link, "false"],
+      [en.plugins.importTabs.agent, "true"],
       [en.plugins.importTabs.zip, "false"],
-      [en.plugins.importTabs.agent, "false"],
+      [en.plugins.importTabs.npm, "false"],
+      [en.plugins.importTabs.link, "false"],
     ]);
-    const panel = html.slice(html.indexOf('role="tabpanel"'));
-    expect(panel).toContain(`aria-label="${en.plugins.importNpmLabel}"`);
+    const panel = panelOf(html);
+    expect(words(panel)).toContain(en.plugins.importSourceLabel);
     expect(panel.match(/<input/g)).toHaveLength(1);
+    expect(panel.match(/<textarea/g)).toHaveLength(1);
     expect(panel).not.toContain('type="file"');
-    expect(panel).not.toContain("<textarea");
+    expect(panel).not.toContain(`aria-label="${en.plugins.importNpmLabel}"`);
   });
 });
 

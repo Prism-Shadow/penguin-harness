@@ -7,8 +7,8 @@
  *   and the dialog closes without asking.
  * - Set up asks before Esc drops a typed value, "keep editing" keeps it, and a value typed back
  *   to empty is no change: Save is held again and Esc closes at once.
- * - The import dialog asks before Esc drops a typed package name; with nothing typed it closes at
- *   once.
+ * - The import dialog, opened on the npm tab, asks before Esc drops a typed package name; with
+ *   nothing typed it closes at once.
  * - While an install is in flight, Esc does nothing and asks nothing; once the install was
  *   refused, the typed name is still there and Esc asks again.
  * - Opening the chat with a typed source moves to the conversation without asking, and leaves
@@ -149,6 +149,7 @@ describe("the plugin import dialog", () => {
 
   it("asks before Esc drops a typed package name, and closes at once with nothing typed", async () => {
     await openImport();
+    await click(button(en.plugins.importTabs.npm));
     await type(npmField(), "@acme/notes");
     await pressEscape();
     expect(promptOpen()).toBe(true);
@@ -164,6 +165,7 @@ describe("the plugin import dialog", () => {
   it("does nothing on Esc while an install is in flight, and asks again once it was refused", async () => {
     const { server } = await openImport();
     server.hold();
+    await click(button(en.plugins.importTabs.npm));
     await type(npmField(), "@acme/notes");
     await click(button(en.plugins.install));
     await pressEscape();
@@ -178,8 +180,8 @@ describe("the plugin import dialog", () => {
   });
 
   it("opens the chat with a typed source without asking, leaving nothing unsaved", async () => {
+    // The dialog opens on the agent tab.
     const { router } = await openImport();
-    await click(button(en.plugins.importTabs.agent));
     await type(
       field(en.plugins.importSourceLabel),
       "https://github.com/acme/plugins/tree/main/notes",
