@@ -20,7 +20,7 @@ import xterm, { type Terminal } from "@xterm/headless";
 import type { IPty } from "node-pty";
 import { loadNodePty } from "./pty-module.js";
 import { defaultTerminalShell } from "./shell.js";
-import { shellLaunch, type TerminalPathFirst } from "./shell-startup.js";
+import { shellLaunch, type ShellNotice, type TerminalPathFirst } from "./shell-startup.js";
 import { TerminalInputModeTracker } from "./input-mode.js";
 import { ensureSpawnHelperExecutable } from "../terminal/spawn-helper.js";
 import {
@@ -91,7 +91,10 @@ export interface CreateTerminalSessionOptions {
   /**
    * One line shown above everything the shell prints — on a development instance, which
    * `penguin` this terminal runs, or why it is not this instance's (cli-notice.ts). Written to
-   * the screen, never to the shell: nothing runs, and the user's prompt follows it.
+   * the screen, never to the shell: nothing runs, and the user's prompt follows it. A line with
+   * a `target` the shell prints itself instead, at its first prompt, where it can
+   * (shell-startup.ts ShellNotice): only then is it known what the user's own startup files left
+   * `penguin` pointing at.
    */
   notice?: TerminalNotice | null;
   /**
@@ -107,12 +110,24 @@ export interface CreateTerminalSessionOptions {
 export interface TerminalNotice {
   text: string;
   tone: "info" | "warning";
+  /**
+   * What `text` takes for granted: that `penguin` here targets this data root. On a development
+   * instance's line, which then says otherwise — `elsewhere`'s two halves around `VAR=value` —
+   * when the shell's own startup files set PENGUIN_API_URL, or a PENGUIN_HOME that is not `root`.
+   */
+  target?: { root: string; elsewhere: readonly [before: string, after: string] };
 }
 
 /** The notice as terminal output: dim when informational, yellow when a warning. */
 function renderNotice(notice: TerminalNotice): string {
   const style = notice.tone === "warning" ? "\x1b[33m" : "\x1b[2m";
   return `${style}${notice.text}\x1b[0m\r\n`;
+}
+
+/** The notice as the shell prints it at its first prompt, for one that names its target. */
+function shellNotice(notice: TerminalNotice | null): ShellNotice | null {
+  if (notice?.target === undefined) return null;
+  return { text: notice.text, root: notice.target.root, elsewhere: notice.target.elsewhere };
 }
 
 export interface TerminalSessionInfo {
@@ -149,13 +164,46 @@ export type TerminalTitleListener = (title: string | null) => void;
  * The user's startup files still set any of them they export, and `penguin` needs none of
  * them: the shim names this server's data root itself (services/cli-shim.ts). Where no shim
  * does, `keepDataRoot` keeps `PENGUIN_HOME` and `PENGUIN_WEB_DB`, as every terminal had them
- * before (see CreateTerminalSessionOptions.inheritDataRoot).
+ * before (see CreateTerminalSessionOptions.inheritDataRoot). The user's own settings among
+ * them stay as well ({@link USER_SETTINGS}).
  */
 function inheritedByTerminal(key: string, keepDataRoot: boolean): boolean {
   const name = key.toUpperCase();
   if (keepDataRoot && (name === "PENGUIN_HOME" || name === "PENGUIN_WEB_DB")) return true;
+  if (USER_SETTINGS.has(name)) return true;
   return !(name.startsWith("PENGUIN_") || name === "PORT" || name === "HOST");
 }
+
+/**
+ * The `PENGUIN_*` variables that are the user's own settings rather than any instance's wiring:
+ * how PenguinHarness should behave for this person wherever it runs. None names a data root, a
+ * server, a session or the code that runs, so none can point what runs in the terminal at the
+ * wrong instance. They stay in the terminal because they are not always set by a startup file
+ * the shell reads again: on Windows a user variable set with `setx` (what `penguin config lang`
+ * itself suggests there) reaches the desktop app, and from it the terminal, by inheritance only.
+ */
+const USER_SETTINGS = new Set([
+  // The CLI's language.
+  "PENGUIN_LANG",
+  // `off`: no automatic release check.
+  "PENGUIN_UPDATE_CHECK",
+  // The desktop app does not import the login shell's environment.
+  "PENGUIN_NO_LOGIN_SHELL_ENV",
+  // The shell Agent commands run in.
+  "PENGUIN_SHELL",
+  // Where the installer and `penguin update` put a tarball install, and where they download from.
+  "PENGUIN_INSTALL_DIR",
+  "PENGUIN_DOWNLOAD_SOURCE",
+  "PENGUIN_DOWNLOAD_SPEED_PROBE",
+  "PENGUIN_DOWNLOAD_BASE_URL",
+  "PENGUIN_DOWNLOAD_FALLBACK_BASE_URL",
+  // The same choice for the desktop app's updater.
+  "PENGUIN_UPDATE_SOURCE",
+  "PENGUIN_UPDATE_SPEED_PROBE",
+  // The Penguin Go provider's key and endpoint, as OPENAI_API_KEY is OpenAI's (which stays too).
+  "PENGUIN_GO_API_KEY",
+  "PENGUIN_GO_BASE_URL",
+]);
 
 /**
  * Environment for the pty. `TERM`/`COLORTERM` are what make colour and 256-colour output
@@ -222,16 +270,18 @@ export class TerminalSession {
       allowProposedApi: true,
     });
 
-    // Before the shell's first byte, into the emulator every viewer restores from: the notice
-    // is the screen's first line, and no client can attach before it is there.
-    if (options.notice) this.terminal.write(renderNotice(options.notice));
-
     const shell = options.shell ?? defaultTerminalShell();
+    const notice = options.notice ?? null;
+    const pathFirst = options.pathFirst ?? null;
     const launch = shellLaunch(
       shell,
       buildTerminalEnv(options.env, options.cwd, options.inheritDataRoot === true),
-      options.pathFirst ?? null,
+      pathFirst === null ? null : { ...pathFirst, notice: shellNotice(notice) },
     );
+    // Before the shell's first byte, into the emulator every viewer restores from: the notice
+    // is the screen's first line, and no client can attach before it is there — unless the shell
+    // prints it itself, at its first prompt.
+    if (notice !== null && !launch.printsNotice) this.terminal.write(renderNotice(notice));
     // Before the first spawn on macOS: node-pty's prebuilt spawn-helper ships without an
     // exec bit, and posix_spawnp refuses it (see spawn-helper.ts).
     ensureSpawnHelperExecutable();

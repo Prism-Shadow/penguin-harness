@@ -9,6 +9,11 @@
  * its prompt, whose CLI `penguin` is and which data root it targets — the shim's default, see
  * services/cli-shim.ts. An installation says nothing: its terminals look as they always did.
  *
+ * The shim's default gives way to the caller's own choice, and the user's startup files make
+ * one for the whole shell when they export PENGUIN_API_URL or another PENGUIN_HOME. So that line
+ * carries its `target`, and the shell prints it at its first prompt, once those files have run,
+ * saying plainly where `penguin` goes instead when they did (terminal/shell-startup.ts).
+ *
  * Two states are worth a warning anywhere: a checkout whose CLI cannot run (the shim is a stub
  * that says why), and a shim that should be there and is not (the server could not write it,
  * or it was removed since), where `penguin` silently becomes whatever else PATH finds.
@@ -76,10 +81,18 @@ export function terminalCliNotice(
     launch.origin === "env"
       ? `${tilde(config.cliEntry, home)} (PENGUIN_CLI_ENTRY)`
       : `the CLI of ${tilde(launch.checkout, home)} (${launch.origin === "source" ? "source" : "built"})`;
+  const root = tilde(config.root, home);
   return {
     tone: "info",
     text:
-      `This dev instance's penguin: ${which}, on data root ${tilde(config.root, home)} ` +
+      `This dev instance's penguin: ${which}, on data root ${root} ` +
       "(`penguin server status` shows its server).",
+    target: {
+      root: config.root,
+      elsewhere: [
+        "Your shell sets ",
+        `, so penguin here talks to that server, not this instance (data root ${root}).`,
+      ],
+    },
   };
 }

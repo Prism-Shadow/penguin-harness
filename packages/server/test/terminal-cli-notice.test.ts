@@ -4,7 +4,9 @@
  *
  * - An installation's terminal says nothing.
  * - A development instance's terminal names the CLI — the checkout and whether it runs from
- *   source or a build, or the PENGUIN_CLI_ENTRY it was given — and the data root it targets.
+ *   source or a build, or the PENGUIN_CLI_ENTRY it was given — and the data root it targets,
+ *   and carries the line its shell shows instead when the user's own files aim penguin
+ *   elsewhere (the shells themselves are tried in terminal-path-first.test.ts).
  * - A checkout whose CLI cannot run is a warning that carries the reason; so is a shim that
  *   should be there and is not, on any instance.
  * - The shell keeps PENGUIN_HOME only where no shim names the data root: no shim, a missing
@@ -65,6 +67,14 @@ describe("a terminal's first line", () => {
     expect(source?.tone).toBe("info");
     expect(source?.text).toContain(`the CLI of ${shown} (source)`);
     expect(source?.text).toContain(`on data root ${root}`);
+    // And what the shell says in its place when its own files aim penguin elsewhere.
+    expect(source?.target).toEqual({
+      root,
+      elsewhere: [
+        "Your shell sets ",
+        `, so penguin here talks to that server, not this instance (data root ${root}).`,
+      ],
+    });
     expect(
       notice("build", path.join(checkout, "packages", "cli", "dist", "penguin.js"))?.text,
     ).toContain(`${shown} (built)`);

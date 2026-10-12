@@ -31,6 +31,7 @@
  *   then says the same and fails.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -528,9 +529,12 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
       PORT: "7368",
       HOST: "127.0.0.1",
     };
+    /** And the user's own settings, which reach the server the same way (a Windows `setx`). */
+    const USER_OWN = { PENGUIN_LANG: "zh", PENGUIN_UPDATE_CHECK: "off" };
+    const SERVER_ENV = { ...SERVER_ONLY, ...USER_OWN };
 
     /**
-     * Opens bash with SERVER_ONLY in this process's environment and `extra` passed by the
+     * Opens bash with SERVER_ENV in this process's environment and `extra` passed by the
      * caller; waits for exactly the line `expected` describes, so anything else shows up on
      * the screen in the timeout's message.
      */
@@ -538,8 +542,8 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
       options: { inheritDataRoot?: boolean },
       expected: Record<string, string>,
     ): Promise<string[]> {
-      const saved = Object.fromEntries(Object.keys(SERVER_ONLY).map((k) => [k, process.env[k]]));
-      Object.assign(process.env, SERVER_ONLY);
+      const saved = Object.fromEntries(Object.keys(SERVER_ENV).map((k) => [k, process.env[k]]));
+      Object.assign(process.env, SERVER_ENV);
       try {
         const { env } = homeFor(bash);
         const session = new TerminalSession({
@@ -555,7 +559,7 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
             () => screen(session).some((line) => line.startsWith(PROMPT)),
             () => `no prompt; screen: ${screen(session).join(" | ")}`,
           );
-          const keys = [...Object.keys(SERVER_ONLY), "PENGUIN_GIVEN"];
+          const keys = [...Object.keys(SERVER_ENV), "PENGUIN_GIVEN"];
           const probe = keys.map((k) => `${k}=\${${k}-unset}`).join(" ");
           const line = keys.map((k) => `${k}=${expected[k] ?? "unset"}`).join(" ");
           const lines = await run(session, `echo "${probe}"`, line);
@@ -572,8 +576,8 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
       }
     }
 
-    it("has none of the server process's PENGUIN_* / PORT / HOST, and what the caller passes", async () => {
-      await shellSees({}, { PENGUIN_GIVEN: "given" });
+    it("has none of the server process's PENGUIN_* / PORT / HOST but the user's own settings, and what the caller passes", async () => {
+      await shellSees({}, { ...USER_OWN, PENGUIN_GIVEN: "given" });
     }, 30_000);
 
     it("keeps the server's PENGUIN_HOME / PENGUIN_WEB_DB where no shim names the data root", async () => {
@@ -582,6 +586,7 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
         {
           PENGUIN_HOME: SERVER_ONLY.PENGUIN_HOME,
           PENGUIN_WEB_DB: SERVER_ONLY.PENGUIN_WEB_DB,
+          ...USER_OWN,
           PENGUIN_GIVEN: "given",
         },
       );
@@ -601,6 +606,253 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
       }
     }, 30_000);
   });
+
+  /**
+   * A HOME whose startup file for `shell` exports `vars` and sets the prompt, and the
+   * environment that points the shell at it.
+   */
+  function homeExporting(shell: string, vars: Record<string, string>): Record<string, string> {
+    const home = fs.mkdtempSync(path.join(tmp, `home-${shell}-vars-`));
+    const write = (rel: string, lines: string[]): void => {
+      fs.mkdirSync(path.dirname(path.join(home, rel)), { recursive: true });
+      fs.writeFileSync(path.join(home, rel), [...lines, ""].join("\n"));
+    };
+    const entries = Object.entries(vars);
+    const posix = [...entries.map(([k, v]) => `export ${k}='${v}'`), `PS1='${PROMPT} '`];
+    if (shell === "bash") write(".bash_profile", posix);
+    if (shell === "zsh") write(".zshrc", posix);
+    if (shell === "dash") write(".profile", posix);
+    if (shell === "fish") {
+      write(".config/fish/config.fish", [
+        "set -g fish_greeting ''",
+        ...entries.map(([k, v]) => `set -gx ${k} '${v}'`),
+        `function fish_prompt; echo -n '${PROMPT} '; end`,
+      ]);
+    }
+    if (shell === "pwsh") {
+      write(".config/powershell/Microsoft.PowerShell_profile.ps1", [
+        ...entries.map(([k, v]) => `$env:${k} = '${v}'`),
+        `function prompt { '${PROMPT} ' }`,
+      ]);
+    }
+    return {
+      HOME: home,
+      XDG_CONFIG_HOME: path.join(home, ".config"),
+      XDG_DATA_HOME: path.join(home, ".local", "share"),
+      XDG_CACHE_HOME: path.join(home, ".cache"),
+      BASH_SILENCE_DEPRECATION_WARNING: "1",
+      POWERSHELL_UPDATECHECK: "Off",
+      POWERSHELL_TELEMETRY_OPTOUT: "1",
+    };
+  }
+
+  /**
+   * A development instance's first line, which the shell prints itself at its first prompt,
+   * once the user's startup files have run: the line as given while `penguin` there still
+   * targets this instance, and what it targets instead when those files set PENGUIN_API_URL or
+   * another PENGUIN_HOME.
+   */
+  describe("a development instance's first line", () => {
+    const ROOT = path.join(path.sep, "instance", "root");
+    const devNotice: TerminalNotice = {
+      text: "the CLI of this instance, on its data root",
+      tone: "info",
+      target: { root: ROOT, elsewhere: ["Your shell sets ", ", so not this instance."] },
+    };
+    const CASES: Array<{ what: string; vars: Record<string, string>; first: string }> = [
+      { what: "nothing", vars: {}, first: devNotice.text },
+      {
+        what: "PENGUIN_HOME to another root",
+        vars: { PENGUIN_HOME: "/somewhere/else" },
+        first: "Your shell sets PENGUIN_HOME=/somewhere/else, so not this instance.",
+      },
+      {
+        what: "PENGUIN_HOME to this root",
+        vars: { PENGUIN_HOME: `${ROOT}/` },
+        first: devNotice.text,
+      },
+      {
+        what: "PENGUIN_API_URL",
+        vars: { PENGUIN_API_URL: "http://localhost:9" },
+        first: "Your shell sets PENGUIN_API_URL=http://localhost:9, so not this instance.",
+      },
+    ];
+
+    for (const shell of ["bash", "zsh", "dash", "fish", "pwsh"]) {
+      const shellPath = onPath(shell);
+      it.skipIf(shellPath === null)(
+        `${shell}: says what the user's own files leave penguin aimed at`,
+        async () => {
+          for (const c of CASES) {
+            const session = await open(
+              shellPath!,
+              homeExporting(shell, c.vars),
+              pathFirst(),
+              devNotice,
+            );
+            try {
+              expect(screen(session), `when they set ${c.what}`).toEqual([c.first, PROMPT]);
+            } finally {
+              session.dispose();
+            }
+          }
+        },
+        60_000,
+      );
+    }
+
+    it.skipIf(onPath("zsh") === null)(
+      "zsh: waits for an instant prompt to hand the terminal back",
+      async () => {
+        // What powerlevel10k's instant prompt does: standard output goes to a file from the top
+        // of .zshrc until a `sched +0` that its first prompt hook sets up, which then prints
+        // whatever was captured as "console output during initialization".
+        const env = homeExporting("zsh", {});
+        fs.writeFileSync(
+          path.join(env.HOME!, ".zshrc"),
+          [
+            "zmodload zsh/sched",
+            "_cap=$HOME/captured",
+            "exec {_po}>&1 {_pe}>&2 1>$_cap 2>&1",
+            '_release() { exec 1>&$_po 2>&$_pe; [[ -s $_cap ]] && print -r -- "captured: $(<$_cap)"; return 0 }',
+            "_first() { precmd_functions=(${precmd_functions:#_first}); sched +0 _release }",
+            "precmd_functions=(_first $precmd_functions)",
+            `PS1='${PROMPT} '`,
+            "",
+          ].join("\n"),
+        );
+        const session = await open(onPath("zsh")!, env, pathFirst(), devNotice);
+        try {
+          expect(screen(session)).toEqual([devNotice.text, PROMPT]);
+        } finally {
+          session.dispose();
+        }
+      },
+      30_000,
+    );
+  });
+
+  /**
+   * A prompt hook that puts the user's `penguin` first, registered only at the second prompt —
+   * what a lazy plugin loader does — runs after ours unless ours moves behind it again. From
+   * the second prompt on `penguin` stays the shim's, and nothing piles up in the hook lists.
+   */
+  const DEFERRED: Array<{ shell: string; what: string; home: (home: string) => void }> = [
+    {
+      shell: "bash",
+      what: "a string PROMPT_COMMAND",
+      home: (home) =>
+        fs.writeFileSync(
+          path.join(home, ".bash_profile"),
+          [
+            `PS1='${PROMPT} '`,
+            "_n=0",
+            '_late() { PATH="$HOME/userbin:$PATH"; }',
+            `_defer() { _n=$((_n + 1)); if [ "$_n" = 2 ]; then PROMPT_COMMAND="$PROMPT_COMMAND"$'\\n'_late; fi; }`,
+            "PROMPT_COMMAND=_defer",
+            "",
+          ].join("\n"),
+        ),
+    },
+    {
+      shell: "zsh",
+      what: "precmd_functions",
+      home: (home) =>
+        fs.writeFileSync(
+          path.join(home, ".zshrc"),
+          [
+            `PS1='${PROMPT} '`,
+            "typeset -gi _n=0",
+            "_late() { path=($HOME/userbin $path) }",
+            "_defer() { (( ++_n == 2 )) && precmd_functions+=(_late); return 0 }",
+            "precmd_functions+=(_defer)",
+            "",
+          ].join("\n"),
+        ),
+    },
+    {
+      shell: "fish",
+      what: "a fish_prompt handler",
+      home: (home) => {
+        const config = path.join(home, ".config", "fish", "config.fish");
+        fs.mkdirSync(path.dirname(config), { recursive: true });
+        fs.writeFileSync(
+          config,
+          [
+            "set -g fish_greeting ''",
+            `function fish_prompt; echo -n '${PROMPT} '; end`,
+            "set -g _n 0",
+            "function _defer --on-event fish_prompt",
+            "  set -g _n (math $_n + 1)",
+            "  if test $_n -eq 2",
+            "    function _late --on-event fish_prompt; set -gx PATH $HOME/userbin $PATH; end",
+            "  end",
+            "end",
+            "",
+          ].join("\n"),
+        );
+      },
+    },
+  ];
+  /** bash 5.1 and later run every element of an array PROMPT_COMMAND. */
+  const bashArrays =
+    onPath("bash") !== null &&
+    spawnSync(onPath("bash")!, ["-c", "((BASH_VERSINFO[0]*100+BASH_VERSINFO[1] >= 501))"])
+      .status === 0;
+  if (bashArrays) {
+    DEFERRED.push({
+      shell: "bash",
+      what: "an array PROMPT_COMMAND",
+      home: (home) =>
+        fs.writeFileSync(
+          path.join(home, ".bash_profile"),
+          [
+            `PS1='${PROMPT} '`,
+            "_n=0",
+            '_late() { PATH="$HOME/userbin:$PATH"; }',
+            '_defer() { _n=$((_n + 1)); if [ "$_n" = 2 ]; then PROMPT_COMMAND+=(_late); fi; }',
+            "PROMPT_COMMAND=(_defer)",
+            "",
+          ].join("\n"),
+        ),
+    });
+  }
+
+  for (const deferred of DEFERRED) {
+    const shellPath = onPath(deferred.shell);
+    describe.skipIf(shellPath === null)(`${deferred.shell} with ${deferred.what}`, () => {
+      it("keeps penguin the shim's when a hook that puts another first is added at the second prompt", async () => {
+        const env = homeWith({});
+        deferred.home(env.HOME!);
+        const session = await open(
+          shellPath!,
+          { ...env, XDG_CONFIG_HOME: path.join(env.HOME!, ".config") },
+          pathFirst(),
+        );
+        try {
+          // Each line runs after the hooks of the prompt it is typed at: the hook is added at
+          // the second, and runs from the third on.
+          const shim = path.join(shimDir, "penguin");
+          for (const prompt of ["first", "second", "third", "fourth"]) {
+            expect(await whichPenguin(session, `at-${prompt}-prompt`), prompt).toBe(shim);
+          }
+          // The hook lists hold what they held a prompt earlier: nothing is added per prompt.
+          const size =
+            deferred.shell === "bash"
+              ? 'echo "size=${#PROMPT_COMMAND[@]}/${#PROMPT_COMMAND}"'
+              : deferred.shell === "zsh"
+                ? 'echo "size=${#precmd_functions}"'
+                : 'echo "size="(count (functions --handlers-type generic))';
+          const before = await run(session, `${size}; echo size-a`, "size-a");
+          const after = await run(session, `${size}; echo size-b`, "size-b");
+          const sizes = (lines: string[], marker: string) => lines[lines.lastIndexOf(marker) - 1];
+          expect(sizes(after, "size-b")).toBe(sizes(before, "size-a"));
+        } finally {
+          session.dispose();
+        }
+      }, 30_000);
+    });
+  }
 });
 
 describePty("a terminal opened through the server", () => {
