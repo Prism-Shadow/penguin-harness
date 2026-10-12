@@ -17,6 +17,8 @@ page's blocks stood further apart.
   GDPevo benchmark"; "A legal agent: upload documents, download reports" became "A legal agent app
   from one sentence"; the English "Build a general-purpose decision agent and its benchmark" became
   "Build a decision agent and its benchmark", which fits its row.
+- **Legal agent example.** Its prompt puts the workflow tab on the new legal agent, where the
+  example meant it, instead of on the agent building it.
 - **Import example.** It now imports GDPevo from
   `packages/penguinharness-benchmark-gdpevo-train` in Prism-Shadow/penguin-harness-benchmark,
   together with its paired test set, through `benchmark-design`, and leaves a Project that already

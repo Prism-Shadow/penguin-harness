@@ -15,6 +15,7 @@
   Benchmark 包」改为「导入 GDPevo 评测集」；「法务智能体：上传文件，下载分析报告」改为「一句话构建法务智能体应用」；
   英文的 "Build a general-purpose decision agent and its benchmark" 改为 "Build a decision agent and its
   benchmark"，一行放得下。
+- **法务智能体示例。** 提示词把 Workflow 标签页做在新建的法务智能体上，这才是示例的本意，而不是做在构建它的智能体自己身上。
 - **导入示例。** 改为经 `benchmark-design` 从 Prism-Shadow/penguin-harness-benchmark 的
   `packages/penguinharness-benchmark-gdpevo-train` 导入 GDPevo，配对的测试集一并导入；Project 里已经有了就保持原样。
 - **节奏跑酷。** 企鹅随音符所在的路线变换形态：接上方音符时飞起来，接下方音符时趴上雪橇贴地滑行。提示词要求难度

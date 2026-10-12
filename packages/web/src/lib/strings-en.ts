@@ -3185,8 +3185,8 @@ When done, open index.html in a browser and self-test once.`,
         desc: "A new legal agent behind a workflow tab with only an upload, a file list and report downloads — no conversation in sight",
         prompt:
           "Create a legal agent that reviews contracts, agreements and other legal documents: it " +
-          "finds risky clauses, explains why, and suggests revisions. Then build yourself a " +
-          "workflow tab as its desk: when I upload a file, the legal agent analyzes it in the " +
+          "finds risky clauses, explains why, and suggests revisions. Then give the legal agent " +
+          "a workflow tab as its desk: when I upload a file, the agent analyzes it in the " +
           "background and produces an analysis report for me to download. The page has only an " +
           "upload, a file list (each file's processing status) and the report downloads, with no " +
           "conversation shown. Take every colour from the theme variables so it looks right in " +
