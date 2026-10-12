@@ -80,17 +80,22 @@ const usable = await Promise.resolve(provider)
 describe.skipIf(!usable)("the real ACL runner (Windows, host-gated)", () => {
   // What the refusal points at: both PowerShells write inside the Workspace and are denied outside.
   const pwsh = spawnSync("where", ["pwsh"], { windowsHide: true }).status === 0;
-  it.each(["powershell", ...(pwsh ? ["pwsh"] : [])])("%s runs confined", (shell) => {
-    const outside = path.join(homedir(), `penguin-dsh-shells-${shell}-${process.pid}.txt`);
-    try {
-      const body = `Set-Content -LiteralPath in-${shell}.txt -Value ok; try { Set-Content -LiteralPath '${outside}' -Value leak -ErrorAction Stop } catch { $_.Exception.Message }`;
-      const r = run(confine([shell, "-NoLogo", "-NoProfile", "-Command", body]));
-      expect(r.status).toBe(0);
-      expect(existsSync(path.join(ws, `in-${shell}.txt`))).toBe(true);
-      expect(existsSync(outside)).toBe(false);
-      expect(r.stdout).toMatch(/access to the path .* is denied/i);
-    } finally {
-      rmSync(outside, { force: true });
-    }
-  });
+  // Real ACL setup and a cold PowerShell start can exceed Vitest's default on Windows CI.
+  it.each(["powershell", ...(pwsh ? ["pwsh"] : [])])(
+    "%s runs confined",
+    (shell) => {
+      const outside = path.join(homedir(), `penguin-dsh-shells-${shell}-${process.pid}.txt`);
+      try {
+        const body = `Set-Content -LiteralPath in-${shell}.txt -Value ok; try { Set-Content -LiteralPath '${outside}' -Value leak -ErrorAction Stop } catch { $_.Exception.Message }`;
+        const r = run(confine([shell, "-NoLogo", "-NoProfile", "-Command", body]));
+        expect(r.status).toBe(0);
+        expect(existsSync(path.join(ws, `in-${shell}.txt`))).toBe(true);
+        expect(existsSync(outside)).toBe(false);
+        expect(r.stdout).toMatch(/access to the path .* is denied/i);
+      } finally {
+        rmSync(outside, { force: true });
+      }
+    },
+    30_000,
+  );
 });

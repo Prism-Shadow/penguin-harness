@@ -223,14 +223,14 @@ describe("penguin benchmark import", () => {
   ];
 
   // This case creates and walks 1001 real files. Windows CI can spend more than the
-  // default five seconds in that disk fixture; the refusal and no-request assertions stay.
+  // previous fifteen-second budget in that disk fixture; the refusal and no-request assertions stay.
   it("refuses a folder of more than 1000 files before anything is sent", async () => {
     const many = Array.from({ length: 1001 }, (_, i) => [`CASE-001/statement/${i}.md`, "x"]);
     writeFiles(dir, Object.fromEntries(many));
     expect(await cli(["benchmark", "import", dir])).toBe(1);
     expect(stderr.join("")).toContain(t.benchmark.tooManyFiles(dir, 1000));
     expect(imports()).toEqual([]);
-  }, 15_000);
+  }, 30_000);
 
   it.each(refusedLocally)("refuses %s before anything is sent", async (_what, argv, message) => {
     expect(await cli(argv(dir))).toBe(1);

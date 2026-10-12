@@ -11,3 +11,4 @@
 
 - 把 `penguinGoOrigin` 移出必需配置成员。`penguinGoOrigin` 与 `modelscopeBridgeUrl` 在服务端配置上改为可选，与 `cliEntry` 同理：运行时没有发布它们时，Penguin Go 与 ModelScope 授权提供者使用生产默认值（`https://token.penguin.ooo`、`https://go.penguin.ooo/modelscope`）。
 - 新增测试钉住这条规则：运行时发布之后才加入的配置成员绝不进入必需列表。
+- Windows CI 为真实 PowerShell ACL 检查及 benchmark 导入的 1001 文件拒绝用例设置有界的 30 秒测试预算，保留原有隔离与禁止上传断言。
