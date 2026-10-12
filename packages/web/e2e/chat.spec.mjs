@@ -361,11 +361,11 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await page.keyboard.press("Escape");
 
   // --- session rename (manual title wins over the auto-generated one) ---
-  // Row actions live in the per-row ellipsis menu ("对话选项"); its panel is body-portaled,
+  // Row actions live in the per-row ellipsis menu ("更多操作"); its panel is body-portaled,
   // so the items are page-level, not inside the row locator.
   const renameTarget = sidebar.locator("li", { hasText: "Configure Tailwind theme" }).first();
   await renameTarget.hover();
-  await renameTarget.getByRole("button", { name: "对话选项" }).click();
+  await renameTarget.getByRole("button", { name: "更多操作" }).click();
   await page.getByRole("button", { name: "重命名对话" }).click();
   await page.getByLabel("标题").fill("My renamed title");
   await page.getByRole("button", { name: "保存" }).click();
@@ -374,29 +374,29 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect(sidebar.getByText("My renamed title")).toBeVisible();
 
   // --- session archive + delete (throwaway session) ---
-  await page.request.post(`${BASE}/api/projects/${projectId}/agents/${agentId}/sessions`, {
-    data: { provider: "custom", modelId: "claude-4-8" },
-  });
+  const throwawayRes = await page.request.post(
+    `${BASE}/api/projects/${projectId}/agents/${agentId}/sessions`,
+    { data: { provider: "custom", modelId: "claude-4-8" } },
+  );
+  const throwawayId = (await throwawayRes.json()).session.sessionId;
   await page.reload();
   const throwaway = sidebar.locator("li", { hasText: "新对话" }).first();
   await expect(throwaway).toBeVisible();
-  // Archive via the row menu: moves it under the collapsed "已归档" group.
+  // Archive via the row menu: the row leaves the sidebar (the archive page lists it).
   await throwaway.hover();
-  await throwaway.getByRole("button", { name: "对话选项" }).click();
-  await page.getByRole("button", { name: "归档", exact: true }).click();
-  await expect(sidebar.getByText(/已归档（\d+）/).first()).toBeVisible();
-  await sidebar
-    .getByText(/已归档（\d+）/)
-    .first()
-    .click();
-  const archived = sidebar.locator("li", { hasText: "新对话" }).first();
-  await expect(archived).toBeVisible();
-  // Delete from the archived group (delete + archive share the same row menu).
-  await archived.hover();
-  await archived.getByRole("button", { name: "对话选项" }).click();
+  await throwaway.getByRole("button", { name: "更多操作" }).click();
+  // The menu's item carries its word; the row's own hover button only an aria-label.
+  await page.getByRole("button", { name: "归档", exact: true }).filter({ hasText: "归档" }).click();
+  await expect(sidebar.getByText("新对话")).toHaveCount(0);
+  // Its URL shows the archived stub, which deletes it after asking.
+  await page.goto(`${BASE}/chat/${throwawayId}`);
+  await expect(
+    page.getByText("这个对话已归档。取消归档后可以查看内容，它会回到左侧列表。"),
+  ).toBeVisible();
   await page.getByRole("button", { name: "删除对话" }).click();
   await page.getByRole("button", { name: "删除", exact: true }).click();
-  await expect(sidebar.getByText("新对话")).toHaveCount(0);
+  await expect(page).not.toHaveURL(new RegExp(throwawayId));
+  expect((await page.request.get(`${BASE}/api/sessions/${throwawayId}`)).status()).toBe(404);
 
   // --- session expiry: any 401 sends the user back to /login (no stuck error page) ---
   // Clearing the cookie is what a rebuilt web.db looks like to the browser.

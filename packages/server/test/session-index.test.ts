@@ -442,7 +442,7 @@ describe("session-index", () => {
       seed("session-act-a3", "2026-07-03T08:00:00.000Z", "2026-07-03T08:00:00.000Z", alpha);
       seed("session-act-a4", "2026-07-04T08:00:00.000Z", "2026-07-06T08:00:00.000Z", alpha);
       seed("session-act-a5", "2026-07-05T08:00:00.000Z", "2026-07-05T08:00:00.000Z", alpha);
-      t.deps.sessionsRepo.setArchived("session-act-a5", "2026-07-10T08:00:00.000Z");
+      t.deps.sessionsRepo.setListing(["session-act-a5"], "archived", "2026-07-10T08:00:00.000Z");
       seed("session-act-b1", "2026-07-06T08:00:00.000Z", "2026-07-09T08:00:00.000Z", beta);
 
       const scope = `&category=active&workspaceGroup=${encodeURIComponent(alpha)}`;
@@ -457,8 +457,8 @@ describe("session-index", () => {
       });
       const counted = await list(`?order=activity&limit=1&before=${below}&counts=1${scope}`);
       expect(counted.sessions.map((s) => s.sessionId)).toEqual(["session-act-a4"]);
-      expect(counted.counts).toEqual({ active: 5, background: 0, archived: 1 });
-      expect(counted.workspaceCounts?.[alpha]).toEqual({ active: 4, background: 0, archived: 1 });
+      expect(counted.counts).toEqual({ active: 5, archived: 1 });
+      expect(counted.workspaceCounts?.[alpha]).toEqual({ active: 4, archived: 1 });
       // Groups are still placed by their newest CREATION, not by the walk's first row.
       expect(counted.workspaceLatest).toEqual({
         [alpha]: "2026-07-05T08:00:00.000Z",

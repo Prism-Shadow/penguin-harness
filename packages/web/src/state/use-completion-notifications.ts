@@ -4,7 +4,9 @@
  *
  * Watches the tracked Session list for active→idle transitions (lib/completion-notify)
  * and, when the window is hidden or unfocused, shows a system notification with the
- * Session's title; clicking focuses the window and opens that Session.
+ * Session's title; clicking focuses the window and opens that Session. Only the sidebar's own
+ * conversations notify (observedSessions): an archived Session — one a program opened and
+ * nobody kept, or one the user filed away — a subagent and an organization's Session never do.
  *
  * Two gates, both from lib/notification-pref: the user turned the preference on, and the
  * platform grants permission at this moment. The permission is checked every time rather
@@ -17,7 +19,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router";
 import { PENGUIN_LOGO_URL } from "../lib/brand-logo";
 import { S } from "../lib/strings";
-import { createCompletionTracker } from "../lib/completion-notify";
+import { createCompletionTracker, observedSessions } from "../lib/completion-notify";
 import {
   notificationPermission,
   notificationsEnabledVersion,
@@ -47,9 +49,7 @@ export function useCompletionNotifications(): void {
     // preference is off: completions the user watched happen, or that happened while
     // notifications were switched off, are consumed silently here instead of surfacing on
     // a later blur or replaying the moment the preference is switched back on.
-    const completed = trackerRef.current.observe(
-      sessions.map((s) => ({ sessionId: s.sessionId, status: s.status })),
-    );
+    const completed = trackerRef.current.observe(observedSessions(sessions));
     if (!enabled) return;
     if (completed.length === 0) return;
     if (!document.hidden && document.hasFocus()) return;

@@ -2461,8 +2461,9 @@ export class SessionManager {
       lastActiveAt: createdAt,
       createdAt,
     });
-    // Make the subagent appear immediately in the sidebar: notify via the parent
-    // Session's channel (a frontend currently watching the parent run refreshes its list in place).
+    // Announce the child on the parent Session's channel. No list shows a subagent Session
+    // (its parent's Agent panel opens it), so the Web App reads nothing from this; it stays
+    // for any other reader of that channel.
     this.publishEvent(entry, {
       type: "session_created",
       projectId: entry.projectId,
@@ -2681,7 +2682,9 @@ export abstract class SessionServiceIface extends Interface<
     SessionServiceImpl,
     | "toInfo"
     | "hasTrace"
+    | "listingOf"
     | "listSessions"
+    | "archivedRows"
     | "sessionStats"
     | "createSession"
     | "defaultSandbox"
@@ -2794,8 +2797,11 @@ export class SessionsModule {
       // into. Derived from the config rather than passed along, so the platform half needs no
       // new capability — and read for truth rather than for null, because a runtime older than
       // this field publishes a config without it and wrote no shim either: no field, no
-      // directory, feature off, rather than a push declined over a PATH entry.
-      pathPrepend: (): string[] => (config.cliEntry ? [cliShimDir(config.root)] : []),
+      // directory, feature off, rather than a push declined over a PATH entry. A checkout whose
+      // CLI cannot run has a shim too — the stub that says why — and it leads PATH all the same,
+      // so no other installation's `penguin` answers in its place.
+      pathPrepend: (): string[] =>
+        config.cliEntry || config.cliLaunch?.unavailable ? [cliShimDir(config.root)] : [],
       // Each Session confines under its OWN policy — the snapshot on its row, its root's for a
       // subagent — so a settings change reaches only Sessions created after it. A row from
       // before snapshots takes the settings at its first command and keeps them from then on.

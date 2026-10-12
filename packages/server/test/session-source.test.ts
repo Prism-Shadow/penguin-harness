@@ -1,37 +1,38 @@
 /**
  * A Session's source on the server: what kind of conversation each Session is, read from its
- * session_meta (never the index row), and the sessions list's three categories built on it.
+ * session_meta (never the index row), and the sessions list's two categories built on it with
+ * the user's marks (the listing rule: session-listing-rule.test.ts).
  *
  * One app and one Project serve the file; each case works in an Agent of its own, which it
  * deletes on the way out.
  *
  * Scenarios:
  * - Given Sessions of every source, some archived, the list files `user` rows under `active`,
- *   `api` / `schedule` / `subagent` / `cli` rows under `background`, and an archived row under
- *   `archived` whatever its source — but a `company` row, archived or not, under none of them;
- *   the plain list still serves it.
- * - Given a category the list no longer has (`subagent`, `schedule`, `benchmark`) or junk,
- *   the list is a 400, never an unfiltered page.
- * - Given the same rows, `counts=1` returns active / background / archived totals over the
- *   whole list whatever the page, counting no company row; the per-Workspace totals sum back
+ *   and `api` / `schedule` / `cli` rows (nobody kept them) and archived rows under `archived`
+ *   — but a `subagent` or `company` row, archived or not, under neither; the plain list still
+ *   serves them.
+ * - Given a category the list no longer has (`background`, `subagent`, `schedule`,
+ *   `benchmark`) or junk, the list is a 400, never an unfiltered page.
+ * - Given the same rows, `counts=1` returns active / archived totals over the whole list
+ *   whatever the page, counting no subagent or company row; the per-Workspace totals sum back
  *   to them, a Workspace holding only company rows has no totals and no stamp, and a request
  *   without `counts=1` carries none.
- * - Given more background rows than a page, `category=background` pages by activity cursor,
- *   serving every background row exactly once and no other.
+ * - Given more archived rows than a page, `category=archived` pages by activity cursor,
+ *   serving every archived row exactly once and no other.
  * - Given a create request, `source: "cli"` creates a `cli` Session and the retired
  *   `benchmark` is accepted as `cli`; a source the server writes itself is a 400 that creates
  *   nothing.
  * - Given a Trace head from before the source was required, after a restart (a registry that
  *   has not seen it) one without a source lists as `active` and reads `user`, one with
- *   `benchmark` lists as `background` and reads `cli`; the startup sweep adopts them the same
+ *   `benchmark` lists as `archived` and reads `cli`; the startup sweep adopts them the same
  *   way.
  * - Given a Session company mode opened before the source was required (a head without one, the
  *   row's client `org`), it reads as `company` and is in no category; so does an `org` row that
- *   has not run yet. An `api` row that has not run yet reads as `api`, in Background.
+ *   has not run yet. An `api` row that has not run yet reads as `api`, archived.
  * - Given company mode opening a desk Session (`company`, client `org`), the Session is
  *   `company`, keeps its `org` client and is in no category; a child it spawns is `subagent`,
- *   in Background.
- * - Given the scheduler opening a Session, it is `schedule`, in Background.
+ *   in no category either.
+ * - Given the scheduler opening a Session, it is `schedule`, archived.
  * (A fork is `user` whatever it was cut from: session-fork.test.ts.)
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -122,7 +123,7 @@ describe("session source", () => {
         createdAt: stamp,
         lastActiveAt: stamp,
       });
-      if (opts.archived) t.deps.sessionsRepo.setArchived(sessionId, stamp);
+      if (opts.archived) t.deps.sessionsRepo.setListing([sessionId], "archived", stamp);
     }
     const meta = {
       session_id: sessionId,
@@ -143,8 +144,8 @@ describe("session source", () => {
 
   /**
    * One row of every source, a pre-source `user` row, a retired `benchmark` row, two archived
-   * ones, and three company rows: one sharing a Workspace with background rows, one archived,
-   * one alone in its Workspace.
+   * ones, and three company rows: one sharing a Workspace with program-opened rows, one
+   * archived, one alone in its Workspace.
    */
   async function seedEverySource() {
     return {
@@ -163,47 +164,54 @@ describe("session source", () => {
     };
   }
 
-  it("files user rows under active, other programs' under background, archived rows under archived, and company rows under none", async () => {
+  it("files user rows under active, programs' and archived rows under archived, and subagent and company rows under neither", async () => {
     const rows = await seedEverySource();
     expect(new Set(ids(await list("?category=active")))).toEqual(
       new Set([rows.user, rows.legacyUser]),
     );
-    expect(new Set(ids(await list("?category=background")))).toEqual(
-      new Set([rows.api, rows.schedule, rows.subagent, rows.cli, rows.legacyBenchmark]),
-    );
     expect(new Set(ids(await list("?category=archived")))).toEqual(
-      new Set([rows.archivedUser, rows.archivedSchedule]),
+      new Set([
+        rows.api,
+        rows.schedule,
+        rows.cli,
+        rows.legacyBenchmark,
+        rows.archivedUser,
+        rows.archivedSchedule,
+      ]),
     );
     // Nowhere in the categories, and still a Session: the plain list serves every row.
     const all = await list("");
+    expect(sourceIn(all, rows.subagent)).toBe("subagent");
     for (const id of [rows.company, rows.archivedCompany, rows.companyOnly]) {
       expect(sourceIn(all, id)).toBe("company");
     }
+    // A row's own `archived` is the rule's answer, not the bare mark.
+    expect(all.sessions.find((s) => s.sessionId === rows.cli)?.archived).toBe(true);
+    expect(all.sessions.find((s) => s.sessionId === rows.subagent)?.archived).toBe(false);
   });
 
   it("refuses a category the list no longer has, or junk, rather than serving an unfiltered page", async () => {
     await seed(1, "subagent");
-    for (const category of ["subagent", "schedule", "benchmark", "weird"]) {
+    for (const category of ["background", "subagent", "schedule", "benchmark", "weird"]) {
       expect((await api.get(`${base()}?category=${category}`)).status, category).toBe(400);
     }
   });
 
-  it("counts=1 totals active, background and archived over the whole list, broken down by Workspace, counting no company row", async () => {
+  it("counts=1 totals active and archived over the whole list, broken down by Workspace, counting no subagent or company row", async () => {
     await seedEverySource();
     const counted = await list("?category=active&counts=1&limit=1");
     expect(counted.sessions).toHaveLength(1);
-    expect(counted.counts).toEqual({ active: 2, background: 5, archived: 2 });
-    // The two background rows sharing a Workspace are counted there together, and the company
-    // row beside them is not.
+    expect(counted.counts).toEqual({ active: 2, archived: 6 });
+    // The cli row is counted in the Workspace it shares, and the subagent and company rows
+    // beside it are not.
     expect(counted.workspaceCounts?.["/tmp/ws-source-shared"]).toEqual({
       active: 0,
-      background: 2,
-      archived: 0,
+      archived: 1,
     });
     // A Workspace holding only a company row is no group of the list: no totals, no stamp.
     expect(counted.workspaceCounts?.["/tmp/ws-source-desk"]).toBeUndefined();
     expect(counted.workspaceLatest?.["/tmp/ws-source-desk"]).toBeUndefined();
-    const summed = { active: 0, background: 0, archived: 0 };
+    const summed = { active: 0, archived: 0 };
     for (const ws of Object.values(counted.workspaceCounts ?? {})) {
       for (const key of Object.keys(summed) as (keyof typeof summed)[]) summed[key] += ws[key];
     }
@@ -211,12 +219,12 @@ describe("session source", () => {
     expect((await list("?category=active")).counts).toBeUndefined();
   });
 
-  it("pages category=background by activity cursor, serving every background row once and no other", async () => {
-    const background: string[] = [];
+  it("pages category=archived by activity cursor, serving every archived row once and no other", async () => {
+    const archived: string[] = [];
     for (let n = 1; n <= 7; n++) {
-      // Every third row is a person's conversation, interleaved with the background ones.
+      // Every third row is a person's conversation, interleaved with the program-opened ones.
       if (n % 3 === 0) await seed(n, "user");
-      else background.push(await seed(n, n % 2 === 0 ? "schedule" : "cli"));
+      else archived.push(await seed(n, n % 2 === 0 ? "schedule" : "cli"));
     }
     const served: string[] = [];
     let below: { lastActiveAt: string; sessionId: string } | undefined;
@@ -224,13 +232,13 @@ describe("session source", () => {
       const cursor = below
         ? `&before=${encodeURIComponent(`${below.lastActiveAt},${below.sessionId}`)}`
         : "";
-      const page = (await list(`?order=activity&category=background&limit=3${cursor}`)).sessions;
+      const page = (await list(`?order=activity&category=archived&limit=3${cursor}`)).sessions;
       served.push(...page.slice(0, 2).map((s) => s.sessionId));
       if (page.length <= 2) break;
       below = page[1];
     }
     // Newest activity first: the seeded stamps rise with n.
-    expect(served).toEqual([...background].reverse());
+    expect(served).toEqual([...archived].reverse());
   });
 
   it("creates a cli Session for source cli, and accepts the retired benchmark as cli", async () => {
@@ -240,7 +248,7 @@ describe("session source", () => {
       expect(res.status, source).toBe(201);
       const { session } = (await res.json()) as SessionCreateResponse;
       expect(session.source, source).toBe("cli");
-      expect(sourceIn(await list("?category=background"), session.sessionId), source).toBe("cli");
+      expect(sourceIn(await list("?category=archived"), session.sessionId), source).toBe("cli");
     }
   });
 
@@ -252,14 +260,14 @@ describe("session source", () => {
     expect((await list("")).sessions).toEqual([]);
   });
 
-  it("reads an old Trace head after a restart: no source lists as active user, benchmark as background cli", async () => {
+  it("reads an old Trace head after a restart: no source lists as active user, benchmark as archived cli", async () => {
     const legacyUser = await seed(1, undefined);
     const legacyBenchmark = await seed(2, "benchmark");
     const all = await list("");
     expect(sourceIn(all, legacyUser)).toBe("user");
     expect(sourceIn(all, legacyBenchmark)).toBe("cli");
     expect(ids(await list("?category=active"))).toEqual([legacyUser]);
-    expect(ids(await list("?category=background"))).toEqual([legacyBenchmark]);
+    expect(ids(await list("?category=archived"))).toEqual([legacyBenchmark]);
     // The single-session GET reads the same way.
     const single = (await (
       await api.get(`/api/sessions/${legacyBenchmark}`)
@@ -286,14 +294,14 @@ describe("session source", () => {
     expect(sourceIn(await list(""), oldDesk)).toBe("company");
     const counted = await list("?category=active&counts=1");
     expect(counted.sessions).toEqual([]);
-    expect(counted.counts).toEqual({ active: 0, background: 0, archived: 0 });
+    expect(counted.counts).toEqual({ active: 0, archived: 0 });
   });
 
   it.each([
     // A desk opened at a hire and never run.
-    ["an org row", "org", "company", { active: 0, background: 0, archived: 0 }],
-    // An API Session whose first run never got as far as its Trace.
-    ["an api row", "api", "api", { active: 0, background: 1, archived: 0 }],
+    ["an org row", "org", "company", { active: 0, archived: 0 }],
+    // An API Session whose first run never got as far as its Trace: archived from creation.
+    ["an api row", "api", "api", { active: 0, archived: 1 }],
   ] as const)(
     "reads %s that has not run yet as the source its client stands for",
     async (_row, client, source, counts) => {
@@ -336,10 +344,10 @@ describe("session source", () => {
     expect(got.session.client).toBe("org");
     const counted = await list("?category=active&counts=1");
     expect(counted.sessions).toEqual([]);
-    expect(counted.counts).toEqual({ active: 0, background: 0, archived: 0 });
+    expect(counted.counts).toEqual({ active: 0, archived: 0 });
   });
 
-  it("files a child a desk Session spawns under Background as subagent", async () => {
+  it("reads a child a desk Session spawns as subagent, in no category", async () => {
     const childId = "session-2026-07-20-09-00-00-c41d0001";
     const deskId = "session-2026-07-20-08-00-00-de5c0001";
     adoptSession(
@@ -368,13 +376,15 @@ describe("session source", () => {
     );
     await t.deps.manager.startTask(deskId, [userText("go")]);
     await waitFor(() => t.deps.manager.statusOf(deskId) === "idle");
-    const background = await list("?category=background");
-    expect(ids(background)).toEqual([childId]);
-    expect(sourceIn(background, childId)).toBe("subagent");
-    expect(background.sessions[0]!.client).toBe("org");
+    const all = await list("");
+    expect(sourceIn(all, childId)).toBe("subagent");
+    expect(all.sessions.find((s) => s.sessionId === childId)?.client).toBe("org");
+    const counted = await list("?category=archived&counts=1");
+    expect(counted.sessions).toEqual([]);
+    expect(counted.counts).toEqual({ active: 0, archived: 0 });
   });
 
-  it("opens a scheduled task's Session as schedule, in Background", async () => {
+  it("opens a scheduled task's Session as schedule, archived", async () => {
     await configureModels();
     // The scheduler's call (new-session mode).
     const info = await t.deps.sessionService.createSession({
@@ -383,7 +393,7 @@ describe("session source", () => {
       source: "schedule",
     });
     expect(info.source).toBe("schedule");
-    expect(sourceIn(await list("?category=background"), info.sessionId)).toBe("schedule");
+    expect(sourceIn(await list("?category=archived"), info.sessionId)).toBe("schedule");
     // Read from session_meta, never from the index row, which stores no source.
     const row = t.deps.sessionsRepo.findById(info.sessionId);
     expect(row !== null && "source" in row).toBe(false);

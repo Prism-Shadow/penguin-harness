@@ -35,7 +35,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 - `MODELSCOPE_BRIDGE_URL`：与 `PENGUIN_GO_ORIGIN` 一样是服务端配置，不接受浏览器指定的端点。它必须是不带凭据、查询参数或 fragment 的 HTTPS 地址。不同之处是**它允许带路径前缀**，因为生产环境的中转层就挂在 `https://go.penguin.ooo/modelscope` 下。见[连接账户](/models#连接账户)。
 - `PENGUIN_UPDATE_CHECK`：设为 `off` 只关闭自动的版本检查，不影响其他对外请求：模型请求、已启用的远程控制连接、Key 授权和代理测试照常联网。
 - `PENGUIN_NO_LOGIN_SHELL_ENV`：不设置时，导入只填补启动过程没有设置的变量。见[桌面应用快速开始](/quickstart-desktop)。
-- `PENGUIN_CLI_ENTRY`：服务器从源码检出启动时，会回退到检出目录中的 `packages/cli/dist/penguin.js`。
+- `PENGUIN_CLI_ENTRY`：未设置时，从源码检出启动的服务器提供该检出自己的 CLI（见 [PATH 启动脚本](#path-启动脚本)）。开发入口 `pnpm dev`、`pnpm desktop` 和 `pnpm penguin` 会清掉继承来的值（例如已安装应用的终端传下来的值），始终使用检出自己的 CLI；打包版与安装版的启动仍以它为准。
 
 ### Agent 所执行命令的环境
 
@@ -49,13 +49,15 @@ Agent 用 `exec_command` 运行的命令继承宿主环境，但有以下改动�
 
 ### PATH 启动脚本
 
-Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin`。服务器启动时会在 `<root>/bin/penguin` 写入一个启动脚本：脚本用服务器自己的 Node 运行 `PENGUIN_CLI_ENTRY` 指向的 CLI 入口，并把这个目录放到每条命令 PATH 的最前面。这样，命令里调用的 `penguin` 就是 Agent 正在运行的这套 harness，无论机器上全局装的是什么版本。
+Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin`。服务器启动时会在 `<root>/bin/penguin` 写入一个启动脚本：脚本用服务器自己的 Node 运行 `PENGUIN_CLI_ENTRY` 指向的 CLI 入口，并把这个目录放到每条命令 PATH 的最前面。这样，命令里调用的 `penguin` 就是 Agent 正在运行的这套 harness，无论机器上全局装的是什么版本。它连接的也是这套 harness：只要 `PENGUIN_HOME` 尚未设置，启动脚本就为它启动的 CLI 把它设为本服务器的数据根目录，且只作用于这个 CLI；服务器的数据库不在 `<root>/web.db` 时，还会一并设置 `PENGUIN_WEB_DB`。
 
-终端面板打开的终端也会在你自己的 shell 启动文件运行之后，把同一个目录放到 PATH 最前面，因此在终端里输入的 `penguin` 同样是本安装的。
+终端面板打开的终端也会在你自己的 shell 启动文件运行之后，把同一个目录放到 PATH 最前面，因此在终端里输入的 `penguin` 同样是本安装的。在 bash、zsh 和 fish 里，这个目录在每个提示符出现前都会回到最前面，排在你自己的提示符钩子之后执行，插件在启动之后才加上的钩子也不例外。要在这里运行别的 `penguin`，请使用它的完整路径，或在启动文件里定义名为 `penguin` 的 alias 或函数：shell 会先查找它们，再查 PATH。终端的环境不带服务器自己的 `PENGUIN_*`、`PORT` 和 `HOST` 变量，所以无论 `penguin` 还是你在终端里启动的服务器，都不会沿用本服务器的设置；你自己的启动文件导出的变量照常生效。其中属于你自己的设置会保留：`PENGUIN_LANG`、`PENGUIN_UPDATE_CHECK`、`PENGUIN_NO_LOGIN_SHELL_ENV`、`PENGUIN_SHELL`、`PENGUIN_INSTALL_DIR`、下载与更新源的变量（`PENGUIN_DOWNLOAD_*`、`PENGUIN_UPDATE_SOURCE`、`PENGUIN_UPDATE_SPEED_PROBE`），以及 `PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL`。没有启动脚本时，终端会保留服务器的 `PENGUIN_HOME` 和 `PENGUIN_WEB_DB`，因为此时没有别的途径让 `penguin` 找到这台服务器。
+
+从源码检出启动的服务器，其每个终端的第一行会写明 `penguin` 运行的是哪份 CLI，以及它的数据根目录。这一行由你的 shell 在第一个提示符出现前、你的启动文件运行之后打印（它们输出的内容排在这一行之上），因此反映它们的设置：启动文件导出了 `PENGUIN_API_URL`，或指向另一个数据根目录的 `PENGUIN_HOME` 时，这一行会改为说明此处的 `penguin` 连接的是那台服务器，而不是这个实例。在 cmd，以及 bash、zsh、fish、sh 和 PowerShell 以外的 shell 里，这一行由服务器在 shell 启动前写入，内容不变。
 
 这个目录既前置到环境变量里，也前置到 shell 内部，因为命令通过登录 shell 运行，而登录 shell 的 profile 常常随后重写 PATH。这也让它排在[密钥保险柜](#vault)里设置的 `PATH` 之前，而保险柜里的 `PATH` 原本会整体替换继承来的值。
 
-启动脚本在每次启动时都会重写，因此安装位置移动后，下次启动会自动跟上。没有可指向的入口时就不写启动脚本，`penguin` 的解析结果与没有启动脚本时相同。
+启动脚本在每次启动时都会重写，因此安装位置移动后，下次启动会自动跟上。没有可指向的入口时就不写启动脚本，`penguin` 的解析结果与没有启动脚本时相同。从源码检出启动、而检出自己的 CLI 无法运行的服务器，则写入一个说明原因并以失败退出的启动脚本，不让别的安装的 `penguin` 顶替。
 
 ### Workspace 预览源
 

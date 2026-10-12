@@ -107,10 +107,10 @@ describe("chat: semantic prompt marks on a terminal", () => {
   it("ends a turn that failed with D;1", async () => {
     server.switchModel = { refuse: "something_new" };
     const printed = await runChat(
-      ["/switch-model openrouter anthropic/claude-opus-5", "/exit"],
+      ["hello", "/switch-model openrouter anthropic/claude-opus-5", "/exit"],
       TERMINAL,
     );
-    expect(marks(printed)).toEqual(["A", "B", "C", "D;1", "A", "B"]);
+    expect(marks(printed)).toEqual(["A", "B", "C", "D;0", "A", "B", "C", "D;1", "A", "B"]);
   });
 
   it.each([

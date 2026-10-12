@@ -5,8 +5,9 @@
  * filter is convenience, not the boundary.
  *
  * - A web admin gets every page in rail order; a non-admin only their own pages (their browser
- *   among them: every user may pair their own Chrome), nothing server-global; the desktop shell's window drops the account page and user management; a
- *   password session against a desktop-mode server keeps the account page.
+ *   and their archived chats among them: every user may pair their own Chrome and keep their
+ *   own archive), nothing server-global; the desktop shell's window drops the account page and
+ *   user management; a password session against a desktop-mode server keeps the account page.
  * - The rail lists an admin's groups once each, in page order, and a single group when only
  *   one remains (its cue to draw no heading).
  * - A requested page passes through when the viewer may open it; a forbidden or unknown page,
@@ -51,6 +52,7 @@ describe("visibleSettingsSections", () => {
       "general",
       "appearance",
       "shortcuts",
+      "archived",
       "account",
       "browser",
       "proxy",
@@ -73,6 +75,7 @@ describe("visibleSettingsSections", () => {
       "general",
       "appearance",
       "shortcuts",
+      "archived",
       "account",
       "browser",
     ]);
@@ -87,6 +90,7 @@ describe("visibleSettingsSections", () => {
       "general",
       "appearance",
       "shortcuts",
+      "archived",
       "browser",
       "proxy",
       "uploads",
@@ -105,6 +109,7 @@ describe("visibleSettingsSections", () => {
       "general",
       "appearance",
       "shortcuts",
+      "archived",
       "account",
       "browser",
       "proxy",

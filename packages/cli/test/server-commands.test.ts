@@ -212,6 +212,20 @@ describe("penguin session ls", () => {
     expect(out()).toContain("path"); // workspace tail, not the whole path column value
   });
 
+  it("leaves out the Sessions penguin run created, which are archived until kept; -a lists them", async () => {
+    server.addSession({ sessionId: "session-2026-08-25-10-00-00-c4a70001", title: "Chat" });
+    expect(await cli(["run", "-m", "batch job", "--background"])).toBe(0);
+    const run = [...server.sessions.values()].find((s) => s.title !== "Chat")!;
+    stdout.length = 0;
+    await cli(["session", "ls"]);
+    expect(out()).toContain("c4a70001");
+    expect(out()).not.toContain(run.sessionId.slice(-8));
+
+    stdout.length = 0;
+    await cli(["session", "ls", "-a"]);
+    expect(out()).toContain(run.sessionId.slice(-8));
+  });
+
   it("--json prints the raw rows", async () => {
     server.addSession({});
     await cli(["session", "ls", "--json"]);

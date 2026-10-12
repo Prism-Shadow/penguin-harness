@@ -41,6 +41,11 @@ entry, a PR body.
   fade, the context bar's hatch and the TokenDance banner's brand-name sweep are the ones kept,
   and Frost's sidebar is flat (owner, 2026-10-11 and 2026-10-12). The frontend skill lists each
   one's job; de-slop rule 18 holds the hook recipes to it.
+- A note under a figure or a control is added only where it is needed: to explain a mark on
+  screen (the uncosted note behind a cost's `*`) or to head off a misreading that would cost the
+  reader something. A breakdown does not get a caveat sentence by default ("two measurements of
+  the same span: they can overlap, and they need not add up") — the numbers carry it, and the
+  subtlety belongs in the code comment and the spec, not under every reading.
 - zh copy follows the docs typography rules (CJK–Latin spacing, full-width punctuation, zh
   "Agent"); prose hygiene for anything published is in `authoring.md`.
 

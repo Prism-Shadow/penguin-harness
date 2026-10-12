@@ -22,6 +22,20 @@ export function resolveRoutedSession(
   return fetched !== null && fetched.sessionId === sessionId ? fetched : null;
 }
 
+/**
+ * How the chat page shows the routed Session: an archived one as its stub, never as a
+ * conversation — an archived conversation shows only its title and its time, so nothing of its
+ * transcript is read until it is unarchived — and any other one as the conversation.
+ */
+export function routedView(routed: SessionInfo | null): {
+  conversation: SessionInfo | null;
+  archived: SessionInfo | null;
+} {
+  return routed !== null && routed.archived
+    ? { conversation: null, archived: routed }
+    : { conversation: routed, archived: null };
+}
+
 /** Return a probed Session only when it belongs to the Project currently shown by the UI. */
 export function sessionForProject(session: SessionInfo, projectId: string): SessionInfo | null {
   return session.projectId === projectId ? session : null;

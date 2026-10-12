@@ -15,7 +15,7 @@ CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`�
 
 1. `--server <url>`：显式指定的目标。
 2. `PENGUIN_API_URL`：同样指定目标，但取自环境变量。服务器驱动的会话会把它注入每个工具子进程，同时注入的还有 `PENGUIN_API_TOKEN`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`，这样 Agent 自己调用 `penguin` 时，请求就能到达运行它的那台服务器。
-3. 数据根目录下存在活跃的 `server.lock`（数据根目录取 `PENGUIN_HOME`，否则为 `~/.penguin/data`）：CLI 接入正在运行的本地服务器。
+3. 数据根目录下存在活跃的 `server.lock`（数据根目录取 `PENGUIN_HOME`，否则为 `~/.penguin/data`）：CLI 接入正在运行的本地服务器。在 PenguinHarness 的终端或 Agent 的命令里运行的 `penguin`，经由那台服务器自己的 `<root>/bin/penguin` 启动；你没有设置 `PENGUIN_HOME` 时，它会填上这台服务器的数据根目录，所以连上的是它所在的服务器，而不是 `~/.penguin/data` 上的那一台。`penguin run` 和 `penguin chat` 会在开场横幅里写明所连的服务器。
 4. 自动启动：CLI 在临时端口上拉起一个独立运行的本地服务器，等它就绪后接入。服务器输出写入 `<root>/logs/server-auto-<date>.log`。如果两个 CLI 同时抢着启动，落败一方的启动进程会退出，双方都接入先成功的那台。
 
 CLI 使用本地 API token 认证。服务器每次启动都会把一个新 token 写入 `<root>/api-token`（仅所有者可读），CLI 以 `Authorization: Bearer` 的形式发送它。`PENGUIN_API_TOKEN` 优先于这个文件。CLI 只对回环地址目标读取这个文件，因此远程 `--server` 需要显式设置 `PENGUIN_API_TOKEN`。按设计，持有这个文件就等于持有管理员权限——能直接访问数据根目录的本地文件系统，本来就拥有同样的权限。`penguin server reset-admin-password` 依据的也是同一条规则。
@@ -33,7 +33,7 @@ CLI 使用本地 API token 认证。服务器每次启动都会把一个新 toke
 - 调用方上下文默认值：在 harness Agent 内部（`PENGUIN_SESSION_ID` 已设置）时，`run` 或 `chat` 创建的 Session 会从调用方 Session 的实时取值继承每一个未指定的字段：Workspace、模型对、审批模式和思考等级。`run_subagent` 对它派生的子 Agent 采用同样的继承，两个入口遵循同一条约定。对每个字段，显式传入的选项优先于调用方的值，调用方的值又优先于普通回退值。查找失败时打印一条暗色警告，并改用普通回退值。在 Agent 之外，行为不变：`--project-id` / `--agent-id` 仍按环境变量取默认值。
 - 超时：`run`、`session input` 和 `session log -f` 上的 `--timeout <duration>` 限制等待时长，语义为软让出——相当于把 `exec_command` 的让出窗口模型搬到 CLI 上。到时后命令干净地脱离并退出，退出码为 0。Task 在服务器上继续运行，之后可以用 `penguin session input` 或 `penguin session log` 接上。可接受的值有 `30s`、`5m`、`2h`，或一个表示秒数的纯整数；其他值一律拒绝。`--timeout 0` 在消息送达后立即返回（`--json` 下为 `{sessionId, status: "running"}`），所以这个选项也覆盖「不等」的场景。不带此选项时，命令无限等待。对新建 Task 而言，惯常做法仍是 `run --background`：提交后不再等待，打印裸 session id 供脚本使用，Task 一创建就脱离。
 - 参数错误：缺少参数、缺少必填选项、选项未知或命令拼错时，CLI 用界面语言打印一行错误、命令自身的用法，并提示查看 `--help`，然后以非零码退出。
-- 数据根目录：`--root <dir>` 为直接读取数据根目录的命令指定根目录，涉及 `config`、`auth`、`version`、`server status` 和 `server stop`。相对路径相对工作目录解析。优先级：`--root`，然后是 `PENGUIN_HOME` 环境变量，最后是 `~/.penguin/data`。
+- 数据根目录：`--root <dir>` 为直接读取数据根目录的命令指定根目录，涉及 `config`、`auth`、`version`、`server status` 和 `server stop`。相对路径相对工作目录解析。优先级：`--root`，然后是 `PENGUIN_HOME` 环境变量（服务器自己的 `penguin` 会在你未设置时把它设为该服务器的数据根目录，见[服务器连接](#服务器连接)），最后是 `~/.penguin/data`。
 
 ## penguin run
 
@@ -61,7 +61,7 @@ penguin run -m <message> [options]
 | `--json` | 打印最终的 `{sessionId, status, text}` 对象，取代渲染后的流。`text` 拼接主 Session 的 助手文本消息。 | — |
 | `--server <url>` | 目标服务器；见[服务器连接](#服务器连接)。 | — |
 
-`run` 创建的每个 Session 都是 CLI 会话（`source: "cli"`），Web App 把它列在会话列表的**后台会话**折叠夹里，而不是 Agent 的对话之间。`penguin chat` 创建的是普通对话。旧版评估 Skill 传入的 `--source benchmark` 仍被接受，但会被忽略并给出提示。
+`run` 创建的每个 Session 都是 CLI 会话（`source: "cli"`），按规则归档：Web App 把它列在[设置 › 已归档对话](/settings#已归档对话)中，而不是 Agent 的对话之间，在那里取消归档后它会留在侧边栏。同样，取消归档之前，`penguin session ls` 只有加 `-a` 才显示它。`penguin chat` 创建的是普通对话。旧版评估 Skill 传入的 `--source benchmark` 仍被接受，但会被忽略并给出提示。
 
 `--timeout` 到时后，`run` 打印目前已渲染的内容和一行暗色的仍在运行提示（附 session id），然后退出 0，不中止 Task。`--json` 下则打印 `{sessionId, status: "running", text}`。`--timeout 0` 在 POST 完成后立即返回，`--json` 下打印 `{sessionId, status: "running"}`，不含 `text`。对目标模式运行，最终 JSON 对象里的 `status` 就是目标结果。
 
@@ -80,6 +80,8 @@ penguin run -m "long job" --background                # returns the session id i
 ```bash
 penguin chat [options]
 ```
+
+新的对话在你发出第一条消息时才创建 Session，而不是在启动时。在此之前，开场横幅显示这个 Session 将使用的 Agent、Workspace 和模型；这时离开对话（`/exit`、Ctrl-C、输入结束）不会在服务器上留下任何东西：没有 Session，没有 Trace，侧栏里也没有条目。第一条消息之前输入的 `/thinking` 与 `/switch-model` 决定 Session 创建时的设置，`/compact` 与 `/clear` 会说明还没有对话。如果创建 Session 失败，例如服务器没有运行或登录已失效，消息不会丢失：错误照常显示，消息回到输入行（从管道输入时，空行即重新发送），按回车即可再次发送。
 
 | 选项 | 说明 | 默认值 |
 | --- | --- | --- |
@@ -103,11 +105,11 @@ penguin chat [options]
 | Task 运行期间输入或粘贴的任意文本 | 运行中插话。按 Enter 发出，多行粘贴作为一条消息；文本会排队，在两轮之间以 `[user_steering]` 用户消息的形式送达模型，同时一个 `»` 确认符会回显这段文本。你输入时渲染暂停，流式输出不会覆盖这一行。如果 Task 先结束，文本会作为下一条普通 Prompt 发送：已按 Enter 的行立即发送，尚未按 Enter 的粘贴在下一次按 Enter 时发送。 |
 | `/goal[:<budget>] <objective>` | 对给出的目标运行目标模式。可选的预算是 Token 预算，例如 `/goal:500k`。Ctrl-C 会中止整个目标。见[目标模式](/goal-mode)。 |
 | `/compact` | 立即压缩当前上下文。 |
-| `/clear` | 原地开启一个全新的空白 Session，仍用同一个 Workspace 和模型。旧 Session 保留在服务器上，之后可用 `--resume` 恢复。 |
+| `/clear` | 原地开启一个全新的空白 Session，仍用同一个 Workspace 和模型，由你的下一条消息创建。旧 Session 保留在服务器上，之后可用 `--resume` 恢复。 |
 | `/thinking` | 显示这个 Session 的思考等级：`--thinking` 或 `/thinking` 固定的等级，否则是 Agent 配置的等级。 |
-| `/thinking <level>` | 固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）。等级不会写回 Agent 配置。 |
+| `/thinking <level>` | 固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）；在第一条消息之前输入时，Session 创建时即固定为该等级。等级不会写回 Agent 配置。 |
 | `/switch-model` | 显示这个 Session 当前的模型。 |
-| `/switch-model <provider> <model_id>` | 在这个 Session 内切换模型。先用当前模型总结压缩上下文（Agent 的压缩方式为 `discard` 时也不例外），然后用新模型继续对话；压缩失败或被中断则保持当前模型。还没运行过的 Session 不压缩，直接切换。目标必须已在 Project 的模型配置中（`penguin config model list`）；两个参数以空白分隔，model_id 可以包含 `/`。 |
+| `/switch-model <provider> <model_id>` | 在这个 Session 内切换模型。先用当前模型总结压缩上下文（Agent 的压缩方式为 `discard` 时也不例外），然后用新模型继续对话；压缩失败或被中断则保持当前模型。还没运行过的 Session 不压缩，直接切换；第一条消息之前切换，则 Session 直接以目标模型创建。目标必须已在 Project 的模型配置中（`penguin config model list`）；两个参数以空白分隔，model_id 可以包含 `/`。 |
 | `/verbose` | 在折叠和完整工具输出之间切换。 |
 | `/exit`、`/quit` | 退出。 |
 
@@ -143,7 +145,7 @@ penguin session rename [session_id] -t <title> [options]
 
 ### penguin session ls
 
-列出 Project 的 Session，默认覆盖所有 Agent，用 `--agent-id` 可只看一个。各列依次为：短 id（即 8 位十六进制尾部，其他命令可以把它当作片段使用）、Agent、标题、运行中/空闲、最近活跃时间和 Workspace 路径的末段。已归档的 Session 只有加 `-a` 才显示。
+列出 Project 的 Session，默认覆盖所有 Agent，用 `--agent-id` 可只看一个。各列依次为：短 id（即 8 位十六进制尾部，其他命令可以把它当作片段使用）、Agent、标题、运行中/空闲、最近活跃时间和 Workspace 路径的末段。已归档的 Session 只有加 `-a` 才显示：包括你归档的，以及在 Web App 中取消归档之前由程序打开的 Session，例如 `run` 创建的 Session、Agent API 的会话和定时任务新开的 Session。
 
 ```bash
 penguin session ls [options]

@@ -977,13 +977,18 @@ export interface Messages {
   };
 
   // —— Runtime output ——
-  /** Startup banner: product + subcommand + CLI version on the first line, then Agent / Workspace / Model each on its own line. */
+  /**
+   * Startup banner: product + subcommand + the CLI's build identity (`penguin --version`'s
+   * string, which names a source build's commit) on the first line, then Agent / Workspace /
+   * Model / Server each on its own line — the server as client.ts connectionLabel spells it.
+   */
   header(
     kind: "chat" | "run",
     version: string,
     agentId: string,
     workspace: string,
     model: string,
+    server: string,
   ): string;
   chatHints(): string;
   confirmExit(): string;
@@ -1049,8 +1054,16 @@ export interface Messages {
   ): string;
   /** Prompt shown when `/compact` has nothing to compact (session just started / two consecutive compactions). */
   compactNothing(): string;
-  /** Feedback after `/clear`: a fresh blank Session is now active; the old Session stays on disk (its resume command is printed right above when it has a Trace record). */
+  /** Feedback after `/clear`: the next message starts a fresh blank Session; the old Session stays on disk (its resume command is printed right above when it has a Trace record). */
   clearDone(): string;
+  /** The chat's line under its banner while it has no Session yet: one is created at the first message. */
+  chatNewConversation(): string;
+  /** A command that needs a conversation (`/compact`, `/clear`) typed before the first message. */
+  chatNoConversation(): string;
+  /** Creating the Session for the first message failed: the message was not sent, and the next Enter sends it again. */
+  chatMessageKept(): string;
+  /** The banner's model when the chat names none and the Project's default model cannot be read. */
+  chatProjectDefaultModel(): string;
   /** Dim line announcing one goal round (printed before the round runs). */
   goalRound(round: number): string;
   /** Dim summary line after a goal ends: how it ended, rounds run, tokens consumed. */
@@ -1071,6 +1084,8 @@ export interface Messages {
   thinkingCurrent(level: string): string;
   /** `/thinking <level>` accepted: the Session is pinned to it, effective from the next request; the reply advises compacting first — a mid-context change invalidates the provider's cached context (never written to the Agent config). */
   thinkingSet(level: string): string;
+  /** `/thinking <level>` before the first message: the Session created then is pinned to it. */
+  thinkingHeld(level: string): string;
   /** Invalid `--thinking` / `/thinking` value (lists the selectable levels). */
   thinkingInvalid(value: string): string;
   /** Bare `/switch-model`: the Session's current model (a formatted label) plus the usage; a switch compacts first. */
@@ -1079,6 +1094,8 @@ export interface Messages {
   switchModelUsage(): string;
   /** After `/switch-model` completed: the model the Session was on and the one it is on now (formatted labels). */
   switchModelDone(previous: string, next: string): string;
+  /** `/switch-model <provider> <model_id>` before the first message: the Session created then runs on it. */
+  switchModelHeld(model: string): string;
   /** 409 `task_in_progress` / `compacting`: the Session is busy (possibly driven from another surface). */
   switchModelBusy(): string;
   /** 409 `same_model`: the Session already runs on the target. */
@@ -1176,12 +1193,14 @@ function headerEn(
   agentId: string,
   workspace: string,
   model: string,
+  server: string,
 ): string {
   return [
-    `PenguinHarness ${kind} v${version}`,
+    `PenguinHarness ${kind} ${version}`,
     `Agent: ${agentId}`,
     `Workspace: ${workspace}`,
     `Model: ${model}`,
+    `Server: ${server}`,
   ].join("\n");
 }
 
@@ -1191,12 +1210,14 @@ function headerZh(
   agentId: string,
   workspace: string,
   model: string,
+  server: string,
 ): string {
   return [
-    `PenguinHarness ${kind} v${version}`,
+    `PenguinHarness ${kind} ${version}`,
     `Agent：${agentId}`,
     `Workspace：${workspace}`,
     `模型：${model}`,
+    `服务器：${server}`,
   ].join("\n");
 }
 
@@ -1302,7 +1323,7 @@ const en: Messages = {
     sourceInvalid: (value) =>
       `Invalid --source value "${value}". penguin run takes no --source: every Session it creates is a CLI Session.`,
     sourceIgnored: () =>
-      "--source benchmark is no longer needed and is ignored: every Session penguin run creates is a CLI Session, listed in the Web App's Background folder.",
+      "--source benchmark is no longer needed and is ignored: every Session penguin run creates is a CLI Session, archived until you unarchive it (Web App: Settings › Archived chats).",
     timeoutWithBackground: () =>
       "--timeout bounds the wait, and --background does not wait: drop one of them.",
   },
@@ -2216,7 +2237,13 @@ const en: Messages = {
                 : ""
           }`) + (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[compaction] nothing to compact yet",
-  clearDone: () => "[clear] started a fresh session (the previous one is kept and resumable)",
+  clearDone: () =>
+    "[clear] your next message starts a fresh session (the previous one is kept and resumable)",
+  chatNewConversation: () => "New conversation: it is created when you send your first message.",
+  chatNoConversation: () =>
+    "[chat] no conversation yet: it is created when you send your first message",
+  chatMessageKept: () => "Your message was not sent: press Enter to send it again.",
+  chatProjectDefaultModel: () => "the Project's default model",
   goalRound: (round) => `[goal] round ${round}`,
   goalFinished: (outcome, rounds, tokens) => {
     const label = {
@@ -2237,6 +2264,8 @@ const en: Messages = {
     `[thinking] level: ${level} (this Session's) — change with /thinking <low|medium|high|xhigh|max>`,
   thinkingSet: (level) =>
     `[thinking] level pinned to ${level} for this Session, effective from the next request — changing it invalidates the model's cached context, so /compact first is recommended (the Agent config is unchanged)`,
+  thinkingHeld: (level) =>
+    `[thinking] the new conversation will be pinned to ${level} (the Agent config is unchanged)`,
   thinkingInvalid: (value) =>
     `Invalid thinking level "${value}". Use low, medium, high, xhigh, or max.`,
   switchModelCurrent: (model) =>
@@ -2244,6 +2273,7 @@ const en: Messages = {
   switchModelUsage: () =>
     "Usage: /switch-model <provider> <model_id>  (e.g. /switch-model deepseek deepseek-v4-pro; penguin config model list shows the configured models)",
   switchModelDone: (previous, next) => `[model switch] model: ${previous} → ${next}`,
+  switchModelHeld: (model) => `[model switch] the new conversation will use ${model}`,
   switchModelBusy: () =>
     "[model switch] the Session is busy (a task or a compaction is running); switch once it finishes",
   switchModelSame: (model) => `[model switch] already on ${model}; nothing to switch`,
@@ -2453,7 +2483,7 @@ const zh: Messages = {
     sourceInvalid: (value) =>
       `无效的 --source 取值 "${value}"。penguin run 不再接受 --source：它创建的每个会话都是 CLI 会话。`,
     sourceIgnored: () =>
-      "--source benchmark 已不再需要，已忽略：penguin run 创建的每个会话都是 CLI 会话，列在 Web App 的「后台会话」折叠夹中。",
+      "--source benchmark 已不再需要，已忽略：penguin run 创建的每个会话都是 CLI 会话，默认归档，列在 Web App 设置的「已归档对话」中，取消归档后进入侧栏。",
     timeoutWithBackground: () => "--timeout 限定等待，而 --background 不等待：二者去其一。",
   },
   chat: {
@@ -3305,7 +3335,11 @@ const zh: Messages = {
                 : ""
           }`) + (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[压缩] 当前上下文为空，无需压缩",
-  clearDone: () => "[清空] 已开启全新 Session（原会话仍保留，可恢复）",
+  clearDone: () => "[清空] 下一条消息将开启全新 Session（原会话仍保留，可恢复）",
+  chatNewConversation: () => "新对话：发出第一条消息时才会创建。",
+  chatNoConversation: () => "[对话] 还没有对话：发出第一条消息时才会创建",
+  chatMessageKept: () => "消息没有发出：按回车键重新发送。",
+  chatProjectDefaultModel: () => "Project 的默认模型",
   goalRound: (round) => `[目标] 第 ${round} 轮`,
   goalFinished: (outcome, rounds, tokens) => {
     const label = {
@@ -3326,12 +3360,14 @@ const zh: Messages = {
     `[思考] 当前等级：${level}（本 Session）——用 /thinking <low|medium|high|xhigh|max> 修改`,
   thinkingSet: (level) =>
     `[思考] 本 Session 的等级已钉为 ${level}，下一轮请求起生效——更换思考等级会使模型缓存失效，建议先 /compact 压缩上下文（不改动 Agent 配置）`,
+  thinkingHeld: (level) => `[思考] 新对话的等级将钉为 ${level}（不改动 Agent 配置）`,
   thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 low、medium、high、xhigh 或 max。`,
   switchModelCurrent: (model) =>
     `[切换模型] 当前模型：${model}——用 /switch-model <provider> <model_id> 切换（会先用当前模型压缩上下文）`,
   switchModelUsage: () =>
     "用法：/switch-model <provider> <model_id>（例如 /switch-model deepseek deepseek-v4-pro；penguin config model list 列出已配置的模型）",
   switchModelDone: (previous, next) => `[切换模型] 模型：${previous} → ${next}`,
+  switchModelHeld: (model) => `[切换模型] 新对话将使用 ${model}`,
   switchModelBusy: () => "[切换模型] 会话正忙（任务或压缩进行中），请待其结束后再切换",
   switchModelSame: (model) => `[切换模型] 已在使用 ${model}，无需切换`,
   switchModelNotConfigured: (model, listCommand, addCommand) =>

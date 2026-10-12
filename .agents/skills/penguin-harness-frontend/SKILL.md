@@ -86,12 +86,19 @@ banner's × and a browser tab's × have none. Either way the mark keeps its `ari
 is for assistive technology, not a panel. A hint on text that may truncate shows that text whole
 (plus an id when one helps), never the verb of the click — the underline already says it opens.
 
+So a hint never carries information that is not on screen: written onto a reading whose text is
+fully visible (a cost, an elapsed time), it simply never opens. A total's breakdown — the cost's
+priced parts, the elapsed time's API / tool components — goes behind a circled "?" right of the
+total instead (`StatHint` in `components/ui/stat-hint.tsx`), and only totals carry one: a
+per-round reading shows its total alone, and a reading that is itself a button (the chat header's
+chips) gets no "?" — its breakdown lives in what it opens.
+
 ### Which disclosure — the "?" or the fold
 
 Two forms, and **a title decides between them, not taste**:
 
-> **The circled "?" may only appear beside a title. It must never stand alone on its own line.
-> Where it would stand alone, use the fold.**
+> **The circled "?" may only appear beside a title, or right of the total it breaks down. It
+> must never stand alone on its own line. Where it would stand alone, use the fold.**
 
 - **A title is present** → `InfoPopover` (`@prismshadow/penguin-ui`). A circled "?"
   immediately after the section heading, the table column header, or the field label — the last of

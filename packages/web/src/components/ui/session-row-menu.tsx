@@ -27,9 +27,12 @@ import { S } from "../../lib/strings";
 /** One thing a Session row can do to its Session. */
 export type SessionRowAction = "pin" | "rename" | "copy" | "messaging" | "archive" | "delete";
 
-/** Row state the labels and glyphs read (both of the toggles flip on it). */
+/**
+ * Row state the labels and glyphs read (the pin toggle flips on it). A row the sidebar draws is
+ * never archived — an archived Session is listed on the archive page — so archive is always
+ * the action, never its undo.
+ */
 export interface SessionRowState {
-  archived: boolean;
   pinned: boolean;
 }
 
@@ -41,17 +44,30 @@ export interface SessionRowState {
 export const HOVER_ROW_ACTIONS: readonly SessionRowAction[] = ["archive"];
 
 /**
- * The context menu's actions. Pin only reorders rows in the active list, so folder rows
- * (archived / subagent / scheduled) offer the rest without it — the same gate the
- * ellipsis menu applied before this moved. The order runs from the actions that change
- * the Session to the one that ends it: pin, rename and the messaging binding first, then
- * archive, then copying the id — the one row that changes nothing, kept between archive
- * and delete — and delete last.
+ * The context menu's actions. The order runs from the actions that change the Session to the
+ * one that ends it: pin, rename and the messaging binding first, then archive, then copying
+ * the id — the one row that changes nothing, kept between archive and delete — and delete
+ * last.
  */
-export function contextMenuActions(canPin: boolean): readonly SessionRowAction[] {
-  return canPin
-    ? ["pin", "rename", "messaging", "archive", "copy", "delete"]
-    : ["rename", "messaging", "archive", "copy", "delete"];
+export const CONTEXT_MENU_ACTIONS: readonly SessionRowAction[] = [
+  "pin",
+  "rename",
+  "messaging",
+  "archive",
+  "copy",
+  "delete",
+];
+
+/**
+ * The actions a row offers on one surface: all of them, but archive on a Session that lives on a
+ * connected machine. The archive page lists this server's Sessions only, so such a Session, once
+ * archived, would have no way back in the UI; it is offered again once that page lists machines.
+ */
+export function rowActionsFor(
+  actions: readonly SessionRowAction[],
+  onMachine: boolean,
+): readonly SessionRowAction[] {
+  return onMachine ? actions.filter((action) => action !== "archive") : actions;
 }
 
 /**
@@ -94,11 +110,7 @@ export function sessionRowMenuItem(
       // shapes for it.
       return { label: S.messaging.bindAction, icon: ICONS.paperPlane, danger: false };
     case "archive":
-      return {
-        label: state.archived ? S.chat.unarchiveSession : S.chat.archiveSession,
-        icon: state.archived ? ICONS.archiveRestore : ICONS.archive,
-        danger: false,
-      };
+      return { label: S.chat.archiveSession, icon: ICONS.archive, danger: false };
     case "delete":
       return { label: S.chat.deleteSession, icon: ICONS.trash, danger: true };
   }

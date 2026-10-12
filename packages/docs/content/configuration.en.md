@@ -35,7 +35,7 @@ Notes:
 - `MODELSCOPE_BRIDGE_URL`: server configuration like `PENGUIN_GO_ORIGIN`, not an endpoint the browser can name. It must be an HTTPS address with no credentials, query string or fragment. Unlike `PENGUIN_GO_ORIGIN`, a path prefix **is** allowed, because the production bridge lives under `https://go.penguin.ooo/modelscope`. See [Connect an account](/models#connect-an-account).
 - `PENGUIN_UPDATE_CHECK`: `off` turns off the automatic release check, nothing else. Model requests, an enabled remote-control connection, provider key authorization and the proxy test still reach the network.
 - `PENGUIN_NO_LOGIN_SHELL_ENV`: without it, the import fills only variables the launch left unset. See [Desktop quickstart](/quickstart-desktop).
-- `PENGUIN_CLI_ENTRY`: when the server was started from a source checkout, it falls back to that checkout's `packages/cli/dist/penguin.js`.
+- `PENGUIN_CLI_ENTRY`: without it, a server started from a source checkout offers that checkout's own CLI (see [PATH launcher](#path-launcher)). The dev entry points `pnpm dev`, `pnpm desktop` and `pnpm penguin` clear a value they inherit, such as one a terminal of the installed app hands on, and always use the checkout's CLI; a packaged or installed launch still honours it.
 
 ### Environment of agent-run commands
 
@@ -49,13 +49,15 @@ Commands an agent runs with `exec_command` inherit the host environment, with th
 
 ### PATH launcher
 
-This installation's own `penguin` is first on the PATH of every command an agent runs. At startup the server writes a launcher script at `<root>/bin/penguin`, which runs the CLI entry from `PENGUIN_CLI_ENTRY` on the server's own Node, and puts that directory at the front of PATH for each command. So `penguin` inside a command is the harness the agent is running in, whatever version is installed globally on the machine.
+This installation's own `penguin` is first on the PATH of every command an agent runs. At startup the server writes a launcher script at `<root>/bin/penguin`, which runs the CLI entry from `PENGUIN_CLI_ENTRY` on the server's own Node, and puts that directory at the front of PATH for each command. So `penguin` inside a command is the harness the agent is running in, whatever version is installed globally on the machine. It also talks to that harness: unless `PENGUIN_HOME` is already set, the launcher sets it to this server's data root for the CLI it starts, and for nothing else, along with `PENGUIN_WEB_DB` when the server keeps its database somewhere other than `<root>/web.db`.
 
-A terminal opened from the Terminal panel puts the same directory first on PATH once your own shell startup files have run, so `penguin` typed there is this installation's too.
+A terminal opened from the Terminal panel puts the same directory first on PATH once your own shell startup files have run, so `penguin` typed there is this installation's too. In bash, zsh and fish it stays first before every prompt, after any prompt hook of your own, including one a plugin adds after startup. To run another `penguin` there, use its full path, or define an alias or function named `penguin` in your startup files: the shell looks those up before PATH. The terminal's environment carries none of the server's own `PENGUIN_*`, `PORT` and `HOST` variables, so neither `penguin` nor a server you start from it picks up this server's settings; your own startup files still set any you export. Your own settings among them stay: `PENGUIN_LANG`, `PENGUIN_UPDATE_CHECK`, `PENGUIN_NO_LOGIN_SHELL_ENV`, `PENGUIN_SHELL`, `PENGUIN_INSTALL_DIR`, the download and update source variables (`PENGUIN_DOWNLOAD_*`, `PENGUIN_UPDATE_SOURCE`, `PENGUIN_UPDATE_SPEED_PROBE`) and `PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL`. Without a launcher, the terminal keeps the server's `PENGUIN_HOME` and `PENGUIN_WEB_DB`, since nothing else would point `penguin` at this server.
+
+On a server started from a checkout, each terminal opens with one line naming the CLI `penguin` runs and its data root. Your shell prints that line at its first prompt, after your startup files have run (anything they print comes above it), so it reflects what they set: when they export `PENGUIN_API_URL`, or a `PENGUIN_HOME` naming another data root, the line says instead that `penguin` there talks to that server, not this instance. In cmd, and in shells other than bash, zsh, fish, sh and PowerShell, the server writes the plain line before the shell starts.
 
 The directory is prepended inside the shell as well as in the environment, because commands run through a login shell whose profile often rewrites PATH afterwards. This also puts it ahead of a `PATH` set in the [Vault](#vault), which otherwise replaces the inherited value outright.
 
-The launcher is rewritten at every start, so the next start picks up a moved installation. When there is no entry to point at, no launcher is written and `penguin` resolves as it would without one.
+The launcher is rewritten at every start, so the next start picks up a moved installation. When there is no entry to point at, no launcher is written and `penguin` resolves as it would without one. A server started from a checkout whose own CLI cannot run writes a launcher that says why and fails instead, so another installation's `penguin` never answers in its place.
 
 ### Workspace preview origin
 
