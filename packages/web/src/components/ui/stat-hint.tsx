@@ -7,10 +7,11 @@
  * the rows below are what it opens — a cost's three priced parts, an elapsed time's two measured
  * components. Only totals carry one; a per-round reading shows its total alone.
  */
+import { Fragment } from "react";
 import type { ReactNode } from "react";
 import type { CostParts } from "@prismshadow/penguin-server/api";
 import { InfoPopover } from "@prismshadow/penguin-ui";
-import { formatMoney, humanizeDuration } from "../../lib/format";
+import { formatMoney, formatPercent, humanizeDuration } from "../../lib/format";
 import { S } from "../../lib/strings";
 import type { Currency } from "../../state/theme";
 
@@ -31,29 +32,39 @@ export function StatHint({
   );
 }
 
-/** A breakdown's rows: each part's name on the left, its value on the right in tabular figures. */
+/**
+ * A breakdown's rows: each part's name, its value, and its share of the total it breaks down —
+ * columns, so the values and the shares each line up. A share is omitted when the total is zero.
+ */
 export function HintRows({
   rows,
+  total,
   className = "",
 }: {
-  rows: ReadonlyArray<readonly [string, string]>;
+  rows: ReadonlyArray<readonly [name: string, value: string, amount: number]>;
+  /** What the shares are of. */
+  total: number;
   className?: string;
 }) {
   return (
-    <dl className={className}>
-      {rows.map(([name, value]) => (
-        <div key={name} className="flex items-baseline justify-between gap-3">
+    <dl className={`grid grid-cols-[1fr_auto_auto] items-baseline gap-x-3 ${className}`}>
+      {rows.map(([name, value, amount]) => (
+        <Fragment key={name}>
           <dt>{name}</dt>
-          <dd className="font-mono tabular-nums text-fg">{value}</dd>
-        </div>
+          <dd className="text-right font-mono tabular-nums text-fg">{value}</dd>
+          <dd className="text-right font-mono tabular-nums">
+            {total > 0 ? `(${formatPercent(amount / total)})` : ""}
+          </dd>
+        </Fragment>
       ))}
     </dl>
   );
 }
 
 /**
- * A cost's three priced parts (cached input, uncached input, output), which sum to it. `uncosted`
- * adds the note that usage on an unpriced model is not in the figure.
+ * A cost's three priced parts (cached input, uncached input, output), each with its share of
+ * their sum — the cost they make up. `uncosted` adds the note that explains the total's `*`:
+ * usage on an unpriced model is not in the figure.
  */
 export function CostPartsRows({
   parts,
@@ -69,10 +80,11 @@ export function CostPartsRows({
   return (
     <div className={className}>
       <HintRows
+        total={parts.cacheRead + parts.cacheWrite + parts.output}
         rows={[
-          [S.chat.costPartCacheRead, formatMoney(parts.cacheRead, currency)],
-          [S.chat.costPartCacheWrite, formatMoney(parts.cacheWrite, currency)],
-          [S.chat.costPartOutput, formatMoney(parts.output, currency)],
+          [S.chat.costPartCacheRead, formatMoney(parts.cacheRead, currency), parts.cacheRead],
+          [S.chat.costPartCacheWrite, formatMoney(parts.cacheWrite, currency), parts.cacheWrite],
+          [S.chat.costPartOutput, formatMoney(parts.output, currency), parts.output],
         ]}
       />
       {uncosted && <p className="mt-2">{S.usage.uncostedNote}</p>}
@@ -81,28 +93,29 @@ export function CostPartsRows({
 }
 
 /**
- * An elapsed time's model API time and tool wall time. They are two measurements of the same span,
- * not a split of it — a background tool overlaps the model's decoding, and approval waits belong
- * to neither — so the note under them says not to add them up.
+ * An elapsed time's model API time and tool wall time, each with its share of `totalMs`. They are
+ * two measurements of the same span, not a split of it — a background tool overlaps the model's
+ * decoding, and approval waits belong to neither — so the shares need not add up to 100%.
  */
 export function ElapsedSplitRows({
   apiMs,
   toolMs,
+  totalMs,
   className = "",
 }: {
   apiMs: number;
   toolMs: number;
+  totalMs: number;
   className?: string;
 }) {
   return (
-    <div className={className}>
-      <HintRows
-        rows={[
-          [S.chat.statApiTime, humanizeDuration(apiMs)],
-          [S.chat.statToolTime, humanizeDuration(toolMs)],
-        ]}
-      />
-      <p className="mt-2">{S.chat.statElapsedSplitNote}</p>
-    </div>
+    <HintRows
+      className={className}
+      total={totalMs}
+      rows={[
+        [S.chat.statApiTime, humanizeDuration(apiMs), apiMs],
+        [S.chat.statToolTime, humanizeDuration(toolMs), toolMs],
+      ]}
+    />
   );
 }

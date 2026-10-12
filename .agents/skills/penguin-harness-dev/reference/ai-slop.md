@@ -36,6 +36,11 @@ entry, a PR body.
   heading is the only divider.
 - Colour comes from the theme tokens and the `tone*` helpers (`lib/tone.ts`), which already exist
   for attention / danger / success — reuse them, never hand-pick a Tailwind hue.
+- A note under a figure or a control is added only where it is needed: to explain a mark on
+  screen (the uncosted note behind a cost's `*`) or to head off a misreading that would cost the
+  reader something. A breakdown does not get a caveat sentence by default ("two measurements of
+  the same span: they can overlap, and they need not add up") — the numbers carry it, and the
+  subtlety belongs in the code comment and the spec, not under every reading.
 - zh copy follows the docs typography rules (CJK–Latin spacing, full-width punctuation, zh
   "Agent"); prose hygiene for anything published is in `authoring.md`.
 

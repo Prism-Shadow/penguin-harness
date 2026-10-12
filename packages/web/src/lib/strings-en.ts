@@ -3462,8 +3462,6 @@ Scenarios:
     statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}, tools ${toolMs}`,
     statApiTime: "Model API time",
     statToolTime: "Tool wall time",
-    statElapsedSplitNote:
-      "Two measurements of the same span: they can overlap, and they need not add up to the elapsed time.",
     costPartCacheRead: "Cached input",
     costPartCacheWrite: "Uncached input",
     costPartOutput: "Output",

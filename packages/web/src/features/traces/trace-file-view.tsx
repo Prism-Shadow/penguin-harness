@@ -620,7 +620,11 @@ export function TraceFileBody({
               value={humanizeDuration(Math.max(0, globalMs))}
               hint={
                 analysis.apiMs > 0 || analysis.toolMs > 0 ? (
-                  <ElapsedSplitRows apiMs={analysis.apiMs} toolMs={analysis.toolMs} />
+                  <ElapsedSplitRows
+                    apiMs={analysis.apiMs}
+                    toolMs={analysis.toolMs}
+                    totalMs={Math.max(0, globalMs)}
+                  />
                 ) : undefined
               }
             />
