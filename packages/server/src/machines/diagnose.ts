@@ -5,7 +5,8 @@
  *
  * Six checks, each answered with facts the page words in its own language:
  *
- * - ssh: a session comes up in BatchMode, the way every job here connects;
+ * - ssh: a session comes up, signed in the way every job here connects (keys, or the password
+ *   this server stores for the machine);
  * - platform: an OS and architecture a release is published for;
  * - tools: what the release installer runs on the far side (curl, tar, gzip, a sha256 tool);
  * - download: whether the machine itself reaches the release for its platform — on GitHub or
@@ -23,6 +24,7 @@ import type { MachineCheck, MachineSourceReach } from "../api/types.js";
 import type { RemoteIdentity } from "./detect.js";
 import type { RemoteLayout } from "./layout.js";
 import { explainSshFailure } from "./ssh-failure.js";
+import type { SshSignIn } from "./ssh-failure.js";
 
 /**
  * Where install.sh downloads a release from — its OSS_RELEASE_ROOT and GITHUB_RELEASE_ROOT,
@@ -152,12 +154,16 @@ function reach(line: string | undefined): MachineSourceReach {
  * The checks a session that could not open answers: why, and nothing else — every other check
  * needs the session.
  */
-export function sshFailureChecks(said: string, alias: string): MachineCheck[] {
+export function sshFailureChecks(
+  said: string,
+  alias: string,
+  signIn: SshSignIn = {},
+): MachineCheck[] {
   return [
     {
       id: "ssh",
       state: "fail",
-      reason: explainSshFailure(said, alias)?.reason ?? "other",
+      reason: explainSshFailure(said, alias, signIn)?.reason ?? "other",
       said: said.trim().slice(0, 600),
     },
     ...(["platform", "tools", "download", "disk", "port"] as const).map((id): MachineCheck => ({

@@ -354,12 +354,14 @@ export async function detectRemote(
   // ask in either dialect, and a second connection would only wait for the same refusal. The
   // transport leads such words with what they mean (ssh-session.ts); said again here only
   // when they did not come through it.
-  const refused = posix.code !== 0 ? sshRefusal(said, target.alias) : null;
+  const signIn = { password: target.password !== undefined };
+  const refused = posix.code !== 0 ? sshRefusal(said, target.alias, signIn) : null;
   if (refused !== null) return { error: refused };
   const windows = await conn.oneShot(windowsProbe(layout), { timeoutMs: 30_000 });
   const identityWin = parseProbeOutput(windows.stdout);
   if (identityWin) return { identity: identityWin };
-  const refusedWin = windows.code !== 0 ? sshFailureText(windows.stderr, target.alias) : null;
+  const refusedWin =
+    windows.code !== 0 ? sshFailureText(windows.stderr, target.alias, signIn) : null;
   if (refusedWin !== null) return { error: refusedWin };
   const words = said || windows.stderr.trim();
   return {

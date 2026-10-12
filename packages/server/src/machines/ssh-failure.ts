@@ -1,13 +1,19 @@
 /**
  * What ssh's own words mean, as one plain sentence a person can act on.
  *
- * Every connection to a machine runs in the background with BatchMode (commands.ts): ssh
- * never asks anything, so whatever it would have asked a person at a terminal comes back as
- * a refusal instead — an unknown host key, a key with a passphrase, a password login. Its
- * diagnostics are precise but written for someone who already knows that: "Host key
- * verification failed." does not say that the cure is to connect once by hand. This reads
- * the diagnostic and leads with the cause and the next step; ssh's own lines follow it,
- * never replaced, since they carry the detail (the address it tried, the key it loaded).
+ * Every connection to a machine runs in the background (commands.ts): ssh never asks a person
+ * anything, so whatever it would have asked at a terminal comes back as a refusal instead — an
+ * unknown host key, a key with a passphrase, a password nobody stored. Its diagnostics are
+ * precise but written for someone who already knows that: "Host key verification failed." does
+ * not say that the cure is to connect once by hand. This reads the diagnostic and leads with the
+ * cause and the next step; ssh's own lines follow it, never replaced, since they carry the
+ * detail (the address it tried, the key it loaded).
+ *
+ * "Permission denied" means one thing for a machine that signs in with keys (no key it holds was
+ * accepted) and another for one that signs in with a stored password (that password was refused,
+ * or the host takes no password at all), so the caller that saw ssh's raw words says which kind
+ * of machine it was. The password sentences are recognised again wherever they sit, so text the
+ * transport already led with one reads the same to every later caller.
  *
  * Pure: the transport calls it with what ssh printed when a session died, and anything that
  * has such text in hand may call it again — the patterns match ssh's words wherever they sit.
@@ -23,6 +29,10 @@ export type SshFailureReason =
   | "key-file"
   /** Signed in with nothing the host accepted (no key, a passphrase, a password login). */
   | "auth"
+  /** The password this server stores for the machine was refused. */
+  | "password-rejected"
+  /** The machine signs in with a stored password, and the host takes no password at all. */
+  | "password-not-offered"
   /** The host name does not resolve. */
   | "host-not-found"
   /** Nothing accepts ssh at that address and port. */
@@ -55,13 +65,36 @@ export function sshWords(said: string, max = 3): string {
   return lines.slice(-max).join(" ");
 }
 
+/** How the connection that printed the words signed in: with keys, or with a stored password. */
+export interface SshSignIn {
+  password?: boolean;
+}
+
+const PASSWORD_REJECTED = "rejected the password saved for it";
+const PASSWORD_NOT_OFFERED = "does not take a password";
+
 /**
  * The plain reading of ssh's words, or null when they are not one of the failures ssh has
  * a fixed diagnostic for (the session came up and the far side said something of its own,
  * say). `alias` is the name the person picked, which is what the sentence calls the machine.
  */
-export function explainSshFailure(said: string, alias: string): SshFailure | null {
+export function explainSshFailure(
+  said: string,
+  alias: string,
+  signIn: SshSignIn = {},
+): SshFailure | null {
   const has = (pattern: RegExp) => pattern.test(said);
+  const rejected: SshFailure = {
+    reason: "password-rejected",
+    sentence: `${alias} ${PASSWORD_REJECTED}. Enter it again in this machine's SSH settings.`,
+  };
+  const notOffered: SshFailure = {
+    reason: "password-not-offered",
+    sentence: `${alias} ${PASSWORD_NOT_OFFERED}. Choose key sign-in in this machine's SSH settings.`,
+  };
+  // Words a password machine's transport already led with: the same reading, whoever asks.
+  if (said.includes(PASSWORD_REJECTED)) return rejected;
+  if (said.includes(PASSWORD_NOT_OFFERED)) return notOffered;
   // Changed before unknown: a changed key also ends in "Host key verification failed."
   if (has(/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key for \S+ has changed/i)) {
     return {
@@ -80,6 +113,19 @@ export function explainSshFailure(said: string, alias: string): SshFailure | nul
         `ssh's question about a new host key. Run \`ssh ${alias}\` once in a terminal on this ` +
         `computer and answer yes, then try again.`,
     };
+  }
+  // Before the key-file check: ssh still loads an IdentityFile it was not going to offer, and
+  // complains when it is missing, on its way to the password it did try.
+  if (
+    signIn.password === true &&
+    has(/Permission denied|Too many authentication failures|No supported authentication/i)
+  ) {
+    // The methods the host still allows, as ssh lists them: none that takes a password means the
+    // stored one was never asked for.
+    const methods = /Permission denied \(([^)]*)\)/i.exec(said)?.[1];
+    return methods !== undefined && !/password|keyboard-interactive/i.test(methods)
+      ? notOffered
+      : rejected;
   }
   if (has(/bad configuration option|bad owner or permissions on|terminating, \d+ bad config/i)) {
     return {
@@ -104,8 +150,9 @@ export function explainSshFailure(said: string, alias: string): SshFailure | nul
       reason: "auth",
       sentence:
         `${alias} did not accept any key this computer offered. Connections here run in the ` +
-        `background and cannot type a password or a key's passphrase: put this computer's ` +
-        `public key in ${alias}'s ~/.ssh/authorized_keys, or load the key into ssh-agent.`,
+        `background and cannot type a key's passphrase: put this computer's public key in ` +
+        `${alias}'s ~/.ssh/authorized_keys, load the key into ssh-agent, or sign in with a ` +
+        `password in this machine's SSH settings.`,
     };
   }
   if (
@@ -148,8 +195,8 @@ export function explainSshFailure(said: string, alias: string): SshFailure | nul
 }
 
 /** The sentence followed by ssh's own lines — what a log line or a job message carries. */
-export function sshFailureText(said: string, alias: string): string | null {
-  const explained = explainSshFailure(said, alias);
+export function sshFailureText(said: string, alias: string, signIn: SshSignIn = {}): string | null {
+  const explained = explainSshFailure(said, alias, signIn);
   if (explained === null) return null;
   const words = sshWords(said);
   return words === "" ? explained.sentence : `${explained.sentence} (ssh: ${words})`;
@@ -160,9 +207,9 @@ export function sshFailureText(said: string, alias: string): string | null {
  * transport led them already (transport/ssh-session.ts does, for a session that died) — or
  * null when they are not one of ssh's fixed diagnostics.
  */
-export function sshRefusal(said: string, alias: string): string | null {
-  const explained = explainSshFailure(said, alias);
+export function sshRefusal(said: string, alias: string, signIn: SshSignIn = {}): string | null {
+  const explained = explainSshFailure(said, alias, signIn);
   if (explained === null) return null;
   const text = said.trim();
-  return text.startsWith(explained.sentence) ? text : (sshFailureText(text, alias) ?? text);
+  return text.startsWith(explained.sentence) ? text : (sshFailureText(text, alias, signIn) ?? text);
 }

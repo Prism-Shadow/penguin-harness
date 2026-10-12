@@ -61,6 +61,7 @@ const CHIP_GLYPH: Record<MachineReading["kind"], string | null> = {
   queued: ICONS.hourglass,
   working: null,
   failed: ICONS.xCircle,
+  signInRefused: ICONS.xCircle,
   notInstalled: ICONS.download,
   unknown: ICONS.helpCircle,
 };
@@ -475,6 +476,8 @@ export interface ReconnectView {
   detail: string | null;
   /** What the connection check found after failures in a row; null until it ran. */
   check: CheckLine[] | null;
+  /** The stored password was refused: no attempt runs until the machine's SSH settings change. */
+  stopped: boolean;
 }
 
 export function reconnectView(
@@ -502,6 +505,7 @@ export function reconnectView(
     detail: failure?.detail ?? null,
     check:
       r.diagnosis === null ? null : r.diagnosis.checks.map((one) => checkLine(one, machine.alias)),
+    stopped: r.waitsForPassword === true,
   };
 }
 

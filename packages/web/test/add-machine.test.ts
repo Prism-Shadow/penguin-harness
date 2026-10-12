@@ -8,7 +8,8 @@
  * - With nothing left to offer it says so and points at the other tab, which its button opens;
  *   a search that matches nothing says so.
  * - By hand, it asks for the name, the host, the user name, the port (22 already filled in) and
- *   the key, and says only a wrong value in the danger ink.
+ *   the key, and says only a wrong value in the danger ink; with password sign-in chosen, the
+ *   password takes the key's place, and the request carries it and no key.
  * - Add writes the new host first (by hand), then enables the machines when the box is ticked —
  *   it starts ticked — or only adds them to the page when it is not.
  * - Add waits until something is ticked on the first tab.
@@ -31,7 +32,11 @@ import type {
   AddMachineFooterProps,
 } from "../src/features/machines/add-machine-dialog";
 import { addPlan, hostRows, reachLine } from "../src/features/machines/add-machine-view";
-import { NEW_HOST_FORM } from "../src/features/machines/ssh-host-dialog";
+import {
+  NEW_HOST_FORM,
+  hostRequest,
+  validateHostForm,
+} from "../src/features/machines/ssh-host-dialog";
 import { S } from "../src/lib/strings";
 import { elementsOf, readMarkup, seenText } from "./helpers/markup";
 
@@ -76,6 +81,7 @@ function body(over: Partial<AddMachineBodyProps> = {}) {
     form: NEW_HOST_FORM,
     errors: {},
     onField: vi.fn(),
+    onSignIn: vi.fn(),
     error: null,
     ...over,
   };
@@ -162,6 +168,42 @@ describe("the dialog's tabs", () => {
     expect(view.fields.find((el) => el.attrs["data-field"] === "port")?.attrs.value).toBe("22");
     expect(seenText(view.markup)).toContain(S.machines.host.portRange);
     expect(view.rows).toEqual([]);
+  });
+
+  it("with password sign-in, asks for the password in the key's place, and sends it with no key", () => {
+    const form = {
+      ...NEW_HOST_FORM,
+      alias: "lab",
+      hostName: "10.0.0.9",
+      identityFile: "~/.ssh/lab",
+      signIn: "password" as const,
+      password: "",
+    };
+    const view = body({ tab: "manual", form });
+    expect(view.fields.map((el) => el.attrs["data-field"])).toEqual([
+      "alias",
+      "hostName",
+      "user",
+      "port",
+      "password",
+    ]);
+    expect(validateHostForm(form).password).toBe(S.common.requiredField);
+    expect(validateHostForm({ ...form, password: "a\nb" }).password).toBe(
+      S.machines.host.passwordOneLine,
+    );
+    expect(hostRequest({ ...form, password: " pw " })).toEqual({
+      alias: "lab",
+      hostName: "10.0.0.9",
+      port: 22,
+      password: " pw ",
+    });
+    // A saved password needs none typed, and the key chosen over it deletes it.
+    expect(validateHostForm(form, true).password).toBeUndefined();
+    expect(hostRequest(form, true)).not.toHaveProperty("password");
+    expect(hostRequest({ ...form, signIn: "key" }, true)).toMatchObject({
+      identityFile: "~/.ssh/lab",
+      password: null,
+    });
   });
 
   it("says why the last Add did not go through", () => {

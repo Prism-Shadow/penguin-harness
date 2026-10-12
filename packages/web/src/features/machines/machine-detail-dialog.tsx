@@ -534,17 +534,33 @@ export function MachineDetailBody({
 
       {reconnect !== null && (
         <RuledSection level={3} title={d.reconnect.title}>
-          <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
-            <Spinner size="xs" tone="success" label={d.reconnect.trying} />
-            <span className="font-semibold">{d.reconnect.trying}</span>
-            <span className="text-fg-muted">
-              {[
-                d.reconnect.lasting(reconnect.lasting),
-                d.reconnect.attempt(reconnect.attempt),
-                reconnect.next === null ? d.reconnect.now : d.reconnect.next(reconnect.next),
-              ].join(" · ")}
-            </span>
-          </p>
+          {/* A refused password stops the retries: the line says so instead of counting down. */}
+          {reconnect.stopped ? (
+            <p
+              data-reconnect="stopped"
+              className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm"
+            >
+              <GlyphIcon
+                d={ICONS.xCircle}
+                size={ICON_SIZE.inlineGlyph}
+                className={toneInk.danger}
+              />
+              <span className="font-semibold">{d.reconnect.stopped}</span>
+              <span className="text-fg-muted">{d.reconnect.lasting(reconnect.lasting)}</span>
+            </p>
+          ) : (
+            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
+              <Spinner size="xs" tone="success" label={d.reconnect.trying} />
+              <span className="font-semibold">{d.reconnect.trying}</span>
+              <span className="text-fg-muted">
+                {[
+                  d.reconnect.lasting(reconnect.lasting),
+                  d.reconnect.attempt(reconnect.attempt),
+                  reconnect.next === null ? d.reconnect.now : d.reconnect.next(reconnect.next),
+                ].join(" · ")}
+              </span>
+            </p>
+          )}
           {reconnect.lastError !== null && (
             <p className="mt-2 text-sm break-words whitespace-pre-line">
               <span className="text-fg-muted">{d.reconnect.lastError}</span> {reconnect.lastError}

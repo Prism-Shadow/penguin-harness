@@ -64,7 +64,7 @@ export const zh = {
     localTitle: "本服务端",
     noneInUse: "还没有在用的机器。",
     sshHint:
-      "能加的机器，是本服务端账户用密钥就能 ssh 上去的主机（在这里的终端里 `ssh <名称>` 能直接进）。用「添加机器」从 ssh 配置里选一台，或手动填写一台新的。",
+      "能加的机器，是本服务端账户能 ssh 上去的主机：用密钥（在这里的终端里 `ssh <名称>` 能直接进），或用在这里保存的密码。用「添加机器」从 ssh 配置里选一台，或手动填写一台新的。",
     /** The ssh host form — the add dialog's manual tab, and configuring a host this app wrote. */
     host: {
       configureVerb: "配置",
@@ -86,14 +86,28 @@ export const zh = {
       identityFile: "私钥文件",
       identityFileHint: "带口令的密钥要先加入 ssh-agent。",
       identityFilePlaceholder: "默认：ssh 的默认密钥（~/.ssh/id_ed25519 等）",
+      /** How the machine signs in: a key (the default), or a password this server stores. */
+      signIn: "登录方式",
+      signInKey: "密钥",
+      signInPassword: "密码",
+      password: "密码",
+      passwordPlaceholder: "这个用户在那台机器上的密码",
+      /** A password is stored: the field starts empty, and empty keeps it. */
+      passwordSavedPlaceholder: "已保存，留空保持不变",
+      /** Key sign-in chosen for a host that has a stored password: what Save does to it. */
+      passwordDropped: "保存后会删除已保存的密码。",
+      passwordOneLine: "密码只能是一行，最多 1024 个字符。",
+      /** `ssh` is what this server's `ssh -V` said. */
+      passwordUnsupported: (ssh: string) =>
+        `本服务端的 ssh 用不了保存的密码：需要 OpenSSH 8.4 或更新版本，这里的是 ${ssh === "" ? "未知版本" : ssh}。`,
       oneWord: "必须是一个词：不能有空格或 #。",
       portRange: "1 到 65535 之间的整数。",
       exists: "ssh 配置里已有这个名称。",
       /** Configuring a host this app wrote: the same form, the name fixed. */
       editTitle: "配置 ssh 主机",
-      saved: (alias: string) => `已更新 ${alias} 的 ssh 配置。`,
+      saved: (alias: string) => `已保存 ${alias} 的 SSH 设置。`,
       foreign:
-        "这一段不是由 PenguinHarness 写入的，可能带有这里不认识的选项；请直接编辑 ~/.ssh/config。",
+        "这一段不是由 PenguinHarness 写入的，可能带有这里不认识的选项：主机设置请直接编辑 ~/.ssh/config，登录方式仍可在这里修改。",
     },
     /** The add dialog (add-machine-dialog.tsx): a host from the ssh config, or a new one by hand. */
     addDialog: {
@@ -137,6 +151,8 @@ export const zh = {
       stopped: "已停止",
       notInstalled: "未安装",
       unknown: "未检查",
+      /** The stored password was refused (or the host takes none): nothing retries until it changes. */
+      signInRefused: "登录被拒",
     },
     /** A job's steps, as the caption under a working card's stepper. */
     phase: {
@@ -182,6 +198,7 @@ export const zh = {
       stopped: "那台机器的服务已停止——请在「机器管理」页面启动它",
       notConnected: "那台机器尚未连接——请在「机器管理」页面启用它",
       missing: "那台机器不在本 Project 的机器列表里",
+      signInRefused: "那台机器拒绝了本服务端的登录——请在「机器管理」页面修改它的 SSH 设置",
       failed: (message: string) => `那台机器没有答复：${message}`,
     },
     adminOnly: "只有管理员可以管理机器。",
@@ -297,13 +314,17 @@ export const zh = {
         now: "正在尝试",
         lastError: "上次失败：",
         checked: "自动检查的结果：",
+        /** The stored password was refused: no attempt runs until it is saved again. */
+        stopped: "已停止重试",
       },
     },
     /** The confirmations the page asks before a verb that stops or removes something. */
     confirm: {
       deleteTitle: (alias: string) => `删除 ${alias}？`,
-      deleteBody: (alias: string) =>
-        `${alias} 会从本 Project 移除，本服务端断开与它的连接。那台机器上的程序和数据都会保留，ssh 配置里的主机也不变；之后可以用「添加机器」把它加回来。`,
+      /** `passwordSaved`: the machine signs in with a password this server stores. */
+      deleteBody: (alias: string, passwordSaved = false) =>
+        `${alias} 会从本 Project 移除，本服务端断开与它的连接。那台机器上的程序和数据都会保留，ssh 配置里的主机也不变；之后可以用「添加机器」把它加回来。` +
+        (passwordSaved ? "本服务端为它保存的密码会删除，除非其他 Project 还在用它。" : ""),
       stopTitle: (alias: string) => `停止 ${alias} 上的服务？`,
       stopBody:
         "正在用它的人会断开，本服务端也不再自动重连这台机器；之后用「启动服务」再启动它。程序与数据都保留。",
@@ -335,7 +356,11 @@ export const zh = {
         "host-key-changed": (alias: string) =>
           `${alias} 的主机密钥和记录的不一致，ssh 拒绝连接。如果那台机器重装过，请用 ssh-keygen -R 删掉旧密钥，再连接一次。`,
         auth: (alias: string) =>
-          `${alias} 不接受本服务端的密钥。后台连接无法输入密码或密钥口令：请把本服务端的公钥加入 ${alias} 的 ~/.ssh/authorized_keys，或把密钥加入 ssh-agent。`,
+          `${alias} 不接受本服务端的密钥。请把本服务端的公钥加入 ${alias} 的 ~/.ssh/authorized_keys、把密钥加入 ssh-agent，或在机器的 SSH 设置里改用密码登录。`,
+        "password-rejected": (_alias: string) =>
+          "那台机器拒绝了保存的密码——请在机器的 SSH 设置里重新填写。",
+        "password-not-offered": (_alias: string) =>
+          "那台机器不接受密码登录——请在机器的 SSH 设置里改用密钥。",
         "key-file": (alias: string) =>
           `为 ${alias} 设置的私钥文件用不了：不存在、读不了，或权限过宽（需要 600）。`,
         "host-not-found": (alias: string) =>

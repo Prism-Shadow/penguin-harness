@@ -17,9 +17,12 @@
  * disappear entirely.
  *
  * Two further rules encoded here:
- * - **BatchMode.** A GUI app has no terminal: an ssh that decides to ask for a password or a
- *   key passphrase would hang forever with nothing to type into. BatchMode turns that into an
- *   immediate, readable failure — v1 is key/agent auth, exactly as the design says.
+ * - **Nothing is ever typed.** A GUI app has no terminal: an ssh that decides to ask for a
+ *   password or a key passphrase would hang forever with nothing to type into. A machine that
+ *   signs in with keys runs in BatchMode, which turns any question into an immediate, readable
+ *   failure. A machine with a stored password signs in with that password and nothing else: ssh
+ *   takes it from the askpass helper (transport/login.ts), keys are not offered, and one wrong
+ *   answer per method ends the attempt.
  * - **The user override rides the command line, never the config.** `-o User=…` selects the
  *   account for this connection; `~/.ssh/config` is read-only to us.
  */
@@ -46,15 +49,50 @@ export interface RemoteTarget {
   alias: string;
   /** Login account. Empty means "whatever ssh resolves", i.e. no -o User override. */
   user: string;
+  /**
+   * Present when this machine signs in with a password this server stores for its alias. The
+   * password itself is not here: `read` fetches it at the moment a connection opens, and it
+   * reaches ssh only through that child's environment (transport/login.ts).
+   */
+  password?: PasswordLogin;
+}
+
+/** How a machine that signs in with a password gets it to ssh. */
+export interface PasswordLogin {
+  /** The askpass helper: prints the password ssh's child environment carries. Holds no secret. */
+  askpass: string;
+  /** The stored password now; null when none is stored any more. */
+  read: () => string | null;
 }
 
 function connectionOptions(target: RemoteTarget): string[] {
+  const user = target.user === "" ? [] : ["-o", `User=${target.user}`];
+  if (target.password === undefined) {
+    return ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", ...user];
+  }
+  // A password, and only a password: BatchMode would refuse to ask the helper, and an account
+  // that locks after a few failures must not be offered keys or asked twice per method. Each
+  // option is spelled even where it is ssh's default, because the command line wins over a
+  // config that says otherwise (`Host *` with `BatchMode yes` or `PasswordAuthentication no`).
+  // No X11 channel: older OpenSSH needs DISPLAY set to ask the helper at all.
   return [
     "-o",
-    "BatchMode=yes",
+    "BatchMode=no",
+    "-o",
+    "PreferredAuthentications=password,keyboard-interactive",
+    "-o",
+    "PubkeyAuthentication=no",
+    "-o",
+    "PasswordAuthentication=yes",
+    "-o",
+    "KbdInteractiveAuthentication=yes",
+    "-o",
+    "NumberOfPasswordPrompts=1",
+    "-o",
+    "ForwardX11=no",
     "-o",
     "ConnectTimeout=10",
-    ...(target.user === "" ? [] : ["-o", `User=${target.user}`]),
+    ...user,
   ];
 }
 

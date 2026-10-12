@@ -14,6 +14,9 @@
  * - A held session that dies comes back on its own after the shortest reconnect wait; a
  *   closed one stays closed; closing lets go, and the next ask opens a new session.
  * - A session a command opened is up but is not a connection until it is held.
+ * - A machine with a stored password signs in through the askpass helper, the password in the
+ *   child's environment and never its argv; a refused password is not offered again — not by the
+ *   held session's own reopen, not by the next command — until it is saved anew.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -22,9 +25,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeConnectionTo,
   connectionTo,
+  forgetRefusal,
   heldSessionOf,
   sessionOf,
 } from "../src/machines/transport/index.js";
+import { SshPasswords } from "../src/machines/ssh-passwords.js";
 
 // The stub `ssh` below is a shell script, which execFile cannot run on Windows; what stays
 // unmeasured on Windows is listed in ci.yml's test-windows note.
@@ -201,5 +206,94 @@ exit 1
     expect(sessionOf("ssh:nas")).toBeNull();
     await conn.exec("true");
     expect(spawns()).toHaveLength(2);
+  });
+});
+
+posixOnly("a password sign-in", () => {
+  const PASSWORD = `it's $HOME & "quoted"`;
+  let stubBin: string;
+  let originalPath: string | undefined;
+  /** What the stub's sshd takes as the right password: changed to make it refuse. */
+  const accept = (password: string) => fs.writeFileSync(path.join(stubBin, "expected"), password);
+  beforeEach(() => {
+    stubBin = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-password-"));
+    const log = (name: string) => JSON.stringify(path.join(stubBin, name));
+    // The stub plays ssh and sshd: it asks the helper what ssh would ask — a new host key, then
+    // the password — and lets in only the expected password.
+    fs.writeFileSync(
+      path.join(stubBin, "ssh"),
+      `#!/bin/sh
+[ "$1" = -V ] && { echo "OpenSSH_9.6p1 stub" >&2; exit 0; }
+echo "$*" >> ${log("calls.log")}
+hostkey=$("$SSH_ASKPASS" "Are you sure you want to continue connecting (yes/no/[fingerprint])?")
+echo "$? [$hostkey] $SSH_ASKPASS_REQUIRE" >> ${log("asked.log")}
+answer=$("$SSH_ASKPASS" "deploy@nas's password: ")
+[ "$answer" = "$(cat ${log("expected")})" ] || { echo "deploy@nas: Permission denied (publickey,password)." >&2; exit 255; }
+exec /bin/sh
+`,
+    );
+    fs.chmodSync(path.join(stubBin, "ssh"), 0o755);
+    accept(PASSWORD);
+    originalPath = process.env.PATH;
+    process.env.PATH = `${stubBin}:${process.env.PATH ?? ""}`;
+  });
+  afterEach(() => {
+    closeConnectionTo("ssh:nas");
+    forgetRefusal("nas");
+    process.env.PATH = originalPath;
+    fs.rmSync(stubBin, { recursive: true, force: true });
+  });
+  const spawns = () => fs.readFileSync(path.join(stubBin, "calls.log"), "utf8").trim().split("\n");
+
+  it("signs in through the helper, and a refused password waits for a new save, held or not", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const until = async (condition: () => boolean, what: string): Promise<void> => {
+      const deadline = Date.now() + 5_000;
+      while (!condition()) {
+        if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    };
+    const store = new SshPasswords(path.join(stubBin, "root"));
+    store.save("nas", PASSWORD);
+    const target = {
+      alias: "nas",
+      user: "deploy",
+      password: { askpass: store.askpass(), read: () => store.read("nas") },
+    };
+    try {
+      const conn = connectionTo(target);
+      expect((await conn.hold()).ok).toBe(true);
+      expect(await conn.exec("echo in")).toMatchObject({ code: 0, stdout: "in\n" });
+      // The password reached the helper through the environment alone; the host key question
+      // was declined, as ssh reads an empty answer; and nothing of it is on the command line.
+      expect(fs.readFileSync(path.join(stubBin, "asked.log"), "utf8")).toBe("1 [] force\n");
+      expect(spawns()).toHaveLength(1);
+      expect(spawns()[0]).not.toContain("quoted");
+      expect(spawns()[0]).toContain("PubkeyAuthentication=no");
+
+      // The machine's password changes under a held session, and the link drops.
+      accept("changed on the machine");
+      process.kill(sessionOf("ssh:nas")!.pid);
+      await until(() => sessionOf("ssh:nas") === null, "the session to drop");
+      await vi.advanceTimersByTimeAsync(1_000);
+      await until(() => spawns().length === 2, "the reopen");
+      await until(() => sessionOf("ssh:nas") === null, "the refusal");
+      // Refused once: no reopen however long it waits, and no command dials with it either.
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      const again = await conn.exec("echo in");
+      expect(again.code).toBe(255);
+      expect(again.stdout).toMatch(/^nas rejected the password saved for it\./);
+      expect(spawns()).toHaveLength(2);
+
+      // Saved anew (the same password, the machine put right): it dials again.
+      accept(PASSWORD);
+      store.save("nas", PASSWORD);
+      forgetRefusal("nas");
+      expect(await conn.exec("echo back")).toMatchObject({ code: 0, stdout: "back\n" });
+      expect(spawns()).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

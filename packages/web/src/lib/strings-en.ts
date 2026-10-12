@@ -56,7 +56,7 @@ export const en: Strings = {
     localTitle: "this server",
     noneInUse: "No machine in use yet.",
     sshHint:
-      "A machine can be added when this server's account can ssh into it by key (`ssh <name>` works in a terminal here). Add machine picks one from the ssh config, or fills in a new one.",
+      "A machine can be added when this server's account can ssh into it: by key (`ssh <name>` works in a terminal here), or with a password saved here. Add machine picks one from the ssh config, or fills in a new one.",
     host: {
       configureVerb: "Configure",
       name: "Name",
@@ -72,13 +72,23 @@ export const en: Strings = {
       identityFile: "Private key file",
       identityFileHint: "A key with a passphrase has to be in ssh-agent first.",
       identityFilePlaceholder: "Default: ssh's default keys (~/.ssh/id_ed25519, …)",
+      signIn: "Sign in with",
+      signInKey: "Key",
+      signInPassword: "Password",
+      password: "Password",
+      passwordPlaceholder: "This user's password on that machine",
+      passwordSavedPlaceholder: "Saved; leave empty to keep it",
+      passwordDropped: "Saving deletes the saved password.",
+      passwordOneLine: "A password is one line of at most 1024 characters.",
+      passwordUnsupported: (ssh: string) =>
+        `This server's ssh cannot use a saved password: it needs OpenSSH 8.4 or later, and this one is ${ssh === "" ? "of an unknown version" : ssh}.`,
       oneWord: "Must be one word: no space, no #.",
       portRange: "A whole number from 1 to 65535.",
       exists: "The ssh config already has this name.",
       editTitle: "Configure ssh host",
-      saved: (alias: string) => `Updated ${alias} in the ssh config.`,
+      saved: (alias: string) => `Saved ${alias}'s SSH settings.`,
       foreign:
-        "This block was not written by PenguinHarness and may carry options this form does not know; edit it in ~/.ssh/config.",
+        "This block was not written by PenguinHarness and may carry options this form does not know: edit the host in ~/.ssh/config. How it signs in can still be changed here.",
     },
     addDialog: {
       title: "Add machine",
@@ -115,6 +125,7 @@ export const en: Strings = {
       stopped: "Stopped",
       notInstalled: "Not installed",
       unknown: "Not checked",
+      signInRefused: "Sign-in refused",
     },
     phase: {
       build: "Building the install image…",
@@ -152,6 +163,8 @@ export const en: Strings = {
       stopped: "That machine's server is stopped — start it from the Machines page",
       notConnected: "That machine is not connected — enable it from the Machines page",
       missing: "That machine is not on this Project's machine list",
+      signInRefused:
+        "That machine refused this server's sign-in — change its SSH settings on the Machines page",
       failed: (message: string) => `That machine did not answer: ${message}`,
     },
     adminOnly: "Only an admin can manage machines.",
@@ -244,12 +257,16 @@ export const en: Strings = {
         now: "trying now",
         lastError: "Last failure:",
         checked: "What the automatic check found:",
+        stopped: "Stopped retrying",
       },
     },
     confirm: {
       deleteTitle: (alias: string) => `Delete ${alias}?`,
-      deleteBody: (alias: string) =>
-        `${alias} is removed from this Project and this server disconnects from it. The program and its data stay on that machine, and its host stays in the ssh config; Add machine can bring it back.`,
+      deleteBody: (alias: string, passwordSaved = false) =>
+        `${alias} is removed from this Project and this server disconnects from it. The program and its data stay on that machine, and its host stays in the ssh config; Add machine can bring it back.` +
+        (passwordSaved
+          ? " The password this server saved for it is deleted, unless another Project still uses it."
+          : ""),
       stopTitle: (alias: string) => `Stop the server on ${alias}?`,
       stopBody:
         "Anyone using it is cut off, and this server stops reconnecting to it; Start server brings it back. The program and its data stay.",
@@ -279,7 +296,11 @@ export const en: Strings = {
         "host-key-changed": (alias: string) =>
           `${alias}'s host key is not the one on record, so ssh refuses to connect. If the machine was reinstalled, remove the old key with ssh-keygen -R and connect once again.`,
         auth: (alias: string) =>
-          `${alias} does not accept this server's key. A background connection cannot type a password or a key passphrase: add this server's public key to ${alias}'s ~/.ssh/authorized_keys, or load the key into ssh-agent.`,
+          `${alias} does not accept this server's key. Add this server's public key to ${alias}'s ~/.ssh/authorized_keys, load the key into ssh-agent, or sign in with a password in the machine's SSH settings.`,
+        "password-rejected": (alias: string) =>
+          `${alias} rejected the saved password. Enter it again in the machine's SSH settings.`,
+        "password-not-offered": (alias: string) =>
+          `${alias} does not take a password. Choose key sign-in in the machine's SSH settings.`,
         "key-file": (alias: string) =>
           `The private key file set for ${alias} cannot be used: it is missing, unreadable, or readable by others (it needs 600).`,
         "host-not-found": (alias: string) =>

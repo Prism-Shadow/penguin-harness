@@ -275,7 +275,10 @@ export function MachinesPage() {
         return {
           title: c.deleteTitle(aliasOf(pendingVerb.id)),
           label: S.machines.card.delete,
-          body: c.deleteBody(aliasOf(pendingVerb.id)),
+          body: c.deleteBody(
+            aliasOf(pendingVerb.id),
+            machineOf(pendingVerb.id)?.passwordSaved === true,
+          ),
           tone: "danger" as const,
         };
       case "stop":

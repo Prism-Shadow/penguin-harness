@@ -30,7 +30,9 @@
  * connect) is kept: it never idles out, and if it dies — a network blip, keepalives giving
  * up on a dead link, a command that timed out — it is reopened on its own, with a backoff,
  * until it is explicitly closed. The proxy's dials ride the held session and never touch a
- * timer, so traffic alone is neither what keeps it nor what could lose it.
+ * timer, so traffic alone is neither what keeps it nor what could lose it. The one death it
+ * does not come back from on its own is a stored password refused (login.ts): retrying it would
+ * lock the account, so the session waits for the password to be saved again.
  */
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -39,6 +41,8 @@ import net from "node:net";
 import { sessionArgs } from "../commands.js";
 import type { RemoteTarget } from "../commands.js";
 import { sshFailureText } from "../ssh-failure.js";
+import { noteSignIn, signInFor } from "./login.js";
+import type { SignIn } from "./login.js";
 
 /**
  * What a command in the session produced. `output` is stdout and stderr merged, with the
@@ -136,6 +140,9 @@ function tell(machineAddress: string, up: boolean): void {
 
 class MachineShell {
   #child: ChildProcessWithoutNullStreams | null = null;
+  /** How the child signed in, and whether a command has completed over it since. */
+  #signIn: SignIn | null = null;
+  #cameUp = false;
   #socksPort: number | null = null;
   #buffer = "";
   /** How far into #buffer lines have been handed to the pending command's onLine. */
@@ -150,10 +157,22 @@ class MachineShell {
   #reopen: NodeJS.Timeout | null = null;
   #backoffMs = RECONNECT_MIN_MS;
 
+  #target: RemoteTarget;
+
   constructor(
     private readonly address: string,
-    private readonly target: RemoteTarget,
-  ) {}
+    target: RemoteTarget,
+  ) {
+    this.#target = target;
+  }
+
+  /**
+   * The latest caller's word on how to reach the machine — a password saved or removed since the
+   * first one asked. Read when the next session opens; a session already up stays as it is.
+   */
+  retarget(target: RemoteTarget): void {
+    this.#target = target;
+  }
 
   /** Keeps the session from here on: a session opened transiently is promoted in place. */
   hold(): void {
@@ -221,7 +240,15 @@ class MachineShell {
 
   #drop(): void {
     const wasUp = this.#child !== null;
+    // A password refused before the session ever came up is remembered (login.ts): nothing
+    // dials this alias with it again, the reopen below included.
+    const refused =
+      this.#signIn !== null &&
+      !this.#cameUp &&
+      noteSignIn(this.#target, this.#signIn, this.#stderr);
     this.#child = null;
+    this.#signIn = null;
+    this.#cameUp = false;
     this.#socksPort = null;
     this.#buffer = "";
     this.#emitted = 0;
@@ -230,13 +257,15 @@ class MachineShell {
     if (pending !== null) {
       clearTimeout(pending.timer);
       // ssh's own last words — a refused key, an unknown host — are the diagnosis, led by
-      // what they mean when ssh has a fixed diagnostic for it: BatchMode turns every question
-      // ssh would have asked a person into a refusal, and the cure is rarely in its words.
+      // what they mean when ssh has a fixed diagnostic for it: nothing here can answer a
+      // question ssh would have asked a person, and the cure is rarely in its words.
       const said = this.#stderr.trim().split("\n").pop() ?? "";
       pending.resolve({
         code: 255,
         output:
-          sshFailureText(this.#stderr, this.target.alias) ??
+          sshFailureText(this.#stderr, this.#target.alias, {
+            password: this.#target.password !== undefined,
+          }) ??
           (said === ""
             ? "the connection to this machine ended"
             : `the connection to this machine ended: ${said}`),
@@ -245,16 +274,26 @@ class MachineShell {
     this.#stderr = "";
     if (this.#held) {
       if (wasUp) tell(this.address, false);
-      this.#scheduleReopen();
+      if (!refused) this.#scheduleReopen();
     }
   }
 
-  async #open(): Promise<ChildProcessWithoutNullStreams> {
+  /** The live child, a new one, or why none may be started (login.ts) — never a throw for that. */
+  async #open(): Promise<ChildProcessWithoutNullStreams | { refused: string }> {
     if (this.#child !== null) return this.#child;
+    const target = this.#target;
+    const login = await signInFor(target);
+    if (!login.ok) return { refused: login.detail };
     const port = await freeLocalPort();
     if (port === null) throw new Error("no free local port for the session's SOCKS listener");
     this.#mark = `--penguin-${randomBytes(9).toString("hex")}--`;
-    const child = spawn("ssh", sessionArgs(this.target, port), { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("ssh", sessionArgs(target, port), {
+      stdio: ["pipe", "pipe", "pipe"],
+      ...(login.signIn.env === undefined ? {} : { env: login.signIn.env }),
+      ...(login.signIn.detached ? { detached: true } : {}),
+    });
+    this.#signIn = login.signIn;
+    this.#cameUp = false;
     // setEncoding, not String(chunk): a multibyte character whose bytes land in two `data`
     // events would otherwise decode to two replacement characters. The stream's decoder holds
     // an incomplete sequence back until the rest of it arrives.
@@ -306,6 +345,8 @@ class MachineShell {
         this.#pending?.onLine?.(line);
     }
     if (at === -1) return;
+    // A mark came back: this child signed in, and whatever ssh says from here is not a refusal.
+    this.#cameUp = true;
     const rest = this.#buffer.slice(at + this.#mark.length);
     const end = rest.indexOf("\n");
     if (end === -1) return; // The exit code has not arrived yet.
@@ -323,15 +364,19 @@ class MachineShell {
 
   async #runExclusive(command: string, opts: ShellRunOptions): Promise<ShellResult> {
     if (this.#idle !== null) clearTimeout(this.#idle);
-    let child: ChildProcessWithoutNullStreams;
+    let opened: ChildProcessWithoutNullStreams | { refused: string };
     try {
-      child = await this.#open();
+      opened = await this.#open();
     } catch (err) {
       return {
         code: 255,
         output: `could not start ssh: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
+    // Refused before any ssh ran: said as the session's own failure would be, and not idling
+    // anything — there is no session to let go.
+    if ("refused" in opened) return { code: 255, output: opened.refused };
+    const child = opened;
     return new Promise<ShellResult>((resolve) => {
       const timer = setTimeout(() => {
         // A session that stopped answering is not one to keep: drop it so the next command
@@ -387,6 +432,8 @@ function shellFor(machineAddress: string, target: RemoteTarget): MachineShell {
   if (shell === undefined) {
     shell = new MachineShell(machineAddress, target);
     sessions.set(machineAddress, shell);
+  } else {
+    shell.retarget(target);
   }
   return shell;
 }

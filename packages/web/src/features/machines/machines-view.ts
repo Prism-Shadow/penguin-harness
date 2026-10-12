@@ -33,6 +33,11 @@ export type MachineReading =
    * stopped or restarted, or this server just started. `since` is when the streak began.
    */
   | { kind: "reconnecting"; since: string; attempts: number }
+  /**
+   * Kept connected, and its stored password refused — or its host takes none: the server does not
+   * try again until the machine's SSH settings change, since retrying could lock the account.
+   */
+  | { kind: "signInRefused"; reason: "password-rejected" | "password-not-offered" }
   /** Installed, and that is as far as this server can take it (a Windows machine). */
   | { kind: "installedOnly" }
   /** Carrying a different build from the one this server would install. */
@@ -131,6 +136,15 @@ export function readMachine(
   // The server keeps an enabled machine connected and says when it is bringing one back — a
   // held ssh session is not liveness (#561), and a server that stopped behind one is exactly
   // what it notices and restarts.
+  if (machine.reconnect?.waitsForPassword === true) {
+    return {
+      kind: "signInRefused",
+      reason:
+        machine.reconnect.sshReason === "password-not-offered"
+          ? "password-not-offered"
+          : "password-rejected",
+    };
+  }
   if (machine.reconnect !== undefined) {
     return {
       kind: "reconnecting",
@@ -185,6 +199,7 @@ export function readingTone(reading: MachineReading): Tone {
     case "reconnecting":
       return "busy";
     case "failed":
+    case "signInRefused":
       return "danger";
     case "ready":
       // A held connection is a live link, not a verdict: blue, never green.
@@ -250,6 +265,9 @@ export function useWaitsBecause(
     }
     case "failed":
       return why.failed;
+    case "signInRefused":
+      // What to do about it, not only that it happened: the one line the card has for it.
+      return S.machines.check.ssh[reading.reason](machine.alias);
     case "notInstalled":
       return why.notInstalled;
     case "installedOnly":

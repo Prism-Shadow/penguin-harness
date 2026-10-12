@@ -39,7 +39,10 @@
  * - Given a batch to use, machines work side by side and each ends connected; stop using keeps
  *   the install.
  * - Given an ssh-config edit, a new block is appended, this app's block is rewritten in place,
- *   and a hand-written one is refused.
+ *   and a hand-written one is refused. A password is stored beside the config, never in it or in
+ *   an answer, set even on a hand-written block, and deleted by key sign-in and with the machine.
+ * - Given a stored password the machine refuses, a machine kept connected stops retrying until a
+ *   password is saved for it again.
  * - Given a refusal decidable without ssh (self-install, a second install, an unknown host, no
  *   image), nothing runs. Given ssh's own refusal, the job ends at the first step with why, for
  *   the page to say, and no offer to install anyway.
@@ -2578,6 +2581,54 @@ describe("machines API", () => {
       }
     });
 
+    it("a refused password stops the retries until a password is saved for the machine again", async () => {
+      let clock = new Date("2026-08-24T12:00:00.000Z");
+      const refusal =
+        "nas rejected the password saved for it. Enter it again in this machine's SSH settings. " +
+        "(ssh: deploy@nas: Permission denied (publickey,password).)";
+      let probes = 0;
+      let signedInWithPassword = false;
+      let accepts = false;
+      await boot({
+        now: () => clock,
+        passwordSignIn: async () => ({ ok: true, detached: false }),
+        readConfig: () =>
+          "# Added by PenguinHarness on 2026-08-01T00:00:00.000Z\nHost nas\n  HostName 10.0.0.2\n",
+        writeConfig: () => {},
+        probe: async (target) => {
+          probes += 1;
+          signedInWithPassword = target.password !== undefined;
+          return accepts
+            ? { state: { kind: "running", port: 7364, pid: 4242 }, machineId: null }
+            : { state: { kind: "unreachable", detail: refusal }, machineId: null };
+        },
+      });
+      kept();
+      const host = "/api/projects/default_project/machines/ssh-hosts/nas";
+      expect((await admin.put(host, { hostName: "10.0.0.2", password: "old" })).status).toBe(200);
+      await t.deps.machines.autoConnect();
+      expect(probes).toBe(1);
+      expect(signedInWithPassword).toBe(true);
+      expect(nas()?.reconnect).toMatchObject({
+        attempts: 1,
+        nextAt: null,
+        sshReason: "password-rejected",
+        waitsForPassword: true,
+        diagnosis: null,
+      });
+      // However long it waits, nothing tries the account again.
+      clock = new Date(clock.getTime() + 60 * 60_000);
+      await t.deps.machines.autoConnect();
+      expect(probes).toBe(1);
+
+      // A password saved for it: tried once, at once, and connected.
+      accepts = true;
+      expect((await admin.put(host, { hostName: "10.0.0.2", password: "new" })).status).toBe(200);
+      await waitFor(() => nas()?.reconnect === undefined);
+      expect(probes).toBeGreaterThan(1);
+      expect(nas()?.connection).not.toBeNull();
+    });
+
     it("a deleted machine is let go: no retries", async () => {
       await boot({ watchSessions: watch });
       kept();
@@ -2722,8 +2773,8 @@ describe("machines API", () => {
       });
     });
 
-    const post = (body: Record<string, unknown>) =>
-      admin.post("/api/projects/default_project/machines/ssh-hosts", body);
+    const HOSTS = "/api/projects/default_project/machines/ssh-hosts";
+    const post = (body: Record<string, unknown>) => admin.post(HOSTS, body);
 
     it("appends the block, and the list names the new host at once", async () => {
       const written: string[] = [];
@@ -2812,6 +2863,69 @@ describe("machines API", () => {
         "ssh_host_foreign",
       );
       expect(written).toHaveLength(1);
+    });
+
+    it("keeps a host's password beside the config, never in it, says only that one is saved, and deletes it", async () => {
+      const written: string[] = [];
+      const aliases = ["build-box", "nas"];
+      let config = CONFIG;
+      let plan: Awaited<ReturnType<MachinesEffects["passwordSignIn"]>> = {
+        ok: true,
+        detached: false,
+      };
+      await boot({
+        listAliases: () => aliases,
+        readConfig: () => config,
+        appendHost: (block) => {
+          written.push(block);
+          aliases.push("orchid-2");
+          config += `\n${block}`;
+        },
+        writeConfig: (text) => {
+          written.push(text);
+          config = text;
+        },
+        passwordSignIn: async () => plan,
+      });
+      const stored = (alias: string) =>
+        path.join(machinesRoot, "machines", "ssh-passwords", Buffer.from(alias).toString("hex"));
+      const created = await post({ alias: "orchid-2", hostName: "10.0.0.9", password: "hunter2" });
+      expect(created.status).toBe(201);
+      expect(written.join("\n")).not.toContain("hunter2");
+      expect(fs.readFileSync(stored("orchid-2"), "utf8")).toBe("hunter2");
+      const listed = (await created.json()) as MachinesResponse;
+      expect(listed.machines.find((m) => m.alias === "orchid-2")?.passwordSaved).toBe(true);
+      const read = await (await admin.get(`${HOSTS}/orchid-2`)).text();
+      expect(read).not.toContain("hunter2");
+      expect(JSON.parse(read)).toMatchObject({ alias: "orchid-2", passwordSaved: true });
+
+      // A block written by hand keeps its lines; its password alone may still be set.
+      const theirs = await admin.put(`${HOSTS}/build-box`, {
+        hostName: "box.example.net",
+        password: "pw",
+      });
+      expect(theirs.status).toBe(200);
+      expect(written).toHaveLength(1);
+      expect(fs.existsSync(stored("build-box"))).toBe(true);
+
+      // Key sign-in deletes the password; so does deleting the machine from its last Project.
+      expect(
+        (await admin.put(`${HOSTS}/orchid-2`, { hostName: "10.0.0.9", password: null })).status,
+      ).toBe(200);
+      expect(fs.existsSync(stored("orchid-2"))).toBe(false);
+      await admin.post("/api/projects/default_project/machines/stop-using", {
+        machines: ["ssh:build-box"],
+      });
+      expect(fs.existsSync(stored("build-box"))).toBe(false);
+
+      // An ssh here that cannot be handed a password: refused by name, nothing stored.
+      plan = { ok: false, detail: "needs OpenSSH 8.4", ssh: "OpenSSH_for_Windows_8.1p1" };
+      const old = await admin.put(`${HOSTS}/nas`, { hostName: "10.0.0.2", password: "pw" });
+      expect(old.status).toBe(409);
+      expect(await old.json()).toMatchObject({
+        error: { code: "ssh_password_unsupported", details: { ssh: "OpenSSH_for_Windows_8.1p1" } },
+      });
+      expect(fs.existsSync(stored("nas"))).toBe(false);
     });
 
     it("names the field that would not survive as one config line", async () => {

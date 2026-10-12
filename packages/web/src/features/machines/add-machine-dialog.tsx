@@ -6,10 +6,11 @@
  *   one per row with a box to tick — the name, and muted beside it how its block reaches it
  *   (`user@host:port`) — under a search box. With nothing left to add, the tab says so and points
  *   at the other one.
- * - Fill in by hand: a new host — name, host, user name, port (22 unless said), private key — which
- *   the server writes into its ssh config before adding it. Each field's hint says what it wants
- *   in the muted ink; only a value that is wrong is said in the danger ink, under its field, as it
- *   is typed — a name the page or the config already has among them.
+ * - Fill in by hand: a new host — name, host, user name, port (22 unless said), and how it signs
+ *   in: a private key (the default) or a password, which the server stores for it — which the
+ *   server writes into its ssh config before adding it. Each field's hint says what it wants in
+ *   the muted ink; only a value that is wrong is said in the danger ink, under its field, as it is
+ *   typed — a name the page or the config already has among them.
  *
  * The footer: Cancel and Add, and a box ticked from the start, "Install and connect right after
  * adding". Ticked, Add enables the machines (`use`: install, start, connect, hand over the Model
@@ -56,12 +57,13 @@ import {
   HostFields,
   NEW_HOST_FORM,
   hasErrors,
+  hostErrorText,
   hostRequest,
   normalizeHostForm,
   shownErrors,
   validateHostForm,
 } from "./ssh-host-dialog";
-import type { HostErrors, HostField, HostForm } from "./ssh-host-dialog";
+import type { HostErrors, HostField, HostForm, SignIn } from "./ssh-host-dialog";
 
 export interface AddMachineBodyProps {
   tab: AddTab;
@@ -79,6 +81,7 @@ export interface AddMachineBodyProps {
   /** What the fields say: each malformed value, or a name already taken, under its field. */
   errors: HostErrors;
   onField: (field: HostField, value: string) => void;
+  onSignIn: (signIn: SignIn) => void;
   /** Why the last Add did not go through, when the server said so; null otherwise. */
   error: string | null;
 }
@@ -203,7 +206,7 @@ function ConfigPanel({
 
 export function AddMachineBody(props: AddMachineBodyProps) {
   const a = S.machines.addDialog;
-  const { tab, onTab, form, errors, onField, error } = props;
+  const { tab, onTab, form, errors, onField, onSignIn, error } = props;
   return (
     <div className="space-y-4">
       <p className="text-sm">{a.intro}</p>
@@ -217,7 +220,7 @@ export function AddMachineBody(props: AddMachineBodyProps) {
           {tab === "config" ? (
             <ConfigPanel {...props} />
           ) : (
-            <HostFields form={form} errors={errors} onChange={onField} />
+            <HostFields form={form} errors={errors} onChange={onField} onSignIn={onSignIn} />
           )}
         </div>
       </div>
@@ -334,8 +337,8 @@ export function AddMachineDialog({
   const draft = useFormDraft<AddDraft>(NEW_DRAFT, { normalize: normalizeDraft });
   const { host: form, installNow } = draft.draft;
   const picked: ReadonlySet<string> = new Set(draft.draft.picked);
-  /** The name the server refused, said under it; cleared by the next keystroke. */
-  const [refused, setRefused] = useState<string | undefined>(undefined);
+  /** What the server refused, under its field (the name, the password); cleared on the next edit. */
+  const [refused, setRefused] = useState<{ field: HostField; text: string } | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The host this dialog wrote into the ssh config, when what followed failed: a second Add
@@ -371,7 +374,7 @@ export function AddMachineDialog({
     found.alias = S.machines.host.exists;
   }
   const errors = shownErrors(found);
-  if (refused !== undefined) errors.alias = refused;
+  if (refused !== undefined) errors[refused.field] = refused.text;
   const canSubmit = tab === "manual" ? !hasErrors(found) : picked.size > 0;
 
   const pick = (id: string) =>
@@ -383,6 +386,10 @@ export function AddMachineDialog({
     }));
   const field = (key: HostField, value: string) => {
     draft.setDraft((prev) => ({ ...prev, host: { ...prev.host, [key]: value } }));
+    setRefused(undefined);
+  };
+  const signIn = (next: SignIn) => {
+    draft.setDraft((prev) => ({ ...prev, host: { ...prev.host, signIn: next } }));
     setRefused(undefined);
   };
 
@@ -406,9 +413,15 @@ export function AddMachineDialog({
       onAdded({ state: answer, verb: plan.verb, count: plan.machines.length });
       onClose();
     } catch (err) {
-      // A name the config already has belongs under its field; anything else under the form.
+      // A name the config already has belongs under its field, and so does a password the
+      // server cannot use; anything else under the form.
       if (err instanceof ApiError && err.code === "ssh_host_exists") {
-        setRefused(S.machines.host.exists);
+        setRefused({ field: "alias", text: S.machines.host.exists });
+      } else if (
+        err instanceof ApiError &&
+        (err.code === "ssh_password_invalid" || err.code === "ssh_password_unsupported")
+      ) {
+        setRefused({ field: "password", text: hostErrorText(err) });
       } else {
         setError(apiErrorText(err));
       }
@@ -451,6 +464,7 @@ export function AddMachineDialog({
         form={form}
         errors={errors}
         onField={field}
+        onSignIn={signIn}
         error={error}
       />
     </Modal>

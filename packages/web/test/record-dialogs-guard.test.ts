@@ -167,6 +167,35 @@ describe("record dialogs", () => {
       await click(button(en.common.discard));
       expect(onClose).toHaveBeenCalledTimes(1);
     });
+
+    it("on a block written by hand, changes only how it signs in: the key over a saved password deletes it", async () => {
+      const network = stubFetch(() => json(state));
+      const host: SshHostResponse = {
+        alias: "gpu-1",
+        hostName: "10.0.0.21",
+        identityFile: "~/.ssh/gpu",
+        editable: false,
+        passwordSaved: true,
+      };
+      const onClose = vi.fn();
+      await mount(
+        withPrompt(h(SshHostDialog, { host, projectId: "p1", onClose, onSaved: () => {} })),
+      );
+      // Saved, so nothing has to be typed; the block's own lines are not this form's.
+      expect(field(m.password).value).toBe("");
+      expect(field(m.password).placeholder).toBe(m.passwordSavedPlaceholder);
+      expect(button(en.common.save).disabled).toBe(true);
+      await click(button(m.signInKey));
+      expect(field(m.identityFile).disabled).toBe(true);
+      expect(document.body.textContent).toContain(m.passwordDropped);
+      await click(button(en.common.save));
+      await waitFor(() => onClose.mock.calls.length === 1);
+      expect(network.requests.at(-1)).toMatchObject({
+        method: "PUT",
+        path: "/api/projects/p1/machines/ssh-hosts/gpu-1",
+        body: { hostName: "10.0.0.21", identityFile: "~/.ssh/gpu", password: null },
+      });
+    });
   });
 
   describe("the manual Benchmark form", () => {

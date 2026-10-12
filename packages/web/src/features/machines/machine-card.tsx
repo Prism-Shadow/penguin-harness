@@ -99,7 +99,7 @@ export function machineMark(reading: MachineReading | null): MachineMark {
     tone: readingTone(reading),
     moving: reading.kind === "queued" || reading.kind === "working",
     glyph:
-      reading.kind === "failed"
+      reading.kind === "failed" || reading.kind === "signInRefused"
         ? ICONS.xCircle
         : reading.kind === "unreachable"
           ? ICONS.alertCircle

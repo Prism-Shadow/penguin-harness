@@ -5068,6 +5068,8 @@ export interface MachineInfo {
    * someone to spend a 30 MB transfer re-doing what is already done.
    */
   elsewhere?: { version: string; at: string };
+  /** This server signs in to the machine with a password it stores for the alias, not a key. */
+  passwordSaved?: true;
   /**
    * In this Project's list: the Machines page shows a card for it. A machine joins the list when
    * it is added (`POST …/machines/add`, which installs nothing) or when an install or a use for
@@ -5206,6 +5208,12 @@ export interface MachineReconnect {
   sshReason?: MachineSshFailure;
   /** The connection check run after three failures in a row; null until then. */
   diagnosis: MachineDiagnosis | null;
+  /**
+   * The password stored for the machine was refused, or its host takes none (`sshReason`
+   * says which): no attempt runs until a password is saved for it again or removed, since
+   * retrying could lock the account. `nextAt` is null meanwhile.
+   */
+  waitsForPassword?: true;
 }
 
 /**
@@ -5362,6 +5370,15 @@ export interface SshHostRequest {
   user?: string;
   port?: number;
   identityFile?: string;
+  /**
+   * Sign in with this password instead of a key: stored on this server in a 0600 file under its
+   * data root, never in the ssh config, and never sent back. On a PUT, `null` deletes the stored
+   * one (back to key sign-in) and leaving it out keeps it. A PUT on a block written by hand may
+   * set it when the other fields are the block as it stands. 400 `ssh_password_invalid` for an
+   * empty or multi-line one; 409 `ssh_password_unsupported` (`details.ssh`: what `ssh -V` said)
+   * when this computer's ssh cannot be handed a password.
+   */
+  password?: string | null;
 }
 
 /**
@@ -5370,8 +5387,10 @@ export interface SshHostRequest {
  * (`PUT …/ssh-hosts/:alias`, the same fields less the alias): a hand-written one may carry
  * options this app does not know, and rewriting it would drop them.
  */
-export interface SshHostResponse extends SshHostRequest {
+export interface SshHostResponse extends Omit<SshHostRequest, "password"> {
   editable: boolean;
+  /** A password is stored for this host, which then signs in with it rather than with a key. */
+  passwordSaved?: true;
 }
 
 /**
@@ -5420,6 +5439,8 @@ export type MachineSshFailure =
   | "host-key-changed"
   | "key-file"
   | "auth"
+  | "password-rejected"
+  | "password-not-offered"
   | "host-not-found"
   | "refused"
   | "timeout"
@@ -5436,7 +5457,7 @@ export type MachineSourceReach = "ok" | "missing" | "unreachable";
  * asked (an earlier check failed, or it does not apply).
  */
 export type MachineCheck =
-  /** A BatchMode session came up, as this account on that host. */
+  /** A session came up (keys, or the stored password), as this account on that host. */
   | { id: "ssh"; state: "pass"; user: string; host: string }
   /** It did not; `said` is ssh's own words, led by what they mean. */
   | { id: "ssh"; state: "fail"; reason: MachineSshFailure; said: string }

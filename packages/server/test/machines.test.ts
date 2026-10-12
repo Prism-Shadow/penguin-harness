@@ -36,9 +36,51 @@ import {
   sessionArgs,
 } from "../src/machines/commands.js";
 import { resolvePushPlan } from "../src/machines/install-server.js";
+import { askpassPlan, passwordEnv } from "../src/machines/transport/login.js";
+import { explainSshFailure, sshFailureText } from "../src/machines/ssh-failure.js";
+import { SshPasswords, passwordProblem } from "../src/machines/ssh-passwords.js";
 
 const RELEASE = remoteLayoutFor("release");
 const DEV = remoteLayoutFor("dev");
+
+describe("the stored passwords", () => {
+  it("keeps one private file per alias, named so no alias is a path, and deletes it", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-passwords-"));
+    try {
+      const store = new SshPasswords(root);
+      store.save("nas", " p@ss word ");
+      store.save("../up", "x");
+      expect(store.read("nas")).toBe(" p@ss word ");
+      expect(store.has("nas")).toBe(true);
+      expect([...store.aliases()].sort()).toEqual(["../up", "nas"]);
+      const dir = path.join(root, "ssh-passwords");
+      expect(fs.readdirSync(dir).sort()).toEqual(
+        [Buffer.from("../up").toString("hex"), Buffer.from("nas").toString("hex")].sort(),
+      );
+      if (process.platform !== "win32") {
+        expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+        for (const name of fs.readdirSync(dir)) {
+          expect(fs.statSync(path.join(dir, name)).mode & 0o777).toBe(0o600);
+        }
+      }
+      store.save("nas", "replaced");
+      expect(store.read("nas")).toBe("replaced");
+      expect(store.remove("nas")).toBe(true);
+      expect(store.has("nas")).toBe(false);
+      expect(store.read("nas")).toBeNull();
+      expect(store.remove("nas")).toBe(false);
+      // The helper ssh runs holds no password: it prints the one its environment carries.
+      const helper = fs.readFileSync(store.askpass(), "utf8");
+      expect(helper).not.toContain("replaced");
+      expect(helper).toContain("PENGUIN_SSH_PASSWORD");
+      expect(passwordProblem("")).toBe("required");
+      expect(passwordProblem("two\nlines")).toBe("invalid");
+      expect(passwordProblem("fine")).toBeNull();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("parseHostAliases", () => {
   const noIncludes = () => [];
@@ -235,6 +277,82 @@ describe("ssh / scp invocations", () => {
     expect(args.endsWith("build-box sh")).toBe(true);
     // Nothing is forwarded by name: any port on the machine is a channel through -D.
     expect(args).not.toContain("-L ");
+  });
+
+  it("signs a password machine in with the password alone, which never rides the command line", () => {
+    const secret = "hunter2 & co";
+    const login = {
+      ...target,
+      password: { askpass: "/r/machines/ssh-askpass/askpass", read: () => secret },
+    };
+    for (const args of [
+      sshArgs(login, "uname -a"),
+      sessionArgs(login, 49152),
+      scpArgs(login, ["/tmp/a"], "/tmp/dir"),
+    ]) {
+      expect(args.join(" ")).not.toContain("hunter2");
+      expect(args).not.toContain("BatchMode=yes");
+      expect(args).toEqual(
+        expect.arrayContaining([
+          "BatchMode=no",
+          "PreferredAuthentications=password,keyboard-interactive",
+          "PubkeyAuthentication=no",
+          "NumberOfPasswordPrompts=1",
+          "User=deploy",
+        ]),
+      );
+    }
+    // The secret travels in the one child's environment, beside the helper that prints it.
+    expect(passwordEnv({ PATH: "/usr/bin" }, "/r/machines/ssh-askpass/askpass", secret)).toEqual({
+      PATH: "/usr/bin",
+      SSH_ASKPASS: "/r/machines/ssh-askpass/askpass",
+      SSH_ASKPASS_REQUIRE: "force",
+      DISPLAY: ":0",
+      PENGUIN_SSH_PASSWORD: secret,
+    });
+    expect(passwordEnv({ DISPLAY: ":1" }, "/a", secret).DISPLAY).toBe(":1");
+  });
+
+  it("hands the password to any OpenSSH it can make ask the helper, and refuses the rest naming the version", () => {
+    expect(askpassPlan("OpenSSH_9.6p1 Ubuntu-3ubuntu13.5, OpenSSL 3.0.13", "linux")).toEqual({
+      ok: true,
+      detached: false,
+    });
+    // Before 8.4 the helper is asked only with no terminal to open: a session of its own.
+    expect(askpassPlan("OpenSSH_8.2p1 Ubuntu-4ubuntu0.11, OpenSSL 1.1.1f", "linux")).toEqual({
+      ok: true,
+      detached: true,
+    });
+    expect(askpassPlan("OpenSSH_for_Windows_9.5p1, LibreSSL 3.8.2", "win32").ok).toBe(true);
+    expect(askpassPlan("OpenSSH_for_Windows_8.1p1, LibreSSL 3.0.2", "win32")).toMatchObject({
+      ok: false,
+      ssh: "OpenSSH_for_Windows_8.1p1, LibreSSL 3.0.2",
+      detail: expect.stringContaining("OpenSSH 8.4 or later"),
+    });
+  });
+
+  it("reads 'Permission denied' by how the machine signs in, and reads its own sentence back the same", () => {
+    const said = "deploy@10.0.0.9: Permission denied (publickey,password).";
+    expect(explainSshFailure(said, "nas")?.reason).toBe("auth");
+    expect(explainSshFailure(said, "nas", { password: true })?.reason).toBe("password-rejected");
+    expect(
+      explainSshFailure("Permission denied, please try again.", "nas", { password: true })?.reason,
+    ).toBe("password-rejected");
+    // A host that takes no password never asked for the stored one.
+    expect(
+      explainSshFailure("deploy@nas: Permission denied (publickey).", "nas", { password: true })
+        ?.reason,
+    ).toBe("password-not-offered");
+    // ssh names an IdentityFile it could not load on its way to the password it did try.
+    expect(
+      explainSshFailure(`no such identity: /k/id: No such file or directory\n${said}`, "nas", {
+        password: true,
+      })?.reason,
+    ).toBe("password-rejected");
+    // What the transport led with reads the same to a caller that does not know the machine.
+    const led = sshFailureText(said, "nas", { password: true })!;
+    expect(led).toMatch(/^nas rejected the password saved for it\./);
+    expect(explainSshFailure(led, "nas")?.reason).toBe("password-rejected");
   });
 
   it("refuses a SOCKS port that is not one", () => {

@@ -4,6 +4,9 @@
  * here; the modules behind it (exec.ts, ssh-session.ts, socks.ts, lane.ts, targets.ts) are
  * private, pinned by machines-transport-boundary.test.ts. See connection.ts for why.
  *
+ * How each ssh child signs in — keys, or a password this server stores — is login.ts's, and a
+ * password refused once is not offered again until it is saved anew.
+ *
  * THE STRUCTURE. Per machine ONE connection: an `ssh -T -D` session whose stdin carries the
  * commands, the scripts and the tarballs, and whose SOCKS port carries every TCP connection
  * to the machine as a channel inside it. Not a budget: there is no count of open connections
@@ -20,6 +23,8 @@ export {
 export type { MachineChannel } from "./connection.js";
 export { heldSessionOf, onSessionChange, sessionOf } from "./ssh-session.js";
 export type { SessionListener, ShellSession } from "./ssh-session.js";
+export { PASSWORD_ENV, forgetRefusal, passwordSignIn } from "./login.js";
+export type { AskpassPlan } from "./login.js";
 export { execFailureText } from "./exec.js";
 export type { ExecResult } from "./exec.js";
 export {

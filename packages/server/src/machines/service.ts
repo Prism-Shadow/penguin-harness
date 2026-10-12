@@ -60,24 +60,29 @@ import {
   closeAllConnections,
   closeConnectionTo,
   connectionTo,
+  forgetRefusal,
   heldSessionOf,
   listHostAliases,
   listHostEntries,
   onSessionChange,
+  passwordSignIn,
   readSshConfig,
   writeSshConfig,
 } from "./transport/index.js";
 import type {
+  AskpassPlan,
   ExecResult,
   MachineConnection,
   SessionListener,
   ShellSession,
 } from "./transport/index.js";
+import { SshPasswords, passwordProblem } from "./ssh-passwords.js";
 import {
   findHostBlock,
   machineIdentity,
   renderHostBlock,
   replaceHostBlock,
+  sameHostEntry,
   validateHostEntry,
 } from "./ssh-config.js";
 import type { SshHostEntry, SshHostProblem } from "./ssh-config.js";
@@ -221,7 +226,18 @@ interface Reconnecting {
   diagnosis: MachineDiagnosis | null;
   /** The failure the diagnosis was taken for: a different one is checked again. */
   diagnosedFor: string | null;
+  /**
+   * The stored password was refused (or the host takes none): no attempt runs until a password
+   * is saved for the machine again or removed — retrying it would lock the account.
+   */
+  waitsForPassword?: true;
 }
+
+/** Why a host block or its password was not written. */
+type HostRefusal =
+  | { ok: false; why: "invalid"; problem: SshHostProblem }
+  | { ok: false; why: "password-invalid"; problem: "required" | "invalid" }
+  | { ok: false; why: "password-unsupported"; detail: string; ssh: string };
 
 /**
  * Runs a job's work with what its batch installs — a plan and where its installers are —
@@ -291,6 +307,8 @@ export interface MachinesEffects {
   relay: (deps: EventRelayDeps) => EventRelay;
   /** Starts telling `listener` when a held connection comes up or goes down; returns the stop. */
   watchSessions: (listener: SessionListener) => () => void;
+  /** Whether this computer's ssh can sign in with a stored password (transport/login.ts). */
+  passwordSignIn: () => Promise<AskpassPlan>;
 }
 
 /** The id of the entry standing for the machine this server runs on. */
@@ -372,6 +390,8 @@ export class MachinesService {
   readonly #unwatch: () => void;
   /** The image a source checkout builds for its installs; null for every other server. */
   readonly #checkout: CheckoutImage | null;
+  /** The passwords machines sign in with, by alias, and the helper ssh asks for them. */
+  readonly #passwords: SshPasswords;
 
   constructor(
     private readonly dataRoot: string,
@@ -411,8 +431,10 @@ export class MachinesService {
       publishEvent: () => {},
       relay: (deps) => new MachineEventRelay(deps),
       watchSessions: onSessionChange,
+      passwordSignIn,
       ...effects,
     };
+    this.#passwords = new SshPasswords(path.join(dataRoot, "machines"));
     this.#relay = this.#effects.relay({
       dial: (address) => this.#dial(address),
       publish: (machineId, event) => this.#effects.publishEvent(machineId, event),
@@ -437,13 +459,25 @@ export class MachinesService {
   // --- what is known -----------------------------------------------------------------------
 
   /**
-   * A machine's ssh target is its alias and nothing else. What the alias means — user, host,
-   * port, key, jump host — is ssh's to resolve, from its own config, every time it is handed
-   * the alias; asking ssh for that answer first (`ssh -G`) only to hand it back was a process
-   * per probe that could go stale against a file a person edits, for no fact we used.
+   * A machine's ssh target is its alias, and the password it signs in with when one is stored
+   * for it. What the alias means — user, host, port, key, jump host — is ssh's to resolve, from
+   * its own config, every time it is handed the alias; asking ssh for that answer first
+   * (`ssh -G`) only to hand it back was a process per probe that could go stale against a file a
+   * person edits, for no fact we used. The password is read when a connection opens, not here.
    */
   #targetOf(alias: string): RemoteTarget {
-    return { alias, user: "" };
+    if (!this.#passwords.has(alias)) return { alias, user: "" };
+    const passwords = this.#passwords;
+    return {
+      alias,
+      user: "",
+      password: { askpass: passwords.askpass(), read: () => passwords.read(alias) },
+    };
+  }
+
+  /** How a target signs in, for reading ssh's words about it (ssh-failure.ts). */
+  #signIn(target: RemoteTarget): { password: boolean } {
+    return { password: target.password !== undefined };
   }
 
   /**
@@ -548,6 +582,7 @@ export class MachinesService {
 
   /** This machine, then the ssh config's host aliases with what is known about each. */
   #allMachines(): MachineInfo[] {
+    const withPassword = this.#passwords.aliases();
     const remotes = this.#effects.listAliases().map((alias): MachineInfo => {
       const id = `ssh:${alias}`;
       const row = this.repo.get(id);
@@ -564,6 +599,7 @@ export class MachinesService {
         connection: session === null ? null : { pid: session.pid },
         ...(reconnect === undefined ? {} : { reconnect: this.#reconnectInfo(reconnect) }),
         ...(row?.sessionPid != null ? { keepConnected: true as const } : {}),
+        ...(withPassword.has(alias) ? { passwordSaved: true as const } : {}),
         api: this.#apiSeen.get(id) ?? null,
         ...(configSync === undefined ? {} : { configSync }),
         // The layout's own spelling, in the shell that machine speaks. Unknown platform
@@ -763,17 +799,18 @@ export class MachinesService {
       id,
       state: "skip",
     }));
+    const signIn = this.#signIn(target);
     const probe = await this.#effects.runOn(target, posixProbe(this.#layout));
     let identity = probe.code === 0 ? parseProbeOutput(probe.stdout) : null;
     if (identity === null) {
-      if (probe.code !== 0 && explainSshFailure(probe.stdout, target.alias) !== null) {
-        return done(sshFailureChecks(probe.stdout, target.alias));
+      if (probe.code !== 0 && explainSshFailure(probe.stdout, target.alias, signIn) !== null) {
+        return done(sshFailureChecks(probe.stdout, target.alias, signIn));
       }
       // No POSIX answer and no ssh refusal: a Windows shell, or a platform with no release.
       const detected = await this.#effects.detect(target, this.#layout);
       if ("error" in detected) {
-        if (explainSshFailure(detected.error, target.alias) !== null) {
-          return done(sshFailureChecks(detected.error, target.alias));
+        if (explainSshFailure(detected.error, target.alias, signIn) !== null) {
+          return done(sshFailureChecks(detected.error, target.alias, signIn));
         }
         return done([
           { id: "ssh", state: "pass", user: "", host: "" },
@@ -1005,7 +1042,7 @@ export class MachinesService {
     target: RemoteTarget,
     message: string,
   ): { canReplaceProgram?: false; sshReason?: SshFailureReason } {
-    const failure = explainSshFailure(message, target.alias);
+    const failure = explainSshFailure(message, target.alias, this.#signIn(target));
     return failure === null ? {} : { canReplaceProgram: false, sshReason: failure.reason };
   }
 
@@ -1019,7 +1056,8 @@ export class MachinesService {
   async #refusedAtTheDoor(machine: MachineInfo): Promise<MachineJob["result"] | null> {
     const target = this.#targetOf(machine.alias);
     const answer = await this.#effects.runOn(target, ":");
-    const refused = answer.code === 0 ? null : sshRefusal(answer.stdout, target.alias);
+    const refused =
+      answer.code === 0 ? null : sshRefusal(answer.stdout, target.alias, this.#signIn(target));
     return refused === null
       ? null
       : { ok: false, step: "check", message: refused, ...this.#sshCause(target, refused) };
@@ -1364,58 +1402,112 @@ export class MachinesService {
   }
 
   /**
-   * Adds a host to this server's ssh config, so it can be enabled like any other. The block
-   * is validated before anything is written, and an alias the config already declares is
-   * refused rather than shadowed: ssh takes the first block that matches, so a second one
-   * would be silently ignored and the person would wonder why their edit did nothing.
+   * Adds a host to this server's ssh config, so it can be enabled like any other — with the
+   * password it signs in with when one is given, stored here and never in the config. The block
+   * and the password are checked before anything is written, and an alias the config already
+   * declares is refused rather than shadowed: ssh takes the first block that matches, so a second
+   * one would be silently ignored and the person would wonder why their edit did nothing.
    */
-  addSshHost(
+  async addSshHost(
     entry: SshHostEntry,
-  ):
-    | { ok: true }
-    | { ok: false; why: "invalid"; problem: SshHostProblem }
-    | { ok: false; why: "exists" } {
+    password?: string,
+  ): Promise<{ ok: true } | HostRefusal | { ok: false; why: "exists" }> {
     const problem = validateHostEntry(entry);
     if (problem !== null) return { ok: false, why: "invalid", problem };
-    if (this.#effects.listAliases().includes(entry.alias.trim()))
-      return { ok: false, why: "exists" };
+    const refused = password === undefined ? null : await this.#passwordRefusal(password);
+    if (refused !== null) return refused;
+    const alias = entry.alias.trim();
+    if (this.#effects.listAliases().includes(alias)) return { ok: false, why: "exists" };
     this.#effects.appendHost(renderHostBlock(entry, this.#effects.now()));
+    if (password !== undefined) this.#setPassword(alias, password);
     return { ok: true };
   }
 
   /**
-   * A host's block as the page can show it back: what it says, and whether this app wrote
-   * it — only then may the page rewrite it. A hand-written block may carry options this app
-   * does not know (a jump host, a key agent setting), and rewriting it would drop them.
+   * A host's block as the page can show it back: what it says, whether this app wrote it — only
+   * then may the page rewrite it; a hand-written block may carry options this app does not know
+   * (a jump host, a key agent setting), and rewriting it would drop them — and whether a password
+   * is stored for it. Never the password.
    */
-  sshHost(alias: string): { entry: SshHostEntry; editable: boolean } | null {
+  sshHost(
+    alias: string,
+  ): { entry: SshHostEntry; editable: boolean; passwordSaved: boolean } | null {
     const text = this.#effects.readConfig();
     if (text === null) return null;
     const found = findHostBlock(text, alias);
-    return found === null ? null : { entry: found.entry, editable: found.ours };
+    return found === null
+      ? null
+      : { entry: found.entry, editable: found.ours, passwordSaved: this.#passwords.has(alias) };
   }
 
-  /** Rewrites, in place, a block this app wrote; the alias stays, everything else is the new entry. */
-  updateSshHost(
+  /**
+   * Rewrites, in place, a block this app wrote — the alias stays, everything else is the new
+   * entry — and sets how the host signs in: `password` a string stores it, null deletes the stored
+   * one (back to keys), absent leaves it. A hand-written block is never rewritten, but its
+   * password may still be set while the entry sent is the block as it stands.
+   */
+  async updateSshHost(
     alias: string,
     entry: Omit<SshHostEntry, "alias">,
-  ):
-    | { ok: true }
-    | { ok: false; why: "invalid"; problem: SshHostProblem }
-    | { ok: false; why: "not-found" }
-    | { ok: false; why: "foreign" } {
+    password?: string | null,
+  ): Promise<
+    { ok: true } | HostRefusal | { ok: false; why: "not-found" } | { ok: false; why: "foreign" }
+  > {
     const next: SshHostEntry = { ...entry, alias };
-    const problem = validateHostEntry(next);
-    if (problem !== null) return { ok: false, why: "invalid", problem };
     const text = this.#effects.readConfig();
     if (text === null) return { ok: false, why: "not-found" };
     const found = findHostBlock(text, alias);
     if (found === null) return { ok: false, why: "not-found" };
-    if (!found.ours) return { ok: false, why: "foreign" };
-    this.#effects.writeConfig(
-      replaceHostBlock(text, found, renderHostBlock(next, this.#effects.now())),
-    );
+    const rewrite = !sameHostEntry(found.entry, next);
+    if (rewrite) {
+      if (!found.ours) return { ok: false, why: "foreign" };
+      const problem = validateHostEntry(next);
+      if (problem !== null) return { ok: false, why: "invalid", problem };
+    }
+    const refused = typeof password === "string" ? await this.#passwordRefusal(password) : null;
+    if (refused !== null) return refused;
+    if (rewrite) {
+      this.#effects.writeConfig(
+        replaceHostBlock(text, found, renderHostBlock(next, this.#effects.now())),
+      );
+    }
+    if (password !== undefined) this.#setPassword(alias, password);
     return { ok: true };
+  }
+
+  /** Why `password` cannot be stored: not one line, or an ssh here that cannot be handed it. */
+  async #passwordRefusal(password: string): Promise<HostRefusal | null> {
+    const problem = passwordProblem(password);
+    if (problem !== null) return { ok: false, why: "password-invalid", problem };
+    const plan = await this.#effects.passwordSignIn();
+    return plan.ok
+      ? null
+      : { ok: false, why: "password-unsupported", detail: plan.detail, ssh: plan.ssh };
+  }
+
+  /** Stores (or with null deletes) the password `alias` signs in with. */
+  #setPassword(alias: string, password: string | null): void {
+    if (password === null) {
+      if (!this.#passwords.remove(alias)) return;
+    } else {
+      this.#passwords.save(alias, password);
+    }
+    this.#passwordChanged(alias);
+  }
+
+  /**
+   * A machine's password was saved or deleted: what was refused before may be tried again. A
+   * machine kept connected that stopped retrying on a refusal is tried once, now.
+   */
+  #passwordChanged(alias: string): void {
+    forgetRefusal(alias);
+    const address = `ssh:${alias}`;
+    const state = this.#reconnects.get(address);
+    this.#changed();
+    if (state?.waitsForPassword !== true) return;
+    delete state.waitsForPassword;
+    state.nextAt = this.#effects.now().getTime();
+    this.#schedule(address, 0);
   }
 
   /**
@@ -1509,6 +1601,10 @@ export class MachinesService {
     for (const address of new Set(addresses)) {
       this.disconnect(address);
       this.release(projectId, address);
+      // No Project here uses it any more: the password it signed in with goes with it.
+      if (this.#projectsUsing(address).length === 0) {
+        this.#setPassword(address.slice("ssh:".length), null);
+      }
       // A finished job is what keeps a card for a machine that never got as far as an install
       // (the page shows every machine with a job): letting it go lets that card go too.
       const job = this.#jobs.get(address);
@@ -1864,6 +1960,7 @@ export class MachinesService {
       lastError: state.lastError,
       ...(state.sshReason === undefined ? {} : { sshReason: state.sshReason }),
       diagnosis: state.diagnosis,
+      ...(state.waitsForPassword === true ? { waitsForPassword: true as const } : {}),
     };
   }
 
@@ -1934,6 +2031,15 @@ export class MachinesService {
       state.sshReason = result.sshReason;
     } else {
       delete state.sshReason;
+    }
+    // A stored password refused, or a host that takes none: another try would only add to an
+    // account's failed sign-ins, and could lock it. Nothing runs until a password is saved for it
+    // again or removed (#passwordChanged); the refusal is its own explanation, so no check either.
+    if (state.sshReason === "password-rejected" || state.sshReason === "password-not-offered") {
+      state.waitsForPassword = true;
+      state.nextAt = null;
+      this.#changed();
+      return;
     }
     const wait = Math.min(RECONNECT_FIRST_MS * 2 ** state.attempts, RECONNECT_MAX_MS);
     state.nextAt = this.#effects.now().getTime() + wait;

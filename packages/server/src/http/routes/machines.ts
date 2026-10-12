@@ -14,9 +14,12 @@
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
  * POST /add                     — put machines in this Project's list, installing nothing.
  * GET  /ssh-hosts               — every host in the ssh config, with its block's user, host, port.
- * POST /ssh-hosts               — append a host block to this server's ~/.ssh/config; 201.
- * GET  /ssh-hosts/:alias        — that block read back, and whether this app wrote it.
- * PUT  /ssh-hosts/:alias        — rewrite a block this app wrote; 404 none, 409 hand-written.
+ * POST /ssh-hosts               — append a host block to this server's ~/.ssh/config, and store
+ *                                 the password it signs in with when one is given; 201.
+ * GET  /ssh-hosts/:alias        — that block read back, whether this app wrote it, and whether a
+ *                                 password is stored for it (never the password).
+ * PUT  /ssh-hosts/:alias        — rewrite a block this app wrote, and set or delete its password;
+ *                                 404 none, 409 hand-written (its password alone may be set).
  * POST /:machineId/restart      — stop that machine's server and start it again; 202, or 409.
  * POST /:machineId/stop         — stop that machine's server and stop keeping it connected;
  *                                 202, or 409.
@@ -130,12 +133,38 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       identityFile: str("identityFile"),
     };
   };
+  /** The password a body sets: a string stores it, null deletes it, anything else leaves it. */
+  const passwordBody = (body: Record<string, unknown>): string | null | undefined =>
+    typeof body.password === "string" ? body.password : body.password === null ? null : undefined;
   const invalid = (problem: { field: string; why: string }) =>
     new HttpError(
       400,
       "ssh_host_invalid",
       `${problem.field}: ${problem.why === "required" ? "required" : "must be one word, with no space or #"}`,
     );
+  /** The refusals a host write and its password share. */
+  const hostRefused = (
+    refused:
+      | { why: "invalid"; problem: { field: string; why: string } }
+      | { why: "password-invalid"; problem: "required" | "invalid" }
+      | { why: "password-unsupported"; detail: string; ssh: string },
+  ): HttpError => {
+    if (refused.why === "password-invalid") {
+      return new HttpError(
+        400,
+        "ssh_password_invalid",
+        refused.problem === "required"
+          ? "password: required"
+          : "password: must be one line of at most 1024 characters",
+      );
+    }
+    if (refused.why === "password-unsupported") {
+      return new HttpError(409, "ssh_password_unsupported", refused.detail, undefined, {
+        ssh: refused.ssh,
+      });
+    }
+    return invalid(refused.problem);
+  };
 
   /** Every host in the ssh config, with what its own block says: the add dialog's rows. */
   app.get("/ssh-hosts", (c) =>
@@ -160,12 +189,16 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
 
   app.post("/ssh-hosts", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const added = deps.machines.addSshHost(hostBody(body));
+    const password = passwordBody(body);
+    const added = await deps.machines.addSshHost(
+      hostBody(body),
+      typeof password === "string" ? password : undefined,
+    );
     if (!added.ok) {
       if (added.why === "exists") {
         throw new HttpError(409, "ssh_host_exists", "That alias is already in the ssh config.");
       }
-      throw invalid(added.problem);
+      throw hostRefused(added);
     }
     return c.json(state(c), 201);
   });
@@ -180,14 +213,25 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
         "No Host block for that alias in ~/.ssh/config itself; it may live in an included file.",
       );
     }
-    return c.json({ ...found.entry, editable: found.editable } satisfies SshHostResponse);
+    return c.json({
+      ...found.entry,
+      editable: found.editable,
+      ...(found.passwordSaved ? { passwordSaved: true as const } : {}),
+    } satisfies SshHostResponse);
   });
 
-  /** Rewrite a block this app wrote. 404 when there is none; 409 when it was written by hand. */
+  /**
+   * Rewrite a block this app wrote, and set or delete its password. 404 when there is none; 409
+   * when it was written by hand and the body would change it (its password alone may be set).
+   */
   app.put("/ssh-hosts/:alias", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const { alias: _ignored, ...entry } = hostBody(body);
-    const updated = deps.machines.updateSshHost(c.req.param("alias"), entry);
+    const updated = await deps.machines.updateSshHost(
+      c.req.param("alias"),
+      entry,
+      passwordBody(body),
+    );
     if (!updated.ok) {
       if (updated.why === "not-found") {
         throw new HttpError(
@@ -203,7 +247,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
           "That block was written by hand; edit it in ~/.ssh/config.",
         );
       }
-      throw invalid(updated.problem);
+      throw hostRefused(updated);
     }
     return c.json(state(c));
   });

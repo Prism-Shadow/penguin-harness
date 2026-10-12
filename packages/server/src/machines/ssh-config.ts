@@ -142,6 +142,21 @@ export interface SshHostEntry {
   identityFile?: string;
 }
 
+/**
+ * Whether two entries say the same about reaching a host — what a block would be rewritten with
+ * against what it says now. An empty user or key is the same as none.
+ */
+export function sameHostEntry(a: SshHostEntry, b: SshHostEntry): boolean {
+  const said = (entry: SshHostEntry) =>
+    JSON.stringify([
+      entry.hostName.trim(),
+      entry.user?.trim() ?? "",
+      entry.port ?? null,
+      entry.identityFile?.trim() ?? "",
+    ]);
+  return said(a) === said(b);
+}
+
 /** Which field of an entry cannot be written, and why. */
 export interface SshHostProblem {
   field: keyof SshHostEntry;
