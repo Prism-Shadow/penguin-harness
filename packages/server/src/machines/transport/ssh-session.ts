@@ -147,14 +147,18 @@ class MachineShell {
 
   #release: (() => void) | null = null;
 
-  constructor(private readonly target: RemoteTarget, private readonly address: string) {}
+  constructor(
+    private readonly target: RemoteTarget,
+    private readonly address: string,
+  ) {}
 
   /** Keeps the session from here on: a session opened transiently is promoted in place. */
   hold(): void {
     this.#held = true;
     if (this.#idle !== null) clearTimeout(this.#idle);
     this.#idle = null;
-    this.#release = registry?.register(sessionResourceId(this.address), this, () => this.close()) ?? null;
+    this.#release =
+      registry?.register(sessionResourceId(this.address), this, () => this.close()) ?? null;
   }
 
   held(): boolean {
@@ -371,7 +375,10 @@ const sessions = new Map<string, MachineShell>();
 function shellFor(machineAddress: string, target: RemoteTarget): MachineShell {
   let shell = sessions.get(machineAddress);
   if (shell === undefined) {
-    shell = (adoptDelivered ? registry?.claim<MachineShell>(sessionResourceId(machineAddress)) : undefined) ?? new MachineShell(target, machineAddress);
+    shell =
+      (adoptDelivered
+        ? registry?.claim<MachineShell>(sessionResourceId(machineAddress))
+        : undefined) ?? new MachineShell(target, machineAddress);
     sessions.set(machineAddress, shell);
     if (shell.held()) shell.hold();
   }

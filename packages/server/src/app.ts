@@ -353,10 +353,7 @@ export async function bootAppDeps(
   // members: the runtime singletons published above, and `tree` — which follows the
   // instance of the moment, so a re-assembly (a plugin change, no push) is never missed.
   // Per-request business dispatch rides the seam.
-  booted = liveTree(
-    { config, db, channels, hmr, control: ctl, desktop, instance },
-    tree,
-  );
+  booted = liveTree({ config, db, channels, hmr, control: ctl, desktop, instance }, tree);
   return booted;
 }
 
