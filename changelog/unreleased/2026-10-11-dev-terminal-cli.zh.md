@@ -3,6 +3,7 @@
 - **Date:** 2026-10-11
 - **Type:** fix
 - **Scope:** `server`, `cli`, `docs`
+- **PR:** [#1037](https://github.com/Prism-Shadow/penguin-harness/pull/1037)
 
 [English](2026-10-11-dev-terminal-cli.md)
 
