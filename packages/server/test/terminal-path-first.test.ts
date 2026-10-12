@@ -228,11 +228,19 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
       // (/var/folders/…/T/…) run past the default 80 columns, and the assertions read whole lines.
       cols: 400,
     });
-    await waitUntil(
-      () => screen(session).some((line) => line.startsWith(PROMPT)),
-      () => `no prompt; screen: ${screen(session).join(" | ")}`,
-    );
-    return session;
+    try {
+      await waitUntil(
+        () => screen(session).some((line) => line.startsWith(PROMPT)),
+        () => `no prompt; screen: ${screen(session).join(" | ")}`,
+        // PowerShell's first startup can stall on a busy CI runner before emitting a byte.
+        path.basename(shellPath) === "pwsh" ? 30_000 : 15_000,
+      );
+      return session;
+    } catch (err) {
+      // The caller cannot enter its finally until open returns: release a failed startup here.
+      session.dispose();
+      throw err;
+    }
   }
 
   /** Types `line` and waits until `done` shows on the screen. */
@@ -262,28 +270,36 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
     const shellPath = onPath(shell.name);
 
     describe.skipIf(shellPath === null)(shell.name, () => {
-      it("runs the shim's penguin over the user's, keeping the user's alias and PATH entry", async () => {
-        const { env } = homeFor(shell);
-        const session = await open(shellPath!, env, pathFirst());
-        try {
-          const lines = await run(session, "penguin; pa; user-tool", "user-tool-ok");
-          expect(lines).toContain("from-shim");
-          expect(lines).not.toContain("from-user");
-          expect(lines).toContain("alias-ok");
-        } finally {
-          session.dispose();
-        }
-      }, 30_000);
+      it(
+        "runs the shim's penguin over the user's, keeping the user's alias and PATH entry",
+        async () => {
+          const { env } = homeFor(shell);
+          const session = await open(shellPath!, env, pathFirst());
+          try {
+            const lines = await run(session, "penguin; pa; user-tool", "user-tool-ok");
+            expect(lines).toContain("from-shim");
+            expect(lines).not.toContain("from-user");
+            expect(lines).toContain("alias-ok");
+          } finally {
+            session.dispose();
+          }
+        },
+        shell.name === "pwsh" ? 60_000 : 30_000,
+      );
 
-      it("prints nothing before the user's prompt", async () => {
-        const { env } = homeFor(shell);
-        const session = await open(shellPath!, env, pathFirst());
-        try {
-          expect(screen(session)).toEqual([PROMPT]);
-        } finally {
-          session.dispose();
-        }
-      }, 30_000);
+      it(
+        "prints nothing before the user's prompt",
+        async () => {
+          const { env } = homeFor(shell);
+          const session = await open(shellPath!, env, pathFirst());
+          try {
+            expect(screen(session)).toEqual([PROMPT]);
+          } finally {
+            session.dispose();
+          }
+        },
+        shell.name === "pwsh" ? 60_000 : 30_000,
+      );
     });
   }
 

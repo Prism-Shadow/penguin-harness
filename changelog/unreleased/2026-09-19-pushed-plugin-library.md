@@ -22,3 +22,7 @@ replaced still holds files under the old tree open (node-pty's binary, a plugin'
 removal left them, the rename onto the remainder was refused, and the boot of every push whose
 assets resolved to that directory failed — the runtime restarted on each. This attempt's complete
 tree is now served from where it was extracted instead.
+
+The real-shell regression fixture now disposes a terminal when startup fails, so a timed-out
+PowerShell cannot keep writing into the test tree during cleanup. PowerShell startup has a
+bounded 30-second prompt deadline and a 60-second test budget; all behavior assertions remain.
