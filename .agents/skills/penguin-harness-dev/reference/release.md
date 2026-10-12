@@ -146,12 +146,15 @@ must not ship: absolute paths carrying a home directory, API keys, and mock-mode
 
 ## Polishing the prose
 
-Release prose goes through a DeepSeek model on the TokenDance gateway before it ships —
+Release prose goes through a model on the TokenDance gateway before it ships —
 `https://tokendance.space/gateway/v1/chat/completions`, OpenAI Chat Completions protocol, model
-`deepseek-v3.2`. The key is the user's TokenDance key; take it from `TOKENDANCE_API_KEY` or a
-file named by `TOKENDANCE_KEY_FILE`, never from an argument, and never commit it. Not every model
-in the catalog is enabled on a given key — a 403 `model_access_denied` means that key needs the
-model granted on the site, not that the key is bad.
+`glm-5.3-flash` (it was `deepseek-v3.2` until 0.2.14, when the user's key lost access to it). The
+key is the user's TokenDance key; take it from `TOKENDANCE_API_KEY` or a file named by
+`TOKENDANCE_KEY_FILE`, never from an argument, and never commit it. Not every model in the catalog
+is enabled on a given key: a 403 `model_access_denied`, or a 401 `invalid_model` for a model that
+`GET /gateway/v1/models` does list, means that key lacks the model, not that the key is bad. Ask the
+user which model to use rather than picking one. `glm-5.3-flash` reasons before it answers, so its
+reasoning counts against `max_tokens`: a small cap returns `finish_reason: length` with no text.
 
 `scripts/polish-release-prose.mjs` beside this file carries the instruction and does the call:
 

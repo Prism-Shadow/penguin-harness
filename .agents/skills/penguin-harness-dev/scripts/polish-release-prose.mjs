@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Polish release prose through a DeepSeek model on the TokenDance gateway.
+ * Polish release prose through a model on the TokenDance gateway (glm-5.3-flash by default).
  *
  * Usage: node polish.mjs <file> [--model <id>] [--write]
  *   Reads the file, sends it whole, prints the polished Markdown (or rewrites the file
@@ -44,7 +44,7 @@ if (!file) {
   console.error("usage: polish.mjs <file> [--model <id>] [--write]");
   process.exit(2);
 }
-const model = args.includes("--model") ? args[args.indexOf("--model") + 1] : "deepseek-v3.2";
+const model = args.includes("--model") ? args[args.indexOf("--model") + 1] : "glm-5.3-flash";
 const write = args.includes("--write");
 
 const keyFile = process.env.TOKENDANCE_KEY_FILE;
@@ -66,6 +66,8 @@ const res = await fetch(BASE, {
       { role: "user", content: source },
     ],
     temperature: 0.3,
+    // A reasoning model: its reasoning counts against this cap, so leave room for both.
+    max_tokens: 32000,
   }),
 });
 
