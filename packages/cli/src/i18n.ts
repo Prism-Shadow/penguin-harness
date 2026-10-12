@@ -977,13 +977,18 @@ export interface Messages {
   };
 
   // —— Runtime output ——
-  /** Startup banner: product + subcommand + CLI version on the first line, then Agent / Workspace / Model each on its own line. */
+  /**
+   * Startup banner: product + subcommand + the CLI's build identity (`penguin --version`'s
+   * string, which names a source build's commit) on the first line, then Agent / Workspace /
+   * Model / Server each on its own line — the server as client.ts connectionLabel spells it.
+   */
   header(
     kind: "chat" | "run",
     version: string,
     agentId: string,
     workspace: string,
     model: string,
+    server: string,
   ): string;
   chatHints(): string;
   confirmExit(): string;
@@ -1176,12 +1181,14 @@ function headerEn(
   agentId: string,
   workspace: string,
   model: string,
+  server: string,
 ): string {
   return [
-    `PenguinHarness ${kind} v${version}`,
+    `PenguinHarness ${kind} ${version}`,
     `Agent: ${agentId}`,
     `Workspace: ${workspace}`,
     `Model: ${model}`,
+    `Server: ${server}`,
   ].join("\n");
 }
 
@@ -1191,12 +1198,14 @@ function headerZh(
   agentId: string,
   workspace: string,
   model: string,
+  server: string,
 ): string {
   return [
-    `PenguinHarness ${kind} v${version}`,
+    `PenguinHarness ${kind} ${version}`,
     `Agent：${agentId}`,
     `Workspace：${workspace}`,
     `模型：${model}`,
+    `服务器：${server}`,
   ].join("\n");
 }
 

@@ -2751,8 +2751,11 @@ export class SessionsModule {
       // into. Derived from the config rather than passed along, so the platform half needs no
       // new capability — and read for truth rather than for null, because a runtime older than
       // this field publishes a config without it and wrote no shim either: no field, no
-      // directory, feature off, rather than a push declined over a PATH entry.
-      pathPrepend: (): string[] => (config.cliEntry ? [cliShimDir(config.root)] : []),
+      // directory, feature off, rather than a push declined over a PATH entry. A checkout whose
+      // CLI cannot run has a shim too — the stub that says why — and it leads PATH all the same,
+      // so no other installation's `penguin` answers in its place.
+      pathPrepend: (): string[] =>
+        config.cliEntry || config.cliLaunch?.unavailable ? [cliShimDir(config.root)] : [],
       // Each Session confines under its OWN policy — the snapshot on its row, its root's for a
       // subagent — so a settings change reaches only Sessions created after it. A row from
       // before snapshots takes the settings at its first command and keeps them from then on.

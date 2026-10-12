@@ -270,9 +270,20 @@ export async function bootAppDeps(
   // test hands the tree) is honoured here too, and the process's own console otherwise.
   const logDouble = replacements.find(([cls]) => cls === ConsoleLog)?.[1] as Log | undefined;
   const shimLog = (line: string): void => (logDouble ?? new ConsoleLog()).line(line);
-  const shim = ensureCliShim(config.root, config.cliEntry ?? null);
+  const shim = ensureCliShim(config.root, config.cliEntry ?? null, {
+    execArgs: config.cliLaunch?.execArgs ?? [],
+    unavailable: config.cliLaunch?.unavailable ?? null,
+    dbPath: config.dbPath,
+  });
   if (shim.kind === "written") {
-    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${shim.entry}`);
+    // The whole command the shim runs, loader included: which CLI `penguin` is, said once.
+    const command = [...shim.execArgs, shim.entry].join(" ");
+    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${command}`);
+  } else if (shim.kind === "stub") {
+    shimLog(
+      `Agent CLI: this checkout's CLI cannot run, so ${path.join(shim.dir, "penguin")} says why ` +
+        `instead of running another installation's: ${shim.reason}`,
+    );
   } else if (shim.kind === "absent") {
     shimLog(
       "Agent CLI: no CLI entry found; commands an Agent runs resolve `penguin` on their own PATH.",

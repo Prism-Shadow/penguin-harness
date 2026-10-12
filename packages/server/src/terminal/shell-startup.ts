@@ -28,6 +28,12 @@
  *   The file sources the user's own `ENV` first. A profile that sets ENV itself replaces
  *   the hook, and the environment half below is what is left.
  *
+ * Startup files are not the last word on PATH, though: a prompt hook runs after all of them,
+ * before every prompt. Version managers and environment tools install one, and a hook that
+ * puts its own directory first takes `penguin` over from the first prompt on. So bash, zsh and
+ * fish also run the statement as their LAST prompt hook — `PROMPT_COMMAND`, `precmd_functions`,
+ * the `fish_prompt` event — and keep the directory first before each prompt.
+ *
  * Every shell but cmd also gets the directory at the front of the pty's environment PATH.
  * That half still counts when no hook runs: an rc that `exec`s another shell, or a shell
  * this module does not know. The hooks leave PATH alone when the directory already leads.
@@ -180,6 +186,68 @@ function posixPathFirst(dirs: readonly string[], platform: NodeJS.Platform): str
   ];
 }
 
+/** The function bash and zsh run before every prompt, see {@link pathFirstFunction}. */
+const PATH_FIRST_FN = "__penguin_path_first";
+
+/**
+ * A function, valid in both bash and zsh, that moves `dirs` to the front of PATH. It runs once
+ * when startup ends and then before every prompt, because startup files are not the last word
+ * on PATH: a prompt hook — zsh's `precmd_functions`, bash's `PROMPT_COMMAND`, which version
+ * managers and environment tools install — runs before each prompt, after every startup file,
+ * and one that puts its own directory first would hand `penguin` to another installation from
+ * the first prompt on. Being the last hook makes this one the last word instead.
+ *
+ * Other occurrences of the directories are dropped, so running it before every prompt never
+ * grows PATH, and it changes nothing while they already lead. It returns the status it was
+ * called with: a prompt that shows `$?` keeps showing the user's last command's. zsh runs it
+ * under its own options, whatever the user set.
+ */
+function pathFirstFunction(dirs: readonly string[], platform: NodeJS.Platform): string[] {
+  const words = dirs.map((dir) => posixQuote(posixDir(dir, platform)));
+  const lead = words.join(":");
+  return [
+    `${PATH_FIRST_FN}() {`,
+    '  local s=$? p=":${PATH-}:" d',
+    '  [ -n "${ZSH_VERSION-}" ] && emulate -L zsh',
+    `  case $p in :${lead}:*) return $s ;; esac`,
+    `  for d in ${words.join(" ")}; do`,
+    '    while case $p in *":$d:"*) true ;; *) false ;; esac; do p=${p/":$d:"/:}; done',
+    "  done",
+    "  p=${p#:}; p=${p%:}",
+    `  PATH=${lead}\${p:+:$p}; export PATH`,
+    "  return $s",
+    "}",
+    PATH_FIRST_FN,
+  ];
+}
+
+/**
+ * bash: the function last in `PROMPT_COMMAND`, a string or (bash 5.1+) an array, whichever the
+ * user's files left it as. Before 5.1 bash runs only an array's first element, so there the
+ * function joins that element, like the string form: newline-separated, which survives a user
+ * value that ends in `;` or `&`.
+ */
+function bashPromptHook(): string[] {
+  return [
+    `if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]] &&`,
+    "  (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) )); then",
+    `  [[ " \${PROMPT_COMMAND[*]} " == *" ${PATH_FIRST_FN} "* ]] || PROMPT_COMMAND+=(${PATH_FIRST_FN})`,
+    "else",
+    "  case ${PROMPT_COMMAND-} in",
+    `    *${PATH_FIRST_FN}*) ;;`,
+    `    *) PROMPT_COMMAND=\${PROMPT_COMMAND:+$PROMPT_COMMAND$'\\n'}${PATH_FIRST_FN} ;;`,
+    "  esac",
+    "fi",
+  ];
+}
+
+/** zsh: the function last in `precmd_functions`, after every hook the user's files added. */
+function zshPromptHook(): string[] {
+  return [
+    `(( \${precmd_functions[(Ie)${PATH_FIRST_FN}]} )) || precmd_functions+=(${PATH_FIRST_FN})`,
+  ];
+}
+
 function bashrc(dirs: readonly string[], platform: NodeJS.Platform): string {
   return [
     ...HEADER,
@@ -189,7 +257,8 @@ function bashrc(dirs: readonly string[], platform: NodeJS.Platform): string {
     'elif [ -r "$HOME/.bash_login" ]; then . "$HOME/.bash_login"',
     'elif [ -r "$HOME/.profile" ]; then . "$HOME/.profile"',
     "fi",
-    ...posixPathFirst(dirs, platform),
+    ...pathFirstFunction(dirs, platform),
+    ...bashPromptHook(),
     "",
   ].join("\n");
 }
@@ -210,11 +279,13 @@ function zshFiles(dirs: readonly string[], platform: NodeJS.Platform): Array<[st
     "_penguin_uzd=${ZDOTDIR-}",
     "ZDOTDIR=$_penguin_zd",
   ];
-  // The end of startup: ZDOTDIR is the user's again, for `exec zsh` and nested shells.
+  // The end of startup: ZDOTDIR is the user's again, for `exec zsh` and nested shells; PATH
+  // gets its directories first, now and before every prompt.
   const finish = [
     "if [[ -n $_penguin_uzd ]]; then export ZDOTDIR=$_penguin_uzd; else unset ZDOTDIR; fi",
     "unset _penguin_zd _penguin_uzd",
-    ...posixPathFirst(dirs, platform),
+    ...pathFirstFunction(dirs, platform),
+    ...zshPromptHook(),
   ];
   return [
     [
@@ -271,9 +342,25 @@ function fishQuote(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
 }
 
+/**
+ * fish's `--init-command`: the same function as bash's and zsh's (pathFirstFunction), run once
+ * now and then on every `fish_prompt` event, which fish emits before each prompt.
+ */
 function fishPathFirst(dirs: readonly string[], platform: NodeJS.Platform): string {
   const quoted = dirs.map((dir) => fishQuote(posixDir(dir, platform)));
-  return `test "$PATH[1]" = ${quoted[0]}; or set -gx PATH ${quoted.join(" ")} $PATH`;
+  const leads = quoted.map((dir, i) => `test "$PATH[${i + 1}]" = ${dir}`).join("; and ");
+  return [
+    `function ${PATH_FIRST_FN} --on-event fish_prompt`,
+    "  set -l s $status",
+    `  if not begin; ${leads}; end`,
+    "    set -l rest",
+    `    for d in $PATH; contains -- $d ${quoted.join(" ")}; or set -a rest $d; end`,
+    `    set -gx PATH ${quoted.join(" ")} $rest`,
+    "  end",
+    "  return $s",
+    "end",
+    PATH_FIRST_FN,
+  ].join("\n");
 }
 
 /** A string as a PowerShell single-quoted literal, where a quote is escaped by doubling it. */

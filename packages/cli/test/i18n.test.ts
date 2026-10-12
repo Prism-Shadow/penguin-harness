@@ -196,15 +196,19 @@ describe("getMessages", () => {
     expect(getMessages("zh").client.noServer()).not.toBe(getMessages("en").client.noServer());
   });
 
-  it("header shows the version and Agent / Workspace / Model on their own lines", () => {
+  it("header shows the build and Agent / Workspace / Model / Server on their own lines", () => {
     for (const lang of ["en", "zh"] as const) {
-      const lines = getMessages(lang).header("run", "1.2.3", "ag", "/ws", "mod").split("\n");
-      expect(lines).toHaveLength(4);
+      const lines = getMessages(lang)
+        .header("run", "v1.2.3-4-gabc1234", "ag", "/ws", "mod", "http://localhost:7368 (/dev)")
+        .split("\n");
+      expect(lines).toHaveLength(5);
       expect(lines[0]).toContain("run");
-      expect(lines[0]).toContain("v1.2.3");
+      // The build's own identity, verbatim: a source build names its commit.
+      expect(lines[0]).toContain(" v1.2.3-4-gabc1234");
       expect(lines[1]).toContain("ag");
       expect(lines[2]).toContain("/ws");
       expect(lines[3]).toContain("mod");
+      expect(lines[4]).toContain("http://localhost:7368 (/dev)");
     }
   });
 });

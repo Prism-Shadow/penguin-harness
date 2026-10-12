@@ -88,6 +88,31 @@ export interface CreateTerminalSessionOptions {
    * Absent or null, the shell starts with the inherited PATH as it is.
    */
   pathFirst?: TerminalPathFirst | null;
+  /**
+   * One line shown above everything the shell prints — on a development instance, which
+   * `penguin` this terminal runs, or why it is not this instance's (cli-notice.ts). Written to
+   * the screen, never to the shell: nothing runs, and the user's prompt follows it.
+   */
+  notice?: TerminalNotice | null;
+  /**
+   * Whether the shell keeps the server process's `PENGUIN_HOME` and `PENGUIN_WEB_DB`. Only
+   * where no shim names this server's data root for `penguin` — a server with no CLI to offer,
+   * or a runtime older than the shim's root default — so that `penguin` there still finds this
+   * server the way it did before. Default false: every `PENGUIN_*` stays out.
+   */
+  inheritDataRoot?: boolean;
+}
+
+/** A line the server shows at the top of a new terminal; `warning` when something is wrong. */
+export interface TerminalNotice {
+  text: string;
+  tone: "info" | "warning";
+}
+
+/** The notice as terminal output: dim when informational, yellow when a warning. */
+function renderNotice(notice: TerminalNotice): string {
+  const style = notice.tone === "warning" ? "\x1b[33m" : "\x1b[2m";
+  return `${style}${notice.text}\x1b[0m\r\n`;
 }
 
 export interface TerminalSessionInfo {
@@ -110,17 +135,40 @@ export type TerminalExitListener = (info: TerminalExitInfo) => void;
 export type TerminalTitleListener = (title: string | null) => void;
 
 /**
+ * Whether a variable of the server's own environment is the user's to inherit. Not the
+ * harness's: every `PENGUIN_*` is this installation's own wiring (its data root, its CLI entry,
+ * the desktop shell's token) or context the server process inherited from whoever started it —
+ * a server started by an Agent command of ANOTHER harness carries that harness's
+ * `PENGUIN_API_URL`, token and Session id — and `PORT` / `HOST` are this server's listener.
+ * None of it describes the user's shell, and all of it misdirects what runs there: `penguin`
+ * would talk to whatever server those name, and `pnpm dev` or `npm run dev` would take this
+ * server's data root and port over their own defaults. Core strips the same set from an Agent's
+ * commands (see its command session manager), matched the same case-insensitive way.
+ *
+ * The user's startup files still set any of them they export, and `penguin` needs none of
+ * them: the shim names this server's data root itself (services/cli-shim.ts). Where no shim
+ * does, `keepDataRoot` keeps `PENGUIN_HOME` and `PENGUIN_WEB_DB`, as every terminal had them
+ * before (see CreateTerminalSessionOptions.inheritDataRoot).
+ */
+function inheritedByTerminal(key: string, keepDataRoot: boolean): boolean {
+  const name = key.toUpperCase();
+  if (keepDataRoot && (name === "PENGUIN_HOME" || name === "PENGUIN_WEB_DB")) return true;
+  return !(name.startsWith("PENGUIN_") || name === "PORT" || name === "HOST");
+}
+
+/**
  * Environment for the pty. `TERM`/`COLORTERM` are what make colour and 256-colour output
  * work at all; the rest of the parent environment is inherited so the shell behaves like the
- * user's own (PATH, proxies, language).
+ * user's own (PATH, proxies, language) — less the harness's own variables (inheritedByTerminal).
  */
 function buildTerminalEnv(
   extra: Record<string, string> | undefined,
   cwd: string,
+  keepDataRoot: boolean,
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (typeof value === "string") env[key] = value;
+    if (typeof value === "string" && inheritedByTerminal(key, keepDataRoot)) env[key] = value;
   }
   Object.assign(env, extra ?? {});
   env.TERM = "xterm-256color";
@@ -173,10 +221,14 @@ export class TerminalSession {
       allowProposedApi: true,
     });
 
+    // Before the shell's first byte, into the emulator every viewer restores from: the notice
+    // is the screen's first line, and no client can attach before it is there.
+    if (options.notice) this.terminal.write(renderNotice(options.notice));
+
     const shell = options.shell ?? defaultTerminalShell();
     const launch = shellLaunch(
       shell,
-      buildTerminalEnv(options.env, options.cwd),
+      buildTerminalEnv(options.env, options.cwd, options.inheritDataRoot === true),
       options.pathFirst ?? null,
     );
     // Before the first spawn on macOS: node-pty's prebuilt spawn-helper ships without an

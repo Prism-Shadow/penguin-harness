@@ -10,6 +10,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   autoStartEntry,
+  connectionLabel,
   normalizeServerUrl,
   parseSseBody,
   resolveAgentId,
@@ -53,6 +54,8 @@ describe("connection resolution", () => {
     expect(conn.baseUrl).toBe("http://localhost:7002");
     expect(conn.loopback).toBe(true);
     expect(conn.autoStarted).toBe(false);
+    // A named server is labelled by its URL alone: no data root stands behind the choice.
+    expect(connectionLabel(conn)).toBe("http://localhost:7002");
   });
 
   it("PENGUIN_API_URL is used when --server is absent", async () => {
@@ -91,6 +94,9 @@ describe("connection resolution", () => {
       const conn = await resolveConnection({}, t);
       expect(conn.baseUrl).toBe(`http://localhost:${port}`);
       expect(conn.autoStarted).toBe(false);
+      // Found through the root, so the banner names the root: that tells two local
+      // instances apart where the port alone would not.
+      expect(connectionLabel(conn)).toBe(`http://localhost:${port} (${root})`);
     } finally {
       listener.close();
       fs.rmSync(root, { recursive: true, force: true });

@@ -25,7 +25,7 @@
  */
 import { createInterface, type Interface } from "node:readline";
 import type { Command } from "commander";
-import { VERSION } from "@prismshadow/penguin-core";
+import { buildInfo } from "@prismshadow/penguin-core";
 import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
@@ -41,6 +41,7 @@ import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
 import { LineComposer, PasteFilter } from "../input.js";
 import {
   ApiError,
+  connectionLabel,
   resolveAgentId,
   resolveConnection,
   resolveProjectId,
@@ -205,8 +206,14 @@ export function registerChatCommand(program: Command, t: Messages): void {
       let renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });
 
       out.write(
-        `${t.header("chat", VERSION, session.agentId, session.workspace, session.modelId)}\n` +
-          `${t.chatHints()}\n`,
+        `${t.header(
+          "chat",
+          buildInfo().describe,
+          session.agentId,
+          session.workspace,
+          session.modelId,
+          connectionLabel(client.conn),
+        )}\n` + `${t.chatHints()}\n`,
       );
       // On resume, first render the history messages of the current context (full
       // messages, same endpoint the Web history uses), then proceed to regular input.

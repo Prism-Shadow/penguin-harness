@@ -11,7 +11,10 @@
  *      it (with PENGUIN_API_TOKEN) into tool subprocesses, which is how an agent's own
  *      `penguin` calls find the server that runs them.
  *   3. A live `server.lock` at the data root (PENGUIN_HOME or ~/.penguin/data): attach to
- *      the running local server on `http://localhost:<port>`.
+ *      the running local server on `http://localhost:<port>`. A `penguin` started through a
+ *      server's `<root>/bin/penguin` shim — in that server's terminals and Agent commands —
+ *      gets that server's root as PENGUIN_HOME unless its caller set one (the server's
+ *      services/cli-shim.ts), so it attaches to that server rather than the installed one.
  *   4. Auto-start: spawn a detached `node <cli entry> server` with PORT=0, wait for its
  *      lock, attach. The loser of a two-CLI spawn race exits with code 3 ("already
  *      running"), which the lock poll absorbs — it finds the winner's lock either way.
@@ -60,6 +63,20 @@ export interface Connection {
   autoStarted: boolean;
   /** Whether the target host is loopback (gates the file-token fallback). */
   loopback: boolean;
+  /**
+   * Whether the server was found through `root` — its live lock, or one auto-started there —
+   * rather than named by `--server` / PENGUIN_API_URL; then the root says which instance it is.
+   */
+  fromRoot: boolean;
+}
+
+/**
+ * Which server a connection talks to, as the chat and run banners show it: the URL, and the
+ * data root behind it when that is how it was found — the part that tells two local
+ * instances apart, the installed app and a development server among them.
+ */
+export function connectionLabel(conn: Connection): string {
+  return conn.fromRoot ? `${conn.baseUrl} (${conn.root})` : conn.baseUrl;
 }
 
 /** One parsed SSE frame; `data` is the raw payload (possibly multi-line joined). */
@@ -204,11 +221,17 @@ export async function resolveConnection(
     if (!loopback && !process.env.PENGUIN_API_TOKEN?.trim()) {
       throw new Error(t.client.remoteNeedsToken(url.origin));
     }
-    return { baseUrl: url.origin, root, autoStarted: false, loopback };
+    return { baseUrl: url.origin, root, autoStarted: false, loopback, fromRoot: false };
   }
   const lock = await liveServerLock(root);
   if (lock !== null) {
-    return { baseUrl: `http://localhost:${lock.port}`, root, autoStarted: false, loopback: true };
+    return {
+      baseUrl: `http://localhost:${lock.port}`,
+      root,
+      autoStarted: false,
+      loopback: true,
+      fromRoot: true,
+    };
   }
   if (opts.autoStart === false) throw new Error(t.client.noServer());
   const { port, logPath } = await autoStartServer(root, t);
@@ -217,6 +240,7 @@ export async function resolveConnection(
     root,
     autoStarted: true,
     loopback: true,
+    fromRoot: true,
   };
   process.stderr.write(`${t.client.autoStarted(conn.baseUrl, logPath)}\n`);
   return conn;

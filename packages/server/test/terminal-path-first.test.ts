@@ -11,18 +11,27 @@
  *   the shim's.
  * - The user's rc still counts: its alias works, and its directory is still on PATH.
  * - Nothing is printed before the user's prompt: no echoed command, no error.
+ * - Given a user rc that puts its own `penguin` first AGAIN after startup — in a prompt hook
+ *   (bash PROMPT_COMMAND as a string or an array, zsh precmd) or in zsh's .zlogin —
+ *   `command -v penguin` is still the shim, at the first prompt and the next.
+ * - The prompt hook keeps the exit status of the user's last command.
  * - zsh: once started, ZDOTDIR is what the user had (unset, or their own), so `exec zsh` and
  *   nested shells read the user's files.
  * - Without a shim directory the shell starts as before, and the user's rc decides `penguin`.
  * - Opening another terminal adds nothing to the startup directory.
+ * - The shell gets none of the server process's PENGUIN_* / PORT / HOST, only what the caller
+ *   passes — but keeps PENGUIN_HOME / PENGUIN_WEB_DB where no shim names the data root. A
+ *   notice, when there is one, is the screen's first line, above the prompt.
  * - Through the server: a terminal opened over the API on a server with a CLI entry runs the
- *   server's `<root>/bin/penguin`.
+ *   server's `<root>/bin/penguin`; a development instance's terminal first says which CLI that
+ *   is and on which data root, or, when the checkout's CLI cannot run, why — and `penguin`
+ *   then says the same and fails.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TerminalSession } from "../src/terminal/session.js";
+import { TerminalSession, type TerminalNotice } from "../src/terminal/session.js";
 import { shellStartupDir, type TerminalPathFirst } from "../src/terminal/shell-startup.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 
@@ -202,6 +211,7 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
     shellPath: string,
     env: Record<string, string>,
     first: TerminalPathFirst | null,
+    notice: TerminalNotice | null = null,
   ): Promise<TerminalSession> {
     const session = new TerminalSession({
       cwd: tmp,
@@ -209,6 +219,7 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
       shell: shellPath,
       env,
       pathFirst: first,
+      notice,
       // Wide enough that no echoed path wraps onto a second screen line: macOS's temp dirs
       // (/var/folders/…/T/…) run past the default 80 columns, and the assertions read whole lines.
       cols: 400,
@@ -332,6 +343,183 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
       expect(fs.readdirSync(dir, { recursive: true }).sort()).toEqual(before);
     }, 30_000);
   });
+
+  /**
+   * Users whose startup files put their own `penguin` first once more AFTER startup: in a
+   * prompt hook, which runs before every prompt (version managers and environment tools
+   * install them), or in zsh's last startup file. Each case's files also do what the rc
+   * above does — put the directory first and set the prompt — so only the late re-prepend
+   * differs.
+   */
+  const LATE: Array<{ shell: string; what: string; files: Record<string, string> }> = [
+    {
+      shell: "bash",
+      what: "a PROMPT_COMMAND string",
+      files: {
+        ".bash_profile": '[ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n',
+        ".bashrc": `export PATH="${RC_PATH}:$PATH"\nPS1='${PROMPT} '\n_user_hook() { PATH="${RC_PATH}:$PATH"; }\nPROMPT_COMMAND=_user_hook\n`,
+      },
+    },
+    {
+      shell: "bash",
+      what: "a PROMPT_COMMAND array",
+      files: {
+        ".bash_profile": '[ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n',
+        ".bashrc": `export PATH="${RC_PATH}:$PATH"\nPS1='${PROMPT} '\n_user_hook() { PATH="${RC_PATH}:$PATH"; }\nPROMPT_COMMAND=(_user_hook)\n`,
+      },
+    },
+    {
+      shell: "zsh",
+      what: "a precmd hook",
+      files: {
+        ".zshrc": `export PATH="${RC_PATH}:$PATH"\nPS1='${PROMPT} '\n_user_hook() { path=(${RC_PATH} $path) }\nprecmd_functions+=(_user_hook)\n`,
+      },
+    },
+    {
+      shell: "zsh",
+      what: ".zlogin",
+      files: {
+        ".zshrc": `export PATH="${RC_PATH}:$PATH"\nPS1='${PROMPT} '\n`,
+        ".zlogin": `path=(${RC_PATH} $path)\n`,
+      },
+    },
+  ];
+
+  /** A fresh HOME with the user's `penguin` in ~/userbin and exactly these startup files. */
+  function homeWith(files: Record<string, string>): Record<string, string> {
+    const home = fs.mkdtempSync(path.join(tmp, "home-late-"));
+    writeScript(path.join(home, "userbin", "penguin"), "echo from-user");
+    for (const [name, content] of Object.entries(files)) {
+      fs.writeFileSync(path.join(home, name), content);
+    }
+    return { HOME: home, BASH_SILENCE_DEPRECATION_WARNING: "1" };
+  }
+
+  /** The line `command -v penguin` printed, read off the screen above the marker after it. */
+  async function whichPenguin(session: TerminalSession, marker: string): Promise<string> {
+    const lines = await run(session, `command -v penguin; echo ${marker}`, marker);
+    return lines[lines.lastIndexOf(marker) - 1] ?? "";
+  }
+
+  for (const late of LATE) {
+    const shellPath = onPath(late.shell);
+
+    describe.skipIf(shellPath === null)(`${late.shell} with ${late.what} that re-prepends`, () => {
+      it("still resolves penguin to the shim, at the first prompt and the next", async () => {
+        const session = await open(shellPath!, homeWith(late.files), pathFirst());
+        try {
+          const shim = path.join(shimDir, "penguin");
+          expect(await whichPenguin(session, "first-prompt")).toBe(shim);
+          expect(await whichPenguin(session, "next-prompt")).toBe(shim);
+          expect(await run(session, "penguin", "from-shim")).not.toContain("from-user");
+        } finally {
+          session.dispose();
+        }
+      }, 30_000);
+    });
+  }
+
+  describe.skipIf(onPath("bash") === null)("the prompt hook", () => {
+    it("keeps the exit status of the user's last command", async () => {
+      const bash = SHELLS.find((shell) => shell.name === "bash")!;
+      const { env } = homeFor(bash);
+      const session = await open(onPath("bash")!, env, pathFirst());
+      try {
+        // Between `false` and the next line bash runs PROMPT_COMMAND, whose last command's
+        // status is what `$?` then reads. Typed ahead: the shell reads the lines in order.
+        session.write("false\r");
+        const lines = await run(session, 'echo "status=$?"', "status=1");
+        expect(lines).not.toContain("status=0");
+      } finally {
+        session.dispose();
+      }
+    }, 30_000);
+  });
+
+  describe.skipIf(onPath("bash") === null)("the shell's environment", () => {
+    const bash = SHELLS.find((shell) => shell.name === "bash")!;
+    /** What the server process carries: its own wiring, and context from whoever started it. */
+    const SERVER_ONLY = {
+      PENGUIN_HOME: "/srv/penguin-root",
+      PENGUIN_WEB_DB: "/srv/penguin.db",
+      PENGUIN_API_URL: "http://localhost:1",
+      PENGUIN_CLI_ENTRY: "/opt/other/penguin.js",
+      PORT: "7368",
+      HOST: "127.0.0.1",
+    };
+
+    /**
+     * Opens bash with SERVER_ONLY in this process's environment and `extra` passed by the
+     * caller; waits for exactly the line `expected` describes, so anything else shows up on
+     * the screen in the timeout's message.
+     */
+    async function shellSees(
+      options: { inheritDataRoot?: boolean },
+      expected: Record<string, string>,
+    ): Promise<string[]> {
+      const saved = Object.fromEntries(Object.keys(SERVER_ONLY).map((k) => [k, process.env[k]]));
+      Object.assign(process.env, SERVER_ONLY);
+      try {
+        const { env } = homeFor(bash);
+        const session = new TerminalSession({
+          cwd: tmp,
+          ownerUserId: "u1",
+          shell: onPath("bash")!,
+          env: { ...env, PENGUIN_GIVEN: "given" },
+          cols: 400,
+          ...options,
+        });
+        try {
+          await waitUntil(
+            () => screen(session).some((line) => line.startsWith(PROMPT)),
+            () => `no prompt; screen: ${screen(session).join(" | ")}`,
+          );
+          const keys = [...Object.keys(SERVER_ONLY), "PENGUIN_GIVEN"];
+          const probe = keys.map((k) => `${k}=\${${k}-unset}`).join(" ");
+          const line = keys.map((k) => `${k}=${expected[k] ?? "unset"}`).join(" ");
+          const lines = await run(session, `echo "${probe}"`, line);
+          expect(lines).toContain(line);
+          return lines;
+        } finally {
+          session.dispose();
+        }
+      } finally {
+        for (const [k, v] of Object.entries(saved)) {
+          if (v === undefined) delete process.env[k];
+          else process.env[k] = v;
+        }
+      }
+    }
+
+    it("has none of the server process's PENGUIN_* / PORT / HOST, and what the caller passes", async () => {
+      await shellSees({}, { PENGUIN_GIVEN: "given" });
+    }, 30_000);
+
+    it("keeps the server's PENGUIN_HOME / PENGUIN_WEB_DB where no shim names the data root", async () => {
+      await shellSees(
+        { inheritDataRoot: true },
+        {
+          PENGUIN_HOME: SERVER_ONLY.PENGUIN_HOME,
+          PENGUIN_WEB_DB: SERVER_ONLY.PENGUIN_WEB_DB,
+          PENGUIN_GIVEN: "given",
+        },
+      );
+    }, 30_000);
+  });
+
+  describe.skipIf(onPath("bash") === null)("a notice", () => {
+    it("is the screen's first line, and the user's prompt follows it", async () => {
+      const bash = SHELLS.find((shell) => shell.name === "bash")!;
+      const { env } = homeFor(bash);
+      const notice: TerminalNotice = { text: "a word before the prompt", tone: "info" };
+      const session = await open(onPath("bash")!, env, pathFirst(), notice);
+      try {
+        expect(screen(session)).toEqual([notice.text, PROMPT]);
+      } finally {
+        session.dispose();
+      }
+    }, 30_000);
+  });
 });
 
 describePty("a terminal opened through the server", () => {
@@ -367,6 +555,129 @@ describePty("a terminal opened through the server", () => {
         fs.rmSync(entryDir, { recursive: true, force: true });
       }
     },
+    30_000,
+  );
+
+  /**
+   * A throwaway HOME for one test: the server's shells start in it and read only its startup
+   * files, which set the prompt and nothing else — not the startup files of whoever runs the
+   * suite.
+   */
+  async function withHome(fn: () => Promise<void>): Promise<void> {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-term-home-"));
+    fs.writeFileSync(
+      path.join(home, ".bash_profile"),
+      '[ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n',
+    );
+    fs.writeFileSync(path.join(home, ".bashrc"), `PS1='${PROMPT} '\n`);
+    const saved = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      await fn();
+    } finally {
+      if (saved === undefined) delete process.env.HOME;
+      else process.env.HOME = saved;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  }
+
+  /** Opens a wide bash over the API; types `line`, if any; polls the screen until `until`. */
+  async function terminalOf(app: Awaited<ReturnType<typeof createTestApp>>["app"]) {
+    const admin = await loginAdmin(app);
+    const api = apiClient(app, admin.cookie);
+    const created = await api.post("/api/terminals", { cwd: "~", shell: bash, cols: 400 });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    return async (line: string | null, until: (lines: string[]) => boolean): Promise<string[]> => {
+      if (line !== null) {
+        await api.post(`/api/terminals/${id}/keys`, { keys: line, literal: true });
+        await api.post(`/api/terminals/${id}/keys`, { keys: "Enter" });
+      }
+      const deadline = Date.now() + 15_000;
+      let lines: string[] = [];
+      while (!until(lines) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const res = await api.get(`/api/terminals/${id}/capture`);
+        lines = ((await res.json()) as { lines: string[] }).lines
+          .map((l) => l.trimEnd())
+          .filter((l) => l !== "");
+      }
+      return lines;
+    };
+  }
+
+  it.skipIf(bash === null)(
+    "on a dev instance, says first which penguin it runs, and runs it on this server's data root",
+    () =>
+      withHome(async () => {
+        const entryDir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-cli-entry-"));
+        const entry = path.join(entryDir, "penguin.mjs");
+        fs.writeFileSync(
+          entry,
+          'console.log(`penguin-home=${process.env.PENGUIN_HOME ?? "unset"}`);\n',
+        );
+        const checkout = path.join(entryDir, "checkout");
+        const t = await createTestApp({
+          config: {
+            cliEntry: entry,
+            cliLaunch: { execArgs: [], checkout, origin: "build", unavailable: null },
+          },
+        });
+        try {
+          const term = await terminalOf(t.app);
+          const opened = await term(null, (lines) => lines.some((l) => l.startsWith(PROMPT)));
+          expect(opened[0]).toContain(`the CLI of ${checkout} (built)`);
+          expect(opened[0]).toContain(`on data root ${t.root}`);
+          // The shell itself is not handed the root: only the `penguin` the shim starts is.
+          const ran = await term('penguin; echo "shell-home=${PENGUIN_HOME-unset}"', (lines) =>
+            lines.includes("shell-home=unset"),
+          );
+          expect(ran).toContain(`penguin-home=${t.root}`);
+          expect(ran).toContain("shell-home=unset");
+        } finally {
+          await t.cleanup();
+          fs.rmSync(entryDir, { recursive: true, force: true });
+        }
+      }),
+    30_000,
+  );
+
+  it.skipIf(bash === null)(
+    "when the checkout's CLI cannot run, says why first, and `penguin` fails saying it too",
+    () =>
+      withHome(async () => {
+        const reason =
+          "packages/cli/dist/penguin.js is not built in /work/penguin-harness. Run " +
+          "`pnpm --filter @prismshadow/penguin-cli build`, then restart the server.";
+        const logs: string[] = [];
+        const t = await createTestApp({
+          log: (line) => logs.push(line),
+          config: {
+            cliEntry: null,
+            cliLaunch: {
+              execArgs: [],
+              checkout: "/work/penguin-harness",
+              origin: null,
+              unavailable: reason,
+            },
+          },
+        });
+        try {
+          expect(logs.some((line) => line.includes("cannot run") && line.includes(reason))).toBe(
+            true,
+          );
+          const term = await terminalOf(t.app);
+          const opened = await term(null, (lines) => lines.some((l) => l.startsWith(PROMPT)));
+          expect(opened[0]).toContain(reason);
+          const ran = await term('penguin --version; echo "rc=$?"', (lines) =>
+            lines.some((l) => l.startsWith("rc=")),
+          );
+          expect(ran).toContain("rc=1");
+          expect(ran.some((l) => l.includes(`cannot run its own CLI: ${reason}`))).toBe(true);
+        } finally {
+          await t.cleanup();
+        }
+      }),
     30_000,
   );
 });

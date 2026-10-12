@@ -32,13 +32,14 @@
  */
 import { Option } from "commander";
 import type { Command } from "commander";
-import { VERSION } from "@prismshadow/penguin-core";
+import { buildInfo } from "@prismshadow/penguin-core";
 import { StreamRenderer, dim } from "../render.js";
 import { parseDurationMs } from "../duration.js";
 import { parseTokenBudget, UNLIMITED_BUDGET } from "../goal-command.js";
 import { resolveThinkingLevel } from "../thinking-command.js";
 import { denyActivePrompt, promptApproval, resolveApprovalMode } from "../approval.js";
 import {
+  connectionLabel,
   resolveAgentId,
   resolveConnection,
   resolveProjectId,
@@ -233,7 +234,14 @@ export function registerRunCommand(program: Command, t: Messages): void {
       const out = process.stdout;
       if (!json) {
         out.write(
-          `${t.header("run", VERSION, session.agentId, session.workspace, session.modelId)}\n`,
+          `${t.header(
+            "run",
+            buildInfo().describe,
+            session.agentId,
+            session.workspace,
+            session.modelId,
+            connectionLabel(client.conn),
+          )}\n`,
         );
       }
 
