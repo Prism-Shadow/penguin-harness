@@ -93,6 +93,7 @@ import {
 } from "./messaging-channels.js";
 import type { MessagingChannelSpec } from "./messaging-channels.js";
 import type { MessagingChannel } from "../../runtime/messaging/connector.js";
+import { MessagingNeedsRecentMessageError } from "../../runtime/messaging/connector.js";
 import { isMessagingChannel } from "../../runtime/messaging/enabled-channel.js";
 import type { WeChatScanService } from "../../runtime/messaging/wechat-scan.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
@@ -478,6 +479,11 @@ export function sessionMessagingRoutes(deps: MessagingRouteDeps): Hono<AppEnv> {
       try {
         await deps.messaging.sendTestMessage(binding);
       } catch (err) {
+        // Not a broken binding: the platform lets the bot speak only for a while after the
+        // user's last message (WeChat), and the fix is in the user's hands.
+        if (err instanceof MessagingNeedsRecentMessageError) {
+          throw new HttpError(409, `${spec.channel}_needs_recent_message`, err.message);
+        }
         throw new HttpError(
           502,
           `${spec.channel}_send_failed`,

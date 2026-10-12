@@ -1,6 +1,7 @@
 ---
 name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
+version: 2026.10.09.5
 ---
 
 # Agent Optimization

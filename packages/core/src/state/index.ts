@@ -21,4 +21,5 @@ export * from "./example-benchmark.js";
 export * from "./builtin-benchmarks.js";
 // The built-in Benchmarks' data: what scripts/benchmark-packages.mjs writes as packages.
 export { BUILTIN_BENCHMARKS } from "./builtin-benchmarks-data.js";
-export { provisionProjectBenchmarks } from "./project-benchmarks.js";
+export { placeBenchmark, provisionProjectBenchmarks } from "./project-benchmarks.js";
+export type { PlaceBenchmarkOptions } from "./project-benchmarks.js";

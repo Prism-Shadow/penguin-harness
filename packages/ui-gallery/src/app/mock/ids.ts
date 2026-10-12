@@ -39,7 +39,7 @@ export const IDS = {
     builtin: "penguinharness-benchmark-sec-e",
   },
   plugins: {
-    /** A library plugin the detail page opens on. */
+    /** A library plugin one demo Agent is behind on, so its card shows an update. */
     registry: "claude-code-expert",
   },
   machine: "local",

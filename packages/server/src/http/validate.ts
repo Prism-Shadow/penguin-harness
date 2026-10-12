@@ -13,11 +13,9 @@ import type {
   SessionListOrder,
   SessionListPaging,
 } from "../services/session-service.js";
-import { HttpError } from "./errors.js";
+import { HttpError, badRequest } from "./errors.js";
 
-export function badRequest(message: string): HttpError {
-  return new HttpError(400, "bad_request", message);
-}
+export { badRequest };
 
 /**
  * Get a path parameter (under sub-route mounting, hono infers string | undefined; the

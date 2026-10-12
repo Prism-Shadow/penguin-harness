@@ -42,7 +42,7 @@ The settings run from top to bottom in this order:
 | --- | --- |
 | Channel tabs | **Feishu**, **Telegram**, **QQ** and **WeChat**, along the top of the dialog. Each channel keeps its own saved settings for this conversation. |
 | **Enable connection** | Turns the connection on or off. Turning it on binds the bot to this conversation; turning it off releases the bot. Saved credentials stay either way. |
-| **Connection status** | **Not connected**, **Connecting**, **Connected** or **Connection error**, plus when the last message arrived and the last connection or delivery problem. The status refreshes on its own. |
+| **Connection status** | **Not connected**, **Connecting**, **Connected** or **Connection error**, plus when the last message arrived and the last connection or delivery problem. On WeChat it also says when replies are waiting to be sent. The status refreshes on its own. |
 | **Test connection** | Checks that the saved or typed credentials sign in, and reports the response time. |
 | **Send test message** | Sends a short test message to the chat. It works once the bot is connected and has received at least one message. |
 | Channel fields | The credentials for the selected channel. See the section for your channel: [Feishu](#connect-feishu), [Telegram](#connect-telegram), [QQ](#connect-qq) or [WeChat](#connect-wechat). |
@@ -146,11 +146,10 @@ WeChat connects through its official bot channel. There is no console and nothin
 4. If your phone shows a number, type it into **Pairing code** and select **Confirm**.
 5. Confirm the authorization on your phone. PenguinHarness saves the credential and shows "Saved the credential for bot {botId} — the connection can be enabled now".
 6. Turn on **Enable connection**, and wait for **Connected**.
-7. Wait about 15 seconds.
-8. Find the bot in WeChat and send it a message. If you get no reply, send the message again.
+7. Find the bot in WeChat and send it a message.
 
 > [!NOTE]
-> Right after the status turns **Connected**, the connection clears messages that were waiting from before. A message that arrives in those first seconds is dropped rather than answered. This happens again each time the connection is turned on or the server restarts.
+> When the connection comes up, it skips messages sent more than 5 minutes earlier. A message sent within those 5 minutes, such as right after you turned the connection on or while the server restarted, is answered. This happens each time the connection is turned on or the server restarts.
 
 If a code expires before you scan it, a new one appears automatically. To bind a different WeChat account later, turn off the connection, then select **Scan again**.
 
@@ -160,6 +159,16 @@ WeChat differs from the other channels:
 - Text, images and files travel in both directions.
 - A voice message arrives as WeChat's own transcription. A recording WeChat could not transcribe cannot be read. A video arrives as a file.
 
+### How replies reach WeChat
+
+WeChat takes the bot's messages only for a while after your last message to it, and only about 10 for each message you send. The bot works within these limits:
+
+- For each message you send, the first 9 replies go out as they are written. The rest are combined into the 10th.
+- A text reply that WeChat will not take yet is held, not dropped. This happens once the time window has passed or the 10 messages are used up, for example late in a long run, or when you start a turn in the Web App long after your last WeChat message. The next time you message the bot in WeChat, the held replies are sent first, and then your message is answered.
+- While replies are held, **Connection status** shows a line starting "Replies waiting since" with the time, in place of a delivery failure. The line goes away once they are sent.
+- Images and files are not held. One that WeChat will not take is reported as a delivery failure.
+- **Send test message** also needs a recent message from you. If WeChat will not take it, PenguinHarness asks you to message the bot in WeChat first.
+
 ## After you connect
 
 A connected conversation shows a paper-plane icon on its row in the sidebar. Point at the icon to see which channel is enabled, for example "Telegram connection enabled".
@@ -168,9 +177,10 @@ A connected conversation shows a paper-plane icon on its row in the sidebar. Poi
 
 - A message to the bot starts a Task in the conversation, just like a message typed in the Web App. The agent is not told that the message came from a chat app.
 - If the agent is busy, the message waits in the queue and runs next.
+- While the connection is on, the conversation stays loaded on the server, from the moment the connection comes up. A message after a quiet spell does not wait for the conversation to load, though the model provider can still be slower to answer after a long pause.
 - On Feishu, Telegram and WeChat, images and files you send are attached to the message. Each image can be up to 20 MB, and one connection accepts up to 40 MB of images per 10 minutes. Files follow the upload limits in [Settings](/settings); Telegram also caps bot downloads at 20 MB.
 - Stickers are not supported, and neither are voice and video messages on Feishu and Telegram. The bot replies that only text, image and file messages are supported.
-- On Feishu, Telegram and WeChat, messages sent while the connection is off are not delivered later.
+- On Feishu, Telegram and WeChat, messages sent while the connection is off are not delivered later. On WeChat, a message sent within 5 minutes before the connection comes up is the exception and is answered.
 
 ### Replies the bot sends
 
@@ -244,4 +254,6 @@ Credentials are stored on the server and never sent back to the browser in full.
 
 **WeChat: the bot does not answer in a group.** The WeChat channel receives direct chats only. Message the bot directly.
 
-**WeChat: the first message gets no reply.** A message sent in the first seconds after the status turns **Connected** is dropped. Wait about 15 seconds, then send the message again.
+**WeChat: replies stop arriving, or arrive combined.** WeChat takes about 10 messages from the bot for each message you send, and only for a while after it. Send the bot a message in WeChat; any replies it was holding are sent first. See [How replies reach WeChat](#how-replies-reach-wechat).
+
+**WeChat: a message sent while the connection was off gets no reply.** When the connection comes up, it skips messages sent more than 5 minutes earlier. Send the message again.

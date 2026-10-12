@@ -34,7 +34,6 @@ import type {
   OrgFinanceResponse,
 } from "@prismshadow/penguin-server/api";
 import {
-  AgentAvatar,
   Badge,
   Button,
   Card,
@@ -71,6 +70,7 @@ import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { NAV_ICONS } from "../../lib/nav-icons";
+import { EmployeeAvatar } from "./employee-avatar";
 import { TrendChart } from "../usage/trend-chart";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
@@ -567,7 +567,7 @@ export function FinancePage() {
                       <TableCell style={{ paddingLeft: 8 + depth * INDENT_PX }}>
                         <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
                           {depth > 0 && <TreeElbow />}
-                          <AgentAvatar
+                          <EmployeeAvatar
                             id={employee.agentId}
                             name={employee.name}
                             size={ICON_SIZE.navRow}

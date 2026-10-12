@@ -1,6 +1,7 @@
 ---
 name: company-hr
 description: Run HR for a PenguinHarness organization — guarantee every employee has an enabled calendar event, hire and offboard employees (channels included), evaluate and improve them (with the agent-tuning plugin's agent-optimization skill), and keep the handbook's role conventions current.
+version: 2026.10.10.1
 ---
 
 # Company HR

@@ -7,9 +7,14 @@
  *
  * Two implementations, one contract:
  *   - the builtin registry serves the index embedded in this package
- *     (builtin-index.json — the four sandbox backends the workspace ships);
+ *     (builtin-index.json — the four sandbox backends the workspace ships, each row carrying
+ *     the descriptions of the package's own package.json `penguin` block and its icon, so its
+ *     card renders on a server the package is not installed on);
  *   - the HTTP registry fetches an `index.json` URL and runs it through the same
- *     validator, so a remote index is trusted no further than the embedded one.
+ *     validator, so a remote index is trusted no further than the embedded one — and less
+ *     in one respect: its entries lose their `icon`, an SVG the Web App inlines into the
+ *     page, which only what ships with this server may supply (the embedded index, and a
+ *     package's own icon on this machine, see localPluginDisplay).
  *
  * A deployment's list is the builtin registry plus the published index (see
  * NIGHTLY_INDEX_URL), merged in http/routes/plugins.ts.
@@ -18,6 +23,8 @@ import type { PluginIndexEntry } from "../api/types.js";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parsePluginPackage, readPluginIcon } from "@prismshadow/penguin-core";
+import type { PluginPackageFields } from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
 
@@ -51,7 +58,14 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
   ) {
     return null;
   }
-  for (const key of ["repository", "homepage"] as const) {
+  for (const key of [
+    "repository",
+    "homepage",
+    "descriptionZh",
+    "shortDescription",
+    "shortDescriptionZh",
+    "icon",
+  ] as const) {
     if (e[key] !== undefined && typeof e[key] !== "string") return null;
   }
   for (const key of ["keywords", "categories"] as const) {
@@ -66,8 +80,16 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
  * publisher's single artifact, so a malformed row means the artifact is broken —
  * unlike a Project's plugin list, whose entries are independent choices skipped one
  * by one.
+ *
+ * `icons: "drop"` is for a document from the network: the Web App draws an entry's icon by
+ * inlining its SVG, so a remote entry's is removed. Removed rather than refused — the rest of
+ * the row still lists, under the puzzle piece.
  */
-export function parsePluginIndex(data: unknown, source: string): PluginIndexEntry[] {
+export function parsePluginIndex(
+  data: unknown,
+  source: string,
+  { icons = "keep" }: { icons?: "keep" | "drop" } = {},
+): PluginIndexEntry[] {
   if (!Array.isArray(data)) {
     throw new Error(`plugin index from ${source} is not an array`);
   }
@@ -76,8 +98,15 @@ export function parsePluginIndex(data: unknown, source: string): PluginIndexEntr
     if (entry === null) {
       throw new Error(`plugin index from ${source} has a malformed entry at index ${i}`);
     }
-    return entry;
+    return icons === "drop" ? withoutIcon(entry) : entry;
   });
+}
+
+/** An index entry with no `icon`: what a remote source's entry becomes (see parsePluginIndex). */
+export function withoutIcon(entry: PluginIndexEntry): PluginIndexEntry {
+  if (!("icon" in entry)) return entry;
+  const { icon: _dropped, ...rest } = entry;
+  return rest;
 }
 
 export const BUILTIN_REGISTRY_SOURCE = "builtin";
@@ -107,6 +136,45 @@ export function builtinPluginRegistry(
       }
     },
   };
+}
+
+/** The display fields an index entry may carry, which a package can also carry itself. */
+export type PluginDisplay = Pick<
+  PluginIndexEntry,
+  "descriptionZh" | "shortDescription" | "shortDescriptionZh" | "icon"
+>;
+
+/**
+ * What a package on this machine says about itself for its card: the Chinese and short
+ * descriptions of its own package.json's `penguin` block, and its icon — read by core's manifest
+ * reader, the same one the library reads a library plugin with, so an icon that is not a plain
+ * SVG is never sent. Empty when the package is not here (an index row is then all there is) or
+ * carries neither. A package.json that will not read gives nothing rather than failing the
+ * listing: the card falls back to what the index says.
+ */
+export async function localPluginDisplay(
+  name: string,
+  bases: readonly PluginBase[],
+): Promise<PluginDisplay> {
+  const found = resolvePluginPackage(name, bases);
+  if (found === null) return {};
+  let penguin: PluginPackageFields;
+  try {
+    const raw = JSON.parse(await fs.readFile(found.manifest, "utf8")) as unknown;
+    penguin = parsePluginPackage(raw, found.manifest).manifest.penguin;
+  } catch {
+    return {};
+  }
+  const display: PluginDisplay = {};
+  if (penguin.descriptionZh !== undefined) display.descriptionZh = penguin.descriptionZh;
+  if (penguin.shortDescription !== undefined) display.shortDescription = penguin.shortDescription;
+  if (penguin.shortDescriptionZh !== undefined) {
+    display.shortDescriptionZh = penguin.shortDescriptionZh;
+  }
+  // No icon, or one that will not do: the card draws the puzzle piece.
+  const { icon } = readPluginIcon(found.dir, penguin.icon);
+  if (icon !== undefined) display.icon = icon;
+  return display;
 }
 
 /** How a published index is fetched: `fetchImpl` and `delay` are injectable for tests. */
@@ -173,7 +241,7 @@ export function httpPluginRegistry(
           `plugin index from ${indexUrl} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-      return parsePluginIndex(data, indexUrl);
+      return parsePluginIndex(data, indexUrl, { icons: "drop" });
     },
     // The shared index format carries no readme location, so a remote source has none to
     // offer yet. Null rather than a guessed URL: inventing one would have the Web App

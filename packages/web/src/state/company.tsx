@@ -210,6 +210,8 @@ interface CompanyStoreState {
   setPersonalEnabled: (enabled: boolean) => void;
   applyPrefs: (prefs: UiPrefs) => void;
   setCurrentOrg: (key: string | null) => void;
+  /** The last organization opened becomes the current one, unless a route already set one. */
+  adoptLastOrg: () => void;
   reloadChannels: (projectId: string, orgId: string) => Promise<void>;
   markChannelRead: (channelId: string) => void;
   reloadOrganizations: (projectIds: readonly string[]) => Promise<void>;
@@ -356,6 +358,16 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
       set(patch);
       settleWorkMode(get());
       storeWorkMode(get().workMode);
+    },
+
+    /**
+     * Makes the last organization opened the current one — only while none is: a route that
+     * names an organization has the last word, whatever this shell remembered.
+     */
+    adoptLastOrg: () => {
+      const { currentOrgKey, lastOrgKey } = get();
+      if (currentOrgKey !== null || lastOrgKey === null) return;
+      get().setCurrentOrg(lastOrgKey);
     },
 
     setCurrentOrg: (key) => {
@@ -781,8 +793,11 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   const { workMode, personalEnabled, lastOrgKey } = state;
   useEffect(() => {
     if (!serverEnabled || !personalEnabled || workMode !== "company") return;
-    if (currentOrgKey !== null || lastOrgKey === null) return;
-    store.getState().setCurrentOrg(lastOrgKey);
+    // Decided on the store's state NOW, not on this render's: an organization route's own
+    // effect (OrgLayout, a child, so it runs first in the same commit) has often just set the
+    // current organization, and this render still shows it as null. Adopting the stored one on
+    // that stale view put the sidebar on the last organization while the page showed another.
+    store.getState().adoptLastOrg();
   }, [store, serverEnabled, personalEnabled, workMode, currentOrgKey, lastOrgKey]);
 
   useEffect(

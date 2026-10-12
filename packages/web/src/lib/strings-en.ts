@@ -58,7 +58,6 @@ export const en: Strings = {
     noneInUse: "No machine in use yet.",
     sshHint:
       "A machine can be added when this server's account can ssh into it by key (`ssh <alias>` works in a terminal here). Whoever set up ssh can put it in ~/.ssh/config.",
-    now: "now",
     allHosts: (count: number) => `${count} more in ~/.ssh/config`,
     expand: "Expand",
     fewer: "Collapse",
@@ -94,27 +93,22 @@ export const en: Strings = {
     updateAll: (count: number) => `Update all (${count})`,
     updateAllConfirm: (count: number) =>
       `Update ${count === 1 ? "this machine" : `these ${count} machines`} to this server's version? Each one reinstalls the program, restarts its server and reconnects, so anyone using it is briefly cut off.`,
-    /** Asked before letting machines go: the connection drops, the install stays. */
+    /** Asked before letting a machine go: the connection drops, the install stays. */
     stopUsingOne: (alias: string) =>
       `Disable ${alias}? This Project disconnects from it and stops listing it; whatever is running through it is cut off. The program stays on that machine, so you can enable it again later.`,
-    stopUsingMany: (count: number) =>
-      `Disable these ${count} machines? This Project disconnects from them and stops listing them; whatever is running through them is cut off. The program stays on those machines, so you can enable them again later.`,
-    selectedCount: (count: number) => `${count} selected`,
-    pickAll: "all",
-    pickNone: "none",
     state: {
-      serving: "Serving",
+      serving: "Running",
       queued: "Queued",
       working: "Working",
       ready: "Connected",
       failed: "Failed",
       installedOnly: "Installed",
-      behind: "Behind",
-      notConnected: "Offline",
+      behind: "Update available",
+      notConnected: "Not connected",
       unreachable: "Unreachable",
-      stopped: "Stopped",
-      linkedStopped: "Connected, not serving",
-      unknown: "Unchecked",
+      stopped: "Not running",
+      linkedStopped: "Connected, not running",
+      unknown: "Not checked",
     },
     phase: {
       check: "Checking the machine…",
@@ -124,30 +118,107 @@ export const en: Strings = {
       connect: "Connecting…",
       sync: "Handing over the Model config…",
     },
+    step: {
+      check: "Check the machine",
+      install: "Install the program",
+      handover: "Send the build",
+      restart: "Restart its server",
+      connect: "Connect",
+      sync: "Sync the Model config",
+    },
     stepOf: (step: number, total: number) => `step ${step} of ${total}`,
     queued: "Waiting its turn behind the machines before it.",
     working: "Working…",
     failedAt: (step: string) => `Failed at "${step}".`,
     replaceProgram: "Force install",
-    replaceProgramWhy:
-      "Whatever is on that machine now, put this build's program there and restart its server — anyone using it will be interrupted.",
+    replaceProgramWhy: "Reinstalls the program even if the version already matches",
     replaceProgramConfirm: (alias: string) =>
       `Force install on ${alias}? Whatever is on that machine now, this server's build is installed and its server restarted; anyone using it will be interrupted.`,
     refusedSelf: (alias: string) => `${alias} is the machine this server runs on; nothing to add.`,
     refusedUnknown: (alias: string) => `${alias} is not in this server's ssh config.`,
-    details: "Details",
-    detailInstalled: "Installed",
-    detailSince: "Since",
-    detailVersion: "Version",
-    detailStarted: "Started",
-    detailServer: "Server",
-    detailChecked: "Checked",
-    detailMachineId: "Machine id",
-    detailRoot: "Server root",
-    serverUpOn: (port: number) => `up on port ${port}`,
-    output: "Output",
     agentsUnreachable: "That machine is not connected — use it from the Machines page",
     adminOnly: "Only an admin can manage machines.",
+    updateNotice: (count: number) =>
+      count === 1 ? "1 machine to update" : `${count} machines to update`,
+    card: {
+      local: "local",
+      ssh: "ssh",
+      updateNeeded: "Update needed",
+      update: "Update",
+    },
+    detail: {
+      describeRemote: (alias: string) => `A remote machine, reached over ssh as ${alias}.`,
+      describeLocal: "The machine this server runs on; no ssh involved.",
+      newerAvailable: (version: string) => `${version} is available`,
+      facts: "Details",
+      progress: "Progress",
+      actions: "Actions",
+      fact: {
+        connection: "Connection",
+        viaSsh: (alias: string) => `ssh · ${alias}`,
+        local: "This machine, no ssh",
+        host: "Address",
+        root: "Data directory",
+        service: "Remote server",
+        serviceLocal: "Server",
+        running: (port: number) => `Running on port ${port}`,
+        stopped: "Not running",
+        unreachable: "Unreachable",
+        checked: "Last checked",
+        installed: "Installed",
+        version: "Version",
+        latest: (version: string) => `${version} (latest)`,
+        behind: (version: string, latest: string) => `${version} · ${latest} available`,
+        installedAt: "Installed on",
+        started: "Started",
+        machineId: "Machine id",
+      },
+      copyMachineId: "Copy machine id",
+      lastJobDone: "The last job finished.",
+      failedAtStep: (step: string, message: string) => `Failed at "${step}": ${message}`,
+      showLog: "Show log",
+      logLabel: "Job log",
+      primary: {
+        update: "Update",
+        updateWhy: (version: string) =>
+          `Updates to ${version}, restarting its server and reconnecting.`,
+        start: "Start server",
+        startWhy: "Starts the server on that machine and connects.",
+        connect: "Connect",
+        connectWhy: "Connects to the server on that machine, starting it first if needed.",
+        tryAgain: "Try again",
+        tryAgainWhy: "Tries ssh again; make sure the machine is on and reachable first.",
+        retry: "Retry",
+        retryWhy: "Runs the whole job again from the start",
+      },
+      maintenance: "Maintenance",
+      leave: "Stop using",
+      configureSsh: "Configure ssh",
+      configureSshWhy: "Changes the address, user, port and key used to reach the machine",
+      hold: {
+        moving: "The machine is busy with a job; available when it finishes",
+        noImage: "This server has no version to install",
+        noConnection: "Not connected, so there is nothing to disconnect",
+        unreachable: "The machine could not be reached at the last check",
+      },
+    },
+    verbs: {
+      install: "Install program",
+      installWhy: "Installs this server's version on the machine",
+      connect: "Reconnect",
+      connectWhy: "Connects to the machine again, starting its server if needed",
+      restart: "Restart server",
+      restartWhy: "Restarts the server on the machine",
+      stopUsingWhy: "Disconnects and removes it from this Project; the program stays installed",
+      disconnect: "Disconnect",
+      disconnectWhy: "Drops the connection only; the server on the machine keeps running",
+      release: "Remove from Project",
+      releaseWhy: "This Project stops listing it; the connection and the program stay as they are",
+      disconnectConfirm: (alias: string) =>
+        `Disconnect from ${alias}? Every Project using it shares this connection, and whatever is running through it is cut off; the server over there keeps running, and you can connect again later.`,
+      releaseConfirm: (alias: string) =>
+        `Remove ${alias} from this Project? It is no longer listed here and no longer receives this Project's Model config; the program and the connection over there stay as they are, and you can enable it again from Add machines….`,
+    },
   },
 
   /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */
@@ -594,11 +665,11 @@ export const en: Strings = {
       does === undefined ? `${column}: ${value}` : `${column}: ${value}. ${does}`,
     /** Asked when the Sandbox switch is turned on and the machine has no sandbox backend. */
     sandboxBackendPrompt: {
-      title: "Install a sandbox backend",
+      title: "Install an Agent Sandbox backend",
       body: (machine: string, pkgs: readonly string[]) =>
-        `${machine} has no sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkgs.join(" and ")}?` +
+        `${machine} has no Agent Sandbox backend for its operating system, so new sessions cannot be confined yet. Install ${pkgs.join(" and ")} on the whole server, shared by every Project?` +
         (pkgs.length > 1 ? " Where both work, the one that confines more is used." : ""),
-      cost: "Installing reloads the server's plugins, which stops agent runs in progress in every Project. The switch stays on either way.",
+      cost: "Installing reloads the server's plugins, which stops the agent runs in progress in every Project. The switch stays on either way.",
       install: "Install",
       installing: "Installing…",
       later: "Not now",
@@ -1103,6 +1174,10 @@ export const en: Strings = {
     /** Disclosed by the "?" beside that label: when a picked image takes effect. */
     avatarInfo:
       "A picture takes effect as soon as you choose it — there is no separate Save for it. The nickname beside it is typed text, so it keeps a Save of its own.",
+    cropAvatar: "Crop avatar",
+    cropAvatarHint: "Drag to position, scroll or use the slider to zoom",
+    cropZoom: "Zoom",
+    useAvatar: "Use this",
     changeAvatar: "Change avatar",
     /**
      * Shared label of the two buttons that put a field back to what an account with nothing set
@@ -1264,8 +1339,9 @@ export const en: Strings = {
     createPluginsPlaceholder: "No plugins selected",
     createPluginsPicked: (n: number): string => `${n} plugin${n === 1 ? "" : "s"} selected`,
     createPluginsHint:
-      "Installed into the agent at creation (skills and hook packages); add or remove them later in its Skills and Hooks tabs.",
+      "Installed into the agent at creation (skills, hook packages and MCP servers); add or remove them later in its Skills, Hooks and Tools tabs.",
     createPluginsEmpty: "The plugin library has nothing to install.",
+    createStdioQuestion: (agent: string): string => `Create ${agent}?`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
     createSkillsPlaceholder: "No skills selected",
     createSkillsPicked: (n: number): string => `${n} skill${n === 1 ? "" : "s"} selected`,
@@ -1468,12 +1544,14 @@ export const en: Strings = {
     mcpArgs: "args",
     mcpArgsHint: "One argument per line",
     mcpEnv: "env",
-    mcpEnvHint: "One KEY=value per line; the Agent vault is not injected into MCP Server processes",
+    mcpEnvHint:
+      "One KEY=value per line; a ${KEY} in a value is read from the agent's vault when the server connects, and nothing else from the vault reaches the process",
     mcpCwd: "cwd",
     mcpCwdHint: "Leave empty to use the Session's Workspace",
     mcpUrl: "url",
     mcpHeaders: "headers",
-    mcpHeadersHint: "One Header-Name: value per line (auth headers such as Authorization)",
+    mcpHeadersHint:
+      "One Header-Name: value per line (auth headers such as Authorization); a ${KEY} in a value is read from the agent's vault when the server connects",
     mcpPermission: "permission",
     mcpPermissionAuto: "auto",
     mcpPermissionAutoLabel: "Auto (readOnlyHint)",
@@ -1494,6 +1572,10 @@ export const en: Strings = {
     mcpNumberInvalid: "Must be an integer > 0",
     mcpDuplicateName: "A server with this name already exists",
     mcpTest: "Test connection",
+    mcpTestAll: "Test all",
+    mcpTestSaveFirst:
+      "Save it first, then test: an entry that uses values from the vault is tested only as saved.",
+    mcpTestSaveFirstBadge: "Save first",
     mcpTesting: "Testing…",
     mcpTestOk: (toolCount: number, latencyMs?: number): string => {
       const timing = latencyMs !== undefined ? ` (${(latencyMs / 1000).toFixed(1)}s)` : "";
@@ -1512,10 +1594,23 @@ export const en: Strings = {
     mcpDeleteTitle: "Delete MCP Server",
     mcpDeleteConfirm: (name: string): string =>
       `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,
+    mcpInstalledBy: (plugin: string): string => `Installed by plugin ${plugin}`,
+    mcpFromPlugin: (plugin: string): string =>
+      `From plugin ${plugin}: reinstalling the plugin replaces this entry.`,
+    mcpRemoveFromPlugin: (plugin: string): string =>
+      `It was installed by plugin ${plugin}; Manage installs on the Plugins page can put it back.`,
     defaultValue: "(default)",
     livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
+    employeesSection: "Company employees",
+    employeesSectionInfo:
+      "These agents are employees of an organization and work in company mode. You can still chat with them and change their settings here; one can be deleted only after it leaves its organization in company mode.",
+    employmentLine: (orgName: string, title: string): string => `${orgName} · ${title}`,
+    employedUndeletable: (employments: ReadonlyArray<{ orgName: string; title: string }>): string =>
+      `This agent is an employee of ${employments.map((e) => `organization "${e.orgName}" (${e.title})`).join(", ")}; make it leave ${employments.length > 1 ? "those organizations" : "the organization"} in company mode first`,
+    employeeMark: (employments: ReadonlyArray<{ orgName: string; title: string }>): string =>
+      `Company employee: ${employments.map((e) => `${e.orgName} · ${e.title}`).join(", ")}`,
     deleteConfirm: (name: string): string =>
       `Delete agent "${name}"? Its directory (including all Traces) will be removed recursively and cannot be recovered.`,
     stateTitle: "Agent State",
@@ -2347,16 +2442,40 @@ export const en: Strings = {
 
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on agents as a whole. */
   plugins: {
-    installedTitle: "Installed plugins",
-    installedDesc:
-      "What this Project asks for, and which of those this process is running. A change applies without a restart where the server can re-assemble itself; re-assembling stops the agent runs in progress in every Project.",
-    installedEmpty: "No plugins installed yet.",
-    stateActive: "running",
     builtin: "built in",
     builtinHint:
       "Ships with this build: installing it downloads nothing, and it loads only once you install it.",
     installedRestart: "restart to load",
     stateFailed: "failed to load",
+    /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
+    stateDisabled: "disabled on this build",
+    /** Under a running row: this build has no slot for part of what the plugin contributes. */
+    runsPartly: (reason: string) => `Part of it is not in use on this build: ${reason}`,
+    /** Page notice while this build cannot fully run a listed plugin. */
+    unsatisfiedNotice: (n: number) =>
+      n === 1
+        ? "This build cannot fully run 1 installed plugin. Its row says why."
+        : `This build cannot fully run ${n} installed plugins. Their rows say why.`,
+    /** The notice's action: filters the list down to those rows. */
+    unsatisfiedShow: "Show",
+    repair: "Fix with AI",
+    repairTitle: (name: string) => `Fix ${name} with AI?`,
+    repairBody: (name: string) =>
+      `A new chat opens in a temporary workspace, with a prompt to repair ${name} already written. Nothing is sent until you send it.`,
+    repairOpen: "Open the chat",
+    repairNoAgent: "This Project has no Agent to hand the repair to.",
+    /** The repair prompt written into the new chat's composer; the user reads and sends it. */
+    repairPrompt: (name: string, disabled: boolean, reason: string) =>
+      [
+        `The plugin \`${name}\` is installed on this server, but the running build cannot ${
+          disabled
+            ? "run it: it is disabled."
+            : "fully run it: part of what it contributes is not in use."
+        }`,
+        `The platform's reason:\n${reason}`,
+        "Find out why this build and the plugin disagree, then fix it. Installed plugins are under the server's data root in `plugins/node_modules/`; a plugin that ships with the build is under the build's own `plugins/` directory. The usual fixes are installing a version of the plugin that matches this build, or changing the plugin so it no longer needs what this build lacks. If only a newer build of the server can fix it, say so and change nothing.",
+        "Tell me what you intend to change before you change an installed plugin.",
+      ].join("\n\n"),
     replacesLabel: "replaces",
     restartPending:
       "A listed plugin is not running and this server could not apply it without a restart: restart the server to load it.",
@@ -2367,9 +2486,15 @@ export const en: Strings = {
     deploymentInstalledToast: (name: string) => `Installed ${name}`,
     /** Listed, but the process could not load it: the reason, not a success. */
     deploymentFailedToast: (name: string, reason: string) => `${name} failed to load: ${reason}`,
-    applyConfirmInstall: (name: string) => `Install ${name}?`,
-    applyConfirmRemove: (name: string) => `Remove ${name}?`,
-    applyConfirmBody: "Agent runs in progress in every Project will be stopped.",
+    /** A server module's install / removal confirm: what it does, then what it costs, in small type below. */
+    applyConfirmInstall: (name: string) => `Install ${name}`,
+    applyConfirmRemove: (name: string) => `Remove ${name}`,
+    applyConfirmInstallBody: (name: string) =>
+      `Installs ${name} on the whole server, shared by every Project.`,
+    applyConfirmRemoveBody: (name: string) =>
+      `Removes ${name} from the server; it stays while another Project still uses it.`,
+    applyConfirmWarning: (install: boolean) =>
+      `${install ? "Installing" : "Removing"} reloads the server's plugins, which stops the agent runs in progress in every Project.`,
     pageTitle: "Plugins",
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "Machine",
@@ -2377,46 +2502,144 @@ export const en: Strings = {
     thisServer: "This server",
     /** A row listed for some machines only, by alias. */
     onlyOn: (names: string) => `only on ${names}`,
-    /** An all-machines row listed only for other machines. */
-    notHere: "not on this server",
-    /** A row the Project lists for a machine that has not reported it running yet. */
-    notSynced: "not on that machine yet",
     /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
     sharedCannotRemove: "Enabled on all machines: remove it in the All machines view.",
     machineUnreadable: (name: string, reason: string) =>
       `Could not read what ${name} runs: ${reason}`,
-    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    /** The header button (admin only) that opens the Settings dialog on its Plugins page. */
     openSettings: "Settings",
     pageDesc:
-      "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",
-    /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
-    installedSection: (n: number): string => `Installed plugins (${n})`,
-    /** The second list: registry entries this Project does not ask for yet. */
-    availableSection: (n: number): string => `Available (${n})`,
-    notInstalled: "not installed",
-    /** The filter column beside the lists, and the empty result. */
-    filterCategories: "Categories",
-    filterKind: "Contains",
-    filterState: "Status",
-    filterClear: "Clear filters",
-    kindLabel: { skills: "Skills", hooks: "Hooks", modules: "Modules" },
-    stateLabel: {
+      "Every plugin, by category. Plugins of skills and/or a hook package ship with this build and are installed on agents; server-module plugins, such as the Agent Sandbox backends, are installed on the whole server by an admin.",
+    /** The grouping select: its accessible name, and its options, each a phrase that says what it does. */
+    groupByLabel: "Group by",
+    groupBy: {
+      category: "Group by category",
+      status: "Group by status",
+      kind: "Group by content",
+      none: "No grouping",
+    },
+    /** What a plugin carries: the section titles of the grouping by content. */
+    kindLabel: { skills: "Skills", hooks: "Hooks", mcp: "MCP servers", modules: "Server modules" },
+    /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
+    sandboxCategory: "Agent Sandbox",
+    otherCategory: "Other",
+    /** A plugin's install status: the word beside the status glyph, and the grouping's section titles. */
+    status: {
+      update: "Update available",
       installed: "Installed",
-      available: "Available",
-      running: "Running",
       restart: "Restart to load",
       failed: "Failed to load",
+      "not-here": "Not on this server",
+      incompatible: "Incompatible",
+      available: "Available",
+    },
+    /** What a status means for this plugin, on hover over its glyph. */
+    statusHint: {
+      libraryInstalled: "An agent in this Project has it",
+      libraryAvailable: "No agent in this Project has it yet",
+      update: (n: number) =>
+        n === 1
+          ? "1 agent's copy is behind the library"
+          : `${n} agents' copies are behind the library`,
+      moduleInstalled: "Installed on the server and loaded",
+      moduleAvailable: "Not installed on the server",
+      restart: "Installed; loads after a server restart",
+      failed: (reason: string) => `Failed to load: ${reason}`,
+      elsewhere: (machines: string) => `Runs only on ${machines}, not on this server`,
+      unsynced: "Installed, not on that machine yet",
     },
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */
     shippedNoEntry: "Ships with this build; the registry has no entry for it yet.",
+    /** In place of the description of a package that carries none. */
+    noDescription: "No description",
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
     libraryBuiltinHint: "Ships with this build; install it to an agent to use it there.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
     searchPlaceholder: "Search plugins",
-    /** Section labels of the plugin detail Modal. */
+    /** Sections of the plugin detail dialog: the description (and the package's README), then the files it installs. */
+    detailDescription: "About",
+    detailFiles: "Files",
     detailSkills: "Skills",
     detailHooks: "Hooks",
+    detailMcpServers: "MCP servers",
+    /** The detail dialog's links to the package's homepage and repository: their names and hover hints. */
+    detailHomepage: "Homepage",
+    detailRepository: "Repository",
+    /** In place of the README of a package that is not on this server. */
+    readmeAfterInstall: "The README shows once the plugin is installed",
+    /** The tag of a plugin an admin installed on this server (not shipped with the build). */
+    installedOnServer: "installed on server",
+    installedOnServerHint: "Installed on this server by an admin; it does not ship with the build.",
+    /** The detail dialog's export (any member) and delete (admin, a package installed on the server). */
+    exportPlugin: "Export",
+    exportPluginHint:
+      "Download the plugin's package as a zip, which another server imports as it is with Import plugin",
+    deletePlugin: "Delete",
+    deleteConfirmTitle: (name: string) => `Delete ${name} from the server`,
+    deleteConfirmBody: (name: string) =>
+      `${name} leaves the server and the plugin library; the copies of its skills and hooks installed on agents stay.`,
+    deletedToast: (name: string) => `Deleted ${name} from the server`,
+    /** The import dialog (admin): a tab for each way in — npm, a link, a zip, or an Agent in a chat. */
+    importPlugin: "Import plugin",
+    importServerWide: "A plugin is installed on the whole server and shared by every Project.",
+    importTabs: {
+      npm: "From npm",
+      link: "From a link",
+      zip: "Upload a zip",
+      agent: "Ask an agent",
+    },
+    /** The npm tab: a package name, which the server installs from the registry itself. */
+    importNpmWhy:
+      "An npm package name, which may carry a version, range or tag; the server installs it from the npm registry.",
+    importNpmLabel: "npm package name",
+    importNpmPlaceholder: "@scope/name or name@1.2.0",
+    importNpmInvalid:
+      "Not an npm package name; give a link under From a link, and let an agent install anything else.",
+    /** The link tab: an https link npm fetches, from wherever the server's network reaches. */
+    importLinkWhy:
+      "An https link to a git repository or a tarball; the server fetches and installs it — from any https address you give, internal ones included.",
+    importLinkLabel: "Link",
+    importLinkPlaceholder: "https://github.com/… or github:owner/repo",
+    importLinkInvalid:
+      "Not an https link; give a package name under From npm, and let an agent install anything else.",
+    /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
+    importLinkSubpath:
+      "A folder or a file inside a repository, which npm cannot install: let an agent port it.",
+    importLinkAskAgent: "Ask an agent",
+    importCost:
+      "When the plugin carries server modules, installing reloads the server's plugins, which stops the agent runs in progress in every Project.",
+    /** On the npm, link and zip tabs: what installing runs, said plainly. */
+    importScriptsRun: "The package's install scripts run on the server as the server's user.",
+    importAgentWhy:
+      "For a page, a repository, a folder in a repository, or a Codex or Claude Code plugin with its skills and MCP servers: the agent reviews it — porting it into a PenguinHarness package first when it is not one — then installs it with penguin plugin install.",
+    importSourceLabel: "Plugin source",
+    importSourcePlaceholder:
+      "A link such as https://github.com/owner/repo/tree/main/plugins/name, a local path or a description",
+    importSourceToken: "<plugin source>",
+    importPromptLabel: "Prompt for the agent",
+    /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
+    importPromptLead: {
+      link: (source: string) => `Install the PenguinHarness plugin at ${source} on this server.`,
+      localPath: (source: string) =>
+        `Install the PenguinHarness plugin in the local folder ${source} on this server.`,
+      reference: (source: string) =>
+        `Find the PenguinHarness plugin described here and install it on this server: ${source}`,
+    },
+    importPromptTail: (projectId: string) =>
+      `A PenguinHarness plugin is an npm package: its package.json (name, version, description, and a \`penguin\` block the plugin card reads, where \`penguin.mcp_servers\` declares its MCP servers) beside \`skills/<name>/SKILL.md\` and/or \`hooks/\`. Whatever the source, before installing anything, read its package.json and every script it ships, and say what it does and what it would run; if anything looks unsafe, stop and tell me. If the source already is such a package — on npm, at an https link to a git repository or a tarball, or in a local folder — install it with \`penguin plugin install <npm name, https link or folder> --project-id ${projectId}\`. If it is anything else — a folder or a file inside a GitHub repository, a Codex (\`.codex-plugin\`) or Claude Code (\`.claude-plugin\`) plugin, a skills repository — read the \`plugin-porting\` skill and follow it: fetch the source at a pinned commit, build the package in a scratch folder, review it, then install that folder the same way. The plugin's MCP servers (a \`.mcp.json\` or an \`mcpServers\` map) are part of it: carry them as \`penguin.mcp_servers\`, never with a secret value in the package. Report the installed name and version, the skills and MCP servers it carries, the vault keys I must set for those servers, and what you left out.`,
+    importUploadDesc:
+      "A zip of the plugin's package directory: package.json at its root or in its one top-level directory, no node_modules — such as another server's Export. Upload only what you trust.",
+    importUploadAction: "Choose a zip file",
+    importedToast: (name: string, version: string | null) =>
+      version === null ? `Installed ${name}` : `Installed ${name} ${version}`,
+    importUnchangedToast: (name: string, version: string | null) =>
+      `${name}${version === null ? "" : ` ${version}`} is already installed on the server`,
+    /** The confirm when the zip holds another version of a package on this server (409 plugin_exists). */
+    replaceTitle: "Replace the installed plugin",
+    replaceBody: (name: string, installed: string, incoming: string) =>
+      `${name} ${installed} is installed on the server; the zip holds ${incoming}. Replacing it moves every Project to the zip's version.`,
+    replaceAction: "Replace",
     usedByAgents: (n: number): string =>
       n === 0 ? "not used yet" : n === 1 ? "used by 1 agent" : `used by ${n} agents`,
     /** Quick start's tooltip: what pressing it does, and what it does not. */
@@ -2436,8 +2659,27 @@ export const en: Strings = {
       `Updated ${plugin} to the latest version (${n} agent(s))`,
     /** Uninstall confirmation: removing the installed copy deletes its files (local edits included). */
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
-    uninstallConfirmBody: (plugin: string, agent: string): string =>
-      `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
+    uninstallConfirmBody: (plugin: string, agent: string, withMcp: boolean): string =>
+      `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included)${withMcp ? " and its MCP servers" : ""} will be deleted.`,
+    mcpNeedsSetup: (keys: string[]): string => `Needs setup: ${keys.join(", ")}`,
+    mcpSetUpWhere: "set it in the Vault tab",
+    mcpSetUpByOwner: "the Project owner sets it",
+    mcpSignIn: "Sign-in (OAuth) required — not available in this version",
+    mcpRunsCommand: (command: string): string =>
+      `Runs ${command} on this server when an agent session starts`,
+    installStdioTitle: (plugin: string, agent: string): string => `Install ${plugin} on ${agent}?`,
+    installStdioBody: (server: string, command: string): string =>
+      `Its MCP server ${server} runs ${command} on this server whenever a session of the agent starts.`,
+    setUp: "Set up",
+    setUpTitle: (plugin: string, agent: string): string => `Set up ${plugin} on ${agent}`,
+    setUpDesc: "The values go into the agent's vault; its MCP servers read them when they connect.",
+    setUpKeySet: "set",
+    setUpKeySetHint: "Already in the vault: the MCP server receives this value",
+    setUpHelpLink: "Where to get it",
+    updatePartMcp: "MCP server",
+    updatePartReplaced: "replaced",
+    importMcpNote:
+      "A plugin may carry MCP servers: a stdio server is a command that runs on this server when an agent session starts, and a remote one is an address this server connects to.",
   },
 
   /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
@@ -2499,25 +2741,14 @@ export const en: Strings = {
   },
 
   pluginRegistry: {
-    pageTitle: "Plugins",
     empty: "No plugins yet",
     specifierHint: "Package name, as a Project's plugin list names it",
-    back: "Back to Plugins",
-    readme: "Documentation",
-    noReadme: "This plugin has no documentation yet.",
-    notFound: "No such plugin.",
     /** Shown above the list when a source answered with nothing, so a short list is not read as a complete one. */
     sourceUnavailable: (count: number): string =>
       count === 1
         ? "One plugin source could not be reached, so this list may be incomplete."
         : `${count} plugin sources could not be reached, so this list may be incomplete.`,
-    repository: "Repository",
-    homepage: "Homepage",
-    authors: "Authors",
-    license: "License",
     copySpecifier: "Copy specifier",
-    installHint:
-      "Install from the Plugins page: the row's Install button asks the current Project for it.",
   },
 
   skills: {
@@ -3234,6 +3465,9 @@ Scenarios:
     sessionOnOfflineMachineUnknown:
       "This conversation is on a machine that is not connected right now.",
     sessionOfflineHint: "It will open as soon as the connection is back.",
+    sessionNotFound: "This conversation does not exist or was deleted",
+    sessionNotFoundHint:
+      "The conversation this link points to is gone, or you do not have access to it.",
     emptyStream: "Send a message to start the conversation",
     historyLoadFailed: "Failed to load history",
     statsLabel: "Stats",
@@ -3366,17 +3600,20 @@ Scenarios:
     mcpConnectTitle: "MCP connect",
     mcpServerList: (servers: string[]): string => servers.join(", "),
     /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
-    mcpConnectResult: (toolCount: number, failed: string[]): string => {
+    mcpConnectResult: (toolCount: number, failed: string[], waiting: string[]): string => {
       const parts: string[] = [];
-      if (toolCount > 0 || failed.length === 0) {
+      if (toolCount > 0 || (failed.length === 0 && waiting.length === 0)) {
         parts.push(`${toolCount} tool${toolCount === 1 ? "" : "s"} discovered`);
       }
       if (failed.length > 0) parts.push(`unavailable: ${failed.join(", ")}`);
+      if (waiting.length > 0) parts.push(`waiting for setup: ${waiting.join(", ")}`);
       return parts.join("; ");
     },
     /** Per-server group row meta inside the expanded connect row. */
     mcpToolsCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     mcpServerFailed: "connection failed",
+    mcpServerNeedsSetup: "needs setup",
+    mcpServerSignIn: "sign-in required",
     mcpConnectAborted: "interrupted — reconnects on the next send",
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),
@@ -3865,6 +4102,12 @@ Scenarios:
       `A message arrived at ${when} but its task never started: ${detail}`,
     deliveryFailedSend: (when: string, detail: string) =>
       `The task ran but its reply failed to go out at ${when}: ${detail}`,
+    /**
+     * WeChat only, in the delivery-failure line's place: replies the platform would not take
+     * yet are held for the user's next WeChat message, which is not a failure.
+     */
+    repliesHeld: (when: string) =>
+      `Replies waiting since ${when}: WeChat accepts only a limited number of the bot's replies, and only for a while after you message it. They go out as soon as you next message the bot in WeChat.`,
     /** A connection failure the connection has since recovered from (lastError is gone by then). */
     lastConnectionError: (when: string, detail: string) =>
       `The connection dropped at ${when}: ${detail}`,
@@ -3875,7 +4118,7 @@ Scenarios:
     faqWhatBinding:
       "The same bot can stay saved in several conversations, but only one of them may have its connection enabled at a time. To move it, turn the connection off where it is on and enable it here — no credential has to be deleted.",
     faqTroubleTitle: "Troubleshooting",
-    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent). */
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent; WeChat direct chats only; WeChat's per-message reply budget and window). */
     troubleNoChat:
       "“Send test message” disabled? The bot must have received one message first, so it knows which chat to send to.",
     troubleConnError:
@@ -3887,6 +4130,9 @@ Scenarios:
     /** WeChat has no group inbound at all — the answer to "I @-ed it in a group and nothing happened". */
     troubleWeChatDirect:
       "The WeChat channel receives direct chats only: @-mentioning the bot in a group does nothing at all. Message it directly instead.",
+    /** WeChat's reply budget and window — the answer to "replies arrive combined, or late". */
+    troubleWeChatReplyWindow:
+      "Replies in WeChat arrive combined, or late? WeChat lets the bot send about 10 messages for each message you send it, and only for a while after your last one. A run that produces more is combined into fewer messages, and anything WeChat will not take yet is held and sent as soon as you next message the bot.",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
@@ -4490,6 +4736,45 @@ Scenarios:
       "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
       "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
       "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
+    // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
+    importBenchmark: "Import benchmark",
+    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatWhy:
+      "The agent pins the link to one commit, fetches only that folder and reads every file before writing it to the Evaluation Center — more reliable than a bare upload.",
+    importSourceLabel: "Benchmark source",
+    importSourceHint:
+      "A folder link in a GitHub repository (such as …/tree/<commit>/packages/<id>), a local path, or a description",
+    importSourcePlaceholder:
+      "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/…",
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    importPromptLead: {
+      repoFolderUrl: (s: string): string =>
+        `Import the Benchmark package at this repository folder into this Project's Evaluation Center: ${s}.`,
+      localPath: (s: string): string => `Import the Benchmark package under this local path: ${s}.`,
+      reference: (s: string): string => `Find and import this Benchmark as a package: ${s}.`,
+    },
+    importPromptTail: (projectId: string): string =>
+      [
+        "The package is a folder with `benchmark_config.toml` (keys: id, title, description, version `YYYY.MM.DD.N`, status, runs, and an `[origin]` table) and one `CASE-*/` per case, holding `statement/README.md` and `rubric/README.md`.",
+        "Fetch only that folder, at a commit, into a temporary directory: resolve the link's branch or tag to its 40-hex commit (`git ls-remote`), download it (a codeload tarball or a sparse checkout), and read every file before importing anything — refuse if it is not a Benchmark package, if its `status` is not `published`, or if it holds anything but text materials. Do not copy large upstream materials; the statements link them.",
+        `Import it with \`penguin benchmark import <the folder> --project-id ${projectId} --origin-url <the link as given> --origin-ref <the 40-hex commit> --origin-path <the folder inside the repository>\` (without the \`--origin-*\` options for a source that is not a repository folder). The server checks it as it checks an uploaded zip and writes \`benchmarks/<id>/\` itself, with the git origin, the package's \`version\` and a \`scoreboard.yaml\` holding \`evaluations: []\`; never write under \`benchmarks/\` yourself.`,
+        "If the command says the Benchmark already exists, stop and ask me before overwriting — an overwrite (`--overwrite`) replaces the whole directory, its `scoreboard.yaml` and `.jobs/` included, and the server refuses it while an evaluation of that Benchmark is still running. Then report the id, title, version and case count the command printed; the Evaluation Center lists it from then on.",
+        'If the `benchmark-design` skill is installed, read its `reference/package.md` ("Importing a package") first.',
+      ].join("\n"),
+    importCopyPrompt: "Copy prompt",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a Benchmark zip",
+    importUploadDesc:
+      "A zip exported from the Evaluation Center, or one with benchmark_config.toml and the CASE-*/ folders at its root or in its only top-level folder. The cases come in, the evaluation records do not: they start empty. Import only sources you trust.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Benchmark imported",
+    importOverwriteTitle: "Overwrite the existing Benchmark",
+    importOverwriteBody: (id: string): string =>
+      `The Benchmark "${id}" already exists. Overwriting replaces all of its files, and its evaluation records (the scoreboard) and run results are deleted with them. This cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
+    exportBenchmark: "Export",
   },
 
   /** Company mode: the organization switcher and dialogs, and the six organization pages. */
@@ -4526,6 +4811,7 @@ Scenarios:
     orgGoneBody:
       "It may have been deleted, or you may no longer have access to the Project it belongs to.",
     backToOrgs: "Back to organizations",
+    backToOverview: "Back to the overview",
     /** Create dialog. */
     createTitle: "New organization",
     orgId: "Organization id",
@@ -4665,6 +4951,7 @@ Scenarios:
       temporaryEntry: (title: string): string => `Temporary · ${title}`,
       closeTemporary: "Remove from Temporary",
       closeAllTemporary: "Close all",
+      agentMissing: "Agent deleted; its desk cannot be opened",
     },
     overview: {
       title: "Overview",
@@ -4752,9 +5039,20 @@ Scenarios:
       hire: "Hire a subordinate",
       setBudget: "Set budget",
       changeReportsTo: "Change reporting line",
+      nameAndAvatar: "Name and avatar",
+      profileTitle: (name: string) => `Name and avatar — ${name}`,
+      employeeName: "Name",
+      employeeNameHint: (agentId: string) =>
+        `What people call this employee here, in any language; it works after @ like the id (${agentId}). Two employees with the same name are shown with their ids noted. Empty: the Agent's own name.`,
+      employeeNameHireHint:
+        "What people call this employee here, in any language — it works after @ like the id. Empty: the Agent's own name.",
       renewDesk: "New desk session",
       leave: "Leave the organization",
       ceoCannotLeave: "The CEO cannot leave",
+      setThinkingLevel: "Set thinking level",
+      agentMissing: "Agent deleted",
+      ceoMissing: (ceoId: string): string =>
+        `The CEO's Agent was deleted, so the organization cannot run: create an Agent with the id ${ceoId} again to restore it.`,
       invalidEntry: "This entry is invalid",
       workspaceTail: "Workspace",
       /** Hire dialog. */
@@ -4829,6 +5127,14 @@ Scenarios:
       currentValue: (value: string): string => `Current: ${value}`,
       manager: "Manager",
       reportsToHint: "Only employees outside its own subtree are listed",
+      thinkingLevelTitle: (name: string): string => `Set ${name}'s thinking level`,
+      thinkingLevelInfo:
+        "Written to the employee's Agent config, the same setting as this Agent's in development mode. The desk session uses it from its next model context and new ticket sessions open on it; a level picked inside the desk session pins only that session.",
+      thinkingLevelDefault: (level: string): string => `Project default (${level})`,
+      thinkingLevelConfirm: (name: string, level: string): string =>
+        `Change ${name}'s thinking level to "${level}"? This writes the Agent's config.`,
+      thinkingLevelPinned: (level: string): string =>
+        `The current desk session is pinned to "${level}" on its own; this setting reaches the desk from its next desk session.`,
     },
     calendar: {
       title: "Calendar",
@@ -5305,6 +5611,8 @@ Scenarios:
         "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       skill_too_large: "This skill directory exceeds the import limits.",
       hook_too_large: "This hook package exceeds the import limits.",
+      benchmark_busy:
+        "This Benchmark is being evaluated: a run under its .jobs/ has not finished, and overwriting it now would let that evaluation go on writing into the new copy. Overwrite it once the evaluation ends.",
       file_not_found: "This file no longer exists.",
       not_pending: "This steering message already reached the model and can no longer be recalled.",
       follow_up_started: "This follow-up already started and can no longer be recalled.",
@@ -5364,6 +5672,10 @@ Scenarios:
       telegram_no_chat:
         "No Telegram message received yet — message the bot once in Telegram first.",
       telegram_send_failed: "Sending the Telegram message failed.",
+      wechat_no_chat: "No WeChat message received yet — message the bot once in WeChat first.",
+      wechat_send_failed: "Sending the WeChat message failed.",
+      wechat_needs_recent_message:
+        "WeChat is not accepting messages from the bot right now — message the bot in WeChat first, then send the test message.",
       another_channel_enabled:
         "Another channel's connection is enabled on this conversation: disable it first.",
       // Deliberately names nothing about the other conversation: it may live in a Project
@@ -5386,6 +5698,8 @@ Scenarios:
       calendar_event_exists: "A calendar event with that name already exists.",
       calendar_event_not_found: "That calendar event no longer exists.",
       desk_unavailable: "The desk session could not be opened.",
+      agent_employed:
+        "This agent is still an employee of an organization: make it leave in company mode, then delete it.",
       ticket_not_found: "That ticket no longer exists.",
       ticket_invalid: "This ticket file needs repair; it accepts no changes until then.",
       ticket_session_failed: "The ticket session could not be started.",

@@ -1,6 +1,7 @@
 ---
 name: a2ui
 description: Make a reply easier to read and act on with rich blocks inside ordinary Markdown — a choice the user picks from, a form that collects several answers, a procedure as steps with warnings in place, a callout, a Mermaid diagram, a weather card, a live clock or countdown, and a dashboard of gauges for a system snapshot, a quota or a job's progress — written as fenced blocks the app renders with its own components; a pick comes back as the user's plain text. Use when a reply asks the user to decide, collects several inputs, gives a procedure, explains a structure or flow, or reports the weather, a time, a deadline or a few readings. Includes STE-style writing rules for Chinese and English, scripts that print real weather and system data as blocks, and a checker script to run on the draft before sending.
+version: 2026.10.09.1
 ---
 
 # A2UI blocks

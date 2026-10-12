@@ -138,6 +138,20 @@ export interface MessagingConnectorHandlers {
    * {@link MessagingChannelError} says whether the outage clears without anyone acting.
    */
   onError?(err: unknown): void;
+  /**
+   * The connection's account started or stopped holding replies it could not deliver yet
+   * (see {@link MessagingReplyHeldError}): the ISO time since which it holds some, or null once
+   * it holds none. Fired on every change, and once at connect for a backlog held from before.
+   * Only a channel that holds replies (WeChat) ever calls it.
+   */
+  onHeldChange?(since: string | null): void;
+  /**
+   * A send the connector made on its OWN — a withheld tail flushed after the quiet period, held
+   * replies delivered on the next inbound message — failed for good. No caller is waiting on
+   * those sends, so this is the only way their failure reaches the binding's status and the
+   * error table.
+   */
+  onSendFailed?(err: unknown): void;
 }
 
 /** A live inbound event stream; `close` ends it (idempotent). */
@@ -167,6 +181,33 @@ export class MessagingChannelError extends Error {
   ) {
     super(message);
     this.name = "MessagingChannelError";
+  }
+}
+
+/**
+ * A send the connector did not deliver NOW but KEPT, to deliver later on its own. Not a failure:
+ * the text is not lost, nothing is broken, and nobody has anything to do — the platform only
+ * lets the bot speak inside a window the user's own messages open, and the user's next message
+ * opens it again (WeChat's context token, see wechat-connector.ts). The bridge therefore files
+ * no error record for it and leaves `lastDeliveryError` alone; the connection reports what it
+ * holds through `onHeldChange` instead.
+ */
+export class MessagingReplyHeldError extends MessagingChannelError {
+  constructor(message: string) {
+    super(message, true);
+    this.name = "MessagingReplyHeldError";
+  }
+}
+
+/**
+ * A PROBE send (see MessagingSendOptions.probe) refused because the platform will not let the
+ * bot speak until the user has messaged it recently. Recovers by itself in the sense that matters:
+ * the user sends the bot a message, and the same test goes through.
+ */
+export class MessagingNeedsRecentMessageError extends MessagingChannelError {
+  constructor(message: string) {
+    super(message, true);
+    this.name = "MessagingNeedsRecentMessageError";
   }
 }
 
@@ -239,6 +280,13 @@ export interface MessagingSendOptions {
    * reach the one message a user sends to check whether the binding works at all.
    */
   markdown?: boolean;
+  /**
+   * This send is a probe of the outbound leg ("send test message"), not a reply. A connector
+   * that would HOLD a refused message for later delivery must throw
+   * {@link MessagingNeedsRecentMessageError} instead: a held probe that arrives an hour later
+   * proves nothing, and the person pressing the button needs to hear why it did not arrive now.
+   */
+  probe?: boolean;
 }
 
 /** Outbound half of one bound account. Every method throws on failure with a readable reason. */

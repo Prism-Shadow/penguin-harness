@@ -2,6 +2,11 @@
   "name": "@penguinharness/data-analysis",
   "version": "0.2.13",
   "description": "Complete data-analysis tasks with bounded inspection, correct data semantics, native artifact handling, complete delivery, and risk-based verification.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -9,7 +14,6 @@
     "directory": "plugins/data-analysis"
   },
   "files": [
-    "plugin.json",
     "icon.svg",
     "skills",
     "hooks",
@@ -17,5 +21,18 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "penguin": {
+    "short_description": "Deliver correct data-analysis artifacts with bounded verification.",
+    "short_description_zh": "以正确数据语义完成产物并进行有界核查。",
+    "category": "office-productivity",
+    "icon": "icon.svg",
+    "quick_start": {
+      "prompt": "Create a CSV of 30 days of made-up daily sales in this Workspace, then analyze it: weekly totals, the best and the worst day, and a line chart saved as sales.png.",
+      "prompt_zh": "在当前工作区生成一份 30 天的虚构日销售额 CSV，然后分析它：每周合计、最好和最差的一天，并把折线图保存为 sales.png。",
+      "skills": [
+        "data-analysis"
+      ]
+    }
   }
 }

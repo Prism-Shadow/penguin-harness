@@ -104,6 +104,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { cardBodyClick } from "../../lib/card-open";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
@@ -2417,7 +2418,8 @@ function AddGroupDialog({
  * into one line of small text; group speed-test results (TTFT / TPS, tone-colored) ride the
  * title row's right edge. All three lines are one click target opening the config dialog (the
  * model homepage link lives in there); a row whose model id its group cannot route adds a
- * warning strip below them, which carries its own action and therefore its own click target.
+ * warning strip below them, which carries its own action and therefore its own click target. A
+ * click anywhere else on the card opens the dialog as well.
  */
 export function ModelCard({
   row,
@@ -2558,8 +2560,12 @@ export function ModelCard({
   return (
     // The card is a box holding the button rather than being one: the routing warning below
     // carries an action of its own, and buttons cannot nest (the group header solves the same
-    // problem the same way). overflow-hidden lets the warning strip fill the rounded corners.
-    <div className="flex w-full flex-col overflow-hidden rounded-md border border-gray-200 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40">
+    // problem the same way). A click on the rest of the box opens the dialog too
+    // (lib/card-open.ts). overflow-hidden lets the warning strip fill the rounded corners.
+    <div
+      onClick={cardBodyClick(onOpen)}
+      className="flex w-full cursor-pointer flex-col overflow-hidden rounded-md border border-gray-200 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
+    >
       <button
         type="button"
         onClick={onOpen}

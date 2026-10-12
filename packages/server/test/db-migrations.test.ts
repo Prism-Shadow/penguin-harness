@@ -58,6 +58,11 @@ function dropAgentApi(db: DatabaseSync): void {
   db.exec("DROP TABLE IF EXISTS agent_api");
 }
 
+/** Migration 15's table: a database stamped before it had none. */
+function dropMessagingConversations(db: DatabaseSync): void {
+  db.exec("DROP TABLE IF EXISTS messaging_conversations");
+}
+
 /** Every company-mode table the migrations add: a database from before them had none. */
 function dropCompanyModeTables(db: DatabaseSync): void {
   for (const table of [
@@ -85,6 +90,7 @@ function open024(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
+  dropMessagingConversations(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   dropCompanyModeTables(db);
   db.exec("DROP TABLE messaging_bindings");
@@ -129,6 +135,7 @@ function open6(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
+  dropMessagingConversations(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(PRE_CHANNEL_CHAT_DDL);
   // SCHEMA_SQL declares the CURRENT shape; migration 8's queue came after 6.
@@ -145,6 +152,7 @@ function open7(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
+  dropMessagingConversations(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec("PRAGMA user_version = 7");
   return db;
@@ -157,6 +165,7 @@ function open8(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
+  dropMessagingConversations(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec("PRAGMA user_version = 8");
   return db;
@@ -169,6 +178,7 @@ function open9(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
+  dropMessagingConversations(db);
   db.exec("PRAGMA user_version = 9");
   return db;
 }
@@ -180,6 +190,7 @@ function open029(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
+  dropMessagingConversations(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
@@ -203,6 +214,7 @@ function openPreProfile(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
+  dropMessagingConversations(db);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   dropProfileColumns(db);
   // Version 4 predates company mode as well: its three migrations (6–8) come after the
@@ -603,8 +615,9 @@ describe("migration 8 → current: model-promotions", () => {
         "machines-columns",
         "browser-extensions",
         "agent-api",
+        "messaging-conversations",
       ]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(schemaVersion(db)).toBe(15);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -627,8 +640,9 @@ describe("migration 8 → current: model-promotions", () => {
         "machines-columns",
         "browser-extensions",
         "agent-api",
+        "messaging-conversations",
       ]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(schemaVersion(db)).toBe(15);
     } finally {
       db.close();
     }
@@ -651,8 +665,9 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         "machines-columns",
         "browser-extensions",
         "agent-api",
+        "messaging-conversations",
       ]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(schemaVersion(db)).toBe(15);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -685,6 +700,7 @@ function open12(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   dropBrowserExtensions(db);
   dropAgentApi(db);
+  dropMessagingConversations(db);
   db.exec("PRAGMA user_version = 12");
   return db;
 }
@@ -693,8 +709,12 @@ describe("migration 12 → current: browser-extensions", () => {
   it("creates the pairings table, which holds one row per token and cascades with its user", () => {
     const db = open12();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["browser-extensions", "agent-api"]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "browser-extensions",
+        "agent-api",
+        "messaging-conversations",
+      ]);
+      expect(schemaVersion(db)).toBe(15);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -741,6 +761,7 @@ function open13(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   dropAgentApi(db);
+  dropMessagingConversations(db);
   db.exec("PRAGMA user_version = 13");
   return db;
 }
@@ -749,8 +770,11 @@ describe("migration 13 → current: agent-api", () => {
   it("creates the settings table while a pushed platform boots: one row per Agent, keyed and allow-all unless set", () => {
     const db = open13();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["agent-api"]);
-      expect(schemaVersion(db)).toBe(14);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "agent-api",
+        "messaging-conversations",
+      ]);
+      expect(schemaVersion(db)).toBe(15);
       const enable = () =>
         db
           .prepare(
@@ -814,6 +838,40 @@ describe("migration 13 → current: agent-api", () => {
     } finally {
       db.close();
       at13.close();
+    }
+  });
+});
+
+/** A database stamped at migration 14: everything before the stored messaging conversations. */
+function open14(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  dropMessagingConversations(db);
+  db.exec("PRAGMA user_version = 14");
+  return db;
+}
+
+describe("migration 14 → current: messaging-conversations", () => {
+  it("creates one row per (channel, bot, chat) while a pushed platform boots, and its down drops them", () => {
+    const db = open14();
+    const at14 = open14();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["messaging-conversations"]);
+      expect(schemaVersion(db)).toBe(15);
+      const put = () =>
+        db
+          .prepare(
+            "INSERT INTO messaging_conversations (channel, account_id, chat_id, state_json, updated_at)" +
+              " VALUES ('wechat', 'bot_1', 'user_1', '{}', '2026-10-10T00:00:00.000Z')",
+          )
+          .run();
+      put();
+      expect(put).toThrow(/UNIQUE/);
+      rollbackTo(db, 14);
+      expect(shape(db)).toBe(shape(at14));
+    } finally {
+      db.close();
+      at14.close();
     }
   });
 });

@@ -12,7 +12,7 @@
  *   click sends focus to supply it.
  * - A connection error gets its own line, whole, and stays on screen after the connection
  *   recovers; arrival is reported while connecting and erroring, naming the inbound stage when
- *   a message arrived but its task never started.
+ *   a message arrived but its task never started; held WeChat replies take the failure line.
  * - The delivery and Markdown options close the form, each switch rendered from its own field
  *   with its explanation behind a "?"; QQ's replies-only rule is stated on screen; the selector
  *   offers all four channels.
@@ -385,6 +385,31 @@ describe("MessagingBindingBody", () => {
       }),
     );
     expect(html).toContain(`>${S.messaging.deliveryFailedInbound(formatDateTime(at), detail)}</p>`);
+    expect(html).not.toContain(S.messaging.deliveryFailedSend(formatDateTime(at), detail));
+  });
+
+  it("says WeChat replies are waiting for the next message, in the failure line's place", () => {
+    // Held replies are not a failure: the remedy is to message the bot, and an older send
+    // failure left beside the held line would read as the reason for the silence.
+    const detail = "wechat send failed: prepare failed";
+    const at = "2026-08-26T09:31:00.000Z";
+    const since = "2026-08-26T09:40:00.000Z";
+    const html = render(
+      stateOf("wechat", {
+        wechat: {
+          ...DARK,
+          secretConfigured: true,
+          enabled: true,
+          status: {
+            state: "connected",
+            lastInboundAt: "2026-08-26T09:30:00.000Z",
+            lastDeliveryError: { at, stage: "send", detail },
+            heldReplySince: since,
+          },
+        },
+      }),
+    );
+    expect(html).toContain(`>${S.messaging.repliesHeld(formatDateTime(since))}</p>`);
     expect(html).not.toContain(S.messaging.deliveryFailedSend(formatDateTime(at), detail));
   });
 
