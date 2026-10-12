@@ -14,7 +14,10 @@
  * - Given a user rc that puts its own `penguin` first AGAIN after startup — in a prompt hook
  *   (bash PROMPT_COMMAND as a string or an array, zsh precmd) or in zsh's .zlogin —
  *   `command -v penguin` is still the shim, at the first prompt and the next.
- * - The prompt hook keeps the exit status of the user's last command.
+ * - The prompt hook keeps the exit status of the user's last command, and the user's settings
+ *   as they were: a `set -e` bash survives a failure set -e lets pass, an ERR / ZERR trap runs
+ *   once per failed command, a bash started inside the terminal under the user's exported
+ *   PROMPT_COMMAND prints no error, and a zsh under `setopt nounset` nothing above its prompt.
  * - zsh: once started, ZDOTDIR is what the user had (unset, or their own), so `exec zsh` and
  *   nested shells read the user's files.
  * - Without a shim directory the shell starts as before, and the user's rc decides `penguin`.
@@ -430,6 +433,84 @@ describePty("a terminal puts this harness's penguin first on PATH", () => {
         session.write("false\r");
         const lines = await run(session, 'echo "status=$?"', "status=1");
         expect(lines).not.toContain("status=0");
+      } finally {
+        session.dispose();
+      }
+    }, 30_000);
+  });
+
+  /**
+   * The prompt hook runs after every command, at the user's own settings, and leaves them as they
+   * were: a hook that failed after a failed command would end a `set -e` bash and run an ERR or
+   * ZERR trap a second time; a PROMPT_COMMAND the user exports reaches the bash started inside the
+   * terminal, which never defines the hook; zsh sets the hook up under the user's `nounset`.
+   */
+  describe.skipIf(onPath("bash") === null)("the prompt hook, in a bash the user configured", () => {
+    const bashWith = (rc: string): Record<string, string> =>
+      homeWith({
+        ".bash_profile": '[ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"\n',
+        ".bashrc": `PS1='${PROMPT} '\n${rc}`,
+      });
+
+    it("does not end a `set -e` shell after a failure that set -e lets pass", async () => {
+      const session = await open(onPath("bash")!, bashWith("set -e\n"), pathFirst());
+      try {
+        // set -e excuses the failure left of `&&`; a prompt hook failing in turn would not be.
+        session.write("false && true\r");
+        expect(await run(session, "echo still-here", "still-here")).toContain("still-here");
+      } finally {
+        session.dispose();
+      }
+    }, 30_000);
+
+    it("runs the user's ERR trap once for a failed command", async () => {
+      const rc = "trap 'echo err-trap' ERR\n";
+      const session = await open(onPath("bash")!, bashWith(rc), pathFirst());
+      try {
+        session.write("false\r");
+        const lines = await run(session, "echo done-mark", "done-mark");
+        expect(lines.filter((line) => line === "err-trap")).toHaveLength(1);
+      } finally {
+        session.dispose();
+      }
+    }, 30_000);
+
+    it("leaves a bash started inside it quiet when the user exports PROMPT_COMMAND", async () => {
+      const rc = 'export PROMPT_COMMAND="history -a${PROMPT_COMMAND:+;$PROMPT_COMMAND}"\n';
+      const session = await open(onPath("bash")!, bashWith(rc), pathFirst());
+      try {
+        // The nested bash reads ~/.bashrc, not the terminal's startup file: it inherits what the
+        // hook added to PROMPT_COMMAND, but not the function that names.
+        session.write("bash\r");
+        const lines = await run(session, "echo in-nested", "in-nested");
+        expect(lines.filter((line) => line.includes("not found"))).toEqual([]);
+      } finally {
+        session.dispose();
+      }
+    }, 30_000);
+  });
+
+  describe.skipIf(onPath("zsh") === null)("the prompt hook, in a zsh the user configured", () => {
+    const zshWith = (rc: string): Record<string, string> =>
+      homeWith({ ".zshrc": `${rc}PS1='${PROMPT} '\n` });
+
+    it("prints nothing above the prompt under `setopt nounset`, and still leads PATH", async () => {
+      const session = await open(onPath("zsh")!, zshWith("setopt nounset\n"), pathFirst());
+      try {
+        expect(screen(session)).toEqual([PROMPT]);
+        expect(await whichPenguin(session, "nounset-done")).toBe(path.join(shimDir, "penguin"));
+      } finally {
+        session.dispose();
+      }
+    }, 30_000);
+
+    it("runs the user's ZERR trap once for a failed command", async () => {
+      const rc = "TRAPZERR() { print zerr-trap }\n";
+      const session = await open(onPath("zsh")!, zshWith(rc), pathFirst());
+      try {
+        session.write("false\r");
+        const lines = await run(session, "echo done-mark", "done-mark");
+        expect(lines.filter((line) => line === "zerr-trap")).toHaveLength(1);
       } finally {
         session.dispose();
       }

@@ -32,7 +32,9 @@
  * before every prompt. Version managers and environment tools install one, and a hook that
  * puts its own directory first takes `penguin` over from the first prompt on. So bash, zsh and
  * fish also run the statement as their LAST prompt hook — `PROMPT_COMMAND`, `precmd_functions`,
- * the `fish_prompt` event — and keep the directory first before each prompt.
+ * the `fish_prompt` event — and keep the directory first before each prompt. Someone who wants
+ * another `penguin` there runs it by its full path, or defines an alias or a function named
+ * `penguin`, which these shells look up before PATH.
  *
  * Every shell but cmd also gets the directory at the front of the pty's environment PATH.
  * That half still counts when no hook runs: an rc that `exec`s another shell, or a shell
@@ -198,53 +200,72 @@ const PATH_FIRST_FN = "__penguin_path_first";
  * the first prompt on. Being the last hook makes this one the last word instead.
  *
  * Other occurrences of the directories are dropped, so running it before every prompt never
- * grows PATH, and it changes nothing while they already lead. It returns the status it was
- * called with: a prompt that shows `$?` keeps showing the user's last command's. zsh runs it
- * under its own options, whatever the user set.
+ * grows PATH, and it changes nothing while they already lead. zsh runs it under its own
+ * options, whatever the user set.
+ *
+ * It always succeeds, and leaves `$?` to the shell: bash and zsh both give the prompt the user's
+ * last status back after their prompt hooks have run. A hook that returned that status instead
+ * would itself fail after every failed command — which ends a shell running under `set -e` (a
+ * `false && true` at the prompt is enough) and runs an ERR or ZERR trap a second time.
  */
 function pathFirstFunction(dirs: readonly string[], platform: NodeJS.Platform): string[] {
   const words = dirs.map((dir) => posixQuote(posixDir(dir, platform)));
   const lead = words.join(":");
   return [
     `${PATH_FIRST_FN}() {`,
-    '  local s=$? p=":${PATH-}:" d',
+    '  local p=":${PATH-}:" d',
     '  [ -n "${ZSH_VERSION-}" ] && emulate -L zsh',
-    `  case $p in :${lead}:*) return $s ;; esac`,
+    `  case $p in :${lead}:*) return 0 ;; esac`,
     `  for d in ${words.join(" ")}; do`,
     '    while case $p in *":$d:"*) true ;; *) false ;; esac; do p=${p/":$d:"/:}; done',
     "  done",
     "  p=${p#:}; p=${p%:}",
     `  PATH=${lead}\${p:+:$p}; export PATH`,
-    "  return $s",
+    "  return 0",
     "}",
     PATH_FIRST_FN,
   ];
 }
 
 /**
- * bash: the function last in `PROMPT_COMMAND`, a string or (bash 5.1+) an array, whichever the
- * user's files left it as. Before 5.1 bash runs only an array's first element, so there the
- * function joins that element, like the string form: newline-separated, which survives a user
- * value that ends in `;` or `&`.
+ * What bash's `PROMPT_COMMAND` runs: the function, where it is defined. A string
+ * `PROMPT_COMMAND` the user exports (`export PROMPT_COMMAND="history -a; …"` is a common line)
+ * reaches every bash started from this one — a nested `bash`, tmux, `exec bash` — and those read
+ * the user's files but not this one, so a bare call would print "command not found" at each of
+ * their prompts. A failed check is a left-hand side of `&&`: no `set -e` exit, no ERR trap.
+ */
+const BASH_PROMPT_ENTRY = `declare -F ${PATH_FIRST_FN} >/dev/null && ${PATH_FIRST_FN}`;
+
+/**
+ * bash: {@link BASH_PROMPT_ENTRY} last in `PROMPT_COMMAND`, a string or (bash 5.1+) an array,
+ * whichever the user's files left it as. Before 5.1 bash runs only an array's first element, so
+ * there the entry joins that element, like the string form: newline-separated, which survives a
+ * user value that ends in `;` or `&`.
  */
 function bashPromptHook(): string[] {
+  const entry = posixQuote(BASH_PROMPT_ENTRY);
   return [
     `if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]] &&`,
     "  (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) )); then",
-    `  [[ " \${PROMPT_COMMAND[*]} " == *" ${PATH_FIRST_FN} "* ]] || PROMPT_COMMAND+=(${PATH_FIRST_FN})`,
+    `  [[ " \${PROMPT_COMMAND[*]} " == *" ${PATH_FIRST_FN} "* ]] || PROMPT_COMMAND+=(${entry})`,
     "else",
     "  case ${PROMPT_COMMAND-} in",
     `    *${PATH_FIRST_FN}*) ;;`,
-    `    *) PROMPT_COMMAND=\${PROMPT_COMMAND:+$PROMPT_COMMAND$'\\n'}${PATH_FIRST_FN} ;;`,
+    `    *) PROMPT_COMMAND=\${PROMPT_COMMAND:+$PROMPT_COMMAND$'\\n'}${entry} ;;`,
     "  esac",
     "fi",
   ];
 }
 
-/** zsh: the function last in `precmd_functions`, after every hook the user's files added. */
+/**
+ * zsh: the function last in `precmd_functions`, after every hook the user's files added. The
+ * array is tested for existence first: it runs at the user's options, and under `setopt nounset`
+ * a subscript of an array nobody has set is an error printed above the first prompt.
+ */
 function zshPromptHook(): string[] {
   return [
-    `(( \${precmd_functions[(Ie)${PATH_FIRST_FN}]} )) || precmd_functions+=(${PATH_FIRST_FN})`,
+    `(( \${+precmd_functions} )) && (( \${precmd_functions[(Ie)${PATH_FIRST_FN}]} )) ||`,
+    `  precmd_functions+=(${PATH_FIRST_FN})`,
   ];
 }
 
