@@ -3,6 +3,7 @@
 - **Date:** 2026-10-11
 - **Type:** fix
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#1038](https://github.com/Prism-Shadow/penguin-harness/pull/1038)
 
 [中文版](2026-10-11-frost-flat-sidebar.zh.md)
 
