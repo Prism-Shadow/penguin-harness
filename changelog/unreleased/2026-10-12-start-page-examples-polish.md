@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1067](https://github.com/Prism-Shadow/penguin-harness/pull/1067)
 
 [中文版](2026-10-12-start-page-examples-polish.zh.md)
 
