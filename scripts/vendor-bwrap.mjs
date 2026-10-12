@@ -242,14 +242,29 @@ async function walk(dir, prefix = "") {
 
 /**
  * Vendors every target into `plugins/sandbox-bwrap/vendor/<arch>/`, skipping the work when the
- * directory already holds this pinning (a `.complete` marker naming it).
+ * directory already holds this pinning (a `.complete` marker naming it) and every target's
+ * bwrap is still there and executable.
  */
 export async function vendorBwrap() {
   const pinning = createHash("sha256")
     .update(`${VENDOR_FORMAT}\0${JSON.stringify(TARGETS)}`)
     .digest("hex");
   const marker = path.join(OUT, ".complete");
-  if (fs.existsSync(marker) && (await fsp.readFile(marker, "utf8")) === pinning) return OUT;
+  const runnable = (t) => {
+    try {
+      fs.accessSync(path.join(OUT, t.arch, "bin", "bwrap"), fs.constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (
+    fs.existsSync(marker) &&
+    (await fsp.readFile(marker, "utf8")) === pinning &&
+    TARGETS.every(runnable)
+  ) {
+    return OUT;
+  }
   await fsp.rm(OUT, { recursive: true, force: true });
   for (const target of TARGETS) {
     const stage = path.join(OUT, target.arch);

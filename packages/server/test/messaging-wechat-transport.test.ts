@@ -543,9 +543,12 @@ describe("the verdict a failure carries", () => {
       throw new TypeError("fetch failed");
     }, send);
     expect(unreachable.recovers).toBe(true);
+    // ...and says it never arrived, which is what the poll loop retries at once.
+    expect(unreachable.network).toBe(true);
     for (const status of [408, 429, 500, 502, 503]) {
       const err = await failureOf(() => new Response("busy", { status }), send);
       expect(err.recovers).toBe(true);
+      expect(err.network).toBe(false);
     }
   });
 

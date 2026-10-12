@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "tsup";
 import { FAR_SIDE_SCRIPTS } from "../../scripts/far-side-scripts.mjs";
 
+const jsOnly = process.env.PENGUIN_BUILD_JS_ONLY === "1";
+
 export default defineConfig({
   // Explicitly name entries to preserve subpath exports: "./api", "./lock",
   // "./initial-password" and "./reset-admin-password" (lock, initial-password and
@@ -31,6 +33,9 @@ export default defineConfig({
     "secret-file": "src/secret-file.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
     "version-report": "src/version-report.ts",
+    // "./benchmark-package": a Benchmark folder or zip as the import route's upload, held to the
+    // route's caps — what `penguin benchmark import` sends.
+    "benchmark-package": "src/benchmark-package.ts",
     // "./plugin": the surface plugin PACKAGES compile against. Plugins live outside
     // this bundle entirely — they are configuration resolved from the installation,
     // not platform capability.
@@ -38,8 +43,13 @@ export default defineConfig({
   },
   format: ["esm"],
   target: "node24",
-  dts: true,
-  clean: true,
+  // PENGUIN_BUILD_JS_ONLY=1 skips the declarations: scripts/dev-prebuild.mjs builds this
+  // package only so that the dev CLI's runtime imports of it resolve, and nothing at
+  // runtime reads a .d.ts. The declaration pass is most of a full build's time. The
+  // declarations an earlier full build left are kept rather than cleaned, so the CLI's and
+  // the desktop's typecheck still find this package's types after a dev start.
+  dts: !jsOnly,
+  clean: jsOnly ? ["!**/*.d.ts"] : true,
   sourcemap: true,
   // The hot-update mechanism is a package for the boundary, not for npm (it is `private`):
   // inlined here so this package's published dist stays self-contained.

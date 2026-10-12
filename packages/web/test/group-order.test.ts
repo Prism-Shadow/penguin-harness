@@ -374,12 +374,12 @@ describe("folder-only groups sort last (demote)", () => {
   });
 
   it("is folder-only when the active share is zero and something is folded away", () => {
-    // One Workspace of an evaluation: a single Test Session, inside the Evaluations folder.
-    const evaluation = { active: 0, subagent: 0, schedule: 0, benchmark: 1, archived: 0 };
+    // One Workspace of an evaluation: a single Test Session, inside the Background folder.
+    const evaluation = { active: 0, background: 1, archived: 0 };
     expect(foldedShare(evaluation)).toBe(1);
     expect(isFolderOnly(0, foldedShare(evaluation))).toBe(true);
     // Every folded category counts; the active one never does.
-    const mixed = { active: 7, subagent: 2, schedule: 1, benchmark: 3, archived: 4 };
+    const mixed = { active: 7, background: 6, archived: 4 };
     expect(foldedShare(mixed)).toBe(10);
     // A registered but still unused Workspace has nothing folded away to fold up …
     expect(isFolderOnly(0, 0)).toBe(false);

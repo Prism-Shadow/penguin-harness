@@ -67,12 +67,19 @@ export interface ToolDefinitionConfig {
  * `environment/mcp/config.ts`: `transport: "stdio" | "http" | "sse"` (inferable from
  * `command` / `url`), the per-transport fields (stdio: `command`/`args`/`env`/`cwd`;
  * http/sse: `url`/`headers`), and the shared optional `connectTimeoutMs` / `timeoutMs` /
- * `maxOutputLength`.
+ * `maxOutputLength`. A string value may hold `${KEY}` references to the Agent's vault, filled
+ * in when the server connects.
  * Docs: /docs/tools § "MCP servers".
  */
 export interface MCPServerConfig {
   name: string;
   config: Record<string, unknown>;
+  /**
+   * Provenance: the plugin whose install wrote this entry (its `penguin.mcp_servers`). Absent
+   * on an entry the user added. Uninstalling or reinstalling that plugin touches exactly the
+   * entries carrying its name.
+   */
+  plugin?: string;
 }
 
 /** Set of tool configs required to initialize Environment. */
@@ -388,6 +395,13 @@ export type SpawnConfiner = (
 export interface ConfinedSpawn {
   argv: readonly string[];
   env?: Readonly<Record<string, string>>;
+  /**
+   * Whole lines the runner itself prints at the head of stderr before it execs the command
+   * (a report, not an error — the Landlock launcher's "partial enforcement" on an older
+   * kernel). The spawn drops them from the head of the command's stderr, matched by exact
+   * line, case-insensitively; the command's own output is never examined past its first line.
+   */
+  runnerLines?: readonly string[];
 }
 
 /**

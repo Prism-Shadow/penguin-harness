@@ -4,7 +4,8 @@
  * - Mode: html.dark class + Tailwind dark: variant; system mode tracks prefers-color-scheme
  *   live.
  * - Theme: html[data-theme] selects one of the shared UI package's themes (absent = the
- *   default, Primer). Offered in Settings → Appearance.
+ *   stylesheet's fallback, Primer). A browser that stores no choice starts in Frost
+ *   (`INITIAL_THEME_ID`). Offered in Settings → Appearance.
  * - Text size: five steps that set the root font-size, so every rem-based type and density
  *   token scales with it.
  * - Font pairing: html[data-font-latin] / [data-font-cjk] override the reading and interface
@@ -139,7 +140,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [dark]);
 
   useEffect(() => {
-    // The default theme sets no data-theme: its selectors match a bare <html>.
+    // Primer, the stylesheet's fallback, sets no data-theme: its selectors match a bare <html>.
     applyThemeAttributes(document.documentElement, { themeId });
   }, [themeId]);
 
@@ -249,16 +250,15 @@ export function useTheme(): ThemeContextValue {
 }
 
 /**
- * The accent swatches a theme offers: "neutral" first (the theme's own accent, painted as a
- * plain gray because it is the absence of a choice, not a hue), then the theme's own presets in
- * its own order, painted in their light values.
+ * The accent swatches a theme offers: "neutral" first (the theme's own accent, the absence of a
+ * choice), then the theme's own presets in its own order, painted in their light values.
  */
 export function accentSwatches(
   themeId: ThemeId,
   dark = false,
 ): ReadonlyArray<{ value: Accent; color: string }> {
-  // "Theme's own" paints the accent that choice resolves to — Console's and Primer's are black
-  // (white in dark), Frost's its green — rather than a stand-in grey.
+  // "Theme's own" paints the accent that choice resolves to — every theme's is black (white in
+  // dark) — rather than a stand-in grey.
   const own = THEME_OWN_ACCENTS[themeId];
   return [
     { value: "neutral", color: dark ? own.dark : own.light },

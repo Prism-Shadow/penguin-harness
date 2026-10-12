@@ -50,8 +50,10 @@ import type { ReactNode } from "react";
 /**
  * Open delay. Long enough that a pointer crossing a column of icons on its way elsewhere
  * leaves no trail of popping panels, short enough to answer a pointer that stopped to ask.
+ * Exported because it is the app's one hover timing: the "?" disclosure
+ * (`useHoverDisclosure`) opens after the same wait.
  */
-const OPEN_DELAY_MS = 400;
+export const HOVER_OPEN_DELAY_MS = 400;
 
 /** Gap between the trigger's edge and the panel, and the panel's minimum distance from the viewport edge (px). */
 const PANEL_GAP = 8;
@@ -253,7 +255,7 @@ export function Tooltip({
       setPosition(
         placement === "bottom" ? belowTrigger(rect, viewport) : besideTrigger(rect, viewport),
       );
-    }, OPEN_DELAY_MS);
+    }, HOVER_OPEN_DELAY_MS);
   };
 
   useEffect(() => {
@@ -391,7 +393,7 @@ export function TooltipLayer() {
               ? besideTrigger(rect, viewport)
               : belowTrigger(rect, viewport),
         });
-      }, OPEN_DELAY_MS);
+      }, HOVER_OPEN_DELAY_MS);
     };
     const onOver = (e: PointerEvent) => start(holder(e.target));
     const onOut = (e: PointerEvent) => {

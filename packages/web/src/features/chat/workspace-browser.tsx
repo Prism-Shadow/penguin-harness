@@ -2089,7 +2089,7 @@ export function WorkspaceBrowser({
           type="button"
           aria-pressed={richView === key}
           onClick={() => setRichView(key)}
-          className={`rounded px-2 py-0.5 text-xs transition-colors duration-150 ${
+          className={`whitespace-nowrap rounded px-2 py-0.5 text-xs transition-colors duration-150 ${
             richView === key
               ? "bg-white font-medium text-gray-900 shadow-sm dark:bg-gray-600 dark:text-gray-100"
               : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"

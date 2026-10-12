@@ -180,7 +180,9 @@ export function SettingsSection({
     <section>
       <div className="space-y-4">{children}</div>
       {actions !== undefined && (
-        <div className="mt-5 flex justify-end gap-2 border-t border-line-muted pt-4">{actions}</div>
+        <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-line-muted pt-4">
+          {actions}
+        </div>
       )}
     </section>
   );

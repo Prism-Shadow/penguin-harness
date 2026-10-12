@@ -43,22 +43,6 @@ export type TodoKey = "agents" | "plugins" | "models" | "errors";
  */
 export type TodoMatch = "set" | "watermark";
 
-/**
- * The two kinds of change a trail can be carrying, where it can tell them apart. Only the
- * Models trail can: the catalog is a list of entries, so an entry the table lacks is genuinely
- * NEW and one whose fields have moved is an upgrade, and `catalogDelta` already separates them
- * for the sync action itself. The other three cannot, and say so by leaving this absent rather
- * than reporting a zero — a plugin nobody has installed is not waiting for anyone, and an
- * Agent's kernel is never new, so "0 added" on those pages would be an answer to a question
- * that was never asked.
- */
-export interface TodoBreakdown {
-  /** Things the Project does not have at all yet. */
-  added: number;
-  /** Things it has an older form of. */
-  updated: number;
-}
-
 /** What one trail has waiting. */
 export interface Todo {
   /** What is waiting, as one string: {@link items} joined by `,`. This is what a dismissal stores. */
@@ -73,12 +57,6 @@ export interface Todo {
   count: number;
   /** Which containment rule {@link raisedTodo} applies to this trail. */
   match: TodoMatch;
-  /**
-   * The added/upgradable split where the trail can honestly make one, absent where it cannot
-   * (see {@link TodoBreakdown}). It always sums to {@link count}, so the page notice and the
-   * nav dot cannot report different totals.
-   */
-  breakdown?: TodoBreakdown;
 }
 
 /**
@@ -138,17 +116,14 @@ export function pluginUpdateTodo(
 }
 
 /**
- * Built-in catalog entries the Project's model table does not match. The delta is the sync
- * action's own (`catalog-sync.ts`), not a second opinion about it: a badge that leads to a
- * button which then reports "already up to date" is worse than no badge.
+ * Built-in presets the Project's model table does not carry — what 「同步新增模型」 would add.
+ * The delta is the add action's own rule (`catalog-sync.ts`), not a second opinion about it: a
+ * badge that leads to a button which then answers "no new presets" is worse than no badge. Only
+ * new models count; a stored row that differs from the catalog may be the user's own edit and is
+ * never offered for refreshing.
  *
- * The signature is the list of references that would change, so syncing part of the table by
- * hand and dismissing the rest behaves the way the user would expect, and a catalog release
- * touching a different model raises the badge again even when the count happens to match.
- *
- * The added/updated split is carried straight off the delta rather than recounted here, for the
- * same reason the count is: the notice on the page and the sync action behind its button have to
- * be describing one calculation, not two that agree today.
+ * The signature is the list of references that would be added, so a catalog release adding a
+ * different model raises the badge again even when the count happens to match.
  */
 export function presetUpdateTodo(delta: CatalogDelta): Todo | null {
   if (delta.refs.length === 0) return null;
@@ -157,7 +132,6 @@ export function presetUpdateTodo(delta: CatalogDelta): Todo | null {
     items: [...delta.refs],
     count: delta.refs.length,
     match: "set",
-    breakdown: { added: delta.added, updated: delta.updated },
   };
 }
 

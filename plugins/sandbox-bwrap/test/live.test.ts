@@ -4,17 +4,37 @@
  *
  * Host-gated — a package whose whole job is kernel confinement can only be proven on a
  * host that has bubblewrap; elsewhere the suite skips and profile.test.ts still pins
- * the profile and the fail-closed path. The backend is driven DIRECTLY here (no
+ * the profile and the fail-closed path (unless PENGUIN_MUST_RUN names it; see
+ * scripts/must-run.mjs). The backend is driven DIRECTLY here (no
  * SandboxService): what a plugin package owes is that its own confinement works, and
  * routing/settings are the harness's behavior, tested there with fakes.
+ *
+ * Exception: the last describe drives the server's SandboxService (imported by path; this
+ * package depends on core alone), which creates the scratchpad bwrap binds.
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { CommandSessionManager } from "@prismshadow/penguin-core";
-import type { SandboxPolicy } from "@prismshadow/penguin-core/plugin";
-import { createPenguinBwrapProvider } from "../src/index.js";
+import type { SpawnConfiner } from "@prismshadow/penguin-core";
+import type { SandboxPolicy, SandboxProviderSource } from "@prismshadow/penguin-core/plugin";
+import { createPenguinBwrapProvider, loadPenguinBwrapProvider } from "../src/index.js";
+import { mustRun } from "../../../scripts/must-run.mjs";
+
+/** The slice of the server's SandboxService these cases drive. */
+interface ServiceUnderTest {
+  whenReady(): Promise<void>;
+  confinerFor(policyOf: () => { mode: "workspace-write" }): SpawnConfiner;
+}
+const { SandboxService } = (await import(
+  fileURLToPath(new URL("../../../packages/server/src/sandbox/index.ts", import.meta.url))
+)) as {
+  SandboxService: new (
+    registrations: Iterable<[string, SandboxProviderSource]>,
+  ) => ServiceUnderTest;
+};
 
 const ws = mkdtempSync(path.join(tmpdir(), "penguin-bwrap-live-"));
 const outsideProbe = path.join(homedir(), `penguin-bwrap-live-${process.pid}.txt`);
@@ -23,14 +43,16 @@ const provider = createPenguinBwrapProvider();
 /** null = spawn unconfined; otherwise confine under this policy (workspaceRoot filled per spawn). */
 let policy: Omit<SandboxPolicy, "workspaceRoot"> | null = null;
 
-const usable = (() => {
+const cannotOpen = await (async () => {
   try {
+    if ((await loadPenguinBwrapProvider()) === null) return "penguin-bwrap runs on Linux only";
     provider.confine(["true"], { mode: "read-only", workspaceRoot: ws });
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
   }
 })();
+const usable = mustRun("sandbox-bwrap", cannotOpen);
 
 const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>
@@ -137,5 +159,39 @@ describe.skipIf(!usable)("penguin-bwrap live enforcement (host-gated)", () => {
     expect(r.code).toBe(0);
     expect(existsSync(outsideProbe)).toBe(true);
     rmSync(outsideProbe, { force: true });
+  });
+});
+
+describe.skipIf(!usable)("penguin-bwrap behind the sandbox service: the Session scratchpad", () => {
+  it("a command writes to a scratchpad not created yet, or deleted mid-Session", async () => {
+    // Under the read-only home, not /tmp: a file reaching the host came through the bind itself.
+    const agentScratchpad = mkdtempSync(path.join(homedir(), "penguin-bwrap-scratchpad-"));
+    const scratchpad = path.join(agentScratchpad, "session-1");
+    const svc = new SandboxService([["penguin-bwrap", provider]]);
+    await svc.whenReady();
+    const confiner = svc.confinerFor(() => ({ mode: "workspace-write" }));
+    const served = new CommandSessionManager({
+      confineSpawn: () => confiner,
+      workspaceDir: ws,
+      scratchpadDir: scratchpad,
+    });
+    try {
+      for (const file of ["a.txt", "b.txt"]) {
+        // Without the service creating it, bwrap exits first: "Can't find source path".
+        expect(existsSync(scratchpad)).toBe(false);
+        const session = served.spawn({
+          cmd: `echo ${file} > ${JSON.stringify(path.join(scratchpad, file))}`,
+          cwd: ws,
+        });
+        let out = "";
+        for await (const chunk of session.collect(15000)) out += chunk;
+        expect(session.exit?.code, out).toBe(0);
+        expect(readFileSync(path.join(scratchpad, file), "utf8")).toBe(`${file}\n`);
+        rmSync(scratchpad, { recursive: true, force: true });
+      }
+    } finally {
+      served.dispose();
+      rmSync(agentScratchpad, { recursive: true, force: true });
+    }
   });
 });

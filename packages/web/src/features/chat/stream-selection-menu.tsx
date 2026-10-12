@@ -40,6 +40,7 @@ import {
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import type { AnchorRect, ContextMenuEventLike } from "@prismshadow/penguin-ui";
+import type { BrowserBackend } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { isDesktopShellWindow } from "../../lib/account-menu";
@@ -57,7 +58,7 @@ import { useAuth } from "../../state/auth";
 import { writeClipboard } from "../../lib/clipboard";
 import { restoreSelection } from "../../components/ui/text-selection";
 import { openLinkInBrowser } from "../builtin-browser/browser-actions";
-import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-store";
+import { browserLinkTarget, subscribeBrowser } from "../builtin-browser/browser-store";
 
 /** The selection a gesture opened the menu on, captured before anything could collapse it. */
 export interface CapturedSelection {
@@ -119,21 +120,26 @@ export function SelectionMenuRows({
 
 /**
  * A web link's rows, in linkMenuItems order. Open in built-in browser opens a tab through the
- * browser's own new-tab request and brings the Browser panel up in this conversation's dock.
+ * browser's own new-tab request and brings the Browser panel up in this conversation's dock;
+ * while the agents drive the user's own Chrome it reads "Open in agent's Chrome tab" and the
+ * same request opens the tab there.
  * The external row opens the address as a new window: the desktop app's window hands every
  * other site's to the system browser, and a browser opens a tab. Copy link address confirms
  * with a toast, as Copy does.
  */
 export function LinkMenuRows({
   href,
-  builtinBrowser,
+  browser,
   desktopShell,
   onDone,
 }: {
   /** The link's web address (menuLinkHref). */
   href: string;
-  /** The built-in browser can open it: this is the desktop app's window and the browser is available. */
-  builtinBrowser: boolean;
+  /**
+   * The agent browser that can open it (browser-state.ts `linkTarget`): the built-in one in the
+   * desktop app's window while it is available, the user's Chrome while it is connected, or none.
+   */
+  browser: BrowserBackend | null;
   /** This page is the desktop app's own window, so "outside the app" is the system browser. */
   desktopShell: boolean;
   /** Runs after a row has acted: closes the panel and puts back any highlight. */
@@ -145,14 +151,18 @@ export function LinkMenuRows({
   };
   return (
     <>
-      {linkMenuItems(builtinBrowser).map((item) => {
+      {linkMenuItems(browser !== null).map((item) => {
         switch (item) {
           case "openInBuiltinBrowser":
             return (
               <MenuItem
                 key={item}
                 glyph={ICONS.globe}
-                label={S.chat.linkMenu.openInBuiltinBrowser}
+                label={
+                  browser === "chrome"
+                    ? S.chat.linkMenu.openInChromeTab
+                    : S.chat.linkMenu.openInBuiltinBrowser
+                }
                 onSelect={run(() => openLinkInBrowser(href))}
               />
             );
@@ -183,18 +193,18 @@ export function LinkMenuRows({
 }
 
 /**
- * LinkMenuRows as the stream shows them: the built-in browser's availability read live from
- * the store the browser layer keeps, and whether this is the desktop app's window from the
+ * LinkMenuRows as the stream shows them: the agent browser that can open the link, read live
+ * from the store the browser layer keeps, and whether this is the desktop app's window from the
  * session. Mounted only while the menu is open, so the stream itself neither re-renders on the
  * browser's events nor needs the session to render.
  */
 function StreamLinkRows({ href, onDone }: { href: string; onDone: () => void }) {
-  const builtinBrowser = useSyncExternalStore(subscribeBrowser, isBrowserOffered);
+  const browser = useSyncExternalStore(subscribeBrowser, browserLinkTarget);
   const { desktopMode, sessionVia } = useAuth();
   return (
     <LinkMenuRows
       href={href}
-      builtinBrowser={builtinBrowser}
+      browser={browser}
       desktopShell={isDesktopShellWindow({ desktopMode, sessionVia })}
       onDone={onDone}
     />

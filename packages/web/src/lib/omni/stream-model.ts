@@ -53,6 +53,7 @@
 import {
   isEventMessage,
   isPartialPayload,
+  normalizeSessionSource,
   parseBackgroundTaskDoneMessage,
   parseUserSteeringText,
 } from "@prismshadow/penguin-core/omnimessage";
@@ -65,6 +66,7 @@ import type {
   OmniMessage,
   PartialModelPayload,
   SessionMetaPayload,
+  SessionSource,
   StopReason,
   TokenUsagePayload,
 } from "@prismshadow/penguin-core/omnimessage";
@@ -397,6 +399,8 @@ export interface McpServerOutcome {
   tools?: number;
   /** Failure detail (present on a failed connect). */
   error?: string;
+  /** The failure's cause (`connect_failed`, or `mcp_needs_setup` / `mcp_sign_in_required` for a server that was not contacted). */
+  errorCode?: string;
 }
 
 export interface McpConnectItem {
@@ -418,6 +422,8 @@ export interface McpConnectItem {
   tools?: McpToolSummary[];
   /** Servers that failed to connect (empty list omitted); reasons live in `results`. */
   failed?: string[];
+  /** Servers not contacted because they wait on the user — a vault key, a sign-in (empty list omitted); reasons live in `results`. */
+  waiting?: string[];
   /** The user aborted the run mid-connect (a fresh connect starts on the next send). */
   aborted?: boolean;
 }
@@ -488,8 +494,8 @@ export interface NestedSessionMeta {
   agentId: string | null;
   provider: string;
   modelId: string;
-  /** Session origin as recorded by core (subagent / schedule / benchmark); absent = user-created. */
-  source?: "subagent" | "schedule" | "benchmark";
+  /** What kind of conversation the child is, as its meta records it (narrowed: an old Trace's missing source reads as `user`, `benchmark` as `cli`). */
+  source: SessionSource;
 }
 
 export interface StreamModel {
@@ -803,13 +809,13 @@ export function pushMessage(
   }
   if (msg.type === "session_meta" && model.nested) {
     const p = msg.payload as SessionMetaPayload;
-    const meta: NestedSessionMeta = {
+    model.meta = {
       agentId: agentIdFromStatePath(p.agent_state),
       provider: p.provider,
       modelId: p.model_id,
+      // Replayed from the child's own Trace, which may predate the required source.
+      source: normalizeSessionSource(p.source),
     };
-    if (p.source !== undefined) meta.source = p.source;
-    model.meta = meta;
   }
 }
 
@@ -1714,12 +1720,19 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
           durationMs: r.duration_ms,
           ...(r.tools !== undefined ? { tools: r.tools } : {}),
           ...(detail !== undefined ? { error: detail.slice(0, 500) } : {}),
+          ...(r.error_code !== undefined ? { errorCode: r.error_code } : {}),
         };
       });
+      // A server skipped before any contact waits on the user (a vault key, a sign-in): named
+      // apart from the servers that failed to connect, so the row does not read as a failure.
+      const waits = (r: (typeof p.results)[number]) =>
+        r.error_code === "mcp_needs_setup" || r.error_code === "mcp_sign_in_required";
       const failedResults = p.results.filter(
-        (r) => r.status === "fatal" || (r.status as string) === "failed",
+        (r) => (r.status === "fatal" || (r.status as string) === "failed") && !waits(r),
       );
       if (failedResults.length > 0) item.failed = failedResults.map((r) => r.server);
+      const waitingResults = p.results.filter(waits);
+      if (waitingResults.length > 0) item.waiting = waitingResults.map((r) => r.server);
       return;
     }
     case "tool_list_ready": {
@@ -2109,11 +2122,43 @@ function bindSubagent(model: StreamModel, sessionId: string, sub: StreamModel): 
 // Overlap dedup (connect-first + dedup)
 // ---------------------------------------------------------------------------
 
-/** Disk-only transport metadata must not make an otherwise identical SSE envelope look new. */
+/** Stands in for an image's content inside a dedup key (see dedupKey). */
+const IMAGE_IN_KEY = "<image>";
+
+/**
+ * An image slot's value as the dedup key sees it: inline bytes (`data:`) and a history page's
+ * reference to the same Trace record (`/api/sessions/<id>/trace-image?…`) are one image; any
+ * other address (a web URL) is kept, since it is the same string in both copies anyway.
+ */
+function imageInKey(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  return value.startsWith("data:") || /^\/api\/sessions\/[^/?#]+\/trace-image\?/.test(value)
+    ? IMAGE_IN_KEY
+    : value;
+}
+
+/**
+ * The envelope a history copy and its SSE copy share. Disk-only transport metadata
+ * (`tracePosition`) must not make an otherwise identical SSE envelope look new, and neither
+ * may an image's form: a windowed history page carries a user `image_url` and a tool output's
+ * `images` by reference while the stream carries the bytes, and an SSE copy that escaped the
+ * overlap dedup would draw the person's image twice. Two images of one prompt may then share a
+ * key (same timestamp); that is harmless, since a history read holds a prompt whole (the server
+ * appends held inputs the Trace lacks), so each stream copy has its own history copy to match.
+ */
 function dedupKey(msg: OmniMessage): string {
   const { tracePosition: _tracePosition, ...envelope } = msg as OmniMessage & {
     tracePosition?: TracePosition;
   };
+  if (msg.type === "model_msg") {
+    const p = msg.payload as { type?: string; image_url?: unknown; images?: unknown };
+    if (p.type === "image_url") {
+      return JSON.stringify({ ...envelope, payload: { ...p, image_url: imageInKey(p.image_url) } });
+    }
+    if (p.type === "tool_call_output" && Array.isArray(p.images)) {
+      return JSON.stringify({ ...envelope, payload: { ...p, images: p.images.map(imageInKey) } });
+    }
+  }
   return JSON.stringify(envelope);
 }
 

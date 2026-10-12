@@ -8,18 +8,31 @@
  * opens the homepage when one is set, and reads as that homepage while it loads. A blank one
  * shows the slot's own empty surface, themed, rather than a white page, and the address bar
  * takes the focus to wait for an address. A tab whose page crashed shows that in the slot, with
- * Reload, instead of the dead page's blank area. Where the browser cannot run (outside the
- * desktop app, an older shell) the panel says so instead.
+ * Reload, instead of the dead page's blank area. Where the built-in browser cannot run (outside
+ * the desktop app, an older shell) the panel says so instead, and offers the user's own Chrome
+ * when the server has it.
+ *
+ * While the agents drive the user's own Chrome the panel is the Chrome surface instead
+ * (chrome-surface.tsx): the built-in pages stay alive out of sight, since nothing registers a
+ * slot for them.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button, EmptyState } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { requestSettings } from "../settings/settings-request";
 import { isBlankUrl, isWebUrl } from "./address";
-import { activateBrowserTab, closeBrowserTab, openBrowserTab } from "./browser-actions";
+import { BackendMenuRows, backendRowsShown } from "./backend-menu";
+import {
+  activateBrowserTab,
+  closeBrowserTab,
+  openBrowserTab,
+  switchBrowserBackend,
+} from "./browser-actions";
 import {
   activeTab,
   addressOf,
-  browserOffered,
+  builtinUsable,
+  chromeInfo,
   currentActivity,
   guestForTab,
   tabBusy,
@@ -28,10 +41,12 @@ import {
 import { browserState, subscribeBrowser } from "./browser-store";
 import { BrowserTabStrip } from "./browser-tab-strip";
 import { BrowserToolbar } from "./browser-toolbar";
+import { ChromeSurface } from "./chrome-surface";
 import { ClearDataDialog } from "./clear-data-dialog";
 import { HomepageDialog } from "./homepage-dialog";
 import { ImportDialog } from "./import-dialog";
 import { heavyTabMemory, loadWarningText } from "./load";
+import { PairingDialog } from "./pairing-dialog";
 import { registerSlot, setSlotVisible } from "./slot-registry";
 import { webviewForTab, type WebviewElement } from "./webview-registry";
 
@@ -77,14 +92,27 @@ function unavailableDetail(state: BrowserState): string | undefined {
 }
 
 export function BuiltinBrowserPanel({ active }: { active: boolean }) {
-  const state = useSyncExternalStore(subscribeBrowser, browserState);
-  if (!browserOffered(state)) {
+  const state = useSyncExternalStore(subscribeBrowser, browserState, browserState);
+  const chromeOffered = chromeInfo(state) !== null;
+  if (state.backend === "chrome" && chromeOffered) {
+    return <ChromeSurface state={state} active={active} />;
+  }
+  if (!builtinUsable(state)) {
     const detail = unavailableDetail(state);
     return (
       <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4">
         <EmptyState
           title={S.builtinBrowser.unavailableTitle}
           {...(detail !== undefined ? { description: detail } : {})}
+          {...(chromeOffered
+            ? {
+                action: (
+                  <Button size="sm" onClick={() => void switchBrowserBackend("chrome")}>
+                    {S.builtinBrowser.useChrome}
+                  </Button>
+                ),
+              }
+            : {})}
         />
       </div>
     );
@@ -98,6 +126,7 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   const [importOpen, setImportOpen] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
   const [homepageOpen, setHomepageOpen] = useState(false);
+  const [pairingOpen, setPairingOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
 
@@ -175,6 +204,27 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
         onSetHomepage={() => setHomepageOpen(true)}
         onOpenExternal={openExternal}
         onDevTools={() => drive(tabId, (view) => view.openDevTools())}
+        {...(backendRowsShown(state)
+          ? {
+              menuTop: (close: () => void) => (
+                <BackendMenuRows
+                  state={state}
+                  onPick={(backend) => {
+                    close();
+                    void switchBrowserBackend(backend);
+                  }}
+                  onConnect={() => {
+                    close();
+                    setPairingOpen(true);
+                  }}
+                  onManage={() => {
+                    close();
+                    requestSettings({ section: "browser" });
+                  }}
+                />
+              ),
+            }
+          : {})}
       />
       <div
         ref={slotRef}
@@ -200,6 +250,7 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
       </div>
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <ClearDataDialog open={clearOpen} onClose={() => setClearOpen(false)} />
+      <PairingDialog open={pairingOpen} onClose={() => setPairingOpen(false)} />
       {homepageOpen && (
         <HomepageDialog
           homepage={homepage}

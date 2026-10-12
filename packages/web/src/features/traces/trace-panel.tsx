@@ -95,7 +95,7 @@ export function TracePanel({
         // "whatever activeTraceFile falls back to" — the newest file, re-resolved on every
         // re-list — so a compaction shard appearing mid-run would move a reader who never
         // clicked a pill onto the new file, remounting the view below onto a different index
-        // and taking its collapsed rounds, pinned row and scroll position with it. Pinned,
+        // and taking its open rounds, pinned row and scroll position with it. Pinned,
         // only a pill click moves the selection.
         setFileIndex((cur) => cur ?? sorted[0]?.index ?? null);
         setError(null);

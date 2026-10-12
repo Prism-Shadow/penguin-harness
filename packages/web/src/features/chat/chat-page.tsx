@@ -4,12 +4,12 @@
  * popup) + the message stream and input area (input box vertically centered when there
  * are no messages), with the dock surfaces beside and below (features/dock): every side
  * element — subagents, Workspace files, Memory, Trace, terminals — is a tab in the right
- * or bottom dock, arranged by the user and persisted globally. This page contributes the
- * panel BODIES (they need its session/stream state) through DockPanel's renderPanel, and
- * the stream's jump commands: a message file card, or a reply's link to a Workspace file,
- * opens the Workspace tab on that file (onOpenFile), a subagent chip opens the agents tab
- * focused (onOpenSubagent), a memory-change row opens the Memory tab located
- * (onLocateMemoryChange).
+ * or bottom dock, arranged by the user and persisted globally. The panel BODIES are registry
+ * definitions (builtin-dock-panels.tsx); this page provides the session/stream state they read
+ * around both docks (chat-dock-context.tsx), and the stream's jump commands: a message file
+ * card, or a reply's link to a Workspace file, opens the Workspace tab on that file
+ * (onOpenFile), a subagent chip opens the agents tab focused (onOpenSubagent), a memory-change
+ * row opens the Memory tab located (onLocateMemoryChange).
  * Approval mode and Model/context usage live in the input area's toolbar; context is compacted
  * via the /compact slash command.
  * Draft state (/chat/new) is carried by DraftView: Agent / Workspace / approval mode / Model are
@@ -21,12 +21,10 @@ import type { ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
-  ApprovalMode,
   ModelRefDto,
   ModelsResponse,
   SessionInfo,
   SessionPatchRequest,
-  SessionSandbox,
   SessionProcessInfo,
   SessionStatus,
   SkillMetadataItem,
@@ -59,6 +57,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { useWorkflowTabs, WorkflowFrame, WorkflowTabStrip } from "../workflows/workflow-tabs";
 import { apiErrorText } from "../../lib/api-error";
+import type { PermissionPick } from "../../lib/permission-level";
 import { configuredCompactionLimit } from "../../lib/context";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
@@ -74,6 +73,7 @@ import {
   sessionBackgroundTasks,
 } from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
+import { a2uiDrafts } from "../../lib/a2ui-drafts";
 import {
   approvalKey,
   createStreamModel,
@@ -90,16 +90,18 @@ import {
 } from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Truncated } from "../../components/ui/truncated";
 import { MessageStream } from "./message-stream";
-import type { StreamRenderContext } from "./message-stream";
+import type { A2uiActions, StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
+import { onPluginConfigSaved } from "../../lib/plugin-config-event";
 import { approvalModeChoices } from "./approval-mode";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import {
@@ -117,6 +119,7 @@ import { prepareNewChatDraft } from "./new-chat";
 import {
   heldRouteSession,
   resolveRoutedSession,
+  routeSessionOutcome,
   sessionForProject,
   sessionProbeKey,
 } from "./session-project";
@@ -134,20 +137,16 @@ import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from 
 import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, promotedPricing, sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import { WorkspaceBrowser } from "./workspace-browser";
-import { ChatMemoryView } from "./memory-view";
 import { useMemoryListing } from "./use-memory-listing";
 import { deletedChangeKeys } from "./memory-nav";
-import { SubagentsView } from "./subagents-view";
-import { TracePanel } from "../traces/trace-panel";
-import { MessagingPanel } from "../messaging/messaging-panel";
-import { SchedulePanel } from "../schedules/schedule-panel";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
 import { DockLauncher } from "../dock/dock-launcher";
-import { BuiltinBrowserPanel } from "../builtin-browser/browser-panel";
 import { useDockMount } from "../dock/use-dock-mount";
-import { panelLabel } from "../dock/panel-meta";
+// importing it registers the built-in panels (their definitions and bodies) with the dock
+import "./builtin-dock-panels";
+import { ChatDockProvider } from "./chat-dock-context";
+import type { ChatDockState } from "./chat-dock-context";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
 import { setDockCwd } from "../dock/dock-terminal";
 import {
@@ -159,7 +158,6 @@ import {
   openPanel,
   panelDock,
   subscribeDock,
-  type PanelKind,
 } from "../dock/dock-state";
 import { terminalApiSupported, subscribeTerminals } from "../terminal/terminal-list";
 import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope";
@@ -499,6 +497,8 @@ export function ChatPage() {
    */
   const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
   const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
+  /** The probe that failed did so with a 404: the server has no such Session for this user. */
+  const [probeMissingKey, setProbeMissingKey] = useState<string | null>(null);
   const heldSession = useRef<SessionInfo | null>(null);
   heldSession.current = heldRouteSession(
     heldSession.current,
@@ -507,13 +507,21 @@ export function ChatPage() {
     probeKey !== null && probeFailedKey === probeKey,
   );
   const selected = draft ? null : heldSession.current;
+  /**
+   * The Agent this page renders under: the routed Session's own, else the current Agent (a
+   * draft has no Session). The current Agent is resolved against THIS server's Agent list and
+   * is adopted from the Session only when that list carries it — an organization's employee
+   * whose Agent lives on a machine is never in it, so going by the current Agent alone left
+   * that conversation on the placeholder for good, with nothing to say why.
+   */
+  const pageAgentId = selected?.agentId ?? agentId;
   // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
   // workflows live on: a Session on a machine runs a copy of the Agent there, and the workflows
   // it built are in that copy. The current Agent is always one of this server's, so going by
   // it listed the wrong Agent's workflows (or none) for every Session on a machine.
   const workflowTabs = useWorkflowTabs(
     projectId,
-    selected?.agentId ?? agentId,
+    pageAgentId,
     selected === null ? null : machineForSession(selected.sessionId),
   );
   // New shells start in this conversation's Workspace — its files are what a terminal
@@ -561,14 +569,18 @@ export function ChatPage() {
   } = useSessionDraft(selected?.sessionId ?? null);
 
   // The rendered transcript: backfilled older windows (frozen items, negative ids) ahead
-  // of the live tail model's items. Version keys the memo — a prepend bumps it.
+  // of the live tail model's items. Keyed on the prefix's identity as well as the stream
+  // version: the controller prepends synchronously and its repaint signal is throttled, so
+  // a render forced by anything else in between must not pair the NEW prepend count (read
+  // live below) with the OLD item list — the stream would anchor against a layout that has
+  // not changed yet and leave the commit that does change it unanchored.
   const allItems = useMemo(
     () =>
       stream.prefixItems.length > 0
         ? [...stream.prefixItems, ...stream.model.items]
         : stream.model.items,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stream.version, routeSessionId],
+    [stream.version, stream.prefixItems, routeSessionId],
   );
   // Derivations over the stream items (the model mutates in place, so `version` — its own
   // repaint signal — keys the memos; the session id covers a switch racing a same-valued
@@ -662,8 +674,8 @@ export function ChatPage() {
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
   // config's level (auto-follow — each model context reads the config, so Agent-config edits
   // keep taking effect). A pin is DURABLE: it survives a reload, shows up in a second tab,
-  // and core applies it from the Session's next LLM request on (soft-limited — the picker's
-  // menu advises compacting first, since the change invalidates the model's cached
+  // and core applies it from the Session's next LLM request on (soft-limited — a pick mid-chat
+  // is confirmed first, offering to compact, since the change invalidates the model's cached
   // context). It is still never written through to the Agent config (that stays draft-only).
   const turnThinkingLevel = selected?.thinkingLevel ?? "";
   // The Agent list may not carry this Session's Agent yet (an Agent an organization created
@@ -673,6 +685,10 @@ export function ChatPage() {
   useEffect(() => {
     if (selectedSessionId && selectedAgentId && selectedAgentKnown)
       setCurrentAgentId(selectedAgentId);
+    else if (selectedSessionId && selectedAgentId)
+      console.warn(
+        `[chat] the Agent ${selectedAgentId} of ${selectedSessionId} is not in this server's Agent list; the conversation renders under the Session's own Agent id`,
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, selectedAgentId, selectedAgentKnown, setCurrentAgentId]);
 
@@ -872,8 +888,12 @@ export function ChatPage() {
           if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
         } else setProbeFailedKey(probeKey);
       },
-      () => {
-        if (!cancelled) setProbeFailedKey(probeKey);
+      (err: unknown) => {
+        if (cancelled) return;
+        setProbeFailedKey(probeKey);
+        // Only an answer that the Session does not exist settles it as missing; a failure to
+        // get any answer is not that, and keeps the old way on.
+        if (err instanceof ApiError && err.status === 404) setProbeMissingKey(probeKey);
       },
     );
     return () => {
@@ -894,22 +914,34 @@ export function ChatPage() {
     isSessionDeleted,
   ]);
 
+  /**
+   * What becomes of the routed Session (session-project.ts): shown, still being looked for, a
+   * reason to open another conversation, or — the direct lookup said it does not exist — a
+   * dead link the page owns up to in place rather than swapping in some other conversation.
+   */
+  const routeOutcome = routeSessionOutcome({
+    shown: selected !== null,
+    pending: routeSessionPending,
+    routeSessionId,
+    deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
+    missing: probeKey !== null && probeMissingKey === probeKey,
+  });
+
   // Auto-select the last conversation when the route doesn't select one: the most recently
-  // ACTIVE loaded active/schedule Session, the same rule the collapsed rail's entry follows —
-  // archived rows are hidden by choice and subagent Sessions belong to their parent, so
-  // neither is auto-opened. If there is none, fall back to draft state (instead of
-  // auto-creating one).
+  // ACTIVE loaded conversation of the user's own (`user` source), the same rule the collapsed
+  // rail's entry follows — archived rows are hidden by choice and background Sessions were
+  // opened by a program, so neither is auto-opened. If there is none, fall back to draft state
+  // (instead of auto-creating one). A routed id missing from the paged list isn't gone until
+  // the direct lookup fails, and one the lookup says does not exist is not replaced at all.
   useEffect(() => {
     if (sessionsLoading || draft) return;
-    if (selected !== null) return;
-    // A routed id missing from the paged list isn't gone until the direct lookup fails.
-    if (routeSessionPending) return;
+    if (routeOutcome !== "redirect") return;
     // An organization's desk or ticket Session is never auto-opened: landing in one by default
     // would put the user inside a conversation the scheduler drives, and company mode's own
     // groups are where it is reached.
     const last = latestConversation(withoutOrgSessions(sessions));
     navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
-  }, [sessionsLoading, draft, selected, routeSessionPending, sessions, navigate]);
+  }, [sessionsLoading, draft, routeOutcome, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
   //
@@ -1494,6 +1526,26 @@ export function ChatPage() {
     composerRef.current?.fillPrompt(text, []);
   }, []);
   /**
+   * A reply's choice or form block answers through the same exit: the picked text lands in the
+   * composer (replacing typed text only after the user confirms) and Send stays the user's move;
+   * its "Other…" fills nothing, which empties what an earlier pick put there. The open
+   * question's answers in progress are kept in this browser per Session (lib/a2ui-drafts.ts),
+   * so a reload finds them. The transcript decides which reply may use these (see
+   * MessageItems); memoized because the blocks read them through context, past the memoized
+   * Markdown.
+   */
+  const { locale } = useLocale();
+  const a2uiActions = useMemo<A2uiActions>(
+    () => ({
+      interactive: true,
+      fill: prefillComposer,
+      lang: locale,
+      drafts: a2uiDrafts,
+      draftScope: selectedSessionId ?? undefined,
+    }),
+    [prefillComposer, locale, selectedSessionId],
+  );
+  /**
    * The Files panel's exit into the conversation — a `@path` reference, or a fenced block
    * around what was selected in a preview — and the message stream's, an excerpt of the
    * conversation selected in it. Nothing is sent and nothing already typed is disturbed: the
@@ -1519,9 +1571,9 @@ export function ChatPage() {
 
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
-  // from the next LLM request (the picker's menu advises compacting first). Modeled on
-  // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
-  // was, rather than showing a level the server does not have.
+  // from the next LLM request (a pick mid-chat reaches here through the confirm dialog, which
+  // offers to compact first). Modeled on onChangePermission — a failed write surfaces as a
+  // toast and leaves the level as it was, rather than showing a level the server does not have.
   const applyTurnThinkingLevel = useCallback(
     (level: string) => {
       if (!selected) return;
@@ -1604,40 +1656,40 @@ export function ChatPage() {
     [selected],
   );
 
-  const onChangeApprovalMode = useCallback(
-    (mode: ApprovalMode) => {
+  // A preset from the permission button: the approval mode and the Session's own sandbox
+  // policy in one PATCH, applied from the next tool call and command. A refused change (a
+  // non-admin loosening past the server's settings) stores nothing — the route checks every
+  // field before writing any — so the Session is as it was, and the toast says why.
+  const onChangePermission = useCallback(
+    (pick: PermissionPick) => {
       if (!selected || modeSaving) return;
       setModeSaving(true);
       // Returned so the permission button keeps the pick on screen until the save settles.
       return api
-        .patchSession(selected.sessionId, { approvalMode: mode })
-        .then((res) => replace(res.session))
-        .catch((e: unknown) => {
-          toastError(apiErrorText(e));
+        .patchSession(selected.sessionId, {
+          approvalMode: pick.approvalMode,
+          // Absent for an approval-mode pick: the Session's policy is left as it is.
+          ...(pick.sandbox !== undefined ? { sandbox: pick.sandbox } : {}),
         })
+        .then((res) => replace(res.session))
+        .catch((e: unknown) => toastError(apiErrorText(e)))
         .finally(() => setModeSaving(false));
     },
     [selected, modeSaving, replace],
   );
 
-  // The Session's own sandbox policy: saved on the Session and applied from its next command.
-  // The same save shape as the approval mode — a refused change (a non-admin loosening past
-  // the server's settings) is a toast, and the button keeps showing what the server has.
-  const onChangeSandbox = useCallback(
-    (pick: Partial<SessionSandbox>) => {
-      if (!selected || modeSaving) return;
-      setModeSaving(true);
-      // Returned so the permission button keeps the pick on screen until the save settles.
-      return api
-        .patchSession(selected.sessionId, { sandbox: pick })
-        .then((res) => replace(res.session))
-        .catch((e: unknown) => {
-          toastError(apiErrorText(e));
-        })
-        .finally(() => setModeSaving(false));
-    },
-    [selected, modeSaving, replace],
-  );
+  // The Sandbox card was saved: the open Session's view (switch, presets) is read again, so the
+  // permission menu shows what the card now says.
+  const selectedId = selected?.sessionId;
+  useEffect(() => {
+    if (selectedId === undefined) return;
+    return onPluginConfigSaved("sandbox", () => {
+      void api.getSession(selectedId).then(
+        (res) => replace(res.session),
+        () => undefined,
+      );
+    });
+  }, [selectedId, replace]);
 
   // Starts a context compaction — the single path to the server for it (the composer's
   // /compact command and the thinking-switch dialog's "compact, then switch" both come
@@ -1937,6 +1989,7 @@ export function ChatPage() {
     workspace: selected?.workspace ?? null,
     statFiles,
     onFork,
+    a2uiActions,
   };
 
   // Any pending approval sitting inside a subagent (approvalKey = "originChain toolCallId";
@@ -1963,115 +2016,44 @@ export function ChatPage() {
   );
   const terminalSupported = terminalApiSupported();
 
+  // The Memory panel's way to its management: add / edit / delete live on the Agent's
+  // settings page, on the memory tab.
+  const openMemorySettings = useCallback(
+    (memoryAgentId: string) => navigate(`/agents/${memoryAgentId}?tab=memory`),
+    [navigate],
+  );
   /**
-   * The panel tabs' bodies. Keyed by Session where the view starts over per conversation
-   * (agents / memory / trace); the Workspace browser instead re-binds through its props —
-   * its own handled-once request guard is what the conversation-switch e2e covers.
+   * What the dock panel bodies read off this page (builtin-dock-panels.tsx), provided around
+   * both docks below. Not memoised: `ctx` is rebuilt on every render and the stream fields
+   * move with every version, so a memo would miss every time; the bodies re-render with the
+   * page, exactly as they did when the page built them inline. The callbacks in it are the
+   * page's own memoised ones, passed as they are, never wrapped afresh.
    */
-  const renderPanel = (kind: PanelKind, active: boolean): ReactNode => {
-    // The browser is one set of pages shared by every conversation, not a Session's view,
-    // so it needs no Session and works on the draft page too.
-    if (kind === "builtin-browser") return <BuiltinBrowserPanel active={active} />;
-    // The draft's Files panel browses the folder picked in the composer, addressed by the
-    // directory itself; a temporary Workspace has none yet.
-    if (!selected && draft && kind === "workspace" && projectId) {
-      return draftWorkspace !== null ? (
-        <WorkspaceBrowser
-          scope={{
-            kind: "workspace",
-            projectId,
-            workspace: draftWorkspace.path,
-            machineId: draftWorkspace.machineId,
-          }}
-          active={active}
-          onAddReference={addComposerReference}
-        />
-      ) : (
-        <EmptyState title={panelLabel(kind)} description={S.files.draftTemporary} />
-      );
-    }
-    if (!selected)
-      return (
-        <EmptyState
-          title={panelLabel(kind)}
-          // The schedules tab says what the first message unlocks; the other tabs share one line.
-          description={kind === "schedules" ? S.schedule.panelDraftEmpty : S.dock.draftEmpty}
-        />
-      );
-    switch (kind) {
-      case "agents":
-        return (
-          <SubagentsView
-            key={selected.sessionId}
-            session={selected}
-            // The merged view (backfilled windows included): a chip on an older turn keeps
-            // its historical graph and child conversation reachable after pagination.
-            model={panelModel}
-            version={stream.version}
-            taskRunning={stream.taskState !== "idle"}
-            ctx={ctx}
-            focusRequest={subagentFocus}
-            taskScope={subagentTaskScope}
-            subagents={stream.subagents}
-            models={models?.models ?? []}
-            approvalMode={selected.approvalMode}
-            approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}
-            onChangeApprovalMode={onChangeApprovalMode}
-            onChangeSandbox={onChangeSandbox}
-            modeSaving={modeSaving}
-            parentThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
-          />
-        );
-      case "workspace":
-        return (
-          <WorkspaceBrowser
-            scope={{ kind: "session", sessionId: selected.sessionId }}
-            openRequest={fileOpenRequest}
-            active={active}
-            reloadSignal={settledTurnSignal}
-            onAddReference={addComposerReference}
-          />
-        );
-      case "memory":
-        return (
-          <ChatMemoryView
-            key={selected.sessionId}
-            session={selected}
-            changes={sessionMemoryChanges}
-            scopes={memoryListing.scopes}
-            listingError={memoryListing.error}
-            request={memoryRequest}
-            active={active}
-            // Management (add / edit / delete) lives on the agent-settings memory tab.
-            onOpenSettings={() => navigate(`/agents/${selected.agentId}?tab=memory`)}
-          />
-        );
-      case "trace":
-        return (
-          <TracePanel
-            key={selected.sessionId}
-            session={selected}
-            active={active}
-            reloadSignal={settledTurnSignal}
-          />
-        );
-      case "messaging":
-        return (
-          <MessagingPanel key={selected.sessionId} sessionId={selected.sessionId} active={active} />
-        );
-      case "schedules":
-        return (
-          <SchedulePanel
-            key={selected.sessionId}
-            session={selected}
-            active={active}
-            onPrefillComposer={prefillComposer}
-          />
-        );
-    }
+  const chatDock: ChatDockState = {
+    selected,
+    draft,
+    draftWorkspace,
+    projectId,
+    panelModel,
+    stream,
+    ctx,
+    subagentFocus,
+    subagentTaskScope,
+    models,
+    onChangePermission,
+    modeSaving,
+    parentThinkingLevel: sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel),
+    fileOpenRequest,
+    settledTurnSignal,
+    addComposerReference,
+    sessionMemoryChanges,
+    memoryListing,
+    memoryRequest,
+    openMemorySettings,
+    prefillComposer,
   };
 
-  if (!projectId || !agentId) {
+  if (!projectId || !pageAgentId) {
     return (
       <div className="p-6">
         <Skeleton className="h-6 w-64" />
@@ -2172,9 +2154,8 @@ export function ChatPage() {
       approvalMode={selected.approvalMode}
       // An organization's Session is not offered always-ask: nobody is there to be asked.
       approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}
-      onChangeApprovalMode={onChangeApprovalMode}
       sandbox={selected.sandbox}
-      onChangeSandbox={onChangeSandbox}
+      onChangePermission={onChangePermission}
       modeSaving={modeSaving}
       autoFocus
       agents={agents}
@@ -2225,14 +2206,14 @@ export function ChatPage() {
         active={workflowTabs.active}
         onSelect={workflowTabs.setActive}
       />
-      {workflowTabs.activeTab !== null && projectId !== null && agentId !== null && (
+      {workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null && (
         <div className="absolute inset-x-0 bottom-0 top-9 z-10">
           <WorkflowFrame
             // Per tab: the frame keeps this workflow's history fold, its error and its
             // armed Remove, and none of that belongs to the next tab.
             key={workflowTabs.activeTab.tabId}
             projectId={projectId}
-            agentId={selected?.agentId ?? agentId}
+            agentId={pageAgentId}
             tab={workflowTabs.activeTab}
             onChanged={() => void workflowTabs.refresh()}
             onRemoved={() => {
@@ -2455,7 +2436,7 @@ export function ChatPage() {
                         data-tooltip={S.chat.processClearExitedHint}
                         disabled={procBusy !== null}
                         onClick={() => void onClearExitedProcesses()}
-                        className="shrink-0 cursor-pointer text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
+                        className="shrink-0 cursor-pointer whitespace-nowrap text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
                       >
                         {S.chat.processClearExited}
                       </button>
@@ -2501,7 +2482,7 @@ export function ChatPage() {
                             type="button"
                             disabled={procBusy !== null}
                             onClick={() => setProcToKill(p)}
-                            className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            className="shrink-0 whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                           >
                             {procBusy?.includes(p.processId)
                               ? S.common.loading
@@ -2523,7 +2504,7 @@ export function ChatPage() {
                               data-tooltip={S.chat.processRemoveHint}
                               disabled={procBusy !== null}
                               onClick={() => void onRemoveProcess(p.processId)}
-                              className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                              className="shrink-0 whitespace-nowrap rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                             >
                               {procBusy?.includes(p.processId)
                                 ? S.common.loading
@@ -2541,168 +2522,192 @@ export function ChatPage() {
         </div>
       )}
 
-      {/* Body: chat column + the right dock on this row (below the toolbar — a dock
-          beside the whole page would squeeze the header), with the bottom dock after the
-          row spanning the full page width. data-dock-row is what the drag preview
-          measures for a right landing. */}
-      <div data-dock-row className="flex min-h-0 flex-1">
-        {/* The chat area, and the only region a dragged file may be dropped on (#311): it
-            covers the conversation and the composer in both branches below, and nothing else
-            — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
-            it (terminal panes included) are all outside, where a file drop is inert (see
-            drop-zone.tsx). `relative` bounds the drop overlay to this column. */}
-        <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          {draft ? (
-            // Draft state: DraftView's vertically centered input card + Agent / Workspace
-            // selection panel; the Session is only created once the first message is sent. Keyed
-            // by Project (switching Project remounts onto that Project's draft cache) and by the
-            // parked-draft id — falling back to location.key for `/chat/new`, so clicking "New
-            // chat" while already on the draft page (which just parked the typed text) remounts
-            // onto the freshly cleared cache. (Agent selection happens inside the draft itself,
-            // so it's not part of the key.)
-            <DraftView
-              key={`draft:${projectId}:${parkedDraftId ?? location.key}`}
-              projectId={projectId}
-              models={models}
-              {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
-              composerRef={composerRef}
-              onWorkspaceChange={onDraftWorkspace}
-            />
-          ) : (
-            // Keyed by Session: the whole block does a light fade-in when switching sessions.
-            <div
-              key={selected?.sessionId ?? "empty"}
-              className="anim-fade flex min-h-0 flex-1 flex-col"
-            >
-              {selected ? (
-                stream.error ? (
-                  // History failed to load: show a clear error and a retry entry point, instead of staying on a misleading empty state.
-                  <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
-                    <p className="text-sm text-red-600 dark:text-red-400">
-                      {S.chat.historyLoadFailed}：{stream.error}
-                    </p>
-                    <Button onClick={stream.retry}>{S.common.retry}</Button>
-                  </div>
-                ) : stream.loading ? (
-                  <div className="space-y-3 p-6">
-                    <Skeleton className="h-5 w-1/3" />
-                    <Skeleton className="h-5 w-2/3" />
-                    <Skeleton className="h-5 w-1/2" />
-                  </div>
-                ) : (
-                  // The empty state shares the same structure as the message stream (message
-                  // area + bottom input area): only the message area's content differs, and
-                  // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
-                  // recreated when the first message arrives (preserving draft/focus).
-                  <>
-                    {/* `relative`: the floating dock launcher below anchors to this body —
-                        the region between the toolbar and the composer — so clamping to
-                        it keeps the launcher off both. */}
-                    <div className="relative min-h-0 flex-1">
-                      {emptyChat ? (
-                        <div className="flex h-full items-center justify-center px-4">
-                          <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
-                            {S.chat.emptyGreeting}
-                          </p>
-                        </div>
-                      ) : (
-                        <MessageStream
-                          items={allItems}
-                          version={stream.version}
-                          ctx={ctx}
-                          scrollElRef={streamScrollRef}
-                          // The selection menu's "Add to conversation": the excerpt is staged
-                          // in this composer as a chip, the same way the Files panel stages a
-                          // quoted range.
-                          onAddExcerpt={addComposerReference}
-                          // Scroll-up backfill of older history windows (tail-first
-                          // loading): near-top scrolling prepends the previous window,
-                          // scroll position anchored (see MessageStream).
-                          older={{
-                            hasMore: stream.older.hasMore,
-                            loading: stream.older.loading,
-                            error: stream.older.error,
-                            prependedCount: stream.prefixItems.length,
-                            onLoad: stream.loadOlder,
-                          }}
-                          // Tick-rail minimap over the stream's left gutter (zero layout
-                          // width; hides itself when the gutter is too narrow or the
-                          // pointer can't hover).
-                          outline={
-                            <ConversationOutline
-                              entries={outline}
-                              turnOffset={stream.outlineOffset}
-                              version={stream.version}
-                              scrollRef={streamScrollRef}
-                              running={stream.taskState !== "idle"}
-                              fit={railFit}
-                            />
-                          }
-                        />
-                      )}
-                      {/* The right dock's floating launcher: rides this body's right edge
-                          while that dock is hidden, and opens its panels in one click. */}
-                      <DockLauncher agentsPending={anySubagentPending} />
-                    </div>
-                    <div className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
-                      <div className="mx-auto max-w-3xl">
-                        {/* Goal banner docked above the composer: an in-flight goal's progress
-                            (restored on load while still active), or the terminal state reached
-                            during this page's lifetime. The stop button is the composer's
-                            regular stop (one abort ends the whole goal loop). */}
-                        {stream.goal && <GoalStatusBanner goal={stream.goal} />}
-                        {input}
-                      </div>
-                    </div>
-                  </>
-                )
-              ) : routeSessionOffline ? (
-                <EmptyState
-                  title={
-                    routeSessionOwner === null
-                      ? S.chat.sessionOnOfflineMachineUnknown
-                      : S.chat.sessionOnOfflineMachine(
-                          machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
-                        )
-                  }
-                  description={S.chat.sessionOfflineHint}
+      {/* The state the dock panels' bodies read (chat-dock-context.tsx): one provider over
+          the row's right dock and the bottom dock after it — a provider adds no element. */}
+      <ChatDockProvider value={chatDock}>
+        {/* data-dock-area: the row and the bottom dock together — what a fullscreen bottom dock
+            (or the narrow merged view) grows to cover, up to the toolbar; a fullscreen right
+            dock covers the row alone. Layout-neutral: it takes the column's remaining height
+            exactly as the row and the dock did when they sat in the column themselves. */}
+        <div data-dock-area className="flex min-h-0 flex-1 flex-col">
+          {/* Body: chat column + the right dock on this row (below the toolbar — a dock
+              beside the whole page would squeeze the header), with the bottom dock after the
+              row spanning the full page width. data-dock-row is what the drag preview
+              measures for a right landing. */}
+          <div data-dock-row className="flex min-h-0 flex-1">
+            {/* The chat area, and the only region a dragged file may be dropped on (#311): it
+                covers the conversation and the composer in both branches below, and nothing else
+                — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
+                it (terminal panes included) are all outside, where a file drop is inert (see
+                drop-zone.tsx). `relative` bounds the drop overlay to this column. */}
+            <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {draft ? (
+                // Draft state: DraftView's vertically centered input card + Agent / Workspace
+                // selection panel; the Session is only created once the first message is sent. Keyed
+                // by Project (switching Project remounts onto that Project's draft cache) and by the
+                // parked-draft id — falling back to location.key for `/chat/new`, so clicking "New
+                // chat" while already on the draft page (which just parked the typed text) remounts
+                // onto the freshly cleared cache. (Agent selection happens inside the draft itself,
+                // so it's not part of the key.)
+                <DraftView
+                  key={`draft:${projectId}:${parkedDraftId ?? location.key}`}
+                  projectId={projectId}
+                  models={models}
+                  {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
+                  composerRef={composerRef}
+                  onWorkspaceChange={onDraftWorkspace}
                 />
-              ) : sessionsLoading || routeSessionPending ? (
-                <div className="space-y-3 p-6">
-                  <Skeleton className="h-5 w-1/2" />
-                </div>
               ) : (
-                <EmptyState
-                  title={S.chat.noSessions}
-                  action={<Button onClick={newChat}>{S.nav.newChat}</Button>}
-                />
+                // Keyed by Session: the whole block does a light fade-in when switching sessions.
+                <div
+                  key={selected?.sessionId ?? "empty"}
+                  className="anim-fade flex min-h-0 flex-1 flex-col"
+                >
+                  {selected ? (
+                    stream.error ? (
+                      // History failed to load: show a clear error and a retry entry point, instead of staying on a misleading empty state.
+                      <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
+                        <p className="text-sm text-red-600 dark:text-red-400">
+                          {S.chat.historyLoadFailed}：{stream.error}
+                        </p>
+                        <Button onClick={stream.retry}>{S.common.retry}</Button>
+                      </div>
+                    ) : stream.loading ? (
+                      <div className="space-y-3 p-6">
+                        <Skeleton className="h-5 w-1/3" />
+                        <Skeleton className="h-5 w-2/3" />
+                        <Skeleton className="h-5 w-1/2" />
+                      </div>
+                    ) : (
+                      // The empty state shares the same structure as the message stream (message
+                      // area + bottom input area): only the message area's content differs, and
+                      // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
+                      // recreated when the first message arrives (preserving draft/focus).
+                      <>
+                        {/* `relative`: the floating dock launcher below anchors to this body —
+                            the region between the toolbar and the composer — so clamping to
+                            it keeps the launcher off both. */}
+                        <div className="relative min-h-0 flex-1">
+                          {emptyChat ? (
+                            <div className="flex h-full items-center justify-center px-4">
+                              <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
+                                {S.chat.emptyGreeting}
+                              </p>
+                            </div>
+                          ) : (
+                            <MessageStream
+                              items={allItems}
+                              version={stream.version}
+                              ctx={ctx}
+                              scrollElRef={streamScrollRef}
+                              // The selection menu's "Add to conversation": the excerpt is staged
+                              // in this composer as a chip, the same way the Files panel stages a
+                              // quoted range.
+                              onAddExcerpt={addComposerReference}
+                              // Scroll-up backfill of older history windows (tail-first
+                              // loading): near-top scrolling prepends the previous window,
+                              // scroll position anchored (see MessageStream).
+                              older={{
+                                hasMore: stream.older.hasMore,
+                                loading: stream.older.loading,
+                                error: stream.older.error,
+                                prependedCount: stream.prefixItems.length,
+                                onLoad: stream.loadOlder,
+                              }}
+                              // Tick-rail minimap over the stream's left gutter (zero layout
+                              // width; hides itself when the gutter is too narrow or the
+                              // pointer can't hover).
+                              outline={
+                                <ConversationOutline
+                                  entries={outline}
+                                  turnOffset={stream.outlineOffset}
+                                  version={stream.version}
+                                  scrollRef={streamScrollRef}
+                                  running={stream.taskState !== "idle"}
+                                  fit={railFit}
+                                />
+                              }
+                            />
+                          )}
+                          {/* The right dock's floating launcher: rides this body's right edge
+                              while that dock is hidden, and opens its panels in one click. */}
+                          <DockLauncher agentsPending={anySubagentPending} />
+                        </div>
+                        <div className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
+                          <div className="mx-auto max-w-3xl">
+                            {/* Goal banner docked above the composer: an in-flight goal's progress
+                                (restored on load while still active), or the terminal state reached
+                                during this page's lifetime. The stop button is the composer's
+                                regular stop (one abort ends the whole goal loop). */}
+                            {stream.goal && <GoalStatusBanner goal={stream.goal} />}
+                            {input}
+                          </div>
+                        </div>
+                      </>
+                    )
+                  ) : routeSessionOffline ? (
+                    <EmptyState
+                      title={
+                        routeSessionOwner === null
+                          ? S.chat.sessionOnOfflineMachineUnknown
+                          : S.chat.sessionOnOfflineMachine(
+                              machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
+                            )
+                      }
+                      description={S.chat.sessionOfflineHint}
+                    />
+                  ) : !sessionsLoading && routeOutcome === "notFound" ? (
+                    // A dead link: said in place, with the one way on that fits the mode —
+                    // a new conversation, or back to the organization in company mode.
+                    <EmptyState
+                      title={S.chat.sessionNotFound}
+                      description={S.chat.sessionNotFoundHint}
+                      action={
+                        company.workMode === "company" ? (
+                          <Button onClick={() => navigate("/org")}>
+                            {S.company.backToOverview}
+                          </Button>
+                        ) : (
+                          <Button onClick={newChat}>{S.nav.newChat}</Button>
+                        )
+                      }
+                    />
+                  ) : sessionsLoading || routeSessionPending ? (
+                    <div className="space-y-3 p-6">
+                      <Skeleton className="h-5 w-1/2" />
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title={S.chat.noSessions}
+                      action={<Button onClick={newChat}>{S.nav.newChat}</Button>}
+                    />
+                  )}
+                </div>
               )}
-            </div>
+            </ChatDropRegion>
+
+            {rightMount.view && (
+              <DockPanel
+                view={rightMount.view}
+                open={rightMount.open}
+                animateEntrance={rightMount.animateEntrance}
+                panelBadges={{ agents: anySubagentPending }}
+                terminalSupported={terminalSupported}
+              />
+            )}
+          </div>
+
+          {bottomMount.view && (
+            <DockPanel
+              view={bottomMount.view}
+              open={bottomMount.open}
+              animateEntrance={bottomMount.animateEntrance}
+              panelBadges={{ agents: anySubagentPending }}
+              terminalSupported={terminalSupported}
+            />
           )}
-        </ChatDropRegion>
-
-        {rightMount.view && (
-          <DockPanel
-            view={rightMount.view}
-            open={rightMount.open}
-            animateEntrance={rightMount.animateEntrance}
-            renderPanel={renderPanel}
-            panelBadges={{ agents: anySubagentPending }}
-            terminalSupported={terminalSupported}
-          />
-        )}
-      </div>
-
-      {bottomMount.view && (
-        <DockPanel
-          view={bottomMount.view}
-          open={bottomMount.open}
-          animateEntrance={bottomMount.animateEntrance}
-          renderPanel={renderPanel}
-          panelBadges={{ agents: anySubagentPending }}
-          terminalSupported={terminalSupported}
-        />
-      )}
+        </div>
+      </ChatDockProvider>
 
       <Modal
         open={credentialGuide}

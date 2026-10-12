@@ -7,7 +7,8 @@
  *   under ui/ (no default document, nothing outside it) and dispatches to its handler, and its
  *   state persists on disk across a reload.
  * - Its own state write is not an edit: the revision holds and nothing is left staged.
- * - It opens and runs Sessions the SDK's way, inside its own Project only.
+ * - It opens and runs Sessions the SDK's way, inside its own Project only, with allow-all:
+ *   nobody is there to answer an ask.
  * - A handler takes any body (a form only from the app's own pages) and sends back any
  *   content type, a stream as it is produced and a redirect relative to its mount, never the
  *   app's cookies; JSON stays the default.
@@ -30,7 +31,7 @@
  * compile; each editing case needs a folder of its own to break, which it gets in an Agent of
  * its own within the editing group's one app.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
@@ -265,10 +266,19 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
       ran: "run: this Project has no Session 'not-a-session'",
       agents: [AGENT],
     });
-    const own = await (await owner.get(`${BASE}/demo/api/open`)).json();
-    // Its own Agent passes the Project check and reaches the session runtime, which in this
-    // fixture has no model key to open a Session with.
-    expect(own).toMatchObject({ opened: expect.stringContaining("API key") });
+    const create = vi.spyOn(t.deps.sessionService, "createSession");
+    try {
+      const own = await (await owner.get(`${BASE}/demo/api/open`)).json();
+      // Its own Agent passes the Project check and reaches the session runtime, which in this
+      // fixture has no model key to open a Session with.
+      expect(own).toMatchObject({ opened: expect.stringContaining("API key") });
+      // Unattended: allow-all, whatever approval mode the Sandbox card's default preset gives.
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId: AGENT, approvalMode: "allow-all" }),
+      );
+    } finally {
+      create.mockRestore();
+    }
   });
 
   it("hands a handler any body and sends back any content type; JSON stays the default", async () => {
@@ -353,31 +363,44 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
   });
 
   it("notices an Agent's FIRST workflow, made with nothing but its file tools", async () => {
-    // Another Agent of the Project, with no workflows/ folder when its list is first read.
-    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "builder" });
-    expect(made.status, await made.text()).toBe(201);
-    const base = `/api/projects/${PROJECT}/agents/builder/workflows`;
-    expect(((await (await owner.get(base)).json()) as { workflows: unknown[] }).workflows).toEqual(
-      [],
-    );
+    // Each retry owns its app: beforeAll's shared Project retains a created Agent after
+    // a failed assertion, otherwise a retry fails with agent_exists before checking discovery.
+    const fresh = await createTestApp();
+    try {
+      const owner = apiClient(fresh.app, (await provisionUser(fresh.app, "owner")).cookie);
+      const project = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
+      expect(project.status, await project.text()).toBe(201);
+      // No workflows/ folder when its list is first read.
+      const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "builder" });
+      expect(made.status, await made.text()).toBe(201);
+      const base = `/api/projects/${PROJECT}/agents/builder/workflows`;
+      expect(
+        ((await (await owner.get(base)).json()) as { workflows: unknown[] }).workflows,
+      ).toEqual([]);
 
-    const first = path.join(agentDir(t.root, PROJECT, "builder"), "workflows", "first");
-    await fs.mkdir(path.join(first, "ui"), { recursive: true });
-    await fs.writeFile(path.join(first, "package.json"), packageJson());
-    await fs.writeFile(path.join(first, "index.ts"), indexSource("first"));
-    await fs.writeFile(path.join(first, "ui", "index.html"), "<h1>first</h1>");
+      const first = path.join(agentDir(fresh.root, PROJECT, "builder"), "workflows", "first");
+      await fs.mkdir(path.join(first, "ui"), { recursive: true });
+      await fs.writeFile(path.join(first, "package.json"), packageJson());
+      await fs.writeFile(path.join(first, "index.ts"), indexSource("first"));
+      await fs.writeFile(path.join(first, "ui", "index.html"), "<h1>first</h1>");
 
-    // Nobody lists again: the server has to see the folder appear and load it on its own.
-    const statusFile = path.join(first, ".build", "status.json");
-    let status: { ok?: boolean } = {};
-    for (let i = 0; i < 100 && status.ok === undefined; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      status = await fs.readFile(statusFile, "utf8").then(
-        (text) => JSON.parse(text) as { ok: boolean },
-        () => ({}),
-      );
+      // Nobody lists again: the server has to see the folder appear and load it on its own.
+      const statusFile = path.join(first, ".build", "status.json");
+      let status: { ok?: boolean } = {};
+      // Discovery also runs the real compiler. Give it the suite's disk/compile budget,
+      // not an iteration count whose ten seconds raced the macOS runner.
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline && status.ok === undefined) {
+        await new Promise((r) => setTimeout(r, 100));
+        status = await fs.readFile(statusFile, "utf8").then(
+          (text) => JSON.parse(text) as { ok: boolean },
+          () => ({}),
+        );
+      }
+      expect(status).toMatchObject({ ok: true, error: null, tabs: ["board"] });
+    } finally {
+      await fresh.cleanup();
     }
-    expect(status).toMatchObject({ ok: true, error: null, tabs: ["board"] });
   });
 
   it("refuses a workflow written in JavaScript, naming the rename it needs", async () => {

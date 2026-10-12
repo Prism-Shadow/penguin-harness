@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>PenguinHarness Browser</title>
+    <link rel="stylesheet" href="pages.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <ul id="servers" class="plain"></ul>
+      <p id="count" class="muted small"></p>
+      <div id="tab" class="tab">
+        <p id="tab-note" class="small"></p>
+        <div id="tab-buttons" class="buttons"></div>
+      </div>
+      <p id="paused-note" class="small muted" hidden></p>
+      <footer>
+        <button id="pause" type="button"></button>
+        <div class="end">
+          <div id="language" class="language"></div>
+          <button id="settings" class="flat" type="button"></button>
+        </div>
+      </footer>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

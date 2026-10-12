@@ -3,7 +3,7 @@
  * that expands to the full thinking text. It is the shared disclosure row, so its metrics and
  * colour states are the ones every other disclosure row uses, and it shares the run-state icons
  * (in progress, done, failed) with the tool-call rows. As a step of the agent's work it carries
- * the activity hook.
+ * the activity hook. Its text streams through `StreamText`, so it arrives the way a reply does.
  */
 import {
   DISCLOSURE_BODY_MD_CLASS,
@@ -13,7 +13,7 @@ import {
 import { LiveDuration, formatDuration } from "../../feedback/duration-slot/duration-slot";
 import { StatusIcon } from "../../icons/status-icon/status-icon";
 import type { RunState } from "../../icons/status-icon/status-icon";
-import { Md } from "../../content/prose/prose";
+import { StreamText } from "../stream-text/stream-text";
 
 export interface ThinkingBlockProps {
   /** Running while the text streams, failed when it stopped short, done otherwise. */
@@ -63,9 +63,7 @@ export function ThinkingBlock({
         </>
       }
     >
-      <div className={`anim-fade ${DISCLOSURE_BODY_MD_CLASS}`}>
-        <Md text={text} streaming={streaming} />
-      </div>
+      <StreamText className={DISCLOSURE_BODY_MD_CLASS} text={text} streaming={streaming} />
     </DisclosureRow>
   );
 }

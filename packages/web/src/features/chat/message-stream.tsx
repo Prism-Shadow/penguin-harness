@@ -7,15 +7,22 @@
  * own context menu (Copy / Add to conversation; open the link or copy its address — see
  * stream-selection-menu.tsx).
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
-import { EmptyState, GlyphIcon, ICONS, Spinner } from "@prismshadow/penguin-ui";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
+import {
+  A2uiActionsProvider,
+  EmptyState,
+  GlyphIcon,
+  ICONS,
+  Spinner,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
+import { interactiveReplyIndex } from "./a2ui-reply";
 import { WorkspaceLinksProvider } from "./workspace-links";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
@@ -23,6 +30,17 @@ import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
 import { useStreamSelectionMenu } from "./stream-selection-menu";
 import type { ComposerReference } from "../../lib/workspace-tree";
+import { FIND_LOAD_OLDER_EVENT, FIND_MORE_ATTR } from "../../lib/find-dom";
+import { FindRevealContext, useRegionRevealed } from "../../lib/find-expand";
+
+/**
+ * What a reply's rich blocks (```a2ui choices and forms) read from context: whether they take
+ * input, where a pick goes, and the language of its text.
+ */
+export type A2uiActions = ComponentProps<typeof A2uiActionsProvider>["value"];
+
+/** The fill of every reply whose blocks do not take input, where picking is disabled anyway. */
+const NO_FILL = (): void => {};
 
 /** Context passed down to nested rendering (pending approvals + approval submit callback + current origin chain). */
 export interface StreamRenderContext {
@@ -76,6 +94,17 @@ export interface StreamRenderContext {
   statFiles?: (paths: string[]) => Promise<ReadonlySet<string>>;
   /** Creates a new root Session through the selected completed assistant turn. */
   onFork?: (target: ForkTarget) => Promise<void>;
+  /**
+   * The actions of the reply whose blocks take input: `interactive` set, `fill` putting the
+   * picked text in this conversation's composer (an empty fill, a choice's "Other…", empties
+   * it), `lang` the interface language, and `drafts` + `draftScope` keeping a form's or a
+   * multi-select's answers in progress across a reload. Honored for the main conversation only, and there for the latest
+   * reply with nothing said after it (see a2ui-reply.ts); every other reply gets the same
+   * language with input off and no drafts. Must keep its identity while its inputs do: the
+   * blocks read it through context, past the memoized Markdown, so a fresh object per render
+   * would re-render every block on every stream frame.
+   */
+  a2uiActions?: A2uiActions;
 }
 
 /** Pure list rendering (reused recursively inside subagent cards): consecutive thinking + tool-call items are aggregated into one "Reasoning & Tools" group. */
@@ -101,6 +130,18 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
   }
   flushRun();
 
+  // A reply's choice or form takes input only as the main conversation's open question
+  // (a2ui-reply.ts; the subagent panel spreads this ctx under its own origin). Every other
+  // reply gets the same language with input off, derived once per actions object so both
+  // values keep their identity across stream frames.
+  const live = ctx.a2uiActions;
+  const liveReply =
+    live !== undefined ? items[interactiveReplyIndex(items, ctx.origin)] : undefined;
+  const still = useMemo<A2uiActions | undefined>(
+    () => (live === undefined ? undefined : { interactive: false, fill: NO_FILL, lang: live.lang }),
+    [live],
+  );
+
   const renderSeg = (seg: Seg, i: number): ReactNode =>
     seg.type === "group" ? (
       <SessionWorkGroup
@@ -109,6 +150,14 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
         ctx={ctx}
         isLast={i === segs.length - 1}
       />
+    ) : seg.item.kind === "assistant_text" && live !== undefined && still !== undefined ? (
+      // Every reply gets a provider and only its value moves between the two: when the user
+      // answers, the question's reply changes a context value rather than its place in the
+      // tree, so it is not remounted (no Markdown re-parse, no diagram re-render), and only
+      // the blocks of a reply whose value changed re-render.
+      <A2uiActionsProvider key={seg.item.id} value={seg.item === liveReply ? live : still}>
+        <MessageItem item={seg.item} ctx={ctx} />
+      </A2uiActionsProvider>
     ) : (
       <MessageItem key={seg.item.id} item={seg.item} ctx={ctx} />
     );
@@ -206,6 +255,7 @@ export function MessageStream({
   outline,
   older,
   onAddExcerpt,
+  findRegion = "conversation",
 }: {
   items: ChatItem[];
   /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
@@ -227,8 +277,16 @@ export function MessageStream({
    * to a conversation with a composer.
    */
   onAddExcerpt: (reference: ComposerReference) => void;
+  /**
+   * The find-in-page region this transcript is (`data-find-region`). The main conversation and
+   * the subagent panel are two of them, and the bar tells them apart by this value alone
+   * (components/find/find-bar.tsx), which is why it is a prop rather than a constant.
+   */
+  findRegion?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // A search of this region opens its collapsed work groups (lib/find-expand.ts).
+  const revealedForFind = useRegionRevealed(scrollRef);
   const selectionMenu = useStreamSelectionMenu(onAddExcerpt);
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
   const followRef = useRef<StreamFollow | null>(null);
@@ -279,6 +337,21 @@ export function MessageStream({
   olderRef.current = older;
   const lastPrependedRef = useRef(older?.prependedCount ?? 0);
   const lastHeightRef = useRef(0);
+  /**
+   * Where the oldest loaded prompt sat in the viewport at the last scroll or commit: what
+   * a prepend restores. A window landing above pushes it down by the window's height, and
+   * the browser's own scroll anchoring may or may not have compensated already (it does
+   * away from the top, never at scroll offset 0), so the correction is measured on the
+   * node itself rather than assumed from the height delta — which would apply it twice.
+   */
+  const anchorRef = useRef<{ id: string; top: number } | null>(null);
+  const recordAnchor = (el: HTMLDivElement) => {
+    const node = el.querySelector<HTMLElement>("[data-outline-anchor]");
+    anchorRef.current =
+      node === null
+        ? null
+        : { id: node.dataset.outlineAnchor ?? "", top: node.getBoundingClientRect().top };
+  };
 
   /** Near the top of loaded history: fetch the previous window (loading/error states gate re-triggering; the retry row is click-driven). */
   const maybeLoadOlder = (el: HTMLDivElement) => {
@@ -302,6 +375,7 @@ export function MessageStream({
       clientHeight: el.clientHeight,
     });
     maybeLoadOlder(el);
+    recordAnchor(el);
     syncJump();
   };
 
@@ -333,8 +407,9 @@ export function MessageStream({
   useLayoutEffect(() => {
     const el = scrollRef.current;
     // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
-    // message the user was reading exactly where it was by offsetting scrollTop by the
-    // content growth (same pre-paint timing as the stick snap, so nothing flashes).
+    // message the user was reading exactly where it was by moving scrollTop by however far
+    // the recorded prompt was displaced (same pre-paint timing as the stick snap, so
+    // nothing flashes); the content growth stands in when that prompt is gone.
     // Keyed on the prepend count — ordinary streaming growth at the bottom must not
     // shift the view. lastHeightRef is refreshed every commit, so at the prepend commit
     // it still holds the pre-prepend height. Skipped while the snap below owns the
@@ -342,11 +417,20 @@ export function MessageStream({
     // anchored like any other, since nothing snaps it.
     const prepended = older?.prependedCount ?? 0;
     if (el && prepended > lastPrependedRef.current && !follow.snaps && !returningRef.current) {
-      el.scrollTop += el.scrollHeight - lastHeightRef.current;
+      const a = anchorRef.current;
+      const node =
+        a === null
+          ? null
+          : el.querySelector<HTMLElement>(`[data-outline-anchor="${CSS.escape(a.id)}"]`);
+      el.scrollTop +=
+        a !== null && node !== null
+          ? node.getBoundingClientRect().top - a.top
+          : el.scrollHeight - lastHeightRef.current;
     }
     lastPrependedRef.current = prepended;
     if (el) lastHeightRef.current = el.scrollHeight;
     if (el && follow.snaps && !returningRef.current) stickToBottom(el, follow);
+    if (el) recordAnchor(el);
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -375,6 +459,21 @@ export function MessageStream({
     // syncJump is recreated per render; the observer only needs the stable follow object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [follow]);
+
+  // Find bar's "load and keep searching" row (components/find/find-bar.tsx): dispatches this
+  // event on the region element so the bar never needs a callback prop of its own. The guards
+  // are maybeLoadOlder's minus the scrollTop threshold (the click is the request) and minus the
+  // error check, so after a failed backfill the click retries it.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onFindLoadOlder = () => {
+      const o = olderRef.current;
+      if (o && o.hasMore && !o.loading) o.onLoad();
+    };
+    el.addEventListener(FIND_LOAD_OLDER_EVENT, onFindLoadOlder);
+    return () => el.removeEventListener(FIND_LOAD_OLDER_EVENT, onFindLoadOlder);
+  }, []);
 
   /** Back-to-bottom: glide down to the live bottom (reduced motion gets an instant jump); follow re-engages on arrival. */
   const jumpToLatest = () => {
@@ -425,6 +524,8 @@ export function MessageStream({
           if (scrollElRef) scrollElRef.current = el;
           selectionMenu.hostRef(el);
         }}
+        data-find-region={findRegion}
+        {...(older?.hasMore ? { [FIND_MORE_ATTR]: "true" } : {})}
         // A selection inside the stream answers a secondary click with the app's own menu;
         // everything else keeps the browser's (see stream-selection-menu.tsx).
         onPointerDown={selectionMenu.hostProps.onPointerDown}
@@ -453,9 +554,12 @@ export function MessageStream({
           {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
               row after a failure, and — once at least one window was backfilled — a quiet
               beginning-of-conversation marker when there is nothing older. Idle-with-more shows
-              nothing: scrolling near the top triggers the fetch by itself. */}
-          {older && items.length > 0 && (
-            <div className="flex justify-center pb-2">
+              nothing — scrolling near the top triggers the fetch by itself — but the row keeps
+              its height the moment there IS history above: a spinner that took space only
+              while spinning pushed the transcript down by its own height, and the prepend's
+              anchoring could not give that back. */}
+          {older && items.length > 0 && (older.hasMore || older.prependedCount > 0) && (
+            <div className="flex h-7 items-center justify-center">
               {older.loading ? (
                 <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
                   <Spinner size="sm" label={S.common.loading} />
@@ -465,7 +569,7 @@ export function MessageStream({
                 <button
                   type="button"
                   onClick={older.onLoad}
-                  className="py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                  className="whitespace-nowrap py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                 >
                   {S.chat.loadEarlierRetry}
                 </button>
@@ -482,7 +586,9 @@ export function MessageStream({
             // Links in replies, reasoning and compaction summaries name files of this Session's
             // Workspace: they open in its Files panel rather than a new tab (see workspace-links.tsx).
             <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
-              <MessageItems items={items} ctx={ctx} />
+              <FindRevealContext.Provider value={revealedForFind}>
+                <MessageItems items={items} ctx={ctx} />
+              </FindRevealContext.Provider>
             </WorkspaceLinksProvider>
           )}
         </div>

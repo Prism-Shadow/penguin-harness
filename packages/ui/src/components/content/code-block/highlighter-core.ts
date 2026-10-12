@@ -16,7 +16,9 @@
  * block.
  *
  * The trade is coverage — a fence in a language not listed in code-languages.ts renders
- * unhighlighted instead of highlighted, where the full bundle would have known it.
+ * unhighlighted instead of highlighted, where the full bundle would have known it. An installed plugin closes
+ * that gap for the languages it contributes: its grammar is fetched from the server and loaded
+ * into this same core, through the same one-load-per-language cache as a bundled chunk.
  *
  * Both themes of {@link CODE_THEMES} are baked into one pass: the light colours inline, the dark
  * ones as `--shiki-dark` variables that prose.css switches to under the dark mode, so switching
@@ -86,6 +88,32 @@ const BLOCK_LINES = {
 };
 
 /**
+ * A plugin's language the caller already resolved (code-languages.ts, registerRuntimeLanguages),
+ * and where its grammar is served. The app knows its own API; this engine only fetches the URL.
+ */
+export interface RuntimeGrammar {
+  id: string;
+  grammarUrl: string;
+}
+
+/**
+ * Fetches a plugin-contributed grammar, in the `{default}` shape loadGrammar expects.
+ *
+ * The grammar is DATA — a TextMate document Shiki's JS engine interprets — so nothing here
+ * evaluates anything the plugin shipped. Note the engine is the pure-JS one, not oniguruma:
+ * a grammar leaning on an oniguruma-only construct fails to compile, which loadGrammar reports
+ * as a load failure and CodeBlock renders as an unhighlighted block.
+ */
+function fetchGrammar({ id, grammarUrl }: RuntimeGrammar): Promise<{ default: LanguageInput }> {
+  return fetch(grammarUrl, { credentials: "same-origin" })
+    .then((res) => {
+      if (!res.ok) throw new Error(`grammar for ${id} answered HTTP ${res.status}`);
+      return res.json() as Promise<LanguageInput>;
+    })
+    .then((grammar) => ({ default: grammar }));
+}
+
+/**
  * Highlights `code` as `language`, returning Shiki's dual-theme HTML, or undefined when the
  * language isn't one this bundle carries. Rejects only on an unexpected failure (chunk fetch,
  * grammar error); callers fall back to unhighlighted text either way.
@@ -95,16 +123,24 @@ const BLOCK_LINES = {
  * onto a token or a line that a range happens to cover whole, so a line stays a bare
  * `<span class="line">` a caller can cut the markup at. Empty ranges are dropped; the ranges must
  * not overlap.
+ *
+ * `runtime` is a plugin's language the caller already resolved: a plugin registers on the
+ * main thread, so a worker's own registry cannot resolve it, and its grammar comes from the server
+ * rather than from this bundle.
  */
 export async function highlight(
   code: string,
   language: string,
   options: HighlightOptions = {},
+  runtime?: RuntimeGrammar,
 ): Promise<string | undefined> {
-  const id = resolveLanguage(language);
+  const id = runtime?.id ?? resolveLanguage(language);
   if (!id) return undefined;
   const core = await getCore();
-  const load = isPlainTextLanguage(id) ? undefined : LANGUAGE_LOADERS.get(id);
+  const load = isPlainTextLanguage(id)
+    ? undefined
+    : (LANGUAGE_LOADERS.get(id) ??
+      (runtime !== undefined ? () => fetchGrammar(runtime) : undefined));
   if (load) await loadGrammar(core, id, load);
   const decorations = (options.marks ?? [])
     .filter((mark) => mark.end > mark.start)

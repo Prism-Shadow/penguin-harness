@@ -82,9 +82,10 @@ export interface DeslopPolicy {
   /** Rule 1: files that may transition a transform — the chevron, the sheet, launcher and drawer motion. */
   readonly transformMotion: readonly string[];
   /**
-   * Rule 1: files that may transition a size — the one `data-layout-motion` rule in the theme
-   * foundation, which moves a sidebar's width or a disclosure's grid rows on the theme's layout
-   * tokens. A component never transitions geometry itself; it sets the attribute.
+   * Rule 1: files that may transition a size or a place — the one `data-layout-motion` rule in
+   * the theme foundation, which moves a sidebar's width, a disclosure's grid rows or a lifted dock
+   * surface's insets on the theme's layout tokens. A component never transitions geometry itself;
+   * it sets the attribute.
    */
   readonly layoutMotion?: readonly string[];
   /** Rule 3: keyframe-driven entrances that may run 300 ms or longer. */
@@ -585,9 +586,14 @@ const TRANSITION_PROPERTIES = new Set(
   ),
 );
 const TRANSFORM_PROPERTIES = new Set(["transform", "translate", "scale", "rotate"]);
-/** Rule 1: the sizes the layout-motion rule may transition, and nothing else may. */
+/**
+ * Rule 1: the geometry the layout-motion rule may transition, and nothing else may — the sizes,
+ * and the two insets a fixed box moves through when a dock surface lifts off the page column.
+ */
 const LAYOUT_PROPERTIES = new Set(
-  "width height min-width max-width flex-basis grid-template-rows grid-template-columns".split(" "),
+  "width height min-width max-width flex-basis grid-template-rows grid-template-columns top left".split(
+    " ",
+  ),
 );
 
 /** Rule 12: the steps a gap, a stack or an all-sides padding may take. */
@@ -1167,12 +1173,13 @@ const cssUppercaseCheck: Check = (analysis) =>
  * Marks a recipe may set in the mono face because they are technical on purpose (user decision,
  * 2026-09-30, when Console's chrome moved to a sans and kept mono for these alone): a
  * `.ui-activity` step's label and progress bar, the transcript's capitals and its block bar; a
- * `.ui-notice` tag drawn in `::before`, a console status line's `[ OK ]`; and the text of a
- * `.ui-chart`, a plot's axis labels. A detail slot, a frame's head or a notice's message is
+ * `.ui-notice` tag drawn in `::before`, a console status line's `[ OK ]`; the text of a
+ * `.ui-chart`, a plot's axis labels; and a `.ui-widget`'s figures (2026-10-04), a reading being
+ * data, not a label. A detail slot, a frame's head, a notice's message or a widget's labels is
  * not one of them.
  */
 const MONO_MARKS =
-  /\.ui-activity\b[^,]*\[data-slot="(?:label|progress)"\]|\.ui-notice\b[^,\s]*::before|\.ui-chart\b[^,]*\btext\b/;
+  /\.ui-activity\b[^,]*\[data-slot="(?:label|progress)"\]|\.ui-notice\b[^,\s]*::before|\.ui-chart\b[^,]*\btext\b|\.ui-widget\b[^,]*\[data-figure\]/;
 
 /** Rule 16: a hook recipe (`.ui-*`) setting a mono `font-family`, off the marks above. */
 const cssHookMonoCheck: Check = (analysis) =>

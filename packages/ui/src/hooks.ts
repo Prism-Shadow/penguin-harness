@@ -47,10 +47,14 @@
  * | `ui-notice`        | a notice: a toast, an inline notice strip                | `data-tone="info" \| "success" \| "warning" \| "danger" \| "neutral"`; children may carry `data-slot="icon" \| "title" \| "body" \| "actions"` |
  * | `ui-chart`         | a chart's root (its `<svg>`)                             | parts carry `data-part="grid" \| "axis" \| "series" \| "area" \| "bar" \| "point" \| "label"`; a series may carry `data-series="<n>"` |
  * | `ui-scrim`         | the dimmed layer behind a dialog, drawer or sheet        | —                                                     |
- * | `ui-stream`        | the body of an assistant reply, which may still be       | `data-state="streaming" \| "done"`; while streaming, the markdown blocks are followed by the stream's edge, a direct child `data-slot="caret"`, and then by anything the host appends |
- * |                    | streaming                                                |                                                       |
+ * | `ui-stream`        | text that may still be streaming in: an assistant        | `data-state="streaming" \| "done"`; while streaming, the markdown blocks (or a `<pre>` host's text node) are followed by the stream's edge, a direct child `data-slot="caret"`, and then by anything the host appends |
+ * |                    | reply, a thinking row, a compaction summary, a tool's    |                                                       |
+ * |                    | output; host: `StreamText`                               |                                                       |
  * | `ui-glyph`         | an icon drawn in every theme's style; the theme's CSS    | direct children `data-set="line" \| "octicons" \| "pixel"`, one drawing each; the line set may hold a `data-part="duo"` body under its stroke; a decorative glyph may carry `data-tint="<hue>"` |
  * |                    | shows its own; hosts: `GlyphIcon`, `GlyphMark`           |                                                       |
+ * | `ui-widget`        | a glanceable reading set apart from the prose: a         | `data-widget="weather" \| "clock" \| "countdown" \| "metrics"`; direct children `data-slot="head" \| "body" \| "foot"`; inside, `data-figure` marks a big numeral, `data-tile` a tile, `data-art` an illustration's svg; `data-offscreen` while scrolled away |
+ * |                    | weather, clock, countdown or metrics tile in a reply;    |                                                       |
+ * |                    | host: `WidgetSurface`                                    |                                                       |
  *
  * `ui-shell` is the one place a theme may paint a field of colour: Frost paints a soft pastel
  * field behind the window (a sky wash from the top corner, a lilac one from the bottom) and
@@ -168,13 +172,16 @@
  * its dialogs are opaque. The hook stays the door a theme would take to treat the backdrop. It
  * moves only with the host's fade, so reduced motion needs nothing from it.
  *
- * `ui-stream` (2026-09-30) is how a theme shows a reply arriving. The host is the reply's body
- * (`AssistantText`): it stays `data-state="streaming"` until its paced reveal
- * (`--ui-stream-reveal` / `--ui-stream-rate`, tokens.ts) has caught up with the stream, and until
- * then renders the stream's edge — the caret slot, `StreamingCaret`, itself a `ui-live` caret —
- * as a direct child right after the markdown blocks; whatever else it holds (a stop reason, a
- * files card) comes after the caret, and the host holds those back until `done`. Primer changes
- * nothing: the host's own pulsing caret glyph stays. Frost hides the caret and lets the trailing
+ * `ui-stream` (2026-09-30) is how a theme shows text arriving. The host is `StreamText`, the one
+ * body every streaming text renders through (2026-10-03): the assistant reply (`AssistantText`
+ * wraps it), a thinking row's text, a compaction's summary and a tool call's output (its plain
+ * format, a `<pre>` whose height cap waits until it is done), so the four reveal alike. It stays
+ * `data-state="streaming"` until its paced reveal (`--ui-stream-reveal` / `--ui-stream-rate`,
+ * tokens.ts) has caught up with the stream, and until then renders the stream's edge — the caret
+ * slot, `StreamingCaret`, itself a `ui-live` caret — as a direct child right after the markdown
+ * blocks or the text; whatever else it holds (a stop reason, a files card) comes after the
+ * caret, and the host holds those back until `done`. Primer changes nothing: the host's own
+ * pulsing caret glyph stays. Frost hides the caret and lets the trailing
  * lines surface through a soft veil — a gradient from nothing to the page's colour over the last
  * three lines, with a faint glow in the accent's wash behind them — drawn only while the caret is
  * the host's last child, so the veil covers the text and never what the host appends after it;
@@ -192,9 +199,20 @@
  * `octicons` svg (GitHub's 16-grid filled drawing, scaled to the box) and the `pixel` svg (a
  * 16x16 drawing on crisp edges, laid out one cell to a CSS pixel from a 13px box up, so it spills
  * a little past a box under 16px). The foundation shows the line set, hides the other two and sets
- * the duo body's opacity from `--ui-icon-duo-opacity`; Primer shows the Octicons, Console the
- * pixel drawings, and Frost keeps the line drawings with their duotone bodies. A host's
- * transform (a chevron's turn, an activity mark's motion) moves all three together.
+ * the duo body's opacity from `--ui-icon-duo-opacity`; Primer keeps the line drawings as they are,
+ * Frost keeps them with their duotone bodies, and Console shows the pixel drawings (no theme
+ * shows the Octicons today; the set still ships). A host's transform (a chevron's turn, an
+ * activity mark's motion) moves all three together.
+ *
+ * `ui-widget` (2026-10-04) is the surface of the A2UI widgets a reply may carry — a weather card,
+ * a clock, a countdown, a dashboard of readings: one rounded box with a head (the name, and when
+ * the data was read), a body and an optional foot (the source). Inside it the host marks what a
+ * recipe may restyle: every big numeral (`data-figure`), every tile (`data-tile`), every weather
+ * illustration's svg (`data-art`). Frost sets it as a soft filled tile with white tiles inside
+ * and its numerals at the regular weight, the way it sets a title large; Console as a hairline
+ * box with a ruled head, hairline tiles, numerals in the mono face (a reading is data) and the
+ * illustration's lines square-capped on crisp edges; Primer keeps the host's card. The
+ * illustration's loops run on `--ui-live-timing`, so they step in Console and glide elsewhere.
  */
 export const HOOKS = [
   "ui-glass",
@@ -213,6 +231,7 @@ export const HOOKS = [
   "ui-scrim",
   "ui-stream",
   "ui-glyph",
+  "ui-widget",
 ] as const;
 
 export type HookName = (typeof HOOKS)[number];

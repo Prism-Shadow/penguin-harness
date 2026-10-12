@@ -113,7 +113,7 @@ export function NewChannelDialog({
           label={S.company.channels.nameField}
           size="sm"
           value={name}
-          hint={S.company.channels.nameHint}
+          info={S.company.channels.nameHint}
           autoFocus
           disabled={busy}
           onChange={(e) => setName(e.target.value)}
@@ -139,7 +139,7 @@ export function NewChannelDialog({
           size="sm"
           rows={2}
           value={purpose}
-          hint={S.company.channels.purposeHint}
+          info={S.company.channels.purposeHint}
           disabled={busy}
           onChange={(e) => setPurpose(e.target.value)}
         />
@@ -157,7 +157,7 @@ export function ChannelTextDialog({
   open,
   title,
   label,
-  hint,
+  info,
   initial,
   multiline = false,
   required = false,
@@ -167,7 +167,8 @@ export function ChannelTextDialog({
   open: boolean;
   title: string;
   label: string;
-  hint?: string;
+  /** What the field means, behind the "?" beside its label. */
+  info?: string;
   initial: string;
   multiline?: boolean;
   required?: boolean;
@@ -228,7 +229,7 @@ export function ChannelTextDialog({
             size="sm"
             rows={3}
             value={value}
-            {...(hint !== undefined ? { hint } : {})}
+            {...(info !== undefined ? { info } : {})}
             autoFocus
             disabled={busy}
             onChange={(e) => setValue(e.target.value)}
@@ -240,7 +241,7 @@ export function ChannelTextDialog({
             required={required}
             value={value}
             error={fieldError}
-            {...(hint !== undefined ? { hint } : {})}
+            {...(info !== undefined ? { info } : {})}
             autoFocus
             disabled={busy}
             onChange={(e) => {

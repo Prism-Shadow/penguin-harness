@@ -99,14 +99,14 @@ describe("the fixtures", () => {
     );
   });
 
-  it("carry the whole built-in catalog, settled: the app's sync check finds nothing to add or update", () => {
+  it("carry the whole built-in catalog: the app's catalog check finds nothing to add", () => {
     const f = buildFixtures("en", NOW);
     for (const m of f.models.models) {
       if (m.provider === "custom") continue;
       expect(catalogEntryFor(m.provider, m.modelId), `${m.provider}/${m.modelId}`).toBeDefined();
     }
     expect(f.models.models.length).toBeGreaterThan(100);
-    expect(catalogDelta(f.models.models)).toEqual({ added: 0, updated: 0, refs: [] });
+    expect(catalogDelta(f.models.models)).toEqual({ added: 0, refs: [] });
     expect(f.models.defaultModel).toEqual({ provider: "deepseek", modelId: "deepseek-flash" });
     expect(f.models.models.filter((m) => m.isDefault).map((m) => m.modelId)).toEqual([
       "deepseek-flash",

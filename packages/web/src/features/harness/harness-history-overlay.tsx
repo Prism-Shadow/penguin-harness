@@ -343,14 +343,14 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
                             <button
                               type="button"
                               onClick={() => void startRollback(entry.id)}
-                              className="rounded-md bg-red-600 px-3 py-1 text-white hover:bg-red-700"
+                              className="whitespace-nowrap rounded-md bg-red-600 px-3 py-1 text-white hover:bg-red-700"
                             >
                               {t.rollbackYes}
                             </button>
                             <button
                               type="button"
                               onClick={() => setRollback({ state: "idle" })}
-                              className="rounded-md border border-gray-300 px-3 py-1 dark:border-gray-700"
+                              className="whitespace-nowrap rounded-md border border-gray-300 px-3 py-1 dark:border-gray-700"
                             >
                               {S.common.cancel}
                             </button>
@@ -363,7 +363,7 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
                           <button
                             type="button"
                             onClick={() => setRollback({ state: "armed", id: entry.id })}
-                            className="rounded-md border border-gray-300 px-3 py-1 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                            className="whitespace-nowrap rounded-md border border-gray-300 px-3 py-1 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
                           >
                             {t.rollback}
                           </button>

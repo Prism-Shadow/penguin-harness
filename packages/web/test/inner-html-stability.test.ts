@@ -43,15 +43,18 @@ describe("dangerouslySetInnerHTML", () => {
     expect(inline).toEqual([]);
   });
 
-  it("is used in exactly the three places that own untrusted markup", () => {
-    // A fourth site is not forbidden, but it is worth noticing: each one is a place sanitisation
+  it("is used in exactly the four places that own untrusted markup", () => {
+    // Another site is not forbidden, but it is worth noticing: each one is a place sanitisation
     // has to be argued, and each one carries the identity rule above. The code surface and the
-    // diff viewer both inject the highlighter's markup, in which the code itself arrives escaped.
+    // diff viewer both inject the highlighter's markup, in which the code itself arrives escaped;
+    // the Mermaid block injects the SVG Mermaid draws in its strict security level, which runs
+    // its output through DOMPurify and refuses click handlers and links.
     const users = sources()
       .filter(([, src]) => src.includes("dangerouslySetInnerHTML"))
       .map(([path]) => path)
       .sort();
     expect(users).toEqual([
+      "packages/ui/src/components/content/a2ui/mermaid-block.tsx",
       "packages/ui/src/components/content/code-block/code-block.tsx",
       "packages/ui/src/components/content/diff-viewer/diff-viewer.tsx",
       "packages/web/src/features/skills/skill-icon-view.tsx",

@@ -15,8 +15,10 @@
  * `ui-notice` and `ui-chart` (notices and charts that differ per theme; the same day), the
  * fourteenth, `ui-scrim` (the dimmed backdrop behind a dialog; 2026-09-30),
  * the fifteenth, `ui-stream` (an assistant reply as it arrives: Frost's soft veil, Console's
- * block cursor; the same day), and the sixteenth, `ui-glyph` (an icon drawn in every theme's
- * style, of which the theme's CSS shows its own). This suite holds the source to it:
+ * block cursor; the same day), the sixteenth, `ui-glyph` (an icon drawn in every theme's
+ * style, of which the theme's CSS shows its own), and the seventeenth, `ui-widget` (a reply's
+ * glanceable reading — weather, a clock, a countdown, metrics; 2026-10-04). This suite holds the
+ * source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
@@ -36,9 +38,12 @@
  *   (`thinking` / `tool` / `event`), its state (`running` / `done` / `error`) and its slots
  *   (`label`, `detail`, `progress`), `.ui-notice` its tone (the five) and its slots (`icon`,
  *   `title`, `body`, `actions`), `.ui-stream` its state (`streaming` / `done`) and its one slot
- *   (`caret`), a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
+ *   (`caret`), `.ui-widget` its kind (the four widgets) and its slots (`head`, `body`, `foot`),
+ *   a chart's parts are the seven the recipes style and a glyph's the one (`duo`),
  *   wherever a `data-part` is written, and a glyph's sets are the three (`line`, `octicons`,
- *   `pixel`), wherever a `data-set` is written.
+ *   `pixel`), wherever a `data-set` is written; and a fold's phase, which the foundation's layout
+ *   motion turns into a track, is one of the three it knows (`open`, `closing`, `settled`)
+ *   wherever a `data-fold` is written.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -66,6 +71,7 @@ const APPENDIX_A = [
   "ui-scrim",
   "ui-stream",
   "ui-glyph",
+  "ui-widget",
 ];
 
 /**
@@ -80,8 +86,9 @@ const APPENDIX_A = [
  * transcript's cards, the code block, the page's cards and a table that is its own box; the shell
  * for the app window; a decorative icon for the rows and headers whose label already says what the
  * icon says (a nav row's glyph in the sidebar or a rail, a group header's, a menu row's glyph, a
- * tab, an empty state) — a session row is not a host, its avatar and marks carry information; a
- * tree for a file tree and the rows under an activity card's head; a field for a settings row;
+ * tab, an empty state, a dialog fact's label) — a session row is not a host, its avatar and marks
+ * carry information; a tree for a file tree and the rows under an activity card's head; a field
+ * for a settings row;
  * activity for the transcript's work in progress and the harness's events — the activity card's
  * head, its rows (a thinking step, a tool call, a compaction's section, an MCP server) and the
  * one-line note.
@@ -136,6 +143,11 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "GroupHeader",
     "Tabs",
     "EmptyState",
+    // A Machine dialog fact's label (2026-10-10): its glyph says what the label's words say.
+    "FactLabel",
+    // A Machine dialog verb's line while the verb waits (2026-10-10): its mark says the line is
+    // a reason, which the words say.
+    "VerbItem",
   ],
   "ui-tree": ["FileTree", "ActivityGroup"],
   "ui-field": ["Field", "PrefRow", "SettingRow"],
@@ -147,16 +159,19 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-notice": ["Toaster", "NoticeStrip"],
   // The Trace timeline draws its lanes and spans as HTML (`grid` on a lane track, `bar` on a
   // span with a 1-based `data-series`), so the chart recipes carry HTML spellings beside the
-  // SVG ones.
-  "ui-chart": ["ChartFrame", "TokenDonut", "Sparkline", "Ring", "TimelineChart"],
+  // SVG ones. A weather widget's next hours are a line chart of their own (2026-10-04).
+  "ui-chart": ["ChartFrame", "TokenDonut", "Sparkline", "Ring", "TimelineChart", "WeatherHourly"],
   // The dimmed backdrop (2026-09-30): a sibling behind a sheet or drawer, or the full-viewport
   // overlay a modal, the command palette, the harness overlay and the lightbox sit in.
   "ui-scrim": ["Modal", "Sheet", "Drawer", "CommandPalette", "HarnessHistoryOverlay", "Lightbox"],
-  // An assistant reply as it arrives (2026-09-30): the reply body the transcript renders and the
-  // gallery frames on its own.
-  "ui-stream": ["AssistantText"],
+  // Text as it arrives (2026-09-30): the one streaming body (2026-10-03) — the reply through
+  // AssistantText, a thinking row's text, a compaction's summary and a tool call's output.
+  "ui-stream": ["StreamText"],
   // An icon in every theme's style: the two icon renderers, a registry glyph's and a mark's.
   "ui-glyph": ["GlyphIcon", "GlyphMark"],
+  // A reply's widgets (2026-10-04): the one surface the weather, clock, countdown and metrics
+  // blocks render on.
+  "ui-widget": ["WidgetSurface"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
@@ -174,6 +189,8 @@ const NOTICE_TONES = new Set(["info", "success", "warning", "danger", "neutral"]
 const NOTICE_SLOTS = new Set(["icon", "title", "body", "actions"]);
 const STREAM_STATES = new Set(["streaming", "done"]);
 const STREAM_SLOTS = new Set(["caret"]);
+const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics"]);
+const WIDGET_SLOTS = new Set(["head", "body", "foot"]);
 /** The glass anatomies a recipe dresses apart from a floating layer: a plugin or skill tile. */
 const GLASS_KINDS = new Set(["tile"]);
 /** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
@@ -181,6 +198,8 @@ const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "
 /** A glyph's one part (the duotone body under its line drawing), and its three sets. */
 const GLYPH_PARTS = new Set(["duo"]);
 const GLYPH_SETS = new Set(["line", "octicons", "pixel"]);
+/** A fold's phases, the three the foundation's `[data-layout-motion][data-fold]` rules read. */
+const FOLD_PHASES = new Set(["open", "closing", "settled"]);
 /** The icon renderers: a `decor` prop on one of these is the decorative-icon hook applied. */
 const ICON_RENDERERS = new Set(["GlyphIcon"]);
 /** A tree row's depth: the eight levels the recipes spell out, and the roots. */
@@ -234,7 +253,7 @@ function childSlots(element: JsxElementInfo): { slot: string; child: JsxElementI
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the sixteen of Appendix A, each with its hosts", () => {
+  it("are the seventeen of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });
@@ -325,6 +344,19 @@ describe("style hooks", () => {
             }
           }
         }
+        if (names.has("ui-widget")) {
+          const widget = element.attributes.get("data-widget");
+          if (typeof widget === "string" && !WIDGET_KINDS.has(widget)) {
+            problems.push(
+              `${at} .ui-widget data-widget="${widget}" is not weather|clock|countdown|metrics`,
+            );
+          }
+          for (const { slot } of childSlots(element)) {
+            if (!WIDGET_SLOTS.has(slot)) {
+              problems.push(`${at} .ui-widget slot "${slot}" is not head, body or foot`);
+            }
+          }
+        }
         if (names.has("ui-shell")) {
           for (const { slot } of childSlots(element)) {
             if (!SHELL_SLOTS.has(slot)) {
@@ -408,6 +440,10 @@ describe("style hooks", () => {
         const set = element.attributes.get("data-set");
         if (typeof set === "string" && !GLYPH_SETS.has(set)) {
           problems.push(`${at} data-set="${set}" is not line|octicons|pixel`);
+        }
+        const fold = element.attributes.get("data-fold");
+        if (typeof fold === "string" && !FOLD_PHASES.has(fold)) {
+          problems.push(`${at} data-fold="${fold}" is not open|closing|settled`);
         }
         // Tree rows are written by the host, wherever it renders them: every literal depth and
         // last mark in the package must be what the recipes select on.
@@ -534,6 +570,28 @@ describe("the hook checks, on known shapes", () => {
     expect(rows[1]!.attributes.get("data-branch")).toBe(true);
     const field = analysis.elements.find((e) => e.classes.some((t) => t.utility === "ui-field"))!;
     expect(childSlots(field).map((s) => s.slot)).toEqual(["label", "control"]);
+  });
+
+  it("read a fold's phase as the foundation does: a literal is judged, an expression is not", () => {
+    const analysis = analyzeFile(
+      file(
+        "e.tsx",
+        [
+          "export function Folds({ phase }: { phase: string }) {",
+          "  return (",
+          "    <>",
+          '      <div data-layout-motion data-fold="closing" />',
+          '      <div data-layout-motion data-fold="shut" />',
+          "      <div data-layout-motion data-fold={phase} />",
+          "    </>",
+          "  );",
+          "}",
+        ].join("\n"),
+      ),
+    );
+    const phases = analysis.elements.map((e) => e.attributes.get("data-fold"));
+    expect(phases).toEqual(["closing", "shut", null]);
+    expect(phases.filter((p) => typeof p === "string" && !FOLD_PHASES.has(p))).toEqual(["shut"]);
   });
 
   it("read a stream's state and its caret as the recipes do", () => {

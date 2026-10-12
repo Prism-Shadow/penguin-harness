@@ -1,18 +1,30 @@
 /**
- * 流式输出: an assistant reply as it streams in, under the current theme's reveal. A scripted
- * Markdown answer (the streaming demo Session's, src/app/mock/transcripts.ts) arrives in bursty
- * chunks (src/app/mock/stream-script.ts) and goes to the package's AssistantText — the body the
- * app renders every reply through — which paces the reveal by the theme's `--ui-stream-reveal`
- * and `--ui-stream-rate`: Primer shows each chunk at once, Frost fades it in by word under a
- * glowing veil, Console types it out behind a block caret. It plays once on load and again on
- * Replay, always on the same seed, so every theme replays the same chunks at the same gaps and
- * the reveals compare. The caption names the mode read from this frame root.
+ * 流式输出: text as it streams in, under the current theme's reveal, on two of the surfaces that
+ * stream it. A scripted Markdown answer (the streaming demo Session's,
+ * src/app/mock/transcripts.ts) arrives in bursty chunks (src/app/mock/stream-script.ts) and goes
+ * to the package's AssistantText — the body the app renders every reply through — and, the same
+ * chunks at the same moments, to a `StreamText` in its plain format wearing a tool call's output
+ * block, as a command's output streams. Both are the one `ui-stream` host, which paces the reveal
+ * by the theme's `--ui-stream-reveal` and `--ui-stream-rate`: Primer shows each chunk at once,
+ * Frost fades it in by word under a glowing veil, Console types it out behind a block caret. It
+ * plays once on load and again on Replay, always on the same seed, so every theme replays the
+ * same chunks at the same gaps and the reveals compare. The caption under both names the mode
+ * read from this frame root.
  *
- * The box is the finished reply's height from the first chunk on (an invisible copy of it
- * shares the live reply's grid cell), so the frame does not grow line by line as text arrives.
+ * Each box is its finished text's height from the first chunk on (an invisible copy of it
+ * shares the live text's grid cell), so the frame does not grow line by line as text arrives.
+ * The output's copy is uncapped: the live output takes the output block's height cap only once
+ * it is done, as it does in the transcript.
  */
 import { useEffect, useMemo, useState } from "react";
-import { AssistantText, STREAM_REVEALS, usePrefersReducedMotion } from "@prismshadow/penguin-ui";
+import {
+  AssistantText,
+  DISCLOSURE_OUTPUT_CAP_CLASS,
+  DISCLOSURE_OUTPUT_CLASS,
+  STREAM_REVEALS,
+  StreamText,
+  usePrefersReducedMotion,
+} from "@prismshadow/penguin-ui";
 import type { StreamReveal } from "@prismshadow/penguin-ui";
 import { streamScript } from "../../app/mock/stream-script";
 import { streamingAnswer } from "../../app/mock/transcripts";
@@ -135,6 +147,28 @@ export function StreamingBoard() {
           <div className="lib-stream-live">
             {/* A replay mounts a fresh reply, so no pacing state carries over. */}
             <AssistantText key={run} text={stream.text} streaming={stream.streaming} />
+          </div>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.output} aside={stream.streaming ? t.receiving : t.received}>
+        <div className="lib-stream lib-stream-output">
+          <div className="lib-stream-sizer" aria-hidden inert>
+            <StreamText
+              format="plain"
+              className={DISCLOSURE_OUTPUT_CLASS}
+              text={answer}
+              streaming={false}
+            />
+          </div>
+          <div className="lib-stream-live">
+            <StreamText
+              key={run}
+              format="plain"
+              className={DISCLOSURE_OUTPUT_CLASS}
+              settledClassName={DISCLOSURE_OUTPUT_CAP_CLASS}
+              text={stream.text}
+              streaming={stream.streaming}
+            />
           </div>
         </div>
         {tokens === null ? (

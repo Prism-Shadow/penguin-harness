@@ -11,6 +11,12 @@
  * `1fr` to `0fr`, and it carries `data-layout-motion`, so the theme's layout motion moves it (and
  * nothing does under reduced motion). A component never transitions a size itself.
  *
+ * The clip is on the grid's own box, never on the row inside it. Between `0fr` and `1fr` a
+ * browser gives the grid f of the content's height but the row only f² of it, so a row that
+ * clipped its content would vanish ahead of the space it leaves and show a blank band under
+ * itself; clipped at the grid, what shows is always the grid. It is `overflow: clip`, not
+ * `hidden`, since a hidden box would become a scroll container for anything sticky inside it.
+ *
  * Open or folded is the caller's when it passes `open` (a page that remembers it), the section's
  * own otherwise, starting from `defaultOpen`.
  */
@@ -79,9 +85,9 @@ export function CollapsibleSection({
       <div
         data-slot="body"
         data-layout-motion
-        className={`grid ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+        className={`grid overflow-clip ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
       >
-        <div id={bodyId} className="min-h-0 overflow-hidden" inert={!open}>
+        <div id={bodyId} className="min-h-0" inert={!open}>
           <div className="border-t border-line-muted">{children}</div>
         </div>
       </div>

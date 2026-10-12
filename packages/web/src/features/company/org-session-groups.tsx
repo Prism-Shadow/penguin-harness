@@ -13,6 +13,10 @@
  * desks, newest first, until the reader removes one with its ✕ or all of them with the header's
  * "Close all"; the group shows only while it lists something (temp-session.ts).
  *
+ * An employee whose Agent was deleted keeps its row, dimmed and inert, its tooltip saying why:
+ * the employee is still in the chart until a person makes it leave, and there is no desk to
+ * open — a click must never land in somebody else's conversation instead.
+ *
  * A row that names a desk session carries the development list's row menu (right-click, and
  * the hover ellipsis), pared down to the two actions an organization leaves to the reader:
  * copy the Session id, and bind the desk to a messaging bot. A desk's title and its lifecycle are
@@ -31,7 +35,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ActivityIcon,
-  AgentAvatar,
   Button,
   CloseIcon,
   Dropdown,
@@ -58,6 +61,7 @@ import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { writeClipboard } from "../../lib/clipboard";
 import { Icon } from "../../components/ui/group-list";
+import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,
@@ -67,7 +71,8 @@ import type { SessionRowAction, SessionRowState } from "../../components/ui/sess
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
 import { orgKey } from "./company-nav";
-import { deskRows, orgRowActivity, ticketSessionTitles } from "./org-sessions";
+import { INVALID_ICON } from "./shared";
+import { deskRowLabel, deskRows, orgRowActivity, ticketSessionTitles } from "./org-sessions";
 import type { OrgDeskRow } from "./org-sessions";
 import {
   dismissAllTempSessions,
@@ -82,9 +87,9 @@ import type { TempSessionRow } from "./temp-session";
  * so the row's menu affordances sit inside the same lit box the reader is pointing at, and
  * `group` reaches them.
  */
-const rowSurface = (active: boolean) =>
+const rowSurface = (active: boolean, inert = false) =>
   `group flex select-none items-center rounded-md pr-1 transition-colors duration-150 ${
-    active ? NAV_FILL.selected : NAV_FILL.hover
+    active ? NAV_FILL.selected : inert ? "" : NAV_FILL.hover
   }`;
 
 /** The row's own button, at the channel rows' density so the whole sidebar reads as one list. */
@@ -165,8 +170,12 @@ function DeskRow({
   const messagingChannel = row.messagingChannel;
   const activity = orgRowActivity(row.status);
   const deskName = S.company.sessionList.deskOf(row.name);
-  const label =
-    activity === "running" ? `${deskName} · ${S.company.sessionList.running}` : deskName;
+  const missing = row.agentMissing === true;
+  const label = missing
+    ? `${deskName} · ${S.company.sessionList.agentMissing}`
+    : activity === "running"
+      ? `${deskName} · ${S.company.sessionList.running}`
+      : deskName;
 
   /** Run one action on this desk's Session, closing the menu first if it was open. */
   const run = (action: SessionRowAction) => {
@@ -192,6 +201,7 @@ function DeskRow({
     run(action);
   };
 
+  const shown = deskRowLabel(row);
   return (
     <li>
       <div
@@ -199,29 +209,41 @@ function DeskRow({
         // Right-click / Shift+F10 / press-and-hold open the row's menu; the native menu is
         // suppressed inside that handler only, so the rest of the app keeps the browser's own.
         {...(sessionId === null ? {} : ctx.rowProps)}
-        className={rowSurface(active)}
+        className={rowSurface(active, missing)}
       >
         <button
           type="button"
           aria-current={active ? "true" : undefined}
           disabled={opening}
+          // Inert rather than disabled: the row stays in the tab order, and its name says why.
+          {...(missing ? { "aria-disabled": true } : {})}
           data-tooltip={row.jobTitle !== "" ? `${row.name} · ${row.jobTitle}` : row.name}
           aria-label={label}
           // A press-and-hold that opened the menu must not also open the desk: touch screens
           // replay the held press as a click once the finger lifts.
           onClick={() => {
             if (ctx.consumeLongPressClick()) return;
+            if (missing) return;
             onOpen();
           }}
-          className={rowButton(active)}
+          className={`${rowButton(active)}${missing ? " cursor-default opacity-60" : ""}`}
         >
-          <AgentAvatar
+          <EmployeeAvatar
             id={row.agentId}
             name={row.name}
-            size={ICON_SIZE.rowLead}
-            className="shrink-0 rounded"
+            size={FACE_PX.row}
+            className="shrink-0 rounded-md"
           />
-          <Truncated text={row.name} className="min-w-0 flex-1" />
+          {/* Who, then the note that tells them apart (deskRowLabel); the note yields first
+              when the row runs out of room. */}
+          <span className="flex min-w-0 flex-1 items-baseline gap-1">
+            <Truncated text={shown.primary} className="min-w-0" />
+            {shown.note !== "" && (
+              <span className="max-w-[45%] shrink-[9999] truncate text-xs font-normal text-gray-400 dark:text-gray-500">
+                ({shown.note})
+              </span>
+            )}
+          </span>
           {/* Enabled-messaging indicator, the development row's own mark: one glyph for every
               channel, the channel named in the tooltip and the screen-reader text. */}
           {messagingChannel !== undefined && (
@@ -243,6 +265,17 @@ function DeskRow({
             none that is both safe and one click, so it holds the ellipsis alone, which is also
             the pointer's way into a menu right-click leaves undiscoverable. */}
         <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+          {/* A deleted Agent's row has no menu: the slot carries the mark saying why it does
+              not open — a wordless glyph, so its tooltip shows wherever the name fits. */}
+          {missing && (
+            <span
+              data-tooltip={S.company.sessionList.agentMissing}
+              className={`shrink-0 ${toneInk.danger}`}
+            >
+              <Icon d={INVALID_ICON} size={ICON_SIZE.rowMark} />
+              <span className="sr-only">{S.company.sessionList.agentMissing}</span>
+            </span>
+          )}
           {sessionId !== null && (
             <SessionRowHoverActions
               actions={[]}
@@ -344,7 +377,7 @@ function TempRow({
           onClick={onOpen}
           className={rowButton(row.active)}
         >
-          <AgentAvatar
+          <EmployeeAvatar
             id={row.agentId}
             name={row.name}
             size={ICON_SIZE.rowLead}
@@ -397,7 +430,7 @@ export function TempSessionRailRows({ projectId, orgId }: { projectId: string; o
             onClick={() => openSession(row.sessionId, row.agentId)}
             className={railItemClass()}
           >
-            <AgentAvatar id={row.agentId} name={row.name} size={18} className="rounded" />
+            <EmployeeAvatar id={row.agentId} name={row.name} size={18} className="rounded" />
             {row.activity !== null && (
               <span
                 aria-hidden
@@ -484,7 +517,7 @@ export function OrgSessionGroups({
             <button
               type="button"
               onClick={() => dismissAllTempSessions(user?.userId ?? null, projectId, orgId)}
-              className="shrink-0 rounded px-1.5 py-1 text-xs font-medium text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+              className="shrink-0 whitespace-nowrap rounded px-1.5 py-1 text-xs font-medium text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
             >
               {S.company.sessionList.closeAllTemporary}
             </button>
@@ -534,10 +567,13 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
   return (
     <>
       {desks.map((d) => {
+        const missing = d.agentMissing === true;
         const running = orgRowActivity(d.status) !== null;
-        const name = running
-          ? `${S.company.sessionList.deskOf(d.name)} · ${S.company.sessionList.running}`
-          : S.company.sessionList.deskOf(d.name);
+        const name = missing
+          ? `${S.company.sessionList.deskOf(d.name)} · ${S.company.sessionList.agentMissing}`
+          : running
+            ? `${S.company.sessionList.deskOf(d.name)} · ${S.company.sessionList.running}`
+            : S.company.sessionList.deskOf(d.name);
         return (
           <button
             key={d.agentId}
@@ -545,10 +581,18 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
             data-tooltip={name}
             aria-label={name}
             disabled={opening === d.agentId}
-            onClick={() => void openDesk(d.agentId, d.sessionId)}
-            className={`${railItemClass()} disabled:opacity-60`}
+            {...(missing ? { "aria-disabled": true } : {})}
+            onClick={() => {
+              if (!missing) void openDesk(d.agentId, d.sessionId);
+            }}
+            className={`${railItemClass()} disabled:opacity-60${missing ? " opacity-60" : ""}`}
           >
-            <AgentAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
+            <EmployeeAvatar
+              id={d.agentId}
+              name={d.name}
+              size={FACE_PX.rail}
+              className="rounded-md"
+            />
             {running && (
               <span
                 aria-hidden

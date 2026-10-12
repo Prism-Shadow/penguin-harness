@@ -55,6 +55,7 @@ const META: SessionMetaPayload = {
   system_prompt: "sp",
   agent_state: "/tmp/state",
   workspace: "/tmp/w",
+  source: "user",
 };
 
 /** Image-fold wiring every Session takes; these tests send no images, so it is never exercised. */

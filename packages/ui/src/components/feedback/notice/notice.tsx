@@ -50,10 +50,15 @@ export interface NoticeDismiss {
   disabled?: boolean;
 }
 
-/** Layout per variant; the tone, the line colour and the hook are the strip's. */
+/**
+ * Layout per variant; the tone, the line colour and the hook are the strip's. Every variant
+ * wraps: the action buttons keep their labels whole, so where the body and the actions do not
+ * fit one line the actions take a row of their own rather than squeezing the body.
+ */
 const VARIANT: Readonly<Record<NoticeVariant, string>> = {
   strip: "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b px-3 py-1.5 text-xs",
-  callout: "flex items-center justify-between gap-4 rounded-lg border px-4 py-3 text-xs",
+  callout:
+    "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border px-4 py-3 text-xs",
   inline:
     "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs",
 };
@@ -112,7 +117,7 @@ export function Notice({
         </div>
       </div>
       {hasActions && (
-        <div data-slot="actions" className="flex shrink-0 items-center gap-2">
+        <div data-slot="actions" className="flex flex-wrap items-center gap-2">
           {labelledDismiss && (
             <Button
               size="sm"

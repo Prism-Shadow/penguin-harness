@@ -196,7 +196,7 @@ export async function exchangeCode(input: {
   return { ok: true, key };
 }
 
-/** Writes a minted key onto every model of one provider group; returns how many it touched. */
+/** Writes a minted key as one provider group's key; returns how many of its rows use it. */
 export type ApplyGroupKey = (
   projectId: string,
   provider: string,

@@ -1,13 +1,14 @@
 /**
  * A model's vision flag (image input supported) through PUT/GET.
  *
- * - An explicit false is persisted and read back; omission means supported (no field) for a
- *   model outside the catalog, and a catalog model without an annotation takes the catalog's.
+ * - An explicit false is persisted and read back; omission means supported (no field), for a
+ *   catalog model too — the catalog is not consulted (a new Project writes its `false` down).
  * - The visionModel pointer round-trips, survives omission, and goes once its target is
  *   invalid; one naming a model that is absent or has no image support is a 400.
  * - A non-boolean vision is a 400.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { catalogEntryFor } from "@prismshadow/penguin-core";
 import type { ModelsResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -64,7 +65,10 @@ describe("models vision annotation", () => {
     expect("vision" in body2.models[0]!).toBe(false);
   });
 
-  it("a catalog model without a TOML annotation falls back to the built-in catalog's vision annotation", async () => {
+  it("a catalog model without a TOML annotation reads as supported, whatever the catalog says: the file is the only truth", async () => {
+    // The catalog marks deepseek-v4-pro as taking no images; a new Project writes that down as
+    // `vision = false`, and once the file holds no annotation, nothing restores it.
+    expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.supportsVision).toBe(false);
     const put = await owner.put(`/api/projects/${projectId}/models`, {
       models: [
         { provider: "deepseek", modelId: "deepseek-v4-pro" },
@@ -72,13 +76,7 @@ describe("models vision annotation", () => {
       ],
     });
     const body = (await put.json()) as ModelsResponse;
-    expect(
-      body.models.find((m) => m.provider === "deepseek" && m.modelId === "deepseek-v4-pro")!.vision,
-    ).toBe(false);
-    expect(
-      body.models.find((m) => m.provider === "google" && m.modelId === "gemini-3-flash-preview")!
-        .vision,
-    ).toBe(true);
+    for (const row of body.models) expect("vision" in row, row.modelId).toBe(false);
   });
 
   it("visionModel pointer: round-trips, omission preserves it, removed once the target is invalid", async () => {

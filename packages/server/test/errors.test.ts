@@ -477,6 +477,7 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         system_prompt: "",
         agent_state: agentState,
         workspace: "/tmp/w",
+        source: "user",
       }),
       sessionId,
     );

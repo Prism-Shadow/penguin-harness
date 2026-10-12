@@ -6,10 +6,20 @@
  *   normalized to their list price with the promotion stored beside it, and a delivery with a
  *   malformed model (no output length, a negative or non-USD price) is refused.
  * - Given a Project whose Penguin Go group has no key, the owner's authorization writes the
- *   delivered key and catalog into it (a member is refused, and a sync before any key asks for
- *   reauthorization); nothing of the account or the key itself is ever answered back.
- * - A later sync applies the platform's repricing, a promotion-only change (web.db alone), and
- *   a newly listed model, reporting what it added and updated.
+ *   delivered key once, as the group's key every model of the group uses, and adds the
+ *   delivered models the group lacks with their list price, routing and promotion (a member is
+ *   refused, and a sync before any key asks for reauthorization); a model the group already
+ *   holds keeps its own price and promotion; nothing of the account or the key itself is ever
+ *   answered back. In a group where no model uses the key yet (every one keyed on its own, and
+ *   nothing new delivered), the key still lands and the flow completes with a count of 0.
+ * - A later sync adds a newly listed model the same way, and never rewrites a model the group
+ *   holds: a repricing or a new promotion of one changes nothing, and nothing is written.
+ * - An added model stores its protocol and endpoint per field against the group's table as
+ *   the file holds it (never the catalog's): a field the table holds is followed — a group
+ *   pointed at a proxy takes the new model along, with its key — and one the table lacks is
+ *   written on the model in full.
+ * - Disconnect (clearing the group key) leaves every model in place, none using the key, and a
+ *   sync asks for authorization again.
  * - The platform's start backoff reaches the caller as a 429 with Retry-After.
  * - A stored key the platform rejects asks for reauthorization and applies nothing.
  * - A failed write retries with the key already claimed, without polling the platform again.
@@ -17,6 +27,7 @@
  * - A flow the user cancels while a poll is in flight applies nothing.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { catalogEntryFor } from "@prismshadow/penguin-core";
 import type {
   ModelsResponse,
   PlatformAuthFlowStatusResponse,
@@ -190,6 +201,8 @@ describe("Penguin Go key authorization routes", () => {
   let projectId: string;
   let pollCount: number;
   let currentCatalogModels: unknown[];
+  /** The models the delivery lists (the connection's own, unless a scenario says otherwise). */
+  let deliveredModels: unknown[];
 
   beforeEach(async () => {
     t = await createTestApp();
@@ -212,6 +225,7 @@ describe("Penguin Go key authorization routes", () => {
 
     pollCount = 0;
     currentCatalogModels = [...deliveryBody.connection.models];
+    deliveredModels = [...deliveryBody.connection.models];
     stubFetch((call) => {
       const { pathname } = new URL(call.url);
       if (pathname === "/api/auth/desktop/start") {
@@ -225,7 +239,10 @@ describe("Penguin Go key authorization routes", () => {
         pollCount += 1;
         return pollCount === 1
           ? json(200, { status: "pending", expiresInSeconds: 500 })
-          : json(200, deliveryBody);
+          : json(200, {
+              ...deliveryBody,
+              connection: { ...deliveryBody.connection, models: deliveredModels },
+            });
       }
       if (pathname === "/api/client/models") {
         expect(call.headers.get("authorization")).toBe("Bearer sk-penguin-go-secret-0001");
@@ -240,14 +257,34 @@ describe("Penguin Go key authorization routes", () => {
     await t.cleanup();
   });
 
-  it("writes the delivered key to the prebuilt group and exposes no account state", async () => {
-    const base = `/api/projects/${projectId}/platform-auth`;
-    const initial = (await (
-      await owner.get(`/api/projects/${projectId}/models`)
-    ).json()) as ModelsResponse;
+  const base = () => `/api/projects/${projectId}/platform-auth`;
+  const models = async (): Promise<ModelsResponse> =>
+    (await (await owner.get(`/api/projects/${projectId}/models`)).json()) as ModelsResponse;
+  /** The owner's authorization, polled to its end: pending once, then the delivery. */
+  const authorize = async (): Promise<PlatformAuthFlowStatusResponse> => {
+    const started = (await (
+      await owner.post(`${base()}/start`, {})
+    ).json()) as PlatformAuthStartResponse;
+    await owner.get(`${base()}/${started.flowId}/status`);
+    return (await (
+      await owner.get(`${base()}/${started.flowId}/status`)
+    ).json()) as PlatformAuthFlowStatusResponse;
+  };
+  const sync = async (): Promise<PlatformModelSyncResponse> =>
+    (await (await owner.post(`${base()}/sync`, {})).json()) as PlatformModelSyncResponse;
+  const promotionOf = (modelId: string) =>
+    t.deps.db
+      .prepare(
+        "SELECT discount FROM model_promotions WHERE project_id = ? AND provider = ? AND model_id = ?",
+      )
+      .get(projectId, "penguin-go", modelId);
+
+  it("writes the delivered key once, as the group's key, adds the models the group lacks, and exposes no account state", async () => {
+    const initial = await models();
     const initialPenguinGoModels = initial.models.filter(
       (model) => model.provider === "penguin-go",
     );
+    const gemini = catalogEntryFor("penguin-go", "gemini-3.8-flash")!;
     // The preset group is there before any authorization, keyless, on the platform's endpoint.
     // The delivery lands on top of it: the group ends up with the preset's models and the
     // delivered ones, whichever the preset already carried.
@@ -257,20 +294,18 @@ describe("Penguin Go key authorization routes", () => {
     ]).size;
     expect(
       initialPenguinGoModels.every(
-        (model) => model.credential?.baseUrl === "https://token.penguin.ooo/api",
+        (model) => model.effective.baseUrl === "https://token.penguin.ooo/api",
       ),
     ).toBe(true);
-    expect(
-      initialPenguinGoModels.every((model) => model.credential?.apiKeyMasked === undefined),
-    ).toBe(true);
-    expect((await member.post(`${base}/start`, {})).status).toBe(403);
-    const unauthorizedSync = await owner.post(`${base}/sync`, {});
+    expect(initial.providers["penguin-go"]).toEqual({ baseUrl: "https://token.penguin.ooo/api" });
+    expect((await member.post(`${base()}/start`, {})).status).toBe(403);
+    const unauthorizedSync = await owner.post(`${base()}/sync`, {});
     expect(unauthorizedSync.status).toBe(409);
     expect(await unauthorizedSync.json()).toMatchObject({
       error: { code: "platform_reauthorization_required" },
     });
 
-    const startResponse = await owner.post(`${base}/start`, {});
+    const startResponse = await owner.post(`${base()}/start`, {});
     expect(startResponse.status).toBe(201);
     const started = (await startResponse.json()) as PlatformAuthStartResponse;
     expect(started.authorizeUrl).toMatch(
@@ -279,21 +314,31 @@ describe("Penguin Go key authorization routes", () => {
     expect(JSON.stringify(started)).not.toContain("deviceSecret");
 
     const pending = (await (
-      await owner.get(`${base}/${started.flowId}/status`)
+      await owner.get(`${base()}/${started.flowId}/status`)
     ).json()) as PlatformAuthFlowStatusResponse;
     expect(pending).toEqual({ status: "pending" });
 
     const done = (await (
-      await owner.get(`${base}/${started.flowId}/status`)
+      await owner.get(`${base()}/${started.flowId}/status`)
     ).json()) as PlatformAuthFlowStatusResponse;
+    // Every model of the group uses the key: the presets and the delivered ones alike.
     expect(done).toEqual({ status: "completed", applied: deliveredCount });
     expect(JSON.stringify(done)).not.toContain("sk-penguin");
 
-    const models = (await (
-      await owner.get(`/api/projects/${projectId}/models`)
-    ).json()) as ModelsResponse;
-    const penguinGoModels = models.models.filter((model) => model.provider === "penguin-go");
+    const after = await models();
+    const penguinGoModels = after.models.filter((model) => model.provider === "penguin-go");
     expect(penguinGoModels).toHaveLength(deliveredCount);
+    expect(after.providers["penguin-go"]?.apiKeyMasked).toBe("sk-p…0001");
+    expect(
+      penguinGoModels.every(
+        (model) =>
+          model.effective.apiKeySource === "provider" &&
+          model.credential?.apiKeyMasked === undefined,
+      ),
+    ).toBe(true);
+    // A model the built-in catalog does not know arrives with the platform's facts, and with
+    // its routing where it differs from the group's table: the protocol (the group sets none),
+    // not the relay endpoint the group's table already holds.
     const deepseekFuture = penguinGoModels.find((model) => model.modelId === "deepseek-future");
     expect(deepseekFuture).toMatchObject({
       displayName: "DeepSeek Future",
@@ -301,94 +346,79 @@ describe("Penguin Go key authorization routes", () => {
       clientType: "deepseek-official",
       vision: false,
       pricing: { cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
-      credential: { baseUrl: "https://token.penguin.ooo/api" },
+      effective: { baseUrl: "https://token.penguin.ooo/api", baseUrlSource: "provider" },
     });
+    expect(deepseekFuture).not.toHaveProperty("credential");
     expect(deepseekFuture).not.toHaveProperty("maxTokens");
     expect(deepseekFuture).not.toHaveProperty("discount");
-    // The promoted model: the file takes the platform's LIST price, and the fraction is stored
-    // beside it in web.db.
-    const gemini = penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash");
-    expect(gemini).toMatchObject({
-      clientType: "google-genai",
-      pricing: { cacheRead: 0, cacheWrite: 1.25, output: 10 },
-      discount: 0.5,
+    // A model the preset already held is not rewritten: its price and promotion stay what
+    // the Project had, whatever the platform lists.
+    const heldGemini = penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash");
+    expect(heldGemini?.pricing).toEqual({
+      cacheRead: gemini.pricing!.cache_read,
+      cacheWrite: gemini.pricing!.cache_write,
+      output: gemini.pricing!.output,
     });
-    expect(gemini).not.toHaveProperty("listPricing");
-    const stored = (await t.deps.projectConfigService.readRaw(projectId)).models as Record<
-      string,
-      unknown
-    >[];
-    const storedGemini = stored.find(
-      (model) => model.provider === "penguin-go" && model.model_id === "gemini-3.8-flash",
+    expect(heldGemini).not.toHaveProperty("discount");
+    expect(promotionOf("gemini-3.8-flash")).toBeUndefined();
+    expect(JSON.stringify(after)).not.toContain("sk-penguin-go-secret-0001");
+    // Stored once, for the group.
+    const raw = await t.deps.projectConfigService.readRaw(projectId);
+    expect(JSON.stringify(raw).match(/sk-penguin-go-secret-0001/g)).toHaveLength(1);
+
+    expect((await owner.get(base())).status).toBe(404);
+    expect((await owner.post(`${base()}/refresh`, {})).status).toBe(404);
+    expect((await owner.post(`${base()}/logout`, {})).status).toBe(404);
+  });
+
+  it("in a group where every model has its own key and nothing new is delivered, the key still lands as the group key and the flow completes with 0", async () => {
+    const held = (await models()).models.filter((model) => model.provider === "penguin-go");
+    expect(held).not.toEqual([]);
+    const own = held.map((model, i) => ({
+      provider: "penguin-go",
+      modelId: model.modelId,
+      apiKey: `sk-own-key-000${i}`,
+    }));
+    expect((await owner.put(`/api/projects/${projectId}/models`, { models: own })).status).toBe(
+      200,
     );
-    expect(storedGemini).toMatchObject({
-      pricing: { unit: "usd_per_mtok", cache_read: 0, cache_write: 1.25, output: 10 },
-    });
-    expect(storedGemini).not.toHaveProperty("discount");
-    const promotionOf = (modelId: string) =>
-      t.deps.db
-        .prepare(
-          "SELECT discount FROM model_promotions WHERE project_id = ? AND provider = ? AND model_id = ?",
-        )
-        .get(projectId, "penguin-go", modelId);
-    expect(promotionOf("gemini-3.8-flash")).toEqual({ discount: 0.5 });
-    expect(penguinGoModels.every((model) => model.credential?.apiKeyMasked !== undefined)).toBe(
-      true,
+    deliveredModels = deliveryBody.connection.models.filter((model) =>
+      held.some((h) => h.modelId === model.modelId),
     );
+
+    expect(await authorize()).toEqual({ status: "completed", applied: 0 });
+    const after = await models();
+    expect(after.providers["penguin-go"]?.apiKeyMasked).toBe("sk-p…0001");
     expect(
-      penguinGoModels.every(
-        (model) => model.credential?.baseUrl === "https://token.penguin.ooo/api",
-      ),
-    ).toBe(true);
-    expect(JSON.stringify(models)).not.toContain("sk-penguin-go-secret-0001");
+      after.models
+        .filter((model) => model.provider === "penguin-go")
+        .map((model) => model.effective.apiKeySource),
+    ).toEqual(own.map(() => "model"));
+  });
 
-    const synced = (await (
-      await owner.post(`${base}/sync`, {})
-    ).json()) as PlatformModelSyncResponse;
-    expect(synced).toMatchObject({ added: 0, updated: 0 });
-    expect(synced.updatedAt).toBe(models.updatedAt);
-    expect(synced.models.filter((model) => model.provider === "penguin-go")).toHaveLength(
-      deliveredCount,
+  it("a later sync adds what the platform newly lists, with its price, routing and promotion, and never rewrites a model the group holds", async () => {
+    expect((await authorize()).status).toBe("completed");
+    const authorized = await models();
+
+    // The platform reprices a model the group holds and deepens a promotion: nothing changes
+    // here, and nothing is written.
+    currentCatalogModels = currentCatalogModels.map((model) =>
+      (model as { modelId?: unknown }).modelId === "deepseek-future"
+        ? {
+            ...(model as Record<string, unknown>),
+            pricing: { unit: "usd_per_mtok", cacheRead: 0.045, cacheWrite: 0.225, output: 0.9 },
+            listPricing: { unit: "usd_per_mtok", cacheRead: 0.06, cacheWrite: 0.3, output: 1.2 },
+            discount: 0.25,
+          }
+        : model,
     );
-
-    const patchGemini = (patch: Record<string, unknown>) => {
-      currentCatalogModels = currentCatalogModels.map((model) =>
-        (model as { modelId?: unknown }).modelId === "gemini-3.8-flash"
-          ? { ...(model as Record<string, unknown>), ...patch }
-          : model,
-      );
-    };
-    patchGemini({
-      pricing: { unit: "usd_per_mtok", cacheRead: 0, cacheWrite: 0.75, output: 6 },
-      listPricing: { unit: "usd_per_mtok", cacheRead: 0, cacheWrite: 1.5, output: 12 },
+    const repriced = await sync();
+    expect(repriced).toMatchObject({ added: 0, updated: 0 });
+    expect(repriced.updatedAt).toBe(authorized.updatedAt);
+    expect(repriced.models.find((model) => model.modelId === "deepseek-future")).toMatchObject({
+      pricing: { cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
     });
-    const repriced = (await (
-      await owner.post(`${base}/sync`, {})
-    ).json()) as PlatformModelSyncResponse;
-    expect(repriced).toMatchObject({ added: 0, updated: 1 });
-    expect(repriced.models.find((model) => model.modelId === "gemini-3.8-flash")).toMatchObject({
-      pricing: { cacheRead: 0, cacheWrite: 1.5, output: 12 },
-      discount: 0.5,
-    });
-
-    // Same list price, deeper promotion: an update all the same, landing in web.db alone —
-    // the file is not rewritten and keeps the list price.
-    patchGemini({
-      pricing: { unit: "usd_per_mtok", cacheRead: 0, cacheWrite: 1.125, output: 9 },
-      discount: 0.25,
-    });
-    const promotionOnly = (await (
-      await owner.post(`${base}/sync`, {})
-    ).json()) as PlatformModelSyncResponse;
-    expect(promotionOnly).toMatchObject({ added: 0, updated: 1 });
-    expect(promotionOnly.updatedAt).toBe(repriced.updatedAt);
-    expect(
-      promotionOnly.models.find((model) => model.modelId === "gemini-3.8-flash"),
-    ).toMatchObject({
-      pricing: { cacheRead: 0, cacheWrite: 1.5, output: 12 },
-      discount: 0.25,
-    });
-    expect(promotionOf("gemini-3.8-flash")).toEqual({ discount: 0.25 });
+    expect(promotionOf("deepseek-future")).toBeUndefined();
 
     currentCatalogModels.push({
       provider: "google",
@@ -415,28 +445,104 @@ describe("Penguin Go key authorization routes", () => {
         endpoint: "google",
       },
     });
-    const added = (await (
-      await owner.post(`${base}/sync`, {})
-    ).json()) as PlatformModelSyncResponse;
+    const added = await sync();
     expect(added).toMatchObject({ added: 1, updated: 0 });
-    expect(added.models.find((model) => model.modelId === "gemini-future")).toMatchObject({
+    const future = added.models.find((model) => model.modelId === "gemini-future");
+    // The file takes the platform's LIST price, and the promotion is stored beside it.
+    expect(future).toMatchObject({
       displayName: "Gemini Future",
       contextWindow: 1_048_576,
       clientType: "google-genai",
       vision: true,
       pricing: { cacheRead: 0.1, cacheWrite: 0.5, output: 2 },
       discount: 0.5,
-      credential: {
-        apiKeyMasked: "sk-p…0001",
+      effective: {
         baseUrl: "https://token.penguin.ooo/api",
+        baseUrlSource: "provider",
+        apiKeySource: "provider",
+        apiKeyMasked: "sk-p…0001",
       },
     });
-    expect(added.models.find((model) => model.modelId === "gemini-future")).not.toHaveProperty(
-      "maxTokens",
+    expect(future).not.toHaveProperty("credential");
+    expect(future).not.toHaveProperty("maxTokens");
+    expect(future).not.toHaveProperty("listPricing");
+    // The model the group already held is still as it was.
+    expect(promotionOf("deepseek-future")).toBeUndefined();
+  });
+
+  it("a platform model is stored against the group's table field by field: a group pointed at a proxy takes a new model along with its key, and a field the table lacks is written on the model", async () => {
+    // The user pointed the group at a proxy.
+    expect(
+      (
+        await owner.put(`/api/projects/${projectId}/models/providers/penguin-go`, {
+          baseUrl: "https://relay-proxy.example/api",
+        })
+      ).status,
+    ).toBe(200);
+    expect((await authorize()).status).toBe("completed");
+    const future = (await models()).models.find((model) => model.modelId === "deepseek-future")!;
+    // Stored bare of an endpoint, so it runs on the proxy with the group key; its protocol is
+    // its own (the group sets none).
+    expect(future.clientType).toBe("deepseek-official");
+    expect(future).not.toHaveProperty("credential");
+    expect(future.effective).toMatchObject({
+      baseUrl: "https://relay-proxy.example/api",
+      baseUrlSource: "provider",
+      apiKeySource: "provider",
+      apiKeyMasked: "sk-p…0001",
+    });
+
+    // The user cleared the group's endpoint: a model listed after that carries the
+    // platform's own, instead of falling to the client's default endpoint.
+    expect(
+      (
+        await owner.put(`/api/projects/${projectId}/models/providers/penguin-go`, {
+          baseUrl: null,
+        })
+      ).status,
+    ).toBe(200);
+    currentCatalogModels.push({
+      provider: "google",
+      modelId: "gemini-future",
+      displayName: "Gemini Future",
+      contextWindow: 1_048_576,
+      maxOutputTokens: 65_536,
+      supportsVision: true,
+      pricing: { unit: "usd_per_mtok", cacheRead: 0.05, cacheWrite: 0.25, output: 1 },
+      recommendedRoute: { protocol: "google-generative-language", endpoint: "google" },
+    });
+    const synced = await sync();
+    expect(synced.added).toBe(1);
+    const gemini = synced.models.find((model) => model.modelId === "gemini-future")!;
+    expect(gemini.clientType).toBe("google-genai");
+    expect(gemini.credential).toEqual({ baseUrl: "https://token.penguin.ooo/api" });
+    // The model the proxy took along is unchanged.
+    expect(synced.models.find((model) => model.modelId === "deepseek-future")).not.toHaveProperty(
+      "credential",
     );
-    expect((await owner.get(base)).status).toBe(404);
-    expect((await owner.post(`${base}/refresh`, {})).status).toBe(404);
-    expect((await owner.post(`${base}/logout`, {})).status).toBe(404);
+  });
+
+  it("Disconnect clears the group key: the group's models stop using it, a sync asks for authorization again, and every model stays", async () => {
+    expect((await authorize()).status).toBe("completed");
+    const authorized = await models();
+    const res = await owner.put(`/api/projects/${projectId}/models/providers/penguin-go`, {
+      clearApiKey: true,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ModelsResponse;
+    expect(body.providers["penguin-go"]).toEqual({ baseUrl: "https://token.penguin.ooo/api" });
+    const rows = body.models.filter((model) => model.provider === "penguin-go");
+    expect(rows.map((model) => model.modelId)).toEqual(
+      authorized.models.filter((m) => m.provider === "penguin-go").map((m) => m.modelId),
+    );
+    expect(rows.some((model) => model.effective.apiKeySource === "provider")).toBe(false);
+    const syncAfter = await owner.post(`${base()}/sync`, {});
+    expect(syncAfter.status).toBe(409);
+    expect(await syncAfter.json()).toMatchObject({
+      error: { code: "platform_reauthorization_required" },
+    });
+    const raw = await t.deps.projectConfigService.readRaw(projectId);
+    expect(JSON.stringify(raw)).not.toContain("sk-penguin-go-secret-0001");
   });
 
   it("preserves the platform start backoff as HTTP 429 with Retry-After", async () => {

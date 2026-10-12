@@ -10,6 +10,7 @@
  */
 import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from "react-router";
 import { useAuth } from "./state/auth";
+import { useRuntimeLanguages } from "./features/chat/use-runtime-languages";
 import { ProjectProvider } from "./state/project";
 import { SessionsProvider } from "./state/sessions";
 import { CompanyProvider } from "./state/company";
@@ -20,7 +21,6 @@ import { AgentsPage } from "./features/agents/agents-page";
 import { AgentSettingsPage } from "./features/agents/agent-settings-page";
 import { PluginsPage } from "./features/plugins/plugins-page";
 import { ModelsPage } from "./features/models/models-page";
-import { PluginDetailPage } from "./features/plugins/plugin-detail-page";
 import { UsagePage } from "./features/usage/usage-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { BenchmarkDetailPage } from "./features/benchmark/benchmark-detail-page";
@@ -48,7 +48,6 @@ const BUILTIN_PAGES: Record<string, React.ComponentType> = {
   AgentSettingsPage,
   PluginsPage,
   ModelsPage,
-  PluginDetailPage,
   MachinesPage,
   UsagePage,
   BenchmarkPage,
@@ -68,6 +67,10 @@ function renderPage(page: PageEntry): React.ReactNode {
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
   const { user } = useAuth();
+  // Plugin-contributed grammars, adopted once for the signed-in tree (see the hook). Called
+  // before the early returns, because a hook cannot be conditional; it fetches only once a user
+  // is signed in.
+  useRuntimeLanguages(user != null);
   if (user === undefined) return null; // GET /api/me is still initializing
   if (user === null) return <Navigate to="/login" replace />;
   return (

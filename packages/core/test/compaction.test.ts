@@ -140,6 +140,7 @@ const metaMessage = sessionMeta({
   system_prompt: "sp",
   agent_state: "/tmp/state",
   workspace: "/tmp/ws",
+  source: "user",
 });
 
 async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]> {

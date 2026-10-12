@@ -22,6 +22,8 @@ export interface FetchRequest {
   readonly query: URLSearchParams;
   /** The body: parsed when it is JSON, as sent otherwise, undefined when there is none. */
   readonly body: unknown;
+  /** The request's abort signal, for an answer that must end the way a real one does when it fires. */
+  readonly signal: AbortSignal | null;
 }
 
 export type FetchHandler = (request: FetchRequest) => Response | Promise<Response>;
@@ -48,6 +50,7 @@ export function stubFetch(handler: FetchHandler = () => apiError(404, "not_found
       path: routed ? routed[2]! : parsed.pathname,
       query: parsed.searchParams,
       body: parseBody(init.body),
+      signal: init.signal ?? null,
     };
     requests.push(request);
     return current(request);

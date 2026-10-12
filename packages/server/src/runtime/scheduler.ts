@@ -34,7 +34,12 @@ import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { userChannelKey } from "../http/routes/events.js";
 import type { Channels, Clock, Paths } from "../hmr/capabilities.js";
-import type { Schedules, Scheduling, SessionIndex } from "../mechanisms/sessions.js";
+import type {
+  Schedules,
+  Scheduling,
+  SessionDrivers,
+  SessionIndex,
+} from "../mechanisms/sessions.js";
 import type { ProjectConfigStore, Projects } from "../mechanisms/projects.js";
 import type { Errors } from "../mechanisms/observability.js";
 
@@ -59,6 +64,11 @@ export interface ScheduleSessionCreatorShape {
     workspace?: string;
     modelId?: string;
     provider?: string;
+    /**
+     * Unattended creators pass `allow-all`: nobody is there to answer an ask the default
+     * preset's approval mode would bring.
+     */
+    approvalMode?: "allow-all";
     source?: "schedule";
   }): Promise<{ sessionId: string }>;
 }
@@ -119,6 +129,8 @@ export class Scheduler implements Scheduling {
   @Use() private readonly errors!: Errors;
   @Use() private readonly channels!: Channels;
   @Use() private readonly clock!: Clock;
+  /** Who a scheduled run acts for: the schedule's creator. Absent where a test wires the scheduler by hand. */
+  @Use() private readonly drivers?: SessionDrivers;
   private now(): number {
     return this.clock.now().getTime();
   }
@@ -434,6 +446,8 @@ export class Scheduler implements Scheduling {
         ...(def.workspace !== undefined ? { workspace: def.workspace } : {}),
         ...(def.modelId !== undefined ? { modelId: def.modelId } : {}),
         ...(def.provider !== undefined ? { provider: def.provider } : {}),
+        // Unattended: the Sandbox card's default preset may ask, and nobody would answer.
+        approvalMode: "allow-all",
         source: "schedule",
       });
       await this.send(projectId, agentId, def, state, info.sessionId);
@@ -455,6 +469,8 @@ export class Scheduler implements Scheduling {
     sessionId: string,
   ): Promise<void> {
     const firedAt = new Date(this.now()).toISOString();
+    // The run acts for the schedule's creator: an agent's browser calls in it drive their Chrome.
+    if (state.creatorUserId) this.drivers?.note(sessionId, state.creatorUserId);
     try {
       await this.runner.startTask(sessionId, [
         // sender "server": in the Trace this user turn was injected by the server's scheduler, not typed by a human.

@@ -23,6 +23,7 @@
     "**/node_modules/**",
     "packages/desktop/release/**",
     "packages/landing/.blog-assets/**",
-    "packages/web/dist-app/**"
+    "packages/web/dist-app/**",
+    "plugins/a2ui/skills/a2ui/scripts/check.mjs"
   ]
 }

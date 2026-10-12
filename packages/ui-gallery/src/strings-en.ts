@@ -105,15 +105,8 @@ export const en: GalleryStrings = {
     },
     plugins: {
       title: "Plugins",
-      description:
-        "The plugin library by category, with search and filters; installed Skills and hooks per Agent.",
+      description: "Every plugin by category, to regroup or search; a card opens its details.",
       how: "Sidebar › Plugins.",
-    },
-    "plugin-detail": {
-      title: "Plugin detail",
-      description:
-        "One plugin's page: its description, the Skills it brings, its file browser and the install action.",
-      how: "Plugins › any plugin.",
     },
     models: {
       title: "Models",
@@ -318,7 +311,7 @@ export const en: GalleryStrings = {
       "A menu from the top, a dialog from the centre, a toast from the bottom — each on the active theme's enter and exit tokens.",
     reveal: "Reveal",
     revealNote:
-      "Streamed text arrives chunk by chunk; each chunk moves once, on the reveal tokens, as it appears.",
+      "New rows appear inside a settled list; each moves once, on the reveal tokens, as it appears.",
     layout: "Layout",
     layoutNote: "The sidebar's width between expanded and rail, on the layout tokens.",
     replay: "Replay",
@@ -329,6 +322,13 @@ export const en: GalleryStrings = {
       toast: "Toast",
       trigger: "More",
       sidebarRows: ["New chat", "Agents", "Models"],
+      revealRows: [
+        { name: "read_file", detail: "package.json" },
+        { name: "grep", detail: "useStreamReveal" },
+        { name: "exec_command", detail: "Run the tests" },
+        { name: "apply_patch", detail: "src/app.ts" },
+        { name: "exec_command", detail: "Check formatting" },
+      ],
     },
     hookJobs: {
       "ui-glass":
@@ -347,9 +347,13 @@ export const en: GalleryStrings = {
       "ui-notice":
         "a notice strip or toast, coloured by its tone: info, success, warning, danger or neutral",
       "ui-chart": "a chart: its grid, axes, lines, areas, bars and points",
+      "ui-widget":
+        "a reading in a reply taken in at a glance: weather, a clock, a countdown, metrics",
       "ui-scrim": "the dimmed layer behind a dialog, drawer or sheet",
-      "ui-stream": "a reply that is still streaming: each theme decides how new text appears",
-      "ui-glyph": "an icon each theme draws its own way: Octicons, duotone line or pixel art",
+      "ui-stream":
+        "text that is still streaming (a reply, thinking, a summary, a tool's output): each theme decides how new text appears",
+      "ui-glyph":
+        "an icon each theme draws its own way: line (Primer), duotone line (Frost) or pixel art (Console)",
     },
     hookSamples: {
       menu: ["Pin", "Rename", "Delete"],
@@ -476,7 +480,7 @@ export const en: GalleryStrings = {
       content: {
         title: "Content",
         description:
-          "Headings and text roles, inline code, Markdown prose, code blocks and surfaces, and the diff viewer.",
+          "Headings and text roles, inline code, Markdown prose, code blocks and surfaces, the diff viewer, and A2UI blocks.",
       },
       layout: {
         title: "Layout",
@@ -803,6 +807,7 @@ export const en: GalleryStrings = {
     },
     streaming: {
       reply: "Assistant reply",
+      output: "Tool output",
       receiving: "Receiving…",
       received: "All received",
       modes: {
@@ -998,6 +1003,233 @@ export const en: GalleryStrings = {
       patch: "From a patch",
       diffLabel: "Changes to src/config.ts",
       patchLabel: "Changes to src/limits.ts",
+      a2ui: "A2UI blocks",
+      a2uiHint:
+        "Components a model writes into its reply: weather, clock, countdown and metrics widgets, then a choice, a form, steps, a callout and a Mermaid diagram. The widgets are snapshots the model supplies; only the clock and the countdown move. A pick or a submit here shows, as a toast, the text the app would put in the composer.",
+      a2uiReply: [
+        {
+          lead: "Here is the weather in Beijing right now:",
+          spec: {
+            type: "weather",
+            place: "Beijing",
+            condition: "partly-cloudy",
+            temp: 18,
+            unit: "C",
+            summary: "Clouding over by evening, light rain likely tonight",
+            high: 22,
+            low: 12,
+            feelsLike: 17,
+            humidity: 62,
+            windSpeed: 12,
+            windDirection: "NE",
+            hourly: [
+              { time: "14:00", temp: 18, condition: "partly-cloudy", precip: 10 },
+              { time: "15:00", temp: 19, condition: "partly-cloudy", precip: 10 },
+              { time: "16:00", temp: 19, condition: "cloudy", precip: 20 },
+              { time: "17:00", temp: 18, condition: "cloudy", precip: 30 },
+              { time: "18:00", temp: 16, condition: "cloudy", precip: 40, night: true },
+              { time: "19:00", temp: 15, condition: "drizzle", precip: 60, night: true },
+            ],
+            daily: [
+              { date: "2026-10-04", high: 22, low: 12, condition: "partly-cloudy", precip: 20 },
+              { date: "2026-10-05", high: 19, low: 11, condition: "rain", precip: 80 },
+              { date: "2026-10-06", high: 17, low: 9, condition: "cloudy", precip: 30 },
+              { date: "2026-10-07", high: 20, low: 10, condition: "clear", precip: 0 },
+              { date: "2026-10-08", high: 23, low: 11, condition: "wind", precip: 10 },
+            ],
+            asOf: "2026-10-04T14:05+08:00",
+            source: "Open-Meteo",
+          },
+        },
+        {
+          lead: "The time now where the team works:",
+          spec: {
+            type: "clock",
+            title: "Team time zones",
+            zones: [
+              { zone: "local" },
+              { zone: "America/New_York", label: "New York" },
+              { zone: "Europe/London", label: "London" },
+            ],
+            style: "both",
+          },
+        },
+        {
+          lead: "Time left until the New Year:",
+          spec: {
+            type: "countdown",
+            to: "2026-12-31T23:59:59+08:00",
+            label: "New Year",
+            doneLabel: "Happy New Year",
+          },
+        },
+        {
+          lead: "The service status, as just read:",
+          spec: {
+            type: "metrics",
+            title: "Service status",
+            items: [
+              {
+                label: "CPU",
+                value: 37,
+                max: 100,
+                unit: "%",
+                gauge: "ring",
+                warn: 80,
+                danger: 95,
+                history: [22, 31, 28, 45, 52, 41, 37],
+              },
+              {
+                label: "Memory",
+                kind: "used",
+                value: 15.3,
+                max: 16,
+                unit: "GB",
+                decimals: 1,
+                gauge: "bar",
+                warn: 13.6,
+                danger: 15.2,
+                delta: 0.4,
+                deltaLabel: "vs. yesterday",
+              },
+              {
+                label: "API quota",
+                kind: "remaining",
+                value: 1240,
+                max: 5000,
+                warn: 1000,
+                danger: 250,
+                detail: "resets in 3 days",
+              },
+              {
+                label: "Monthly budget",
+                kind: "remaining",
+                value: 180,
+                max: 1000,
+                prefix: "¥",
+                warn: 300,
+                danger: 100,
+              },
+              { label: "Upload", kind: "progress", value: 63, max: 100, unit: "%" },
+            ],
+            asOf: "2026-10-04T14:05+08:00",
+          },
+        },
+        {
+          lead: "Pick the database first.",
+          spec: {
+            type: "choice",
+            question: "Which database should the service use?",
+            options: [
+              {
+                label: "PostgreSQL",
+                description: "Relational; the team already runs it",
+                recommended: true,
+              },
+              { label: "SQLite", description: "One file beside the service" },
+              { label: "MongoDB", description: "Documents; the schema can change at any time" },
+            ],
+            allowOther: true,
+          },
+        },
+        {
+          lead: "The change passed every check.",
+          spec: {
+            type: "choice",
+            question: "Merge it now?",
+            options: [
+              { label: "Merge now", recommended: true },
+              { label: "After review" },
+              { label: "Not yet" },
+            ],
+          },
+        },
+        {
+          lead: "Pick the checks to run before the release:",
+          spec: {
+            type: "choice",
+            question: "Which checks should run before the release?",
+            multiple: true,
+            options: [
+              {
+                label: "Type check",
+                description: "A few seconds; catches most slips",
+                recommended: true,
+              },
+              { label: "Unit tests", description: "About two minutes" },
+              { label: "End-to-end tests", description: "About fifteen minutes; needs a browser" },
+            ],
+          },
+        },
+        {
+          lead: "Give the deployment details in one go:",
+          spec: {
+            type: "form",
+            title: "Deployment",
+            fields: [
+              {
+                id: "region",
+                label: "Region",
+                kind: "single",
+                options: [{ label: "eu-west" }, { label: "us-east" }, { label: "ap-south" }],
+                required: true,
+              },
+              {
+                id: "addons",
+                label: "Add-ons",
+                kind: "multiple",
+                options: [{ label: "CDN" }, { label: "WAF" }],
+              },
+              {
+                id: "replicas",
+                label: "Replicas",
+                kind: "number",
+                min: 1,
+                max: 10,
+                step: 1,
+                unit: "pods",
+              },
+              { id: "notes", label: "Notes", kind: "text", placeholder: "Anything else" },
+            ],
+            submitLabel: "Fill in answers",
+          },
+        },
+        {
+          lead: "Rotate the key in three steps:",
+          spec: {
+            type: "steps",
+            title: "Rotate the API key",
+            steps: [
+              { text: "Open Settings › Keys." },
+              { text: "Create a new key and copy it.", note: "The new key works at once." },
+              {
+                text: "Delete the old key.",
+                warning: "A deleted key cannot be restored.",
+                caution: "Jobs that still use the old key fail until they restart.",
+                code: "curl -X DELETE https://api.example.com/keys/old",
+                lang: "bash",
+              },
+            ],
+          },
+        },
+        {
+          lead: "One more thing:",
+          spec: { type: "callout", tone: "tip", text: "Run `pnpm test` before you push." },
+        },
+        {
+          lead: "Before you start:",
+          spec: {
+            type: "callout",
+            tone: "warning",
+            title: "Stop point",
+            text: "If you have no first numbers within two days, change the plan. This step decides whether the rest is worth the time; stopping early costs less than giving up at the end.",
+          },
+        },
+      ],
+      a2uiDiagramLead: "A request checks the cache first:",
+      a2uiDiagram:
+        "flowchart LR\n  A[Request] --> B{Cached?}\n  B -->|yes| C[Serve it]\n  B -->|no| D[Fetch from origin]\n  D --> C",
+      a2uiInvalidLead: "A block that cannot be shown gives its reason and its source:",
     },
     layout: {
       page: "Page and header",

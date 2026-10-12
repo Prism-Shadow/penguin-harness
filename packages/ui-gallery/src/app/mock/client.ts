@@ -8,6 +8,7 @@
  * runs in the wrong order.
  */
 import { ApiError } from "./errors";
+import { answerAsResponse } from "./fetch-shim";
 import { router } from "./routes";
 import { getStore } from "./store";
 import type { Method } from "./router";
@@ -73,4 +74,27 @@ export async function apiFetchWithMeta<T>(
   if (answer.kind === "empty") return { data: undefined as T, serverNowMs };
   if (answer.kind === "raw") return { data: answer.body as T, serverNowMs };
   return { data: answer.body as T, serverNowMs };
+}
+
+export interface ApiFetchStreamOptions {
+  method?: "GET" | "POST";
+  body?: unknown;
+  signal?: AbortSignal;
+}
+
+/**
+ * The app's `apiFetchStream`: the router's answer as a Response, its body unread for the caller
+ * to stream, and a refusal as the same ApiError the app's client throws.
+ */
+export async function apiFetchStream(
+  path: string,
+  options: ApiFetchStreamOptions = {},
+): Promise<Response> {
+  await beat();
+  if (options.signal?.aborted) throw options.signal.reason;
+  const response = await answerAsResponse(options.method ?? "GET", path, options.body);
+  if (response.ok) return response;
+  const { error } = (await response.json()) as { error: { code: string; message: string } };
+  if (response.status === 401 && !isAuthEndpoint(path)) onUnauthorized?.();
+  throw new ApiError(response.status, error.code, error.message);
 }

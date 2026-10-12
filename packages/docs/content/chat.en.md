@@ -68,7 +68,7 @@ Limits apply at two moments:
 - When you pick or drop a file: a file over the per-file size (100MB by default) or an image over 20MB is refused before anything is read, and the message names the limit in force.
 - When you send: a message carries at most 20 files and 120MB in total by default. Over that, the send fails with "Too many files attached to one message." or "The request is too large."
 
-An admin can change both sizes under [Settings › Upload limits](/settings#upload-limits). The 20MB cap for images placed inline does not follow them: an inline image enters the conversation and the Trace, where its size is paid again on every history page and every Session resume.
+An admin can change both sizes under [Settings › Upload limits](/settings#upload-limits). The 20MB cap for images placed inline does not follow them: an inline image enters the conversation and the Trace, where its size is paid again on every Session resume.
 
 On send, attached files are written into the Session's scratchpad, which is deleted with the Session. The conversation shows an "Attached files" notice; the file contents never enter the conversation, and the model opens each file by path with its file tools. On a model without image input, images are saved to the scratchpad the same way and passed as file paths, and a hint above the composer says so.
 
@@ -218,11 +218,39 @@ The fork is a new Session with the same agent, model, Workspace and approval mod
 - **MCP connect**, the first connection to the agent's MCP servers, leaves a row with the number of tools found and the names of unavailable servers. It expands into one group per server, with its status, tool count and connect time, and each group opens to its tool list or the error.
 - **Subagents** each leave a row with their avatar, name, short Session id, a spinner while running, and an amber dot while one of their tool calls awaits approval. Selecting the row opens the **Agents panel**: a call graph of that Task at the top, with each node's elapsed time, and the selected subagent's live conversation below. Nested tool cards and approvals work as in the main chat, the subagent has a composer of its own, and **Jump to this session** opens it as a full conversation. When the current Task starts a subagent, the Agents panel opens by itself, once per Task.
 
+### Rich output blocks
+
+A reply can hold blocks that the chat draws as components instead of plain text:
+
+- **Choice**: a question with options. Select an option to put it in the composer. When several picks are allowed, tick them and select **Fill in**. **Other…** clears the composer and moves you there to write your own answer. The option the agent recommends is marked **Recommended**.
+- **Form**: several questions at once. Answer them and select the form's button; the answers go into the composer one per line.
+- **Steps**: a numbered procedure. A warning or caution appears above the step it applies to.
+- **Callout**: a short note, tip, caution or warning on one line, its icon saying which (point at the icon to see the name). A step's warnings, cautions and notes look the same.
+- **Diagram**: a Mermaid diagram, such as a flowchart or a sequence diagram. **Show source** shows the text it is drawn from.
+- **Weather**: the conditions and forecast at a place, with an illustration that moves (rain falls, clouds drift). It stays still when your system is set to reduce motion.
+- **Clock**: the time now in one to four time zones. It ticks live.
+- **Countdown**: the time left until a deadline or an event. It counts down live.
+- **Metrics**: tiles with gauges for a snapshot, such as system resources, a quota or budget left, or the progress of a job. A tile takes the warning or danger colour when its value crosses the thresholds the agent set.
+
+Weather and metrics are snapshots the agent took at the time shown on the block; they do not update. Only the clock and the countdown change while you watch.
+
+Picking sends nothing. The composer gets ordinary text that you can edit, and you still select **Send**. If the composer holds text you typed, you are asked before it is replaced or cleared. A form's answers and a multi-select's picks are kept in this browser, so a reload or a visit to another conversation does not lose them; they expire after 7 days. Only the latest reply takes answers, and only until a message follows it; earlier replies, subagent conversations and the Trace show the same blocks read-only. A block that cannot be drawn shows its source under a one-line reason.
+
+Outside the Web App the blocks arrive as plain text. In `penguin chat`, `penguin run` and [remote control](/remote-control) chats, a choice reads as numbered options that you answer with a number or in your own words.
+
 ### Older messages
 
-A conversation opens on its latest 50 turns. Scroll near the top to load 50 more; your reading position stays in place. If loading fails, select "Failed to load earlier messages — click to retry". Once nothing older remains, "Beginning of conversation" marks the start. Turn numbers and header statistics count from the start of the conversation, so they match a full load.
+A conversation opens on its latest 20 turns. Scroll near the top to load 20 more; your reading position stays in place. A turn with a very large output can make one load hold fewer turns. Pictures load as they scroll into view. If loading fails, select "Failed to load earlier messages — click to retry". Once nothing older remains, "Beginning of conversation" marks the start. Turn numbers and header statistics count from the start of the conversation, so they match a full load.
 
 To return to the newest message, select **Jump to latest**. In a longer conversation, ticks in the left margin mark each exchange: point at a tick to preview it, and select it to jump there. Where the margin has no room, such as on a phone, an **Outline** button in the toolbar lists the same exchanges.
+
+### Find in the conversation
+
+Ctrl+F (⌘F on a Mac) opens a find bar over the area that holds the focus: the conversation, a subagent's conversation in the Agents panel, the conversation list, or the Files panel. With the focus anywhere else, it searches the conversation. Ctrl+Shift+F (⇧⌘F) searches every area on screen at once and lists each match with its area and the text around it; select a row to go there. The button at the bottom of the bar switches between one area and all of them.
+
+Typing updates the count without moving the page. Press Enter to show the selected match and again to go to the next one; Shift+Enter goes back. **Aa** matches case, and Esc closes the bar. While you search, collapsed step groups in the searched area open so that the steps listed in them can be found, and they fold again when you close the bar; a step's own output stays folded and is not searched. Earlier messages that are not loaded cannot be found: the bar then shows **Load and keep searching**, which loads them and continues upward from the match you were on.
+
+Both keys are defaults: change them under [System settings › Keyboard shortcuts](/settings#keyboard-shortcuts). In a browser they replace the browser's own find wherever a conversation is on screen or the focus is in one of these areas; everywhere else the browser keeps them.
 
 ## Use side panels
 
@@ -239,6 +267,8 @@ The chat page has two docks for panels: the right sidebar and the bottom panel. 
 | Terminal | A shell; see [Use a terminal](#use-a-terminal) |
 
 Each conversation remembers its own panel layout in this browser, and switching conversations restores it. Hiding a dock keeps its panels as they were, including unsaved edits. While a subagent waits for approval, an amber dot marks the button of the dock that holds the Agents panel, or the **Right sidebar** button when the panel is closed.
+
+To make a dock as large as it goes, select **Full screen** in its header, or drag its edge past the widest (for the bottom panel, tallest) it can be. The right sidebar then covers the conversation and the bottom panel grows up to the toolbar; the toolbar with the title and statistics, and the sidebar on the left, stay where they are. Its tabs and **Add panel** keep working. To come back, select **Exit full screen** in the same place, or drag the edge back. Full screen also ends when you switch conversations, hide the dock or close its last tab, or when a panel opens in a dock it covers.
 
 ### Open panels with the shortcuts launcher
 
@@ -259,7 +289,7 @@ Good to know:
 
 ### Use a terminal
 
-Terminals open as tabs in the docks, or on the standalone `/terminal` page.
+Terminals open as tabs in the docks, or on the standalone `/terminal` page. Each runs your login shell with your own startup files, then puts this installation's `penguin` first on PATH, the same one agents get (see [PATH launcher](/configuration#path-launcher)).
 
 - Ctrl+` shows or hides the terminal tabs. With no terminal open, it takes over a running shell no conversation holds, or starts a new one.
 - Ctrl+Shift+` starts a new terminal in the docks.
@@ -337,21 +367,24 @@ The right-click menu replaces the browser's own menu only on conversation rows a
 | --- | --- |
 | Turning hourglass | The Session is running |
 | Squeezing bar | The Session is compacting |
-| Green dot | A run finished that you have not looked at yet |
+| Green dot | A run finished that you have not looked at yet; only on your own conversations, never in **Background** |
 | Small green activity trace | The Session still has background tasks: commands running past their wait time, or background subagents mid-round. The tooltip counts them, such as "2 background tasks" |
 | Amber count | Tool calls waiting for approval |
 | Pin | The conversation is pinned |
 | Remote control icon | A messaging connection is enabled for the conversation |
 | Alarm clock | A scheduled task bound to the conversation will still fire; see [Scheduled tasks](/schedules) |
+| Plug, calendar, two robots or `>_` prompt | In the **Background** folder: what opened the Session, the Agent API, a scheduled task's run, a parent agent or `penguin run` |
 
 The background-task mark does not depend on the others: an idle conversation whose dev server is still running keeps it, and it disappears as soon as the last task ends, without a refresh.
 
 ### Folders
 
-Below each group's active conversations are its folders: **Subagents**, **Scheduled**, **Evaluations** and **Archived**, each loading its rows only when opened. When grouped by time, one set of folders covers the whole Project, and **Load more chats** fetches older conversations.
+Below each group's active conversations are its two folders, **Background** and **Archived**, each loading its rows only when opened. When grouped by time, one set of folders covers the whole Project, and **Load more chats** fetches older conversations.
 
-- **Evaluations** holds the conversations opened by **Use** in the [Evaluation Center](/evaluation-center), and the Test Sessions an evaluation starts for every case and run, so they do not crowd the tested agent's list.
-- Opening a subagent, scheduled or evaluation conversation opens its folder.
+- **Background** holds the Sessions a program opened rather than you: those an external program opened through the Agent API, a scheduled task's runs, subagent Sessions, and those `penguin run` created, including the Test Sessions an evaluation starts for every case and run. Each row carries a mark naming its source (API, Scheduled, Subagent or CLI), shown on hover.
+- **Archived** holds every archived conversation, whatever its source.
+- Company mode's desk and ticket Sessions are in none of these, archived or not, in either mode: they are listed only in [company mode](/company-mode)'s own views.
+- Opening a background conversation opens its folder. **Last conversation** and a deleted conversation's successor are only ever your own conversations, never background or company ones.
 - A group with nothing but folder rows, such as an agent that has only run evaluations, starts collapsed and sorts after the other groups (pinned groups excepted), with a dimmed header counting the folded rows. Once you open it, it stays open for that Project.
 
 A group's active conversations, and each open folder, show ten conversations at a time. **Show N more chats** reveals ten more; rows already loaded come first, and more are fetched from the server only when they run out. Once more than ten show, **Show less** folds back to the first ten. With more than ten groups, the list shows ten groups per page, with a pager below it.
@@ -366,10 +399,12 @@ A group's active conversations, and each open folder, show ten conversations at 
 | Tab | Run the highlighted slash command |
 | Backspace | At the start of the text, remove a staged `/agent` or `/model` chip |
 | Shift+F10 | Open the menu of the focused conversation row, or of the Files panel |
-| Esc | Close a menu; fold the shortcuts launcher; cancel a pending threshold change |
+| Esc | Close a menu or the find bar; fold the shortcuts launcher; cancel a pending threshold change |
 | Left / Right | Move the focused compaction threshold marker by 1,000 Tokens (10,000 with Shift) |
 | Ctrl+Alt+S | Open **Search chats** in the sidebar |
 | Ctrl+Alt+N | Start a new chat |
+| Ctrl+F | Find in the conversation, or in the area that holds the focus |
+| Ctrl+Shift+F | Find in every area on screen |
 | Ctrl+Alt+1 | Show or hide the sidebar |
 | Ctrl+Alt+2 | Show or hide the right sidebar |
 | Ctrl+Alt+3 | Show or hide the bottom panel |
@@ -378,7 +413,7 @@ A group's active conversations, and each open folder, show ten conversations at 
 | Ctrl+Alt+` | Close the focused terminal, after confirmation |
 | Ctrl+S | Save in the Files panel's editor or the handbook |
 
-On a Mac, ⌘ takes the place of Ctrl in Ctrl+S and in the Ctrl+Alt rows other than the terminal's (⌘S, ⌥⌘S); the three terminal keys use the Control key there too. Every row from Ctrl+Alt+S down is a default: change it under [System settings › Keyboard shortcuts](/settings#keyboard-shortcuts).
+On a Mac, ⌘ takes the place of Ctrl in Ctrl+S, Ctrl+F, Ctrl+Shift+F and in the Ctrl+Alt rows other than the terminal's (⌘S, ⌘F, ⌥⌘S); the three terminal keys use the Control key there too. Every row from Ctrl+Alt+S down is a default: change it under [System settings › Keyboard shortcuts](/settings#keyboard-shortcuts).
 
 ## Limits
 
@@ -388,7 +423,7 @@ On a Mac, ⌘ takes the place of Ctrl in Ctrl+S and in the Ctrl+Alt rows other t
 | Attachments per message | 20 files |
 | Attachment size | 100MB per file and 120MB per message by default; set by an admin under [Upload limits](/settings#upload-limits) |
 | Shortcuts | 3 per user; name up to 40 characters, prompt up to 4000 |
-| History | The latest 50 turns on opening, then 50 more per load |
+| History | The latest 20 turns on opening, then 20 more per load; at most 4 MiB of messages per load, but always at least one turn |
 | Conversation list | 10 conversations at a time per group or folder; 10 groups per page |
 | Send to background | Offered after a call has run for 10 seconds |
 | Retry countdown | Shown for waits of 2s or more |

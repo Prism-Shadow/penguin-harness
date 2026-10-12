@@ -307,13 +307,12 @@ function StepCard({
         <span className="text-sm font-medium">{title}</span>
       </span>
       <p className="flex-1 text-xs text-gray-500 dark:text-gray-400">{body}</p>
-      <span className="flex items-center justify-between gap-2">
-        {done ? (
+      {/* The action keeps the row's end, and drops below the done mark when both do not fit. */}
+      <span className="flex flex-wrap items-center gap-2">
+        {done && (
           <span className={`text-xs ${toneInk.success}`}>{S.company.overview.stepDone}</span>
-        ) : (
-          <span />
         )}
-        {action}
+        <span className="ml-auto">{action}</span>
       </span>
     </li>
   );
@@ -528,153 +527,166 @@ export function OverviewPage() {
         <MissionFold mission={detail.mission} />
       </header>
 
-      {/* KPI strip: four cells ruled by hairlines, each with the button that opens its page. */}
-      <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-gray-200 bg-gray-200 lg:grid-cols-4 dark:border-gray-800 dark:bg-gray-800">
-        <KpiCell
-          label={S.company.overview.employees}
-          value={counts.total}
-          jump={S.company.overview.openChart}
-          onJump={() => page("chart")}
-          detail={
-            <>
-              <ToneCount tone="success" label={S.company.overview.onDesk} value={counts.onDesk} />
-              <ToneCount tone="busy" label={S.company.overview.running} value={counts.running} />
-              <ToneCount tone="attention" label={S.company.overview.paused} value={counts.paused} />
-            </>
-          }
-        />
-        <KpiCell
-          label={S.company.overview.board}
-          value={board.open}
-          jump={S.company.overview.openBoard}
-          onJump={() => page("tickets")}
-          detail={
-            <span className="block w-full">
-              <span
-                className="flex h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
-                role="img"
-                aria-label={`${S.company.overview.openTickets} ${board.open} · ${S.company.overview.boardTotal(board.total)}`}
-              >
-                {board.segments
-                  .filter((seg) => seg.count > 0)
-                  .map((seg) => (
-                    <span
-                      key={seg.status}
-                      data-tooltip={`${S.company.tickets.columns[seg.status] ?? seg.status} ${seg.count}`}
-                      className={`block h-full ${BOARD_FILL[seg.status]}`}
-                      style={{ width: `${seg.share * 100}%` }}
-                    />
-                  ))}
-              </span>
-              {/* The counts under the bar are the controls, not the bar and not the cell: each
-                  is a small button that opens the board filtered to what it counts, and its
-                  tooltip says so rather than leaving the reader to guess. */}
-              <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-                {board.segments.map((seg) => (
-                  <button
-                    key={seg.status}
-                    type="button"
-                    data-tooltip={S.company.overview.openColumn(
-                      S.company.tickets.columns[seg.status] ?? seg.status,
-                    )}
-                    onClick={() => page("tickets", `?column=${seg.status}`)}
-                    className={`inline-flex items-center ${ICON_GAP.tight} rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
-                  >
-                    <span
-                      className={`block h-1.5 w-1.5 rounded-full ${BOARD_FILL[seg.status]}`}
-                      aria-hidden
-                    />
-                    {S.company.tickets.columns[seg.status] ?? seg.status}
-                    <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
-                      {seg.count}
-                    </span>
-                  </button>
-                ))}
-                {/* The blocked count is one more label in this row, not a pill: it is read
-                    beside the five column counts and has to weigh the same as they do. */}
-                <button
-                  type="button"
-                  data-tooltip={S.company.overview.openColumn(S.company.overview.blocked)}
-                  onClick={() => page("tickets", "?blocked=1")}
-                  className={`inline-flex items-center ${ICON_GAP.tight} rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
-                >
-                  <span
-                    className={`block h-1.5 w-1.5 rounded-full ${
-                      detail.blockedTickets > 0 ? toneDot.attention : toneDot.muted
-                    }`}
-                    aria-hidden
-                  />
-                  {S.company.overview.blocked}
-                  <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
-                    {detail.blockedTickets}
-                  </span>
-                </button>
-              </span>
-            </span>
-          }
-        />
-        <KpiCell
-          label={S.company.overview.today}
-          value={today.total}
-          jump={S.company.overview.openCalendar}
-          onJump={() => page("calendar")}
-          detail={
-            today.total === 0 ? (
-              <span>{S.company.overview.todayEmpty}</span>
-            ) : (
+      {/* KPI strip: four cells ruled by hairlines, each with the button that opens its page.
+          Four abreast only where the strip itself is wide enough for the board cell's count
+          buttons at the reader's text size (the sidebar and the text size both take from it,
+          so the viewport cannot say); two by two otherwise. */}
+      <div className="@container mt-5">
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-gray-200 bg-gray-200 @xl:grid-cols-4 dark:border-gray-800 dark:bg-gray-800">
+          <KpiCell
+            label={S.company.overview.employees}
+            value={counts.total}
+            jump={S.company.overview.openChart}
+            onJump={() => page("chart")}
+            detail={
               <>
-                {today.fired > 0 && (
-                  <ToneCount tone="success" label={markLabel("fired")} value={today.fired} />
-                )}
-                {today.queued > 0 && (
-                  <ToneCount tone="attention" label={markLabel("queued")} value={today.queued} />
-                )}
-                {today.failed > 0 && (
-                  <ToneCount tone="danger" label={S.company.overview.failed} value={today.failed} />
-                )}
-                {today.paused > 0 && (
-                  <ToneCount tone="muted" label={markLabel("paused")} value={today.paused} />
-                )}
+                <ToneCount tone="success" label={S.company.overview.onDesk} value={counts.onDesk} />
+                <ToneCount tone="busy" label={S.company.overview.running} value={counts.running} />
                 <ToneCount
                   tone="attention"
-                  label={S.company.overview.upcoming}
-                  value={today.upcoming}
+                  label={S.company.overview.paused}
+                  value={counts.paused}
                 />
               </>
-            )
-          }
-        />
-        <KpiCell
-          label={S.company.overview.spend}
-          value={
-            <span className={`flex items-center ${ICON_GAP.card}`}>
-              {/* Small: the cell is a quarter of the strip, and the ring is the picture of a
+            }
+          />
+          <KpiCell
+            label={S.company.overview.board}
+            value={board.open}
+            jump={S.company.overview.openBoard}
+            onJump={() => page("tickets")}
+            detail={
+              <span className="block w-full">
+                <span
+                  className="flex h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
+                  role="img"
+                  aria-label={`${S.company.overview.openTickets} ${board.open} · ${S.company.overview.boardTotal(board.total)}`}
+                >
+                  {board.segments
+                    .filter((seg) => seg.count > 0)
+                    .map((seg) => (
+                      <span
+                        key={seg.status}
+                        data-tooltip={`${S.company.tickets.columns[seg.status] ?? seg.status} ${seg.count}`}
+                        className={`block h-full ${BOARD_FILL[seg.status]}`}
+                        style={{ width: `${seg.share * 100}%` }}
+                      />
+                    ))}
+                </span>
+                {/* The counts under the bar are the controls, not the bar and not the cell: each
+                  is a small button that opens the board filtered to what it counts, and its
+                  tooltip says so rather than leaving the reader to guess. */}
+                <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {board.segments.map((seg) => (
+                    <button
+                      key={seg.status}
+                      type="button"
+                      data-tooltip={S.company.overview.openColumn(
+                        S.company.tickets.columns[seg.status] ?? seg.status,
+                      )}
+                      onClick={() => page("tickets", `?column=${seg.status}`)}
+                      className={`inline-flex items-center ${ICON_GAP.tight} whitespace-nowrap rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+                    >
+                      <span
+                        className={`block h-1.5 w-1.5 rounded-full ${BOARD_FILL[seg.status]}`}
+                        aria-hidden
+                      />
+                      {S.company.tickets.columns[seg.status] ?? seg.status}
+                      <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+                        {seg.count}
+                      </span>
+                    </button>
+                  ))}
+                  {/* The blocked count is one more label in this row, not a pill: it is read
+                    beside the five column counts and has to weigh the same as they do. */}
+                  <button
+                    type="button"
+                    data-tooltip={S.company.overview.openColumn(S.company.overview.blocked)}
+                    onClick={() => page("tickets", "?blocked=1")}
+                    className={`inline-flex items-center ${ICON_GAP.tight} whitespace-nowrap rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+                  >
+                    <span
+                      className={`block h-1.5 w-1.5 rounded-full ${
+                        detail.blockedTickets > 0 ? toneDot.attention : toneDot.muted
+                      }`}
+                      aria-hidden
+                    />
+                    {S.company.overview.blocked}
+                    <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+                      {detail.blockedTickets}
+                    </span>
+                  </button>
+                </span>
+              </span>
+            }
+          />
+          <KpiCell
+            label={S.company.overview.today}
+            value={today.total}
+            jump={S.company.overview.openCalendar}
+            onJump={() => page("calendar")}
+            detail={
+              today.total === 0 ? (
+                <span>{S.company.overview.todayEmpty}</span>
+              ) : (
+                <>
+                  {today.fired > 0 && (
+                    <ToneCount tone="success" label={markLabel("fired")} value={today.fired} />
+                  )}
+                  {today.queued > 0 && (
+                    <ToneCount tone="attention" label={markLabel("queued")} value={today.queued} />
+                  )}
+                  {today.failed > 0 && (
+                    <ToneCount
+                      tone="danger"
+                      label={S.company.overview.failed}
+                      value={today.failed}
+                    />
+                  )}
+                  {today.paused > 0 && (
+                    <ToneCount tone="muted" label={markLabel("paused")} value={today.paused} />
+                  )}
+                  <ToneCount
+                    tone="attention"
+                    label={S.company.overview.upcoming}
+                    value={today.upcoming}
+                  />
+                </>
+              )
+            }
+          />
+          <KpiCell
+            label={S.company.overview.spend}
+            value={
+              <span className={`flex items-center ${ICON_GAP.card}`}>
+                {/* Small: the cell is a quarter of the strip, and the ring is the picture of a
                   number already spelled out beside it. */}
-              <SpendRing
-                size={40}
-                cost={spend.cost}
-                currency={currency}
-                {...(spend.budget !== null ? { budget: spend.budget } : {})}
-                {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
-              />
-              <span className="min-w-0 truncate">{formatMoney(spend.cost, currency)}</span>
-            </span>
-          }
-          jump={S.company.overview.openFinance}
-          onJump={() => page("finance")}
-          detail={
-            <span className="block w-full">
-              <BudgetBar
-                cost={spend.cost}
-                currency={currency}
-                compact
-                {...(spend.budget !== null ? { budget: spend.budget } : {})}
-                {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
-              />
-              <span className="mt-1.5 block">{spendDetail}</span>
-            </span>
-          }
-        />
+                <SpendRing
+                  size={40}
+                  cost={spend.cost}
+                  currency={currency}
+                  {...(spend.budget !== null ? { budget: spend.budget } : {})}
+                  {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
+                />
+                <span className="min-w-0 truncate">{formatMoney(spend.cost, currency)}</span>
+              </span>
+            }
+            jump={S.company.overview.openFinance}
+            onJump={() => page("finance")}
+            detail={
+              <span className="block w-full">
+                <BudgetBar
+                  cost={spend.cost}
+                  currency={currency}
+                  compact
+                  {...(spend.budget !== null ? { budget: spend.budget } : {})}
+                  {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
+                />
+                <span className="mt-1.5 block">{spendDetail}</span>
+              </span>
+            }
+          />
+        </div>
       </div>
 
       {steps.fresh ? (
@@ -683,7 +695,8 @@ export function OverviewPage() {
           info={S.company.overview.firstStepsInfo}
           className="mt-8"
         >
-          <ol className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {/* As many cards abreast as hold a step's action whole; the others wrap below. */}
+          <ol className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-4">
             {FIRST_STEPS.map((step, i) => (
               <StepCard
                 key={step}

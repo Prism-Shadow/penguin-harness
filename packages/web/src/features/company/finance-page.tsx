@@ -34,7 +34,6 @@ import type {
   OrgFinanceResponse,
 } from "@prismshadow/penguin-server/api";
 import {
-  AgentAvatar,
   Badge,
   Button,
   Card,
@@ -71,6 +70,7 @@ import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { NAV_ICONS } from "../../lib/nav-icons";
+import { EmployeeAvatar } from "./employee-avatar";
 import { TrendChart } from "../usage/trend-chart";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
@@ -383,17 +383,30 @@ export function FinancePage() {
     }
   };
 
+  // On a phone the switch takes a full-width row of its own under the title, and each option
+  // shows its month alone: "Previous period 2026-09" beside its twin does not fit there at a
+  // large text size. The full wording stays each option's accessible name.
   const periodSwitch =
     previous !== null ? (
-      <Segmented
-        options={[
-          { value: previous, label: `${S.company.finance.prevPeriod} ${previous}` },
-          { value: currentPeriod, label: `${S.company.finance.thisPeriod} ${currentPeriod}` },
-        ]}
-        value={target === previous ? previous : currentPeriod}
-        onChange={setPeriod}
-        cols={2}
-      />
+      <div className="w-full sm:w-auto">
+        <Segmented
+          options={[
+            {
+              value: previous,
+              label: `${S.company.finance.prevPeriod} ${previous}`,
+              shortLabel: previous,
+            },
+            {
+              value: currentPeriod,
+              label: `${S.company.finance.thisPeriod} ${currentPeriod}`,
+              shortLabel: currentPeriod,
+            },
+          ]}
+          value={target === previous ? previous : currentPeriod}
+          onChange={setPeriod}
+          cols={2}
+        />
+      </div>
     ) : undefined;
 
   if (data === null) {
@@ -554,7 +567,7 @@ export function FinancePage() {
                       <TableCell style={{ paddingLeft: 8 + depth * INDENT_PX }}>
                         <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
                           {depth > 0 && <TreeElbow />}
-                          <AgentAvatar
+                          <EmployeeAvatar
                             id={employee.agentId}
                             name={employee.name}
                             size={ICON_SIZE.navRow}

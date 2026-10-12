@@ -23,7 +23,7 @@ export interface ResolveTerminalShellOptions {
 }
 
 /** Basename without a trailing .exe/.cmd/.bat, lowercased ("C:\...\pwsh.EXE" -> "pwsh"). */
-function shellName(shell: string): string {
+export function shellName(shell: string): string {
   // path.win32 handles both separators, so /usr/bin/zsh still yields "zsh".
   return path.win32
     .basename(shell)

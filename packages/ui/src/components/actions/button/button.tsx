@@ -49,8 +49,13 @@ const LINK_SIZE: Record<ButtonSize, string> = {
   "icon-sm": "",
 };
 
-/** Layout and motion shared by a real button and the element that stands in for one. */
-const BASE = "inline-flex items-center justify-center gap-1 transition-colors duration-150";
+/**
+ * Layout and motion shared by a real button and the element that stands in for one. The label
+ * never wraps: a squeezed button breaks a CJK label between any two characters, so the row it
+ * stands in has to make room instead (wrap the row, shrink the text beside it, widen the column).
+ */
+const BASE =
+  "inline-flex items-center justify-center gap-1 whitespace-nowrap transition-colors duration-150";
 
 const look = (variant: ButtonVariant, size: ButtonSize) =>
   `${VARIANT[variant]} ${variant === "link" ? LINK_SIZE[size] : SIZE[size]}`;

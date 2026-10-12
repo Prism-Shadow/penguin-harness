@@ -36,6 +36,7 @@ The CLI and the Web App talk to the Server over HTTP and SSE. Among the shipped 
 | --- | --- |
 | `packages/core` | SDK and engine: `context_engine`, OmniMessage, the LLM and Environment interfaces, hooks, state and Trace |
 | `packages/server` | The Human implementation: runs Tasks through core, takes input and approvals over HTTP, streams output over SSE |
+| `packages/amsp` | The [Agent API](/agent-api)'s protocol package: the [AMSP](/amsp) wire types, which the Server imports, and a zero-dependency client for Node and browsers |
 | `packages/cli` | Terminal client of the Server: REPL and one-shot runs over HTTP and SSE. It starts a local Server when none is running. Only `penguin config` reads and writes configuration files directly through the SDK |
 | `packages/web` | Rendering SPA: renders the OmniMessage stream and contains no engine logic |
 | `packages/desktop` | Desktop app: an Electron shell that runs the Server as a `utilityProcess` and opens its window on the local HTTP address |

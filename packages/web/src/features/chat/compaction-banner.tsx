@@ -18,8 +18,8 @@
  * icon and wall time exactly like a thinking block** — 「思考」/ "Thinking", what the
  * compaction request thought ahead of its summary (present only once any arrived; a model
  * that does not think leaves no empty row), and 「压缩结果」/ "Result", the summary itself.
- * Both carry the thinking block's own body (`md-body` + the streaming `Md`) and stream while
- * the request writes them.
+ * Both carry the thinking block's own body (`md-body` through the shared `StreamText`) and
+ * stream while the request writes them, revealed the way a reply is.
  *
  * Two layers, and the running row opens exactly one of them (ActivityGroup's expand policy):
  * while the compaction runs the banner is open, so the two section rows are on
@@ -50,8 +50,8 @@ import {
   DISCLOSURE_BODY_MD_CLASS,
   DisclosureRow,
   LiveDuration,
-  Md,
   StatusIcon,
+  StreamText,
 } from "@prismshadow/penguin-ui";
 import type { ActivityGroupRow } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
@@ -105,9 +105,7 @@ function CompactionSection({
         </span>
       }
     >
-      <div className={`anim-fade ${DISCLOSURE_BODY_MD_CLASS}`}>
-        <Md text={text} streaming={streaming} />
-      </div>
+      <StreamText className={DISCLOSURE_BODY_MD_CLASS} text={text} streaming={streaming} />
     </DisclosureRow>
   );
 }

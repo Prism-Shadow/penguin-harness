@@ -32,6 +32,7 @@ import type { AccentChoice } from "../src/boot";
 import {
   ACCENT_PRESET_IDS,
   DEFAULT_THEME_ID,
+  INITIAL_THEME_ID,
   THEME_ACCENT_PRESETS,
   THEME_IDS,
 } from "../src/tokens";
@@ -114,11 +115,12 @@ function runBoot(stored: Record<string, string | null>, systemDark: boolean, thr
 
 /**
  * What the provider resolves the same stored values to, written from the stored-preference rules
- * rather than from the script: an unknown mode means "system", an unknown theme id the default
- * theme, an unknown accent `neutral`, an unknown face the theme's own, and the text size is what
- * `readTextSize` says (the legacy scale mapped and migrated on the way). A preset any theme lists
- * is written to the root whichever theme is active — the theme files scope their presets to
- * their own root, so an unlisted one paints nothing and comes back with its theme.
+ * rather than from the script: an unknown mode means "system", an absent or unknown theme id the
+ * theme a browser starts in, an unknown accent `neutral`, an unknown face the theme's own, and
+ * the text size is what `readTextSize` says (the legacy scale mapped and migrated on the way). A
+ * preset any theme lists is written to the root whichever theme is active — the theme files
+ * scope their presets to their own root, so an unlisted one paints nothing and comes back with
+ * its theme.
  */
 function viaProvider(stored: Record<string, string | null>, systemDark: boolean) {
   const mode = stored[THEME_STORAGE_KEYS.mode];
@@ -132,7 +134,7 @@ function viaProvider(stored: Record<string, string | null>, systemDark: boolean)
     dark: mode === "dark" || (mode !== "light" && systemDark),
     themeId: (THEME_IDS as readonly (string | null | undefined)[]).includes(themeId)
       ? (themeId as ThemeId)
-      : DEFAULT_THEME_ID,
+      : INITIAL_THEME_ID,
     accent: (ACCENT_PRESET_IDS as readonly (string | null | undefined)[]).includes(accent)
       ? (accent as AccentChoice)
       : "neutral",
@@ -228,6 +230,20 @@ describe("BOOT_SCRIPT", () => {
     context.matchMedia = () => ({ matches: false });
     compiled.runInContext(context);
     expect(root.style.fontSize).toBe("18px");
+  });
+
+  it("opens a browser that stores no theme, or an unknown one, in the initial theme, and Primer as a bare root", () => {
+    // The theme a fresh browser starts in is written to the root like a chosen one; the stylesheet
+    // alone paints its fallback, Primer, which is how a stored choice of Primer is painted.
+    for (const stored of [null, "retro"]) {
+      expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: stored }, false).theme, `${stored}`).toBe(
+        INITIAL_THEME_ID,
+      );
+    }
+    expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: DEFAULT_THEME_ID }, false).theme).toBe(
+      undefined,
+    );
+    expect(runBoot({ [THEME_STORAGE_KEYS.themeId]: "geek" }, false).theme).toBe("geek");
   });
 
   it("knows every preset every theme lists, and writes one under any theme", () => {

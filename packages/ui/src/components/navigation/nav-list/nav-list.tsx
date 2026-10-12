@@ -16,6 +16,13 @@
  * classes, state and content; an element the row does not draw at all takes the row's look
  * through {@link navRowClass}.
  *
+ * Selection moves as a fill: the arriving row's fill eases in over 200 ms while the departing
+ * row's leaves over 150 ms, so the highlight reads as moving to the clicked row rather than two
+ * rows blinking. The selected row is its fill and the full ink, never a heavier
+ * weight — a weight cannot ease (the bundled faces are fixed cuts), so the label would jump a
+ * pixel wider on every switch. A theme that marks selection by weight says so in its own recipe
+ * (Console's, on the app window's navigation).
+ *
  * A row on the app's navigation column (`surface="muted"`) sits on the muted surface, where a
  * surface step would not show: its hover and its selection are thin washes of the ink instead
  * ({@link NAV_FILL}), which every other row on that column reads too.
@@ -102,12 +109,12 @@ const GLYPH_SIZE: Record<NavRowDensity, number> = {
  */
 const STATE: Record<NavSurface, { active: string; rest: string; groupRest: string }> = {
   default: {
-    active: "bg-line-muted font-medium text-fg",
+    active: "bg-line-muted text-fg",
     rest: "text-fg-muted hover:bg-surface-muted hover:text-fg",
     groupRest: "text-fg-muted group-hover:bg-surface-muted group-hover:text-fg",
   },
   muted: {
-    active: `${NAV_FILL.selected} font-medium text-fg`,
+    active: `${NAV_FILL.selected} text-fg`,
     rest: `text-fg-muted ${NAV_FILL.hover} hover:text-fg`,
     groupRest: `text-fg-muted ${NAV_FILL.groupHover} group-hover:text-fg`,
   },
@@ -142,7 +149,9 @@ export function navRowClass({
       : groupHover
         ? STATE[surface].groupRest
         : STATE[surface].rest;
-  return `flex ${width} items-center whitespace-nowrap rounded-md text-left transition-colors duration-150 ${DENSITY[density]} ${state}`;
+  // The arriving fill eases in slower than the departing one leaves (see the module comment).
+  const pace = active && !disabled ? "duration-200" : "duration-150";
+  return `flex ${width} items-center whitespace-nowrap rounded-md text-left transition-colors ${pace} ${DENSITY[density]} ${state}`;
 }
 
 /**

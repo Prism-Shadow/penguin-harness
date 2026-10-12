@@ -108,8 +108,13 @@ export function Modal({
             {children}
           </div>
         )}
+        {/* The buttons keep their labels whole, so when a phone-width foot cannot hold them in
+            one row it starts another rather than squeezing one. */}
         {footer && (
-          <div data-slot="foot" className="flex justify-end gap-2 border-t border-line px-4 py-3">
+          <div
+            data-slot="foot"
+            className="flex flex-wrap justify-end gap-2 border-t border-line px-4 py-3"
+          >
             {footer}
           </div>
         )}

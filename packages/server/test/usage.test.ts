@@ -60,6 +60,7 @@ function meta(sessionId: string, modelId: string, provider = "custom"): SessionM
     system_prompt: "",
     agent_state: "/tmp/x",
     workspace: "/tmp/w",
+    source: "user",
   };
 }
 

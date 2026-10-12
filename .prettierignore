@@ -15,6 +15,10 @@ packages/desktop/skills/
 # formatter pass would read as drift against the script's own output)
 packages/ui/src/fonts/misans/
 
+# the a2ui skill's checker, an esbuild bundle written by scripts/build-a2ui-check.mjs whose header
+# hashes its sources (a formatter pass would change the file the hash test compares)
+plugins/a2ui/skills/a2ui/scripts/check.mjs
+
 # docs-only area (mostly Chinese; not machine-formatted)
 specs/
 *.md

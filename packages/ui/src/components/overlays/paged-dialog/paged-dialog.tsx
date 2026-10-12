@@ -68,7 +68,7 @@ export function PagedDialog<K extends string>({
   const activeLabel = activeItem?.label ?? title;
 
   return (
-    <Modal open={open} onClose={onClose} title={title} headerless bare widthClass="sm:max-w-3xl">
+    <Modal open={open} onClose={onClose} title={title} headerless bare widthClass="sm:max-w-4xl">
       <div className="flex h-[min(40rem,85vh)] flex-col sm:flex-row">
         {/* Rail: vertical on desktop, a horizontal scroller above the pane on narrow screens. */}
         <NavList

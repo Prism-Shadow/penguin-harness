@@ -40,7 +40,63 @@ const processor = unified().use(remarkParse).use(remarkGfm);
 
 /** Reads a reply as Markdown. Never throws: any text at all is a valid document. */
 export function parseMarkdown(text: string): Root {
-  return processor.parse(text);
+  const root = processor.parse(text);
+  literalStrikethrough(root, text);
+  return root;
+}
+
+/**
+ * Strikethrough is not rendered: every `delete` node GFM produced becomes its own text again —
+ * the opening tildes, its children as parsed, the closing tildes — so each channel's renderer
+ * escapes the tildes like any other literal text and the reader sees what the model typed.
+ *
+ * Model replies use `~` for ranges (`3~5 天`) and "about" (`~30 秒`) far more often than for
+ * strikethrough, and two such tildes in one paragraph strike out everything between them. The
+ * Web App renders replies the same way (packages/ui's remark-literal-tildes.ts), so a reply reads
+ * alike in the transcript and in every chat. remark-gfm has no switch for strikethrough alone,
+ * and the rest of GFM — tables, task lists, autolinks — stays wanted, hence a pass on the tree.
+ * The markers are read from the source at the node's offset, so `~` stays one tilde and `~~` two;
+ * the synthesized text nodes carry the markers' own spans.
+ */
+function literalStrikethrough(node: Nodes, source: string): void {
+  if (!("children" in node)) return;
+  const out: Nodes[] = [];
+  for (const child of node.children as Nodes[]) {
+    literalStrikethrough(child, source);
+    if (child.type !== "delete") {
+      out.push(child);
+      continue;
+    }
+    const start = child.position?.start;
+    const end = child.position?.end;
+    let run = 0;
+    if (start?.offset !== undefined) {
+      while (run < 2 && source[start.offset + run] === "~") run++;
+    }
+    const marker = run === 0 ? "~~" : "~".repeat(run);
+    const markerNode = (from: typeof start, to: typeof end): Nodes =>
+      from !== undefined && to !== undefined
+        ? { type: "text", value: marker, position: { start: from, end: to } }
+        : { type: "text", value: marker };
+    const openEnd =
+      start?.offset !== undefined
+        ? {
+            line: start.line,
+            column: start.column + marker.length,
+            offset: start.offset + marker.length,
+          }
+        : undefined;
+    const closeStart =
+      end?.offset !== undefined
+        ? { line: end.line, column: end.column - marker.length, offset: end.offset - marker.length }
+        : undefined;
+    out.push(
+      markerNode(start, openEnd),
+      ...(child.children as Nodes[]),
+      markerNode(closeStart, end),
+    );
+  }
+  (node as { children: Nodes[] }).children = out;
 }
 
 /**

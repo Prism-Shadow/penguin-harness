@@ -8,7 +8,8 @@
  *
  * - A run's running → idle flips reach the Project's owner and its members, and no other user,
  *   not even one with a live channel of their own.
- * - The event names the Session and carries the row stamp a list fetch would return.
+ * - The event names the Session and its Project, and carries the row stamp a list fetch would
+ *   return.
  * - It carries hasTrace true from the first flip of a Session that had never run.
  * - It carries none of the composer state the Session channel owns.
  * - A member removed from the Project stops hearing about its Sessions.
@@ -97,8 +98,11 @@ describe("session_state on the user channel", () => {
     expect(stranger.events).toEqual([]);
   });
 
-  it("names the Session and carries the row stamp a list fetch would return", async () => {
+  it("names the Session and its Project, and carries the row stamp a list fetch would return", async () => {
     await runTask();
+    // Every flip names the Project: a list of another Project skips it without a request, and a
+    // list of this one that holds no row for the Session knows it has a row to fetch.
+    expect(boxes.owner.states().map((e) => e.projectId)).toEqual([PROJECT, PROJECT]);
     const settled = boxes.owner.states().at(-1)!;
     expect(settled.sessionId).toBe(SID);
     expect(settled.state).toBe("idle");

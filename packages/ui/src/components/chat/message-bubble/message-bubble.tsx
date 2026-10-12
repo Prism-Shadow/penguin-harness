@@ -122,7 +122,11 @@ export function MessageBubble({
   }
 }
 
-/** An image the person sent, in its bubble (`bubble`) or among a steer's (`chip`, smaller). */
+/**
+ * An image the person sent, in its bubble (`bubble`) or among a steer's (`chip`, smaller). It
+ * loads lazily: a transcript's images can be fetched by reference, one request each, and only
+ * the ones scrolled near need to arrive.
+ */
 export function MessageImage({
   src,
   alt,
@@ -136,6 +140,7 @@ export function MessageImage({
     <ZoomableImage
       src={src}
       alt={alt}
+      lazy
       className={
         size === "bubble"
           ? "max-h-48 max-w-full rounded-control"

@@ -21,11 +21,12 @@ import { avatarInitial } from "./avatar";
  * The sizes a user avatar is drawn at, named by the slot rather than by the number (the
  * `ICON_SIZE` convention). `tile` is what a navigation row, a rail and a menu header share — the
  * three must stay identical, because collapsing a sidebar swaps one for another and a changed
- * size would pop. `preview` is a profile page, where the avatar is the subject.
+ * size would pop. `preview` is a profile page, where the avatar is the subject of its settings
+ * row — one step above the row's controls, not a hero (40px; it was 64px until 2026-10-02).
  */
-export const USER_AVATAR_SIZE = { tile: 28, preview: 64 } as const;
+export const USER_AVATAR_SIZE = { tile: 28, preview: 40 } as const;
 
-/** The letter's share of the disc: large enough to read at 28px, still inside the circle at 64. */
+/** The letter's share of the disc: large enough to read at 28px, still inside the circle at 40. */
 const INITIAL_RATIO = 0.45;
 
 export function UserAvatar({

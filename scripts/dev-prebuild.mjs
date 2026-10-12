@@ -2,9 +2,15 @@
 /**
  * Serialized dev prestep: ensure dependencies are installed, then build what the dev
  * servers consume: packages/core, and packages/cli for the `penguin` a dev server hands the
- * Agents it runs (it writes a shim at `<root>/bin/penguin` pointing at
- * `packages/cli/dist/penguin.js`, so that file has to exist and be current when the server
- * starts — `tsx watch` never rebuilds it).
+ * Agents it runs and puts first in its terminals (it writes a shim at `<root>/bin/penguin`
+ * pointing at `packages/cli/dist/penguin.js`, so that file has to exist and be current when
+ * the server starts — `tsx watch` never rebuilds it). That CLI imports modules of
+ * packages/server at runtime (the lock, the token minting, the version report…) from the
+ * server's dist, which the dev server itself, running its source under tsx, never builds —
+ * so the prestep builds the server too, JavaScript only (PENGUIN_BUILD_JS_ONLY, see
+ * packages/server/tsup.config.ts). Before it comes packages/hmr, which that build inlines
+ * and the dev server imports; the server's build script also regenerates the interface
+ * table (src/ifaces.json) the dev server reads.
  *
  * dev:server and dev:web must build packages/core before starting
  * (never start on stale deps — see the 2026-07-17 design changelog entry), and every dev
@@ -28,7 +34,7 @@
  *   re-invocation (from packages/server's dev script) is a no-op. The window is
  *   deliberately tiny so a human edit-then-restart cycle always rebuilds.
  *
- * Usage: `node scripts/dev-prebuild.mjs` (install + build core/cli) or
+ * Usage: `node scripts/dev-prebuild.mjs` (install + build core/hmr/server/cli) or
  * `node scripts/dev-prebuild.mjs --install-only` (dev:docs / dev:landing — no workspace
  * deps to build, but installs must still be current).
  */
@@ -214,14 +220,32 @@ try {
       refreshViteCache();
       exitCode = 0;
     } else {
-      console.log("[dev-prebuild] building core and the CLI...");
-      // One pnpm invocation, so the two run in dependency order: the CLI bundle inlines
-      // core, and core has to be rebuilt first for it to inline the current one.
+      console.log(
+        "[dev-prebuild] building core, the server modules the CLI imports, and the CLI...",
+      );
+      // One pnpm invocation, so they run in dependency order: the CLI bundle inlines core,
+      // and the server build inlines hmr, so each has to be rebuilt before its consumer.
+      // Through each package's `build` script, not tsup directly: that is the script
+      // syncInjectedDepsAfterScripts names, so the CLI's injected copy of the server is
+      // refreshed with the output.
       const res = spawnSync(
         "pnpm",
-        ["--filter", "@prismshadow/penguin-core", "--filter", "@prismshadow/penguin-cli", "build"],
-        // shell on Windows: pnpm is a .cmd shim there (see ensureInstalled).
-        { cwd: ROOT, stdio: "inherit", shell: process.platform === "win32" },
+        [
+          ...["core", "hmr", "server", "cli"].flatMap((pkg) => [
+            "--filter",
+            `@prismshadow/penguin-${pkg}`,
+          ]),
+          "build",
+        ],
+        {
+          cwd: ROOT,
+          stdio: "inherit",
+          // shell on Windows: pnpm is a .cmd shim there (see ensureInstalled).
+          shell: process.platform === "win32",
+          // The server's declarations take most of its build and nothing at runtime reads
+          // them; the other packages' configs ignore this.
+          env: { ...process.env, PENGUIN_BUILD_JS_ONLY: "1" },
+        },
       );
       if (res.status === 0) {
         writeFileSync(BUILD_STAMP, String(Date.now()));

@@ -16,6 +16,7 @@ import { useUiStrings } from "../../../strings";
 import { Chevron } from "../../icons/chevron/chevron";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { setDragPreview } from "../../overlays/drag-preview/drag-preview";
+import { Fold } from "../../layout/fold/fold";
 import { ICON_SIZE } from "../../../icon-scale";
 
 /** A folder toggle's and a "more" row's shape: a dense, muted row with a chevron column. */
@@ -65,8 +66,8 @@ export function MoreRow({
 
 /**
  * A collapsed-by-default lazy folder (subagent, scheduled, archived): the toggle row shows the
- * label (typically with the group's exact share), the body renders only while open, and an
- * optional "more" row reveals and pages the folder on its own. The "show less" row below it
+ * label (typically with the group's exact share), the body renders only while open — it folds
+ * in and out through `Fold` — and an optional "more" row reveals and pages the folder on its own. The "show less" row below it
  * folds the folder back to its first page; the two can stand at once, since a folder revealed
  * part-way still has rows to show and rows to fold away.
  */
@@ -129,17 +130,19 @@ export function FolderSection({
           {action}
         </div>
       )}
-      {open && children}
-      {open && more && (
-        <MoreRow
-          {...(moreLabel !== undefined ? { label: moreLabel, ariaLabel: moreLabel } : {})}
-          pending={pending}
-          onClick={() => onMore?.()}
-        />
-      )}
-      {open && less && (
-        <MoreRow label={strings.fewer} ariaLabel={strings.fewer} onClick={() => onLess?.()} />
-      )}
+      <Fold open={open}>
+        {children}
+        {more && (
+          <MoreRow
+            {...(moreLabel !== undefined ? { label: moreLabel, ariaLabel: moreLabel } : {})}
+            pending={pending}
+            onClick={() => onMore?.()}
+          />
+        )}
+        {less && (
+          <MoreRow label={strings.fewer} ariaLabel={strings.fewer} onClick={() => onLess?.()} />
+        )}
+      </Fold>
     </div>
   );
 }

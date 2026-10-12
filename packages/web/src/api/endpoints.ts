@@ -9,11 +9,16 @@ import type {
   AdminUserCreateRequest,
   AdminUserCreateResponse,
   AdminUsersResponse,
+  AgentApiKeyCreateRequest,
+  AgentApiKeyCreateResponse,
+  AgentApiResponse,
+  AgentApiUpdateRequest,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
   AgentCreateRequest,
   AgentCreateResponse,
   AgentHooksResponse,
+  AgentMcpServersResponse,
   AgentImportRequest,
   AgentImportResponse,
   AgentKernelUpdateResponse,
@@ -26,6 +31,8 @@ import type {
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
+  BenchmarkArchiveImportRequest,
+  BenchmarkArchiveImportResponse,
   BenchmarkCasesResponse,
   BenchmarkCreateRequest,
   BenchmarkCreateResponse,
@@ -85,6 +92,9 @@ import type {
   SshHostResponse,
   ModelsResponse,
   ModelsUpdateRequest,
+  PresetSyncRequest,
+  PresetSyncResponse,
+  ProviderConnectionUpdate,
   ModelTestRequest,
   ModelTestResponse,
   ModelVisionDetectRequest,
@@ -170,6 +180,7 @@ import type {
   PluginConfigResponse,
   PluginConfigActionResponse,
   PluginConfigUpdateRequest,
+  LanguageIndexResponse,
   PluginReadmeResponse,
   SessionsResponse,
   SessionSwitchModelRequest,
@@ -205,6 +216,7 @@ import type {
   VaultResponse,
   VaultUpdateRequest,
   InstalledPluginsResponse,
+  PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
   WorkflowInfo,
@@ -226,12 +238,19 @@ import type {
   BuiltinBrowserSettings,
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
+  BrowserBackend,
+  BrowserBackendResponse,
+  BrowserExtensionPairingResponse,
+  BrowserExtensionsResponse,
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta } from "./client";
+import type { RunRequest } from "@prismshadow/amsp";
+import { apiFetch, apiFetchStream, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
+import { activityCursorParam } from "../lib/session-grouping";
+import type { ActivityKey } from "../lib/session-grouping";
 
 // Auth & user -----------------------------------------------------------------
 
@@ -397,6 +416,31 @@ export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
     method: "PUT",
     body,
   });
+
+/**
+ * One group's connection (`[providers.<id>]`, owner): only the fields the update names change;
+ * the models that store none of their own follow it. Answers with the whole table, re-read.
+ */
+export const putProviderConnection = (
+  projectId: string,
+  provider: string,
+  body: ProviderConnectionUpdate,
+) =>
+  apiFetch<ModelsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/providers/${encodeURIComponent(provider)}`,
+    { method: "PUT", body },
+  );
+
+/**
+ * The built-in catalog against the table (owner): `add` adds the presets it lacks and touches
+ * nothing else; `restore` puts every built-in model back to the catalog, keeping keys and the
+ * user's own models. Answers with the table and the two counts.
+ */
+export const syncPresets = (projectId: string, body: PresetSyncRequest) =>
+  apiFetch<PresetSyncResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/sync-presets`,
+    { method: "POST", body },
+  );
 
 /** Narrow default-model switch (owner): flips the same default_model the models page maintains, without resending the table. */
 export const putDefaultModel = (projectId: string, body: DefaultModelUpdateRequest) =>
@@ -673,6 +717,53 @@ export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
     { method: "POST" },
   );
 
+// An Agent's public API (the stream itself is AMSP under /api/amsp/v1; these are its settings) ---
+
+const agentApiBase = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/api`;
+
+/** The Agent's API switch, keyless switch, approval mode and keys (any member may read them). */
+export const getAgentApi = (projectId: string, agentId: string) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId));
+
+/** Changes the given settings and keeps the rest (owner only). */
+export const putAgentApi = (projectId: string, agentId: string, body: AgentApiUpdateRequest) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId), { method: "PUT", body });
+
+/** Mints a key (owner only): the answer is the one place the secret is ever shown. */
+export const createAgentApiKey = (
+  projectId: string,
+  agentId: string,
+  body: AgentApiKeyCreateRequest,
+) =>
+  apiFetch<AgentApiKeyCreateResponse>(`${agentApiBase(projectId, agentId)}/keys`, {
+    method: "POST",
+    body,
+  });
+
+/** Deletes a key for good (owner only): a program presenting it is refused from the next request on. */
+export const deleteAgentApiKey = (projectId: string, agentId: string, keyId: string) =>
+  apiFetch<void>(`${agentApiBase(projectId, agentId)}/keys/${encodeURIComponent(keyId)}`, {
+    method: "DELETE",
+  });
+
+/**
+ * Runs the Agent once through its API for the owner's sign-in (the API tab's Try it): the body is
+ * the public runs route's, and the answer the same AMSP event stream, handed back unread for
+ * `readSse` (or the same JSON refusal, as an ApiError).
+ */
+export const tryAgentApi = (
+  projectId: string,
+  agentId: string,
+  body: RunRequest,
+  opts: { signal?: AbortSignal } = {},
+) =>
+  apiFetchStream(`${agentApiBase(projectId, agentId)}/try`, {
+    method: "POST",
+    body,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+  });
+
 // Session ---------------------------------------------------------------------
 
 /**
@@ -680,13 +771,23 @@ export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
  * detect "has more". `category` filters server-side (paging applies within the category);
  * `workspaceGroup` narrows the same way to one Workspace group, so a group can page its own
  * stream; `withCounts` asks for per-category totals over the whole list alongside the page.
+ *
+ * The sidebar pages in activity order with a cursor (`order: "activity"` + `before`), never by
+ * offset: activity reorders the list while it is being read, and an offset page would skip a row
+ * that moved above it. A server that predates `order` ignores both parameters and answers in
+ * creation order — the next page then repeats rows the pool already holds, deduplicated by id.
  */
 export const listSessions = (
   projectId: string,
   agentId: string,
   opts?: {
-    offset: number;
+    /** Rows to skip, in creation order. Exclusive with `before`. */
+    offset?: number;
     limit: number;
+    /** `activity`: last activity first, ties by id descending (code-point order) — the sidebar's order. Omitted: creation order. */
+    order?: "created" | "activity";
+    /** Activity order only: rows strictly below this key — the last row of the previous page. */
+    before?: ActivityKey;
     category?: SessionCategory;
     /** One Workspace group's rows only: its path, or the merged temporary group's sentinel (session-grouping.ts). */
     workspaceGroup?: string;
@@ -702,7 +803,10 @@ export const listSessions = (
   machineId?: string | null,
 ) => {
   const qs = opts
-    ? `?limit=${opts.limit}&offset=${opts.offset}` +
+    ? `?limit=${opts.limit}` +
+      (opts.offset !== undefined ? `&offset=${opts.offset}` : "") +
+      (opts.order ? `&order=${opts.order}` : "") +
+      (opts.before ? `&before=${encodeURIComponent(activityCursorParam(opts.before))}` : "") +
       (opts.category ? `&category=${opts.category}` : "") +
       (opts.workspaceGroup ? `&workspaceGroup=${encodeURIComponent(opts.workspaceGroup)}` : "") +
       (opts.withCounts ? "&counts=1" : "") +
@@ -719,15 +823,26 @@ export const listSessions = (
  * Browses directories. With no machine, this server's own filesystem; with one, THAT
  * machine's — listed by this server over ssh, so picking a workspace on another machine
  * needs no second login to that machine's own server.
+ *
+ * `places` asks a home request (empty `path`) for the machine's standard folders and its
+ * locations (drives, volumes, mounts) as well. Only this server discovers them, so the flag
+ * goes on the local route alone; a machine reached over ssh answers with its folders only.
  */
-export const listDirs = (projectId: string, path = "", machineId?: string | null) =>
-  machineId === undefined || machineId === null
+export const listDirs = (
+  projectId: string,
+  path = "",
+  machineId?: string | null,
+  opts?: { places?: boolean },
+) => {
+  const places = opts?.places === true ? "&places=1" : "";
+  return machineId === undefined || machineId === null
     ? apiFetch<DirListResponse>(
-        `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
+        `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}${places}`,
       )
     : apiFetch<DirListResponse>(
         `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/dirs?path=${encodeURIComponent(path)}`,
       );
+};
 
 /**
  * Asks the desktop shell to read a folder macOS refused, in the app's own name — what makes
@@ -782,8 +897,16 @@ export const forkSession = (sessionId: string, body: SessionForkRequest) =>
     body,
   });
 
-export const getSession = (sessionId: string) =>
-  apiFetch<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`);
+/**
+ * One Session's row. `machineId` names the server to ask when the caller knows and the id map
+ * does not yet — a Session the list has never fetched, announced by a machine's own event
+ * stream. Omitted, the id routes itself (lib/session-machines.ts).
+ */
+export const getSession = (sessionId: string, machineId?: string | null) =>
+  apiFetch<SessionResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}`,
+    machineId === undefined ? {} : { server: machineId },
+  );
 
 export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
   apiFetch<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`, {
@@ -932,7 +1055,7 @@ export const testQQBinding = (sessionId: string, body: QQTestRequest) =>
     body,
   });
 
-/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to). */
+/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` / `wechat_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to, and on WeChat it answers 409 `wechat_needs_recent_message` when the platform will not take a bot message until the user messages the bot again). */
 export const sendMessagingTestMessage = (sessionId: string, channel: MessagingChannel) =>
   apiFetch<MessagingTestMessageResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/test-message`,
@@ -1528,6 +1651,10 @@ export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plug
 export const getPluginFiles = (plugin: string) =>
   apiFetch<PluginFilesResponse>(`/api/plugins/${encodeURIComponent(plugin)}/files`);
 
+/** A library plugin's README.md, from its package root, for the detail dialog; 404 when the package ships none. */
+export const getLibraryPluginReadme = (plugin: string) =>
+  apiFetch<PluginReadmeResponse>(`/api/plugins/${encodeURIComponent(plugin)}/readme`);
+
 /**
  * Installs whole library plugins — each one's skills and hook package; an already-installed
  * plugin is overwritten with the library content (i.e. updated). 201 returns the Agent's
@@ -1542,6 +1669,10 @@ export const installAgentPlugins = (projectId: string, agentId: string, names: s
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
 export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
 
+/** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
+export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
+
+/** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
 export const getPluginReadme = (name: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
 
@@ -1553,6 +1684,20 @@ export const getAgentSkills = (projectId: string, agentId: string) =>
 export const getAgentHooks = (projectId: string, agentId: string) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/hooks`,
+  );
+
+/** The Agent's MCP servers in config order: target, the plugin that installed each, the vault keys still missing and whether a sign-in is needed (never a value). */
+export const getAgentMcpServers = (projectId: string, agentId: string) =>
+  apiFetch<AgentMcpServersResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/mcp-servers`,
+  );
+
+/** Removes one MCP server entry from the Agent, whoever added it; 204, 404 unknown_mcp_server when it is not there. */
+export const uninstallAgentMcpServer = (projectId: string, agentId: string, name: string) =>
+  apiFetch<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/mcp-servers/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
   );
 
 /** Uninstalls one hook package (deletes agent_state/hooks/<name>/ whole); 204, 404 not_found when it is not installed. */
@@ -1642,6 +1787,28 @@ export const deleteBenchmark = (projectId: string, benchmarkId: string) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}`,
     { method: "DELETE" },
+  );
+
+/** Imports a Benchmark package from a zip (base64; any member); 409 `benchmark_exists` on a taken id unless overwrite; 201 returns the Benchmark as listed. */
+export const importBenchmarkArchive = (projectId: string, body: BenchmarkArchiveImportRequest) =>
+  apiFetch<BenchmarkArchiveImportResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/archive`,
+    { method: "POST", body },
+  );
+
+/**
+ * Download URL of a published Benchmark's package (a zip; the server names it `<id>-v<version>.zip`
+ * in Content-Disposition), from the machine holding the copy — null for this server. The export
+ * round-trips through importBenchmarkArchive.
+ */
+export const benchmarkArchiveUrl = (
+  projectId: string,
+  benchmarkId: string,
+  machineId?: string | null,
+): string =>
+  apiUrl(
+    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}/archive`,
+    machineId ?? null,
   );
 
 const benchmarkCaseFilesPath = (
@@ -1902,6 +2069,27 @@ export const getOrgChart = (projectId: string, orgId: string) =>
 
 export const hireOrgEmployee = (projectId: string, orgId: string, body: OrgHireRequest) =>
   apiFetch<OrgEmployeeItem>(`${orgBase(projectId, orgId)}/employees`, { method: "POST", body });
+
+/** Where an employee's avatar is served from; `rev` (its `avatarRev`) makes the URL the image's own, so it is cached for good. */
+export const orgEmployeeAvatarUrl = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  rev: string,
+): string =>
+  `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}/avatar?rev=${encodeURIComponent(rev)}`;
+
+/** Sets the employee's avatar from a data URL (png, jpeg or webp); `null` removes it. */
+export const putOrgEmployeeAvatar = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  avatar: string | null,
+) =>
+  apiFetch<OrgEmployeeItem>(
+    `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}/avatar`,
+    { method: "PUT", body: { avatar } },
+  );
 
 export const patchOrgEmployee = (
   projectId: string,
@@ -2251,9 +2439,10 @@ export const putInstalledPlugins = (projectId: string, plugins: readonly string[
     body: { plugins },
   });
 /**
- * Admin only: asks this Project for a plugin the build ships — in the shared table, or with
- * `machineId` in that machine's own table — refused for one it does not, so the list never
- * names a package that is not on the machine; then re-assembles the App where it runs here.
+ * Admin only: lists the package in the shared table, or with `machineId` in that machine's
+ * own table. The machines that will run it install it — this server npm-installs it into its
+ * data root unless the build ships it, and only when it runs it itself — then the App is
+ * re-assembled. Slow for a cold registry fetch.
  */
 export const installPlugin = (
   projectId: string,
@@ -2266,7 +2455,7 @@ export const installPlugin = (
   });
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that
- * machine's own table; nothing on disk changes.
+ * machine's own table; the package leaves this server's disk once nothing asks it to run here.
  */
 export const uninstallPlugin = (
   projectId: string,
@@ -2280,10 +2469,31 @@ export const uninstallPlugin = (
     { method: "DELETE" },
   );
 
-// ---- The built-in browser (desktop app only; every route is admin-only) ----
 /**
- * Always this server's: the pages live in the desktop shell this server was spawned by, so a
- * machine's browser routes would drive a shell that is not on this screen.
+ * Admin only: installs a plugin package from an uploaded zip on this server — 409
+ * plugin_exists while another version is installed, unless `overwrite`. A package of server
+ * modules is listed for this machine and applied; a package of Skills or hooks joins the
+ * library. `installed` says which.
+ */
+export const importPluginArchive = (projectId: string, body: PluginArchiveImportRequest) =>
+  apiFetch<InstalledPluginsResponse>(`${pluginsPath(projectId)}/archive`, {
+    method: "POST",
+    body,
+  });
+
+/** Zip download URL of a library plugin's package (any member; the server names the file, `<name>-v<version>.zip`). */
+export const libraryPluginArchiveUrl = (plugin: string): string =>
+  `/api/plugins/${encodeURIComponent(plugin)}/archive`;
+
+/** Zip download URL of a listed server module's package on this server (any member). */
+export const registryPluginArchiveUrl = (name: string): string =>
+  `/api/plugins/registry/archive?name=${encodeURIComponent(name)}`;
+
+// ---- The agent browser: the desktop's built-in browser, or the user's own Chrome ----
+/**
+ * Always this server's: the built-in browser's pages live in the desktop shell this server was
+ * spawned by, and a user's Chrome is paired to this server, so a machine's browser routes would
+ * drive a browser that is not on this screen.
  */
 const builtinBrowserPath = (rest: string) => `/api/builtin-browser${rest}`;
 
@@ -2293,9 +2503,37 @@ export type BuiltinBrowserStorage = Extract<
   { op: "clear-data" }
 >["storages"][number];
 
-/** Whether the browser can be driven at all, and its tabs as they stand. */
+/**
+ * The caller's backend — whether it can be driven now, its tabs — and every backend the server
+ * offers them (`backends`).
+ */
 export const getBuiltinBrowserStatus = () =>
   apiFetch<BuiltinBrowserStatus>(builtinBrowserPath("/status"), { server: null });
+/** The caller's backend and the ones they may choose (both only on the desktop, for an admin). */
+export const getBrowserBackend = () =>
+  apiFetch<BrowserBackendResponse>(builtinBrowserPath("/backend"), { server: null });
+/** Chooses the backend; 409 `action_in_flight` while an agent acts in the one being left. */
+export const putBrowserBackend = (backend: BrowserBackend) =>
+  apiFetch<BrowserBackendResponse>(builtinBrowserPath("/backend"), {
+    method: "PUT",
+    body: { backend },
+    server: null,
+  });
+/** A one-time pairing code for the signed-in user (ten minutes, one use; a new one replaces it). */
+export const createBrowserPairingCode = () =>
+  apiFetch<BrowserExtensionPairingResponse>(builtinBrowserPath("/extension/pairings"), {
+    method: "POST",
+    server: null,
+  });
+/** The Chromes paired to the caller's account, the connected one, and the admin's switch. */
+export const getBrowserExtensions = () =>
+  apiFetch<BrowserExtensionsResponse>(builtinBrowserPath("/extension"), { server: null });
+/** Forgets a paired Chrome; its connection closes and it must be paired again. */
+export const revokeBrowserExtension = (extensionId: string) =>
+  apiFetch<void>(builtinBrowserPath(`/extension/${encodeURIComponent(extensionId)}`), {
+    method: "DELETE",
+    server: null,
+  });
 /**
  * A new tab, at `url` or else at the homepage (blank without one). The server asks this window
  * (over the user channel) to create the page, and answers once the page is claimed — so this
@@ -2329,6 +2567,16 @@ export const setBuiltinBrowserOnScreen = (tabId: number | null) =>
   });
 export const closeBuiltinBrowserTab = (tabId: number) =>
   apiFetch<void>(builtinBrowserPath(`/tabs/${tabId}`), { method: "DELETE", server: null });
+/**
+ * Loads `url` in a tab through the server, and answers once it loaded: the address bar of a tab
+ * this window does not host (one in the user's Chrome).
+ */
+export const navigateBuiltinBrowserTab = (tabId: number, url: string) =>
+  apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath(`/tabs/${tabId}/navigate`), {
+    method: "POST",
+    body: { url },
+    server: null,
+  });
 /** The system browsers' profiles on this computer that can be imported from. */
 export const getBuiltinBrowserImportSources = () =>
   apiFetch<BuiltinBrowserImportSourcesResponse>(builtinBrowserPath("/import/sources"), {

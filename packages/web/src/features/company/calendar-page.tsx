@@ -911,7 +911,7 @@ export function CalendarPage() {
                     {editingEvent.lastOutcome === "fired" && (
                       <button
                         type="button"
-                        className="underline"
+                        className="whitespace-nowrap underline"
                         onClick={() => void openDesk(editingEvent.agentId)}
                       >
                         {S.company.openDesk}
@@ -947,7 +947,7 @@ export function CalendarPage() {
                 size="sm"
                 label={S.company.calendar.name}
                 required
-                hint={S.company.calendar.nameHint}
+                info={S.company.calendar.nameHint}
                 {...(fieldErrors.name !== undefined ? { error: fieldErrors.name } : {})}
                 value={form.name}
                 disabled={form.editing !== null}
@@ -967,7 +967,7 @@ export function CalendarPage() {
               required
               size="sm"
               rows={4}
-              hint={S.company.calendar.promptHint}
+              info={S.company.calendar.promptHint}
               {...(fieldErrors.prompt !== undefined ? { error: fieldErrors.prompt } : {})}
               value={form.prompt}
               onChange={(e) => set({ prompt: e.target.value })}
@@ -978,7 +978,7 @@ export function CalendarPage() {
                 label={S.company.calendar.startAt}
                 required
                 type="datetime-local"
-                hint={S.company.calendar.staggerHint}
+                info={S.company.calendar.staggerHint}
                 {...(fieldErrors.startAt !== undefined ? { error: fieldErrors.startAt } : {})}
                 value={form.startAt}
                 onChange={(e) => set({ startAt: e.target.value })}
@@ -1119,7 +1119,7 @@ function DayOverflow({
                   close();
                   onOpenDay();
                 }}
-                className="shrink-0 text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
+                className="shrink-0 whitespace-nowrap text-xs text-gray-500 underline-offset-2 transition-colors duration-150 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
               >
                 {S.company.calendar.openDay}
               </button>

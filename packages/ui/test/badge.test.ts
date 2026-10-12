@@ -1,7 +1,7 @@
 /**
  * Badge and Count: every tone in three weights from the tone tokens, one geometry for all three,
- * the small rung and the theme's pill radius; the rest of a tag's look from the badge tokens; a
- * count in tabular figures that caps at `max`.
+ * the theme's pill radius; the rest of a tag's look — its type size and line-height among it —
+ * from the badge tokens; a count in tabular figures that caps at `max`.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -29,7 +29,8 @@ describe("Badge", () => {
       expect.arrayContaining([
         "bg-tone-neutral-bg",
         "text-tone-neutral-fg",
-        "text-xs",
+        "text-[length:var(--ui-badge-size)]",
+        "leading-[var(--ui-badge-lh)]",
         "font-[number:var(--ui-badge-weight)]",
         "rounded-[var(--ui-radius-pill)]",
         "whitespace-nowrap",
@@ -99,7 +100,7 @@ describe("Badge", () => {
   it("keeps one geometry across the three weights, so a mixed row stays aligned", () => {
     const geometry = (variant: "soft" | "outline" | "solid") =>
       classTokens(render({ tone: "danger", variant })).filter((t) =>
-        /^(?:p[xy]?-|border$|text-xs$|rounded)/.test(t),
+        /^(?:p[xy]?-|border$|text-\[length:|leading-|rounded)/.test(t),
       );
     expect(geometry("outline")).toEqual(geometry("soft"));
     expect(geometry("solid")).toEqual(geometry("soft"));
@@ -111,6 +112,25 @@ describe("Badge", () => {
     expect(classTokens(render({ size: "sm" }))).toEqual(
       expect.arrayContaining(["px-1.5", "py-px"]),
     );
+  });
+
+  it("is set under the theme's small text, on a fixed line, in every theme", () => {
+    // A tag reads as a mark beside its row's text, not as more of it: every theme sets it below
+    // its small rung, and on a line-height of its own so its height does not follow the row's.
+    const rem = (value: string | undefined) => /^(\d*\.?\d+)rem$/.exec(value ?? "")?.[1];
+    for (const id of THEME_IDS) {
+      const theme = analyzeThemeFile(
+        readFileSync(join(SRC_DIR, "themes", `${id}.css`), "utf8"),
+        id,
+      );
+      const values = modeDeclarations(theme, "light");
+      const size = rem(values.get("--ui-badge-size"));
+      const small = rem(values.get("--ui-text-small-size"));
+      expect(size, `${id} --ui-badge-size is a rem length`).toBeDefined();
+      expect(small, `${id} --ui-text-small-size is a rem length`).toBeDefined();
+      expect(Number(size), id).toBeLessThan(Number(small));
+      expect(rem(values.get("--ui-badge-lh")), `${id} --ui-badge-lh is a rem length`).toBeDefined();
+    }
   });
 
   it("carries the caller's words as its content, and its tooltip when given one", () => {

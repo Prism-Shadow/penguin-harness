@@ -43,6 +43,7 @@ import {
   isHookInput,
   isSessionMeta,
   ModelSwitchRefusedError,
+  normalizeSessionSource,
   parseUserSteeringText,
   tracesDir,
   userText,
@@ -84,7 +85,7 @@ import type { PendingApproval } from "./approvals.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import { LiveTailTracker } from "./live-tail.js";
-import { asSessionSource } from "./session-sources.js";
+import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
@@ -92,6 +93,9 @@ import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
+import { SANDBOX_GROUP } from "../sandbox/settings-store.js";
+import { sandboxEnabledOf, sandboxPresetsOf, sandboxStartOf } from "../sandbox/settings-policy.js";
+import { PluginConfig } from "../plugin/config.js";
 import { SessionService } from "../services/session-service.js";
 import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
 import { TitleGenerator } from "./title-generator.js";
@@ -370,15 +374,18 @@ export function createCoreSessionLoader(
           `This Session's Workspace no longer exists: ${row.workspace}, so it cannot continue. Create a new Session.`,
         );
       }
-      const knownSource = sources?.get(row.sessionId);
+      // The source this process recorded at creation, else the one the row stands for: the
+      // organization runtime's are `company`, the Agent API's `api` (unrunSource), the list's
+      // reading of the same row.
+      const knownSource = sources?.get(row.sessionId) ?? unrunSource(row.client);
       try {
         return await agent.createSession({
           workspaceDir: row.workspace,
           modelId: row.modelId,
           provider: row.provider,
-          // The rebuilt Session re-records a known origin in its fresh session_meta, and
-          // starts its first context at the row's pinned level.
-          ...(knownSource != null ? { source: knownSource } : {}),
+          // The rebuilt Session records that source in its fresh session_meta (an unknown one
+          // is core's default, `user`), and starts its first context at the row's pinned level.
+          ...(knownSource !== undefined ? { source: knownSource } : {}),
           ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
         });
       } catch (err) {
@@ -576,6 +583,16 @@ interface RuntimeEntry {
 const ENTRY_IDLE_MS = 30 * 60 * 1000;
 const ENTRY_SWEEP_INTERVAL_MS = 60 * 1000;
 
+/**
+ * Queue depth cap per session. Every queued follow-up is a full model run waiting to
+ * happen, and the queue has no other brake: org triggers always ask to queue
+ * (queueIfBusy), so a mention storm or an @all fan-out against a busy desk would grow it
+ * without bound and then replay every entry as a model call. The cap refuses the overflow
+ * loudly instead (429 queue_full): the org trigger path records org_dispatch_failed, and
+ * the HTTP caller sees the refusal directly.
+ */
+export const FOLLOW_UP_QUEUE_LIMIT = 16;
+
 /** Composite Agent key (used as a Set key, avoiding projectId/agentId concatenation ambiguity). */
 function agentKey(projectId: string, agentId: string): string {
   return `${projectId}\0${agentId}`;
@@ -721,6 +738,8 @@ export class SessionManager {
   private readonly deletingAgents = new Set<string>();
   /** Sessions currently being deleted (guards against the entry/Trace file being rebuilt and reviving it inside the deletion race window). */
   private readonly deletingSessions = new Set<string>();
+  /** Sessions whose runtime entry idle eviction leaves alone (see keepLoaded). */
+  private readonly keptLoaded = new Set<string>();
   /** Per-Agent config generation (key = agentKey), bumped by invalidateAgentRuntimes when a Project's credentials change. */
   private readonly agentGenerations = new Map<string, number>();
   /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
@@ -885,7 +904,7 @@ export class SessionManager {
 
   /** Add a newly created Session to the active table (status idle), avoiding a redundant load on the next Task. */
   adopt(row: SessionRow, session: RuntimeSession): void {
-    this.entries.set(row.sessionId, {
+    const entry: RuntimeEntry = {
       sessionId: row.sessionId,
       projectId: row.projectId,
       agentId: row.agentId,
@@ -893,7 +912,7 @@ export class SessionManager {
       modelId: row.modelId,
       session,
       status: "idle",
-      approvals: new ApprovalRegistry(),
+      approvals: new ApprovalRegistry(() => this.publishApprovals(entry)),
       abort: null,
       running: null,
       generation: this.generationOf(row.projectId, row.agentId),
@@ -904,7 +923,8 @@ export class SessionManager {
       returnedSteering: [],
       lastActivityMs: Date.now(),
       backgroundTasks: backgroundTaskCounts(session),
-    });
+    };
+    this.entries.set(row.sessionId, entry);
     // Same wiring as ensureEntry: adopt IS the entry path for a session created in this
     // process (POST /sessions), and a listener registered only on the loader path left
     // freshly created sessions unable to deliver idle-arrival completion reports.
@@ -1085,6 +1105,14 @@ export class SessionManager {
       // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
       if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
       if (entry.status !== "idle" && opts?.queueIfBusy) {
+        // The cap refuses the overflow rather than enqueuing it: see FOLLOW_UP_QUEUE_LIMIT.
+        if (entry.followUps.length >= FOLLOW_UP_QUEUE_LIMIT) {
+          throw new HttpError(
+            429,
+            "queue_full",
+            `Session ${entry.sessionId} already has ${entry.followUps.length} queued follow-ups (cap ${FOLLOW_UP_QUEUE_LIMIT}); wait for the session to drain.`,
+          );
+        }
         entry.followUps.push({
           id: randomUUID(),
           input,
@@ -1854,9 +1882,65 @@ export class SessionManager {
       // Undelivered background completion notices pin the entry too: they live in the core
       // Session object, so evicting it would silently drop them.
       if (entry.session.hasPendingBackgroundNotices?.()) continue;
+      // An enabled messaging connection pins it for latency rather than correctness: the
+      // Session is where a bot lives on this server, and the next chat message after a quiet
+      // half hour would otherwise wait for a resume from the Trace (see keepLoaded).
+      if (this.keptLoaded.has(key)) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }
+  }
+
+  /**
+   * Pins (`on`) or releases a Session's runtime entry against idle eviction (see sweepIdle).
+   * The messaging bridge holds the pin for as long as a binding's connection is enabled: that
+   * Session is where the bot lives on this server, and evicting it after half an hour of quiet
+   * makes the next chat message wait for a resume from the Trace before anything else happens.
+   *
+   * It pins only what is loaded and loads nothing itself (preload does). A stale id pins
+   * nothing: an entry a delete removed is gone from the table whatever this set says, and the
+   * bridge releases the id when its connection goes.
+   */
+  keepLoaded(sessionId: string, on: boolean): void {
+    if (on) this.keptLoaded.add(sessionId);
+    else this.keptLoaded.delete(sessionId);
+  }
+
+  /**
+   * Loads a Session's runtime into the active table ahead of its first Task, through the same
+   * get-or-resume path that Task would take, so the first message after a messaging connection
+   * comes up — an enable, a server restart — does not pay for a resume from the Trace on top of
+   * everything else. Only the load: no run starts, and the core bootstrap (session metadata,
+   * MCP connections) still happens on the first run. Under the Session lock, like startTask, so
+   * a Task arriving mid-load waits for this load instead of starting a second one.
+   *
+   * A Session that is gone or being deleted, alone or with its Agent, resolves quietly: there is
+   * nothing to warm and the caller has nothing to do about it. So does one with no Trace yet,
+   * because loading it is a self-heal REBUILD under a new session id — that would move the
+   * Session out from under the binding that asked, and earlier than any Task would. The row's
+   * `hasTrace` is a cache, so a row that has not caught up only misses the warm-up. Any other
+   * load failure rejects; the first Task meets the same failure and reports it where a person
+   * will see it.
+   */
+  async preload(sessionId: string): Promise<void> {
+    await this.withLock(sessionId, async () => {
+      if (this.closed || this.deletingSessions.has(sessionId)) return;
+      const row = this.deps.sessions.findById(sessionId);
+      if (!row || this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
+      if (!this.entries.has(sessionId) && row.hasTrace !== true) return;
+      try {
+        await this.ensureEntry(sessionId);
+      } catch (err) {
+        // A delete that began while the runtime was loading: ensureEntry re-checks after it.
+        if (
+          err instanceof HttpError &&
+          ["session_not_found", "session_deleting", "agent_deleting"].includes(err.code)
+        ) {
+          return;
+        }
+        throw err;
+      }
+    });
   }
 
   // —— Internal ——
@@ -1983,7 +2067,7 @@ export class SessionManager {
       modelId: row.modelId,
       session,
       status: "idle",
-      approvals: new ApprovalRegistry(),
+      approvals: new ApprovalRegistry(() => this.publishApprovals(entry)),
       abort: null,
       running: null,
       generation,
@@ -2297,11 +2381,11 @@ export class SessionManager {
     const p = msg.payload as SessionMetaPayload;
     const agentId = path.basename(path.dirname(p.agent_state));
     if (!agentId || agentId === "." || agentId === "..") return null;
-    // The forwarded session_meta records the origin at the source (core's spawn site); fall
-    // back to inferring "subagent" from the registration path for older metas (narrowed —
-    // a junk value also falls back). It goes into the in-process registry only — the index
-    // row deliberately stores no source column.
-    const source = asSessionSource(p.source) ?? "subagent";
+    // The forwarded session_meta records the source where it is decided (core's spawn site
+    // writes `subagent`); it is narrowed like any meta read back, so the registry holds what
+    // the child's Trace head will answer after a restart. It goes into the in-process registry
+    // only — the index row deliberately stores no source column.
+    const source = normalizeSessionSource(p.source);
     this.deps.sources.set(childSid, source);
     const root = this.rootSessionOf(entry.sessionId);
     this.childRoots.set(childSid, root);
@@ -2422,6 +2506,7 @@ export class SessionManager {
     notify(entry.projectId, {
       type: "session_state",
       sessionId: entry.sessionId,
+      projectId: entry.projectId,
       state,
       lastActiveAt,
       hasTrace,
@@ -2455,6 +2540,29 @@ export class SessionManager {
       processes: counts.processes,
       subagents: counts.subagents,
     });
+  }
+
+  /**
+   * Publishes `session_approvals` on the user channel: how many tool calls of this Session wait
+   * for a person now. The Session's own stream carries the calls; this is what lets a list, or
+   * a host watching every Session of a Project, see which one waits without subscribing to each.
+   * Sent for an entry that is being disposed too, so a mark it had is cleared.
+   */
+  private publishApprovals(entry: RuntimeEntry): void {
+    try {
+      this.deps.notifyProjectUsers?.(entry.projectId, {
+        type: "session_approvals",
+        sessionId: entry.sessionId,
+        count: entry.approvals.size,
+      });
+    } catch (err) {
+      // The notifier reads the Project's audience from the database, which shutdown can close
+      // while a run outlives its drain window (the failure publishState guards too). A list
+      // mark is never worth throwing out of an approval's wait, answer or interrupt.
+      this.log(
+        `[session] approvals notice failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** Serialize (mutually exclude) execution by sessionId; cleans up the lock-table entry once its chain drains (avoids unbounded growth). */
@@ -2520,6 +2628,8 @@ export abstract class Sessions extends Interface<
     | "atIdleBoundary"
     | "shutdown"
     | "sweepIdle"
+    | "keepLoaded"
+    | "preload"
   >
 >() {}
 
@@ -2532,6 +2642,7 @@ export abstract class SessionServiceIface extends Interface<
     | "sessionStats"
     | "createSession"
     | "defaultSandbox"
+    | "pickSandbox"
     | "updateSandbox"
     | "latestTracePath"
     | "adoptUnmanagedTraceSessions"
@@ -2567,6 +2678,8 @@ export class SessionsModule {
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traceStore!: TraceIndexStore;
   @Use(SandboxModule) private readonly sandbox!: Sandbox;
+  /** The Sandbox card's presets live in the sandbox's settings group. */
+  @Use() private readonly pluginConfig!: PluginConfig;
   @Use() private readonly projectEvents!: ProjectEvents;
   @Use() private readonly messagingRepo!: MessagingBindings;
   /** Company-mode caches: which organization owns a Session (read at every command spawn). */
@@ -2584,12 +2697,20 @@ export class SessionsModule {
     const errors = this.errors;
     const projectConfig = this.projectConfig;
     const sandbox = this.sandbox as SandboxService;
+    const pluginConfig = this.pluginConfig;
     const orgCache = this.orgCache;
     const modelScopeAuth = this.modelScopeAuth;
 
     const assembly: AgentAssembly = {
+      // ModelScope's group key is an access token the bridge refreshes, so each request reads
+      // it fresh. A model with a key of its own keeps that key (undefined = the credential
+      // the client was built with stands); the rest use the group key, refreshed first, and a
+      // model with neither has nothing to send.
       resolveModelApiKey: async ({ projectId, provider, modelId }) => {
         if (provider !== MODELSCOPE_PROVIDER_ID) return undefined;
+        if ((await projectConfig.getModelApiKey(projectId, provider, modelId)) !== undefined) {
+          return undefined;
+        }
         await modelScopeAuth.ensureFresh({ projectId, provider });
         const apiKey = await projectConfig.getGroupApiKey(projectId, provider);
         if (apiKey === undefined) throw modelCredentialMissing(modelId);
@@ -2705,6 +2826,15 @@ export class SessionsModule {
       sandboxDefaults: () => sandbox.currentSettings(),
       sandboxDimensions: () => [...new Set(sandbox.backends().flatMap((b) => b.dimensions))],
       sandboxUnavailable: () => sandbox.failures(),
+      sandboxBackends: () => sandbox.backends().map((b) => b.name),
+      // The Sandbox card's presets, read per view: a rename there reaches the next read.
+      sandboxPresets: () =>
+        sandboxPresetsOf(pluginConfig.schema(SANDBOX_GROUP), pluginConfig.get(SANDBOX_GROUP)),
+      sandboxSwitchOn: () => sandboxEnabledOf(pluginConfig.get(SANDBOX_GROUP)),
+      // The default preset's approval mode, while the switch is on.
+      sandboxDefaultApproval: () =>
+        sandboxStartOf(pluginConfig.schema(SANDBOX_GROUP), pluginConfig.get(SANDBOX_GROUP))
+          .approvalMode,
     });
     this.manager = manager;
     this.sessionService = sessionService;

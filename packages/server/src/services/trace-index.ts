@@ -39,13 +39,17 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { agentsDir, isSessionMeta, tracesDir } from "@prismshadow/penguin-core";
+import {
+  agentsDir,
+  isSessionMeta,
+  normalizeSessionSource,
+  tracesDir,
+} from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { TraceIndexRepo } from "../db/repos/trace-index.js";
 import { cacheable, statMtime } from "../internal/mtime-gate.js";
 import { readTraceHead } from "../internal/trace-head.js";
-import { asSessionSource } from "../runtime/session-sources.js";
 import { fallbackTitle } from "../runtime/title-generator.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
@@ -99,7 +103,13 @@ function factsFromRecords(
     sessionId,
     projectId,
     agentId,
-    source: meta ? (asSessionSource(meta.payload.source) ?? null) : null,
+    // Narrowed (an old head's `benchmark` reads as `cli`), except that a head recording no source
+    // keeps none: what it reads as depends on the Session's index row (readRecordedSource).
+    // Without a meta the value means nothing, and every reader checks metaRead first.
+    source:
+      meta === undefined || meta.payload.source === undefined
+        ? null
+        : normalizeSessionSource(meta.payload.source),
     workspace: meta && typeof meta.payload.workspace === "string" ? meta.payload.workspace : "",
     title: firstPrompt !== null ? fallbackTitle(firstPrompt) : null,
     provider: meta && typeof meta.payload.provider === "string" ? meta.payload.provider : null,

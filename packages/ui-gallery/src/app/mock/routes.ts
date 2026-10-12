@@ -11,9 +11,15 @@
 import type {
   AdminUserCreateResponse,
   AdminUsersResponse,
+  AgentApiKeyCreateResponse,
+  AgentApiKeyInfo,
+  AgentApiResponse,
+  AgentApiSettings,
   AgentConfigResponse,
   AgentCreateResponse,
   AgentHooksResponse,
+  AgentMcpServerItem,
+  AgentMcpServersResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
   AgentSchedulesConfigDto,
@@ -21,8 +27,12 @@ import type {
   AgentSkillsResponse,
   AgentsResponse,
   AgentVaultConfigDto,
+  ApprovalMode,
   AuthResponse,
   BenchmarkCasesResponse,
+  BrowserBackendResponse,
+  BrowserExtensionPairingResponse,
+  BrowserExtensionsResponse,
   BuiltinBrowserHistoryResponse,
   BuiltinBrowserImportSourcesResponse,
   BuiltinBrowserSettings,
@@ -53,11 +63,15 @@ import type {
   MemoryOverviewResponse,
   MemoryScopeExport,
   MeResponse,
+  LanguageIndexResponse,
   MessagesResponse,
   MessagingBindingsResponse,
   ModelBalanceResponse,
   ModelProtocolDetectResponse,
   ModelsResponse,
+  PresetSyncResponse,
+  ProviderConnectionDto,
+  ProviderConnectionUpdate,
   ModelTestResponse,
   ModelVisionDetectResponse,
   OrganizationsResponse,
@@ -112,9 +126,9 @@ import type {
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 // The catalog decides which groups publish a balance, as it does on the server.
-import { providerInfo } from "../../../../core/dist/state/model-catalog.js";
+import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
 import { READ_ONLY } from "./errors";
-import { dayKey } from "./fixtures";
+import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 import type { UsageDay } from "./fixtures";
 import { IDS } from "./ids";
 import { empty, fail, json, raw, Router } from "./router";
@@ -306,13 +320,58 @@ router
 // Models and provider keys
 // ---------------------------------------------------------------------------------------------
 
+/** A key as GET /models shows it. */
+const maskKey = (key: string) => `${key.slice(0, 4)}…${key.slice(-4)}`;
+
+/** One group's connection after an update, as the server stores it (omitted fields kept); any group takes a protocol. */
+function updatedConnection(
+  current: ProviderConnectionDto | undefined,
+  update: ProviderConnectionUpdate,
+): ProviderConnectionDto {
+  const next: ProviderConnectionDto = { ...(current ?? {}) };
+  if (update.baseUrl === null || update.baseUrl === "") delete next.baseUrl;
+  else if (typeof update.baseUrl === "string") next.baseUrl = update.baseUrl;
+  if (update.clientType === null || update.clientType === "") delete next.clientType;
+  else if (typeof update.clientType === "string") next.clientType = update.clientType;
+  if (update.clearApiKey === true) {
+    delete next.apiKeyMasked;
+    delete next.createdAt;
+  }
+  if (typeof update.apiKey === "string" && update.apiKey !== "") {
+    next.apiKeyMasked = maskKey(update.apiKey);
+    next.createdAt = new Date().toISOString();
+  }
+  return next;
+}
+
+/** Writes group connections, then re-resolves every model's effective connection. */
+function writeProviders(store: DemoStore, updates: Record<string, ProviderConnectionUpdate>): void {
+  const providers = { ...store.f.models.providers };
+  for (const [id, update] of Object.entries(updates)) {
+    const next = updatedConnection(providers[id], update);
+    if (Object.keys(next).length > 0) providers[id] = next;
+    else delete providers[id];
+  }
+  store.f.models.providers = providers;
+  refreshEffective(store);
+}
+
+function refreshEffective(store: DemoStore): void {
+  const { providers } = store.f.models;
+  store.f.models.models = store.f.models.models.map((m) => ({
+    ...m,
+    effective: effectiveOf(m, providers),
+  }));
+}
+
 router
   .get("/api/projects/:projectId/models", ({ store }): ModelsResponse => store.f.models)
   .put("/api/projects/:projectId/models", ({ store, body }): ModelsResponse => {
-    const { defaultModel, visionModel, models } = record(body) as Partial<{
+    const { defaultModel, visionModel, models, providers } = record(body) as Partial<{
       defaultModel: ModelsResponse["defaultModel"];
       visionModel: ModelsResponse["visionModel"];
       models: Array<Record<string, unknown>>;
+      providers: Record<string, ProviderConnectionUpdate>;
     }>;
     if (Array.isArray(models)) {
       store.f.models.models = models.map((entry) => {
@@ -322,7 +381,7 @@ router
         const { apiKey, clearApiKey, baseUrl, renamedFrom, discount, ...rest } = entry;
         const credential = { ...(existing?.credential ?? {}) };
         if (typeof apiKey === "string" && apiKey !== "") {
-          credential.apiKeyMasked = `${apiKey.slice(0, 4)}…${apiKey.slice(-4)}`;
+          credential.apiKeyMasked = maskKey(apiKey);
           credential.createdAt = new Date().toISOString();
         }
         if (clearApiKey === true) delete credential.apiKeyMasked;
@@ -346,8 +405,27 @@ router
     }
     if (defaultModel) store.f.models.defaultModel = defaultModel;
     if (visionModel) store.f.models.visionModel = visionModel;
+    writeProviders(store, providers ?? {});
     store.f.models.updatedAt = new Date().toISOString();
     return store.f.models;
+  })
+  .put(
+    "/api/projects/:projectId/models/providers/:provider",
+    ({ store, params, body }): ModelsResponse => {
+      writeProviders(store, { [str(params.provider)]: record(body) as ProviderConnectionUpdate });
+      store.f.models.updatedAt = new Date().toISOString();
+      return store.f.models;
+    },
+  )
+  // The demo table already holds every preset: an add finds nothing, and a restore resets
+  // the built-in models where they stand (the demo's own edits are not tracked, so nothing
+  // visible moves).
+  .post("/api/projects/:projectId/models/sync-presets", ({ store, body }): PresetSyncResponse => {
+    const restore = record(body).mode === "restore";
+    const builtIn = store.f.models.models.filter(
+      (m) => catalogEntryFor(m.provider, m.modelId) !== undefined,
+    ).length;
+    return { ...store.f.models, added: 0, restored: restore ? builtIn : 0 };
   })
   .put("/api/projects/:projectId/models/default", ({ store, body }): DefaultModelResponse => {
     const { provider, modelId } = record(body);
@@ -366,9 +444,8 @@ router
       const message = `The ${provider} group publishes no balance.`;
       return { ok: false, provider, error: "unsupported", message, fetchedAt };
     }
-    const keyed = store.f.models.models.some(
-      (m) => m.provider === provider && m.credential?.apiKeyMasked,
-    );
+    // The group's own key, as the server reads it; a key set on one model does not count.
+    const keyed = store.f.models.providers[provider]?.apiKeyMasked !== undefined;
     if (!keyed) {
       const message = `The ${info.label} group stores no API key.`;
       return { ok: false, provider, error: "no_key", message, fetchedAt };
@@ -452,6 +529,35 @@ const configOf = (ctx: Ctx): AgentConfigResponse => {
   if (!config) notFound("Agent config");
   return config;
 };
+
+/**
+ * An Agent's MCP servers as the server lists them, read off its config: transport and target,
+ * the plugin that installed each. The demo's vault is taken to hold every key a server
+ * references, so none waits for setup.
+ */
+const mcpServerItems = (ctx: Ctx): AgentMcpServerItem[] =>
+  configOf(ctx).config.mcpServers.map((entry) => {
+    const c = entry.config;
+    const named = c["transport"];
+    const transport: AgentMcpServerItem["transport"] =
+      named === "http" || named === "sse" || named === "stdio"
+        ? named
+        : typeof c["command"] === "string"
+          ? "stdio"
+          : "http";
+    const args = Array.isArray(c["args"]) ? c["args"].map(String) : [];
+    return {
+      name: entry.name,
+      transport,
+      target:
+        transport === "stdio"
+          ? [String(c["command"] ?? ""), ...args].join(" ")
+          : String(c["url"] ?? ""),
+      ...(entry.plugin !== undefined ? { plugin: entry.plugin } : {}),
+      missingKeys: [],
+      signIn: false,
+    };
+  });
 
 router
   .get(
@@ -621,6 +727,7 @@ router
       hookCount: 0,
       pluginUpdates: [],
       memoryCount: 0,
+      apiEnabled: false,
     };
     store.f.agents.push(agent);
     const template = store.f.agentConfigs[IDS.agents.notes]!;
@@ -706,46 +813,176 @@ router
   });
 
 // ---------------------------------------------------------------------------------------------
+// An Agent's public API: its switches, approval mode and keys (the stream itself is not mocked)
+// ---------------------------------------------------------------------------------------------
+
+const API_APPROVAL_MODES: readonly ApprovalMode[] = [
+  "allow-all",
+  "deny-all",
+  "read-only",
+  "always-ask",
+];
+
+/** `n` random bytes as base64url, the alphabet the server's keys and key ids are written in. */
+function base64url(n: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(n));
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * The Agent's settings, as the server reads an Agent never configured: off, keyed, allow-all.
+ * The store's own object: answers hand out a copy, as a server's JSON would, since the app keeps
+ * what it is given and a later write here must not reach into its state.
+ */
+const apiOf = (ctx: Ctx): AgentApiSettings => {
+  const agentId = agentOf(ctx).agentId;
+  ctx.store.f.agentApi[agentId] ??= {
+    enabled: false,
+    open: false,
+    approvalMode: "allow-all",
+    keys: [],
+  };
+  return ctx.store.f.agentApi[agentId];
+};
+
+router
+  .get("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => ({
+    api: structuredClone(apiOf(ctx)),
+    serverEnabled: ctx.store.f.serverSettings.agentApiEnabled,
+  }))
+  .put("/api/projects/:projectId/agents/:agentId/api", (ctx): AgentApiResponse => {
+    const settings = apiOf(ctx);
+    const { enabled, open, approvalMode } = record(ctx.body);
+    if (typeof enabled === "boolean") {
+      settings.enabled = enabled;
+      agentOf(ctx).apiEnabled = enabled;
+    }
+    if (typeof open === "boolean") settings.open = open;
+    const mode = API_APPROVAL_MODES.find((m) => m === approvalMode);
+    if (mode !== undefined) settings.approvalMode = mode;
+    return {
+      api: structuredClone(settings),
+      serverEnabled: ctx.store.f.serverSettings.agentApiEnabled,
+    };
+  })
+  .post("/api/projects/:projectId/agents/:agentId/api/keys", (ctx): unknown => {
+    const settings = apiOf(ctx);
+    const name = str(record(ctx.body).name).trim();
+    if (name.length < 1 || name.length > 64) {
+      fail(400, "bad_request", "A key's name is 1 to 64 characters.");
+    }
+    const secret = `penguin_${base64url(32)}`;
+    const key: AgentApiKeyInfo = {
+      keyId: base64url(12),
+      name,
+      prefix: secret.slice(0, 16),
+      createdBy: ctx.store.f.user.userId,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null,
+    };
+    settings.keys.push(key);
+    return json({ key: { ...key }, secret } satisfies AgentApiKeyCreateResponse, 201);
+  })
+  .delete("/api/projects/:projectId/agents/:agentId/api/keys/:keyId", (ctx) => {
+    const settings = apiOf(ctx);
+    const kept = settings.keys.filter((k) => k.keyId !== ctx.params.keyId);
+    if (kept.length === settings.keys.length) fail(404, "key_not_found", "No such key.");
+    settings.keys = kept;
+    return empty();
+  })
+  // Try it: the stream a real run sends, scripted (fixtures.ts), whole in one body.
+  .post("/api/projects/:projectId/agents/:agentId/api/try", (ctx) =>
+    raw(
+      amspTryStream(ctx.body, {
+        agent: `${ctx.params.projectId}/${ctx.params.agentId}`,
+        lang: ctx.store.lang,
+        now: Date.now(),
+      }),
+      {
+        "content-type": "text/event-stream; charset=utf-8",
+      },
+    ),
+  );
+
+// ---------------------------------------------------------------------------------------------
 // Sessions: the list, directories, creation, the row
 // ---------------------------------------------------------------------------------------------
 
 const TEMP_WORKSPACE = /[/\\]workspaces[/\\][^/\\]+$/;
 const isTemp = (workspace: string) => workspace === "" || TEMP_WORKSPACE.test(workspace);
 
-function categoryOf(row: SessionInfo): SessionCategory {
+/**
+ * The server's rule: a company Session is in no category; otherwise archived first, then a
+ * person's conversation is active and every other source background.
+ */
+function categoryOf(row: SessionInfo): SessionCategory | null {
+  if (row.source === "company") return null;
   if (row.archived) return "archived";
-  return row.source ?? "active";
+  return row.source === undefined || row.source === "user" ? "active" : "background";
 }
 
-/** An organization's desk or ticket Session, by its owner or by the durable `org` stamp. */
-const isOrgRow = (row: SessionInfo) => (row.orgId ?? "") !== "" || row.client === "org";
+/** An organization's desk or ticket Session, by its owner, the durable `org` stamp or its source. */
+const isOrgRow = (row: SessionInfo) =>
+  (row.orgId ?? "") !== "" || row.client === "org" || row.source === "company";
 
 function countsOf(rows: readonly SessionInfo[]): SessionCategoryCounts {
-  const counts: SessionCategoryCounts = {
-    active: 0,
-    schedule: 0,
-    subagent: 0,
-    benchmark: 0,
-    archived: 0,
-  };
-  for (const row of rows) counts[categoryOf(row)] += 1;
+  const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
+  for (const row of rows) {
+    const category = categoryOf(row);
+    if (category !== null) counts[category] += 1;
+  }
   return counts;
+}
+
+/** Newest creation first: the list's default order. */
+const byCreated = (a: SessionInfo, b: SessionInfo) =>
+  a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
+
+/** `order=activity`: last activity first, ties by id — both by code point, as the server compares. */
+function byActivity(
+  a: Pick<SessionInfo, "lastActiveAt" | "sessionId">,
+  b: Pick<SessionInfo, "lastActiveAt" | "sessionId">,
+): number {
+  if (a.lastActiveAt !== b.lastActiveAt) return a.lastActiveAt > b.lastActiveAt ? -1 : 1;
+  return a.sessionId > b.sessionId ? -1 : a.sessionId < b.sessionId ? 1 : 0;
 }
 
 router
   .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): unknown => {
     const { store, params, query } = ctx;
     // `excludeOrg=1` asks for the user's own rows: an organization's Sessions leave the page
-    // and the totals alike.
+    // and the totals alike. A request for a category, a Workspace group or counts leaves the
+    // company Sessions out too, which no category holds.
     const ownOnly = query.get("excludeOrg") === "1";
-    const all = store.f.sessions
-      .filter((s) => s.agentId === params.agentId && !(ownOnly && isOrgRow(s)))
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+    const activity = query.get("order") === "activity";
     const category = query.get("category") as SessionCategory | null;
     const group = query.get("workspaceGroup");
+    const classified = category !== null || group !== null || query.get("counts") === "1";
+    const all = store.f.sessions
+      .filter(
+        (s) =>
+          s.agentId === params.agentId &&
+          !(ownOnly && isOrgRow(s)) &&
+          !(classified && categoryOf(s) === null),
+      )
+      .sort(activity ? byActivity : byCreated);
     let rows = category ? all.filter((s) => categoryOf(s) === category) : all;
     if (group !== null) {
       rows = rows.filter((s) => (group === "temp" ? isTemp(s.workspace) : s.workspace === group));
+    }
+    // `before=<lastActiveAt>,<sessionId>`: the rows strictly below the last one the sidebar
+    // holds, in activity order only.
+    const before = query.get("before");
+    if (before !== null) {
+      if (!activity) fail(400, "bad_request", "before requires order=activity.");
+      const comma = before.indexOf(",");
+      const cursor = { lastActiveAt: before.slice(0, comma), sessionId: before.slice(comma + 1) };
+      if (comma < 0 || !Number.isFinite(Date.parse(cursor.lastActiveAt)) || !cursor.sessionId)
+        fail(400, "bad_request", "before must be <lastActiveAt>,<sessionId>.");
+      rows = rows.filter((s) => byActivity(s, cursor) > 0);
     }
     const limit = Number(query.get("limit"));
     const offset = Number(query.get("offset")) || 0;
@@ -763,15 +1000,31 @@ router
       response.workspaceCounts = Object.fromEntries(
         Object.entries(byWorkspace).map(([path, list]) => [path, countsOf(list)]),
       );
+      // The newest CREATION per path, whatever order the page is in.
       response.workspaceLatest = Object.fromEntries(
-        Object.entries(byWorkspace).map(([path, list]) => [path, list[0]!.createdAt]),
+        Object.entries(byWorkspace).map(([path, list]) => [
+          path,
+          list.reduce((latest, row) => (row.createdAt > latest ? row.createdAt : latest), ""),
+        ]),
       );
     }
     return response;
   })
   .get("/api/projects/:projectId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
-    return store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
+    const listing = store.f.dirs[path] ?? { path, parent: "/home/demo", entries: [] };
+    // The home request that builds the finder's sidebar also carries the machine's own places,
+    // as the server's does: a Linux machine's root and one mounted disk.
+    if (query.get("path") || query.get("places") !== "1") return listing;
+    return {
+      ...listing,
+      platform: "linux",
+      standardFolders: {},
+      locations: [
+        { path: "/", kind: "root" },
+        { path: "/mnt/data", kind: "volume", label: "data" },
+      ],
+    };
   })
   .get("/api/projects/:projectId/machines/:machineId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
@@ -1114,8 +1367,13 @@ function analyze(history: readonly OmniMessage[]): TraceAnalysisResponse {
     (sum, t) => sum + (t.startTs ? Math.max(0, Date.parse(t.endTs) - Date.parse(t.startTs)) : 0),
     0,
   );
+  // The context ring's bound, read off the file's head session_meta as the server does.
+  const head = history.find((m) => m.type === "session_meta")?.payload;
+  const contextWindow =
+    head !== undefined && "model_context_window" in head ? head.model_context_window : undefined;
   return {
     elapsedMs,
+    ...(contextWindow !== undefined ? { modelContextWindow: contextWindow } : {}),
     apiMs: tasks.reduce((sum, t) => sum + t.llmMs, 0),
     toolMs: tasks.reduce((sum, t) => sum + t.toolMs, 0),
     cost: tasks.reduce((sum, t) => sum + (t.cost ?? 0), 0),
@@ -1661,9 +1919,35 @@ const libraryPlugins = (store: DemoStore) => store.f.library.groups.flatMap((g) 
 router
   .get("/api/plugins", ({ store }): PluginLibraryResponse => store.f.library)
   .get("/api/plugins/registry", ({ store }): PluginIndexResponse => store.f.pluginIndex)
+  // The demo installs no languages plugin: every fence is one the bundle carries or plain.
+  .get("/api/languages", (): LanguageIndexResponse => ({ languages: [] }))
   .get("/api/plugins/registry/readme", ({ store, query }): PluginReadmeResponse => {
     const name = query.get("name") ?? "";
     return { name, readme: store.f.readmes[name] ?? null };
+  })
+  // A listed server module's package as a zip: the demo's bytes stand in for the package.
+  .get("/api/plugins/registry/archive", ({ store, query }) => {
+    const name = query.get("name") ?? "";
+    if (!store.f.pluginIndex.plugins.some((e) => e.name === name)) notFound("Plugin");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${name.replace(/^@[^/]+\//, "")}.zip"`,
+    });
+  })
+  // A library plugin's own README.md: the demo's plugins ship none unless the store has one.
+  .get("/api/plugins/:plugin/readme", ({ store, params }): PluginReadmeResponse => {
+    const name = params.plugin!;
+    if (!libraryPlugins(store).some((p) => p.name === name)) notFound("Plugin");
+    const readme = store.f.readmes[name];
+    if (readme === undefined) notFound("README");
+    return { name, readme };
+  })
+  .get("/api/plugins/:plugin/archive", ({ store, params }) => {
+    if (!libraryPlugins(store).some((p) => p.name === params.plugin)) notFound("Plugin");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.plugin!}.zip"`,
+    });
   })
   .get("/api/plugins/:plugin/files", ({ store, params }): PluginFilesResponse => {
     const files = store.f.pluginFiles[params.plugin!];
@@ -1702,7 +1986,11 @@ router
     agent.skillCount = installed.skills.length;
     agent.hookCount = installed.hooks.length;
     return json(
-      { skills: installed.skills, hooks: installed.hooks } satisfies AgentPluginsInstallResponse,
+      {
+        skills: installed.skills,
+        hooks: installed.hooks,
+        mcpServers: mcpServerItems(ctx),
+      } satisfies AgentPluginsInstallResponse,
       201,
     );
   })
@@ -1712,6 +2000,16 @@ router
   .get("/api/projects/:projectId/agents/:agentId/hooks", (ctx): AgentHooksResponse => ({
     hooks: installedOf(ctx).hooks,
   }))
+  .get("/api/projects/:projectId/agents/:agentId/mcp-servers", (ctx): AgentMcpServersResponse => ({
+    servers: mcpServerItems(ctx),
+  }))
+  .delete("/api/projects/:projectId/agents/:agentId/mcp-servers/:name", (ctx) => {
+    const config = configOf(ctx).config;
+    const kept = config.mcpServers.filter((entry) => entry.name !== ctx.params.name);
+    if (kept.length === config.mcpServers.length) notFound("MCP server");
+    config.mcpServers = kept;
+    return empty();
+  })
   .delete("/api/projects/:projectId/agents/:agentId/hooks/:name", (ctx) => {
     const installed = installedOf(ctx);
     const before = installed.hooks.length;
@@ -1807,12 +2105,17 @@ router
     if (store.f.benchmarks.some((b) => b.id === benchmarkId))
       fail(409, "benchmark_exists", "That id is taken.");
     const list = Array.isArray(cases) ? (cases as Array<Record<string, unknown>>) : [];
+    // The server writes the day's first version, on the local calendar.
+    const day = new Date();
+    const two = (n: number) => String(n).padStart(2, "0");
     const benchmark: BenchmarksResponse["benchmarks"][number] = {
       id: benchmarkId,
       title: str(title, benchmarkId),
       ...(typeof description === "string" ? { description } : {}),
       runs: typeof runs === "number" ? runs : 1,
       status: "published",
+      version: `${day.getFullYear()}.${two(day.getMonth() + 1)}.${two(day.getDate())}.1`,
+      origin: { kind: "manual" },
       caseCount: list.length,
       evaluations: [],
       agentIds: [],
@@ -1834,6 +2137,14 @@ router
     const benchmark = benchmarkOf(ctx);
     ctx.store.f.benchmarks = ctx.store.f.benchmarks.filter((b) => b.id !== benchmark.id);
     return empty();
+  })
+  .post("/api/projects/:projectId/benchmarks/archive", () => readOnly("import a Benchmark package"))
+  .get("/api/projects/:projectId/benchmarks/:benchmarkId/archive", (ctx) => {
+    const benchmark = benchmarkOf(ctx);
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${benchmark.id}-v${benchmark.version ?? "0"}.zip"`,
+    });
   })
   .get("/api/projects/:projectId/benchmarks/:benchmarkId/cases/:caseId/files", (ctx) =>
     listCaseFiles(ctx, "statement"),
@@ -1958,20 +2269,46 @@ router
   .post("/api/desktop/privacy-settings", () => notFound("Desktop mode"));
 
 // ---------------------------------------------------------------------------------------------
-// The built-in browser: the desktop shell's, so it answers as a server with no shell does
+// The agent browser: the demo answers as a server with no desktop shell does, where the only
+// backend is the user's own Chrome, and this user has not paired one
 // ---------------------------------------------------------------------------------------------
 
 function browserUnavailable(): never {
-  return fail(503, "browser_unavailable", "The built-in browser needs the desktop app.");
+  return fail(
+    503,
+    "browser_unavailable",
+    "No Chrome is paired for this user; the demo has no extension to connect.",
+  );
 }
+
+/** A pairing code's shape: 43 base64url characters. */
+const DEMO_PAIRING_CODE = "demo-pairing-code-for-the-gallery-0123456789";
 
 router
   .get("/api/builtin-browser/status", (): BuiltinBrowserStatus => ({
     available: false,
-    reason: "not_desktop",
+    reason: "extension_not_paired",
+    backend: "chrome",
+    backends: [{ backend: "chrome", available: false, reason: "extension_not_paired" }],
     tabs: [],
     activeTabId: null,
   }))
+  .get("/api/builtin-browser/backend", (): BrowserBackendResponse => ({
+    backend: "chrome",
+    choices: ["chrome"],
+  }))
+  .put("/api/builtin-browser/backend", () => readOnly("switch the agent browser"))
+  .post("/api/builtin-browser/extension/pairings", (): BrowserExtensionPairingResponse => ({
+    code: DEMO_PAIRING_CODE.slice(0, 43),
+    expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    origin: null,
+  }))
+  .get("/api/builtin-browser/extension", (): BrowserExtensionsResponse => ({
+    paired: [],
+    enabled: true,
+  }))
+  .delete("/api/builtin-browser/extension/:id", () => notFound("Paired Chrome"))
+  .post("/api/builtin-browser/tabs/:tab/navigate", browserUnavailable)
   .post("/api/builtin-browser/tabs", browserUnavailable)
   .post("/api/builtin-browser/tabs/claim", browserUnavailable)
   .post("/api/builtin-browser/tabs/on-screen", browserUnavailable)
@@ -2017,6 +2354,8 @@ router
   .post("/api/projects/:projectId/organizations/:orgId/employees", companyOff)
   .patch("/api/projects/:projectId/organizations/:orgId/employees/:agentId", companyOff)
   .delete("/api/projects/:projectId/organizations/:orgId/employees/:agentId", companyOff)
+  .get("/api/projects/:projectId/organizations/:orgId/employees/:agentId/avatar", companyOff)
+  .put("/api/projects/:projectId/organizations/:orgId/employees/:agentId/avatar", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/employees/:agentId/desk", companyOff)
   .post("/api/projects/:projectId/organizations/:orgId/employees/:agentId/desk", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/handbook", companyOff)
@@ -2106,6 +2445,9 @@ router
       }
       return store.f.installedPlugins;
     },
+  )
+  .post("/api/projects/:projectId/plugins/installed/archive", () =>
+    readOnly("install a plugin archive"),
   )
   .delete(
     "/api/projects/:projectId/plugins/installed",

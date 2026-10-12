@@ -26,7 +26,8 @@
  * - Given a connect, the remembered port is the one used, a dead server is started, a live one
  *   is left alone, and a held session is re-held at start() and at the App's boot — never
  *   after a disconnect.
- * - Given a model edit during a sync, it is written once afterwards, never dropped.
+ * - Given a model edit during a sync, it is written once afterwards, never dropped; what travels
+ *   is every group connection and every row, a bare preset included.
  * - Given a connected machine, its directories are listed through the alias holding it.
  * - Given a probe, the machine's own id is learned and kept; this machine's id is minted once.
  * - Given a batch to use, machines work side by side and each ends connected; stop using keeps
@@ -41,7 +42,11 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { MachinesUseResponse, MachinesResponse } from "../src/api/types.js";
+import type {
+  MachinesUseResponse,
+  MachinesResponse,
+  ModelsUpdateRequest,
+} from "../src/api/types.js";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../src/db/database.js";
 import { MachinesRepo } from "../src/db/repos/machines.js";
@@ -1135,11 +1140,17 @@ describe("machines API", () => {
   });
 
   describe("syncing models outward", () => {
-    /** A machine's server: counts what it is asked, and can be made slow. */
+    /** A machine's server: counts what it is asked, keeps what it is sent, and can be made slow. */
     const machineServer = async (opts: { delayMs: number }) => {
       const asked: string[] = [];
+      const puts: ModelsUpdateRequest[] = [];
       const server = http.createServer((req, res) => {
         asked.push(`${req.method} ${req.url}`);
+        let body = "";
+        req.on("data", (chunk: Buffer) => (body += chunk.toString("utf8")));
+        req.on("end", () => {
+          if (req.method === "PUT") puts.push(JSON.parse(body) as ModelsUpdateRequest);
+        });
         setTimeout(() => {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(
@@ -1152,8 +1163,48 @@ describe("machines API", () => {
       const port = await new Promise<number>((resolve) =>
         server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)),
       );
-      return { asked, port, close: () => server.close() };
+      return { asked, puts, port, close: () => server.close() };
     };
+
+    it("what travels is every group connection and every row, a bare preset included", async () => {
+      const remote = await machineServer({ delayMs: 0 });
+      try {
+        await boot({
+          loadConfig: async () =>
+            ({
+              providers: { tokendance: { api_key: "td-group-key-0123456789" } },
+              models: [
+                // A bare preset: it runs on its group's table, which travels beside it, and the
+                // machine's own copy may be another release's or edited since.
+                { provider: "tokendance", model_id: "glm-5.3" },
+                // A model the user added, bare: it follows its group over there too.
+                { provider: "openrouter", model_id: "acme/hand-added" },
+                // A preset with a protocol of its own.
+                { provider: "deepseek", model_id: "deepseek-flash", client_type: "openai-chat" },
+              ],
+            }) as never,
+        });
+        machinesRepo.patch("ssh:nas", {
+          version: "9.9.9",
+          installedAt: "2026-08-01T00:00:00.000Z",
+          remotePort: remote.port,
+        });
+        machinesRepo.setMembers(PROJECT, ["ssh:nas"]);
+        connected.add("ssh:nas");
+
+        await t.deps.machines.syncModelsEverywhere(PROJECT);
+        await waitFor(() => remote.puts.length >= 1);
+        const sent = remote.puts[0]!;
+        expect(sent.providers).toEqual({ tokendance: { apiKey: "td-group-key-0123456789" } });
+        expect(sent.models.map((m) => [m.provider, m.modelId])).toEqual([
+          ["tokendance", "glm-5.3"],
+          ["openrouter", "acme/hand-added"],
+          ["deepseek", "deepseek-flash"],
+        ]);
+      } finally {
+        remote.close();
+      }
+    });
 
     it("an edit that lands while a sync is in flight is written afterwards, once — not dropped", async () => {
       const remote = await machineServer({ delayMs: 60 });

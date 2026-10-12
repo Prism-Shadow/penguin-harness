@@ -1,7 +1,7 @@
 /**
- * The built-in browser's user-channel events, fanned out from the one `/api/events`
- * connection (state/sessions.tsx publishes here) to the browser layer, which is the only
- * subscriber. Module level and free of dependencies, because the connection outlives every
+ * The agent browser's user-channel events, fanned out from the one `/api/events` connection
+ * (state/sessions.tsx publishes here) to the browser layer (browser-layer.tsx), whose follower
+ * and page host are the subscribers. Module level and free of dependencies, because the connection outlives every
  * page and the session list's store has no business knowing what the browser does with them.
  */
 import type { BuiltinBrowserServerEvent, ServerEvent } from "@prismshadow/penguin-server/api";
@@ -12,7 +12,9 @@ export function isBuiltinBrowserEvent(ev: ServerEvent): ev is BuiltinBrowserServ
     ev.type === "builtin_browser_open" ||
     ev.type === "builtin_browser_close" ||
     ev.type === "builtin_browser_activity" ||
-    ev.type === "builtin_browser_metrics"
+    ev.type === "builtin_browser_metrics" ||
+    ev.type === "builtin_browser_backend" ||
+    ev.type === "builtin_browser_extension"
   );
 }
 

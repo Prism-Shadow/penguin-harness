@@ -5,17 +5,21 @@
  * - Breadcrumbs split a posix path from the root and keep a drive root whole.
  * - History goes back and forward, a new visit drops what was ahead, and reloading the folder
  *   shown records nothing.
- * - The list hides hidden entries and puts folders first; type-to-select finds a folder by
- *   prefix and arrow keys skip files, stopping at the ends.
+ * - The list hides dot-names and what the machine marks hidden, and puts folders first;
+ *   type-to-select finds a folder by prefix and arrow keys skip files, stopping at the ends.
  * - The keyboard map reads the Finder chords with ⌘ on a Mac and Ctrl elsewhere, leaving Enter
- *   and Home/End to a text field.
- * - Quick access offers each platform's standard folders that exist there (Windows names
- *   ignoring case), keeps Windows drives apart, takes the user's additions and removals (a
+ *   and Home/End to a text field; Explorer's address keys work off the Mac, and F5 refreshes
+ *   everywhere.
+ * - Quick access takes the standard folders the machine resolved itself, or else finds each
+ *   platform's by name (Windows ignoring case), takes the user's additions and removals (a
  *   default included), and stores them per machine, reading anything unreadable as none.
+ * - Locations keep the machine's order and are named the way its file manager names them: a
+ *   Windows drive by its label or its type and then its letter, a Linux root as the file
+ *   system, anything else by its own name.
  * - The context menu offers open, choose, Quick access and copy on a folder, copy only on a
  *   file, and acts on the open folder (with Refresh) from the list's empty space.
  * - Recent folds the newest Session per Workspace across Agents, leaving temporary ones out;
- *   "go to" resolves ~ against the machine's home.
+ *   "go to" resolves ~ against the machine's home, and a bare drive to its root.
  * - A folder the server may not read gets a box of its own: the desktop app's access request
  *   only on a Mac, in the shell, browsing its own server, and never Retry alone where there is
  *   something better to do.
@@ -25,7 +29,7 @@
  *   layout.
  */
 import { describe, expect, it } from "vitest";
-import type { DirEntryInfo, DirListResponse } from "@prismshadow/penguin-server/api";
+import type { DirEntryInfo, DirListResponse, DirLocation } from "@prismshadow/penguin-server/api";
 import {
   EMPTY_HISTORY,
   NO_EDITS,
@@ -35,12 +39,13 @@ import {
   clearButton,
   defaultPlaces,
   deniedBox,
-  drivePlaces,
   finderKeyAction,
   finderMenuItems,
   historyStep,
   historyVisit,
   loadQuickAccess,
+  locationName,
+  locationPlaces,
   parentOf,
   quickAccessKey,
   quickAccessPlaces,
@@ -106,11 +111,18 @@ describe("history", () => {
 
 describe("the list", () => {
   const entries = visibleEntries(
-    [dir("zeta"), dir("notes.txt", "file"), dir(".git"), dir("Alpha"), dir("beta")],
+    [
+      dir("zeta"),
+      dir("notes.txt", "file"),
+      dir(".git"),
+      { ...dir("AppData"), hidden: true },
+      dir("Alpha"),
+      dir("beta"),
+    ],
     "",
   );
 
-  it("drops hidden entries and puts folders first", () => {
+  it("drops dot-names and what the machine marks hidden, and puts folders first", () => {
     expect(entries.map((e) => e.name)).toEqual(["Alpha", "beta", "zeta", "notes.txt"]);
     expect(visibleEntries(entries, "ET").map((e) => e.name)).toEqual(["beta", "zeta"]);
   });
@@ -153,6 +165,18 @@ describe("keyboard map", () => {
     expect(finderKeyAction(key("Enter"), false, false)).toBeNull();
     expect(finderKeyAction(key("Home"), false, false)).toBeNull();
     expect(finderKeyAction(key("ArrowDown"), false, false)).toBe("down");
+  });
+
+  it("takes Explorer's address keys off the Mac, and F5 everywhere", () => {
+    for (const k of [key("l", { ctrl: true }), key("D", { alt: true }), key("F4")]) {
+      expect(finderKeyAction(k, false, false), k.key).toBe("goto");
+      expect(finderKeyAction(k, true, false), k.key).toBeNull();
+    }
+    expect(finderKeyAction(key("F5"), true, false)).toBe("refresh");
+    expect(finderKeyAction(key("F5"), false, true)).toBe("refresh");
+    // A modified F5 is the browser's hard reload, and Ctrl+Shift+L is not Ctrl+L.
+    expect(finderKeyAction(key("F5", { ctrl: true }), false, true)).toBeNull();
+    expect(finderKeyAction(key("L", { ctrl: true, shift: true }), false, true)).toBeNull();
   });
 });
 
@@ -200,7 +224,44 @@ describe("quick access", () => {
     ]);
   });
 
-  it("lists only folders that exist there, and matches Windows names ignoring case", () => {
+  it("takes the folders the machine resolved itself, whole, in its file manager's order", () => {
+    // Windows moved Desktop and Documents into OneDrive, leaving stale English-named folders
+    // behind; a German Linux desktop names its XDG folders in German.
+    const win = defaultPlaces(
+      home({
+        path: "C:\\Users\\me",
+        platform: "win32",
+        entries: folders("C:\\Users\\me", std, "\\"),
+        standardFolders: {
+          documents: "C:\\Users\\me\\OneDrive\\Documents",
+          desktop: "C:\\Users\\me\\OneDrive\\Desktop",
+        },
+      }),
+    );
+    expect(win.map((p) => [p.key, p.path])).toEqual([
+      ["home", "C:\\Users\\me"],
+      ["desktop", "C:\\Users\\me\\OneDrive\\Desktop"],
+      ["documents", "C:\\Users\\me\\OneDrive\\Documents"],
+    ]);
+    const linux = defaultPlaces(
+      home({
+        platform: "linux",
+        standardFolders: {
+          downloads: "/home/me/Downloads",
+          desktop: "/home/me/Schreibtisch",
+          // A folder that is home itself is not listed a second time.
+          documents: "/home/me",
+        },
+      }),
+    );
+    expect(linux.map((p) => [p.key, p.path])).toEqual([
+      ["home", "/home/me"],
+      ["desktop", "/home/me/Schreibtisch"],
+      ["downloads", "/home/me/Downloads"],
+    ]);
+  });
+
+  it("finds them by name where the machine did not resolve them, Windows' ignoring case", () => {
     const linux = defaultPlaces(
       home({
         platform: "linux",
@@ -218,23 +279,12 @@ describe("quick access", () => {
       path: "C:\\Users\\me",
       parent: "C:\\Users",
       platform: "win32",
-      roots: ["C:\\", "D:\\"],
       entries: [{ name: "documents", path: "C:\\Users\\me\\documents", kind: "dir" }],
     });
     expect(win.map((p) => [p.key, p.label])).toEqual([
       ["home", "me"],
       ["documents", "documents"],
     ]);
-  });
-
-  it("keeps Windows' drives for This PC, apart from Quick access", () => {
-    const listing = home({ platform: "win32", roots: ["C:\\", "D:\\"] });
-    expect(drivePlaces(listing).map((p) => [p.key, p.label, p.path])).toEqual([
-      ["drive", "C:", "C:\\"],
-      ["drive", "D:", "D:\\"],
-    ]);
-    expect(defaultPlaces(listing).some((p) => p.key === "drive")).toBe(false);
-    expect(drivePlaces(home({ platform: "linux" }))).toEqual([]);
   });
 
   it("adds any folder at the end, and removes any entry — a default included", () => {
@@ -270,6 +320,68 @@ describe("quick access", () => {
     expect(loadQuickAccess("m-2", storage)).toEqual(NO_EDITS);
     storage.setItem(quickAccessKey("m-3"), JSON.stringify({ added: ["/a", 3, ""], removed: "x" }));
     expect(loadQuickAccess("m-3", storage)).toEqual({ added: ["/a"], removed: [] });
+  });
+});
+
+describe("locations", () => {
+  const names = {
+    drives: {
+      drive: "Local Disk",
+      removable: "USB Drive",
+      network: "Network Drive",
+      optical: "CD Drive",
+    },
+    fileSystem: "File System",
+  };
+  const named = (locations: DirLocation[]) =>
+    locationPlaces({ path: "/", parent: null, entries: [], locations }).map((p) => [
+      p.key,
+      locationName(p, names),
+    ]);
+
+  it("names a Windows drive as Explorer does: its label or its type, then its letter", () => {
+    expect(
+      named([
+        { path: "C:\\", kind: "drive", label: "Windows" },
+        { path: "D:\\", kind: "drive" },
+        { path: "E:\\", kind: "removable" },
+        { path: "F:\\", kind: "optical" },
+        { path: "Z:\\", kind: "network", label: "\\\\nas\\media" },
+        { path: "Y:\\", kind: "network" },
+      ]),
+    ).toEqual([
+      ["drive", "Windows (C:)"],
+      ["drive", "Local Disk (D:)"],
+      ["removable", "USB Drive (E:)"],
+      ["optical", "CD Drive (F:)"],
+      ["network", "\\\\nas\\media (Z:)"],
+      ["network", "Network Drive (Y:)"],
+    ]);
+  });
+
+  it("names a Linux root as the file system, and anything else by its own name or its folder's", () => {
+    expect(
+      named([
+        { path: "/", kind: "root" },
+        { path: "/media/me/STICK", kind: "removable" },
+        { path: "/mnt/c", kind: "drive", label: "C:" },
+      ]),
+    ).toEqual([
+      ["root", "File System"],
+      ["removable", "STICK"],
+      ["drive", "C:"],
+    ]);
+    expect(
+      named([
+        { path: "/", kind: "volume", label: "Macintosh HD" },
+        { path: "/Volumes/Backup", kind: "volume" },
+      ]),
+    ).toEqual([
+      ["volume", "Macintosh HD"],
+      ["volume", "Backup"],
+    ]);
+    // A machine reached over ssh reports none.
+    expect(locationPlaces({ path: "/home/me", parent: "/home", entries: [] })).toEqual([]);
   });
 });
 
@@ -320,10 +432,13 @@ describe("recent and go to folder", () => {
     ]);
   });
 
-  it("resolves ~ against the machine's home", () => {
+  it("resolves ~ against the machine's home, and a bare drive to its root", () => {
     expect(resolveGoTo("~/work", "/home/me")).toBe("/home/me/work");
     expect(resolveGoTo("~", "C:\\Users\\me")).toBe("C:\\Users\\me");
     expect(resolveGoTo(" /srv ", null)).toBe("/srv");
+    expect(resolveGoTo("d:", null)).toBe("D:\\");
+    expect(resolveGoTo(" D: ", "C:\\Users\\me")).toBe("D:\\");
+    expect(resolveGoTo("D:\\work", null)).toBe("D:\\work");
   });
 });
 

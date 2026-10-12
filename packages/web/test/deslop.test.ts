@@ -70,11 +70,16 @@ const ALLOWLIST: DeslopAllowlist = {
  * the code that landed on main while the waves were in flight, and the transcript's harness rows
  * (the cards and notes on the work group's anatomy, and the item dispatch around them); the
  * terminal's appearance module is not among them by design, since the terminal resolves its own
- * palette outside the token system, while the key bar that reads it is.
+ * palette outside the token system, while the key bar that reads it is. A new file written on the
+ * tokens joins as it lands (the find bar).
  */
 const TOKENS_ONLY: readonly string[] = [
+  "components/find/find-bar.tsx",
+  "features/builtin-browser/backend-menu.tsx",
   "features/builtin-browser/browser-tab-strip.tsx",
   "features/builtin-browser/browser-toolbar.tsx",
+  "features/builtin-browser/chrome-surface.tsx",
+  "features/builtin-browser/pairing-dialog.tsx",
   "features/chat/attached-files-banner.tsx",
   "features/chat/background-done-banner.tsx",
   "features/chat/compaction-banner.tsx",
@@ -91,6 +96,8 @@ const TOKENS_ONLY: readonly string[] = [
   "features/chat/workspace-finder.tsx",
   "features/chat/workspace-finder-model.ts",
   "features/chat/workspace-select.tsx",
+  "features/settings/browser-section.tsx",
+  "features/settings/chrome-extension-section.tsx",
   "features/settings/shortcut-recorder.tsx",
   "features/settings/shortcuts-section.tsx",
   "features/settings/trace-import-row.tsx",

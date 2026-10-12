@@ -64,3 +64,18 @@ export function unpackedAssetsDir(dir: string): string {
   }
   return out;
 }
+
+/** Where a push puts the skill/hook plugin library, relative to the unpacked assets. */
+export const LIBRARY_DIR = "library";
+
+/**
+ * The plugin library a push carried (scripts/deploy.mjs packs it as `archives/library.tgz`):
+ * a directory with a `package.json` naming the plugin packages and their `node_modules`, the
+ * shape core's loader resolves from. Null when there are no assets, or the push predates the
+ * library travelling with it — the loader then reads the running program's, as before.
+ */
+export function pushedLibraryDir(assets: string | null): string | null {
+  if (assets === null) return null;
+  const dir = path.join(unpackedAssetsDir(assets), LIBRARY_DIR);
+  return fs.existsSync(path.join(dir, "package.json")) ? dir : null;
+}

@@ -2,17 +2,20 @@
  * The Workspace finder's decisions, kept apart from the modal so they are testable without a
  * DOM: path breadcrumbs, back/forward history, what the list shows and in which order,
  * type-to-select, the sidebar's places (Quick access, with the user's own additions and
- * removals), the context menu's items, the keyboard map, what the box for a folder the
- * server may not read offers, and the footer's no-folder button.
+ * removals, and the machine's locations — drives, volumes, mounts — with their names), the
+ * context menu's items, the keyboard map, what the box for a folder the server may not read
+ * offers, and the footer's no-folder button.
  *
  * Paths come from whichever machine is being browsed, so nothing here asks the browser's own
  * platform about a path — a Windows server's `C:\Users\me` and a Linux one's `/home/me` both
- * have to split correctly in the same tab.
+ * have to split correctly in the same tab. The keyboard map alone is told the user's own
+ * platform: keys follow where the user sits, not the machine being browsed.
  */
 import type {
   DesktopPrivacyPane,
   DirEntryInfo,
   DirListResponse,
+  DirLocation,
 } from "@prismshadow/penguin-server/api";
 import {
   TEMP_WORKSPACE_GROUP_KEY,
@@ -117,12 +120,14 @@ export const isFolder = (entry: DirEntryInfo): boolean => entry.kind !== "file";
 
 /**
  * What the list shows: hidden entries dropped, the filter applied (case-insensitive
- * substring), folders first and then by name.
+ * substring), folders first and then by name. Hidden is a dot-name everywhere, plus whatever
+ * the machine itself marks hidden: a Windows profile holds `AppData`, `desktop.ini` and the old
+ * junctions that refuse to be opened, none of which its own Explorer shows.
  */
 export function visibleEntries(entries: readonly DirEntryInfo[], filter: string): DirEntryInfo[] {
   const q = filter.trim().toLowerCase();
   return entries
-    .filter((e) => !e.name.startsWith("."))
+    .filter((e) => !e.name.startsWith(".") && e.hidden !== true)
     .filter((e) => q === "" || e.name.toLowerCase().includes(q))
     .sort((a, b) => {
       const fa = isFolder(a);
@@ -162,11 +167,18 @@ export function stepSelection(
 /** A standard folder that a platform's own file manager lists in its sidebar. */
 export type StandardFolder = "desktop" | "documents" | "downloads" | "pictures";
 
+/** What kind of storage a location is: a Windows drive by its type, a volume, a Linux root. */
+export type LocationKind = DirLocation["kind"];
+
 /** A sidebar place. `key` picks its icon (and a standard folder's label); `path` is what clicking it opens. */
 export interface Place {
-  key: "home" | StandardFolder | "drive" | "folder";
+  key: "home" | StandardFolder | LocationKind | "folder";
   path: string;
-  /** The label for places named by their path: home by its folder name, a drive by its letter, an added folder by its name. */
+  /**
+   * The label for places named by their path: home by its folder name, an added folder by its
+   * name. A location's is the machine's own name for it, empty when it has none; locationName
+   * builds what the row shows from it.
+   */
   label: string;
 }
 
@@ -212,34 +224,78 @@ const STANDARD_FOLDERS: Record<
 };
 
 /**
- * Quick access as the machine offers it before the user changes anything, from that machine's
- * own home listing: home itself, then the platform's standard folders that exist there. The
- * home listing is the source rather than a guessed path because only that machine knows
- * whether the folder is there (a Linux server without a desktop has none of them). Windows
- * matches the names ignoring case, as its filesystem does.
+ * Quick access as the machine offers it before the user changes anything: home itself, then
+ * the platform's standard folders that exist there. Where the machine resolved them itself
+ * (`standardFolders`) its answer is taken whole, since only it knows that Windows moved
+ * Documents into OneDrive or that a Linux desktop set up in another language names its folders
+ * in that language. Otherwise — a machine reached over ssh — they are found by their English
+ * names in the home listing, rather than guessed, because only that listing says whether the
+ * folder is there (a Linux server without a desktop has none of them); Windows matches the
+ * names ignoring case, as its filesystem does. Either way the platform's own order is kept,
+ * and a folder that turns out to be home, or another place already listed, is not listed twice.
  */
 export function defaultPlaces(home: DirListResponse | null): Place[] {
   if (home === null) return [];
   const platform = quickAccessPlatform(home.platform);
   const places: Place[] = [{ key: "home", path: home.path, label: baseName(home.path) }];
+  const resolved = home.standardFolders;
   for (const [key, name] of STANDARD_FOLDERS[platform]) {
-    const found = home.entries.find(
-      (e) =>
-        isFolder(e) &&
-        (platform === "win32" ? e.name.toLowerCase() === name.toLowerCase() : e.name === name),
-    );
-    if (found !== undefined) places.push({ key, path: found.path, label: found.name });
+    const path =
+      resolved !== undefined
+        ? resolved[key]
+        : home.entries.find(
+            (e) =>
+              isFolder(e) &&
+              (platform === "win32"
+                ? e.name.toLowerCase() === name.toLowerCase()
+                : e.name === name),
+          )?.path;
+    if (path !== undefined && path !== "" && !places.some((p) => p.path === path)) {
+      places.push({ key, path, label: baseName(path) });
+    }
   }
   return places;
 }
 
-/** Windows' drive roots, for the This PC section; nothing on other platforms. */
-export function drivePlaces(home: DirListResponse | null): Place[] {
-  return (home?.roots ?? []).map((root) => ({
-    key: "drive",
-    path: root,
-    label: root.replace(/\\$/, ""),
+/**
+ * The machine's locations — Windows' drives, a Mac's volumes, a Linux root and its mounts — in
+ * the order the machine gave them, for the sidebar section after Quick access and the address
+ * bar's root menu. Nothing for a machine that reported none (one reached over ssh).
+ */
+export function locationPlaces(home: DirListResponse | null): Place[] {
+  return (home?.locations ?? []).map((loc) => ({
+    key: loc.kind,
+    path: loc.path,
+    label: loc.label ?? "",
   }));
+}
+
+/** The words a location's name is built from, in the reader's language (the finder's strings). */
+export interface LocationNames {
+  /** A Windows drive with no label of its own, by its type, as Explorer names it. */
+  drives: Record<"drive" | "removable" | "network" | "optical", string>;
+  /** A Linux machine's file-system root. */
+  fileSystem: string;
+}
+
+/**
+ * What a location's row says. A Windows drive is named as Explorer names it — its label, or
+ * the name of its type when it has none, then the letter: `Windows (C:)`, `USB Drive (E:)`,
+ * and for a network drive whose share stands in for the label, `\\nas\media (Z:)`. A Linux
+ * root is the file system, as its file managers call it; anything else (a Mac volume, a
+ * mount, a WSL drive under `/mnt`) goes by its own name, or by its folder's when it has none.
+ */
+export function locationName(place: Place, names: LocationNames): string {
+  const letter = /^([A-Za-z]:)\\?$/.exec(place.path)?.[1];
+  if (letter !== undefined) {
+    const kind =
+      place.key === "removable" || place.key === "network" || place.key === "optical"
+        ? place.key
+        : "drive";
+    return `${place.label !== "" ? place.label : names.drives[kind]} (${letter.toUpperCase()})`;
+  }
+  if (place.key === "root") return names.fileSystem;
+  return place.label !== "" ? place.label : baseName(place.path);
 }
 
 /** What the user changed in one machine's Quick access. */
@@ -407,11 +463,14 @@ export function recentWorkspaces(
 
 /**
  * "Go to folder" input → the path to load: `~` and `~/…` resolve against the machine's home
- * when it is known (the dirs API takes absolute paths only); anything else is sent as typed
+ * when it is known (the dirs API takes absolute paths only), and a bare drive (`d:`) is that
+ * drive's root, as Explorer's address bar takes it — to Windows itself `D:` is wherever that
+ * drive's current directory is, which a server has no use for. Anything else is sent as typed
  * and the server decides.
  */
 export function resolveGoTo(input: string, home: string | null): string {
   const p = input.trim();
+  if (/^[A-Za-z]:$/.test(p)) return `${p.toUpperCase()}\\`;
   if (home === null) return p;
   if (p === "~") return home;
   const m = /^~[\\/](.*)$/.exec(p);
@@ -422,7 +481,17 @@ export function resolveGoTo(input: string, home: string | null): string {
 
 /** What a key press asks the finder to do. */
 export type FinderAction =
-  "up" | "down" | "first" | "last" | "open" | "parent" | "back" | "forward" | "goto" | "choose";
+  | "up"
+  | "down"
+  | "first"
+  | "last"
+  | "open"
+  | "parent"
+  | "back"
+  | "forward"
+  | "goto"
+  | "choose"
+  | "refresh";
 
 /** The keyboard-event fields the map reads (a subset of KeyboardEvent, for tests). */
 export type FinderKey = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">;
@@ -430,10 +499,13 @@ export type FinderKey = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "alt
 /**
  * The finder's keyboard map. The modifier is ⌘ on a Mac and Ctrl elsewhere, so the Finder
  * chords (⌘↑ parent, ⌘↓ open, ⌘[ / ⌘] back and forward, ⌘⇧G type a path into the address
- * bar) read the same on every platform; Alt+arrows are accepted too off the Mac, where
- * Explorer and the browsers taught them. Plain arrows, Home/End and Enter are list keys — `inList` is false
- * for a text field, where they belong to the field (Up/Down excepted: the filter box steers
- * the list the way a combobox does).
+ * bar) read the same on every platform; off the Mac, Explorer's own keys work too — Alt+arrows
+ * for back, forward and up, and Ctrl+L, Alt+D and F4 for the address bar (Ctrl+L is also the
+ * Linux file managers'). F5 refreshes everywhere, as it does in Explorer and in a browser,
+ * where it would otherwise reload the whole app out from under the dialog; with a modifier it
+ * is left to the browser's own hard reload. Plain arrows, Home/End and Enter are list keys —
+ * `inList` is false for a text field, where they belong to the field (Up/Down excepted: the
+ * filter box steers the list the way a combobox does).
  */
 export function finderKeyAction(
   e: FinderKey,
@@ -442,6 +514,7 @@ export function finderKeyAction(
 ): FinderAction | null {
   const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
   const bare = !e.metaKey && !e.ctrlKey && !e.altKey;
+  if (bare && !e.shiftKey && e.key === "F5") return "refresh";
   if (mod && e.shiftKey && !e.altKey && (e.key === "g" || e.key === "G")) return "goto";
   if (mod && !e.shiftKey && !e.altKey) {
     if (e.key === "ArrowUp") return "parent";
@@ -449,13 +522,16 @@ export function finderKeyAction(
     if (e.key === "[") return "back";
     if (e.key === "]") return "forward";
     if (e.key === "Enter") return "choose";
+    if (!isMac && (e.key === "l" || e.key === "L")) return "goto";
   }
   if (!isMac && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
     if (e.key === "ArrowLeft") return "back";
     if (e.key === "ArrowRight") return "forward";
     if (e.key === "ArrowUp") return "parent";
+    if (e.key === "d" || e.key === "D") return "goto";
   }
   if (!bare || e.shiftKey) return null;
+  if (!isMac && e.key === "F4") return "goto";
   if (e.key === "ArrowDown") return "down";
   if (e.key === "ArrowUp") return "up";
   if (!inList) return null;

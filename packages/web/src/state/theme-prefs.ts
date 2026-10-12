@@ -9,7 +9,7 @@
  */
 import {
   ACCENT_PRESET_IDS,
-  DEFAULT_THEME_ID,
+  INITIAL_THEME_ID,
   THEME_IDS,
   resolveAccent,
 } from "@prismshadow/penguin-ui";
@@ -36,9 +36,10 @@ export type PrefStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 /** "Use the theme's own face" — stored like any other choice, applied as no attribute at all. */
 export const FONT_FOLLOWS_THEME = "theme";
 
+/** The stored theme, or the one a browser starts in when it stores none (or an unknown one). */
 export function readThemeId(storage: PrefStorage): ThemeId {
   const stored = storage.getItem(THEME_STORAGE_KEYS.themeId);
-  return THEME_IDS.find((id) => id === stored) ?? DEFAULT_THEME_ID;
+  return THEME_IDS.find((id) => id === stored) ?? INITIAL_THEME_ID;
 }
 
 /**

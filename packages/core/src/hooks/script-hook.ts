@@ -30,6 +30,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { prependPathEnv } from "../environment/tools/command/path-prepend.js";
+import { runnerLineFilter } from "../environment/tools/command/runner-lines.js";
 import type { ConfinedSpawn, SpawnConfiner } from "../interfaces/index.js";
 import type { UserPromptTrigger } from "../plugins/index.js";
 import type { StopHook, StopHookInput, StopHookResult } from "./stop-hook.js";
@@ -120,7 +121,16 @@ export async function runHookScript(
     };
     opts.signal?.addEventListener("abort", onAbort, { once: true });
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+    // The runner's own report lines (ConfinedSpawn.runnerLines) are no reason for a failure.
+    const runner = runnerLineFilter(confined.runnerLines);
+    if (runner === null) {
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+    } else {
+      child.stderr
+        .setEncoding("utf8")
+        .on("data", (chunk: string) => (stderr += runner.push(chunk)));
+      child.stderr.on("end", () => (stderr += runner.flush()));
+    }
     child.on("error", (err) => fail(err.message));
     child.on("close", (code) => {
       if (code !== 0) {

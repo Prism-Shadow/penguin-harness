@@ -130,6 +130,7 @@ const metaFor = (model: ModelRef): SessionMetaPayload => ({
   system_prompt: "sp",
   agent_state: "/tmp/state",
   workspace: "/tmp/ws",
+  source: "user",
 });
 
 const SUMMARY_REPLY = "[summary]the distilled summary[/summary]";

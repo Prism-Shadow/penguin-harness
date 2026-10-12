@@ -14,7 +14,7 @@
  * gallery's root applies them through the package's `applyThemeAttributes`, so a size or a font
  * pairing chosen here is what a user of the app would have chosen in its Settings.
  */
-import { DEFAULT_THEME_ID, THEME_IDS } from "@prismshadow/penguin-ui";
+import { INITIAL_THEME_ID, THEME_IDS } from "@prismshadow/penguin-ui";
 import type { ThemeId } from "@prismshadow/penguin-ui";
 import { DEFAULT_TEXT_SIZE, TEXT_SIZES } from "@prismshadow/penguin-ui/boot";
 import type { TextSize } from "@prismshadow/penguin-ui/boot";
@@ -49,7 +49,7 @@ export interface GalleryState {
 }
 
 export const DEFAULT_STATE: GalleryState = {
-  theme: DEFAULT_THEME_ID,
+  theme: INITIAL_THEME_ID,
   mode: "light",
   size: DEFAULT_TEXT_SIZE,
   latin: "theme",

@@ -36,6 +36,7 @@ import {
   loadProjectConfig,
   ModelSwitchRefusedError,
   saveProjectConfig,
+  setProviderConnection,
   setVaultEntry,
   userText,
 } from "../src/index.js";
@@ -267,31 +268,6 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
       expect(session.modelId).toBe("deepseek-flash");
     } finally {
       session.dispose();
-    }
-  });
-});
-
-describe("Agent.createSession session source (session_meta origin marker)", () => {
-  it("records the given source in session_meta; a user-created session carries no source key", async () => {
-    const agent = await createAgent();
-    const ws = path.join(tmpRoot, "ws-source");
-    await fs.mkdir(ws, { recursive: true });
-
-    const scheduled = await agent.createSession({ workspaceDir: ws, source: "schedule" });
-    try {
-      expect((scheduled.metaMessage.payload as { source?: string }).source).toBe("schedule");
-    } finally {
-      scheduled.dispose();
-    }
-
-    // Absent = user-created: the key must not appear at all (Trace consumers treat absence as the default).
-    const plain = await agent.createSession({ workspaceDir: ws });
-    try {
-      expect("source" in (plain.metaMessage.payload as unknown as Record<string, unknown>)).toBe(
-        false,
-      );
-    } finally {
-      plain.dispose();
     }
   });
 });
@@ -1547,6 +1523,62 @@ describe("Agent.createSession credential rule (a keyless gateway row never borro
     });
     try {
       expect(session.provider).toBe(preset.provider);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a model with no key of its own runs on its group's key, at the endpoint and on the protocol its group's table names", async () => {
+    // What Connect writes: the key once, on the group — beside the endpoint and protocol a new
+    // Project's file already gives TokenDance. The preset row stores none of the three.
+    await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "tokendance", { api_key: "td-group" });
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-group-key");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      provider: "tokendance",
+      modelId: "glm-5.3",
+    });
+    try {
+      await bootstrapped(session);
+      const built = (capturedLLMConfigs.list as { modelId?: string }[]).filter(
+        (c) => c.modelId === "glm-5.3",
+      );
+      expect(built.at(-1)).toMatchObject({
+        apiKey: "td-group",
+        baseUrl: "https://tokendance.space/gateway/v1",
+        clientType: "openai-chat",
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a model whose group's table names no endpoint or protocol is built with none: the catalog does not fill them in", async () => {
+    // The user cleared TokenDance's endpoint and protocol and kept its key: the file now says
+    // the row goes wherever MMSP routes its id, and that is what the Session is built with.
+    await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "tokendance", {
+      base_url: null,
+      client_type: null,
+      api_key: "td-group",
+    });
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-group-cleared");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      provider: "tokendance",
+      modelId: "glm-5.3",
+    });
+    try {
+      await bootstrapped(session);
+      const built = (
+        capturedLLMConfigs.list as { modelId?: string; baseUrl?: string; clientType?: string }[]
+      ).filter((c) => c.modelId === "glm-5.3");
+      expect(built.at(-1)).toMatchObject({ apiKey: "td-group" });
+      expect(built.at(-1)?.baseUrl).toBeUndefined();
+      expect(built.at(-1)?.clientType).toBeUndefined();
     } finally {
       session.dispose();
     }

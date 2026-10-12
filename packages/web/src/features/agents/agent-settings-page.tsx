@@ -1,5 +1,5 @@
 /**
- * Agent settings page: nine tabs —
+ * Agent settings page: ten tabs —
  * Overview (name/description form + two ruled sections in the skills import modal's
  * family: Agent State — State version, snapshot export-import and the copyable State
  * path — and Kernel — the defaults generation with its update / restore-defaults
@@ -7,7 +7,7 @@
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
  * Hooks (hooks-tab.tsx), Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule
- * (schedules-tab.tsx).
+ * (schedules-tab.tsx), API (api-tab.tsx: the Agent's public API, kept by this server).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side). Leaving a form tab with unsaved edits — another tab, or Back — asks to
  * discard them first; a snapshot import asks before it replaces the Agent State.
@@ -65,6 +65,7 @@ import { MemoryTab } from "./memory-tab";
 import { kernelTabLabel } from "./kernel-labels";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
+import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
@@ -78,7 +79,8 @@ type TabKey =
   | "hooks"
   | "memory"
   | "vault"
-  | "schedules";
+  | "schedules"
+  | "api";
 
 /**
  * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
@@ -138,6 +140,7 @@ export function AgentSettingsPage() {
     { key: "memory", label: S.agent.tabMemory },
     { key: "vault", label: S.agent.tabVault },
     { key: "schedules", label: S.agent.tabSchedules },
+    { key: "api", label: S.agent.tabApi },
   ] as const;
   const navigate = useNavigate();
   const params = useParams<{ agentId: string }>();
@@ -338,6 +341,13 @@ export function AgentSettingsPage() {
         {tab === "hooks" && <HooksTab agentId={agentId} onConfigChanged={refreshConfig} />}
         {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
         {tab === "schedules" && <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "api" && (
+          <ApiTab
+            projectId={projectId}
+            agentId={agentId}
+            isOwner={currentProject?.role === "owner"}
+          />
+        )}
       </div>
       <ConfirmModal
         open={pendingLeave !== null}

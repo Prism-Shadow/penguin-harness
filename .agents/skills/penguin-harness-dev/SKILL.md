@@ -106,6 +106,8 @@ pnpm --filter @prismshadow/penguin-web test                                     
 | Request assembly, history rebuild, compaction, the system prompt, a tool's description or schema | core's three `prompt-cache-*` suites — read the section below before you touch what they report |
 | One package's source | that package's `test`, plus `typecheck` |
 | Exported core types, or anything downstream imports | `pnpm build` + `pnpm typecheck` before any test |
+| Anything that opens, folds, resizes or animates in the Web App or `packages/ui` | the `ui` and `web` tests + frames captured mid-transition in all three themes (`penguin-harness-frontend`, "Motion"); a resting screenshot is not evidence |
+| A remote test tree after `main` moved (a merge, a rebase) | rebuild `@prismshadow/penguin-server...` there first: a stale core `dist` reads as dozens of TS2305 "no exported member" errors in web and the gallery |
 | `package.json`, the lockfile, `pnpm-workspace.yaml` | `pnpm install --frozen-lockfile` + `pnpm build` |
 | Installers, `release.yml` | `sh scripts/test-installer.sh` |
 

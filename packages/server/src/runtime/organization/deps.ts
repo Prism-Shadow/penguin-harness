@@ -58,6 +58,12 @@ export interface OrgSessionCreator {
      * forget it.
      */
     client: "org";
+    /**
+     * Always "company": what kind of conversation a desk or ticket session is, recorded in its
+     * session_meta. It keeps the Session out of every category of the session list, so it is
+     * listed only in company mode's own views. Required for the same reason as `client`.
+     */
+    source: "company";
   }): Promise<{ sessionId: string; workspace: string }>;
 }
 

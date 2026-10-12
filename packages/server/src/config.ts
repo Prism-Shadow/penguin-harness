@@ -11,6 +11,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { NIGHTLY_INDEX_URL } from "./plugin/registry.js";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
 import { checkoutCliEntry } from "./services/cli-shim.js";
@@ -73,16 +74,6 @@ export interface ServerConfig {
    */
   desktopToken: string | null;
   /**
-   * Whether `penguin server|web` supervises this process (PENGUIN_SUPERVISED=1) and relaunches
-   * it when it exits with core's SERVER_RESTART_EXIT_CODE — what makes the web UI's "restart
-   * to update" possible. False under a direct server start, a dev run, or the desktop shell.
-   *
-   * Required, unlike cliEntry below: the hot-update seam names it in the
-   * config interface it claims (hmr/capabilities.ts's HMR_INTERFACES), and a runtime that
-   * publishes a lifecycle capability publishes this field with it — the two arrived together.
-   */
-  supervised: boolean;
-  /**
    * Port announcement file (PENGUIN_PORT_FILE): once the App is up, the actual
    * bound port is written here — the supervising process's way to learn the port when
    * it starts the server with PORT=0.
@@ -116,6 +107,17 @@ export interface ServerConfig {
    * no CLI to offer and no shim written.
    */
   cliEntry?: string | null;
+  /**
+   * The published plugin index this deployment reads (PENGUIN_PLUGIN_INDEX), or null
+   * for none. Unset = the index repository's published document; `off` = builtin entries only
+   * and no outbound request, the same opt-out shape PENGUIN_UPDATE_CHECK=off gives the version
+   * check; any other value replaces the URL, which is what a fork or a private index needs.
+   *
+   * OPTIONAL because the config a RUNTIME publishes is whatever its own build knew: a runtime
+   * older than this field carries none, and a pushed platform still has to boot on it. Absent
+   * therefore reads as unset — the published index — while an explicit null is the opt-out.
+   */
+  pluginIndexUrl?: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -221,7 +223,14 @@ export function normalizeModelScopeBridgeUrl(raw: string | undefined): string {
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_GO_ORIGIN / MODELSCOPE_BRIDGE_URL / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY). */
+/** PENGUIN_PLUGIN_INDEX -> the URL to read, or null when the lookup is off. */
+function resolvePluginIndexUrl(raw: string | undefined): string | null {
+  const value = raw?.trim();
+  if (value === undefined || value === "") return NIGHTLY_INDEX_URL;
+  return value.toLowerCase() === "off" ? null : value;
+}
+
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_GO_ORIGIN / MODELSCOPE_BRIDGE_URL / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY / PENGUIN_PLUGIN_INDEX). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
@@ -253,7 +262,7 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     desktopToken,
     portFile: env.PENGUIN_PORT_FILE?.trim() || null,
     trustProxy: env.PENGUIN_TRUST_PROXY === "1",
-    supervised: env.PENGUIN_SUPERVISED === "1",
     cliEntry: env.PENGUIN_CLI_ENTRY?.trim() || defaultCliEntry(),
+    pluginIndexUrl: resolvePluginIndexUrl(env.PENGUIN_PLUGIN_INDEX),
   };
 }

@@ -875,13 +875,32 @@
   white-space: nowrap;
 }
 
-/* The reveal specimen reads as a reply: the reading face at the prose rung. */
+/* The reveal specimen reads as a work group's steps: one line per tool, its name in the code
+   face, the detail muted; the box holds every row, so appending one never grows it. */
 .gf-reveal {
-  min-height: 5rem;
-  margin: 0;
-  font-family: var(--ui-font-sans);
-  font-size: var(--ui-text-prose-size);
-  line-height: var(--ui-text-prose-lh);
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: 9rem;
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+}
+.gf-reveal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-stack-1);
+  padding: var(--ui-row-py) calc(var(--ui-space-unit) * 2);
+  color: var(--ui-fg-subtle);
+}
+.gf-reveal-row .gf-mono {
+  color: var(--ui-fg);
+}
+.gf-reveal-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-fg-muted);
 }
 
 /* The layout specimen: a sidebar beside a page, folding to a rail by width alone. */
@@ -1119,28 +1138,6 @@
     font-weight: var(--ui-h1-weight);
     letter-spacing: var(--ui-h1-tracking);
   }
-  .gh-caret,
-  .gf-caret {
-    margin-left: 0.125rem;
-    animation: gf-blink 1s steps(2, jump-none) infinite;
-  }
-  .gh-dot,
-  .gf-live-dot {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 999px;
-    background-color: var(--ui-tone-success-fg);
-    animation: gf-pulse 1.4s ease-in-out infinite;
-  }
-  .gh-spinner,
-  .gf-spinner {
-    width: 0.875rem;
-    height: 0.875rem;
-    border-radius: 999px;
-    border: 1.5px solid var(--ui-line);
-    border-top-color: var(--ui-fg);
-    animation: gf-spin 0.8s linear infinite;
-  }
   .gh-frame {
     overflow: hidden;
     border: 1px solid var(--ui-line);
@@ -1323,20 +1320,5 @@
     color: var(--ui-fg);
     font-size: var(--ui-text-small-size);
     line-height: var(--ui-text-small-lh);
-  }
-}
-@keyframes gf-blink {
-  50% {
-    opacity: 0.15;
-  }
-}
-@keyframes gf-pulse {
-  50% {
-    opacity: 0.4;
-  }
-}
-@keyframes gf-spin {
-  to {
-    transform: rotate(360deg);
   }
 }

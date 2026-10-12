@@ -1,7 +1,7 @@
 /**
  * Unit tests for the Trace service: multi-file history concatenation, file
- * listing, pagination, performance-analysis derivation, and Agent-level
- * drill-down browsing.
+ * listing, pagination (following a growing file), performance-analysis derivation
+ * (including the head's context window), and Agent-level drill-down browsing.
  */
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -77,6 +77,7 @@ function metaPayload(over: Partial<SessionMetaPayload> = {}): SessionMetaPayload
     system_prompt: "sp",
     agent_state: "/tmp/a",
     workspace: "/tmp/w",
+    source: "user",
     ...over,
   };
 }
@@ -154,6 +155,28 @@ describe("trace-service", () => {
     expect((page.events[0]!.payload as { text: string }).text).toBe("m3");
     const notFound = await service.readEvents(P, A, S, 99, 0, 10).catch((e: unknown) => e);
     expect((notFound as { status: number }).status).toBe(404);
+  });
+
+  it("paginated line reads follow a file the running Task appends to", async () => {
+    const file = await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      userText("m0"),
+      userText("m1"),
+    ]);
+    expect((await service.readEvents(P, A, S, 1, 0, 10)).total).toBe(2);
+    await fs.appendFile(file, `${JSON.stringify(userText("m2"))}\n`, "utf8");
+    const grown = await service.readEvents(P, A, S, 1, 1, 10);
+    expect(grown.total).toBe(3);
+    expect(grown.events.map((e) => (e.payload as { text: string }).text)).toEqual(["m1", "m2"]);
+  });
+
+  it("the analysis carries the context window its file's head names, and none when the head names none", async () => {
+    await writeTraceFile(root, P, A, "2026-07-05", S, 1, [
+      sessionMeta(metaPayload({ model_context_window: 200_000 })),
+      userText("hi"),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-05", S, 2, [userText("no head")]);
+    expect((await service.analyze(P, A, S, 1)).modelContextWindow).toBe(200_000);
+    expect((await service.analyze(P, A, S, 2)).modelContextWindow).toBeUndefined();
   });
 
   it("performance analysis: Request pairing, tool durations, reconnect / compaction counts, Token trend", async () => {
@@ -857,7 +880,7 @@ describe("trace-service", () => {
     withTitles.close();
   });
 
-  it("Agent-level paging: category/workspace come from the DB row (archived wins; a registry-known origin fills its bucket)", async () => {
+  it("Agent-level paging: category/workspace come from the DB row (archived wins; a registry-known source fills its bucket)", async () => {
     const s2 = "session-2026-07-06-09-00-00-11112222";
     const s3 = "session-2026-07-07-08-00-00-33334444";
     await writeTraceFile(root, P, A, "2026-07-05", S, 1, [userText("a")]);
@@ -865,7 +888,7 @@ describe("trace-service", () => {
     await writeTraceFile(root, P, A, "2026-07-07", s3, 1, [userText("c")]);
     const sources = new SessionSources();
     sources.set(s2, "subagent");
-    sources.set(s3, null); // meta seen, user-created
+    sources.set(s3, "user"); // meta seen, a person's conversation
     const h = makeTraceHarness(root, {
       sources,
       sessions: {
@@ -880,23 +903,11 @@ describe("trace-service", () => {
     const byId = new Map(res.sessions!.map((x) => [x.sessionId, x]));
     expect(byId.get(S)!.category).toBe("archived");
     expect(byId.get(S)!.workspace).toBe("/ws/one");
-    expect(byId.get(s2)!.category).toBe("subagent"); // untracked but registry-known
+    expect(byId.get(s2)!.category).toBe("background"); // untracked but registry-known
     expect(byId.get(s3)!.category).toBe("active");
-    expect(res.counts).toEqual({ active: 1, subagent: 1, schedule: 0, benchmark: 0, archived: 1 });
-    expect(res.workspaceCounts!["/ws/one"]).toEqual({
-      active: 0,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 1,
-    });
-    expect(res.workspaceCounts!["/ws/two"]).toEqual({
-      active: 1,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    });
+    expect(res.counts).toEqual({ active: 1, background: 1, archived: 1 });
+    expect(res.workspaceCounts!["/ws/one"]).toEqual({ active: 0, background: 0, archived: 1 });
+    expect(res.workspaceCounts!["/ws/two"]).toEqual({ active: 1, background: 0, archived: 0 });
 
     // The category filter pages within one bucket; totalSessions is the bucket's count.
     const active = await h.service.agentTraces(
@@ -907,13 +918,7 @@ describe("trace-service", () => {
     );
     expect(active.sessions!.map((x) => x.sessionId)).toEqual([s3]);
     expect(active.totalSessions).toBe(1);
-    expect(active.counts).toEqual({
-      active: 1,
-      subagent: 1,
-      schedule: 0,
-      benchmark: 0,
-      archived: 1,
-    });
+    expect(active.counts).toEqual({ active: 1, background: 1, archived: 1 });
     const archived = await h.service.agentTraces(
       P,
       A,
@@ -934,27 +939,21 @@ describe("trace-service", () => {
     ]);
 
     const first = await service.agentTraces(P, A, { offset: 0, limit: 10 });
-    expect(first.sessions![0]!.category).toBe("subagent");
+    expect(first.sessions![0]!.category).toBe("background");
     expect(first.sessions![0]!.workspace).toBe("/ws/child");
-    expect(first.counts).toEqual({
-      active: 0,
-      subagent: 1,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    });
+    expect(first.counts).toEqual({ active: 0, background: 1, archived: 0 });
     // The observation landed in the shared registry (single source of truth) at registration.
     expect(harness.sources.get(S)).toBe("subagent");
     const reads = harness.traceIndex.counters.headReads;
 
     const second = await service.agentTraces(P, A, { offset: 0, limit: 10 });
-    expect(second.sessions![0]!.category).toBe("subagent");
+    expect(second.sessions![0]!.category).toBe("background");
     expect(harness.traceIndex.counters.headReads).toBe(reads); // classification never re-reads
   });
 
   it("Agent-level paging: every Session is listed whichever client created it (no CLI filter)", async () => {
     const cliSid = "session-2026-07-06-09-00-00-11112222"; // untracked, user-created meta (a legacy CLI-direct run)
-    const childSid = "session-2026-07-07-08-00-00-33334444"; // untracked but subagent-origin -> its folder
+    const childSid = "session-2026-07-07-08-00-00-33334444"; // untracked but subagent-sourced -> Background
     await writeTraceFile(root, P, A, "2026-07-06", cliSid, 1, [
       sessionMeta(metaPayload({ session_id: cliSid })),
       userText("cli run"),
@@ -975,13 +974,7 @@ describe("trace-service", () => {
     const listed = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(listed.sessions!.map((x) => x.sessionId)).toEqual([childSid, cliSid, webSid]);
     expect(listed.totalSessions).toBe(3);
-    expect(listed.counts).toEqual({
-      active: 2,
-      subagent: 1,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    });
+    expect(listed.counts).toEqual({ active: 2, background: 1, archived: 0 });
     h.close();
   });
 

@@ -149,6 +149,8 @@
   align-items: center;
   gap: 2px;
 }
+/* The chrome's links move by colour alone, the same short ease everywhere: the chrome is
+   deliberately theme-independent, so its motion is a literal rather than the theme's tokens. */
 .g-link {
   display: inline-flex;
   align-items: center;
@@ -157,6 +159,9 @@
   border-radius: 6px;
   color: var(--g-ink-2);
   white-space: nowrap;
+  transition:
+    color 150ms ease-out,
+    background-color 150ms ease-out;
 }
 .g-link:hover {
   color: var(--g-ink);
@@ -525,24 +530,27 @@
   padding: 0;
   border-left: 1px solid var(--g-line);
 }
+/* A link's box is the same at rest and current — the 2px rule is always there, transparent until
+   the link is current — so moving between pages changes colour and nothing else. */
 .g-nav-link {
   display: block;
   margin-left: -1px;
-  padding: 5px 12px;
-  border-left: 1px solid transparent;
+  padding: 5px 12px 5px 11px;
+  border-left: 2px solid transparent;
   color: var(--g-ink-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition:
+    color 150ms ease-out,
+    border-color 150ms ease-out;
 }
 .g-nav-link:hover {
   color: var(--g-ink);
 }
 .g-nav-link[aria-current="page"] {
-  padding-left: 11px;
-  border-left: 2px solid var(--g-accent);
+  border-left-color: var(--g-accent);
   color: var(--g-accent);
-  font-weight: 500;
 }
 
 /* ---- The content column ------------------------------------------------------------------- */

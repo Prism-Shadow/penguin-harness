@@ -1,8 +1,14 @@
 /**
  * Group balances (GET /api/projects/:p/models/balance): the server asks the vendor endpoint
- * the catalog's `balance` descriptor names, with the group's stored key — or, without one, the
- * environment key a Session on the group's rows would use on that vendor's own host — and
- * answers with a small reading or a typed failure — never the key, never the vendor's own text.
+ * the catalog's `balance` descriptor names, with the group's key (`[providers.<id>]`, never a
+ * model's own) — or, without one, the environment key a Session on the group's rows would use
+ * on their effective endpoint when that is the vendor's own host — and answers with a small
+ * reading or a typed failure — never the key, never the vendor's own text.
+ *
+ * - A group key is asked with; a model's own key never is, so a group whose only key sits on
+ *   one model answers no_key.
+ * - Without a group key, DeepSeek borrows DEEPSEEK_API_KEY only while its rows run on DeepSeek's
+ *   own endpoint: a group pointed at a proxy is lent nothing; a gateway never is.
  *
  * The vendors are stood in for at the wire: `fetch` is stubbed globally, which is the call the
  * reader really makes (the server routes it through the proxy dispatcher in production), so
@@ -81,26 +87,24 @@ describe("GET /api/projects/:p/models/balance", () => {
       `/api/projects/${projectId}/models/balance?provider=${provider}${force ? "&force=1" : ""}`,
     );
   /**
-   * Narrows the table to one preset of each balance group and stores the given keys on them
-   * (an omitted key keeps the stored one, as on the models page).
+   * Narrows the table to one preset of each balance group and stores the given keys as the
+   * groups' keys, the way Enter key and Connect do (an omitted key keeps the stored one).
    */
   const storeKeys = async (keys: { tokendance?: string; deepseek?: string }) => {
     const res = await owner.put(`/api/projects/${projectId}/models`, {
       defaultModel: { provider: "deepseek", modelId: "deepseek-v4-pro" },
       models: [
-        {
-          provider: "tokendance",
-          modelId: tokenDanceRow.modelId,
-          ...(keys.tokendance !== undefined ? { apiKey: keys.tokendance } : {}),
-        },
-        {
-          provider: "deepseek",
-          modelId: "deepseek-v4-pro",
-          ...(keys.deepseek !== undefined ? { apiKey: keys.deepseek } : {}),
-        },
+        { provider: "tokendance", modelId: tokenDanceRow.modelId },
+        { provider: "deepseek", modelId: "deepseek-v4-pro" },
       ],
     });
     expect(res.status).toBe(200);
+    for (const [provider, apiKey] of Object.entries(keys)) {
+      const group = await owner.put(`/api/projects/${projectId}/models/providers/${provider}`, {
+        apiKey,
+      });
+      expect(group.status).toBe(200);
+    }
   };
 
   beforeEach(async () => {
@@ -168,6 +172,39 @@ describe("GET /api/projects/:p/models/balance", () => {
     const text = await res.text();
     expect(text).not.toContain("sk-ds-env-0003");
     expect(JSON.parse(text)).toMatchObject({ ok: true, provider: "deepseek", amount: "110.00" });
+    expect(calls).toEqual([{ url: DEEPSEEK_URL, authorization: "Bearer sk-ds-env-0003" }]);
+  });
+
+  it("a model's own key is never asked with: a group whose only key sits on one model answers no_key", async () => {
+    vi.stubEnv("DEEPSEEK_API_KEY", "");
+    const res = await owner.put(`/api/projects/${projectId}/models`, {
+      models: [
+        { provider: "tokendance", modelId: tokenDanceRow.modelId, apiKey: "sk-td-row-0005" },
+        { provider: "deepseek", modelId: "deepseek-v4-pro", apiKey: "sk-ds-row-0006" },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const calls = stubVendors(() => json(200, TOKENDANCE_REPLY));
+    for (const provider of ["tokendance", "deepseek"]) {
+      expect(await (await balance(provider)).json(), provider).toMatchObject({
+        ok: false,
+        error: "no_key",
+      });
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it("DeepSeek pointed at a proxy as a group is lent no DEEPSEEK_API_KEY; pointed back at its own endpoint, it is", async () => {
+    vi.stubEnv("DEEPSEEK_API_KEY", "sk-ds-env-0003");
+    await storeKeys({});
+    const group = `/api/projects/${projectId}/models/providers/deepseek`;
+    await owner.put(group, { baseUrl: "https://proxy.example/deepseek" });
+    const calls = stubVendors(() => json(200, DEEPSEEK_REPLY));
+    expect(await (await balance("deepseek")).json()).toMatchObject({ ok: false, error: "no_key" });
+    expect(calls).toEqual([]);
+
+    await owner.put(group, { baseUrl: "https://api.deepseek.com" });
+    expect(await (await balance("deepseek")).json()).toMatchObject({ ok: true, amount: "110.00" });
     expect(calls).toEqual([{ url: DEEPSEEK_URL, authorization: "Bearer sk-ds-env-0003" }]);
   });
 

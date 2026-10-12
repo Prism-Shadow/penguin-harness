@@ -106,7 +106,8 @@ export function workspaceLabel(workspace: string): string {
  * display cap step for active rows — 10 conversations show by default and every "More"
  * click reveals/loads 10 more. Fetches use limit = SIDEBAR_PAGE_SIZE + 1 (see splitPage)
  * so one request both fills a page and answers "is there more" without a
- * response-envelope change.
+ * response-envelope change. Pages run in activity order (compareActivityDesc), cut at the
+ * watermark (cutAtWatermark) wherever several streams merge.
  */
 export const SIDEBAR_PAGE_SIZE = 10;
 
@@ -210,6 +211,85 @@ export function revealPlan({
 }
 
 /**
+ * A row's place in the sidebar's activity order — the order every list of it is displayed
+ * AND paged in (the server's `order=activity`): last activity first, ties broken by id.
+ */
+export interface ActivityKey {
+  lastActiveAt: string;
+  sessionId: string;
+}
+
+/**
+ * The activity order: `lastActiveAt` descending, then `sessionId` descending, both compared by
+ * code point (`<` / `>`, never `localeCompare`). Negative when `a` is more recent.
+ *
+ * Code point because the two ends must agree on one total order: the browser names a page's
+ * cursor and the server slices on it, and a collation that ranks case or punctuation
+ * differently from the server would skip or repeat a row at every page boundary it touches.
+ * The stamps are uniform ISO-8601 UTC strings, so string order is time order.
+ */
+export function compareActivityDesc(a: ActivityKey, b: ActivityKey): number {
+  if (a.lastActiveAt !== b.lastActiveAt) return a.lastActiveAt > b.lastActiveAt ? -1 : 1;
+  if (a.sessionId !== b.sessionId) return a.sessionId > b.sessionId ? -1 : 1;
+  return 0;
+}
+
+/** The key alone, detached from the row — what a page position stores, so a later live event that moves the row does not move the cursor with it. */
+export const activityKeyOf = (row: ActivityKey): ActivityKey => ({
+  lastActiveAt: row.lastActiveAt,
+  sessionId: row.sessionId,
+});
+
+/** The `before=` query value of a cursor: `<lastActiveAt>,<sessionId>` (neither half can contain a comma). */
+export const activityCursorParam = (key: ActivityKey): string =>
+  `${key.lastActiveAt},${key.sessionId}`;
+
+/** One server stream's position as the watermark sees it: the key of the last row read from it, and whether rows lie below that. */
+export interface StreamPosition {
+  hasMore: boolean;
+  cursor: ActivityKey | null;
+}
+
+/**
+ * The watermark of a list merged from several streams (Agents, machines): the most recent
+ * cursor among the streams that still have more. Every row a stream has not served yet lies
+ * below its own cursor, so nothing missing can sort above this key — the rows at or above it
+ * are a true prefix of the merged order, and rows below it may still have unfetched rows
+ * between them.
+ *
+ * Null when no stream has more (everything is fetched; every loaded row shows). A stream with
+ * more but no cursor — nothing read from it yet — bounds nothing, so what is loaded still shows.
+ */
+export function activityWatermark(streams: readonly StreamPosition[]): ActivityKey | null {
+  let mark: ActivityKey | null = null;
+  for (const { hasMore, cursor } of streams) {
+    if (!hasMore || cursor === null) continue;
+    if (mark === null || compareActivityDesc(cursor, mark) < 0) mark = cursor;
+  }
+  return mark;
+}
+
+/**
+ * The rows a merged list shows: those at or above `watermark`, in activity order. `keep` (the
+ * open conversation) stays wherever it falls — a reader is never left looking at a chat its
+ * own list does not show. A null watermark keeps every row.
+ *
+ * The rows below are fetched but held back: showing them now would let a later page insert
+ * rows above them, and a list that grows anywhere but at its bottom reads as rows jumping.
+ */
+export function cutAtWatermark<T extends ActivityKey>(
+  rows: readonly T[],
+  watermark: ActivityKey | null,
+  keep?: string | null,
+): T[] {
+  const kept =
+    watermark === null
+      ? [...rows]
+      : rows.filter((r) => r.sessionId === keep || compareActivityDesc(r, watermark) <= 0);
+  return kept.sort(compareActivityDesc);
+}
+
+/**
  * Applies the limit+1 fetch trick: `fetched` came from a request with `limit = pageSize + 1`;
  * the visible page is the first `pageSize` items, and an overflow item (never shown) proves
  * the server has more.
@@ -221,18 +301,19 @@ export function splitPage<T>(fetched: T[], pageSize: number): { items: T[]; hasM
 }
 
 /**
- * The sidebar category a Session renders under — the same precedence the server's
- * `category` list filter applies, so filtered fetching and client rendering can never
- * disagree: archived wins regardless of `source` (archiving is an explicit user action,
- * so the Archived folder must show everything the user put there); otherwise a Session
- * goes to its origin's bucket, and no (or an unrecognized future) source falls through
- * to the active user rows (visible) rather than vanishing into the wrong folder.
+ * The sidebar category a Session renders under — the same rule the server's `category`
+ * list filter applies, so filtered fetching and client rendering can never disagree. A
+ * company Session (company mode's desk and ticket Sessions) is in none, archived or not: only
+ * company mode's own views list it. Otherwise archived wins regardless of `source` (archiving
+ * is an explicit user action, so the Archived folder must show everything the user put there);
+ * then a person's conversation (`user`, or a row the server has not classified yet) is active,
+ * and every other source — API, scheduled, subagent and CLI Sessions — goes to the Background
+ * folder.
  */
-export function sessionCategory(s: SessionInfo): SessionCategory {
+export function sessionCategory(s: SessionInfo): SessionCategory | null {
+  if (s.source === "company") return null;
   if (s.archived) return "archived";
-  return s.source === "subagent" || s.source === "schedule" || s.source === "benchmark"
-    ? s.source
-    : "active";
+  return s.source === undefined || s.source === "user" ? "active" : "background";
 }
 
 /**
@@ -247,34 +328,34 @@ export function matchesSessionQuery(s: SessionInfo, query: string): boolean {
 }
 
 /** The collapsed-folder categories of a group, in render order (below the active user rows). */
-export const FOLDER_CATEGORIES = ["subagent", "schedule", "benchmark", "archived"] as const;
+export const FOLDER_CATEGORIES = ["background", "archived"] as const;
 export type FolderCategory = (typeof FOLDER_CATEGORIES)[number];
 
 /**
- * Five-way split of one sidebar group's Sessions by sessionCategory (rendered top to
+ * Three-way split of one sidebar group's Sessions by sessionCategory (rendered top to
  * bottom in this order): active user rows in the group body, then the collapsed
- * Subagents / Scheduled / Evaluations / Archived folders.
+ * Background and Archived folders.
  */
 export type SessionPartition = Record<SessionCategory, SessionInfo[]>;
 
-/** Partitions a group's Sessions for rendering. Input order is preserved within each part. */
+/**
+ * Partitions a group's Sessions for rendering. Input order is preserved within each part; a
+ * company Session, in no category, is in no part.
+ */
 export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
-  const parts: SessionPartition = {
-    active: [],
-    subagent: [],
-    schedule: [],
-    benchmark: [],
-    archived: [],
-  };
-  for (const s of sessions) parts[sessionCategory(s)].push(s);
+  const parts: SessionPartition = { active: [], background: [], archived: [] };
+  for (const s of sessions) {
+    const category = sessionCategory(s);
+    if (category !== null) parts[category].push(s);
+  }
   return parts;
 }
 
 /**
- * A group's FOLDED share: the conversations its collapsed folders hold (Subagents /
- * Scheduled / Evaluations / Archived), summed from one set of category counts. Missing
- * keys count as zero rather than poisoning the sum with NaN — the guard
- * aggregateWorkspaceCounts applies to the same numbers.
+ * A group's FOLDED share: the conversations its collapsed folders hold (Background /
+ * Archived), summed from one set of category counts. Missing keys count as zero rather than
+ * poisoning the sum with NaN — the guard aggregateWorkspaceCounts applies to the same
+ * numbers.
  */
 export function foldedShare(counts: SessionCategoryCounts): number {
   let total = 0;
@@ -324,8 +405,8 @@ export function aggregateWorkspaceCounts(
       let group = out.get(key);
       if (!group) {
         group = {
-          totals: { active: 0, subagent: 0, schedule: 0, benchmark: 0, archived: 0 },
-          agents: { active: [], subagent: [], schedule: [], benchmark: [], archived: [] },
+          totals: { active: 0, background: 0, archived: 0 },
+          agents: { active: [], background: [], archived: [] },
         };
         out.set(key, group);
       }
@@ -345,20 +426,17 @@ export function aggregateWorkspaceCounts(
 /**
  * The Session the UI opens as "the last conversation" (the chat home's auto-select and
  * the collapsed rail's entry): the loaded row the user was last IN — not the one created
- * last, which on a revisited conversation is a different row. Archived rows are hidden by
- * choice, a subagent Session is a child of some other conversation, and a benchmark Session is
- * an evaluator's Test Session rather than a conversation of the user's (the evaluate / optimize
- * conversation they just sent is already the one on screen), so none of the three is ever
- * auto-opened; schedule-created runs are the user's conversations and qualify. Newest by
- * lastActiveAt (stamped from `Date#toISOString`, so uniform ISO-8601 UTC like createdAt and
- * comparable as a string), ties broken by sessionId — the list's ordering convention. Input
- * order doesn't matter.
+ * last, which on a revisited conversation is a different row. Only a person's conversation
+ * (an active row) qualifies: archived rows are hidden by choice, and neither a background
+ * Session — one an API caller, a scheduled task, a parent agent or `penguin run` opened — nor a
+ * company Session is a conversation of this list the user was in. Newest by lastActiveAt (stamped from `Date#toISOString`, so
+ * uniform ISO-8601 UTC like createdAt and comparable as a string), ties broken by sessionId —
+ * the list's ordering convention. Input order doesn't matter.
  */
 export function latestConversation(sessions: readonly SessionInfo[]): SessionInfo | null {
   let best: SessionInfo | null = null;
   for (const s of sessions) {
-    const category = sessionCategory(s);
-    if (category !== "active" && category !== "schedule") continue;
+    if (sessionCategory(s) !== "active") continue;
     if (
       !best ||
       s.lastActiveAt > best.lastActiveAt ||
@@ -524,10 +602,10 @@ const MONTH_MS = 30 * DAY_MS;
 export const timeGroupKey = (bucket: TimeBucket): string => `\0time-${bucket}`;
 
 /**
- * Group key the folders (Subagents / Scheduled / Evaluations / Archived) hang off in time
- * mode. They are NOT bucketed: their rows load only when a folder is first expanded, so an
- * unloaded Session's bucket is unknown and no bucket could honestly advertise a share of
- * them. One shared, Project-wide set below the buckets is what the sidebar renders instead.
+ * Group key the folders (Background / Archived) hang off in time mode. They are NOT bucketed:
+ * their rows load only when a folder is first expanded, so an unloaded Session's bucket is
+ * unknown and no bucket could honestly advertise a share of them. One shared, Project-wide set
+ * below the buckets is what the sidebar renders instead.
  */
 export const TIME_FOLDERS_GROUP_KEY = "\0time-folders";
 
@@ -551,11 +629,12 @@ export interface TimeGroup<T = SessionInfo> {
 /**
  * Buckets Sessions by their last activity into the three time groups, in TIME_BUCKETS
  * order. Empty buckets are dropped — a "Last day" header over nothing states an absence
- * the list is not asked to report. Members are sorted by `lastActiveAt` desc (the flat
- * store list concatenates per-Agent responses, so its order isn't globally chronological);
- * the sidebar re-orders them again for pins and manual sort.
+ * the list is not asked to report. Members are sorted in activity order (compareActivityDesc;
+ * the flat store list merges per-Agent responses, so its order is not one to rely on); the
+ * sidebar re-orders them again for pins and manual sort. The caller has already cut the rows at
+ * the list's watermark, so a bucket only ever holds a prefix of the activity order.
  */
-export function groupSessionsByTime<T extends { lastActiveAt: string }>(
+export function groupSessionsByTime<T extends ActivityKey>(
   sessions: readonly T[],
   nowMs: number,
 ): TimeGroup<T>[] {
@@ -570,9 +649,7 @@ export function groupSessionsByTime<T extends { lastActiveAt: string }>(
   for (const bucket of TIME_BUCKETS) {
     const rows = byBucket.get(bucket);
     if (rows === undefined) continue;
-    rows.sort((a, b) =>
-      a.lastActiveAt < b.lastActiveAt ? 1 : a.lastActiveAt > b.lastActiveAt ? -1 : 0,
-    );
+    rows.sort(compareActivityDesc);
     groups.push({ key: timeGroupKey(bucket), bucket, sessions: rows });
   }
   return groups;
@@ -582,13 +659,7 @@ export function groupSessionsByTime<T extends { lastActiveAt: string }>(
 export function totalCategoryCounts(
   byAgent: ReadonlyMap<string, SessionCategoryCounts>,
 ): SessionCategoryCounts {
-  const totals: SessionCategoryCounts = {
-    active: 0,
-    subagent: 0,
-    schedule: 0,
-    benchmark: 0,
-    archived: 0,
-  };
+  const totals: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
   for (const counts of byAgent.values()) {
     for (const category of ALL_CATEGORIES) {
       const n = counts[category];
@@ -618,17 +689,19 @@ export function pinnedFirst<T>(
 }
 
 /**
- * The two marks a Session an organization owns can carry — a desk session of one of its
+ * The marks a Session an organization owns can carry — a desk session of one of its
  * employees, or a session contributing to one of its tickets. `client` is stamped on the row
- * when the organization runtime creates the Session and never changes; `orgId` is resolved per
- * read from the organization's own caches. Both are optional on the wire, and a row is an
- * organization's when either says so.
+ * when the organization runtime creates the Session and never changes, and a Session it opened
+ * is a `company` Session; `orgId` is resolved per read from the organization's own caches. All
+ * are optional on the wire, and a row is an organization's when any says so.
  */
 export interface OrgSessionMarks {
   /** The owning organization, resolved per read; absent once the organization is deleted. */
   orgId?: string;
   /** The client that created the Session; "org" is the organization runtime's own stamp. */
   client?: string;
+  /** What kind of conversation it is; "company" for a desk or ticket Session. */
+  source?: string;
 }
 
 /**
@@ -637,7 +710,11 @@ export interface OrgSessionMarks {
  * longer hold the Session, and the row would otherwise reappear somewhere it never belonged.
  */
 export function isOrgSession(row: OrgSessionMarks): boolean {
-  return (row.orgId !== undefined && row.orgId !== "") || row.client === "org";
+  return (
+    (row.orgId !== undefined && row.orgId !== "") ||
+    row.client === "org" ||
+    row.source === "company"
+  );
 }
 
 /**

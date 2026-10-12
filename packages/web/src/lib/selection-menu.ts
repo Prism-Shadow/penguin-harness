@@ -137,12 +137,12 @@ export function menuLinkHref(rawHref: string | null): string | null {
 export type LinkMenuItem = "openInBuiltinBrowser" | "openExternal" | "copyLink";
 
 /**
- * A web link's rows, in order: open it in the built-in browser, open it outside the app, copy
- * its address. The first only where the built-in browser can run — the desktop app's window,
- * with the browser available — because nowhere else could it open the page.
+ * A web link's rows, in order: open it in the agent browser, open it outside the app, copy its
+ * address. The first only where the agent browser can open the page — the desktop app's window
+ * with the built-in browser available, or any window while the user's Chrome is connected.
  */
-export function linkMenuItems(builtinBrowser: boolean): readonly LinkMenuItem[] {
-  return builtinBrowser
+export function linkMenuItems(agentBrowser: boolean): readonly LinkMenuItem[] {
+  return agentBrowser
     ? ["openInBuiltinBrowser", "openExternal", "copyLink"]
     : ["openExternal", "copyLink"];
 }

@@ -49,6 +49,7 @@ describe("scheduler", () => {
     workspace?: string;
     provider?: string;
     modelId?: string;
+    approvalMode?: "allow-all";
     source?: "schedule";
   }>;
   let events: Array<{ userId: string; event: ScheduleServerEvent }>;
@@ -408,6 +409,8 @@ describe("scheduler", () => {
       workspace: "/tmp/ws",
       provider: "custom",
       modelId: "m-bench",
+      // Unattended: allow-all, whatever approval mode the Sandbox card's default preset gives.
+      approvalMode: "allow-all",
       source: "schedule",
     });
     expect(started.map((s) => s.sessionId)).toEqual(["session-new-1", "session-new-2"]);

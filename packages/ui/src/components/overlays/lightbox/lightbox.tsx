@@ -65,6 +65,7 @@ export function ZoomableImage({
   alt,
   className,
   closeLabel,
+  lazy = false,
 }: {
   src: string;
   alt: string;
@@ -72,12 +73,14 @@ export function ZoomableImage({
   className?: string;
   /** The lightbox's close glyph's accessible name; defaults to the interface's word for "close". */
   closeLabel?: string;
+  /** Fetch the thumbnail only as it nears the viewport (a long list of fetched images, e.g. a transcript's). */
+  lazy?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button type="button" className="block cursor-zoom-in" onClick={() => setOpen(true)}>
-        <img src={src} alt={alt} className={className} />
+        <img src={src} alt={alt} className={className} loading={lazy ? "lazy" : undefined} />
       </button>
       <Lightbox
         open={open}

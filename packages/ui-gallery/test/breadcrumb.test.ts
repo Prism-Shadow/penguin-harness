@@ -28,7 +28,7 @@ describe("formatBreadcrumb", () => {
         size: "m",
       }),
     ).toBe("白领 › 对话 · 深色");
-    expect(zh.rail.themeNames).toEqual({ github: "通用", modern: "白领", geek: "极客" });
+    expect(zh.rail.themeNames).toEqual({ github: "朴素", modern: "白领", geek: "极客" });
     expect(en.rail.themeNames).toEqual({ github: "Primer", modern: "Frost", geek: "Console" });
   });
 
@@ -56,8 +56,8 @@ describe("formatBreadcrumb", () => {
       }),
     ).toBe("Primer › Models · dark · amber · 20px · phone");
     expect(
-      formatBreadcrumb({ theme: "通用", page: "模型库", mode: "深色", size: "xs", view: "手机" }),
-    ).toBe("通用 › 模型库 · 深色 · 14px · 手机");
+      formatBreadcrumb({ theme: "朴素", page: "模型库", mode: "深色", size: "xs", view: "手机" }),
+    ).toBe("朴素 › 模型库 · 深色 · 14px · 手机");
     expect(formatBreadcrumb({ theme: "Primer", page: "Models", mode: "light", size: "m" })).toBe(
       "Primer › Models · light",
     );

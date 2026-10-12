@@ -4,6 +4,8 @@
  *
  * - There is a desk row per employee in chart order, whether or not the desk was ever opened;
  *   its state is the session list's live status, else the sessions route's, else the chart's.
+ * - An employee whose Agent was deleted keeps its row, marked, and the row names no Session to
+ *   open — not even one a cache still holds — and no live status moves it.
  * - A desk row carries the messaging channel the sessions route names, follows a bind, a
  *   switch and an unbind written into the loaded answer, and hands back the same answer when
  *   nothing changes.
@@ -23,6 +25,7 @@ import type {
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
 import {
+  deskRowLabel,
   deskRows,
   liveEmployeeStates,
   orgRowActivity,
@@ -107,6 +110,26 @@ const sessions: OrgSessionsResponse = {
   ],
 };
 
+describe("deskRowLabel", () => {
+  it("leads with a name when the employee has one, and with the title when it has none", () => {
+    expect(deskRowLabel({ agentId: "acme_ceo", name: "王总", jobTitle: "CEO" })).toEqual({
+      primary: "王总",
+      note: "CEO",
+    });
+    // An id says little to a person; the title leads, and the id tells two Developers apart.
+    expect(
+      deskRowLabel({ agentId: "acme_dev_a", name: "acme_dev_a", jobTitle: "Developer" }),
+    ).toEqual({
+      primary: "Developer",
+      note: "acme_dev_a",
+    });
+    expect(deskRowLabel({ agentId: "acme_x", name: "acme_x", jobTitle: "" })).toEqual({
+      primary: "acme_x",
+      note: "",
+    });
+  });
+});
+
 describe("deskRows", () => {
   it("keeps chart order and lists an employee whose desk was never opened", () => {
     expect(deskRows(chart, sessions)).toEqual([
@@ -152,6 +175,28 @@ describe("deskRows", () => {
       agentId: "pm",
       status: "running",
     });
+  });
+
+  it("names no Session for an employee whose Agent was deleted, whatever the caches still hold", () => {
+    const orphaned: OrgChartResponse = {
+      ...chart,
+      employees: chart.employees.map((e) =>
+        e.agentId === "pm" ? { ...e, agentMissing: true, invalid: "Agent pm does not exist" } : e,
+      ),
+    };
+    const rows = deskRows(orphaned, sessions, liveStatuses({ "s-pm": "running" }));
+    expect(rows.map((d) => d.agentId)).toEqual(["ceo", "pm", "dev"]);
+    expect(rows[1]).toEqual({
+      agentId: "pm",
+      name: "Product",
+      jobTitle: "Engineer",
+      sessionId: null,
+      status: "idle",
+      agentMissing: true,
+    });
+    // The rest of the organization is untouched.
+    expect(rows[0]).toMatchObject({ sessionId: "s-ceo" });
+    expect(rows[0]).not.toHaveProperty("agentMissing");
   });
 
   it("falls back to the snapshot for a desk the session list has not loaded", () => {

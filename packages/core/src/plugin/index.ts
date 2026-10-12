@@ -3,10 +3,10 @@
  *
  * Types, plus the five decorators — the same ones the harness's own modules are written
  * with (core kernel/decorators.ts: no imports, so a plugin's bundle carries them and
- * nothing else of the SDK). The host that drives a plugin lives in whatever embeds this
- * SDK (for the harness, `@prismshadow/penguin-server/plugin`); a plugin reaches THAT with
- * `import type` only and stays a self-contained library that happens to satisfy an
- * interface.
+ * nothing else of the SDK) — and `sessionShell`, which a plugin reads from the host's copy
+ * (see below). The host that drives a plugin lives in whatever embeds this SDK (for the
+ * harness, `@prismshadow/penguin-server/plugin`); a plugin reaches THAT with `import type`
+ * only and stays a self-contained library that happens to satisfy an interface.
  *
  * A plugin is an npm package; what it carries is what it ships. Its MODULES — the same
  * unit the harness itself is built from — are written the same way: a `@Component` (or
@@ -45,7 +45,17 @@ export { Bind, Component, Module, Provide, Use } from "../kernel/decorators.js";
 export type { Opaque, Slot } from "../kernel/markers.js";
 export { Interface } from "../kernel/markers.js";
 
+/**
+ * The harness's session shell — resolved once per process, the shell of the system prompt's
+ * `Shell:` line — for a backend whose confinement depends on which program that is (DSH's
+ * Windows ACL runner cannot start bash). Unlike the decorators it is the HOST's value: a
+ * plugin that bundles this entry reads it from the host's copy at run time, by a specifier its
+ * bundler leaves alone and by namespace, because a host core from before this export has none.
+ */
+export { sessionShell } from "../environment/tools/command/shell.js";
+
 export type * from "./sandbox.js";
+export type * from "./languages.js";
 
 /**
  * What a plugin package's default export is.

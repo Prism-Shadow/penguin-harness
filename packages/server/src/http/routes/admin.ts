@@ -14,7 +14,7 @@ import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Desktop, Proxy } from "../../hmr/capabilities.js";
 import { adminSettingsRoutes } from "./admin-settings.js";
 import { adminPluginConfigRoutes } from "./admin-plugin-config.js";
-import { PluginConfigAdmin } from "../../plugin/config.js";
+import { PluginConfigAdmin } from "../../plugin/config-page.js";
 import type { Admin } from "../../mechanisms/identity.js";
 import type { Settings } from "../../mechanisms/settings.js";
 

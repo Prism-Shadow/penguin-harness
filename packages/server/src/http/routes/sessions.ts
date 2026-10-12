@@ -44,6 +44,7 @@ import type {
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { decodeCursor } from "../../services/message-window.js";
 import type { MessagesPageRequest } from "../../services/trace-service.js";
+import { withImagesByReference } from "../../services/trace-images.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
@@ -54,9 +55,10 @@ import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
   badRequest,
   optionalEnum,
-  optionalPagingQuery,
+  optionalSessionListPagingQuery,
   optionalString,
   paginationQuery,
+  parseNonNegativeInt,
   pathParam,
   positiveIntParam,
   readJson,
@@ -69,7 +71,7 @@ import type { ChannelHub } from "../../runtime/channel.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
-import type { SessionService } from "../../services/session-service.js";
+import type { SessionListOrder, SessionService } from "../../services/session-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SessionsRouteDeps {
@@ -97,6 +99,8 @@ export interface SessionsRouteDeps {
   liveStreams: LiveStreams;
   /** Re-validates the session behind an open stream, once per heartbeat. */
   auth: Auth;
+  /** Who a run acts for: the person who started it (an agent's browser calls drive their Chrome). */
+  drivers?: SessionDrivers;
 }
 import {
   assertAttachmentBudget,
@@ -138,7 +142,12 @@ import type {
 } from "../../mechanisms/projects.js";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
-import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/sessions.js";
+import type {
+  Schedules,
+  SessionDrivers,
+  SessionIndex,
+  SessionOrigins,
+} from "../../mechanisms/sessions.js";
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
 import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
@@ -147,9 +156,20 @@ import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
 import type { LiveStreams } from "../../auth/live-streams.js";
 import type { Auth } from "../../mechanisms/identity.js";
+import type { AgentApi } from "../../mechanisms/agent-api.js";
+import type { OrgService } from "../../runtime/organization/service.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
+
+/**
+ * What a manual title may not contain once its whitespace is collapsed: C0/C1 controls (an
+ * ESC sequence would drive the terminal that `penguin session ls` prints it to) and the bidi
+ * embeddings, overrides and isolates (U+202A–U+202E, U+2066–U+2069) that make a row read as
+ * something else. Not all of `\p{Cf}`: U+200D (zero-width joiner) holds emoji sequences
+ * together.
+ */
+const SESSION_TITLE_FORBIDDEN = /[\p{Cc}\u202A-\u202E\u2066-\u2069]/u;
 
 /** Max path count and per-path length for a single files/stat check (message file-card candidates never exceed this scale). */
 const STAT_MAX_PATHS = 100;
@@ -280,13 +300,10 @@ async function sessionCompactionThreshold(
 }
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
-const SESSION_CATEGORIES: readonly SessionCategory[] = [
-  "active",
-  "subagent",
-  "schedule",
-  "benchmark",
-  "archived",
-];
+const SESSION_CATEGORIES: readonly SessionCategory[] = ["active", "background", "archived"];
+
+/** Accepted `order` query values of the list endpoint (SessionListOrder, spelled out for validation). */
+const SESSION_LIST_ORDERS: readonly SessionListOrder[] = ["created", "activity"];
 
 /**
  * A base64 `data:` URL of an image, in the exact shape core parses it back out of
@@ -520,16 +537,26 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 
   // Serves every row straight from the DB, whichever client created it (legacy CLI-direct
   // Traces were adopted by the boot sweep; see SessionService.listSessions) — unless the
-  // caller asks for the user's own rows only (`excludeOrg=1`, development mode's list).
+  // caller asks for the user's own rows only (`excludeOrg=1`, development mode's list) or for
+  // a category, a Workspace group or counts, none of which holds a company Session.
   app.get("/", async (c) => {
     // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
+    // Optional order: `created` (the default, newest creation first) or `activity` (most recent
+    // lastActiveAt first, ties by id) — the order the sidebar displays, and so the one it pages.
+    const rawOrder = c.req.query("order");
+    if (rawOrder !== undefined && !SESSION_LIST_ORDERS.includes(rawOrder as SessionListOrder)) {
+      throw badRequest(`order must be one of ${SESSION_LIST_ORDERS.join(" / ")}.`);
+    }
+    const order = (rawOrder ?? "created") as SessionListOrder;
     // Optional paging (absent = full list, the pre-paging contract): the sidebar requests
-    // limit+1 and shows limit, detecting "has more" without a response-envelope change.
-    const paging = optionalPagingQuery(c);
+    // limit+1 and shows limit, detecting "has more" without a response-envelope change. Under
+    // `order=activity` it pages by cursor (`before=<lastActiveAt>,<sessionId>`) instead of
+    // offset, since activity moves rows across an offset; see SessionService.listSessions.
+    const paging = optionalSessionListPagingQuery(c, order);
     // Optional category filter (paging then applies within the category) and per-category
     // totals — the sidebar loads active rows only and labels the collapsed folders from counts.
     const rawCategory = c.req.query("category");
@@ -554,6 +581,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const { sessions, counts, workspaceCounts, workspaceLatest } =
       await deps.sessionService.listSessions(projectId, agentId, {
         ...(paging ? { paging } : {}),
+        order,
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
@@ -586,12 +614,18 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const sandbox = parseSandboxPick(body);
-    // Creating-client hint stored on the row ("cli" from the CLI; default "web").
-    // Informational provenance only — lists serve every row regardless.
+    // Creating-client hint stored on the row ("cli" from the CLI; default "web"). Provenance:
+    // only "org", which no request may send, is ever read back as a filter.
     const client = optionalEnum(body, "client", ["web", "cli"] as const);
-    // The only origin a client may set: `subagent` and `schedule` are written by the server
-    // itself, so anything but `benchmark` is a 400 rather than a silently ignored field.
-    const source = optionalEnum(body, "source", ["benchmark"] as const);
+    // The one source a client may name is `cli` (`penguin run`): every other one is the
+    // server's own to write, and absent means `user`, so anything else is a 400 rather than a
+    // silently ignored field. compat(0.3.0): the retired `benchmark` is accepted as `cli`, for
+    // an older CLI or Web App that still sends it.
+    const source = optionalEnum(
+      { source: body.source === "benchmark" ? "cli" : body.source },
+      "source",
+      ["cli"] as const,
+    );
     let workspace = optionalString(body, "workspace", { minLen: 1, label: "workspace" });
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
@@ -668,12 +702,21 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       if (typeof titleRaw !== "string") {
         throw new HttpError(400, "invalid_title", "title must be a string.");
       }
-      title = titleRaw.trim();
+      // Newlines and tabs become plain spaces here, so what is left to refuse is only
+      // what no title should carry.
+      title = titleRaw.replace(/\s+/g, " ").trim();
       if (!title || title.length > SESSION_TITLE_MAX) {
         throw new HttpError(
           400,
           "invalid_title",
           `title must be 1–${SESSION_TITLE_MAX} characters.`,
+        );
+      }
+      if (SESSION_TITLE_FORBIDDEN.test(title)) {
+        throw new HttpError(
+          400,
+          "invalid_title",
+          "title must not contain control or bidirectional-override characters.",
         );
       }
     }
@@ -690,6 +733,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         "No updatable field provided (approvalMode / sandbox / thinkingLevel / archived / title).",
       );
     }
+    // Every check before any write: the sandbox pick's (the non-admin ceiling, what this server
+    // can enforce) included, so a refused request stores nothing — not the approval-mode half
+    // of a preset whose sandbox half was refused.
+    const nextSandbox =
+      sandbox !== undefined
+        ? deps.sessionService.pickSandbox(row, sandbox, c.var.user.isAdmin)
+        : undefined;
     let updated: SessionRow = { ...row };
     if (title !== undefined) {
       // Manual renaming takes priority over auto-generation: TitleGenerator only ever replaces the fallback title it wrote itself, never a manual rename.
@@ -709,10 +759,10 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       deps.sessionsRepo.updateApprovalMode(row.sessionId, approvalMode);
       updated = { ...updated, approvalMode };
     }
-    if (sandbox !== undefined) {
+    if (nextSandbox !== undefined) {
       // Takes effect at the Session's next command: its confiner reads the row at every spawn.
-      const next = deps.sessionService.updateSandbox(row, sandbox, c.var.user.isAdmin);
-      updated = { ...updated, sandbox: next };
+      deps.sessionService.updateSandbox(row.sessionId, nextSandbox);
+      updated = { ...updated, sandbox: nextSandbox };
     }
     if (thinkingLevel !== undefined) {
       // The row is what the loader applies at load; a runtime already loaded is assigned
@@ -783,7 +833,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     };
     try {
       const insertedForkRow = deps.sessionsRepo.insertFork(row.sessionId, forkRow);
-      deps.sessionSources.set(fork.sessionId, null);
+      // A fork is a person's conversation, as its Trace head records.
+      deps.sessionSources.set(fork.sessionId, "user");
       return c.json(
         {
           session: await deps.sessionService.toInfo(insertedForkRow, true),
@@ -896,6 +947,40 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     });
   });
 
+  // One image of one Trace record, the URL a windowed history page puts in place of an
+  // inline data URL (services/trace-images.ts). The record never changes, so the answer is
+  // immutable; only inert raster types are ever served (the page references nothing else).
+  app.get("/:sessionId/trace-image", async (c) => {
+    const row = resolveSession(c);
+    const intQuery = (name: string, min: number): number | undefined => {
+      const raw = c.req.query(name);
+      if (raw === undefined) return undefined;
+      const v = parseNonNegativeInt(raw);
+      if (v === null || v < min) {
+        throw badRequest(`${name} must be an integer of at least ${min}.`);
+      }
+      return v;
+    };
+    const fileIndex = intQuery("file", 1);
+    const ordinal = intQuery("ordinal", 0);
+    if (fileIndex === undefined || ordinal === undefined) {
+      throw badRequest("file and ordinal are required.");
+    }
+    const image = await deps.traceService.readTraceImage(
+      row.projectId,
+      row.agentId,
+      row.sessionId,
+      fileIndex,
+      ordinal,
+      intQuery("i", 0),
+    );
+    return c.body(new Uint8Array(image.bytes), 200, {
+      "content-type": image.mime,
+      "x-content-type-options": "nosniff",
+      "cache-control": "private, max-age=31536000, immutable",
+    });
+  });
+
   app.get("/:sessionId/messages", async (c) => {
     const row = resolveSession(c);
     const page = messagesPageQuery(c);
@@ -958,8 +1043,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         },
         ...(result.contextModel !== undefined ? { contextModel: result.contextModel } : {}),
       };
+      // Images by reference, after the held inputs were merged: the dedup compares raw
+      // envelopes, and a held input carries its image inline exactly as its Trace copy does.
+      const messages = appendPendingInputs(result.messages, pendingInputs).map((m) =>
+        withImagesByReference(row.sessionId, m),
+      );
       return c.json({
-        messages: appendPendingInputs(result.messages, pendingInputs),
+        messages,
         ...(live !== undefined ? { live } : {}),
         page: info,
       } satisfies MessagesResponse);
@@ -1018,6 +1108,9 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
+    // A person starting a run is who it acts for; the API token is an agent (or a tool) on
+    // somebody's behalf, and leaves the Session's driver as it was.
+    const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
     // Resolved per request from the admin settings, so a limit change applies to the very next
     // upload rather than at the next restart.
     const limits = toAttachmentLimits(deps.serverSettingsRepo.getAttachmentLimitsMb());
@@ -1043,11 +1136,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       // composes round 1, its stop hook drives every later round; the manager runs the
       // start under the session lock, so a goal is never started over a running one.
       const objective = stripLeadingMarkerBlocks(text).trim() || text;
+      if (driver !== null) deps.drivers?.note(row.sessionId, driver);
       const { sessionId } = await deps.manager.startGoal(row.sessionId, {
         messages,
         objective,
         budget: goal.budget,
       });
+      if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }
     const parsed = parseTaskInput(body, limits);
@@ -1072,6 +1167,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       row.sessionId,
     );
     try {
+      if (driver !== null) deps.drivers?.note(row.sessionId, driver);
       // 202: the Task executes on the server, decoupled from the SSE connection; sessionId is the current actual id (the new id after self-heal).
       const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
         queueIfBusy,
@@ -1079,6 +1175,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         // (DELETE /follow-ups/:id) can hand it back; unused when the task starts directly.
         recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
       });
+      if (driver !== null && sessionId !== row.sessionId) deps.drivers?.note(sessionId, driver);
       return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
     } catch (err) {
       // The Task never started, so nothing references these files and nothing will ever clean
@@ -1650,6 +1747,9 @@ export class SessionApiRoutes {
   @Use() private readonly usage!: UsageQueries;
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
+  @Use() private readonly drivers!: SessionDrivers;
+  @Use() private readonly agentApi!: AgentApi;
+  @Use() private readonly orgService!: OrgService;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1694,6 +1794,7 @@ export class SessionApiRoutes {
       fileReveal: this.fileReveal,
       liveStreams: this.liveStreams,
       auth: this.auth,
+      drivers: this.drivers,
     };
     const modelOAuthDeps = {
       config: this.config,
@@ -1725,21 +1826,28 @@ export class SessionApiRoutes {
       agentConfigService,
       projectConfigService,
       access,
-      sandboxDefaults: () => sessionService.sandboxView(sessionService.defaultSandbox()),
+      sandboxDefaults: () => sessionService.defaultsView(),
     });
     this.commandPolicyRoutes = commandPolicyRoutes({ projectConfigService, access });
     this.agentsRoutes = agentsRoutes({
+      agentApi: this.agentApi,
       agentConfigService,
       agentService: this.agents,
       errorsRepo: this.errorsRepo,
       manager,
       access,
+      orgService: this.orgService,
       schedulesRepo: this.schedulesRepo,
       sessionService,
       sessionsRepo,
       traceIndex: this.traceIndex,
     });
-    this.agentConfigRoutes = agentConfigRoutes({ agentConfigService, manager, access });
+    this.agentConfigRoutes = agentConfigRoutes({
+      agentConfigService,
+      manager,
+      access,
+      config: this.config,
+    });
     this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
     this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
     this.usageRoutes = usageRoutes({ access, usageService: this.usage });

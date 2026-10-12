@@ -2,7 +2,7 @@
  * Built-in model catalog (single source of truth): official chat models that MMSP can
  * auto-route, shared by core's default config, server's initial config, and web/cli display.
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
- * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
+ * DeepSeek, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
  * 2026-08-18; the direct Anthropic group: 2026-08-20; the DeepSeek V4 Flash Vision Exp rows:
  * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26, its
  * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
@@ -10,7 +10,7 @@
  * the direct qwen3.8-flash: 2026-08-26; the TokenDance Doubao Seed rows (seed-2.1-pro,
  * seed-2.1-turbo, seed-evolving): 2026-09-02; the vLLM group: 2026-09-03; the GPT-6 Astra
  * rows (direct + OpenRouter): 2026-09-09; the whole Gemini 3.x line-up, direct + OpenRouter —
- * the 3.6 / 3.7 / 3.8 Flash launch discounts declared, every other row re-read and unchanged:
+ * the 3.6 / 3.8 Flash launch discounts declared, every other row re-read and unchanged:
  * 2026-09-09; the OpenRouter and TokenDance V4.1 Flash rows, and TokenDance's running
  * promotions plus its Doubao Seed display names: 2026-09-10; the Penguin Go resale lineup,
  * matched to the relay's current generic-client model export: 2026-09-11, its DeepSeek rows to
@@ -19,9 +19,14 @@
  * lists, TokenDance's deepseek-v4-flash-0731 / deepseek-v4-pro-0813 / kimi-k3 promotions, the
  * OpenRouter qwen/qwen3.8-27b row, the Fireworks AI and SiliconFlow additions, and both Qwen
  * groups' line-ups with their peak/off-peak DeepSeek rows: 2026-09-16; the OpenCode Go group:
- * 2026-09-18 — per each provider's docs; and the ModelScope group, whose preset ids were read
+ * 2026-09-18 — per each provider's docs; the ModelScope group, whose preset ids were read
  * from public model pages and endpoint listings — their windows, vision flags and prices are
- * NOT verified and say so on the rows themselves: 2026-09-18 and 2026-09-20).
+ * NOT verified and say so on the rows themselves: 2026-09-18 and 2026-09-20; and the
+ * 2026-10-10 refresh — Claude Fable 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5 and GPT-6.1 Sol
+ * (direct + OpenRouter) per MMSP 0.5.2's registry and the vendor pages it carries, the whole
+ * TokenDance group re-read from its public portal API, the OpenRouter Step 5 Preview, Grok 4.7
+ * and MiMo-V2.6-Flash rows, SiliconFlow's GLM-5.3 Flash and Hy4 preview rows, and Gemini 3.7
+ * Flash dropped from every group, Google rerouting the id to 3.8 Flash: 2026-10-10).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -31,9 +36,10 @@
  * - cache_write: the vendor's "cache write" price (e.g. Anthropic uses 1.25 x input); vendors
  *   without a separate cache-write fee use the standard input price;
  * - output: output price (thinking + reply).
- * OpenAI charges extra for >272K input, Gemini 3.1 Pro for >200K input, and MiniMax M3 doubles
- * every rate above 512K input; this catalog records their base tier (the cost center uses a
- * single rate, so long-context usage will be underestimated).
+ * OpenAI charges extra for >272K input, Gemini 3.1 Pro for >200K input, MiniMax M3 doubles
+ * every rate above 512K input, and Claude Haiku 5.5 quintuples every rate above 100K; this
+ * catalog records their base tier (the cost center uses a single rate, so long-context usage
+ * will be underestimated).
  *
  * Scope: excludes deepseek-chat / deepseek-reasoner legacy aliases (deprecated 2026-07-24),
  * glm-5v-turbo (MMSP's Z.AI client forwards images
@@ -45,11 +51,16 @@
  * auto-routed by MMSP and leave client_type unset; seven gateway groups (OpenRouter,
  * Fireworks AI, SiliconFlow, TokenDance, OpenCode Go, Qwen Pay-As-You-Go and Qwen Token Plan)
  * can't be auto-routed, so every gateway row **always pins an explicit client_type** and
- * inlines its preset base URL. ModelScope's rows pin one protocol too (see below).
- * Two groups pin at GROUP level as well (ModelProviderInfo.clientType, read
+ * names its preset base URL. ModelScope's rows pin one protocol too (see below).
+ * These are reference values, never runtime fallbacks: a new Project's file receives them
+ * once — a group's shared endpoint and protocol in its `[providers.<id>]` table
+ * (presetProviderTable), a row's own only where it differs from its group's
+ * (catalogModelEntry) — as do "Add new models" and "Restore defaults"; from then on the file
+ * alone says where a request goes (effectiveConnection reads no catalog).
+ * Four groups pin at GROUP level as well (ModelProviderInfo.clientType, read
  * through providerClientType), so that a model the user adds there speaks the same protocol
  * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
- * OpenRouter, whose do — see each group's own block comment.
+ * OpenRouter, TokenDance and SiliconFlow, whose do — see each group's own block comment.
  * That pin is load-bearing, not decoration: MMSP's AutoLLMClient routes an unpinned id by
  * the family its spelling begins with and never looks at base_url (see routedClientType), so
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
@@ -78,7 +89,12 @@
  * This file imports no Node built-ins (type-only imports only), so it can be bundled directly
  * for the browser.
  */
-import type { ModelEntry, ModelPricing } from "./project-config.js";
+import type {
+  ModelEntry,
+  ModelPricing,
+  ProviderConnection,
+  ProviderTable,
+} from "./project-config.js";
 
 /** Model provider info (used for web grouping/logo and the "API key blank falls back to env var" hint). */
 /**
@@ -151,9 +167,11 @@ export interface ModelProviderInfo {
   /** Vendor's model list / docs page URL (frontend's "add model" dialog links this as "get model id"); none for custom. */
   modelsUrl?: string;
   /**
-   * Gateway's OpenAI-compatible endpoint (openrouter / siliconflow / qwen-token-plan): used by
-   * the frontend's "add model" dialog to prefill base URL by group; left blank for direct
-   * vendors and custom.
+   * Gateway's OpenAI-compatible endpoint (openrouter / siliconflow / qwen-token-plan / …): what
+   * a new Project writes as the group's `[providers.<id>]` base URL (catalogGroupConnection),
+   * so every row of the group — a model added by hand included — follows it without storing
+   * the address itself. A reference value: nothing reads it when a request is built. Left
+   * blank for direct vendors and custom.
    */
   gatewayBaseUrl?: string;
   /**
@@ -175,25 +193,27 @@ export interface ModelProviderInfo {
   balance?: ModelProviderBalance;
   /**
    * The group takes models the user adds by hand: `custom` and vLLM, whose rows point at an
-   * endpoint the catalog cannot know. Every other built-in group carries its catalog presets
-   * and the rows it already stores, and nothing else. Read it through isAddableGroup, which
-   * also answers for user-defined groups.
+   * endpoint the catalog cannot know, and the three gateways whose catalogs list a fraction of
+   * what they serve — OpenRouter, TokenDance and SiliconFlow — where an added model follows
+   * the group's connection (its endpoint, key and protocol) exactly as the presets do. Every
+   * other built-in group carries its catalog presets and the rows it already stores, and
+   * nothing else. Read it through isAddableGroup, which also answers for user-defined groups.
    */
   addable?: boolean;
   /**
    * The MMSP protocol EVERY entry in this group speaks, models the user adds included.
    *
-   * Set it only where the group itself decides the answer and no other property already
-   * implies it: the other gateways derive `openai-chat` from carrying a `gatewayBaseUrl`, and
-   * `custom` / user-defined groups deliberately declare nothing — their whole point is that
-   * the protocol is detected from the endpoint or picked by hand, and a pin here would
-   * take that choice away.
+   * Set it where the group itself decides the answer for a row the catalog does not list:
+   * every group that takes hand-added models and speaks one protocol (vLLM, OpenRouter,
+   * TokenDance, SiliconFlow). The other gateways hold catalog rows only, each carrying its own
+   * pin, and `custom` / user-defined groups deliberately declare nothing — their whole point
+   * is that the protocol is detected from the endpoint or picked by hand, and a pin here
+   * would take that choice away.
    *
-   * Where it IS set, it outranks every group-shape guess in the app: the add-model dialog
-   * preselects it, moving an entry into the group rewrites the entry to it, the API-key env
-   * hint resolves against it, and protocol detection is skipped because the group already
-   * knows. Read it through providerClientType rather than reaching for the field, so those
-   * call sites keep answering as one.
+   * Where it IS set, a new Project writes it as the group's `[providers.<id>]` protocol
+   * (catalogGroupConnection), and the rows — models added by hand included — follow that
+   * table. A reference value like gatewayBaseUrl: what the app reads at runtime is the file's
+   * table. Read it through providerClientType rather than reaching for the field.
    */
   clientType?: string;
   /**
@@ -238,7 +258,11 @@ export interface ModelCatalogEntry {
   supportsVision: boolean;
   /** MMSP client type: required when an id cannot be auto-routed or a shared protocol must be pinned. */
   clientType?: string;
-  /** Preset base URL: inlined into gateway entries so only an API key is required. */
+  /**
+   * Preset base URL, so only an API key is required. A new Project stores it once: on the
+   * group's `[providers.<id>]` table when it is the group's endpoint (catalogGroupConnection),
+   * else on the row itself (catalogModelEntry). Never read when a request is built.
+   */
   baseUrl?: string;
   /**
    * The seller no longer offers this row, but Projects created while it did still carry it: a
@@ -325,6 +349,11 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://tokendance.space/keys",
     modelsUrl: "https://tokendance.space/models",
     gatewayBaseUrl: TOKENDANCE_BASE_URL,
+    // Every preset speaks Chat Completions, and the group takes models added by hand
+    // (`addable`), which follow the group: a new Project's `[providers.tokendance]` carries
+    // this pin, so such a row resolves to it.
+    clientType: "openai-chat",
+    addable: true,
     recommended: true,
     // https://tokendance.space/docs/api-key-oauth
     oauth: {
@@ -341,8 +370,10 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
     id: PENGUIN_GO_PROVIDER_ID,
     label: "Penguin Go",
-    // The authorization flow writes one inlined relay key across the group. Keep the env
-    // names private to this relay so the UI never suggests using a vendor credential here.
+    // The authorization flow writes the relay key once, on the group's `[providers.penguin-go]`
+    // table. Keep the env names private to this relay so the UI never suggests using a vendor
+    // credential here. Every row names the relay, so a new Project writes that endpoint on the
+    // group; its rows sit on two protocols, so each row stores its own.
     envKey: "PENGUIN_GO_API_KEY",
     envBaseUrlKey: "PENGUIN_GO_BASE_URL",
     apiKeyUrl: "https://token.penguin.ooo/",
@@ -351,10 +382,11 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   },
   {
     // One key serves the whole group, but its models sit on three protocols (see the group's
-    // block comment in MODEL_CATALOG), so no group-level pin. The env pair records what its
-    // Chat Completions majority's client reads, and a model added here by hand gets the preset
-    // base URL below with openai-chat. Like every gateway's, a keyless row is refused that
-    // fallback (modelEnvFallback): the key goes on the rows.
+    // block comment in MODEL_CATALOG), so no group-level pin: a new Project writes each row's
+    // protocol on the row, and the Messages base on the seven rows that use it. The env pair
+    // records what its Chat Completions majority's client reads. Like every gateway's, a
+    // keyless row is refused that fallback (modelEnvFallback): the key goes on the group or
+    // the row.
     id: "opencode-go",
     label: "OpenCode Go",
     envKey: "OPENAI_API_KEY",
@@ -384,6 +416,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // The whole group speaks the Responses API, which OpenRouter serves at the preset base
     // URL below for every upstream — presets and user-added entries alike.
     clientType: "openai-responses",
+    // The catalog lists a fraction of what OpenRouter serves, so the group takes more.
+    addable: true,
   },
   {
     id: "fireworks",
@@ -426,6 +460,9 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://cloud.siliconflow.cn/me/account/ak",
     modelsUrl: "https://cloud.siliconflow.cn/models",
     gatewayBaseUrl: SILICONFLOW_BASE_URL,
+    // As TokenDance: Chat Completions throughout, and models added by hand follow the group.
+    clientType: "openai-chat",
+    addable: true,
   },
   {
     id: "atlascloud",
@@ -492,8 +529,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // because its OAuth requires a client secret the desktop App cannot keep locally, not
     // because inference requests are routed through that bridge.
     //
-    // The endpoint host is still inlined on every preset row; the row's own `client_type` tells
-    // the frontend which MMSP protocol that upstream model uses, as with Penguin Go.
+    // Every preset row names the endpoint and one protocol in the catalog, so a new Project
+    // writes both on the group's `[providers.modelscope]` table and the rows follow it.
     id: MODELSCOPE_PROVIDER_ID,
     label: "ModelScope",
     envKey: "OPENAI_API_KEY",
@@ -739,14 +776,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- OpenRouter (gateway: OpenAI-compatible protocol, preset base URL). Prices re-read in
   // one pass on 2026-08-07 from the models API (/api/v1/models; the API is authoritative
   // where a model's web page disagrees); the DeepSeek rows, the rows added on 2026-08-18
-  // (gemini-3.7-flash, grok-4.6, deepseek-v4-pro-0813, glm-5.3, the openai/* additions) and
-  // every pre-existing openai/* and google/* row were re-read on 2026-08-18 from the model
-  // pages and the per-model endpoints API.
+  // (grok-4.6, deepseek-v4-pro-0813, glm-5.3, the openai/* additions) and every
+  // pre-existing openai/* and google/* row were re-read on 2026-08-18 from the model
+  // pages and the per-model endpoints API. The rows added on 2026-10-10 — the four Claude 5.x
+  // rows, openai/gpt-6.1-sol, stepfun/step-5-preview, x-ai/grok-4.7,
+  // xiaomi/mimo-v2.6-flash and xiaomi/mimo-v2.6-pro — were read that day from the models API and the per-model
+  // endpoints API, whose default endpoint runs no promotion (`discount: 0`) on any of them;
+  // their context windows are the listing's `top_provider.context_length`, as on the
+  // mimo-v2.5 and step-3.7-flash rows.
   //
   // Protocol: every row pins `openai-responses`. OpenRouter serves the Responses API at
   // {base}/responses for every upstream, at the same https://openrouter.ai/api/v1 base URL
-  // the rows already carry, and the group pins the same protocol so an entry added to it by
-  // hand inherits it. The generic Responses client sends a text-only tool result as a plain
+  // the rows already carry, and the group pins the same protocol, which a new Project writes on
+  // `[providers.openrouter]`, so an entry added to it by hand follows it. The generic Responses client sends a text-only tool result as a plain
   // string and replays reasoning items only where the upstream returned them.
   //
   // Price buckets: cache_read stores the published input_cache_read
@@ -770,11 +812,47 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // the real cost — that is exactly how the gpt-5.6-terra and gpt-5.6-luna rows drifted 2x
   // low before the 2026-08-18 re-read. --
   {
+    // $10 input / $12.50 cache write / $0.25 cache read / $50 output, the cache read at 2.5% of
+    // input as on Anthropic's own list; 1M window, image input.
+    modelId: "anthropic/claude-fable-5.1",
+    displayName: "Claude Fable 5.1",
+    provider: "openrouter",
+    contextWindow: 1000000,
+    pricing: usd(0.25, 12.5, 50),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "anthropic/claude-fable-5",
     displayName: "Claude Fable 5",
     provider: "openrouter",
     contextWindow: 1000000,
     pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // $0.10 input / $0.125 cache write / $0.01 cache read / $0.50 output for prompts up to
+    // 100,000 tokens; the listing's `overrides` bill every rate 5x from 100,000 prompt tokens,
+    // Anthropic's own tiering. The base tier is recorded, as for the other tiered rows.
+    modelId: "anthropic/claude-haiku-5.5",
+    displayName: "Claude Haiku 5.5",
+    provider: "openrouter",
+    contextWindow: 1000000,
+    pricing: usd(0.01, 0.125, 0.5),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // $4 input / $5 cache write / $0.20 cache read / $20 output.
+    modelId: "anthropic/claude-opus-5.5",
+    displayName: "Claude Opus 5.5",
+    provider: "openrouter",
+    contextWindow: 1000000,
+    pricing: usd(0.2, 5, 20),
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
@@ -805,6 +883,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // $2 input / $2.50 cache write / $0.10 cache read / $10 output. The cache read is half
+    // Sonnet 5's $0.20: Anthropic prices it at 5% of input on this generation (MMSP 0.5.2
+    // moved its registry row from $0.20), and OpenRouter bills the same.
+    modelId: "anthropic/claude-sonnet-5.5",
+    displayName: "Claude Sonnet 5.5",
+    provider: "openrouter",
+    contextWindow: 1000000,
+    pricing: usd(0.1, 2.5, 10),
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
@@ -894,28 +985,13 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
-    // Same Gemini cache conventions as the gemini-3.7-flash row below. OpenRouter passes
+    // Same Gemini cache conventions as the gemini-3.6-flash row below. OpenRouter passes
     // Google's launch discount through, so it bills $0.075/$0.75/$3.75 — the list price less
     // 50%, declared in `discount` so the $0.15/$1.50/$7.50 list survives the promotion (same
-    // treatment as the 3.6 and 3.7 rows below).
+    // treatment as the 3.6 row below). Gemini 3.7 Flash is no longer listed beside it: Google
+    // retires that id and reroutes it to 3.8 Flash.
     modelId: "google/gemini-3.8-flash",
     displayName: "Gemini 3.8 Flash",
-    provider: "openrouter",
-    contextWindow: 1048576,
-    pricing: usd(0.15, 1.5, 7.5),
-    discount: 0.5,
-    supportsVision: true,
-    clientType: "openai-responses",
-    baseUrl: OPENROUTER_BASE_URL,
-  },
-  {
-    // Same Gemini cache conventions as the gemini-3.6-flash row below. The default Google
-    // endpoint now bills $0.075/$0.75/$3.75 with `discount: 0.5` (endpoints API, read
-    // 2026-09-09) — Google's launch discount passed straight through; the deeper
-    // `discount: 0.75` promotion this row used to store has ended. Declared in `discount` so
-    // the $0.15/$1.50/$7.50 list stays on file.
-    modelId: "google/gemini-3.7-flash",
-    displayName: "Gemini 3.7 Flash",
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 7.5),
@@ -1011,6 +1087,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // The openai/* rows below mirror the direct OpenAI group one-for-one. Their context
   // windows are OpenRouter's published 1,050,000 / 400,000, matching the direct rows.
+  {
+    // Read 2026-10-10: the default endpoint is OpenAI's own, at $2 input / $0.10 cached input
+    // / $2.50 cache write / $10 output with `discount: 0`, OpenAI's list. The listing's
+    // `overrides` from 272,000 prompt tokens (2x prompt and cache, 1.5x completion) are the
+    // long-context tier, which is not recorded, as on the direct row.
+    modelId: "openai/gpt-6.1-sol",
+    displayName: "GPT-6.1 Sol",
+    provider: "openrouter",
+    contextWindow: 1050000,
+    pricing: usd(0.1, 2.5, 10),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
   {
     // Read 2026-09-09 from the models API and the per-model endpoints API: the default
     // endpoint is OpenAI's own, listed at $10 input / $1 cached input / $12.5 cache write /
@@ -1175,6 +1265,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // StepFun's own endpoint is the only one: $1 input / $2.70 output with a published $0.05
+    // input_cache_read and no write premium, so cache_write carries the input price. 1,000,000
+    // window; text, image and video input.
+    modelId: "stepfun/step-5-preview",
+    displayName: "Step 5 Preview",
+    provider: "openrouter",
+    contextWindow: 1000000,
+    pricing: usd(0.05, 1, 2.7),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     // No official separate cache price published: cache_read uses the standard input price.
     modelId: "stepfun/step-3.7-flash",
     displayName: "Step 3.7 Flash",
@@ -1224,6 +1327,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Grok 4.7 keeps Grok 4.6's $2 input / $6 output / $0.50 cache hit and its 500,000 window,
+    // with image input. The listing's `overrides` double every rate from 200,000 prompt tokens;
+    // the base tier is recorded.
+    modelId: "x-ai/grok-4.7",
+    displayName: "Grok 4.7",
+    provider: "openrouter",
+    contextWindow: 500000,
+    pricing: usd(0.5, 2, 6),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     // xAI's Grok 4.6 (OpenRouter listing dated 2026-08-12): same $2/$6 input/output rates as
     // Grok 4.5 with a raised $0.50 cache-hit price.
     modelId: "x-ai/grok-4.6",
@@ -1241,6 +1357,31 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 500000,
     pricing: usd(0.3, 2, 6),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // $0.14 input / $0.28 output with a published $0.0028 input_cache_read, the same rates as
+    // MiMo-V2.5; text, image, video and audio input.
+    modelId: "xiaomi/mimo-v2.6-flash",
+    displayName: "MiMo-V2.6-Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.0028, 0.14, 0.28),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // $0.435 input / $0.87 output with a published $0.0036 input_cache_read (models API and
+    // the per-model endpoints API, read 2026-10-10: Xiaomi's own endpoint, no discount — the
+    // USD face of TokenDance's CNY 0.025 / 3 / 6); text, image, video and audio input.
+    modelId: "xiaomi/mimo-v2.6-pro",
+    displayName: "MiMo-V2.6-Pro",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.0036, 0.435, 0.87),
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
@@ -1505,13 +1646,15 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   {
     // Added 2026-09-16, both ids confirmed in SiliconFlow's /v1/models listing. Hy4 preview is
-    // text only at CNY 6 input / 18 output / 0.3 cache hit, with the 1,024,000-token window the
-    // TokenDance hy4-preview row records; GLM-5.3 below is text only at 8 / 28 / 2, with the
-    // same 1M window as zai-org/GLM-5.2.
+    // text only at CNY 6 input / 18 output / 0.3 cache hit, the list price as quoted again on
+    // 2026-10-10; siliconflow.cn/pricing shows the same input and output figures and no cache
+    // price. Its window is the 1,048,576 tokens that page now publishes for it (the row had
+    // borrowed the TokenDance row's 1,024,000). GLM-5.3 below is text only at 8 / 28 / 2, with
+    // the same 1M window as zai-org/GLM-5.2.
     modelId: "tencent/Hy4-preview",
     displayName: "Hy4 preview",
     provider: "siliconflow",
-    contextWindow: 1024000,
+    contextWindow: 1048576,
     pricing: cny(0.3, 6, 18),
     supportsVision: false,
     clientType: "openai-chat",
@@ -1524,6 +1667,22 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(2, 8, 28),
     supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
+    // Added 2026-10-10 at the list price quoted that day: CNY 0.23 cache hit / 0.8 input / 2.8
+    // output, which is Z.AI's own CNY list for the model and what the TokenDance and Qwen
+    // Pay-As-You-Go rows store. siliconflow.cn/pricing currently shows it at CNY 0, beside the
+    // platform's free models; a free period is a rate no promotion field can hold, so the row
+    // keeps the list price. The window is the 1,048,576 tokens that page publishes. Natively
+    // multimodal (`vlm` there), and this group's openai-chat client forwards image_url parts.
+    modelId: "zai-org/GLM-5.3-Flash",
+    displayName: "GLM-5.3 Flash",
+    provider: "siliconflow",
+    contextWindow: 1048576,
+    pricing: cny(0.23, 0.8, 2.8),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
@@ -1572,44 +1731,59 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: ATLASCLOUD_BASE_URL,
   },
-  // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Context windows,
-  // vision flags and supported protocols from the public catalog API (GET
-  // https://tokendance.space/gateway/v1/models, no credential required; re-read 2026-09-10);
-  // prices are the gateway's own CNY rates from each model's detail page, read 2026-08-25
-  // and last confirmed by the seller 2026-09-10, or 2026-09-16 for the deepseek-v4-flash-0731,
-  // deepseek-v4-pro-0813 and kimi-k3 rows (the detail pages need a signed-in session, so they
-  // cannot be re-read anonymously). TokenDance publishes an input price and a cache-hit price
-  // with no separate cache-write fee, so cache_write carries the input price.
+  // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Re-read in full on
+  // 2026-10-10 from two public APIs that need no credential: the gateway's catalog (GET
+  // https://tokendance.space/gateway/v1/models — ids, context windows and supported protocols)
+  // and the portal's model list (GET https://tokendance.space/portal/api/models/all — names,
+  // input modalities and prices). Prices are the gateway's own CNY rates. The portal publishes
+  // what a model bills as `pricing.items` and, while a promotion runs, its list price beside
+  // that as `pricing.reference`. TokenDance charges no separate cache-write fee, so cache_write
+  // carries the input price. The per-model pages (tokendance.space/models/<id>) render in the
+  // browser from the same data.
   //
-  // Discounts: every row here stores the official LIST price, the convention of the two Qwen
-  // groups below, and a promoted row declares its rate in `discount` rather than having its
-  // price rewritten — a promotion that lapses is then one field to delete, with the rate to
-  // return to still on the row. effectivePricing() applies it; a new Project stores the list
-  // price and the fraction as a promotion beside it, which the cost center applies, so it
-  // charges what the gateway charges.
-  // Nine rows are promoted: deepseek-v4-flash-0731 and deepseek-v4-pro-0813 at 10% off and
-  // kimi-k3 at 40% (seller's quote 2026-09-16); glm-5.3, glm-5.3-flash and qwen3.8-max at 10%
-  // and the three Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50% (rates
-  // re-confirmed 2026-09-10). One more row, deepseek-v4.1-flash, carries no flat discount at
-  // all and instead follows the vendor's own peak/off-peak schedule (DEEPSEEK_OFF_PEAK),
-  // storing the peak price the way the direct DeepSeek rows do; so does the retired
-  // deepseek-v4-flash-vision-exp row, which is no longer a preset. The rest carry neither, so
-  // for them list price and billed rate coincide.
+  // Discounts: every row here stores the official LIST price — the portal's `reference`, or
+  // its `items` where no promotion runs — the convention of the two Qwen groups below, and a
+  // promoted row declares its rate in `discount` rather than having its price rewritten: a
+  // promotion that lapses is then one field to delete, with the rate to return to still on the
+  // row. effectivePricing() applies it; a new Project stores the list price and the fraction as
+  // a promotion beside it, which the cost center applies, so it charges what the gateway
+  // charges. Eight rows are promoted as of 2026-10-10: ling-3.0-flash at 65% off, the three
+  // Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50%, glm-5.2 at 20%, and
+  // glm-5.3, glm-5.3-flash and qwen3.8-max at 10%. The gateway also sells the DeepSeek V4
+  // preview releases under the bare ids deepseek-v4-flash and deepseek-v4-pro ("… Preview");
+  // they are deliberately not presets (the user's call, 2026-10-10): the dated rows below are
+  // the releases that superseded them.
   //
-  // A running promotion usually also shows up without a credential: the catalog API opens
-  // such a model's `description` with a bracketed 限时 ("limited-time") tag, so the same
-  // anonymous request the context windows come from is a cheap first check on whether one is
-  // still live. It is neither exhaustive nor authoritative on the rate — the rates above are
-  // the ones the seller confirmed. --
+  // Three DeepSeek rows — deepseek-v4.1-flash, deepseek-v4-flash-0731 and deepseek-v4-pro-0813 —
+  // are priced by time instead (`pricing.time_pricing`): a peak price on weekdays 09:00-12:00
+  // and 14:00-18:00 Beijing time, DeepSeek's own windows, and half the peak list price at every
+  // other hour. They store the peak list price and declare DEEPSEEK_OFF_PEAK, as the direct
+  // DeepSeek rows do; so does the retired deepseek-v4-flash-vision-exp row, which is no longer a
+  // preset. On top of that schedule the gateway takes 20% off: in both tiers on
+  // deepseek-v4.1-flash, and in the peak tier alone on the 0731 and 0813 rows. A row cannot
+  // declare a flat discount beside a schedule, so that 20% is not recorded, and the cost center
+  // prices those hours 25% above what the gateway bills. The rest of the group carries neither,
+  // so list price and billed rate coincide.
+  //
+  // A running promotion usually also shows in a model's `description`, which opens with a
+  // bracketed 限时 ("limited-time") tag. The tag is neither exhaustive nor authoritative on the
+  // rate: kimi-k3's still announces an offer that ended 2026-09-30, and the two Seed 2.1 rows'
+  // say 20% while their prices are at 50% off. The rows follow the prices.
+  //
+  // Display names follow the catalog's spelling of a model family where it has one (GLM-5.3,
+  // Qwen 3.8 Max, MiMo-V2.5), and otherwise the portal's name without its "Vendor: " prefix
+  // (Seed-2.1-Pro, Ling-3.1-flash, Step 5 Preview). Rows are in plain dictionary order by id. --
   {
-    // 10% off a CNY 1.5 input / 4.5 output / 0.15 cache hit list, so the gateway bills
-    // 1.35 / 4.05 / 0.135 (seller's quote 2026-09-16).
+    // Text only, 1,048,576 window. Priced by time (see the block comment): a CNY 3 input / 9
+    // output / 0.1 cache hit list, billed at 2.4 / 7.2 / 0.08 in the peak windows and at half
+    // the list, 1.5 / 4.5 / 0.05, at every other hour. It had been quoted on 2026-09-16 as a
+    // flat CNY 1.5 / 4.5 / 0.15 list at 10% off.
     modelId: "deepseek-v4-flash-0731",
     displayName: "DeepSeek V4 Flash 0731",
     provider: "tokendance",
     contextWindow: 1048576,
-    pricing: cny(0.15, 1.5, 4.5),
-    discount: 0.1,
+    pricing: cny(0.1, 3, 9),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1630,27 +1804,29 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     retired: true,
   },
   {
-    // 10% off a CNY 4.5 input / 13.5 output / 0.45 cache hit list, so the gateway bills
-    // 4.05 / 12.15 / 0.405 (seller's quote 2026-09-16).
+    // Text only, 1,000,000 window. Priced by time like the 0731 row: a CNY 9 input / 27 output
+    // / 0.3 cache hit list, DeepSeek's own peak price for V4 Pro 0813, billed at 7.2 / 21.6 /
+    // 0.24 in the peak windows and at half the list, 4.5 / 13.5 / 0.15, at every other hour. It
+    // had been quoted on 2026-09-16 as a flat CNY 4.5 / 13.5 / 0.45 list at 10% off.
     modelId: "deepseek-v4-pro-0813",
     displayName: "DeepSeek V4 Pro 0813",
     provider: "tokendance",
     contextWindow: 1000000,
-    pricing: cny(0.45, 4.5, 13.5),
-    discount: 0.1,
+    pricing: cny(0.3, 9, 27),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
     // Listed 2026-09-10; the dotted id is the seller's spelling of the model DeepSeek serves
-    // directly as `deepseek-flash`. 1M context and native multimodality from the catalog
-    // API. It follows the vendor's own peak/off-peak schedule rather than a flat gateway
-    // discount (seller's quote 2026-09-10): the row stores the peak tier CNY 0.04 / 2 / 8,
-    // the direct row's figures, and declares DEEPSEEK_OFF_PEAK, which halves every bucket
-    // outside Beijing weekday 09:00-12:00 and 14:00-18:00. Unlike the direct row this one
-    // needs no DeepSeek-specific pin — it is reached through this group's generic openai-chat
-    // client, which forwards image_url parts.
+    // directly as `deepseek-flash`. 1M context and native multimodality. Its list follows the
+    // vendor's own schedule: the peak tier CNY 0.04 / 2 / 8, the direct row's figures, and half
+    // that outside Beijing weekday 09:00-12:00 and 14:00-18:00. The row stores the peak tier
+    // and declares DEEPSEEK_OFF_PEAK. The gateway also takes 20% off both tiers, billing
+    // 0.032 / 1.6 / 6.4 at peak, which the row cannot declare beside its schedule (see the
+    // block comment). Unlike the direct row this one needs no DeepSeek-specific pin — it is
+    // reached through this group's generic openai-chat client, which forwards image_url parts.
     modelId: "deepseek-v4.1-flash",
     displayName: "DeepSeek V4.1 Flash",
     provider: "tokendance",
@@ -1664,21 +1840,38 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     // Dots Studio's (rednote / Xiaohongshu) Dots3-Note Preview: an open-weight MoE, 280B total
     // and 16B active, the lightest of the Dots 3 family. TokenDance lists it as "Dots3-Note
-    // Preview（Free）", and the name is kept as the seller spells it, tag and full-width
-    // parentheses included, as the OpenRouter `(free)` rows keep theirs. The price is a
+    // Preview（Free）": the words and the tag are kept as the seller spells them, as the
+    // OpenRouter `(free)` rows keep theirs, but the full-width parentheses are the typesetting
+    // of the seller's Chinese listing rather than part of the name, and a catalog name shows
+    // untranslated in every UI language — so it takes the ASCII " (" of every other
+    // parenthesised row, which reads right in both. The price is a
     // genuine CNY 0 on every bucket, the same treatment as the OpenRouter `:free` rows, so
     // costs compute to 0 and the free badge shows — over a 512,000-token context window, with
     // openai:chat-completions and anthropic:messages as its supported_protocols (this group's
     // openai-chat pin is a convention here, not the only shape the id serves). The gateway's
     // own listing describes it as covering multimodal understanding, which is what the
     // vision flag records; no image request was sent to it. Read 2026-09-15 from the
-    // gateway's /models listing and tokendance.space/models/dots-3-note-preview.
+    // gateway's /models listing and tokendance.space/models/dots-3-note-preview, and unchanged
+    // on 2026-10-10.
     modelId: "dots-3-note-preview",
-    displayName: "Dots3-Note Preview（Free）",
+    displayName: "Dots3-Note Preview (Free)",
     provider: "tokendance",
     contextWindow: 512000,
     pricing: cny(0, 0, 0),
     supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // Text only, 1,000,000 window. 20% off a CNY 8 input / 28 output / 2 cache hit list, the
+    // same list as glm-5.3, so the gateway bills 6.4 / 22.4 / 1.6.
+    modelId: "glm-5.2",
+    displayName: "GLM-5.2",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(2, 8, 28),
+    discount: 0.2,
+    supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
@@ -1696,8 +1889,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     // Natively multimodal per TokenDance's catalog entry, and this group's generic
     // openai-chat client forwards image_url parts, so image input works on this path. Its
-    // supported_protocols is openai:chat-completions alone, so the openai-chat pin is the
-    // only shape this id serves.
+    // supported_protocols are openai:chat-completions and anthropic:messages.
     //
     // The 50% promotion this row used to carry ran through 2026-09-09 24:00 (the catalog
     // API's own description said so) and has been replaced by 10% off; the list price is
@@ -1713,6 +1905,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // A faster GLM-5.3 Flash (up to 200 tokens/s, per its listing), natively multimodal like
+    // it: text, image and video input, which this group's openai-chat client forwards.
+    // 1,000,000 window; CNY 2 input / 7 output / 0.57 cache hit, undiscounted.
+    modelId: "glm-5.3-flashx",
+    displayName: "GLM-5.3 FlashX",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.57, 2, 7),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
     // The same upstream model as the OpenRouter `tencent/hy4-preview` row above, reached
     // through a second seller: each row records what its own seller charges, so the two must
     // not be made to agree (the qwen3.8-flash pair below states the same rule). TokenDance
@@ -1722,7 +1927,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // Text-only: the catalog entry advertises no image modality, matching the OpenRouter
     // listing's text-in/text-out. Its supported_protocols are openai:chat-completions and
     // openai:responses, so the openai-chat pin is this group's convention rather than the
-    // only shape the id serves — unlike glm-5.3-flash above, where it is forced.
+    // only shape the id serves.
     modelId: "hy4-preview",
     displayName: "Hy4 preview",
     provider: "tokendance",
@@ -1733,14 +1938,83 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
-    // 40% off a CNY 20 input / 100 output / 1.6 cache hit list, so the gateway bills
-    // 12 / 60 / 0.96 (seller's quote 2026-09-16).
+    // CNY 20 input / 100 output / 2 cache hit, Moonshot's own list, undiscounted as of
+    // 2026-10-10. The 40% promotion this row carried (seller's quote 2026-09-16, when the cache
+    // hit listed at 1.6) has ended; the description still opens with the tag of an offer that
+    // ran to 2026-09-30. Its supported_protocols is openai:chat-completions alone, so the
+    // openai-chat pin is the only shape this id serves.
     modelId: "kimi-k3",
     displayName: "Kimi K3",
     provider: "tokendance",
     contextWindow: 1048576,
-    pricing: cny(1.6, 20, 100),
-    discount: 0.4,
+    pricing: cny(2, 20, 100),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // inclusionAI's Ling-3.0-flash: text only, with the 256,000-token window the listing gives
+    // (the model's native length; its description says it extends to 1M). 65% off a CNY 0.4
+    // input / 1.2 output / 0.08 cache hit list, so the gateway bills 0.14 / 0.42 / 0.028.
+    modelId: "ling-3.0-flash",
+    displayName: "Ling-3.0-flash",
+    provider: "tokendance",
+    contextWindow: 256000,
+    pricing: cny(0.08, 0.4, 1.2),
+    discount: 0.65,
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // Text only, 1,000,000 window, at the same CNY 0.4 input / 1.2 output / 0.08 cache hit list
+    // as Ling-3.0-flash. Listed 2026-09-30 with a two-week free trial served at 256K, so the
+    // portal bills it at 0 until about 2026-10-14. A free period is no `discount`, which is a
+    // fraction below 1, and the trial ends before a release carries this row, so the row
+    // records the list price and the full window the model is sold at afterwards.
+    modelId: "ling-3.1-flash",
+    displayName: "Ling-3.1-flash",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.08, 0.4, 1.2),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // Xiaomi's MiMo-V2.6 line, the three rows alike: text, image, audio and video input (image
+    // parts go through this group's openai-chat client), a 1,000,000 window, no promotion, and
+    // openai:chat-completions, openai:responses and anthropic:messages as supported_protocols.
+    // Flash at CNY 1 input / 2 output / 0.02 cache hit.
+    modelId: "mimo-v2.6-flash",
+    displayName: "MiMo-V2.6-Flash",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.02, 1, 2),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // Pro at CNY 3 input / 6 output / 0.025 cache hit.
+    modelId: "mimo-v2.6-pro",
+    displayName: "MiMo-V2.6-Pro",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.025, 3, 6),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // The Pro model served up to 20x faster, at ten times its price on every bucket: CNY 30
+    // input / 60 output / 0.25 cache hit (OpenRouter lists the same rates in USD for
+    // xiaomi/mimo-v2.6-pro-ultraspeed). The seller's id drops "pro"; its name keeps it.
+    modelId: "mimo-v2.6-ultraspeed",
+    displayName: "MiMo-V2.6-Pro-UltraSpeed",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.25, 30, 60),
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1752,11 +2026,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // 2026-09-16 re-pricing (its page had read 1 / 3 / 0.1), but only because the two sellers
     // do: each row still follows its own seller.
     //
-    // Its supported_protocols is the widest in this group — openai:chat-completions,
-    // openai:responses AND anthropic:messages — so the openai-chat pin here is the group's
-    // convention rather than the only shape the id serves, unlike glm-5.3-flash above where
-    // it is forced. Natively multimodal per the catalog entry, and this group's openai-chat
-    // client forwards image_url parts, so image input works on this path.
+    // Its supported_protocols are openai:chat-completions, openai:responses and
+    // anthropic:messages, so the openai-chat pin here is the group's convention rather than the
+    // only shape the id serves. Natively multimodal per the catalog entry, and this group's
+    // openai-chat client forwards image_url parts, so image input works on this path.
     //
     // Undiscounted, so its list price and its billed rate coincide — unlike the
     // qwen3.8-max row below, which is on 10% off.
@@ -1782,17 +2055,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   {
     // The three Doubao Seed rows share this note. Priced 2026-09-02 from the seller's quoted
-    // 50%-off rates, doubled back to the list price a row stores; context windows and
-    // protocols from the catalog API, whose descriptions call the 2.1 models multimodal
-    // Coding/Agent models (this group's openai-chat client forwards image_url parts, so
-    // image input works on this path). That API tags the two 2.1 rows with a limited-time
-    // 20% line rather than the 50% here; as for every promoted row in this group, the rate
-    // recorded is the one the seller confirmed. seed-2.1-pro and seed-2.1-turbo also list
-    // openai:responses, so their openai-chat pin is the group's convention rather than the
-    // only shape they serve; seed-evolving lists chat-completions alone.
+    // 50%-off rates, doubled back to the list price a row stores, and re-read 2026-10-10 from
+    // the portal, whose prices still put all three at 50% off a list of CNY 6 / 30 / 1.2
+    // (Pro, Evolving) and 3 / 15 / 0.6 (Turbo), input / output / cache hit — although the two
+    // 2.1 rows' descriptions announce 20%. Context windows and protocols from the catalog API,
+    // whose descriptions call the 2.1 models multimodal Coding/Agent models (this group's
+    // openai-chat client forwards image_url parts, so image input works on this path).
+    // seed-2.1-pro and seed-2.1-turbo also list openai:responses, so their openai-chat pin is
+    // the group's convention rather than the only shape they serve; seed-evolving lists
+    // chat-completions alone.
     //
     // Display names are the seller's own, as the catalog API spells them (re-read
-    // 2026-09-10): Seed-2.1-Pro, Seed-2.1-Turbo, Seed-Evolving.
+    // 2026-10-10): Seed-2.1-Pro, Seed-2.1-Turbo, Seed-Evolving.
     modelId: "seed-2.1-pro",
     displayName: "Seed-2.1-Pro",
     provider: "tokendance",
@@ -1828,6 +2102,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
+  {
+    // StepFun's Step 5 Preview: text, image and video input, a 1,000,000 window, and CNY 7
+    // input / 20 output / 0.35 cache hit, undiscounted.
+    modelId: "step-5-preview",
+    displayName: "Step 5 Preview",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.35, 7, 20),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
   // -- Penguin Go (mixed-protocol relay). The model ids are the generation rows
   // provisioned by Penguin Go's generic-client authorization contract. Both
   // protocols share the /api base: the google-genai client appends /v1beta itself, while
@@ -1837,19 +2123,11 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // authoritative when the relay later publishes changed metadata. The DeepSeek rows follow
   // DeepSeek's own lineup (re-read 2026-09-16): V4.1 Flash as `deepseek-flash` and V4 Pro 0813
   // as `deepseek-v4-pro`; the two retired V4 Flash ids, served from V4.1 Flash, are not resold.
+  // Gemini 3.7 Flash is no longer preset (2026-10-10): Google retires the id and reroutes it to
+  // 3.8 Flash, the first row below.
   {
     modelId: "gemini-3.8-flash",
     displayName: "Gemini 3.8 Flash",
-    provider: PENGUIN_GO_PROVIDER_ID,
-    contextWindow: 1048576,
-    pricing: usd(0.075, 0.75, 3.75),
-    supportsVision: true,
-    clientType: "google-genai",
-    baseUrl: PENGUIN_GO_BASE_URL,
-  },
-  {
-    modelId: "gemini-3.7-flash",
-    displayName: "Gemini 3.7 Flash",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1048576,
     pricing: usd(0.075, 0.75, 3.75),
@@ -2472,14 +2750,14 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.06, 0.3, 1.2),
     supportsVision: true,
   },
-  // -- Google Gemini (official USD pricing) --
+  // -- Google Gemini (official USD pricing). Gemini 3.7 Flash left the group on 2026-10-10:
+  // Google retires the id and reroutes it to 3.8 Flash, at the same price. --
   {
-    // Same list price and same launch discount as the gemini-3.7-flash and gemini-3.6-flash
-    // rows below: Google halves all three rates through 2026-12-31. Like those rows this one
-    // declares the promotion in `discount`, so the list price stays on file — here and in a
-    // Project, which is seeded with the fraction beside it — while the cost center bills the
-    // 0.075/0.75/3.75 Google actually charges today. One field to delete when the promotion
-    // lapses.
+    // Same list price and same launch discount as the gemini-3.6-flash row below: Google
+    // halves all three rates through 2026-12-31. Like that row this one declares the
+    // promotion in `discount`, so the list price stays on file — here and in a Project, which
+    // is seeded with the fraction beside it — while the cost center bills the 0.075/0.75/3.75
+    // Google actually charges today. One field to delete when the promotion lapses.
     modelId: "gemini-3.8-flash",
     displayName: "Gemini 3.8 Flash",
     provider: "google",
@@ -2489,21 +2767,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
   },
   {
-    // Google's list price, identical to gemini-3.6-flash (per MMSP's registry and Google's
-    // price page), halved through 2026-12-31 by a launch discount on all three
-    // rates. That promotion is declared in `discount` — same treatment as gemini-3.8-flash
-    // above — so the list price survives it and there is one field to delete when it lapses.
-    modelId: "gemini-3.7-flash",
-    displayName: "Gemini 3.7 Flash",
-    provider: "google",
-    contextWindow: 1048576,
-    pricing: usd(0.15, 1.5, 7.5),
-    discount: 0.5,
-    supportsVision: true,
-  },
-  {
-    // Same list price and same launch discount as the 3.7 and 3.8 rows: Google halves all
-    // three rates through 2026-12-31 (Google's pricing page, read 2026-09-09).
+    // Same list price and same launch discount as the 3.8 row: Google halves all three rates
+    // through 2026-12-31 (Google's pricing page, read 2026-09-09).
     modelId: "gemini-3.6-flash",
     displayName: "Gemini 3.6 Flash",
     provider: "google",
@@ -2555,19 +2820,55 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.05, 0.5, 3),
     supportsVision: true,
   },
-  // -- Anthropic (official USD pricing; cache write = 1.25 x input). Re-read 2026-08-20 from
-  // platform.claude.com/docs/en/about-claude/pricing. Sonnet 5's $2 input / $10 output is its
+  // -- Anthropic (official USD pricing; cache write = 1.25 x input, the 5-minute write).
+  // Re-read 2026-08-20 from platform.claude.com/docs/en/about-claude/pricing; the 5.5 / 5.1
+  // generation added 2026-10-10 from MMSP 0.5.2's registry and the copy of that page it
+  // carries (llmsdk_docs/claude5_5/docs/pricing.md). Sonnet 5's $2 input / $10 output is its
   // standard rate rather than an introductory one, so it prices below Sonnet 4.6 — that
-  // inversion is Anthropic's list, not a transcription slip. Anthropic bills the full 1M
-  // window at a single rate, so none of the long-context tiers named in the file header apply
-  // here, and the fast-mode premium on Opus 5 / Opus 4.8 ($10 input / $50 output) is a
-  // separate tier these rows do not record. --
+  // inversion is Anthropic's list, not a transcription slip. The cache-hit multiplier is no
+  // longer one figure: 0.025x input on Fable 5.1, 0.05x on Opus 5.5 and Sonnet 5.5, 0.1x on
+  // every other row. Anthropic bills the full 1M window at a single rate on every row but
+  // Haiku 5.5, which the file header's tier list names; and the fast-mode premium on Opus 5.5
+  // ($8 input / $40 output) and Opus 5 / Opus 4.8 ($10 / $50) is a separate tier these rows do
+  // not record. Every row takes image input over a 1,000,000-token window. --
+  {
+    // $10 input / $12.50 cache write / $0.25 cache hit / $50 output.
+    modelId: "claude-fable-5-1",
+    displayName: "Claude Fable 5.1",
+    provider: "anthropic",
+    contextWindow: 1000000,
+    pricing: usd(0.25, 12.5, 50),
+    supportsVision: true,
+  },
   {
     modelId: "claude-fable-5",
     displayName: "Claude Fable 5",
     provider: "anthropic",
     contextWindow: 1000000,
     pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+  },
+  {
+    // $0.10 input / $0.125 cache write / $0.01 cache hit / $0.50 output for a prompt of up to
+    // 100,000 tokens, counting cache reads and writes; a longer prompt pays 5x on every rate,
+    // for the whole request. The base tier is recorded. MMSP 0.5.2 is the first release whose
+    // official Anthropic client knows the model: it runs `none` thinking at low effort, refuses
+    // a forced tool choice, which Haiku 5.5 answers without thinking, and refuses fast mode,
+    // which Haiku 5.5 rejects (fastModeProtocol offers no toggle for it either).
+    modelId: "claude-haiku-5-5",
+    displayName: "Claude Haiku 5.5",
+    provider: "anthropic",
+    contextWindow: 1000000,
+    pricing: usd(0.01, 0.125, 0.5),
+    supportsVision: true,
+  },
+  {
+    // $4 input / $5 cache write / $0.20 cache hit / $20 output.
+    modelId: "claude-opus-5-5",
+    displayName: "Claude Opus 5.5",
+    provider: "anthropic",
+    contextWindow: 1000000,
+    pricing: usd(0.2, 5, 20),
     supportsVision: true,
   },
   {
@@ -2595,6 +2896,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
   },
   {
+    // $2 input / $2.50 cache write / $0.10 cache hit / $10 output. MMSP 0.5.0 listed the cache
+    // hit at $0.20, Sonnet 5's figure; 0.5.2 lowered it to the 0.05x of input that Anthropic's
+    // pricing page states for this model.
+    modelId: "claude-sonnet-5-5",
+    displayName: "Claude Sonnet 5.5",
+    provider: "anthropic",
+    contextWindow: 1000000,
+    pricing: usd(0.1, 2.5, 10),
+    supportsVision: true,
+  },
+  {
     modelId: "claude-sonnet-5",
     displayName: "Claude Sonnet 5",
     provider: "anthropic",
@@ -2611,6 +2923,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
   },
   // -- OpenAI (official USD pricing) --
+  {
+    // OpenAI's list price per MMSP 0.5.2's registry and the model page it carries
+    // (llmsdk_docs/gpt6/docs/gpt-6.1-sol.md, read 2026-10-10): $2 input / $0.10 cached input
+    // (5% of input) / $2.50 cache write / $10 output, over a 1,050,000-token window with text
+    // and image input. As on gpt-6-astra below, cache_write carries the published cache-write
+    // price; a prompt above 272K tokens pays 2x input and cache and 1.5x output for the whole
+    // request, a tier this row does not record.
+    modelId: "gpt-6.1-sol",
+    displayName: "GPT-6.1 Sol",
+    provider: "openai",
+    contextWindow: 1050000,
+    pricing: usd(0.1, 2.5, 10),
+    supportsVision: true,
+  },
   {
     // OpenAI's list price (developers.openai.com/api/docs/models/gpt-6-astra, read
     // 2026-09-09) is $10 input / $1 cached input / $12.5 cache write / $50 output. Per the
@@ -2936,15 +3262,14 @@ export function providerInfo(providerId: string): ModelProviderInfo | undefined 
  * The protocol a group pins on every one of its entries (ModelProviderInfo.clientType), or
  * undefined when the group pins none — an unknown id (a user-defined group) included.
  *
- * Two groups pin: vLLM, whose models are served by the user's own vLLM adapter, and
+ * Four groups pin: vLLM, whose models are served by the user's own vLLM adapter,
  * OpenRouter, whose models all speak the Responses API OpenRouter serves at its preset base
- * URL.
+ * URL, and TokenDance and SiliconFlow, whose models all speak Chat Completions.
  *
- * The single entry point for the pin, so the places that decide a saved model's client_type
- * cannot drift apart: the web add-model dialog's default, moving an entry between groups,
- * the last-resort protocol on the save paths that do not probe, the env-var hint, and the
- * CLI's `config model add`. A group without a pin keeps whatever those call sites already
- * derive from its shape.
+ * A reference value, read when a file is written from the catalog (catalogGroupConnection:
+ * a new Project, "Add new models" for a group new to the file, "Restore defaults") and by
+ * nothing that builds or judges a request: at runtime a group's protocol is its
+ * `[providers.<id>]` table's.
  */
 export function providerClientType(providerId: string): string | undefined {
   return providerInfo(providerId)?.clientType;
@@ -2967,8 +3292,9 @@ export function providerClientType(providerId: string): string | undefined {
  * all is a separate, wider rule: isAddableGroup.
  *
  * Every other group answers the protocol question by itself and therefore routes any id the
- * endpoint serves: `custom` and user-defined groups detect or pick it, a gateway inherits its
- * preset's, and a group-level pin (OpenRouter, vLLM) hands it to every entry.
+ * endpoint serves: `custom` and user-defined groups detect or pick it, and a gateway's or
+ * vLLM's rows speak the protocol their group's `[providers.<id>]` table or the row itself
+ * stores (a new Project writes it there).
  */
 export function isVendorGroup(providerId: string): boolean {
   const info = providerInfo(providerId);
@@ -3000,11 +3326,12 @@ export function unroutableVendorModel(
 }
 
 /**
- * Whether models may be added to this group by hand: `custom`, vLLM (ModelProviderInfo.addable)
- * and every user-defined group, i.e. an id this catalog does not know. Every other built-in
- * group — the first-party vendors and the gateways — carries its catalog presets and the rows
- * it already stores: the models page offers no add-model entry point there, and the models PUT
- * and the CLI's `config model add` refuse a new row that is not a preset (unaddableModel).
+ * Whether models may be added to this group by hand: `custom`, vLLM, OpenRouter, TokenDance,
+ * SiliconFlow (ModelProviderInfo.addable) and every user-defined group, i.e. an id this
+ * catalog does not know. Every other built-in group — the first-party vendors and the other
+ * gateways — carries its catalog presets and the rows it already stores: the models page
+ * offers no add-model entry point there, and the models PUT and the CLI's `config model add`
+ * refuse a new row that is not a preset (unaddableModel).
  */
 export function isAddableGroup(providerId: string): boolean {
   const info = providerInfo(providerId);
@@ -3029,14 +3356,14 @@ export interface ModelEnvInfo {
 
 /**
  * MMSP's routing rule, mirrored: without a client type, the family a model id begins with
- * names its official client (AutoLLMClient's `MODEL_FAMILIES`, which the package does not
- * export), and an id of no known family cannot be started at all.
+ * names its official client (AutoLLMClient's `MODEL_FAMILIES` as of MMSP 0.5.2, which the
+ * package does not export), and an id of no known family cannot be started at all.
  */
 const MODEL_FAMILIES: readonly (readonly [prefix: string, clientType: string])[] = [
   ["gpt-", "openai-official"],
   ["text-embedding-", "openai-official"],
   ["claude-", "anthropic-official"],
-  ["gemini-", "gemini-official"],
+  ["gemini-", "google-official"],
   ["glm-", "zai-official"],
   ["kimi-", "moonshot-official"],
   ["deepseek-", "deepseek-official"],
@@ -3056,14 +3383,20 @@ export type FastModeProtocol = "openai" | "anthropic";
  * What the harness mirrors about each MMSP client, in one place: the environment variable
  * prefix it reads its key and base URL from when handed none (an official client its vendor's,
  * a compatible client the vendor's whose wire protocol it speaks), the path it appends to its
- * base URL, and the protocol that carries `fast_mode` (absent = the client rejects it). A
- * client type this table does not name is one MMSP does not have either.
+ * base URL, the protocol that carries `fast_mode` (absent = the client rejects it, or the
+ * harness cannot tell what it does with it), and `openServer` for a client that calls a base
+ * URL handed no key with no key at all where every other client refuses it (see
+ * keylessEndpoint). A client type this table does not name is one MMSP does not have either.
  */
 export const MMSP_CLIENTS: Readonly<
-  Record<string, { env: string; path: string; fastMode?: FastModeProtocol }>
+  Record<string, { env: string; path: string; fastMode?: FastModeProtocol; openServer?: true }>
 > = {
   "openai-official": { env: "OPENAI", path: "/responses", fastMode: "openai" },
   "anthropic-official": { env: "ANTHROPIC", path: "/v1/messages", fastMode: "anthropic" },
+  "google-official": { env: "GEMINI", path: "/v1beta/interactions", fastMode: "openai" },
+  // compat: MMSP 0.5.2 keeps google-official's earlier name as an alias, and a Project written
+  // before it may still pin it, never rewritten; this row goes with the MMSP upgrade that drops
+  // the alias (changelog/unreleased/2026-10-10-backward-compatibility.md).
   "gemini-official": { env: "GEMINI", path: "/v1beta/interactions", fastMode: "openai" },
   "zai-official": { env: "ZAI", path: "/chat/completions" },
   "moonshot-official": { env: "MOONSHOT", path: "/chat/completions" },
@@ -3077,6 +3410,9 @@ export const MMSP_CLIENTS: Readonly<
   "google-genai": { env: "GEMINI", path: "/v1beta/models" },
   // MMSP 0.5.1 keeps the 0.5.0 name of google-genai as an alias.
   "gemini-generate-content": { env: "GEMINI", path: "/v1beta/models" },
+  // An MMSP server: the client posts to {base}/stream. It forwards `fast_mode` to the server,
+  // whose upstream client decides, so the harness offers no toggle it cannot vouch for.
+  mmsp: { env: "MMSP", path: "/stream", openServer: true },
 };
 
 /**
@@ -3147,6 +3483,9 @@ export const VENDOR_ENDPOINTS: Readonly<Record<string, readonly string[]>> = {
   ZAI_API_KEY: ["https://api.z.ai/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4"],
   MOONSHOT_API_KEY: ["https://api.moonshot.cn/v1", "https://api.moonshot.ai/v1"],
   MINIMAX_API_KEY: [MINIMAX_BASE_URL, "https://api.minimaxi.com/v1"],
+  // The mmsp client sends MMSP_API_KEY only to MMSP_BASE_URL (or its default), i.e. only when
+  // handed no base URL: no base URL a row names is lent it.
+  MMSP_API_KEY: [],
 };
 
 /**
@@ -3165,6 +3504,12 @@ export function sameEndpoint(a: string, b: string): boolean {
   };
   const na = norm(a);
   return na !== undefined && na === norm(b);
+}
+
+/** Client-type equality as routing sees it: canonical spelling (canonicalClientType), case and surrounding space ignored. */
+export function sameClientType(a: string, b: string): boolean {
+  const norm = (value: string): string => canonicalClientType(value.trim())!.toLowerCase();
+  return norm(a) === norm(b);
 }
 
 /** What the credential rule reads off a model entry: the paired reference, the pinned protocol and the endpoint. */
@@ -3202,7 +3547,8 @@ export interface ModelEnvFallback extends ModelEnvInfo {
  *   `*_BASE_URL` the user set beside the key — that pairing is MMSP's own and is left to it
  *   entirely; the client reads the pair itself.
  * - A base URL that is one of that vendor's own official endpoints (VENDOR_ENDPOINTS) —
- *   allowed, the harness reading the variable and passing it explicitly.
+ *   allowed, the harness reading the variable and passing it explicitly. The mmsp client has
+ *   none: MMSP_API_KEY goes only where MMSP_BASE_URL points, to an entry with no base URL.
  * - Anything else — every gateway group's preset endpoint, custom / user-defined / vLLM rows
  *   with their own endpoints, a vendor row re-pointed at a proxy — refused. A row's own base
  *   URL equal to the `*_BASE_URL` variable's value earns no exception either (per the user:
@@ -3238,22 +3584,35 @@ export function modelEnvFallback(entry: ModelCredentialShape): ModelEnvFallback 
 }
 
 /**
- * The variable a keyless entry added to this group with the group's defaults falls back to,
- * or `undefined` when such an entry gets none: gateways (a preset base URL), the pinned
- * self-hosted group (vLLM), custom and user-defined groups all point away from the vendors'
- * own endpoints. The group-level key dialog's hint and the group header read this.
+ * The variable a keyless row that follows this group's connection falls back to, or
+ * `undefined` when such a row gets none — the group-level key dialog's hint. Judged on the
+ * group's `[providers.<id>]` values as the file stores them (`group`), never on the catalog's:
+ *
+ * - only a first-party vendor group (isVendorGroup) has one at all: gateways, vLLM, custom and
+ *   user-defined groups exist to point away from the vendors' own endpoints;
+ * - a vendor variable while the group leaves its rows on the vendor's own endpoint (no base
+ *   URL, or one of VENDOR_ENDPOINTS') and on a client that reads that variable (no protocol,
+ *   or one whose pair it is) — the same destination rule modelEnvFallback applies per row;
+ * - a provider-scoped variable (the Penguin Go relay's) while the group names an endpoint:
+ *   the relay key never travels to a vendor's default endpoint.
  */
-export function providerEnvFallbackKey(providerId: string): string | undefined {
-  const info = providerInfo(providerId);
-  if (
-    info === undefined ||
-    info.id === "custom" ||
-    info.gatewayBaseUrl !== undefined ||
-    info.clientType !== undefined
-  ) {
+export function providerEnvFallbackKey(
+  providerId: string,
+  group: ProviderConnectionShape | undefined,
+): string | undefined {
+  if (!isVendorGroup(providerId)) return undefined;
+  const envKey = providerInfo(providerId)!.envKey;
+  const baseUrl = group?.baseUrl?.trim() || undefined;
+  const official = VENDOR_ENDPOINTS[envKey];
+  if (official === undefined) return baseUrl !== undefined ? envKey : undefined;
+  const clientType = canonicalClientType(group?.clientType?.trim() || undefined)?.toLowerCase();
+  if (clientType !== undefined && `${MMSP_CLIENTS[clientType]?.env}_API_KEY` !== envKey) {
     return undefined;
   }
-  return info.envKey;
+  if (baseUrl !== undefined && !official.some((own) => sameEndpoint(own, baseUrl))) {
+    return undefined;
+  }
+  return envKey;
 }
 
 /**
@@ -3277,6 +3636,23 @@ export interface ResolvedModelCredential {
 }
 
 /**
+ * Whether a keyless request to this base URL goes out with no key rather than being refused:
+ * MMSP's mmsp client calls a base URL it is handed without a key as an open MMSP server (the
+ * `openServer` clients of MMSP_CLIENTS). Every other client lends the environment's key where
+ * modelEnvFallback allows it, or needs a key of its own.
+ */
+export function keylessEndpoint(
+  modelId: string,
+  clientType: string | undefined,
+  baseUrl: string | undefined,
+): boolean {
+  return (
+    Boolean(baseUrl?.trim()) &&
+    MMSP_CLIENTS[routedClientType(modelId, clientType) ?? ""]?.openServer === true
+  );
+}
+
+/**
  * The credential an MMSP client is built with for a **model entry**, applying
  * modelEnvFallback's rule (the one function every path shares): Session creation and resume,
  * the vision describer, the connectivity / speed / vision probes and the utility completion
@@ -3292,6 +3668,8 @@ export interface ResolvedModelCredential {
  *   provider-scoped pair: the variable's value is passed explicitly — MMSP refuses a base URL
  *   without a key rather than lend the vendor's variable to it — and an unset variable is
  *   refused here.
+ * - No key and a base URL on the mmsp client (keylessEndpoint): the base URL alone, so the
+ *   client sends no key, which an open MMSP server takes — as MMSP itself does.
  * - No key, no fallback: refused with a ModelCredentialError before any client exists.
  * - A provider-scoped group's row (Penguin Go) is also refused without a base URL, whatever
  *   the key's source: the relay key must not travel to the vendor's default endpoint.
@@ -3311,6 +3689,9 @@ export function resolveModelCredential(
   }
   if (apiKey !== undefined) return { apiKey, ...(baseUrl !== undefined ? { baseUrl } : {}) };
   if (fallback === undefined) {
+    if (baseUrl !== undefined && keylessEndpoint(entry.modelId, entry.clientType, baseUrl)) {
+      return { baseUrl };
+    }
     // A Bedrock region on the entry is not "not the vendor's": it is AWS, whose usual
     // credential is the default provider chain rather than a key. Until MMSP stops
     // letting its Bedrock client attach ANTHROPIC_API_KEY, a keyless row here is refused,
@@ -3357,18 +3738,201 @@ export function endpointEnvApiKey(
  * defaults point away from the vendor (the vLLM presets, a custom row saved without an
  * endpoint) does fall back to OPENAI_API_KEY under the rule, but presenting that as "key
  * configured" would encourage exactly the misconfiguration that sends the OpenAI key and a
- * self-hosted model id to api.openai.com. The preview therefore needs the row to name a vendor
- * endpoint itself, or to sit in a group whose defaults are the vendor's (providerEnvFallbackKey).
- * The server's `GET /models` preview and the web dialog's hint both read this, so the two
- * cannot disagree.
+ * self-hosted model id to api.openai.com.
+ *
+ * `entry` is the row's EFFECTIVE shape (effectiveConnection: the file's values, row then
+ * group), and the preview needs one of:
+ *
+ * - an effective base URL — the fallback rule already guarantees it is the vendor's own (or,
+ *   for the Penguin Go relay, that the relay variable goes with it);
+ * - no base URL, in a built-in group other than `custom`, on the client the id's family names
+ *   anyway (no protocol, or that very client — what a DeepSeek row pinned to
+ *   `deepseek-official` speaks): the request goes to the vendor's own endpoint with the
+ *   vendor's key. A generic or self-hosted protocol with no endpoint (the vLLM presets, a
+ *   custom row) is the misconfiguration above, and a relay variable with no relay endpoint is
+ *   refused by resolveModelCredential.
+ *
+ * The server's `GET /models` preview, the web dialog's hint and the CLI's list read this, so
+ * they cannot disagree.
  */
 export function modelEnvPreviewKey(entry: ModelCredentialShape): string | undefined {
   const fallback = modelEnvFallback(entry);
   if (fallback === undefined) return undefined;
-  if (entry.baseUrl?.trim() || providerEnvFallbackKey(entry.provider) !== undefined) {
-    return fallback.envKey;
+  if (entry.baseUrl?.trim()) return fallback.envKey;
+  if (!fallback.readByClient) return undefined;
+  const info = providerInfo(entry.provider);
+  if (info === undefined || info.id === "custom") return undefined;
+  const pinned = entry.clientType?.trim();
+  return !pinned || routedClientType(entry.modelId, pinned) === routedClientType(entry.modelId)
+    ? fallback.envKey
+    : undefined;
+}
+
+/** Where an effective connection value came from: the row, its group's table, or nowhere. */
+export type ConnectionSource = "model" | "provider" | "none";
+
+/** A group's `[providers.<id>]` connection as the resolver reads it (providerConnectionShape). */
+export interface ProviderConnectionShape {
+  baseUrl?: string | undefined;
+  clientType?: string | undefined;
+  apiKey?: string | undefined;
+}
+
+/** The connection a request for one row is built with, and where each value came from. */
+export interface EffectiveConnection {
+  baseUrl?: string;
+  baseUrlSource: ConnectionSource;
+  clientType?: string;
+  clientTypeSource: ConnectionSource;
+  apiKey?: string;
+  /** No "env" here: whether the environment lends a key is modelEnvFallback's call, made on this shape afterwards. */
+  apiKeySource: ConnectionSource;
+}
+
+/** `[providers.<id>]` -> the resolver's shape (snake -> camel); undefined in, undefined out. */
+export function providerConnectionShape(
+  p: ProviderConnection | undefined,
+): ProviderConnectionShape | undefined {
+  if (p === undefined) return undefined;
+  return { baseUrl: p.base_url, clientType: p.client_type, apiKey: p.api_key };
+}
+
+/** The first candidate holding a non-blank value, with its source; blank and absent are the same. */
+function firstPresent<S extends string>(
+  candidates: ReadonlyArray<readonly [string | undefined, S]>,
+): { value?: string; source: S | "none" } {
+  for (const [value, source] of candidates) {
+    if (value !== undefined && value.trim() !== "") return { value, source };
   }
-  return undefined;
+  return { source: "none" };
+}
+
+/** `scheme://host[:port]` of a URL (the port only when not the scheme's default), or undefined when it does not parse. */
+function endpointOrigin(value: string): string | undefined {
+  try {
+    const u = new URL(value.trim());
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether a group's key reaches a row: a key belongs to the endpoint it was issued for (the
+ * principle PRN-021 applies to environment keys). It reaches the row when the row has no base
+ * URL of its own — the row goes where the group's clients go — or when the row's own base URL
+ * has the same origin (scheme, host, port) as the group's: OpenCode Go's Messages rows sit on
+ * another path of the host the group's base URL names, and one key serves both. A row with its
+ * own base URL in a group that has none, or on another origin (a preset carrying its own host,
+ * like custom's Atria; one model re-pointed at a proxy), goes somewhere the group's key was
+ * not issued for, and gets none: it needs a key of its own.
+ *
+ * Blank counts as absent on both sides; a base URL that does not parse matches nothing.
+ * effectiveConnection applies it, and the counts that ask "how many rows use the group key"
+ * (the server's, the models page's) ask here.
+ */
+export function groupKeyReaches(
+  rowBaseUrl: string | undefined,
+  groupBaseUrl: string | undefined,
+): boolean {
+  const own = rowBaseUrl?.trim();
+  if (!own) return true;
+  const group = groupBaseUrl?.trim();
+  if (!group) return false;
+  const origin = endpointOrigin(own);
+  return origin !== undefined && origin === endpointOrigin(group);
+}
+
+/**
+ * The connection a row is actually used with — the file's values and nothing else: per field,
+ * the first non-blank value of
+ *
+ *   base_url:    row -> provider -> none
+ *   client_type: row -> provider -> none
+ *   api_key:     row -> provider (only where groupKeyReaches) -> none
+ *
+ * where "provider" is the group's `[providers.<id>]` table (providerConnectionShape) and
+ * "none" means the client library's own default: no base URL = the routed client's default
+ * endpoint (or its `*_BASE_URL` variable), no client type = MMSP routes by the id's family,
+ * no key = the environment, where modelEnvFallback allows it on the EFFECTIVE shape.
+ * client_type passes canonicalClientType.
+ *
+ * The catalog is not a layer here: it is a reference written into a file once (a new Project,
+ * "Add new models", "Restore defaults"), and a value the file does not hold is the client's
+ * default, whatever the catalog says. A row's own value always wins over its group's, so a
+ * group protocol never overrides the protocol a row stores (Penguin Go's and OpenCode Go's
+ * rows each store theirs). Pure and browser-safe: the server's `GET /models`, the models page
+ * and the CLI read the same answer.
+ */
+export function effectiveConnection(
+  entry: ModelCredentialShape & { apiKey?: string | undefined },
+  group: ProviderConnectionShape | undefined,
+): EffectiveConnection {
+  const baseUrl = firstPresent([
+    [entry.baseUrl, "model"],
+    [group?.baseUrl, "provider"],
+  ]);
+  const clientType = firstPresent([
+    [entry.clientType, "model"],
+    [group?.clientType, "provider"],
+  ]);
+  const apiKey = firstPresent([
+    [entry.apiKey, "model"],
+    [groupKeyReaches(entry.baseUrl, group?.baseUrl) ? group?.apiKey : undefined, "provider"],
+  ]);
+  return {
+    ...(baseUrl.value !== undefined ? { baseUrl: baseUrl.value } : {}),
+    baseUrlSource: baseUrl.source,
+    ...(clientType.value !== undefined
+      ? { clientType: canonicalClientType(clientType.value)! }
+      : {}),
+    clientTypeSource: clientType.source,
+    ...(apiKey.value !== undefined ? { apiKey: apiKey.value } : {}),
+    apiKeySource: apiKey.source,
+  };
+}
+
+/**
+ * The credential and protocol a client is built with for a config row: effectiveConnection,
+ * then resolveModelCredential on the EFFECTIVE shape — so PRN-021's destination rule judges
+ * the endpoint the request really goes to (a group pointed at a proxy gets no vendor key from
+ * the environment) — with the effective clientType returned beside it.
+ *
+ * `override` is the caller's explicit pair (Session creation's apiKey / baseUrl) and sits above
+ * the row's own values; blank counts as absent there too. An override base URL is the row's
+ * own for groupKeyReaches. Throws ModelCredentialError exactly where resolveModelCredential
+ * does.
+ */
+export function resolveEntryCredential(
+  entry: Pick<ModelEntry, "provider" | "model_id" | "client_type" | "base_url" | "api_key">,
+  provider: ProviderConnectionShape | undefined,
+  override: { apiKey?: string | undefined; baseUrl?: string | undefined } = {},
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): { apiKey?: string; baseUrl?: string; clientType?: string } {
+  const effective = effectiveConnection(
+    {
+      provider: entry.provider,
+      modelId: entry.model_id,
+      clientType: entry.client_type,
+      baseUrl: override.baseUrl?.trim() ? override.baseUrl : entry.base_url,
+      apiKey: override.apiKey?.trim() ? override.apiKey : entry.api_key,
+    },
+    provider,
+  );
+  const credential = resolveModelCredential(
+    {
+      provider: entry.provider,
+      modelId: entry.model_id,
+      clientType: effective.clientType,
+      baseUrl: effective.baseUrl,
+      apiKey: effective.apiKey,
+    },
+    env,
+  );
+  return {
+    ...credential,
+    ...(effective.clientType !== undefined ? { clientType: effective.clientType } : {}),
+  };
 }
 
 /**
@@ -3383,6 +3947,8 @@ export function modelEnvPreviewKey(entry: ModelCredentialShape): string | undefi
  * - raises UnsupportedParameterError (the Z.AI, Moonshot, DeepSeek, google-genai and
  *   embedding clients, and anthropic-official on Bedrock or for the generations that reject
  *   the `speed` parameter) -> `undefined`;
+ * - forwards it to an MMSP server, whose upstream client decides what it does with it (mmsp)
+ *   -> `undefined`: the harness cannot say on which protocol, or whether at all;
  * - routes nowhere (AutoLLMClient throws for an id it cannot place) -> `undefined` as well,
  *   since a model that cannot run has no fast tier either.
  *
@@ -3406,12 +3972,15 @@ export function fastModeProtocol(
   baseUrl?: string,
 ): FastModeProtocol | undefined {
   const routed = routedClientType(modelId, clientType);
-  // Bedrock has no fast tier, and these Claude generations reject the `speed` parameter; both
-  // tests run against what the client was constructed with, as the client's own do.
+  // Bedrock has no fast tier, and these Claude generations reject the `speed` parameter (MMSP
+  // 0.5.2's NO_FAST_MODE); both tests run against what the client was constructed with, as the
+  // client's own do.
   if (
     routed === "anthropic-official" &&
     (baseUrl?.startsWith("bedrock://") ||
-      ["4-6", "sonnet-5-5", "fable-5-1"].some((generation) => modelId.includes(generation)))
+      ["4-6", "sonnet-5-5", "haiku-5-5", "fable-5-1"].some((generation) =>
+        modelId.includes(generation),
+      ))
   ) {
     return undefined;
   }
@@ -3419,13 +3988,81 @@ export function fastModeProtocol(
 }
 
 /**
+ * The value every one of `values` holds, by `same`, or undefined when one lacks it, two
+ * differ, or there are none.
+ */
+function sharedValue(
+  values: readonly (string | undefined)[],
+  same: (a: string, b: string) => boolean,
+): string | undefined {
+  const first = values[0];
+  if (first === undefined) return undefined;
+  return values.every((v) => v !== undefined && same(v, first)) ? first : undefined;
+}
+
+/**
+ * The connection the catalog gives a built-in group when a file is written from it — a new
+ * Project, "Add new models" for a group new to the file, "Restore defaults": its gateway
+ * endpoint (`gatewayBaseUrl`, else the one base URL every catalog row of the group carries)
+ * and its one protocol (the group's pin, providerClientType, else the one pin every catalog
+ * row of the group carries; canonical spelling). Retired rows count: "Restore defaults"
+ * writes them too, so they must store their difference from the same table.
+ *
+ * Undefined for `custom` (it holds the user's own endpoints), for an id the catalog does not
+ * know, and for a group with neither — the first-party vendors, whose rows go to the
+ * client's defaults. A reference value: nothing reads it when a request is built.
+ */
+export function catalogGroupConnection(
+  providerId: string,
+): { base_url?: string; client_type?: string } | undefined {
+  const info = providerInfo(providerId);
+  if (info === undefined || info.id === "custom") return undefined;
+  const rows = MODEL_CATALOG.filter((m) => m.provider === providerId);
+  const baseUrl =
+    info.gatewayBaseUrl ??
+    sharedValue(
+      rows.map((m) => m.baseUrl),
+      sameEndpoint,
+    );
+  const clientType = canonicalClientType(
+    providerClientType(providerId) ??
+      sharedValue(
+        rows.map((m) => m.clientType),
+        sameClientType,
+      ),
+  );
+  if (baseUrl === undefined && clientType === undefined) return undefined;
+  return {
+    ...(baseUrl !== undefined ? { base_url: baseUrl } : {}),
+    ...(clientType !== undefined ? { client_type: clientType } : {}),
+  };
+}
+
+/**
+ * `[providers.<id>]` for every built-in group with a catalogGroupConnection, in the catalog's
+ * group order — what a new Project's file stores beside presetModelEntries' rows. A fresh
+ * object on every call, so a caller may change it.
+ */
+export function presetProviderTable(): ProviderTable {
+  const table: ProviderTable = {};
+  for (const p of MODEL_PROVIDERS) {
+    const connection = catalogGroupConnection(p.id);
+    if (connection !== undefined) table[p.id] = connection;
+  }
+  return table;
+}
+
+/**
  * Catalog -> preset ModelEntry list (shared by defaultProjectConfig and the server's initial
  * config, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
- * separate fields (`model_id` is the plain upstream id); models whose upstream id can be
- * auto-routed by MMSP leave client_type unset; gateway models (OpenRouter / SiliconFlow)
- * always pin a client_type — openai-responses for the OpenRouter rows, each OpenCode Go row's
- * own endpoint protocol, openai-chat for the rest — and inline a preset base_url. No secrets
- * are included, so only an API key is needed.
+ * separate fields (`model_id` is the plain upstream id). The facts a row stores are the
+ * context window, the price and `vision = false`, plus the row's protocol and endpoint where
+ * they differ from its group's table in `groups` (catalogModelEntry): beside those tables, the
+ * file alone says where every request goes, and nothing is left for a resolver to fill from
+ * the catalog. `groups` is the `[providers]` table the rows will sit beside — a new Project's
+ * (presetProviderTable, the default), or the file's own when "Add new models" adds rows to an
+ * existing Project, so each added row resolves to its catalog connection whatever the user
+ * has set on its group. No secrets are included, so only an API key is needed.
  *
  * Pricing is written as the LIST price the catalog records (a scheduled row's PEAK price),
  * never a discounted number. What is on disk then stays true whatever promotion is live and
@@ -3433,34 +4070,65 @@ export function fastModeProtocol(
  * file as a per-Project fraction (presetPromotions), and both it and an off-peak tier are
  * applied when the price is read, by the models page and by the cost center alike.
  */
-export function presetModelEntries(): ModelEntry[] {
+export function presetModelEntries(groups: ProviderTable = presetProviderTable()): ModelEntry[] {
+  const catalog = presetProviderTable();
   // A retired row stays in the catalog for the Projects that still carry it, and only for them.
-  return MODEL_CATALOG.filter((m) => m.retired !== true).map(catalogModelEntry);
+  return MODEL_CATALOG.filter((m) => m.retired !== true).map((m) =>
+    catalogModelEntry(m, catalog, groups),
+  );
 }
 
 /**
  * Every catalog row as a ModelEntry, retired rows included, in the shape presetModelEntries
- * writes. This is the list "Sync presets" compares a Project's table against: the sync never adds
- * a retired row, but it updates one the Project already carries like any preset, so a price an
- * older release stored returns to the catalog's (see ModelCatalogEntry.retired).
+ * writes. This is the list "Restore defaults" puts a Project's built-in rows back to: a sync
+ * never adds a retired row, but a restore resets one the Project already carries like any
+ * preset, so a price an older release stored returns to the catalog's (see
+ * ModelCatalogEntry.retired). `groups` as in presetModelEntries.
  */
-export function catalogModelEntries(): ModelEntry[] {
-  return MODEL_CATALOG.map(catalogModelEntry);
+export function catalogModelEntries(groups: ProviderTable = presetProviderTable()): ModelEntry[] {
+  const catalog = presetProviderTable();
+  return MODEL_CATALOG.map((m) => catalogModelEntry(m, catalog, groups));
 }
 
-/** One catalog row as the ModelEntry a Project stores (see presetModelEntries). */
-function catalogModelEntry(m: ModelCatalogEntry): ModelEntry {
+/**
+ * One catalog row as the ModelEntry a Project stores (see presetModelEntries): its facts, and
+ * `client_type` / `base_url` exactly where the row's catalog connection — per field, the
+ * row's own catalog value, else its group's (`catalog`, presetProviderTable) — differs from
+ * the table it will sit beside (`groups`): canonical client types compared, endpoints by
+ * sameEndpoint, a blank table field counting as absent. A row whose group's table carries the
+ * same value stores none and follows the table; a row whose group has no table (custom's
+ * Atria) stores its own.
+ */
+function catalogModelEntry(
+  m: ModelCatalogEntry,
+  catalog: ProviderTable,
+  groups: ProviderTable,
+): ModelEntry {
+  const group = groups[m.provider];
+  const clientType = canonicalClientType(m.clientType ?? catalog[m.provider]?.client_type);
+  const groupClientType = group?.client_type?.trim() || undefined;
+  const ownClientType =
+    clientType !== undefined &&
+    (groupClientType === undefined || !sameClientType(clientType, groupClientType))
+      ? clientType
+      : undefined;
+  const baseUrl = m.baseUrl ?? catalog[m.provider]?.base_url;
+  const groupBaseUrl = group?.base_url?.trim() || undefined;
+  const ownBaseUrl =
+    baseUrl !== undefined && (groupBaseUrl === undefined || !sameEndpoint(baseUrl, groupBaseUrl))
+      ? baseUrl
+      : undefined;
   return {
     provider: m.provider,
     model_id: m.modelId,
     ...(m.contextWindow !== undefined ? { context_window: m.contextWindow } : {}),
-    ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
+    ...(ownClientType !== undefined ? { client_type: ownClientType } : {}),
     ...(m.pricing ? { pricing: { ...m.pricing } } : {}),
     // ModelEntry.vision defaults to supported: only models that don't support images
     // explicitly persist false (drives read_file's hand-off of images to the vision model and input
     // image hand-off, see project-config.ts).
     ...(m.supportsVision ? {} : { vision: false }),
-    ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
+    ...(ownBaseUrl !== undefined ? { base_url: ownBaseUrl } : {}),
   };
 }
 

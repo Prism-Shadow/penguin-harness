@@ -1,23 +1,37 @@
 /**
  * The org chart's personnel dialogs. Hire a subordinate — in two sections: the Agent (an
  * existing one of the Project, or a new one: id, name, description, plugins defaulting to
- * agent-company and agent-development) and the position (title, duties, workspace, budget)
+ * agent-company and agent-development, where the confirmation shows the command a picked plugin's
+ * stdio MCP server runs on this server) and the position (title, duties, workspace, budget)
  * — the single-field edits, each showing the current value first: budget (a monthly cap,
- * typed in the reader's own currency and stored in USD, or unbounded) and reporting line
- * (anyone outside the employee's own subtree); and the desk renewal, which writes the
- * workspace and opens a fresh desk session in one confirm. Every single-field edit stops at
- * the shared ConfirmModal first (the confirmation names what the chart file will say), then
+ * typed in the reader's own currency and stored in USD, or unbounded), reporting line
+ * (anyone outside the employee's own subtree) and thinking level; and the desk renewal, which
+ * writes the workspace and opens a fresh desk session in one confirm. Every single-field edit
+ * stops at the shared ConfirmModal first (the confirmation names what will be written), then
  * calls the API; the renewal is its own confirmation and needs no second one.
+ *
+ * The thinking level is not the chart's: a desk reads it from the employee's Agent config at
+ * every new model context, and a ticket session opens on it, so that config is what the edit
+ * writes — the same write the development draft's picker makes. A level picked inside the desk
+ * session pins only that session, which then no longer follows the config; the dialog says so
+ * when the current desk is pinned.
  */
 import { useEffect, useState } from "react";
-import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
+import type { ChangeEvent } from "react";
+import type {
+  AgentModelConfigDto,
+  OrgEmployeeItem,
+  OrgHireRequest,
+  PluginItem,
+} from "@prismshadow/penguin-server/api";
 import {
   Button,
+  buttonClass,
   ConfirmModal,
   FieldError,
-  FieldHint,
   FieldLabel,
   FormPicker,
+  HiddenFileInput,
   ICONS,
   Input,
   Modal,
@@ -32,18 +46,32 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import {
+  avatarDataUrlFromImage,
+  loadAvatarImage,
+  releaseAvatarImage,
+} from "../../lib/avatar-image";
+import type { AvatarCrop } from "../../lib/avatar-image";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
+import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
 import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { MoneyPerMonthInput } from "./shared";
+import { StdioDisclosure } from "../plugins/plugin-mcp";
+import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
+import { EmployeeAvatar } from "./employee-avatar";
 import { managerCandidates } from "./org-chart-tree";
+import {
+  SELECTABLE_THINKING_LEVELS,
+  effectiveThinkingLevel,
+  thinkingLevelLabel,
+} from "../chat/thinking-level";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];
@@ -82,10 +110,14 @@ export function HireDialog({
   const [agentId, setAgentId] = useState("");
   const [newId, setNewId] = useState("");
   const [newName, setNewName] = useState("");
+  /** What the organization calls the employee; for a new Agent its name stands in when empty. */
+  const [employeeName, setEmployeeName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [plugins, setPlugins] = useState<string[]>(DEFAULT_EMPLOYEE_PLUGINS);
   const [pluginsOpen, setPluginsOpen] = useState(false);
-  const [library, setLibrary] = useState<PickableItem[] | null>(null);
+  const [library, setLibrary] = useState<Array<
+    PickableItem & Pick<PluginItem, "title" | "titleZh" | "mcpServers">
+  > | null>(null);
   const [title, setTitle] = useState("");
   const [duties, setDuties] = useState("");
   const [workspace, setWorkspace] = useState("");
@@ -104,6 +136,7 @@ export function HireDialog({
     setAgentId(candidates[0]?.agentId ?? "");
     setNewId("");
     setNewName("");
+    setEmployeeName("");
     setNewDescription("");
     setPlugins(DEFAULT_EMPLOYEE_PLUGINS);
     setTitle("");
@@ -166,6 +199,7 @@ export function HireDialog({
       // The box speaks the reader's currency; the chart file holds USD.
       const budgetUsd = toStoredUsd(budget, currency);
       const body: OrgHireRequest = {
+        ...(employeeName.trim() ? { name: employeeName.trim() } : {}),
         title: title.trim(),
         reportsTo: manager.agentId,
         ...(source === "existing"
@@ -239,28 +273,34 @@ export function HireDialog({
                 />
               </div>
               {source === "existing" ? (
-                <Select
-                  size="sm"
-                  label={S.company.chart.agent}
-                  required
-                  value={agentId}
-                  hint={S.company.chart.agentHint}
-                  {...(errors.agent !== undefined ? { error: errors.agent } : {})}
-                  onChange={(e) => {
-                    setAgentId(e.target.value);
-                    setErrors((p) => ({ ...p, agent: undefined }));
-                  }}
-                >
-                  {candidates.length === 0 ? (
-                    <option value="">{S.company.chart.noAgentsLeft}</option>
-                  ) : (
-                    candidates.map((a) => (
-                      <option key={a.agentId} value={a.agentId}>
-                        {agentDisplayName(a)} ({a.agentId})
-                      </option>
-                    ))
-                  )}
-                </Select>
+                <div>
+                  <InfoFieldLabel
+                    label={S.company.chart.agent}
+                    info={S.company.chart.agentHint}
+                    required
+                  />
+                  <Select
+                    size="sm"
+                    aria-label={S.company.chart.agent}
+                    required
+                    value={agentId}
+                    {...(errors.agent !== undefined ? { error: errors.agent } : {})}
+                    onChange={(e) => {
+                      setAgentId(e.target.value);
+                      setErrors((p) => ({ ...p, agent: undefined }));
+                    }}
+                  >
+                    {candidates.length === 0 ? (
+                      <option value="">{S.company.chart.noAgentsLeft}</option>
+                    ) : (
+                      candidates.map((a) => (
+                        <option key={a.agentId} value={a.agentId}>
+                          {agentDisplayName(a)} ({a.agentId})
+                        </option>
+                      ))
+                    )}
+                  </Select>
+                </div>
               ) : (
                 <>
                   <Input
@@ -280,7 +320,7 @@ export function HireDialog({
                     label={S.company.chart.agentName}
                     size="sm"
                     value={newName}
-                    hint={S.company.chart.agentNameHint}
+                    info={S.company.chart.agentNameHint}
                     onChange={(e) => setNewName(e.target.value)}
                   />
                   <Textarea
@@ -291,7 +331,10 @@ export function HireDialog({
                     onChange={(e) => setNewDescription(e.target.value)}
                   />
                   <div>
-                    <FieldLabel>{S.company.chart.plugins}</FieldLabel>
+                    <InfoFieldLabel
+                      label={S.company.chart.plugins}
+                      info={S.company.chart.pluginsHint}
+                    />
                     <FormPicker
                       open={pluginsOpen}
                       setOpen={setPluginsOpen}
@@ -319,7 +362,6 @@ export function HireDialog({
                         searchPlaceholder={S.plugins.searchPlaceholder}
                       />
                     </FormPicker>
-                    <FieldHint>{S.company.chart.pluginsHint}</FieldHint>
                   </div>
                 </>
               )}
@@ -327,6 +369,14 @@ export function HireDialog({
           </RuledSection>
           <RuledSection level={3} title={S.company.chart.hirePositionSection}>
             <div className="space-y-3">
+              <Input
+                label={S.company.chart.employeeName}
+                size="sm"
+                value={employeeName}
+                maxLength={64}
+                hint={S.company.chart.employeeNameHireHint}
+                onChange={(e) => setEmployeeName(e.target.value)}
+              />
               <Input
                 label={S.company.chart.employeeTitle}
                 required
@@ -344,7 +394,7 @@ export function HireDialog({
                 size="sm"
                 rows={2}
                 value={duties}
-                hint={S.company.chart.dutiesHint}
+                info={S.company.chart.dutiesHint}
                 onChange={(e) => setDuties(e.target.value)}
               />
               <Input
@@ -352,7 +402,7 @@ export function HireDialog({
                 size="sm"
                 value={workspace}
                 className="font-mono"
-                hint={S.company.chart.hireWorkspaceHint}
+                hint={S.company.chart.workspaceHint}
                 placeholder={hireAgentId}
                 onChange={(e) => setWorkspace(e.target.value)}
               />
@@ -360,8 +410,8 @@ export function HireDialog({
                 label={S.company.chart.budget}
                 currency={currency}
                 value={budget}
-                placeholder={S.company.chart.budgetPlaceholder}
-                hint={S.company.chart.budgetHint}
+                placeholder={S.company.noBudget}
+                info={S.company.chart.budgetHint}
                 {...(errors.budget !== undefined ? { error: errors.budget } : {})}
                 onChange={(text) => {
                   setBudget(text);
@@ -385,13 +435,32 @@ export function HireDialog({
         <p className="text-sm text-gray-600 dark:text-gray-300">
           {S.company.chart.hireConfirm(hireName, manager.name)}
         </p>
+        {/* A new employee's plugin with a stdio MCP server runs a command on this server whenever
+            a session of the Agent starts: said here, before the Agent is created. */}
+        {source === "new" && (
+          <StdioDisclosure
+            className="mt-3"
+            plugins={(library ?? []).filter((plugin) => plugins.includes(plugin.name))}
+          />
+        )}
       </ConfirmModal>
     </>
   );
 }
 
 /** Which single-field edit a dialog performs. */
-export type EmployeeEdit = "budget" | "reportsTo";
+export type EmployeeEdit = "budget" | "reportsTo" | "thinkingLevel";
+
+/** What the thinking-level edit reads before it offers anything: the Agent's own level ("" = none), what that resolves to, and the desk's pin ("" = none). */
+interface ThinkingLevelReading {
+  own: string;
+  effective: string;
+  pinned: string;
+}
+
+/** A level as the reader sees it: the tier's name, the raw value for anything unknown. */
+const levelName = (level: string): string =>
+  thinkingLevelLabel(S.chat.thinkingLevelNames, level) ?? level;
 
 export function EmployeeEditDialog({
   edit,
@@ -416,6 +485,8 @@ export function EmployeeEditDialog({
   const [error, setError] = useState<string | undefined>(undefined);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** The thinking-level edit's reading; null while it loads (or for the other edits). */
+  const [levels, setLevels] = useState<ThinkingLevelReading | null>(null);
   const managers = managerCandidates(employees, employee.agentId);
 
   useEffect(() => {
@@ -424,16 +495,62 @@ export function EmployeeEditDialog({
     setValue(
       edit === "budget"
         ? fromStoredUsd(employee.budget, currency)
-        : (employee.reportsTo ?? managers[0]?.agentId ?? ""),
+        : edit === "reportsTo"
+          ? (employee.reportsTo ?? managers[0]?.agentId ?? "")
+          : "",
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit, employee]);
+
+  // The thinking level lives in the Agent's config, the Project default stands in for an Agent
+  // without one, and the desk Session may carry a pin of its own: all three are read before
+  // anything is offered. Only the config is required; the other two degrade to "unknown".
+  useEffect(() => {
+    if (edit !== "thinkingLevel") return;
+    setLevels(null);
+    let cancelled = false;
+    const deskId = employee.desk?.sessionId;
+    Promise.all([
+      api.getAgentConfig(projectId, employee.agentId),
+      api.getChatDefaults(projectId).catch(() => null),
+      deskId === undefined ? null : api.getSession(deskId).catch(() => null),
+    ]).then(
+      ([config, defaults, desk]) => {
+        if (cancelled) return;
+        const own = config.config.model?.thinkingLevel ?? "";
+        const effective = effectiveThinkingLevel(own, defaults?.thinkingLevel);
+        const pin = desk?.session.thinkingLevel ?? "";
+        setLevels({
+          own,
+          effective,
+          pinned: thinkingLevelLabel(S.chat.thinkingLevelNames, pin) === null ? "" : pin,
+        });
+        // A stored level the menu does not offer ("none") starts the menu on the default tier.
+        setValue(
+          (SELECTABLE_THINKING_LEVELS as readonly string[]).includes(effective)
+            ? effective
+            : "medium",
+        );
+      },
+      (e: unknown) => {
+        if (cancelled) return;
+        toastError(apiErrorText(e));
+        onClose();
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit, employee, projectId]);
 
   const managerName = (id: string) => employees.find((e) => e.agentId === id)?.name ?? id;
   const title =
     edit === "budget"
       ? S.company.chart.budgetTitle(employee.name)
-      : S.company.chart.reportsToTitle(employee.name);
+      : edit === "thinkingLevel"
+        ? S.company.chart.thinkingLevelTitle(employee.name)
+        : S.company.chart.reportsToTitle(employee.name);
   /** What the confirmation names: the typed amount as it will be stored, read back in the reader's currency. */
   const budgetLabel = (raw: string) => {
     const usd = toStoredUsd(raw, currency);
@@ -442,7 +559,9 @@ export function EmployeeEditDialog({
   const confirmText =
     edit === "budget"
       ? S.company.chart.budgetConfirm(employee.name, budgetLabel(value))
-      : S.company.chart.reportsToConfirm(employee.name, managerName(value));
+      : edit === "thinkingLevel"
+        ? S.company.chart.thinkingLevelConfirm(employee.name, levelName(value))
+        : S.company.chart.reportsToConfirm(employee.name, managerName(value));
 
   const validate = (): boolean => {
     if (edit === "budget" && !isBudgetText(value)) {
@@ -453,6 +572,8 @@ export function EmployeeEditDialog({
       setError(S.company.chart.reportsToCycle);
       return false;
     }
+    // The menu only offers selectable tiers, and Save waits for the reading.
+    if (edit === "thinkingLevel" && levels === null) return false;
     return true;
   };
 
@@ -460,6 +581,16 @@ export function EmployeeEditDialog({
     if (edit === null) return;
     setBusy(true);
     try {
+      if (edit === "thinkingLevel") {
+        // The PUT carries only this key: the server merges it into the YAML, nothing else moves.
+        await api.putAgentConfig(projectId, employee.agentId, {
+          config: { model: { thinkingLevel: value as AgentModelConfigDto["thinkingLevel"] } },
+        });
+        toastSuccess(S.common.saved);
+        setConfirmOpen(false);
+        onSaved();
+        return;
+      }
       await api.patchOrgEmployee(
         projectId,
         orgId,
@@ -491,7 +622,7 @@ export function EmployeeEditDialog({
             <Button
               size="sm"
               variant="primary"
-              disabled={busy}
+              disabled={busy || (edit === "thinkingLevel" && levels === null)}
               onClick={() => {
                 if (validate()) setConfirmOpen(true);
               }}
@@ -514,8 +645,8 @@ export function EmployeeEditDialog({
               label={S.company.chart.budget}
               currency={currency}
               value={value}
-              placeholder={S.company.chart.budgetPlaceholder}
-              hint={S.company.chart.budgetHint}
+              placeholder={S.company.noBudget}
+              info={S.company.chart.budgetHint}
               {...(error !== undefined ? { error } : {})}
               autoFocus
               onChange={(text) => {
@@ -544,11 +675,16 @@ export function EmployeeEditDialog({
               value={employee.reportsTo === null ? "—" : managerName(employee.reportsTo)}
             />
             <div>
+              <InfoFieldLabel
+                label={S.company.chart.manager}
+                info={S.company.chart.reportsToHint}
+                required
+              />
               <Select
                 size="sm"
-                label={S.company.chart.manager}
+                aria-label={S.company.chart.manager}
+                required
                 value={value}
-                hint={S.company.chart.reportsToHint}
                 {...(error !== undefined ? { error } : {})}
                 onChange={(e) => {
                   setValue(e.target.value);
@@ -563,6 +699,43 @@ export function EmployeeEditDialog({
               </Select>
               {managers.length === 0 && <FieldError>{S.company.chart.reportsToCycle}</FieldError>}
             </div>
+          </div>
+        )}
+        {edit === "thinkingLevel" && (
+          <div className="space-y-3">
+            <CurrentValue
+              value={
+                levels === null
+                  ? "…"
+                  : levels.own === ""
+                    ? S.company.chart.thinkingLevelDefault(levelName(levels.effective))
+                    : levelName(levels.own)
+              }
+            />
+            <div>
+              <InfoFieldLabel
+                label={S.chat.thinkingLevel}
+                info={S.company.chart.thinkingLevelInfo}
+              />
+              <Select
+                size="sm"
+                aria-label={S.chat.thinkingLevel}
+                value={value}
+                disabled={levels === null}
+                onChange={(e) => setValue(e.target.value)}
+              >
+                {SELECTABLE_THINKING_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {levelName(level)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            {levels !== null && levels.pinned !== "" && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {S.company.chart.thinkingLevelPinned(levelName(levels.pinned))}
+              </p>
+            )}
           </div>
         )}
       </Modal>
@@ -594,6 +767,163 @@ export function EmployeeEditDialog({
  * that fails after the chart was already rewritten keeps the dialog open and asks the page to
  * reload, so what is on screen never disagrees with the file.
  */
+/**
+ * What the organization calls an employee, and what it looks like: the chart entry's `name`
+ * and the picture in the organization's `avatars/`. Both are the organization's, not the
+ * Agent's — the same Agent may be someone else elsewhere. The picture is written as it is
+ * picked (the picker re-encodes it to fit, like a person's own); the name on Save.
+ */
+export function EmployeeProfileDialog({
+  open,
+  projectId,
+  orgId,
+  employee,
+  onClose,
+  onChanged,
+}: {
+  open: boolean;
+  projectId: string;
+  orgId: string;
+  employee: OrgEmployeeItem;
+  onClose: () => void;
+  /** The name or the picture was written: the caller re-reads the chart. */
+  onChanged: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+
+  // Reset as the dialog opens or turns to another employee — not on every re-read of the
+  // chart, which a picture change triggers and which would wipe a name still being typed.
+  useEffect(() => {
+    if (!open) return;
+    setName(employee.givenName ?? "");
+    setError(undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, employee.agentId]);
+
+  const run = async (work: () => Promise<unknown>, done?: () => void) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await work();
+      onChanged();
+      done?.();
+    } catch (e) {
+      setError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** The picked image, decoded and waiting for its crop to be chosen. */
+  const [cropping, setCropping] = useState<HTMLImageElement | null>(null);
+  const endCrop = () => {
+    if (cropping !== null) releaseAvatarImage(cropping);
+    setCropping(null);
+  };
+
+  const onPickFile = (e: ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file === undefined) return;
+    setError(undefined);
+    loadAvatarImage(file).then(setCropping, () => setError(S.profile.avatarUnreadable));
+  };
+
+  const onCropped = (crop: AvatarCrop) => {
+    const image = cropping;
+    if (image === null) return;
+    void run(async () => {
+      const dataUrl = avatarDataUrlFromImage(image, crop);
+      if (dataUrl === null) throw new Error(S.profile.avatarTooLarge);
+      await api.putOrgEmployeeAvatar(projectId, orgId, employee.agentId, dataUrl);
+    }).finally(endCrop);
+  };
+
+  const save = () =>
+    run(
+      () =>
+        api.patchOrgEmployee(projectId, orgId, employee.agentId, {
+          name: name.trim() === "" ? null : name.trim(),
+        }),
+      () => {
+        toastSuccess(S.company.chart.saved);
+        onClose();
+      },
+    );
+
+  return (
+    <Modal
+      open={open}
+      title={S.company.chart.profileTitle(employee.name)}
+      onClose={() => (busy ? undefined : onClose())}
+      footer={
+        <>
+          <Button size="sm" onClick={onClose} disabled={busy}>
+            {S.common.cancel}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy || name.trim() === (employee.givenName ?? "")}
+            onClick={() => void save()}
+          >
+            {S.common.save}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <EmployeeAvatar
+            id={employee.agentId}
+            name={employee.name}
+            size={48}
+            className="rounded-lg"
+          />
+          <label
+            className={`shrink-0 ${buttonClass("secondary", "sm")} ${busy ? "pointer-events-none opacity-60" : ""}`}
+          >
+            <HiddenFileInput
+              accept="image/png,image/jpeg,image/webp"
+              disabled={busy}
+              onChange={onPickFile}
+            />
+            {S.profile.changeAvatar}
+          </label>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="shrink-0"
+            disabled={busy || employee.avatarRev === undefined}
+            onClick={() =>
+              void run(() => api.putOrgEmployeeAvatar(projectId, orgId, employee.agentId, null))
+            }
+          >
+            {S.profile.restoreDefault}
+          </Button>
+        </div>
+        <AvatarCropDialog image={cropping} busy={busy} onCancel={endCrop} onConfirm={onCropped} />
+        <Input
+          label={S.company.chart.employeeName}
+          size="sm"
+          value={name}
+          maxLength={64}
+          disabled={busy}
+          placeholder={employee.agentId}
+          hint={S.company.chart.employeeNameHint(employee.agentId)}
+          {...(error !== undefined ? { error } : {})}
+          onChange={(e) => {
+            setName(e.target.value);
+            setError(undefined);
+          }}
+        />
+      </div>
+    </Modal>
+  );
+}
+
 export function DeskRenewDialog({
   open,
   projectId,
@@ -678,11 +1008,8 @@ export function DeskRenewDialog({
       }
     >
       <div className="space-y-3">
-        {/* This dialog is its own confirmation, so what it will do stays on screen instead of
-            hiding behind a "?" the reader would have to open before deciding. */}
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {S.company.chart.renewDeskExplain}
-        </p>
+        {/* What confirming does sits behind the field's "?": the title and the button already
+            say a new desk session opens, and the only field is the workspace it writes. */}
         <Input
           label={S.company.chart.workspace}
           required
@@ -691,6 +1018,7 @@ export function DeskRenewDialog({
           className="font-mono"
           placeholder="."
           hint={S.company.chart.workspaceHint}
+          info={S.company.chart.renewDeskExplain}
           {...(error !== undefined ? { error } : {})}
           autoFocus
           onChange={(e) => {

@@ -8,6 +8,9 @@
  * credential with `sk-1…abcd`. Neither failure says anything at the time; both are found
  * later, by the machine, as an auth error.
  *
+ * The groups' connections (`[providers.<id>]`) travel in the same PUT: our values, keys in
+ * plaintext, merged into theirs per field — a field we do not hold is left alone there.
+ *
  * The machine's API is faked. What travels between the two servers is HTTP through a tunnel
  * that already exists, so there is nothing ssh-shaped left to exercise at this level.
  */
@@ -83,9 +86,17 @@ const local = (over: Partial<ModelEntry> = {}): ModelEntry => ({
 
 /** What that machine's GET answers: keys masked, exactly as the real endpoint reports them. */
 const remoteTable = (over: Partial<ModelsResponse> = {}): ModelsResponse => ({
+  providers: {},
   models: [],
   ...over,
 });
+
+/** A remote row's effective connection, as its GET reports one; the sync never reads it. */
+const followsNothing = {
+  baseUrlSource: "none",
+  clientTypeSource: "none",
+  apiKeySource: "none",
+} as const;
 
 describe("planModelSync", () => {
   it("sends our entry with its key in plaintext", () => {
@@ -106,6 +117,7 @@ describe("planModelSync", () => {
             isDefault: false,
             contextWindow: 200000,
             credential: { apiKeyMasked: "sk-a…wxyz", baseUrl: "https://theirs.example" },
+            effective: followsNothing,
           },
         ],
       }),
@@ -128,6 +140,7 @@ describe("planModelSync", () => {
             modelId: "deepseek-v4-flash",
             isDefault: true,
             credential: { apiKeyMasked: "sk-o…lder" },
+            effective: followsNothing,
           },
         ],
       }),
@@ -155,6 +168,26 @@ describe("planModelSync", () => {
     const ours = { provider: "deepseek", modelId: "deepseek-v4-flash" };
     expect(planModelSync(mine, remoteTable({ defaultModel: theirs })).defaultModel).toEqual(ours);
     expect(planModelSync(mine, remoteTable()).defaultModel).toEqual(ours);
+  });
+
+  it("sends our group connections with their keys in plaintext, omitting what we do not hold", () => {
+    const plan = planModelSync(
+      {
+        models: [],
+        providers: {
+          tokendance: { api_key: "td-group-0123456789", created_at: "2026-10-01T00:00:00Z" },
+          "my-lab": { base_url: "https://lab.example/v1", client_type: "openai-chat" },
+          "penguin-go": { client_type: "google-genai", api_key: "pg-group-0123456789" },
+        },
+      },
+      remoteTable({ providers: { tokendance: { apiKeyMasked: "td-t…heir" } } }),
+    );
+    expect(plan.providers).toEqual({
+      tokendance: { apiKey: "td-group-0123456789" },
+      "my-lab": { baseUrl: "https://lab.example/v1", clientType: "openai-chat" },
+      "penguin-go": { clientType: "google-genai", apiKey: "pg-group-0123456789" },
+    });
+    expect(JSON.stringify(plan)).not.toContain("…");
   });
 
   it("does not name a pointer that is not in the table it sends", () => {
@@ -222,6 +255,32 @@ describe("syncModelsToMachine, against a scripted machine", () => {
       ],
     });
     expect(machine.puts.map((p) => p.path)).toEqual(["/api/projects/default_project/models"]);
+  });
+
+  it("a Project whose only configuration is a group key is written; one with nothing to carry is left alone", async () => {
+    const machine = fakeMachine({
+      "/api/projects": {
+        status: 200,
+        body: { projects: [{ projectId: "keyed" }, { projectId: "bare" }] },
+      },
+      "/api/projects/keyed/models": { status: 200, body: remoteTable() },
+      "/api/projects/bare/models": { status: 200, body: remoteTable() },
+    });
+    const outcome = await syncModelsToMachine({
+      api: machine.api,
+      projects: ["keyed", "bare"],
+      loadLocal: async (projectId): Promise<LocalModels> =>
+        projectId === "keyed"
+          ? { models: [], providers: { tokendance: { api_key: "td-group-0123456789" } } }
+          : { models: [], providers: {} },
+    });
+    expect(outcome).toMatchObject({ kind: "synced", projects: ["keyed"] });
+    expect(machine.puts).toEqual([
+      {
+        path: "/api/projects/keyed/models",
+        body: { models: [], providers: { tokendance: { apiKey: "td-group-0123456789" } } },
+      },
+    ]);
   });
 
   it("the channel giving out fails the sync as a whole — nothing after it would fare better", async () => {
@@ -304,6 +363,39 @@ describe("syncModelsToMachine, against a running server", () => {
       const theirs = config.models.find((m) => m.model_id === "claude-opus-5");
       expect(ours?.api_key).toBe("sk-ours-0123456789");
       expect(theirs?.api_key).toBe("sk-theirs-9876543210");
+    } finally {
+      server.close();
+      await machine.cleanup();
+    }
+  });
+
+  it("lands a group key and a bare model of the user's on it, with no row of ours keyed", async () => {
+    const machine = await createTestApp();
+    const { server, port } = await listening(machine.app.fetch);
+    try {
+      const login = await post(port, "/api/auth/login", {
+        userId: "admin",
+        password: machine.adminPassword,
+      });
+      const cookie = login.setCookie.map((line) => line.split(";")[0]?.trim() ?? "").join("; ");
+
+      const outcome = await syncModelsToMachine({
+        api: machineApi(new http.Agent(), port, cookie),
+        projects: ["default_project"],
+        // What a Project looks like once its keys live on its groups: no row carries one.
+        loadLocal: async () => ({
+          models: [{ provider: "openrouter", model_id: "acme/hand-added" }],
+          providers: { openrouter: { api_key: "sk-or-group-0123456789" } },
+        }),
+      });
+      expect(outcome).toMatchObject({ kind: "synced", projects: ["default_project"] });
+
+      const config = await machine.deps.projectConfigService.loadConfig("default_project");
+      expect(config.providers?.openrouter?.api_key).toBe("sk-or-group-0123456789");
+      expect(config.models.find((m) => m.model_id === "acme/hand-added")).toEqual({
+        provider: "openrouter",
+        model_id: "acme/hand-added",
+      });
     } finally {
       server.close();
       await machine.cleanup();

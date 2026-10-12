@@ -1,9 +1,10 @@
 /**
  * The built-in browser's toolbar: back, forward, reload (stop while the page loads), Home
  * while a homepage is set, the address bar, the mark of an agent at work while one drives the
- * browser, the load warning while the server gives one, and the overflow menu — import from a
- * system browser, clear browsing data, set the homepage, open the page in the system browser,
- * developer tools.
+ * browser, the load warning while the server gives one, and the overflow menu — on the desktop,
+ * which browser the agents drive and how the user's Chrome stands (backend-menu.tsx), then
+ * import from a system browser, clear browsing data, set the homepage, open the page in the
+ * system browser, developer tools.
  *
  * Icon buttons are flat: no fill at rest or on hover, the glyph darkens instead, and each is
  * named by a tooltip below it. The agent mark and the load warning are icons with their tooltip,
@@ -28,7 +29,8 @@ import { toneInk } from "../../lib/tone";
 import { AddressBar } from "./address-bar";
 import type { BrowserActivity } from "./browser-state";
 
-function ToolButton({
+/** A flat icon button of the browser's toolbars, named by its tooltip. */
+export function ToolButton({
   label,
   disabled = false,
   tooltipSuppressed = false,
@@ -85,6 +87,32 @@ export interface BrowserToolbarProps {
   /** Null when the page is not a web page the system browser could open. */
   onOpenExternal: (() => void) | null;
   onDevTools: () => void;
+  /**
+   * Rows above the menu's own (the backend choice and the Chrome row), handed the menu's close;
+   * a rule follows them.
+   */
+  menuTop?: (close: () => void) => ReactNode;
+}
+
+/** The mark of an agent at work in the browser: an icon in the busy tone, named by its tooltip. */
+export function AgentBusyMark({ activity }: { activity: BrowserActivity | null }) {
+  if (activity === null) return null;
+  // A server newer than this Web App may name an action the dictionary does not know yet;
+  // the raw name still says more than nothing.
+  const actions = S.builtinBrowser.actions as Record<string, string | undefined>;
+  const busyLabel = S.builtinBrowser.agentBusy(actions[activity.action] ?? activity.action);
+  return (
+    <Tooltip label={busyLabel} placement="bottom">
+      <span
+        role="img"
+        aria-label={busyLabel}
+        data-testid="builtin-browser-agent-busy"
+        className={`flex h-7 w-7 shrink-0 items-center justify-center ${toneInk.busy}`}
+      >
+        <GlyphIcon d={ICONS.robot} size={ICON_SIZE.iconButton} />
+      </span>
+    </Tooltip>
+  );
 }
 
 export function BrowserToolbar(props: BrowserToolbarProps) {
@@ -94,13 +122,6 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
     setMenuOpen(false);
     run();
   };
-  // A server newer than this Web App may name an action the dictionary does not know yet;
-  // the raw name still says more than nothing.
-  const actions = S.builtinBrowser.actions as Record<string, string | undefined>;
-  const busyLabel =
-    activity !== null
-      ? S.builtinBrowser.agentBusy(actions[activity.action] ?? activity.action)
-      : null;
 
   return (
     <div className="flex shrink-0 items-center gap-1 border-b border-line bg-canvas px-2 py-1">
@@ -143,18 +164,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
         onNavigate={props.onNavigate}
         inputRef={props.addressRef}
       />
-      {busyLabel !== null && (
-        <Tooltip label={busyLabel} placement="bottom">
-          <span
-            role="img"
-            aria-label={busyLabel}
-            data-testid="builtin-browser-agent-busy"
-            className={`flex h-7 w-7 shrink-0 items-center justify-center ${toneInk.busy}`}
-          >
-            <GlyphIcon d={ICONS.robot} size={ICON_SIZE.iconButton} />
-          </span>
-        </Tooltip>
-      )}
+      <AgentBusyMark activity={activity} />
       {props.loadWarning !== null && (
         <Tooltip label={props.loadWarning} placement="bottom">
           <span
@@ -185,6 +195,12 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
         }
       >
         <Menu density="sm">
+          {props.menuTop !== undefined && (
+            <>
+              {props.menuTop(() => setMenuOpen(false))}
+              <MenuSeparator />
+            </>
+          )}
           <MenuItem
             glyph={ICONS.download}
             label={S.builtinBrowser.importAction}

@@ -2,8 +2,8 @@
  * The floating launcher for the workbench — an AssistiveTouch-style ball floating clear of
  * the chat body's right edge while no dock surface is up, so the dock's panels stay
  * discoverable for a user who never notices the toolbar's toggle. The ball carries a short
- * caption, and a click fans out one round button per panel kind (plus the terminal) onto a
- * tight ring centred on it and opening leftward. The entries are glyphs alone; the caption
+ * caption, and a click fans out one round button per panel the registry offers here (plus the
+ * terminal) onto a tight ring centred on it and opening leftward. The entries are glyphs alone; the caption
  * under the ball is where their names are read — it shows the hovered or focused entry's
  * name — because seven name pills floating around the ball is what pushed the ring far
  * enough out to stop reading as one object. The ball is that readout's other half: it draws
@@ -56,17 +56,9 @@ import { S } from "../../lib/strings";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { toneInk } from "../../lib/tone";
 import { subscribeTerminals, terminalApiSupported } from "../terminal/terminal-list";
-import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-store";
 import { openTerminalInDock } from "./dock-terminal";
-import { panelGlyph, panelLabel } from "./panel-meta";
-import {
-  PANEL_KINDS,
-  dockVersion,
-  isDockVisible,
-  isNarrow,
-  openPanel,
-  subscribeDock,
-} from "./dock-state";
+import { useDockPanels } from "./panel-registry";
+import { dockVersion, isDockVisible, isNarrow, openPanel, subscribeDock } from "./dock-state";
 import {
   FAN_ENTRY_SIZE,
   LAUNCHER_CAPTION_HEIGHT,
@@ -108,7 +100,6 @@ export function DockLauncher({ agentsPending }: DockLauncherProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
   useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
   const terminalSupported = useSyncExternalStore(subscribeTerminals, terminalApiSupported);
-  const browserOffered = useSyncExternalStore(subscribeBrowser, isBrowserOffered);
   const narrow = isNarrow();
   const visible = shouldShowLauncher({
     rightDockVisible: isDockVisible("right"),
@@ -121,7 +112,6 @@ export function DockLauncher({ agentsPending }: DockLauncherProps) {
     <FloatingLauncher
       agentsPending={agentsPending}
       terminalSupported={terminalSupported}
-      browserOffered={browserOffered}
       narrow={narrow}
     />
   );
@@ -148,16 +138,16 @@ interface FanEntry {
 function FloatingLauncher({
   agentsPending,
   terminalSupported,
-  browserOffered,
   narrow,
 }: {
   agentsPending: boolean;
   terminalSupported: boolean;
-  /** The built-in browser can be shown (the desktop app's own window, with a shell that hosts it). */
-  browserOffered: boolean;
   /** Below the breakpoint the docks merge, so an entry names no dock and lets the store pick. */
   narrow: boolean;
 }) {
+  // The panels offered here, in registry order (the built-in browser only in the desktop app's
+  // own window): one fan entry each.
+  const panels = useDockPanels();
   const reducedMotion = usePrefersReducedMotion();
   const reducedMotionRef = useRef(reducedMotion);
   reducedMotionRef.current = reducedMotion;
@@ -414,15 +404,14 @@ function FloatingLauncher({
   // render as one merged surface, so it names none and the store lands the tab where the
   // toolbar's own panel buttons land it.
   const target = narrow ? undefined : "right";
-  const kinds = PANEL_KINDS.filter((kind) => kind !== "builtin-browser" || browserOffered);
-  const entries: FanEntry[] = kinds.map((kind) => ({
-    key: kind,
-    label: panelLabel(kind),
-    glyphAt: (size) => panelGlyph(kind, size),
-    badge: kind === "agents" && agentsPending,
-    testId: `dock-launcher-open-${kind}`,
+  const entries: FanEntry[] = panels.map((definition) => ({
+    key: definition.id,
+    label: definition.label(),
+    glyphAt: (size) => <GlyphIcon d={definition.glyph} size={size} />,
+    badge: definition.id === "agents" && agentsPending,
+    testId: `dock-launcher-open-${definition.id}`,
     // The dock becomes visible with the tab, and the launcher unmounts with it.
-    choose: () => openPanel(kind, target),
+    choose: () => openPanel(definition.id, target),
   }));
   if (terminalSupported) {
     entries.push({

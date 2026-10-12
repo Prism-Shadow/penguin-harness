@@ -278,6 +278,7 @@ type SpawnConfiner = (
 interface ConfinedSpawn {
   argv: readonly string[];                  // spawned instead of the original argv
   env?: Readonly<Record<string, string>>;   // entries the sandbox runner itself needs, laid over the command's env
+  runnerLines?: readonly string[];          // lines the runner prints before the command; dropped from the head of its stderr
 }
 
 // The policy itself (@prismshadow/penguin-core/plugin). "danger-full-access" with no network cut

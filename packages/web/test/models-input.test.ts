@@ -12,13 +12,34 @@
  * - Which env fallback variables a key hint may promise (detectedEnvKeys):
  *   only those the server reported a value for.
  * - Whether a row has a key (hasKey) and what the card prints for it
- *   (keyStatusText): the shared hasConfiguredKey rule (stored key or a masked
- *   env fallback) plus the dialog's unsaved-edit notions.
+ *   (keyStatusText / keyStatusNote): the key the row is used with — its own,
+ *   its group's or a masked env fallback — plus the dialog's unsaved-edit
+ *   notions; a key inherited from the group reads like the model's own, with
+ *   its source on hover.
+ * - Where a moved model's protocol lands (clientTypeAfterProviderChange): a
+ *   group that decides one is followed rather than copied; a group that sets
+ *   none decides nothing, whatever the catalog pins.
+ * - What a blank API key or base URL field says (connectionPlaceholders):
+ *   where the group's setting covers it, exactly "leave blank to use the
+ *   group's setting" — never the group's URL or masked key; where the group's
+ *   key does not reach the model's own endpoint, that it does not apply; where
+ *   the group sets nothing, the field's own hint (the environment's variable,
+ *   the client's default endpoint, the shape of a required URL).
+ * - The Details fold (model-dialog-details.tsx): closed when a dialog opens;
+ *   the add dialog shows only the model id, display name and group, folding
+ *   the connection, the test and the rest; the settings dialog keeps the API
+ *   key, base URL and actions in view and folds the limits, prices and
+ *   capability switches; a refused save opens the fold when a field to fix is
+ *   inside it and focuses the first field to fix.
  */
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import {
   capabilityRow,
   clientTypeAfterProviderChange,
+  connectionPlaceholders,
   decimalOnly,
   detectedEnvKeys,
   digitsOnly,
@@ -26,12 +47,26 @@ import {
   modelLabelOf,
   priceToSubmit,
   hasKey,
+  keyStatusNote,
   keyStatusText,
   nextPointers,
   rowRef,
   toRow,
 } from "../src/features/models/models-page";
+import type { RowState } from "../src/features/models/models-page";
+import {
+  DetailsFold,
+  foldedSlots,
+  revealOnSave,
+} from "../src/features/models/model-dialog-details";
 import { S } from "../src/lib/strings";
+
+/** A saved model as GET /models sends it; the effective connection is irrelevant to these rules. */
+const dto = (m: Omit<ModelInfo, "effective" | "isDefault">): ModelInfo => ({
+  isDefault: false,
+  effective: { baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" },
+  ...m,
+});
 
 describe("priceToSubmit", () => {
   // The catalog bills this row at CNY 0.05 per million, i.e. $0.00714285714... The form can
@@ -102,55 +137,60 @@ describe("decimalOnly (price)", () => {
 describe("detectedEnvKeys (variables a key hint may promise)", () => {
   it("collects the variables the server reported a value for, and only those", () => {
     const rows = [
-      toRow({
-        provider: "anthropic",
-        modelId: "claude-sonnet-4-6",
-        envKey: "ANTHROPIC_API_KEY",
-        envKeyMasked: "sk-a…3456",
-        isDefault: false,
-      }),
+      toRow(
+        dto({
+          provider: "anthropic",
+          modelId: "claude-sonnet-4-6",
+          envKey: "ANTHROPIC_API_KEY",
+          envKeyMasked: "sk-a…3456",
+        }),
+      ),
       // Variable name known, no value reported: nothing here proves it is set, so a hint
       // must not tell the user that leaving the key empty is covered.
-      toRow({
-        provider: "deepseek",
-        modelId: "deepseek-v4-pro",
-        envKey: "DEEPSEEK_API_KEY",
-        isDefault: false,
-      }),
-      toRow({ provider: "custom", modelId: "my-model", isDefault: false }),
+      toRow(
+        dto({
+          provider: "deepseek",
+          modelId: "deepseek-v4-pro",
+          envKey: "DEEPSEEK_API_KEY",
+        }),
+      ),
+      toRow(dto({ provider: "custom", modelId: "my-model" })),
     ];
     expect(detectedEnvKeys(rows)).toEqual(new Set(["ANTHROPIC_API_KEY"]));
     expect(detectedEnvKeys([])).toEqual(new Set());
   });
 });
 
-describe("hasKey / keyStatusText (the model card's key judgement)", () => {
-  const stored = toRow({
-    provider: "moonshot",
-    modelId: "kimi-k2.6",
-    credential: { apiKeyMasked: "sk-o\u20261111" },
-    isDefault: false,
-  });
-  const envBacked = toRow({
-    provider: "anthropic",
-    modelId: "claude-sonnet-4-6",
-    envKey: "ANTHROPIC_API_KEY",
-    envKeyMasked: "sk-a\u20263456",
-    isDefault: false,
-  });
-  const bare = toRow({ provider: "custom", modelId: "my-model", isDefault: false });
+describe("hasKey / keyStatusText / keyStatusNote (the model card's key judgement)", () => {
+  const stored = toRow(
+    dto({
+      provider: "moonshot",
+      modelId: "kimi-k2.6",
+      credential: { apiKeyMasked: "sk-o\u20261111" },
+    }),
+  );
+  const envBacked = toRow(
+    dto({
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      envKey: "ANTHROPIC_API_KEY",
+      envKeyMasked: "sk-a\u20263456",
+    }),
+  );
+  const bare = toRow(dto({ provider: "custom", modelId: "my-model" }));
 
   it("a stored key or a masked env fallback both count; a bare row does not", () => {
     expect(hasKey(stored)).toBe(true);
     expect(hasKey(envBacked)).toBe(true);
     expect(hasKey(bare)).toBe(false);
     // Variable name only: nothing proves it is set, so it is still key-less.
-    const nameOnly = toRow({
-      provider: "deepseek",
-      modelId: "deepseek-v4-pro",
-      envKey: "DEEPSEEK_API_KEY",
-      isDefault: false,
-    });
+    const nameOnly = toRow(
+      dto({
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+        envKey: "DEEPSEEK_API_KEY",
+      }),
+    );
     expect(hasKey(nameOnly)).toBe(false);
   });
 
@@ -182,6 +222,30 @@ describe("hasKey / keyStatusText (the model card's key judgement)", () => {
       }),
     ).toBe("sk-a\u20263456");
   });
+
+  /** A group whose table holds a key: Enter key, Connect or the group settings wrote it. */
+  const keyedGroup = { apiKeyMasked: "sk-g\u20262222" };
+
+  it("a model with no key of its own uses its group's, which reads like its own, sourced on hover", () => {
+    expect(hasKey(bare, keyedGroup)).toBe(true);
+    expect(keyStatusText(bare, keyedGroup)).toBe("sk-g\u20262222");
+    expect(keyStatusNote(bare, keyedGroup)).toBe(S.models.keyFromGroup);
+    // The environment's key gets the same treatment; a key of the model's own needs no note.
+    expect(keyStatusNote(envBacked)).toBe(S.models.readFromEnv);
+    expect(keyStatusNote(stored, keyedGroup)).toBeUndefined();
+    expect(keyStatusNote(bare)).toBeUndefined();
+  });
+
+  it("a key of the model's own wins over the group's, and clearing it falls back to the group's", () => {
+    expect(keyStatusText(stored, keyedGroup)).toBe("sk-o\u20261111");
+    expect(keyStatusText({ ...stored, clearApiKey: true }, keyedGroup)).toBe("sk-g\u20262222");
+    expect(hasKey({ ...stored, clearApiKey: true }, keyedGroup)).toBe(true);
+  });
+
+  it("a group table without a key lends none", () => {
+    expect(hasKey(bare, { baseUrl: "https://proxy.example/v1" })).toBe(false);
+    expect(keyStatusText(bare, { baseUrl: "https://proxy.example/v1" })).toBe(S.models.noKey);
+  });
 });
 
 describe("clientTypeAfterProviderChange", () => {
@@ -190,16 +254,34 @@ describe("clientTypeAfterProviderChange", () => {
     expect(clientTypeAfterProviderChange("custom", "anthropic-official")).toBe("openai-chat");
     expect(clientTypeAfterProviderChange("google", "openai-chat")).toBe("openai-chat");
   });
+
+  it("follows a group that decides the protocol, rather than copying it onto the model", () => {
+    // TokenDance's table holds Chat Completions: a model moved in stores nothing.
+    expect(
+      clientTypeAfterProviderChange("tokendance", "ant-messages", { clientType: "openai-chat" }),
+    ).toBe("");
+    // The same group with its protocol cleared decides nothing: the model keeps its own.
+    expect(clientTypeAfterProviderChange("tokendance", "ant-messages")).toBe("ant-messages");
+    // Custom with a protocol set in its group settings: a model moved in from a vendor group
+    // follows it, while a generic protocol the model already chose stays its own.
+    const groupProtocol = { clientType: "openai-responses" };
+    expect(clientTypeAfterProviderChange("custom", "", groupProtocol)).toBe("");
+    expect(clientTypeAfterProviderChange("custom", "anthropic-official", groupProtocol)).toBe("");
+    expect(clientTypeAfterProviderChange("custom", "ant-messages", groupProtocol)).toBe(
+      "ant-messages",
+    );
+  });
 });
 
 describe("toRow (DTO → row edit state)", () => {
   it("provider and modelId are both plain entry fields (zero parsing); the loaded identity is a paired reference", () => {
-    const row = toRow({
-      provider: "anthropic",
-      modelId: "claude-sonnet-4-6",
-      displayName: "Claude Sonnet 4.6",
-      isDefault: false,
-    });
+    const row = toRow(
+      dto({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        displayName: "Claude Sonnet 4.6",
+      }),
+    );
     expect(row.provider).toBe("anthropic");
     expect(row.modelId).toBe("claude-sonnet-4-6");
     expect(row.original).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-6" });
@@ -207,54 +289,55 @@ describe("toRow (DTO → row edit state)", () => {
   });
 
   it("carries the env-fallback name and its masked preview through to the row", () => {
-    const row = toRow({
-      provider: "anthropic",
-      modelId: "claude-sonnet-4-6",
-      envKey: "ANTHROPIC_API_KEY",
-      envKeyMasked: "sk-a…3456",
-      isDefault: false,
-    });
+    const row = toRow(
+      dto({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        envKey: "ANTHROPIC_API_KEY",
+        envKeyMasked: "sk-a…3456",
+      }),
+    );
     expect(row.envKey).toBe("ANTHROPIC_API_KEY");
     expect(row.envKeyMasked).toBe("sk-a…3456");
-    expect(toRow({ provider: "custom", modelId: "m", isDefault: false }).envKeyMasked).toBe(
-      undefined,
-    );
+    expect(toRow(dto({ provider: "custom", modelId: "m" })).envKeyMasked).toBe(undefined);
   });
 
   it("providers outside the catalog list are kept as-is (only the display layer buckets them under custom)", () => {
-    const row = toRow({ provider: "myproxy", modelId: "claude-sonnet-4-6", isDefault: false });
+    const row = toRow(dto({ provider: "myproxy", modelId: "claude-sonnet-4-6" }));
     expect(row.provider).toBe("myproxy");
     expect(row.modelId).toBe("claude-sonnet-4-6");
     expect(row.original).toEqual({ provider: "myproxy", modelId: "claude-sonnet-4-6" });
   });
 
   it("an upstream id may itself contain `/` (gateway models): still the full model_id, not mistaken for a group", () => {
-    const row = toRow({ provider: "openrouter", modelId: "xiaomi/mimo-v2.5", isDefault: false });
+    const row = toRow(dto({ provider: "openrouter", modelId: "xiaomi/mimo-v2.5" }));
     expect(row.provider).toBe("openrouter");
     expect(row.modelId).toBe("xiaomi/mimo-v2.5");
   });
 
   it("carries the per-model max output tokens through; absent = '' (inherit the Agent setting)", () => {
-    const capped = toRow({
-      provider: "custom",
-      modelId: "local-qwen",
-      maxTokens: 8000,
-      isDefault: false,
-    });
+    const capped = toRow(
+      dto({
+        provider: "custom",
+        modelId: "local-qwen",
+        maxTokens: 8000,
+      }),
+    );
     expect(capped.maxTokens).toBe("8000");
-    const plain = toRow({ provider: "custom", modelId: "local-qwen", isDefault: false });
+    const plain = toRow(dto({ provider: "custom", modelId: "local-qwen" }));
     expect(plain.maxTokens).toBe("");
   });
 
   it("carries the per-model fast mode through; absent = off (the toggle's default)", () => {
-    const fast = toRow({
-      provider: "custom",
-      modelId: "local-qwen",
-      fastMode: true,
-      isDefault: false,
-    });
+    const fast = toRow(
+      dto({
+        provider: "custom",
+        modelId: "local-qwen",
+        fastMode: true,
+      }),
+    );
     expect(fast.fastMode).toBe(true);
-    const plain = toRow({ provider: "custom", modelId: "local-qwen", isDefault: false });
+    const plain = toRow(dto({ provider: "custom", modelId: "local-qwen" }));
     expect(plain.fastMode).toBe(false);
   });
 });
@@ -521,5 +604,137 @@ describe("capabilityRow (vision support + fast mode sharing one row)", () => {
     // A preset model whose client rejects fast mode has no capability switches at all: the
     // grid must not render, or the dialog's space-y would draw a gap around an empty box.
     expect(capabilityRow({ vision: false, fastMode: false }).show).toBe(false);
+  });
+});
+
+describe("connectionPlaceholders (what a blank API key or base URL field says)", () => {
+  const draft = (
+    patch: Partial<Pick<RowState, "provider" | "modelId" | "baseUrl" | "credential">> = {},
+  ) => ({
+    provider: "openrouter",
+    modelId: "x-ai/grok-5",
+    baseUrl: "",
+    ...patch,
+  });
+  const GROUP = {
+    baseUrl: "https://openrouter.ai/api/v1",
+    clientType: "openai-responses",
+    apiKeyMasked: "sk-or…4444",
+  };
+  const plain = { baseUrlRequired: false };
+
+  it("says the group's setting covers a blank field, and repeats neither its URL nor its key", () => {
+    const hints = connectionPlaceholders(draft(), GROUP, plain);
+    expect(hints).toEqual({
+      apiKey: S.models.inheritFromGroup,
+      baseUrl: S.models.inheritFromGroup,
+    });
+    for (const hint of Object.values(hints)) {
+      expect(hint).not.toContain("openrouter.ai");
+      expect(hint).not.toContain("4444");
+    }
+  });
+
+  it("keeps a model's own key, and says the group's key does not reach a model on another origin", () => {
+    expect(
+      connectionPlaceholders(draft({ credential: { apiKeyMasked: "sk-m…1111" } }), GROUP, plain)
+        .apiKey,
+    ).toBe(S.models.apiKeyKeepHint);
+    const proxied = connectionPlaceholders(
+      draft({ baseUrl: "https://proxy.example/v1" }),
+      GROUP,
+      plain,
+    );
+    expect(proxied.apiKey).toBe(S.models.keyNotReachedNote);
+    // The base URL field is the model's own here; blank, it would still follow the group.
+    expect(proxied.baseUrl).toBe(S.models.inheritFromGroup);
+  });
+
+  it("falls back to the field's own hint where the group sets nothing", () => {
+    expect(
+      connectionPlaceholders(
+        draft({ provider: "deepseek", modelId: "deepseek-flash" }),
+        undefined,
+        {
+          envKey: "DEEPSEEK_API_KEY",
+          baseUrlRequired: false,
+        },
+      ),
+    ).toEqual({
+      apiKey: S.models.apiKeyEnvHint("DEEPSEEK_API_KEY"),
+      baseUrl: S.models.baseUrlNone,
+    });
+    expect(
+      connectionPlaceholders(draft({ provider: "my-group" }), undefined, {
+        baseUrlRequired: true,
+      }),
+    ).toEqual({ apiKey: undefined, baseUrl: "https://…" });
+    // A table with a key but no URL lends the key to models without one of their own.
+    expect(connectionPlaceholders(draft(), { apiKeyMasked: "sk-g…2222" }, plain)).toEqual({
+      apiKey: S.models.inheritFromGroup,
+      baseUrl: S.models.baseUrlNone,
+    });
+  });
+});
+
+describe("the model dialogs' Details fold", () => {
+  const fold = (open: boolean) =>
+    renderToStaticMarkup(
+      createElement(DetailsFold, {
+        open,
+        onToggle: () => {},
+        children: createElement("input", { id: "x" }),
+      }),
+    );
+
+  it("is closed until opened, its fields kept in the page but hidden", () => {
+    const closed = fold(false);
+    expect(closed).toContain('aria-expanded="false"');
+    expect(closed).toMatch(/ hidden=""/);
+    expect(closed).toContain('id="x"');
+    expect(closed).toContain(S.models.details);
+    const open = fold(true);
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).not.toMatch(/ hidden=""/);
+  });
+
+  it("leaves only the model's id, name and group in view when adding", () => {
+    // Every block below the identity fields is folded: a new model follows its group.
+    expect([...foldedSlots(true)].sort()).toEqual(
+      ["actions", "apiKey", "baseUrl", "capabilities", "limits", "pricing"].sort(),
+    );
+  });
+
+  it("keeps the actions, the API key and the base URL in view on a saved model", () => {
+    const folded = foldedSlots(false);
+    for (const slot of ["actions", "apiKey", "baseUrl"] as const)
+      expect(folded.has(slot)).toBe(false);
+    for (const slot of ["limits", "pricing", "capabilities"] as const) {
+      expect(folded.has(slot)).toBe(true);
+    }
+  });
+
+  it("opens on a refused save when a field to fix is inside it, and focuses the first such field", () => {
+    // Adding a custom model with no base URL anywhere: the field is folded.
+    expect(revealOnSave({ baseUrl: "required" }, true)).toEqual({
+      openDetails: true,
+      focus: "baseUrl",
+    });
+    // The same error on a saved model is in view: nothing to open.
+    expect(revealOnSave({ baseUrl: "required" }, false)).toEqual({
+      openDetails: false,
+      focus: "baseUrl",
+    });
+    // A partial price on a saved model opens the fold on the first missing bucket.
+    expect(revealOnSave({ cacheWrite: "x", output: "x" }, false)).toEqual({
+      openDetails: true,
+      focus: "cacheWrite",
+    });
+    // A missing id comes first in the dialog, and still opens the fold for the field behind it.
+    expect(revealOnSave({ modelId: "x", contextWindow: "x" }, true)).toEqual({
+      openDetails: true,
+      focus: "modelId",
+    });
+    expect(revealOnSave({}, true)).toEqual({ openDetails: false, focus: null });
   });
 });

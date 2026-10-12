@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PenguinHarness Browser</title>
+    <link rel="stylesheet" href="pages.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header>
+        <img src="../icons/icon-48.png" alt="" width="32" height="32" />
+        <h1 id="heading"></h1>
+        <div id="language" class="language"></div>
+      </header>
+      <p id="intro" class="muted"></p>
+
+      <section>
+        <h2 id="paired-title"></h2>
+        <ul id="servers"></ul>
+        <p id="servers-empty" class="muted" hidden></p>
+        <p id="remove-hint" class="muted small" hidden></p>
+      </section>
+
+      <section>
+        <h2 id="add-title"></h2>
+        <form id="pair-form" novalidate>
+          <label>
+            <span id="server-url-label"></span>
+            <input
+              id="server-url"
+              type="text"
+              inputmode="url"
+              autocomplete="url"
+              spellcheck="false"
+            />
+          </label>
+          <label>
+            <span id="code-label"></span>
+            <input id="code" type="text" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="actions">
+            <button id="connect" class="primary" type="submit"></button>
+            <span id="pair-message" class="message" role="status"></span>
+          </div>
+        </form>
+      </section>
+
+      <section>
+        <h2 id="steps-title"></h2>
+        <ol>
+          <li id="step1"></li>
+          <li id="step2"></li>
+          <li id="step3"></li>
+        </ol>
+        <a id="docs-link" target="_blank" rel="noopener"></a>
+      </section>
+    </main>
+    <script type="module" src="pair.js"></script>
+  </body>
+</html>

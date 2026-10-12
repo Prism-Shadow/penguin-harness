@@ -1,7 +1,7 @@
 /**
- * The built-in browser's user-channel events, as the one `/api/events` connection routes them
+ * The agent browser's user-channel events, as the one `/api/events` connection routes them
  * (state/sessions.tsx's applyUserEvent → features/builtin-browser/browser-events.ts): this
- * server's go to the browser layer, a machine's go nowhere — its server drives no shell on
+ * server's go to the browser layer, a machine's go nowhere — its server drives no browser on
  * this screen — and a resync tells the layer to re-read the registry.
  */
 import { describe, expect, it } from "vitest";
@@ -14,7 +14,7 @@ import {
 } from "../src/features/builtin-browser/browser-events";
 
 const EVENTS: BuiltinBrowserServerEvent[] = [
-  { type: "builtin_browser_tabs", tabs: [], activeTabId: null },
+  { type: "builtin_browser_tabs", tabs: [], activeTabId: null, backend: "builtin" },
   { type: "builtin_browser_open", requestId: "r", url: "https://example.com/", activate: true },
   { type: "builtin_browser_close", tabId: 1 },
   { type: "builtin_browser_activity", tabId: 1, busy: true, action: "scan" },
@@ -22,6 +22,8 @@ const EVENTS: BuiltinBrowserServerEvent[] = [
     type: "builtin_browser_metrics",
     metrics: { at: 1, tabs: [], totalKB: 0, warnings: [], heavyTabIds: [] },
   },
+  { type: "builtin_browser_backend", backend: "chrome" },
+  { type: "builtin_browser_extension", state: "disconnected" },
 ];
 
 function listStore() {
@@ -31,8 +33,8 @@ function listStore() {
   return store;
 }
 
-describe("built-in browser events on the user channel", () => {
-  it("recognises exactly the five browser events", () => {
+describe("agent browser events on the user channel", () => {
+  it("recognises exactly the seven browser events", () => {
     for (const ev of EVENTS) expect(isBuiltinBrowserEvent(ev)).toBe(true);
     const other: ServerEvent = { type: "resync_required" };
     expect(isBuiltinBrowserEvent(other)).toBe(false);

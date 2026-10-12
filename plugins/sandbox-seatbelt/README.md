@@ -1,8 +1,9 @@
 # macOS Seatbelt sandbox backend
 
 The macOS counterpart to the bubblewrap backend, built on `sandbox-exec` (Seatbelt).
-Implements **all three** dimensions of the harness sandbox interface — filesystem writes,
-network isolation and path masking — as policy rules rather than mounts.
+Implements every dimension of the harness sandbox interface — filesystem writes, network
+isolation (none, or localhost only), path masking and closing the temporary directory — as
+policy rules rather than mounts.
 
 ## The program it runs
 
@@ -47,7 +48,7 @@ subpath rule silently matches nothing.
 
 ## Settings
 
-On **Settings → Plugins**, inside the Sandbox card: the **sandbox-exec program** (a path or a command on PATH; empty uses `sandbox-exec`). It applies at the next command spawn; a changed program is probed afresh. If Seatbelt failed its check at boot, saving the card loads it again, no restart.
+On **Settings → Plugins**, inside the Agent Sandbox card: the **sandbox-exec program** (a path or a command on PATH; empty uses `sandbox-exec`). It applies at the next command spawn; a changed program is probed afresh. If Seatbelt failed its check at boot, saving the card loads it again, no restart.
 
 ## Install
 

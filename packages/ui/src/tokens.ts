@@ -49,12 +49,27 @@
  * lets it surface word by word through a soft veil, Console types it out behind a block cursor.
  */
 
-/** Stable, lowercase theme ids. Display names (Primer / Frost / Console) are UI copy, not ids. */
-export const THEME_IDS = ["github", "modern", "geek"] as const;
+/**
+ * Stable, lowercase theme ids, in the order every list offers them — Settings, the gallery:
+ * Frost, Console, Primer (user decision, 2026-10-02). Display names are UI copy, not ids.
+ */
+export const THEME_IDS = ["modern", "geek", "github"] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
 
-/** The theme an absent or unknown `data-theme` resolves to. Its file needs no attribute selector. */
+/**
+ * The theme the stylesheet paints for an absent or unknown `data-theme`: its file matches a bare
+ * root and needs no attribute selector. A stylesheet fact only — the product's default is
+ * {@link INITIAL_THEME_ID}.
+ */
 export const DEFAULT_THEME_ID: ThemeId = "github";
+
+/**
+ * The theme a browser starts in when it stores no choice, or an unknown one: Frost (user
+ * decision, 2026-10-02; Primer before). It is written to the root like any chosen theme — the
+ * stylesheet's fallback stays {@link DEFAULT_THEME_ID} — so the boot script, the provider and
+ * the gallery read this one and nothing else names a default.
+ */
+export const INITIAL_THEME_ID: ThemeId = "modern";
 
 /** The two modes every theme file defines. `system` is a preference, not a mode. */
 export const THEME_MODES = ["light", "dark"] as const;
@@ -86,8 +101,9 @@ export interface AccentPresetSpec {
  * id, a theme's preset rules match only their own theme, so a preset the active theme does not
  * list paints nothing (the theme's own accent shows, as `neutral` would) and comes back when the
  * user returns to a theme that lists it. Primer keeps the five ids and values the Web App has
- * always had, so nothing there moves; Frost's five are warm and muted; Console's six are the
- * orange it shipped with and five terminal hues — its own accent went black and white
+ * always had, so nothing there moves; Frost's six are its former forest green and five warm,
+ * muted hues (its own accent went black and white on 2026-10-02, as Console's had); Console's six
+ * are the orange it shipped with and five terminal hues — its own accent went black and white
  * (2026-09-30), so the orange became a preset.
  */
 export const ACCENT_PRESETS = {
@@ -99,6 +115,7 @@ export const ACCENT_PRESETS = {
     { id: "amber", swatch: "#b45309" },
   ],
   modern: [
+    { id: "forest", swatch: "#006838" },
     { id: "ocean", swatch: "#3b6ea8" },
     { id: "clay", swatch: "#b8552f" },
     { id: "plum", swatch: "#7a4d8f" },
@@ -133,14 +150,14 @@ export const ACCENT_PRESET_IDS: readonly AccentPreset[] = [
 /**
  * The accent a theme paints when no preset is chosen (`neutral`): its own `--ui-accent` per
  * mode, spelled as the theme file spells it, so a picker can paint the "theme's own" swatch
- * without a stylesheet probe (a test holds each value equal to the CSS). Primer's and Console's
- * are monochrome — the ink in light, a near-white in dark — so that swatch shows black or white
- * rather than a hue; Primer's are zero-chroma neutrals (2026-09-30), not the slate of Tailwind's
- * stock gray. Frost's is its green.
+ * without a stylesheet probe (a test holds each value equal to the CSS). All three are
+ * monochrome (user decision, 2026-10-02): the theme's ink in light, a near-white in dark, so that
+ * swatch shows black or white rather than a hue. Primer's are Tailwind's stock gray-900 /
+ * gray-100, as v0.2.13 drew them.
  */
 export const THEME_OWN_ACCENTS: OwnAccents = {
-  github: { light: "#171717", dark: "#f5f5f5" },
-  modern: { light: "#006838", dark: "#4aa45c" },
+  github: { light: "#111827", dark: "#f3f4f6" },
+  modern: { light: "#232527", dark: "#f5f5f6" },
   geek: { light: "#1d1d1f", dark: "#f4f2f2" },
 };
 type OwnAccents = Readonly<Record<ThemeId, Readonly<Record<ThemeModeName, string>>>>;
@@ -399,10 +416,18 @@ export const TOKEN_GROUPS = [
     // What `Badge` and `Count` draw a tag with, so a theme decides what a tag looks like without
     // the component asking which theme runs: the width of the inset rule a soft tag draws in its
     // tone's line (0px where the tone's tint alone sets the tag off its row — a length, never a
-    // bare 0, since the ring adds it to an offset), the tag's weight, and the md tag's padding as
+    // bare 0, since the ring adds it to an offset), the tag's weight, the md tag's padding as
     // `<block> <inline>` (a theme with one tag size gives it the sm tag's `1px` by one and a half
-    // space units).
-    names: ["--ui-badge-soft-ring", "--ui-badge-weight", "--ui-badge-pad-md"],
+    // space units), and the tag's font size and line-height (`size` / `lh`): a tag is set one step
+    // under the theme's small rung (user decision, 2026-10-02 — the model marks read too large),
+    // and the line-height is fixed so a tag's height does not follow its row's.
+    names: [
+      "--ui-badge-soft-ring",
+      "--ui-badge-weight",
+      "--ui-badge-pad-md",
+      "--ui-badge-size",
+      "--ui-badge-lh",
+    ],
   },
   {
     id: "type-families",

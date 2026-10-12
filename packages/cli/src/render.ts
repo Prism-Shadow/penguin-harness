@@ -38,6 +38,10 @@
  * not rendered — the child Agent's final text is already streamed through the parent
  * tool's output gutter.
  *
+ * **Rich blocks**: a reply's ```a2ui blocks (a choice, a form, steps, a callout, a widget), which the
+ * Web App draws as components, print as core's text fallback here, streamed and in history
+ * alike (see a2ui-stream.ts); every other fence prints as written.
+ *
  * No third-party color library is used; only minimal ANSI escapes — and they are emitted at
  * all only when the output stream supports color (see `supportsColor`): piped output, e.g. a
  * nested `penguin run` driven through `exec_command`, must stay plain (#102).
@@ -65,6 +69,8 @@ import type {
   ToolDefinition,
   ToolListReadyPayload,
 } from "@prismshadow/penguin-core";
+import { toFallbackMarkdown } from "@prismshadow/penguin-core/a2ui";
+import { A2uiStreamFilter } from "./a2ui-stream.js";
 import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
 import { ToolOutputCollapser, collapseLines } from "./output-collapse.js";
 import { defaultMessages } from "./i18n.js";
@@ -263,7 +269,8 @@ export function renderHistory(
             out.write(`\n> ${p.text ?? ""}\n`);
           }
         } else {
-          out.write(`${p.text ?? ""}${marker}\n`);
+          // A reply's a2ui blocks print as their text fallback, as they do while streaming.
+          out.write(`${toFallbackMarkdown(p.text ?? "")}${marker}\n`);
         }
         break;
       case "image_url":
@@ -397,6 +404,11 @@ export class StreamRenderer {
   private inDim = false;
   /** Whether tool-call output is at the start of a line (decides whether the gutter needs to be written). */
   private toolOutLineStart = true;
+  /**
+   * The reply's ```a2ui blocks, printed as their text fallback: a block is held while it
+   * streams and printed converted once it closes (see a2ui-stream.ts).
+   */
+  private readonly replyBlocks = new A2uiStreamFilter();
 
   /**
    * tool_call_id -> tool name for the current task's parent-session calls (nested tool
@@ -1013,16 +1025,21 @@ export class StreamRenderer {
     // stays quiet — the Web banner is where the streamed text shows.
     if (this.compactionActive) return;
     if (p.event_type === "stop") {
+      this.writeReply(this.replyBlocks.flush());
       this.finishLine();
       return;
     }
     // Insert a line break when switching from thinking (dim) to body text, to avoid them running together.
     if (this.inDim) this.finishLine();
-    if (p.text) {
-      this.out.write(p.text);
-      this.inLine = true;
-      this.lastLineKey = null;
-    }
+    if (p.text) this.writeReply(this.replyBlocks.push(p.text));
+  }
+
+  /** Writes the reply text the a2ui filter released; a delta it holds back releases nothing. */
+  private writeReply(text: string): void {
+    if (text === "") return;
+    this.out.write(text);
+    this.inLine = true;
+    this.lastLineKey = null;
   }
 
   private handlePartialThinking(p: PartialThinkingPayload): void {
@@ -1259,6 +1276,8 @@ export class StreamRenderer {
     // A tool-output stream cut off before its stop (aborted turn) still has held-back
     // collapsed lines: settle them here so nothing silently vanishes from the screen.
     this.settleAllCollapsers();
+    // Likewise a reply cut off inside an a2ui block: what the filter still holds is printed.
+    this.writeReply(this.replyBlocks.flush());
     this.finishLine();
     // This task's elapsed time = first message -> last non-compaction request_end
     // (mid-turn compaction falls within the span and is counted; compaction after the

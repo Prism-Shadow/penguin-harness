@@ -11,9 +11,11 @@
  *   failed exchange or an unstorable key ends it with its reason. A redirect deposits the code
  *   once (a manual flow takes none) and only the owner's poll redeems it; an unpolled deposit
  *   expires with the flow. The callback origin follows the request unless a proxy is trusted.
- * - The routes: only the owner starts, polls and redeems; the key lands on every model of the
- *   group and the Project's open Session channels hear credentials_updated; a rejected code
- *   reaches the dialog through the poll and touches no model; a malformed link answers a page.
+ * - The routes: only the owner starts, polls and redeems; the key lands once, as the group's key
+ *   every model of the group uses, and the Project's open Session channels hear
+ *   credentials_updated; a rejected code reaches the dialog through the poll and touches no
+ *   model; a malformed link answers a page. Disconnect (clearing the group key) is all it
+ *   takes to undo it: no state of the flow outlives it, and models with their own key keep it.
  * - The redirect receiver answers without a session: the flow id buys a deposit and nothing
  *   more — not for another user, an unknown flow, another Project, a stale or replayed flow,
  *   a HEAD, or a manual flow — and the exemption covers exactly its literal path.
@@ -441,7 +443,7 @@ describe("model-oauth routes", () => {
     expect((await owner.post(`${base()}/start`, { provider: "deepseek" })).status).toBe(400);
   });
 
-  it("the callback deposits the code and the owner's poll redeems it, writing the key to every model of the group", async () => {
+  it("the callback deposits the code and the owner's poll redeems it, writing the group's key, which every model of the group uses", async () => {
     const started = (await (
       await owner.post(`${base()}/start`, { provider: "tokendance" })
     ).json()) as ModelOAuthStartResponse;
@@ -484,15 +486,19 @@ describe("model-oauth routes", () => {
     ).json()) as ModelsResponse;
     const group = models.models.filter((m) => m.provider === "tokendance");
     expect(group.length).toBeGreaterThan(0);
-    for (const m of group) expect(m.credential?.apiKeyMasked).toBeTruthy();
+    expect(models.providers.tokendance?.apiKeyMasked).toBeTruthy();
+    for (const m of group) expect(m.effective.apiKeySource).toBe("provider");
     // Only that group, and never in plaintext.
-    for (const m of models.models.filter((m) => m.provider !== "tokendance")) {
-      expect(m.credential?.apiKeyMasked).toBeUndefined();
-    }
+    expect(
+      Object.entries(models.providers)
+        .filter(([, connection]) => connection.apiKeyMasked !== undefined)
+        .map(([id]) => id),
+    ).toEqual(["tokendance"]);
     expect(JSON.stringify(models)).not.toContain("sk-oauth-minted-key-9911");
 
+    // Stored once, for the group — not once per model.
     const cfg = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
-    expect(cfg).toContain("sk-oauth-minted-key-9911");
+    expect(cfg.match(/sk-oauth-minted-key-9911/g)).toHaveLength(1);
 
     expect(
       events
@@ -543,7 +549,53 @@ describe("model-oauth routes", () => {
     const models = (await (
       await owner.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
+    for (const connection of Object.values(models.providers)) {
+      expect(connection.apiKeyMasked).toBeUndefined();
+    }
     for (const m of models.models) expect(m.credential?.apiKeyMasked).toBeUndefined();
+  });
+
+  it("Disconnect clears the group key the flow wrote: the group's models stop using it, a model with its own key keeps it, and nothing else of the group changes", async () => {
+    const started = (await (
+      await owner.post(`${base()}/start`, { provider: "tokendance" })
+    ).json()) as ModelOAuthStartResponse;
+    await owner.get(`${base()}/callback?flow=${encodeURIComponent(started.flowId)}&code=c-1`);
+    expect(
+      ((await (await owner.get(`${base()}/${started.flowId}`)).json()) as ModelOAuthStatusResponse)
+        .status,
+    ).toBe("done");
+    // One model keyed to an account of its own.
+    const svc = t.deps.projectConfigService;
+    const raw = await svc.readRaw(projectId);
+    await svc.writeRaw(projectId, {
+      ...raw,
+      models: (raw.models as Array<Record<string, unknown>>).map((m) =>
+        m.provider === "tokendance" && m.model_id === "glm-5.3"
+          ? { ...m, api_key: "sk-td-own-row-0017" }
+          : m,
+      ),
+    });
+    const connected = (await (
+      await owner.get(`/api/projects/${projectId}/models`)
+    ).json()) as ModelsResponse;
+
+    const res = await owner.put(`/api/projects/${projectId}/models/providers/tokendance`, {
+      clearApiKey: true,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ModelsResponse;
+    const {
+      apiKeyMasked: _key,
+      createdAt: _createdAt,
+      ...connection
+    } = connected.providers.tokendance!;
+    expect(body.providers.tokendance).toEqual(connection);
+    for (const m of body.models.filter((row) => row.provider === "tokendance")) {
+      expect(m.effective.apiKeySource, m.modelId).toBe(m.modelId === "glm-5.3" ? "model" : "none");
+    }
+    const cfg = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    expect(cfg).not.toContain("sk-oauth-minted-key-9911");
+    expect(cfg).toContain("sk-td-own-row-0017");
   });
 
   it("a malformed callback link answers a page, not a stack trace", async () => {
@@ -622,16 +674,10 @@ describe("model-oauth callback without a session", () => {
   /** What the owner's dialog asks for every two seconds — and what redeems a deposited code. */
   const poll = async (flowId: string, p = projectId): Promise<ModelOAuthStatusResponse> =>
     (await (await owner.get(`${base(p)}/${flowId}`)).json()) as ModelOAuthStatusResponse;
-  /**
-   * Whether any model of the group ended up with a stored key. The group's entries always
-   * carry a `credential` (it holds the catalog's base URL), so only `apiKeyMasked` answers
-   * the question actually being asked.
-   */
+  /** Whether the group ended up with a stored key (the group's own; its models follow it). */
   const groupHasKey = async (p = projectId): Promise<boolean> => {
     const models = (await (await owner.get(`/api/projects/${p}/models`)).json()) as ModelsResponse;
-    return models.models.some(
-      (m) => m.provider === "tokendance" && m.credential?.apiKeyMasked !== undefined,
-    );
+    return models.providers.tokendance?.apiKeyMasked !== undefined;
   };
 
   /** A Project of the owner's. */

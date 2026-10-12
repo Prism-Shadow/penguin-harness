@@ -20,6 +20,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
+import type { HttpBindings } from "@hono/node-server";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
@@ -34,7 +35,6 @@ import {
   HMR_CONFIG_RESOURCE_ID,
   HMR_DB_RESOURCE_ID,
   HMR_DESKTOP_RESOURCE_ID,
-  HMR_LIFECYCLE_RESOURCE_ID,
   HMR_HOST_RESOURCE_ID,
   HMR_CONTROL_RESOURCE_ID,
   HMR_OVERRIDES_RESOURCE_ID,
@@ -59,6 +59,7 @@ import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { jsonOnlyWrites } from "./auth/middleware.js";
+import { AMSP_PREFIX, amspAllowOrigin } from "./amsp/cors.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
@@ -71,6 +72,7 @@ import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
+import { STREAM_IDLE_MS } from "./http/sse.js";
 import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
@@ -101,7 +103,6 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { LifecycleService } from "./services/lifecycle-service.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -188,8 +189,6 @@ export interface ServerBoot {
   /** The frozen operations over `hmr` (packages/hmr's main.ts): the seam and the upgrade route drive it, nothing drives the host directly. */
   control: Hmr<PlatformApi>;
   desktop: DesktopService | null;
-  /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
-  lifecycle: LifecycleService;
   tree: ModuleTree;
 }
 
@@ -296,8 +295,6 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
-  const lifecycle = new LifecycleService(config.supervised);
-  hmr.resources.register(HMR_LIFECYCLE_RESOURCE_ID, lifecycle);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -319,7 +316,7 @@ export async function bootAppDeps(
   // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
   // members: the runtime singletons published above. The tree is THIS generation's and
   // goes stale at the next push — per-request business dispatch rides the seam.
-  booted = { config, db, channels, hmr, control: ctl, desktop, lifecycle, tree };
+  booted = { config, db, channels, hmr, control: ctl, desktop, tree };
   return booted;
 }
 
@@ -397,6 +394,20 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
   });
 
+  // An event stream's socket that sends nothing for STREAM_IDLE_MS is destroyed (Node lets the
+  // first expiry pass while a write is pending, so a stuck write is cut within two). A live
+  // stream pings every 20 s; it goes that quiet only when its peer stopped reading and a write
+  // never completes, and then only the socket can end it: the stream's own close queues behind
+  // that write. The abort runs the stream's teardown. Only the host holds the socket (`c.env`,
+  // passed by index.ts), hence here.
+  app.use("*", async (c, next) => {
+    await next();
+    const socket = (c.env as Partial<HttpBindings> | undefined)?.incoming?.socket;
+    if (socket && c.res.headers.get("content-type")?.startsWith("text/event-stream")) {
+      socket.setTimeout(STREAM_IDLE_MS, () => socket.destroy());
+    }
+  });
+
   // Canonical-host guard (loopback binds only): the App is served on one loopback name and
   // previews on its counterpart, but the SAME process answers on both. Without this, Agent-
   // written preview HTML on the preview host could call /api same-origin and — if a session
@@ -438,6 +449,10 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   // 300MB bodies on a server whose limits were left at 10MB. It is re-derived per request, so an
   // admin's change takes effect immediately; the middleware itself is memoized on the resulting
   // size so the steady state allocates nothing.
+  //
+  // The Agent API is called from browsers too: its CORS header (amsp/cors.ts) has to reach these
+  // two refusals, which answer before its group runs, or a caller reads a CORS failure, not the code.
+  app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
     const size = bodyLimitBytes(settings().getAttachmentLimitsMb());

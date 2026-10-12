@@ -1,7 +1,9 @@
 /**
  * The shared UI package's accessibility fallbacks in the app's words. The package never reads the
  * app's dictionaries; `LocaleProvider` hands it these instead, per interface language, so a close
- * cross or a "Copied" announcement speaks the language the rest of the page does.
+ * cross or a "Copied" announcement speaks the language the rest of the page does. The `a2ui`
+ * group is the one stretch of visible copy among them: the words around the blocks a reply
+ * draws, which render inside Markdown where no caller can pass them down.
  *
  * Each value is read from the dictionary itself rather than from the live `S`, so the two objects
  * are built once and keep their identity across renders.
@@ -32,6 +34,7 @@ export function uiStringsOf(dict: Strings): UiStrings {
     previous: dict.common.previousPage,
     next: dict.common.nextPage,
     pagePosition: dict.chat.groupPagePosition,
+    a2ui: dict.chat.a2ui,
   };
 }
 

@@ -37,7 +37,7 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
@@ -58,12 +58,14 @@ import {
   Dropdown,
   ICONS,
   MenuItem,
+  MenuLabel,
   PenguinLogo,
   toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { UNCONFINED } from "../../lib/permission-level";
+import { UNCONFINED, draftSandboxAfter } from "../../lib/permission-level";
+import type { PermissionPick } from "../../lib/permission-level";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { rememberSessionMachine } from "../../lib/session-machines";
@@ -75,6 +77,7 @@ import { useSessions } from "../../state/sessions";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { versionBadgeFor } from "../../lib/update-flow";
 import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
+import { employeesLast, isEmployee } from "../agents/agent-employment";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import { APPROVAL_MODES } from "./approval-mode";
@@ -98,6 +101,7 @@ import {
   type ChatDefaultsChangedDetail,
 } from "./chat-defaults-event";
 import { newChatAgentId } from "./new-chat";
+import { onPluginConfigSaved } from "../../lib/plugin-config-event";
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { FilesPanelToggle } from "./dock-toggles";
@@ -396,12 +400,10 @@ export function DraftView({
     ) {
       setWorkspace(chatDefaults.workspace);
     }
-    if (
-      chatDefaults.approvalMode !== undefined &&
-      cached.approvalMode === undefined &&
-      !touchedRef.current.approval
-    ) {
-      setApprovalMode(chatDefaults.approvalMode);
+    // The Project's own default wins; else the Sandbox card's default preset, while it is on.
+    const seeded = chatDefaults.approvalMode ?? chatDefaults.sandbox?.defaultApprovalMode;
+    if (seeded !== undefined && cached.approvalMode === undefined && !touchedRef.current.approval) {
+      setApprovalMode(seeded);
     }
   }, [chatDefaults, stateWorkspace, cached.workspace, cached.approvalMode]);
 
@@ -438,7 +440,7 @@ export function DraftView({
         setChatDefaults(d);
         touchedRef.current = { workspace: false, approval: false };
         setWorkspace(d.workspace ?? "");
-        setApprovalMode(d.approvalMode ?? "allow-all");
+        setApprovalMode(d.approvalMode ?? d.sandbox?.defaultApprovalMode ?? "allow-all");
         // The Agent a fresh mount would now start on (the new block's default while it names
         // an Agent, then default_agent, then the first).
         setAgentId(newChatAgentId(agents, d));
@@ -453,6 +455,25 @@ export function DraftView({
   /** Latest-closure mirror for the window listener (same convention as persistRef). */
   const onDefaultsChangedRef = useRef(onDefaultsChanged);
   onDefaultsChangedRef.current = onDefaultsChanged;
+  // The Sandbox card was saved (from the composer's More…, say): the permission menu reads the
+  // sandbox view again, and an approval mode nobody picked follows the new default preset.
+  useEffect(
+    () =>
+      onPluginConfigSaved("sandbox", () => {
+        void api.getChatDefaults(projectId).then(
+          (res) => {
+            setChatDefaults((prev) => ({
+              ...(prev ?? {}),
+              ...(res.sandbox !== undefined ? { sandbox: res.sandbox } : {}),
+            }));
+            const seeded = res.approvalMode ?? res.sandbox?.defaultApprovalMode;
+            if (seeded !== undefined && !touchedRef.current.approval) setApprovalMode(seeded);
+          },
+          () => undefined,
+        );
+      }),
+    [projectId],
+  );
   useEffect(() => {
     const onEvent = (e: Event) => {
       const detail = chatDefaultsChangedDetail(e, projectId);
@@ -569,9 +590,6 @@ export function DraftView({
     // Carried through every write, so a reload finds the prefill still marked as composed
     // rather than resuming it as if it had been typed here.
     if (aiPrefillRef.current) data.aiPrefill = true;
-    // The evaluation mark the Evaluation Center's Use dialog set on this draft rides along for
-    // the same reason: after a reload the Session must still be created as an evaluation run.
-    if (cached.source !== undefined) data.source = cached.source;
     // A parked draft writes back into its own list entry; the active draft into its slot.
     if (draftId !== undefined) saveDraftSession(userId, projectId, draftId, data);
     else saveDraft(draftKey(userId, projectId), data);
@@ -586,7 +604,6 @@ export function DraftView({
     approvalMode,
     sandboxPick,
     modelRef,
-    cached.source,
   ]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
@@ -737,12 +754,12 @@ export function DraftView({
     // home, or the next Session would be created on the machine the previous pick named.
     setWorkspaceMachine(machineId ?? null);
   }, []);
-  const changeApprovalMode = useCallback((mode: ApprovalMode) => {
+  // A preset sets both halves of the draft's level at once, as it does on a Session; an
+  // approval-mode pick (switch off) leaves the sandbox half unpicked, so the settings decide it.
+  const changePermission = useCallback((pick: PermissionPick) => {
     touchedRef.current.approval = true;
-    setApprovalMode(mode);
-  }, []);
-  const changeSandbox = useCallback((pick: Partial<SessionSandbox>) => {
-    setSandboxPick((prev) => ({ ...prev, ...pick }));
+    setApprovalMode(pick.approvalMode);
+    setSandboxPick((prev) => draftSandboxAfter(prev, pick));
   }, []);
 
   // Synchronous in-flight guard for the one send entry point (the composer): a second
@@ -768,9 +785,6 @@ export function DraftView({
           body.provider = modelRef.provider;
         }
         if (workspace.trim()) body.workspace = workspace.trim();
-        // A draft the Evaluation Center's Use dialog composed creates its Session as an
-        // evaluation run, which the sidebar files under the Evaluations folder.
-        if (cached.source !== undefined) body.source = cached.source;
         // Created ON the machine that owns the workspace: that server runs the agent in it.
         const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
@@ -816,7 +830,6 @@ export function DraftView({
       sandboxPick,
       modelRef,
       workspace,
-      cached.source,
       add,
       discardDraft,
       navigate,
@@ -911,15 +924,15 @@ export function DraftView({
           approvalMode={approvalMode}
           // A draft becomes an ordinary conversation, never an organization's: every mode.
           approvalModes={APPROVAL_MODES}
-          onChangeApprovalMode={changeApprovalMode}
           sandbox={{ ...(chatDefaults?.sandbox ?? UNCONFINED), ...sandboxPick }}
-          onChangeSandbox={changeSandbox}
+          onChangePermission={changePermission}
           modeSaving={false}
           autoFocus
           agents={agents}
           {...(agentId ? { currentAgentId: agentId } : {})}
           skills={agentSkills}
           {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
+          {...(cached.goal === true ? { initialGoal: true } : {})}
           onSkillsChange={onSkillsChange}
           initialText={cached.text ?? ""}
           onTextChange={onTextChange}
@@ -1135,31 +1148,38 @@ function AgentSelect({
     >
       <div className="max-h-56 overflow-y-auto">
         {agents.length === 0 && <p className="px-3 py-1.5 text-xs text-gray-400">{empty}</p>}
-        {agents.map((a) => {
+        {/* The organizations' employees come last, under a label of their own: they are Agents
+            like any other, but their work happens in company mode (agent-employment.ts). */}
+        {employeesLast(agents).map((a, i, ordered) => {
           const active = a.agentId === selected?.agentId;
+          const firstEmployee = isEmployee(a) && (i === 0 || !isEmployee(ordered[i - 1]!));
           return (
-            <MenuItem
-              key={a.agentId}
-              density="sm"
-              aria-pressed={active}
-              checked={active}
-              onSelect={() => {
-                onSelect(a);
-                setOpen(false);
-              }}
-              glyph={
-                <AgentAvatar
-                  id={a.agentId}
-                  name={agentDisplayName(a)}
-                  size={20}
-                  className="shrink-0 rounded"
-                />
-              }
-              label={agentDisplayName(a)}
-              description={
-                a.description ? <span className="block truncate">{a.description}</span> : undefined
-              }
-            />
+            <Fragment key={a.agentId}>
+              {firstEmployee && <MenuLabel>{S.agent.employeesSection}</MenuLabel>}
+              <MenuItem
+                density="sm"
+                aria-pressed={active}
+                checked={active}
+                onSelect={() => {
+                  onSelect(a);
+                  setOpen(false);
+                }}
+                glyph={
+                  <AgentAvatar
+                    id={a.agentId}
+                    name={agentDisplayName(a)}
+                    size={20}
+                    className="shrink-0 rounded"
+                  />
+                }
+                label={agentDisplayName(a)}
+                description={
+                  a.description ? (
+                    <span className="block truncate">{a.description}</span>
+                  ) : undefined
+                }
+              />
+            </Fragment>
           );
         })}
       </div>

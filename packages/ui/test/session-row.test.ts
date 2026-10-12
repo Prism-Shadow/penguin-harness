@@ -66,6 +66,8 @@ describe("SessionRow", () => {
 
   it("names every standing mark in words, from the caller's labels", () => {
     const html = row({
+      sourceGlyph: ICONS.terminalPrompt,
+      sourceLabel: "CLI",
       pinnedLabel: "已置顶",
       relayLabel: "飞书远程控制",
       scheduledLabel: "定时任务",
@@ -73,6 +75,8 @@ describe("SessionRow", () => {
       approvals: { count: 3, label: "3 个待审批" },
       agent: { id: "coder", name: "Coder" },
     });
+    expect(html).toContain('<span data-tooltip="CLI" class="shrink-0 text-fg-subtle">');
+    expect(html).toContain('<span class="sr-only">CLI</span>');
     expect(html).toContain('<span class="sr-only">已置顶</span>');
     expect(html).toContain('<span class="sr-only">飞书远程控制</span>');
     expect(html).toContain('<span class="sr-only">Coder</span>');
@@ -81,6 +85,12 @@ describe("SessionRow", () => {
     expect(html).toMatch(
       /data-tooltip="3 个待审批" class="[^"]*tabular-nums text-tone-attention-fg">3</,
     );
+  });
+
+  it("draws a source mark only when it has both a glyph and its words", () => {
+    // A mark is the subtle-ink span after the title; neither half alone draws one.
+    expect(row({ sourceGlyph: ICONS.plug })).not.toContain('class="shrink-0 text-fg-subtle"');
+    expect(row({ sourceLabel: "API" })).not.toContain("API");
   });
 
   it("draws no background mark and no approval count at zero", () => {

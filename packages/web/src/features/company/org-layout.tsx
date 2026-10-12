@@ -104,18 +104,20 @@ export function OrgIndexRedirect() {
 
 /**
  * The landing of a user who has no organization anywhere: what one is, the button that makes
- * one, and three missions worth starting.
+ * one, and four companies worth starting.
  *
- * The proposals are the same three the create dialog offers under its mission field, as cards:
- * a name to recognize the shape of the company by and the mission itself, clamped to three
- * lines with the whole text in the tooltip. Each opens the dialog already filled in — the
+ * Each proposal is a card with a name to recognize the shape of the company by and a one-line
+ * summary of what it does. A mission runs to a paragraph, and four of them side by side buried
+ * the landing in text, so the card says just enough to choose by and the mission arrives with
+ * the click: each card opens the dialog filled in with its name and its whole mission — the
  * hardest part of an empty landing is not the form, it is having nothing to type into it — and
- * leaves the id to the field's own generator.
+ * leaves the id to the field's own generator. Everything a card says is on show, so it carries
+ * no tooltip.
  *
- * The cards stretch to one height and lay their content out as a column, so the three names
- * sit on one line and each mission starts under its own name: a `<button>` centres its own
- * content vertically, which left the shorter cards' names floating half a line below the
- * tallest card's.
+ * The cards stretch to one height and lay their content out as a column, so the names sit on
+ * one line and each summary starts under its own name: a `<button>` centres its own content
+ * vertically, which left the shorter cards' names floating half a line below the tallest
+ * card's.
  */
 function OrgEmptyLanding() {
   const company = useCompany();
@@ -157,13 +159,12 @@ function OrgEmptyLanding() {
               <li key={example.id} className="min-w-0">
                 <button
                   type="button"
-                  data-tooltip={copy.mission}
-                  onClick={() => openCreate(copy)}
+                  onClick={() => openCreate({ name: copy.name, mission: copy.mission })}
                   className="flex h-full w-full flex-col rounded-md border border-gray-200 p-3 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/60"
                 >
                   <span className="block text-sm font-medium">{copy.name}</span>
-                  <span className="mt-1 line-clamp-3 block text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-                    {copy.mission}
+                  <span className="mt-1 block text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                    {copy.summary}
                   </span>
                 </button>
               </li>

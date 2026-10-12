@@ -11,7 +11,10 @@
  * page parks off-screen at a real size, so a page an agent works in while the dock is closed
  * keeps a desktop layout. While a browser panel is on screen a frame loop follows its slot,
  * because the dock resizes, slides and moves with the layout around it and nothing announces
- * all of those.
+ * all of those. The pages have no stacking order of their own, except while the slot sits in a
+ * dock surface gone fullscreen: that surface paints on a layer above the page, so the page on
+ * screen (and the agent ring over it) steps up one layer with it — for as long as the surface is
+ * lifted, its enter and exit animations included — and back down once it is back in the flow.
  *
  * It also runs the lifecycle the server asks for over the user channel: `builtin_browser_open`
  * creates a page; as soon as the page's element knows its webContents id, the id claims the
@@ -26,6 +29,12 @@
  *
  * And it says once when the browser gets too heavy: each load warning the server starts giving
  * raises one toast, wherever the user is in the app; the toolbar's mark carries it after that.
+ *
+ * Every window, `<webview>` or not, follows the agent browser's state (BrowserFollower): the
+ * user's own Chrome needs no page here, so a plain browser window offers the Browser panel too.
+ * A backend switch or word on the user's Chrome is followed by a fresh status read, which brings
+ * the chosen backend's tabs and settles what an event alone cannot (a revoked Chrome that was the
+ * last one paired). While the agents drive Chrome the built-in pages stay hosted, out of sight.
  */
 import {
   memo,
@@ -38,7 +47,7 @@ import {
 } from "react";
 import type { CSSProperties } from "react";
 import type { BuiltinBrowserLoadWarning } from "@prismshadow/penguin-server/api";
-import { toastAttention } from "@prismshadow/penguin-ui";
+import { DOCK_FULLSCREEN_Z, toastAttention } from "@prismshadow/penguin-ui";
 import { toneInk } from "../../lib/tone";
 import { currentDockScope, isTabShown, openPanel } from "../dock/dock-state";
 import { isBlankUrl } from "./address";
@@ -113,6 +122,8 @@ interface PageHost {
   view: WebviewElement | null;
   /** What was last written to the two boxes; a frame that computes the same writes nothing. */
   applied: Placement | undefined;
+  /** Whether the frame was last written onto the layer above a fullscreen dock surface. */
+  lifted: boolean;
   /** The size it parks at: the size it was last shown at, or the default. */
   parkSize: Size;
 }
@@ -123,10 +134,21 @@ const hosts = new Map<string, PageHost>();
 function hostFor(key: string): PageHost {
   let host = hosts.get(key);
   if (host === undefined) {
-    host = { frame: null, view: null, applied: undefined, parkSize: DEFAULT_PARK_SIZE };
+    host = {
+      frame: null,
+      view: null,
+      applied: undefined,
+      lifted: false,
+      parkSize: DEFAULT_PARK_SIZE,
+    };
     hosts.set(key, host);
   }
   return host;
+}
+
+/** The layer a page or the ring paints on: the step above a fullscreen dock surface, or none. */
+function layerFor(lifted: boolean): string {
+  return lifted ? String(DOCK_FULLSCREEN_Z + 1) : "";
 }
 
 function toRect(box: DOMRect): Rect {
@@ -144,12 +166,15 @@ function writeRect(style: CSSStyleDeclaration, rect: Rect): void {
  * Lays every hosted page out for this frame: the active tab over the visible slot, unless its
  * page is blank or crashed (the panel's own surface shows then: the blank state, or the crash
  * with its Reload), and everything else parked. The ring, when mounted, frames the visible slot.
- * The server hears which tab is on screen, none while the window is hidden: that tab runs at full
- * speed, and the parked ones may be throttled.
+ * A page shown over a slot inside a fullscreen dock surface steps up to the layer above that
+ * surface, and so does the ring; a parked page, or one over an ordinary slot, has no layer of its
+ * own (a fullscreen surface covering the OTHER dock then covers it, as it should). The server
+ * hears which tab is on screen, none while the window is hidden: that tab runs at full speed, and
+ * the parked ones may be throttled.
  */
 function placePages(ring: HTMLDivElement | null): void {
   const state = browserState();
-  const tab = activeTab(state);
+  const tab = state.backend === "builtin" ? activeTab(state) : null;
   const slot = tab === null ? null : visibleSlot();
   const onScreen =
     slot === null
@@ -165,16 +190,20 @@ function placePages(ring: HTMLDivElement | null): void {
     tab !== null &&
     tab.crashed === undefined &&
     !(isBlankUrl(tab.url) && !tab.loading);
+  const lifted = showPage && slot !== null && slot.lifted;
   reportOnScreenTab(
     showPage && tab !== null && document.visibilityState !== "hidden" ? tab.id : null,
   );
   for (const guest of state.guests) {
     const host = hosts.get(guest.key);
     if (host === undefined || host.frame === null || host.view === null) continue;
-    const placement =
-      showPage && onScreen !== null && guest.tabId !== null && guest.tabId === state.activeTabId
-        ? onScreen
-        : parkedPlacement(host.parkSize);
+    const shown =
+      showPage && onScreen !== null && guest.tabId !== null && guest.tabId === state.activeTabId;
+    const placement = shown ? onScreen : parkedPlacement(host.parkSize);
+    if ((shown && lifted) !== host.lifted) {
+      host.lifted = shown && lifted;
+      host.frame.style.zIndex = layerFor(host.lifted);
+    }
     host.parkSize = shownSize(placement) ?? host.parkSize;
     if (samePlacement(host.applied, placement)) continue;
     writeRect(host.frame.style, placement.frame);
@@ -184,6 +213,7 @@ function placePages(ring: HTMLDivElement | null): void {
   if (ring !== null) {
     if (onScreen !== null && onScreen.shown) {
       ring.style.display = "";
+      ring.style.zIndex = layerFor(lifted);
       writeRect(ring.style, onScreen.frame);
     } else {
       ring.style.display = "none";
@@ -258,7 +288,48 @@ const GuestPage = memo(function GuestPage({ guest }: { guest: BrowserGuest }) {
 export function BuiltinBrowserLayer() {
   // Decided once: whether this window has the element does not change while it is open.
   const [supported] = useState(webviewSupported);
-  return supported ? <LayerHost /> : null;
+  return (
+    <>
+      <BrowserFollower />
+      {supported ? <LayerHost /> : null}
+    </>
+  );
+}
+
+/**
+ * Every window: reads the status, follows the events, re-reads the status after a backend switch
+ * or word on the user's Chrome, and when the channel comes back past its replay buffer (events
+ * were lost, or the server restarted). An agent opening a page or starting to act for the
+ * conversation on screen brings the Browser panel up, once per conversation. Unmounting
+ * (signing out) stops offering the browser until the next status.
+ */
+function BrowserFollower() {
+  useEffect(() => {
+    void refreshBrowserStatus();
+    const revealed = new Set<string>();
+    const offEvents = subscribeBuiltinBrowserEvents((event) => {
+      dispatchBrowser({ type: "event", event });
+      if (event.type === "builtin_browser_backend" || event.type === "builtin_browser_extension") {
+        void refreshBrowserStatus();
+      }
+      const conversation = currentDockScope();
+      const onScreen = { conversation, browserShown: isTabShown(BROWSER_TAB) };
+      if (shouldReveal(event, onScreen, revealed)) {
+        revealed.add(conversation);
+        openPanel(BROWSER_TAB);
+      }
+    });
+    const offResync = subscribeBuiltinBrowserResync(() => {
+      dispatchBrowser({ type: "resync" });
+      void refreshBrowserStatus();
+    });
+    return () => {
+      offEvents();
+      offResync();
+      dispatchBrowser({ type: "unreachable" });
+    };
+  }, []);
+  return null;
 }
 
 function LayerHost() {
@@ -268,38 +339,25 @@ function LayerHost() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const ringRef = useRef<HTMLDivElement | null>(null);
 
-  // This window hosts the pages from here on: read the registry and the settings, follow the
-  // events, and re-read both when the channel comes back past its replay buffer (events were
-  // lost, or the server restarted). Unmounting (signing out) drops the pages, and the store
-  // forgets them with it.
+  // This window hosts the built-in browser's pages from here on: read its settings, and re-read
+  // them (and forget which tab the server was told is on screen) when the channel comes back
+  // past its replay buffer. Unmounting (signing out) drops the pages, and the store forgets
+  // them with it.
   useEffect(() => {
     dispatchBrowser({ type: "supported", supported: true });
-    void refreshBrowserStatus();
     void refreshBrowserSettings();
-    const revealed = new Set<string>();
-    const offEvents = subscribeBuiltinBrowserEvents((event) => {
-      dispatchBrowser({ type: "event", event });
-      const conversation = currentDockScope();
-      const onScreen = { conversation, browserShown: isTabShown(BROWSER_TAB) };
-      if (shouldReveal(event, onScreen, revealed)) {
-        revealed.add(conversation);
-        openPanel(BROWSER_TAB);
-      }
-    });
     const offResync = subscribeBuiltinBrowserResync(() => {
       forgetOnScreenReport();
-      dispatchBrowser({ type: "resync" });
-      void refreshBrowserStatus();
       void refreshBrowserSettings();
     });
     return () => {
-      offEvents();
       offResync();
       dispatchBrowser({ type: "supported", supported: false });
     };
   }, []);
 
-  const available = state.available;
+  // A shell slow to answer the server's handshake reads as unavailable until it is asked again.
+  const available = state.available || state.backend !== "builtin";
   useEffect(() => {
     if (available) return;
     let cancelled = false;
@@ -317,6 +375,13 @@ function LayerHost() {
       window.clearTimeout(timer);
     };
   }, [available]);
+
+  // A dock surface lifting off to cover the page, or returning, is the one change to the boxes
+  // around a slot while it stays mounted: the dock's content box becomes fixed (its placeholder
+  // stops clipping it) and the page must step above the surface's layer. Both are cached per slot
+  // (slot-registry.ts), and the dock drops the caches itself at each step of its fullscreen phase,
+  // once the step is in the DOM — not the store's flag, which flips before the exit animation has
+  // run and says nothing when it ends; the frame loop below reads them afresh on its next tick.
 
   // After every render: a new page gets its boxes, and a switched tab moves at once.
   useLayoutEffect(() => placePages(ringRef.current));

@@ -12,7 +12,7 @@ import { Hono } from "hono";
 import type { PluginConfigActionResponse, PluginConfigResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { PluginConfigError } from "../../plugin/config.js";
-import type { PluginConfigAdmin } from "../../plugin/config.js";
+import type { PluginConfigAdmin } from "../../plugin/config-page.js";
 import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireString } from "../validate.js";
 

@@ -62,10 +62,14 @@ rebuild, delete `packages/web/node_modules/.vite` and restart.
 Plugins are the exception to the snapshot rule: in a workspace checkout core's loader reads
 the repo's `plugins/<name>/` directories directly, not pnpm's injected copies (plugins have
 no `build` script, so those copies would never re-sync), so an edit under `plugins/` — a new
-skill, a changed SKILL.md, a bumped `plugin.json` — is live in `pnpm dev` and in the test
-suites at once. Any content change under a plugin must bump its `plugin.json` date version
-(`YYYY.MM.DD.N`): that version is how installed copies learn they are behind, and CI fails a
-pull request whose plugin files changed without it (`scripts/check-plugin-versions.mjs`).
+skill, a changed SKILL.md, a changed `package.json` — is live in `pnpm dev` and in the test
+suites at once. A plugin's own version is its npm version (`package.json`, bumped by the
+release); the date versions (`YYYY.MM.DD.N`) sit on the parts an install writes into an Agent.
+Any change under `skills/<name>/` must raise that skill's `version` in its SKILL.md
+frontmatter, and any change to the hook scripts or the `penguin.hooks` commands must raise
+`penguin.hooks.version` in `package.json`: those versions are how installed copies learn they are
+behind, and CI fails a pull request that changed a part without raising it
+(`scripts/check-plugin-versions.mjs`).
 
 Dev entry points that touch data default to separate data roots, kept apart from the
 installed CLI/server's `~/.penguin/data` — hacking on the repo never mixes state with
@@ -128,10 +132,12 @@ single data directory (`~/.penguin/data`) and a single message protocol (OmniMes
 | [`packages/core`](../packages/core)       | `@prismshadow/penguin-core`   | SDK & engine: ReAct loop, OmniMessage protocol, LLM/Environment interface contracts, Agent State, Trace |
 | [`packages/cli`](../packages/cli)         | `@prismshadow/penguin-cli`    | The `penguin` command: REPL, one-shot runs, model & vault config, service launcher                      |
 | [`packages/server`](../packages/server)   | `@prismshadow/penguin-server` | Web backend: HTTP API + SSE streaming, multi-user auth, Project authorization, usage stats              |
+| [`packages/amsp`](../packages/amsp) | `@prismshadow/amsp` | AMSP, the Agent API's event stream: its wire types, which the server imports, and a zero-dependency client for Node and browsers |
 | [`packages/web`](../packages/web)         | `@prismshadow/penguin-web`    | Web App: multi-session chat, Agent/skill/model management, Trace observability, evaluation center       |
 | [`plugins/*`](../plugins) | `@penguinharness/<name>` | The built-in plugins, one npm package each (`plugins/<name>` is `@penguinharness/<name>`): Agent plugins — skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries) — which `packages/core` depends on and loads; and server plugins a Project asks for on the Plugins page (its `[plugins]` table), such as the sandbox backends |
 | [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |
 | [`packages/docs`](../packages/docs)       | —                             | Documentation site (bilingual, deployed under `/docs/`)                                                 |
+| [`packages/browser-extension`](../packages/browser-extension) | — | PenguinHarness Browser: the Chrome extension through which the server drives the tabs a user hands it (released as a zip) |
 
 Responsibilities split by source of truth: the **SDK** owns protocol and execution
 (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime

@@ -8,9 +8,11 @@
  * - A stored secret is removed through the clear checkbox, gated on screen while the channel
  *   holds the connection; the connection switch carries the bind/unbind sentence as its
  *   tooltip, and its gating reason when another channel holds the connection.
+ * - A gated switch stays clickable; the gate names, per channel, what is missing and where a
+ *   click sends focus to supply it.
  * - A connection error gets its own line, whole, and stays on screen after the connection
  *   recovers; arrival is reported while connecting and erroring, naming the inbound stage when
- *   a message arrived but its task never started.
+ *   a message arrived but its task never started; held WeChat replies take the failure line.
  * - The delivery and Markdown options close the form, each switch rendered from its own field
  *   with its explanation behind a "?"; QQ's replies-only rule is stated on screen; the selector
  *   offers all four channels.
@@ -26,6 +28,7 @@ import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 import {
   MessagingBindingBody,
   MessagingBindingHelp,
+  enablePrerequisite,
   telegramTestNotices,
   type MessagingBindingEditorState,
   type MessagingChannelFacts,
@@ -80,8 +83,9 @@ function stateOf(
     testing: false,
     sendingTest: false,
     testable: false,
-    toggleBlocked: false,
-    toggleHint: null,
+    toggleBusy: false,
+    enableGate: null,
+    saveButtonId: "save-under-test",
     adoptBinding: () => {},
     save: noop,
     toggleEnabled: noop,
@@ -297,7 +301,7 @@ describe("MessagingBindingBody", () => {
     }
     // The grid's column count is spelled out in the component rather than interpolated, so
     // a fourth channel that did not widen it would silently wrap onto a second row.
-    expect(html).toContain("grid-cols-4");
+    expect(html).toContain("grid-cols-[repeat(4,1fr)]");
   });
 
   it("says whether anything has arrived, and which end failed when something did", () => {
@@ -384,6 +388,31 @@ describe("MessagingBindingBody", () => {
     expect(html).not.toContain(S.messaging.deliveryFailedSend(formatDateTime(at), detail));
   });
 
+  it("says WeChat replies are waiting for the next message, in the failure line's place", () => {
+    // Held replies are not a failure: the remedy is to message the bot, and an older send
+    // failure left beside the held line would read as the reason for the silence.
+    const detail = "wechat send failed: prepare failed";
+    const at = "2026-08-26T09:31:00.000Z";
+    const since = "2026-08-26T09:40:00.000Z";
+    const html = render(
+      stateOf("wechat", {
+        wechat: {
+          ...DARK,
+          secretConfigured: true,
+          enabled: true,
+          status: {
+            state: "connected",
+            lastInboundAt: "2026-08-26T09:30:00.000Z",
+            lastDeliveryError: { at, stage: "send", detail },
+            heldReplySince: since,
+          },
+        },
+      }),
+    );
+    expect(html).toContain(`>${S.messaging.repliesHeld(formatDateTime(since))}</p>`);
+    expect(html).not.toContain(S.messaging.deliveryFailedSend(formatDateTime(at), detail));
+  });
+
   it("reports arrival while connecting and while erroring: it is traffic, not the socket", () => {
     const live: MessagingChannelFacts = { ...DARK, secretConfigured: true, enabled: true };
     // Telegram's connect runs getMe, getWebhookInfo, a backlog drain and a first getUpdates
@@ -461,16 +490,66 @@ describe("MessagingBindingBody", () => {
     );
   });
 
-  it("shows the switch's gating reason when the other channel holds the connection", () => {
+  it("shows the switch's gating reason, and leaves a gated switch clickable", () => {
     const hint = S.messaging.otherEnabledHint(S.messaging.channelName.feishu);
     const html = render(
       stateOf(
         "telegram",
         { feishu: { ...DARK, secretConfigured: true, enabled: true } },
-        { toggleBlocked: true, toggleHint: hint },
+        { enableGate: { hint, focus: null } },
       ),
     );
     expect(html).toContain(hint);
+    // Dimmed and announced as unavailable, but not natively disabled: a click has to reach
+    // the handler that explains what to do first.
+    const toggle = /<button[^>]*role="switch"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(toggle).toContain('aria-disabled="true"');
+    expect(toggle).not.toContain('disabled=""');
+  });
+});
+
+describe("enablePrerequisite", () => {
+  const stored = { enabled: false, secretConfigured: true };
+  const blank = { enabled: false, secretConfigured: false };
+
+  it("names what each channel is missing and where focus goes to supply it", () => {
+    const expected = {
+      feishu: "credential",
+      telegram: "credential",
+      qq: "scan",
+      wechat: "scan",
+    } as const;
+    for (const channel of ["feishu", "telegram", "qq", "wechat"] as MessagingChannel[]) {
+      // No stored credential: the per-channel sentence, focus on the scan or the typed field.
+      expect(
+        enablePrerequisite({ channel, facts: blank, enabledChannel: null, dirty: false }),
+      ).toEqual({ hint: S.messaging.credentialMissingHint[channel], focus: expected[channel] });
+      // Stored but edited since: save first.
+      expect(
+        enablePrerequisite({ channel, facts: stored, enabledChannel: null, dirty: true }),
+      ).toEqual({ hint: S.messaging.saveBeforeEnable, focus: "save" });
+      // Another channel holds the connection: that outranks the rest, and its fix is not on
+      // this form, so focus stays put.
+      const other: MessagingChannel = channel === "feishu" ? "telegram" : "feishu";
+      expect(
+        enablePrerequisite({ channel, facts: blank, enabledChannel: other, dirty: true }),
+      ).toEqual({
+        hint: S.messaging.otherEnabledHint(S.messaging.channelName[other]),
+        focus: null,
+      });
+      // Nothing missing; and turning a live connection off is never gated.
+      expect(
+        enablePrerequisite({ channel, facts: stored, enabledChannel: null, dirty: false }),
+      ).toBeNull();
+      expect(
+        enablePrerequisite({
+          channel,
+          facts: { enabled: true, secretConfigured: true },
+          enabledChannel: channel,
+          dirty: true,
+        }),
+      ).toBeNull();
+    }
   });
 });
 

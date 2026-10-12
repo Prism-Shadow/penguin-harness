@@ -17,6 +17,9 @@
  * its accessible name and tooltip — the caller's `label`, since only the app knows its words — so
  * nothing here is legible only to a sighted reader with full colour vision.
  *
+ * A run that finishes on screen brings the dot in under `data-reveal` rather than swapping it for
+ * the hourglass in one frame; a row that mounts finished reveals nothing.
+ *
  * Every state renders into the same `size` box, and the dot is centred in it rather than sized
  * to it: the box is the reservation, so a row never shifts as a run starts, finishes and is read.
  *
@@ -32,6 +35,7 @@
  * fully legible.
  */
 import { ICON_SIZE } from "../../../icon-scale";
+import { useArrived } from "../../../motion/use-arrived";
 import { Dot } from "../dot/dot";
 import { GlyphIcon } from "../glyph-icon/glyph-icon";
 import { ICONS } from "../icons";
@@ -56,6 +60,7 @@ export function ActivityIcon({
   label: string;
   size?: number;
 }) {
+  const changedHere = useArrived(activity);
   if (activity === "completedUnread") {
     // A plain labelled image: run completion is announced by the app's notification path, so
     // the dot must not announce itself again as a live status.
@@ -64,6 +69,7 @@ export function ActivityIcon({
         role="img"
         aria-label={label}
         data-tooltip={label}
+        {...(changedHere ? { "data-reveal": true } : {})}
         style={{ width: size, height: size }}
         className="flex shrink-0 items-center justify-center"
       >

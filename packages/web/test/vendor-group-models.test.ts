@@ -2,11 +2,11 @@
  * A vendor group carries the built-in catalog and nothing else.
  *
  * Its entries persist no `client_type`, so MMSP places each one by the vendor family its
- * model id begins with; an id of no known family — or an entry still pinned to a client type
- * MMSP does not have — is a model that never starts. The page therefore offers no add-model
- * entry point on such a group, and marks a row that cannot route — with the fix that row's
- * own shape calls for, since a built-in model whose stored entry carries a stale protocol pin
- * must not be told to move into a custom group.
+ * model id begins with; an id of no known family is a model that never starts. The page
+ * therefore offers no add-model entry point on such a group, and marks a row that cannot route
+ * with the way out: moving it into a custom group, where a protocol can be picked or detected.
+ * A protocol set on the group (its settings) routes its models too, so the card judges the
+ * protocol a row is actually used with.
  *
  * vitest runs node-only here, so the card is rendered to static markup and the group header's
  * add entry point is checked through the action set group-header.ts decides (the header lives
@@ -62,35 +62,20 @@ const render = (patch: Partial<RowState>, owner = true) =>
       hourTick: 0,
       onOpen: noop,
       onMoveToCustom: owner ? noop : undefined,
-      onSyncPresets: owner ? noop : undefined,
     }),
   );
 
-/**
- * In the catalog, and unroutable by the pin it carries: a Project written before MMSP 0.5.0
- * holds deepseek-flash pinned to `deepseek-v4`, a client type MMSP no longer has.
- */
-const PRESET_STALE_PIN = { modelId: "deepseek-flash", clientType: "deepseek-v4" };
 /** Not in the catalog: added by hand into a group that routes by id. */
 const HAND_ADDED = { modelId: "qwen/qwen3.8-flash-next" };
 
 describe("unroutableFix", () => {
-  it("sends a built-in model to the preset sync, never to a custom group", () => {
-    // The live case: the stale pin fails at construction, while the catalog row pins nothing
-    // today and routes by its `deepseek-` prefix — which is what a sync writes back.
-    expect(unroutableFix("deepseek", "deepseek-flash", "deepseek-v4")).toBe("sync");
-    // As the catalog carries it today there is nothing wrong with the row at all.
-    expect(unroutableFix("deepseek", "deepseek-flash", "")).toBeNull();
-  });
-
   it("sends a hand-added id to a custom group", () => {
     expect(unroutableFix("deepseek", "qwen/qwen3.8-flash-next", "")).toBe("custom");
   });
 
-  it("judges the id currently in the field, not the one the row was loaded with", () => {
-    // Retyping a preset's id makes it a different model; a sync would not touch it, so the
-    // advice has to change with the field.
-    expect(unroutableFix("deepseek", "deepseek-flash-0731", "deepseek-v4")).toBe("custom");
+  it("judges the protocol the row is used with, a group's included", () => {
+    // DeepSeek told to speak Chat Completions in its group settings routes any id.
+    expect(unroutableFix("deepseek", "qwen/qwen3.8-flash-next", "openai-chat")).toBeNull();
   });
 
   it("has nothing to say about a routable row, a blank id, or a group that picks its protocol", () => {
@@ -105,27 +90,13 @@ describe("unroutableFix", () => {
 });
 
 describe("a card for a row its vendor group cannot route", () => {
-  it("tells a built-in model's owner to sync presets, and offers that action", () => {
-    const html = render(PRESET_STALE_PIN);
-    expect(html).toContain(S.models.vendorRowStalePin);
-    expect(html).toContain(S.models.syncCatalog);
-    // The wrong advice for this row: it is a built-in model, and it stays where it is.
-    expect(html).not.toContain(S.models.moveToCustomGroup);
-    expect(html).not.toContain(S.models.vendorRowUnroutable);
-  });
-
   it("tells a hand-added model's owner to move it, and offers that action", () => {
     const html = render(HAND_ADDED);
     expect(html).toContain(S.models.vendorRowUnroutable);
     expect(html).toContain(S.models.moveToCustomGroup);
-    expect(html).not.toContain(S.models.vendorRowStalePin);
-    expect(html).not.toContain(S.models.syncCatalog);
   });
 
-  it("still warns a member in both cases, who has no config write and so is offered no action", () => {
-    const preset = render(PRESET_STALE_PIN, false);
-    expect(preset).toContain(S.models.vendorRowStalePin);
-    expect(preset).not.toContain(S.models.syncCatalog);
+  it("still warns a member, who has no config write and so is offered no action", () => {
     const handAdded = render(HAND_ADDED, false);
     expect(handAdded).toContain(S.models.vendorRowUnroutable);
     expect(handAdded).not.toContain(S.models.moveToCustomGroup);
@@ -143,7 +114,6 @@ describe("a card for a row its vendor group cannot route", () => {
     });
     for (const html of [byId, byPin, inCustom]) {
       expect(html).not.toContain(S.models.vendorRowUnroutable);
-      expect(html).not.toContain(S.models.vendorRowStalePin);
     }
   });
 });
@@ -176,18 +146,18 @@ describe("the ways the page can open the add-model dialog", () => {
   });
 
   it("leave the page's other group actions in place (only adding a model is closed off)", () => {
-    // A vendor group still takes a group API key and a speed test — the rule is about what
-    // may be written into the group, not about reaching it.
-    expect(source).toContain("onClick={() => setGroupKeyFor(group.provider.id)}");
+    // A vendor group still takes a speed test and its settings, where its group key is set —
+    // the rule is about what may be written into the group, not about reaching it.
     expect(source).toContain("setSpeedFor(group.provider.id)");
+    expect(source).toContain("setSettingsFor(group.provider.id)");
     for (const p of MODEL_PROVIDERS.filter((provider) => isVendorGroup(provider.id))) {
       const actions = groupHeaderActions(p, {
         isOwner: true,
         keyStored: true,
         balancePinned: false,
       });
-      expect(actions, p.id).toContain("groupKey");
       expect(actions, p.id).toContain("speedTest");
+      expect(actions, p.id).toContain("settings");
     }
   });
 });
@@ -199,30 +169,23 @@ describe("the predicate the page reads", () => {
     expect(isVendorGroup("openrouter")).toBe(false);
     expect(unroutableVendorModel("deepseek", "qwen/qwen3.8-flash-next")).toBe(true);
     expect(unroutableVendorModel("custom", "qwen/qwen3.8-flash-next")).toBe(false);
-    // Whether a model may be added at all is the wider rule: gateways take none either.
+    // Whether a model may be added at all is the wider rule: most gateways take none either,
+    // while the three that list a fraction of what they serve do.
     expect(isAddableGroup("deepseek")).toBe(false);
-    expect(isAddableGroup("openrouter")).toBe(false);
+    expect(isAddableGroup("fireworks")).toBe(false);
+    expect(isAddableGroup("openrouter")).toBe(true);
     expect(isAddableGroup("custom")).toBe(true);
   });
 });
 
 describe("copy", () => {
-  it("carries both fixes in both dictionaries, and keeps them apart", () => {
+  it("carries the warning and its way out in both dictionaries", () => {
     for (const dict of [zh, en]) {
       const m = dict.models;
-      expect(m.vendorRowUnroutable).not.toBe(m.vendorRowStalePin);
-      expect(m.testNotRoutable).not.toBe(m.testStalePin);
-      // Neither message quotes the sync button's own label. The warning is shown to members
-      // too, who have no such button, and the owner who does have one reads it right beside
-      // the sentence. Checked per dictionary because a card only ever renders the active one.
-      expect(m.vendorRowStalePin).not.toContain(m.syncCatalog);
-      expect(m.testStalePin).not.toContain(m.syncCatalog);
       for (const text of [
         m.vendorRowUnroutable,
-        m.vendorRowStalePin,
         m.moveToCustomGroup,
         m.testNotRoutable,
-        m.testStalePin,
         // The server's refusal is localized by code, not by relaying its English message.
         dict.errors.byCode.model_not_routable,
       ]) {

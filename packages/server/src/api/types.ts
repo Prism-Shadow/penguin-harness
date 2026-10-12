@@ -16,6 +16,7 @@
 import type {
   CompactionMode,
   OmniMessage,
+  SessionSource,
   ToolCallPayload,
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
@@ -32,10 +33,18 @@ import type { WorkflowInfo } from "../mechanisms/workflows.js";
 // General
 // ---------------------------------------------------------------------------
 
-/** Unified error response body; `code` is a machine-readable error code, `message` is a Chinese user-facing message. */
+/**
+ * Unified error response body: `code` is a machine-readable error code, `message` an English
+ * user-facing message, and `details`, on the errors that have them, the facts a client acts on
+ * beside the code (the Benchmark id a 409 `benchmark_exists` is about, say) — read from there,
+ * never parsed out of the message.
+ */
 export interface ErrorBody {
-  error: { code: string; message: string };
+  error: { code: string; message: string; details?: ErrorDetails };
 }
+
+/** An error's structured facts, by name; each code that carries them documents its own. */
+export type ErrorDetails = Readonly<Record<string, string>>;
 
 /** Session approval mode (reuses the CLI enum). */
 export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask";
@@ -43,8 +52,11 @@ export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask"
 /** Session run status: idle / Task in progress / compacting. */
 export type SessionStatus = "idle" | "running" | "compacting";
 
-/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session / created by a Benchmark evaluation or optimization. */
-export type SessionSource = "schedule" | "subagent" | "benchmark";
+/**
+ * What kind of conversation a Session is (`user` / `api` / `schedule` / `subagent` / `cli`):
+ * core's type, the one definition, re-exported for the DTOs below.
+ */
+export type { SessionSource };
 
 // ---------------------------------------------------------------------------
 // Authentication and users
@@ -256,6 +268,19 @@ export interface ServerSettings {
    * reports it so clients hide the mode switch. Organizations on disk are untouched.
    */
   companyMode: boolean;
+  /**
+   * Whether users may drive their own Chrome through the PenguinHarness Browser extension
+   * (default on). Off closes every connected extension (close code 4009), refuses new
+   * connections, and makes the chrome backend unavailable (`extension_disabled`); pairings are
+   * kept, so turning it on again lets the extensions reconnect.
+   */
+  browserExtensionsEnabled: boolean;
+  /**
+   * Whether external programs may talk to Agents through the Agent API (default on). Off answers
+   * every `/api/amsp/v1` request 403 `agent_api_disabled` (a CORS preflight excepted); every
+   * Agent's API switch, approval mode and keys are kept, so turning it on again restores them.
+   */
+  agentApiEnabled: boolean;
 }
 
 export interface ServerSettingsResponse {
@@ -268,6 +293,10 @@ export interface ServerSettingsUpdateRequest {
   proxyForAgent?: boolean;
   /** Company mode master switch; see `ServerSettings.companyMode`. */
   companyMode?: boolean;
+  /** Chrome extension switch; see `ServerSettings.browserExtensionsEnabled`. */
+  browserExtensionsEnabled?: boolean;
+  /** Agent API switch; see `ServerSettings.agentApiEnabled`. */
+  agentApiEnabled?: boolean;
   /**
    * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
    * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
@@ -405,6 +434,12 @@ export interface UiPrefs {
   lastOrgKey?: string;
   /** The one group balance shown beside the user name (pinned on the models page); null when unpinned. */
   pinnedBalance?: PinnedBalance | null;
+  /**
+   * The browser this user's agents drive. Written only through PUT /api/builtin-browser/backend
+   * (PUT /api/me/prefs refuses it): absent means built-in for an admin on the desktop, chrome
+   * everywhere else.
+   */
+  browserBackend?: BrowserBackend;
   [key: string]: unknown;
 }
 
@@ -482,7 +517,8 @@ export interface MemberAddResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Model and credential config (single .project_config.toml file; credentials are inlined on model entries)
+// Model and credential config (single .project_config.toml file; credentials are inlined in it:
+// once per group in [providers.<id>], and on a model entry where that model overrides its group)
 // ---------------------------------------------------------------------------
 
 /**
@@ -500,6 +536,40 @@ export interface ModelPricingDto {
   cacheRead: number;
   cacheWrite: number;
   output: number;
+}
+
+/**
+ * One group's `[providers.<id>]` connection as the page reads it: the values the GROUP stores
+ * (never the catalog's), the key masked. An absent field is unset: a row with no value of its
+ * own then gets the client's default.
+ */
+export interface ProviderConnectionDto {
+  baseUrl?: string;
+  clientType?: string;
+  apiKeyMasked?: string;
+  /** When the group key was written (ISO 8601). */
+  createdAt?: string;
+}
+
+/** Where an effective connection value comes from: the row itself, its group, or nowhere (the client's default). */
+export type ConnectionSourceDto = "model" | "provider" | "none";
+
+/**
+ * What a row is actually used with, after core's effectiveConnection (row -> group -> none,
+ * per field; the file's values only — the catalog is not consulted), and where each value
+ * came from. The group's key counts only where it reaches the row (core's groupKeyReaches).
+ * The row's own values stay in `clientType` / `credential` (what the form edits); this is for
+ * display.
+ */
+export interface ModelEffectiveConnection {
+  baseUrl?: string;
+  baseUrlSource: ConnectionSourceDto;
+  clientType?: string;
+  clientTypeSource: ConnectionSourceDto;
+  /** `env` = no row or group key, and the environment lends one on the effective endpoint (modelEnvFallback). */
+  apiKeySource: "model" | "provider" | "env" | "none";
+  /** Mask of the key the row would use, whichever source; absent when none. */
+  apiKeyMasked?: string;
 }
 
 /** Read-only credential display: masked key and creation time; plaintext is never sent. */
@@ -522,12 +592,15 @@ export interface ModelInfo {
    */
   displayName?: string;
   contextWindow?: number;
-  /** MMSP client type (`openai-chat`, `openai-responses`, etc.); absent = MMSP routes by the vendor family the modelId begins with. */
+  /**
+   * The row's OWN MMSP client type (`openai-chat`, `openai-responses`, etc.) — an override of
+   * its group's; absent = the row follows its group (see `effective`).
+   */
   clientType?: string;
   /**
-   * Whether image input (vision/multimodal) is supported: the TOML `vision` annotation takes
-   * priority, falling back to the built-in catalog annotation; if neither exists, defaults to
-   * unset (= treated as supported).
+   * Whether image input (vision/multimodal) is supported: the TOML `vision` annotation only
+   * (a new Project writes `false` where the catalog says so); absent = unset, treated as
+   * supported. The catalog is not consulted.
    */
   vision?: boolean;
   /**
@@ -558,13 +631,18 @@ export interface ModelInfo {
    * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
    * currently holds for `envKey` — the plaintext is never serialized. Reported only where the
    * fallback may be presented as covering the entry (core's modelEnvPreviewKey): a row whose
-   * own base URL is a vendor endpoint, or a keyless row in a vendor group or Penguin Go. Gateway
-   * rows never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
+   * effective base URL is a vendor endpoint (or the Penguin Go relay), or a row with no base URL
+   * in a built-in group other than custom, on the client its id's family names. Gateway rows
+   * never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
    * although those do fall back. Absent = the variable is unset or empty, or the entry is not
-   * previewable.
+   * previewable. Computed on the effective shape, and only when no row or group key reaches
+   * the row.
    */
   envKeyMasked?: string;
+  /** The row's OWN key (masked) and base URL — overrides of its group's; see `effective`. */
   credential?: CredentialInfo;
+  /** The connection the row is actually used with, and where each value comes from. */
+  effective: ModelEffectiveConnection;
   isDefault: boolean;
 }
 
@@ -580,7 +658,27 @@ export interface ModelsResponse {
    * (the key was fixed since). Absent when the Project has no config file yet.
    */
   updatedAt?: string;
+  /** Every group's stored connection (`[providers.<id>]`), keyed by provider id; a group with none is absent. */
+  providers: Record<string, ProviderConnectionDto>;
   models: ModelInfo[];
+}
+
+/**
+ * A change to one group's connection (`PUT /models/providers/:provider`, or a member of
+ * `ModelsUpdateRequest.providers`). Omitted fields are kept.
+ */
+export interface ProviderConnectionUpdate {
+  /** `null` clears it; omitted keeps it. */
+  baseUrl?: string | null;
+  /**
+   * `null` or `""` clears it; omitted keeps it. Any group takes one: a row that stores its own
+   * protocol keeps it.
+   */
+  clientType?: string | null;
+  /** A non-empty key; sets `createdAt`. Rows with their own key keep it. */
+  apiKey?: string;
+  /** When true, clears the group key (rows with their own key keep it). */
+  clearApiKey?: boolean;
 }
 
 /** PUT full-table replace semantics: models not present are deleted; omitting apiKey = keep existing value. Key = (provider, modelId). */
@@ -603,7 +701,10 @@ export interface ModelUpdateEntry {
    */
   renamedFrom?: ModelRefDto;
   contextWindow?: number;
-  /** Empty string/omitted = unspecified (MMSP routes by the vendor family the modelId begins with). */
+  /**
+   * Empty string/omitted = the row stores none: it follows its group's protocol, else MMSP
+   * routes by the vendor family the modelId begins with.
+   */
   clientType?: string;
   /** Whether image input (vision/multimodal) is supported; omitted = supported (not persisted). */
   vision?: boolean;
@@ -631,7 +732,31 @@ export interface ModelsUpdateRequest {
   defaultModel?: ModelRefDto;
   /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
   visionModel?: ModelRefDto;
+  /** Group connection changes, merged per provider; a provider absent here keeps its table. */
+  providers?: Record<string, ProviderConnectionUpdate>;
   models: ModelUpdateEntry[];
+}
+
+/**
+ * `POST /models/sync-presets` (owner): `add` adds the catalog's presets the Project lacks
+ * (retired rows never), as a new Project stores them, writes the catalog's
+ * `[providers.<id>]` table for a group that has neither rows nor a table yet, and seeds the
+ * added rows' promotions, touching nothing else; `restore` puts every built-in row and
+ * built-in group table back to the catalog (facts reset, base URLs and protocols set on models
+ * or groups return to the catalog's, keys and the user's own rows and groups kept, promotions
+ * reset, deleted presets added back).
+ */
+export type PresetSyncMode = "add" | "restore";
+
+export interface PresetSyncRequest {
+  mode: PresetSyncMode;
+}
+
+export interface PresetSyncResponse extends ModelsResponse {
+  /** Preset rows added (both modes). */
+  added: number;
+  /** Built-in rows reset to the catalog (`restore`; 0 for `add`). */
+  restored: number;
 }
 
 /**
@@ -737,7 +862,12 @@ export interface ModelProtocolDetectRequest {
   apiKey?: string;
   /** "Clear saved API key" is checked: do not fall back to the stored key (probe the current draft). */
   clearApiKey?: boolean;
-  /** Optional paired reference: when it names a stored entry and no apiKey is given, that entry's saved key backs the probes (mirrors the connectivity test). */
+  /**
+   * Optional paired reference: when it names a stored entry and no apiKey is given, that
+   * entry's saved key backs the probes (mirrors the connectivity test), else its group's.
+   * `provider` may be sent without `modelId` (the group settings dialog has no model): the
+   * group key backs the probes.
+   */
   provider?: string;
   modelId?: string;
 }
@@ -1088,11 +1218,15 @@ export interface VaultUpdateRequest {
 // Agent and its config (system_config.yaml + AGENTS.md)
 // ---------------------------------------------------------------------------
 
-/** One installed plugin (a skill or a hook package) the library carries a higher version of (see {@link AgentSummary.pluginUpdates}). */
+/** One library plugin an Agent's installed copy is behind on — one of its skills or its hook package carries an older dated version than the library's same part (see {@link AgentSummary.pluginUpdates}). */
 export interface PluginUpdateRef {
   /** Plugin name — what `POST …/plugins` reinstalls to bring the Agent up to date. */
   name: string;
-  /** The LIBRARY's version (`YYYY.MM.DD.N`), i.e. what installing again would bring, not what is on disk. */
+  /**
+   * The LIBRARY's content version: the newest dated version (`YYYY.MM.DD.N`) among the plugin's
+   * parts, i.e. the date of what installing again would bring, not what is on disk. A label —
+   * it moves whenever any part changes, so a dismissed update comes back for the next one.
+   */
   version: string;
 }
 
@@ -1125,15 +1259,36 @@ export interface AgentSummary {
   hookCount: number;
   /**
    * Installed plugins the built-in library has moved past — a skill or a hook package whose
-   * on-disk version is behind the library plugin that ships it — each with the library version
-   * on offer: the plugin-library update gate, riding along on the Agent list so a badge over
-   * that page costs no request of its own. Empty when nothing is behind. Skills the library
-   * does not carry (installed from a zip or a picked directory) are never listed: there is no
-   * library version for them to be behind.
+   * on-disk dated version is behind the library's same part (compared part by part, never
+   * against the plugin's npm version) — each with the library's content version on offer: the
+   * plugin-library update gate, riding along on the Agent list so a badge over that page costs
+   * no request of its own. Empty when nothing is behind. Skills the library does not carry
+   * (installed from a zip or a picked directory) are never listed: there is no library version
+   * for them to be behind.
    */
   pluginUpdates: PluginUpdateRef[];
   /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
   memoryCount: number;
+  /** Whether the Agent's API tab switch is on (this server's web.db, see AgentApiSettings.enabled): the list card's API mark. */
+  apiEnabled: boolean;
+  /**
+   * The organizations of this Project that employ the Agent, one entry per organization:
+   * every organization directory the Project holds, paused ones included, plus the CEO id of
+   * an organization whose chart does not parse. Absent or empty = not an employee. An
+   * employed Agent cannot be deleted (`DELETE` answers 409 `agent_employed`) until it leaves
+   * every one of them; development mode lists employees in a section of their own.
+   */
+  employments?: Employment[];
+}
+
+/** One organization employing an Agent, as the Agent list carries it (see {@link AgentSummary.employments}). */
+export interface Employment {
+  orgId: string;
+  /** The organization's display name (`org_config.toml`), the id when the config does not parse. */
+  orgName: string;
+  /** The Agent's title in that organization's chart; "CEO" for the CEO of a chart that does not parse. */
+  title: string;
+  status: OrgStatus;
 }
 
 export interface AgentsResponse {
@@ -1295,13 +1450,20 @@ export interface AgentKernelUpdateResponse {
   kernelVersion: string;
 }
 
-/** POST …/config/mcp-test result: reachability of one MCP Server entry. */
+/**
+ * POST …/config/mcp-test result: reachability of one MCP Server entry. Its `${KEY}` references
+ * are filled in from the Agent's vault only when the entry is saved on the Agent exactly as
+ * tested (same name, same config — the user's rule); a new or changed entry that references the
+ * vault is not filled in and not contacted (`saveFirst`).
+ */
 export interface McpServerTestResponse {
   ok: boolean;
   /** Discovered tool names (`mcp__<server>__<tool>`), present on success. */
   tools?: string[];
-  /** Failure detail (connect error, timeout, server stderr tail), present on failure. */
+  /** Failure detail (connect error, timeout, server stderr tail; "needs setup: …" naming a vault key a saved entry references and the vault lacks, with nothing contacted), present on failure. */
   error?: string;
+  /** The entry references the vault and is not saved as it is: nothing was filled in or contacted — save it, then test (`error` says so in English). */
+  saveFirst?: boolean;
   /** Connect + discovery wall time (both outcomes) — the models test reports latency, this matches. */
   latencyMs?: number;
 }
@@ -1326,6 +1488,72 @@ export interface AgentConfigUpdateRequest {
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
   };
+}
+
+// ---------------------------------------------------------------------------
+// Agent API (/api/projects/:projectId/agents/:agentId/api; the stream itself is AMSP,
+// /api/amsp/v1, whose snake_case wire types live in @prismshadow/amsp)
+// ---------------------------------------------------------------------------
+
+/** One API key of an Agent, as listed: the secret itself is shown once, at creation, and never again. */
+export interface AgentApiKeyInfo {
+  keyId: string;
+  /** 1-64 characters, given by whoever created it. */
+  name: string;
+  /** The key's first 16 characters (`penguin_` + 8), enough to tell keys apart. */
+  prefix: string;
+  /** user_id of the Project owner who created it. */
+  createdBy: string;
+  createdAt: string;
+  /** Last run request that authenticated with it; null = never used. */
+  lastUsedAt: string | null;
+}
+
+/**
+ * One Agent's public API settings — this server's, kept in web.db, never in the Agent State or
+ * the Project file, so the Agent cannot expose itself or loosen its own approvals. An Agent
+ * never configured reads as disabled, keyed, allow-all, with no keys.
+ */
+export interface AgentApiSettings {
+  /** The API tab's switch; off = every AMSP request for this Agent is 404 `agent_not_found`. */
+  enabled: boolean;
+  /** Keyless access: a request without `Authorization` is accepted; off = 401 `unauthorized`. */
+  open: boolean;
+  /**
+   * The approval mode an API Session is created with. It is copied onto each API Session when
+   * that Session is created, and the Session's own mode is what every decision reads, so a
+   * change here applies to API Sessions created afterwards.
+   */
+  approvalMode: ApprovalMode;
+  keys: AgentApiKeyInfo[];
+}
+
+export interface AgentApiResponse {
+  api: AgentApiSettings;
+  /**
+   * The admin's server-wide switch (`ServerSettings.agentApiEnabled`), which only an admin can
+   * read through /api/admin/settings: off, every Agent's API is refused (403) whatever `api` says.
+   */
+  serverEnabled: boolean;
+}
+
+/** PUT body (owner only): every field optional, omitted fields keep their current value. */
+export interface AgentApiUpdateRequest {
+  enabled?: boolean;
+  open?: boolean;
+  approvalMode?: ApprovalMode;
+}
+
+/** POST …/api/keys body (owner only). */
+export interface AgentApiKeyCreateRequest {
+  /** 1-64 characters. */
+  name: string;
+}
+
+/** The one response that carries the secret (`penguin_` + 43 base64url characters); only its hash is stored. */
+export interface AgentApiKeyCreateResponse {
+  key: AgentApiKeyInfo;
+  secret: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1483,6 +1711,19 @@ export interface SessionSandbox {
    * (400 `sandbox_unsupported`).
    */
   localNetworkSupported?: boolean;
+  /** Response only, ignored in requests: whether a backend here can enforce `masksPaths`. */
+  maskPathsSupported?: boolean;
+  /**
+   * Response only, ignored in requests: true when this policy hides paths (the Sandbox card's
+   * masked paths, kept by every pick). Where `maskPathsSupported` is false, every level then
+   * refuses every command, and the composer says so.
+   */
+  masksPaths?: boolean;
+  /**
+   * Response only, ignored in requests: the names of the sandbox backends in use here, which the
+   * composer names when a level is beyond what they enforce. Absent with none in use.
+   */
+  backendsInUse?: string[];
   /**
    * Response only, ignored in requests: the sandbox backends that are enabled here but failed
    * to load or failed their check (a WSL distro not set up, a wrong program path), each with
@@ -1490,6 +1731,50 @@ export interface SessionSandbox {
    * composer marks the confining levels unavailable and gives the first one's reason.
    */
   unavailableBackends?: UnavailableSandboxBackend[];
+  /**
+   * Response only, ignored in requests: the server's sandbox presets (the Sandbox card's table),
+   * in table order, disabled rows included. The composer lists the enabled ones and names the
+   * Session's level by the first row matching its mode, network and approval mode. A server
+   * that does not report it gets the composer's built-in table.
+   */
+  presets?: SessionSandboxPreset[];
+  /**
+   * Response only, ignored in requests: true when this Session's policy holds something the
+   * presets do not show — masked paths, or the temp directory not writable.
+   */
+  advanced?: boolean;
+  /**
+   * Response only, chat defaults only: the approval mode a new Session starts with when its
+   * request names none — the Sandbox card's default preset's, while the switch is on. Absent:
+   * the server's own fallback (`allow-all`).
+   */
+  defaultApprovalMode?: ApprovalMode;
+  /**
+   * Response only, ignored in requests: the Sandbox card's switch on this server — whether new
+   * Sessions start confined. Off, the composer offers the approval modes alone (a Session keeps
+   * its own policy either way). A server that does not report it is read as on.
+   */
+  switchOn?: boolean;
+}
+
+/** One sandbox preset: a named mode, network level and approval mode. */
+export interface SessionSandboxPreset {
+  id: string;
+  /** The name an administrator gave it, or its declared English name. */
+  name: string;
+  /** Its declared Chinese name, while it has not been renamed. */
+  nameZh?: string;
+  /** Whether the composer's menu lists it. */
+  enabled: boolean;
+  mode: SessionSandboxMode;
+  network: SessionSandboxNetwork;
+  approvalMode: ApprovalMode;
+  /**
+   * Response-only: its file mode or network is wider than the server's sandbox settings (the
+   * ceiling for non-admins), so a non-admin's pick of it is refused with `403 sandbox_forbidden`.
+   * The same comparison as that refusal; absent when it is within them.
+   */
+  aboveCeiling?: true;
 }
 
 /** An enabled sandbox backend that is not in use on this server, and why. */
@@ -1528,7 +1813,16 @@ export interface SessionInfo {
   thinkingLevel?: ThinkingLevelName;
   /** Short title auto-generated by the model after the first turn; unset until generated (frontend shows "New Chat"). */
   title?: string;
-  /** Session source (for list badges/folders), derived from core session_meta — the single source of truth (not stored in the DB); unset for user-created sessions. */
+  /**
+   * What kind of conversation this is, read from core session_meta — the single source of
+   * truth (the DB stores no source). A `user` Session is an active row of the sidebar; `api`,
+   * `schedule`, `subagent` and `cli` file the row under its Background folder, marked with its
+   * source; a `company` Session is in no folder of the list at all — company mode's own views
+   * list it. A Trace head that records no source (written before it was required) reads as
+   * `company` for a row the organization runtime opened (`client: "org"`), else as `user`; so
+   * does such a row before its first run. Absent only while any other row is not yet
+   * classified (its Trace head has not been read yet), which renders as `user`.
+   */
   source?: SessionSource;
   createdAt: string;
   /**
@@ -1578,14 +1872,14 @@ export interface SessionInfo {
   /**
    * Which client opened the Session, as stored on the index row: "cli" from the CLI (a
    * Session adopted from a legacy CLI-direct Trace included), "org" from the organization
-   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "web"
-   * otherwise. Absent only on a row that
-   * predates the column, which reads as "web". Unlike {@link SessionInfo.orgId} — projected
-   * from the organization caches, so it disappears with the organization and is not read
-   * while company mode is off — this is a durable stamp on the row: development mode's list
-   * hides an "org" Session either way.
+   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "api"
+   * from an Agent API run (the only Sessions the API may continue), "web" otherwise. Absent
+   * only on a row that predates the column, which reads as "web". Unlike
+   * {@link SessionInfo.orgId} — projected from the organization caches, so it disappears with
+   * the organization and is not read while company mode is off — this is a durable stamp on
+   * the row: development mode's list hides an "org" Session either way.
    */
-  client?: "web" | "cli" | "org";
+  client?: "web" | "cli" | "org" | "api";
   /**
    * Background work the Session's loaded runtime still owns: command sessions running past
    * their yield window (`exec_command` promotions and `run_in_background` launches) and
@@ -1607,15 +1901,37 @@ export interface SessionBackgroundTasks {
 }
 
 /**
- * Session list category, the sidebar's five-way split applied server-side: archived wins
- * regardless of origin (archiving is an explicit user action), then the origin's bucket,
- * and a Session with no (or an unknown) source is `active` — user-created rows.
+ * Session list category, the sidebar's three-way split applied server-side: archived wins
+ * regardless of source (archiving is an explicit user action); otherwise a `user` Session (or
+ * one not yet classified) is `active`, and every other source is `background` — the one
+ * folder that holds what programs opened (API, scheduled, subagent and CLI Sessions). A
+ * `company` Session belongs to none of the three, archived or not: the list leaves it out of
+ * every category and every total.
  */
-export type SessionCategory = "active" | SessionSource | "archived";
+export type SessionCategory = "active" | "background" | "archived";
 
 /** Per-category totals across an Agent's whole Session list (returned when the list is requested with counts). */
 export type SessionCategoryCounts = Record<SessionCategory, number>;
 
+/**
+ * GET /api/projects/:projectId/agents/:agentId/sessions. Every query parameter is optional:
+ *
+ * - `order`: `created` (the default) lists newest creation first; `activity` lists most recent
+ *   `lastActiveAt` first, ties broken by `sessionId` descending, both compared as plain strings
+ *   (code points, never locale collation) so a client can compute the same order.
+ * - `limit` (1–1000) with `offset` (≥ 0): an offset page, in either order. Offsets suit only the
+ *   `created` order, which activity never reshuffles.
+ * - `before=<lastActiveAt>,<sessionId>` with `limit`: under `order=activity` only, the rows
+ *   strictly below that cursor — the key of the last row the client holds. A row that becomes
+ *   active between pages moves above the cursor and is not served again, and no other row is
+ *   skipped (`session_state` tells the client about the moved one). 400 without
+ *   `order=activity`, beside `offset`, without `limit`, or when not a parseable stamp and a
+ *   valid id split at the first comma.
+ * - `category`, `workspaceGroup`, `excludeOrg=1` filter before paging; `counts=1` adds the
+ *   whole-list totals below, which no cursor or offset narrows. A request with `category`,
+ *   `workspaceGroup` or `counts=1` leaves every `company` Session out of the page and the
+ *   totals (it is in no category); one with none of them serves every row.
+ */
 export interface SessionsResponse {
   /**
    * The page. With `excludeOrg=1` on the request, the rows an organization owns — its desk
@@ -1655,6 +1971,23 @@ export interface DirEntryInfo {
   kind?: "dir" | "file";
   /** Last modification, epoch milliseconds; absent when unknown (listings over ssh, an entry stat could not reach). */
   mtime?: number;
+  /** Hidden by the machine's own rules beyond the dot-name convention (Windows hidden/system attribute). */
+  hidden?: true;
+}
+/** A storage location the machine offers beside its folders: a Windows drive, a macOS volume, a Linux root or mount. */
+export interface DirLocation {
+  /** Absolute path it opens (`C:\`, `/`, `/Volumes/USB`, `/media/me/USB`, `/mnt/c`). */
+  path: string;
+  kind: "drive" | "removable" | "network" | "optical" | "volume" | "root";
+  /** The machine's own name for it (volume label, volume name, share `\\nas\media`, WSL `C:`); absent when none. */
+  label?: string;
+}
+/** The platform's standard folders as that machine resolves them; only those that exist. */
+export interface DirStandardFolders {
+  desktop?: string;
+  documents?: string;
+  downloads?: string;
+  pictures?: string;
 }
 export interface DirListResponse {
   /** Absolute path of the current directory (realpath). */
@@ -1665,8 +1998,10 @@ export interface DirListResponse {
   entries: DirEntryInfo[];
   /** The listed machine's `process.platform`; absent for a machine listed over ssh. */
   platform?: string;
-  /** Windows only, on the home request (no `path`): the drive roots that exist. */
-  roots?: string[];
+  /** Home request with `places=1` only. */
+  standardFolders?: DirStandardFolders;
+  /** Home request with `places=1` only, in the order the sidebar lists them. */
+  locations?: DirLocation[];
 }
 
 /** One Skill found in a picked directory: metadata plus which of the two layouts it came from. */
@@ -1712,12 +2047,12 @@ export interface SessionCreateRequest {
    */
   client?: "web" | "cli" | "org";
   /**
-   * Marks the Session as created by a Benchmark evaluation or optimization (the Evaluation
-   * Center's Use flows, and the Test Sessions agent-evaluation launches through the CLI). Only
-   * this value is accepted from a client: `subagent` and `schedule` are written by the server
-   * itself. The Web App files such Sessions into the Evaluations folder of the session list.
+   * The Session's source, when it is not a person's conversation: only `cli` is accepted from
+   * a client (`penguin run` sends it); every other source is the server's own to write, and
+   * absent means `user`. The retired `benchmark` is still accepted, as `cli`, until 0.3.0, for
+   * an older CLI or Web App that still sends it.
    */
-  source?: "benchmark";
+  source?: "cli";
 }
 
 export interface SessionCreateResponse {
@@ -1801,7 +2136,10 @@ export interface MessagesLiveTail {
  * only; the parameterless full read never carries it). A window is a run of whole
  * message-bearing units — one unit = one Task in the Web reducer's sense, opened by a
  * main-session user prompt — cut so that no pairing (tool_call/output), compaction span
- * or steering group ever splits across windows.
+ * or steering group ever splits across windows. Besides the unit count, a window stops
+ * before the unit that would take its serialized messages past 4 MiB, but always holds at
+ * least one unit; such a window carries `before` like any other, with fewer units than
+ * asked for.
  */
 export interface MessagesPageInfo {
   /**
@@ -1849,6 +2187,15 @@ export interface MessagesPageInfo {
 
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
+  /**
+   * On windowed requests, images are served by reference: in every record that carries a
+   * `tracePosition`, an inline PNG / JPEG / GIF / WebP `data:` URL — a user `image_url`, or
+   * an entry of a tool output's `images` — is replaced by
+   * `/api/sessions/<sessionId>/trace-image?file=<fileIndex>&ordinal=<ordinal>[&i=<k>]`
+   * (`i` = the index into `images`), an immutable, access-checked image response. Expanded
+   * subagent messages, held inputs not yet in the Trace, other image types and the
+   * parameterless full read keep their data URLs.
+   */
   messages: HistoryMessage[];
   /**
    * Present only while the Session is running/compacting: the in-progress stream tail
@@ -2166,6 +2513,20 @@ export interface MessagingRuntimeStatus {
    * behind — for the life of the connection, like the two above it.
    */
   lastConnectionError?: { at: string; detail: string };
+  /**
+   * Since when (ISO 8601) the bot has been HOLDING replies it could not deliver yet, to send
+   * them with the chat's next inbound message; absent while nothing is held. WeChat only: the
+   * platform accepts a bot's messages only for a while after the user's last one, and only
+   * about ten per message, so a long run or a quiet user leaves replies waiting rather than
+   * lost.
+   *
+   * Not a failure, and deliberately not `lastDeliveryError`: nothing is broken and nobody has
+   * to act beyond what the panel says — message the bot in WeChat and the held replies arrive
+   * first. Cleared the moment they have been delivered. Unlike the fields above it is not
+   * scoped to one connection: held replies are stored, so a backlog from before a restart is
+   * reported again as soon as the connection opens.
+   */
+  heldReplySince?: string;
 }
 
 /**
@@ -2696,11 +3057,17 @@ export type ServerEvent =
    * that has now run from one that never has — a first run would otherwise settle back into the
    * blank "never ran" row the client still believes in.
    *
+   * `projectId` names the Session's Project: a list showing one Project ignores another's flips
+   * without a request, and a flip for a Session of its own Project that it holds no row for is a
+   * row it is missing — one that became active below its activity cursor (see SessionsResponse) —
+   * which it fetches by id.
+   *
    * Published only to the user channels of the Project's owner and members.
    */
   | {
       type: "session_state";
       sessionId: string;
+      projectId: string;
       state: SessionStatus;
       lastActiveAt: string;
       hasTrace: boolean;
@@ -2713,6 +3080,15 @@ export type ServerEvent =
    * the user channels of the Project's owner and members, like `session_state`.
    */
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
+  /**
+   * A Session's count of tool calls waiting for a person's approval changed: a call was
+   * escalated (every call under always-ask, rw/unknown calls under read-only), answered, or
+   * denied by an interrupt. The count is the row's `pendingApprovalCount` as it stands after
+   * the change, zeros included, so a list moves its mark without refetching; the calls
+   * themselves are on the Session's own stream (`approval_request`, replayed on subscribe).
+   * Published to the user channels of the Project's owner and members, like `session_state`.
+   */
+  | { type: "session_approvals"; sessionId: string; count: number }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
   /**
@@ -2731,14 +3107,14 @@ export type ServerEvent =
    * A Session now exists. On the user channel for every creation — the CLI, another tab,
    * a schedule, an agent spawning a child — so the list learns about rows it did not make;
    * and on the parent Session's channel for a subagent, so a tab watching the parent run
-   * refreshes in place. `source` is absent for a user-created Session, as it is on the row.
+   * refreshes in place. `source` is what the new Session's meta records.
    */
   | {
       type: "session_created";
       projectId: string;
       agentId: string;
       sessionId: string;
-      source?: SessionSource;
+      source: SessionSource;
     }
   | ScheduleServerEvent
   | GoalServerEvent
@@ -2864,7 +3240,10 @@ export interface TraceEventsResponse {
   events: OmniMessage[];
   offset: number;
   limit: number;
-  /** Total line count of the file (basis for pagination). */
+  /**
+   * Record count of the file (basis for pagination), in the ordinals `tracePosition` and the
+   * analysis' `messageFrom` / `messageTo` use: malformed lines are not records.
+   */
   total: number;
 }
 
@@ -3184,6 +3563,13 @@ export interface TraceAnalysisResponse {
    * scope every total here shares). Absent exactly when the turns carry no `cost`.
    */
   cost?: number;
+  /**
+   * The model's context window as the file's head `session_meta` records it
+   * (`model_context_window`), for the context ring. The panel no longer reads every event, so the
+   * analysis carries it; absent when the head records none (an older server, or a file without
+   * one), and the panel then falls back as it always has.
+   */
+  modelContextWindow?: number | string;
   requests: RequestSpan[];
   /** Token / duration aggregated per Task (used directly by the Trace page's context ring and per-turn TPS). */
   tasks: TraceTaskStats[];
@@ -3656,13 +4042,44 @@ export interface BenchmarkEvaluation {
  */
 export type BenchmarkStatus = "draft" | "published" | "failed";
 
+/**
+ * Where a Benchmark's copy came from: `builtin` (seeded when the Project was created), `manual`
+ * (the create form), `agent` (the benchmark-design Skill wrote it), `git` (an Agent imported a
+ * repository folder), `zip` (an uploaded package).
+ */
+export type BenchmarkOriginKind = "builtin" | "manual" | "agent" | "git" | "zip";
+
+/**
+ * Why a Benchmark's manifest cannot be read: the code of core's `BenchmarkManifestError`
+ * (`benchmark_id_mismatch` for an `id` that is not the directory's, `benchmark_manifest_invalid`
+ * for a file that is not TOML or a `version` or `[origin]` out of shape) and its message, which
+ * names the key or the file.
+ */
+export interface BenchmarkManifestProblem {
+  code: string;
+  message: string;
+}
+
+/** The `[origin]` table of a Benchmark's benchmark_config.toml. */
+export interface BenchmarkOrigin {
+  kind: BenchmarkOriginKind;
+  /** git: the folder link as the user gave it (a GitHub tree URL). Always an http(s) URL. */
+  url?: string;
+  /** git: the 40-hex commit the import resolved the link to. */
+  ref?: string;
+  /** git: the folder inside the repository. */
+  path?: string;
+  /** git / zip: when this copy was written (ISO 8601; `imported_at` in the file). */
+  importedAt?: string;
+}
+
 export interface BenchmarkSummary {
   /** Directory name is the identifier (semantic naming, e.g. swe-bench-v1). */
   id: string;
-  /** Title from benchmark_config.toml; falls back to the directory name if unset. */
+  /** Title from benchmark_config.toml; the directory name when it gives none or the manifest cannot be read. */
   title: string;
   description?: string;
-  /** Number of runs per case (the `runs` field in benchmark_config.toml, ≥1; defaults to 1). */
+  /** Number of runs per case (the `runs` key in benchmark_config.toml, an integer ≥ 1); absent when it gives none or the manifest cannot be read, which reads as 1. */
   runs?: number;
   /**
    * `draft` while the Skill that builds the Benchmark is still writing its cases and
@@ -3670,10 +4087,29 @@ export interface BenchmarkSummary {
    * Benchmark is frozen and its Formal Baseline recorded; `failed` when calibration ended
    * without a Pilot result that could be frozen, which leaves the Benchmark unusable — the Web
    * App masks it too and says it has to be deleted and created again. benchmark_config.toml is
-   * read literally: only `draft` is a draft and only `failed` is a failure, so a missing field,
-   * or any other value, reads as published.
+   * read literally: only `draft` is a draft and only `failed` is a failure, so a missing key, or
+   * any other value, reads as published. A Benchmark whose manifest cannot be read lists as
+   * failed, with `manifestError`.
    */
   status: BenchmarkStatus;
+  /**
+   * The manifest's date version, `YYYY.MM.DD.N`: the revision of the Benchmark's content. Absent
+   * when the manifest has none (one written before versions is unversioned), when it cannot be
+   * read, and from a machine whose server predates versions.
+   */
+  version?: string;
+  /**
+   * Where this copy came from, the manifest's `[origin]`. Absent when the manifest has none (where
+   * a copy written before origins came from is unknown), when it cannot be read, and from a
+   * machine whose server predates origins.
+   */
+  origin?: BenchmarkOrigin;
+  /**
+   * Set when the manifest cannot be read. Such a Benchmark lists under its directory name, as
+   * `failed`, with no version or origin, and nothing may use or export it until the file is
+   * fixed; the Web App masks it with this reason.
+   */
+  manifestError?: BenchmarkManifestProblem;
   /** Case count (number of case subfolders). */
   caseCount: number;
   /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */
@@ -3705,10 +4141,11 @@ export interface BenchmarkCasesResponse {
 
 /**
  * POST /api/projects/:p/benchmarks (owner only): create a Benchmark by hand. The
- * server writes the on-disk layout the evaluation Skills read — `benchmark_config.toml`, a
- * `scoreboard.yaml` holding `evaluations: []`, and one `<case id>/` per case with
- * `statement/README.md` and `rubric/README.md`. 409 `benchmark_exists` when the directory is
- * already there; nothing is merged into an existing Benchmark.
+ * server writes the on-disk layout the evaluation Skills read — `benchmark_config.toml`
+ * (published, the day's first version, origin `manual`), a `scoreboard.yaml` holding
+ * `evaluations: []`, and one `<case id>/` per case with `statement/README.md` and
+ * `rubric/README.md`. 409 `benchmark_exists` when the directory is already there; nothing is
+ * merged into an existing Benchmark.
  */
 export interface BenchmarkCreateRequest {
   /** Directory name, which is the identifier: letters, digits, `_` and `-` only. */
@@ -3736,6 +4173,52 @@ export interface BenchmarkCreateResponse {
   benchmark: BenchmarkSummary;
 }
 
+/**
+ * POST /api/projects/:p/benchmarks/archive (any Project member): import a Benchmark package from
+ * a zip. The zip holds `benchmark_config.toml` and the `CASE-*` directories, at its root (where the
+ * manifest must name its `id`) or inside exactly one top-level directory named by the Benchmark's
+ * id — the shape `GET …/benchmarks/:benchmarkId/archive` exports. A zip carrying
+ * `scoreboard.yaml`, `.jobs/` or anything else at its top level, a link, a manifest past the
+ * create form's limits, a package that is not `published` or a case without both READMEs is
+ * refused (400); so is a zip past the caps (413 `benchmark_too_large`: 14MB
+ * zipped, 1000 files, 5MB a file, 20MB inflated). The copy is written with origin `zip` and an
+ * empty scoreboard — or origin `git`, when the request says the package is a repository folder
+ * fetched at a commit. An id already taken is 409 `benchmark_exists` (`details.benchmarkId` names
+ * it) unless `overwrite`.
+ */
+export interface BenchmarkArchiveImportRequest {
+  /** The zip, base64-encoded. */
+  dataBase64: string;
+  /**
+   * Replace the Benchmark of the same id whole — its evaluation records and `.jobs/` included.
+   * Refused with 409 `benchmark_busy` while an evaluation of it is still running a trial there.
+   */
+  overwrite?: boolean;
+  /**
+   * The repository folder the package was fetched from, at one commit: what
+   * `penguin benchmark import --origin-url … --origin-ref … --origin-path …` sends for an Agent's
+   * import of a folder link. The copy's origin is then `git` with these fields and the time of the
+   * import, instead of `zip`.
+   */
+  origin?: BenchmarkArchiveGitOrigin;
+}
+
+/** Where a package fetched from a git repository came from. */
+export interface BenchmarkArchiveGitOrigin {
+  kind: "git";
+  /** The folder link as the user gave it: an http(s) URL, at most 2048 characters. */
+  url: string;
+  /** The 40-character commit the link was resolved to. */
+  ref: string;
+  /** The folder inside the repository, at most 1024 characters. */
+  path: string;
+}
+
+export interface BenchmarkArchiveImportResponse {
+  /** The imported Benchmark, as the list now reads it. */
+  benchmark: BenchmarkSummary;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin library, and an Agent's installed skills and hooks
 // ---------------------------------------------------------------------------
@@ -3754,7 +4237,7 @@ export interface SkillMetadataItem {
    * which the plugin item carries once. Absent, the frontend draws the book glyph.
    */
   icon?: string;
-  /** Version (`YYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
+  /** The skill's own dated version (`YYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
   version: string;
 }
 
@@ -3772,21 +4255,81 @@ export interface HookItem {
   icon?: string;
 }
 
-/** One library plugin as the listing describes it: the manifest fields plus what it ships (skill bodies and scripts are never sent). */
+/**
+ * One library plugin as the listing describes it: the manifest fields (its package.json — npm's
+ * fields and the `penguin` block) plus what it ships (skill bodies and scripts are never sent).
+ * Every field but the identity, the version and the contents is optional: a field the package
+ * does not carry is missing here, and the page says so rather than inventing one.
+ */
 export interface PluginItem {
   name: string;
+  /** Display name (`penguin.title`, `title_zh`); absent → the page shows `name`. */
+  title?: string;
+  titleZh?: string;
+  /** English one-liner (package.json `description`); "" when the package carries none. */
   description: string;
   descriptionZh?: string;
   shortDescription?: string;
   shortDescriptionZh?: string;
-  /** `YYYY.MM.DD.N`. */
+  /** The plugin's npm version (its package.json, following the release) — what the card shows. Installed copies are compared part by part instead: each skill's `version`, and {@link hookVersion}. */
   version: string;
-  /** The plugin's skills (metadata only). */
+  /** The npm package the plugin is, e.g. `@penguinharness/a2ui` — what Delete and a server module's row name it by. */
+  package: string;
+  /** Where the plugin comes from: `builtin` — a package this build ships; `installed` — one an admin installed on the server (by name, link or zip). */
+  source: "builtin" | "installed";
+  /** The package's npm `author` (a name), `license`, `homepage` and `repository` URL, for the detail dialog. */
+  author?: string;
+  license?: string;
+  homepage?: string;
+  repository?: string;
+  /** The plugin's skills (metadata only), each with its own dated `version`. */
   skills: SkillMetadataItem[];
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
-  /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
+  /** The hook package's own dated version (`penguin.hooks.version`, `YYYY.MM.DD.N`); absent without a hook package. */
+  hookVersion?: string;
+  /** The plugin's raw icon SVG (`icon.svg` at the package root, or `penguin.icon` — every built-in plugin ships one; an unsafe one is never sent), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
+  /** The demo the Plugins page's quick start pre-fills (`penguin.quick_start`); absent = pre-select its first skill. */
+  quickStart?: QuickStartItem;
+  /** The MCP servers the plugin installs into an Agent's `tools.mcpServers` (`penguin.mcp_servers`); `[]` without any. */
+  mcpServers: PluginMcpServerItem[];
+}
+
+/** An MCP transport, as an entry resolves it (`transport`, else inferred from `command` / `url`). */
+export type McpTransport = "stdio" | "http" | "sse";
+
+/** One vault key a plugin's MCP server needs before it can connect: declared in the manifest, or only referenced (then the key is all there is to show). */
+export interface PluginSetupKeyItem {
+  key: string;
+  label?: string;
+  labelZh?: string;
+  /** Where to get the value (a URL), or one sentence. */
+  help?: string;
+}
+
+/** A plugin's MCP server as the library lists it: identity and target only — no header, env or oauth value. */
+export interface PluginMcpServerItem {
+  name: string;
+  transport: McpTransport;
+  /** The URL (http/sse), or `command args…` (stdio), as written: `${PLUGIN_ROOT}` and `${KEY}` references unresolved. */
+  target: string;
+  /** Every vault key the server's config references, declared ones first. */
+  setup: PluginSetupKeyItem[];
+  /** The server offers OAuth sign-in (`config.oauth`). */
+  oauth: boolean;
+  /** It needs that sign-in — OAuth and no `Authorization` header of its own — which this version cannot do: an Agent skips it. */
+  signIn: boolean;
+}
+
+/** A quick start: a prompt pre-filled into a new-chat draft — never sent by the page. */
+export interface QuickStartItem {
+  prompt: string;
+  promptZh?: string;
+  /** Skills to pre-select (a library plugin's own). */
+  skills?: string[];
+  /** Open the draft in goal mode. */
+  goal?: boolean;
 }
 
 export interface PluginGroupItem {
@@ -3825,6 +4368,30 @@ export interface PluginInstallRequest {
 export interface AgentPluginsInstallResponse {
   skills: SkillMetadataItem[];
   hooks: HookItem[];
+  /** The Agent's MCP servers after the install (a plugin's servers join its `tools.mcpServers`). A server name the Agent already has from someone else is 409 `mcp_server_name_taken`, nothing installed. */
+  mcpServers: AgentMcpServerItem[];
+}
+
+/**
+ * One `tools.mcpServers` entry of an Agent, as the Plugins page and the Agent settings read it:
+ * identity, target and what keeps it from connecting — never a header, env or oauth value.
+ */
+export interface AgentMcpServerItem {
+  name: string;
+  transport: McpTransport;
+  /** The URL (http/sse), or `command args…` (stdio): `${PLUGIN_ROOT}` already resolved at install, `${KEY}` references left as written. */
+  target: string;
+  /** The plugin that installed it; absent for an entry the user added. */
+  plugin?: string;
+  /** `${KEY}` references of its config that the Agent's vault does not hold (names only); empty = nothing to set up. */
+  missingKeys: string[];
+  /** It needs an OAuth sign-in, which this version cannot do: skipped at connect time. */
+  signIn: boolean;
+}
+
+/** GET /api/projects/:p/agents/:a/mcp-servers: the Agent's MCP servers in config order; DELETE …/mcp-servers/:name removes one (204, 404 `unknown_mcp_server`). */
+export interface AgentMcpServersResponse {
+  servers: AgentMcpServerItem[];
 }
 
 /** GET /api/projects/:p/agents/:a/skills: Skills installed on this Agent. */
@@ -3882,6 +4449,17 @@ export interface PluginIndexEntry {
   /** Semantic version of this entry. */
   version: string;
   description: string;
+  /** Chinese description (optional; the UI picks per language, English without it). */
+  descriptionZh?: string;
+  /** One-line descriptions for the card (optional; the card falls back to `description`). */
+  shortDescription?: string;
+  shortDescriptionZh?: string;
+  /**
+   * The plugin's raw icon SVG (optional; the card draws the puzzle piece without it). The
+   * listing fills these display fields from the package's own package.json (its `penguin`
+   * block) and icon when the package is on this server, over whatever the index row says.
+   */
+  icon?: string;
   authors: string[];
   /** SPDX license identifier. */
   license: string;
@@ -3899,13 +4477,48 @@ export interface PluginIndexEntry {
 /** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
 export interface PluginIndexResponse {
   plugins: PluginIndexEntry[];
+  /**
+   * Sources that could not be read, by `source` and reason. Present and empty when every
+   * source answered. A remote index that is down shortens the listing rather than emptying
+   * it, so the page needs to be able to say so instead of silently showing less.
+   */
+  failures: { source: string; error: string }[];
 }
 
-/** GET /api/plugins/registry/readme — long-form docs for one entry; `readme` is null when none exists. */
+/**
+ * A plugin's long-form docs: the README.md at its package root, as npm ships it.
+ * GET /api/plugins/registry/readme?name= answers for an index entry, with `readme` null when
+ * the package is not on this server or has none; GET /api/plugins/:plugin/readme answers for a
+ * library plugin, 404 when it ships none.
+ */
 export interface PluginReadmeResponse {
   name: string;
   /** Markdown, rendered by the Web App. Null when this entry has no readme. */
   readme: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Plugin-contributed languages
+// ---------------------------------------------------------------------------
+
+/**
+ * One language a plugin contributes, as the listing reports it. The grammar itself is not
+ * here: it is tens to hundreds of kilobytes, and only the languages a conversation actually
+ * shows are worth fetching (`GET /api/languages/:id/grammar`).
+ */
+export interface LanguageSummary {
+  /** Canonical id: the fence info string, and the id both endpoints address. */
+  id: string;
+  displayName: string;
+  /** Alternative fence info strings, needed BEFORE the grammar loads (it is what decides to load it). */
+  aliases?: string[];
+  /** File extensions without the dot, for the Workspace file viewer. */
+  extensions?: string[];
+}
+
+/** GET /api/languages: every language this App's plugins contributed, by id. */
+export interface LanguageIndexResponse {
+  languages: LanguageSummary[];
 }
 
 // ---------------------------------------------------------------------------
@@ -4507,8 +5120,20 @@ export interface OrganizationsResponse {
 
 export interface OrgEmployeeItem {
   agentId: string;
-  /** Agent display name (system_config.yaml); falls back to the id. */
+  /**
+   * What this employee goes by in the organization, unique across it: the chart's `name`, else
+   * the Agent's display name, else the id — with the id noted (`name (id)`) when the name is
+   * not this employee's alone. It is what every surface shows and what works after `@`.
+   */
   name: string;
+  /** The `name` as written in the chart, for editing; absent when the entry has none. */
+  givenName?: string;
+  /**
+   * Present when the employee has an avatar: the content revision of the image served at
+   * `GET …/employees/:agentId/avatar` (append it as `?rev=` — the image is cached for good).
+   * Absent, surfaces draw the letter tile.
+   */
+  avatarRev?: string;
   title: string;
   /** null for the CEO (the root). */
   reportsTo: string | null;
@@ -4521,11 +5146,22 @@ export interface OrgEmployeeItem {
   budget?: number;
   model?: { provider: string; modelId: string };
   state: OrgEmployeeState;
+  /**
+   * The employee's current desk. Absent while the ledger names none, and while the Session
+   * it names no longer exists (deleted by hand, or with its Agent): a desk is listed only
+   * once it can be opened, and the reconcile pass re-opens a missing one when it can.
+   */
   desk?: { sessionId: string; workspace: string; openedAt: string };
   /** Period spend: own sessions, and cumulative (own + every subordinate). */
   spend: { own: number; cumulative: number; ratio?: number };
   /** Why the entry cannot be triggered (missing Agent, missing workspace directory). */
   invalid?: string;
+  /**
+   * The entry's Agent no longer exists (`invalid` carries the sentence). Its desk cannot be
+   * opened; the entry stays until a person makes the employee leave, or until an Agent with
+   * the same id is created again (which is how a deleted CEO is restored).
+   */
+  agentMissing?: true;
 }
 
 export interface OrgChartResponse {
@@ -4831,6 +5467,7 @@ export interface OrgDeskItem {
 }
 
 export interface OrgSessionsResponse {
+  /** One per employee whose current desk Session exists; a desk the ledger names but the server no longer has is left out. */
   desks: OrgDeskItem[];
   tickets: Array<{
     ticketId: string;
@@ -4974,6 +5611,11 @@ export interface OrgHireRequest {
   agentId?: string;
   /** … or create one (the two are exclusive). Plugins default to agent-company + agent-development. */
   newAgent?: { agentId: string; name?: string; description?: string; plugins?: string[] };
+  /**
+   * What the organization calls the employee (any script, one line, no `@`, ≤ 64 characters).
+   * Omitted, a new Agent's `name` is used; with neither, the Agent's display name stands in.
+   */
+  name?: string;
   title: string;
   reportsTo: string;
   workspace?: string;
@@ -4983,6 +5625,8 @@ export interface OrgHireRequest {
 }
 
 export interface OrgEmployeePatchRequest {
+  /** null (or an empty string) clears the name: back to the Agent's display name. */
+  name?: string | null;
   title?: string;
   reportsTo?: string;
   workspace?: string;
@@ -5193,17 +5837,30 @@ export interface ContributionsResponse {
  * One field of a settings group a module declares (its `PluginConfigProvider.groups`
  * contribution's `properties.<name>`): what the Settings dialog draws for it. `secret` is
  * drawn as a password field and masked on the way out; `enum` is a choice among `options`;
- * `list` is a list of strings, drawn one per line.
+ * `list` is a list of strings, drawn one per line; `table` is a fixed set of `rows`, each a
+ * value per one of its `columns`, drawn as a table.
  */
 export interface PluginConfigField {
-  type: "string" | "secret" | "boolean" | "number" | "enum" | "list";
+  type: "string" | "secret" | "boolean" | "number" | "enum" | "list" | "table";
   title: string;
   titleZh?: string;
+  /** What the field means: disclosed behind a "?" beside its title. */
   description?: string;
   descriptionZh?: string;
+  /**
+   * The shape a value must take ("one absolute path per line"): shown under the field at all
+   * times, since it is read while typing.
+   */
+  hint?: string;
+  hintZh?: string;
   placeholder?: string;
   /** The value a package with nothing stored reads; also what an empty field falls back to. */
   default?: string | number | boolean | string[];
+  /**
+   * Drawn in the card's Advanced fold, collapsed by default, rather than among the basic
+   * fields. Presentation only: it is stored, validated and read like any other field.
+   */
+  advanced?: boolean;
   /** A save that would leave this field empty is refused. */
   required?: boolean;
   /** `enum` only: the values it may take, in display order. */
@@ -5217,6 +5874,114 @@ export interface PluginConfigField {
   pattern?: string;
   /** What a save refused by `pattern` says, after the field's name (e.g. "must be an absolute path"). */
   patternErrorMessage?: string;
+  /**
+   * `table` only: its columns, in display order, and its rows, in display order. The table
+   * has no `default`: the rows' declared cells are its defaults, and what is stored is only
+   * the cells that differ from them — `{ [row id]: { [column]: value } }`.
+   */
+  columns?: PluginConfigTableColumn[];
+  rows?: PluginConfigTableRow[];
+  /**
+   * `table` only: a single choice of one row — the sandbox's default preset. The choice is
+   * stored in `field`, an `enum` field of the same group whose options are the row ids (plus,
+   * in an `extensible` table, the ids of the rows added to it); the page draws that field only
+   * as its title in brackets after the chosen row's name ("(Default)"), and picks it from a
+   * row's "…" menu.
+   */
+  rowChoice?: PluginConfigRowChoice;
+  /**
+   * `table` only: rows may be added (and only those deleted, from the row's "…" menu) and every
+   * row reordered. A new row
+   * starts from these values. What is stored, beside the declared rows' changed cells, is the
+   * added rows under `"$added"` (`{ [row id]: { [column]: value } }`, every column present) and
+   * the row order under `"$order"` (row ids); neither key can be a row id. A save sends either
+   * key whole; a document without them reads as the declared rows in declared order.
+   */
+  extensible?: PluginConfigNewRow;
+  /**
+   * `table` only: a header drawn over adjacent columns that belong together (the sandbox's
+   * Pin, under "Action"). `columns` names them. When the group ends the columns, the row's drag
+   * handle and "…" menu join it.
+   */
+  columnGroup?: PluginConfigColumnGroup;
+  /**
+   * `table` only: a `boolean` column drawn as a pin toggle rather than a switch — a row pinned
+   * to a list (the sandbox presets in the composer's menu). The texts are its tooltip in each
+   * state. Declared on the table, not the column, so every column keeps one shape.
+   */
+  pin?: PluginConfigPinColumn;
+}
+
+/** A table's pin column: which boolean column, and its tooltip pinned and not. */
+export interface PluginConfigPinColumn {
+  column: string;
+  on: string;
+  onZh?: string;
+  off: string;
+  offZh?: string;
+}
+
+/**
+ * A table's single choice of a row: the `enum` field it stores into, and its title, drawn in
+ * brackets after the chosen row's name. The choice may name no row (nothing stored, and the
+ * group's `derive` gives none): no row is marked and a save is not refused for it. A save that
+ * leaves it naming a row the table no longer has is refused.
+ */
+export interface PluginConfigRowChoice {
+  field: string;
+  title: string;
+  titleZh?: string;
+}
+
+/** One column of a `table` field: a scalar field type (`string`, `boolean`, or an `enum` with `options`). */
+export interface PluginConfigTableColumn {
+  name: string;
+  type: "string" | "boolean" | "enum";
+  title: string;
+  titleZh?: string;
+  /** What the column means: disclosed behind a "?" beside its header. */
+  description?: string;
+  descriptionZh?: string;
+  options?: PluginConfigOption[];
+}
+
+/** One row of a `table` field: its id and its declared cells. */
+export interface PluginConfigTableRow {
+  id: string;
+  /** Every column's declared value. */
+  values: Record<string, string | boolean>;
+  /** A string cell's declared value in Chinese, shown until a save changes the cell. */
+  valuesZh?: Record<string, string>;
+  /** Columns whose cell in this row a save may not change. */
+  locked?: string[];
+  /** A row added to an `extensible` table (not declared): the only kind that may be deleted. */
+  added?: boolean;
+  /**
+   * What the row is for, disclosed behind a "?" beside its name while its `enum` cells hold
+   * their declared values. A row without one, or whose choices changed, gets a "?" listing its
+   * `enum` cells' values and what each does (the options' `description`s).
+   */
+  description?: string;
+  descriptionZh?: string;
+}
+
+/** A header over adjacent table columns, with its own "?". */
+export interface PluginConfigColumnGroup {
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  columns: string[];
+}
+
+/** The values a row added to an `extensible` table starts from. */
+export interface PluginConfigNewRow {
+  /** The add button's text ("Add preset"). */
+  add?: string;
+  addZh?: string;
+  values: Record<string, string | boolean>;
+  /** A string column's starting text in Chinese. */
+  valuesZh?: Record<string, string>;
 }
 
 /** One choice of an `enum` field. */
@@ -5224,6 +5989,9 @@ export interface PluginConfigOption {
   value: string;
   title: string;
   titleZh?: string;
+  /** What picking it does: listed, for a table column's option, in a row's "?" (see the row's `description`). */
+  description?: string;
+  descriptionZh?: string;
 }
 
 /** A declared configuration: a titled group of fields, in declaration order. */
@@ -5232,6 +6000,13 @@ export interface PluginConfiguration {
   titleZh?: string;
   description?: string;
   descriptionZh?: string;
+  /**
+   * A `boolean` field that turns the group on (the sandbox's `enabled`). While it is off, as
+   * drafted, the card draws that field alone: no other field, notice or action, and none of the
+   * groups drawn inside it. Turning it on in a group that reports a `backend` it lacks offers
+   * to install one.
+   */
+  switch?: string;
   properties: Record<string, PluginConfigField>;
 }
 
@@ -5245,6 +6020,9 @@ export interface PluginConfigNotice {
   tone: "attention" | "muted" | "progress";
   text: string;
   textZh?: string;
+  /** More about the notice, disclosed under it on request; lines separated by `\n`. */
+  details?: string;
+  detailsZh?: string;
 }
 
 /** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
@@ -5262,11 +6040,33 @@ export interface PluginConfigEntry {
   actions?: PluginConfigActionDecl[];
   /** Enum options this machine cannot honour now: drawn greyed out with the reason; a save choosing one is refused. */
   unavailable?: PluginConfigUnavailableDecl[];
+  /**
+   * For a group whose settings a backend plugin enforces (the sandbox): whether one that
+   * applies to this machine's OS is installed, and which packages this OS defaults to. The card
+   * offers to install `recommended` when the group's switch is turned on and none is installed.
+   * Asked per read, like the notices; the client never guesses the OS.
+   */
+  backend?: PluginConfigBackend;
 }
 
-/** One enum option a settings group cannot honour on this machine, and why. */
+/** Whether a backend that applies to this machine is installed, and this OS's default ones. */
+export interface PluginConfigBackend {
+  /** A backend for this OS is installed: loaded, or installed and failing its check. */
+  installed: boolean;
+  /**
+   * The npm packages this OS defaults to, installed together; absent on an OS with no default
+   * backend. Linux names two: bubblewrap, and sandbox-dsh, which confines files through
+   * Landlock where bubblewrap is refused.
+   */
+  recommended?: string[];
+}
+
+/** One enum option (or boolean position) a settings group cannot honour on this machine, and why. */
 export interface PluginConfigUnavailableDecl {
   field: string;
+  /** A `table` field's column: the option is unavailable in every cell of that column. */
+  column?: string;
+  /** An enum option, or a boolean field's position: "true" or "false". */
   value: string;
   reason: string;
   reasonZh?: string;
@@ -5306,6 +6106,20 @@ export interface PluginConfigUpdateRequest {
   values: Record<string, unknown>;
 }
 
+/**
+ * An installed plugin the running build cannot fully run (plugin/unsatisfied.ts): it
+ * contributes to a slot, or wires to a module or interface, that this build does not have.
+ * Also what a refused push names (`plugins_unsatisfied`) and a confirmed one reports.
+ */
+export interface UnsatisfiedPlugin {
+  /** The package specifier, as the installed-plugins list spells it. */
+  specifier: string;
+  /** True when the whole plugin is left out of this generation; false when only the contributions this build has no slot for were dropped and the rest of it runs. */
+  disabled: boolean;
+  /** What this build lacks, in the platform's own words. */
+  reason: string;
+}
+
 /** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
 export interface InstalledPlugin {
   /** The package specifier as written in the file. */
@@ -5328,6 +6142,13 @@ export interface InstalledPlugin {
    * reported for a plugin this server is asked to run (`here`).
    */
   error?: string;
+  /**
+   * Present when this build cannot fully run the package (see {@link UnsatisfiedPlugin}).
+   * With `disabled`, `active` is false and a restart would not load it; without, the package
+   * runs minus the contributions this build has no slot for. Only reported for a plugin this
+   * server is asked to run (`here`).
+   */
+  unsatisfied?: Pick<UnsatisfiedPlugin, "disabled" | "reason">;
   /** Listed in the shared `[plugins]` table: every machine runs it. */
   everywhere: boolean;
   /** The machines whose own `[plugins.<machineId>]` table lists it, by machine id. */
@@ -5340,8 +6161,30 @@ export interface InstalledPlugin {
   here: boolean;
 }
 
+/** What an install put on this server (POST …/plugins/installed and …/installed/archive). */
+export interface PluginInstallOutcome {
+  /** The package name npm installed — for a link, the name its package.json carries. */
+  name: string;
+  version: string | null;
+  /** It carries skills, a hook package or MCP servers: the library lists it, and nothing loads it. */
+  library: boolean;
+  /** It carries server modules: the Project's list loads it. */
+  modules: boolean;
+  /** The zip held the version already installed: nothing was installed. */
+  unchanged?: boolean;
+}
+
+/** POST /api/projects/:projectId/plugins/installed/archive (admin): a plugin package zip, base64. */
+export interface PluginArchiveImportRequest {
+  dataBase64: string;
+  /** Replace another installed version of the package (the 409 `plugin_exists` question). */
+  overwrite?: boolean;
+}
+
 export interface InstalledPluginsResponse {
   plugins: InstalledPlugin[];
+  /** After an install: what landed on this server. */
+  installed?: PluginInstallOutcome;
   /**
    * Specifiers this build SHIPS (the hot push's assets, or the installation's own
    * `plugins/`): installable without a download, and not installed until listed.
@@ -5351,16 +6194,40 @@ export interface InstalledPluginsResponse {
   file: string;
   /** This server's own machine id — the key of its `[plugins.<machineId>]` table. */
   machineId: string;
-  /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
+  /** A listed plugin neither runs, nor failed to load, nor is one this build cannot run: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Built-in Browser (desktop only): Electron <webview> guests in the persist:penguin-browser
-// partition, driven over CDP by the shell on the server's behalf. See builtin-browser/.
+// The agent browser, two backends behind one link (see builtin-browser/): the desktop's
+// built-in browser — Electron <webview> guests in the persist:penguin-browser partition,
+// driven over CDP by the shell on the server's behalf — and the user's own Chrome, driven
+// through the PenguinHarness Browser extension over a WebSocket the extension opens.
 // ---------------------------------------------------------------------------
 
-/** One guest page of the built-in browser; `id` is the guest's webContents id. */
+/** The browser an agent drives: the desktop's built-in one, or the user's own Chrome. */
+export type BrowserBackend = "builtin" | "chrome";
+
+/**
+ * What a backend's link can do. The shell cannot create tabs (the Web App's <webview> does) and
+ * throttles and measures its guests; the extension creates, closes and focuses tabs itself and
+ * has no cookie store the server may touch.
+ */
+export interface BrowserLinkCapabilities {
+  /** `open-tab`, `close-tab` and `activate-tab` are answered (chrome). */
+  createsTabs: boolean;
+  /** `throttle` and the `metrics` events (builtin). */
+  throttles: boolean;
+  /** `set-cookies` and `clear-data` (builtin). */
+  cookieStore: boolean;
+}
+
+/**
+ * One tab of the agent browser. Built-in: a guest page, `id` its webContents id. Chrome: a tab
+ * the extension drives (one it created in the Penguin tab group, or one the user added), `id`
+ * Chrome's tab id; `canGoBack`/`canGoForward` are always false there (the tabs API cannot read
+ * them).
+ */
 export interface BuiltinBrowserTab {
   id: number;
   url: string;
@@ -5377,18 +6244,123 @@ export interface BuiltinBrowserTab {
   crashed?: string;
 }
 
-/** Why the built-in browser cannot be driven: not under the desktop shell, a shell too old to host it, or no app window to host a new tab. */
-export type BuiltinBrowserUnavailableReason = "not_desktop" | "shell_unsupported" | "no_window";
+/**
+ * Why the agent browser cannot be driven. Built-in: not under the desktop shell, a shell too old
+ * to host it, or no app window to host a new tab. Chrome: this user has no paired extension, it
+ * is paired but not connected now, or an admin switched Chrome connections off server-wide.
+ */
+export type BuiltinBrowserUnavailableReason =
+  | "not_desktop"
+  | "shell_unsupported"
+  | "no_window"
+  | "extension_not_paired"
+  | "extension_disconnected"
+  | "extension_disabled";
 
-/** GET /api/builtin-browser/status. */
-export interface BuiltinBrowserStatus {
+/** One backend as GET /status lists it for the caller. */
+export interface BrowserBackendInfo {
+  backend: BrowserBackend;
   available: boolean;
   reason?: BuiltinBrowserUnavailableReason;
+  /** chrome: the caller's connected extension, else the one seen most recently; absent when none is paired. */
+  extension?: {
+    id: string;
+    name: string;
+    version: string;
+    connected: boolean;
+    lastSeenAt: string | null;
+  };
+}
+
+/**
+ * GET /api/builtin-browser/status: the caller's effective backend (`backend`) — whether it can
+ * be driven now, its tabs — and every backend this server offers the caller (`backends`).
+ */
+export interface BuiltinBrowserStatus {
+  /** Whether the effective backend can be driven now. */
+  available: boolean;
+  reason?: BuiltinBrowserUnavailableReason;
+  backend: BrowserBackend;
+  backends: BrowserBackendInfo[];
   tabs: BuiltinBrowserTab[];
   activeTabId: number | null;
-  /** The shell's latest measurement of the browser's load; absent before its first one. */
+  /** The shell's latest measurement of the built-in browser's load; absent before its first one, and on chrome. */
   metrics?: BuiltinBrowserMetrics;
 }
+
+/** GET / PUT /api/builtin-browser/backend: the caller's backend and the ones they may choose. */
+export interface BrowserBackendResponse {
+  backend: BrowserBackend;
+  choices: BrowserBackend[];
+}
+
+/** One Chrome paired to the caller's account (a row of `browser_extensions`). */
+export interface BrowserExtensionRecord {
+  id: string;
+  /** As the extension names itself, e.g. "Chrome 130 on macOS". */
+  name: string;
+  version: string;
+  createdAt: string;
+  lastSeenAt: string | null;
+  /** Whether this one holds the caller's connection now (one at a time per user). */
+  connected: boolean;
+}
+
+/** GET /api/builtin-browser/extension. */
+export interface BrowserExtensionsResponse {
+  paired: BrowserExtensionRecord[];
+  /** The id of the connected one, when one is. */
+  connected?: string;
+  /** The admin's server-wide switch (`ServerSettings.browserExtensionsEnabled`). */
+  enabled: boolean;
+}
+
+/**
+ * POST /api/builtin-browser/extension/pairings: a one-time code for the signed-in user, valid
+ * for ten minutes, used once; the dialog shows it beside the server address.
+ */
+export interface BrowserExtensionPairingResponse {
+  /** 43 base64url characters. */
+  code: string;
+  /** ISO time the code stops working. */
+  expiresAt: string;
+  /** The request's Origin, when it carried one: the address the browser reaches this server at. */
+  origin: string | null;
+}
+
+/** POST /api/builtin-browser/extension/pair (no cookie: the extension's own request). */
+export interface BrowserExtensionPairRequest {
+  code: string;
+  /** How the extension names this Chrome, e.g. "Chrome 130 on macOS" (1–80 characters). */
+  name: string;
+  /** The extension's own version (manifest.version). */
+  version: string;
+}
+
+/** What /extension/pair answers: the long-lived token, shown once and stored only hashed here. */
+export interface BrowserExtensionPairResponse {
+  extensionId: string;
+  /** Rides the WebSocket's subprotocol list as `token.<token>`; never a URL. */
+  token: string;
+  /** This server's install id (a stable name for the data root); null when it is unknown. */
+  installId: string | null;
+  user: { userId: string; displayName: string | null };
+  serverVersion: string;
+}
+
+/**
+ * The extension WebSocket's close codes (`/api/builtin-browser/extension/ws`). Besides these the
+ * server closes with 1012 when it restarts or hot-swaps (reconnect with the usual backoff).
+ *
+ * - 4001 replaced: another extension of the same user connected (last connected wins); do not
+ *   auto-retry.
+ * - 4003 revoked: the pairing was revoked (or the token was); forget this server.
+ * - 4005 protocol_mismatch: no `penguin-browser.1` subprotocol, or a hello the server does not
+ *   speak; the extension needs updating.
+ * - 4008 ping_timeout: two pings (or the hello) went unanswered.
+ * - 4009 disabled: an admin switched Chrome connections off; retry hourly.
+ */
+export type BrowserExtensionCloseCode = 4001 | 4003 | 4005 | 4008 | 4009;
 
 /** One tab's share of the built-in browser's load, as the shell last measured it. */
 export interface BuiltinBrowserTabMetrics {
@@ -5552,9 +6524,22 @@ export interface BuiltinBrowserSettings {
 export type BuiltinBrowserAction =
   "navigate" | "scan" | "exec" | "click" | "type" | "screenshot" | "cdp";
 
-/** User-channel events of the built-in browser (admins only). */
+/**
+ * User-channel events of the agent browser. The built-in backend's go to every admin; a chrome
+ * backend's go to the user whose Chrome it is, as do `builtin_browser_backend` and
+ * `builtin_browser_extension`.
+ */
 export type BuiltinBrowserServerEvent =
-  | { type: "builtin_browser_tabs"; tabs: BuiltinBrowserTab[]; activeTabId: number | null }
+  /**
+   * A backend's whole tab list. `backend` names whose: a desktop admin hears both the built-in
+   * browser's and their own Chrome's, and the two lists must not overwrite each other.
+   */
+  | {
+      type: "builtin_browser_tabs";
+      tabs: BuiltinBrowserTab[];
+      activeTabId: number | null;
+      backend: BrowserBackend;
+    }
   /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
   | {
       type: "builtin_browser_open";
@@ -5573,7 +6558,15 @@ export type BuiltinBrowserServerEvent =
       sessionId?: string;
     }
   /** The shell measured the browser's load (see BuiltinBrowserMetrics). */
-  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics };
+  | { type: "builtin_browser_metrics"; metrics: BuiltinBrowserMetrics }
+  /** The user switched backend (PUT /backend); every window of theirs follows. */
+  | { type: "builtin_browser_backend"; backend: BrowserBackend }
+  /** The user's Chrome connected, went away, was replaced by another Chrome of theirs, or was revoked. */
+  | {
+      type: "builtin_browser_extension";
+      state: "connected" | "disconnected" | "replaced" | "revoked";
+      extension?: BrowserExtensionRecord;
+    };
 
 /** A cookie as the shell writes it (Electron's CookiesSetDetails). */
 export interface DesktopBrowserCookie {
@@ -5589,9 +6582,13 @@ export interface DesktopBrowserCookie {
   sameSite?: "unspecified" | "no_restriction" | "lax" | "strict";
 }
 
-/** Server → shell: what the shell does with its guests. Mechanism only — the product logic stays on the server. */
+/**
+ * Server → browser link: what the shell (built-in) or the extension (chrome) does with its tabs.
+ * Mechanism only — the product logic stays on the server. The names are historical: the same
+ * envelopes travel the extension's WebSocket as JSON text frames.
+ */
 export type DesktopBrowserCommand =
-  /** Reply: `{ version: 1, partition: string }`. An older shell never answers. */
+  /** Reply: a BrowserHello. An older shell never answers. */
   | { op: "hello" }
   /** Reply: `{ tabs: BuiltinBrowserTab[] }`. */
   | { op: "tabs" }
@@ -5618,7 +6615,30 @@ export type DesktopBrowserCommand =
    * before. A tab is unthrottled until a command lists it, so a server that never sends one
    * changes nothing. A shell older than this command answers `unknown_op`.
    */
-  | { op: "throttle"; tabIds: number[] };
+  | { op: "throttle"; tabIds: number[] }
+  /**
+   * Chrome only (the shell answers `unknown_op`). Reply: `{ tab: BuiltinBrowserTab }`. A tab at
+   * `url` (http(s) or about:blank, checked by the server) in the extension's Penguin tab group;
+   * `activate` asks for it to be the selected tab of its window.
+   */
+  | { op: "open-tab"; url: string; activate: boolean }
+  /** Chrome only. Reply: `{}`. Closes a tab the extension drives. */
+  | { op: "close-tab"; tabId: number }
+  /** Chrome only. Reply: `{}`. Shows the tab in the user's Chrome (selects it, focuses its window). */
+  | { op: "activate-tab"; tabId: number }
+  /** Chrome only. Reply: `{}`. Sent every 20 s; the traffic keeps the MV3 service worker alive. */
+  | { op: "ping" };
+
+/**
+ * The `hello` reply. Built-in: `{ version: 1, partition }` (an older shell sends no `backend`).
+ * Chrome: `{ version: 1, backend: "chrome", extension }`; any other version is closed 4005.
+ */
+export interface BrowserHello {
+  version: 1;
+  backend?: BrowserBackend;
+  partition?: string;
+  extension?: { version: string; chrome: string; name: string };
+}
 
 export interface DesktopBrowserCommandMessage {
   type: "desktop-browser-command";
@@ -5656,7 +6676,14 @@ export type DesktopBrowserEvent =
    * shortly after one closes, empty after the last): each tab's memory and CPU, and the pages'
    * memory together, a process shared by two tabs counted once.
    */
-  | { kind: "metrics"; tabs: BuiltinBrowserTabMetrics[]; totalKB: number };
+  | { kind: "metrics"; tabs: BuiltinBrowserTabMetrics[]; totalKB: number }
+  /**
+   * Chrome only: the tab still exists in Chrome but the agent may no longer drive it — the user
+   * pressed Cancel on Chrome's debugging bar (`user`), the debugger went away otherwise
+   * (`detached`), or the page is one Chrome lets no extension attach to (`restricted`). The
+   * extension fails that tab's pending commands with the error `tab_released`.
+   */
+  | { kind: "tab-released"; tabId: number; reason: "user" | "detached" | "restricted" };
 
 export interface DesktopBrowserEventMessage {
   type: "desktop-browser-event";

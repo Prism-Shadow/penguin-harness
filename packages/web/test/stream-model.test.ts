@@ -14,7 +14,8 @@
  * - A compaction renders one banner: its summary and thinking stream onto it, each body
  *   section is timed over the window it shows itself running (retries included), history
  *   replay rebuilds the same banner, and a quit or aborted compaction settles as failed.
- * - The MCP connect row sums tools, keeps per-server outcomes and its wall time.
+ * - The MCP connect row sums tools, keeps per-server outcomes and its wall time, and names a
+ *   server skipped for a vault key or a sign-in as waiting rather than failed.
  * - Retries render one ladder line per streak, with their countdown inputs, settling as
  *   gave-up on abort, exhaustion or a new Task; request events inside a compaction do not.
  * - Subagent output routes into the nearest approved, unfinished run_subagent card, one hop
@@ -27,8 +28,10 @@
  * - Elapsed time survives a reload mid-run and never leaks the local clock.
  * - Tool cards are found at any depth by origin chain, and an approval key tells apart the
  *   same call id under different origins.
- * - Overlap dedup matches identical envelopes in its window (Trace positions ignored) and
- *   discards the matching in-flight fragment, nested ones included.
+ * - Overlap dedup matches identical envelopes in its window (Trace positions ignored, an
+ *   image's inline bytes and its history reference taken as one) and discards the matching
+ *   in-flight fragment, nested ones included; an image history does not hold is never
+ *   taken for one it does.
  * - Thinking and tool durations cover generation and execution, minus approval waits; aborts
  *   and idle close running cards.
  * - A repeated tool_call_id opens a new card and closes the superseded one.
@@ -133,6 +136,7 @@ function meta(sessionId: string): OmniMessage<SessionMetaPayload> {
     system_prompt: "",
     agent_state: "/a",
     workspace: "/w",
+    source: "user",
   });
 }
 
@@ -913,10 +917,54 @@ describe("approvals and events", () => {
     expect(row.durationMs).toBe(1200);
     expect(row.toolCount).toBe(2);
     expect(row.failed).toEqual(["bad"]);
-    // Per-server outcomes back the expanded server groups (failure reasons live there).
+    // Per-server outcomes back the expanded server groups (failure reasons and causes live there).
     expect(row.results).toEqual([
       { server: "fx", status: "completed", durationMs: 180, tools: 2 },
-      { server: "bad", status: "fatal", durationMs: 60, error: "spawn nope ENOENT" },
+      {
+        server: "bad",
+        status: "fatal",
+        durationMs: 60,
+        error: "spawn nope ENOENT",
+        errorCode: "connect_failed",
+      },
+    ]);
+  });
+
+  it("mcp connect row: a server skipped for a vault key or a sign-in is named as waiting, not as failed", () => {
+    const m = createStreamModel();
+    pushMessage(m, mcpConnectBegin(["fx", "mail", "cf"]));
+    pushMessage(
+      m,
+      mcpConnectEnd({
+        status: "fatal",
+        results: [
+          { server: "fx", transport: "stdio", status: "completed", duration_ms: 90, tools: 1 },
+          {
+            server: "mail",
+            transport: "http",
+            status: "fatal",
+            duration_ms: 0,
+            error_code: "mcp_sign_in_required",
+            error_message: "requires OAuth sign-in, which this version does not support yet",
+          },
+          {
+            server: "cf",
+            transport: "http",
+            status: "fatal",
+            duration_ms: 0,
+            error_code: "mcp_needs_setup",
+            error_message: "needs setup: vault key CLOUDFLARE_API_TOKEN is not set",
+          },
+        ],
+      }),
+    );
+    const row = items(m)[0] as McpConnectItem;
+    expect(row.failed).toBeUndefined();
+    expect(row.waiting).toEqual(["mail", "cf"]);
+    expect(row.results?.map((r) => r.errorCode)).toEqual([
+      undefined,
+      "mcp_sign_in_required",
+      "mcp_needs_setup",
     ]);
   });
 
@@ -2369,6 +2417,55 @@ describe("overlap dedup (contract §7.2)", () => {
     const live = at(assistantText("same"), "2026-07-05T00:00:01.000Z");
     const history = { ...live, tracePosition: { fileIndex: 1, ordinal: 9 } };
     expect(isDuplicate(buildDedupIndex([history]), live)).toBe(true);
+  });
+
+  it("an image a history page carries by reference matches the stream's inline copy of the same record", () => {
+    const bytes = "data:image/png;base64,iVBORw0KGgo=";
+    const ref = (query: string) => `/api/sessions/s1/trace-image?${query}`;
+    const userImage = at(imageUrlMessage(bytes), "2026-07-05T00:00:00.000Z");
+    const shot = at(
+      toolCallOutput({ output: "two shots", toolCallId: "c1", images: [bytes, bytes] }),
+      "2026-07-05T00:00:04.000Z",
+    );
+    // The page's copies: positioned Trace records whose images became route URLs.
+    const pageImage = {
+      ...userImage,
+      payload: { ...userImage.payload, image_url: ref("file=1&ordinal=4") },
+      tracePosition: { fileIndex: 1, ordinal: 4 },
+    };
+    const pageShot = {
+      ...shot,
+      payload: {
+        ...shot.payload,
+        images: [ref("file=1&ordinal=6&i=0"), ref("file=1&ordinal=6&i=1")],
+      },
+      tracePosition: { fileIndex: 1, ordinal: 6 },
+    };
+    const page = buildDedupIndex([pageImage, pageShot]);
+    expect(isDuplicate(page, userImage)).toBe(true);
+    expect(isDuplicate(page, shot)).toBe(true);
+  });
+
+  it("an image the history does not hold is never taken for one it does", () => {
+    const bytes = "data:image/png;base64,iVBORw0KGgo=";
+    const held = at(imageUrlMessage(bytes), "2026-07-05T00:00:00.000Z");
+    const page = buildDedupIndex([
+      {
+        ...held,
+        payload: { ...held.payload, image_url: "/api/sessions/s1/trace-image?file=1&ordinal=4" },
+      },
+    ]);
+    // The same picture sent again later is a new message.
+    expect(isDuplicate(page, at(imageUrlMessage(bytes), "2026-07-05T00:01:00.000Z"))).toBe(false);
+    // Web addresses are compared as written: a different picture at the same moment stays apart.
+    const web = (url: string) => at(imageUrlMessage(url), "2026-07-05T00:00:00.000Z");
+    expect(
+      isDuplicate(buildDedupIndex([web("https://a.test/1.png")]), web("https://a.test/2.png")),
+    ).toBe(false);
+    // A tool output with one more image than history's copy is not that copy.
+    const out = (images: string[]) =>
+      at(toolCallOutput({ output: "shot", toolCallId: "c1", images }), "2026-07-05T00:00:04.000Z");
+    expect(isDuplicate(buildDedupIndex([out([bytes])]), out([bytes, bytes]))).toBe(false);
   });
 
   it("a full message hitting dedup discards the matching in-flight fragment (discardFragmentFor)", () => {

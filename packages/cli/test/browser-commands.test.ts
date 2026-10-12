@@ -1,9 +1,19 @@
 /**
- * `penguin browser`, driven through `cli()` in-process against the fake server's built-in
- * browser handler: each command's request (method, path, body — PENGUIN_SESSION_ID included
- * where the API takes it), the three sources of an exec script (argument, --file, stdin),
- * --save, the output contract of scan / exec / click / import / history, and the one-line
- * errors with exit code 1, API errors and argument errors alike.
+ * `penguin browser`, driven through `cli()` in-process against the fake server's browser
+ * handler: each command's request (method, path, body), the three sources of an exec script
+ * (argument, --file, stdin), --save, the output contract of status / scan / exec / click /
+ * import / history, and the one-line errors with exit code 1, API errors and argument errors
+ * alike.
+ *
+ * - `status` names the backend the user chose — the built-in browser, or their own Chrome with
+ *   its name and the extension's version — and, when it cannot be driven, why and what to tell
+ *   the user: Chrome not paired, not connected, or switched off by an admin. A server that names
+ *   no backend gets the status alone.
+ * - Inside a session every call carries PENGUIN_SESSION_ID — in the body, or in the query of a
+ *   GET or DELETE — so the server acts for the person driving the session (their Chrome).
+ * - What only the built-in browser has (import, history), asked of the user's Chrome, says to
+ *   have the user sign in in Chrome instead; an unavailable browser with no reason (the user
+ *   paused the extension) prints the server's own words.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -103,14 +113,85 @@ const execResult = (over: Partial<BuiltinBrowserExecResult> = {}): BuiltinBrowse
   ...over,
 });
 
+/** The chrome entry of a status's `backends`, with the user's paired Chrome when one is. */
+const chromeInfo = (available: boolean, reason?: string, named = true) => ({
+  backend: "chrome",
+  available,
+  ...(reason !== undefined ? { reason } : {}),
+  ...(named
+    ? {
+        extension: {
+          id: "ext-1",
+          name: "Chrome 130 on macOS",
+          version: "0.2.13",
+          connected: available,
+          lastSeenAt: "2026-10-03T08:00:00.000Z",
+        },
+      }
+    : {}),
+});
+
 describe("status and tabs", () => {
-  it("status prints availability and the tab list, the active tab starred", async () => {
+  it("status names the built-in browser and prints the tab list, the active tab starred", async () => {
     routes["GET /status"] = () => ({
-      body: { available: true, tabs: [ORDERS, GOOGLE], activeTabId: 12 },
+      body: {
+        available: true,
+        backend: "builtin",
+        backends: [
+          { backend: "builtin", available: true },
+          chromeInfo(false, "extension_not_paired", false),
+        ],
+        tabs: [ORDERS, GOOGLE],
+        activeTabId: 12,
+      },
     });
     expect(await cli(["browser", "status"])).toBe(0);
-    expect(out()).toBe("status: available\ntabs: *12 Your Orders | 15 Google\n");
+    expect(out()).toBe("status: available · backend: builtin\ntabs: *12 Your Orders | 15 Google\n");
   });
+
+  it("status names the user's Chrome and its extension when agents drive it", async () => {
+    const chromeTab = tab(1203, "Your Orders", "https://www.amazon.com/your-orders/orders");
+    routes["GET /status"] = () => ({
+      body: {
+        available: true,
+        backend: "chrome",
+        backends: [chromeInfo(true)],
+        tabs: [chromeTab],
+        activeTabId: 1203,
+      },
+    });
+    expect(await cli(["browser", "status"])).toBe(0);
+    expect(out()).toBe(
+      "status: available · backend: chrome (Chrome 130 on macOS, extension 0.2.13)\n" +
+        "tabs: *1203 Your Orders\n",
+    );
+  });
+
+  it.each([
+    ["extension_not_paired", false, "status: unavailable (extension_not_paired) · backend: chrome"],
+    [
+      "extension_disconnected",
+      true,
+      "status: unavailable (extension_disconnected) · backend: chrome (Chrome 130 on macOS, extension 0.2.13)",
+    ],
+    ["extension_disabled", false, "status: unavailable (extension_disabled) · backend: chrome"],
+  ])(
+    "status exits 1 when the user's Chrome is %s, saying what to tell the user",
+    async (reason, named, statusLine) => {
+      routes["GET /status"] = () => ({
+        body: {
+          available: false,
+          reason,
+          backend: "chrome",
+          backends: [chromeInfo(false, reason, named)],
+          tabs: [],
+          activeTabId: null,
+        },
+      });
+      expect(await cli(["browser", "status"])).toBe(1);
+      expect(out()).toBe(`${statusLine}\nnote: ${t.browser.unavailableHint(reason)}\n`);
+    },
+  );
 
   it("status prints the browser's memory, and the server's load warning with what to do", async () => {
     const GB = 1024 * 1024;
@@ -159,7 +240,7 @@ describe("status and tabs", () => {
     expect(out()).toBe("status: available\ntabs: *12 Your Orders\nmemory: 300 MB across 1 tab\n");
   });
 
-  it("status exits 1 when the browser is unavailable, saying what is needed", async () => {
+  it("status exits 1 when the built-in browser is unavailable, saying what is needed (a server naming no backend)", async () => {
     routes["GET /status"] = () => ({
       body: { available: false, reason: "no_window", tabs: [], activeTabId: null },
     });
@@ -681,6 +762,71 @@ describe("import and history", () => {
   });
 });
 
+describe("the calling session", () => {
+  it("every call carries PENGUIN_SESSION_ID: in the query of a GET or DELETE, in the body otherwise", async () => {
+    process.env.PENGUIN_SESSION_ID = SESSION;
+    const scan = { tab: ORDERS, tabs: [ORDERS], activeTabId: 12, content: "" };
+    Object.assign(routes, {
+      "GET /status": () => ({ body: { available: true, tabs: [], activeTabId: null } }),
+      "GET /tabs": () => ({ body: { tabs: [], activeTabId: null } }),
+      "DELETE /tabs/active": () => ({ status: 204 }),
+      "GET /history": () => ({ body: { entries: [] } }),
+      "GET /import/sources": () => ({ body: { sources: [] } }),
+      "POST /tabs/15/activate": () => ({ body: { tab: GOOGLE } }),
+      "POST /tabs/active/scan": () => ({ body: scan }),
+      "POST /tabs/active/cdp": () => ({ body: { result: {} } }),
+      "POST /import": () => ({ body: { sourceId: "chrome:Default", warnings: [] } }),
+    });
+    for (const args of [
+      ["status"],
+      ["tabs"],
+      ["close"],
+      ["history", "orders"],
+      ["import", "--list"],
+      ["switch", "15"],
+      ["scan"],
+      ["cdp", "DOM.getDocument"],
+      ["import", "--from", "chrome:Default"],
+    ]) {
+      expect(await cli(["browser", ...args]), args.join(" ")).toBe(0);
+    }
+    const sent = browserRequests().map((r) => ({
+      call: `${r.method} ${r.path.slice("/api/builtin-browser".length)}`,
+      session: new URLSearchParams(r.search).get("sessionId") ?? r.body?.sessionId,
+    }));
+    expect(sent).toEqual(
+      [
+        "GET /status",
+        "GET /tabs",
+        "DELETE /tabs/active",
+        "GET /history",
+        "GET /import/sources",
+        "POST /tabs/15/activate",
+        "POST /tabs/active/scan",
+        "POST /tabs/active/cdp",
+        "POST /import",
+      ].map((call) => ({ call, session: SESSION })),
+    );
+  });
+
+  it("a screenshot carries it too, beside its own options", async () => {
+    process.env.PENGUIN_SESSION_ID = SESSION;
+    routes["POST /tabs/active/screenshot"] = () => ({
+      body: { mime: "image/png", data: Buffer.from("png").toString("base64") },
+    });
+    expect(
+      await cli(["browser", "screenshot", "-o", path.join(scratch, "s.png"), "--full-page"]),
+    ).toBe(0);
+    expect(lastBody()).toEqual({ fullPage: true, sessionId: SESSION });
+  });
+
+  it("outside a session the calls name none", async () => {
+    routes["GET /status"] = () => ({ body: { available: true, tabs: [], activeTabId: null } });
+    expect(await cli(["browser", "status"])).toBe(0);
+    expect(browserRequests().at(-1)?.search).toBe("");
+  });
+});
+
 describe("errors", () => {
   it("an unavailable browser explains the desktop app, whatever the command", async () => {
     // The fake's default answer: a server outside the desktop app.
@@ -704,6 +850,32 @@ describe("errors", () => {
     });
     expect(await cli(["browser", "tabs"])).toBe(1);
     expect(err()).toBe(`error: browser_unavailable: ${t.browser.unavailableHint("no_window")}\n`);
+  });
+
+  it("an unavailable browser with no reason prints the server's own words (the user paused Chrome)", async () => {
+    const paused =
+      "The user paused the PenguinHarness Browser extension in Chrome; ask them to resume it.";
+    routes["POST /tabs/active/scan"] = () => ({
+      status: 503,
+      body: { error: { code: "browser_unavailable", message: paused } },
+    });
+    expect(await cli(["browser", "scan"])).toBe(1);
+    expect(err()).toBe(`error: browser_unavailable: ${paused}\n`);
+  });
+
+  it("import or history asked of the user's Chrome says to sign in there instead", async () => {
+    const refused = {
+      status: 405,
+      body: {
+        error: { code: "not_supported", message: "Import belongs to the built-in browser." },
+      },
+    };
+    routes["GET /import/sources"] = () => refused;
+    routes["GET /history"] = () => refused;
+    expect(await cli(["browser", "import", "--list"])).toBe(1);
+    expect(await cli(["browser", "history"])).toBe(1);
+    const line = `error: not_supported: ${t.browser.notSupported()}`;
+    expect(err().split("\n")).toEqual([line, line, ""]);
   });
 
   it("any other API error is one line with the server's code and message", async () => {

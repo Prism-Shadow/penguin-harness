@@ -248,11 +248,13 @@
     /* Badges: one tag. The tones have no tint, so a soft tag draws the same 1px inset rule in its
        tone's line as an outlined one — the two weights are one ruled word, and a solid tag is the
        tone's ink filled in; the regular cut (the weight scale has no middle step to give a tag),
-       in the chrome face at the small rung; and the md tag takes the sm tag's padding, so a row
-       of tags and counts is one height. */
+       in the chrome face a step under the small rung (11px on a 16px line at the 16px root); and
+       the md tag takes the sm tag's padding, so a row of tags and counts is one height. */
     --ui-badge-soft-ring: 1px;
     --ui-badge-weight: var(--ui-weight-body);
     --ui-badge-pad-md: 1px calc(var(--ui-space-unit) * 1.5);
+    --ui-badge-size: 0.6875rem;
+    --ui-badge-lh: 1rem;
 
     /* Typography — families. Latin face first, so ASCII always renders in the theme's face; the
        chrome and reading text share Plex Sans — the chrome reads the sans by name, so a chosen
@@ -533,7 +535,8 @@
    * `animate-spin` and `.ui-frame` redraw a card's box.
    *
    * Console gives a recipe to: eyebrow (its ink; the rung is theme.css's), display, live, frame,
-   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart, stream, glyph.
+   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart, stream, glyph,
+   * widget.
    * `.ui-glass` and `.ui-scrim` are no-ops here: the overlay is opaque through the glass tokens,
    * and the page behind a dialog is dimmed, not blurred.
    */
@@ -962,6 +965,33 @@
   /* A point is a rect the chart rounds to a circle by its `rx`; squared off here. */
   :root[data-theme="geek"] .ui-chart [data-part="point"] {
     rx: 0;
+    shape-rendering: crispEdges;
+  }
+
+  /* Widgets as text-first panels: a hairline box with a ruled head, no fill anywhere, numerals in
+     the mono face (a reading is data), the illustration with square caps on crisp edges, and its
+     loops stepping (the live timing token) rather than gliding. */
+  :root[data-theme="geek"] .ui-widget {
+    border: var(--ui-border-w) solid var(--ui-line);
+    border-radius: 0;
+    background-color: transparent;
+  }
+  :root[data-theme="geek"] .ui-widget > [data-slot="head"] {
+    padding-bottom: calc(var(--ui-space-unit) * 2);
+    border-bottom: var(--ui-border-w) solid var(--ui-line);
+  }
+  :root[data-theme="geek"] .ui-widget [data-tile] {
+    border: var(--ui-border-w) solid var(--ui-line);
+    border-radius: 0;
+    background-color: transparent;
+  }
+  :root[data-theme="geek"] .ui-widget [data-figure] {
+    font-family: var(--ui-font-mono);
+    letter-spacing: var(--ui-tracking-mono);
+  }
+  :root[data-theme="geek"] .ui-widget [data-art] {
+    stroke-linecap: butt;
+    stroke-linejoin: miter;
     shape-rendering: crispEdges;
   }
 }

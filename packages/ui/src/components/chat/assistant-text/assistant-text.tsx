@@ -1,23 +1,13 @@
 /**
- * An assistant reply's body in the transcript: the Markdown, the streaming caret, and whatever
- * the caller adds once the reply is whole. The Web App renders every reply through it, and the
- * gallery renders it on its own, so a theme's reveal is seen exactly as the transcript shows it.
- *
- * The body is the `ui-stream` host: `data-state` is `streaming` while the reply is still coming
- * in — the stream is open, or the paced reveal (use-stream-reveal.ts) has not caught up with it
- * — and `done` after, and the caret is its `caret` slot. Primer gives the hook nothing and
- * reveals instantly, so the body renders as a plain reply; Frost fades the new text in under a
- * soft veil at the body's foot, and Console types it out behind a block caret.
- *
- * Markdown renders the revealed prefix, so code blocks and lists grow as they are typed. It
- * stays in its streaming mode (no highlighting, no KaTeX; see prose.tsx) until the reveal is
- * done, and `children` (a stop reason, a nested reply's files card) wait for the same moment, so
- * nothing lands under text that is still coming in.
+ * An assistant reply's body in the transcript: the reply's Markdown streaming through
+ * `StreamText` — the one `ui-stream` host, so a reply reveals exactly as a thinking row, a
+ * compaction summary and a tool's output do — on the reply's reading type, and whatever the
+ * caller adds once the reply is whole (a stop reason, a nested reply's files card). The Web App
+ * renders every reply through it, and the gallery renders it on its own, so a theme's reveal is
+ * seen exactly as the transcript shows it.
  */
 import type { ReactNode } from "react";
-import { Md } from "../../content/prose/prose";
-import { StreamingCaret } from "./streaming-caret";
-import { useStreamReveal } from "./use-stream-reveal";
+import { StreamText } from "../stream-text/stream-text";
 
 export interface AssistantTextProps {
   /** The reply's text received so far. */
@@ -29,17 +19,13 @@ export interface AssistantTextProps {
 }
 
 export function AssistantText({ text, streaming, children }: AssistantTextProps) {
-  const revealed = useStreamReveal(text, streaming);
-  const live = streaming || revealed.length < text.length;
   return (
-    <div
-      className="ui-stream md-body anim-msg my-3 font-sans text-base leading-relaxed text-fg"
-      data-state={live ? "streaming" : "done"}
+    <StreamText
+      text={text}
+      streaming={streaming}
+      className="md-body anim-msg my-3 font-sans text-base leading-relaxed text-fg"
     >
-      {/* Re-renders the revealed text directly while live; memoized, so a settled reply skips the re-parse, and code blocks highlight once on settle (see prose.tsx). */}
-      <Md text={revealed} streaming={live} />
-      {live && <StreamingCaret />}
-      {!live && children}
-    </div>
+      {children}
+    </StreamText>
   );
 }

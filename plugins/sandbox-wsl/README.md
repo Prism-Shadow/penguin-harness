@@ -7,6 +7,7 @@ A Windows sandbox backend for PenguinHarness. Each agent command runs in a dedic
 | fs-write   | The distro is read-only; the Workspace is bound read-write (or read-only) at its /mnt path, and under `workspace-write` so are the policy's `writableRoots` (the Session's scratchpad) |
 | network    | `network: "none"` runs the command in an empty network namespace; `"local"` is not supported |
 | mask-paths | A tmpfs over a directory, `/dev/null` over a file                                          |
+| closed-temp | `/tmp` gets a private tmpfs only when the policy grants temp; otherwise it stays read-only |
 
 Other Windows drives are hidden from a confined command unless **Show Windows drives read-only** is on. The mount that hides them is remounted read-only after the Workspace is bound, so a write to a path outside the Workspace is refused rather than landing in a tmpfs that vanishes with the command.
 
@@ -14,7 +15,7 @@ WSL keeps the generated `resolv.conf` outside the distro's root, at `/mnt/wsl/re
 
 ## Setup
 
-Everything happens on the WSL card under **Settings → Plugins → Sandbox**, with its progress shown there:
+Everything happens on the WSL card under **Settings → Plugins → Agent Sandbox**, with its progress shown there:
 
 1. **Install WSL**: raises the Windows consent prompt for `setup/install-wsl.ps1`, which runs `wsl --install --no-distribution`. Some machines need a restart afterwards. This is the only step that needs an administrator.
 2. **Initialize sandbox distro**: downloads the base rootfs (checked against its published sha256), imports it as its own distro, installs bubblewrap and the **Packages** list, creates the `penguin` account, and switches Windows interop off.

@@ -7,7 +7,8 @@
  * 2. GET messages renders history, then replays the buffer (overlap deduped); on load failure,
  *    expose error and a retry entry point;
  * 3. Disconnects are auto-reconnected by the browser (Last-Event-ID built in; server replays from
- *    its buffer); resync_required → controller rebuilds the model and keeps consuming the same
+ *    its buffer), and a connection that went silent is reopened by api/sse.ts from the last id
+ *    seen; resync_required → controller rebuilds the model and keeps consuming the same
  *    connection;
  * 4. task_state in the stream is the authoritative run state (server pushes the current snapshot
  *    on subscribe); initialStatus only serves as the first-frame placeholder, driving the input

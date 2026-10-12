@@ -8,7 +8,8 @@
  * can list and validate it without running the package. Its shape is VS Code's
  * `contributes.configuration` cut down to what a settings page can draw without knowing the
  * module — a titled group of fields (a string, a secret, a boolean, a number, a choice among
- * options, or a list of lines) — plus a `parent` that draws the group inside another's card.
+ * options, a list of lines, or a table of fixed rows) — plus a `parent` that draws the group
+ * inside another's card.
  * The group's name is the contribution's id. A group whose status changes at run time (the
  * sandbox's backends) contributes that as code to `PluginConfigPage.status`.
  *
@@ -26,8 +27,8 @@
  * boot (a data-only contribution), which is what lets one module both declare and require.
  *
  * Two nodes, for the same ordering reason. `PluginConfigProvider` holds the values and takes
- * the declarations; `PluginConfigPage` is what the admin API reads — the entries with their
- * live notices — and takes the status code. A status contributor (the sandbox's, which reads
+ * the declarations; `PluginConfigPage` (config-page.ts) is what the admin API reads — the
+ * entries with their live notices — and takes the status code. A status contributor (the sandbox's, which reads
  * the sandbox service) is created before the page, and a sandbox backend reading its own
  * group is created after the provider: one node for both would close that circle.
  */
@@ -36,7 +37,10 @@ import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
 import type {
   PluginConfigEntry,
   PluginConfigField,
-  PluginConfigNotice,
+  PluginConfigOption,
+  PluginConfigPinColumn,
+  PluginConfigTableColumn,
+  PluginConfigTableRow,
   PluginConfiguration,
 } from "../api/types.js";
 import { Settings } from "../mechanisms/settings.js";
@@ -51,10 +55,350 @@ const FIELD_TYPES = new Set<PluginConfigField["type"]>([
   "number",
   "enum",
   "list",
+  "table",
 ]);
 
 /** A field name: what the manifest and the stored document are keyed by. */
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+/** A table row's id: what its stored cells are keyed by. */
+const ROW_ID = /^[a-z][a-z0-9-]*$/;
+
+const COLUMN_TYPES = new Set<PluginConfigTableColumn["type"]>(["string", "boolean", "enum"]);
+
+/** An enum's options, checked: every one a string value with a title. */
+function parseOptions(options: unknown, where: string): PluginConfigOption[] {
+  if (!Array.isArray(options) || options.length === 0) {
+    throw new Error(`${where}.options must list the choices`);
+  }
+  return options.map((o, i) => {
+    const opt = (o ?? {}) as Record<string, unknown>;
+    if (typeof opt.value !== "string" || typeof opt.title !== "string") {
+      throw new Error(`${where}.options[${i}] needs a string value and title`);
+    }
+    return {
+      value: opt.value,
+      title: opt.title,
+      ...(typeof opt.titleZh === "string" ? { titleZh: opt.titleZh } : {}),
+      ...describedBy(opt),
+    };
+  });
+}
+
+export const isRecord = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** A column's (or row's, or option's) description, in both languages, where declared as text. */
+function describedBy(c: Record<string, unknown>): { description?: string; descriptionZh?: string } {
+  return {
+    ...(typeof c.description === "string" ? { description: c.description } : {}),
+    ...(typeof c.descriptionZh === "string" ? { descriptionZh: c.descriptionZh } : {}),
+  };
+}
+
+/** A table's pin column: a boolean column of it, and its tooltip pinned and not. */
+function parsePin(
+  raw: unknown,
+  columns: readonly PluginConfigTableColumn[],
+  where: string,
+): PluginConfigPinColumn {
+  const p = (raw ?? {}) as Record<string, unknown>;
+  if (typeof p.on !== "string" || typeof p.off !== "string") {
+    throw new Error(`${where}.pin needs an on and an off text`);
+  }
+  if (columns.find((c) => c.name === p.column)?.type !== "boolean") {
+    throw new Error(`${where}.pin.column must name a boolean column`);
+  }
+  return {
+    column: p.column as string,
+    on: p.on,
+    off: p.off,
+    ...(typeof p.onZh === "string" ? { onZh: p.onZh } : {}),
+    ...(typeof p.offZh === "string" ? { offZh: p.offZh } : {}),
+  };
+}
+
+/** Whether a value is of a table column's type. */
+function cellFits(column: PluginConfigTableColumn, value: unknown): boolean {
+  if (column.type === "boolean") return typeof value === "boolean";
+  if (column.type === "enum") {
+    return typeof value === "string" && (column.options ?? []).some((o) => o.value === value);
+  }
+  return typeof value === "string";
+}
+
+/** A `table` field's columns and rows, checked: every row declares every column, and fits it. */
+function parseTable(
+  f: Record<string, unknown>,
+  where: string,
+): { columns: PluginConfigTableColumn[]; rows: PluginConfigTableRow[] } {
+  if (!Array.isArray(f.columns) || f.columns.length === 0) {
+    throw new Error(`${where}.columns must list the columns`);
+  }
+  const columns = f.columns.map((raw, i): PluginConfigTableColumn => {
+    const c = (raw ?? {}) as Record<string, unknown>;
+    const at = `${where}.columns[${i}]`;
+    if (typeof c.name !== "string" || !FIELD_NAME.test(c.name)) {
+      throw new Error(`${at}.name is not a valid name`);
+    }
+    if (
+      typeof c.type !== "string" ||
+      !COLUMN_TYPES.has(c.type as PluginConfigTableColumn["type"])
+    ) {
+      throw new Error(`${at}.type must be one of ${[...COLUMN_TYPES].join(", ")}`);
+    }
+    if (typeof c.title !== "string" || c.title === "") throw new Error(`${at}.title is required`);
+    return {
+      name: c.name,
+      type: c.type as PluginConfigTableColumn["type"],
+      title: c.title,
+      ...(typeof c.titleZh === "string" ? { titleZh: c.titleZh } : {}),
+      ...describedBy(c),
+      ...(c.type === "enum" ? { options: parseOptions(c.options, at) } : {}),
+    };
+  });
+  if (!Array.isArray(f.rows) || f.rows.length === 0) {
+    throw new Error(`${where}.rows must list the rows`);
+  }
+  const ids = new Set<string>();
+  const rows = f.rows.map((raw, i): PluginConfigTableRow => {
+    const r = (raw ?? {}) as Record<string, unknown>;
+    const at = `${where}.rows[${i}]`;
+    if (typeof r.id !== "string" || !ROW_ID.test(r.id) || ids.has(r.id)) {
+      throw new Error(`${at}.id must be a unique lower-case id`);
+    }
+    ids.add(r.id);
+    const values = isRecord(r.values) ? r.values : {};
+    for (const column of columns) {
+      if (!cellFits(column, values[column.name])) {
+        throw new Error(`${at}.values.${column.name} does not fit its column`);
+      }
+    }
+    const row: PluginConfigTableRow = {
+      id: r.id,
+      values: Object.fromEntries(columns.map((c) => [c.name, values[c.name] as string | boolean])),
+      ...describedBy(r),
+    };
+    if (r.valuesZh !== undefined) {
+      if (!isRecord(r.valuesZh)) throw new Error(`${at}.valuesZh must be an object`);
+      for (const [name, v] of Object.entries(r.valuesZh)) {
+        if (columns.find((c) => c.name === name)?.type !== "string" || typeof v !== "string") {
+          throw new Error(`${at}.valuesZh.${name} must be a string column's text`);
+        }
+      }
+      row.valuesZh = r.valuesZh as Record<string, string>;
+    }
+    if (r.locked !== undefined) {
+      if (!Array.isArray(r.locked) || !r.locked.every((n) => columns.some((c) => c.name === n))) {
+        throw new Error(`${at}.locked must list columns of the table`);
+      }
+      row.locked = r.locked as string[];
+    }
+    return row;
+  });
+  return { columns, rows };
+}
+
+/** Where an `extensible` table stores its added rows and its row order: never a row id. */
+export const TABLE_ADDED = "$added";
+export const TABLE_ORDER = "$order";
+
+/** The rows added to an `extensible` table, as stored: each well-formed one, in stored order. */
+function addedRowsOf(field: PluginConfigField, raw: unknown): PluginConfigTableRow[] {
+  if (field.extensible === undefined || !isRecord(raw)) return [];
+  const declared = new Set((field.rows ?? []).map((r) => r.id));
+  const rows: PluginConfigTableRow[] = [];
+  for (const [id, cells] of Object.entries(raw)) {
+    if (!ROW_ID.test(id) || declared.has(id) || !isRecord(cells)) continue;
+    const columns = field.columns ?? [];
+    if (!columns.every((c) => cellFits(c, cells[c.name]))) continue;
+    rows.push({
+      id,
+      values: Object.fromEntries(columns.map((c) => [c.name, cells[c.name] as string | boolean])),
+      added: true,
+    });
+  }
+  return rows;
+}
+
+/** Rows in the stored order: ids it names first, in that order, then the rest as they come. */
+function inStoredOrder(rows: PluginConfigTableRow[], raw: unknown): PluginConfigTableRow[] {
+  if (!Array.isArray(raw)) return rows;
+  const rank = new Map<string, number>();
+  for (const id of raw) if (typeof id === "string" && !rank.has(id)) rank.set(id, rank.size);
+  return rows
+    .map((row, i) => ({ row, at: rank.get(row.id) ?? rank.size + i }))
+    .sort((a, b) => a.at - b.at)
+    .map(({ row }) => row);
+}
+
+/**
+ * A `table` field as read: every declared row with the stored cells laid over the declared
+ * ones (never a locked cell's: a hand-edited document cannot remap one), then — in an `extensible` table — the rows added to it, all in the stored order. A cell
+ * a save changed drops its Chinese text — the name an administrator gave is the name in every
+ * language. Stored rows the table neither declares nor added are left out.
+ */
+export function resolveTable(field: PluginConfigField, stored: unknown): PluginConfigTableRow[] {
+  const cells = isRecord(stored) ? stored : {};
+  const declared = declaredRowsOf(field, cells);
+  if (field.extensible === undefined) return declared;
+  return inStoredOrder(
+    [...declared, ...addedRowsOf(field, cells[TABLE_ADDED])],
+    cells[TABLE_ORDER],
+  );
+}
+
+function declaredRowsOf(
+  field: PluginConfigField,
+  cells: Record<string, unknown>,
+): PluginConfigTableRow[] {
+  return (field.rows ?? []).map((row) => {
+    const own = isRecord(cells[row.id]) ? (cells[row.id] as Record<string, unknown>) : {};
+    const values = { ...row.values };
+    for (const column of field.columns ?? []) {
+      const v = own[column.name];
+      if (row.locked?.includes(column.name)) continue;
+      if (v !== undefined && cellFits(column, v)) values[column.name] = v as string | boolean;
+    }
+    const zh = Object.entries(row.valuesZh ?? {}).filter(
+      ([name]) => values[name] === row.values[name],
+    );
+    const { valuesZh: _declared, ...rest } = row;
+    return { ...rest, values, ...(zh.length > 0 ? { valuesZh: Object.fromEntries(zh) } : {}) };
+  });
+}
+
+/**
+ * One update of a `table` field folded onto its stored cells. Each cell is checked against its
+ * column and named `<field>.<row>.<column>` when refused; a cell set back to its declared value
+ * (or sent empty) is dropped, so only the cells that differ are stored; a row the table does not
+ * declare is dropped; a locked cell may not change.
+ */
+function applyTableUpdate(
+  name: string,
+  field: PluginConfigField,
+  stored: unknown,
+  update: unknown,
+): Record<string, unknown> {
+  if (!isRecord(update)) {
+    throw new PluginConfigError(name, `"${name}" must be an object of rows`);
+  }
+  const before = isRecord(stored) ? stored : {};
+  const next: Record<string, unknown> = {};
+  for (const row of field.rows ?? []) {
+    const cells: Record<string, string | boolean> = {};
+    const kept = isRecord(before[row.id]) ? (before[row.id] as Record<string, unknown>) : {};
+    for (const column of field.columns ?? []) {
+      const v = kept[column.name];
+      // A stored locked cell (a hand-edited document) is not carried over: reads ignore it.
+      if (row.locked?.includes(column.name)) continue;
+      if (v !== undefined && cellFits(column, v)) cells[column.name] = v as string | boolean;
+    }
+    const sent = update[row.id];
+    if (sent !== undefined) {
+      if (!isRecord(sent)) {
+        throw new PluginConfigError(name, `"${name}.${row.id}" must be an object of cells`);
+      }
+      for (const [columnName, raw] of Object.entries(sent)) {
+        const at = `${name}.${row.id}.${columnName}`;
+        const column = (field.columns ?? []).find((c) => c.name === columnName);
+        if (column === undefined) {
+          throw new PluginConfigError(name, `"${at}" is not a column of this table`);
+        }
+        const value = typeof raw === "string" ? raw.trim() : raw;
+        if (value === null || value === "" || value === row.values[columnName]) {
+          delete cells[columnName];
+          continue;
+        }
+        if (!cellFits(column, value)) {
+          throw new PluginConfigError(
+            name,
+            column.type === "enum"
+              ? `"${at}" must be one of ${(column.options ?? []).map((o) => o.value).join(", ")}`
+              : `"${at}" must be a ${column.type}`,
+          );
+        }
+        if (row.locked?.includes(columnName)) {
+          throw new PluginConfigError(name, `"${at}" cannot be changed`);
+        }
+        cells[columnName] = value as string | boolean;
+      }
+    }
+    if (Object.keys(cells).length > 0) next[row.id] = cells;
+  }
+  if (field.extensible !== undefined) {
+    const added =
+      update[TABLE_ADDED] !== undefined
+        ? checkAddedRows(name, field, update[TABLE_ADDED])
+        : Object.fromEntries(
+            addedRowsOf(field, before[TABLE_ADDED]).map((row) => [row.id, row.values]),
+          );
+    if (Object.keys(added).length > 0) next[TABLE_ADDED] = added;
+    const sentOrder = update[TABLE_ORDER];
+    if (
+      sentOrder !== undefined &&
+      (!Array.isArray(sentOrder) || !sentOrder.every((id) => typeof id === "string"))
+    ) {
+      throw new PluginConfigError(name, `"${name}.${TABLE_ORDER}" must be a list of row ids`);
+    }
+    // Only ids of rows that exist, each once; a deleted row leaves the order with it.
+    const ids = new Set([...(field.rows ?? []).map((r) => r.id), ...Object.keys(added)]);
+    const listed: unknown = sentOrder ?? before[TABLE_ORDER];
+    const order = [
+      ...new Set(
+        (Array.isArray(listed) ? listed : []).filter(
+          (id): id is string => typeof id === "string" && ids.has(id),
+        ),
+      ),
+    ];
+    if (order.length > 0) next[TABLE_ORDER] = order;
+  }
+  return next;
+}
+
+/**
+ * The added rows a save sends, checked: each id a lower-case row id the table does not declare,
+ * each row every column's value; a text cell may not be empty. A refused cell is named
+ * `<field>.<row>.<column>`.
+ */
+function checkAddedRows(
+  name: string,
+  field: PluginConfigField,
+  sent: unknown,
+): Record<string, Record<string, string | boolean>> {
+  if (!isRecord(sent)) {
+    throw new PluginConfigError(name, `"${name}.${TABLE_ADDED}" must be an object of rows`);
+  }
+  const declared = new Set((field.rows ?? []).map((r) => r.id));
+  const out: Record<string, Record<string, string | boolean>> = {};
+  for (const [id, raw] of Object.entries(sent)) {
+    if (!ROW_ID.test(id) || declared.has(id)) {
+      throw new PluginConfigError(name, `"${name}.${id}" is not an id a new row may take`);
+    }
+    if (!isRecord(raw)) {
+      throw new PluginConfigError(name, `"${name}.${id}" must be an object of cells`);
+    }
+    const cells: Record<string, string | boolean> = {};
+    for (const column of field.columns ?? []) {
+      const at = `${name}.${id}.${column.name}`;
+      const v = raw[column.name];
+      const value = typeof v === "string" ? v.trim() : v;
+      if (!cellFits(column, value) || value === "") {
+        throw new PluginConfigError(
+          name,
+          column.type === "enum"
+            ? `"${at}" must be one of ${(column.options ?? []).map((o) => o.value).join(", ")}`
+            : value === ""
+              ? `"${at}" may not be empty`
+              : `"${at}" must be a ${column.type}`,
+        );
+      }
+      cells[column.name] = value as string | boolean;
+    }
+    out[id] = cells;
+  }
+  return out;
+}
 
 /**
  * Validates a declared configuration. Undefined when there is none; a malformed one throws,
@@ -98,7 +442,14 @@ export function parsePluginConfiguration(
       throw new Error(`${where}: configuration.properties.${name}.title is required`);
     }
     const field: PluginConfigField = { type: type as PluginConfigField["type"], title: f.title };
-    for (const key of ["titleZh", "description", "descriptionZh", "placeholder"] as const) {
+    for (const key of [
+      "titleZh",
+      "description",
+      "descriptionZh",
+      "hint",
+      "hintZh",
+      "placeholder",
+    ] as const) {
       const v = f[key];
       if (v === undefined) continue;
       if (typeof v !== "string") {
@@ -107,23 +458,72 @@ export function parsePluginConfiguration(
       field[key] = v;
     }
     if (field.type === "enum") {
-      const options = f.options;
-      if (!Array.isArray(options) || options.length === 0) {
-        throw new Error(`${where}: configuration.properties.${name}.options must list the choices`);
+      field.options = parseOptions(f.options, `${where}: configuration.properties.${name}`);
+    }
+    if (field.type === "table") {
+      Object.assign(field, parseTable(f, `${where}: configuration.properties.${name}`));
+      if (f.extensible !== undefined) {
+        const e = (f.extensible ?? {}) as Record<string, unknown>;
+        const at = `${where}: configuration.properties.${name}.extensible`;
+        const values = isRecord(e.values) ? e.values : {};
+        for (const column of field.columns ?? []) {
+          if (!cellFits(column, values[column.name])) {
+            throw new Error(`${at}.values.${column.name} does not fit its column`);
+          }
+        }
+        field.extensible = {
+          ...(typeof e.add === "string" ? { add: e.add } : {}),
+          ...(typeof e.addZh === "string" ? { addZh: e.addZh } : {}),
+          values: Object.fromEntries(
+            (field.columns ?? []).map((c) => [c.name, values[c.name] as string | boolean]),
+          ),
+          ...(isRecord(e.valuesZh) ? { valuesZh: e.valuesZh as Record<string, string> } : {}),
+        };
       }
-      field.options = options.map((o, i) => {
-        const opt = (o ?? {}) as Record<string, unknown>;
-        if (typeof opt.value !== "string" || typeof opt.title !== "string") {
+      if (f.columnGroup !== undefined) {
+        const g = (f.columnGroup ?? {}) as Record<string, unknown>;
+        const at = `${where}: configuration.properties.${name}.columnGroup`;
+        const known = new Set((field.columns ?? []).map((c) => c.name));
+        if (
+          typeof g.title !== "string" ||
+          !Array.isArray(g.columns) ||
+          g.columns.length === 0 ||
+          !g.columns.every((c) => typeof c === "string" && known.has(c))
+        ) {
+          throw new Error(`${at} needs a title and columns of the table`);
+        }
+        field.columnGroup = {
+          title: g.title,
+          ...(typeof g.titleZh === "string" ? { titleZh: g.titleZh } : {}),
+          ...describedBy(g),
+          columns: g.columns as string[],
+        };
+      }
+      if (f.pin !== undefined) {
+        field.pin = parsePin(
+          f.pin,
+          field.columns ?? [],
+          `${where}: configuration.properties.${name}`,
+        );
+      }
+      if (f.rowChoice !== undefined) {
+        const c = (f.rowChoice ?? {}) as Record<string, unknown>;
+        if (typeof c.field !== "string" || typeof c.title !== "string" || c.title === "") {
           throw new Error(
-            `${where}: configuration.properties.${name}.options[${i}] needs a string value and title`,
+            `${where}: configuration.properties.${name}.rowChoice needs a field and a title`,
           );
         }
-        return {
-          value: opt.value,
-          title: opt.title,
-          ...(typeof opt.titleZh === "string" ? { titleZh: opt.titleZh } : {}),
+        field.rowChoice = {
+          field: c.field,
+          title: c.title,
+          ...(typeof c.titleZh === "string" ? { titleZh: c.titleZh } : {}),
         };
-      });
+      }
+      if (f.default !== undefined) {
+        throw new Error(
+          `${where}: configuration.properties.${name}.default: a table's rows are its defaults`,
+        );
+      }
     }
     if (field.type === "list" && f.maxItems !== undefined) {
       if (typeof f.maxItems !== "number" || !Number.isInteger(f.maxItems) || f.maxItems < 1) {
@@ -170,6 +570,12 @@ export function parsePluginConfiguration(
       }
       field.required = f.required;
     }
+    if (f.advanced !== undefined) {
+      if (typeof f.advanced !== "boolean") {
+        throw new Error(`${where}: configuration.properties.${name}.advanced must be a boolean`);
+      }
+      if (f.advanced) field.advanced = true;
+    }
     if (f.default !== undefined) {
       if (!valueFits(field, f.default) || valueViolation(name, field, f.default) !== undefined) {
         throw new Error(
@@ -180,11 +586,34 @@ export function parsePluginConfiguration(
     }
     properties[name] = field;
   }
+  const switchOf = (sw: string) => {
+    if (properties[sw]?.type !== "boolean") {
+      throw new Error(`${where}: configuration.switch must name a boolean field`);
+    }
+    return sw;
+  };
+  // A row choice stores into an enum of the same group whose options are exactly the row ids.
+  for (const [name, field] of Object.entries(properties)) {
+    if (field.rowChoice === undefined) continue;
+    const target = properties[field.rowChoice.field];
+    const ids = (field.rows ?? []).map((r) => r.id);
+    const values = (target?.options ?? []).map((o) => o.value);
+    if (
+      target?.type !== "enum" ||
+      values.length !== ids.length ||
+      !ids.every((id) => values.includes(id))
+    ) {
+      throw new Error(
+        `${where}: configuration.properties.${name}.rowChoice.field must name an enum of this group whose options are the row ids`,
+      );
+    }
+  }
   return {
     ...(str("title") !== undefined ? { title: str("title")! } : {}),
     ...(str("titleZh") !== undefined ? { titleZh: str("titleZh")! } : {}),
     ...(str("description") !== undefined ? { description: str("description")! } : {}),
     ...(str("descriptionZh") !== undefined ? { descriptionZh: str("descriptionZh")! } : {}),
+    ...(str("switch") !== undefined ? { switch: switchOf(str("switch")!) } : {}),
     properties,
   };
 }
@@ -200,6 +629,8 @@ export function valueFits(field: PluginConfigField, value: unknown): boolean {
       return typeof value === "string" && (field.options ?? []).some((o) => o.value === value);
     case "list":
       return Array.isArray(value) && value.every((v) => typeof v === "string");
+    case "table":
+      return isRecord(value);
     default:
       return typeof value === "string";
   }
@@ -282,6 +713,11 @@ export function applyUpdate(
   update: Record<string, unknown>,
 ): Record<string, unknown> {
   const next = { ...stored };
+  const rowChoiceTargets = new Map(
+    Object.entries(schema.properties).flatMap(([table, f]) =>
+      f.rowChoice !== undefined ? [[f.rowChoice.field, table] as const] : [],
+    ),
+  );
   for (const [name, value] of Object.entries(update)) {
     const field = schema.properties[name];
     if (field === undefined)
@@ -293,6 +729,18 @@ export function applyUpdate(
     if (field.type === "secret" && typeof value === "string") {
       const current = stored[name];
       if (typeof current === "string" && current !== "" && value === maskApiKey(current)) continue;
+    }
+    if (field.type === "table") {
+      const cells = applyTableUpdate(name, field, stored[name], value);
+      if (Object.keys(cells).length === 0) delete next[name];
+      else next[name] = cells;
+      continue;
+    }
+    // A row choice's field names a row, which may be one added to the table: checked below,
+    // against the table as this save leaves it.
+    if (rowChoiceTargets.has(name) && typeof value === "string") {
+      next[name] = value;
+      continue;
     }
     if (!valueFits(field, value)) {
       throw new PluginConfigError(
@@ -323,6 +771,16 @@ export function applyUpdate(
     const violation = valueViolation(name, field, next[name]);
     if (violation !== undefined) throw new PluginConfigError(name, violation);
   }
+  for (const [target, table] of rowChoiceTargets) {
+    const chosen = next[target];
+    const field = schema.properties[table]!;
+    if (chosen !== undefined && !resolveTable(field, next[table]).some((r) => r.id === chosen)) {
+      throw new PluginConfigError(
+        target,
+        `"${target}" must name a row of "${table}": "${String(chosen)}" is not one (choose another row before deleting it)`,
+      );
+    }
+  }
   for (const [name, field] of Object.entries(schema.properties)) {
     if (field.required === true && next[name] === undefined && field.default === undefined) {
       throw new PluginConfigError(name, `"${name}" is required`);
@@ -346,65 +804,6 @@ export interface SettingsGroup {
   parent?: string;
 }
 
-/**
- * The code half of a `status` contribution: a group's live notices, asked per read, and the
- * ACTIONS it offers.
- *
- * An action is for what a person cannot express as a field: something the deployment must DO
- * once, on the machine, before the settings above mean anything — the Windows sandbox's local
- * accounts, which need an administrator's consent. Naming the command in a notice puts the work
- * on whoever reads it; an action lets the module do it and report back.
- */
-export interface SettingsGroupStatus {
-  notices(): PluginConfigNotice[];
-  /**
-   * After a save of this group or of one drawn inside its card: does what that save sets in
-   * motion beyond the group's own watchers, and resolves once it has settled, so the notices
-   * the save answers with are current.
-   */
-  saved?(): Promise<void>;
-  /** What this group offers to do, drawn as buttons beneath its notices. */
-  actions?(): PluginConfigAction[];
-  /**
-   * Enum options this machine cannot honour right now: drawn greyed out with the reason, and a
-   * save choosing one is refused. Asked per read, like the notices.
-   */
-  unavailable?(): PluginConfigUnavailable[];
-  /** Runs one, by its id. Told what happened, in words the page shows as they are. */
-  run?(action: string): Promise<PluginConfigActionResult>;
-}
-
-/** One enum option a settings group cannot honour on this machine, and why. */
-export interface PluginConfigUnavailable {
-  field: string;
-  value: string;
-  reason: string;
-  reasonZh?: string;
-}
-
-/** One thing a settings group can do, named for the button that runs it. */
-export interface PluginConfigAction {
-  id: string;
-  title: string;
-  titleZh?: string;
-  /** What pressing it will do, shown beside the button — a person consents to what they read. */
-  description?: string;
-  descriptionZh?: string;
-}
-
-/** What an action reports: whether it did what it said, and what to tell the person. */
-export interface PluginConfigActionResult {
-  ok: boolean;
-  message: string;
-  messageZh?: string;
-  /**
-   * Work the action started and did not wait for, reported through `progress` notices; it
-   * resolves when that work ends. The page node then settles the card the way a save does (a
-   * sandbox backend the work made usable loads again). Never sent to the page.
-   */
-  settled?: Promise<void>;
-}
-
 /** What a module reads: the group it declared, and a watch on it. */
 @Interface()
 export abstract class PluginConfig {
@@ -414,6 +813,8 @@ export abstract class PluginConfig {
   abstract watch(name: string, cb: (values: Record<string, unknown>) => void): () => void;
   /** Whether anything was ever saved under `name` — what tells a default from a choice. */
   abstract saved(name: string): boolean;
+  /** The configuration `name` was declared with (what `resolveTable` reads a table by); undefined for none. */
+  abstract schema(name: string): PluginConfiguration | undefined;
 }
 
 export interface PluginConfigSlots {
@@ -426,22 +827,6 @@ export interface PluginConfigSlots {
 export abstract class PluginConfigEntries {
   abstract describe(): PluginConfigEntry[];
   abstract set(name: string, update: Record<string, unknown>): PluginConfigEntry;
-}
-
-/** What the settings page reads and writes. */
-@Interface()
-export abstract class PluginConfigAdmin {
-  /** Every declared group, in order, with its live notices; values masked. */
-  abstract describe(): PluginConfigEntry[];
-  /** Validates and stores one update; answers that entry, masked, with its notices once its card's status has settled. */
-  abstract set(name: string, update: Record<string, unknown>): Promise<PluginConfigEntry>;
-  /** Runs one group's action and says what happened; throws PluginConfigError for an unknown one. */
-  abstract run(name: string, action: string): Promise<PluginConfigActionResult>;
-}
-
-export interface PluginConfigAdminSlots {
-  /** Live notices for a group that has any (`group` names it). */
-  status: Slot<{ group: string }, SettingsGroupStatus>;
 }
 
 export interface PluginConfigStoreDeps {
@@ -479,6 +864,10 @@ export class PluginConfigStore {
 
   saved(name: string): boolean {
     return this.deps.settings.get(`plugin-config:${name}`) !== null;
+  }
+
+  schema(name: string): PluginConfiguration | undefined {
+    return this.group(name)?.configuration;
   }
 
   watch(name: string, cb: (values: Record<string, unknown>) => void): () => void {
@@ -554,65 +943,5 @@ export class PluginConfigProvider {
     const store = new PluginConfigStore({ settings: this.settings, groups: () => groups });
     this.pluginConfig = store;
     this.pluginConfigEntries = store;
-  }
-}
-
-/** The page's view: the stored entries with the live notices their status contributors report. */
-@Module()
-export class PluginConfigPage {
-  @Use() private readonly entries!: PluginConfigEntries;
-  @Provide() pluginConfigAdmin!: PluginConfigAdmin;
-  setup({ contributions }: ClassCtx) {
-    const entries = this.entries;
-    const status = new Map<string, SettingsGroupStatus>();
-    for (const c of contributions.status ?? []) {
-      status.set(c.data.group as string, c.code as SettingsGroupStatus);
-    }
-    const withStatus = (entry: PluginConfigEntry): PluginConfigEntry => {
-      const group = status.get(entry.name);
-      const notices = group?.notices() ?? [];
-      const actions = group?.actions?.() ?? [];
-      const unavailable = group?.unavailable?.() ?? [];
-      return {
-        ...entry,
-        ...(notices.length > 0 ? { notices } : {}),
-        ...(actions.length > 0 ? { actions } : {}),
-        ...(unavailable.length > 0 ? { unavailable } : {}),
-      };
-    };
-    this.pluginConfigAdmin = {
-      describe: () => entries.describe().map(withStatus),
-      set: async (name, update) => {
-        // An option this machine cannot honour is refused like an invalid value, naming it.
-        for (const u of status.get(name)?.unavailable?.() ?? []) {
-          if (update[u.field] === u.value) {
-            throw new PluginConfigError(
-              u.field,
-              `"${u.field}" cannot be "${u.value}" here: ${u.reason}`,
-            );
-          }
-        }
-        const saved = entries.set(name, update);
-        await status.get(saved.parent ?? name)?.saved?.();
-        return withStatus(saved);
-      },
-      run: async (name, action) => {
-        const group = status.get(name);
-        const offered = group?.actions?.() ?? [];
-        if (group?.run === undefined || !offered.some((a) => a.id === action)) {
-          throw new PluginConfigError(null, `"${name}" offers no action "${action}".`);
-        }
-        const { settled, ...result } = await group.run(action);
-        // What the action changed on the machine is settled like a save of its card: the
-        // owner's status runs its follow-up (a backend that failed its check loads again).
-        const owner = entries.describe().find((e) => e.name === name)?.parent ?? name;
-        const settle = async () => {
-          await status.get(owner)?.saved?.();
-        };
-        if (settled === undefined) await settle();
-        else void settled.then(settle, settle).catch(() => {});
-        return result;
-      },
-    };
   }
 }

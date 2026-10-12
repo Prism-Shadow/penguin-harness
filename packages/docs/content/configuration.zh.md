@@ -51,6 +51,8 @@ Agent 用 `exec_command` 运行的命令继承宿主环境，但有以下改动�
 
 Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin`。服务器启动时会在 `<root>/bin/penguin` 写入一个启动脚本：脚本用服务器自己的 Node 运行 `PENGUIN_CLI_ENTRY` 指向的 CLI 入口，并把这个目录放到每条命令 PATH 的最前面。这样，命令里调用的 `penguin` 就是 Agent 正在运行的这套 harness，无论机器上全局装的是什么版本。
 
+终端面板打开的终端也会在你自己的 shell 启动文件运行之后，把同一个目录放到 PATH 最前面，因此在终端里输入的 `penguin` 同样是本安装的。
+
 这个目录既前置到环境变量里，也前置到 shell 内部，因为命令通过登录 shell 运行，而登录 shell 的 profile 常常随后重写 PATH。这也让它排在[密钥保险柜](#vault)里设置的 `PATH` 之前，而保险柜里的 `PATH` 原本会整体替换继承来的值。
 
 启动脚本在每次启动时都会重写，因此安装位置移动后，下次启动会自动跟上。没有可指向的入口时就不写启动脚本，`penguin` 的解析结果与没有启动脚本时相同。
@@ -66,7 +68,7 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 ### 供应商凭证变量
 
-模型条目没有内联 `api_key` 时，**只在请求确实发往该供应商的官方端点时**回退到供应商的环境变量：条目没有 `base_url`，或 `base_url` 是厂商自己的端点。`*_BASE_URL` 的值只在条目没有内联 `base_url` 时才会使用；自带 `base_url` 的条目一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。其余条目——网关分组预置的端点、带自己端点的 custom、vLLM 与自建分组——必须有自己的 `api_key`，否则 PenguinHarness 拒绝为它构建客户端；见[设置 API key](/models#设置-api-key)。
+模型条目没有 `api_key`、分组也没有能借给它的 `api_key` 时，**只在请求确实发往该供应商的官方端点时**回退到供应商的环境变量：条目解析不出任何 `base_url`（见[分组连接信息](#分组连接信息)），或解析出的 `base_url` 是厂商自己的端点。`*_BASE_URL` 的值只在解析不出 `base_url` 时才会使用；条目自己的或分组的 `base_url` 指向别处时，一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。其余条目——网关分组预置的端点、带自己端点的 custom、vLLM 与自建分组——必须有自己的或分组的 `api_key`，否则 PenguinHarness 拒绝为它构建客户端；见[设置 API key](/models#设置-api-key)。
 
 | 供应商 | API key | Base URL |
 | --- | --- | --- |
@@ -79,11 +81,11 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。opencode-go 分组中走 Anthropic Messages 的模型同理，其客户端读取的是 `ANTHROPIC_*`。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，三条预置都固定使用通用 Responses 客户端；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
+openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。opencode-go 分组中走 Anthropic Messages 的模型同理，其客户端读取的是 `ANTHROPIC_*`。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，分组上存的是通用 Responses 客户端；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）的模型只在解析不出 `base_url` 时读取 `MMSP_API_KEY` 与 `MMSP_BASE_URL`（缺省为 `http://127.0.0.1:25752/v1`）；有 `base_url` 而没有 `api_key` 时不发送任何 key，开放的 MMSP 服务器正是这样接受请求。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 
-`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，以 0600 权限写入，凭证内联在模型条目上。模型的标识始终是 `(provider, model_id)` 这一对，绝不把字符串拼接成单个 id；指向这个文件的每处引用都同时带上两部分，也绝不会只凭 `model_id` 推断供应商。
+`<root>/<project>/.project_config.toml` 是 Project 唯一的配置文件：隐藏文件，以 0600 权限写入，凭证内联在文件里：每个分组在 `[providers.<id>]` 存一份，模型条目上只存覆盖分组的值。模型的标识始终是 `(provider, model_id)` 这一对，绝不把字符串拼接成单个 id；指向这个文件的每处引用都同时带上两部分，也绝不会只凭 `model_id` 推断供应商。
 
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -93,6 +95,7 @@ openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-yo
 | `[default_chat]` | 表 | — | 新对话的预填默认值；见[新对话默认值](#新对话默认值) |
 | `[command_policy]` | 表 | 出厂规则集 | shell 命令的拒绝规则，先于审批模式生效；见[命令策略](#命令策略) |
 | `[plugins]` | 表 | — | Project 要求的服务端插件；见[插件](#插件) |
+| `[providers.<id>]` | 表 | — | 分组的连接信息，组内模型跟随它；见[分组连接信息](#分组连接信息) |
 | `[[models]]` | 表数组 | — | 可用的模型条目 |
 
 ### 模型条目
@@ -102,47 +105,81 @@ openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-yo
 | `provider` | 字符串 | — | 供应商分组；与 `model_id` 一起构成条目的唯一键 |
 | `model_id` | 字符串 | — | 上游请求 id，原样发给 MMSP |
 | `context_window` | 数字 | — | 上下文窗口大小 |
-| `client_type` | 字符串 | 按 `model_id` 开头的厂商系列路由 | MMSP 客户端类型 |
+| `client_type` | 字符串 | 分组的；两者都没有时按 `model_id` 开头的厂商系列路由 | 该模型自己的 MMSP 客户端类型 |
 | `display_name` | 字符串 | 内置模型目录中的名称 | 显示名；与模型目录不同时才会持久化 |
 | `vision` | 布尔 | `true` | 模型是否接受图像输入 |
 | `max_tokens` | 数字 | Agent 的 `model.max_tokens` | 单个模型的最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens` |
 | `fast_mode` | 布尔 | 关闭 | 单个模型的快速模式（供应商收取溢价的快速服务档位） |
 | `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`）。这里记的始终是牌价 |
-| `api_key` | 字符串 | 供应商的环境变量，仅限厂商自己的端点 | 内联凭证 |
-| `base_url` | 字符串 | 部分模型目录条目有预设 | 自定义 base URL |
+| `api_key` | 字符串 | 分组密钥（以能借给该条目为限）；没有时为供应商的环境变量，仅限厂商自己的端点 | 该模型自己的内联凭证 |
+| `base_url` | 字符串 | 分组的；两者都没有时为客户端的缺省端点 | 该模型自己的 base URL |
 | `created_at` | 字符串 | — | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
 
 字段说明：
 
-- `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages` 或 `openai-chat`。Web 对话框能根据 base URL 识别用的是哪一种。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。MMSP 的其他客户端类型同样可用：厂商的官方客户端（`openai-official`、`anthropic-official`、`gemini-official`、`zai-official`、`moonshot-official`、`deepseek-official`、`minimax-official`），以及其余通用客户端（`openai-chat-vllm-adapter`、`openai-embedding`、`google-genai`）。不设置时，模型 id 路由到它开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）的官方客户端；其他系列的 id 必须设置 `client_type`。
+- `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages`、`openai-chat`、`google-genai`（Google 的 generateContent）或 `mmsp`（MMSP 服务器）。Web 对话框能根据 base URL 识别前三种中的哪一种；后两种需手动选择。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。MMSP 的其他客户端类型同样可用：厂商的官方客户端（`openai-official`、`anthropic-official`、`google-official`、`zai-official`、`moonshot-official`、`deepseek-official`、`minimax-official`），以及其余通用客户端（`openai-chat-vllm-adapter`、`openai-embedding`）。`gemini-official` 是 MMSP 0.5.2 之前 `google-official` 的名称，仍然可用，并按原样保留。不设置时，模型 id 路由到它开头的厂商系列（`gpt-`、`text-embedding-`、`claude-`、`gemini-`、`glm-`、`kimi-`、`deepseek-`、`minimax-`）的官方客户端；其他系列的 id 必须设置 `client_type`。
 - `fast_mode`：只持久化 `true`。只有 MMSP 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
 - `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
-- `base_url`：内置模型目录为网关条目预设了这个字段。直连厂商的条目不设置它，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。
-- `api_key`：为空时，只在条目的端点是厂商自己的地址时回退到供应商的环境变量（见[供应商凭证变量](#供应商凭证变量)）；网关、custom 与 vLLM 条目需要自己的 key。
+- `base_url`：新建 Project 时，各网关的端点存在其分组上；预置条目只在与分组不同时才存自己的（OpenCode Go 的 Anthropic Messages 条目、custom 里的 Atria Dawn Preview）。使用模型时不会补上缺少的值：直连厂商的条目没有 base URL，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。
+- `api_key`：为空时使用分组密钥，除非条目自己的 `base_url` 与分组的不同 origin（见[分组连接信息](#分组连接信息)）。两者都没有时，只在条目的端点是厂商自己的地址时回退到供应商的环境变量（见[供应商凭证变量](#供应商凭证变量)）；网关、custom 与 vLLM 条目需要自己的或分组的 key。
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
+
+[providers.deepseek]
+api_key = "sk-..."
+created_at = "2026-10-02T08:00:00.000Z"
+
+[providers.openrouter]
+base_url = "https://proxy.example.com/openrouter/v1"
+client_type = "openai-responses"
 
 [[models]]
 provider = "deepseek"
 model_id = "deepseek-flash"
 context_window = 1000000
-vision = true
-api_key = "sk-..."
 
 [models.pricing]
 unit = "usd_per_mtok"
 cache_read = 0.005714
 cache_write = 0.285714
 output = 1.142857
+
+[[models]]
+provider = "openrouter"
+model_id = "openrouter/free"
+context_window = 128000
+vision = false
+api_key = "sk-or-..."
 ```
 
-`pricing.unit` 目前始终是 `usd_per_mtok`（美元每百万 Token）。三档价格对应 `token_usage` 的三个计数器。
+deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分组设置的代理，使用分组的协议和自己的 key。`pricing.unit` 目前始终是 `usd_per_mtok`（美元每百万 Token）。三档价格对应 `token_usage` 的三个计数器。
 
 通过 CLI（`penguin config model …`）或 Web App 的「模型库」页面编辑这个文件。
 
 > [!WARNING]
 > 服务运行期间不要手动编辑 `.project_config.toml`。模型无权读写这个文件。
+
+### 分组连接信息
+
+`[providers.<id>]` 存一个分组的连接信息，以 provider id 为键：内置分组或你创建的分组。新建 Project 的文件为目录给出端点或协议的每个内置分组写好这张表：网关的 base URL 与协议、Penguin Go 的中转 base URL、vLLM 的协议；一方厂商分组与 custom 没有。模型库页面的分组设置与连接分组时都会写入它，不带 `--model-id` 的 `penguin config model add --provider <分组>` 同样写入。自建分组的这张表随该分组最后一个模型一并删除。
+
+| 键 | 类型 | 说明 |
+| --- | --- | --- |
+| `api_key` | 字符串 | 分组密钥，组内没有自己 key、访问分组端点的模型都使用它 |
+| `base_url` | 字符串 | 分组的 base URL |
+| `client_type` | 字符串 | 分组的 MMSP 客户端类型；模型自己的 `client_type` 优先于它 |
+| `created_at` | 字符串 | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
+
+模型的每个连接字段各自解析，取第一个非空值：
+
+| 字段 | 解析顺序 |
+| --- | --- |
+| `base_url` | 模型条目 → 分组 → 无：客户端的缺省端点 |
+| `client_type` | 模型条目 → 分组 → 无：按 `model_id` 路由 |
+| `api_key` | 模型条目 → 分组（以能借给该模型为限）→ 无：在[供应商凭证变量](#供应商凭证变量)允许时取环境变量 |
+
+这些值的唯一来源是这个文件。内置模型目录只是参考：新建 Project 时，以及模型库页面的**同步新增模型**与**恢复默认**会把目录写进文件，构建请求时从不读目录。key 属于签发它的端点：分组密钥只借给没有自己 `base_url` 的模型，或自己的 `base_url` 与分组 `base_url` 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 条目位于 `https://opencode.ai/zen/go`，与分组的 `https://opencode.ai/zen/go/v1` 同 origin，能借到；custom 里自带端点的 Atria Dawn Preview 借不到。环境变量规则按模型解析出的 `base_url` 判定，所以分组 `base_url` 指向代理时，组内所有模型都不再回退到环境变量。
 
 ### 新对话默认值
 
@@ -288,7 +325,7 @@ enabled = false
 | `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 块，讲解基于文件的任务管理；包含 `{{SCHEDULE_LIST}}` |
 | `hooks.enabled` | `true` | 是否在循环的钩子点运行已安装的钩子包 |
 | `tools.builtin` | 省略时为完整默认工具集 | 工具条目；一旦写入，就整体替换默认列表 |
-| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`） |
+| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`，插件安装的条目另带 `plugin`） |
 
 ### 字段说明
 
@@ -305,7 +342,7 @@ enabled = false
 - `schedules.enabled`：关闭时，服务端仍会触发任务，只是模型不再了解任务系统。
 - `hooks.enabled`：唯一没有提示词的小节，因为钩子包是脚本，不是上下文文本。关闭时，钩子包仍保持安装，只是不再有任何环节调用它们。
 - `tools.builtin`：每个条目包含 `name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`。`call_description` 是按工具控制调用参数 `description` 的开关；开启时调用必须带上这个参数；字段缺失则视为保留。
-- `tools.mcpServers`：传输方式为 `stdio`、`http` 或 `sse`，发现的工具以 `mcp__<server>__<tool>` 的形式加入工具集。`config.permission`（`auto` / `r` / `rw`，默认 `auto`）为对应 Server 的所有工具固定审批等级，不再采信它们的 `readOnlyHint`。见 [MCP Server](/tools#mcp-server)。
+- `tools.mcpServers`：传输方式为 `stdio`、`http` 或 `sse`，发现的工具以 `mcp__<server>__<tool>` 的形式加入工具集。`config.permission`（`auto` / `r` / `rw`，默认 `auto`）为对应 Server 的所有工具固定审批等级，不再采信它们的 `readOnlyHint`。`config` 中的字符串值可以写指向 Vault 键的 `${KEY}` 引用，在 Server 连接时填入，见 [Vault 引用](/tools#vault-引用)。`plugin` 是写入该条目的那次安装所属的插件：重新安装或卸载这个插件，只动带它名字的条目；不带这个字段的条目归你自己。删掉这个字段，条目就归你所有，此后该插件读作未安装，而且名称被占用期间无法再安装它。见 [MCP Server](/tools#mcp-server)。
 
 四个 `compaction.*` 字段是本文件中唯一即时生效的部分，运行中的对话无需等待。引擎会在每个压缩检查点重新读取这一节（每次请求上报 Token 用量之后，以及手动执行 `/compact` 时），因此保存的修改对已在运行的 Session 同样生效。其余内容都在模型上下文开启时读取，修改要到下一次压缩才生效。在 Web App 里，你还可以在上下文面板中拖动条上的虚线切刀来[修改阈值](/chat#修改压缩阈值)。
 
@@ -352,7 +389,7 @@ compaction:
 - 最后，配置会打上当前 `kernel_version` 的标记。
 - 匹配是**保守**的：只有哈希与某一已记录代一致的标签页才算旧默认值。代太老、不在记录之内的标签页，会当作自定义内容保留。
 
-**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
+**还原为默认配置**的工作方式类似 Skill 更新：用当前默认值覆盖配置，只保留 `name`、`description` 和 `version`。其余全部替换，包括自定义系统提示词、工具列表、模型与压缩设置，以及 MCP Server，插件安装的也不例外（在**插件市场**页面用**管理安装**可以把它们装回来）。当内核更新的保守匹配留下旧字段时，用它做一次彻底刷新。
 
 面向开发者的说明：
 
@@ -491,7 +528,7 @@ frontmatter 就只有这三个字段。记忆属于哪个作用域由所在目�
 `agent_state/.vault.toml` 是 Agent 级的环境变量密钥保险柜：一个隐藏文件，以 0600 权限写入。
 
 - 键名必须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`（即 shell 环境变量的命名规则）。值的长度上限为 8,192 个字符。
-- 值只注入工具子进程的环境。这些值绝不会进入模型上下文，也不会出现在 Trace 里。
+- 值只注入工具子进程的环境，以及 MCP Server 条目中以 `${KEY}` 引用该键的地方（见 [Vault 引用](/tools#vault-引用)）。这些值绝不会进入模型上下文，也不会出现在 Trace 里。
 - 系统提示词里只显示键名。模板中的 `{{VAULT}}` 占位符展开为 `vault.prompt`，其中带有 `{{VAULT_KEYS}}` 键名列表，可在 **密钥保险柜** 标签页编辑。`vault.enabled` 关闭时这一块为空：值仍会注入子进程，只是模型看不到键名。旧版模板里内联的 `{{VAULT_KEYS}}` 在同一个开关控制下仍会照常替换，标签页还提供一键迁移（参见[系统提示词占位符](#系统提示词占位符)）。
 - 保存后的更改立即对新 Session 生效；正在运行的 Session 则在下一次压缩时生效，与其他 Agent State 的更改一样。无论在 Web App 里保存、通过 API 保存还是用 CLI 保存，行为都相同。
 - 用 `penguin config vault set/list/remove` 管理，或在 **密钥保险柜** 标签页操作。

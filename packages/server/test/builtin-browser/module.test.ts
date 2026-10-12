@@ -1,8 +1,9 @@
 /**
- * The built-in browser assembled in the real platform tree: a plain server has no shell to
- * reach, a desktop-mode server reaches the (fake) shell on its port, the admin's event stream
- * hears the tabs, the CLI's admin token is let in and a non-admin is not, and disposing the App
- * — what a hot swap does to the old generation — takes the browser's listener off the port.
+ * The agent browser assembled in the real platform tree: a plain server has no shell to reach
+ * and offers every signed-in user their own Chrome instead, a desktop-mode server reaches the
+ * (fake) shell on its port, the admin's event stream hears the tabs, the CLI's admin token is
+ * let in, and disposing the App — what a hot swap does to the old generation — takes the
+ * browser's listener off the port.
  */
 import { describe, expect, it } from "vitest";
 import type { BuiltinBrowserStatus } from "../../src/api/types.js";
@@ -26,24 +27,25 @@ async function until(ready: () => boolean, what: string): Promise<void> {
 }
 
 describe("the built-in browser in the platform tree", () => {
-  it("is not_desktop on a plain server, and admin-only", async () => {
+  it("offers only Chrome on a plain server, to the admin and a member alike", async () => {
     const t = await createTestApp();
     try {
+      const unpaired: BuiltinBrowserStatus = {
+        available: false,
+        reason: "extension_not_paired",
+        backend: "chrome",
+        backends: [{ backend: "chrome", available: false, reason: "extension_not_paired" }],
+        tabs: [],
+        activeTabId: null,
+      };
       const admin = await loginAdmin(t.app);
       const res = await apiClient(t.app, admin.cookie).get("/api/builtin-browser/status");
       expect(res.status).toBe(200);
-      expect((await res.json()) as BuiltinBrowserStatus).toEqual({
-        available: false,
-        reason: "not_desktop",
-        tabs: [],
-        activeTabId: null,
-      });
+      expect((await res.json()) as BuiltinBrowserStatus).toEqual(unpaired);
       const bob = await provisionUser(t.app, "bob");
-      const refused = await apiClient(t.app, bob.cookie).get("/api/builtin-browser/status");
-      expect(refused.status).toBe(403);
-      expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
-        "admin_required",
-      );
+      const own = await apiClient(t.app, bob.cookie).get("/api/builtin-browser/status");
+      expect(own.status).toBe(200);
+      expect((await own.json()) as BuiltinBrowserStatus).toEqual(unpaired);
     } finally {
       await t.cleanup();
     }
@@ -63,6 +65,11 @@ describe("the built-in browser in the platform tree", () => {
       const status = await apiClient(t.app, cookie).get("/api/builtin-browser/status");
       expect((await status.json()) as BuiltinBrowserStatus).toEqual({
         available: true,
+        backend: "builtin",
+        backends: [
+          { backend: "builtin", available: true },
+          { backend: "chrome", available: false, reason: "extension_not_paired" },
+        ],
         tabs: [tab(3)],
         activeTabId: 3,
       });

@@ -32,9 +32,14 @@ export const IDS = {
     /** The release-notes Agent's desk, opened by an organization's scheduler; never listed. */
     orgDesk: "s-org-digest",
   },
-  benchmarks: { docs: "docs-qa-v1", draft: "release-notes-draft" },
+  /** A Benchmark the docs agent wrote, one still being built, and a built-in one. */
+  benchmarks: {
+    docs: "docs-qa-v1",
+    draft: "release-notes-draft",
+    builtin: "penguinharness-benchmark-sec-e",
+  },
   plugins: {
-    /** A library plugin the detail page opens on. */
+    /** A library plugin one demo Agent is behind on, so its card shows an update. */
     registry: "claude-code-expert",
   },
   machine: "local",

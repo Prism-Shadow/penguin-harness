@@ -314,20 +314,24 @@ function GeneralSection({
         {isOwner ? (
           <div className="flex flex-col items-end gap-1">
             <div className="flex items-stretch gap-2">
-              <Input
-                size="sm"
-                className="w-44"
-                value={name}
-                invalid={Boolean(nameError)}
-                maxLength={100}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  if (nameError) setNameError(undefined);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void saveName();
-                }}
-              />
+              {/* The width sits on a box around the field: the control's own `w-full` outranks
+                  a width passed to it, and a field as wide as the row leaves the button
+                  beside it no room. Narrower on a phone, where the row's title needs the room. */}
+              <div className="w-32 sm:w-44">
+                <Input
+                  size="sm"
+                  value={name}
+                  invalid={Boolean(nameError)}
+                  maxLength={100}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (nameError) setNameError(undefined);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveName();
+                  }}
+                />
+              </div>
               <Button
                 size="sm"
                 disabled={nameBusy || !name.trim() || name.trim() === savedName}

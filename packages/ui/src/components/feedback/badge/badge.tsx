@@ -19,8 +19,9 @@
  * What a tag looks like beyond its tone is the theme's, through the badge tokens (tokens.ts):
  * a soft badge also draws its tone's line as an inset rule `--ui-badge-soft-ring` wide — 0px
  * where the tint sets the tag off its row, 1px in Console, whose tones have no tint, so there a
- * soft and an outlined badge are the same ruled word — and the weight (`--ui-badge-weight`) and
- * the md padding (`--ui-badge-pad-md`, which Console sets to the sm padding, one tag size) are
+ * soft and an outlined badge are the same ruled word — and the weight (`--ui-badge-weight`), the
+ * md padding (`--ui-badge-pad-md`, which Console sets to the sm padding, one tag size) and the
+ * type (`--ui-badge-size` on a fixed `--ui-badge-lh`, a step under the theme's small rung) are
  * the theme's too. No theme draws a tint and a rule on one tag: the ring is 0px wherever the
  * tint is not transparent.
  *
@@ -92,7 +93,7 @@ const SIZE: Record<BadgeSize, string> = {
 };
 
 function badgeClass(tone: ToneName, variant: BadgeVariant, size: BadgeSize): string {
-  return `inline-flex shrink-0 items-center whitespace-nowrap rounded-[var(--ui-radius-pill)] text-xs font-[number:var(--ui-badge-weight)] ${SIZE[size]} ${RING[variant]} ${VARIANT[variant][tone]}`;
+  return `inline-flex shrink-0 items-center whitespace-nowrap rounded-[var(--ui-radius-pill)] text-[length:var(--ui-badge-size)] leading-[var(--ui-badge-lh)] font-[number:var(--ui-badge-weight)] ${SIZE[size]} ${RING[variant]} ${VARIANT[variant][tone]}`;
 }
 
 export function Badge({

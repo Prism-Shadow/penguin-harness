@@ -11,7 +11,12 @@
  * Project provisioning at signup.
  */
 import fs from "node:fs/promises";
-import { DEFAULT_PROJECT_ID, projectDir, provisionProjectAgents } from "@prismshadow/penguin-core";
+import {
+  DEFAULT_PROJECT_ID,
+  projectDir,
+  provisionProjectAgents,
+  provisionProjectBenchmarks,
+} from "@prismshadow/penguin-core";
 import type { MemberInfo, ProjectRole, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { ProjectRow } from "../db/repos/projects.js";
@@ -38,6 +43,7 @@ import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
 import type { ErrorLog, UsageStore } from "../mechanisms/observability.js";
 import type { TraceIndex } from "../mechanisms/traces.js";
 import type { OrgCache } from "../mechanisms/organization.js";
+import type { AgentApi } from "../mechanisms/agent-api.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -73,6 +79,8 @@ export class ProjectService implements ProjectLifecycle {
   @Use() private readonly manager!: ProjectRuns;
   /** Trace-index cleanup on Project destruction (rows describe files removed with the Project dir). */
   @Use() private readonly traceIndex!: TraceIndex;
+  /** The Project's Agents' API settings and keys (web.db): a destroyed Project exposes nothing. */
+  @Use() private readonly agentApi!: AgentApi;
 
   // Access control lives in ProjectAccess (services/project-access.ts); these delegate so
   // in-package callers keep one entry point.
@@ -99,8 +107,8 @@ export class ProjectService implements ProjectLifecycle {
   /**
    * Create a Project: the id is chosen by the creator (a semantic id, checked for
    * duplicates against both the DB and the directory — 409 if taken), the initial
-   * config is written (display name defaults to the id), and the built-in Agent is
-   * initialized.
+   * config is written (display name defaults to the id), the built-in Agent is
+   * initialized, and the Project's Benchmarks are written (the only time they are).
    * A non-admin's id is forced to be "<username>-<suffix>", where the suffix is
    * lowercase letters, digits, and underscores only — the hyphen is a reserved
    * separator, usernames never contain a hyphen, so the first hyphen is the
@@ -157,7 +165,7 @@ export class ProjectService implements ProjectLifecycle {
       // The presets' promotions live in web.db, keyed to the row inserted above (and removed
       // with it by the rollback below).
       await this.projectConfig.seedPresetPromotions(projectId);
-      await this.provisionBuiltinAgents(projectId);
+      await this.provisionProjectDefaults(projectId);
     } catch (err) {
       this.projects.delete(projectId);
       await fs
@@ -202,8 +210,9 @@ export class ProjectService implements ProjectLifecycle {
       return;
     }
     const projectId = DEFAULT_PROJECT_ID;
-    // Initialize the built-in Agent (loaded without overwriting if it already exists); this also ensures the directory exists.
-    await this.provisionBuiltinAgents(projectId);
+    // Initialize the built-in Agent (loaded without overwriting if it already exists) and write
+    // the Benchmarks the directory lacks; this also ensures the directory exists.
+    await this.provisionProjectDefaults(projectId);
     // Adopting an existing directory doesn't go through writeInitialConfig: preset
     // models and the default model are backfilled instead (only when there are no
     // models at all; a default_project already configured via the CLI is left
@@ -286,6 +295,9 @@ export class ProjectService implements ProjectLifecycle {
     this.usage.deleteByProject(projectId);
     this.errors.deleteByProject(projectId);
     this.schedules.deleteByProject(projectId);
+    // Before the owner's user row can go (deleteUser destroys their Projects first): a key
+    // names its creator.
+    this.agentApi.deleteByProject(projectId);
     this.orgCache.deleteProject(projectId);
     this.traceIndex.removeProject(projectId);
     await fs.rm(projectDir(this.root, projectId), { recursive: true, force: true });
@@ -343,14 +355,15 @@ export class ProjectService implements ProjectLifecycle {
   }
 
   /**
-   * Ensures the Project's built-in Agent exists (the sole built-in Agent
-   * default_agent; initialized if the directory is empty, otherwise loaded without
-   * overwriting) and indexes it. createdAt increments by 1ms in preset order, so
-   * built-in Agents stably sort first; other Agents backfilled by directory
-   * scanning are sorted by their own createdAt and are outside the scope of this
-   * guarantee.
+   * The Project's built-in Agent and its Benchmarks; existing directories are adopted, never
+   * overwritten. The built-in Agent (the sole one, default_agent) is initialized if its
+   * directory is empty, otherwise loaded, and indexed: createdAt increments by 1ms in preset
+   * order, so built-in Agents stably sort first; other Agents backfilled by directory scanning
+   * are sorted by their own createdAt and are outside the scope of this guarantee. Then the
+   * example and the built-in Benchmarks are written, each only where its directory is missing
+   * — the one time they are written; a failure reaches the caller.
    */
-  private async provisionBuiltinAgents(projectId: string): Promise<void> {
+  private async provisionProjectDefaults(projectId: string): Promise<void> {
     const agentIds = await provisionProjectAgents({ root: this.root, projectId });
     const base = Date.now();
     agentIds.forEach((agentId, i) => {
@@ -360,6 +373,7 @@ export class ProjectService implements ProjectLifecycle {
         createdAt: new Date(base + i).toISOString(),
       });
     });
+    await provisionProjectBenchmarks(this.root, projectId);
   }
 }
 

@@ -14,7 +14,8 @@
  * `streaming` disables highlighting while deltas are still arriving — re-tokenizing a growing
  * block every frame is O(n²) work — and the settle re-render (new string instance,
  * streaming=false) highlights each block exactly once. Inline code keeps the default rendering
- * (`.md-body code` in prose.css).
+ * (`.md-body code` in prose.css). An `a2ui` or `mermaid` fence is drawn as a component instead,
+ * on the same settle (see MdPre).
  *
  * KaTeX is held back the same way, for the same reason: `streaming` swaps the rehype stage out, so
  * a formula shows its own TeX source until the message settles and is typeset once (see
@@ -34,6 +35,8 @@ import { createContext, isValidElement, memo, useContext } from "react";
 import type { ComponentPropsWithoutRef, MouseEvent, ReactElement, ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components, ExtraProps, Options } from "react-markdown";
+import { A2uiBlock } from "../a2ui/a2ui-block";
+import { MermaidBlock } from "../a2ui/mermaid-block";
 import { CodeBlock } from "../code-block/code-block";
 import { NO_REHYPE_PLUGINS, REHYPE_PLUGINS, REMARK_PLUGINS } from "./markdown-plugins";
 import "katex/dist/katex.min.css";
@@ -55,19 +58,22 @@ function codeText(children: unknown): string {
  * where the rehype stage is off, and the block would otherwise pick up CodeBlock's chrome and copy
  * button for the few hundred milliseconds before it settles into a formula. A plain <pre> is the
  * source either way, so the settle changes the typesetting and nothing else.
+ *
+ * Two languages are components rather than code: an `a2ui` fence is a block from the A2UI
+ * catalog (a choice, a form, steps, a callout, a widget) and a `mermaid` fence a diagram. Both take
+ * `streaming` the way the highlighter does — a quiet placeholder while deltas arrive, drawn once
+ * on the settle — and both fall back to their source in a CodeBlock when they cannot be drawn.
+ * They are module-level components, so routing to them adds no element type per render.
  */
 function MdPre({ children, streaming }: { children?: ReactNode; streaming: boolean }) {
   if (isValidElement(children)) {
     const props = children.props as { className?: string; children?: unknown };
     const language = /language-([\w+-]+)/.exec(props.className ?? "")?.[1] ?? "";
     if (language === "math") return <pre>{children}</pre>;
-    return (
-      <CodeBlock
-        language={language}
-        code={codeText(props.children).replace(/\n$/, "")}
-        highlight={!streaming}
-      />
-    );
+    const code = codeText(props.children).replace(/\n$/, "");
+    if (language === "a2ui") return <A2uiBlock source={code} streaming={streaming} />;
+    if (language === "mermaid") return <MermaidBlock source={code} streaming={streaming} />;
+    return <CodeBlock language={language} code={code} highlight={!streaming} />;
   }
   return <pre>{children}</pre>;
 }

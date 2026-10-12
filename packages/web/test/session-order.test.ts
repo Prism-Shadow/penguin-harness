@@ -10,7 +10,9 @@
  *   getter throws degrades instead of escaping.
  * - Stored rows take their stored positions, unstored newcomers come first in recency order,
  *   and stale stored ids are inert.
- * - Recent mode sorts by last activity (ties by id descending) without mutating the input.
+ * - Recent mode sorts by last activity (ties by id descending) without mutating the input;
+ *   stamps and ids compare by code point, the order the watermark cuts in, so rows revealed
+ *   by a page that tie with shown ones land below them.
  * - Manual mode applies the stored order inside each pin partition, newcomers on top of theirs.
  * - A drop moves one id before or after another, and a drop that moves nothing returns the
  *   input so nothing is written; committing a partition fronts it and keeps the others'
@@ -32,6 +34,7 @@ import {
   storeSessionSortMode,
 } from "../src/lib/session-order";
 import type { SessionOrderStorage } from "../src/lib/session-order";
+import { cutAtWatermark } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const id = (x: string) => x;
@@ -167,6 +170,31 @@ describe("orderSessionRows recency (最近更新 = last ACTIVITY, not creation)"
     });
     expect(out.map((r) => r.id)).toEqual(["c", "b", "a"]);
     expect(tied.map((r) => r.id)).toEqual(["a", "c", "b"]); // input untouched
+  });
+
+  it("rows sharing a stamp keep the watermark's code-point order, so a page revealing a tied row appends it below", () => {
+    // Four conversations touched in the same millisecond; ids a collation ranks the other way
+    // round (case, `_` against `-`). The server pages them and the watermark cuts them by code
+    // point, so the display must too.
+    const stamp = "2026-08-14T09:00:00.000Z";
+    const tied = ["session-ABCD", "session-a-b", "session-abcd", "session-a_b"].map(
+      (sessionId) => ({ sessionId, lastActiveAt: stamp }),
+    );
+    const show = (rows: readonly { sessionId: string; lastActiveAt: string }[]) =>
+      orderSessionRows(rows, (r) => r.sessionId, {
+        ...plain,
+        sortMode: "recent",
+        recencyOf: (r) => r.lastActiveAt,
+      }).map((r) => r.sessionId);
+
+    // Before a load: the cursor stopped at `session-a_b`, so only the rows at or above it show.
+    const before = show(cutAtWatermark(tied, { lastActiveAt: stamp, sessionId: "session-a_b" }));
+    // After it: every stream is exhausted and all four show.
+    const after = show(cutAtWatermark(tied, null));
+
+    expect(before).toEqual(["session-abcd", "session-a_b"]);
+    expect(after).toEqual(["session-abcd", "session-a_b", "session-a-b", "session-ABCD"]);
+    expect(after.slice(0, before.length)).toEqual(before);
   });
 
   it("recency also decides where manual-mode newcomers land, and never crosses the pin boundary", () => {

@@ -15,6 +15,7 @@
  * displays them, and a stale entry surviving a reload would route a call at a machine that
  * may no longer own — or may no longer have — that Session.
  */
+import { apiUrl } from "./server-context";
 
 /** sessionId → the machine it lives on. Absent = this server. */
 const owners = new Map<string, string>();
@@ -60,4 +61,16 @@ export function sessionIdInPath(path: string): string | null {
 export function machineForPath(path: string): string | null {
   const sessionId = sessionIdInPath(path);
   return sessionId === null ? null : machineForSession(sessionId);
+}
+
+/**
+ * A server-absolute URL the BROWSER follows itself (an `<img src>`), routed by the same rule.
+ * No request passes through the fetch wrapper for the rule to act on, so the owner's proxy
+ * prefix has to be in the URL: a windowed history page names each Trace image as
+ * `/api/sessions/<id>/trace-image?…`, which for a Session on a machine only that machine can
+ * answer. Anything that is not a Session path (a `data:` URL, an http(s) address, a URL already
+ * re-rooted onto a machine) comes back unchanged.
+ */
+export function routedUrl(url: string): string {
+  return apiUrl(url, machineForPath(url));
 }
