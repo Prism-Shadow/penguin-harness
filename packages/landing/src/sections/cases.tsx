@@ -1,13 +1,8 @@
 /**
- * Use-case gallery as switchable tabs, each under its one-sentence prompt: an AI app built from
- * one sentence (the RAG docs expert), and a self-evolution algorithm reproduced from one sentence
- * (APE on the demo task that ships with the ape-rsi-toolkit Skill). Video entries use a matching
- * PenguinHarness run as their poster; still-only entries show the result.
- * Tab order follows S.cases.tabs; CASE_STILLS is index-aligned with it. A tab may carry a `cost`
- * line (the RAG one does) — an emphasized token-cost hook under the caption; an empty one
- * renders nothing.
+ * The one-sentence case: the prompt as it was typed, then the recording of the run that built a
+ * RAG question-answering app from it, with a matching PenguinHarness screenshot as the poster,
+ * and the Token cost of the whole build under the caption.
  */
-import { useState } from "react";
 import { S } from "../lib/strings";
 import { useLocale } from "../state/locale";
 import type { Locale } from "../state/locale";
@@ -18,130 +13,62 @@ import chatZhLight from "../assets/shots/chat-zh-light.webp";
 import chatZhDark from "../assets/shots/chat-zh-dark.webp";
 import chatEnLight from "../assets/shots/chat-en-light.webp";
 import chatEnDark from "../assets/shots/chat-en-dark.webp";
-import benchmarkZhLight from "../assets/shots/benchmark-zh-light.webp";
-import benchmarkZhDark from "../assets/shots/benchmark-zh-dark.webp";
-import benchmarkEnLight from "../assets/shots/benchmark-en-light.webp";
-import benchmarkEnDark from "../assets/shots/benchmark-en-dark.webp";
-
-type ShotSet = Record<Locale, { light: string; dark: string }>;
 
 /**
- * Demo recording for a case, index-aligned with S.cases.tabs; null where the tab shows a
- * still. The community-hosted file only downloads on play
- * (preload="none"), and a matching PenguinHarness run doubles as the poster — so a video
- * tab costs a visitor exactly what an image tab already did until they press play.
+ * The recording, per language. The community-hosted file only downloads on play
+ * (preload="none"), and the poster is a still of the same conversation — so the section costs a
+ * visitor one image until they press play.
  */
-const CASE_VIDEOS: Array<Record<Locale, string> | null> = [
-  { zh: demoVideoUrl("rag_zh"), en: demoVideoUrl("rag_en") },
-  null,
-];
+const VIDEO: Record<Locale, string> = { zh: demoVideoUrl("rag_zh"), en: demoVideoUrl("rag_en") };
 
-/**
- * Theme- and locale-matched posters or stills, index-aligned with S.cases.tabs. The APE tab
- * shows the Evaluation Center screenshot until a capture of the score chart from a real run
- * replaces it.
- */
-const CASE_STILLS: ShotSet[] = [
-  {
-    zh: { light: chatZhLight, dark: chatZhDark },
-    en: { light: chatEnLight, dark: chatEnDark },
-  },
-  {
-    zh: { light: benchmarkZhLight, dark: benchmarkZhDark },
-    en: { light: benchmarkEnLight, dark: benchmarkEnDark },
-  },
-];
+const POSTERS: Record<Locale, { light: string; dark: string }> = {
+  zh: { light: chatZhLight, dark: chatZhDark },
+  en: { light: chatEnLight, dark: chatEnDark },
+};
 
 export function Cases() {
   const { locale } = useLocale();
-  const tabs = S.cases.tabs;
-  const [active, setActive] = useState(0);
-  const tab = tabs[active] ?? tabs[0]!;
-  const shots = (CASE_STILLS[active] ?? CASE_STILLS[0]!)[locale];
-  const video = (CASE_VIDEOS[active] ?? null)?.[locale];
+  const posters = POSTERS[locale];
+  const c = S.cases;
 
   return (
-    <Section id="cases" eyebrow={S.cases.eyebrow} title={S.cases.title} subtitle={S.cases.subtitle}>
-      <div
-        role="tablist"
-        aria-label={S.cases.eyebrow}
-        className="flex flex-wrap justify-center gap-2"
-      >
-        {tabs.map((t, i) => (
-          <button
-            key={t.label}
-            type="button"
-            role="tab"
-            aria-selected={i === active}
-            onClick={() => setActive(i)}
-            className={`rounded-full border px-3.5 py-1.5 text-sm transition-colors ${
-              i === active
-                ? "border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900"
-                : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-900"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <figure role="tabpanel" className="anim-fade mx-auto mt-8 max-w-5xl" key={tab.label}>
+    <Section id="cases" eyebrow={c.eyebrow} title={c.title} subtitle={c.subtitle}>
+      <figure className="mx-auto max-w-5xl">
         <div className="mx-auto mb-5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-left sm:w-fit sm:max-w-full sm:overflow-x-auto dark:border-gray-800 dark:bg-gray-900">
           <code className="font-mono text-[12px] leading-5 whitespace-pre-wrap text-gray-800 sm:text-[13px] sm:whitespace-nowrap dark:text-gray-200">
             <span className="mr-2 text-gray-400 select-none dark:text-gray-500">&gt;</span>
-            {tab.prompt}
+            {c.prompt}
           </code>
         </div>
         <BrowserFrame>
-          {/* Light/dark are two elements rather than one with a swapped source: a <video>
+          {/* Light and dark are two elements rather than one with a swapped source: a <video>
               takes a single poster, and the theme-matched still is what stands in for the
               recording before play. Only the visible one's poster is ever fetched. */}
-          {video ? (
-            <>
-              <video
-                src={video}
-                poster={shots.light}
-                controls
-                preload="none"
-                playsInline
-                aria-label={tab.caption}
-                className="block h-auto w-full bg-gray-950 dark:hidden"
-              />
-              <video
-                src={video}
-                poster={shots.dark}
-                controls
-                preload="none"
-                playsInline
-                aria-label={tab.caption}
-                className="hidden h-auto w-full bg-gray-950 dark:block"
-              />
-            </>
-          ) : (
-            <>
-              <img
-                src={shots.light}
-                alt={tab.caption}
-                loading="lazy"
-                className="block h-auto w-full dark:hidden"
-              />
-              <img
-                src={shots.dark}
-                alt={tab.caption}
-                loading="lazy"
-                className="hidden h-auto w-full dark:block"
-              />
-            </>
-          )}
+          <video
+            src={VIDEO[locale]}
+            poster={posters.light}
+            controls
+            preload="none"
+            playsInline
+            aria-label={c.caption}
+            className="block h-auto w-full bg-gray-950 dark:hidden"
+          />
+          <video
+            src={VIDEO[locale]}
+            poster={posters.dark}
+            controls
+            preload="none"
+            playsInline
+            aria-label={c.caption}
+            className="hidden h-auto w-full bg-gray-950 dark:block"
+          />
         </BrowserFrame>
         <figcaption className="mt-3 text-center text-xs text-gray-500 dark:text-gray-400">
-          {tab.caption}
+          {c.caption}
         </figcaption>
-        {tab.cost && (
-          <p className="mt-2 text-center text-[13px] font-semibold text-brand-700 dark:text-brand-300">
-            {tab.cost}
-          </p>
-        )}
+        <p className="mt-2 text-center text-[13px] font-semibold text-brand-700 dark:text-brand-300">
+          {c.cost}
+        </p>
       </figure>
     </Section>
   );

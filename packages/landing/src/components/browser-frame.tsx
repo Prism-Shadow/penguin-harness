@@ -1,13 +1,16 @@
-/** Fake browser chrome around product screenshots: traffic dots + address pill. */
+/** Fake browser chrome around product screenshots and live frames: traffic dots + address pill. */
 import type { ReactNode } from "react";
 
 export function BrowserFrame({
   children,
   url = "127.0.0.1:7364",
+  aside,
   className = "",
 }: {
   children: ReactNode;
   url?: string;
+  /** What sits right of the address pill (a link out); an empty slot of the same weight otherwise. */
+  aside?: ReactNode;
   className?: string;
 }) {
   return (
@@ -23,7 +26,7 @@ export function BrowserFrame({
         <span className="min-w-0 flex-1 truncate rounded-md bg-gray-100 px-3 py-1 text-center font-mono text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
           {url}
         </span>
-        <span className="w-10" aria-hidden="true" />
+        {aside ?? <span className="w-10" aria-hidden="true" />}
       </div>
       {children}
     </div>

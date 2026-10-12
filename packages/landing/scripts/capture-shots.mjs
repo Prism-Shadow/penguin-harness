@@ -1,18 +1,18 @@
 /**
- * Capture real product screenshots for the landing page.
+ * Capture the Cases section's poster: the conversation that built the RAG app, in the product.
  *
  * Flow: host a scripted mock LLM (speaks BOTH Anthropic SSE and OpenAI chat-completions
  * SSE, so whichever client MMSP routes to gets a valid stream) -> start the Web
  * server against a temp data root serving the built web dist -> drive a genuine
  * "build an Agent app" conversation (tools actually execute in the workspace) ->
- * screenshot the chat page, its Trace panel and the evaluation center, per UI language
- * (zh / en, each with its own user so sidebars stay monolingual) and per theme
- * (light / dark), into
- * src/assets/shots/ as <page>-<lang>-<theme>.webp (12 files, re-encoded to WebP
- * inside Chromium to keep the repo small).
+ * screenshot the finished chat page per UI language (zh / en, each with its own user so
+ * sidebars stay monolingual) and per mode (light / dark), in the app's default theme, into
+ * src/assets/shots/ as chat-<lang>-<mode>.webp (re-encoded to WebP inside Chromium to keep
+ * the repo small). The rest of the home page shows the app live, from the gallery.
  *
- * Prereqs: `pnpm --filter @prismshadow/penguin-{skills,core,server,web} build` and
- * Playwright's chromium. Run: `node scripts/capture-shots.mjs`.
+ * Prereqs: `pnpm --filter @prismshadow/penguin-{core,server,web} build` and Playwright's
+ * chromium. Run: `node scripts/capture-shots.mjs`. On a shared machine, SHOTS_PORT moves the
+ * server (the mock LLM takes the next port) and SHOTS_OUT_DIR writes the shots elsewhere.
  */
 import http from "node:http";
 import { spawn } from "node:child_process";
@@ -24,9 +24,9 @@ import { chromium } from "@playwright/test";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../../..");
-const OUT_DIR = path.resolve(HERE, "../src/assets/shots");
-const MOCK_PORT = 8941;
-const SRV_PORT = 8940;
+const OUT_DIR = path.resolve(process.env.SHOTS_OUT_DIR ?? path.join(HERE, "../src/assets/shots"));
+const SRV_PORT = Number(process.env.SHOTS_PORT ?? 8940);
+const MOCK_PORT = SRV_PORT + 1;
 // `localhost`, not `127.0.0.1`: that literal address is reserved as the Workspace-preview
 // host, and the API answers 401 on it.
 const BASE = `http://localhost:${SRV_PORT}`;
@@ -226,7 +226,7 @@ function sse(res, event, data) {
 function anthropicReply(res, body) {
   const flat = JSON.stringify(body.messages ?? []);
   const script = scriptFor(flat);
-  const isTitle = flat.includes("concise title");
+  const isTitle = flat.includes("You are a title generator");
   const toolResults = flat.split('"tool_result"').length - 1;
   const turn = script.turns[Math.min(toolResults, script.turns.length - 1)];
   const msgCount = (body.messages ?? []).length;
@@ -306,7 +306,7 @@ function anthropicReply(res, body) {
 function openaiReply(res, body) {
   const flat = JSON.stringify(body.messages ?? []);
   const script = scriptFor(flat);
-  const isTitle = flat.includes("concise title");
+  const isTitle = flat.includes("You are a title generator");
   const toolResults = flat.split('"role":"tool"').length - 1;
   const turn = script.turns[Math.min(toolResults, script.turns.length - 1)];
 
@@ -611,12 +611,6 @@ try {
         ([t, l]) => {
           localStorage.setItem("penguin.theme", t);
           localStorage.setItem("penguin.lang", l);
-          // Both docks start closed (no scopes), so the chat shot is unaffected; the
-          // ratio only decides how tall the bottom dock is once the Trace tab opens it.
-          localStorage.setItem(
-            "penguin.dock.layout",
-            JSON.stringify({ scopes: {}, bottomRatio: 0.62 }),
-          );
         },
         [theme, lang],
       );
@@ -639,35 +633,6 @@ try {
       await page.getByText(DONE_MARKER).first().waitFor({ timeout: 90000 });
       await page.waitForTimeout(2000);
       await saveWebp(await page.screenshot(), `chat-${lang}-${theme}.webp`);
-
-      // Trace view: a Trace is read in its own conversation's Trace panel, opened as a
-      // tab in the bottom dock (the toolbar pulls the empty dock open, the picker puts
-      // the tab in it). Waiting for a timeline segment titled after the conversation's
-      // exec_command call guarantees every language captures the same opened Trace —
-      // stats plus a timeline with tool calls — never a still-loading skeleton.
-      await page.getByTestId("dock-toggle-bottom").click();
-      const bottomDock = page.locator("[data-testid='dock'][data-position='bottom']");
-      await bottomDock.getByTestId("dock-pick-trace").click();
-      await bottomDock
-        .locator('[data-tab-id="trace"][data-active="true"]')
-        .waitFor({ timeout: 20000 });
-      await bottomDock
-        .getByTitle(/exec_command/)
-        .first()
-        .waitFor({ timeout: 30000 });
-      await page.waitForTimeout(2000);
-      await saveWebp(await page.screenshot(), `traces-${lang}-${theme}.webp`);
-
-      // Evaluation center: open the pre-provisioned example Benchmark scoreboard.
-      await page.goto(`${BASE}/benchmark`);
-      await page.waitForTimeout(1500);
-      await page
-        .getByText("Example Benchmark")
-        .first()
-        .click()
-        .catch(() => {});
-      await page.waitForTimeout(2500);
-      await saveWebp(await page.screenshot(), `benchmark-${lang}-${theme}.webp`);
 
       await context.close();
     }

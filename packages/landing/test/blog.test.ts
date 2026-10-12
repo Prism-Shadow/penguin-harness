@@ -5,8 +5,10 @@ import {
   formatAuthors,
   formatPostDate,
   getPost,
+  latestPosts,
   parseAuthors,
   postsFor,
+  UPDATE_CATEGORIES,
 } from "../src/lib/blog";
 
 const entry = (pinned: boolean, date: string, slug: string) => ({ pinned, date, slug });
@@ -147,5 +149,23 @@ describe("frontmatter mapping (author / pinned / category)", () => {
       "easiest-way-to-build-ai-agents-2026",
       "simple-harness-is-all-you-need",
     ]);
+  });
+});
+
+describe("latestPosts", () => {
+  it("is the newest news and practice posts by date alone, pinned or not", () => {
+    for (const locale of ["en", "zh"] as const) {
+      const latest = latestPosts(locale, 4);
+      const updates = postsFor(locale).filter((p) => UPDATE_CATEGORIES.includes(p.category));
+      expect(latest).toHaveLength(Math.min(4, updates.length));
+      // Nothing newer was left out, and the four read newest first.
+      const dates = latest.map((p) => p.date);
+      expect(dates).toEqual([...dates].sort().reverse());
+      const oldestShown = dates.at(-1)!;
+      for (const post of updates) {
+        if (!latest.includes(post)) expect(post.date <= oldestShown, post.slug).toBe(true);
+      }
+      expect(new Set(latest.map((p) => p.slug)).size).toBe(latest.length);
+    }
   });
 });

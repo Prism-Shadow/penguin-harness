@@ -1,11 +1,8 @@
 /**
- * Sticky top navigation: logo + section anchors + blog and download links + docs and gallery
- * links (sibling sites, never the current page here) + language/theme toggles + GitHub.
- * Desktop links share a sliding hover pill, while the selected section or route
- * keeps its own active background. On the home page the active section tracks the
- * LIVE scroll position (scroll-spy), so the highlight follows as you scroll; on other
- * routes it falls back to route state (e.g. Blog). Section links route through "/#id"
- * so the URL hash stays in sync on click. A disclosure menu covers small screens.
+ * Sticky top navigation: logo + the site's standalone pages (Home, Blog, Download, then Docs and
+ * the gallery, which are sibling sites and never the current page here) + language/theme toggles
+ * + GitHub. Desktop links share a sliding hover pill, while the current page keeps its own active
+ * background. A disclosure menu covers small screens.
  *
  * The markup and class strings are duplicated verbatim in the docs nav
  * (packages/docs/src/components/nav.tsx — the two sites share no package, as with
@@ -16,21 +13,27 @@ import type { MouseEvent } from "react";
 import { Link, useLocation } from "react-router";
 import { S } from "../lib/strings";
 import { DOCS_URL, galleryUrl, REPO_API_URL, REPO_URL } from "../lib/links";
-import {
-  getActiveNavItem,
-  getNavItemForSection,
-  NAV_SECTION_IDS,
-  OBSERVED_SECTION_IDS,
-} from "../lib/nav-state";
-import type { ActiveNavItem, ObservedSectionId } from "../lib/nav-state";
-import { useScrollSpy } from "../lib/use-scroll-spy";
 import { useLocale } from "../state/locale";
 import { GitHubIcon, MenuIcon, XIcon } from "./icons";
 import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
 
-/** Stable empty list: keeps the spy idle away from the home page. */
-const NO_IDS: readonly string[] = [];
+/** The landing page's own pages, in nav order; Docs and the gallery follow as sibling sites. */
+const PAGES = [
+  { to: "/", item: "home" },
+  { to: "/blog", item: "blog" },
+  { to: "/download", item: "download" },
+] as const;
+
+type PageItem = (typeof PAGES)[number]["item"];
+
+/** The page the route is on: a blog post counts as the blog. */
+function currentPage(pathname: string): PageItem | null {
+  if (pathname === "/") return "home";
+  if (pathname === "/blog" || pathname.startsWith("/blog/")) return "blog";
+  if (pathname === "/download") return "download";
+  return null;
+}
 
 function GitHubStarsLink() {
   const [stars, setStars] = useState<number | null>(null);
@@ -67,26 +70,18 @@ function GitHubStarsLink() {
 }
 
 export function Nav() {
-  const { pathname, hash } = useLocation();
-  const onHome = pathname === "/";
-  const spied = useScrollSpy(onHome ? OBSERVED_SECTION_IDS : NO_IDS) as ObservedSectionId | null;
-  const activeItem: ActiveNavItem = onHome
-    ? getNavItemForSection(spied)
-    : getActiveNavItem(pathname, hash);
+  const { pathname } = useLocation();
+  const current = currentPage(pathname);
   const [open, setOpen] = useState(false);
   const pillRef = useRef<HTMLSpanElement | null>(null);
   const pillVisible = useRef(false);
   const { locale } = useLocale();
   // The gallery opens in the language the reader has the site in.
   const gallery = galleryUrl(locale);
-
-  const sectionLabel: Record<(typeof NAV_SECTION_IDS)[number], string> = {
-    highlights: S.nav.highlights,
-    quickstart: S.nav.quickstart,
-    scenarios: S.nav.scenarios,
-    benchmark: S.nav.benchmark,
-    contract: S.nav.contract,
-    features: S.nav.features,
+  const pageLabel: Record<PageItem, string> = {
+    home: S.nav.home,
+    blog: S.nav.blog,
+    download: S.nav.download,
   };
 
   const activeLinkCls =
@@ -131,36 +126,17 @@ export function Nav() {
 
   const desktopLinks = (
     <>
-      {NAV_SECTION_IDS.map((id) => {
-        const active = activeItem === id;
-        return (
-          <Link
-            key={id}
-            to={`/#${id}`}
-            className={deskLinkCls(active)}
-            onMouseEnter={slideTo}
-            aria-current={active ? "location" : undefined}
-          >
-            {sectionLabel[id]}
-          </Link>
-        );
-      })}
-      <Link
-        to="/blog"
-        className={deskLinkCls(activeItem === "blog")}
-        onMouseEnter={slideTo}
-        aria-current={activeItem === "blog" ? "page" : undefined}
-      >
-        {S.nav.blog}
-      </Link>
-      <Link
-        to="/download"
-        className={deskLinkCls(activeItem === "download")}
-        onMouseEnter={slideTo}
-        aria-current={activeItem === "download" ? "page" : undefined}
-      >
-        {S.nav.download}
-      </Link>
+      {PAGES.map(({ to, item }) => (
+        <Link
+          key={item}
+          to={to}
+          className={deskLinkCls(current === item)}
+          onMouseEnter={slideTo}
+          aria-current={current === item ? "page" : undefined}
+        >
+          {pageLabel[item]}
+        </Link>
+      ))}
       {/* Docs (/docs/) and the gallery (/gallery/) are sibling SPAs: plain anchors, not Links. */}
       <a href={DOCS_URL} className={deskLinkCls(false)} onMouseEnter={slideTo}>
         {S.nav.docs}
@@ -173,36 +149,17 @@ export function Nav() {
 
   const mobileLinks = (
     <>
-      {NAV_SECTION_IDS.map((id) => {
-        const active = activeItem === id;
-        return (
-          <Link
-            key={id}
-            to={`/#${id}`}
-            className={mobileLinkCls(active)}
-            onClick={() => setOpen(false)}
-            aria-current={active ? "location" : undefined}
-          >
-            {sectionLabel[id]}
-          </Link>
-        );
-      })}
-      <Link
-        to="/blog"
-        className={mobileLinkCls(activeItem === "blog")}
-        onClick={() => setOpen(false)}
-        aria-current={activeItem === "blog" ? "page" : undefined}
-      >
-        {S.nav.blog}
-      </Link>
-      <Link
-        to="/download"
-        className={mobileLinkCls(activeItem === "download")}
-        onClick={() => setOpen(false)}
-        aria-current={activeItem === "download" ? "page" : undefined}
-      >
-        {S.nav.download}
-      </Link>
+      {PAGES.map(({ to, item }) => (
+        <Link
+          key={item}
+          to={to}
+          className={mobileLinkCls(current === item)}
+          onClick={() => setOpen(false)}
+          aria-current={current === item ? "page" : undefined}
+        >
+          {pageLabel[item]}
+        </Link>
+      ))}
       <a href={DOCS_URL} className={mobileLinkCls(false)} onClick={() => setOpen(false)}>
         {S.nav.docs}
       </a>
@@ -223,7 +180,7 @@ export function Nav() {
         </Link>
 
         <nav
-          className="relative ml-4 hidden items-center gap-0.5 xl:flex"
+          className="relative ml-4 hidden items-center gap-0.5 md:flex"
           aria-label="Primary"
           onMouseLeave={hidePill}
         >
@@ -246,7 +203,7 @@ export function Nav() {
             onClick={() => setOpen((v) => !v)}
             aria-label={open ? S.nav.closeMenu : S.nav.openMenu}
             aria-expanded={open}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent text-gray-600 transition-colors hover:border-gray-200 hover:bg-gray-50 xl:hidden dark:text-gray-400 dark:hover:border-gray-800 dark:hover:bg-gray-900"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-transparent text-gray-600 transition-colors hover:border-gray-200 hover:bg-gray-50 md:hidden dark:text-gray-400 dark:hover:border-gray-800 dark:hover:bg-gray-900"
           >
             {open ? <XIcon className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
           </button>
@@ -255,7 +212,7 @@ export function Nav() {
 
       {open && (
         <nav
-          className="anim-fade border-t border-gray-200 bg-white px-4 py-2 xl:hidden dark:border-gray-800 dark:bg-gray-950"
+          className="anim-fade border-t border-gray-200 bg-white px-4 py-2 md:hidden dark:border-gray-800 dark:bg-gray-950"
           aria-label="Mobile"
         >
           <div className="grid grid-cols-2 gap-1 py-1">{mobileLinks}</div>

@@ -1,7 +1,7 @@
 /**
  * Render the social share card referenced by index.html's og:image / twitter:image.
  *
- * Same pattern as capture-game-mockup.mjs: og-cover.html is a static, dependency-free
+ * Same pattern as capture-readme-demo.mjs: og-cover.html is a static, dependency-free
  * mockup, captured at exactly 1200x630 into packages/landing/public/og-cover.png —
  * public/ rather than src/assets/ because the URL has to be stable and absolute for
  * the platforms that fetch it, not a hashed bundle asset. PNG, not WebP: WeChat and a

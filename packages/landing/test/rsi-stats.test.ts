@@ -3,9 +3,9 @@
  * whose package.json files them under the `rsi` category, and BENCHMARKS exactly core's built-in
  * Benchmarks, one entry per upstream repository core records for them, linked to it, so a new
  * toolkit or built-in, or a moved upstream, fails here instead of leaving the landing page behind. Every
- * link is absolute https, and only the Default toolkit has none; both dictionaries carry one
- * kind per Benchmark and no derived count in the stat tiles; and the cases section's APE prompt
- * is that toolkit's quick start, word for word.
+ * link is absolute https, and only the Default toolkit has none; and both dictionaries carry one
+ * kind per Benchmark and no derived count in the stat tiles (the hero derives the algorithm and
+ * Benchmark counts from these lists).
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -18,10 +18,9 @@ import { en } from "../src/lib/strings-en";
 
 const pluginsRoot = join(__dirname, "..", "..", "..", "plugins");
 
-/** The `penguin` block of a plugin's package.json: the fields this test reads. */
+/** The `penguin` block of a plugin's package.json: the field this test reads. */
 interface Manifest {
   category?: unknown;
-  quick_start?: { prompt?: string; prompt_zh?: string };
 }
 
 const manifest = (plugin: string): Manifest => {
@@ -101,16 +100,9 @@ describe("hero catalogue ↔ its sources", () => {
   for (const { file, dict } of DICTIONARIES) {
     it(`${file} has one kind per Benchmark and no catalogue counts in the stat tiles`, () => {
       expect(dict.hero.benchmarkKinds).toHaveLength(BENCHMARKS.length);
-      expect(dict.hero.stats).toHaveLength(4);
       for (const stat of dict.hero.stats) {
         expect(stat.value).not.toMatch(/算法|Benchmark|Algorithms|Reproductions/);
       }
     });
   }
-
-  it("the APE case prompt is the ape-rsi-toolkit quick start, word for word", () => {
-    const quickStart = manifest("ape-rsi-toolkit").quick_start;
-    expect(zh.cases.tabs[1]?.prompt).toBe(quickStart?.prompt_zh);
-    expect(en.cases.tabs[1]?.prompt).toBe(quickStart?.prompt);
-  });
 });

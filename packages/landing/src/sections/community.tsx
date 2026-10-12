@@ -21,12 +21,7 @@ export function Community() {
     ...S.community.items[key],
   }));
   return (
-    <Section
-      id="community"
-      eyebrow={S.community.eyebrow}
-      title={S.community.title}
-      subtitle={S.community.subtitle}
-    >
+    <Section id="community" title={S.community.title} subtitle={S.community.subtitle}>
       <div className="mx-auto grid max-w-4xl gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((item) => (
           <a

@@ -1,8 +1,10 @@
 /**
- * Product-first hero: the positioning line, two direct installation paths, four stat tiles (the
- * small label over the big value), and three catalogue rows (supported models, self-evolution
- * algorithms, Benchmarks) whose outside links confirm before they open. What the rows list, and
- * where each entry links, is lib/rsi-stats.ts.
+ * Product-first hero: the positioning line with its badge, two direct installation paths, three
+ * stat tiles (the small label over the big value), three catalogue rows (supported models,
+ * self-evolution algorithms, Benchmarks) each led by its count, whose outside links confirm
+ * before they open, and then the app itself, live: the start page in a frame. What the rows list,
+ * and where each entry links, is lib/rsi-stats.ts; the algorithm and Benchmark counts are those
+ * lists' lengths.
  */
 import type { ReactNode } from "react";
 import { Link } from "react-router";
@@ -16,7 +18,7 @@ import {
   TerminalIcon,
 } from "../components/icons";
 import { ExternalLink, ExternalLinkScope } from "../components/external-link";
-import { useLocale } from "../state/locale";
+import { LiveAppFrame } from "../components/live-app-frame";
 
 /**
  * An entry of a text catalogue row: plain text on the page, no box of its own — the row is a
@@ -28,32 +30,35 @@ const ENTRY = "inline-flex items-center gap-1 text-sm font-medium text-gray-700 
 const ENTRY_LINK = `${ENTRY} underline-offset-4 decoration-gray-300 transition-colors hover:text-gray-950 hover:underline dark:decoration-gray-600 dark:hover:text-white`;
 
 /**
- * One labelled row of the catalogue: label above the items on phones; from `sm` up, label and
- * items share the catalogue's two columns (subgrid), so the three labels line up.
+ * One row of the catalogue, led by its count: the count and label above the items on phones;
+ * from `sm` up, they share the catalogue's two columns (subgrid), the count-and-label column
+ * aligned left so the three counts line up.
  */
 function CatalogRow({
+  count,
   label,
   delay,
   listClassName,
   children,
 }: {
+  count: string;
   label: string;
   delay: number;
   listClassName: string;
   children: ReactNode;
 }) {
-  // Uppercase suits the English labels; on a Chinese label it would only shout whatever Latin
-  // word the label carries.
-  const { locale } = useLocale();
   return (
     <div
       className="anim-rise flex flex-col items-center sm:col-span-2 sm:grid sm:grid-cols-subgrid sm:items-center"
       style={{ animationDelay: `${delay}ms` }}
     >
-      <dt
-        className={`text-xs font-semibold tracking-wide text-gray-500 sm:text-right ${locale === "en" ? "uppercase" : ""}`}
-      >
-        {label}
+      <dt className="flex items-baseline gap-2 sm:text-left">
+        <span className="text-lg leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
+          {count}
+        </span>
+        <span className="text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400">
+          {label}
+        </span>
       </dt>
       {/* Spaced by margin, not `gap`: a gap on the subgrid would override the catalogue's own. */}
       <dd className="mt-2.5 sm:mt-0">
@@ -87,7 +92,14 @@ export function Hero() {
           className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance"
           style={{ animationDelay: "70ms" }}
         >
-          {S.hero.positioning}
+          {/* The badge hangs off the line's top-right corner; on a phone it sits above the
+              corner instead, inside the column, where the line already reaches the edge. */}
+          <span className="relative inline-block">
+            {S.hero.positioning}
+            <span className="absolute right-0 bottom-full mb-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] leading-4 font-semibold tracking-normal whitespace-nowrap text-brand-700 sm:right-auto sm:bottom-full sm:left-full sm:mb-0 sm:-translate-x-3 sm:translate-y-2 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-300">
+              {S.hero.badge}
+            </span>
+          </span>
         </p>
 
         <p
@@ -121,15 +133,15 @@ export function Hero() {
         </div>
 
         <dl
-          className="anim-rise mx-auto mt-10 grid max-w-6xl grid-cols-2 gap-x-4 gap-y-7 sm:mt-12 sm:gap-x-6 sm:gap-y-8 xl:grid-cols-4 xl:gap-x-2"
+          className="anim-rise mx-auto mt-10 grid max-w-5xl gap-y-5 sm:mt-12 sm:grid-cols-3 sm:gap-x-6"
           style={{ animationDelay: "250ms" }}
         >
           {S.hero.stats.map((stat) => (
             <div key={stat.value} className="min-w-0">
-              <dt className="mx-auto mt-1 max-w-56 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              <dt className="mx-auto mt-1 max-w-64 text-xs leading-5 text-gray-500 dark:text-gray-400">
                 {stat.label}
               </dt>
-              <dd className="hero-stat-value mx-auto mt-0.5 max-w-64 text-[19px] leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-2xl xl:max-w-none dark:text-gray-100">
+              <dd className="hero-stat-value mx-auto mt-0.5 text-xl leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-[22px] dark:text-gray-100">
                 {stat.value}
               </dd>
             </div>
@@ -139,6 +151,7 @@ export function Hero() {
         <ExternalLinkScope>
           <dl className="mx-auto mt-10 grid w-fit max-w-full gap-y-6 sm:mt-12 sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-4">
             <CatalogRow
+              count={S.hero.supportedModelsCount}
               label={S.hero.supportedModelsLabel}
               delay={300}
               listClassName="gap-x-2 gap-y-1"
@@ -161,6 +174,7 @@ export function Hero() {
             </CatalogRow>
 
             <CatalogRow
+              count={String(RSI_TOOLKITS.length)}
               label={S.hero.algorithmsLabel}
               delay={340}
               listClassName="gap-x-5 gap-y-1.5"
@@ -180,6 +194,7 @@ export function Hero() {
             </CatalogRow>
 
             <CatalogRow
+              count={String(BENCHMARKS.length)}
               label={S.hero.benchmarksLabel}
               delay={380}
               listClassName="gap-x-5 gap-y-1.5"
@@ -195,6 +210,12 @@ export function Hero() {
             </CatalogRow>
           </dl>
         </ExternalLinkScope>
+
+        <LiveAppFrame
+          surface="chat-new"
+          title={S.showcase.start}
+          className="anim-rise mx-auto mt-14 max-w-6xl text-left sm:mt-16"
+        />
       </div>
     </section>
   );
