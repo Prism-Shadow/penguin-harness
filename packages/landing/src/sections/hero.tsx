@@ -1,8 +1,8 @@
 /**
- * Product-first hero: the positioning line, two direct installation paths, two stat tiles, and
- * three catalogue rows (supported models, self-evolution algorithms, Benchmarks)
- * whose outside links confirm before they open. What the rows list, and where each entry links,
- * is lib/rsi-stats.ts.
+ * Product-first hero: the positioning line, two direct installation paths, four stat tiles (the
+ * small label over the big value), and three catalogue rows (supported models, self-evolution
+ * algorithms, Benchmarks) whose outside links confirm before they open. What the rows list, and
+ * where each entry links, is lib/rsi-stats.ts.
  */
 import type { ReactNode } from "react";
 import { Link } from "react-router";
@@ -18,11 +18,14 @@ import {
 import { ExternalLink, ExternalLinkScope } from "../components/external-link";
 import { useLocale } from "../state/locale";
 
-const CHIP_STATIC =
-  "inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300";
+/**
+ * An entry of a text catalogue row: plain text on the page, no box of its own — the row is a
+ * list, read the way the model logos beside it are.
+ */
+const ENTRY = "inline-flex items-center gap-1 text-sm font-medium text-gray-700 dark:text-gray-300";
 
-/** A chip that links somewhere: the static chip plus a hover that says it can be clicked. */
-const CHIP = `${CHIP_STATIC} transition-colors hover:border-gray-300 hover:bg-gray-50 dark:hover:border-gray-700 dark:hover:bg-gray-800`;
+/** An entry that links out: the same text, underlined on hover, with the outside-link mark. */
+const ENTRY_LINK = `${ENTRY} underline-offset-4 decoration-gray-300 transition-colors hover:text-gray-950 hover:underline dark:decoration-gray-600 dark:hover:text-white`;
 
 /**
  * One labelled row of the catalogue: label above the items on phones; from `sm` up, label and
@@ -118,16 +121,16 @@ export function Hero() {
         </div>
 
         <dl
-          className="anim-rise mx-auto mt-10 grid max-w-md grid-cols-2 gap-x-6 sm:mt-12"
+          className="anim-rise mx-auto mt-10 grid max-w-6xl grid-cols-2 gap-x-4 gap-y-7 sm:mt-12 sm:gap-x-6 sm:gap-y-8 xl:grid-cols-4 xl:gap-x-2"
           style={{ animationDelay: "250ms" }}
         >
           {S.hero.stats.map((stat) => (
             <div key={stat.value} className="min-w-0">
-              <dt className="text-[19px] leading-tight font-semibold tracking-tight text-gray-900 sm:text-2xl dark:text-gray-100">
-                {stat.value}
-              </dt>
-              <dd className="mt-1 text-xs leading-5 text-balance text-gray-500 dark:text-gray-400">
+              <dt className="mx-auto mt-1 max-w-56 text-xs leading-5 text-gray-500 dark:text-gray-400">
                 {stat.label}
+              </dt>
+              <dd className="hero-stat-value mx-auto mt-0.5 max-w-64 text-[19px] leading-tight font-semibold tracking-tight text-balance text-gray-900 sm:text-2xl xl:max-w-none dark:text-gray-100">
+                {stat.value}
               </dd>
             </div>
           ))}
@@ -157,25 +160,33 @@ export function Hero() {
               </li>
             </CatalogRow>
 
-            <CatalogRow label={S.hero.algorithmsLabel} delay={340} listClassName="gap-2">
+            <CatalogRow
+              label={S.hero.algorithmsLabel}
+              delay={340}
+              listClassName="gap-x-5 gap-y-1.5"
+            >
               {RSI_TOOLKITS.map((toolkit) => (
                 <li key={toolkit.plugin}>
                   {toolkit.href !== null ? (
-                    <ExternalLink href={toolkit.href} className={CHIP}>
+                    <ExternalLink href={toolkit.href} className={ENTRY_LINK}>
                       {toolkit.label}
                       <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
                     </ExternalLink>
                   ) : (
-                    <span className={CHIP_STATIC}>{toolkit.label}</span>
+                    <span className={ENTRY}>{toolkit.label}</span>
                   )}
                 </li>
               ))}
             </CatalogRow>
 
-            <CatalogRow label={S.hero.benchmarksLabel} delay={380} listClassName="gap-2">
+            <CatalogRow
+              label={S.hero.benchmarksLabel}
+              delay={380}
+              listClassName="gap-x-5 gap-y-1.5"
+            >
               {BENCHMARKS.map((benchmark, index) => (
                 <li key={benchmark.id}>
-                  <ExternalLink href={benchmark.href} className={CHIP}>
+                  <ExternalLink href={benchmark.href} className={ENTRY_LINK}>
                     {S.hero.benchmarkKinds[index]}
                     <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
                   </ExternalLink>

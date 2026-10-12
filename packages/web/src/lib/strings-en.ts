@@ -3178,16 +3178,17 @@ When done, open index.html in a browser and self-test once.`,
           'stock for me": resolve a company name to its ticker itself, and when there is no match ' +
           "or the company is not listed, say so rather than inventing a quote.",
       },
-      missionControl: {
-        label: "Build a custom workflow UI: mission control",
-        desc: "A workflow tab beside the chat: dispatch a task to several agents at once and watch every Session's live status",
+      legalDesk: {
+        label: "A legal agent: upload documents, download reports",
+        desc: "A new legal agent behind a workflow tab with only an upload, a file list and report downloads — no conversation in sight",
         prompt:
-          "Build yourself a workflow: a mission-control tab beside this chat. I type a task and pick " +
-          "one or more of this Project's Agents; it opens a Session for each and runs them in " +
-          "parallel. Every run is a card with a live, animated status (queued, running, done) and " +
-          "its elapsed time, and the board survives a reload. Add a second tab with the numbers — " +
-          "runs per Agent, average duration — and a button that fills the whole app, like a wall " +
-          "display. Take every colour from the theme variables so it looks right in light and dark.",
+          "Create a legal agent that reviews contracts, agreements and other legal documents: it " +
+          "finds risky clauses, explains why, and suggests revisions. Then build yourself a " +
+          "workflow tab as its desk: when I upload a file, the legal agent analyzes it in the " +
+          "background and produces an analysis report for me to download. The page has only an " +
+          "upload, a file list (each file's processing status) and the report downloads, with no " +
+          "conversation shown. Take every colour from the theme variables so it looks right in " +
+          "light and dark.",
       },
       agentBenchmarkBuild: {
         label: "Build a general-purpose decision agent and its benchmark",

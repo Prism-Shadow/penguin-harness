@@ -289,7 +289,7 @@ const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
 const TASK_GLYPHS: Record<ExampleTaskId, string> = {
   ragDocsExpert: ICONS.bookOpen,
   investmentCopilot: ICONS.barChart,
-  missionControl: ICONS.dashboard,
+  legalDesk: ICONS.file,
   game: ICONS.play,
   gamecenter: ICONS.tiles,
   lol: ICONS.sliders,

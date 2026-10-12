@@ -27,7 +27,7 @@ export const EXAMPLE_FOLDERS = [
     tasks: [
       { id: "ragDocsExpert", skills: ["penguin-sdk", "web-design"] },
       { id: "investmentCopilot", skills: ["penguin-sdk", "web-design"] },
-      { id: "missionControl", skills: ["penguin-sdk", "web-design"] },
+      { id: "legalDesk", skills: ["penguin-sdk", "web-design"] },
     ],
   },
   {
