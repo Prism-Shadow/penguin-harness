@@ -3,7 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** feature
 - **Scope:** `web`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#1072](https://github.com/Prism-Shadow/penguin-harness/pull/1072)
 
 [中文版](2026-10-12-ski-game-prompt.zh.md)
 
