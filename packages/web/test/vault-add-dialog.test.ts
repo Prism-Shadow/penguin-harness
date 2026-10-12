@@ -5,6 +5,7 @@
  *
  * - Add waits for a key that keeps the naming rule and a value; a broken key is named as it is
  *   typed.
+ * - Enter writes nothing: a form of two fields commits only on Add.
  * - Esc, Cancel, a press outside and the × each ask while anything is typed; "keep editing"
  *   leaves the dialog and the typing.
  * - An untouched dialog closes at once.
@@ -14,7 +15,7 @@
  *   to the form.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createElement as h } from "react";
+import { act, createElement as h } from "react";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
@@ -52,6 +53,13 @@ const value = () => fieldIn(topDialog(), en.vault.value);
 const add = () => buttonIn(topDialog(), en.vault.add);
 const promptOpen = () => hasButton(en.common.discard);
 
+/** Enter pressed in a field, as the keyboard delivers it. */
+async function pressEnter(target: Element) {
+  await act(async () => {
+    target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+}
+
 describe("adding a vault key", () => {
   beforeAll(() => setActiveStrings(en));
   afterAll(() => setActiveStrings(zh));
@@ -69,6 +77,17 @@ describe("adding a vault key", () => {
     await type(key(), "OPENAI_API_KEY");
     expect(add().disabled).toBe(false);
     expect(topDialog().textContent).not.toContain(en.vault.keyInvalid);
+  });
+
+  it("writes nothing on Enter, since a form of two fields commits only on Add", async () => {
+    const server = await openAdd();
+    await type(key(), "OPENAI_API_KEY");
+    await type(value(), "sk-test");
+    for (const box of [value, key]) {
+      await pressEnter(box());
+      expect(server.writes("/vault")).toEqual([]);
+      expect(dialogs()).toHaveLength(1);
+    }
   });
 
   it.each([

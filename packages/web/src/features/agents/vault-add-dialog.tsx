@@ -3,7 +3,8 @@
  * the vault kept as it is. A record dialog under the settings commit model — the dialog is one
  * form, Add is live only once the key keeps the naming rule and a value is typed, and closing it
  * with anything typed (Cancel, Esc, the ×, a press outside) asks before the typing is thrown
- * away. The form is mounted only while the dialog is open, so every opening starts empty.
+ * away. It has two fields, so Enter submits nothing: Add is the only way to write. The form is
+ * mounted only while the dialog is open, so every opening starts empty.
  *
  * Adding a key that is already configured replaces its value, which cannot be undone, so it asks
  * first; Cancel there returns to the form. A rejection from the server lands under the key, and
@@ -130,10 +131,6 @@ function VaultAddForm({ existingKeys, onAdd, onClose }: VaultAddDialogProps) {
             onChange={(e) => edit({ value: e.target.value })}
             className="font-mono"
             autoComplete="off"
-            onKeyDown={(e) => {
-              // A one-field submit: Enter is the Add button, under the same conditions.
-              if (e.key === "Enter") submit();
-            }}
           />
         </div>
       </Modal>
