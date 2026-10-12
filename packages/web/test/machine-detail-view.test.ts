@@ -215,16 +215,15 @@ describe("the toolbar", () => {
     expect(verbs(stopped)).toEqual(["start", "restart", "configure", "uninstall"]);
     expect(heldOf(stopped)).toEqual(["restart"]);
     expect(machineToolbar(stopped, null, IMAGE, false).sentence).toBe(
-      S.machines.detail.held.stopped([S.machines.detail.toolbar.restart]),
+      S.machines.detail.held.stopped,
     );
   });
 
-  it("holds what needs the machine while it is being brought back, naming each in one sentence", () => {
+  it("holds what needs the machine while it is being brought back, and says why in one sentence", () => {
     const away = machine({ reconnect: lost });
     expect(heldOf(away)).toEqual(["stop", "restart", "uninstall"]);
-    const t = S.machines.detail.toolbar;
     expect(machineToolbar(away, null, IMAGE, false).sentence).toBe(
-      S.machines.detail.held.unreachable([t.stop, t.restart, t.uninstall]),
+      S.machines.detail.held.unreachable,
     );
   });
 
@@ -251,7 +250,7 @@ describe("the toolbar", () => {
     // With nothing to install, Enable waits, and says why.
     const none = machineToolbar(added, null, null, true);
     expect(none.items[0]!.held).toBe("noImage");
-    expect(none.sentence).toBe(S.machines.detail.held.noImage([S.machines.detail.toolbar.enable]));
+    expect(none.sentence).toBe(S.machines.detail.held.noImage);
   });
 
   it("is empty for this server's own entry", () => {

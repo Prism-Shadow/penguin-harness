@@ -519,12 +519,11 @@ describe("the Machine dialog", () => {
 
   it("greys what cannot run, saying why once under the toolbar", () => {
     const shown = dialog(comingBack, null);
-    const t = S.machines.detail.toolbar;
     expect(shown.verbs.get("stop")?.disabled).toBe(true);
     expect(shown.verbs.get("restart")?.disabled).toBe(true);
     expect(shown.verbs.get("uninstall")?.disabled).toBe(true);
     expect(shown.verbs.get("configure")?.disabled).toBe(false);
-    expect(shown.held).toBe(S.machines.detail.held.unreachable([t.stop, t.restart, t.uninstall]));
+    expect(shown.held).toBe(S.machines.detail.held.unreachable);
   });
 
   it("holds every verb while a request is in flight, and leaves the sentence as it was", () => {

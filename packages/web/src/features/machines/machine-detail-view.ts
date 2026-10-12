@@ -419,11 +419,8 @@ export function machineToolbar(
     items.push(item("uninstall", t.uninstall, reachHeld));
   }
   const held = S.machines.detail.held;
-  const sentence =
-    REASONS.map((reason) => {
-      const verbs = items.filter((one) => one.held === reason).map((one) => one.label);
-      return verbs.length === 0 ? null : held[reason](verbs);
-    }).find((line) => line !== null) ?? null;
+  const reason = REASONS.find((one) => items.some((it) => it.held === one));
+  const sentence = reason === undefined ? null : held[reason];
   return { items, sentence };
 }
 

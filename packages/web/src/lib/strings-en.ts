@@ -230,14 +230,10 @@ export const en: Strings = {
         skippedModel: (model: string, reason: string) => `${model}: ${reason}`,
       },
       held: {
-        moving: (verbs: string[]) =>
-          `This machine is busy with a job; available when it finishes: ${verbs.join(", ")}.`,
-        unreachable: (verbs: string[]) =>
-          `Cannot reach this machine, so these wait for now: ${verbs.join(", ")}.`,
-        stopped: (verbs: string[]) =>
-          `Its server is stopped, so these wait for now: ${verbs.join(", ")}.`,
-        noImage: (verbs: string[]) =>
-          `This server has no version to install, so these wait: ${verbs.join(", ")}.`,
+        moving: "Another action is running on this machine.",
+        unreachable: "Can't reach this machine right now.",
+        stopped: "Its server is stopped.",
+        noImage: "This server has no version to install.",
       },
       reconnect: {
         title: "Reconnecting",

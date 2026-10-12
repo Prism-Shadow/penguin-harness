@@ -278,14 +278,14 @@ export const zh = {
         skippedModel: (model: string, reason: string) => `${model}：${reason}`,
       },
       /**
-       * The one sentence under the toolbar while some of its verbs wait: why, and which. The list
-       * is the toolbar's own labels, joined.
+       * The one sentence under the toolbar while some of its verbs wait: why, said plainly. The
+       * greyed buttons already say which, so the sentence does not list them.
        */
       held: {
-        moving: (verbs: string[]) => `这台机器正在处理任务，完成后可用：${verbs.join("、")}。`,
-        unreachable: (verbs: string[]) => `连不上这台机器：${verbs.join("、")}暂不可用。`,
-        stopped: (verbs: string[]) => `服务已停止：${verbs.join("、")}暂不可用。`,
-        noImage: (verbs: string[]) => `本服务端没有可安装的版本：${verbs.join("、")}暂不可用。`,
+        moving: "正在执行其他操作，请等它完成。",
+        unreachable: "暂时连不上这台机器。",
+        stopped: "服务已停止。",
+        noImage: "本服务端没有可安装的版本。",
       },
       /** The section while the server brings a machine it keeps connected back. */
       reconnect: {
