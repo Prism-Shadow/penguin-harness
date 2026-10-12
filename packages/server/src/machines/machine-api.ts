@@ -1,6 +1,6 @@
 /**
  * A client for one machine's own API, dialled through the connection this side holds. Every piece
- * of work this server does ON a machine goes through here — the hot update, the model sync.
+ * of work this server does ON a machine goes through here — the hot update, the config sync.
  *
  * node:http rather than fetch: the Host header has to be the canonical app host
  * (`localhost:<port>`) while the connection goes to 127.0.0.1, and fetch ignores an explicit
@@ -13,7 +13,7 @@ import http from "node:http";
 /** The machine's own API, reached through its tunnel as an authenticated caller. */
 export interface MachineApi {
   request(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "PATCH",
     path: string,
     body?: unknown,
   ): Promise<{ status: number; text: string }>;

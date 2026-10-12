@@ -10,11 +10,14 @@
  *   and while a job moves there, its stepper says what is happening instead;
  * - asks to delete the machine with its trash button, never while a job is on its way;
  * - holds Use and Delete while a request is in flight;
+ * - offers Sync config only on a connected machine on this server's build;
  * - on this server's own entry offers Use and Settings, and a delete that cannot be pressed.
  *
  * The dialog
  * - lays its verbs out in one toolbar, each asking its page for its own verb: Enable and Update
- *   for the whole pipeline, Stop or Start, Restart, Configure SSH, Uninstall;
+ *   for the whole pipeline, Stop or Start, Restart, Sync config, Configure SSH, Uninstall;
+ * - says when the config was last synced, or why that failed, and lists what it could not carry:
+ *   models keyed from this server's environment, models the machine would not take;
  * - greys a verb that cannot run and says why in one sentence under the toolbar, never on a
  *   hover; holds every verb while a request is in flight, the sentence unchanged;
  * - explains a failure: the step it stopped at, in the far side's own words, what the server's
@@ -297,6 +300,7 @@ function card(machine: MachineInfo, job: MachineJob | null = null, busy = false)
     busy,
     onOpen: vi.fn(),
     onUse: vi.fn(),
+    onSyncConfig: vi.fn(),
     onDelete: vi.fn(),
   };
   const element = MachineCard(props) as AnyElement;
@@ -414,6 +418,16 @@ describe("a machine's card", () => {
     expect(buttons.get("delete")!.props.disabled).toBe(true);
   });
 
+  it("offers Sync config only on a connected machine on this server's build", () => {
+    const { buttons, props } = card(ready);
+    (buttons.get("sync-config")!.props.onClick as () => void)();
+    expect(props.onSyncConfig).toHaveBeenCalledOnce();
+    expect(props.onOpen).not.toHaveBeenCalled();
+    for (const machine of [readyBehind, stopped, comingBack, added, here]) {
+      expect(card(machine).buttons.has("sync-config"), machine.alias).toBe(false);
+    }
+  });
+
   it("this server's own card starts a conversation here, opens its dialog, and cannot be deleted", () => {
     const { buttons, props } = card(here);
     expect([...buttons.keys()]).toEqual(["use", "settings"]);
@@ -455,6 +469,52 @@ describe("the Machine dialog", () => {
     expect([...enable.verbs.keys()]).toEqual(["enable", "configure"]);
     enable.verbs.get("enable")!.press();
     expect(enable.onAct).toHaveBeenCalledWith("use");
+    // On this server's build, a connected machine's config is synced from the toolbar too.
+    const inSync = dialog(ready, null);
+    inSync.verbs.get("syncConfig")!.press();
+    expect(inSync.onAct).toHaveBeenCalledWith("syncConfig");
+  });
+
+  it("says when the config was last synced or why it failed, and lists what it could not carry", () => {
+    const at = new Date(Date.now() - 3 * 60_000).toISOString();
+    const synced = dialog(
+      { ...ready, configSync: { at, ok: true, envOnly: [], skipped: [] } },
+      null,
+    ).html;
+    const line = elementsOf(readMarkup(synced)).find((el) => "data-config-sync" in el.attrs);
+    expect(line?.attrs["data-config-sync"]).toBe("ok");
+    expect(synced).not.toContain("data-config-sync-notice");
+
+    const failed = dialog(
+      {
+        ...ready,
+        configSync: {
+          at,
+          ok: false,
+          detail: "Plugins not synced — it answered 500",
+          envOnly: [
+            { projectId: "p", provider: "openai", modelId: "gpt-5", variable: "OPENAI_API_KEY" },
+          ],
+          skipped: [
+            {
+              projectId: "p",
+              provider: "penguin-go",
+              modelId: "gemini-3.7-flash",
+              code: "model_not_addable",
+              reason: "cannot be added",
+            },
+          ],
+        },
+      },
+      null,
+    ).html;
+    const c = S.machines.detail.configSync;
+    const seen = seenText(readMarkup(failed));
+    expect(seen).toContain(c.failed("Plugins not synced — it answered 500"));
+    expect(seen).toContain(c.envOnly(c.envModel("openai/gpt-5", ["OPENAI_API_KEY"])));
+    expect(seen).toContain(
+      c.skippedModel("penguin-go/gemini-3.7-flash", S.errors.byCode.model_not_addable),
+    );
   });
 
   it("greys what cannot run, saying why once under the toolbar", () => {

@@ -155,7 +155,7 @@ export function HostFields({
         label={m.name}
         required
         hint={fixedName ? undefined : m.nameHint}
-        placeholder="build-box"
+        placeholder={m.namePlaceholder}
         disabled={fixedName || locked}
         {...field("alias")}
       />
@@ -164,7 +164,7 @@ export function HostFields({
         label={m.hostName}
         required
         hint={m.hostNameHint}
-        placeholder="192.168.1.20"
+        placeholder={m.hostNamePlaceholder}
         disabled={locked}
         {...field("hostName")}
       />
@@ -173,15 +173,14 @@ export function HostFields({
         <Input
           size="sm"
           label={m.user}
-          hint={m.userHint}
-          placeholder="ubuntu"
+          placeholder={m.userPlaceholder}
           disabled={locked}
           {...field("user")}
         />
         <Input
           size="sm"
           label={m.port}
-          placeholder="22"
+          placeholder={m.portPlaceholder}
           inputMode="numeric"
           disabled={locked}
           {...field("port")}
@@ -191,7 +190,7 @@ export function HostFields({
         size="sm"
         label={m.identityFile}
         hint={m.identityFileHint}
-        placeholder="~/.ssh/id_ed25519"
+        placeholder={m.identityFilePlaceholder}
         disabled={locked}
         {...field("identityFile")}
       />

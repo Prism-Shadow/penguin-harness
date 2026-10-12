@@ -4,9 +4,10 @@
  * A card's quick buttons are the Agents card's: Use starts a new conversation in the machine's
  * temporary workspace, Settings opens the Machine dialog, Delete takes the machine off this
  * Project — after a confirmation that says plainly what happens: the connection drops, and the
- * program and its data stay on the machine, its host in the ssh config. The Machine dialog holds
- * every other verb in one toolbar (machine-detail-dialog.tsx): Enable or Update, Stop or Start its
- * server, Restart it, Configure SSH, Uninstall.
+ * program and its data stay on the machine, its host in the ssh config. A connected machine on
+ * this server's build also has Sync config, which hands it this Project's config now. The Machine
+ * dialog holds every other verb in one toolbar (machine-detail-dialog.tsx): Enable or Update, Stop
+ * or Start its server, Restart it, Sync config, Configure SSH, Uninstall.
  *
  * One card per machine, this server first, then the machines in use by name. A card says the
  * state once, as a mark beside the name with its word on hover (machine-card.tsx). While machines
@@ -337,6 +338,8 @@ export function MachinesPage() {
         return void post((project) => api.connectMachine(project, machine.id));
       case "restart":
         return void post((project) => api.restartMachine(project, machine.id));
+      case "syncConfig":
+        return void post((project) => api.syncMachineConfig(project, machine.id));
       case "configure":
         return void configure(machine.alias);
       case "uninstall":
@@ -361,6 +364,7 @@ export function MachinesPage() {
       busy={posting}
       onOpen={() => setOpenId(machine.id)}
       onUse={() => startChat(machine)}
+      onSyncConfig={() => void post((project) => api.syncMachineConfig(project, machine.id))}
       onDelete={() => setPendingVerb({ kind: "delete", id: machine.id })}
     />
   );

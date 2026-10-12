@@ -22,12 +22,14 @@
  *                                 202, or 409.
  * POST /:machineId/uninstall    — stop it and remove the program, and with `removeData` its
  *                                 data root; 202, or 409.
+ * POST /:machineId/sync         — hand that connected machine the Project config now; 202, or
+ *                                 409 (`not_connected`, `job_running`, …).
  * POST /:machineId/diagnose     — check what would stop an install or a connect there, writing
  *                                 nothing on it; 200, or 409 while a job works on it.
  * GET  /:machineId/dirs?path=   — browse that machine's directories over ssh.
  *
- * Under a Project because the page is, and because this Project's Model credentials go to
- * this Project's machines and no others (machines/models-sync.ts). The machine itself is not
+ * Under a Project because the page is, and because this Project's config, its Model
+ * credentials included, goes to this Project's machines and no others (machines/models-sync.ts). The machine itself is not
  * project-scoped: connect, disconnect and dirs act on one host, shared by every Project using
  * it; what a Project owns is the membership.
  *
@@ -358,7 +360,7 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
    * the page says each in a sentence of its own.
    */
   const refuseOnInstalled = (
-    why: "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported",
+    why: "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported" | "not-connected",
   ): HttpError => {
     if (why === "busy") return new HttpError(409, "job_running", "A job is already running there.");
     if (why === "unknown-machine") {
@@ -366,6 +368,9 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
     }
     if (why === "self")
       return new HttpError(409, "self_machine", "That is the machine this server runs on.");
+    if (why === "not-connected") {
+      return new HttpError(409, "not_connected", "That machine is not connected.");
+    }
     if (why === "unsupported") {
       return new HttpError(
         409,
@@ -397,6 +402,17 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       c.req.param("machineId"),
       body.removeData === true,
     );
+    if (!started.ok) throw refuseOnInstalled(started.why);
+    return c.json(state(c), 202);
+  });
+
+  /**
+   * Hands that machine the config of every Project using it now — models, command policy,
+   * new-chat defaults, plugin list — as a job, 202. Only a connected machine: one on another
+   * build than this server's is refused at the job's first step, pointing at Update.
+   */
+  app.post("/:machineId/sync", (c) => {
+    const started = deps.machines.startSyncConfig(c.req.param("machineId"));
     if (!started.ok) throw refuseOnInstalled(started.why);
     return c.json(state(c), 202);
   });

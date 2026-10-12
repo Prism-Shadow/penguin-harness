@@ -12,11 +12,14 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type { Machines } from "../../machines/service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface CommandPolicyRouteDeps {
   projectConfigService: ProjectConfigStore;
   access: Access;
+  /** The machines this Project uses enforce the same policy (machines/service.ts). */
+  machines: Pick<Machines, "syncConfigEverywhere">;
 }
 
 /** Bounds for the rule list: enough for a serious deny list, small enough to stay a config file. */
@@ -120,12 +123,14 @@ export function commandPolicyRoutes(deps: CommandPolicyRouteDeps): Hono<AppEnv> 
     // deliberate "no rules", distinct from omitting the field by mistake).
     const rules = validateRules(body.rules);
 
-    return c.json(
-      await deps.projectConfigService.setCommandPolicy(projectId, {
-        ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
-        rules,
-      }),
-    );
+    const policy = await deps.projectConfigService.setCommandPolicy(projectId, {
+      ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+      rules,
+    });
+    // A Session started on one of this Project's machines is confined by that machine's copy.
+    // Not awaited: the person saving is not the one who should wait for a set of ssh tunnels.
+    void deps.machines.syncConfigEverywhere(projectId);
+    return c.json(policy);
   });
 
   return app;

@@ -34,12 +34,15 @@ import {
   effectivePluginTable,
   loadProjectConfig,
 } from "@prismshadow/penguin-core";
-import type { ProjectConfig } from "@prismshadow/penguin-core";
+import type { ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   SshHostSummary,
   MachineCheck,
+  MachineConfigSync,
   MachineDiagnosis,
+  MachineEnvOnly,
   MachineInfo,
+  MachineSkippedModel,
   MachineJob,
   MachinePhase,
   MachineReconnect,
@@ -100,9 +103,10 @@ import { probeServerState } from "./server-state.js";
 import { upgradeRemote } from "./upgrade.js";
 import type { UpgradeOutcome } from "./upgrade.js";
 import { mintTokenOnRemote } from "./remote-token.js";
-import { syncModelsToMachine } from "./models-sync.js";
+import { envSourced, syncModelsToMachine } from "./models-sync.js";
 import { syncPluginsToMachine, type WantedPlugin } from "./plugins-sync.js";
 import type { LocalModels } from "./models-sync.js";
+import { localSettings, syncSettingsToMachine } from "./settings-sync.js";
 import { machineApi } from "./machine-api.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
 import type { MachineRow } from "../db/repos/machines.js";
@@ -128,7 +132,7 @@ import type { RemoteLayout } from "./layout.js";
 type Say = (line: string, phase?: MachinePhase) => void;
 
 /**
- * Why a machine was not handed this server's Model config: what it runs, and what it must run
+ * Why a machine was not handed this server's Project config: what it runs, and what it must run
  * instead. Said where the job stops, and as the reason a kept machine is still on its way back.
  */
 function mustUpdate(running: RunningBuild | null, to?: string): string {
@@ -137,6 +141,33 @@ function mustUpdate(running: RunningBuild | null, to?: string): string {
   return runs === ""
     ? `That machine must be updated${target} before it can use this server's models.`
     : `That machine runs ${runs}; it must be updated${target} before it can use this server's models.`;
+}
+
+/**
+ * This side's model table for a Project, whole: every group connection (`[providers.<id>]`)
+ * and every entry, a bare one included. The file is the only truth, here as over there: a
+ * bare row runs on its group's table, which travels beside it, and the machine's own copy of
+ * a preset may have been seeded by another release or edited since — so nothing is skipped
+ * on the guess that the far side already holds the same.
+ */
+function localModelsOf(config: ProjectConfig): LocalModels {
+  return {
+    models: config.models,
+    ...(config.providers !== undefined ? { providers: config.providers } : {}),
+    ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
+    ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
+    ...(config.name !== undefined ? { name: config.name } : {}),
+  };
+}
+
+/** `provider/model (VAR, VAR)`, one per model, in the order the config lists them. */
+function envOnlyList(rows: readonly MachineEnvOnly[]): string {
+  const byModel = new Map<string, string[]>();
+  for (const row of rows) {
+    const key = `${row.provider}/${row.modelId}`;
+    byModel.set(key, [...(byModel.get(key) ?? []), row.variable]);
+  }
+  return [...byModel].map(([model, variables]) => `${model} (${variables.join(", ")})`).join(", ");
 }
 
 /** A job's outcome when it did not go through. */
@@ -176,6 +207,8 @@ const DIAGNOSABLE_STEPS = new Set([
 type InstallRefusal = "busy" | "unknown-machine" | "no-image" | "self";
 /** Why a connect — or a stop, a restart, an uninstall — was refused before any ssh ran. */
 type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "unsupported";
+/** Why a config sync was refused before any ssh ran: those, or a machine not connected. */
+type SyncRefusal = ConnectRefusal | "not-connected";
 
 /** A machine this server keeps connected, while it is brought back (MachineReconnect, in epoch ms). */
 interface Reconnecting {
@@ -239,8 +272,10 @@ export interface MachinesEffects {
     runOn: MachinesEffects["runOn"],
   ) => ReturnType<typeof mintTokenOnRemote>;
   upgrade: typeof upgradeRemote;
-  /** This server's own Project config, credentials in plaintext — the source of a model sync. */
+  /** This server's own Project config, credentials in plaintext — the source of a config sync. */
   loadConfig: (projectId: string) => Promise<ProjectConfig>;
+  /** This server's environment: what a model entry with no key of its own may take one from. */
+  env: () => Readonly<Record<string, string | undefined>>;
   /**
    * Packs this server's checkout into an install image (checkout-image.ts) — or null when it
    * does not run from a checkout, which is every server but a development one.
@@ -285,12 +320,17 @@ export class MachinesService {
   /** Sessions minted on machines, by address, reused until near their TTL. */
   readonly #sessions = new Map<string, { cookie: string; at: number }>();
   /**
-   * Machines with a model sync in flight, and whether another was asked for meanwhile. An
+   * Machines with a config sync in flight, and whether another was asked for meanwhile. An
    * edit that arrives while a sync is running is not dropped and not queued behind it one
    * by one: ONE trailing sync runs when the current one ends, reading the config as it is
    * then — which is what every edit in between wanted written.
    */
   readonly #syncing = new Map<string, { again: boolean }>();
+  /**
+   * What each machine's last config sync came to, by address. In memory like #statuses: a
+   * restart syncs every machine it brings back anyway.
+   */
+  readonly #configSyncs = new Map<string, MachineConfigSync>();
   /**
    * What the proxy's traffic last learned of each machine's API, by address. In memory
    * like #statuses: a sighting is only true for the moment it was taken.
@@ -364,6 +404,7 @@ export class MachinesService {
       mintToken: (target, runOn) => mintTokenOnRemote(target, layout, runOn),
       upgrade: upgradeRemote,
       loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
+      env: () => process.env,
       packCheckout: null,
       now: () => new Date(),
       announce: () => {},
@@ -512,6 +553,7 @@ export class MachinesService {
       const row = this.repo.get(id);
       const session = this.#liveSession(id);
       const reconnect = this.#reconnects.get(id);
+      const configSync = this.#configSyncs.get(id);
       return {
         id,
         alias,
@@ -523,6 +565,7 @@ export class MachinesService {
         ...(reconnect === undefined ? {} : { reconnect: this.#reconnectInfo(reconnect) }),
         ...(row?.sessionPid != null ? { keepConnected: true as const } : {}),
         api: this.#apiSeen.get(id) ?? null,
+        ...(configSync === undefined ? {} : { configSync }),
         // The layout's own spelling, in the shell that machine speaks. Unknown platform
         // reads as POSIX: it is the majority, and an install corrects the record.
         root: row?.platform === "win32" ? this.#layout.dataRoot.win : this.#layout.dataRoot.posix,
@@ -542,11 +585,22 @@ export class MachinesService {
     return this.#allMachines().map((machine) => {
       if (machine.local) return machine;
       const mine = members.has(machine.id);
+      const sync = machine.configSync;
       return {
         ...machine,
         installed: mine ? machine.installed : null,
         ...(mine ? { member: true as const } : {}),
         ...(!mine && machine.installed !== null ? { elsewhere: machine.installed } : {}),
+        // Another Project's models are its own business, on this page as on the machine.
+        ...(sync === undefined
+          ? {}
+          : {
+              configSync: {
+                ...sync,
+                envOnly: sync.envOnly.filter((entry) => entry.projectId === projectId),
+                skipped: sync.skipped.filter((entry) => entry.projectId === projectId),
+              },
+            }),
       };
     });
   }
@@ -1367,7 +1421,7 @@ export class MachinesService {
   /**
    * Brings machines into use, as one queued batch: for each, install (or bring the build
    * forward) if the record says it is not on this server's build, then connect and hand it
-   * the Model config — the whole of what a person means by "use this machine", as one job
+   * the Project config — the whole of what a person means by "use this machine", as one job
    * per machine, one after another. Refusals decidable without ssh are answered by id, so
    * the page can say them; everything else is queued and reported through `jobs`.
    */
@@ -1564,7 +1618,7 @@ export class MachinesService {
       if (after.state.kind === "running") remotePort = after.state.port;
     }
 
-    // Whatever answers on that port gets this server's Model config next, and a server of
+    // Whatever answers on that port gets this server's Project config next, and a server of
     // another build may not read it: an Agent there then fails at its first Session. So it is
     // asked what it runs first, and brought in line before anything is handed over.
     const lined = await this.#inLine(address, target, remotePort, expected, say);
@@ -1583,14 +1637,17 @@ export class MachinesService {
     }
     this.repo.patch(address, { remotePort });
     say(`Connected; its server is on port ${remotePort} over there.`);
-    // An Agent started over there resolves its model against THAT machine's config, so a
-    // machine without our credentials is connected and unusable.
-    say("Handing over the Model config…", "sync");
-    if (lined.unasked === undefined) {
-      await this.#syncModels(address, target, remotePort, say, this.#projectsUsing(address));
-    } else {
-      say(`Models not synced — ${lined.unasked}`);
-    }
+    // An Agent started over there resolves its model, its command policy and its defaults
+    // against THAT machine's config, so a machine without ours is connected and unusable.
+    say("Handing over the Project config…", "sync");
+    await this.#syncConfig(
+      address,
+      target,
+      remotePort,
+      say,
+      this.#projectsUsing(address),
+      lined.unasked,
+    );
     // Its own events, carried into this server's stream from here on (event-relay.ts). A
     // machine whose server has minted no id yet cannot be named in them, and has none to send;
     // a generation stopped meanwhile carries nothing — its successor subscribes for itself.
@@ -1604,7 +1661,7 @@ export class MachinesService {
   }
 
   /**
-   * Makes the server answering on a machine's port the one to hand this server's Model config
+   * Makes the server answering on a machine's port the one to hand this server's Project config
    * to, or says why it is not:
    *
    * - a server that does not run the build on its disk ({@link RunningBuild.foreign}: say a
@@ -1617,6 +1674,9 @@ export class MachinesService {
    * a config written for one build and read by another is how every Session there fails. A
    * server that cannot be asked at all is connected all the same (as it was before this check:
    * the hand-over would fail at the same door), and `unasked` says why nothing is handed to it.
+   *
+   * `mend` false only checks: a server on another build is refused with the same sentence and
+   * nothing is done to it — what a Sync config job asks, which is not an update.
    */
   async #inLine(
     address: string,
@@ -1624,6 +1684,7 @@ export class MachinesService {
     port: number,
     expected: PushPlan | null,
     say: Say,
+    mend = true,
   ): Promise<{ ok: true; port: number; unasked?: string } | { ok: false; message: string }> {
     // The steps below are this connect's, not jobs of their own: their lines, not their phases.
     const tell: Say = (line) => say(line);
@@ -1635,6 +1696,7 @@ export class MachinesService {
         unasked: `could not ask that machine what it runs: ${asked.detail}`,
       };
     }
+    if (asked.build.foreign && !mend) return { ok: false, message: mustUpdate(asked.build) };
     if (asked.build.foreign) {
       say(
         `Its server runs ${asked.build.release}, not the build installed there; restarting it onto that build…`,
@@ -1657,6 +1719,7 @@ export class MachinesService {
       if (asked.build.foreign) return { ok: false, message: mustUpdate(asked.build) };
     }
     if (expected === null || runsPlan(asked.build, expected)) return { ok: true, port };
+    if (!mend) return { ok: false, message: mustUpdate(asked.build, expected.version) };
 
     say(`It runs ${asked.build.version}; bringing it to ${expected.version} first…`);
     const handOver = () => this.#handOverBuild(address, target, expected, tell);
@@ -1845,7 +1908,7 @@ export class MachinesService {
 
   /**
    * One attempt to bring a machine back — the whole connect: what runs there, its server started
-   * if it is not, the connection held, the Model config handed over. A failure waits twice as long
+   * if it is not, the connection held, the Project config handed over. A failure waits twice as long
    * as the one before, up to the cap; the third in a row, and any later one that fails
    * differently, runs the connection check, whose answer the page shows as the explanation.
    */
@@ -1994,51 +2057,140 @@ export class MachinesService {
 
   // --- work on a machine ---------------------------------------------------------------------
 
-  /** Hands a machine the Model credentials an Agent over there needs. Failure is reported, never fatal. */
-  async #syncModels(
+  /**
+   * Hands a machine the Project config of every Project using it — what an Agent over there
+   * resolves against that machine's own copy: the models with their groups, the default and
+   * vision model and the Project's name (models-sync.ts), the sandbox command policy and the
+   * new-chat defaults (settings-sync.ts), and the plugin list (plugins-sync.ts). A part the
+   * machine refuses for one Project is said and the rest still go; only a channel that gives out
+   * ends it. What it came to is kept as the machine's last sync, beside the values this server's
+   * environment supplies, which no sync carries.
+   */
+  async #syncConfig(
     address: string,
     target: RemoteTarget,
     port: number,
     say: Say,
     projects: string[],
-  ): Promise<void> {
+    /** Why nothing may be handed over this time: the machine could not say what it runs. */
+    withheld?: string,
+  ): Promise<MachineConfigSync> {
+    // One read of each Project's config serves every part of this sync; the next sync reads
+    // the file afresh, which is what a trailing sync after an edit is for.
+    const configs = new Map<string, Promise<ProjectConfig>>();
+    const configOf = (projectId: string): Promise<ProjectConfig> => {
+      let config = configs.get(projectId);
+      if (config === undefined) {
+        config = this.#effects.loadConfig(projectId);
+        // Each part handles a rejection its own way; the shared copy must not go unhandled.
+        config.catch(() => {});
+        configs.set(projectId, config);
+      }
+      return config;
+    };
+    const envOnly = await this.#envOnly(projects, configOf);
+    const skipped: MachineSkippedModel[] = [];
+    const problems: string[] = [];
+    const fail = (line: string) => {
+      problems.push(line);
+      say(line);
+    };
+    const finish = (): MachineConfigSync => {
+      // Said last, whatever went through: these never travel, so the machine lacks them anyway.
+      for (const projectId of projects) {
+        const rows = envOnly.filter((entry) => entry.projectId === projectId);
+        if (rows.length === 0) continue;
+        const whose = projects.length > 1 ? ` for ${projectId}` : "";
+        say(
+          `Not carried${whose} — these authenticate from this server's environment: ${envOnlyList(rows)}; enter the key on the Models page, or set the same variable on that machine.`,
+        );
+      }
+      const sync: MachineConfigSync = {
+        at: this.#effects.now().toISOString(),
+        ok: problems.length === 0,
+        ...(problems.length === 0 ? {} : { detail: problems.join("\n") }),
+        envOnly,
+        skipped,
+      };
+      this.#configSyncs.set(address, sync);
+      this.#changed();
+      return sync;
+    };
     if (projects.length === 0) {
-      say("No models synced — no Project on this server uses that machine.");
-      return;
+      say("Nothing synced — no Project on this server uses that machine.");
+      return finish();
+    }
+    if (withheld !== undefined) {
+      fail(`Config not synced — ${withheld}`);
+      return finish();
     }
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) {
-      say(`Models not synced — ${session.detail}`);
-      return;
+      fail(`Config not synced — ${session.detail}`);
+      return finish();
     }
-    const outcome = await syncModelsToMachine({
-      api: machineApi(this.#effects.agent(target, port), port, session.cookie),
-      loadLocal: (projectId) => this.#localModels(projectId),
+    const api = machineApi(this.#effects.agent(target, port), port, session.cookie);
+
+    const models = await syncModelsToMachine({
+      api,
+      loadLocal: (projectId) => configOf(projectId).then(localModelsOf, () => null),
       projects,
     });
-    if (outcome.kind === "failed") {
-      say(`Models not synced — ${outcome.detail}`);
-      return;
+    if (models.kind === "failed") {
+      fail(`Config not synced — ${models.detail}`);
+      return finish();
     }
-    if (outcome.created.length > 0) say(`Created there: ${outcome.created.join(", ")}.`);
-    if (outcome.projects.length > 0) say(`Models synced: ${outcome.projects.join(", ")}.`);
-    for (const { projectId, detail } of outcome.refused) {
-      say(`Models of ${projectId} not synced — ${detail}`);
+    if (models.created.length > 0) say(`Created there: ${models.created.join(", ")}.`);
+    for (const entry of models.skipped) {
+      skipped.push(entry);
+      say(`Skipped ${entry.provider}/${entry.modelId} — ${entry.reason}`);
+      const config = await configOf(entry.projectId).catch(() => null);
+      const names = (ref: ModelRef | undefined) =>
+        ref?.provider === entry.provider && ref.model_id === entry.modelId;
+      for (const [pointer, ref] of [
+        ["Default model", config?.default_model],
+        ["Vision model", config?.vision_model],
+      ] as const) {
+        if (names(ref)) {
+          say(
+            `${pointer} not sent — it is ${entry.provider}/${entry.modelId}, which was skipped; that machine keeps its own.`,
+          );
+        }
+      }
     }
-    // Same session, same Projects: a plugin a Project asks for has to be loaded on the
-    // machine that will run its Sessions, and enabling it once per machine by hand is not
-    // a path this product has (PRFC-0010).
+    if (models.projects.length > 0) say(`Models synced: ${models.projects.join(", ")}.`);
+    for (const { projectId, detail } of models.refused) {
+      fail(`Models of ${projectId} not synced — ${detail}`);
+    }
+
+    const settings = await syncSettingsToMachine({
+      api,
+      loadLocal: (projectId) => configOf(projectId).then(localSettings),
+      projects,
+    });
+    if (settings.projects.length > 0) {
+      say(`Command policy and new-chat defaults synced: ${settings.projects.join(", ")}.`);
+    }
+    for (const { projectId, detail } of settings.notes) {
+      say(`New-chat defaults of ${projectId}: ${detail}.`);
+    }
+    for (const { projectId, part, detail } of settings.refused) {
+      fail(`The ${part} of ${projectId} not synced — ${detail}`);
+    }
+
+    // A plugin a Project asks for has to be loaded on the machine that will run its Sessions,
+    // and enabling it once per machine by hand is not a path this product has (PRFC-0010).
     const plugins = await syncPluginsToMachine({
-      api: machineApi(this.#effects.agent(target, port), port, session.cookie),
+      api,
       // Asked of THIS machine: its own table joins the shared one, keyed by the id its server
       // minted — null (no server there has reported one) reads the shared table alone.
       loadLocal: (projectId) =>
-        this.#localPlugins(projectId, this.repo.get(address)?.machineId ?? null),
+        this.#localPlugins(configOf, projectId, this.repo.get(address)?.machineId ?? null),
       projects,
     });
     if (plugins.kind === "failed") {
-      say(`Plugins not synced — ${plugins.detail}`);
-      return;
+      fail(`Plugins not synced — ${plugins.detail}`);
+      return finish();
     }
     if (plugins.added.length > 0) say(`Plugins added there: ${plugins.added.join(", ")}.`);
     if (plugins.removed.length > 0) say(`Plugins removed there: ${plugins.removed.join(", ")}.`);
@@ -2049,17 +2201,39 @@ export class MachinesService {
     }
     if (plugins.restartPending) say(`That machine restarts to finish loading its plugins.`);
     for (const { projectId, detail } of plugins.refused) {
-      say(`Plugins of ${projectId} not synced — ${detail}`);
+      fail(`Plugins of ${projectId} not synced — ${detail}`);
     }
-    void address;
+    return finish();
+  }
+
+  /**
+   * The values the given Projects' models take from this server's environment (models-sync.ts
+   * `envSourced`); a Project whose config cannot be read has none to name.
+   */
+  async #envOnly(
+    projects: readonly string[],
+    configOf: (projectId: string) => Promise<ProjectConfig>,
+  ): Promise<MachineEnvOnly[]> {
+    const env = this.#effects.env();
+    const found: MachineEnvOnly[] = [];
+    for (const projectId of projects) {
+      const config = await configOf(projectId).catch(() => null);
+      if (config === null) continue;
+      for (const entry of envSourced(config, env)) found.push({ projectId, ...entry });
+    }
+    return found;
   }
 
   /**
    * What a Project asks of one machine, by package name with its pinned version; an
    * unreadable config syncs nothing rather than emptying the machine.
    */
-  async #localPlugins(projectId: string, machineId: string | null): Promise<WantedPlugin[]> {
-    const config = await this.#effects.loadConfig(projectId);
+  async #localPlugins(
+    configOf: (projectId: string) => Promise<ProjectConfig>,
+    projectId: string,
+    machineId: string | null,
+  ): Promise<WantedPlugin[]> {
+    const config = await configOf(projectId);
     const table = effectivePluginTable(config.plugins ?? { all: {}, machines: {} }, machineId);
     return Object.entries(table).map(([name, req]) =>
       req.version === undefined ? { name } : { name, version: req.version },
@@ -2088,34 +2262,11 @@ export class MachinesService {
     try {
       do {
         slot.again = false;
-        await this.#syncModels(address, target, port, () => {}, projects());
+        await this.#syncConfig(address, target, port, () => {}, projects());
       } while (slot.again);
     } finally {
       this.#syncing.delete(address);
     }
-  }
-
-  /**
-   * This side's model table for a Project, whole: every group connection (`[providers.<id>]`)
-   * and every entry, a bare one included. The file is the only truth, here as over there: a
-   * bare row runs on its group's table, which travels beside it, and the machine's own copy of
-   * a preset may have been seeded by another release or edited since — so nothing is skipped
-   * on the guess that the far side already holds the same.
-   */
-  async #localModels(projectId: string): Promise<LocalModels | null> {
-    let config: ProjectConfig;
-    try {
-      config = await this.#effects.loadConfig(projectId);
-    } catch {
-      return null;
-    }
-    return {
-      models: config.models,
-      ...(config.providers !== undefined ? { providers: config.providers } : {}),
-      ...(config.default_model !== undefined ? { defaultModel: config.default_model } : {}),
-      ...(config.vision_model !== undefined ? { visionModel: config.vision_model } : {}),
-      ...(config.name !== undefined ? { name: config.name } : {}),
-    };
   }
 
   /**
@@ -2394,9 +2545,60 @@ export class MachinesService {
     });
     this.#statuses.delete(address);
     this.#apiSeen.delete(address);
+    this.#configSyncs.delete(address);
     closeConnectionTo(address);
     this.#changed();
     return { ok: true, uninstalled: true, dataRemoved: removeData };
+  }
+
+  /**
+   * Hands a connected machine the Project config now, as a job: `check`, the build check a
+   * connect makes — a machine on another build is refused with the sentence that points at
+   * Update, and nothing is done to it — then `sync`. Refused before any ssh for a machine that is
+   * not connected.
+   */
+  startSyncConfig(address: string): { ok: true } | { ok: false; why: SyncRefusal } {
+    const refused = this.#refuseOnInstalled(address);
+    if (refused !== null) return { ok: false, why: refused };
+    if (this.#liveSession(address) === null || this.repo.get(address)?.remotePort == null) {
+      return { ok: false, why: "not-connected" };
+    }
+    const machine = this.#allMachines().find((entry) => entry.id === address)!;
+    this.#startJob("sync", machine, ["check", "sync"], { offerReplaceProgram: false }, (say) =>
+      this.#syncConfigWork(machine, say),
+    );
+    return { ok: true };
+  }
+
+  async #syncConfigWork(machine: MachineInfo, say: Say): Promise<MachineJob["result"]> {
+    const address = machine.id;
+    const target = this.#targetOf(machine.alias);
+    const port = this.repo.get(address)?.remotePort ?? null;
+    if (port === null || this.#liveSession(address) === null) {
+      return {
+        ok: false,
+        step: "check",
+        message: "that machine is no longer connected.",
+        canReplaceProgram: false,
+      };
+    }
+    say("Asking what it runs…", "check");
+    const lined = await this.#inLine(address, target, port, this.#plan(), say, false);
+    if (!lined.ok) {
+      return { ok: false, step: "check", message: lined.message, canReplaceProgram: false };
+    }
+    say("Handing over the Project config…", "sync");
+    const sync = await this.#syncConfig(
+      address,
+      target,
+      lined.port,
+      say,
+      this.#projectsUsing(address),
+      lined.unasked,
+    );
+    return sync.ok
+      ? { ok: true, synced: true }
+      : { ok: false, step: "sync", message: sync.detail ?? "", canReplaceProgram: false };
   }
 
   /**
@@ -2489,20 +2691,15 @@ export class MachinesService {
     await (this.#checkout?.holding(plan, sweep) ?? sweep());
   }
 
-  /** Brings every connected machine up to date with this server's Model config. */
   /**
-   * Pushes a Project's models to every connected machine it uses — a key rotated here, a
-   * default switched here, reaches them at once. Not through #sweep: that returns null for a
-   * machine that is busy and would silently drop the edit; a sync in flight is instead told
-   * to run once more (#syncCoalesced), and an install in flight on the machine is not a
-   * reason to lose a credential either — the two do not contend for the shell.
+   * Pushes a Project's config to every connected machine it uses — a key rotated here, a
+   * default switched, a command policy edited, the Project renamed, a plugin listed: each
+   * reaches them at once. Not through #sweep: that returns null for a machine that is busy and
+   * would silently drop the edit; a sync in flight is instead told to run once more
+   * (#syncCoalesced), and an install in flight on the machine is not a reason to lose a
+   * credential either — the two do not contend for the shell.
    */
-  /**
-   * Both syncs travel together (see #syncModels), so this is also how a plugin change
-   * reaches the fleet. Named for the models because that is what it was, and renaming an
-   * interface member is a contract change a pushed platform pays for.
-   */
-  async syncModelsEverywhere(projectId: string): Promise<void> {
+  async syncConfigEverywhere(projectId: string): Promise<void> {
     // A machine left on another build than this server's image keeps the config it has: what
     // this server writes is for its own build (#inLine says the same at connect). Updating the
     // machine is what brings it back into the sync.
@@ -2521,9 +2718,11 @@ export class MachinesService {
           this.#liveSession(address) === null ? null : (this.repo.get(address)?.remotePort ?? null);
         if (port === null) return;
         try {
-          await this.#syncCoalesced(address, this.#targetOf(machine.alias), port, () => [
-            projectId,
-          ]);
+          // Every Project using the machine, not only the one edited: a trailing run serves
+          // whichever edits it coalesced, and the machine's last-sync record speaks for all of them.
+          await this.#syncCoalesced(address, this.#targetOf(machine.alias), port, () =>
+            this.#projectsUsing(address),
+          );
         } catch {
           // Best effort: the connect log is where a sync's own words go; this one has none.
         }
@@ -2540,7 +2739,7 @@ export abstract class Machines extends Interface<
     | "job"
     | "startInstall"
     | "start"
-    | "syncModelsEverywhere"
+    | "syncConfigEverywhere"
     | "proxyTarget"
     | "jobs"
     | "startUse"

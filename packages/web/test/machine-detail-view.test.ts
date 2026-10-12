@@ -10,7 +10,8 @@
  * - The toolbar: one row, no verb twice. A machine with nothing installed is enabled; one on
  *   another build is updated, and only then — in sync, there is no update to offer, hidden rather
  *   than greyed; then its server is stopped while it is kept connected, started once it is not;
- *   restarted; its ssh host configured; the program uninstalled. This server's own entry has none.
+ *   restarted; its config synced, only while it is connected on this server's build; its ssh host
+ *   configured; the program uninstalled. This server's own entry has none.
  * - A verb waits for one reason, and one sentence says it, naming every verb it holds: a job on
  *   its way holds all but the ssh form; a machine being brought back holds stopping, restarting
  *   and uninstalling; a stopped server holds restarting; no build to install holds enabling. No
@@ -183,7 +184,7 @@ describe("the toolbar", () => {
       .map((i) => i.verb);
 
   it("offers a connected machine its verbs in one row, none of them twice and none of them waiting", () => {
-    expect(verbs(machine())).toEqual(["stop", "restart", "configure", "uninstall"]);
+    expect(verbs(machine())).toEqual(["stop", "restart", "syncConfig", "configure", "uninstall"]);
     expect(machineToolbar(machine(), null, IMAGE, false).sentence).toBeNull();
   });
 
@@ -199,7 +200,9 @@ describe("the toolbar", () => {
     ]);
     expect(bar.items[0]).toMatchObject({ primary: true, held: null });
     // In sync — or with no build of this server's to compare against — there is nothing to update.
+    // Out of sync there is no config sync either: the update hands the config over.
     expect(verbs(machine())).not.toContain("update");
+    expect(verbs(behind)).not.toContain("syncConfig");
     expect(verbs(behind, null, null)).not.toContain("update");
   });
 
@@ -227,7 +230,7 @@ describe("the toolbar", () => {
 
   it("holds every verb but the ssh form while a job is on its way", () => {
     const running = job({ running: true, phase: "install" });
-    expect(heldOf(machine(), running)).toEqual(["stop", "restart", "uninstall"]);
+    expect(heldOf(machine(), running)).toEqual(["stop", "restart", "syncConfig", "uninstall"]);
     const behind = machine({ installed: { version: "0.2.12", at: "2026-09-20T08:00:00.000Z" } });
     expect(heldOf(behind, running)).toEqual(["update", "stop", "restart", "uninstall"]);
     expect(machineToolbar(behind, running, IMAGE, false).sentence).toContain(

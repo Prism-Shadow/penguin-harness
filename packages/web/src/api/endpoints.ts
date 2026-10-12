@@ -2071,6 +2071,16 @@ export const stopMachine = (projectId: string, machineId: string) =>
   );
 
 /**
+ * Hands that connected machine the config of every Project using it now — models, command policy,
+ * new-chat defaults, plugin list (202, a job). Its `configSync` says what the sync came to.
+ */
+export const syncMachineConfig = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/sync`,
+    { method: "POST", body: {} },
+  );
+
+/**
  * Removes the program from that machine, its server stopped first; `removeData` takes its data
  * directory too. The machine stays in the list as not installed. 202, a job.
  */

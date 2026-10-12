@@ -28,6 +28,12 @@
  *   after a disconnect.
  * - Given a model edit during a sync, it is written once afterwards, never dropped; what travels
  *   is every group connection and every row, a bare preset included.
+ * - Given a Project config sync, the command policy and the new-chat defaults travel with the
+ *   models — the machine keeps its own workspace, and its own default Agent when it lacks ours —
+ *   and a value from this server's environment is named as not carried; a part the machine refuses
+ *   is said and the rest still lands. Sync config checks the build first and refuses a machine on
+ *   another build, writing nothing, and one not connected; a command policy saved here reaches the
+ *   Project's machines.
  * - Given a connected machine, its directories are listed through the alias holding it.
  * - Given a probe, the machine's own id is learned and kept; this machine's id is minted once.
  * - Given a batch to use, machines work side by side and each ends connected; stop using keeps
@@ -1246,7 +1252,9 @@ describe("machines API", () => {
         let body = "";
         req.on("data", (chunk: Buffer) => (body += chunk.toString("utf8")));
         req.on("end", () => {
-          if (req.method === "PUT") state.puts.push(JSON.parse(body) as ModelsUpdateRequest);
+          if (req.method === "PUT" && req.url?.endsWith("/models")) {
+            state.puts.push(JSON.parse(body) as ModelsUpdateRequest);
+          }
           res.writeHead(200, { "content-type": "application/json" });
           res.end(
             req.url === "/api/version"
@@ -1439,7 +1447,7 @@ describe("machines API", () => {
         machinesRepo.patch("ssh:nas", { version: "9.9.9+hmr.0123456789ab" });
         connected.add("ssh:nas");
 
-        await t.deps.machines.syncModelsEverywhere(PROJECT);
+        await t.deps.machines.syncConfigEverywhere(PROJECT);
 
         expect(remote.state.puts).toEqual([]);
       } finally {
@@ -1458,7 +1466,9 @@ describe("machines API", () => {
         let body = "";
         req.on("data", (chunk: Buffer) => (body += chunk.toString("utf8")));
         req.on("end", () => {
-          if (req.method === "PUT") puts.push(JSON.parse(body) as ModelsUpdateRequest);
+          if (req.method === "PUT" && req.url?.endsWith("/models")) {
+            puts.push(JSON.parse(body) as ModelsUpdateRequest);
+          }
         });
         setTimeout(() => {
           res.writeHead(200, { "content-type": "application/json" });
@@ -1501,7 +1511,7 @@ describe("machines API", () => {
         machinesRepo.setMembers(PROJECT, ["ssh:nas"]);
         connected.add("ssh:nas");
 
-        await t.deps.machines.syncModelsEverywhere(PROJECT);
+        await t.deps.machines.syncConfigEverywhere(PROJECT);
         await waitFor(() => remote.puts.length >= 1);
         const sent = remote.puts[0]!;
         expect(sent.providers).toEqual({ tokendance: { apiKey: "td-group-key-0123456789" } });
@@ -1533,21 +1543,224 @@ describe("machines API", () => {
         connected.add("ssh:nas");
 
         // Three edits in a burst: the first starts a sync, the next two land during it.
-        const first = t.deps.machines.syncModelsEverywhere(PROJECT);
+        const first = t.deps.machines.syncConfigEverywhere(PROJECT);
         await new Promise((resolve) => setTimeout(resolve, 10));
-        const second = t.deps.machines.syncModelsEverywhere(PROJECT);
-        const third = t.deps.machines.syncModelsEverywhere(PROJECT);
+        const second = t.deps.machines.syncConfigEverywhere(PROJECT);
+        const third = t.deps.machines.syncConfigEverywhere(PROJECT);
         await Promise.all([first, second, third]);
         // Give the trailing run its own round trips.
-        await waitFor(() => remote.asked.filter((a) => a.startsWith("PUT")).length >= 2);
+        const modelPuts = () =>
+          remote.asked.filter((a) => a === `PUT /api/projects/${PROJECT}/models`);
+        await waitFor(() => modelPuts().length >= 2);
 
-        const puts = remote.asked.filter((a) => a.startsWith("PUT"));
+        const puts = modelPuts();
         // Exactly two writes: the one in flight, and ONE trailing run for everything that
         // arrived during it — the config is read fresh then, so the last edit is what lands.
         expect(puts).toHaveLength(2);
       } finally {
         remote.close();
       }
+    });
+  });
+
+  describe("syncing the Project config", () => {
+    /**
+     * A machine's server on this server's build (or `runs`, another one): it records every write
+     * it is sent, answers with its own new-chat defaults, and refuses what `refuse` names.
+     */
+    const machineServer = async (
+      opts: {
+        runs?: string;
+        refuse?: (method: string, url: string, body: unknown) => unknown;
+      } = {},
+    ) => {
+      const writes: Array<{ method: string; url: string; body: unknown }> = [];
+      const server = http.createServer((req, res) => {
+        let text = "";
+        req.on("data", (chunk: Buffer) => (text += chunk.toString("utf8")));
+        req.on("end", () => {
+          const url = req.url ?? "";
+          const method = req.method ?? "GET";
+          const body: unknown = text === "" ? undefined : JSON.parse(text);
+          if (method !== "GET") writes.push({ method, url, body });
+          const refused = opts.refuse?.(method, url, body);
+          res.writeHead(refused === undefined ? 200 : 400, { "content-type": "application/json" });
+          res.end(
+            JSON.stringify(
+              refused !== undefined
+                ? refused
+                : url === "/api/version"
+                  ? { version: opts.runs ?? "9.9.9" }
+                  : url === "/api/projects"
+                    ? { projects: [{ projectId: PROJECT }] }
+                    : url.endsWith("/chat-defaults")
+                      ? { agentId: "their-agent", workspace: "/srv/theirs" }
+                      : url.endsWith("/plugins/installed")
+                        ? { plugins: [], shipped: [] }
+                        : { models: [] },
+            ),
+          );
+        });
+      });
+      const port = await new Promise<number>((resolve) =>
+        server.listen(0, "127.0.0.1", () => resolve((server.address() as AddressInfo).port)),
+      );
+      return { writes, port, close: () => server.close() };
+    };
+    /** This server's Project: a model keyed from its environment, a policy and new-chat defaults of its own. */
+    const bootOn = async (remote: Awaited<ReturnType<typeof machineServer>>) => {
+      await boot({
+        loadConfig: async () =>
+          ({
+            models: [
+              { provider: "deepseek", model_id: "deepseek-v4-flash", api_key: "sk-x" },
+              { provider: "openai", model_id: "gpt-5" },
+            ],
+            command_policy: { enabled: false, rules: [{ name: "no-rm", pattern: "rm -rf" }] },
+            default_chat: { agent_id: "ours", workspace: "/home/me/here", thinking_level: "high" },
+          }) as never,
+        env: () => ({ OPENAI_API_KEY: "sk-env-0123456789" }),
+        probe: async () => ({
+          state: { kind: "running" as const, port: remote.port, pid: 4242 },
+          machineId: null,
+        }),
+      });
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        remotePort: remote.port,
+      });
+      machinesRepo.setMembers(PROJECT, ["ssh:nas"]);
+      connected.add("ssh:nas");
+    };
+    const nas = () => t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas")!;
+    /** The Machines page's Sync config, followed to its end. */
+    const syncNow = async () => {
+      const res = await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/sync`);
+      expect(res.status).toBe(202);
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      return t.deps.machines.job()!;
+    };
+
+    it("carries the command policy and the new-chat defaults, keeping the machine's own workspace and, when it lacks ours, its default Agent", async () => {
+      const remote = await machineServer({
+        refuse: (method, url, body) =>
+          method === "PUT" &&
+          url.endsWith("/chat-defaults") &&
+          (body as { agentId?: string }).agentId === "ours"
+            ? { error: { code: "unknown_agent", message: "no such Agent" } }
+            : undefined,
+      });
+      try {
+        await bootOn(remote);
+
+        await t.deps.machines.syncConfigEverywhere(PROJECT);
+
+        const base = `/api/projects/${PROJECT}`;
+        expect(remote.writes.filter((w) => w.url !== `${base}/models`)).toEqual([
+          {
+            method: "PUT",
+            url: `${base}/command-policy`,
+            body: { enabled: false, rules: [{ name: "no-rm", pattern: "rm -rf", enabled: true }] },
+          },
+          {
+            method: "PUT",
+            url: `${base}/chat-defaults`,
+            body: { agentId: "ours", thinkingLevel: "high", workspace: "/srv/theirs" },
+          },
+          {
+            method: "PUT",
+            url: `${base}/chat-defaults`,
+            body: { thinkingLevel: "high", workspace: "/srv/theirs", agentId: "their-agent" },
+          },
+        ]);
+        // A default Agent the machine lacks is not a failed sync; a key from this server's
+        // environment is what the sync says it could not carry.
+        expect(nas().configSync).toMatchObject({
+          ok: true,
+          envOnly: [
+            {
+              projectId: PROJECT,
+              provider: "openai",
+              modelId: "gpt-5",
+              variable: "OPENAI_API_KEY",
+            },
+          ],
+          skipped: [],
+        });
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("Sync config checks the build, then syncs; a part the machine refuses is said, and the rest still lands", async () => {
+      const remote = await machineServer({
+        refuse: (method, url) =>
+          method === "PUT" && url.endsWith("/command-policy")
+            ? { error: { code: "invalid_rules", message: "rules exceeds 64 entries." } }
+            : undefined,
+      });
+      try {
+        await bootOn(remote);
+
+        const job = await syncNow();
+
+        expect(job.kind).toBe("sync");
+        expect(job.steps).toEqual(["check", "sync"]);
+        expect(job.result).toMatchObject({ ok: false, step: "sync", canReplaceProgram: false });
+        const refusal = `The command policy of ${PROJECT} not synced — it answered 400`;
+        expect((job.result as { message: string }).message).toContain(refusal);
+        expect(job.log.join("\n")).toContain(`Models synced: ${PROJECT}.`);
+        expect(job.log.join("\n")).toContain(
+          "Not carried — these authenticate from this server's environment: openai/gpt-5 (OPENAI_API_KEY)",
+        );
+        expect(remote.writes.map((w) => w.url)).toEqual([
+          `/api/projects/${PROJECT}/models`,
+          `/api/projects/${PROJECT}/command-policy`,
+          `/api/projects/${PROJECT}/chat-defaults`,
+        ]);
+        expect(nas().configSync).toMatchObject({
+          ok: false,
+          detail: expect.stringContaining(refusal),
+        });
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("Sync config refuses a machine on another build at its first step, writing nothing, and one not connected up front", async () => {
+      const remote = await machineServer({ runs: "9.9.8" });
+      try {
+        await bootOn(remote);
+
+        const job = await syncNow();
+
+        expect(job.result).toEqual({
+          ok: false,
+          step: "check",
+          message:
+            "That machine runs 9.9.8; it must be updated to 9.9.9 before it can use this server's models.",
+          canReplaceProgram: false,
+        });
+        expect(remote.writes).toEqual([]);
+
+        connected.delete("ssh:nas");
+        const res = await admin.post(`/api/projects/${PROJECT}/machines/ssh:nas/sync`);
+        expect(res.status).toBe(409);
+        expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+          "not_connected",
+        );
+      } finally {
+        remote.close();
+      }
+    });
+
+    it("a command policy saved here reaches the Project's machines", async () => {
+      await boot();
+      const synced = vi.spyOn(service, "syncConfigEverywhere").mockResolvedValue();
+      const res = await admin.put(`/api/projects/${PROJECT}/command-policy`, { rules: [] });
+      expect(res.status).toBe(200);
+      expect(synced).toHaveBeenCalledWith(PROJECT);
     });
   });
 

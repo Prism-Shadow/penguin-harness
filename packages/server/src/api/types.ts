@@ -5122,6 +5122,12 @@ export interface MachineInfo {
    */
   api: { answeredAt: string } | { failedAt: string; detail: string } | null;
   /**
+   * What the last time this server handed it the Project config came to: at a connect, a Sync
+   * config job, or an automatic sync after a config edit here. Absent until the first one since
+   * this server started; kept in memory only.
+   */
+  configSync?: MachineConfigSync;
+  /**
    * What the last probe found over there, or null when none has been taken. Never filled in
    * at list time: a probe costs an ssh round trip per machine, so the list reports the last
    * answer and the page asks for a fresh one when it wants one — on a widening schedule,
@@ -5137,6 +5143,48 @@ export interface MachineInfo {
    * already resolved to an absolute path.
    */
   root: string;
+}
+
+/**
+ * One config sync to a machine: when it ended, whether every part of it reached the machine for
+ * every Project using it, and what did not, in the far side's words.
+ */
+export interface MachineConfigSync {
+  /** ISO timestamp the sync ended. */
+  at: string;
+  ok: boolean;
+  /** The parts that did not go through, one per line; absent when `ok`. */
+  detail?: string;
+  /**
+   * The values the Project's models take from this server's environment variables rather than
+   * its config (an API key, or a base URL), which no sync can carry: one row per variable. On
+   * the list answered for a Project, that Project's rows only.
+   */
+  envOnly: MachineEnvOnly[];
+  /**
+   * The model entries the machine refused by name — a hand-added model in a group that takes
+   * only its built-in ones there — left out while the rest of the table went. On the list
+   * answered for a Project, that Project's rows only.
+   */
+  skipped: MachineSkippedModel[];
+}
+
+/** A model entry a machine would not take: its error code and its own words for why. */
+export interface MachineSkippedModel {
+  projectId: string;
+  provider: string;
+  modelId: string;
+  /** The far side's error code (`model_not_addable`, `model_not_routable`). */
+  code: string;
+  reason: string;
+}
+
+/** A model entry that takes `variable` from this server's environment. */
+export interface MachineEnvOnly {
+  projectId: string;
+  provider: string;
+  modelId: string;
+  variable: string;
 }
 
 /**
@@ -5186,9 +5234,9 @@ export interface MachineJob {
    * `use` is the whole pipeline — install if needed, hand over, connect, sync — as one job;
    * `connect` is what the page calls Start service; `stop` stops the machine's server and stops
    * keeping it connected; `uninstall` stops it and removes the program, and the data directory
-   * when asked.
+   * when asked; `sync` hands a connected machine the Project config.
    */
-  kind: "install" | "connect" | "restart" | "use" | "stop" | "uninstall";
+  kind: "install" | "connect" | "restart" | "use" | "stop" | "uninstall" | "sync";
   machineId: string;
   alias: string;
   /** Waiting its turn: a few machines are worked on at once, and a batch queues the rest. */
@@ -5218,6 +5266,8 @@ export interface MachineJob {
     | { ok: true; stopped: true }
     /** The program is gone from the machine; `dataRemoved` says whether its data root went too. */
     | { ok: true; uninstalled: true; dataRemoved: boolean }
+    /** Every part of the Project config reached the machine (its `configSync` says the same). */
+    | { ok: true; synced: true }
     | {
         ok: false;
         step: string;
@@ -5278,7 +5328,8 @@ export interface MachinesResponse {
 /**
  * Every step a job may name, in the order they can occur. A job lists its own subset as
  * `MachineJob.steps`: a source checkout's enable starts by building its install image
- * (`build`); a stop is `check`, `stop`; an uninstall `check`, `stop`, `remove`.
+ * (`build`); a stop is `check`, `stop`; an uninstall `check`, `stop`, `remove`; a config sync
+ * `check`, `sync`.
  */
 export const MACHINE_PHASES = [
   "build",

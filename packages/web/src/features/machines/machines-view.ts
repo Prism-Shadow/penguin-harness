@@ -211,6 +211,20 @@ export function canUse(machine: MachineInfo, job: MachineJob | null): boolean {
 }
 
 /**
+ * Whether Sync config is offered: a connected machine on this server's build. One on another
+ * build is offered Update instead, which hands the config over as it reconnects.
+ */
+export function canSyncConfig(machine: MachineInfo, imageVersion: string | null): boolean {
+  return (
+    !machine.local &&
+    machine.installed !== null &&
+    machine.connection !== null &&
+    machine.reconnect === undefined &&
+    !outOfDate(machine, imageVersion)
+  );
+}
+
+/**
  * Why Use waits, said in the card's middle while no job moves there; null when it does not
  * wait, or when the job's stepper already says what is happening. A streak of reconnecting that
  * has lasted a minute or more says for how long.

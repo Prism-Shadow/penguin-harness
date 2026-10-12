@@ -6,9 +6,13 @@
  *   brings the machine back) and one plain word, the reason behind it on the glyph's hover — the
  *   installed version, and one line saying how this server reaches the machine.
  * - The toolbar, right under it: every verb in one row of flat buttons, as a file manager lays out
- *   its commands — Update while the machine carries another build (Enable when nothing is
- *   installed), Stop or Start its server, Restart it, Configure SSH, Uninstall. A verb that cannot
- *   run now stays in place, greyed, and ONE muted sentence under the row says why and names them.
+ *   its commands, set apart by spacing alone — Update while the machine carries another build
+ *   (Enable when nothing is installed), Stop or Start its server, Restart it, Sync config while it
+ *   is connected on this server's build, Configure SSH, Uninstall. A verb that cannot run now
+ *   stays in place, greyed, and ONE muted sentence under the row says why and names them.
+ * - Under the toolbar, one quiet line on the last config sync — when, or why it failed — and an
+ *   attention notice listing what it could not carry: models keyed from this server's
+ *   environment, and models the machine would not take.
  * - Reconnecting, while the server brings a machine it keeps connected back: for how long, which
  *   attempt and when the next, the last failure — and what the connection check found, once the
  *   server ran it after failures in a row.
@@ -57,6 +61,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { DOT_TONE, jobMoving } from "./machine-card";
 import {
+  configSyncView,
   jobView,
   machineChip,
   machineFacts,
@@ -65,6 +70,7 @@ import {
 } from "./machine-detail-view";
 import type {
   CheckLine,
+  ConfigSyncView,
   Fact,
   JobStep,
   MachineChip,
@@ -87,6 +93,7 @@ const VERB_OF: Record<ToolbarVerb, MachineVerb> = {
   stop: "stop",
   start: "start",
   restart: "restart",
+  syncConfig: "syncConfig",
   configure: "configure",
   uninstall: "uninstall",
 };
@@ -383,8 +390,9 @@ function CheckList({ lines, alias }: { lines: readonly CheckLine[]; alias: strin
 
 /**
  * The toolbar: the verbs in one row of flat buttons, the primary one first in the primary look,
- * wrapping where the row does not fit; a request in flight greys every one. `data-verb` names each
- * for whatever reads the markup.
+ * wrapping where the row does not fit; a request in flight greys every one. No rule above or below
+ * it: the spacing around the row is what sets it apart. `data-verb` names each for whatever reads
+ * the markup.
  */
 export function MachineToolbar({
   items,
@@ -399,7 +407,7 @@ export function MachineToolbar({
     <div
       role="toolbar"
       aria-label={S.machines.detail.toolbar.label}
-      className="flex flex-wrap items-center gap-1 border-y border-line py-1.5"
+      className="flex flex-wrap items-center gap-1"
     >
       {items.map((item) => (
         <Button
@@ -415,6 +423,48 @@ export function MachineToolbar({
         </Button>
       ))}
     </div>
+  );
+}
+
+/**
+ * The last config sync: one quiet line — a check, or the danger cross on a failure, beside the
+ * words — and, when the sync left anything behind, one attention notice saying what and why.
+ */
+function ConfigSync({ view }: { view: ConfigSyncView }) {
+  const c = S.machines.detail.configSync;
+  return (
+    <>
+      <p
+        data-config-sync={view.ok ? "ok" : "failed"}
+        className="mt-1.5 flex items-start gap-1.5 text-xs text-fg-muted"
+      >
+        <GlyphIcon
+          d={view.ok ? ICONS.check : ICONS.xCircle}
+          size={ICON_SIZE.inlineGlyph}
+          className={`mt-0.5 shrink-0 ${view.ok ? "text-fg-subtle" : toneInk.danger}`}
+        />
+        <span className="min-w-0 break-words whitespace-pre-line">{view.line}</span>
+      </p>
+      {(view.envOnly !== null || view.skipped.length > 0) && (
+        <NoticeStrip
+          tone="attention"
+          data-config-sync-notice=""
+          className="mt-3 space-y-2 rounded-md border px-3 py-2 text-sm"
+        >
+          {view.envOnly !== null && <p data-env-only="">{c.envOnly(view.envOnly)}</p>}
+          {view.skipped.length > 0 && (
+            <div data-skipped="">
+              <p>{c.skippedTitle}</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 break-words">
+                {view.skipped.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </NoticeStrip>
+      )}
+    </>
   );
 }
 
@@ -439,6 +489,7 @@ export function MachineDetailBody({
   const view = !machine.local && job !== null ? jobView(job) : null;
   const toolbar = machineToolbar(machine, job, imageVersion, noImage);
   const reconnect = machine.local ? null : reconnectView(machine, locale, now);
+  const configSync = machine.local ? null : configSyncView(machine, locale, now);
   const labelWidth = FACT_LABEL_WIDTH[locale];
   return (
     <div className="space-y-6">
@@ -476,6 +527,7 @@ export function MachineDetailBody({
                 {toolbar.sentence}
               </p>
             )}
+            {configSync !== null && <ConfigSync view={configSync} />}
           </div>
         )}
       </div>

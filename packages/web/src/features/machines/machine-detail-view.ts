@@ -24,7 +24,15 @@ import {
 import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
 import { reasonText } from "./machine-card";
-import { failureText, isPhase, outOfDate, readingTone, sshWords, stepLabel } from "./machines-view";
+import {
+  canSyncConfig,
+  failureText,
+  isPhase,
+  outOfDate,
+  readingTone,
+  sshWords,
+  stepLabel,
+} from "./machines-view";
 import type { MachineReading } from "./machines-view";
 
 /** The machine's state as one chip: a glyph (or a spinner) and one plain word. */
@@ -336,7 +344,7 @@ export function jobView(job: MachineJob): JobView {
 
 /** The toolbar's verbs, by what each one does. */
 export type ToolbarVerb =
-  "enable" | "update" | "stop" | "start" | "restart" | "configure" | "uninstall";
+  "enable" | "update" | "stop" | "start" | "restart" | "syncConfig" | "configure" | "uninstall";
 
 /** Why a toolbar verb waits: a job on its way, a machine out of reach, a stopped server, no build. */
 export type HoldReason = "moving" | "unreachable" | "stopped" | "noImage";
@@ -357,6 +365,8 @@ const GLYPH: Record<ToolbarVerb, string> = {
   stop: ICONS.stopCircle,
   start: ICONS.play,
   restart: ICONS.rotateCw,
+  // The config leaving this server for that machine.
+  syncConfig: ICONS.upload,
   configure: ICONS.slidersHorizontal,
   uninstall: ICONS.trash,
 };
@@ -369,8 +379,9 @@ const REASONS: readonly HoldReason[] = ["moving", "unreachable", "stopped", "noI
  * one sentence saying why those that wait do. A machine with nothing installed is enabled (the
  * whole pipeline); one on another build than this server's is updated — the same pipeline,
  * offered only while it would change something; then its server stopped or started (whichever
- * it is not), restarted, its ssh host configured, and the program uninstalled. This server's own
- * entry takes none.
+ * it is not), restarted, its config synced (only while it is connected and on this server's
+ * build), its ssh host configured, and the program uninstalled. This server's own entry takes
+ * none.
  */
 export function machineToolbar(
   machine: MachineInfo,
@@ -401,6 +412,9 @@ export function machineToolbar(
       kept ? item("stop", t.stop, reachHeld) : item("start", t.start, moving ? "moving" : null),
     );
     items.push(item("restart", t.restart, reachHeld ?? (kept ? null : "stopped")));
+    if (canSyncConfig(machine, imageVersion)) {
+      items.push(item("syncConfig", t.syncConfig, moving ? "moving" : null));
+    }
     items.push(item("configure", t.configure, null));
     items.push(item("uninstall", t.uninstall, reachHeld));
   }
@@ -411,6 +425,54 @@ export function machineToolbar(
       return verbs.length === 0 ? null : held[reason](verbs);
     }).find((line) => line !== null) ?? null;
   return { items, sentence };
+}
+
+/** The last config sync, as the line under the toolbar says it, and what it could not carry. */
+export interface ConfigSyncView {
+  ok: boolean;
+  /** 「配置已同步 · 3 分钟前」, or 「配置同步失败：…」 with the far side's words. */
+  line: string;
+  /** The models that take a value from this server's environment, said as a list; null for none. */
+  envOnly: string | null;
+  /** Each model the machine would not take, with why; empty for none. */
+  skipped: string[];
+}
+
+/** `provider/model (VAR, VAR)` per model, in the order the server listed them. */
+function envOnlyText(rows: NonNullable<MachineInfo["configSync"]>["envOnly"]): string {
+  const c = S.machines.detail.configSync;
+  const byModel = new Map<string, string[]>();
+  for (const row of rows) {
+    const key = `${row.provider}/${row.modelId}`;
+    byModel.set(key, [...(byModel.get(key) ?? []), row.variable]);
+  }
+  return c.joinList([...byModel].map(([model, variables]) => c.envModel(model, variables)));
+}
+
+/**
+ * What the dialog says of the machine's last config sync; null before the first one since the
+ * server started. A skipped model's reason is the far side's code in the reader's language where
+ * the app knows it, its own words otherwise.
+ */
+export function configSyncView(
+  machine: MachineInfo,
+  locale: "zh" | "en",
+  now: number,
+): ConfigSyncView | null {
+  const sync = machine.configSync;
+  if (sync === undefined) return null;
+  const c = S.machines.detail.configSync;
+  const byCode = S.errors.byCode as Record<string, string | undefined>;
+  return {
+    ok: sync.ok,
+    line: sync.ok
+      ? c.synced(formatRelativeLong(sync.at, locale, now))
+      : c.failed(sync.detail ?? ""),
+    envOnly: sync.envOnly.length === 0 ? null : envOnlyText(sync.envOnly),
+    skipped: sync.skipped.map((one) =>
+      c.skippedModel(`${one.provider}/${one.modelId}`, byCode[one.code] ?? one.reason),
+    ),
+  };
 }
 
 /** The Reconnecting section: how long, which attempt, when the next, why the last one failed. */

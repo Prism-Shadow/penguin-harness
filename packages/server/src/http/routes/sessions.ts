@@ -2028,8 +2028,13 @@ export class SessionApiRoutes {
       projectConfigService,
       access,
       sandboxDefaults: () => sessionService.defaultsView(),
+      machines: this.machines,
     });
-    this.commandPolicyRoutes = commandPolicyRoutes({ projectConfigService, access });
+    this.commandPolicyRoutes = commandPolicyRoutes({
+      projectConfigService,
+      access,
+      machines: this.machines,
+    });
     this.agentsRoutes = agentsRoutes({
       agentApi: this.agentApi,
       agentConfigService,

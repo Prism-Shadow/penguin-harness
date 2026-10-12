@@ -70,13 +70,22 @@ export const zh = {
       configureVerb: "配置",
       name: "名称",
       nameHint: "一个词。之后在这里和 `ssh <名称>` 里都用它称呼这台机器。",
+      /**
+       * Each field's placeholder: what applies when it is left empty — what ssh does with the
+       * option the server then leaves out of the host block — or, for a field that must be
+       * filled, what goes in it.
+       */
+      namePlaceholder: "这台机器的名称",
       hostName: "主机地址",
       hostNameHint: "IP 或域名。",
+      hostNamePlaceholder: "要连接的机器的地址",
       user: "用户名",
-      userHint: "留空则用本服务端账户的用户名。",
+      userPlaceholder: "默认：本服务端账户的用户名",
       port: "端口",
+      portPlaceholder: "默认：22",
       identityFile: "私钥文件",
-      identityFileHint: "留空则用 ssh 的默认密钥。带口令的密钥要先加入 ssh-agent。",
+      identityFileHint: "带口令的密钥要先加入 ssh-agent。",
+      identityFilePlaceholder: "默认：ssh 的默认密钥（~/.ssh/id_ed25519 等）",
       oneWord: "必须是一个词：不能有空格或 #。",
       portRange: "1 到 65535 之间的整数。",
       exists: "ssh 配置里已有这个名称。",
@@ -137,7 +146,7 @@ export const zh = {
       handover: "传送构建…",
       restart: "重启服务…",
       connect: "建立连接…",
-      sync: "同步模型配置…",
+      sync: "同步配置…",
       stop: "停止服务…",
       remove: "删除程序…",
     },
@@ -149,7 +158,7 @@ export const zh = {
       handover: "传送构建",
       restart: "重启服务",
       connect: "建立连接",
-      sync: "同步模型配置",
+      sync: "同步配置",
       stop: "停止服务",
       remove: "删除程序",
     },
@@ -188,6 +197,8 @@ export const zh = {
       /** A new conversation in this machine's temporary workspace. */
       use: "使用",
       settings: "设置",
+      /** Hands the machine this Project's config now; an icon button, named by its hint. */
+      syncConfig: "同步配置",
       delete: "删除",
       /** This server's own card: a delete that cannot be, said on its placeholder. */
       localUndeletable: "本服务端不能删除",
@@ -254,8 +265,20 @@ export const zh = {
         stop: "停止服务",
         start: "启动服务",
         restart: "重启服务",
+        syncConfig: "同步配置",
         configure: "配置 SSH",
         uninstall: "卸载",
+      },
+      /** The line under the toolbar on the last config sync, and the notice of what it left behind. */
+      configSync: {
+        synced: (ago: string) => `配置已同步 · ${ago}`,
+        failed: (detail: string) => `配置同步失败：${detail}`,
+        envOnly: (models: string) =>
+          `这些模型的 Key 来自本服务端的环境变量，不会同步到这台机器：${models}。请在模型页填写 Key，或在那台机器上设置同名环境变量。`,
+        envModel: (model: string, variables: string[]) => `${model}（${variables.join("、")}）`,
+        joinList: (items: string[]) => items.join("、"),
+        skippedTitle: "这些模型没有同步到这台机器：",
+        skippedModel: (model: string, reason: string) => `${model}：${reason}`,
       },
       /**
        * The one sentence under the toolbar while some of its verbs wait: why, and which. The list

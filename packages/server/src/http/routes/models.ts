@@ -77,7 +77,7 @@ export function publishCredentialsUpdated(deps: ModelsRouteDeps, projectId: stri
 export function modelConfigChanged(deps: ModelsRouteDeps, projectId: string): void {
   deps.manager.invalidateProjectRuntimes(projectId);
   publishCredentialsUpdated(deps, projectId);
-  void deps.machines.syncModelsEverywhere(projectId);
+  void deps.machines.syncConfigEverywhere(projectId);
 }
 
 /** Validate a paired reference object ({ provider, modelId }); shape mismatch throws 400. */
@@ -380,7 +380,7 @@ export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
       modelId: requireString(body, "modelId", { minLen: 1, maxLen: 200 }),
     };
     const defaultModel = await deps.projectConfigService.setDefaultModelRef(projectId, ref);
-    void deps.machines.syncModelsEverywhere(projectId);
+    void deps.machines.syncConfigEverywhere(projectId);
     return c.json({ defaultModel } satisfies DefaultModelResponse);
   });
 

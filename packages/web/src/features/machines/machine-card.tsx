@@ -16,8 +16,11 @@
  * none is, and Use cannot start a conversation there, it says why in one muted line (a hint would
  * never open on the button, which shows its word). The quick buttons are the Agents card's: Use
  * starts a new conversation in the machine's temporary workspace, Settings opens the Machine
- * dialog, Delete takes the machine off this Project after a confirmation. This server's own card
- * keeps Use and Settings; its Delete is a placeholder that cannot be pressed.
+ * dialog, Delete takes the machine off this Project after a confirmation. Before them, while the
+ * machine is connected on this server's build, an icon button syncs this Project's config to it
+ * now; it stands first so that the buttons after it line up across cards whether or not it is
+ * there. This server's own card keeps Use and Settings; its Delete is a placeholder that cannot
+ * be pressed.
  */
 import type { MachineInfo, MachineJob } from "@prismshadow/penguin-server/api";
 import {
@@ -38,6 +41,7 @@ import { formatRelativeShort } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import {
+  canSyncConfig,
   canUse,
   isPhase,
   outOfDate,
@@ -200,6 +204,8 @@ export interface MachineCardProps {
   onOpen: () => void;
   /** Starts a new conversation in the machine's temporary workspace. */
   onUse: () => void;
+  /** Hands the machine this Project's config now (a job). */
+  onSyncConfig: () => void;
   /** Asks to take the machine off this Project (the page confirms first). */
   onDelete: () => void;
 }
@@ -242,6 +248,7 @@ export function MachineCard({
   busy,
   onOpen,
   onUse,
+  onSyncConfig,
   onDelete,
 }: MachineCardProps) {
   const reading = machine.local ? null : readMachine(machine, job, imageVersion);
@@ -320,6 +327,18 @@ export function MachineCard({
       {/* The Agents card's quick buttons: the primary verb with its word, Settings with its gear
           and word, Delete as a bare icon in the danger look. */}
       <div className="flex shrink-0 items-center gap-2">
+        {canSyncConfig(machine, imageVersion) && (
+          <Button
+            size="icon"
+            data-action="sync-config"
+            title={card.syncConfig}
+            aria-label={card.syncConfig}
+            disabled={busy || moving}
+            onClick={onSyncConfig}
+          >
+            <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
+          </Button>
+        )}
         <Button
           size="sm"
           variant="primary"
