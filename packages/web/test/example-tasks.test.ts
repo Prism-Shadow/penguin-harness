@@ -14,7 +14,8 @@
  * - The short example prompts stay under their length ceilings and keep their core in both
  *   locales — the RAG docs expert its source and citations, the Benchmark import its Skill and
  *   the GDPevo package it imports, the rhythm runner its two penguin forms, its easy difficulty
- *   and its instrumental music.
+ *   and its instrumental music, the ski game its downhill terrain, its visible skis and a crash
+ *   that never ends the run.
  * - The investment Copilot example keeps its "not investment advice" framing.
  */
 import { describe, expect, it } from "vitest";
@@ -152,11 +153,11 @@ describe("scheduled-task examples", () => {
 });
 
 /**
- * These seven are written to be read by the user before they run, so each is a short paragraph —
- * around 100 Chinese characters — carrying what to build plus the constraints the result would be
- * wrong without, and none of the step-by-step detail the Agent works out or asks about. The caps
- * below are a ceiling against re-inflation, not a target. Only these seven are covered: the older
- * briefs in the catalog are still far longer and are being shortened separately.
+ * The prompts listed here are written to be read by the user before they run, so each is a short
+ * paragraph — around 100 Chinese characters — carrying what to build plus the constraints the
+ * result would be wrong without, and none of the step-by-step detail the Agent works out or asks
+ * about. The caps below are a ceiling against re-inflation, not a target. Only the listed ones are
+ * covered: the older briefs in the catalog are still far longer and are being shortened separately.
  */
 describe("short example prompts", () => {
   const shortExamples = [
@@ -176,6 +177,18 @@ describe("short example prompts", () => {
         "`benchmark-design`",
         "packages/penguinharness-benchmark-gdpevo-train",
         "leave them as they are",
+      ],
+    },
+    {
+      id: "game",
+      zhMarkers: ["滑雪大冒险", "滑雪板", "整体向下", "陡坡", "摔倒不会结束游戏", "爬起来"],
+      enMarkers: [
+        "Ski Safari",
+        "visible skis",
+        "trends downhill",
+        "steep slopes",
+        "never ends the run",
+        "gets back up",
       ],
     },
     {

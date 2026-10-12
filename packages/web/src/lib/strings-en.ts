@@ -3224,13 +3224,14 @@ export const en: Strings = {
     exampleTasks: {
       game: {
         label: "Penguin ski safari mini game",
-        desc: "A Ski Safari-style 2D game: a penguin skis down rolling hills, launches off the crests and flips in the air for points",
+        desc: "A Ski Safari-style 2D game: a penguin on skis rides steep slopes downhill, flips in the air off the crests for points and gets back up after a crash",
         prompt:
-          "Build a 2D game like Ski Safari: a cute Antarctic penguin skis down rolling snowy " +
-          "hills with real height to them, and cresting a hill launches it into the air. Hold " +
-          "Space in the air to flip; landing upright scores, more flips score more, and a crash " +
-          "ends the run with one-click restart. Start easy, with speed ramping up smoothly. " +
-          "A 2D side-scroller with a cute cartoon look, pure frontend in a single HTML file, " +
+          "Build a 2D game like Ski Safari: a cute Antarctic penguin on bold, clearly visible skis " +
+          "heads down a mountain. The terrain trends downhill, with steep slopes and rolling crests; the " +
+          "penguin speeds up going down, and cresting a hill launches it into the air. Hold Space in the " +
+          "air to flip; landing upright scores, more flips score more. A crash never ends the run: the " +
+          "penguin gets back up and skis on, minus some speed. Make it fun: start easy, vary the terrain, " +
+          "ramp the speed up smoothly. A 2D cartoon side-scroller, pure frontend in a single HTML file, " +
           "styled per the web-design skill. " +
           "When done, test it in a browser once and tell me how to open it and how to play.",
       },
