@@ -206,7 +206,9 @@ export function agentServer(initial: AgentConfigResponse = agentConfig()): Agent
     }
     if (path === SESSIONS_BATCH_PATH && method === "POST") {
       const { requests } = request.body as SessionsBatchRequest;
-      return json({ results: requests.map((r) => ({ agentId: r.agentId, ok: true, sessions: [] })) });
+      return json({
+        results: requests.map((r) => ({ agentId: r.agentId, ok: true, sessions: [] })),
+      });
     }
     if (method !== "GET") {
       const refusedWrite = refused();
