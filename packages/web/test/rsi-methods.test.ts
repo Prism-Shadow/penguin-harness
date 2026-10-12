@@ -1,9 +1,9 @@
 /**
  * The Optimize tab's Method select (src/features/benchmark/rsi-methods.ts) is pinned to the
- * plugin library: one row per plugin of the `rsi` category, each naming Skills its plugin ships,
- * each labelled and described in both dictionaries. A toolkit added to plugins/ without a row —
- * or a row whose plugin left — fails here rather than as a missing or dead option, and the start
- * page's toolkit cards, which follow the same rows, cannot lose one either.
+ * plugin library: one row per plugin of the `rsi` category, each naming Skills that the plugins
+ * it names ship (the default row's evaluator ships in Agent Evaluation, not in the toolkit), each
+ * labelled and described in both dictionaries. A toolkit added to plugins/ without a row — or a
+ * row whose plugin left — fails here rather than as a missing or dead option.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -38,12 +38,13 @@ describe("RSI_METHODS", () => {
     expect(RSI_METHODS.map((m) => m.plugin).sort()).toEqual(plugins);
   });
 
-  it("names Skills its row's plugin ships", () => {
+  it("names Skills the plugins it names ship", () => {
     for (const m of RSI_METHODS) {
-      const skills = "evaluationSkill" in m ? [m.skill, m.evaluationSkill] : [m.skill];
-      for (const skill of skills) {
-        const file = join(PLUGINS, m.plugin, "skills", skill, "SKILL.md");
-        expect(existsSync(file), `${m.plugin} ships ${skill}`).toBe(true);
+      const skills: Array<[plugin: string, skill: string]> = [[m.plugin, m.skill]];
+      if ("evaluationSkill" in m) skills.push([m.evaluationPlugin, m.evaluationSkill]);
+      for (const [plugin, skill] of skills) {
+        const file = join(PLUGINS, plugin, "skills", skill, "SKILL.md");
+        expect(existsSync(file), `${plugin} ships ${skill}`).toBe(true);
       }
     }
   });

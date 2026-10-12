@@ -4751,7 +4751,7 @@ Scenarios:
     evaluatorAgentHint:
       "The one that spawns the evaluation subagents, scores against the rubric and writes the scoreboard; needs the agent-evaluation Skill",
     evaluatorMissingSkill:
-      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the default-rsi-toolkit plugin (Default RSI Toolkit) on it first.",
+      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-evaluation plugin (Agent Evaluation) on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
       "The model this conversation runs on, the Project's default model unless changed; the tested agent is evaluated on this same model, at the thinking level it is configured with",

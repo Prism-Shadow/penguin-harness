@@ -40,7 +40,7 @@ export function buildBenchmarkImportPrompt(input: string, projectId: string): st
 
 /**
  * The draft "Open a new chat" asks for: the prompt for `input`, to the Project's default Agent —
- * the one that carries the preinstalled default-rsi-toolkit plugin, whose benchmark-design Skill
+ * the one that carries the preinstalled agent-evaluation plugin, whose benchmark-design Skill
  * tells it how to import a package — with that Skill preselected. The composer drops a preselected
  * Skill the Agent lacks, and the prompt's tail carries the rules for that case. Null when there is
  * nothing to send (no source) or no Agent to send it to.

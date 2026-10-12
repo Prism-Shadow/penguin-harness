@@ -1,7 +1,7 @@
 {
   "name": "@penguinharness/default-rsi-toolkit",
   "version": "0.2.13",
-  "description": "The Default RSI Toolkit: the trial → reflect → improve loop as four Skills — initialize an agent from a requirement, design and calibrate a capability Benchmark (or import a published package), run and score isolated cases, and improve the agent from measured results, with a snapshot before every round.",
+  "description": "The Default RSI Toolkit: the trial → reflect → improve loop as one Skill — improve an agent from its measured Benchmark results, round after round, with a snapshot before every round. It measures through the agent-evaluation Skill of the Agent Evaluation plugin.",
   "keywords": [
     "penguin-plugin",
     "penguinharness",
@@ -23,16 +23,16 @@
     "access": "public"
   },
   "penguin": {
-    "description_zh": "默认 RSI 工具包：试跑 → 反思 → 提升的循环，四个 Skill——依据需求初始化 Agent、设计并校准能力 Benchmark（或导入已发布的 Benchmark 包）、隔离执行与评分、再根据测得结果改进 Agent，每轮之前自动快照。",
+    "description_zh": "默认 RSI 工具包：把「试跑 → 反思 → 提升」的循环做成一个 Skill——依据 Benchmark 的实测结果逐轮改进 Agent，每轮之前自动快照。测量经由 Agent Evaluation 插件的 agent-evaluation Skill 完成。",
     "short_description": "Default RSI Toolkit: trial, reflect, improve.",
     "short_description_zh": "默认 RSI 工具包：试跑、反思、提升。",
     "category": "rsi",
     "icon": "icon.svg",
     "quick_start": {
-      "prompt": "Plan a new agent that reviews pull requests: draft its AGENTS.md and list the skills it would need. Show me the plan and wait for my go-ahead before writing anything.",
-      "prompt_zh": "规划一个审阅 Pull Request 的新 Agent：起草它的 AGENTS.md，列出它需要的技能。先把方案给我看，等我确认后再写入任何东西。",
+      "prompt": "List this Project's Benchmarks with their latest scores, then propose which agent to optimize on which Benchmark and for how many rounds. Wait for my go-ahead before starting.",
+      "prompt_zh": "列出本 Project 的 Benchmark 和各自最近的分数，再建议用哪个 Benchmark 优化哪个 Agent、跑几轮。等我确认后再开始。",
       "skills": [
-        "agent-initialization"
+        "agent-optimization"
       ]
     }
   }

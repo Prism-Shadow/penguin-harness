@@ -99,6 +99,9 @@ importers:
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
+      '@penguinharness/agent-evaluation':
+        specifier: workspace:*
+        version: link:../../plugins/agent-evaluation
       '@penguinharness/ape-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ape-rsi-toolkit
@@ -202,6 +205,9 @@ importers:
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
+      '@penguinharness/agent-evaluation':
+        specifier: workspace:*
+        version: link:../../plugins/agent-evaluation
       '@penguinharness/ape-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ape-rsi-toolkit
@@ -299,6 +305,9 @@ importers:
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
+      '@penguinharness/agent-evaluation':
+        specifier: workspace:*
+        version: link:../../plugins/agent-evaluation
       '@penguinharness/ape-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/ape-rsi-toolkit
@@ -786,6 +795,8 @@ importers:
   plugins/agent-company: {}
 
   plugins/agent-development: {}
+
+  plugins/agent-evaluation: {}
 
   plugins/ape-rsi-toolkit: {}
 
@@ -1835,6 +1846,9 @@ packages:
 
   '@penguinharness/agent-development@file:plugins/agent-development':
     resolution: {directory: plugins/agent-development, type: directory}
+
+  '@penguinharness/agent-evaluation@file:plugins/agent-evaluation':
+    resolution: {directory: plugins/agent-evaluation, type: directory}
 
   '@penguinharness/ape-rsi-toolkit@file:plugins/ape-rsi-toolkit':
     resolution: {directory: plugins/ape-rsi-toolkit, type: directory}
@@ -6420,6 +6434,8 @@ snapshots:
 
   '@penguinharness/agent-development@file:plugins/agent-development': {}
 
+  '@penguinharness/agent-evaluation@file:plugins/agent-evaluation': {}
+
   '@penguinharness/ape-rsi-toolkit@file:plugins/ape-rsi-toolkit': {}
 
   '@penguinharness/awm-rsi-toolkit@file:plugins/awm-rsi-toolkit': {}
@@ -6496,6 +6512,7 @@ snapshots:
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
@@ -6516,6 +6533,7 @@ snapshots:
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
       commander: 13.1.0
       dotenv: 17.4.2
+      fflate: 0.8.3
       smol-toml: 1.6.1
       yaml: 2.9.0
     transitivePeerDependencies:
@@ -6534,6 +6552,7 @@ snapshots:
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
@@ -6568,6 +6587,7 @@ snapshots:
       '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
       '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
       '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
