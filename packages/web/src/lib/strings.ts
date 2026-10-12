@@ -5813,6 +5813,20 @@ Benchmark：
   },
   errors: {
     networkError: "网络错误，请检查连接",
+    /**
+     * An answer that is not the server's: no JSON came back. Something between the page and the
+     * server answered in its place, and the generic failure would blame the server.
+     */
+    notTheServer: {
+      /** A web page came back: a dev server or reverse proxy in front did not forward the request. */
+      page: (status: number) =>
+        `收到的是一个网页（HTTP ${status}），不是服务端的答复——页面与服务端之间的开发服务器或反向代理没有转发这个请求。`,
+      /** A proxy answered: a gateway status, or a proxy's own header on the answer. */
+      proxy: (status: number) =>
+        `中间的代理代为答复（HTTP ${status}），请求没有到达服务端。本机与局域网地址应绕过代理。`,
+      other: (status: number, type: string) =>
+        `收到的不是服务端的答复（HTTP ${status}${type === "" ? "" : `，${type}`}）。`,
+    },
     modelCredentialMissing: (modelId: string) =>
       `模型 ${modelId} 还没有可用的 API key，请先在「模型」页为它配置`,
     noDefaultModel: "该 Project 还没有默认模型，请先在「模型」页添加模型并设为默认",

@@ -5674,6 +5674,14 @@ Scenarios:
   },
   errors: {
     networkError: "Network error, please check your connection",
+    notTheServer: {
+      page: (status: number) =>
+        `A web page came back (HTTP ${status}) instead of the server's answer — the dev server or reverse proxy in front of it did not forward this request.`,
+      proxy: (status: number) =>
+        `A proxy answered (HTTP ${status}) and the request never reached the server. Local and LAN addresses should bypass the proxy.`,
+      other: (status: number, type: string) =>
+        `What came back is not the server's answer (HTTP ${status}${type === "" ? "" : `, ${type}`}).`,
+    },
     modelCredentialMissing: (modelId: string) =>
       `Model ${modelId} has no API key yet — configure it on the Models page first`,
     noDefaultModel: "This project has no default model yet — add one on the Models page first",

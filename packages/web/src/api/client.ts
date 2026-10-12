@@ -113,10 +113,35 @@ function requestInit(options: {
   };
 }
 
+/** The server's error body: `{error: {code, message, details?}}`. */
+interface ErrorEnvelope {
+  error?: { code?: string; message?: string; details?: unknown };
+}
+
 /**
- * The ApiError a non-2xx response stands for: the server's envelope code and message (or the
- * generic ones for a body that is not the envelope) and its Retry-After. A 401 from this server
- * outside the auth endpoints also signs the window out.
+ * The error for an answer that is not the server's: no JSON came back, so something between the
+ * page and the server answered in its place. Every answer the server gives is JSON, its errors
+ * included; a web page is a dev server or reverse proxy that did not forward the request, and a
+ * gateway status or a proxy's own header is an HTTP proxy that could not reach the server.
+ */
+function notTheServer(response: Response): ApiError {
+  const type = (response.headers.get("content-type") ?? "").split(";")[0]!.trim();
+  const proxied =
+    [502, 503, 504].includes(response.status) ||
+    ["via", "proxy-agent", "x-squid-error"].some((name) => response.headers.has(name));
+  const message = proxied
+    ? S.errors.notTheServer.proxy(response.status)
+    : type === "text/html"
+      ? S.errors.notTheServer.page(response.status)
+      : S.errors.notTheServer.other(response.status, type);
+  return new ApiError(response.status, "not_the_server", message);
+}
+
+/**
+ * The ApiError a non-2xx response stands for: the server's envelope code and message (the
+ * generic ones for JSON without them, {@link notTheServer} for a body that is not JSON at all)
+ * and its Retry-After. A 401 from this server outside the auth endpoints also signs the window
+ * out.
  */
 async function failureOf(
   response: Response,
@@ -126,16 +151,18 @@ async function failureOf(
   let code = "http_error";
   let message: string = S.common.unknownError;
   let details: ErrorDetails | undefined;
+  const text = await response.text().catch(() => "");
+  let body: ErrorEnvelope | null;
   try {
-    const body = (await response.json()) as {
-      error?: { code?: string; message?: string; details?: unknown };
-    };
-    if (body.error?.code) code = body.error.code;
-    if (body.error?.message) message = body.error.message;
-    details = detailsOf(body.error?.details);
+    body = JSON.parse(text) as ErrorEnvelope | null;
   } catch {
-    // Non-JSON error body: fall back to the default message.
+    // Not the server's answer, so not its verdict on this window's session either: a 401 that
+    // something in front of it sent signs nobody out.
+    return notTheServer(response);
   }
+  if (body?.error?.code) code = body.error.code;
+  if (body?.error?.message) message = body.error.message;
+  details = detailsOf(body?.error?.details);
   // A 401 from ANOTHER machine is that machine's answer, not this server's: it means we
   // are not signed in over there, which says nothing about the session here. Treating it
   // as a local logout is how clicking a remote host in a picker bounced the window to the
@@ -187,7 +214,14 @@ export async function apiFetchWithMeta<T>(
   if (response.status === 204) return { data: undefined as T, serverNowMs, etag };
   const text = await response.text();
   if (!text) return { data: undefined as T, serverNowMs, etag };
-  return { data: JSON.parse(text) as T, serverNowMs, etag };
+  let data: T;
+  try {
+    data = JSON.parse(text) as T;
+  } catch {
+    // A success status with no JSON: a dev server or reverse proxy answered with its own page.
+    throw notTheServer(response);
+  }
+  return { data, serverNowMs, etag };
 }
 
 export interface ApiFetchStreamOptions {
