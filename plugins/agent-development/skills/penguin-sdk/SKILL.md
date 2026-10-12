@@ -1,6 +1,7 @@
 ---
 name: penguin-sdk
 description: Use whenever the user wants to build an agent application — their own program with an agent in it, such as an AI app, an agentic app, a RAG app or a bot — or to connect a program to a Penguin agent. A program reaches an agent in one of two ways, and the skill asks the user which before building — embedded with the Penguin Harness SDK (`@prismshadow/penguin-core`, no server), or over the Penguin server's Agent API (AMSP, with the `@prismshadow/amsp` client or curl). This is writing application code, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and the Agent API client. Also use it for workflows — the tabs and pages beside the chat that an Agent keeps in its own `workflows/` folder inside PenguinHarness: building one, changing it, restoring an earlier version, and removing a tab or a whole workflow when the user wants the custom UI gone.
+version: 2026.10.10.1
 ---
 
 # Penguin Harness SDK and Agent API

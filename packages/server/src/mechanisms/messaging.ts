@@ -31,3 +31,23 @@ export abstract class MessagingBindings {
   abstract delete(sessionId: string, channel: string): void;
   abstract deleteSession(sessionId: string): void;
 }
+
+/**
+ * MessagingConversations: the mechanism MessagingConversationsRepo implements — per-(bot, chat)
+ * delivery state a connector owns as an opaque document (WeChat's context token and held
+ * replies), kept for as long as a binding references the bot.
+ */
+@Interface()
+export abstract class MessagingConversations {
+  abstract get(channel: string, accountId: string, chatId: string): Record<string, unknown> | null;
+  abstract list(
+    channel: string,
+    accountId: string,
+  ): { chatId: string; state: Record<string, unknown> }[];
+  abstract put(
+    channel: string,
+    accountId: string,
+    chatId: string,
+    state: Record<string, unknown>,
+  ): void;
+}

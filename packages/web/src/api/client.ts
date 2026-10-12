@@ -7,23 +7,43 @@
  * notifies AuthProvider to clear the current user, letting the route guard redirect to the
  * login page — instead of each page popping its own "unauthorized" error.
  */
+import type { ErrorDetails } from "@prismshadow/penguin-server/api";
 import { S } from "../lib/strings";
 import { apiUrl } from "../lib/server-context";
 import { machineForPath } from "../lib/session-machines";
 
-/** Unified API error: carries the HTTP status code and server error code (server error body {error:{code,message}}). */
+/**
+ * Unified API error: carries the HTTP status code and server error code (server error body
+ * {error:{code,message,details?}}), and the body's `details` — the facts a caller acts on beside
+ * the code, such as the id a 409 names — when the server sent them.
+ */
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly retryAfterSeconds?: number;
+  readonly details?: ErrorDetails;
 
-  constructor(status: number, code: string, message: string, retryAfterSeconds?: number) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    retryAfterSeconds?: number,
+    details?: ErrorDetails,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.details = details;
   }
+}
+
+/** The error body's `details` when it is an object of strings, the shape the server sends; undefined otherwise. */
+function detailsOf(raw: unknown): ErrorDetails | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const entries = Object.entries(raw).filter(([, value]) => typeof value === "string");
+  return entries.length > 0 ? (Object.fromEntries(entries) as ErrorDetails) : undefined;
 }
 
 /** Session-invalidation callback (registered by AuthProvider; not triggered by 401s from the login/register endpoints themselves). */
@@ -105,10 +125,14 @@ async function failureOf(
 ): Promise<ApiError> {
   let code = "http_error";
   let message: string = S.common.unknownError;
+  let details: ErrorDetails | undefined;
   try {
-    const body = (await response.json()) as { error?: { code?: string; message?: string } };
+    const body = (await response.json()) as {
+      error?: { code?: string; message?: string; details?: unknown };
+    };
     if (body.error?.code) code = body.error.code;
     if (body.error?.message) message = body.error.message;
+    details = detailsOf(body.error?.details);
   } catch {
     // Non-JSON error body: fall back to the default message.
   }
@@ -121,7 +145,7 @@ async function failureOf(
   const retryAfter = response.headers.get("retry-after");
   const retryAfterSeconds =
     retryAfter !== null && /^\d+$/.test(retryAfter) ? Number(retryAfter) : undefined;
-  return new ApiError(response.status, code, message, retryAfterSeconds);
+  return new ApiError(response.status, code, message, retryAfterSeconds, details);
 }
 
 /** Makes an API request; non-2xx responses uniformly throw ApiError; 204/empty body returns undefined. */

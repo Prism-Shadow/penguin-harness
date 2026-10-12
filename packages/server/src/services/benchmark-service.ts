@@ -6,10 +6,13 @@
  * has them, the date `version` and the `origin`) and `scoreboard.yaml` (evaluations[], each
  * carrying the Agent it tested, each case its model-written averages and a runs array).
  * Content is normally created and refined by the benchmark-design Skill; the server also
- * writes the same layout for a Benchmark created by hand (`create`) and removes a Benchmark
- * directory whole (`remove`), and never touches a scoreboard. A built-in Benchmark is read like
- * any other: its cases run elsewhere (their statements say how), and the service does not know
- * or care.
+ * writes the same layout for a Benchmark created by hand (`create`) or uploaded as a package
+ * (`importArchive`, whose copy starts with an empty scoreboard and whose overwrite replaces the
+ * directory whole, though never while an evaluation of it is still running), packs a Benchmark's
+ * package for download (`exportArchive`), and removes a Benchmark directory whole (`remove`); it
+ * never edits a scoreboard, and never rewrites a manifest in place. A built-in Benchmark is read
+ * like any other: its cases run elsewhere (their statements say how), and the service does not
+ * know or care.
  * A manifest is what makes a directory a Benchmark: `list` skips one without it. A manifest
  * written before `id`, `version` and `origin` existed is read as it is, unversioned and of
  * unknown origin; reading never rewrites one. A manifest that is there but says something
@@ -28,12 +31,15 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   BenchmarkManifestError,
   benchmarksDir,
+  checkBenchmarkManifest,
   nextDateVersion,
+  placeBenchmark,
   readBenchmarkManifest,
   writeBenchmarkManifest,
   type BenchmarkManifest,
 } from "@prismshadow/penguin-core";
 import type {
+  BenchmarkArchiveGitOrigin,
   BenchmarkCaseScore,
   BenchmarkCaseSummary,
   BenchmarkCasesResponse,
@@ -46,6 +52,7 @@ import type {
   WorkspaceFilesResponse,
 } from "../api/types.js";
 import type { WorkspaceFileContent, WorkspaceFileReadOptions } from "./workspace-files-service.js";
+import { packBenchmark, readBenchmarkArchive } from "./benchmark-archive.js";
 import { HttpError } from "../http/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Paths } from "../hmr/capabilities.js";
@@ -68,6 +75,75 @@ export interface BenchmarkCreateInput {
   description?: string;
   runs: number;
   cases: BenchmarkCaseInput[];
+}
+
+/** How an uploaded package is written: over a taken id or not, and where it came from. */
+export interface BenchmarkImportOptions {
+  overwrite: boolean;
+  /** The repository folder the package was fetched from; absent for an upload, whose origin is `zip`. */
+  origin?: BenchmarkArchiveGitOrigin;
+}
+
+/** A Benchmark's package as a zip, and the name its download is offered under. */
+export interface BenchmarkArchive {
+  /** `<id>-v<version>.zip`. */
+  fileName: string;
+  data: Uint8Array;
+}
+
+/** A taken id: `details.benchmarkId` names it, for the Web App's overwrite confirm and the CLI. */
+function benchmarkExists(id: string): HttpError {
+  return new HttpError(409, "benchmark_exists", `Benchmark already exists: ${id}`, undefined, {
+    benchmarkId: id,
+  });
+}
+
+/** Whether anything is under `p`; a symlink counts, wherever it points. */
+async function occupied(p: string): Promise<boolean> {
+  try {
+    await fs.lstat(p);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/** A directory's entries in code-unit order; none when it is missing or is not a directory. */
+async function entriesOf(dir: string) {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return [];
+    throw error;
+  }
+}
+
+/**
+ * The first entry under `benchDir/.jobs/` that marks an evaluation still running, or null. A
+ * Benchmark whose cases run through Harbor is evaluated one trial at a time into `.jobs/`
+ * (agent-evaluation's reference/harbor.md): a cell writes the Test Agent's State to
+ * `.jobs/<job>.agent-state.tar.gz` before it launches the trial and removes it when the launch
+ * returns, and Harbor writes the trial into `.jobs/<job>/<trial>/`, whose `result.json` comes
+ * last. Until both are done, that evaluation keeps writing into the Benchmark's directory by path,
+ * its trials and then its scoreboard. A trial whose process was killed leaves the same marks
+ * behind until someone removes them.
+ */
+async function runningTrial(benchDir: string): Promise<string | null> {
+  const jobsDir = path.join(benchDir, ".jobs");
+  for (const job of await entriesOf(jobsDir)) {
+    if (job.isFile() && job.name.endsWith(".agent-state.tar.gz")) return `.jobs/${job.name}`;
+    if (!job.isDirectory()) continue;
+    const jobDir = path.join(jobsDir, job.name);
+    for (const trial of await entriesOf(jobDir)) {
+      if (trial.isDirectory() && !(await occupied(path.join(jobDir, trial.name, "result.json")))) {
+        return `.jobs/${job.name}/${trial.name}`;
+      }
+    }
+  }
+  return null;
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -307,9 +383,7 @@ export class BenchmarkService implements Benchmarks {
       // that is already there, so two creates of one id cannot both proceed.
       await fs.mkdir(benchDir);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        throw new HttpError(409, "benchmark_exists", `Benchmark already exists: ${input.id}`);
-      }
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw benchmarkExists(input.id);
       throw error;
     }
     const manifest: BenchmarkManifest = {
@@ -371,6 +445,138 @@ export class BenchmarkService implements Benchmarks {
       throw new HttpError(404, "not_found", `Benchmark does not exist: ${benchmarkId}`);
     }
     await fs.rm(benchDir, { recursive: true, force: true });
+  }
+
+  /**
+   * Writes the package an uploaded zip holds as `benchmarks/<id>/` (benchmark-archive.ts says what
+   * is refused and why). What lands is the package as a new copy: its cases byte for byte; its
+   * manifest, written with its id, with the origin rewritten to `zip` and the time of this import,
+   * or to `git` with the repository folder `options.origin` names for a package fetched from one
+   * (the version stays the package's, or none when it has none: it names the content, not the
+   * copy); and a `scoreboard.yaml` with no
+   * evaluations, since a package carries none. A taken id is a 409 unless `overwrite`, which
+   * replaces the whole directory, its scoreboard and `.jobs/` included — except while an
+   * evaluation of it is still running (`runningTrial`), which would go on writing its trials and
+   * its scoreboard into the new copy: 409 `benchmark_busy`. The copy is staged and renamed into
+   * place, so a failed write leaves the id as it was.
+   */
+  async importArchive(
+    projectId: string,
+    archive: Uint8Array,
+    options: BenchmarkImportOptions,
+  ): Promise<BenchmarkSummary> {
+    const { manifest: packaged, caseFiles } = readBenchmarkArchive(archive);
+    const dir = benchmarksDir(this.root, projectId);
+    const benchDir = path.join(dir, packaged.id);
+    await fs.mkdir(dir, { recursive: true });
+    if (!options.overwrite && (await occupied(benchDir))) throw benchmarkExists(packaged.id);
+    const running = options.overwrite ? await runningTrial(benchDir) : null;
+    if (running !== null) {
+      throw new HttpError(
+        409,
+        "benchmark_busy",
+        `Benchmark ${packaged.id} is being evaluated: ${running} marks a trial that has not finished, and the evaluation would go on writing into the new copy. Overwrite it once the evaluation ends.`,
+      );
+    }
+    const importedAt = new Date().toISOString();
+    const { origin } = options;
+    const manifest: BenchmarkManifest = {
+      ...packaged,
+      origin:
+        origin !== undefined
+          ? {
+              kind: "git",
+              url: origin.url,
+              ref: origin.ref,
+              path: origin.path,
+              imported_at: importedAt,
+            }
+          : { kind: "zip", imported_at: importedAt },
+    };
+    try {
+      await placeBenchmark(
+        dir,
+        manifest.id,
+        async (stage) => {
+          for (const [rel, data] of caseFiles) {
+            const file = path.join(stage, ...rel.split("/"));
+            await fs.mkdir(path.dirname(file), { recursive: true });
+            await fs.writeFile(file, data);
+          }
+          await writeBenchmarkManifest(stage, manifest);
+          await fs.writeFile(
+            path.join(stage, "scoreboard.yaml"),
+            stringifyYaml({ evaluations: [] }),
+            "utf8",
+          );
+        },
+        { replace: options.overwrite },
+      );
+    } catch (error) {
+      // Taken before this copy was renamed in: by another import of the same id after the check
+      // above, or, under `overwrite`, by another overwrite whose copy went in first. Either way the
+      // id now holds someone else's copy, which the person may choose to overwrite in turn.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOTEMPTY" || code === "EEXIST") throw benchmarkExists(manifest.id);
+      throw error;
+    }
+    return this.summarize(benchDir, manifest.id, manifest);
+  }
+
+  /**
+   * The Benchmark's package as a zip for download (benchmark-archive.ts says what it holds), named
+   * `<id>-v<version>.zip`, or `<id>.zip` when the manifest has no version. Only a published
+   * Benchmark has one to give: a draft is still being written, a failed one never finished
+   * calibrating, one whose manifest cannot be read has no manifest to give, and one whose manifest
+   * is past the limits an import holds a package to (a hand-edited title, description or run
+   * count) would not import anywhere (409, with the reason). As for `remove`, only a real
+   * directory counts: a symlink is not followed.
+   */
+  async exportArchive(projectId: string, benchmarkId: string): Promise<BenchmarkArchive> {
+    const benchDir = path.join(benchmarksDir(this.root, projectId), benchmarkId);
+    let isDirectory = false;
+    try {
+      isDirectory = (await fs.lstat(benchDir)).isDirectory();
+    } catch {
+      // Missing: reported below as not found.
+    }
+    const manifest = isDirectory ? await this.manifestOf(benchDir) : null;
+    if (manifest === null) {
+      throw new HttpError(404, "not_found", `Benchmark does not exist: ${benchmarkId}`);
+    }
+    if (manifest instanceof BenchmarkManifestError) {
+      throw new HttpError(
+        409,
+        manifest.code,
+        `The Benchmark's manifest cannot be read, so it has no package to export: ${manifest.message}`,
+      );
+    }
+    if (manifest.status !== "published") {
+      throw new HttpError(
+        409,
+        "benchmark_not_published",
+        `Only a published Benchmark can be exported; ${benchmarkId} is ${manifest.status}.`,
+      );
+    }
+    // The list reads a hand-edited manifest leniently; a package holds to what an import takes.
+    try {
+      checkBenchmarkManifest(manifest);
+    } catch (error) {
+      if (!(error instanceof BenchmarkManifestError)) throw error;
+      throw new HttpError(
+        409,
+        error.code,
+        `The Benchmark's manifest is past what a package may hold, so no import would take it: ${error.message}`,
+      );
+    }
+    return {
+      // An id and a date version; a Benchmark whose manifest predates versions goes by its id.
+      fileName:
+        manifest.version !== undefined
+          ? `${benchmarkId}-v${manifest.version}.zip`
+          : `${benchmarkId}.zip`,
+      data: await packBenchmark(benchDir, manifest),
+    };
   }
 
   async listCases(projectId: string, benchmarkId: string): Promise<BenchmarkCasesResponse> {

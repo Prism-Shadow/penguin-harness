@@ -30,7 +30,8 @@
  *   back its in-flight runs; a loader's HttpError passes through; shutdown disposes every
  *   environment and refuses new Tasks, and a run parked on an approval is denied, winds down,
  *   and is disposed only after it has, even once the database has closed under it.
- * - Idle entries are evicted (running ones, pending approvals and working subagents pin them);
+ * - Idle entries are evicted (running ones, pending approvals, working subagents and a kept
+ *   Session pin them); a preload loads without running, and leaves a Session with no Trace;
  *   invalidating an Agent's or a Project's runtimes rebuilds them at next access, never
  *   mid-run, and publishes a discarded runtime's background count as cleared.
  *
@@ -80,7 +81,7 @@ import type { SessionRow } from "../src/db/repos/sessions.js";
 import { ChannelHub } from "../src/runtime/channel.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorRecordArgs, ErrorSink } from "../src/runtime/error-recorder.js";
-import { SessionManager } from "../src/runtime/session-manager.js";
+import { SessionManager, FOLLOW_UP_QUEUE_LIMIT } from "../src/runtime/session-manager.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
@@ -811,6 +812,42 @@ describe("session-manager", () => {
     expect(states[states.length - 1]).toMatchObject({ state: "idle", queued: 0 });
   });
 
+  it("queueIfBusy: a full queue refuses with 429 instead of growing without bound", async () => {
+    const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
+    const first = await manager.startTask("session-1", [userText("task 1")]);
+    expect(first.queued).toBe(false);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+
+    // Fill the queue to the cap; every entry still queues as before.
+    for (let i = 0; i < FOLLOW_UP_QUEUE_LIMIT; i++) {
+      const q = await manager.startTask("session-1", [userText(`follow-up ${i}`)], {
+        queueIfBusy: true,
+      });
+      expect(q.queued).toBe(true);
+    }
+    expect(manager.pendingFollowUpCount("session-1")).toBe(FOLLOW_UP_QUEUE_LIMIT);
+
+    // The next one is refused loudly — not queued, not started, nothing dropped silently.
+    const err = await manager
+      .startTask("session-1", [userText("overflow")], { queueIfBusy: true })
+      .catch((e: unknown) => e);
+    expect((err as HttpError).status).toBe(429);
+    expect((err as HttpError).code).toBe("queue_full");
+    expect(manager.pendingFollowUpCount("session-1")).toBe(FOLLOW_UP_QUEUE_LIMIT);
+    // Without queueIfBusy the 409 mutual exclusion is unchanged.
+    const conflict = await manager.startTask("session-1", [userText("x")]).catch((e: unknown) => e);
+    expect((conflict as HttpError).code).toBe("task_in_progress");
+
+    // Draining one frees a slot for exactly one more.
+    manager.abortTask("session-1");
+    await waitFor(() => manager.pendingFollowUpCount("session-1") === FOLLOW_UP_QUEUE_LIMIT - 1);
+    const refill = await manager.startTask("session-1", [userText("refill")], {
+      queueIfBusy: true,
+    });
+    expect(refill.queued).toBe(true);
+    expect(manager.pendingFollowUpCount("session-1")).toBe(FOLLOW_UP_QUEUE_LIMIT);
+  });
+
   it("queueIfBusy during compaction: the queue drains once the compaction ends", async () => {
     const runInputs: string[][] = [];
     let releaseCompact: (() => void) | null = null;
@@ -1289,6 +1326,40 @@ describe("session-manager", () => {
     await manager.startTask("session-1", [userText("b")]);
     await waitFor(() => manager.statusOf("session-1") === "idle");
     expect(loads).toBe(1);
+  });
+
+  it("keepLoaded / preload: a kept entry outlives the idle window, and preload loads without running", async () => {
+    let loads = 0;
+    const loader: SessionLoader = {
+      load: async () => {
+        loads++;
+        return approvalFakeSession("session-1");
+      },
+    };
+    const manager = makeManager(loader);
+    // No Trace yet: the load would be a self-heal rebuild under a new id, so preload leaves it.
+    await manager.preload("session-1");
+    expect(loads).toBe(0);
+    sessions.markHasTrace("session-1");
+    await manager.preload("session-1");
+    expect(loads).toBe(1);
+    // Only the load: no run started, nothing published.
+    expect(manager.statusOf("session-1")).toBe("idle");
+    expect(recorded).toHaveLength(0);
+    // A Session that does not exist resolves quietly.
+    await expect(manager.preload("session-ghost")).resolves.toBeUndefined();
+
+    // Kept: the sweep passes it by, so the next access finds it loaded.
+    manager.keepLoaded("session-1", true);
+    manager.sweepIdle(Date.now() + 31 * 60 * 1000, 30 * 60 * 1000);
+    await manager.preload("session-1");
+    expect(loads).toBe(1);
+
+    // Released: evicted like any idle entry, and loaded again on the next access.
+    manager.keepLoaded("session-1", false);
+    manager.sweepIdle(Date.now() + 31 * 60 * 1000, 30 * 60 * 1000);
+    await manager.preload("session-1");
+    expect(loads).toBe(2);
   });
 
   it("invalidateAgentRuntimes: an idle entry is discarded and re-resumed on next access; other Agents unaffected", async () => {

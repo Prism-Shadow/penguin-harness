@@ -125,6 +125,8 @@ const UNCLASSIFIED_ON_PURPOSE: Record<string, string> = {
   "penguin.installId": "the marker itself — it is what the comparison reads, never swept",
   "penguin.chatRouteApplied.":
     "sessionStorage: scoped to one tab's history, so it cannot outlive a data root",
+  "penguin.mcp_servers":
+    "not a storage key: the plugin manifest field the import dialog's agent prompt names",
 };
 
 /**

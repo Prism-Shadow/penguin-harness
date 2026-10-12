@@ -1,14 +1,18 @@
 /**
  * PickerList (src/components/forms/picker-list/picker-list.tsx): a search box over a list whose
  * rows differ only in content. The box is autofocused and named by its placeholder, nothing starts
- * highlighted, the entry in effect carries the check, and an empty result says so.
+ * highlighted, the entry in effect carries the check, and an empty result says so. A run of rows
+ * the host names is labelled once, above its first row, and the label is not a row.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { PickerList } from "../src/components/forms/picker-list/picker-list";
 import { classTokens, renderStatic } from "../src/testing";
 
-const render = (items: string[], extra: { footer?: string } = {}) =>
+const render = (
+  items: string[],
+  extra: { footer?: string; groupLabel?: (item: string) => string | null } = {},
+) =>
   renderStatic(
     createElement(PickerList<string>, {
       items,
@@ -21,6 +25,7 @@ const render = (items: string[], extra: { footer?: string } = {}) =>
       onPick: () => {},
       renderRow: (item) => createElement("span", { className: "row" }, item),
       ...(extra.footer !== undefined ? { footer: createElement("p", null, extra.footer) } : {}),
+      ...(extra.groupLabel !== undefined ? { groupLabel: extra.groupLabel } : {}),
     }),
   );
 
@@ -43,6 +48,22 @@ describe("PickerList", () => {
     expect(classTokens(`<b${rows[1]!}`)).toContain("bg-surface-muted");
     // Nothing is highlighted before the keyboard asks for it.
     expect(classTokens(html)).not.toContain("bg-line-muted");
+  });
+
+  it("labels a named run once, above its first row, and the label is no button", () => {
+    const html = render(["alpha", "beta", "x-gamma", "x-delta"], {
+      groupLabel: (item) => (item.startsWith("x-") ? "Employees" : null),
+    });
+    expect(html.split("Employees")).toHaveLength(2);
+    expect(html.indexOf("beta")).toBeLessThan(html.indexOf("Employees"));
+    expect(html.indexOf("Employees")).toBeLessThan(html.indexOf("x-gamma"));
+    // Not a row: no button holds it, so the keyboard walks the four items alone.
+    const buttons = html
+      .split("<button")
+      .slice(1)
+      .map((chunk) => chunk.split("</button>")[0]!);
+    expect(buttons.filter((b) => b.includes('class="row"'))).toHaveLength(4);
+    expect(buttons.some((b) => b.includes("Employees"))).toBe(false);
   });
 
   it("says so when nothing matches, and pins the footer below the list", () => {

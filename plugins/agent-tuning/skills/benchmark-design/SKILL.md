@@ -1,6 +1,7 @@
 ---
 name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline.
+version: 2026.10.09.5
 ---
 
 # Benchmark Design
@@ -10,6 +11,8 @@ Build a multi-Case Benchmark for one Test Agent, calibrate its difficulty with o
 This Skill changes the Benchmark, never the Test Agent. It does not run or score the Test Agent. Delegate every evaluation with `run_subagent`, and tell each worker to use `agent-evaluation`. Stop after the Baseline; do not begin optimization.
 
 A Benchmark whose Cases are run through Harbor (their statements say so; the built-in PenguinHarness Benchmarks) is a frozen upstream task set that ships with PenguinHarness: never create, refine, recalibrate or re-baseline one.
+
+Importing an existing Benchmark package (a repository folder link or a local folder) is not design: follow `reference/package.md`, which also defines what a package holds.
 
 ## Before you start
 

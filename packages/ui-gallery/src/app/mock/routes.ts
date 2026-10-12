@@ -18,6 +18,8 @@ import type {
   AgentConfigResponse,
   AgentCreateResponse,
   AgentHooksResponse,
+  AgentMcpServerItem,
+  AgentMcpServersResponse,
   AgentKernelUpdateResponse,
   AgentPluginsInstallResponse,
   AgentSchedulesConfigDto,
@@ -92,6 +94,7 @@ import type {
   SchedulesResponse,
   SemanticIdSuggestResponse,
   ServerSettingsResponse,
+  SessionBatchResult,
   SessionCategory,
   SessionCategoryCounts,
   SessionContextResponse,
@@ -100,6 +103,8 @@ import type {
   SessionInfo,
   SessionProcessesResponse,
   SessionResponse,
+  SessionsBatchResponse,
+  SessionsResponse,
   SessionTracesResponse,
   SshHostResponse,
   SshHostsResponse,
@@ -530,6 +535,35 @@ const configOf = (ctx: Ctx): AgentConfigResponse => {
   return config;
 };
 
+/**
+ * An Agent's MCP servers as the server lists them, read off its config: transport and target,
+ * the plugin that installed each. The demo's vault is taken to hold every key a server
+ * references, so none waits for setup.
+ */
+const mcpServerItems = (ctx: Ctx): AgentMcpServerItem[] =>
+  configOf(ctx).config.mcpServers.map((entry) => {
+    const c = entry.config;
+    const named = c["transport"];
+    const transport: AgentMcpServerItem["transport"] =
+      named === "http" || named === "sse" || named === "stdio"
+        ? named
+        : typeof c["command"] === "string"
+          ? "stdio"
+          : "http";
+    const args = Array.isArray(c["args"]) ? c["args"].map(String) : [];
+    return {
+      name: entry.name,
+      transport,
+      target:
+        transport === "stdio"
+          ? [String(c["command"] ?? ""), ...args].join(" ")
+          : String(c["url"] ?? ""),
+      ...(entry.plugin !== undefined ? { plugin: entry.plugin } : {}),
+      missingKeys: [],
+      signIn: false,
+    };
+  });
+
 router
   .get(
     "/api/projects/:projectId/agents/:agentId/vault",
@@ -921,65 +955,116 @@ function byActivity(
   return a.sessionId > b.sessionId ? -1 : a.sessionId < b.sessionId ? 1 : 0;
 }
 
+/** One page of an Agent's list, as the GET route's query and the batch route's entries both ask. */
+interface ListAsk {
+  ownOnly: boolean;
+  activity: boolean;
+  category: SessionCategory | null;
+  group: string | null;
+  counts: boolean;
+  /** Activity order only: the rows strictly below the last one the sidebar holds. */
+  before: { lastActiveAt: string; sessionId: string } | null;
+  /** Absent (or not positive): the whole list. */
+  limit: number;
+  offset: number;
+}
+
+/** One Agent's list page from the fixtures, under the server's rules. */
+function listPage(store: DemoStore, agentId: string, ask: ListAsk): SessionsResponse {
+  // `ownOnly` (excludeOrg) asks for the user's own rows: an organization's Sessions leave the
+  // page and the totals alike. A request for a category, a Workspace group or counts leaves
+  // the company Sessions out too, which no category holds.
+  const { ownOnly, activity, category, group, before, limit, offset } = ask;
+  const classified = category !== null || group !== null || ask.counts;
+  const all = store.f.sessions
+    .filter(
+      (s) =>
+        s.agentId === agentId &&
+        !(ownOnly && isOrgRow(s)) &&
+        !(classified && categoryOf(s) === null),
+    )
+    .sort(activity ? byActivity : byCreated);
+  let rows = category ? all.filter((s) => categoryOf(s) === category) : all;
+  if (group !== null) {
+    rows = rows.filter((s) => (group === "temp" ? isTemp(s.workspace) : s.workspace === group));
+  }
+  if (before !== null) {
+    if (!activity) fail(400, "bad_request", "before requires order=activity.");
+    if (!Number.isFinite(Date.parse(before.lastActiveAt)) || !before.sessionId)
+      fail(400, "bad_request", "before must be <lastActiveAt>,<sessionId>.");
+    rows = rows.filter((s) => byActivity(s, before) > 0);
+  }
+  const page = Number.isFinite(limit) && limit > 0 ? rows.slice(offset, offset + limit) : rows;
+  const response: SessionsResponse = { sessions: page };
+  if (ask.counts) {
+    response.counts = countsOf(all);
+    const byWorkspace: Record<string, SessionInfo[]> = {};
+    for (const row of all) (byWorkspace[row.workspace] ??= []).push(row);
+    response.workspaceCounts = Object.fromEntries(
+      Object.entries(byWorkspace).map(([path, list]) => [path, countsOf(list)]),
+    );
+    // The newest CREATION per path, whatever order the page is in.
+    response.workspaceLatest = Object.fromEntries(
+      Object.entries(byWorkspace).map(([path, list]) => [
+        path,
+        list.reduce((latest, row) => (row.createdAt > latest ? row.createdAt : latest), ""),
+      ]),
+    );
+  }
+  return response;
+}
+
 router
-  .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): unknown => {
+  .get("/api/projects/:projectId/agents/:agentId/sessions", (ctx): SessionsResponse => {
     const { store, params, query } = ctx;
-    // `excludeOrg=1` asks for the user's own rows: an organization's Sessions leave the page
-    // and the totals alike. A request for a category, a Workspace group or counts leaves the
-    // company Sessions out too, which no category holds.
-    const ownOnly = query.get("excludeOrg") === "1";
-    const activity = query.get("order") === "activity";
-    const category = query.get("category") as SessionCategory | null;
-    const group = query.get("workspaceGroup");
-    const classified = category !== null || group !== null || query.get("counts") === "1";
-    const all = store.f.sessions
-      .filter(
-        (s) =>
-          s.agentId === params.agentId &&
-          !(ownOnly && isOrgRow(s)) &&
-          !(classified && categoryOf(s) === null),
-      )
-      .sort(activity ? byActivity : byCreated);
-    let rows = category ? all.filter((s) => categoryOf(s) === category) : all;
-    if (group !== null) {
-      rows = rows.filter((s) => (group === "temp" ? isTemp(s.workspace) : s.workspace === group));
-    }
-    // `before=<lastActiveAt>,<sessionId>`: the rows strictly below the last one the sidebar
-    // holds, in activity order only.
-    const before = query.get("before");
-    if (before !== null) {
-      if (!activity) fail(400, "bad_request", "before requires order=activity.");
-      const comma = before.indexOf(",");
-      const cursor = { lastActiveAt: before.slice(0, comma), sessionId: before.slice(comma + 1) };
-      if (comma < 0 || !Number.isFinite(Date.parse(cursor.lastActiveAt)) || !cursor.sessionId)
-        fail(400, "bad_request", "before must be <lastActiveAt>,<sessionId>.");
-      rows = rows.filter((s) => byActivity(s, cursor) > 0);
-    }
-    const limit = Number(query.get("limit"));
-    const offset = Number(query.get("offset")) || 0;
-    const page = Number.isFinite(limit) && limit > 0 ? rows.slice(offset, offset + limit) : rows;
-    const response: { sessions: SessionInfo[] } & Partial<
-      Pick<
-        import("@prismshadow/penguin-server/api").SessionsResponse,
-        "counts" | "workspaceCounts" | "workspaceLatest"
-      >
-    > = { sessions: page };
-    if (query.get("counts") === "1") {
-      response.counts = countsOf(all);
-      const byWorkspace: Record<string, SessionInfo[]> = {};
-      for (const row of all) (byWorkspace[row.workspace] ??= []).push(row);
-      response.workspaceCounts = Object.fromEntries(
-        Object.entries(byWorkspace).map(([path, list]) => [path, countsOf(list)]),
-      );
-      // The newest CREATION per path, whatever order the page is in.
-      response.workspaceLatest = Object.fromEntries(
-        Object.entries(byWorkspace).map(([path, list]) => [
-          path,
-          list.reduce((latest, row) => (row.createdAt > latest ? row.createdAt : latest), ""),
-        ]),
-      );
-    }
-    return response;
+    // `before=<lastActiveAt>,<sessionId>`: split at the first comma.
+    const rawBefore = query.get("before");
+    const comma = rawBefore?.indexOf(",") ?? -1;
+    if (rawBefore !== null && comma < 0)
+      fail(400, "bad_request", "before must be <lastActiveAt>,<sessionId>.");
+    return listPage(store, str(params.agentId), {
+      ownOnly: query.get("excludeOrg") === "1",
+      activity: query.get("order") === "activity",
+      category: query.get("category") as SessionCategory | null,
+      group: query.get("workspaceGroup"),
+      counts: query.get("counts") === "1",
+      before:
+        rawBefore === null
+          ? null
+          : { lastActiveAt: rawBefore.slice(0, comma), sessionId: rawBefore.slice(comma + 1) },
+      limit: Number(query.get("limit")),
+      offset: Number(query.get("offset")) || 0,
+    });
+  })
+  // The sidebar's whole reload in one request: each entry answered as the GET route would,
+  // and an Agent the demo does not have is an answer about that Agent (`absent`), never a
+  // failure of the batch.
+  .post("/api/projects/:projectId/sessions/batch", ({ store, body }): SessionsBatchResponse => {
+    const requests = record(body).requests;
+    if (!Array.isArray(requests)) fail(400, "bad_request", "requests must be an array.");
+    const results = requests.map((entry): SessionBatchResult => {
+      const ask = record(entry);
+      const agentId = str(ask.agentId);
+      if (!store.f.agents.some((a) => a.agentId === agentId)) {
+        return { agentId, ok: false, reason: "absent" };
+      }
+      const before = record(ask.before);
+      const page = listPage(store, agentId, {
+        ownOnly: ask.excludeOrg === true,
+        activity: ask.order === "activity",
+        category: (ask.category as SessionCategory | undefined) ?? null,
+        group: typeof ask.workspaceGroup === "string" ? ask.workspaceGroup : null,
+        counts: ask.withCounts === true,
+        before:
+          ask.before === undefined
+            ? null
+            : { lastActiveAt: str(before.lastActiveAt), sessionId: str(before.sessionId) },
+        limit: Number(ask.limit),
+        offset: Number(ask.offset) || 0,
+      });
+      return { agentId, ok: true, ...page };
+    });
+    return { results };
   })
   .get("/api/projects/:projectId/dirs", ({ store, query }): DirListResponse => {
     const path = query.get("path") || "/home/demo";
@@ -1896,6 +1981,30 @@ router
     const name = query.get("name") ?? "";
     return { name, readme: store.f.readmes[name] ?? null };
   })
+  // A listed server module's package as a zip: the demo's bytes stand in for the package.
+  .get("/api/plugins/registry/archive", ({ store, query }) => {
+    const name = query.get("name") ?? "";
+    if (!store.f.pluginIndex.plugins.some((e) => e.name === name)) notFound("Plugin");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${name.replace(/^@[^/]+\//, "")}.zip"`,
+    });
+  })
+  // A library plugin's own README.md: the demo's plugins ship none unless the store has one.
+  .get("/api/plugins/:plugin/readme", ({ store, params }): PluginReadmeResponse => {
+    const name = params.plugin!;
+    if (!libraryPlugins(store).some((p) => p.name === name)) notFound("Plugin");
+    const readme = store.f.readmes[name];
+    if (readme === undefined) notFound("README");
+    return { name, readme };
+  })
+  .get("/api/plugins/:plugin/archive", ({ store, params }) => {
+    if (!libraryPlugins(store).some((p) => p.name === params.plugin)) notFound("Plugin");
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${params.plugin!}.zip"`,
+    });
+  })
   .get("/api/plugins/:plugin/files", ({ store, params }): PluginFilesResponse => {
     const files = store.f.pluginFiles[params.plugin!];
     if (!files) {
@@ -1933,7 +2042,11 @@ router
     agent.skillCount = installed.skills.length;
     agent.hookCount = installed.hooks.length;
     return json(
-      { skills: installed.skills, hooks: installed.hooks } satisfies AgentPluginsInstallResponse,
+      {
+        skills: installed.skills,
+        hooks: installed.hooks,
+        mcpServers: mcpServerItems(ctx),
+      } satisfies AgentPluginsInstallResponse,
       201,
     );
   })
@@ -1943,6 +2056,16 @@ router
   .get("/api/projects/:projectId/agents/:agentId/hooks", (ctx): AgentHooksResponse => ({
     hooks: installedOf(ctx).hooks,
   }))
+  .get("/api/projects/:projectId/agents/:agentId/mcp-servers", (ctx): AgentMcpServersResponse => ({
+    servers: mcpServerItems(ctx),
+  }))
+  .delete("/api/projects/:projectId/agents/:agentId/mcp-servers/:name", (ctx) => {
+    const config = configOf(ctx).config;
+    const kept = config.mcpServers.filter((entry) => entry.name !== ctx.params.name);
+    if (kept.length === config.mcpServers.length) notFound("MCP server");
+    config.mcpServers = kept;
+    return empty();
+  })
   .delete("/api/projects/:projectId/agents/:agentId/hooks/:name", (ctx) => {
     const installed = installedOf(ctx);
     const before = installed.hooks.length;
@@ -2070,6 +2193,14 @@ router
     const benchmark = benchmarkOf(ctx);
     ctx.store.f.benchmarks = ctx.store.f.benchmarks.filter((b) => b.id !== benchmark.id);
     return empty();
+  })
+  .post("/api/projects/:projectId/benchmarks/archive", () => readOnly("import a Benchmark package"))
+  .get("/api/projects/:projectId/benchmarks/:benchmarkId/archive", (ctx) => {
+    const benchmark = benchmarkOf(ctx);
+    return raw("PK\u0003\u0004 demo archive", {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="${benchmark.id}-v${benchmark.version ?? "0"}.zip"`,
+    });
   })
   .get("/api/projects/:projectId/benchmarks/:benchmarkId/cases/:caseId/files", (ctx) =>
     listCaseFiles(ctx, "statement"),
@@ -2312,6 +2443,8 @@ router
   .post("/api/projects/:projectId/organizations/:orgId/employees", companyOff)
   .patch("/api/projects/:projectId/organizations/:orgId/employees/:agentId", companyOff)
   .delete("/api/projects/:projectId/organizations/:orgId/employees/:agentId", companyOff)
+  .get("/api/projects/:projectId/organizations/:orgId/employees/:agentId/avatar", companyOff)
+  .put("/api/projects/:projectId/organizations/:orgId/employees/:agentId/avatar", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/employees/:agentId/desk", companyOff)
   .post("/api/projects/:projectId/organizations/:orgId/employees/:agentId/desk", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/handbook", companyOff)
@@ -2401,6 +2534,9 @@ router
       }
       return store.f.installedPlugins;
     },
+  )
+  .post("/api/projects/:projectId/plugins/installed/archive", () =>
+    readOnly("install a plugin archive"),
   )
   .delete(
     "/api/projects/:projectId/plugins/installed",

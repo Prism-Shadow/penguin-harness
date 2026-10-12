@@ -349,8 +349,12 @@ export type ErrorCode =
   | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "unsupported" // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input" // the input failed to assemble into a request
-  // MCP connect failures.
-  | "connect_failed";
+  // MCP connect failures: a server that could not connect, and a server that was not
+  // contacted because the Agent's vault lacks a key its entry references or because it needs
+  // an OAuth sign-in (per-server results of mcp_connect_end).
+  | "connect_failed"
+  | "mcp_needs_setup"
+  | "mcp_sign_in_required";
 
 /** The shared error-reporting block (see ErrorCode). */
 export interface ErrorInfo {
@@ -533,7 +537,7 @@ export interface ToolListReadyPayload {
 export interface McpServerConnectResult {
   server: string;
   transport: "stdio" | "http" | "sse";
-  /** `completed` / `fatal` (connect or discovery failed; not retried within the run) / `aborted`. Legacy Traces spell the failure `failed`. */
+  /** `completed` / `fatal` (connect or discovery failed, or the server was skipped — see `error_code`; not retried within the run) / `aborted`. Legacy Traces spell the failure `failed`. */
   status: StopReason;
   duration_ms: number;
   /** Number of tools discovered (present on completed). */

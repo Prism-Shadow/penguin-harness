@@ -7,7 +7,7 @@ description: 所有 penguin 命令和子命令的选项、默认值、输出结�
 
 CLI 以 npm 包 `@prismshadow/penguin-cli` 发布，命令名为 `penguin`。直接运行 `penguin` 会打印帮助。`-v, --version` 打印当前构建的一行标识信息，`penguin version --json` 则打印完整信息。启动时，CLI 会从工作目录加载 `.env` 文件。
 
-CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`session`、`agent`、`project`、`cost`、`schedule`、`org`、`browser`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
+CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`session`、`agent`、`project`、`cost`、`schedule`、`benchmark`、`org`、`browser`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
 
 ## 服务器连接
 
@@ -318,6 +318,25 @@ penguin agent api status --agent-id helper --json
 penguin project ls
 ```
 
+## penguin plugin
+
+在服务端安装和移除插件，这是管理员的操作：CLI 用服务端的本地 API token 发起调用，这个 token 代表管理员，因此 Agent 可以在对话中审阅插件后自行安装。每个命令都支持 `--project-id`（缺省依次取 `PENGUIN_PROJECT_ID`、`default_project`）、`--json` 和 `--server`。
+
+- `penguin plugin install <specifier>` 把插件安装到服务端：npm 包名，可带版本、范围或标签（`@scope/name`、`name@1.2.0`），或指向 git 仓库或 tarball 的 https 链接（`https://github.com/o/r`、`github:o/r#v1`）。其他来源，例如不是插件包目录的路径、`http:` 链接或指向仓库中某个文件夹的链接，服务端会拒绝。只含 Skill、钩子或 MCP Server 的插件进入插件库，再在**插件**页把它安装到 Agent 上；带服务端模块的插件还会为该 Project 启用并立即载入，服务端上正在进行的 Agent 运行会被中止。
+- `penguin plugin install <directory>` 从本地目录安装插件包，目录里须有 `package.json`（与 npm 包名同名时以目录为准）。CLI 先用插件库自己的读取器读取它，插件库会拒绝时就停下，不发送任何内容；随后把目录打成 zip（不含 `node_modules`、`.git` 和 `.npmrc`），按**上传 zip 包**的方式上传。服务端已装有该包的其他版本时，命令会说明，加上 `--overwrite` 即可替换。包可以只带 MCP Server（在 `penguin.mcp_servers` 中声明）；上传之后，命令为包携带的每个 Server 打印一行：名称、传输方式和目标，目标是 URL，或 stdio Server 在服务器上运行的命令。Agent 正是这样安装它转换好的插件，见[导入与导出插件](/skills#导入与导出插件)。
+- `penguin plugin remove <name>` 从 Project 中移除插件；没有其他 Project 使用时，一并从服务端删除。
+- `penguin plugin list`（或 `ls`）列出 Project 启用的服务端模块及其在本服务端上的状态，以及服务端安装的 Skill / 钩子 / MCP Server 插件。
+
+```bash
+penguin plugin install @acme/penguin-notes@1.2.0
+penguin plugin install https://github.com/acme/penguin-notes --project-id my-project
+penguin plugin install ./penguin-notes --overwrite
+penguin plugin list --json
+penguin plugin remove @acme/penguin-notes
+```
+
+要从 zip 安装插件，请使用**插件**页的**导入插件**，见[导入与导出插件](/skills#导入与导出插件)。
+
 ## penguin cost
 
 展示来自服务器用量聚合的 Token 用量与成本。默认打印一张摘要卡片，包含今天、最近 7 天和总计，忽略任何范围选项。`--by` 则打印分组表格。
@@ -382,6 +401,38 @@ penguin schedule update daily-report --period 12h --disable
 penguin schedule rm daily-report
 ```
 
+## penguin benchmark
+
+经服务器把一个 Benchmark 包导入 Project 的评估中心：与**导入评估集**弹窗里的上传 zip 是同一次导入、同一套检查。包里能有什么，见[导入 Benchmark](/evaluation-center#导入-benchmark)。
+
+```bash
+penguin benchmark import <dir-or-zip> [--overwrite]
+  [--origin-url <link> --origin-ref <commit> --origin-path <folder>]
+  [--project-id <id>] [--json] [--server <url>]
+```
+
+参数是一个包文件夹（含 `benchmark_config.toml` 与各个 `CASE-*` 文件夹），或它的 zip。zip 原样发送。文件夹先整个打成 zip，每个条目保持原样：CLI 不略去任何东西，也不跟随链接，所以包里不该有的东西（例如 `scoreboard.yaml`、`.jobs` 文件夹或链接）会由服务器拒收并点名，与上传时一样。Benchmark 由服务器写入；这个命令自己从不往 `benchmarks/` 下写东西。
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--overwrite` | 整体替换同 id 的 Benchmark，删除它的评估记录与运行结果。该 Benchmark 的评估还有 trial 在运行时，服务器拒绝覆盖。 | id 已被占用时命令失败 |
+| `--origin-url <link>` / `--origin-ref <commit>` / `--origin-path <folder>` | 包所取自的仓库文件夹：原样的链接、它解析到的 40 位提交号，以及仓库里的文件夹路径。三个要么都给，要么都不给。服务器把它们记为 Benchmark 的来源 `git`，Benchmark 页面会链接这个文件夹。 | 来源为 `zip` |
+| `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。`--json` 打印导入后的 Benchmark。 | — |
+
+- 发送之前，文件夹先按导入的上限检查：1,000 个文件、单个文件 5 MB、合计 20 MB、打包后 14 MB。超出时命令立即失败。
+- id 已被占用时，命令以一行说明失败，并点出是哪个 Benchmark；加 `--overwrite` 再运行一次即可替换它。
+- 这个命令与其他走服务器的命令一样，用本机 API token 认证（见[服务器连接](#服务器连接)）。
+
+```bash
+penguin benchmark import ./report-writing-v1
+penguin benchmark import "$TMP/packages/penguinharness-benchmark-sec-a" \
+  --origin-url https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-sec-a \
+  --origin-ref c12d65bc20beb5130ed57b3b7983c62d497b7d2f \
+  --origin-path packages/penguinharness-benchmark-sec-a
+```
+
+Agent 正是这样从仓库文件夹导入包的，做法见 `benchmark-design` Skill 的 `reference/package.md`。
+
 ## penguin org
 
 公司模式的命令族，是组织 API 之上的瘦客户端。组织在 Project 目录下的文件（员工树、工位台账、日历、工单和频道）始终是唯一事实来源。每个子命令要么读取这些文件的投影，要么通过编辑这些文件的路由写入；契约与 `schedule` 一致——CLI 是经过校验的写入方，API 错误原样打印，Agent 立即得到校验结果，不必像手工编辑那样等下一轮对账。按约定，生成的 id 带前缀：组织用 `co_`，频道用 `ch_`。服务器建议这些前缀但从不强制，这里传入的 id 会严格按输入原样创建。
@@ -393,6 +444,7 @@ penguin org show [--org-id <id>] [--json]                       # overview: work
 penguin org chart [--org-id <id>] [--json]                      # the employee tree
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
 penguin org employee set <agent_id> [--title <s>] [--reports-to <agent_id>] [--workspace <path>] [--budget <usd>] [--duties <s>] [--model-id <id> --provider <p>]
+penguin org employee avatar [<agent_id>] (--file <image> | --clear)   # PNG/JPEG/WebP，≤ 约 96 KiB；id 缺省为 PENGUIN_AGENT_ID，员工可给自己设
 penguin org leave <agent_id>                                    # out of the organization (not the CEO); the Agent itself stays
 penguin org desk show [<agent_id>] [--json]                     # the desk session id and Workspace (opens the desk if there is none)
 penguin org desk renew [<agent_id>]                             # a fresh desk session (resets the context)

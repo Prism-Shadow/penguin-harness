@@ -1,7 +1,12 @@
 {
   "name": "@penguinharness/use-firecrawl",
   "version": "0.2.13",
-  "description": "Search the web and scrape pages into clean markdown with the Firecrawl API \u2014 query-based discovery, single-URL extraction including public PDFs, driven by curl with a vault-stored API key.",
+  "description": "Search the web and scrape pages into clean markdown with the Firecrawl API — query-based discovery, single-URL extraction including public PDFs, driven by curl with a vault-stored API key.",
+  "keywords": [
+    "penguin-plugin",
+    "penguinharness",
+    "skills"
+  ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -9,7 +14,6 @@
     "directory": "plugins/use-firecrawl"
   },
   "files": [
-    "plugin.json",
     "icon.svg",
     "skills",
     "hooks",
@@ -17,5 +21,18 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "penguin": {
+    "short_description": "Web search and page scraping via Firecrawl.",
+    "short_description_zh": "用 Firecrawl 做网络搜索与页面抓取。",
+    "category": "office-productivity",
+    "icon": "icon.svg",
+    "quick_start": {
+      "prompt": "Search the web for the latest PenguinHarness release and summarize its three most important changes, with links to the sources.",
+      "prompt_zh": "在网上搜索 PenguinHarness 的最新版本，概括其中最重要的三项改动，并附上来源链接。",
+      "skills": [
+        "firecrawl"
+      ]
+    }
   }
 }

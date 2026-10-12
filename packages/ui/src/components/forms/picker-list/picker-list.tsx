@@ -13,9 +13,14 @@
  * letters, press Enter" work. Escape is the host's: the search box empties itself on the first
  * press when it holds text, and the host closes its own panel at the window level (an IME-safe
  * handler for a switch picker, the dropdown's for a dropdown).
+ *
+ * A host whose items fall into runs (the agent picker's company employees, listed last) names
+ * a run with `groupLabel`: the name is drawn once above the run's first row, in the menus'
+ * group-label rung. It is not a row — the keyboard walks the items alone.
  */
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
+import { MenuLabel } from "../../overlays/menu/menu";
 import { ChoiceCheck, menuRowClass, menuRowTone } from "../../overlays/menu-panel/menu-panel";
 import { SearchInput } from "../search-input/search-input";
 
@@ -29,6 +34,7 @@ export function PickerList<T>({
   emptyText,
   onPick,
   renderRow,
+  groupLabel,
   footer,
 }: {
   items: readonly T[];
@@ -45,6 +51,8 @@ export function PickerList<T>({
   onPick: (item: T) => void;
   /** The row's own content, left of the check's slot. */
   renderRow: (item: T) => ReactNode;
+  /** The name of the run an item belongs to, drawn above the run's first row; null = no name. */
+  groupLabel?: (item: T) => string | null;
   /** Pinned below the scroll area (mirroring the search box above it). */
   footer?: ReactNode;
 }) {
@@ -87,22 +95,28 @@ export function PickerList<T>({
       </div>
       <div className="max-h-56 overflow-y-auto">
         {items.length === 0 && <p className="px-3 py-1.5 text-xs text-fg-subtle">{emptyText}</p>}
-        {items.map((item) => {
+        {items.map((item, i) => {
           const key = itemKey(item);
           const current = isCurrent?.(item) ?? false;
+          const label = groupLabel?.(item) ?? null;
+          const opensRun = label !== null && (i === 0 || groupLabel?.(items[i - 1]!) !== label);
           return (
-            <button
-              key={key}
-              type="button"
-              ref={key === activeKey ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
-              onClick={() => onPick(item)}
-              className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(current)}${
-                key === activeKey ? " bg-line-muted" : ""
-              }`}
-            >
-              {renderRow(item)}
-              <ChoiceCheck on={current} />
-            </button>
+            <Fragment key={key}>
+              {opensRun && <MenuLabel>{label}</MenuLabel>}
+              <button
+                type="button"
+                ref={
+                  key === activeKey ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined
+                }
+                onClick={() => onPick(item)}
+                className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(current)}${
+                  key === activeKey ? " bg-line-muted" : ""
+                }`}
+              >
+                {renderRow(item)}
+                <ChoiceCheck on={current} />
+              </button>
+            </Fragment>
           );
         })}
       </div>

@@ -17,9 +17,12 @@ import {
   Button,
   CopyButton,
   EmptyState,
+  GlyphIcon,
+  ICONS,
   PageFrame,
   PageHeader,
   Skeleton,
+  toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
@@ -29,6 +32,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
+import { downloadArchive } from "../agents/archive-download";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { benchmarkPath } from "./benchmark-prompts";
 import { fetchBenchmarks } from "./benchmark-sources";
@@ -82,17 +86,27 @@ function webLink(url: string | undefined): string | null {
   }
 }
 
+/** The copy button's quiet look, for the export button that stands beside it. */
+const QUIET_ICON_BUTTON =
+  "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-150 hover:bg-surface-muted hover:text-fg-muted";
+
 /**
  * What the header says under the Benchmark's title: the directory its files live in, with a copy
- * button, and the version its manifest is at; under them, for a copy an Agent imported from a
- * repository folder, a link to that folder. A Benchmark whose manifest was written before
- * versions or could not be read, or one a machine running an older server answered for, has no
- * version, and the header names its directory alone.
+ * button — and, for a published Benchmark, Export beside it, which downloads its package — and
+ * the version its manifest is at; under them, for a copy an Agent imported from a repository
+ * folder, a link to that folder. A draft, a failed Benchmark and one whose manifest cannot be read
+ * have no package, and no Export. A Benchmark whose manifest was written before versions or could
+ * not be read, or one a machine running an older server answered for, has no version, and the
+ * header names its directory alone.
  */
 export function BenchmarkHeaderFacts({
   benchmark,
+  onExport,
 }: {
-  benchmark: Pick<BenchmarkSummary, "id" | "version" | "origin">;
+  benchmark: Pick<BenchmarkSummary, "id" | "version" | "origin"> &
+    Partial<Pick<BenchmarkSummary, "status">>;
+  /** Downloads the package; shown only when the Benchmark is published. */
+  onExport?: () => void;
 }) {
   const source = benchmark.origin?.kind === "git" ? webLink(benchmark.origin.url) : null;
   return (
@@ -108,6 +122,17 @@ export function BenchmarkHeaderFacts({
             size="sm"
             className="shrink-0"
           />
+          {onExport !== undefined && benchmark.status === "published" && (
+            <button
+              type="button"
+              data-tooltip={S.benchmark.exportBenchmark}
+              aria-label={S.benchmark.exportBenchmark}
+              onClick={onExport}
+              className={QUIET_ICON_BUTTON}
+            >
+              <GlyphIcon d={ICONS.download} />
+            </button>
+          )}
         </span>
         {benchmark.version !== undefined && benchmark.version !== "" && (
           <span className="shrink-0 text-xs">
@@ -212,6 +237,23 @@ export function BenchmarkDetailPage() {
   const masked = benchmark !== null && benchmark.status !== "published";
   const failed = benchmark !== null && benchmark.status === "failed";
 
+  /**
+   * Export: the package of the copy this page describes — this server's when it holds one, else
+   * the first machine's — through the Skills tab's download, so a refusal is a toast rather than
+   * a saved error file.
+   */
+  const exportBenchmark = async () => {
+    if (benchmark === null) return;
+    try {
+      await downloadArchive(
+        api.benchmarkArchiveUrl(projectId, benchmark.id, benchmark.machineIds[0] ?? null),
+        benchmark.id,
+      );
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
+
   let body;
   if (error !== null) {
     body = <p className="text-sm text-red-600 dark:text-red-400">{error}</p>;
@@ -259,7 +301,11 @@ export function BenchmarkDetailPage() {
                 : benchmark.title}
           </span>
         }
-        description={benchmark ? <BenchmarkHeaderFacts benchmark={benchmark} /> : undefined}
+        description={
+          benchmark ? (
+            <BenchmarkHeaderFacts benchmark={benchmark} onExport={() => void exportBenchmark()} />
+          ) : undefined
+        }
         actions={
           benchmark && !masked ? (
             <Button size="sm" variant="primary" onClick={() => setUsing(true)}>

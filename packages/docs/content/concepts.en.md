@@ -98,7 +98,7 @@ See [Skills & Plugins](/skills).
 
 ### Plugin
 
-A plugin is what the plugin library installs. It ships Skills, a hook package, or both, and installing it on an agent puts them into that agent's Agent State. A server plugin is a different kind: an npm package of server modules, such as a sandbox backend, that a Project asks the server to run.
+A plugin is what the plugin library installs. It ships Skills, a hook package, MCP servers, or a mix of them, and installing it on an agent puts them into that agent's Agent State. A server plugin is a different kind: an npm package of server modules, such as a sandbox backend, that a Project asks the server to run.
 
 See [Skills & Plugins](/skills).
 
@@ -110,7 +110,7 @@ See [Skills & Plugins](/skills#hook-packages).
 
 ### MCP server
 
-An MCP server is a program or service that offers tools through the Model Context Protocol. The tools it offers join the agent's toolset and go through the same approval as the built-in tools.
+An MCP server is a program or service that offers tools through the Model Context Protocol. The tools it offers join the agent's toolset and go through the same approval as the built-in tools. You add one in the agent's settings, or a plugin brings it along and installing the plugin adds it.
 
 See [Tools & Approval](/tools#mcp-servers).
 
@@ -122,7 +122,7 @@ See [Configuration Reference](/configuration#memory).
 
 ### Vault
 
-The Vault holds an agent's secrets as environment variables. The values reach only the processes the agent's tools start, never the model or the Trace; the model sees at most the key names.
+The Vault holds an agent's secrets as environment variables. The values reach only the processes the agent's tools start and the MCP servers whose entries reference them, never the model or the Trace; the model sees at most the key names.
 
 See [Configuration Reference](/configuration#vault).
 

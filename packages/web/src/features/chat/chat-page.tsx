@@ -119,9 +119,11 @@ import { prepareNewChatDraft } from "./new-chat";
 import {
   heldRouteSession,
   resolveRoutedSession,
+  routeSessionOutcome,
   sessionForProject,
   sessionProbeKey,
 } from "./session-project";
+import { RouteProbe } from "./route-probe";
 import { machineForSession } from "../../lib/session-machines";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
@@ -496,6 +498,8 @@ export function ChatPage() {
    */
   const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
   const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
+  /** The probe that failed did so with a 404: the server has no such Session for this user. */
+  const [probeMissingKey, setProbeMissingKey] = useState<string | null>(null);
   const heldSession = useRef<SessionInfo | null>(null);
   heldSession.current = heldRouteSession(
     heldSession.current,
@@ -504,13 +508,21 @@ export function ChatPage() {
     probeKey !== null && probeFailedKey === probeKey,
   );
   const selected = draft ? null : heldSession.current;
+  /**
+   * The Agent this page renders under: the routed Session's own, else the current Agent (a
+   * draft has no Session). The current Agent is resolved against THIS server's Agent list and
+   * is adopted from the Session only when that list carries it — an organization's employee
+   * whose Agent lives on a machine is never in it, so going by the current Agent alone left
+   * that conversation on the placeholder for good, with nothing to say why.
+   */
+  const pageAgentId = selected?.agentId ?? agentId;
   // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
   // workflows live on: a Session on a machine runs a copy of the Agent there, and the workflows
   // it built are in that copy. The current Agent is always one of this server's, so going by
   // it listed the wrong Agent's workflows (or none) for every Session on a machine.
   const workflowTabs = useWorkflowTabs(
     projectId,
-    selected?.agentId ?? agentId,
+    pageAgentId,
     selected === null ? null : machineForSession(selected.sessionId),
   );
   // New shells start in this conversation's Workspace — its files are what a terminal
@@ -558,14 +570,18 @@ export function ChatPage() {
   } = useSessionDraft(selected?.sessionId ?? null);
 
   // The rendered transcript: backfilled older windows (frozen items, negative ids) ahead
-  // of the live tail model's items. Version keys the memo — a prepend bumps it.
+  // of the live tail model's items. Keyed on the prefix's identity as well as the stream
+  // version: the controller prepends synchronously and its repaint signal is throttled, so
+  // a render forced by anything else in between must not pair the NEW prepend count (read
+  // live below) with the OLD item list — the stream would anchor against a layout that has
+  // not changed yet and leave the commit that does change it unanchored.
   const allItems = useMemo(
     () =>
       stream.prefixItems.length > 0
         ? [...stream.prefixItems, ...stream.model.items]
         : stream.model.items,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stream.version, routeSessionId],
+    [stream.version, stream.prefixItems, routeSessionId],
   );
   // Derivations over the stream items (the model mutates in place, so `version` — its own
   // repaint signal — keys the memos; the session id covers a switch racing a same-valued
@@ -670,6 +686,10 @@ export function ChatPage() {
   useEffect(() => {
     if (selectedSessionId && selectedAgentId && selectedAgentKnown)
       setCurrentAgentId(selectedAgentId);
+    else if (selectedSessionId && selectedAgentId)
+      console.warn(
+        `[chat] the Agent ${selectedAgentId} of ${selectedSessionId} is not in this server's Agent list; the conversation renders under the Session's own Agent id`,
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, selectedAgentId, selectedAgentKnown, setCurrentAgentId]);
 
@@ -842,8 +862,17 @@ export function ChatPage() {
    * connection is back (state/sessions.tsx: OFFLINE_RECHECK_MS).
    */
   const routeSessionOffline = routeSessionPending && probeFailedKey === probeKey;
+  /** The direct lookup of the routed Session, one per page (route-probe.ts). */
+  const [routeProbe] = useState(() => new RouteProbe());
+  /** A row the lookup found while the Session list was still loading, to add once it settles. */
+  const addWhenListed = useRef<SessionInfo | null>(null);
   useEffect(() => {
-    if (draft || !projectId || !routeSessionId || !probeKey || sessionsLoading) return;
+    routeProbe.track(draft ? null : probeKey, sessionsLoading);
+    // NOT gated on `sessionsLoading`: the direct lookup is what opens the conversation, and
+    // holding it behind the sidebar's list fan-out (one first page per Agent per machine)
+    // put seconds of sidebar work in front of the conversation the reader asked for. The
+    // failure path below is the one place the list still matters, and it is handled there.
+    if (draft || !projectId || !routeSessionId || !probeKey) return;
     // Settled (row loaded, or the lookup already failed): nothing to probe — and a failed
     // key must not be re-probed just because the list's identity churned.
     if (!routeSessionPending) return;
@@ -856,26 +885,36 @@ export function ChatPage() {
       setProbeFailedKey(probeKey);
       return;
     }
-    let cancelled = false;
-    api.getSession(routeSessionId).then(
-      (res) => {
-        if (cancelled) return;
-        const session = sessionForProject(res.session, projectId);
-        if (session) {
+    // Deliberately NOT cancelled on re-run: this lookup is keyed by the routed Session, and
+    // its answer stays valid across the list churn that re-runs this effect. Tying its
+    // lifetime to one run is what made a deep link issue a dozen identical requests. One
+    // lookup per Session in flight, the list's loading read when it settles, and an answer
+    // about a Session the route has left dropped: see route-probe.ts.
+    routeProbe.run(
+      probeKey,
+      async () => sessionForProject((await api.getSession(routeSessionId)).session, projectId),
+      {
+        found: (session, listLoading) => {
           setFetchedSession(session);
-          addSession(session);
+          // add() invalidates a reload in flight. During the sidebar's first load that threw
+          // the whole load away, leaving the list on this one row and still loading; the
+          // conversation needs only the fetched row, so the list gets it once it has settled.
+          if (listLoading) addWhenListed.current = session;
+          else addSession(session);
           // A Session of an Agent the list has not loaded (company mode creates Agents
           // server-side): fetch the list, or the page has no Agent to render under.
           if (!agents.some((a) => a.agentId === session.agentId)) void reloadAgents();
-        } else setProbeFailedKey(probeKey);
-      },
-      () => {
-        if (!cancelled) setProbeFailedKey(probeKey);
+        },
+        // Only once the list has settled: a failure while it loads is not a verdict, and
+        // this effect re-runs when it settles and asks again.
+        gone: (cause) => {
+          setProbeFailedKey(probeKey);
+          // Only an answer that the Session does not exist settles it as missing; a failure to
+          // get any answer is not that, and keeps the old way on.
+          if (cause instanceof ApiError && cause.status === 404) setProbeMissingKey(probeKey);
+        },
       },
     );
-    return () => {
-      cancelled = true;
-    };
     // `selected` rather than `sessions`: while the routed row stays unloaded, list churn
     // (status flips, new pages) keeps it null and leaves the in-flight lookup alone —
     // depending on the array identity cancelled and re-issued it on every user event.
@@ -890,23 +929,46 @@ export function ChatPage() {
     addSession,
     isSessionDeleted,
   ]);
+  // The row found during the list's first load, added once the list has settled and only if
+  // it did not bring the row itself (one beyond the first page, or an organization's row,
+  // which no list page serves and whose status and title events reach only listed rows).
+  useEffect(() => {
+    const row = addWhenListed.current;
+    if (sessionsLoading || row === null) return;
+    addWhenListed.current = null;
+    if (row.sessionId !== routeSessionId || sessions.some((s) => s.sessionId === row.sessionId))
+      return;
+    addSession(row);
+  }, [sessionsLoading, sessions, routeSessionId, addSession]);
+
+  /**
+   * What becomes of the routed Session (session-project.ts): shown, still being looked for, a
+   * reason to open another conversation, or — the direct lookup said it does not exist — a
+   * dead link the page owns up to in place rather than swapping in some other conversation.
+   */
+  const routeOutcome = routeSessionOutcome({
+    shown: selected !== null,
+    pending: routeSessionPending,
+    routeSessionId,
+    deletedHere: routeSessionId !== null && isSessionDeleted(routeSessionId),
+    missing: probeKey !== null && probeMissingKey === probeKey,
+  });
 
   // Auto-select the last conversation when the route doesn't select one: the most recently
   // ACTIVE loaded conversation of the user's own (`user` source), the same rule the collapsed
   // rail's entry follows — archived rows are hidden by choice and background Sessions were
   // opened by a program, so neither is auto-opened. If there is none, fall back to draft state
-  // (instead of auto-creating one).
+  // (instead of auto-creating one). A routed id missing from the paged list isn't gone until
+  // the direct lookup fails, and one the lookup says does not exist is not replaced at all.
   useEffect(() => {
     if (sessionsLoading || draft) return;
-    if (selected !== null) return;
-    // A routed id missing from the paged list isn't gone until the direct lookup fails.
-    if (routeSessionPending) return;
+    if (routeOutcome !== "redirect") return;
     // An organization's desk or ticket Session is never auto-opened: landing in one by default
     // would put the user inside a conversation the scheduler drives, and company mode's own
     // groups are where it is reached.
     const last = latestConversation(withoutOrgSessions(sessions));
     navigate(last ? `/chat/${last.sessionId}` : `/chat/${DRAFT_SESSION_ID}`, { replace: true });
-  }, [sessionsLoading, draft, selected, routeSessionPending, sessions, navigate]);
+  }, [sessionsLoading, draft, routeOutcome, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
   //
@@ -2018,7 +2080,7 @@ export function ChatPage() {
     prefillComposer,
   };
 
-  if (!projectId || !agentId) {
+  if (!projectId || !pageAgentId) {
     return (
       <div className="p-6">
         <Skeleton className="h-6 w-64" />
@@ -2171,14 +2233,14 @@ export function ChatPage() {
         active={workflowTabs.active}
         onSelect={workflowTabs.setActive}
       />
-      {workflowTabs.activeTab !== null && projectId !== null && agentId !== null && (
+      {workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null && (
         <div className="absolute inset-x-0 bottom-0 top-9 z-10">
           <WorkflowFrame
             // Per tab: the frame keeps this workflow's history fold, its error and its
             // armed Remove, and none of that belongs to the next tab.
             key={workflowTabs.activeTab.tabId}
             projectId={projectId}
-            agentId={selected?.agentId ?? agentId}
+            agentId={pageAgentId}
             tab={workflowTabs.activeTab}
             onChanged={() => void workflowTabs.refresh()}
             onRemoved={() => {
@@ -2620,6 +2682,22 @@ export function ChatPage() {
                             )
                       }
                       description={S.chat.sessionOfflineHint}
+                    />
+                  ) : !sessionsLoading && routeOutcome === "notFound" ? (
+                    // A dead link: said in place, with the one way on that fits the mode —
+                    // a new conversation, or back to the organization in company mode.
+                    <EmptyState
+                      title={S.chat.sessionNotFound}
+                      description={S.chat.sessionNotFoundHint}
+                      action={
+                        company.workMode === "company" ? (
+                          <Button onClick={() => navigate("/org")}>
+                            {S.company.backToOverview}
+                          </Button>
+                        ) : (
+                          <Button onClick={newChat}>{S.nav.newChat}</Button>
+                        )
+                      }
                     />
                   ) : sessionsLoading || routeSessionPending ? (
                     <div className="space-y-3 p-6">

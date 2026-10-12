@@ -7,7 +7,7 @@ This page documents every `penguin` command. It opens with how the CLI reaches a
 
 The CLI ships as the npm package `@prismshadow/penguin-cli`, and the command is `penguin`. Bare `penguin` prints help. `-v, --version` prints the running build's one-line identity, and `penguin version --json` prints all of it. On startup the CLI loads a `.env` file from the working directory.
 
-The CLI is a thin client of the server. Every session-facing command (`run`, `chat`, `session`, `agent`, `project`, `cost`, `schedule`, `org`, `browser`) sends HTTP requests to a PenguinHarness server and renders the replies. Tasks run on the server, Sessions live in its index, and the Web App sees everything the CLI creates, and the other way round. Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
+The CLI is a thin client of the server. Every session-facing command (`run`, `chat`, `session`, `agent`, `project`, `cost`, `schedule`, `benchmark`, `org`, `browser`) sends HTTP requests to a PenguinHarness server and renders the replies. Tasks run on the server, Sessions live in its index, and the Web App sees everything the CLI creates, and the other way round. Only `config` still edits the Project's files directly, and `server` / `web` start the service itself.
 
 ## Server connection
 
@@ -318,6 +318,25 @@ penguin agent api status --agent-id helper --json
 penguin project ls
 ```
 
+## penguin plugin
+
+Installs and removes the plugins on the server, which is an admin's to do: the CLI calls with the server's local API token, which is the admin's, so an agent can install a plugin it has reviewed in a conversation. Each command takes `--project-id` (defaulting to `PENGUIN_PROJECT_ID`, then `default_project`), `--json` and `--server`.
+
+- `penguin plugin install <specifier>` installs a plugin on the server: an npm package name, optionally with a version, range or tag (`@scope/name`, `name@1.2.0`), or an https link to a git repository or a tarball (`https://github.com/o/r`, `github:o/r#v1`). The server refuses anything else, such as a path that is not a package directory, an `http:` link or a link to a folder inside a repository. A plugin of Skills, hooks or MCP servers joins the plugin library, and you install it on an agent from the **Plugins** page. A plugin of server modules is also listed for the Project and loaded at once, which stops the agent runs in progress on the server.
+- `penguin plugin install <directory>` installs a plugin package from a local directory that holds a `package.json` (a directory wins over an npm name spelled the same). The CLI first reads it with the plugin library's own reader and stops, sending nothing, when the library would refuse it; it then zips the directory without `node_modules`, `.git` and `.npmrc` and uploads it the way **Upload a zip** does. When the server holds another version of the package, the command says so; add `--overwrite` to replace it. A package may carry MCP servers alone, declared in `penguin.mcp_servers`; after the upload the command prints one line per server the package carries, with its name, transport and target: the URL, or the command a stdio server runs on the server. This is how an agent installs a plugin it has ported; see [Import and export plugins](/skills#import-and-export-plugins).
+- `penguin plugin remove <name>` removes the plugin from the Project, and from the server once no other Project lists it.
+- `penguin plugin list` (or `ls`) lists the server modules the Project lists, with their state on this server, and the plugins of Skills, hooks or MCP servers installed on the server.
+
+```bash
+penguin plugin install @acme/penguin-notes@1.2.0
+penguin plugin install https://github.com/acme/penguin-notes --project-id my-project
+penguin plugin install ./penguin-notes --overwrite
+penguin plugin list --json
+penguin plugin remove @acme/penguin-notes
+```
+
+To install a plugin from a zip, use **Import plugin** on the **Plugins** page; see [Import and export plugins](/skills#import-and-export-plugins).
+
 ## penguin cost
 
 Shows Token usage and cost from the server's usage aggregates. By default the command prints a summary card with today, the last 7 days and the total, which ignore any range options. `--by` prints a grouped table instead.
@@ -382,6 +401,38 @@ penguin schedule update daily-report --period 12h --disable
 penguin schedule rm daily-report
 ```
 
+## penguin benchmark
+
+Imports a Benchmark package into the Project's Evaluation Center through the server: the same import, with the same checks, as the zip upload of the **Import benchmark** dialog. See [Import a Benchmark](/evaluation-center#import-a-benchmark) for what a package may hold.
+
+```bash
+penguin benchmark import <dir-or-zip> [--overwrite]
+  [--origin-url <link> --origin-ref <commit> --origin-path <folder>]
+  [--project-id <id>] [--json] [--server <url>]
+```
+
+The argument is a package folder, holding `benchmark_config.toml` and its `CASE-*` folders, or a zip of one. A zip is sent as it is. A folder is zipped whole first, every entry as it is: the CLI leaves nothing out and follows no link, so the server refuses what a package may not hold, such as a `scoreboard.yaml`, a `.jobs` folder or a link, and names it, as it does for an upload. The server writes the Benchmark; the command never writes under `benchmarks/` itself.
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--overwrite` | Replaces a Benchmark of the same id whole, deleting its evaluation records and run results. The server refuses it while an evaluation of that Benchmark still has a trial running. | A taken id fails the command |
+| `--origin-url <link>` / `--origin-ref <commit>` / `--origin-path <folder>` | The repository folder the package was fetched from: the link as given, the 40-character commit it resolved to, and the folder inside the repository. Give all three or none. The server records them as the Benchmark's origin `git`, and its page links the folder. | Origin `zip` |
+| `--project-id <id>` / `--json` / `--server <url>` | See [Global conventions](#global-conventions). `--json` prints the imported Benchmark. | — |
+
+- Before anything is sent, a folder is held to the import's limits: 1,000 files, 5 MB in one file, 20 MB in all and 14 MB zipped. Past them the command fails at once.
+- A taken id fails the command with a line that names the Benchmark; run it again with `--overwrite` to replace it.
+- The command authenticates with the local API token, like the other server-backed commands (see [Server connection](#server-connection)).
+
+```bash
+penguin benchmark import ./report-writing-v1
+penguin benchmark import "$TMP/packages/penguinharness-benchmark-sec-a" \
+  --origin-url https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-sec-a \
+  --origin-ref c12d65bc20beb5130ed57b3b7983c62d497b7d2f \
+  --origin-path packages/penguinharness-benchmark-sec-a
+```
+
+An agent imports a package from a repository folder this way, as the `benchmark-design` Skill's `reference/package.md` describes.
+
 ## penguin org
 
 Company mode's command family, a thin client over the organization API. An organization's files under the Project directory (the employee tree, the desks ledger, the calendar, tickets and channels) stay the single source of truth. Every subcommand either reads a projection of those files or writes through the route that edits them, under the same validated-writer contract `schedule` follows: API errors are printed verbatim, so an agent gets validation right away instead of waiting for the reconcile pass a hand edit goes through. By convention, generated ids carry a prefix, `co_` for an organization and `ch_` for a channel. The server proposes these prefixes but never enforces them, so an id passed here is created exactly as typed.
@@ -393,6 +444,7 @@ penguin org show [--org-id <id>] [--json]                       # overview: work
 penguin org chart [--org-id <id>] [--json]                      # the employee tree
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
 penguin org employee set <agent_id> [--title <s>] [--reports-to <agent_id>] [--workspace <path>] [--budget <usd>] [--duties <s>] [--model-id <id> --provider <p>]
+penguin org employee avatar [<agent_id>] (--file <image> | --clear)   # PNG/JPEG/WebP ≤ ~96 KiB; the id defaults to PENGUIN_AGENT_ID, so an employee sets its own
 penguin org leave <agent_id>                                    # out of the organization (not the CEO); the Agent itself stays
 penguin org desk show [<agent_id>] [--json]                     # the desk session id and Workspace (opens the desk if there is none)
 penguin org desk renew [<agent_id>]                             # a fresh desk session (resets the context)

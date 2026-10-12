@@ -36,11 +36,12 @@ import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { toHookItem } from "../../services/plugin-library.js";
 import {
+  MAX_ARCHIVE_BYTES,
   MAX_ARCHIVE_FILES,
   MAX_FILE_BYTES,
   MAX_TOTAL_BYTES,
+  assertSafeEntryPath,
 } from "../../services/skill-import-limits.js";
-import { MAX_ARCHIVE_BYTES, assertSafeEntryPath } from "./skills.js";
 
 /** The hook points a manifest lists commands for. */
 const HOOK_POINTS = ["stop", "pre_tool_use", "user_prompt"] as const;

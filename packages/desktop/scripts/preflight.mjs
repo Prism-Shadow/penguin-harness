@@ -29,7 +29,7 @@ for (const [what, rel] of [
   // a `pnpm install` fails here rather than at the first library read.
   ...Object.keys(pkg.dependencies)
     .filter((dep) => dep.startsWith("@penguinharness/"))
-    .map((dep) => [`the plugin package ${dep}`, `node_modules/${dep}/plugin.json`]),
+    .map((dep) => [`the plugin package ${dep}`, `node_modules/${dep}/package.json`]),
   ["the builtin plugins", "plugins"],
   ["the web frontend build", "../web/dist/index.html"],
 ]) {
