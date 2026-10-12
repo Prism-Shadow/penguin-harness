@@ -190,14 +190,18 @@ Installs this server's build on other hosts over ssh and manages the connections
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/machines` | This machine and the host aliases in the server's own `~/.ssh/config`, with this Project's installs, the last statuses and the current job: `{machines: [{id, alias, machineId, installed, elsewhere?, member?, local, connection, api, status}], imageVersion, job}` |
+| GET | `/api/projects/:projectId/machines` | This machine and the host aliases in the server's own `~/.ssh/config`, with this Project's installs, the last statuses and every machine's job: `{machines: [{id, alias, machineId, installed, elsewhere?, member?, local, connection, keepConnected?, reconnect?, api, status}], imageVersion, job, jobs}` |
 | GET | `/api/projects/:projectId/machines/ssh-hosts` | Every host in the ssh config (included files too) with the `user`, `hostName` and `port` its own block names, literally: `{hosts: [{alias, hostName?, user?, port?}]}` |
 | POST | `/api/projects/:projectId/machines/add` | Puts `{machines: [id…]}` on this Project's list without installing anything; answers the list and `refused` by id |
 | POST | `/api/projects/:projectId/machines/probe` | Asks this Project's installed machines what they are doing (one ssh round trip each, five at a time) and returns the list with fresh statuses |
+| POST | `/api/projects/:projectId/machines/use` | Brings `{machines: [id…]}` into use as one batch — install or update where needed, start, connect, hand over the Model config — and puts them on this Project's list; `202` with the list and `refused` by id |
+| POST | `/api/projects/:projectId/machines/stop-using` | Deletes `{machines: [id…]}` from this Project: drops each connection and stops keeping it connected; the program and its data stay on the machine, its host in the ssh config |
 | POST | `/api/projects/:projectId/machines/:machineId/install` | Starts installing this build on that host and assigns the host to this Project; `202` with the same body while the job runs |
-| POST | `/api/projects/:projectId/machines/:machineId/connect` | Starts that machine's server and holds the one connection to it; `202` with the same body while the connect job runs |
-| POST | `/api/projects/:projectId/machines/:machineId/disconnect` | Drops the connection and leaves the remote server running |
-| POST | `/api/projects/:projectId/machines/:machineId/restart` | Stops that machine's server and starts it again on the same port; `202`, or `409` while a job runs |
+| POST | `/api/projects/:projectId/machines/:machineId/connect` | Starts that machine's server and holds the one connection to it, keeping it connected from then on; `202` with the same body while the connect job runs |
+| POST | `/api/projects/:projectId/machines/:machineId/disconnect` | Drops the connection, stops keeping it connected, and leaves the remote server running |
+| POST | `/api/projects/:projectId/machines/:machineId/restart` | Stops that machine's server and starts it again on the same port; `202`, or `409` while a job runs on it |
+| POST | `/api/projects/:projectId/machines/:machineId/stop` | Stops that machine's server and stops keeping it connected; the install stays. `202`, or `409` |
+| POST | `/api/projects/:projectId/machines/:machineId/uninstall` | Stops that machine's server and removes the program, its data directory too with `{removeData: true}`; the machine stays on the list as not installed. `202`, or `409` |
 | GET | `/api/projects/:projectId/machines/:machineId/dirs?path=` | The subdirectories of `path` on that machine, read over the held connection; the Workspace picker browses these |
 | POST | `/api/projects/:projectId/machines/:machineId/release` | Removes that machine from this Project; the install on it stays |
 | POST | `/api/projects/:projectId/machines/:machineId/diagnose` | Checks what would stop an install or a connect, writing nothing on the machine: `{machineId, checkedAt, checks: [{id, state, …}]}`; `409` while a job works on it |
@@ -205,17 +209,21 @@ Installs this server's build on other hosts over ssh and manages the connections
 These routes are admin only on a personal server as much as on a multi-user one: an install runs ssh with the server account's keys and writes a program directory on another machine, which is an owner's capability rather than a visitor's. The server writes to its ssh config only when someone adds or configures a host from the page, and never resolves it. The list is the config's text, read once however many hosts it declares, and each alias goes to ssh exactly as written, so ssh applies its own config every time.
 
 - `POST …/install` accepts the body `{replaceProgram: true}` to answer a job that came back asking for it: the server installs the program even though its version already matches, and restarts it.
-- `POST …/connect` holds an `ssh -T -D` session that never times out when idle, reconnects on its own if it drops, and is restored after a restart or a hot push. A Windows machine returns `409` `connect_unsupported`, because there is no shell to hold a session on.
+- `POST …/connect` holds an `ssh -T -D` session that never times out when idle. A Windows machine returns `409` `connect_unsupported`, because there is no shell to hold a session on.
+- A machine once connected is **kept connected** (`keepConnected`) until it is stopped (`POST …/stop`), deleted (`POST …/stop-using`) or disconnected: when its ssh session drops, its server stops or restarts, or this server itself restarts, the server brings it back on its own — probing it, starting its server if it is not running, holding the connection again and handing over the Model config. A failed attempt waits twice as long as the one before, from 5 seconds up to 5 minutes; while it lasts the machine carries `reconnect`, and after three failures in a row the connection check below runs on its own and its answer is kept there. Nothing is retried while a job works on the machine.
 - `POST …/disconnect` leaves the remote server running because it belongs to that machine, and other people may be using it.
+- `POST …/stop` and `POST …/uninstall` are jobs: `stop` takes the steps `check` and `stop`, `uninstall` `check`, `stop` and `remove`. Both refuse to change anything when the machine cannot be reached (the job fails at `check`, with `sshReason` when ssh refused). `uninstall` removes what the installer put in the program directory — `bin`, `lib`, `web`, `node`, and the release's `~/.local/bin/penguin` while it still points there — and with `removeData` the data directory, and the machine's id with it; this server forgets the install, and the machine stays on the Project's list. A Windows machine returns `409` `connect_unsupported` for both.
 - `POST …/restart` exists as its own action because a machine's files can be updated while it runs, and only a restart makes the process match them.
-- `POST …/diagnose` runs six checks in order, each `pass`, `warn`, `fail` or `skip`: `ssh` (a BatchMode sign-in, with the reason and ssh's own words when it fails), `platform` (`fail` with a `reason`: `unsupported`, `glibc` — older than the `need` the release's Node runs on — or `musl`; `warn` with `terminalsNeed` when the machine's `glibc` runs the release but not its terminals), `tools` (what the release installer runs; a missing `curl` alone is a `warn`), `download` (whether the machine reaches release `version` on GitHub or the mirror; `warn` when it reaches neither, since an install then sends the package over ssh), `disk` (free MB in the home against what an install needs) and `port` (`free`, `penguin`, or `other`).
+- `POST …/diagnose` (the server also runs it on its own: after a job fails at a step it can explain, and after a machine kept connected fails to come back three times in a row) runs six checks in order, each `pass`, `warn`, `fail` or `skip`: `ssh` (a BatchMode sign-in, with the reason and ssh's own words when it fails), `platform` (`fail` with a `reason`: `unsupported`, `glibc` — older than the `need` the release's Node runs on — or `musl`; `warn` with `terminalsNeed` when the machine's `glibc` runs the release but not its terminals), `tools` (what the release installer runs; a missing `curl` alone is a `warn`), `download` (whether the machine reaches release `version` on GitHub or the mirror; `warn` when it reaches neither, since an install then sends the package over ssh), `disk` (free MB in the home against what an install needs) and `port` (`free`, `penguin`, or `other`).
 - A machine that cannot download its release itself gets the package from this server: fetched once, checked against its published checksum, kept under `<root>/machines/releases/v<version>/`, and sent over the ssh session.
 - `GET …/dirs` addresses the machine by its own id, like the API proxy below. It returns `404` when the machine is not connected, because a read never opens ssh by itself, and `403 dir_permission_denied` for a directory that machine refuses to list. Its entries are folders only, without `kind` or `mtime`.
 
 ### Machine fields
 
 - `elsewhere`: the host was installed by another Project, so it can be adopted instead of installed.
-- `member`: `true` when the machine is on this Project's list, its Machines page showing a card for it. `POST …/add` puts it there without installing; `POST …/use` puts it there as soon as it is asked for, so a first install that fails stays on the list with its job until stop-using.
+- `keepConnected`: `true` while this server keeps the machine connected (see above); absent for a machine only added, stopped, deleted or disconnected.
+- `reconnect`: present while the server brings a machine it keeps connected back: `{since, attempts, nextAt, lastError, sshReason?, diagnosis}` — when the streak began, the attempts that failed, when the next one runs (`null` while one runs), the last failure in the far side's words, why ssh refused when it did, and the connection check run after three failures (`null` until then).
+- `member`: `true` when the machine is on this Project's list, its Machines page showing a card for it. `POST …/add` puts it there without installing; `POST …/use` puts it there as soon as it is asked for, so a first install that fails stays on the list with its job until it is deleted (stop-using).
 - `checkoutImage`: present only when this server runs from a source checkout (`pnpm dev`, `pnpm desktop`). Such a server builds its install image from the checkout at every install or use, with the hot push's own packer (`scripts/deploy.mjs --out`), and keeps it under `<root>/machines/checkout-image/`, never in its own `hmr/`. The field is `{state}`: `unbuilt`, `building`, `built`, or `failed` with the build's last lines in `detail`. A failed build ends its job at the step `build the install image`.
 - `imageVersion`: the version an install would leave on a machine: the base release, plus `+hmr.<platform sha>` when a pushed build goes with it. A tarball or packaged install answers with its own release and its own pushed state. A source checkout answers with the checkout's release plus the image it last built, and `null` before its first build. Otherwise `null` means this server carries no image and builds none, and every install fails with `409` `no_install_image`.
 - `installed`: the last install this server carried out on that machine, as `{version, at}`, or `null` if there was none. It is stored under the data root, so it survives a restart, a hot push and installs on other machines. It records what was done rather than checking the far side, so a machine wiped by hand still shows as installed until the next install corrects it. A failed install records nothing.
@@ -231,26 +239,33 @@ The URL uses the machine's own id rather than the ssh alias it was reached throu
 
 This proxy is admin only and uses one identity: the request runs on the far side as that machine's admin, with a session this server mints through its own ssh access (`penguin auth token` on the machine). The browser's cookies never go across, and the machine's cookies never come back. Only `/api` is forwarded; the frontend stays local.
 
+A connected machine's own user-level events reach a page through this server rather than through the proxy: the server subscribes to each machine's `GET /api/events` over its ssh session and republishes every server event as `machine_event` (`{machineId, event}`) on its own user stream, to admins. A page therefore holds one event stream however many machines are connected — a browser allows six HTTP/1.1 connections to one origin, and a stream per machine used them all up with five. A subscription that ends is resumed from the last event id, and the machine's own `resync_required` is relayed like any other event.
+
 ### Jobs
 
-An install is a job, not a single request. It probes the far side, may download and verify a Node runtime, and copies an image over scp, which can take minutes. `POST` starts the job and returns at once. The client polls `GET` for `job.log`, which carries the far side's own output (ssh's diagnostics and the remote installer's output).
+An install is a job, not a single request. It probes the far side, may download and verify a Node runtime, and copies an image over the ssh session, which can take minutes. `POST` starts the job and returns at once. Every change to a job — queued, started, a new step, a log line, done — is told on the user event stream as `machines_changed` (see [Streaming (SSE)](#streaming-sse)), and the client reads `GET` again for `jobs[].log`, which carries the far side's own output (ssh's diagnostics and the remote installer's output).
 
-A connect (`POST …/connect`) and a restart (`POST …/restart`) are jobs of the same shape, told apart by `job.kind` (`install`, `connect` or `restart`). `job.result` is `null` while the job runs, and then one of:
+A use, a connect (`POST …/connect`), a restart, a stop and an uninstall are jobs of the same shape, told apart by `job.kind` (`install`, `use`, `connect`, `restart`, `stop` or `uninstall`). `job.steps` lists the steps the job goes through, in order — for a use `check`, `install`, `handover`, `restart`, `connect`, `sync`, led by `build` on a source checkout — and `job.phase` is the one it is on, which only moves forward; a step the job does not need is passed over. `job.result` is `null` while the job runs, and then one of:
 
 - `{ok: true, installed: "installed" | "already-installed", version}` for an install
-- `{ok: true, connected: true}` for a connect or a restart
+- `{ok: true, connected: true}` for a use, a connect or a restart
+- `{ok: true, stopped: true}` for a stop
+- `{ok: true, uninstalled: true, dataRemoved}` for an uninstall
 - `{ok: false, step, message, canReplaceProgram?, sshReason?}` for a failure
+
+A use, install or connect that failed at a step the connection check can explain gets `job.diagnosis`: `{state: "running"}`, then `{state: "done", machineId, checkedAt, checks}`.
 
 `canReplaceProgram` marks a failure whose next step is to install the program anyway, with `POST …/install` and `{replaceProgram: true}`. The server offers this step instead of taking it, because it restarts a server other people may be using. `sshReason` is set when ssh itself refused (the same reasons as the connection check's `ssh` check); such a job fails at `step: "check"` when the refusal comes before anything else, and never offers `canReplaceProgram`.
 
-Only one job runs at a time. Jobs live in memory and do not survive a hot push or a restart. To recover, run the job again: every step is idempotent.
+One job runs per machine at a time, a few machines side by side. Jobs live in memory and do not survive a hot push or a restart. To recover, run the job again: every step is idempotent.
 
 ### Refusals
 
 These refusals are decided before any ssh command runs, and each has its own code:
 
-- `409` `install_running`
+- `409` `install_running`, `connect_running`, `job_running`: a job is already queued or running on that machine
 - `404` `unknown_machine`
+- `409` `not_installed`: nothing this server installed is on that machine (connect, restart, stop, uninstall)
 - `409` `no_install_image`
 - `409` `self_install`: this server will not push its build over the program directory it runs from. Besides the `local` row, this also covers an alias that points back to this host (such as `Host localhost` or a second name for this host) once a probe has heard this server's own id from it.
 
@@ -1205,7 +1220,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | `GET /api/sessions/:sessionId/stream` | The Session's message stream and run events, including `session_created` for its subagent Sessions and the goal-mode events |
-| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_state`, `session_background`, `session_approvals`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated` and company mode's `org_*` events |
+| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_state`, `session_background`, `session_approvals`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated`, company mode's `org_*` events, and for admins `machines_changed` and `machine_event` |
 
 ### Wire Format
 
@@ -1231,6 +1246,8 @@ export type ServerEvent =
   | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "web_updated"; rev: string }
+  | { type: "machines_changed" }
+  | { type: "machine_event"; machineId: string; event: ServerEvent }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string }
