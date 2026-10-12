@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** fix
 - **Scope:** `core`, `server`, `cli`, `docs`
+- **PR:** [#1056](https://github.com/Prism-Shadow/penguin-harness/pull/1056)
 
 [English](2026-10-12-dev-cli-data-root.md)
 
