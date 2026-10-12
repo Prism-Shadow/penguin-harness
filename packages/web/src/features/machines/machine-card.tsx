@@ -214,6 +214,26 @@ function Stat({ glyph, children }: { glyph: string; children: string }) {
   );
 }
 
+/**
+ * Why Use waits, in the card's middle: a muted line with a mark that says the line is a reason —
+ * decorative, so a theme may drop it and the words still say it all.
+ */
+function UseWaits({ why }: { why: string }) {
+  return (
+    <p
+      data-use-waits=""
+      className="flex items-start gap-1.5 text-xs text-gray-500 dark:text-gray-400"
+    >
+      <GlyphIcon
+        d={ICONS.info}
+        size={ICON_SIZE.inlineGlyph}
+        className="ui-icon-decor mt-0.5 shrink-0"
+      />
+      <span>{why}</span>
+    </p>
+  );
+}
+
 export function MachineCard({
   machine,
   job,
@@ -293,19 +313,7 @@ export function MachineCard({
         {moving && job !== null ? (
           <Stepper job={job} />
         ) : (
-          waits !== null && (
-            <p
-              data-use-waits=""
-              className="flex items-start gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-            >
-              <GlyphIcon
-                d={ICONS.info}
-                size={ICON_SIZE.inlineGlyph}
-                className="ui-icon-decor mt-0.5 shrink-0"
-              />
-              <span>{waits}</span>
-            </p>
-          )
+          waits !== null && <UseWaits why={waits} />
         )}
       </div>
 
