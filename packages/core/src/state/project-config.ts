@@ -561,35 +561,6 @@ export function migrateProjectConfigTable(table: Record<string, unknown>): boole
 }
 
 /**
- * Whether a loader may write a migrated table back to `root`'s config files. Not while another
- * live process holds the root's server lock (`<root>/server.lock`): that server may be an older
- * release, which cannot read the client types the migration writes and would fail its every
- * Session, so the migrated table is used in memory only and the file is left to the server that
- * owns the root (a current one migrates it on its own reads). No lock, an unreadable one, one
- * naming this process, or one whose process is gone all allow the write. Removed with the two
- * migrations at the 0.3.0 release preparation.
- */
-export async function migrationMayWriteBack(root: string): Promise<boolean> {
-  let pid: unknown;
-  try {
-    const raw = await fs.readFile(path.join(root, "server.lock"), "utf8");
-    pid = (JSON.parse(raw) as { pid?: unknown }).pid;
-  } catch {
-    return true;
-  }
-  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0 || pid === process.pid) {
-    return true;
-  }
-  try {
-    process.kill(pid, 0);
-    return false;
-  } catch (err) {
-    // EPERM: the process exists but belongs to another user, so the root is still held.
-    return (err as NodeJS.ErrnoException).code !== "EPERM";
-  }
-}
-
-/**
  * Leniently parses the `[providers]` table: a value that is not a table reads as absent; a
  * member that is not a table is dropped, and so is one left with no field; each field is kept
  * only when a non-blank string, and `client_type` is normalized through canonicalClientType.
@@ -854,7 +825,7 @@ export async function loadProjectConfig(root: string, projectId: string): Promis
   const table = (parseToml(raw) ?? {}) as Record<string, unknown>;
   // The raw table is written back, not the typed config, so every key the file carries
   // survives the rewrite (this loader keeps known keys only).
-  if (migrateProjectConfigTable(table) && (await migrationMayWriteBack(root))) {
+  if (migrateProjectConfigTable(table)) {
     await atomicWriteFile(file, renderProjectConfigToml(table), {
       mode: 0o600,
       followSymlinks: true,
