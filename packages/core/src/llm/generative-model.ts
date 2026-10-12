@@ -634,46 +634,8 @@ export function isFatalProviderRejection(error: unknown): boolean {
 }
 
 /**
- * Provider wordings of a request refused over an image it carries (matched case-insensitively
- * against the provider's message and its error code/type). Each names an image explicitly —
- * a bare "invalid request" must stay `rejected`.
- */
-const IMAGE_REJECTION_PATTERNS: readonly RegExp[] = [
-  // OpenAI "You uploaded an unsupported image", DeepSeek "You have uploaded an unsupported image".
-  /unsupported image/i,
-  // OpenAI-style "Invalid image" and the `invalid_image` / `invalid_image_format` codes.
-  /invalid image/i,
-  /invalid_image/i,
-  // The `image_parse_error` code OpenAI-style APIs send for bytes they could not parse.
-  /image_parse_error/i,
-  // Anthropic "Could not process image".
-  /could not process image/i,
-  // Gemini "Unable to process input image"; OpenAI-compatible servers "Failed to decode
-  // image", "failed to download image" (an image URL the server fetches itself).
-  /(unable|failed) to (process|decode|download|fetch|load|read) (the )?(input |provided )?image/i,
-  // "The image is not valid", "Image is invalid", "image could not be processed".
-  /image (is not valid|is invalid|could not be (processed|decoded))/i,
-  // "The provided image does not represent a valid image".
-  /does not represent a valid image/i,
-  // Anthropic "Image does not match the provided media type image/png".
-  /image does not match the provided media type/i,
-  // Anthropic "image exceeds 5 MB maximum", "image dimensions exceed max allowed size".
-  /image.{0,40}(exceeds|too large|dimensions? (exceed|too))/i,
-  // OpenAI "The image you provided requires 53800 patches after processing, exceeding the
-  // limit of 30000. Please resize the image and try again."
-  /patches.{0,60}exceed/i,
-  /resize the image/i,
-  // A text-only model: "This model does not support image input", "doesn't support vision".
-  /(does not|doesn't) support (image|vision)/i,
-  // llama.cpp without a multimodal projector: "image input is not supported".
-  /image input (is )?not supported/i,
-  // Gateways fronting a text-only model: "Images are not supported for this model".
-  /images? (are|is) not supported/i,
-];
-
-/**
- * Provider wordings of a request larger than the model's context window (matched like
- * IMAGE_REJECTION_PATTERNS).
+ * Provider wordings of a request larger than the model's context window (matched
+ * case-insensitively against the provider's message and its error code/type).
  */
 const CONTEXT_OVERFLOW_PATTERNS: readonly RegExp[] = [
   // OpenAI's `context_length_exceeded` code, which compatible servers repeat in the message.
@@ -723,24 +685,15 @@ function matchesProviderWording(error: unknown, patterns: readonly RegExp[]): bo
 }
 
 /**
- * Determines whether a provider rejection is about an image in the request — an unsupported
- * format, corrupt data, a size or dimension past the provider's limit, or a model that takes
- * no images. Read off the provider's wording (IMAGE_REJECTION_PATTERNS) and consulted only for
- * an error `isFatalProviderRejection` already holds definitive, so a transient failure that
- * happens to mention an image keeps its retries. The outcome is still `fatal` here: whether
- * the request can go out again without the image is the engine's call (`image_rejected`).
- */
-export function isImageRejection(error: unknown): boolean {
-  return matchesProviderWording(error, IMAGE_REJECTION_PATTERNS);
-}
-
-/**
  * Determines whether a provider rejection says the request exceeds the model's context window.
- * Read off the provider's wording (CONTEXT_OVERFLOW_PATTERNS) and, like `isImageRejection`,
- * consulted only for a definitive 4xx. Still `fatal` — the same context overflows again on
+ * Read off the provider's wording (CONTEXT_OVERFLOW_PATTERNS) and consulted only for an error
+ * `isFatalProviderRejection` already holds definitive, so a transient failure that happens to
+ * mention the context keeps its retries. Still `fatal` — the same context overflows again on
  * every retry — but coded `context_overflow` so frontends can point at the fix: a model with a
  * larger window, or a configured context window no larger than what the server supports (set
- * too large, compaction triggers too late to keep the context under the real limit).
+ * too large, compaction triggers too late to keep the context under the real limit). This is
+ * the only outcome read off the provider's wording, and it only changes a hint: nothing here
+ * reads the message for an image — see the engine's `image_rejected`.
  */
 export function isContextOverflowRejection(error: unknown): boolean {
   return matchesProviderWording(error, CONTEXT_OVERFLOW_PATTERNS);
@@ -930,14 +883,15 @@ export class GenerativeModel implements LLMInterface {
    *   - **User interruption**: `finishInterrupted("aborted")` closes out, produces no usage →
    *     `aborted`;
    *   - **Fatal failure** — a definitive provider 4xx rejection (`isFatalProviderRejection`;
-   *     coded `image_rejected` / `context_overflow` when its wording says so, see
-   *     `isImageRejection`), a credentials failure (`isAuthenticationError`), a fast-mode
-   *     rejection (`isFastModeUnsupportedError`, thrown deterministically before any network
-   *     I/O when this config enables `fast_mode` on a model without a fast tier), or input
-   *     that never assembled into a request: `finishInterrupted("fatal")` closes out, produces
-   *     no usage → `fatal` (carrying `errorMessage`), which the engine stops the run on
-   *     instead of retrying — the identical request can never succeed, so the ladder would
-   *     only delay the actionable message;
+   *     coded `context_overflow` when its wording says so, see `isContextOverflowRejection`),
+   *     a credentials failure (`isAuthenticationError`), a fast-mode rejection
+   *     (`isFastModeUnsupportedError`, thrown deterministically before any network I/O when
+   *     this config enables `fast_mode` on a model without a fast tier), or input that never
+   *     assembled into a request: `finishInterrupted("fatal")` closes out, produces no usage
+   *     → `fatal` (carrying `errorMessage`), which the engine stops the run on instead of
+   *     retrying — the identical request can never succeed, so the ladder would only delay
+   *     the actionable message. The engine makes one exception: a provider 4xx on an input
+   *     that holds images is retried with the images replaced (`image_rejected`);
    *   - **Every other failure** — idle timeout, network/transport drops, 408/429/5xx,
    *     MMSP parse errors and truncated streams, and anything unclassifiable:
    *     `finishInterrupted("retryable")` closes out, produces no usage → `retryable`
@@ -1107,17 +1061,12 @@ export class GenerativeModel implements LLMInterface {
         };
       } else if (isFatalProviderRejection(error)) {
         // A definitive provider 4xx rejection (408/429 excluded): the identical request
-        // fails identically on every retry, so stop now with the provider's own message.
-        // Two rejections get a code of their own, read off that message: an image the
-        // provider refuses (the engine can replace it and send the rest again) and a request
-        // past the context window (frontends point at the fix). The image is checked first:
-        // a message matching both takes the path the engine can recover from, and a retry
-        // that still overflows comes back as context_overflow.
-        const errorCode = isImageRejection(error)
-          ? "image_rejected"
-          : isContextOverflowRejection(error)
-            ? "context_overflow"
-            : "rejected";
+        // fails identically on every retry, so stop now with the provider's own message. A
+        // request past the context window gets a code of its own, read off that message, so
+        // frontends can point at the fix. Nothing here reads the message for an image:
+        // whether the request carried one is the engine's knowledge, and it treats any 4xx
+        // on such a request as the image's (`image_rejected`) and sends the rest again.
+        const errorCode = isContextOverflowRejection(error) ? "context_overflow" : "rejected";
         outcome = { status: "fatal", errorCode, errorMessage: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)

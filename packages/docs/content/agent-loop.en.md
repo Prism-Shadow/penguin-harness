@@ -273,7 +273,7 @@ A `fatal` failure stops the run at once, without retrying. It covers:
 
 An identical request can only fail the same way, so the ladder would only delay the actionable error.
 
-One rejection is retried anyway: a provider refusing an image (`image_rejected`). When the turn's input carries images, the engine replaces them with a note that names each one (format, pixel size, byte size), quotes the provider's error, and gives the likely causes and how to make a copy that passes. It records that attempt as `retryable` with `retry_in_ms: 0` and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement, and because the note is built from the image and the recorded `error_message` alone, replay reproduces it exactly. If the input has no image left to remove, the bad image is in the committed history and the rejection is fatal like any other.
+One rejection is retried anyway: a provider 4xx on a request whose input carries images. Providers word such refusals too many ways to match reliably, so the engine takes any 4xx on an image-bearing input as a rejection of the images (`image_rejected`): it replaces each image with a fixed note telling the model that the current model does not accept the image, records that attempt as `retryable` with `retry_in_ms: 0`, and sends the cleaned input at once. The cleaned input stays the turn's input, so an interruption or the next message never resends the image. Resuming the Session applies the same replacement. A 4xx on an input with no image is fatal like any other: a refused image already in the committed history is beyond the reach of a retry.
 
 ### How a turn is retried
 

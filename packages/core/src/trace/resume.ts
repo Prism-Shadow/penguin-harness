@@ -429,14 +429,13 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
         outputs = [];
         inRequest = false;
       } else {
-        // The provider refused an image in this turn's input: the engine replaced every image
-        // in it with a note (built from the image and the recorded error_message, so it is
-        // the same text) before sending it again, so the input goes back the same way —
-        // otherwise the resumed history would carry the image the provider refuses, and
-        // every request after resume would fail on it. Only the attempt's own input: what
-        // landed during the request was never part of it.
+        // The provider refused this turn's input over its images: the engine replaced every
+        // image in it with the fixed note before sending it again, so the input goes back the
+        // same way — otherwise the resumed history would carry the image the provider
+        // refuses, and every request after resume would fail on it. Only the attempt's own
+        // input: what landed during the request was never part of it.
         if (msg.payload.error_code === "image_rejected") {
-          snapshot = replaceInputImages(snapshot, msg.payload.error_message);
+          snapshot = replaceInputImages(snapshot);
         }
         dropUncommittedRound();
       }

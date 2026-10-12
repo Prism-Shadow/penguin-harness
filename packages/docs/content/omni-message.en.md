@@ -234,7 +234,7 @@ type ErrorCode =
   | "auth"                    // the provider rejected the credentials
   | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "context_overflow"        // a provider 4xx: the request exceeds the model's context window
-  | "image_rejected"          // a provider 4xx refusing an image in the input (retried with it replaced)
+  | "image_rejected"          // a provider 4xx on an input holding images, retried with them replaced
   | "unsupported"             // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input"           // the input failed to assemble into a request
   // MCP connect failures

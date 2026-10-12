@@ -1744,9 +1744,12 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect(outcome2.errorMessage).toContain("insufficient_user_quota");
   });
 
-  // The provider's wording singles out two definitive rejections — wherever it rides: the
-  // error's message, the parsed body's code, the Anthropic body's nested message. Only a 4xx
-  // is read this way: a 5xx stays retryable whatever it says.
+  // The provider's wording singles out one definitive rejection, a request past the context
+  // window — wherever it rides: the error's message, the parsed body's code, the Anthropic
+  // body's nested message. Only a 4xx is read this way: a 5xx stays retryable whatever it
+  // says. No image is read out of the wording: a 400 worded like an image refusal is a plain
+  // `rejected` here, and the engine decides from the input it sent whether to strip images
+  // and retry (see engine.test.ts).
   it.each([
     {
       name: "llama.cpp past its context size",
@@ -1780,36 +1783,14 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       code: "context_overflow",
     },
     {
-      name: "DeepSeek unsupported image",
+      name: "a 400 worded like an image refusal (DeepSeek)",
       status: 400,
       message:
         "input[366].image[0]: You have uploaded an unsupported image. Please make sure your " +
         "image is valid and has one of the following formats: webp, png, jpeg, and gif.",
       body: undefined,
       stopReason: "fatal",
-      code: "image_rejected",
-    },
-    {
-      name: "Anthropic Could not process image",
-      status: 400,
-      message: "Could not process image",
-      body: undefined,
-      stopReason: "fatal",
-      code: "image_rejected",
-    },
-    {
-      name: "OpenAI image past its patch limit",
-      status: 400,
-      message: "400 Bad Request",
-      body: {
-        message:
-          "The image you provided requires 53800 patches after processing, exceeding the " +
-          "limit of 30000. Please resize the image and try again.",
-        type: "invalid_request_error",
-        code: "invalid_value",
-      },
-      stopReason: "fatal",
-      code: "image_rejected",
+      code: "rejected",
     },
     {
       name: "a plain parameter 400",
@@ -1820,7 +1801,7 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       code: "rejected",
     },
     {
-      name: "a 500 worded like an image rejection",
+      name: "a 500 worded like an image refusal",
       status: 500,
       message: "Could not process image",
       body: undefined,

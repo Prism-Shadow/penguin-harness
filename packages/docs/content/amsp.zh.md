@@ -189,7 +189,7 @@ data: [DONE]
 | `auth` | 供应商拒绝了凭据 |
 | `rejected` | 供应商明确拒绝了请求（参数、配额） |
 | `context_overflow` | 请求超出了模型的上下文窗口 |
-| `image_rejected` | 供应商拒收了请求中的图片。本轮输入中的图片会被换成文字说明并立即重试（`retryable`，`retry_in_ms: 0`）；只有被拒的图片已在对话历史中时，运行才以此结束 |
+| `image_rejected` | 带图片的请求被供应商以 4xx 拒绝；引擎不看报文，一律视为图片被拒。图片换成一句固定说明后立即重试（`retryable`，`retry_in_ms: 0`） |
 | `unsupported` | 请求要求了模型做不到的事 |
 | `invalid_input` | 输入无法组装成请求 |
 | `connect_failed` | 某个 MCP Server 连接失败（出现在 `mcp_connect.done` 上） |
