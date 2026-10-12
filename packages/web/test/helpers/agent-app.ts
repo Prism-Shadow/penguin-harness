@@ -25,6 +25,7 @@ import type {
   AgentConfigUpdateRequest,
   McpServerTestResponse,
   ScheduleItem,
+  SessionsBatchRequest,
   VaultEntryInfo,
   VaultUpdateRequest,
 } from "@prismshadow/penguin-server/api";
@@ -43,6 +44,12 @@ export const PROJECT_ID = "proj";
 export const AGENT_ID = "helper";
 
 const AGENT_PATH = `/api/projects/${PROJECT_ID}/agents/${AGENT_ID}`;
+
+/** The sidebar's one-request read of every Agent's page: a POST that writes nothing. */
+const SESSIONS_BATCH_PATH = `/api/projects/${PROJECT_ID}/sessions/batch`;
+/** Whether a request only reads: a GET, or the sessions batch read. */
+const isRead = (request: FetchRequest): boolean =>
+  request.method === "GET" || request.path === SESSIONS_BATCH_PATH;
 
 /** A tool whose schema declares the optional `description` argument (so it has the switch). */
 const describedTool = (name: string) => ({
@@ -124,7 +131,8 @@ export interface AgentServer {
   schedules(): ScheduleItem[];
   /**
    * Every write (PUT, POST, DELETE) so far, oldest first — to the path when one is named: a path
-   * under the Agent's (`/config`), or a whole API path (`/api/…`).
+   * under the Agent's (`/config`), or a whole API path (`/api/…`). The sidebar's sessions batch
+   * is a POST that only reads, and is not one.
    */
   writes(path?: string): FetchRequest[];
   /** The next write answers this error instead of storing anything. */
@@ -196,6 +204,10 @@ export function agentServer(initial: AgentConfigResponse = agentConfig()): Agent
     if (/^\/api\/projects\/[^/]+\/agents\/[^/]+\/sessions$/.test(path) && method === "GET") {
       return json({ sessions: [] });
     }
+    if (path === SESSIONS_BATCH_PATH && method === "POST") {
+      const { requests } = request.body as SessionsBatchRequest;
+      return json({ results: requests.map((r) => ({ agentId: r.agentId, ok: true, sessions: [] })) });
+    }
     if (method !== "GET") {
       const refusedWrite = refused();
       if (refusedWrite !== null) return refusedWrite;
@@ -263,7 +275,7 @@ export function agentServer(initial: AgentConfigResponse = agentConfig()): Agent
   };
 
   const fetch = stubFetch(async (request) => {
-    if (held !== null && request.method !== "GET") {
+    if (held !== null && !isRead(request)) {
       await new Promise<void>((resolve) => held!.push(resolve));
     }
     return answer(request);
@@ -276,7 +288,7 @@ export function agentServer(initial: AgentConfigResponse = agentConfig()): Agent
     writes: (path) =>
       fetch.requests.filter(
         (r) =>
-          r.method !== "GET" &&
+          !isRead(r) &&
           (path === undefined ||
             r.path === (path.startsWith("/api/") ? path : `${AGENT_PATH}${path}`)),
       ),
