@@ -81,6 +81,8 @@ penguin run -m "long job" --background                # returns the session id i
 penguin chat [options]
 ```
 
+新的对话在你发出第一条消息时才创建 Session，而不是在启动时。在此之前，开场横幅显示这个 Session 将使用的 Agent、Workspace 和模型；这时离开对话（`/exit`、Ctrl-C、输入结束）不会在服务器上留下任何东西：没有 Session，没有 Trace，侧栏里也没有条目。第一条消息之前输入的 `/thinking` 与 `/switch-model` 决定 Session 创建时的设置，`/compact` 与 `/clear` 会说明还没有对话。如果创建 Session 失败，例如服务器没有运行或登录已失效，消息不会丢失：错误照常显示，消息回到输入行（从管道输入时，空行即重新发送），按回车即可再次发送。
+
 | 选项 | 说明 | 默认值 |
 | --- | --- | --- |
 | `--project-id <id>` / `--agent-id <id>` | 要使用的 Project 和 Agent，同 `run`。 | 见[全局约定](#全局约定) |
@@ -103,11 +105,11 @@ penguin chat [options]
 | Task 运行期间输入或粘贴的任意文本 | 运行中插话。按 Enter 发出，多行粘贴作为一条消息；文本会排队，在两轮之间以 `[user_steering]` 用户消息的形式送达模型，同时一个 `»` 确认符会回显这段文本。你输入时渲染暂停，流式输出不会覆盖这一行。如果 Task 先结束，文本会作为下一条普通 Prompt 发送：已按 Enter 的行立即发送，尚未按 Enter 的粘贴在下一次按 Enter 时发送。 |
 | `/goal[:<budget>] <objective>` | 对给出的目标运行目标模式。可选的预算是 Token 预算，例如 `/goal:500k`。Ctrl-C 会中止整个目标。见[目标模式](/goal-mode)。 |
 | `/compact` | 立即压缩当前上下文。 |
-| `/clear` | 原地开启一个全新的空白 Session，仍用同一个 Workspace 和模型。旧 Session 保留在服务器上，之后可用 `--resume` 恢复。 |
+| `/clear` | 原地开启一个全新的空白 Session，仍用同一个 Workspace 和模型，由你的下一条消息创建。旧 Session 保留在服务器上，之后可用 `--resume` 恢复。 |
 | `/thinking` | 显示这个 Session 的思考等级：`--thinking` 或 `/thinking` 固定的等级，否则是 Agent 配置的等级。 |
-| `/thinking <level>` | 固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）。等级不会写回 Agent 配置。 |
+| `/thinking <level>` | 固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）；在第一条消息之前输入时，Session 创建时即固定为该等级。等级不会写回 Agent 配置。 |
 | `/switch-model` | 显示这个 Session 当前的模型。 |
-| `/switch-model <provider> <model_id>` | 在这个 Session 内切换模型。先用当前模型总结压缩上下文（Agent 的压缩方式为 `discard` 时也不例外），然后用新模型继续对话；压缩失败或被中断则保持当前模型。还没运行过的 Session 不压缩，直接切换。目标必须已在 Project 的模型配置中（`penguin config model list`）；两个参数以空白分隔，model_id 可以包含 `/`。 |
+| `/switch-model <provider> <model_id>` | 在这个 Session 内切换模型。先用当前模型总结压缩上下文（Agent 的压缩方式为 `discard` 时也不例外），然后用新模型继续对话；压缩失败或被中断则保持当前模型。还没运行过的 Session 不压缩，直接切换；第一条消息之前切换，则 Session 直接以目标模型创建。目标必须已在 Project 的模型配置中（`penguin config model list`）；两个参数以空白分隔，model_id 可以包含 `/`。 |
 | `/verbose` | 在折叠和完整工具输出之间切换。 |
 | `/exit`、`/quit` | 退出。 |
 

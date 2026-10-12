@@ -81,6 +81,8 @@ Starts an interactive REPL, where each input line starts a Task.
 penguin chat [options]
 ```
 
+A new chat creates its Session when you send the first message, not when it starts. Until then the banner shows the agent, Workspace and model the Session will have, and leaving the chat (`/exit`, Ctrl-C, the end of the input) leaves nothing on the server: no Session, no Trace, no entry in the sidebar. `/thinking` and `/switch-model` typed before the first message set what the Session is created with, and `/compact` and `/clear` say there is no conversation yet. If creating the Session fails, for example because the server is down or a sign-in has lapsed, the message is not lost: the error is shown, the message goes back into the input line (from a pipe, an empty line sends it), and Enter sends it again.
+
 | Option | Description | Default |
 | --- | --- | --- |
 | `--project-id <id>` / `--agent-id <id>` | Project and agent to use, as on `run`. | See [Global conventions](#global-conventions) |
@@ -103,11 +105,11 @@ On a terminal, the REPL marks its prompts with OSC 133 semantic prompt sequences
 | Any text while a Task runs, typed or pasted | Mid-run steering. Enter sends it, a multi-line paste as one message; the text is queued and reaches the model between turns as a `[user_steering]` user message, and a `»` acknowledgment echoes the text. Rendering pauses while you type, so streamed output does not overwrite the line. If the Task finishes first, the text is sent as the next normal prompt: a line already entered at once, a paste not yet entered by the next Enter. |
 | `/goal[:<budget>] <objective>` | Runs goal mode on the objective. The optional budget is a token budget, such as `/goal:500k`. Ctrl-C aborts the whole goal. See [Goal mode](/goal-mode). |
 | `/compact` | Compacts the current context now. |
-| `/clear` | Starts a fresh blank Session in place, on the same Workspace and model. The old Session stays on the server and can be resumed with `--resume`. |
+| `/clear` | Starts a fresh blank Session in place, on the same Workspace and model; your next message creates it. The old Session stays on the server and can be resumed with `--resume`. |
 | `/thinking` | Shows this Session's thinking level: the level pinned by `--thinking` or `/thinking`, else the agent's configured level. |
-| `/thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`). The level is never written back to the agent config. |
+| `/thinking <level>` | Pins the Session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`); before the first message, the Session is created pinned to it. The level is never written back to the agent config. |
 | `/switch-model` | Shows this Session's current model. |
-| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model; a compaction that fails or is interrupted keeps the current model. A Session that has not run yet switches without compacting. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
+| `/switch-model <provider> <model_id>` | Switches this Session's model in place. The context is summarized on the current model first, even when the agent's compaction mode is `discard`, and the conversation continues on the new model; a compaction that fails or is interrupted keeps the current model. A Session that has not run yet switches without compacting, and before the first message the Session is created on the target. The target must be in the Project's model config (`penguin config model list`); the two arguments are whitespace-separated, and a model id may contain `/`. |
 | `/verbose` | Switches between collapsed and full tool output. |
 | `/exit`, `/quit` | Quits. |
 
