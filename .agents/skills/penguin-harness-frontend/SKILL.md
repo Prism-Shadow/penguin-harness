@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-frontend
-description: Use when changing the PenguinHarness Web App (`packages/web`) or the shared UI package — adding or restyling any UI, picking a status colour, adding an icon, laying out a row or a form field, writing user-facing copy, building a popup or a hover-revealed panel, or making anything open, fold, resize or maximize. Covers the semantic tone tokens, the icon size/stroke/gap scale, the semantic-versus-formatting rule and the hover "?", the two-dictionary i18n contract, the portal-panel pattern, motion (every disclosure folds through `Fold`, sizes move through the theme's layout motion), where a gradient may go (only where it carries data or a state), and the recent owner decisions on favorites, maximized surfaces, the collapsed rail and example cards.
+description: Use when changing the PenguinHarness Web App (`packages/web`) or the shared UI package — adding or restyling any UI, picking a status colour, adding an icon, laying out a row or a form field, writing user-facing copy, building a popup or a hover-revealed panel, or making anything open, fold, resize or maximize. Covers the semantic tone tokens, the icon size/stroke/gap scale, the semantic-versus-formatting rule and the hover "?", the two-dictionary i18n contract, the portal-panel pattern, motion (every disclosure folds through `Fold`, sizes move through the theme's layout motion), where a gradient may go (only where it has a job: data, a state, or one deliberate emphasis), and the recent owner decisions on favorites, maximized surfaces, the collapsed rail and example cards.
 ---
 
 # Web App frontend conventions
@@ -295,19 +295,23 @@ with CDP (`Animation.enable` + `Animation.setPlaybackRate` 0.1) or pause and see
 interaction states a resting shot never shows (drag previews, hover hand-offs between a badge and a
 toggle, nested radii, an edge painted over by a neighbour), zoomed 3–4×.
 
-## Gradients: only where they carry data or a state
+## Gradients: only where they have a job
 
-A gradient carries the data's shape or a state transition, or it is not painted: never atmosphere,
-a glow, a wash behind a surface or a highlight on a word (owner, 2026-10-11:
-"UI 里面使用渐变一定要保持克制"). A surface that must stand apart does it with a flat token fill and
-its rule — Frost's navigation column is frosted glass over one flat field, with no wash. The four
-that stay, each with its job:
+A gradient carries the data's shape, a state transition, or — deliberately, and once — the one
+emphasis a surface carries; it is never atmosphere, a glow or a wash behind content (owner,
+2026-10-11: "UI 里面使用渐变一定要保持克制"). A surface that must stand apart does it with a flat
+token fill and its rule — Frost's navigation column is frosted glass over one flat field, with no
+wash. The five that stay, each with its job:
 
 - the running step's label sweep (`ui-activity`, Frost): the one signal that a step is in progress;
 - the streaming reply's veil (`ui-stream`, Frost): the newest lines are the faintest;
 - a chart area's fade towards its baseline (`ui-chart`, a mask): the data's shape;
 - the context bar's hatch past the compaction threshold (`.context-hatch`): room the model has that
-  compaction fires before.
+  compaction fires before;
+- the sweep across the brand name in the models page's TokenDance banner (`.banner-shimmer`): a
+  deliberate emphasis on the sponsor's name, the one emphasis the banner carries (owner,
+  2026-10-12: "这个是着重的"). An emphasis is allowed only like this: asked for, one word, one
+  surface, nothing else moving beside it.
 
 Rule 18 of the de-slop guard (`packages/ui/src/testing/deslop.ts`) fails a gradient in any other
 hook recipe, as a background or a mask. A gradient in app CSS outside a hook is review: name its job

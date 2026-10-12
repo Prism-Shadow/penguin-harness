@@ -1197,19 +1197,20 @@ const cssHookMonoCheck: Check = (analysis) =>
  * `.ui-glass` (the frosted layer) and `.ui-scrim` (the dimmed backdrop behind a dialog, which a
  * theme may blur; user decision, 2026-09-30).
  *
- * A gradient carries the data's shape or a state transition, or it is not painted: never as
- * atmosphere or decoration (owner, 2026-10-11 — gradients are used with restraint, and Frost's
- * sidebar has none). Three recipes have such a job. The RUNNING state of `.ui-activity`, whose
- * highlight sweeping across a label is the signal that a step is in progress (user decision,
- * 2026-09-29) — never the resting states, so a finished transcript carries no wash. `.ui-chart`,
- * as a MASK only: a line's area fading towards the baseline, the data's shape (the same day). And
- * the STREAMING state of `.ui-stream`, the veil a reply's newest lines surface through while it
- * arrives (user decision, 2026-09-30) — like the activity row's, never on the finished reply:
- * the `done` state's rule may hold the image only through its fade-out, by the discrete
- * transition rule 1 allows, and never declares one. `.ui-shell` is not among them: the app
- * window's field is one flat colour, so a wash on it is the tell, as is a gradient on any other
- * hook, as a background or as a mask. A gradient in app CSS that is not a hook (the context
- * bar's hatch, which carries meaning) is review.
+ * A gradient carries the data's shape or a state transition — or, deliberately and once, the one
+ * emphasis a surface carries — and is never atmosphere or decoration (owner, 2026-10-11 and
+ * 2026-10-12: gradients are used with restraint, and Frost's sidebar has none). Three hook recipes
+ * have such a job. The RUNNING state of `.ui-activity`, whose highlight sweeping across a label is
+ * the signal that a step is in progress (user decision, 2026-09-29) — never the resting states, so
+ * a finished transcript carries no wash. `.ui-chart`, as a MASK only: a line's area fading towards
+ * the baseline, the data's shape (the same day). And the STREAMING state of `.ui-stream`, the veil
+ * a reply's newest lines surface through while it arrives (user decision, 2026-09-30) — like the
+ * activity row's, never on the finished reply: the `done` state's rule may hold the image only
+ * through its fade-out, by the discrete transition rule 1 allows, and never declares one.
+ * `.ui-shell` is not among them: the app window's field is one flat colour, so a wash on it is the
+ * tell, as is a gradient on any other hook, as a background or as a mask. A gradient in app CSS
+ * that is not a hook is review: the context bar's hatch, which carries meaning, and the sweep
+ * across the TokenDance banner's brand name, the banner's one deliberate emphasis.
  */
 const GRADIENT_RECIPES =
   /\.ui-activity\[data-state="running"\]|\.ui-chart\b|\.ui-stream\[data-state="streaming"\]/;
