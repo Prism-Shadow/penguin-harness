@@ -363,13 +363,11 @@ export const TOKEN_GROUPS = [
   {
     id: "shell",
     title: "Shell",
-    // The app window's own frame (the `ui-shell` hook): the field behind it, the two washes a
-    // theme may paint over the field, the two columns' fills, the rule between them, and the main
-    // column's inset, corner and shadow when it floats. Primer's values are today's rendering.
+    // The app window's own frame (the `ui-shell` hook): the field behind it — one flat colour,
+    // never a gradient — the two columns' fills, the rule between them, and the main column's
+    // inset, corner and shadow when it floats. Primer's values are today's rendering.
     names: [
       "--ui-shell-field",
-      "--ui-shell-wash-1",
-      "--ui-shell-wash-2",
       "--ui-shell-nav-bg",
       "--ui-shell-main-bg",
       "--ui-shell-line",

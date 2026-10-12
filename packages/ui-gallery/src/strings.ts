@@ -462,8 +462,7 @@ export const zh = {
       loading: { title: "加载", description: "转圈、骨架屏与进度条。" },
       streaming: {
         title: "流式输出",
-        description:
-          "助手回答随流到达时怎样显现：朴素即时显示，白领按词淡入、带一层微光，极客逐字打出。",
+        description: "助手回答随流到达时怎样显现：朴素即时显示，白领按词淡入，极客逐字打出。",
       },
       charts: {
         title: "图表",
@@ -786,7 +785,7 @@ export const zh = {
       received: "已全部到达",
       modes: {
         instant: "即时：文字一到就显示，不加动效",
-        fade: "淡入：按词显现，末尾几行从带强调色微光的渐变里浮现",
+        fade: "淡入：按词显现，最新的一行半从一层轻纱里浮现",
         typewriter: "打字机：逐字打出，末尾跟着一个实心块状光标",
       } as Record<StreamReveal, string>,
       unset: "按即时处理",

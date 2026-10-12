@@ -21,6 +21,7 @@
  * settings row and the app-wide hook stay in step without either owning the state.
  */
 
+import { PENGUIN_LOGO_URL } from "./brand-logo";
 import { S } from "./strings";
 
 /** localStorage key of the opt-in; only NOTIFICATIONS_ON counts as on. */
@@ -150,7 +151,7 @@ export async function enableNotifications(
       const notification = new Notification(S.notify.enabledTitle, {
         body: S.notify.enabledBody,
         tag: ENABLED_NOTIFICATION_TAG,
-        icon: "/penguin-logo.svg",
+        icon: PENGUIN_LOGO_URL,
       });
       notification.onclick = () => {
         notification.close();

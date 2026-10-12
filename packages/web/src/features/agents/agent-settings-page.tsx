@@ -9,20 +9,26 @@
  * Hooks (hooks-tab.tsx), Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule
  * (schedules-tab.tsx), API (api-tab.tsx: the Agent's public API, kept by this server).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
- * server-side). Leaving a form tab with unsaved edits — another tab, or Back — asks to
- * discard them first; a snapshot import asks before it replaces the Agent State.
+ * server-side).
+ *
+ * Every form tab follows the settings commit model: its typed fields are a draft
+ * (`useFormDraft`) that only Save writes, Save is live only while the draft changed and is
+ * valid, and Reset puts the stored values back. The open tab lives in `?tab=` alone, so a tab
+ * switch, Back, a sidebar link and the browser's back button are all navigations that the
+ * app's leave guard holds while a tab has unsaved edits. Switches write at once, alone — the
+ * tools table's `call_description` included. A snapshot import asks before it replaces the
+ * Agent State.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import type {
+  AgentConfigDto,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
-  AgentCompactionConfigDto,
   AgentKernelUpdateResponse,
-  AgentModelConfigDto,
 } from "@prismshadow/penguin-server/api";
-import type { ToolDefinitionConfig, ToolPermission } from "@prismshadow/penguin-core/interfaces";
+import type { ToolPermission } from "@prismshadow/penguin-core/interfaces";
 import {
   Button,
   Card,
@@ -48,8 +54,8 @@ import {
   Textarea,
   UpdateDot,
   toastError,
-  toastInfo,
   toastSuccess,
+  useFormDraft,
 } from "@prismshadow/penguin-ui";
 import type { OptionMenuChoice } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -58,7 +64,17 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
-import { useReportDirty, useSaveConfirm } from "./save-confirm";
+import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
+import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
+import {
+  hasDescriptionProperty,
+  normalizeTools,
+  toolsDraftOf,
+  toolsErrors,
+  toolsUpdateOf,
+  withCallDescription,
+} from "./tools-form";
+import type { ToolNumberField, ToolRowDraft } from "./tools-form";
 import { SkillsTab } from "./skills-tab";
 import { HooksTab } from "./hooks-tab";
 import { MemoryTab } from "./memory-tab";
@@ -103,18 +119,6 @@ export function optionRows(
     }));
 }
 
-/** Numeric input's string state → number (empty/invalid = undefined, meaning no change). */
-function parseNum(s: string): number | undefined {
-  const trimmed = s.trim();
-  if (!trimmed) return undefined;
-  const n = Number(trimmed);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-function numToStr(n: number | undefined): string {
-  return n === undefined ? "" : String(n);
-}
-
 /**
  * Narrow an untrusted `?tab=` query value to a known tab key (exported for unit tests):
  * validated against the live TABS keys — not a hardcoded list — so newly added tabs
@@ -150,16 +154,15 @@ export function AgentSettingsPage() {
   const projectId = currentProject?.projectId ?? null;
 
   const [data, setData] = useState<AgentConfigResponse | null>(null);
-  // ?tab= deep link (from the Agents page's stat icons): a valid key lands the page on that
-  // tab; missing/unknown values fall back to "overview", exactly the previous behavior.
+  // The open tab is the `?tab=` value alone (the Agents page's stat icons deep-link with it;
+  // missing or unknown values fall back to "overview"). A switch only writes the address, so
+  // it is a navigation: while the open tab holds unsaved edits the app's leave guard asks
+  // before it happens, and the tab on screen never runs ahead of the address it would leave.
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tab, setTab] = useState<TabKey>(() =>
-    resolveTabKey(searchParams.get("tab"), TABS, "overview"),
-  );
-  /** Switch tab and mirror it into `?tab=` (replace history entry, keep other params) so the address stays shareable. */
+  const tab: TabKey = resolveTabKey(searchParams.get("tab"), TABS, "overview");
+  /** Writes the tab into `?tab=` (replacing the history entry, keeping the other params). */
   const switchTab = useCallback(
     (next: TabKey) => {
-      setTab(next);
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev);
@@ -171,20 +174,6 @@ export function AgentSettingsPage() {
     },
     [setSearchParams],
   );
-  /**
-   * Whether the mounted tab holds unsaved edits (each form tab reports it). Leaving the tab —
-   * another tab, or Back — unmounts it and its form state, so a leave asks to discard first.
-   * A ref: only the leave handlers read it, and a keystroke need not re-render the page.
-   */
-  const dirtyRef = useRef(false);
-  const reportDirty = useCallback((dirty: boolean) => {
-    dirtyRef.current = dirty;
-  }, []);
-  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
-  const guardLeave = (go: () => void) => {
-    if (dirtyRef.current) setPendingLeave(() => go);
-    else go();
-  };
   // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
   const [error, setError] = useState<string | null>(null);
 
@@ -239,9 +228,14 @@ export function AgentSettingsPage() {
     void reloadAgents();
   }, [load, reloadAgents]);
 
+  /**
+   * One config write from a tab. Resolves with the stored config, which the tab adopts as its
+   * new baseline; a refused write toasts why and resolves with null, leaving the tab's draft as
+   * it was — still dirty.
+   */
   const save = useCallback(
-    async (update: AgentConfigUpdateRequest) => {
-      if (!projectId || !agentId) return;
+    async (update: AgentConfigUpdateRequest): Promise<AgentConfigResponse | null> => {
+      if (!projectId || !agentId) return null;
       try {
         const res = await api.putAgentConfig(projectId, agentId, update);
         setData(res);
@@ -264,8 +258,10 @@ export function AgentSettingsPage() {
         ) {
           void reloadAgents();
         }
+        return res;
       } catch (e) {
         toastError(apiErrorText(e));
+        return null;
       }
     },
     [projectId, agentId, reloadAgents],
@@ -290,7 +286,7 @@ export function AgentSettingsPage() {
     <PageFrame width="sm" className="no-scrollbar relative">
       <PageHeader
         title={data.config.name ?? agentId}
-        back={{ label: S.agent.backToList, onClick: () => guardLeave(() => navigate("/agents")) }}
+        back={{ label: S.agent.backToList, onClick: () => navigate("/agents") }}
         // The id is data: mono on the small rung. A block keeps its line box at its own
         // 16px rather than the description line's body height.
         description={<span className="block font-mono text-xs text-gray-400">{agentId}</span>}
@@ -305,7 +301,7 @@ export function AgentSettingsPage() {
         )}
         active={tab}
         onChange={(next) => {
-          if (next !== tab) guardLeave(() => switchTab(next));
+          if (next !== tab) switchTab(next);
         }}
       />
       <div className="py-4">
@@ -317,21 +313,14 @@ export function AgentSettingsPage() {
             onImported={onImported}
             onConfigReset={onConfigReset}
             onKernelUpdated={onKernelUpdated}
-            onDirtyChange={reportDirty}
           />
         )}
-        {tab === "prompt" && <PromptTab data={data} onSave={save} onDirtyChange={reportDirty} />}
-        {tab === "memory" && (
-          <MemoryTab
-            agentId={agentId}
-            onConfigChanged={refreshConfig}
-            onDirtyChange={reportDirty}
-          />
-        )}
-        {tab === "runtime" && <RuntimeTab data={data} onSave={save} onDirtyChange={reportDirty} />}
+        {tab === "prompt" && <PromptTab data={data} onSave={save} />}
+        {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
         {tab === "tools" && (
           <div className="space-y-6">
-            <ToolsTab data={data} onSave={save} onDirtyChange={reportDirty} />
+            <ToolsTab data={data} onSave={save} />
             {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
                 builtin table's Save button, so it lives beside ToolsTab, not inside it. */}
             <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
@@ -349,26 +338,73 @@ export function AgentSettingsPage() {
           />
         )}
       </div>
-      <ConfirmModal
-        open={pendingLeave !== null}
-        title={S.common.discardTitle}
-        onClose={() => setPendingLeave(null)}
-        onConfirm={() => {
-          const go = pendingLeave;
-          setPendingLeave(null);
-          dirtyRef.current = false;
-          go?.();
-        }}
-        confirmLabel={S.common.discard}
-        cancelLabel={S.common.cancel}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.common.discardBody}</p>
-      </ConfirmModal>
     </PageFrame>
   );
 }
 
-type SaveFn = (update: AgentConfigUpdateRequest) => Promise<void>;
+/** The page's config write: the stored config on success, null once a refusal has been toasted. */
+type SaveFn = (update: AgentConfigUpdateRequest) => Promise<AgentConfigResponse | null>;
+
+/**
+ * A form tab's Save and Reset. Save is live only while the draft differs from the stored values
+ * and is valid; Reset puts the stored values back without asking, and is live only while there
+ * is something to put back.
+ */
+function SaveRow({
+  dirty,
+  valid,
+  busy,
+  onSave,
+  onReset,
+}: {
+  dirty: boolean;
+  valid: boolean;
+  busy: boolean;
+  onSave: () => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button size="sm" variant="primary" disabled={!dirty || !valid || busy} onClick={onSave}>
+        {S.common.save}
+      </Button>
+      <Button size="sm" disabled={!dirty || busy} onClick={onReset}>
+        {S.common.reset}
+      </Button>
+    </div>
+  );
+}
+
+/** Runs one tab save with its busy flag, adopting the stored answer when there is one. */
+async function saveWith(
+  setBusy: (busy: boolean) => void,
+  run: () => Promise<AgentConfigResponse | null>,
+  adopt: (res: AgentConfigResponse) => void,
+): Promise<void> {
+  setBusy(true);
+  try {
+    const res = await run();
+    if (res !== null) adopt(res);
+  } finally {
+    setBusy(false);
+  }
+}
+
+interface OverviewDraft {
+  name: string;
+  description: string;
+}
+
+const overviewDraftOf = (config: AgentConfigDto): OverviewDraft => ({
+  name: config.name ?? "",
+  description: config.description ?? "",
+});
+
+/** What Save sends: both fields trimmed. */
+const trimOverview = (draft: OverviewDraft): OverviewDraft => ({
+  name: draft.name.trim(),
+  description: draft.description.trim(),
+});
 
 function OverviewTab({
   data,
@@ -377,7 +413,6 @@ function OverviewTab({
   onImported,
   onConfigReset,
   onKernelUpdated,
-  onDirtyChange,
 }: {
   data: AgentConfigResponse;
   agentId: string;
@@ -385,13 +420,12 @@ function OverviewTab({
   onImported: (version: number) => void;
   onConfigReset: () => void;
   onKernelUpdated: () => void;
-  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
-  const [name, setName] = useState(data.config.name ?? "");
-  const [description, setDescription] = useState(data.config.description ?? "");
+  const form = useFormDraft(overviewDraftOf(data.config), { normalize: trimOverview });
+  const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   /** A picked snapshot package awaiting the overwrite confirmation: an import replaces the whole Agent State. */
@@ -406,13 +440,6 @@ function OverviewTab({
   const [kernelUpdating, setKernelUpdating] = useState(false);
   /** Last kernel update's merge report (kept fields listed under the section until the next full reload). */
   const [kernelResult, setKernelResult] = useState<AgentKernelUpdateResponse | null>(null);
-  const { requestSave, element: saveConfirm } = useSaveConfirm();
-  // The same comparison as `submit`: trimmed fields against the stored values.
-  useReportDirty(
-    name.trim() !== (data.config.name ?? "") ||
-      description.trim() !== (data.config.description ?? ""),
-    onDirtyChange,
-  );
 
   const runReset = async () => {
     if (!projectId) return;
@@ -444,17 +471,18 @@ function OverviewTab({
     }
   };
 
+  /** Sends the trimmed fields that differ from the stored ones. */
   const submit = () => {
+    const draft = trimOverview(form.draft);
+    const stored = trimOverview(form.baseline);
     const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
-    if (name.trim() !== (data.config.name ?? "")) config.name = name.trim();
-    if (description.trim() !== (data.config.description ?? "")) {
-      config.description = description.trim();
-    }
-    if (Object.keys(config).length === 0) {
-      toastInfo(S.common.noChangesToSave);
-      return;
-    }
-    requestSave(() => void onSave({ config }));
+    if (draft.name !== stored.name) config.name = draft.name;
+    if (draft.description !== stored.description) config.description = draft.description;
+    void saveWith(
+      setSaving,
+      () => onSave({ config }),
+      (res) => form.adopt(overviewDraftOf(res.config)),
+    );
   };
 
   const runImport = async (dataBase64: string, confirm: boolean) => {
@@ -496,20 +524,17 @@ function OverviewTab({
       <Input
         size="sm"
         label={S.common.name}
-        value={name}
-        onChange={(e) => setName(e.target.value)}
+        value={form.draft.name}
+        onChange={(e) => form.patch({ name: e.target.value })}
       />
       <Textarea
         label={S.agent.description}
         size="sm"
         rows={3}
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
+        value={form.draft.description}
+        onChange={(e) => form.patch({ description: e.target.value })}
       />
-      <Button size="sm" variant="primary" onClick={submit}>
-        {S.common.save}
-      </Button>
-      {saveConfirm}
+      <SaveRow dirty={form.dirty} valid busy={saving} onSave={submit} onReset={form.reset} />
 
       {/* Agent State section (ruled, the skills import modal's section family — no card
           boxes; per user feedback the sections separate with a top rule and the values
@@ -733,39 +758,46 @@ function OverviewTab({
   );
 }
 
-/** The props every form tab takes: the loaded config, the page's save, and its dirty report. */
+/** The props every form tab takes: the loaded config and the page's save. */
 interface FormTabProps {
   data: AgentConfigResponse;
   onSave: SaveFn;
-  onDirtyChange?: (dirty: boolean) => void;
 }
 
-function PromptTab({ data, onSave, onDirtyChange }: FormTabProps) {
-  const [agentsMd, setAgentsMd] = useState(data.agentsMd);
-  const [systemPrompt, setSystemPrompt] = useState(data.config.systemPrompt);
+interface PromptDraft {
+  agentsMd: string;
+  systemPrompt: string;
+}
+
+const promptDraftOf = (res: AgentConfigResponse): PromptDraft => ({
+  agentsMd: res.agentsMd,
+  systemPrompt: res.config.systemPrompt,
+});
+
+function PromptTab({ data, onSave }: FormTabProps) {
+  // Both editors compare exactly: whitespace is part of a prompt.
+  const form = useFormDraft(promptDraftOf(data));
+  const [saving, setSaving] = useState(false);
   const promptRef = useRef<HTMLTextAreaElement>(null);
-  const { requestSave, element: saveConfirm } = useSaveConfirm();
-  useReportDirty(
-    agentsMd !== data.agentsMd || systemPrompt !== data.config.systemPrompt,
-    onDirtyChange,
-  );
 
   const submit = () => {
     const update: AgentConfigUpdateRequest = {};
-    if (agentsMd !== data.agentsMd) update.agentsMd = agentsMd;
-    if (systemPrompt !== data.config.systemPrompt) update.config = { systemPrompt };
-    if (update.agentsMd === undefined && update.config === undefined) {
-      toastInfo(S.common.noChangesToSave);
-      return;
+    if (form.draft.agentsMd !== form.baseline.agentsMd) update.agentsMd = form.draft.agentsMd;
+    if (form.draft.systemPrompt !== form.baseline.systemPrompt) {
+      update.config = { systemPrompt: form.draft.systemPrompt };
     }
-    requestSave(() => void onSave(update));
+    void saveWith(
+      setSaving,
+      () => onSave(update),
+      (res) => form.adopt(promptDraftOf(res)),
+    );
   };
 
   /**
    * Quickly insert a placeholder at the system_prompt cursor position (appends to the
    * end when unfocused). Prefers execCommand insertText — it writes to the browser's
    * undo stack (undoable with Ctrl/⌘+Z) and fires an input event, which the
-   * controlled onChange syncs into state; falls back to directly mutating state when
+   * controlled onChange syncs into the draft; falls back to directly editing the draft when
    * unsupported (no undo).
    */
   const insertPlaceholder = (ph: string) => {
@@ -774,11 +806,12 @@ function PromptTab({ data, onSave, onDirtyChange }: FormTabProps) {
       el.focus();
       // execCommand is deprecated but still the only available way to preserve the textarea's native undo stack.
       const inserted = document.execCommand?.("insertText", false, ph);
-      if (inserted) return; // onChange will update state from e.target.value
+      if (inserted) return; // onChange will update the draft from e.target.value
     }
-    const start = el ? el.selectionStart : systemPrompt.length;
-    const end = el ? el.selectionEnd : systemPrompt.length;
-    setSystemPrompt(systemPrompt.slice(0, start) + ph + systemPrompt.slice(end));
+    const value = form.draft.systemPrompt;
+    const start = el ? el.selectionStart : value.length;
+    const end = el ? el.selectionEnd : value.length;
+    form.patch({ systemPrompt: value.slice(0, start) + ph + value.slice(end) });
     requestAnimationFrame(() => {
       if (!el) return;
       el.focus();
@@ -794,8 +827,8 @@ function PromptTab({ data, onSave, onDirtyChange }: FormTabProps) {
         mono
         size="sm"
         rows={14}
-        value={agentsMd}
-        onChange={(e) => setAgentsMd(e.target.value)}
+        value={form.draft.agentsMd}
+        onChange={(e) => form.patch({ agentsMd: e.target.value })}
       />
       <Textarea
         ref={promptRef}
@@ -803,8 +836,8 @@ function PromptTab({ data, onSave, onDirtyChange }: FormTabProps) {
         mono
         size="sm"
         rows={12}
-        value={systemPrompt}
-        onChange={(e) => setSystemPrompt(e.target.value)}
+        value={form.draft.systemPrompt}
+        onChange={(e) => form.patch({ systemPrompt: e.target.value })}
       />
       <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
         <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
@@ -824,101 +857,43 @@ function PromptTab({ data, onSave, onDirtyChange }: FormTabProps) {
           ))}
         </ul>
       </div>
-      <Button size="sm" variant="primary" onClick={submit}>
-        {S.common.save}
-      </Button>
-      {saveConfirm}
+      <SaveRow dirty={form.dirty} valid busy={saving} onSave={submit} onReset={form.reset} />
     </div>
   );
 }
 
-function RuntimeTab({ data, onSave, onDirtyChange }: FormTabProps) {
+function RuntimeTab({ data, onSave }: FormTabProps) {
   const cfg = data.config;
-  const [maxTurns, setMaxTurns] = useState(numToStr(cfg.maxTurns));
-  const [maxTokens, setMaxTokens] = useState(numToStr(cfg.model?.maxTokens));
-  const [thinkingLevel, setThinkingLevel] = useState(cfg.model?.thinkingLevel ?? "");
-  const [timeoutMs, setTimeoutMs] = useState(numToStr(cfg.model?.timeoutMs));
-  const [maxContextLength, setMaxContextLength] = useState(
-    numToStr(cfg.compaction?.maxContextLength),
-  );
-  const [maxSessionTurns, setMaxSessionTurns] = useState(numToStr(cfg.compaction?.maxSessionTurns));
-  const [mode, setMode] = useState(cfg.compaction?.mode ?? "");
-  const [prompt, setPrompt] = useState(cfg.compaction?.prompt ?? "");
-  const [fieldErrors, setFieldErrors] = useState<{ maxTurns?: string; timeoutMs?: string }>({});
-  const clearFieldErrors = () => setFieldErrors((p) => (p.maxTurns || p.timeoutMs ? {} : p));
-  const { requestSave, element: saveConfirm } = useSaveConfirm();
-  // What `submit` would send, minus its validation: an empty number field means "no change",
-  // and an unpicked menu stays on the stored value.
-  const numChanged = (s: string, stored: number | undefined) => {
-    const n = parseNum(s);
-    return n !== undefined && n !== stored;
+  // The five numbers, the two menus and the prompt are one form: the menus sit inside it, so
+  // they save with it (a menu that stood alone in its row would write at once instead).
+  const form = useFormDraft(runtimeDraftOf(cfg), { normalize: normalizeRuntime });
+  const errors = runtimeErrors(form.draft, form.baseline);
+  const [saving, setSaving] = useState(false);
+
+  /** A number box's inline error, judged only once it differs from the stored value. */
+  const errorOf = (field: RuntimeNumberField): string | undefined => {
+    const error = errors?.[field];
+    if (error === "invalid") return S.agent.numberInvalid;
+    if (error === "cannotClear") return S.agent.numberCannotClear;
+    return undefined;
   };
-  useReportDirty(
-    numChanged(maxTurns, cfg.maxTurns) ||
-      numChanged(maxTokens, cfg.model?.maxTokens) ||
-      (thinkingLevel !== "" && thinkingLevel !== (cfg.model?.thinkingLevel ?? "")) ||
-      numChanged(timeoutMs, cfg.model?.timeoutMs) ||
-      numChanged(maxContextLength, cfg.compaction?.maxContextLength) ||
-      numChanged(maxSessionTurns, cfg.compaction?.maxSessionTurns) ||
-      (mode !== "" && mode !== (cfg.compaction?.mode ?? "")) ||
-      prompt !== (cfg.compaction?.prompt ?? ""),
-    onDirtyChange,
-  );
+  const setNumber = (field: RuntimeNumberField, value: string) =>
+    form.patch({ [field]: value } as Partial<RuntimeDraft>);
 
+  /** Sends the keys that differ from the stored config, and nothing else. */
   const submit = () => {
-    setFieldErrors({});
-    const config: NonNullable<AgentConfigUpdateRequest["config"]> = {};
-
-    const mt = parseNum(maxTurns);
-    if (mt !== undefined && mt !== cfg.maxTurns) {
-      if (mt <= 0 && mt !== -1) {
-        setFieldErrors({ maxTurns: S.agent.maxTurnsInvalid });
-        return;
-      }
-      config.maxTurns = mt;
-    }
-
-    const model: AgentModelConfigDto = {};
-    const tok = parseNum(maxTokens);
-    if (tok !== undefined && tok !== cfg.model?.maxTokens) model.maxTokens = tok;
-    if (thinkingLevel && thinkingLevel !== (cfg.model?.thinkingLevel ?? "")) {
-      model.thinkingLevel = thinkingLevel as AgentModelConfigDto["thinkingLevel"];
-    }
-    const tmo = parseNum(timeoutMs);
-    if (tmo !== undefined && tmo !== cfg.model?.timeoutMs) {
-      if (tmo <= 0 && tmo !== -1) {
-        setFieldErrors({ timeoutMs: S.agent.timeoutInvalid });
-        return;
-      }
-      model.timeoutMs = tmo;
-    }
-    if (Object.keys(model).length > 0) config.model = model;
-
-    const compaction: AgentCompactionConfigDto = {};
-    const mcl = parseNum(maxContextLength);
-    if (mcl !== undefined && mcl !== cfg.compaction?.maxContextLength) {
-      compaction.maxContextLength = mcl;
-    }
-    const mst = parseNum(maxSessionTurns);
-    if (mst !== undefined && mst !== cfg.compaction?.maxSessionTurns) {
-      compaction.maxSessionTurns = mst;
-    }
-    if (mode && mode !== (cfg.compaction?.mode ?? "")) {
-      compaction.mode = mode as AgentCompactionConfigDto["mode"];
-    }
-    if (prompt !== (cfg.compaction?.prompt ?? "")) compaction.prompt = prompt;
-    if (Object.keys(compaction).length > 0) config.compaction = compaction;
-
-    if (Object.keys(config).length === 0) {
-      toastInfo(S.common.noChangesToSave);
-      return;
-    }
-    requestSave(() => void onSave({ config }));
+    if (errors !== null) return;
+    const config = runtimeUpdateOf(form.draft, form.baseline);
+    void saveWith(
+      setSaving,
+      () => onSave({ config }),
+      (res) => form.adopt(runtimeDraftOf(res.config)),
+    );
   };
 
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
   // Thinking level composes both review rounds: the "" inherit row is filtered (the user picks
-  // explicitly; unset shows the (default) placeholder and the reset link rewinds to it), "none"
+  // explicitly; unset shows the (default) placeholder and Reset rewinds to it), "none"
   // is no longer offered (many models cannot disable thinking) but stays a valid stored value —
   // when the **persisted** config carries it, a display-only legacy row is appended, so a
   // misclick onto another tier keeps it reachable until the change is actually saved
@@ -938,20 +913,18 @@ function RuntimeTab({ data, onSave, onDirtyChange }: FormTabProps) {
             <Input
               label={S.agent.maxTurns}
               size="sm"
-              value={maxTurns}
-              error={fieldErrors.maxTurns}
-              onChange={(e) => {
-                setMaxTurns(e.target.value);
-                clearFieldErrors();
-              }}
+              value={form.draft.maxTurns}
+              error={errorOf("maxTurns")}
+              onChange={(e) => setNumber("maxTurns", e.target.value)}
               inputMode="numeric"
               className="font-mono"
             />
             <Input
               label={S.agent.maxTokens}
               size="sm"
-              value={maxTokens}
-              onChange={(e) => setMaxTokens(e.target.value)}
+              value={form.draft.maxTokens}
+              error={errorOf("maxTokens")}
+              onChange={(e) => setNumber("maxTokens", e.target.value)}
               inputMode="numeric"
               className="font-mono"
             />
@@ -960,8 +933,8 @@ function RuntimeTab({ data, onSave, onDirtyChange }: FormTabProps) {
               fullWidth
               size="sm"
               placeholder={S.agent.defaultValue}
-              value={thinkingLevel}
-              onChange={setThinkingLevel}
+              value={form.draft.thinkingLevel}
+              onChange={(thinkingLevel) => form.patch({ thinkingLevel })}
               options={thinkingLevelOptions}
             />
             <Input
@@ -969,12 +942,9 @@ function RuntimeTab({ data, onSave, onDirtyChange }: FormTabProps) {
               info={S.agent.timeoutMsHint}
               infoLabel={S.agent.timeoutMs}
               size="sm"
-              value={timeoutMs}
-              error={fieldErrors.timeoutMs}
-              onChange={(e) => {
-                setTimeoutMs(e.target.value);
-                clearFieldErrors();
-              }}
+              value={form.draft.timeoutMs}
+              error={errorOf("timeoutMs")}
+              onChange={(e) => setNumber("timeoutMs", e.target.value)}
               inputMode="numeric"
               className="font-mono"
             />
@@ -991,8 +961,9 @@ function RuntimeTab({ data, onSave, onDirtyChange }: FormTabProps) {
               info={S.agent.maxContextLengthHint}
               infoLabel={S.agent.maxContextLength}
               size="sm"
-              value={maxContextLength}
-              onChange={(e) => setMaxContextLength(e.target.value)}
+              value={form.draft.maxContextLength}
+              error={errorOf("maxContextLength")}
+              onChange={(e) => setNumber("maxContextLength", e.target.value)}
               inputMode="numeric"
               className="font-mono"
             />
@@ -1001,8 +972,9 @@ function RuntimeTab({ data, onSave, onDirtyChange }: FormTabProps) {
               info={S.agent.maxSessionTurnsHint}
               infoLabel={S.agent.maxSessionTurns}
               size="sm"
-              value={maxSessionTurns}
-              onChange={(e) => setMaxSessionTurns(e.target.value)}
+              value={form.draft.maxSessionTurns}
+              error={errorOf("maxSessionTurns")}
+              onChange={(e) => setNumber("maxSessionTurns", e.target.value)}
               inputMode="numeric"
               className="font-mono"
             />
@@ -1011,8 +983,8 @@ function RuntimeTab({ data, onSave, onDirtyChange }: FormTabProps) {
               fullWidth
               size="sm"
               placeholder={S.agent.defaultValue}
-              value={mode}
-              onChange={setMode}
+              value={form.draft.mode}
+              onChange={(mode) => form.patch({ mode })}
               options={compactionModeOptions}
             />
           </div>
@@ -1027,56 +999,24 @@ function RuntimeTab({ data, onSave, onDirtyChange }: FormTabProps) {
             mono
             size="sm"
             rows={4}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            value={form.draft.prompt}
+            onChange={(e) => form.patch({ prompt: e.target.value })}
           />
         </div>
       </Card>
 
-      <Button size="sm" variant="primary" onClick={submit}>
-        {S.common.save}
-      </Button>
-      {saveConfirm}
+      <SaveRow
+        dirty={form.dirty}
+        valid={errors === null}
+        busy={saving}
+        onSave={submit}
+        onReset={form.reset}
+      />
     </div>
   );
 }
 
-/** Local edit state for a tool row: numeric columns use string state (can be cleared then re-entered; empty string = clear the override and revert to default). */
-interface ToolRowState {
-  base: ToolDefinitionConfig;
-  timeoutMs: string;
-  maxOutputLength: string;
-}
-
-/**
- * Whether the tools table differs from the loaded config, column by column: an empty number
- * cell is "not overridden", and a call_description switched back on where the stored row
- * omits it is "not written" (missing means on).
- */
-function toolRowsDirty(
-  rows: readonly ToolRowState[],
-  orig: readonly ToolDefinitionConfig[],
-): boolean {
-  const num = (s: string) => (s.trim() === "" ? undefined : Number(s.trim()));
-  return (
-    rows.length !== orig.length ||
-    rows.some((r, i) => {
-      const o = orig[i]!;
-      const cd =
-        r.base.call_description === true && o.call_description === undefined
-          ? undefined
-          : r.base.call_description;
-      return (
-        r.base.permission !== o.permission ||
-        num(r.timeoutMs) !== o.timeoutMs ||
-        num(r.maxOutputLength) !== o.maxOutputLength ||
-        cd !== o.call_description
-      );
-    })
-  );
-}
-
-function ToolsTab({ data, onSave, onDirtyChange }: FormTabProps) {
+function ToolsTab({ data, onSave }: FormTabProps) {
   // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
   const permissionOptions: ReadonlyArray<OptionMenuChoice<ToolPermission>> = [
     {
@@ -1092,82 +1032,50 @@ function ToolsTab({ data, onSave, onDirtyChange }: FormTabProps) {
       description: S.agent.permissionReadWriteDescription,
     },
   ];
-  const [rows, setRows] = useState<ToolRowState[]>(() =>
-    data.config.toolsBuiltin.map((t) => ({
-      base: { ...t },
-      timeoutMs: numToStr(t.timeoutMs),
-      maxOutputLength: numToStr(t.maxOutputLength),
-    })),
-  );
-  // Per-cell validation errors, keyed `${rowIndex}-${column}`, shown red under the offending numeric input.
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const { requestSave, element: saveConfirm } = useSaveConfirm();
-  const dirty = toolRowsDirty(rows, data.config.toolsBuiltin);
-  useReportDirty(dirty, onDirtyChange);
+  const stored = data.config.toolsBuiltin;
+  // The permission menus and the two number columns are the table's draft (see tools-form.ts);
+  // the call_description switches are not — each writes at once, alone.
+  const form = useFormDraft(toolsDraftOf(stored), { normalize: normalizeTools });
+  const errors = toolsErrors(form.draft, form.baseline);
+  const [saving, setSaving] = useState(false);
+  /** A call_description write in flight: the row it flips and the value it shows meanwhile. */
+  const [flip, setFlip] = useState<{ name: string; on: boolean } | null>(null);
+  // One write at a time: a flip and a table Save both PUT the whole table, so one landing
+  // after the other must not carry the other's stale copy.
+  const writing = saving || flip !== null;
 
-  const update = (index: number, patch: Partial<ToolRowState>) => {
-    setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-    setFieldErrors((p) => {
-      const kt = `${index}-timeoutMs`;
-      const km = `${index}-maxOutputLength`;
-      if (!p[kt] && !p[km]) return p;
-      const next = { ...p };
-      delete next[kt];
-      delete next[km];
-      return next;
-    });
+  const setRow = (name: string, patch: Partial<ToolRowDraft>) =>
+    form.setDraft((rows) => rows.map((r) => (r.name === name ? { ...r, ...patch } : r)));
+
+  /**
+   * The switch: the stored table with this one row flipped, written at once. The table's draft
+   * beside it stays as typed; a refused write toasts (the page's save) and the switch shows the
+   * stored value again.
+   */
+  const flipCallDescription = async (name: string, on: boolean) => {
+    if (writing) return;
+    setFlip({ name, on });
+    try {
+      await onSave({ config: { toolsBuiltin: withCallDescription(stored, name, on) } });
+    } finally {
+      setFlip(null);
+    }
   };
 
+  /** The whole table: the draft laid over the stored rows (a blank cell drops its override). */
   const submit = () => {
-    // toolsBuiltin is submitted as a full table: an empty string omits that key (revert to default); non-empty values are validated per the server's rules.
-    const errs: Record<string, string> = {};
-    const tools: ToolDefinitionConfig[] = [];
-    for (const [i, row] of rows.entries()) {
-      const tool: ToolDefinitionConfig = { ...row.base };
-      delete tool.timeoutMs;
-      delete tool.maxOutputLength;
-      const timeout = row.timeoutMs.trim();
-      if (timeout) {
-        const n = Number(timeout);
-        if (!Number.isInteger(n) || (n <= 0 && n !== -1)) {
-          errs[`${i}-timeoutMs`] = S.agent.toolFieldInvalid(row.base.name, "timeoutMs");
-        } else tool.timeoutMs = n;
-      }
-      const maxOutput = row.maxOutputLength.trim();
-      if (maxOutput) {
-        const n = Number(maxOutput);
-        if (!Number.isInteger(n) || (n <= 0 && n !== -1)) {
-          errs[`${i}-maxOutputLength`] = S.agent.toolFieldInvalid(row.base.name, "maxOutputLength");
-        } else tool.maxOutputLength = n;
-      }
-      // call_description: missing = true, so flipping a stored-missing row back to on
-      // rewinds to "not written" instead of writing the default explicitly.
-      const origRow = data.config.toolsBuiltin[i];
-      if (tool.call_description === true && origRow?.call_description === undefined) {
-        delete tool.call_description;
-      }
-      tools.push(tool);
-    }
-    if (Object.keys(errs).length > 0) {
-      setFieldErrors(errs);
-      return;
-    }
-    setFieldErrors({});
-    // The table is submitted whole, so the editable columns are compared against the loaded
-    // config to detect a no-op save (row order is stable — both sides map the same list).
-    if (!dirty) {
-      toastInfo(S.common.noChangesToSave);
-      return;
-    }
-    requestSave(() => void onSave({ config: { toolsBuiltin: tools } }));
+    if (errors !== null || writing) return;
+    void saveWith(
+      setSaving,
+      () => onSave({ config: { toolsBuiltin: toolsUpdateOf(stored, form.draft) } }),
+      (res) => form.adopt(toolsDraftOf(res.config.toolsBuiltin)),
+    );
   };
 
-  /** Whether a tool's config schema declares the optional `description` call argument (only then does the per-row switch make sense). */
-  const hasDescriptionProperty = (t: ToolDefinitionConfig): boolean => {
-    const props = (t.parameters as { properties?: Record<string, unknown> } | undefined)
-      ?.properties;
-    return props !== undefined && props !== null && props["description"] !== undefined;
-  };
+  const cellError = (row: ToolRowDraft, field: ToolNumberField): string | undefined =>
+    errors?.has(`${row.name}/${field}`) === true
+      ? S.agent.toolFieldInvalid(row.name, field)
+      : undefined;
 
   return (
     <div className="space-y-4">
@@ -1187,62 +1095,71 @@ function ToolsTab({ data, onSave, onDirtyChange }: FormTabProps) {
           </TableHeaderCell>
         </TableHead>
         <TableBody>
-          {rows.map((row, i) => (
-            <TableRow key={row.base.name}>
-              <TableCell className="align-top font-mono text-xs">{row.base.name}</TableCell>
-              <TableCell className="align-top">
-                <OptionMenu
-                  mono
-                  size="sm"
-                  aria-label={S.agent.toolPermission}
-                  placeholder={S.agent.defaultValue}
-                  options={permissionOptions}
-                  value={row.base.permission}
-                  onChange={(v) => update(i, { base: { ...row.base, permission: v } })}
-                />
-              </TableCell>
-              <TableCell className="align-top">
-                <Input
-                  size="sm"
-                  value={row.timeoutMs}
-                  error={fieldErrors[`${i}-timeoutMs`]}
-                  inputMode="numeric"
-                  className="font-mono"
-                  onChange={(e) => update(i, { timeoutMs: e.target.value })}
-                />
-              </TableCell>
-              <TableCell className="align-top">
-                <Input
-                  size="sm"
-                  value={row.maxOutputLength}
-                  error={fieldErrors[`${i}-maxOutputLength`]}
-                  inputMode="numeric"
-                  className="font-mono"
-                  onChange={(e) => update(i, { maxOutputLength: e.target.value })}
-                />
-              </TableCell>
-              <TableCell className="align-top">
-                {/* Per-tool call_description switch (missing = on): shown only for tools whose
-                    config schema actually declares the description argument. */}
-                {hasDescriptionProperty(row.base) ? (
-                  <Switch
-                    checked={row.base.call_description !== false}
-                    onChange={(v) => update(i, { base: { ...row.base, call_description: v } })}
-                    aria-label={`${row.base.name} ${S.agent.toolCallDescription}`}
+          {form.draft.map((row) => {
+            const tool = stored.find((t) => t.name === row.name);
+            return (
+              <TableRow key={row.name}>
+                <TableCell className="align-top font-mono text-xs">{row.name}</TableCell>
+                <TableCell className="align-top">
+                  <OptionMenu
+                    mono
+                    size="sm"
+                    aria-label={S.agent.toolPermission}
+                    placeholder={S.agent.defaultValue}
+                    options={permissionOptions}
+                    value={row.permission}
+                    onChange={(permission) => setRow(row.name, { permission })}
                   />
-                ) : (
-                  <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
+                </TableCell>
+                <TableCell className="align-top">
+                  <Input
+                    size="sm"
+                    aria-label={`${row.name} ${S.agent.toolTimeout}`}
+                    value={row.timeoutMs}
+                    error={cellError(row, "timeoutMs")}
+                    inputMode="numeric"
+                    className="font-mono"
+                    onChange={(e) => setRow(row.name, { timeoutMs: e.target.value })}
+                  />
+                </TableCell>
+                <TableCell className="align-top">
+                  <Input
+                    size="sm"
+                    aria-label={`${row.name} ${S.agent.toolMaxOutput}`}
+                    value={row.maxOutputLength}
+                    error={cellError(row, "maxOutputLength")}
+                    inputMode="numeric"
+                    className="font-mono"
+                    onChange={(e) => setRow(row.name, { maxOutputLength: e.target.value })}
+                  />
+                </TableCell>
+                <TableCell className="align-top">
+                  {/* Per-tool call_description switch (missing = on): shown only for tools whose
+                      config schema actually declares the description argument. */}
+                  {tool !== undefined && hasDescriptionProperty(tool) ? (
+                    <Switch
+                      checked={flip?.name === row.name ? flip.on : tool.call_description !== false}
+                      disabled={writing}
+                      onChange={(on) => void flipCallDescription(row.name, on)}
+                      aria-label={`${row.name} ${S.agent.toolCallDescription}`}
+                    />
+                  ) : (
+                    <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
 
-      <Button size="sm" variant="primary" onClick={submit}>
-        {S.common.save}
-      </Button>
-      {saveConfirm}
+      <SaveRow
+        dirty={form.dirty}
+        valid={errors === null}
+        busy={writing}
+        onSave={submit}
+        onReset={form.reset}
+      />
     </div>
   );
 }

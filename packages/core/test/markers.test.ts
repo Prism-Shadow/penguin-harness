@@ -20,6 +20,8 @@ import {
   buildSkillsMessage,
   buildTurnAbortedBlock,
   buildTurnRetriedBlock,
+  stripRequestErrorLines,
+  transcribeRequestError,
   dualFormPatterns,
   extractSummary,
   markerBlock,
@@ -33,6 +35,7 @@ import {
   startsWithMarker,
   stripConversationMarkers,
   stripMarkerBlocks,
+  transcribeText,
   transcribeToolCall,
   transcribeUserInput,
   unwrapSyntheticBlock,
@@ -168,6 +171,23 @@ describe("engine blocks ([turn_aborted] / [turn_retried] / [context_summary] / [
     // Mismatched tags and ordinary text are not blocks.
     expect(unwrapSyntheticBlock("[turn_aborted]\nx\n[/turn_retried]")).toBeNull();
     expect(unwrapSyntheticBlock("just a message")).toBeNull();
+  });
+
+  it("request_error lines: the failure's code and text as they came, at most one per block", () => {
+    expect(transcribeRequestError("network", "502 Bad Gateway")).toBe(
+      '  [request_error code="network"]502 Bad Gateway[/request_error]',
+    );
+    // An idle timeout carries a code and no text.
+    expect(transcribeRequestError("timeout", undefined)).toBe(
+      '  [request_error code="timeout"][/request_error]',
+    );
+    // Rebuilding a block drops the old line (a multi-line error included) before the new one.
+    const inner = [transcribeText("half"), transcribeRequestError("network", "502\nBad Gateway")];
+    expect(stripRequestErrorLines(inner.join("\n"))).toBe(transcribeText("half"));
+    expect(stripRequestErrorLines(transcribeRequestError("timeout", undefined))).toBe("");
+    expect(stripRequestErrorLines(transcribeText("no error here"))).toBe(
+      transcribeText("no error here"),
+    );
   });
 });
 

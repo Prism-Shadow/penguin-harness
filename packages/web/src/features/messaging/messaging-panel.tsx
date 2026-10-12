@@ -12,9 +12,17 @@
  *
  * Status polling is gated on `active` (the dock keeps hidden tabs mounted): a hidden tab
  * neither polls nor loses the form state it accumulated.
+ *
+ * Unsaved edits are registered with the shared guard under this conversation's own scope (apart
+ * from the session-row dialog's), so every way of throwing them away asks first: the tab's ×,
+ * the one gesture that unmounts this body, and a route change such as opening another
+ * conversation. Hiding the dock takes nothing away and asks nothing.
  */
-import { Button, Skeleton } from "@prismshadow/penguin-ui";
+import { useEffect } from "react";
+import { Button, Skeleton, guardLeave, useUnsavedChanges } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { setCloseGuard } from "../dock/close-guard";
+import { tabKey } from "../dock/dock-state";
 import {
   MessagingBindingBody,
   MessagingBindingHelp,
@@ -23,6 +31,15 @@ import {
 
 export function MessagingPanel({ sessionId, active }: { sessionId: string; active: boolean }) {
   const b = useMessagingBinding(sessionId, { poll: active });
+  const scope = `messaging-panel:${sessionId}`;
+  useUnsavedChanges(b.unsavedAny, { scope, discard: b.discard });
+  const dirty = b.unsavedAny;
+  useEffect(() => {
+    if (!dirty) return;
+    const key = tabKey({ kind: "panel", panel: "messaging" });
+    setCloseGuard(key, () => guardLeave(() => {}, scope));
+    return () => setCloseGuard(key, null);
+  }, [dirty, scope]);
 
   return (
     <div className="h-full overflow-y-auto p-3">
@@ -40,7 +57,7 @@ export function MessagingPanel({ sessionId, active }: { sessionId: string; activ
               id={b.saveButtonId}
               variant="primary"
               size="sm"
-              disabled={b.busy}
+              disabled={b.busy || !b.dirty || !b.valid}
               onClick={() => void b.save()}
             >
               {b.busy ? S.common.saving : S.common.save}

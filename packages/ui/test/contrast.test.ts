@@ -12,17 +12,15 @@
  * - a tone's ink (`tone-*-fg`) as a glyph or status word on the four page surfaces — 3:1, except
  *   `neutral`, the one tone allowed to recede where its meaning is already in text;
  * - a decorative icon's hue (`icon-tint-*`) as a mark on the four page surfaces and on the
- *   navigation column, bare and over each of the field's washes — 3:1, in every theme, whether
- *   or not its recipe paints decorative icons in them;
+ *   navigation column — 3:1, in every theme, whether or not its recipe paints decorative icons
+ *   in them;
  * - a tone's ink on its own tint (`tone-*-bg`, a badge) and a solid badge's label on its fill — 4.5:1;
  * - the accent's label on the accent at rest and on hover (the primary button) — 4.5:1 — and the
  *   accent as a mark on the page and the card (a selected row's `>`, a link-coloured glyph) —
  *   3:1; both for the theme's own accent and, in the second suite, for every preset the theme
  *   lists, overlaid on the theme's values for that mode (a dark lift included);
  * - text and muted text on the shell's two columns, composited onto the field behind the window
- *   (Frost's navigation column is translucent glass on the field) — 4.5:1, on the bare field and
- *   where each of the field's two washes is strongest: a wash is a radial gradient from its
- *   colour to nothing, so its worst point is its colour laid on the field;
+ *   (Frost's navigation column is translucent glass on the field) — 4.5:1;
  * - the calm dark (2026-09-29, raised the same day after the owner found the first pass too
  *   dim): in dark, body text at 11:1 or better on the three page surfaces, the muted ink at
  *   6:1 and the subtle ink at 4.5:1; light keeps 7:1 and 4.5:1; the emphasis ink at 4.5:1 in
@@ -66,8 +64,6 @@ interface Pair {
   readonly fg: TokenName;
   readonly bg: TokenName;
   readonly min: number;
-  /** A shell column measured over this wash of the field, at the wash's strongest point. */
-  readonly wash?: TokenName;
 }
 
 interface ContrastException {
@@ -151,12 +147,7 @@ const pairsFor = (mode: ThemeModeName): readonly Pair[] => [
     const fg = `--ui-icon-tint-${tint}` as TokenName;
     return [
       ...PAGE_SURFACES.map((bg) => ({ fg, bg, min: 3 as const })),
-      ...([undefined, "--ui-shell-wash-1", "--ui-shell-wash-2"] as const).map((wash) => ({
-        fg,
-        bg: "--ui-shell-nav-bg" as const,
-        min: 3 as const,
-        ...(wash !== undefined ? { wash } : {}),
-      })),
+      { fg, bg: "--ui-shell-nav-bg" as const, min: 3 as const },
     ];
   }),
   ...TONES.flatMap((tone) => [
@@ -173,14 +164,7 @@ const pairsFor = (mode: ThemeModeName): readonly Pair[] => [
   ]),
   ...ACCENT_PAIRS,
   ...(["--ui-shell-nav-bg", "--ui-shell-main-bg"] as const).flatMap((bg) =>
-    ([undefined, "--ui-shell-wash-1", "--ui-shell-wash-2"] as const).flatMap((wash) =>
-      (["--ui-fg", "--ui-fg-muted"] as const).map((fg) => ({
-        fg,
-        bg,
-        min: 4.5 as const,
-        ...(wash !== undefined ? { wash } : {}),
-      })),
-    ),
+    (["--ui-fg", "--ui-fg-muted"] as const).map((fg) => ({ fg, bg, min: 4.5 as const })),
   ),
 ];
 
@@ -200,16 +184,8 @@ function layerBelow(bg: TokenName): TokenName | "base" | "worst" {
 
 type Resolve = (name: TokenName) => Rgba | string;
 
-/**
- * The opaque colour a background token shows, composited down its layers; a string is an error.
- * `wash` lays a wash of the shell's field under a column, at full strength.
- */
-function opaqueBackground(
-  bg: TokenName,
-  mode: ThemeModeName,
-  resolve: Resolve,
-  wash?: TokenName,
-): Rgba | string {
+/** The opaque colour a background token shows, composited down its layers; a string is an error. */
+function opaqueBackground(bg: TokenName, mode: ThemeModeName, resolve: Resolve): Rgba | string {
   const color = resolve(bg);
   if (typeof color === "string") return color;
   const below = layerBelow(bg);
@@ -226,9 +202,7 @@ function opaqueBackground(
           : WHITE
         : opaqueBackground(below, mode, resolve);
   if (typeof under === "string") return under;
-  if (wash === undefined || below !== "--ui-shell-field") return composite(color, under);
-  const tint = resolve(wash);
-  return typeof tint === "string" ? tint : composite(color, composite(tint, under));
+  return composite(color, under);
 }
 
 function measure(
@@ -238,7 +212,7 @@ function measure(
 ): { ratio: number; detail: string } | string {
   const fg = resolve(pair.fg);
   if (typeof fg === "string") return fg;
-  const bg = opaqueBackground(pair.bg, mode, resolve, pair.wash);
+  const bg = opaqueBackground(pair.bg, mode, resolve);
   if (typeof bg === "string") return bg;
   const ratio = contrastRatio(fg, bg);
   return { ratio, detail: `${formatColor(composite(fg, bg))} on ${formatColor(bg)}` };
@@ -328,7 +302,7 @@ describe("theme contrast", () => {
         const failures: string[] = [];
         for (const pair of pairsFor(mode)) {
           const result = measure(pair, mode, resolve);
-          const name = `${pair.fg} on ${pair.bg}${pair.wash !== undefined ? ` over ${pair.wash}` : ""}`;
+          const name = `${pair.fg} on ${pair.bg}`;
           if (typeof result === "string") failures.push(`${name}: ${result}`);
           else if (result.ratio < pair.min && excepted(pair) === undefined) {
             failures.push(

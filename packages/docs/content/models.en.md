@@ -42,7 +42,7 @@ A group's header shows the provider's logo, the group's name, its model count an
 
 - the group's balance, for TokenDance and DeepSeek once the group has a key; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
 - the connection, for TokenDance, Penguin Go and ModelScope: **Not connected**, which you select to connect, or **Connected**, a menu with **Sync models** (Penguin Go only), **Reconnect** and **Disconnect**; see [Connect an account](#connect-an-account);
-- **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow** and groups you created; see [Add a model](#add-a-model);
+- **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **Atlas Cloud** and groups you created; see [Add a model](#add-a-model);
 - the speed test and **Settings** (a gear), which end every group, **Custom** included, so the two stand at the same right edge on every group; see [Measure speed](#measure-speed). The gear opens a menu: the group's sort, then **Group settings…**; see [Group settings](#group-settings).
 
 While the TokenDance group has no key, a banner above the groups offers to connect your TokenDance wallet, so the models there need no key set by hand. Its **Connect** runs the same flow as the group's. Select × to hide the banner in this browser.
@@ -97,14 +97,14 @@ All of the group's models, their API keys and the group's settings are removed. 
 
 ## Add a model
 
-**Add model** is on the headers of **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow** and the groups you created. The other built-in groups — the vendors and the other gateways — carry their built-in models only; see [Built-in models only](#built-in-models-only).
+**Add model** is on the headers of **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **Atlas Cloud** and the groups you created. The other built-in groups — the vendors and the other gateways — carry their built-in models only; see [Built-in models only](#built-in-models-only).
 
 1. On the group's header, select **Add model** (the plus icon).
 2. In **Model ID**, enter the model id exactly as the provider's API expects it, for example `qwen3-32b`. **Get model IDs** opens the provider's model list.
 3. Optional: in **Display name**, enter a display name. An empty display name shows the model id.
 4. Check **Group**: it starts on the group whose header you used.
 5. Optional: open **Details**, collapsed by default, for everything else. A new model follows its group's connection, so the connection fields there are overrides:
-   - **API key** and **Custom base URL**: a field the group sets reads "Leave blank to use the group's setting"; leave it empty to follow the group, or type a value of the model's own. The model needs a key, its own or the group key: these groups point at endpoints that are not a vendor's own, and no environment variable is used for such an endpoint. On **OpenRouter**, **TokenDance** and **SiliconFlow**, an empty base URL uses the gateway's endpoint on the group; on the other groups the base URL is required unless the group's settings give one.
+   - **API key** and **Custom base URL**: a field the group sets reads "Leave blank to use the group's setting"; leave it empty to follow the group, or type a value of the model's own. The model needs a key, its own or the group key: these groups point at endpoints that are not a vendor's own, and no environment variable is used for such an endpoint. On **OpenRouter**, **TokenDance**, **SiliconFlow** and **Atlas Cloud**, an empty base URL uses the gateway's endpoint on the group; on the other groups the base URL is required unless the group's settings give one.
    - The protocol, picked from the suffix of the base URL field or found with **Detect**; see [Detect a custom model's protocol](#detect-a-custom-models-protocol).
    - **Context window**: the model's context window in Tokens. For a model that is not in the built-in catalog, an empty field saves as 1000000.
    - **Max output tokens**: the most output Tokens per request. Leave it empty to use the agent's setting; lower it for models with a small context.
@@ -116,12 +116,12 @@ All of the group's models, their API keys and the group's settings are removed. 
 
 Which protocol a new model uses depends on its group:
 
-- **vLLM** uses `openai-chat-vllm-adapter`, **OpenRouter** `openai-responses`, and **TokenDance** and **SiliconFlow** `openai-chat`, the protocol a new Project stores in the group's settings. The model stores none and follows its group.
+- **vLLM** uses `openai-chat-vllm-adapter`, **OpenRouter** `openai-responses`, and **TokenDance**, **SiliconFlow** and **Atlas Cloud** `openai-chat`, the protocol a new Project stores in the group's settings. The model stores none and follows its group.
 - **Custom** and groups you created: the group's protocol when its settings set one; otherwise pick the protocol from the base URL field, or detect it. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
 
 ### Built-in models only
 
-Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance** and **SiliconFlow** carries the models in PenguinHarness's built-in catalog and nothing else. Their keys are managed per group, and which models they hold is the catalog's to decide.
+Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow** and **Atlas Cloud** carries the models in PenguinHarness's built-in catalog and nothing else. Their keys are managed per group, and which models they hold is the catalog's to decide.
 
 - These groups have no **Add model**, and **Model settings** does not offer them as a group to move a model into.
 - The server refuses a new model in one of these groups unless it is one of the group's built-in models: saving it fails with "This group carries its built-in models only". `penguin config model add` refuses it the same way. A built-in model you deleted can be added back, which is what **Add new models** does.
@@ -215,7 +215,7 @@ A group holds one key, the **group key**, and every model in the group without a
 - **A whole group.** Enter the key in [Group settings](#group-settings), the gear on the group's header, or let [Connect an account](#connect-an-account) write it. Either way it becomes the group key; a key set on one model is not touched.
 - **One model.** In **Model settings**, enter the key in **API key**. Once saved, the key is shown masked; leave the field empty to keep it, or select **Clear stored API key** to remove it, after which the model uses the group key again. A model that uses the group key shows it masked as well.
 - **Another endpoint.** A key belongs to the endpoint it was issued for: the group key reaches a model only when the model has no base URL of its own, or its own base URL has the same origin (scheme, host and port) as the group's. OpenCode Go's Anthropic Messages models, on another path of the group's host, take it. A model pointed at another host does not and needs a key of its own, such as one OpenRouter model sent through a proxy, or **Custom**'s preset Atria Dawn Preview, which carries its own endpoint, so a **Custom** key never reaches its host. Such a model's card reads **No key**, and the key field in **Model settings** says the group key does not apply.
-- **No key.** A model with neither its own key nor a group key that reaches it uses the provider's environment variable on the server **only when its requests go to that provider's official endpoint**: neither the model nor its group sets a base URL (MMSP's own `*_API_KEY` / `*_BASE_URL` pairing then applies), or the base URL it uses is the vendor's own endpoint. A model or group base URL that points anywhere else is never covered by the environment, not even when `OPENAI_BASE_URL` names the same server: a DeepSeek group pointed at a proxy in its settings takes no `DEEPSEEK_API_KEY`. Gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, the Qwen gateways, ModelScope), **Custom**, **vLLM** and groups you created point at other endpoints, so their models need a key of their own or their group's: a Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The Penguin Go group is the exception that proves the rule — its rows fall back to its own `PENGUIN_GO_API_KEY`, never to a vendor's variable. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
+- **No key.** A model with neither its own key nor a group key that reaches it uses the provider's environment variable on the server **only when its requests go to that provider's official endpoint**: neither the model nor its group sets a base URL (MMSP's own `*_API_KEY` / `*_BASE_URL` pairing then applies), or the base URL it uses is the vendor's own endpoint. A model or group base URL that points anywhere else is never covered by the environment, not even when `OPENAI_BASE_URL` names the same server: a DeepSeek group pointed at a proxy in its settings takes no `DEEPSEEK_API_KEY`. Gateway groups (TokenDance, OpenRouter, Fireworks AI, SiliconFlow, Atlas Cloud, the Qwen gateways, ModelScope), **Custom**, **vLLM** and groups you created point at other endpoints, so their models need a key of their own or their group's: a Session, a connection test or a group speed test on a keyless row there fails with "has no API key" instead of borrowing `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The Penguin Go group is the exception that proves the rule — its rows fall back to its own `PENGUIN_GO_API_KEY`, never to a vendor's variable. The card and the dialog show when a key is read from an environment variable; see [Built-in provider groups](#built-in-provider-groups).
 
 A key you type is stored in the hidden Project config file, which has mode 0600. The Web App always masks it.
 
@@ -486,6 +486,7 @@ The table below lists the built-in groups and the environment variables their mo
 | openai | `OPENAI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | siliconflow | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://api.siliconflow.cn/v1` |
+| atlascloud | `OPENAI_API_KEY` | Atlas Cloud (OpenAI-compatible gateway), preset base URL `https://api.atlascloud.ai/v1`; model ids keep their vendor prefix (e.g. `deepseek-ai/deepseek-v4.1-flash`) |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
 | minimax | `MINIMAX_API_KEY` | `MiniMax-M3` with a 1,000,000-token context window and vision, routed by its id to MiniMax's official Responses client (`minimax-official`); no preset base URL, so requests go to `https://api.minimax.io/v1` unless `MINIMAX_BASE_URL` names another; accepts a Token Plan Subscription Key or pay-as-you-go API key |
@@ -495,7 +496,7 @@ The table below lists the built-in groups and the environment variables their mo
 | vllm | `OPENAI_API_KEY` | Self-hosted vLLM servers: protocol fixed to `openai-chat-vllm-adapter`, no preset base URL, eight preset models priced at 0 (see [Connect a local or self-hosted endpoint](#connect-a-local-or-self-hosted-endpoint)) |
 | custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint; ships one preset, Atria Dawn Preview (Anthropic Messages API at `api.atria-asi.ai`, needs its own key, 256K window, priced at $0 until the vendor publishes prices) |
 
-The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through MMSP's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for custom, vLLM and user-created groups unless the row's base URL is the vendor's own endpoint. ModelScope also uses the `OPENAI_*` credential variables because its credential is an api-inference token, and all three presets pin the generic Responses protocol; a keyless ModelScope row is refused the same way.
+The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / atlascloud / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through MMSP's generic OpenAI-protocol clients, whose variable is `OPENAI_API_KEY`; a keyless row there is refused rather than sent your OpenAI key. The same holds for custom, vLLM and user-created groups unless the row's base URL is the vendor's own endpoint. ModelScope also uses the `OPENAI_*` credential variables because its credential is an api-inference token, and all three presets pin the generic Responses protocol; a keyless ModelScope row is refused the same way.
 
 - The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells.
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).
@@ -576,7 +577,7 @@ The list is not exhaustive.
   - `glm-5.2` at 20%
   - `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
 
-  Gemini 3.8 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model card shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
+  Gemini 3.8 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. Atlas Cloud's `qwen/qwen3.6-35b-a3b` is 25% off. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model card shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
 - **Your own prices.** Editing a row's price cancels its promotion and takes the discount tag off the card: the figure is then yours, not the seller's.
 
 ## The per-Project model table

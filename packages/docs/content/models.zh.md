@@ -42,7 +42,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 - 分组的余额：TokenDance 和 DeepSeek 分组有 key 之后显示；点击金额打开菜单，可以置顶或更新余额，见[账户余额](#账户余额)；
 - 连接状态：TokenDance、Penguin Go 和 ModelScope 未连接时为**未连接**，点击即开始连接；已连接时为一个**已连接**菜单，内含**同步模型**（仅 Penguin Go）、**重新连接**和**断开连接**，见[连接账户](#连接账户)；
-- **添加模型**（加号图标）：只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow** 和你创建的分组，见[添加模型](#添加模型)；
+- **添加模型**（加号图标）：只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow**、**Atlas Cloud** 和你创建的分组，见[添加模型](#添加模型)；
 - 测速与**设置**（齿轮）：每个分组（包括 **Custom**）都以这两个按钮收尾，因而在每个分组都对齐在同一条右缘上，见[测速](#测速)。齿轮打开一个菜单：先是该分组的排序，然后是**分组设置…**，见[分组设置](#分组设置)。
 
 TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推荐连接 TokenDance 钱包，这样分组里的模型不用手动配置密钥。横幅上的**连接**与分组标题栏上的是同一个流程。点击 × 可以在当前浏览器里隐藏横幅。
@@ -97,14 +97,14 @@ TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推�
 
 ## 添加模型
 
-**添加模型**只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow** 和你创建的分组的标题栏上。其余内置分组（厂商分组与其余网关分组）只承载内置模型，见[只承载内置模型](#只承载内置模型)。
+**添加模型**只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow**、**Atlas Cloud** 和你创建的分组的标题栏上。其余内置分组（厂商分组与其余网关分组）只承载内置模型，见[只承载内置模型](#只承载内置模型)。
 
 1. 在分组标题上，点击**添加模型**（加号图标）。
 2. 在**模型 ID** 里输入模型 id，必须与供应商 API 要求的完全一致，例如 `qwen3-32b`。**获取模型 id** 会打开供应商的模型列表。
 3. 可选：在**模型名称**里输入显示名。显示名为空时直接显示模型 id。
 4. 确认**分组**：默认是你点击的那个分组标题栏所在的分组。
 5. 可选：展开默认折叠的**详细配置**，填写其余各项。新模型继承分组的连接信息，其中的连接字段都是覆盖值：
-   - **API key** 与**自定义 base URL**：分组设置了该字段时，占位文字为「留空继承分组设置」；留空即跟随分组，填写的值即成为该模型自己的值。模型必须有 key，自己的或分组密钥都可以：这些分组指向的都不是厂商自己的端点，这样的端点不会使用任何环境变量。在 **OpenRouter**、**TokenDance** 和 **SiliconFlow** 留空 base URL 即使用分组上的网关端点；其余分组必填，除非分组设置里已经给出。
+   - **API key** 与**自定义 base URL**：分组设置了该字段时，占位文字为「留空继承分组设置」；留空即跟随分组，填写的值即成为该模型自己的值。模型必须有 key，自己的或分组密钥都可以：这些分组指向的都不是厂商自己的端点，这样的端点不会使用任何环境变量。在 **OpenRouter**、**TokenDance**、**SiliconFlow** 和 **Atlas Cloud** 留空 base URL 即使用分组上的网关端点；其余分组必填，除非分组设置里已经给出。
    - 协议：在 base URL 字段的后缀里选择，或用**检测协议**探测，见[检测自定义模型的协议](#检测自定义模型的协议)。
    - **上下文窗口**：模型的上下文窗口大小，单位是 Token。模型不在内置模型目录里时，留空会保存为 1000000。
    - **最大输出长度**：每次请求最多输出的 Token 数。留空则使用 Agent 的设置；上下文较小的模型建议调低这个值。
@@ -116,12 +116,12 @@ TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推�
 
 新模型使用哪种协议，取决于所在的分组：
 
-- **vLLM** 使用 `openai-chat-vllm-adapter`，**OpenRouter** 使用 `openai-responses`，**TokenDance** 和 **SiliconFlow** 使用 `openai-chat`，即新建 Project 时写进分组设置的协议。模型本身不存协议，跟随分组。
+- **vLLM** 使用 `openai-chat-vllm-adapter`，**OpenRouter** 使用 `openai-responses`，**TokenDance**、**SiliconFlow** 和 **Atlas Cloud** 使用 `openai-chat`，即新建 Project 时写进分组设置的协议。模型本身不存协议，跟随分组。
 - **Custom** 和你创建的分组：分组设置了协议时用分组的；否则在 base URL 字段里选择协议，或者检测协议。见[检测自定义模型的协议](#检测自定义模型的协议)。
 
 ### 只承载内置模型
 
-除 **Custom**、**vLLM**、**OpenRouter**、**TokenDance** 和 **SiliconFlow** 以外，每个内置分组只承载 PenguinHarness 内置模型目录里的模型。这些分组的 key 按分组统一管理，组里有哪些模型由目录决定。
+除 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow** 和 **Atlas Cloud** 以外，每个内置分组只承载 PenguinHarness 内置模型目录里的模型。这些分组的 key 按分组统一管理，组里有哪些模型由目录决定。
 
 - 这些分组没有**添加模型**，**模型配置**的分组下拉里也不提供把模型移进这些分组。
 - 服务端会拒绝往这些分组新增不属于该分组内置模型的条目：保存时提示「该分组只承载内置模型」。`penguin config model add` 同样拒绝。删掉的内置模型可以重新加回来，**同步新增模型**做的就是这件事。
@@ -215,7 +215,7 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 - **整个分组。** 在[分组设置](#分组设置)（分组标题栏上的齿轮）里填写，或由[连接账户](#连接账户)写入。两种方式写的都是分组密钥；单个模型上设置的 key 不受影响。
 - **单个模型。** 在**模型配置**里，把 key 填入 **API key**。保存后 key 会打码显示；输入框留空即保留原 key，点击**清除已存 API key** 可删除它，此后该模型重新使用分组密钥。使用分组密钥的模型同样打码显示这把 key。
 - **其他端点。** key 属于签发它的端点：分组密钥只借给没有自己 base URL 的模型，或自己的 base URL 与分组 base URL 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 模型位于分组主机的另一条路径上，照样使用分组密钥。指向别的主机的模型取不到分组密钥，需要自己的 key，例如经代理访问的某个 OpenRouter 模型，或 **Custom** 里自带端点的预置模型 Atria Dawn Preview——**Custom** 的 key 因此不会发往它的主机。这样的模型卡片显示**未配置 key**，**模型配置**的 key 输入框会说明分组密钥不适用。
-- **不配 key。** 模型自己没有 key、也没有能借到的分组密钥时，**只在请求确实发往该供应商的官方端点时**使用服务端上供应商的环境变量：模型和分组都没有设置 base URL（此时按 MMSP 自己的 `*_API_KEY` / `*_BASE_URL` 配对），或模型实际使用的 base URL 是厂商自己的端点。模型或分组的 base URL 指向别处时，一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外：在分组设置里指向代理的 DeepSeek 分组不会使用 `DEEPSEEK_API_KEY`。网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、两个 Qwen 网关、ModelScope）、**Custom**、**vLLM** 和你创建的分组指向别的端点，其中的模型必须有自己的 key 或分组密钥：在这些分组里对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。Penguin Go 分组是唯一的例外，它回退到自己的 `PENGUIN_GO_API_KEY`，从不使用厂商变量。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
+- **不配 key。** 模型自己没有 key、也没有能借到的分组密钥时，**只在请求确实发往该供应商的官方端点时**使用服务端上供应商的环境变量：模型和分组都没有设置 base URL（此时按 MMSP 自己的 `*_API_KEY` / `*_BASE_URL` 配对），或模型实际使用的 base URL 是厂商自己的端点。模型或分组的 base URL 指向别处时，一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外：在分组设置里指向代理的 DeepSeek 分组不会使用 `DEEPSEEK_API_KEY`。网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、Atlas Cloud、两个 Qwen 网关、ModelScope）、**Custom**、**vLLM** 和你创建的分组指向别的端点，其中的模型必须有自己的 key 或分组密钥：在这些分组里对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。Penguin Go 分组是唯一的例外，它回退到自己的 `PENGUIN_GO_API_KEY`，从不使用厂商变量。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
 
 你填写的 key 存在 Project 的隐藏配置文件里，文件权限为 0600。Web App 里它始终打码显示。
 
@@ -485,6 +485,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | openai | `OPENAI_API_KEY` | |
 | anthropic | `ANTHROPIC_API_KEY` | |
 | siliconflow | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://api.siliconflow.cn/v1` |
+| atlascloud | `OPENAI_API_KEY` | Atlas Cloud（OpenAI 兼容网关），预置 base URL `https://api.atlascloud.ai/v1`；模型 id 带厂商前缀（如 `deepseek-ai/deepseek-v4.1-flash`） |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
 | minimax | `MINIMAX_API_KEY` | `MiniMax-M3`，上下文窗口 1,000,000 Token，支持视觉，按 id 路由到 MiniMax 官方的 Responses 客户端（`minimax-official`）；无预置 base URL，请求发往 `https://api.minimax.io/v1`，除非 `MINIMAX_BASE_URL` 另有指定；接受 Token Plan 订阅密钥或按量付费 API key |
@@ -494,7 +495,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | vllm | `OPENAI_API_KEY` | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，无预置 base URL，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
 | custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn Preview（Anthropic Messages API，地址 `api.atria-asi.ai`，需要自己的 key，上下文窗口 256K，供应商公布价格之前定价 $0） |
 
-OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom、vLLM 和自建分组同样如此，除非条目的 base URL 就是厂商自己的端点。ModelScope 也使用 `OPENAI_*` 凭据变量，因为它的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
+OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom、vLLM 和自建分组同样如此，除非条目的 base URL 就是厂商自己的端点。ModelScope 也使用 `OPENAI_*` 凭据变量，因为它的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
 
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
@@ -575,7 +576,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
   - `glm-5.2` 打 8 折
   - `glm-5.3`、`glm-5.3-flash` 和 `qwen3.8-max` 打 9 折
 
-  Gemini 3.8 Flash 和 3.6 Flash 也打 5 折，google 分组和 OpenRouter 上（`google/gemini-3.8-flash`、`google/gemini-3.6-flash`）都是如此，因为 Google 在 2026-12-31 之前对它们一律减半。Project 预置的是**牌价**：折扣率由服务端另行保存，存在它自己的数据库里，而不写入 `.project_config.toml`，计算成本时再从牌价中扣除，因此成本中心按卖家实际收取的价格计费。模型卡片用标签标出当前实际计费的费率，模型弹窗则写明**此处为牌价，当前促销在此基础上省 N%；修改价格会取消促销**。
+  Gemini 3.8 Flash 和 3.6 Flash 也打 5 折，google 分组和 OpenRouter 上（`google/gemini-3.8-flash`、`google/gemini-3.6-flash`）都是如此，因为 Google 在 2026-12-31 之前对它们一律减半。Atlas Cloud 的 `qwen/qwen3.6-35b-a3b` 打 7.5 折。Project 预置的是**牌价**：折扣率由服务端另行保存，存在它自己的数据库里，而不写入 `.project_config.toml`，计算成本时再从牌价中扣除，因此成本中心按卖家实际收取的价格计费。模型卡片用标签标出当前实际计费的费率，模型弹窗则写明**此处为牌价，当前促销在此基础上省 N%；修改价格会取消促销**。
 - **你自己的价格。** 修改条目的价格会取消它的促销，卡片上的折扣标签也随之消失：此后这个数字由你自己定，不再代表卖家。
 
 ## Project 模型表

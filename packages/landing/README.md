@@ -2,7 +2,7 @@
 
 The PenguinHarness product landing page (React + Vite + Tailwind CSS 4): bilingual (zh/en), light/dark themes, the feature matrix and CONTRACT.md showcase, benchmark charts, Playwright-captured product screenshots, and a local-Markdown blog (product news / release notes).
 
-It deploys to GitHub Pages together with the [docs site](../docs) as one artifact: landing at the site root, docs under `/docs/` (assembled by `scripts/build-site.mjs` at the repo root; the nav, footer and CTA link into `/docs/`).
+It deploys to GitHub Pages together with the [docs site](../docs) and the [component gallery](../ui-gallery) as one artifact: landing at the site root, docs under `/docs/`, the gallery under `/gallery/` (assembled by `scripts/build-site.mjs` at the repo root; the nav, footer and CTA link into `/docs/`, the nav and footer into `/gallery/`).
 
 ## Development
 
@@ -12,15 +12,15 @@ pnpm --filter @prismshadow/penguin-landing build      # dist/ (with 404.html SPA
 pnpm --filter @prismshadow/penguin-landing typecheck
 pnpm --filter @prismshadow/penguin-landing test
 
-BASE_PATH=/ pnpm build:site                           # repo root: assemble landing + docs
+BASE_PATH=/ pnpm build:site                           # repo root: assemble landing + docs + gallery
 pnpm --filter @prismshadow/penguin-landing preview    # serve the assembled tree
 ```
 
-`BASE_PATH` controls the asset base (GitHub Pages project pages need `/<repo>/`; local default `/`). The `Docs` links resolve only in the assembled build — in plain `dev` they point at a path this dev server doesn't serve.
+`BASE_PATH` controls the asset base (GitHub Pages project pages need `/<repo>/`; local default `/`). The `Docs` and `Gallery` links resolve only in the assembled build — in plain `dev` they point at paths this dev server doesn't serve.
 
 ## Deployment
 
-`.github/workflows/pages.yml` builds landing + docs and deploys on pushes to main that touch either package (or on manual dispatch). First-time setup: repository Settings → Pages → Source = "GitHub Actions".
+`.github/workflows/pages.yml` builds landing + docs + gallery and deploys on pushes to main that touch any of the three packages, or the Web App and UI package the gallery frames (or on manual dispatch). First-time setup: repository Settings → Pages → Source = "GitHub Actions".
 
 ## Blog
 

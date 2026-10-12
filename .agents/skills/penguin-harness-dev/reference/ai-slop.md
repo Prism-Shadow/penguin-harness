@@ -36,6 +36,11 @@ entry, a PR body.
   heading is the only divider.
 - Colour comes from the theme tokens and the `tone*` helpers (`lib/tone.ts`), which already exist
   for attention / danger / success — reuse them, never hand-pick a Tailwind hue.
+- A gradient only where it carries the data's shape, a state transition or one deliberate
+  emphasis, never as atmosphere: the running step's sweep, the streaming veil, a chart area's
+  fade, the context bar's hatch and the TokenDance banner's brand-name sweep are the ones kept,
+  and Frost's sidebar is flat (owner, 2026-10-11 and 2026-10-12). The frontend skill lists each
+  one's job; de-slop rule 18 holds the hook recipes to it.
 - zh copy follows the docs typography rules (CJK–Latin spacing, full-width punctuation, zh
   "Agent"); prose hygiene for anything published is in `authoring.md`.
 

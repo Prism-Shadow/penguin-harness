@@ -6,7 +6,7 @@
  * chunks at the same moments, to a `StreamText` in its plain format wearing a tool call's output
  * block, as a command's output streams. Both are the one `ui-stream` host, which paces the reveal
  * by the theme's `--ui-stream-reveal` and `--ui-stream-rate`: Primer shows each chunk at once,
- * Frost fades it in by word under a glowing veil, Console types it out behind a block caret. It
+ * Frost fades it in by word under a soft veil, Console types it out behind a block caret. It
  * plays once on load and again on Replay, always on the same seed, so every theme replays the
  * same chunks at the same gaps and the reveals compare. The caption under both names the mode
  * read from this frame root.

@@ -22,6 +22,7 @@ export const zh = {
     blog: "博客",
     download: "下载",
     docs: "文档",
+    gallery: "画廊",
     github: "GitHub",
     openMenu: "打开目录",
     closeMenu: "关闭目录",

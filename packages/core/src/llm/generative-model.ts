@@ -823,7 +823,8 @@ export class GenerativeModel implements LLMInterface {
    *     assembled into a request: `finishInterrupted("fatal")` closes out, produces no usage
    *     → `fatal` (carrying `errorMessage`), which the engine stops the run on instead of
    *     retrying — the identical request can never succeed, so the ladder would only delay
-   *     the actionable message;
+   *     the actionable message. The engine makes one exception: a provider 4xx on an input
+   *     that holds images is retried with the images replaced (`image_rejected`);
    *   - **Every other failure** — idle timeout, network/transport drops, 408/429/5xx,
    *     MMSP parse errors and truncated streams, and anything unclassifiable:
    *     `finishInterrupted("retryable")` closes out, produces no usage → `retryable`
@@ -994,6 +995,10 @@ export class GenerativeModel implements LLMInterface {
       } else if (isFatalProviderRejection(error)) {
         // A definitive provider 4xx rejection (408/429 excluded): the identical request
         // fails identically on every retry, so stop now with the provider's own message.
+        // Nothing here reads that message: whether the request carried an image is the
+        // engine's knowledge, and it treats any 4xx on such a request as the image's
+        // (`image_rejected`) and sends the rest again with the provider's text in place of
+        // the image, for the model to judge.
         outcome = { status: "fatal", errorCode: "rejected", errorMessage: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)

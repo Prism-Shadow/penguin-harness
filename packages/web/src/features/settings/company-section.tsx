@@ -55,7 +55,7 @@ export function CompanySection() {
     };
   }, []);
 
-  const toggle = async (next: boolean) => {
+  const write = async (next: boolean) => {
     if (stored === null || busy) return;
     // Optimistic: the knob moves with the click, and only a failure moves it back.
     setCompanyMode(next);
@@ -77,6 +77,9 @@ export function CompanySection() {
     }
     setBusy(false);
   };
+  /** On applies at once; off stops every organization, so it runs only from its confirmation. */
+  const switchOnCompanyMode = () => void write(true);
+  const switchOffCompanyMode = () => void write(false);
 
   const hydrated = stored !== null;
   return (
@@ -91,7 +94,7 @@ export function CompanySection() {
             hint={S.company.betaNotice}
             checked={companyMode}
             onChange={(next) => {
-              if (next) void toggle(true);
+              if (next) switchOnCompanyMode();
               else setConfirmOff(true);
             }}
             disabled={!hydrated || busy}
@@ -106,7 +109,7 @@ export function CompanySection() {
         onClose={() => setConfirmOff(false)}
         onConfirm={() => {
           setConfirmOff(false);
-          void toggle(false);
+          switchOffCompanyMode();
         }}
         confirmLabel={S.settings.companyModeOff}
         cancelLabel={S.common.cancel}
