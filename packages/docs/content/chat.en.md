@@ -392,6 +392,7 @@ Archived conversations are listed under [Settings › Archived chats](/settings#
 
 - Unarchiving brings a conversation back to the sidebar. One that a program opened then stays there through its later runs, until you archive it again.
 - A program can keep working in an archived conversation: an Agent API call or a scheduled task continues it, and it stays archived.
+- Archiving the conversation on screen takes you to a new chat, as **New chat** does.
 - Opening an archived conversation's link shows only its title, its last-active time and its source (**User** for one you started), with "This chat is archived. Unarchive it to read it; it returns to the sidebar.", an **Unarchive** button and a **Delete** icon. Its messages are not loaded, and it has no composer or side panels. **Unarchive** loads the conversation in place and puts it back in the sidebar; **Delete** asks first.
 - Subagent Sessions are listed neither in the sidebar nor under Archived chats. Open one from its parent conversation's Agents panel with **Jump to this session**. While the parent is archived, its Agents panel is not shown, so its subagents are out of reach until you unarchive the parent.
 - Company mode's desk and ticket Sessions are not listed in either place, in either mode: they are listed only in [company mode](/company-mode)'s own views.

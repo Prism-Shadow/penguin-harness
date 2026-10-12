@@ -162,9 +162,9 @@ At the top are **Search archived chats**, which matches titles regardless of cas
 | Source | **All sources**, **User** (the conversations you archived yourself), **API**, **Scheduled** or **CLI** |
 | Project | **All projects**, or one Project by name |
 
-The conversations are grouped by Workspace under their Project. Each group's header names both, as **Project › Workspace**, and the group with the latest activity comes first; temporary workspaces form one group, as in the sidebar. The header also shows how many chats the group holds, such as **3 chats**, and a … menu with **Unarchive all** and **Delete all**. Each row shows the title and the time of the last activity, with:
+The conversations are grouped by Workspace under their Project. Each group's header names both, as **Project › Workspace**, and the group with the latest activity comes first; temporary workspaces form one group, as in the sidebar. The header also shows how many chats the group holds, such as **3 chats**, and **Select all**. Each row shows the title and the time of the last activity, with:
 
-- a source mark on a conversation a program opened: point at it for API, Scheduled or CLI;
+- a pill naming who opened a conversation a program opened: **API**, **Scheduled** or **CLI** (a conversation you started has none);
 - a running mark while the conversation runs;
 - a **Delete** icon and an **Unarchive** button at the end.
 
@@ -175,10 +175,10 @@ With no archived conversations the page reads **No archived chats**; when the se
 ### Unarchive or delete chats
 
 - **Unarchive** on a row puts the conversation back in the sidebar at once. A conversation a program opened then stays in the sidebar through its later runs.
-- To act on several, select their rows: a row's box shows when you point at the row, and always on a touch screen. A bar above the list then reads **N selected**, with **Unarchive**, **Delete** and **Clear selection**; it stays in view, with the search and the filters, while the list scrolls.
-- **Unarchive all** and **Delete all** in a group's … menu act on the chats its header counted, and on no other: a chat archived or opened after the count, or one that ran since, is left alone, and **Delete all** skips a chat that is running.
+- To act on several, select their rows: a row's box shows when you point at the row or tab to the box, and always on a touch screen. A bar above the list then reads **N selected**, with **Unarchive**, **Delete** and **Clear selection**; it stays in view, with the search and the filters, while the list scrolls.
+- **Select all** in a group's header selects every chat in the group, including the ones not shown yet, and reads **Deselect all** while they all are. Unticking one row afterwards leaves the rest selected. What **Select all** chose covers the chats its header counted, and no other: a chat archived or opened after the count, or one that ran since, is left alone, and **Delete** skips a chat that is running.
 
-Unarchiving does not ask. Deleting always asks first, and a batch or group delete names how many chats it removes. Deleting removes the conversations' messages and Traces for good, along with their subagent Sessions.
+Unarchiving does not ask. Deleting always asks first, and a batch delete names how many chats it removes. Deleting removes the conversations' messages and Traces for good, along with their subagent Sessions.
 
 The page keeps up with changes made elsewhere: it updates when a conversation is archived, unarchived or deleted, or when a program opens a new one, and a row's running mark comes and goes with its run.
 
