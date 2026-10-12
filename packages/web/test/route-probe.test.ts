@@ -13,6 +13,8 @@
  *   Session is gone: a deep link to a deleted Session leaves the skeleton.
  * - Given an answer the page may not show (a Session of another Project) after the list
  *   settled, the Session is gone.
+ * - Given the Session is gone, the page is told why: the lookup's rejection (a 404 there is
+ *   what makes the page say the Session does not exist), or none for an answer it may not show.
  * - Given the route moved to another Session before a lookup settled, its answer changes
  *   nothing.
  */
@@ -31,6 +33,7 @@ function page() {
   const lookups: Lookup[] = [];
   const found: { row: string; listLoading: boolean }[] = [];
   const gone: string[] = [];
+  const causes: unknown[] = [];
   const effect = (key: string | null, listLoading: boolean) => {
     probe.track(key, listLoading);
     if (key === null) return;
@@ -39,11 +42,14 @@ function page() {
       () => new Promise<string | null>((resolve, reject) => lookups.push({ key, resolve, reject })),
       {
         found: (row, listLoading) => found.push({ row, listLoading }),
-        gone: () => gone.push(key),
+        gone: (cause) => {
+          gone.push(key);
+          causes.push(cause);
+        },
       },
     );
   };
-  return { effect, lookups, found, gone };
+  return { effect, lookups, found, gone, causes };
 }
 
 /** Lets a settled lookup's handlers run. */
@@ -108,6 +114,19 @@ describe("the routed Session's direct lookup", () => {
     await flush();
     expect(p.found).toEqual([]);
     expect(p.gone).toEqual(["p:s1"]);
+  });
+
+  it("tells the page why the Session is gone: the lookup's rejection, or none for a row it may not show", async () => {
+    const p = page();
+    p.effect("p:s1", false);
+    p.lookups[0]!.reject(notFound);
+    await flush();
+    expect(p.causes).toEqual([notFound]);
+    const q = page();
+    q.effect("p:s1", false);
+    q.lookups[0]!.resolve(null);
+    await flush();
+    expect(q.causes).toEqual([null]);
   });
 
   it("drops the answer about a Session the route has since left", async () => {

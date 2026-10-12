@@ -22,8 +22,11 @@
 export interface RouteProbeHandlers<T> {
   /** The lookup found the routed Session; `listLoading`: the Session list had not settled yet. */
   found(row: T, listLoading: boolean): void;
-  /** The lookup settled it after the list had: the Session is not there. */
-  gone(): void;
+  /**
+   * The lookup settled it after the list had: the Session is not there. `cause` is the lookup's
+   * rejection, or null when it answered with a row the page may not show.
+   */
+  gone(cause: unknown): void;
 }
 
 export class RouteProbe {
@@ -49,12 +52,15 @@ export class RouteProbe {
   run<T>(key: string, lookup: () => Promise<T | null>, on: RouteProbeHandlers<T>): void {
     if (this.inFlight === key) return;
     this.inFlight = key;
-    const settle = (row: T | null) => {
+    const settle = (row: T | null, cause: unknown) => {
       if (this.inFlight === key) this.inFlight = null;
       if (this.routed !== key) return;
       if (row !== null) on.found(row, this.listLoading);
-      else if (!this.listLoading) on.gone();
+      else if (!this.listLoading) on.gone(cause);
     };
-    lookup().then(settle, () => settle(null));
+    lookup().then(
+      (row) => settle(row, null),
+      (err: unknown) => settle(null, err),
+    );
   }
 }

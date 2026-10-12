@@ -903,7 +903,12 @@ export function ChatPage() {
         },
         // Only once the list has settled: a failure while it loads is not a verdict, and
         // this effect re-runs when it settles and asks again.
-        gone: () => setProbeFailedKey(probeKey),
+        gone: (cause) => {
+          setProbeFailedKey(probeKey);
+          // Only an answer that the Session does not exist settles it as missing; a failure to
+          // get any answer is not that, and keeps the old way on.
+          if (cause instanceof ApiError && cause.status === 404) setProbeMissingKey(probeKey);
+        },
       },
     );
     // `selected` rather than `sessions`: while the routed row stays unloaded, list churn
