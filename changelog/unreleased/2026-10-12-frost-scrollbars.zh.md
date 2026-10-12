@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** fix
 - **Scope:** `ui`
+- **PR:** [#1070](https://github.com/Prism-Shadow/penguin-harness/pull/1070)
 
 [English](2026-10-12-frost-scrollbars.md)
 
