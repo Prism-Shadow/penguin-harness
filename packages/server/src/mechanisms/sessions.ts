@@ -10,6 +10,8 @@ import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type { ScheduleStateRow } from "../db/repos/schedules.js";
 import type { ScheduleFileCache } from "../runtime/schedule-store.js";
 import type { ScheduleEntryView } from "../runtime/scheduler.js";
+import type { LiveTail } from "../runtime/live-tail.js";
+import type { RuntimeEntry } from "../runtime/session-manager.js";
 
 /** SessionIndex: the mechanism SessionsRepo implements. */
 @Interface()
@@ -54,6 +56,17 @@ export abstract class SessionDrivers {
   /** The human `sessionId` acts for; null for a Session the server does not know. */
   abstract driverOf(sessionId: string): string | null;
 }
+
+/** AgentState: the mechanism AgentStateStore implements — the Session runtime's in-memory state, data only. */
+export abstract class AgentState extends Interface<{
+  readonly entries: Map<string, RuntimeEntry>;
+  readonly childRoots: Map<string, string>;
+  readonly locks: Map<string, Promise<unknown>>;
+  readonly deletingAgents: Set<string>;
+  readonly deletingSessions: Set<string>;
+  readonly agentGenerations: Map<string, number>;
+  readonly liveTail: LiveTail;
+}>() {}
 
 /** SessionOrigins: the mechanism SessionSources implements. */
 @Interface()

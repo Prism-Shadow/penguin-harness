@@ -11,7 +11,7 @@
  * Data types are arktype definitions, compared with TS assignability rules (./data.ts);
  * the non-data shapes (functions, promises,
  * streams, live objects satisfying another interface, host objects compared by name)
- * are the six other cases below.
+ * are the other cases below.
  */
 import type { Json } from "./json.js";
 import type { TypeTable } from "./data.js";
@@ -31,6 +31,10 @@ export type TypeExpr =
   | { void: true }
   /** An array whose element is not data (promises, callbacks, live objects). */
   | { array: TypeExpr }
+  /** Map<K, V>: a live keyed collection, as `[key, value]`. */
+  | { map: readonly [TypeExpr, TypeExpr] }
+  /** Set<T>: a live collection of T. */
+  | { set: TypeExpr }
   /** A plain object shape with at least one non-data member, compared member by member. */
   | { object: Record<string, TypeExpr>; optional?: readonly string[] }
   /** `T | null | undefined` around a non-data T. */
@@ -174,7 +178,7 @@ export function assignable(
   return why;
 }
 
-/** a ⊆ b over the seven shapes; data goes to arktype, interfaces recurse through the table. */
+/** a ⊆ b over the shapes of TypeExpr; data goes to arktype, interfaces recurse through the table. */
 export function extendsExpr(
   a: TypeExpr,
   b: TypeExpr,
@@ -201,6 +205,12 @@ export function extendsExpr(
   if ("oneOf" in a) return a.oneOf.every((m) => extendsExpr(m, b, table, seen));
   if ("oneOf" in b) return b.oneOf.some((m) => extendsExpr(a, m, table, seen));
   if ("array" in a && "array" in b) return extendsExpr(a.array, b.array, table, seen);
+  if ("map" in a && "map" in b) {
+    return (
+      extendsExpr(a.map[0], b.map[0], table, seen) && extendsExpr(a.map[1], b.map[1], table, seen)
+    );
+  }
+  if ("set" in a && "set" in b) return extendsExpr(a.set, b.set, table, seen);
   if ("object" in a && "object" in b) {
     for (const [key, want] of Object.entries(b.object)) {
       const have = a.object[key];
@@ -232,6 +242,8 @@ export function show(expr: TypeExpr): string {
   if ("void" in expr) return "void";
   if ("promise" in expr) return `Promise<${show(expr.promise)}>`;
   if ("array" in expr) return `${show(expr.array)}[]`;
+  if ("map" in expr) return `Map<${show(expr.map[0])}, ${show(expr.map[1])}>`;
+  if ("set" in expr) return `Set<${show(expr.set)}>`;
   if ("object" in expr)
     return `{ ${Object.entries(expr.object)
       .map(([k, v]) => `${k}${expr.optional?.includes(k) ? "?" : ""}: ${show(v)}`)
