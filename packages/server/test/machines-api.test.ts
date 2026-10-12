@@ -51,7 +51,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import zlib from "node:zlib";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { VERSION } from "@prismshadow/penguin-core";
 import type {
   MachinesUseResponse,
@@ -2090,6 +2090,45 @@ describe("machines API", () => {
       await waitFor(() => t.deps.machines.jobs().every((job) => !job.running && !job.queued));
       expect(holds).toBe(2);
       expect(nas()?.keepConnected).toBe(true);
+    });
+
+    it("a stop while the boot is still bringing machines back leaves nothing behind it", async () => {
+      const relay = quietRelay();
+      let release!: () => void;
+      const answered = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let holds = 0;
+      await boot({
+        relay: () => relay,
+        watchSessions: watch,
+        hold: async (target) => {
+          holds += 1;
+          await answered;
+          connected.add(`ssh:${target.alias}`);
+          return { ok: true, session: { pid: process.pid, socksPort: 1 } };
+        },
+      });
+      kept();
+      const booting = t.deps.machines.start();
+      await waitFor(() => holds === 1);
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      try {
+        // The App goes away — a hot push, a shutdown — while the machine is still on its way back.
+        t.deps.machines.stop();
+        release();
+        await booting;
+        // A boot that finishes arms a look-over that reads the list every minute. This one was
+        // cut short: a look-over armed now would read a store its App has closed.
+        expect(vi.getTimerCount()).toBe(0);
+        await t.deps.machines.autoConnect();
+        expect(holds).toBe(1);
+        // The connection that landed after the stop carries no events here: the successor
+        // subscribes for itself, and two subscriptions would say every event twice.
+        expect(relay.subscribed.has("ssh:nas")).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("a deleted machine is let go: no retries", async () => {

@@ -1557,9 +1557,10 @@ export class MachinesService {
     say("Handing over the Model config…", "sync");
     await this.#syncModels(address, target, remotePort, say, this.#projectsUsing(address));
     // Its own events, carried into this server's stream from here on (event-relay.ts). A
-    // machine whose server has minted no id yet cannot be named in them, and has none to send.
+    // machine whose server has minted no id yet cannot be named in them, and has none to send;
+    // a generation stopped meanwhile carries nothing — its successor subscribes for itself.
     const machineId = this.repo.get(address)?.machineId ?? null;
-    if (machineId !== null) this.#relay.start(address, machineId);
+    if (machineId !== null && !this.#stopped) this.#relay.start(address, machineId);
     // Connected, by whichever way it came — a job or the supervision's own attempt: a streak of
     // reconnecting that was under way is over.
     this.#settle(address);
@@ -1809,6 +1810,9 @@ export class MachinesService {
     // config handed over as it connects lands on the build that will read it.
     await this.syncOutOfDate();
     await this.autoConnect();
+    // A stop that came while the sweep ran ended this generation (a hot push, a shutdown, an
+    // App torn down): nothing is armed after it, or the look-over would outlive the store it reads.
+    if (this.#stopped) return;
     // Kept connected is a standing intent, not a boot-time attempt: each loss arms its own
     // retry (#lost), and this look-over every KEEP_HELD_MS catches whatever slipped past —
     // a drop no event reported. Unref'd: a timer must not keep a process alive.
@@ -1823,6 +1827,8 @@ export class MachinesService {
    * or past its wait. What the boot runs, and what the look-over repeats.
    */
   async autoConnect(): Promise<void> {
+    // A stopped generation reads nothing: its store may already be closed.
+    if (this.#stopped) return;
     await this.#bringBack(this.repo.all().map((row) => row.address));
   }
 
@@ -2058,7 +2064,7 @@ export class MachinesService {
     await this.#refreshStatus(address, target);
     this.repo.patch(address, { remotePort: port });
     const machineId = this.repo.get(address)?.machineId ?? null;
-    if (machineId !== null && this.#liveSession(address) !== null) {
+    if (machineId !== null && this.#liveSession(address) !== null && !this.#stopped) {
       this.#relay.start(address, machineId);
     }
     return { ok: true, port };
