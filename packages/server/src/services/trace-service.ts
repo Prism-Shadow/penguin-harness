@@ -54,7 +54,13 @@ import type { SessionRow } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
-import { ratesAt, requestCostUsd } from "./usage-service.js";
+import {
+  ratesAt,
+  requestCostParts,
+  requestCostUsd,
+  sumCostParts,
+  ZERO_COST_PARTS,
+} from "./usage-service.js";
 import type { PricingLookup, TieredRates } from "./usage-service.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import {
@@ -75,7 +81,7 @@ import type {
 } from "./message-window.js";
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
-import { listCategory, readRecordedSource } from "../runtime/session-sources.js";
+import { listCategory, listingMarksOf, readRecordedSource } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { TraceLineIndex } from "./trace-line-index.js";
 import { traceRecordImage, withImagesByReference } from "./trace-images.js";
@@ -340,6 +346,52 @@ export class TraceService implements Traces {
   private async readShard(path: string): Promise<OmniMessage[]> {
     this.observeShardRead?.(path);
     return readTraceTolerant(path);
+  }
+
+  /**
+   * The direct subagent children of a Session: the ids its Trace's `subagent` pointer records
+   * name, in Trace order, each with the Agent whose Trace directory holds the child (a child may
+   * run under another Agent of the Project; null when no Trace of it is indexed) and the time
+   * the pointer was recorded. A fork copies its source's records, pointers included, under their
+   * own times, so a pointer older than the Session names a child of the Session it was forked
+   * from (see session-deletion.ts). Only the pointer records matter, so each shard is scanned as
+   * text and only the lines that can hold one are parsed.
+   */
+  async subagentChildren(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<Array<{ sessionId: string; agentId: string | null; spawnedAt: string }>> {
+    const files = await this.locateAll(projectId, agentId, sessionId);
+    const ctx = { projectScanned: false };
+    const seen = new Set<string>([sessionId]);
+    const out: Array<{ sessionId: string; agentId: string | null; spawnedAt: string }> = [];
+    for (const file of files) {
+      let text: string;
+      try {
+        text = await fs.readFile(file.path, "utf8");
+      } catch {
+        continue; // Vanished mid-walk: nothing in it can be deleted any more either.
+      }
+      for (const line of text.split("\n")) {
+        if (!line.includes('"subagent"')) continue;
+        let msg: OmniMessage;
+        try {
+          msg = JSON.parse(line) as OmniMessage;
+        } catch {
+          continue; // A torn final line (a crashed writer) holds no complete pointer.
+        }
+        const child = subagentPointer(msg);
+        if (child === null || seen.has(child)) continue;
+        seen.add(child);
+        out.push({
+          sessionId: child,
+          agentId: await this.resolveChildAgent(projectId, child, ctx),
+          spawnedAt: msg.timestamp,
+        });
+      }
+    }
+    return out;
   }
 
   /** Deletes all of this Session's Trace files (called when the Session is deleted); the index rows go with them. */
@@ -1092,6 +1144,9 @@ export class TraceService implements Traces {
       }
       return t;
     };
+    // The file's cost split by pricing bucket, summed where each turn's `cost` is, from the same
+    // Request's Tokens and rates: it covers exactly the Requests the file's `cost` does.
+    let costParts = ZERO_COST_PARTS;
 
     /**
      * Which turn each message belongs to: **decided definitively in one
@@ -1367,21 +1422,19 @@ export class TraceService implements Traces {
               // Priced per Request, at the tier this Request's own timestamp fell in — the
               // rule the cost center applies to the usage row this same event produced, so
               // the two figures for one request are the same figure.
-              t.cost =
-                (t.cost ?? 0) +
-                requestCostUsd(
-                  {
-                    cacheRead: request?.cache_read ?? 0,
-                    cacheWrite: request?.cache_write ?? 0,
-                    output: request?.output ?? 0,
-                  },
-                  ratesAt(
-                    pricing.rates,
-                    pricing.provider,
-                    pricing.modelId,
-                    new Date(msg.timestamp),
-                  ),
-                );
+              const counts = {
+                cacheRead: request?.cache_read ?? 0,
+                cacheWrite: request?.cache_write ?? 0,
+                output: request?.output ?? 0,
+              };
+              const rates = ratesAt(
+                pricing.rates,
+                pricing.provider,
+                pricing.modelId,
+                new Date(msg.timestamp),
+              );
+              t.cost = (t.cost ?? 0) + requestCostUsd(counts, rates);
+              costParts = sumCostParts(costParts, requestCostParts(counts, rates));
             }
             if (!compactionActive) {
               // The context snapshot only takes non-compaction Requests: tokens
@@ -1557,7 +1610,7 @@ export class TraceService implements Traces {
       elapsedMs,
       apiMs,
       toolMs,
-      ...(cost !== undefined ? { cost } : {}),
+      ...(cost !== undefined ? { cost, costParts } : {}),
       ...(modelContextWindow !== undefined ? { modelContextWindow } : {}),
       requests,
       tasks,
@@ -1617,12 +1670,12 @@ export class TraceService implements Traces {
   }
 
   /**
-   * Classification (no IO): `archived` comes exactly from the DB row; the source comes
+   * Classification (no IO): the listing marks come exactly from the DB row; the source comes
    * from the shared sources registry, else from the Session's registration-time facts
    * (trace_sessions — the reconciler head-read its earliest shard once when the file
    * first appeared, so by listing time every indexed Session is classified exactly), a head
-   * without one read with the row's client. Null for a `company` Session, which is in no
-   * category (listCategory) and so not in this listing.
+   * without one read with the row's client. Null for a `subagent` or `company` Session, which
+   * is in no category (listCategory) and so not in this listing.
    */
   private classify(
     sessionId: string,
@@ -1634,7 +1687,7 @@ export class TraceService implements Traces {
     const known = this.sources?.get(sessionId);
     const recorded = known !== undefined ? known : facts?.metaRead ? facts.source : undefined;
     const source = recorded === undefined ? undefined : readRecordedSource(recorded, row?.client);
-    const category = listCategory(source, (row?.archivedAt ?? null) !== null);
+    const category = listCategory(source, listingMarksOf(row ?? {}));
     if (category === null) return null;
     return { category, workspace: row?.workspace ?? facts?.workspace ?? "" };
   }
@@ -1664,9 +1717,9 @@ export class TraceService implements Traces {
     const ids = [...bySession.keys()].sort((a, b) => b.localeCompare(a));
     // Classify every group once; the same result drives the category filter, the
     // counts AND the returned fields, so a row can never appear in a bucket its own
-    // `category` denies. Every Session is listed whichever client created it, but a company
-    // Session, which no category holds.
-    const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
+    // `category` denies. Every Session is listed whichever client created it, but a subagent
+    // or company Session, which no category holds.
+    const counts: SessionCategoryCounts = { active: 0, archived: 0 };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const factsById = new Map<string, TraceSessionFacts>();
     const visible: string[] = [];
@@ -1676,7 +1729,7 @@ export class TraceService implements Traces {
       factsById.set(id, facts);
       visible.push(id);
       counts[facts.category] += 1;
-      const ws = (workspaceCounts[facts.workspace] ??= { active: 0, background: 0, archived: 0 });
+      const ws = (workspaceCounts[facts.workspace] ??= { active: 0, archived: 0 });
       ws[facts.category] += 1;
     }
     const filtered =

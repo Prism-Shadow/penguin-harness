@@ -5,9 +5,9 @@
  *   organizations' employees, each part in the order it was given; an Agent employed by
  *   several organizations is one employee, and a list with no employee has no second part.
  * - The pickers list the same Agents with every employee behind the rest.
- * - The sidebar's Agent grouping leaves out an employee with no development conversation, and
- *   only that: an employee with one, active or folded away, keeps its group, and an Agent that
- *   is no employee keeps its group even when empty.
+ * - The sidebar's Agent grouping leaves out an employee with no conversation in the sidebar,
+ *   and only that: an employee with one keeps its group, and an Agent that is no employee keeps
+ *   its group even when empty.
  */
 import { describe, expect, it } from "vitest";
 import type { AgentSummary, Employment } from "@prismshadow/penguin-server/api";
@@ -60,19 +60,17 @@ describe("employeesLast", () => {
 });
 
 describe("dropsEmployeeGroup", () => {
-  const none = { active: 0, folded: 0 };
-
-  it("drops an employee that has no development conversation", () => {
-    expect(dropsEmployeeGroup(ceo, none)).toBe(true);
+  it("drops an employee that has no conversation in the sidebar", () => {
+    expect(dropsEmployeeGroup(ceo, 0)).toBe(true);
   });
 
-  it("keeps an employee with a development conversation, active or folded away", () => {
-    expect(dropsEmployeeGroup(ceo, { active: 1, folded: 0 })).toBe(false);
-    expect(dropsEmployeeGroup(analyst, { active: 0, folded: 2 })).toBe(false);
+  it("keeps an employee with a conversation in the sidebar", () => {
+    expect(dropsEmployeeGroup(ceo, 1)).toBe(false);
+    expect(dropsEmployeeGroup(analyst, 2)).toBe(false);
   });
 
   it("keeps an Agent that is no employee, even with nothing in it", () => {
-    expect(dropsEmployeeGroup(plain, none)).toBe(false);
-    expect(dropsEmployeeGroup(formerEmployee, none)).toBe(false);
+    expect(dropsEmployeeGroup(plain, 0)).toBe(false);
+    expect(dropsEmployeeGroup(formerEmployee, 0)).toBe(false);
   });
 });

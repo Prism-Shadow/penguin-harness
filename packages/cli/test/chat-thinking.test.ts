@@ -148,7 +148,7 @@ describe("chat /thinking (the Session's pinned thinking level, applied per model
   });
 
   it("/clear carries the Session's latest pin to the replacement Session", async () => {
-    await driveChat(["/thinking high", "/clear", "after", "/exit"], ["--thinking", "low"]);
+    await driveChat(["go", "/thinking high", "/clear", "after", "/exit"], ["--thinking", "low"]);
     const sessions = [...server.sessions.values()];
     expect(sessions).toHaveLength(2);
     // Pinned low at creation, re-pinned high by /thinking; the replacement inherits the
@@ -210,7 +210,8 @@ describe("chat caller-context defaults (PENGUIN_SESSION_ID inheritance)", () => 
       thinkingLevel: "xhigh",
     });
     process.env.PENGUIN_SESSION_ID = caller.sessionId;
-    const out = await driveChat(["/thinking", "/exit"]);
+    // The values are read at start and shown by /thinking; the Session is created by "go".
+    const out = await driveChat(["/thinking", "go", "/exit"]);
     const created = [...server.sessions.values()].find((x) => x.sessionId !== caller.sessionId)!;
     expect(created.workspace).toBe("/callers/dir");
     expect(created.modelId).toBe("caller-model");

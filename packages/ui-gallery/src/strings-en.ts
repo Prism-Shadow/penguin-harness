@@ -461,7 +461,7 @@ export const en: GalleryStrings = {
       streaming: {
         title: "Streaming",
         description:
-          "How an assistant reply reveals as it streams in: Primer shows it at once, Frost fades it in word by word with a soft glow, Console types it out.",
+          "How an assistant reply reveals as it streams in: Primer shows it at once, Frost fades it in word by word, Console types it out.",
       },
       charts: {
         title: "Charts",
@@ -812,7 +812,7 @@ export const en: GalleryStrings = {
       received: "All received",
       modes: {
         instant: "shows text the moment it arrives, with no motion",
-        fade: "fades in word by word, the last lines rising out of a softly glowing accent veil",
+        fade: "fades in word by word, the newest line and a half rising out of a soft veil",
         typewriter: "types out character by character behind a solid block caret",
       },
       unset: "treated as instant",

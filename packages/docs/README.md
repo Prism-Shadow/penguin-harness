@@ -28,7 +28,7 @@ pnpm --filter @prismshadow/penguin-docs test
 
 ## Deployment
 
-Deployed to GitHub Pages together with the landing page as one artifact: `scripts/build-site.mjs` (repo root) builds landing with `BASE_PATH=<base>` and docs with `BASE_PATH=<base>docs/`, then copies this package's `dist/` into the landing dist under `docs/`. `.github/workflows/pages.yml` runs it on pushes to main touching either package.
+Deployed to GitHub Pages together with the landing page and the component gallery as one artifact: `scripts/build-site.mjs` (repo root) builds landing with `BASE_PATH=<base>`, docs with `BASE_PATH=<base>docs/` and the gallery with `BASE_PATH=<base>gallery/`, then copies this package's `dist/` into the landing dist under `docs/` (and the gallery's under `gallery/`). `.github/workflows/pages.yml` runs it on pushes to main touching any of the three packages.
 
 ```bash
 BASE_PATH=/ pnpm build:site                        # assemble locally

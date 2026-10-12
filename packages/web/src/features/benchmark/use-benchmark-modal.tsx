@@ -25,7 +25,7 @@
  * preselected, and its tail hands it the baseline's provider and model when there is a baseline.
  *
  * The conversation is an ordinary Session, listed with the agent's own: only the Test Sessions
- * it starts through `penguin run` (CLI Sessions) are filed under the Background folder.
+ * it starts through `penguin run` (CLI Sessions) are archived, by the listing rule.
  */
 import { useEffect, useState } from "react";
 import type {

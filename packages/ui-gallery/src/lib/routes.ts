@@ -21,11 +21,15 @@ import { isSurfaceId } from "../app/surfaces";
 import type { SurfaceId } from "../app/surfaces";
 import { isTopicId } from "../library/topics";
 import type { TopicId } from "../library/topics";
+import { FONTS_PAGE_IDS, fontsPath, surfacePath, topicPath } from "./page-paths";
+import type { FontsPageId } from "./page-paths";
 import { formatGalleryQuery } from "./url-state";
 import type { GalleryState } from "./url-state";
 
-export const FONTS_PAGE_IDS = ["defaults", "specimens", "licences"] as const;
-export type FontsPageId = (typeof FONTS_PAGE_IDS)[number];
+// The addresses themselves live in page-paths.ts, which the Vite config reads too; the pages take
+// them from here, beside the links built on them.
+export { FONTS_PAGE_IDS, fontsPath, surfacePath, topicPath };
+export type { FontsPageId };
 
 export type Route =
   | { kind: "home" }
@@ -60,21 +64,6 @@ export function parseRoute(path: string): Route {
     return isTopicId(id) ? { kind: "topic", id } : { kind: "missing", id };
   }
   return { kind: "unknown", path: clean };
-}
-
-/** `/s/<surface>`, without the base. */
-export function surfacePath(id: string): string {
-  return `/s/${encodeURIComponent(id)}`;
-}
-
-/** `/c/<topic>`, without the base. */
-export function topicPath(id: string): string {
-  return `/c/${encodeURIComponent(id)}`;
-}
-
-/** `/fonts`, `/fonts/specimens` or `/fonts/licences`, without the base. */
-export function fontsPath(page: FontsPageId): string {
-  return page === "defaults" ? "/fonts" : `/fonts/${page}`;
 }
 
 /** A link to a surface page carrying the view state. */

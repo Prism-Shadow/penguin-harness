@@ -12,6 +12,8 @@
  *   failed says so in place of its rows.
  * - Each round's context ring is bounded by the file's context window, and by 128k when the
  *   analysis (from an older server) carries none.
+ * - The global summary's cost and elapsed time each put their breakdown behind a "?"; no round
+ *   card carries one.
  * - Opening a file asks once to scroll its newest round into view — the open round drawn last —
  *   and no refresh after it asks again, not even one that opens a new round for a reader
  *   following the run.
@@ -21,6 +23,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type { TraceAnalysisResponse, TraceTaskStats } from "@prismshadow/penguin-server/api";
+import { DEFAULT_UI_STRINGS } from "@prismshadow/penguin-ui";
 import {
   EMPTY_FILE,
   TraceFileBody,
@@ -210,6 +213,19 @@ describe("the context ring", () => {
   it("falls back to 128k when the analysis carries no window", () => {
     const html = render({ analysis: analysisOf(3), expanded: [] });
     expect(ringOf(html)).toContain(`${used}/${humanizeTokens(128_000)}`);
+  });
+});
+
+describe("the global summary", () => {
+  it('gives the cost and the elapsed time a "?" each, and no round card one', () => {
+    const costParts = { cacheRead: 0.1, cacheWrite: 0.12, output: 0.2 };
+    const html = render({ analysis: analysisOf(3, { cost: 0.42, costParts }), expanded: [] });
+
+    expect(html).toContain(DEFAULT_UI_STRINGS.moreInfoAbout(S.common.cost));
+    expect(html).toContain(DEFAULT_UI_STRINGS.moreInfoAbout(S.chat.statElapsed));
+    // Three round cards are drawn, and the two marks above are every "?" on the page.
+    expect(heads(html)).toBe(3);
+    expect(count(html, new RegExp(`aria-label="${DEFAULT_UI_STRINGS.moreInfo}`, "g"))).toBe(2);
   });
 });
 

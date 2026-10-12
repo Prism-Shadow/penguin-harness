@@ -616,6 +616,39 @@ export const zh = {
     off: "关闭",
   },
 
+  /** Settings › Personal › Archived chats (features/settings/archived-sessions-section.tsx). */
+  archivedSessions: {
+    search: "搜索已归档对话",
+    /** The two filters' accessible names. */
+    sourceFilter: "来源",
+    projectFilter: "项目",
+    allSources: "全部来源",
+    allProjects: "全部项目",
+    /** A group's count beside its header. */
+    count: (n: number): string => `${n} 条对话`,
+    /** A group header's button: choose every Session of the group, loaded or not; and its undo once all of it is chosen. */
+    selectAll: "全选",
+    deselectAll: "取消全选",
+    /** A row's checkbox, named by the conversation's title. */
+    select: (title: string): string => `选择「${title}」`,
+    selected: (n: number): string => `已选 ${n} 项`,
+    clearSelection: "清除选择",
+    /** The reveal row under the groups shown: how many groups are still hidden. */
+    moreGroups: (n: number): string => `更多分组（${n}）`,
+    empty: "没有已归档的对话",
+    noMatches: "没有匹配的对话",
+    /** The busy glyph's tooltip on a row whose Session is running. */
+    running: "运行中",
+    loadFailed: (reason: string): string => `无法读取已归档对话：${reason}`,
+    actionFailed: (reason: string): string => `操作没有完成：${reason}`,
+    /** The confirm before a batch or group delete (a single row uses the chat's own confirm). */
+    deleteTitle: (n: number): string => (n === 1 ? "删除对话" : `删除 ${n} 个对话`),
+    deleteConfirm: (n: number): string =>
+      n === 1
+        ? "确定删除这个对话？它的消息与 Trace 将被移除，且不可恢复。"
+        : `确定删除这 ${n} 个对话？它们的消息与 Trace 将被移除，且不可恢复。`,
+  },
+
   /** The Trace dock panel (the current conversation's Trace files). */
   tracePanel: {
     empty: "暂无轨迹",
@@ -649,6 +682,10 @@ export const zh = {
     generalTitle: "通用",
     appearanceTitle: "外观",
     shortcutsTitle: "快捷键",
+    /** Settings › Personal › Archived chats, and the "?" beside its heading. */
+    archivedTitle: "已归档对话",
+    archivedInfo:
+      "这里是不在左侧列表里的对话：你归档的，以及由程序开启、你还没有取消归档的（API、定时任务和 penguin run 开启的对话）。归档的对话只显示标题和时间；取消归档后它回到左侧列表，之后的运行也不会再把它移走。",
     /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
     shortcutsInfo:
       "快捷键随平台：macOS 用 ⌘，其余平台用 Ctrl。改动即刻生效，本浏览器的其他标签页同步跟随；本账号的其他浏览器与桌面应用在下次加载时取得。按账号并按平台分别保存，Mac 与 Windows 各有一套。浏览器自身保留的组合（如 Ctrl+W / ⌘W）在浏览器标签页里收不到，只在桌面应用里生效；浏览器本身也用的组合（如打印的 Ctrl+P / ⌘P）在浏览器标签页里会取代它的那个功能。两者都在列表中标出。",
@@ -677,6 +714,8 @@ export const zh = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
+    /** Under the two switches while the address has unsaved edits: they act on the saved address. */
+    saveProxyAddressFirst: "先保存代理地址",
     /** Reachability test: the block's heading, and its button at rest and while probing. */
     proxyProbe: "连通性测速",
     proxyProbeRun: "测速",
@@ -1162,10 +1201,17 @@ export const zh = {
     /** Confirm-before-save dialog shared by the settings forms (writes go to server-side config files). */
     confirmSaveTitle: "保存修改",
     confirmSaveBody: "确定保存这些修改吗？修改将写入服务器上的配置文件。",
-    /** Leaving or cancelling a form that holds unsaved edits (Agent settings tabs, the handbook editor, the binding dialog). */
+    /**
+     * The one prompt every way of leaving a form with unsaved edits shows (the shared UI
+     * package's UnsavedChangesHost): its accessible name, the question, the danger button that
+     * discards and leaves, and the button that stays with the edits.
+     */
     discardTitle: "放弃未保存的修改",
-    discardBody: "放弃尚未保存的修改？放弃后无法找回。",
-    discard: "放弃",
+    discardBody: "放弃未保存的修改？未保存的内容将丢失。",
+    discard: "放弃修改",
+    keepEditing: "继续编辑",
+    /** A page form's button beside Save: puts every field back to what is stored, without asking. */
+    reset: "重置",
     none: "（无）",
     retry: "重试",
     unknownError: "请求失败，请稍后重试",
@@ -1580,8 +1626,8 @@ export const zh = {
       ["discard", "不生成摘要，直接丢弃旧上下文，下一轮从新窗口重新开始。"],
     ] as ReadonlyArray<readonly [string, string]>,
     compactionPrompt: "prompt（摘要提示词）",
-    maxTurnsInvalid: "max_turns 必须 > 0 或为 -1",
-    timeoutInvalid: "timeoutMs 必须 > 0 或为 -1",
+    numberInvalid: "必须是 > 0 的整数或 -1",
+    numberCannotClear: "已保存的值不能清空：请填写数值，或点「重置」还原",
     toolFieldInvalid: (name: string, field: string) => `${name}: ${field} 必须是 > 0 的整数或 -1`,
     toolPermission: "permission",
     permissionReadLabel: "Read-only",
@@ -1728,7 +1774,7 @@ export const zh = {
     /** The API tab: this server's switch for the Agent's public API, its approval mode, keys and examples. */
     apiEnable: "开启 API 访问",
     apiEnableHint:
-      "外部程序可通过 URL、密钥与 Agent ID 与此 Agent 对话；对话归入侧栏的「后台会话」。",
+      "外部程序可通过 URL、密钥与 Agent ID 与此 Agent 对话；对话默认归档，列在设置的「已归档对话」中。",
     apiOwnerOnly: "只有 Project 所有者可以更改这些设置。",
     apiAdminOff:
       "管理员已在服务器设置中关闭 Agent API：所有 API 请求都会被拒绝，这里的设置与密钥保留。",
@@ -1769,7 +1815,7 @@ export const zh = {
     /** The tab's Try it: one real API run on the owner's sign-in, shown as a program receives it. */
     apiTry: "试一试",
     apiTryHint:
-      "以你的登录身份走程序用的同一条运行路由，收到的就是程序会收到的事件流；开出的会话归入侧栏的「后台会话」。",
+      "以你的登录身份走程序用的同一条运行路由，收到的就是程序会收到的事件流；开出的会话默认归档，列在「已归档对话」中。",
     apiTryExample: "现在几点了？",
     apiTryRun: "运行",
     apiTryStop: "停止",
@@ -2219,8 +2265,12 @@ export const zh = {
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,
-    confirmSaveTitle: "保存模型配置",
-    confirmSave: (name: string): string => `确定保存对「${name}」的配置修改？`,
+    /** The add-model dialog's footer verb (the settings dialog's is the common Save). */
+    addAction: "添加",
+    /** A save that changes a promoted row's price or identity: the server then drops the promotion. */
+    confirmCancelPromotionTitle: "取消促销",
+    confirmCancelPromotion: (name: string, pct: number): string =>
+      `保存后「${name}」当前省 ${pct}% 的促销将被取消：修改价格或模型标识会结束促销。确定保存？`,
     confirmDefaultTitle: "设为默认模型",
     confirmDefault: (name: string): string =>
       `确定把「${name}」设为默认模型？新建的 Session 将默认使用它。`,
@@ -2354,7 +2404,6 @@ export const zh = {
     readOnlyHint: "member 只读；Vault 修改仅 owner 可执行",
     keyHint: "字母、数字与下划线，不能以数字开头",
     keyInvalid: "键名不合法：仅字母、数字与下划线，且不能以数字开头",
-    valueRequired: "值不能为空",
     /**
      * The tab's "add with AI" entry: the dialog's title and lead (an honest warning — a value
      * typed into the prompt reaches the provider, the Trace and the agent's own command line),
@@ -3627,6 +3676,13 @@ Benchmark：
      * (approval waits, harness overhead), so this reads as two measurements, never as a split.
      */
     statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}，工具 ${toolMs}`,
+    /** The same two components as rows, behind the "?" beside an elapsed total. */
+    statApiTime: "模型 API 时间",
+    statToolTime: "工具 wall time",
+    /** The three priced parts behind the "?" beside a cost total; they sum to that total. */
+    costPartCacheRead: "缓存输入",
+    costPartCacheWrite: "未缓存输入",
+    costPartOutput: "输出",
     statInput: "输入 tokens",
     statCached: "已缓存",
     statOutput: "输出 tokens",
@@ -3939,26 +3995,21 @@ Benchmark：
     expandRestSessions: (n: number) => `展开其余 ${n} 个对话`,
     /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
     loadMoreSessions: "加载更多会话",
-    /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
-    folderGroups: {
-      background: (n: number) => `后台会话（${n}）`,
-      archived: (n: number) => `已归档（${n}）`,
-    },
-    /** A Background row's source mark: the program that opened the Session, as its tooltip and hidden text. */
+    /**
+     * Who opened a Session: a person (`user`), or the program behind it — the mark a row of one
+     * a program opened carries, as its tooltip and hidden text, and the archive page's source
+     * filter.
+     */
     sessionSource: {
+      user: "用户",
       api: "API",
       schedule: "定时任务",
-      subagent: "子智能体",
       cli: "CLI",
     },
-    /**
-     * Tooltip of a folder-only group's header — a group with no active conversation of its
-     * own, only rows inside its folders (it renders collapsed and sorts last). `n` is what
-     * those folders hold, which is also the count the dimmed header shows; the Workspace path
-     * follows where the header has one, since this sentence replaces the tooltip that carried it.
-     */
-    folderOnlyGroup: (n: number, path?: string) =>
-      `仅有折叠任务：${n} 个会话${path ? `（${path}）` : ""}`,
+    /** An archived conversation opened by its URL: what the stub in place of the transcript says. */
+    archivedStub: {
+      note: "这个对话已归档。取消归档后可以查看内容，它会回到左侧列表。",
+    },
     /** The skills note's fixed phrase (the count picks the en plural); the skill names follow it as `nameList`. */
     skillsLabel: (_count: number): string => "使用技能",
     /** Attached-file notice above a user message: this fixed phrase, then the file names (only the names; the paths stay in the Trace) as `nameList`. */
@@ -5334,16 +5385,12 @@ Benchmark：
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
       budget: "月预算",
       budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
-      hireConfirm: (name: string, manager: string): string =>
-        `将 ${name} 加入组织，汇报给 ${manager}？会改写组织图文件。`,
+      /** The confirmation a new Agent's picked plugin with a stdio MCP server asks for before the hire: the question; the commands follow it. */
+      hireStdioQuestion: (name: string): string => `招募 ${name}？`,
       hired: (name: string): string => `已招募 ${name}`,
       /** Budget / reporting line / desk renewal / leave dialogs. */
       budgetTitle: (name: string): string => `设置 ${name} 的预算`,
-      budgetConfirm: (name: string, budget: string): string =>
-        `将 ${name} 的月预算改为 ${budget}？超过 80% 告警，达到 100% 暂停其自动触发。`,
       reportsToTitle: (name: string): string => `调整 ${name} 的汇报线`,
-      reportsToConfirm: (name: string, manager: string): string =>
-        `让 ${name} 改为汇报给 ${manager}？其下属随之一起移动。`,
       reportsToCycle: "不能汇报给自己或自己的下属",
       renewDeskTitle: (name: string): string => `为 ${name} 换工位`,
       renewDeskExplain: "换工位会开一个新的工位会话并重置上下文；改了工作区就写入员工树。",
@@ -5373,15 +5420,13 @@ Benchmark：
       clearBudget: "设为不限",
       currentValue: (value: string): string => `当前：${value}`,
       manager: "上级",
-      reportsToHint: "只列出不在其下属范围内的员工",
+      reportsToHint: "只列出不在其下属范围内的员工；其下属随之一起移动",
       /** The thinking-level edit: it writes the employee's Agent config, the place a desk reads it from. */
       thinkingLevelTitle: (name: string): string => `设置 ${name} 的思考等级`,
       thinkingLevelInfo:
         "写入该员工 Agent 的配置，与开发模式里这个 Agent 的设置是同一处。工位会话自下一个模型上下文起使用它，新开的工单会话直接使用；在工位会话里选的思考等级只固定那一个会话。",
       /** No level of the Agent's own: the Project default applies, and this is what it resolves to. */
       thinkingLevelDefault: (level: string): string => `Project 默认（${level}）`,
-      thinkingLevelConfirm: (name: string, level: string): string =>
-        `将 ${name} 的思考等级改为「${level}」？会写入该 Agent 的配置。`,
       thinkingLevelPinned: (level: string): string =>
         `当前工位会话已单独固定为「${level}」，此设置自下次换工位起对工位生效。`,
     },
@@ -5410,7 +5455,6 @@ Benchmark：
       periodHint: "30m / 12h / 7d，留空为一次性；最短 5m",
       delete: "删除日程",
       deleteConfirm: (name: string): string => `确认删除日程「${name}」？`,
-      saveConfirm: (name: string): string => `保存日程「${name}」？会改写它的日程文件。`,
       outcome: "结果",
       lastFired: "最近触发",
       nextFire: "下次触发",
@@ -5519,7 +5563,6 @@ Benchmark：
       invalid: "该工单无效：状态与所在列不符，或 id 重复",
       invalidFiles: "无法解析的工单文件",
       edit: "编辑字段",
-      saveConfirm: (title: string): string => `保存对「${title}」的修改？会改写工单文件。`,
       saved: "工单已保存",
       created: "工单已创建",
       detail: "工单详情",

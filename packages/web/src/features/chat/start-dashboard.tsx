@@ -62,6 +62,7 @@ import {
   toastSuccess,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatMonthDay, formatRelativeShort, formatScore } from "../../lib/format";
@@ -317,7 +318,7 @@ function StartHeader() {
   return (
     <div className={`mb-4 flex items-center ${ICON_GAP.card}`}>
       {/* Square asset with its own padding; a white tile in dark mode, like an app icon. */}
-      <PenguinLogo src="/penguin-logo.svg" className="h-12 w-12 shrink-0 rounded-xl" />
+      <PenguinLogo src={PENGUIN_LOGO_URL} className="h-12 w-12 shrink-0 rounded-xl" />
       <div className="min-w-0">
         <Heading level={1} display>
           {S.appName}

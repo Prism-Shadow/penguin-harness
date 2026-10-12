@@ -1,7 +1,7 @@
 ---
 name: penguin-config
 description: Manage model API keys, default models and per-agent vault secrets with the penguin CLI.
-version: 2026.10.10.1
+version: 2026.10.11.1
 ---
 
 # Penguin Config (CLI)
@@ -25,7 +25,7 @@ penguin config model add --provider <group> --model-id <upstream_id> [--api-key 
 ```
 
 - A model is identified by the `(provider, model_id)` pair, so `--provider` and `--model-id` are **both required** to name one — the group is never inferred from the model id, because gateways resell vendor models under their upstream ids and a wrong guess would send the key to another vendor's endpoint. `--model-id` takes the provider's upstream model id (what the API expects) and is persisted as the entry's request id, so it reaches the API unchanged; `--provider` names the group (`deepseek`, `openai`, `anthropic`, `google`, `openrouter`, `siliconflow`, … — `custom` for any other endpoint).
-- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow` and groups of your own take models added by hand. Every other built-in group carries its catalog models only: `model add` there accepts one of that group's catalog model ids (to set its key, limits or prices, or to bring it back) and refuses any other id with "cannot be added". Add such a model under `custom` with `--base-url`, or under a group of your own.
+- Only `custom`, `vllm`, `openrouter`, `tokendance`, `siliconflow`, `atlascloud` and groups of your own take models added by hand. Every other built-in group carries its catalog models only: `model add` there accepts one of that group's catalog model ids (to set its key, limits or prices, or to bring it back) and refuses any other id with "cannot be added". Add such a model under `custom` with `--base-url`, or under a group of your own.
 - `--api-key`, `--base-url` and `--client-type` set the model's **own** values, and `--clear-api-key`, `--clear-base-url` and `--clear-client-type` remove them. Omitted, the model follows its group (see [Group connection](#group-connection)), and with no group value it gets the client's default; the built-in catalog is never consulted. A model added to `openrouter`, `tokendance` or `siliconflow` needs only `--provider` and `--model-id` once the group has a key: a new Project already stores those gateways' endpoint and protocol on the group. For an OpenAI chat-completion compatible endpoint under `custom` or a group of your own, use `--client-type openai --base-url <endpoint>`, or set both once on the group; in a vendor group, omit `--client-type` to auto-route by model id.
 - Prices are USD per million tokens (cache read / cache write / output).
 - `--vision` / `--no-vision` mark whether the model accepts images; omitting both keeps the current value (default is vision-capable).

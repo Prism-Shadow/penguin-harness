@@ -5,7 +5,7 @@
  * never drags an unfinished prompt edit along), an amber alert when the template lacks the
  * feature's section placeholder — with one-click insert, or one-click migration when the
  * template still carries the legacy hardcoded section — and an editable prompt section (mono
- * textarea + placeholder-chip reference + confirm-first save). On the three prompt features
+ * textarea + placeholder-chip reference + Save and Reset). On the three prompt features
  * the toggle and prompt govern prompt injection only — the feature itself keeps working with
  * the switch off (vault values still reach subprocesses, tasks still fire, skills stay
  * invocable). Hooks is the one switch-only feature: its packages are scripts run at the loop's
@@ -13,11 +13,17 @@
  * card alone — and its switch does govern behavior, deciding whether a new Session assembles
  * any hooks at all.
  *
- * Exposed as a hook returning render slots (the useSaveConfirm convention) because the pieces
- * straddle the host tab's own content: the switch and alert sit above it, the prompt editor
- * below. The hook owns the config state; the tab seeds it via `applyConfig` from the
- * getAgentConfig response it loads in parallel with its own data. `canEdit` carries the host
- * tab's permission model (member-level on Skills, owner-only on Vault / Schedules / Hooks).
+ * Exposed as a hook returning render slots because the pieces straddle the host tab's own
+ * content: the switch and alert sit above it, the prompt editor below. The hook owns the config
+ * state; the tab seeds it via `applyConfig` from the getAgentConfig response it loads in
+ * parallel with its own data. `canEdit` carries the host tab's permission model (member-level on
+ * Skills, owner-only on Vault / Schedules / Hooks).
+ *
+ * The prompt is a typed form (the settings commit model): a draft against the stored prompt
+ * that only Save writes, Save live only while the two differ, Reset to put the stored text back,
+ * and leaving the tab with unsaved edits asks first. The switch and the placeholder insert write
+ * the config at once and move the stored prompt the draft is compared with; what is being typed
+ * stays as typed.
  */
 import { useCallback, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
@@ -37,12 +43,12 @@ import {
   ToggleRow,
   toastError,
   toastSuccess,
+  useFormDraft,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { useSaveConfirm } from "./save-confirm";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 
@@ -124,10 +130,13 @@ export function usePromptInjection({
 
   // null until the host tab's load delivers the config (the slots render nothing until then).
   const [state, setState] = useState<SectionConfigState | null>(null);
-  const [prompt, setPrompt] = useState("");
+  // The prompt as typed, against the stored one (exactly: whitespace is part of a prompt). A
+  // switch-only feature stores none, so its draft stays empty and never dirty; so does a
+  // read-only one, whose textarea cannot be typed into.
+  const prompt = useFormDraft(state?.prompt ?? "");
   const [switchBusy, setSwitchBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const promptRef = useRef<HTMLTextAreaElement>(null);
-  const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   // A switch-only feature supplies no prompt strings: it renders neither the template alert
   // nor the prompt editor, and there is nothing for the placeholder endpoints to insert.
@@ -139,8 +148,8 @@ export function usePromptInjection({
       const dto:
         AgentVaultConfigDto | AgentSkillsConfigDto | AgentSchedulesConfigDto | AgentHooksConfigDto =
         config[feature];
+      // The stored prompt moves with the state: a clean draft follows it, a dirty one stays.
       setState(dto);
-      setPrompt("prompt" in dto ? dto.prompt : "");
     },
     [feature],
   );
@@ -186,7 +195,6 @@ export function usePromptInjection({
     try {
       const dto = await insert(projectId, agentId);
       setState(dto);
-      setPrompt(dto.prompt);
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
     } catch (e) {
@@ -194,19 +202,27 @@ export function usePromptInjection({
     }
   };
 
-  /** Saves the prompt through the ordinary config write (confirm-first, like the other settings tabs). */
-  const savePrompt = () =>
-    requestSave(() => {
-      if (!projectId) return;
-      void api
-        .putAgentConfig(projectId, agentId, featurePatch({ prompt }))
-        .then((res) => {
-          applyConfig(res.config);
-          toastSuccess(S.agent.savedTakesEffect);
-          onConfigChanged?.();
-        })
-        .catch((e: unknown) => toastError(apiErrorText(e)));
-    });
+  /** Saves the prompt through the ordinary config write; a refusal keeps it as typed. */
+  const savePrompt = async () => {
+    if (!projectId || !prompt.dirty || saving) return;
+    setSaving(true);
+    try {
+      const res = await api.putAgentConfig(
+        projectId,
+        agentId,
+        featurePatch({ prompt: prompt.draft }),
+      );
+      applyConfig(res.config);
+      const dto = res.config[feature];
+      prompt.adopt("prompt" in dto ? dto.prompt : "");
+      toastSuccess(S.agent.savedTakesEffect);
+      onConfigChanged?.();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const toggleCard = state !== null && (
     <ToggleRow
@@ -258,8 +274,8 @@ export function usePromptInjection({
         size="sm"
         rows={12}
         readOnly={!canEdit}
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
+        value={prompt.draft}
+        onChange={(e) => prompt.setDraft(e.target.value)}
       />
       {/* Placeholder reference, the Prompt/Memory tab convention — a chip inserts at the cursor.
           Inside the card it takes the step below the card's radius. */}
@@ -271,7 +287,7 @@ export function usePromptInjection({
               <button
                 type="button"
                 disabled={!canEdit}
-                onClick={() => insertPromptToken(promptRef, prompt, setPrompt, token!)}
+                onClick={() => insertPromptToken(promptRef, prompt.draft, prompt.setDraft, token!)}
                 data-tooltip={S.memory.insertToken}
                 className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 disabled:pointer-events-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
               >
@@ -283,13 +299,20 @@ export function usePromptInjection({
         </ul>
       </div>
       {canEdit && (
-        <div className="flex justify-end">
-          <Button size="sm" variant="primary" onClick={savePrompt}>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" disabled={!prompt.dirty || saving} onClick={prompt.reset}>
+            {S.common.reset}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!prompt.dirty || saving}
+            onClick={() => void savePrompt()}
+          >
             {S.common.save}
           </Button>
         </div>
       )}
-      {saveConfirm}
     </Card>
   );
 

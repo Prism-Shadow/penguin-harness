@@ -3,15 +3,20 @@
  * the sidebar groups by Agent, so all Agents' Sessions are loaded at once (fetched in parallel);
  * the chat page shares this same data for status sync / title events / self-healing reload.
  *
- * **Paged per (Agent, category)**: the default load fetches only the **active** category
- * (a person's conversations, non-archived) plus per-category totals — background (API,
- * scheduled, subagent and CLI) and archived Sessions are not loaded until their collapsed
- * folder is opened. Each pair fetches
- * SIDEBAR_PAGE_SIZE sessions per page (requesting one extra to detect "has more" — see
- * splitPage); `loadMoreFor` fetches a pair's first page when unloaded and the next page
- * otherwise, so every category's paging is independent of the others. A reload resets each
- * **loaded** pair back to its first page (an open folder must not blank on an event-triggered
- * refresh) and leaves unopened folders unloaded.
+ * **The sidebar's rows only**: every fetch asks for the **active** category — the user's
+ * conversations, the listing rule's other side of the archive (an archived Session, and one a
+ * program opened that nobody kept, live on the archive page instead) — plus per-category
+ * totals. Pages run per (Agent, Workspace group, source): each fetches SIDEBAR_PAGE_SIZE
+ * sessions (requesting one extra to detect "has more" — see splitPage); `loadMoreFor` fetches a
+ * stream's first page when unloaded and the next page otherwise. A reload resets each
+ * **loaded** stream back to its first page (a group's rows must not blank on an
+ * event-triggered refresh).
+ *
+ * **Rows the sidebar does not draw**: the chat page hands the store the row it shows (add,
+ * replace) whatever list that row is in — an archived Session's stub, a subagent opened from
+ * the Agent panel, an organization's desk — so the status, title and PATCH writes keep reaching
+ * the page; no fetch returns such a row, so a reload carries them over, the totals never count
+ * them, and the sidebar draws only the active ones (session-grouping.ts isSidebarRow).
  *
  * **Activity order, cursor paging**: every page is asked for in the sidebar's own display order
  * (`order=activity`: last activity first) and continues from the key of the last row read
@@ -25,12 +30,9 @@
  * **Own rows only**: every fetch asks the server for the user's own conversations
  * (`excludeOrg`), and no category holds a company Session anyway, so an organization's desk,
  * ticket and sub-sessions are in neither the rows nor the totals the sidebar builds its groups
- * from. One can still enter through `add()` (the
- * chat page's deep-link self-heal): the sidebar drops it at render (withoutOrgSessions), the
- * totals are left alone for it, and a reload carries it over. Live statuses are remembered for
- * EVERY `session_state` the user channel reports (`liveStatuses`), row or no row — company
- * mode's surfaces read them for the Sessions this list deliberately does not fetch
- * (useLiveSessionStatuses).
+ * from. Live statuses are remembered for EVERY `session_state` the user channel reports
+ * (`liveStatuses`), row or no row — company mode's surfaces read them for the Sessions this
+ * list deliberately does not fetch (useLiveSessionStatuses).
  *
  * **Sessions are not auto-created here**: a new conversation starts as a draft (chat page `/chat/new`),
  * and the Session is only actually created when the first message is sent — after landing, the user
@@ -74,6 +76,7 @@ import {
   publishBuiltinBrowserResync,
 } from "../features/builtin-browser/browser-events";
 import { WORKFLOW_UPDATED_EVENT } from "../lib/workflow-tabs";
+import { publishUserEvent } from "../lib/omni/user-events";
 import { mergeCounts, mostRecentFirst } from "../lib/session-merge";
 import {
   forgetSessionMachines,
@@ -89,7 +92,6 @@ import {
 import { setTerminalMachines } from "../lib/terminal-machines";
 import { machineIdOf } from "../lib/workspace-machines";
 import {
-  FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
   activityKeyOf,
   activityWatermark,
@@ -105,16 +107,22 @@ import { noteScheduleEvent } from "../features/schedules/schedule-store";
 import { useProject } from "./project";
 
 interface SessionsContextValue {
-  /** Loaded list (paged per Agent and category, in activity order — most recently active first). */
+  /**
+   * Loaded rows, most recently active first: the sidebar's pages (paged per Agent and Workspace
+   * group) plus the rows the chat page handed in for the conversation it shows, whichever list
+   * those are in — the sidebar draws only its own (isSidebarRow).
+   */
   sessions: SessionInfo[];
   /** agentId → that Agent's loaded Session list, most recently active first (empty array if none). */
   byAgent: ReadonlyMap<string, SessionInfo[]>;
-  /** agentId → per-category totals from the last list fetch (folder labels; kept in step locally on add / remove / archive toggles). */
+  /** agentId → per-category totals from the last list fetch (the sidebar reads `active`; kept in step locally on add / remove / archive toggles). */
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   /** agentId → the same totals broken down by Workspace group — a path ON a machine, keyed by workspaceGroupKey (workspace-mode groups read their own share from it; maintained like countsByAgent). */
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
-  /** agentId → each Workspace path's newest Session `createdAt` from the last list fetch: what places a workspace-mode group before any of its rows are loaded. */
+  /** agentId → each Workspace path's newest Session `createdAt` from the last list fetch, every category counted: the Workspace picker's "recently used". */
   workspaceLatestByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
+  /** agentId → each Workspace path's newest ACTIVE Session `createdAt` from the last list fetch: what places a workspace-mode group before any of its rows are loaded (an archived Session does not move a group it is not shown in). */
+  workspaceLatestActiveByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /** Every run status the user channel has reported this page's lifetime, by Session id — loaded row or not (see useLiveSessionStatuses). */
   liveStatuses: ReadonlyMap<string, SessionStatus>;
   /**
@@ -131,21 +139,20 @@ interface SessionsContextValue {
    */
   machineIds: string[];
   /**
-   * Whether a pair's first page has been fetched (false = the folder shows nothing because
+   * Whether a stream's first page has been fetched (false = the group shows nothing because
    * nothing was asked for yet). `workspaceGroup` asks about ONE group's own stream, which
    * is paged separately from the Agent's whole one.
    */
-  isLoadedFor: (agentId: string, category: SessionCategory, workspaceGroup?: string) => boolean;
-  /** Whether the server still holds unfetched Sessions of a category for an Agent (or for one of its Workspace groups) — an unloaded pair answers from the counts. */
-  hasMoreFor: (agentId: string, category: SessionCategory, workspaceGroup?: string) => boolean;
+  isLoadedFor: (agentId: string, workspaceGroup?: string) => boolean;
+  /** Whether the server still holds unfetched active Sessions for an Agent (or for one of its Workspace groups) — an unloaded stream answers from the counts. */
+  hasMoreFor: (agentId: string, workspaceGroup?: string) => boolean;
   /**
-   * The watermark of a list fed by these Agents' streams of `category` — scoped to one
-   * Workspace group when given — on every source: the key a sidebar list is cut at, so it shows
-   * a true prefix of its activity order (see watermarkFor). Null = show every loaded row.
+   * The watermark of a list fed by these Agents' streams — scoped to one Workspace group when
+   * given — on every source: the key a sidebar list is cut at, so it shows a true prefix of its
+   * activity order (see watermarkFor). Null = show every loaded row.
    */
   activityWatermarkFor: (
     agentIds: readonly string[],
-    category: SessionCategory,
     workspaceGroup?: string,
   ) => ActivityKey | null;
   /**
@@ -178,13 +185,13 @@ interface SessionsContextValue {
    */
   offlineMachineIds: string[];
   reload: () => Promise<void>;
-  /** Fetches a category's first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
-  loadMoreFor: (
-    agentIds: string[],
-    category: SessionCategory,
-    workspaceGroup?: string,
-  ) => Promise<void>;
-  /** Prepend to the list on success (draft materialized by the first message, or explicit creation via dialog). */
+  /** Fetches the first page for each given unloaded Agent and the next page for each loaded one with more (no-op otherwise); `workspaceGroup` pages that group's own stream instead of the Agent's whole one. */
+  loadMoreFor: (agentIds: string[], workspaceGroup?: string) => Promise<void>;
+  /**
+   * Puts a row in the list: a Session just created (a draft's first message), or the one the
+   * chat page looked up for the conversation it shows — held, whatever list it is in, so the
+   * page's writes reach it (the sidebar draws only its own rows).
+   */
   add: (session: SessionInfo) => void;
   /** Remove from the list in place after deletion (also tombstones the id — see isDeleted). */
   remove: (sessionId: string) => void;
@@ -195,7 +202,11 @@ interface SessionsContextValue {
    * callers consult this first and skip the request entirely.
    */
   isDeleted: (sessionId: string) => boolean;
-  /** Replace the whole entry with the PATCH result. */
+  /**
+   * Replace the whole entry with the PATCH result. An archive toggle moves the row between the
+   * lists in place — out of the sidebar, still held for the page showing it — and keeps the
+   * totals in step; a row not held yet is put in.
+   */
   replace: (session: SessionInfo) => void;
   /**
    * Live run status of one row — from the open Session's own stream (`task_state`), and from
@@ -220,39 +231,25 @@ export interface LiveRowFields {
 const SessionsContext = createContext<SessionsContextValue | null>(null);
 
 /**
- * Page-state key of one (Agent, category, Workspace-group, source) run. The scope is the
- * server's query form of a group (workspaceGroupQuery) — a path or the temp sentinel — and
+ * Page-state key of one (Agent, Workspace-group, source) stream of active rows. The scope is
+ * the server's query form of a group (workspaceGroupQuery) — a path or the temp sentinel — and
  * "" means the Agent's whole stream. The source is the machine whose Sessions that stream is
  * walked on (`null` = this server): each server pages its own rows with its own offsets, so
  * one shared cursor would ask machine B for rows only machine A had reached. "\0" appears in
- * none of the four (the merged temp group's own key does contain one, which is exactly why
+ * none of the three (the merged temp group's own key does contain one, which is exactly why
  * the query form is what gets stored).
  */
-const pageKey = (
-  agentId: string,
-  category: SessionCategory,
-  scope = "",
-  source: string | null = null,
-) => `${agentId}\0${category}\0${scope}\0${source ?? ""}`;
+const pageKey = (agentId: string, scope = "", source: string | null = null) =>
+  `${agentId}\0${scope}\0${source ?? ""}`;
 
-/** Every list category, in the order the store loads them (active eagerly, the folders on demand). */
-const ALL_CATEGORIES: readonly string[] = ["active", ...FOLDER_CATEGORIES];
-
-/** The run a page key names, or null if it is not one (never, in practice — a guard for the reload scan). */
+/** The stream a page key names, or null if it is not one (never, in practice — a guard for the reload scan). */
 function parsePageKey(
   key: string,
-): { agentId: string; category: SessionCategory; scope: string; source: string | null } | null {
+): { agentId: string; scope: string; source: string | null } | null {
   const parts = key.split("\0");
-  if (parts.length !== 4) return null;
-  const [agentId, category, scope, source] = parts as [string, string, string, string];
-  return ALL_CATEGORIES.includes(category)
-    ? {
-        agentId,
-        category: category as SessionCategory,
-        scope,
-        source: source === "" ? null : source,
-      }
-    : null;
+  if (parts.length !== 3) return null;
+  const [agentId, scope, source] = parts as [string, string, string];
+  return { agentId, scope, source: source === "" ? null : source };
 }
 
 /** Scope string of a Workspace group (undefined / "" = the Agent's whole stream). */
@@ -285,9 +282,9 @@ const sourcesFor = (
 type PagePosition = StreamPosition;
 
 /**
- * The watermark of the list fed by `agentIds`' streams of `category` — each Agent's whole
- * stream, or one Workspace group's own — on every source the scope is about: the most recent
- * cursor among the streams that still have more (session-grouping.ts's activityWatermark).
+ * The watermark of the list fed by `agentIds`' streams — each Agent's whole stream, or one
+ * Workspace group's own — on every source the scope is about: the most recent cursor among the
+ * streams that still have more (session-grouping.ts's activityWatermark).
  *
  * A group's own stream that has not been read yet stands on the Agent's whole stream instead:
  * that stream's loaded prefix, cut by Workspace, is a prefix of the group's, so it bounds the
@@ -297,7 +294,6 @@ type PagePosition = StreamPosition;
 export function watermarkFor(
   state: { pageState: ReadonlyMap<string, PagePosition>; machineIds: readonly string[] },
   agentIds: readonly string[],
-  category: SessionCategory,
   workspaceGroup?: string,
 ): ActivityKey | null {
   const scope = scopeOf(workspaceGroup);
@@ -305,8 +301,8 @@ export function watermarkFor(
   for (const agentId of new Set(agentIds)) {
     for (const source of sourcesFor([null, ...state.machineIds], workspaceGroup)) {
       const position =
-        state.pageState.get(pageKey(agentId, category, scope, source)) ??
-        (scope === "" ? undefined : state.pageState.get(pageKey(agentId, category, "", source)));
+        state.pageState.get(pageKey(agentId, scope, source)) ??
+        (scope === "" ? undefined : state.pageState.get(pageKey(agentId, "", source)));
       if (position !== undefined) positions.push(position);
     }
   }
@@ -351,15 +347,16 @@ interface SessionsStoreState {
    * renders from it — consumers only ask whether a specific id is in it.
    */
   deletedSessionIds: ReadonlySet<string>;
-  /** pageKey → that pair's paging cursor; a key is present iff its first page has been fetched. */
+  /** pageKey → that stream's paging cursor; a key is present iff its first page has been fetched. */
   pageState: ReadonlyMap<string, PagePosition>;
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
   workspaceLatestByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
+  workspaceLatestActiveByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /**
    * Run status by Session id as the user channel last reported it, for every `session_state`
    * received — the rows this store holds AND the ones it never fetches (an organization's
-   * desks and ticket sessions, another category's unopened folder). The user channel is the
+   * desks and ticket sessions, archived and subagent Sessions). The user channel is the
    * only source that reports a run ENDING, so company mode's surfaces read this for the
    * Sessions the development list deliberately leaves out. Not reset on a Project switch:
    * ids are globally unique and a status is a fact about the Session, not about the list.
@@ -369,14 +366,17 @@ interface SessionsStoreState {
   loading: boolean;
 
   reload: () => Promise<void>;
-  loadMoreFor: (
-    agentIds: string[],
-    category: SessionCategory,
-    workspaceGroup?: string,
-  ) => Promise<void>;
+  loadMoreFor: (agentIds: string[], workspaceGroup?: string) => Promise<void>;
   add: (session: SessionInfo) => void;
   remove: (sessionId: string) => void;
   replace: (session: SessionInfo) => void;
+  /**
+   * A Session's listing changed somewhere — archived, unarchived or deleted, by this tab or
+   * another, or by the archive page's batches — as the user channel announces it. Changes are
+   * gathered for a moment and applied in one update, since a batch announces up to 500 at once
+   * and a render per announcement would stall the page.
+   */
+  noteListingChange: (change: ListingChange) => void;
   setStatus: (sessionId: string, status: SessionStatus, row?: LiveRowFields) => void;
   setTitle: (sessionId: string, title: string) => void;
   /**
@@ -384,7 +384,8 @@ interface SessionsStoreState {
    * resumed from the CLI, say. It is the most recently active row there is, so it belongs at the
    * top of the list, and no page will ever serve it: it moved above every cursor. One lookup on
    * `source` (where the event came from) fetches the row, and it joins the list when it is one
-   * of the list's own — a user's conversation of a listed Agent, not deleted here. Flips that
+   * of the list's own — an active conversation of a listed Agent, not deleted here (an archived
+   * or subagent Session running stays where it is listed: nowhere in the sidebar). Flips that
    * arrive while the lookup runs share it, and the newest of them is applied to the row it
    * returns. Settles once the lookup has; never rejects.
    */
@@ -432,6 +433,18 @@ const LIVE_STATUS_MAX = 1000;
  */
 const DECLINED_IDS_MAX = 1000;
 
+/** One listing change the user channel announced (session_archived / session_deleted). */
+export type ListingChange =
+  | { kind: "archived" | "unarchived"; sessionId: string; projectId: string }
+  | { kind: "deleted"; sessionId: string; projectId: string };
+
+/**
+ * How long listing changes gather before they are applied together: long enough for a batch's
+ * announcements (one per Session, sent back to back) to land as one update, short enough to
+ * read as immediate.
+ */
+export const LISTING_CHANGE_DELAY_MS = 60;
+
 /** `live` with `sessionId` at `status` — the same map when nothing changed, so no render is spent on a repeat. */
 function rememberStatus(
   live: ReadonlyMap<string, SessionStatus>,
@@ -446,12 +459,13 @@ function rememberStatus(
   return next;
 }
 
-/** One (Agent, page) pair the sidebar's reload wants from a given source. */
+/**
+ * One stream's first page the sidebar's reload wants from a given source: the Agent's whole
+ * stream of active rows (`scope` "", which also carries the totals) or one Workspace group's.
+ */
 type WantedPage = {
   agentId: string;
-  category: SessionCategory;
   scope: string;
-  counts: boolean;
 };
 
 /** What the reload merge consumes per answered page. */
@@ -459,11 +473,11 @@ type PageAnswer = {
   agentId: string;
   source: string | null;
   pages: Array<{
-    category: SessionCategory;
     scope: string;
     counts?: SessionCategoryCounts;
     workspaceCounts?: Record<string, SessionCategoryCounts>;
     workspaceLatest?: Record<string, string>;
+    workspaceLatestActive?: Record<string, string>;
     items: SessionInfo[];
     hasMore: boolean;
   }>;
@@ -497,11 +511,13 @@ function oneAnswer(
     source,
     pages: [
       {
-        category: want.category,
         scope: want.scope,
         counts: result.counts,
         workspaceCounts: result.workspaceCounts,
         workspaceLatest: result.workspaceLatest,
+        // A server from before the split sends only the every-Session stamp, which is what
+        // the groups were ordered by then: it stands in.
+        workspaceLatestActive: result.workspaceLatestActive ?? result.workspaceLatest,
         ...splitPage(result.sessions, SIDEBAR_PAGE_SIZE),
       },
     ],
@@ -533,14 +549,19 @@ export function createSessionsStore() {
    */
   let adoptSeq = 0;
   const adoptedAt = new Map<string, number>();
+  /** Listing changes gathered for the next flush, by Session id: the last word on an id wins. */
+  const pendingListing = new Map<string, ListingChange>();
+  let listingTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Reloads started and not yet settled: a flush that invalidates one asks again. */
+  let reloadsInFlight = 0;
 
   return createStore<SessionsStoreState>((set, get) => {
     /**
      * Keeps an Agent's category totals — overall and per Workspace — in step with a local
      * list mutation of `session` (no-op while its counts are unknown). An organization's row
      * never moves them: the server's totals are the user's own rows only (`excludeOrg`), and a
-     * company Session is in no category, so such a row — held for the page that deep-linked
-     * it — was never counted and must not be counted out.
+     * subagent or company Session is in no category, so such a row — held for the page that
+     * shows it — was never counted and must not be counted out.
      */
     const adjustCount = (session: SessionInfo, category: SessionCategory | null, delta: number) => {
       if (category === null || isOrgSession(session)) return;
@@ -558,7 +579,7 @@ export function createSessionsStore() {
         // Keyed by GROUP, as the fetch stores them: the badge belongs to the directory on
         // the machine this Session is on, not to every machine holding that path string.
         const key = workspaceGroupKey(workspace, machineForSession(session.sessionId));
-        const ws = wsCur[key] ?? { active: 0, background: 0, archived: 0 };
+        const ws = wsCur[key] ?? { active: 0, archived: 0 };
         const next = new Map(workspaceCounts);
         next.set(agentId, {
           ...wsCur,
@@ -570,10 +591,11 @@ export function createSessionsStore() {
 
     /**
      * Puts one row in the list (replacing an entry with its id), keeping the totals in step.
-     * Counts the row only when the pair's fetched pages provably held its whole category
+     * Counts an active row only when its Agent's fetched pages provably held every active row
      * (loaded, no more): the row is then genuinely new to the server totals. Otherwise
      * (deep-link self-heal or a live adoption of an unfetched row) the counts already include
-     * it — a possible one-off drift self-heals on the next reload.
+     * it — a possible one-off drift self-heals on the next reload. A row of no sidebar list
+     * (archived, subagent, company) is held for the page showing it and never counted.
      */
     const insert = (session: SessionInfo) => {
       const existed = get().sessions.some((s) => s.sessionId === session.sessionId);
@@ -583,8 +605,8 @@ export function createSessionsStore() {
       const category = sessionCategory(session);
       if (
         !existed &&
-        category !== null &&
-        get().pageState.get(pageKey(session.agentId, category, "", source))?.hasMore === false
+        category === "active" &&
+        get().pageState.get(pageKey(session.agentId, "", source))?.hasMore === false
       ) {
         adjustCount(session, category, 1);
       }
@@ -600,6 +622,72 @@ export function createSessionsStore() {
       while (declined.size > DECLINED_IDS_MAX) declined.delete(declined.values().next().value!);
     };
 
+    /** `deleted` with `ids` added, the oldest falling out past DELETED_IDS_MAX. */
+    const withTombstones = (deleted: ReadonlySet<string>, ids: Iterable<string>) => {
+      const next = new Set(deleted);
+      for (const id of ids) {
+        next.delete(id);
+        next.add(id);
+      }
+      while (next.size > DELETED_IDS_MAX) next.delete(next.values().next().value!);
+      return next;
+    };
+
+    /**
+     * Applies the gathered listing changes in one update. An archive flip of a row this list
+     * holds moves it between the lists in place — out of the sidebar but still held, so a page
+     * showing it turns into the archived stub or back — with the totals in step. An unarchived
+     * Session this list does not hold joins the sidebar where its activity puts it, which only
+     * a fetch can tell: one reload for the whole batch. A deleted Session is dropped and
+     * tombstoned, held or not, so a page routed at it stops asking for it.
+     */
+    const flushListing = () => {
+      listingTimer = null;
+      if (pendingListing.size === 0) return;
+      const changes = [...pendingListing.values()];
+      pendingListing.clear();
+      const { projectId } = get();
+      let rows = get().sessions;
+      const gone: string[] = [];
+      let fetchUnheld = false;
+      for (const change of changes) {
+        const row = rows.find((s) => s.sessionId === change.sessionId);
+        if (change.kind === "deleted") {
+          gone.push(change.sessionId);
+          if (row !== undefined) {
+            adjustCount(row, sessionCategory(row), -1);
+            rows = rows.filter((s) => s.sessionId !== change.sessionId);
+          }
+          continue;
+        }
+        const archived = change.kind === "archived";
+        // An unarchived id may have been looked up while it was archived and declined then.
+        if (!archived) declined.delete(change.sessionId);
+        if (row === undefined) {
+          if (!archived && change.projectId === projectId) fetchUnheld = true;
+          continue;
+        }
+        if (row.archived === archived) continue;
+        const next = { ...row, archived };
+        adjustCount(row, sessionCategory(row), -1);
+        adjustCount(next, sessionCategory(next), 1);
+        rows = rows.map((s) => (s.sessionId === change.sessionId ? next : s));
+      }
+      // A change must not be undone by a reload already in flight (remove()'s rule): that one is
+      // dropped, and asked again so the list still lands.
+      if (rows !== get().sessions) {
+        gen += 1;
+        if (reloadsInFlight > 0) fetchUnheld = true;
+      }
+      set({
+        sessions: rows,
+        ...(gone.length > 0
+          ? { deletedSessionIds: withTombstones(get().deletedSessionIds, gone) }
+          : {}),
+      });
+      if (fetchUnheld) void get().reload();
+    };
+
     return {
       projectId: null,
       agentIds: [],
@@ -613,6 +701,7 @@ export function createSessionsStore() {
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
       workspaceLatestByAgent: new Map(),
+      workspaceLatestActiveByAgent: new Map(),
       liveStatuses: new Map(),
       loading: true,
 
@@ -631,6 +720,7 @@ export function createSessionsStore() {
         // to decide whether to draw a skeleton over the open conversation.
         if (get().sessions.length === 0) set({ loading: true });
         let applied = false;
+        reloadsInFlight += 1;
         // This server first, then every machine of the Project this server holds a
         // connection to. Order matters only as a tie-break for equal timestamps.
         const sources: (string | null)[] = [null, ...machineIds];
@@ -644,33 +734,22 @@ export function createSessionsStore() {
               : [...new Set([...agentIds, ...(agentIdsByMachine[source] ?? [])])];
           return ids.map((agentId) => ({ agentId, source }));
         });
-        // One request per SOURCE, carrying every (Agent, page) pair that source owes us.
-        // These were one GET each — with several Agents and machines that is dozens fired at
-        // once, serialised by the browser's six-connections-per-host limit, and the
+        // One request per SOURCE, carrying every (Agent, stream) first page that source owes
+        // us. These were one GET each — with several Agents and machines that is dozens fired
+        // at once, serialised by the browser's six-connections-per-host limit, and the
         // conversation pane's own message read queued behind all of them.
         const bySource = new Map<string | null, WantedPage[]>();
         for (const { agentId, source } of jobs) {
-          // The Agent's whole-stream active first page (with per-category totals)
-          // always; plus the first page of every other pair already on screen — an
-          // open folder, and each Workspace group paging its own stream — because a
-          // reload triggered by a server event must refresh them, not blank them.
-          const pairs: { category: SessionCategory; scope: string }[] = [
-            { category: "active", scope: "" },
-          ];
+          // The Agent's whole-stream first page (with per-category totals) always; plus the
+          // first page of every other stream already on screen — each Workspace group paging
+          // its own — because a reload triggered by a server event must refresh them, not
+          // blank them.
+          const list = bySource.get(source) ?? [];
+          list.push({ agentId, scope: "" });
           for (const key of get().pageState.keys()) {
             const parsed = parsePageKey(key);
             if (parsed === null || parsed.agentId !== agentId || parsed.source !== source) continue;
-            if (parsed.category === "active" && parsed.scope === "") continue;
-            pairs.push({ category: parsed.category, scope: parsed.scope });
-          }
-          const list = bySource.get(source) ?? [];
-          for (const { category, scope } of pairs) {
-            list.push({
-              agentId,
-              category,
-              scope,
-              counts: category === "active" && scope === "",
-            });
+            if (parsed.scope !== "") list.push({ agentId, scope: parsed.scope });
           }
           bySource.set(source, list);
         }
@@ -686,10 +765,9 @@ export function createSessionsStore() {
                       agentId: w.agentId,
                       limit: SIDEBAR_PAGE_SIZE + 1,
                       order: "activity",
-                      category: w.category,
+                      category: "active",
                       excludeOrg: true,
-                      ...(w.scope === "" ? {} : { workspaceGroup: w.scope }),
-                      ...(w.counts ? { withCounts: true } : {}),
+                      ...(w.scope === "" ? { withCounts: true } : { workspaceGroup: w.scope }),
                     })),
                     source,
                   );
@@ -743,7 +821,7 @@ export function createSessionsStore() {
             string,
             Readonly<Record<string, SessionCategoryCounts>>
           >();
-          // Counts are SUMMED across sources, not overwritten: a folder badge that counted
+          // Counts are SUMMED across sources, not overwritten: a group's count that counted
           // one machine would contradict the rows underneath it (mergeCounts).
           const countParts = new Map<string, SessionCategoryCounts[]>();
           // Each answer with the machine that gave it: a path means a directory only
@@ -756,12 +834,28 @@ export function createSessionsStore() {
             }>
           >();
           // Newest-Session stamps per group, keyed the way the counts are (a path on a
-          // machine); the newest answer for a group wins.
+          // machine); the newest answer for a group wins. Two of them: every Session's (the
+          // Workspace picker's "recently used") and the active ones' (the groups' order).
           const nextWorkspaceLatest = new Map<string, Readonly<Record<string, string>>>();
+          const nextWorkspaceLatestActive = new Map<string, Readonly<Record<string, string>>>();
+          const foldStamps = (
+            into: Map<string, Readonly<Record<string, string>>>,
+            agentId: string,
+            source: string | null,
+            stamps: Readonly<Record<string, string>>,
+          ) => {
+            const latest: Record<string, string> = { ...(into.get(agentId) ?? {}) };
+            for (const [path, stamp] of Object.entries(stamps)) {
+              const groupKey = workspaceGroupKey(path, source);
+              const held = latest[groupKey];
+              if (held === undefined || held < stamp) latest[groupKey] = stamp;
+            }
+            into.set(agentId, latest);
+          };
           for (const r of results) {
             for (const p of r.pages) {
               const last = p.items.at(-1);
-              nextPageState.set(pageKey(r.agentId, p.category, p.scope, r.source), {
+              nextPageState.set(pageKey(r.agentId, p.scope, r.source), {
                 hasMore: p.hasMore,
                 cursor: last === undefined ? null : activityKeyOf(last),
               });
@@ -774,15 +868,10 @@ export function createSessionsStore() {
                 ]);
               }
               if (p.workspaceLatest) {
-                const latest: Record<string, string> = {
-                  ...(nextWorkspaceLatest.get(r.agentId) ?? {}),
-                };
-                for (const [path, stamp] of Object.entries(p.workspaceLatest)) {
-                  const groupKey = workspaceGroupKey(path, r.source);
-                  const held = latest[groupKey];
-                  if (held === undefined || held < stamp) latest[groupKey] = stamp;
-                }
-                nextWorkspaceLatest.set(r.agentId, latest);
+                foldStamps(nextWorkspaceLatest, r.agentId, r.source, p.workspaceLatest);
+              }
+              if (p.workspaceLatestActive) {
+                foldStamps(nextWorkspaceLatestActive, r.agentId, r.source, p.workspaceLatestActive);
               }
               for (const s of p.items) {
                 if (seen.has(s.sessionId)) continue;
@@ -835,10 +924,10 @@ export function createSessionsStore() {
           // machine that has it rather than this server — which would answer 404 about
           // someone else's.
           //
-          // Folder badges are NOT topped up from here: counts come from the servers that
-          // answered, so an out-of-reach machine's rows show without being counted. Better
-          // than the alternative — a count is a claim about what a server holds now, and the
-          // cache cannot make that claim.
+          // Totals are NOT topped up from here: counts come from the servers that answered,
+          // so an out-of-reach machine's rows show without being counted. Better than the
+          // alternative — a count is a claim about what a server holds now, and the cache
+          // cannot make that claim.
           for (const machineId of new Set([...offlineMachineIds, ...silent])) {
             for (const s of cachedMachineSessions(projectId, machineId)) {
               if (seen.has(s.sessionId)) continue;
@@ -874,6 +963,8 @@ export function createSessionsStore() {
               if (workspaceCounts) nextWorkspaceCounts.set(agentId, workspaceCounts);
               const latest = held.workspaceLatestByAgent.get(agentId);
               if (latest) nextWorkspaceLatest.set(agentId, latest);
+              const latestActive = held.workspaceLatestActiveByAgent.get(agentId);
+              if (latestActive) nextWorkspaceLatestActive.set(agentId, latestActive);
             }
           }
           // A Session adopted from a live event after this reload started may have run after
@@ -889,19 +980,25 @@ export function createSessionsStore() {
           // Most recently active first across every source: each answered sorted, and
           // concatenating sorted lists does not give a sorted list.
           nextSessions.sort(mostRecentFirst);
-          // No fetch returns an organization row (`excludeOrg`), so one held here entered
-          // through add() for the page showing it (an open desk or ticket session) and no
-          // reload can bring it back: carry it over, or that page's writes stop reaching it.
-          const held = get().sessions.filter((s) => isOrgSession(s) && !seen.has(s.sessionId));
+          // No fetch returns a row of no sidebar list — an organization's (`excludeOrg`), an
+          // archived one, a subagent — so one held here entered through add() or replace()
+          // for the page showing it (an open desk, an archived stub, a child opened from the
+          // Agent panel) and no reload can bring it back: carry it over, or that page's writes
+          // stop reaching it.
+          const held = get().sessions.filter(
+            (s) => !seen.has(s.sessionId) && (isOrgSession(s) || sessionCategory(s) !== "active"),
+          );
           set({
             sessions: [...nextSessions, ...held],
             pageState: nextPageState,
             countsByAgent: nextCounts,
             workspaceCountsByAgent: nextWorkspaceCounts,
             workspaceLatestByAgent: nextWorkspaceLatest,
+            workspaceLatestActiveByAgent: nextWorkspaceLatestActive,
           });
           applied = true;
         } finally {
+          reloadsInFlight -= 1;
           // Only a reload that produced a list may report one. Abandoning above leaves the
           // flag exactly as it was — false with rows on screen, which is still true of them;
           // true with none, because none were fetched and saying otherwise is what paints an
@@ -911,9 +1008,9 @@ export function createSessionsStore() {
       },
 
       /**
-       * Category page fetch for each given Agent: the first page when the pair is unloaded
-       * (skipped unless the counts say the category holds anything), the next page when
-       * loaded with more — the rows strictly below the pair's cursor, in activity order.
+       * Page fetch for each given Agent: the first page when the stream is unloaded (skipped
+       * unless the counts say the Agent holds an active row), the next page when loaded with
+       * more — the rows strictly below the stream's cursor, in activity order.
        * Appended rows are still deduplicated by sessionId: a row can reach the pool down two
        * streams (the Agent's whole one and a group's own), and `add()` slips rows in too.
        *
@@ -927,9 +1024,9 @@ export function createSessionsStore() {
        * the whole stream's loaded prefix, cut by Workspace, is a prefix of the group's, so the
        * group's rows above that cursor are already in the pool. Starting over would re-read
        * them and the click would appear to do nothing. When the whole stream is exhausted the
-       * pool holds every row the group has there, and the pair is settled without a request.
+       * pool holds every row the group has there, and the stream is settled without a request.
        */
-      loadMoreFor: async (agentIds, category, workspaceGroup) => {
+      loadMoreFor: async (agentIds, workspaceGroup) => {
         const { projectId, machineIds } = get();
         if (!projectId) return;
         const sources = sourcesFor([null, ...machineIds], workspaceGroup);
@@ -944,7 +1041,7 @@ export function createSessionsStore() {
         const { pageState, countsByAgent } = get();
         for (const agentId of new Set(agentIds)) {
           for (const source of sources) {
-            const position = pageState.get(pageKey(agentId, category, scope, source));
+            const position = pageState.get(pageKey(agentId, scope, source));
             if (position !== undefined) {
               if (position.hasMore) targets.push({ agentId, source, before: position.cursor });
               continue;
@@ -953,14 +1050,14 @@ export function createSessionsStore() {
             // worth a request — they are the SUM over sources, so a machine with none still
             // gets one first page, which is what discovers that it has none.
             if (scope === "") {
-              if ((countsByAgent.get(agentId)?.[category] ?? 0) > 0)
+              if ((countsByAgent.get(agentId)?.active ?? 0) > 0)
                 targets.push({ agentId, source, before: null });
               continue;
             }
             // An unloaded group stream: it continues from the whole stream (see above). The
             // counts cannot gate it (they are not broken down by group here); the caller only
             // asks for a group it has reason to believe holds rows.
-            const whole = pageState.get(pageKey(agentId, category, "", source));
+            const whole = pageState.get(pageKey(agentId, "", source));
             if (whole !== undefined && !whole.hasMore) {
               settled.push({ agentId, source, cursor: whole.cursor });
               continue;
@@ -990,7 +1087,7 @@ export function createSessionsStore() {
                     limit: SIDEBAR_PAGE_SIZE + 1,
                     order: "activity",
                     ...(w.before === null ? {} : { before: w.before }),
-                    category,
+                    category: "active",
                     excludeOrg: true,
                     ...(scope === "" ? {} : { workspaceGroup: scope }),
                   })),
@@ -1037,14 +1134,14 @@ export function createSessionsStore() {
         const nextPageState = new Map(get().pageState);
         for (const r of ok) {
           const last = r.items.at(-1);
-          nextPageState.set(pageKey(r.agentId, category, scope, r.source), {
+          nextPageState.set(pageKey(r.agentId, scope, r.source), {
             hasMore: r.hasMore,
             // An empty page leaves the stream where it was read from.
             cursor: last === undefined ? r.before : activityKeyOf(last),
           });
         }
         for (const { agentId, source, cursor } of settled) {
-          nextPageState.set(pageKey(agentId, category, scope, source), { hasMore: false, cursor });
+          nextPageState.set(pageKey(agentId, scope, source), { hasMore: false, cursor });
         }
         set({
           ...(appended.length > 0 ? { sessions: [...prev, ...appended] } : {}),
@@ -1091,7 +1188,14 @@ export function createSessionsStore() {
           const now = get();
           // The list moved on to another Project while this was asked: not its row.
           if (now.projectId !== projectId) return;
-          if (fetched === null || isOrgSession(fetched) || fetched.projectId !== projectId) {
+          // Only the sidebar's own rows join it: an archived Session that runs (a schedule, an
+          // API caller, a kept Session archived again) and a subagent stay where they are listed.
+          if (
+            fetched === null ||
+            isOrgSession(fetched) ||
+            fetched.projectId !== projectId ||
+            sessionCategory(fetched) !== "active"
+          ) {
             if (fetched !== null || gone) decline(sessionId);
             return;
           }
@@ -1127,29 +1231,33 @@ export function createSessionsStore() {
         // pruned list, and any of them that reacts to the row's disappearance (the chat
         // page's deep-link lookup) must already be able to see that the id is dead rather
         // than merely unfetched — otherwise it fires a request that can only 404.
-        const deleted = new Set(get().deletedSessionIds);
-        deleted.add(sessionId);
-        while (deleted.size > DELETED_IDS_MAX) {
-          const oldest = deleted.values().next();
-          if (oldest.done) break;
-          deleted.delete(oldest.value);
-        }
         set({
-          deletedSessionIds: deleted,
+          deletedSessionIds: withTombstones(get().deletedSessionIds, [sessionId]),
           sessions: get().sessions.filter((s) => s.sessionId !== sessionId),
         });
       },
 
       replace: (session) => {
-        // An archive toggle moves the row across categories: keep the folder totals in step.
         const old = get().sessions.find((s) => s.sessionId === session.sessionId);
-        if (old && sessionCategory(old) !== sessionCategory(session)) {
+        // Not held (the page's row fell out of a reload, say): put it in, so the page that sent
+        // the PATCH shows its result.
+        if (old === undefined) {
+          insert(session);
+          return;
+        }
+        // An archive toggle moves the row between the lists, in place: keep the totals in step.
+        if (sessionCategory(old) !== sessionCategory(session)) {
           adjustCount(session, sessionCategory(old), -1);
           adjustCount(session, sessionCategory(session), 1);
         }
         set({
           sessions: get().sessions.map((s) => (s.sessionId === session.sessionId ? session : s)),
         });
+      },
+
+      noteListingChange: (change) => {
+        pendingListing.set(change.sessionId, change);
+        listingTimer ??= setTimeout(flushListing, LISTING_CHANGE_DELAY_MS);
       },
 
       /**
@@ -1292,10 +1400,12 @@ export function applyUserEvent(
     if (source === null) onWebUpdated();
     return;
   }
-  // A Session now exists that this list did not create — the CLI, another tab, a schedule, an
-  // agent spawning a child, on this server or on a machine. Nothing short of a fetch can put
-  // the row in place with everything a row needs (title, workspace, counts), so reload; the
-  // same answer schedule_fired gives below, for the same reason.
+  // A Session now exists that this list did not create — `penguin chat`, another tab, on this
+  // server or on a machine. Nothing short of a fetch can put the row in place with everything a
+  // row needs (title, workspace, counts), so reload; the same answer schedule_fired gives below,
+  // for the same reason. Only a person's conversation can land in this list: what a program
+  // opens (the Agent API, a schedule, `penguin run`) is archived until kept, and a subagent or
+  // company Session is in no list, so their creation leaves the list as it is.
   //
   // The Project is compared whatever the event came from. A machine's Projects carry THIS
   // server's ids — installing one creates the same Project over there, and every list call
@@ -1304,7 +1414,24 @@ export function applyUserEvent(
   // Session and every subagent started in any other Project on any connected machine refetched
   // the whole list, Agents × sources.
   if (ev.type === "session_created") {
-    if (ev.projectId === store.getState().projectId) void store.getState().reload();
+    if (ev.source === "user" && ev.projectId === store.getState().projectId) {
+      void store.getState().reload();
+    }
+    return;
+  }
+  // The user's listing decision on a Session changed, or the Session is gone — this tab's own
+  // action echoed back, another tab's, or one of the archive page's batches (one event per
+  // Session). The store gathers them and applies a batch as one update.
+  if (ev.type === "session_archived" || ev.type === "session_deleted") {
+    store.getState().noteListingChange(
+      ev.type === "session_deleted"
+        ? { kind: "deleted", sessionId: ev.sessionId, projectId: ev.projectId }
+        : {
+            kind: ev.archived ? "archived" : "unarchived",
+            sessionId: ev.sessionId,
+            projectId: ev.projectId,
+          },
+    );
     return;
   }
   // A Session changed run state. This is what keeps every row honest: a tab subscribes to the
@@ -1543,9 +1670,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     const contextChanged = appliedContext.current !== contextKey;
     appliedContext.current = contextKey;
     // Sync the fetch context and reset the loaded pages in the same synchronous step:
-    // reload() picks the categories to refetch from pageState, so a Project switch can't
-    // carry folder page state across via shared Agent ids (default_agent exists in every
-    // Project).
+    // reload() picks the pages to refetch from pageState, so a Project switch can't carry
+    // page state across via shared Agent ids (default_agent exists in every Project).
     // deletedSessionIds is deliberately NOT reset: session ids are globally unique and never
     // reused, so a Session deleted before a Project switch is still deleted after it — and
     // re-arming its lookup would just re-create the 404 this set exists to prevent.
@@ -1568,6 +1694,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
             countsByAgent: new Map(),
             workspaceCountsByAgent: new Map(),
             workspaceLatestByAgent: new Map(),
+            workspaceLatestActiveByAgent: new Map(),
             // The pages were just cleared, so the list is loading from this instant —
             // including the window where the Agent set itself is still being refetched (a
             // Project switch empties it, which makes reload() below return without fetching
@@ -1602,7 +1729,12 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const conn = openUserEvents({
       onOmniMessage: () => undefined,
-      onServerEvent: (ev) => applyUserEvent(store, ev, () => window.location.reload()),
+      onServerEvent: (ev) => {
+        applyUserEvent(store, ev, () => window.location.reload());
+        // The surfaces that list this server's Sessions apart from the sidebar (the archive
+        // page) follow the same channel.
+        publishUserEvent(ev);
+      },
       // This stream is the only thing an idle window has open, and the server ends it when
       // the session behind it is revoked — which EventSource reports as an ordinary fatal
       // error, indistinguishable from a dead network. Asking settles it: a session that is
@@ -1640,50 +1772,47 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   const sources = useMemo<(string | null)[]>(() => [null, ...machineIds], [machineIds]);
 
   // Loaded only when EVERY source has answered: one machine's first page arriving does not
-  // make the folder complete, and treating it as loaded would hide the rest behind a
+  // make the group complete, and treating it as loaded would hide the rest behind a
   // "load more" that never appears.
   const isLoadedFor = useCallback(
-    (agentId: string, category: SessionCategory, workspaceGroup?: string) =>
+    (agentId: string, workspaceGroup?: string) =>
       sourcesFor(sources, workspaceGroup).every((source) =>
-        pageState.has(pageKey(agentId, category, scopeOf(workspaceGroup), source)),
+        pageState.has(pageKey(agentId, scopeOf(workspaceGroup), source)),
       ),
     [pageState, sources],
   );
 
   // More if ANY source has more — or if a source has not been asked at all and the counts,
-  // which are the sum over sources, say the category holds something. A group's own stream
+  // which are the sum over sources, say the Agent holds an active row. A group's own stream
   // not asked yet has nothing more on a source whose whole stream is exhausted: every row the
-  // group has there is already in the pool (loadMoreFor settles such a pair without asking).
+  // group has there is already in the pool (loadMoreFor settles such a stream without asking).
   const hasMoreFor = useCallback(
-    (agentId: string, category: SessionCategory, workspaceGroup?: string) => {
+    (agentId: string, workspaceGroup?: string) => {
       const scope = scopeOf(workspaceGroup);
       let anyUnloaded = false;
       for (const source of sourcesFor(sources, workspaceGroup)) {
-        const position = pageState.get(pageKey(agentId, category, scope, source));
+        const position = pageState.get(pageKey(agentId, scope, source));
         if (position !== undefined) {
           if (position.hasMore) return true;
           continue;
         }
-        if (
-          scope !== "" &&
-          pageState.get(pageKey(agentId, category, "", source))?.hasMore === false
-        )
+        if (scope !== "" && pageState.get(pageKey(agentId, "", source))?.hasMore === false)
           continue;
         anyUnloaded = true;
       }
       if (!anyUnloaded) return false;
       // Unloaded: the counts are the sum over sources, so anything they report is by
       // definition still unfetched somewhere. A group's own stream is not in those counts,
-      // so an unloaded scoped pair answers from the Agent's total for the category — the
-      // group's share of it cannot exceed that.
-      return (countsByAgent.get(agentId)?.[category] ?? 0) > 0;
+      // so an unloaded scoped stream answers from the Agent's active total — the group's
+      // share of it cannot exceed that.
+      return (countsByAgent.get(agentId)?.active ?? 0) > 0;
     },
     [pageState, countsByAgent, sources],
   );
 
   const activityWatermarkFor = useCallback(
-    (agentIds: readonly string[], category: SessionCategory, workspaceGroup?: string) =>
-      watermarkFor({ pageState, machineIds }, agentIds, category, workspaceGroup),
+    (agentIds: readonly string[], workspaceGroup?: string) =>
+      watermarkFor({ pageState, machineIds }, agentIds, workspaceGroup),
     [pageState, machineIds],
   );
 
@@ -1725,6 +1854,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       countsByAgent: state.countsByAgent,
       workspaceCountsByAgent: state.workspaceCountsByAgent,
       workspaceLatestByAgent: state.workspaceLatestByAgent,
+      workspaceLatestActiveByAgent: state.workspaceLatestActiveByAgent,
       liveStatuses: state.liveStatuses,
       machineLabels,
       machineIds: state.machineIds,

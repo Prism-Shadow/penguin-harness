@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
  * Serialized dev prestep: ensure dependencies are installed, then build what the dev
- * servers consume: packages/core, and packages/cli for the `penguin` a dev server hands the
- * Agents it runs and puts first in its terminals (it writes a shim at `<root>/bin/penguin`
- * pointing at `packages/cli/dist/penguin.js`, so that file has to exist and be current when
- * the server starts — `tsx watch` never rebuilds it). That CLI imports modules of
- * packages/server at runtime (the lock, the token minting, the version report…) from the
- * server's dist, which the dev server itself, running its source under tsx, never builds —
- * so the prestep builds the server too, JavaScript only (PENGUIN_BUILD_JS_ONLY, see
- * packages/server/tsup.config.ts). Before it comes packages/hmr, which that build inlines
- * and the dev server imports; the server's build script also regenerates the interface
- * table (src/ifaces.json) the dev server reads.
+ * servers consume: packages/core, and what the `penguin` a dev server hands the Agents it runs
+ * and puts first in its terminals needs. That shim (`<root>/bin/penguin`) runs the CLI's
+ * SOURCE through tsx while the server runs from source, so CLI edits show up without a
+ * restart; but the CLI imports modules of packages/server at runtime (the lock, the token
+ * minting, the version report…) from the server's dist, which the dev server itself, running
+ * its source under tsx, never builds — so the prestep builds the server too, JavaScript only
+ * (PENGUIN_BUILD_JS_ONLY, see packages/server/tsup.config.ts). Before it comes packages/hmr,
+ * which that build inlines and the dev server imports; the server's build script also
+ * regenerates the interface table (src/ifaces.json) the dev server reads. packages/cli is
+ * built as well: its dist is what the shim falls back to when the source cannot run (no tsx).
  *
  * dev:server and dev:web must build packages/core before starting
  * (never start on stale deps — see the 2026-07-17 design changelog entry), and every dev

@@ -169,6 +169,11 @@ import type {
   ServerSettingsUpdateRequest,
   SessionCategory,
   SessionContextResponse,
+  ArchivedSessionGroupsResponse,
+  ArchivedSessionsBatch,
+  ArchivedSessionsBatchResponse,
+  ArchivedSessionsQuery,
+  ArchivedSessionsResponse,
   SessionCreateRequest,
   SessionCreateResponse,
   SessionForkRequest,
@@ -941,6 +946,48 @@ export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
 
 export const deleteSession = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+
+// The archive page (Settings › Archived chats) -------------------------------------------
+
+/** The archive page's groups — one Workspace of one Project each — with their counts, newest first. */
+export const listArchivedSessionGroups = (query: ArchivedSessionsQuery = {}) =>
+  apiFetch<ArchivedSessionGroupsResponse>("/api/me/archived-sessions/groups", {
+    query: { q: query.q, source: query.source, projectId: query.projectId },
+  });
+
+/** One group's archived Sessions, newest activity first, continuing below `before` (the last row held). */
+export const listArchivedSessions = (
+  query: ArchivedSessionsQuery & {
+    projectId: string;
+    workspace: string;
+    limit: number;
+    before?: ActivityKey;
+  },
+) =>
+  apiFetch<ArchivedSessionsResponse>("/api/me/archived-sessions", {
+    query: {
+      q: query.q,
+      source: query.source,
+      projectId: query.projectId,
+      workspace: query.workspace,
+      limit: query.limit,
+      before: query.before ? activityCursorParam(query.before) : undefined,
+    },
+  });
+
+/** Unarchives the named Sessions, or every archived one a filter matches: they return to the sidebar for good. */
+export const unarchiveSessions = (target: ArchivedSessionsBatch) =>
+  apiFetch<ArchivedSessionsBatchResponse>("/api/me/archived-sessions/unarchive", {
+    method: "POST",
+    body: target,
+  });
+
+/** Deletes the named Sessions, or every archived one a filter matches, with their subagent children. */
+export const deleteSessions = (target: ArchivedSessionsBatch) =>
+  apiFetch<ArchivedSessionsBatchResponse>("/api/me/archived-sessions/delete", {
+    method: "POST",
+    body: target,
+  });
 
 // Messaging bindings ----------------------------------------------------------
 

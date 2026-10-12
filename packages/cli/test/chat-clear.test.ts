@@ -1,10 +1,11 @@
 /**
- * chat `/clear`: starts a brand-new blank Session in place, over the server API. The old
- * Session stays on the server (its resume command is printed so it remains reachable via
- * `--resume`), the replacement is created with the same Workspace and model, and
- * subsequent input runs on the new Session. Drives the real REPL over a fake stdin
- * against the in-process fake server; each line is fed only after the REPL prints its
- * input prompt, so no line lands mid-run.
+ * chat `/clear`: starts a brand-new blank Session in place, over the server API — created, like
+ * a new chat's, by the next message. The old Session stays on the server (its resume command is
+ * printed so it remains reachable via `--resume`), the replacement is created with the same
+ * Workspace and model, and subsequent input runs on the new Session. Before the first message
+ * there is nothing to clear. Drives the real REPL over a fake stdin against the in-process fake
+ * server; each line is fed only after the REPL prints its input prompt, so no line lands
+ * mid-run.
  */
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -104,7 +105,7 @@ describe("chat /clear (fresh Session in place, server-backed)", () => {
   });
 
   it("creates a person's conversation, for the chat and for /clear: no create request names a source", async () => {
-    await driveChat(["/clear", "/exit"]);
+    await driveChat(["hi", "/clear", "again", "/exit"]);
     const creates = server.requests.filter(
       (r) => r.method === "POST" && r.path.endsWith("/sessions"),
     );
@@ -112,10 +113,16 @@ describe("chat /clear (fresh Session in place, server-backed)", () => {
     expect(creates.every((r) => r.body !== undefined && !("source" in r.body))).toBe(true);
   });
 
-  it("/clear before any Task prints no resume hint (neither Session has history yet)", async () => {
-    const out = await driveChat(["/clear", "/exit"]);
-    expect(server.sessions.size).toBe(2);
+  it("/clear creates nothing itself: a /clear and an exit leave only the first Session", async () => {
+    const out = await driveChat(["hi", "/clear", "/exit"]);
+    expect(server.sessions.size).toBe(1);
     expect(out).toContain(getMessages("en").clearDone());
+  });
+
+  it("/clear before the first message has no conversation to clear: nothing is created, no resume hint", async () => {
+    const out = await driveChat(["/clear", "/exit"]);
+    expect(server.sessions.size).toBe(0);
+    expect(out).toContain(getMessages("en").chatNoConversation());
     expect(out).not.toContain("--resume");
   });
 });

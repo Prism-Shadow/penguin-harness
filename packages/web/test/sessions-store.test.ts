@@ -8,8 +8,8 @@
  * - A refresh over rows already on screen does not raise loading.
  *
  * Several machines:
- * - A reload asks each server once: every Agent's first page and every open folder's, in one
- *   request.
+ * - A reload asks each server once: every Agent's first page and every open Workspace group's,
+ *   in one request.
  * - Every source is merged newest first, each row remembers the machine it lives on, the
  *   counts are summed, and what a machine answered is cached for the next restart.
  * - A machine is asked about its own Agents too, and this server only about its own.
@@ -21,11 +21,13 @@
  * - Two machines' counts for one path stay apart.
  * - A group's next page is asked only of the machine the group is on, by path.
  *
- * The user's own rows only:
- * - Every fetch, a reload or a folder's next page, asks the server to leave the
- *   organizations' rows out of the page and the totals.
+ * The sidebar's rows only:
+ * - Every fetch, a reload or a next page, asks for active rows and leaves the organizations'
+ *   rows out of the page and the totals.
  * - An organization row that enters by another door is held for its page, survives reloads,
  *   and never moves the own-only totals; an own row added the same way still counts.
+ * - An archived or subagent row the chat page hands in is held for its page the same way: it
+ *   is never counted, and a reload carries it over.
  *
  * Activity order and cursors:
  * - Every list fetch asks for the activity order; a first page sends no cursor, and the next
@@ -34,16 +36,27 @@
  *   machine; when that stream is exhausted, no request is sent.
  * - The watermark over two machines is the more recent cursor with more; a machine nothing was
  *   read from bounds nothing; everything exhausted shows every row.
- * - A folder pages in activity order too: an archived conversation resumed yesterday lists
- *   above one archived last month, and its next page continues below it.
  *
  * Sessions that become active:
  * - A loaded row moves up without a request.
  * - A Session of this Project no page holds is fetched from the machine that announced it and
  *   shows at the top; one run's flips share one lookup and the newest flip lands on the row.
- * - Another Project's flip, an organization's Session, an id deleted here and an id that is
- *   gone are not listed, and the last three are not asked about again.
+ * - Another Project's flip, an organization's Session, an archived or subagent Session, an id
+ *   deleted here and an id that is gone are not listed, and none is asked about again.
  * - A reload that was already running when such a Session was fetched keeps it.
+ *
+ * Workspace stamps:
+ * - Every Session's newest per Workspace is kept for the picker, the active ones' for the
+ *   groups' order; an older server's every-Session stamp stands in for the active one.
+ *
+ * Archive, unarchive and delete:
+ * - An archive toggle the page makes (replace) moves the row out of the sidebar and back in
+ *   place, the totals in step; a row not held yet is put in.
+ * - Announced elsewhere (session_archived), a held row flips the same way; an unarchived row
+ *   the list does not hold makes one reload for the whole batch, and a declined id is asked
+ *   about again once it is unarchived.
+ * - A deleted Session (session_deleted) is dropped and tombstoned, held or not, and a batch of
+ *   them is one update.
  *
  * Property (seeded, 100 runs): after any sequence of loads, live flips and reloads, every list
  * the sidebar draws — time mode's, each Agent group's, each Workspace group's — is a prefix of
@@ -57,18 +70,20 @@
  *   for them.
  *
  * Events from a machine:
- * - A session_created for this Project reloads wherever it happened; another Project's never.
+ * - A session_created for a person's conversation in this Project reloads wherever it
+ *   happened; another Project's never, and a program's or a child's never.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ServerEvent,
   SessionBatchPageRequest,
-  SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
+  SessionSource,
   SessionsResponse,
 } from "@prismshadow/penguin-server/api";
 import {
+  LISTING_CHANGE_DELAY_MS,
   applyUserEvent,
   createSessionsStore,
   liveSessionStatuses,
@@ -79,6 +94,7 @@ import {
   aggregateWorkspaceCounts,
   compareActivityDesc,
   cutAtWatermark,
+  isSidebarRow,
   sessionCategory,
   workspaceGroupKey,
 } from "../src/lib/session-grouping";
@@ -178,7 +194,7 @@ const serverRecent = (
           ? -1
           : 0;
 
-const zeroCounts = (): SessionCategoryCounts => ({ active: 0, background: 0, archived: 0 });
+const zeroCounts = (): SessionCategoryCounts => ({ active: 0, archived: 0 });
 
 /** One page request as the batch endpoint carries it. */
 type BatchEntry = SessionBatchPageRequest;
@@ -284,7 +300,7 @@ function session(sessionId: string, over: Partial<SessionInfo> = {}): SessionInf
 const row = (sessionId: string, createdAt: string, agentId = "a1") =>
   session(sessionId, { agentId, createdAt, lastActiveAt: createdAt });
 
-const COUNTS = { active: 1, background: 1, archived: 0 };
+const COUNTS = { active: 1, archived: 1 };
 
 const page = (
   sessions: SessionInfo[],
@@ -293,7 +309,7 @@ const page = (
 ): SessionsResponse =>
   ({
     sessions,
-    counts: { active, background: 0, archived: 0 },
+    counts: { active, archived: 0 },
     ...(workspaceCounts === undefined ? {} : { workspaceCounts }),
   }) as SessionsResponse;
 
@@ -347,27 +363,35 @@ describe("the list across machines", () => {
     expect(cachedMachineSessions("p", "M1").map((s) => s.sessionId)).toEqual(["there"]);
   });
 
-  it("a reload asks each server once, carrying every Agent's first page and every open folder's", async () => {
+  it("a reload asks each server once, carrying every Agent's first page and every open group's", async () => {
     // One request per (Agent, page) was dozens fired at once on a Project with several Agents
     // and machines, serialised behind the browser's per-host connection limit — and the open
     // conversation's own read queued behind them.
-    const withArchived = { sessions: [], counts: { active: 0, background: 0, archived: 2 } };
     for (const source of [null, "M1"]) {
-      answers.set(key(source, "a1"), withArchived);
+      answers.set(key(source, "a1"), { sessions: [], counts: COUNTS });
       answers.set(key(source, "a2"), { sessions: [], counts: COUNTS });
     }
     const store = boot(["M1"], [], ["a1", "a2"]);
     await store.getState().reload();
-    await store.getState().loadMoreFor(["a1"], "archived");
+    // A Workspace group on this server has opened its own stream.
+    await store.getState().loadMoreFor(["a1"], "/w");
     fetch.requests.length = 0;
     await store.getState().reload();
     expect(fetch.requests.map((r) => r.machine)).toEqual([null, "M1"]);
-    for (const request of fetch.requests) {
-      expect(batchEntriesOf(request).map((e) => [e.agentId, e.category])).toEqual([
-        ["a1", "active"],
-        ["a1", "archived"],
-        ["a2", "active"],
-      ]);
+    const pages = (i: number) =>
+      batchEntriesOf(fetch.requests[i]!).map((e) => [e.agentId, e.workspaceGroup ?? ""]);
+    expect(pages(0)).toEqual([
+      ["a1", ""],
+      ["a1", "/w"],
+      ["a2", ""],
+    ]);
+    // The group is a directory on this server: the machine is asked about the whole streams only.
+    expect(pages(1)).toEqual([
+      ["a1", ""],
+      ["a2", ""],
+    ]);
+    for (const entry of batchEntries()) {
+      expect(entry).toMatchObject({ category: "active", order: "activity", excludeOrg: true });
     }
   });
 
@@ -476,13 +500,13 @@ describe("the list across machines", () => {
     await store.getState().reload();
 
     fetch.requests.length = 0;
-    await store.getState().loadMoreFor(["a1"], "active", `M1\u0000/w`);
+    await store.getState().loadMoreFor(["a1"], `M1\u0000/w`);
     // `/w` exists on this server too: asking it would page another directory's rows into
     // this group. The machine half never travels in the query.
     expect(asked()).toEqual([{ machineId: "M1", workspaceGroup: "/w" }]);
 
     fetch.requests.length = 0;
-    await store.getState().loadMoreFor(["a1"], "active", "/w");
+    await store.getState().loadMoreFor(["a1"], "/w");
     expect(asked()).toEqual([{ machineId: null, workspaceGroup: "/w" }]);
   });
 });
@@ -502,14 +526,14 @@ describe("the list fetches the user's own rows only", () => {
     }
   });
 
-  it("loadMoreFor() pages a folder down the same own-rows stream", async () => {
-    answers.set(key(null, "a1"), { sessions: [], counts: COUNTS });
+  it("loadMoreFor() pages the same stream of active, own rows", async () => {
+    served.set(key(null, "a1"), activeRun("r", 12));
     const store = boot();
     await store.getState().reload();
     fetch.requests.length = 0;
-    await store.getState().loadMoreFor(["a1"], "background");
+    await store.getState().loadMoreFor(["a1"]);
     expect(fetch.requests).toHaveLength(1);
-    expect(batchEntries()[0]).toMatchObject({ category: "background", excludeOrg: true });
+    expect(batchEntries()[0]).toMatchObject({ category: "active", excludeOrg: true });
   });
 });
 
@@ -550,6 +574,21 @@ describe("an organization row that enters by another door", () => {
     expect(ids(store)).toEqual(["own", "s-desk"]);
     expect(store.getState().countsByAgent.get("a1")?.active).toBe(1);
   });
+
+  it.each([
+    ["an archived row", { archived: true }],
+    ["a subagent", { source: "subagent" as const }],
+  ])(
+    "holds %s for its page without counting it, and a reload carries it over",
+    async (_what, over) => {
+      const store = await loadedStore();
+      store.getState().add(session("held", over));
+      expect(store.getState().countsByAgent.get("a1")).toEqual(COUNTS);
+      await store.getState().reload();
+      expect(ids(store)).toEqual(["own", "held"]);
+      expect(store.getState().countsByAgent.get("a1")).toEqual(COUNTS);
+    },
+  );
 });
 
 /** A minute-spaced run of `n` rows, most recently active first; created in the REVERSE order, so creation order and activity order disagree on every pair. */
@@ -570,17 +609,16 @@ function activeRun(
 
 const cursorOf = (row: SessionInfo) => `${row.lastActiveAt},${row.sessionId}`;
 
-/** The rows a sidebar list of `category` shows: the pool's rows it holds, cut at its watermark. */
+/** The rows a sidebar list shows: the pool's rows of the sidebar it holds, cut at its watermark. */
 function shown(
   store: ReturnType<typeof boot>,
   agentIds: string[],
-  category: SessionCategory,
   workspaceGroup?: string,
   holds: (s: SessionInfo) => boolean = () => true,
 ): string[] {
   const state = store.getState();
-  const rows = state.sessions.filter((s) => sessionCategory(s) === category && holds(s));
-  return cutAtWatermark(rows, watermarkFor(state, agentIds, category, workspaceGroup)).map(
+  const rows = state.sessions.filter((s) => isSidebarRow(s) && holds(s));
+  return cutAtWatermark(rows, watermarkFor(state, agentIds, workspaceGroup)).map(
     (s) => s.sessionId,
   );
 }
@@ -623,15 +661,17 @@ describe("the list pages in activity order, under a cursor", () => {
     const first = batchEntries()[0]!;
     expect(first.order).toBe("activity");
     expect(first.before).toBeUndefined();
+    expect(first.offset).toBeUndefined();
     // The conversations used last lead, though they were created first.
     expect(ids(store)).toEqual(rows.slice(0, 10).map((s) => s.sessionId));
 
     fetch.requests.length = 0;
-    await store.getState().loadMoreFor(["a1"], "active");
+    await store.getState().loadMoreFor(["a1"]);
     const next = batchEntries()[0]!;
     expect(next.order).toBe("activity");
     // The tenth row, the last one shown — not the overflow row that only said "more".
     expect(entryCursor(next)).toBe(cursorOf(rows[9]!));
+    expect(next.offset).toBeUndefined();
     expect(ids(store)).toEqual(rows.slice(0, 20).map((s) => s.sessionId));
   });
 
@@ -641,15 +681,13 @@ describe("the list pages in activity order, under a cursor", () => {
     const store = boot();
     await store.getState().reload();
     fetch.requests.length = 0;
-    await store.getState().loadMoreFor(["a1"], "active", "/w");
+    await store.getState().loadMoreFor(["a1"], "/w");
     expect(fetch.requests).toHaveLength(1);
     expect(batchEntries()[0]!.workspaceGroup).toBe("/w");
     expect(entryCursor(batchEntries()[0]!)).toBe(cursorOf(rows[9]!));
     // Nothing re-read, nothing skipped: the group holds its every row, in order.
     const inW = (s: SessionInfo) => s.workspace === "/w";
-    expect(shown(store, ["a1"], "active", "/w", inW)).toEqual(
-      rows.filter(inW).map((s) => s.sessionId),
-    );
+    expect(shown(store, ["a1"], "/w", inW)).toEqual(rows.filter(inW).map((s) => s.sessionId));
   });
 
   it("a Workspace group whose Agent's stream is exhausted asks nothing: the pool holds it all", async () => {
@@ -660,10 +698,10 @@ describe("the list pages in activity order, under a cursor", () => {
     const store = boot();
     await store.getState().reload();
     fetch.requests.length = 0;
-    await store.getState().loadMoreFor(["a1"], "active", "/w");
-    await store.getState().loadMoreFor(["a1"], "active", "/w");
+    await store.getState().loadMoreFor(["a1"], "/w");
+    await store.getState().loadMoreFor(["a1"], "/w");
     expect(fetch.requests).toEqual([]);
-    expect(watermarkFor(store.getState(), ["a1"], "active", "/w")).toBeNull();
+    expect(watermarkFor(store.getState(), ["a1"], "/w")).toBeNull();
   });
 
   it("the watermark over two machines is the more recent cursor with more", async () => {
@@ -678,49 +716,27 @@ describe("the list pages in activity order, under a cursor", () => {
     ]);
     const store = boot(["M1", "M3"]);
     await store.getState().reload();
-    expect(watermarkFor(store.getState(), ["a1"], "active")).toEqual({
+    expect(watermarkFor(store.getState(), ["a1"])).toEqual({
       lastActiveAt: here[9]!.lastActiveAt,
       sessionId: here[9]!.sessionId,
     });
     // The older machine's first page waits below the line: M1's rows are all older than
     // this server's tenth, and this server still has more above them.
-    expect(shown(store, ["a1"], "active")).toEqual([
-      "cached",
-      ...here.slice(0, 10).map((s) => s.sessionId),
-    ]);
+    expect(shown(store, ["a1"])).toEqual(["cached", ...here.slice(0, 10).map((s) => s.sessionId)]);
 
     // This server runs out; M1's cursor is the line now.
-    await store.getState().loadMoreFor(["a1"], "active");
-    expect(watermarkFor(store.getState(), ["a1"], "active")?.sessionId).toBe(there[19]!.sessionId);
-    expect(shown(store, ["a1"], "active")).toEqual([
+    await store.getState().loadMoreFor(["a1"]);
+    expect(watermarkFor(store.getState(), ["a1"])?.sessionId).toBe(there[19]!.sessionId);
+    expect(shown(store, ["a1"])).toEqual([
       "cached",
       ...here.map((s) => s.sessionId),
       ...there.slice(0, 20).map((s) => s.sessionId),
     ]);
 
     // Everything read: every row shows.
-    await store.getState().loadMoreFor(["a1"], "active");
-    expect(watermarkFor(store.getState(), ["a1"], "active")).toBeNull();
-    expect(shown(store, ["a1"], "active")).toHaveLength(1 + 12 + 25);
-  });
-
-  it("a folder pages in activity order: an archived conversation resumed yesterday lists first", async () => {
-    // archived-00 was created first and resumed last; creation order would bury it.
-    const archived = activeRun("archived", 12, { over: () => ({ archived: true }) });
-    served.set(key(null, "a1"), [
-      session("own", { createdAt: "2026-09-30T00:00:00.000Z" }),
-      ...archived,
-    ]);
-    const store = boot();
-    await store.getState().reload();
-    fetch.requests.length = 0;
-    await store.getState().loadMoreFor(["a1"], "archived");
-    expect(batchEntries()[0]).toMatchObject({ category: "archived", order: "activity" });
-    expect(shown(store, ["a1"], "archived")).toEqual(archived.slice(0, 10).map((s) => s.sessionId));
-    await store.getState().loadMoreFor(["a1"], "archived");
-    // The second request continues below the tenth row — its cursor, not the overflow row's.
-    expect(entryCursor(batchEntries()[1]!)).toBe(cursorOf(archived[9]!));
-    expect(shown(store, ["a1"], "archived")).toEqual(archived.map((s) => s.sessionId));
+    await store.getState().loadMoreFor(["a1"]);
+    expect(watermarkFor(store.getState(), ["a1"])).toBeNull();
+    expect(shown(store, ["a1"])).toHaveLength(1 + 12 + 25);
   });
 });
 
@@ -736,7 +752,7 @@ describe("a Session that becomes active", () => {
     fetch.requests.length = 0;
     applyUserEvent(store, sessionState("r-08", NOW), () => undefined);
     expect(fetch.requests).toEqual([]);
-    expect(shown(store, ["a1"], "active")[0]).toBe("r-08");
+    expect(shown(store, ["a1"])[0]).toBe("r-08");
   });
 
   it("is fetched from the machine that announced it, and shows at the top", async () => {
@@ -757,7 +773,7 @@ describe("a Session that becomes active", () => {
     ]);
     await adopted(store, "there-11", "M1", NOW);
     expect(machineForSession("there-11")).toBe("M1");
-    expect(shown(store, ["a1"], "active")[0]).toBe("there-11");
+    expect(shown(store, ["a1"])[0]).toBe("there-11");
   });
 
   it("one run's flips share one lookup, and the newest flip lands on the row", async () => {
@@ -786,20 +802,28 @@ describe("a Session that becomes active", () => {
     expect(store.getState().liveStatuses.get("elsewhere")).toBe("running");
   });
 
-  it("an organization's Session, an id deleted here and an id that is gone are never listed, nor asked about twice", async () => {
-    served.set(key(null, "a1"), [session("desk", { client: "org", lastActiveAt: NOW })]);
+  it("an organization's Session, an archived or subagent one, an id deleted here and an id that is gone are never listed, nor asked about twice", async () => {
+    served.set(key(null, "a1"), [
+      session("desk", { client: "org", lastActiveAt: NOW }),
+      // A schedule ran into a Session nobody kept, and a parent's child ran: both run, and
+      // neither is the sidebar's.
+      session("scheduled", { source: "schedule", archived: true, lastActiveAt: NOW }),
+      session("child", { source: "subagent", lastActiveAt: NOW }),
+    ]);
     const store = boot();
     store.setState({ sessions: [session("doomed")] });
     store.getState().remove("doomed");
-    const all = ["desk", "doomed", "vanished"];
+    const all = ["desk", "scheduled", "child", "doomed", "vanished"];
     for (const id of all) applyUserEvent(store, sessionState(id, NOW), () => undefined);
     expect(sessionLookups().map((r) => r.path)).toEqual([
       "/api/sessions/desk",
+      "/api/sessions/scheduled",
+      "/api/sessions/child",
       "/api/sessions/vanished",
     ]);
     await Promise.all(all.map((id) => adopted(store, id, null, NOW)));
     for (const id of all) applyUserEvent(store, sessionState(id, LATER, "idle"), () => undefined);
-    expect(sessionLookups()).toHaveLength(2);
+    expect(sessionLookups()).toHaveLength(4);
     expect(ids(store)).toEqual([]);
   });
 
@@ -826,6 +850,158 @@ describe("a Session that becomes active", () => {
     release();
     await reloading;
     expect(ids(store)[0]).toBe("fresh");
+  });
+});
+
+describe("the Workspace stamps", () => {
+  it("keeps every Session's newest per Workspace for the picker, and the active ones' for the groups' order", async () => {
+    answers.set(key(null, "a1"), {
+      sessions: [session("own")],
+      counts: COUNTS,
+      workspaceCounts: { "/w": COUNTS },
+      // An archived run made after the conversation: it is the Workspace's newest Session.
+      workspaceLatest: { "/w": "2026-09-17T09:00:00.000Z" },
+      workspaceLatestActive: { "/w": "2026-09-16T09:00:00.000Z" },
+    });
+    const store = boot();
+    await store.getState().reload();
+    expect(store.getState().workspaceLatestByAgent.get("a1")).toEqual({
+      "/w": "2026-09-17T09:00:00.000Z",
+    });
+    expect(store.getState().workspaceLatestActiveByAgent.get("a1")).toEqual({
+      "/w": "2026-09-16T09:00:00.000Z",
+    });
+  });
+
+  it("places the groups by an older server's every-Session stamp, the only one it sends", async () => {
+    answers.set(key(null, "a1"), {
+      sessions: [session("own")],
+      counts: COUNTS,
+      workspaceCounts: { "/w": COUNTS },
+      workspaceLatest: { "/w": "2026-09-17T09:00:00.000Z" },
+    });
+    const store = boot();
+    await store.getState().reload();
+    expect(store.getState().workspaceLatestActiveByAgent.get("a1")).toEqual({
+      "/w": "2026-09-17T09:00:00.000Z",
+    });
+  });
+});
+
+describe("archive, unarchive and delete", () => {
+  /** One Agent's two conversations on screen, its pages complete, its totals counted. */
+  async function onScreen() {
+    served.set(key(null, "a1"), [
+      session("kept", { lastActiveAt: "2026-09-16T10:00:00.000Z" }),
+      session("other", { lastActiveAt: "2026-09-16T09:00:00.000Z" }),
+    ]);
+    const store = boot();
+    await store.getState().reload();
+    fetch.requests.length = 0;
+    return store;
+  }
+  const active = (store: ReturnType<typeof boot>) =>
+    store.getState().countsByAgent.get("a1")?.active;
+  const archivedEvent = (sessionId: string, archived: boolean): ServerEvent => ({
+    type: "session_archived",
+    sessionId,
+    projectId: "p",
+    agentId: "a1",
+    archived,
+  });
+  const deletedEvent = (sessionId: string): ServerEvent => ({
+    type: "session_deleted",
+    sessionId,
+    projectId: "p",
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it("moves a row the page archives out of the sidebar in place, and back on unarchive, the totals in step", async () => {
+    const store = await onScreen();
+    const kept = store.getState().sessions.find((s) => s.sessionId === "kept")!;
+    store.getState().replace({ ...kept, archived: true });
+    // Out of the sidebar, still held for the page showing it (which turns into the stub).
+    expect(shown(store, ["a1"])).toEqual(["other"]);
+    expect(ids(store)).toContain("kept");
+    expect(active(store)).toBe(1);
+    store.getState().replace({ ...kept, archived: false });
+    expect(shown(store, ["a1"])).toEqual(["kept", "other"]);
+    expect(active(store)).toBe(2);
+    // A row not held yet (a page's row that fell out of a reload) is put in.
+    store.getState().replace(session("deep", { lastActiveAt: "2026-09-16T11:00:00.000Z" }));
+    expect(shown(store, ["a1"])[0]).toBe("deep");
+    expect(fetch.requests).toEqual([]);
+  });
+
+  it("flips a held row announced elsewhere, and reloads once for unarchived rows it does not hold", async () => {
+    vi.useFakeTimers();
+    const store = await onScreen();
+    applyUserEvent(store, archivedEvent("kept", true), () => undefined);
+    // Gathered first: nothing moves until the batch lands.
+    expect(shown(store, ["a1"])).toEqual(["kept", "other"]);
+    await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
+    expect(shown(store, ["a1"])).toEqual(["other"]);
+    expect(active(store)).toBe(1);
+
+    // The archive page unarchives three it holds none of: one reload brings them in.
+    served
+      .get(key(null, "a1"))!
+      .push(
+        session("u1", { lastActiveAt: "2026-09-16T12:00:00.000Z" }),
+        session("u2", { lastActiveAt: "2026-09-16T12:01:00.000Z" }),
+        session("u3", { lastActiveAt: "2026-09-16T12:02:00.000Z" }),
+      );
+    for (const id of ["u1", "u2", "u3"]) {
+      applyUserEvent(store, archivedEvent(id, false), () => undefined);
+    }
+    await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
+    await vi.runAllTimersAsync();
+    expect(fetch.requests.filter((r) => r.path.endsWith("/sessions/batch"))).toHaveLength(1);
+    expect(shown(store, ["a1"]).slice(0, 3)).toEqual(["u3", "u2", "u1"]);
+  });
+
+  it("asks again about an id it declined while archived, once that Session is unarchived", async () => {
+    vi.useFakeTimers();
+    // Older than a whole page of conversations, so no first page serves it.
+    const late = session("late", {
+      source: "api",
+      archived: true,
+      lastActiveAt: "2026-09-01T09:00:00.000Z",
+    });
+    served.set(key(null, "a1"), [...activeRun("r", 11), late]);
+    const store = boot();
+    await store.getState().reload();
+    applyUserEvent(store, sessionState("late", "2026-09-30T08:00:00.000Z"), () => undefined);
+    await adopted(store, "late", null, "2026-09-30T08:00:00.000Z");
+    expect(ids(store)).not.toContain("late");
+    // Kept now, and running again: the next flip looks it up anew and it joins the list.
+    late.archived = false;
+    applyUserEvent(store, archivedEvent("late", false), () => undefined);
+    await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
+    await vi.runAllTimersAsync();
+    expect(ids(store)).not.toContain("late");
+    late.lastActiveAt = "2026-09-30T08:05:00.000Z";
+    applyUserEvent(store, sessionState("late", late.lastActiveAt), () => undefined);
+    await adopted(store, "late", null, late.lastActiveAt);
+    expect(shown(store, ["a1"])[0]).toBe("late");
+  });
+
+  it("drops and tombstones every deleted Session, held or not, as one batch", async () => {
+    vi.useFakeTimers();
+    const store = await onScreen();
+    for (const id of ["kept", "gone-1", "gone-2"]) {
+      applyUserEvent(store, deletedEvent(id), () => undefined);
+    }
+    // Gathered: a batch of announcements is applied together, not one render each.
+    expect(ids(store)).toEqual(["kept", "other"]);
+    await vi.advanceTimersByTimeAsync(LISTING_CHANGE_DELAY_MS);
+    expect(ids(store)).toEqual(["other"]);
+    expect(active(store)).toBe(1);
+    for (const id of ["kept", "gone-1", "gone-2"]) {
+      expect(store.getState().deletedSessionIds.has(id), id).toBe(true);
+    }
+    expect(fetch.requests).toEqual([]);
   });
 });
 
@@ -939,7 +1115,7 @@ describe("property: every list is a prefix of its activity order, and loads only
           const rows = state.sessions.filter(
             (s) => sessionCategory(s) === "active" && list.holds(s, machineForSession(s.sessionId)),
           );
-          return cutAtWatermark(rows, watermarkFor(state, list.agents, "active", list.group));
+          return cutAtWatermark(rows, watermarkFor(state, list.agents, list.group));
         };
         /** The list's true order, from the servers' rows as they stand. */
         const truth = (list: List) =>
@@ -964,7 +1140,7 @@ describe("property: every list is a prefix of its activity order, and loads only
           if (roll < 0.55) {
             const target = pick(lists());
             const before = new Map(lists().map((list) => [list.name, view(list)]));
-            await store.getState().loadMoreFor(target.agents, "active", target.group);
+            await store.getState().loadMoreFor(target.agents, target.group);
             expectPrefixes(step, `load ${target.name}`);
             for (const list of lists()) {
               const was = before.get(list.name)!;
@@ -1092,15 +1268,24 @@ describe("live statuses outlive the rows", () => {
  * there), so the id in an event is as meaningful from a machine as from here.
  */
 describe("events arriving from a machine", () => {
-  const created = (projectId: string): ServerEvent =>
-    ({ type: "session_created", projectId, agentId: "a1", sessionId: "s1" }) as ServerEvent;
+  const created = (projectId: string, source: SessionSource = "user"): ServerEvent => ({
+    type: "session_created",
+    projectId,
+    agentId: "a1",
+    sessionId: "s1",
+    source,
+  });
 
   it.each([
-    ["p", 2],
-    ["other", 0],
-  ])(
-    "a session_created in Project %s reloads the list %i times, from a machine or here",
-    (projectId, reloads) => {
+    ["p", "user", 2],
+    ["other", "user", 0],
+    // What a program opens is archived until kept, and a child is in no list: nothing to fetch.
+    ["p", "cli", 0],
+    ["p", "api", 0],
+    ["p", "subagent", 0],
+  ] as const)(
+    "a session_created in Project %s for a %s Session reloads the list %i times, from a machine or here",
+    (projectId, source, reloads) => {
       const store = boot();
       let count = 0;
       store.setState({
@@ -1108,8 +1293,8 @@ describe("events arriving from a machine", () => {
           count += 1;
         },
       });
-      applyUserEvent(store, created(projectId), () => undefined, "M1");
-      applyUserEvent(store, created(projectId), () => undefined, null);
+      applyUserEvent(store, created(projectId, source), () => undefined, "M1");
+      applyUserEvent(store, created(projectId, source), () => undefined, null);
       expect(count).toBe(reloads);
     },
   );

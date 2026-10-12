@@ -29,8 +29,8 @@
  *   the add dialog shows only the model id, display name and group, folding
  *   the connection, the test and the rest; the settings dialog keeps the API
  *   key, base URL and actions in view and folds the limits, prices and
- *   capability switches; a refused save opens the fold when a field to fix is
- *   inside it and focuses the first field to fix.
+ *   capability switches; a wrong field inside the closed fold is what opens it
+ *   (Save waits on every field, so the reason it waits must be in view).
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -56,8 +56,8 @@ import {
 import type { RowState } from "../src/features/models/models-page";
 import {
   DetailsFold,
+  foldedErrors,
   foldedSlots,
-  revealOnSave,
 } from "../src/features/models/model-dialog-details";
 import { S } from "../src/lib/strings";
 
@@ -714,27 +714,15 @@ describe("the model dialogs' Details fold", () => {
     }
   });
 
-  it("opens on a refused save when a field to fix is inside it, and focuses the first such field", () => {
+  it("names the wrong fields inside the fold, in the dialog's order, and none in view", () => {
     // Adding a custom model with no base URL anywhere: the field is folded.
-    expect(revealOnSave({ baseUrl: "required" }, true)).toEqual({
-      openDetails: true,
-      focus: "baseUrl",
-    });
+    expect(foldedErrors({ baseUrl: "required" }, true)).toEqual(["baseUrl"]);
     // The same error on a saved model is in view: nothing to open.
-    expect(revealOnSave({ baseUrl: "required" }, false)).toEqual({
-      openDetails: false,
-      focus: "baseUrl",
-    });
-    // A partial price on a saved model opens the fold on the first missing bucket.
-    expect(revealOnSave({ cacheWrite: "x", output: "x" }, false)).toEqual({
-      openDetails: true,
-      focus: "cacheWrite",
-    });
-    // A missing id comes first in the dialog, and still opens the fold for the field behind it.
-    expect(revealOnSave({ modelId: "x", contextWindow: "x" }, true)).toEqual({
-      openDetails: true,
-      focus: "modelId",
-    });
-    expect(revealOnSave({}, true)).toEqual({ openDetails: false, focus: null });
+    expect(foldedErrors({ baseUrl: "required" }, false)).toEqual([]);
+    // A partial price on a saved model: both missing buckets, in the dialog's order.
+    expect(foldedErrors({ output: "x", cacheWrite: "x" }, false)).toEqual(["cacheWrite", "output"]);
+    // The id is an identity field, never folded; the limit behind it is.
+    expect(foldedErrors({ modelId: "x", contextWindow: "x" }, true)).toEqual(["contextWindow"]);
+    expect(foldedErrors({}, true)).toEqual([]);
   });
 });

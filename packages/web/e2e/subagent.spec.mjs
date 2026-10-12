@@ -8,8 +8,9 @@
  * Workspace tabs COEXISTING in one dock (activating one covers, never closes, the other),
  * the historical topology (the old turn's row pins its Task back; closing the tab and
  * reopening from the toolbar returns to the latest), the child-session title generated from
- * the child's own conversation, the sidebar "Subagents" folder, the identity strip's
- * jump-to-session button, and — in a second always-ask session — that an approval INSIDE
+ * the child's own conversation, the child staying out of the sidebar (the Agent panel is its
+ * one door), the identity strip's jump-to-session button, and — in a second always-ask
+ * session — that an approval INSIDE
  * the child stays discoverable (row badge) and actionable from the panel.
  * A dedicated reload-free test drives the auto-open lifecycle (auto-open on the current
  * task's first live spawn, re-armed per task, a mid-task manual close respected, an open
@@ -240,18 +241,15 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
   expect(childMeta, "child trace session_meta").toBeTruthy();
   expect(childMeta.payload.source).toBe("subagent");
 
-  // --- Sidebar: the child session (source=subagent) nests inside the collapsed "Background"
-  // folder (parallel to "Archived" within the same temp-workspace group). Reload first so the
-  // sidebar list carries the persisted title/source, and the folder is back to its default
-  // collapsed state. ---
+  // --- Sidebar: the child session (source=subagent) is in no list — the Agent panel is its
+  // one door. After a reload the sidebar holds the parent and no folder at all, and the chip
+  // still opens the child in the panel. ---
   await page.reload();
   const sidebar = page.getByRole("complementary");
-  const subagentFolder = sidebar.getByRole("button", { name: "后台会话（1）" });
-  await expect(subagentFolder, "collapsed Background folder").toBeVisible();
-  // Collapsed by default: the child row is not rendered until the folder is expanded.
   await expect(sidebar.getByText("Subagent TODO summary")).toHaveCount(0);
-  await subagentFolder.click();
-  await expect(sidebar.getByText("Subagent TODO summary")).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: /^后台会话|^已归档/ })).toHaveCount(0);
+  await openPanelViaChip(page);
+  await expect(page.getByText("Subagent report: 3 TODOs")).toBeVisible();
 });
 
 test("auto-open lifecycle: spawn opens the tab, a plain task keeps it, manual close is respected per task", async ({

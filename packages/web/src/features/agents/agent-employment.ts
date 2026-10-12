@@ -46,14 +46,12 @@ export function employeesLast<T extends Employable>(agents: readonly T[]): T[] {
 
 /**
  * Whether the sidebar's Agent grouping leaves this Agent out: an employee with no development
- * conversation at all — none active and none in its folders. Its desk and ticket sessions are
- * company mode's and are never counted here. An employee that has development conversations
- * keeps its group, and an Agent that is no employee always does (an empty group is how a new
- * Agent is reached from the sidebar).
+ * conversation in the sidebar (`conversations`, its active ones). Its desk and ticket sessions
+ * are company mode's and are never counted here, and its archived conversations live on the
+ * archive page. An employee that has development conversations keeps its group, and an Agent
+ * that is no employee always does (an empty group is how a new Agent is reached from the
+ * sidebar).
  */
-export function dropsEmployeeGroup(
-  agent: Employable,
-  shares: { active: number; folded: number },
-): boolean {
-  return isEmployee(agent) && shares.active === 0 && shares.folded === 0;
+export function dropsEmployeeGroup(agent: Employable, conversations: number): boolean {
+  return isEmployee(agent) && conversations === 0;
 }

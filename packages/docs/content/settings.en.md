@@ -1,11 +1,11 @@
 ---
 title: Settings
-description: Manage your profile, preferences and password, and, as an admin, users, the proxy, upload limits, company mode, the Agent API and plugins.
+description: Manage your profile, preferences, archived chats and password, and, as an admin, users, the proxy, upload limits, company mode, the Agent API and plugins.
 ---
 
-**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences and password, and, for an admin, the server's users, proxy, upload limits, company mode, Agent API and plugins, the sandbox among them.
+**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences, your archived chats and your password, and, for an admin, the server's users, proxy, upload limits, company mode, Agent API and plugins, the sandbox among them.
 
-- Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance), [Keyboard shortcuts](#keyboard-shortcuts) and [Account](#account).
+- Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance), [Keyboard shortcuts](#keyboard-shortcuts), [Archived chats](#archived-chats) and [Account](#account).
 - Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Upload limits](#upload-limits), [Company mode](#company-mode), [Agent API](#agent-api) and [Plugins](#plugins).
 
 ## Open Settings
@@ -25,6 +25,7 @@ The rail is grouped into **Personal** and **Server**:
 | [General](#general) | Personal | Everyone |
 | [Appearance](#appearance) | Personal | Everyone |
 | [Keyboard shortcuts](#keyboard-shortcuts) | Personal | Everyone |
+| [Archived chats](#archived-chats) | Personal | Everyone |
 | [Account](#account) | Personal | Only where a password exists to change |
 | [Users](#users) | Server | Admin only, and not in the desktop app |
 | [Proxy options](#proxy-options) | Server | Admin only |
@@ -88,7 +89,7 @@ The **General** page is personal.
 | --- | --- | --- |
 | **Language** | English / 中文 / System | System follows the browser. |
 | **Currency** | USD $ / CNY ¥ | The display currency for prices. Storage is always USD. Conversion happens only at the edge of the screen. |
-| **Task completion notifications** | On / Off (off by default) | Shows a system notification when a Task finishes while the window is hidden or unfocused. Clicking the notification opens that Session. |
+| **Task completion notifications** | On / Off (off by default) | Shows a system notification when a Task finishes while the window is hidden or unfocused. Clicking the notification opens that Session. Only conversations in the sidebar notify; archived ones stay silent. |
 | **Company mode** | On / Off (on by default) | Shown only while an admin has turned company mode on for the server. Off hides your own **Development** / **Company** switch and nothing else; organizations keep running. See [Company mode](/company-mode). |
 | **Import Trace** | — | Turns a Trace file into a conversation. The row is there only if you own a Project. See [Import a Trace](#import-a-trace). |
 
@@ -149,6 +150,37 @@ As soon as a binding is set, the line under its row says what stands in its way:
 - A combination the browser also uses, such as Ctrl+P or ⌘P for printing: in a browser tab, the binding takes over that browser function.
 
 Bindings are shared by your browsers and the desktop app, so the browser's notes show in the desktop app too. No default sits on a combination the browser keeps. Save keeps Ctrl+S / ⌘S and takes over the browser's Save Page while an editor has focus, so its row carries a note; on a Mac so do the two rows whose defaults Chrome also uses, ⌥⌘P and ⌥⌘N.
+
+## Archived chats
+
+The **Archived chats** page is personal. It lists the archived conversations of every Project you own or are a member of: the ones you archived, and the ones a program opened that you have not unarchived, such as Agent API conversations, the new Sessions of scheduled tasks and the Sessions `penguin run` creates. See [Archived conversations](/chat#archived-conversations) in Chat. The page lists this server's conversations only, not those on connected machines.
+
+At the top are **Search archived chats**, which matches titles regardless of case, and two filters:
+
+| Filter | Options |
+| --- | --- |
+| Source | **All sources**, **User** (the conversations you archived yourself), **API**, **Scheduled** or **CLI** |
+| Project | **All projects**, or one Project by name |
+
+The conversations are grouped by Workspace under their Project. Each group's header names both, as **Project › Workspace**, and the group with the latest activity comes first; temporary workspaces form one group, as in the sidebar. The header also shows how many chats the group holds, such as **3 chats**, and **Select all**. Each row shows the title and the time of the last activity, with:
+
+- a pill naming who opened a conversation a program opened: **API**, **Scheduled** or **CLI** (a conversation you started has none);
+- a running mark while the conversation runs;
+- a **Delete** icon and an **Unarchive** button at the end.
+
+A group shows 10 chats at first. **Show N more chats** reveals 10 more, and **Show less** folds back to 10. Only the first 20 groups show at first; **More groups (N)** below them reveals more.
+
+With no archived conversations the page reads **No archived chats**; when the search or a filter matches nothing, it reads **No matching chats**.
+
+### Unarchive or delete chats
+
+- **Unarchive** on a row puts the conversation back in the sidebar at once. A conversation a program opened then stays in the sidebar through its later runs.
+- To act on several, select their rows: a row's box shows when you point at the row or tab to the box, and always on a touch screen. A bar above the list then reads **N selected**, with **Unarchive**, **Delete** and **Clear selection**; it stays in view, with the search and the filters, while the list scrolls.
+- **Select all** in a group's header selects every chat in the group, including the ones not shown yet, and reads **Deselect all** while they all are. Unticking one row afterwards leaves the rest selected. What **Select all** chose covers the chats its header counted, and no other: a chat archived or opened after the count, or one that ran since, is left alone, and **Delete** skips a chat that is running.
+
+Unarchiving does not ask. Deleting always asks first, and a batch delete names how many chats it removes. Deleting removes the conversations' messages and Traces for good, along with their subagent Sessions.
+
+The page keeps up with changes made elsewhere: it updates when a conversation is archived, unarchived or deleted, or when a program opens a new one, and a row's running mark comes and goes with its run.
 
 ## Account
 

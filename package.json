@@ -18,7 +18,7 @@
     "test:e2e": "pnpm --filter @prismshadow/penguin-core test:e2e",
     "build": "pnpm -r build && pnpm link:cli",
     "link:cli": "pnpm --dir packages/cli link --global || echo '[link:cli] pnpm global directory not configured; skipping the global penguin link (run pnpm setup once first)'",
-    "penguin": "node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data-cli PENGUIN_PROFILE=dev PORT=7369 -- tsx packages/cli/src/penguin.ts",
+    "penguin": "node scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data-cli PENGUIN_PROFILE=dev PORT=7369 -- tsx packages/cli/src/penguin.ts",
     "dev": "concurrently -n server,web -c cyan,magenta \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:server": "pnpm --filter @prismshadow/penguin-server dev",
     "dev:web": "node scripts/dev-prebuild.mjs && pnpm --filter @prismshadow/penguin-web dev",
@@ -27,7 +27,7 @@
     "dev:gallery": "node scripts/dev-prebuild.mjs --install-only && pnpm --filter @prismshadow/penguin-ui-gallery dev",
     "build:site": "node scripts/build-site.mjs",
     "build:a2ui-check": "node scripts/build-a2ui-check.mjs",
-    "desktop": "pnpm -r build && node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data -- pnpm --dir packages/desktop start"
+    "desktop": "pnpm -r build && node scripts/run-with-env.mjs --unset=PENGUIN_CLI_ENTRY PENGUIN_HOME=~/.penguin/dev-data -- pnpm --dir packages/desktop start"
   },
   "devDependencies": {
     "@prismshadow/penguin-cli": "workspace:*",

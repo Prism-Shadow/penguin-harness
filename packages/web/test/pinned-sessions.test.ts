@@ -9,8 +9,9 @@
  *   no-op and loading is empty.
  * - Toggling adds or removes one id without mutating the input; removing an unpinned id
  *   returns the same set, so the caller skips its writes.
- * - The pinned cluster tops a group's active rows, each partition keeping its order; folder
- *   rows ignore pins and a pin of a deleted Session surfaces nothing.
+ * - The pinned cluster tops a group's rows, each partition keeping its order; a pinned row the
+ *   sidebar does not draw (archived, a subagent) and a pin of a deleted Session surface
+ *   nothing.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
@@ -22,7 +23,7 @@ import {
   togglePinnedSession,
 } from "../src/lib/pinned-sessions";
 import type { PinnedSessionsStorage } from "../src/lib/pinned-sessions";
-import { partitionSessions, pinnedFirst } from "../src/lib/session-grouping";
+import { isSidebarRow, pinnedFirst } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 /** Minimal SessionInfo (session-grouping.test.ts convention: only the fields the logic reads matter). */
@@ -127,7 +128,7 @@ describe("togglePinnedSession / removePinnedSession", () => {
 });
 
 describe("pinned ordering composes with the group lists", () => {
-  it("the pinned cluster tops a group's active rows, each partition keeping its own order; stale ids are inert", () => {
+  it("the pinned cluster tops a group's rows, each partition keeping its own order; stale ids are inert", () => {
     const rows = [
       session("s1"),
       session("s2"),
@@ -135,16 +136,12 @@ describe("pinned ordering composes with the group lists", () => {
       session("s4", { archived: true }),
       session("s5", { source: "subagent" }),
     ];
-    // Both grouping modes feed the shared group body the same way: partition first,
-    // then pinnedFirst over the ACTIVE rows only (pinning is an active-list priority).
-    const parts = partitionSessions(rows);
-    const pins = new Set(["s3", "deleted-elsewhere"]);
-    const active = pinnedFirst(parts.active, (s) => s.sessionId, pins);
-    expect(active.map((s) => s.sessionId)).toEqual(["s3", "s1", "s2"]);
-    // Folder rows keep chronological order and membership regardless of pins …
-    expect(parts.archived.map((s) => s.sessionId)).toEqual(["s4"]);
-    expect(parts.background.map((s) => s.sessionId)).toEqual(["s5"]);
-    // … and a stored id of a Session deleted elsewhere never surfaces a row.
-    expect(active.some((s) => s.sessionId === "deleted-elsewhere")).toBe(false);
+    // Every grouping mode feeds the shared group body the same way: the sidebar's own rows
+    // first, then pinnedFirst over them.
+    const pins = new Set(["s3", "s4", "s5", "deleted-elsewhere"]);
+    const shown = pinnedFirst(rows.filter(isSidebarRow), (s) => s.sessionId, pins);
+    // A pinned archived or subagent Session is not the sidebar's, and a stored id of a
+    // Session deleted elsewhere never surfaces a row.
+    expect(shown.map((s) => s.sessionId)).toEqual(["s3", "s1", "s2"]);
   });
 });

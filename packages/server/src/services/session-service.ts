@@ -42,7 +42,12 @@ import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/
 import { badRequest } from "../http/validate.js";
 import type { SessionRow } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
-import { listCategory, readRecordedSource, unrunSource } from "../runtime/session-sources.js";
+import {
+  listCategory,
+  listingMarksOf,
+  readRecordedSource,
+  unrunSource,
+} from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
@@ -169,6 +174,15 @@ export type SessionListOrder = "created" | "activity";
 export interface ActivityCursor {
   lastActiveAt: string;
   sessionId: string;
+}
+
+/** One row the listing rule files as archived (SessionService.archivedRows). */
+export interface ArchivedRow {
+  row: SessionRow;
+  /** The source the row was classified by; absent while its Trace head is unread. */
+  source?: SessionSource;
+  /** Whether a Trace record exists: what toInfo takes for this row. */
+  hasTrace: boolean;
 }
 
 /**
@@ -357,6 +371,8 @@ export class SessionService {
    * Async because `source` is derived from session_meta: a registry miss (Session predating
    * this process) falls back to reading the Trace head once (see sourceOf). `traces` is the
    * list flow's one-walk discovery result; without it a miss locates the shard itself.
+   * `archived` is the listing rule's answer (listCategory), not the bare mark: a background
+   * Session the user never kept reads archived, and a subagent with a stray mark does not.
    *
    * `orgIds` is the list flow's one-query organization map (see listSessions); without it the
    * organization is a point lookup, which is what the single-Session paths want.
@@ -388,7 +404,7 @@ export class SessionService {
       pendingApprovalCount: this.deps.manager.pendingApprovalCount(row.sessionId),
       pendingFollowUpCount: this.deps.manager.pendingFollowUpCount(row.sessionId),
       hasTrace,
-      archived: (row.archivedAt ?? null) !== null,
+      archived: listCategory(source, listingMarksOf(row)) === "archived",
       ...(messagingChannel !== null ? { messagingChannel } : {}),
       ...(orgId !== undefined ? { orgId } : {}),
       ...(row.client !== null && row.client !== undefined ? { client: row.client } : {}),
@@ -423,12 +439,23 @@ export class SessionService {
   }
 
   /**
-   * The list category of a row (see listCategory): none for a `company` Session, archived or
-   * not, which the list never serves; otherwise archived wins (an explicit user action), then
-   * its source's.
+   * The list category of a row (see listCategory): none for a `subagent` or `company` Session,
+   * whatever its marks, which the list never serves; otherwise archived when the user archived
+   * it or when a program opened it and the user has not kept it, else active.
    */
   private async categoryOf(row: SessionRow, hasTrace: boolean): Promise<SessionCategory | null> {
-    return listCategory(await this.sourceOf(row, hasTrace), (row.archivedAt ?? null) !== null);
+    return listCategory(await this.sourceOf(row, hasTrace), listingMarksOf(row));
+  }
+
+  /**
+   * Where one row is listed, for a caller holding just the row (a PATCH, the archive page's
+   * batches). A row the registry already classified costs nothing; any other is looked up
+   * through the trace index once (hasTrace reconciles the Agent), so a subagent Session is
+   * known for one even before any list has walked it.
+   */
+  async listingOf(row: SessionRow): Promise<SessionCategory | null> {
+    const known = this.deps.sources.get(row.sessionId) !== undefined;
+    return this.categoryOf(row, known ? row.hasTrace === true : await this.hasTrace(row));
   }
 
   /**
@@ -453,15 +480,17 @@ export class SessionService {
    * moved row is simply not served again (the client learns of it from `session_state`). The
    * offset form keeps serving the `created` order exactly as before.
    *
-   * `category` filters to one sidebar bucket **before** paging, so offset/limit page
-   * within the category. Filtering needs each walked row's category (a possible
-   * Trace-head read per row, cached in the sources registry); without `withCounts`
-   * the walk stops as soon as the requested page is complete. `withCounts` classifies
-   * every row, a cursor or not, and returns per-category totals over the whole list — plus
-   * the same totals broken down by Workspace path, and each path's newest Session's
-   * `createdAt` — so the sidebar can label the collapsed folders, list every Workspace that holds
-   * Sessions (not only the ones its loaded pages happen to touch) and place the groups
-   * by recency, all without loading them.
+   * `category` filters to one list (the sidebar's `active`, the archive page's `archived`)
+   * **before** paging, so offset/limit page within the category. Filtering needs each walked
+   * row's category (a possible Trace-head read per row, cached in the sources registry);
+   * without `withCounts` the walk stops as soon as the requested page is complete.
+   * `withCounts` classifies every row, a cursor or not, and returns per-category totals over
+   * the whole list — plus the same totals broken down by Workspace path, and each path's
+   * newest Session's `createdAt`, once over every category (`workspaceLatest`, the Workspace
+   * picker's "recently used") and once over the active ones (`workspaceLatestActive`) — so the
+   * sidebar can list every Workspace that holds active Sessions (not only the ones its loaded
+   * pages happen to touch) and place the groups by the recency of what they show, all without
+   * loading them.
    *
    * `workspaceGroup` filters the same way, to one Workspace group (see workspace-group.ts),
    * so a sidebar grouped by Workspace pages each group down its OWN stream instead of
@@ -469,22 +498,22 @@ export class SessionService {
    * its siblings were about to read, and their rows move on screen untouched. The two
    * filters compose; the returned counts stay whole-Agent either way.
    *
-   * A `company` Session — company mode's desk and ticket Sessions, which only company mode's
-   * own views list — belongs to no category (listCategory), archived or not: every classified
-   * form of the list (`category`, `workspaceGroup` or `withCounts`) leaves it out of the page,
-   * the totals, the Workspace breakdown and its stamps alike. The plain form, which classifies
-   * nothing, still serves every row.
+   * A `subagent` or `company` Session — a child its parent's Agent panel opens, company mode's
+   * desk and ticket Sessions — belongs to no category (listCategory), whatever its marks: every
+   * classified form of the list (`category`, `workspaceGroup` or `withCounts`) leaves it out of
+   * the page, the totals, the Workspace breakdown and its stamps alike. The plain form, which
+   * classifies nothing, still serves every row.
    *
    * `excludeOrg` drops the rows an organization owns (its desk and ticket sessions, and the
    * sub-sessions they spawned) from the stream BEFORE anything else looks at it — the page,
-   * `counts`, `workspaceCounts`, `workspaceLatest` and the limit+1 "has more" all describe the
+   * `counts`, `workspaceCounts`, both Workspace stamps and the limit+1 "has more" all describe the
    * same own-rows stream. It is what development mode's list asks for: that list draws the
    * user's own conversations, and a total or a stamp that still counted a desk or a ticket
-   * session would make its Workspace appear as a group the list can never fill. The `company`
-   * rule above does not replace it: the sub-sessions are `subagent` Sessions, a person's
-   * conversation attached to a ticket is stamped `org` but stays `user`, and a row the
-   * organization caches name before the reconcile pass stamps it reads as `user`. Without the
-   * flag every row is served, whichever client created it, but for that rule.
+   * session would make its Workspace appear as a group the list can never fill. The rule above
+   * does not replace it: a person's conversation attached to a ticket is stamped `org` but
+   * stays `user`, and a row the organization caches name before the reconcile pass stamps it
+   * reads as `user`. Without the flag every row is served, whichever client created it, but
+   * for that rule.
    */
   async listSessions(
     projectId: string,
@@ -502,36 +531,10 @@ export class SessionService {
     counts?: SessionCategoryCounts;
     workspaceCounts?: Record<string, SessionCategoryCounts>;
     workspaceLatest?: Record<string, string>;
+    workspaceLatestActive?: Record<string, string>;
   }> {
     const { paging, order = "created", category, workspaceGroup, withCounts, excludeOrg } = opts;
-    const rows = new Map(
-      this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
-    );
-    // One query for the whole Project's organization-owned sessions, looked up per row
-    // below: the company caches are small, and a lookup per row would put a statement
-    // behind every entry of a long sidebar list.
-    const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
-    if (excludeOrg) {
-      // The durable `client` stamp answers first: it survives the organization and is
-      // inherited by sub-sessions, which no cache names. The caches catch a row the
-      // reconcile pass has not stamped yet.
-      for (const [id, row] of rows) if (row.client === "org" || orgIds.has(id)) rows.delete(id);
-    }
-
-    let traces: ReadonlySet<string> | undefined;
-    if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
-      // Hydration pass: some rows predate this process and are unclassified — one
-      // reconciled index read supplies discovery so sourceOf's facts lookups and the
-      // has_trace cache need no per-row work. Steady state (everything classified)
-      // skips this.
-      traces = await this.discoverTraces(projectId, agentId);
-      for (const row of rows.values()) {
-        if (!row.hasTrace && traces.has(row.sessionId)) {
-          row.hasTrace = true;
-          this.deps.sessions.markHasTrace(row.sessionId);
-        }
-      }
-    }
+    const { rows, orgIds, traces } = await this.walkRows(projectId, agentId, excludeOrg === true);
 
     const sorted = [...rows.values()].sort(
       order === "activity" ? compareActivityDesc : compareCreatedDesc,
@@ -558,9 +561,10 @@ export class SessionService {
     }
 
     const want = paging ? skip + paging.limit : Infinity;
-    const counts: SessionCategoryCounts = { active: 0, background: 0, archived: 0 };
+    const counts: SessionCategoryCounts = { active: 0, archived: 0 };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const workspaceLatest: Record<string, string> = {};
+    const workspaceLatestActive: Record<string, string> = {};
     const matched: SessionRow[] = [];
     for (const [i, row] of sorted.entries()) {
       // Rows above a cursor are the client's already: never served, and classified only for
@@ -569,17 +573,25 @@ export class SessionService {
       if (!servable && !withCounts) continue;
       if (!withCounts && matched.length >= want) break;
       const cat = await this.categoryOf(row, rowHasTrace(row));
-      // A company Session is in no category: neither served nor counted, nor stamped on its
-      // Workspace, so no total describes a row the list cannot serve.
+      // A subagent or company Session is in no category: neither served nor counted, nor
+      // stamped on its Workspace, so no total describes a row the list cannot serve.
       if (cat === null) continue;
       counts[cat] += 1;
       if (withCounts) {
-        const ws = (workspaceCounts[row.workspace] ??= { active: 0, background: 0, archived: 0 });
+        const ws = (workspaceCounts[row.workspace] ??= { active: 0, archived: 0 });
         ws[cat] += 1;
-        // A path's newest Session by creation, whichever order the walk is in.
+        // A path's newest Session by creation, whichever order the walk is in — and apart, its
+        // newest active one: an archived Session must not move a sidebar group it is not in.
         const latest = workspaceLatest[row.workspace];
         if (latest === undefined || row.createdAt.localeCompare(latest) > 0) {
           workspaceLatest[row.workspace] = row.createdAt;
+        }
+        const latestActive = workspaceLatestActive[row.workspace];
+        if (
+          cat === "active" &&
+          (latestActive === undefined || row.createdAt.localeCompare(latestActive) > 0)
+        ) {
+          workspaceLatestActive[row.workspace] = row.createdAt;
         }
       }
       const wanted =
@@ -589,7 +601,75 @@ export class SessionService {
       if (wanted && matched.length < want) matched.push(row);
     }
     const sessions = await toPage(paging ? matched.slice(skip, want) : matched);
-    return withCounts ? { sessions, counts, workspaceCounts, workspaceLatest } : { sessions };
+    return withCounts
+      ? { sessions, counts, workspaceCounts, workspaceLatest, workspaceLatestActive }
+      : { sessions };
+  }
+
+  /**
+   * The archive page's walk (services/archived-sessions-service.ts): every row of the Agent the
+   * listing rule files as archived — the rows `listSessions` serves with `category: "archived"`
+   * and `excludeOrg`, classified the same way — with the source each was classified by and
+   * whether it has a Trace. It builds no SessionInfo: the page makes one (toInfo) only for the
+   * rows a response carries, so a request costs a classification per archived row, not a full
+   * row view per archived row.
+   */
+  async archivedRows(projectId: string, agentId: string): Promise<ArchivedRow[]> {
+    const { rows, traces } = await this.walkRows(projectId, agentId, true);
+    const out: ArchivedRow[] = [];
+    for (const row of rows.values()) {
+      const hasTrace = traces ? traces.has(row.sessionId) : row.hasTrace === true;
+      const source = await this.sourceOf(row, hasTrace);
+      if (listCategory(source, listingMarksOf(row)) !== "archived") continue;
+      out.push({ row, hasTrace, ...(source !== undefined ? { source } : {}) });
+    }
+    return out;
+  }
+
+  /**
+   * The rows a list walk starts from: the Agent's index rows, an organization's left out when
+   * `excludeOrg` asks (see listSessions), with the Project's organization map; and when any row
+   * predates this process, the one reconciled Trace discovery (`traces`) that lets every row be
+   * classified without per-row work and backfills the `has_trace` cache. Steady state —
+   * every row classified — skips the discovery and leaves `traces` absent.
+   */
+  private async walkRows(
+    projectId: string,
+    agentId: string,
+    excludeOrg: boolean,
+  ): Promise<{
+    rows: Map<string, SessionRow>;
+    orgIds: ReadonlyMap<string, string>;
+    traces: ReadonlySet<string> | undefined;
+  }> {
+    const rows = new Map(
+      this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
+    );
+    // One query for the whole Project's organization-owned sessions, looked up per row
+    // below: the company caches are small, and a lookup per row would put a statement
+    // behind every entry of a long sidebar list.
+    const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
+    if (excludeOrg) {
+      // The durable `client` stamp answers first: it survives the organization and is
+      // inherited by sub-sessions, which no cache names. The caches catch a row the
+      // reconcile pass has not stamped yet.
+      for (const [id, row] of rows) if (row.client === "org" || orgIds.has(id)) rows.delete(id);
+    }
+
+    let traces: ReadonlySet<string> | undefined;
+    if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
+      // Hydration pass: some rows predate this process and are unclassified — one
+      // reconciled index read supplies discovery so sourceOf's facts lookups and the
+      // has_trace cache need no per-row work.
+      traces = await this.discoverTraces(projectId, agentId);
+      for (const row of rows.values()) {
+        if (!row.hasTrace && traces.has(row.sessionId)) {
+          row.hasTrace = true;
+          this.deps.sessions.markHasTrace(row.sessionId);
+        }
+      }
+    }
+    return { rows, orgIds, traces };
   }
 
   /**
