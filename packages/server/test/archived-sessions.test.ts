@@ -24,7 +24,8 @@
  *   it; an id the user cannot open is reported missing.
  * - Given a group's batch pinned to the time its count was read, it acts on the Sessions that
  *   count saw: one archived or created after it is left alone, and so is a running one, which a
- *   group's delete never aborts (deleting it by id still does).
+ *   group's delete never aborts (deleting it by id still does); a row it excludes — unticked
+ *   after Select all — stays where it is.
  * - Given a running archived Session, delete aborts its run before the files go.
  * - Given a subagent or company Session, archiving or unarchiving it is a 409 that changes
  *   nothing.
@@ -436,6 +437,19 @@ describe("the archive page", () => {
     expect(t.deps.sessionsRepo.findById(running)).toBeNull();
   });
 
+  it("leaves out the rows a group's batch excludes: the ones unticked after Select all", async () => {
+    const w = await world();
+    const ws = "/tmp/arch-ws-exclude";
+    const ago = (seconds: number) => new Date(Date.now() - seconds * 1000).toISOString();
+    const unticked = await seed(w.p1, { source: "cli", workspace: ws, at: ago(60) });
+    const chosen = await seed(w.p1, { source: "cli", workspace: ws, at: ago(50) });
+    const snapshot = await groups(w.owner, `?projectId=${w.p1}`);
+    const filter = { projectId: w.p1, workspace: ws, until: snapshot.asOf, exclude: [unticked] };
+    expect(await batch(w.owner, "unarchive", { filter })).toEqual({ done: 1, missing: [] });
+    expect(await archivedFlag(w.owner, chosen)).toBe(false);
+    expect(await archivedFlag(w.owner, unticked)).toBe(true);
+  });
+
   it("aborts a running Session's run before deleting it", async () => {
     const w = await world();
     const running = await seed(w.p1, { source: "cli" });
@@ -544,6 +558,8 @@ describe("the archive page", () => {
     expect(await post({ sessionIds: ["../etc"] })).toBe(400);
     expect(await post({ filter: { source: "subagent" } })).toBe(400);
     expect(await post({ filter: { until: "yesterday" } })).toBe(400);
+    expect(await post({ filter: { exclude: [] } })).toBe(400);
+    expect(await post({ filter: { exclude: ["../etc"] } })).toBe(400);
     expect(await archivedFlag(w.owner, ids.cliA)).toBe(true);
   });
 });

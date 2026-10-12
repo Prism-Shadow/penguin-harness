@@ -230,7 +230,7 @@ export class ArchivedSessionsService {
    * The rows a batch acts on. The ids form looks each one up and keeps the ones the user can
    * open, reporting the rest as missing (an id never says whether a Session the user cannot
    * open exists). The filter form expands to the archived rows it matches, as the listing
-   * shows them.
+   * shows them — as its `until` count saw them, without the ones it `exclude`s.
    */
   private async resolve(
     userId: string,
@@ -247,7 +247,10 @@ export class ArchivedSessionsService {
       return { rows, missing };
     }
     const { until } = target.filter;
+    // Rows unticked after the group was chosen whole stay where they are.
+    const excluded = new Set(target.filter.exclude);
     for (const { row: listed } of await this.matching(userId, target.filter)) {
+      if (excluded.has(listed.sessionId)) continue;
       const row = this.deps.sessions.findById(listed.sessionId);
       if (row !== null && (until === undefined || countedBy(row, until))) rows.push(row);
     }

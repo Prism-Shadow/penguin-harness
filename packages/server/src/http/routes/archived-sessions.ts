@@ -8,8 +8,9 @@
  *   POST /unarchive   unarchive explicit ids, or every archived row a filter matches
  *   POST /delete      delete them the same way
  *
- * A group's batch is a filter carrying the snapshot its count was read at (`until`, the groups
- * response's `asOf`), so it acts on the rows the user saw counted and on none that came after.
+ * A group chosen whole (Select all) is a filter carrying the snapshot its count was read at
+ * (`until`, the groups response's `asOf`) and the rows unticked since (`exclude`), so it acts on
+ * the rows the user saw counted and kept chosen, and on none that came after.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -90,6 +91,17 @@ function parseUntil(raw: unknown): string {
   return raw;
 }
 
+/** Session ids a filter leaves out: 1–500 of them. */
+function parseExclude(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > BATCH_MAX) {
+    throw badRequest(`exclude must be an array of 1–${BATCH_MAX} Session ids.`);
+  }
+  if (!raw.every((id) => typeof id === "string" && isValidId(id))) {
+    throw badRequest("exclude must hold Session ids.");
+  }
+  return raw as string[];
+}
+
 /** A batch's body: `{sessionIds}` (1–500 ids) or `{filter}`, exactly one of them. */
 async function parseBatch(c: Context<AppEnv>): Promise<ArchivedSessionsBatch> {
   const body = await readJson(c);
@@ -116,6 +128,7 @@ async function parseBatch(c: Context<AppEnv>): Promise<ArchivedSessionsBatch> {
       ...parseQuery(raw),
       ...(raw.workspace !== undefined ? { workspace: parseWorkspace(raw.workspace) } : {}),
       ...(raw.until !== undefined ? { until: parseUntil(raw.until) } : {}),
+      ...(raw.exclude !== undefined ? { exclude: parseExclude(raw.exclude) } : {}),
     },
   };
 }

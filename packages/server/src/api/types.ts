@@ -2043,6 +2043,8 @@ export interface ArchivedSessionsBatchFilter extends ArchivedSessionsQuery {
    * not active since are acted on, so one archived or run after the count is left alone.
    */
   until?: string;
+  /** Sessions left out although the filter matches them — rows unticked after Select all (1–500). */
+  exclude?: string[];
 }
 
 /** POST /api/me/archived-sessions/unarchive and /delete. */

@@ -1113,7 +1113,7 @@ function archivedRows(store: DemoStore, query: URLSearchParams): SessionInfo[] {
     .sort(byActivity);
 }
 
-/** The ids a batch names, or every archived row its filter matches. */
+/** The ids a batch names, or every archived row its filter matches but the ones it excludes. */
 function batchIds(store: DemoStore, body: unknown): string[] {
   const b = record(body);
   if (Array.isArray(b.sessionIds)) return b.sessionIds.filter((id) => typeof id === "string");
@@ -1122,7 +1122,10 @@ function batchIds(store: DemoStore, body: unknown): string[] {
   for (const key of ["q", "source", "projectId", "workspace"]) {
     if (typeof filter[key] === "string") params.set(key, filter[key] as string);
   }
-  return archivedRows(store, params).map((s) => s.sessionId);
+  const excluded = new Set(Array.isArray(filter.exclude) ? filter.exclude : []);
+  return archivedRows(store, params)
+    .map((s) => s.sessionId)
+    .filter((id) => !excluded.has(id));
 }
 
 router
