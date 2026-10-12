@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#1066](https://github.com/Prism-Shadow/penguin-harness/pull/1066)
 
 [English](2026-10-12-rsi-lists-from-library.md)
 
