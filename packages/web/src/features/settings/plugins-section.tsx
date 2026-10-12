@@ -1,12 +1,16 @@
 /**
- * Plugin options (admin only, server-global): one card per settings entry — a group a module
- * contributes (the sandbox) or a loaded plugin's declared configuration — drawn from its
- * schema: a string, a secret, a boolean, a number, a choice, a list of lines or a table (a
- * row per preset, say; plugin-config-table.tsx) per field, so the page knows nothing about any
- * particular entry. Fields a group marks `advanced` sit in a fold under the others, collapsed
- * by default (advanced-fold.tsx). A group with a `switch` draws that field alone while it is
- * off, and one that reports a `backend` it lacks offers to install it when the switch is turned
- * on (sandbox-backend-prompt.tsx). An entry naming a
+ * At the top, apart from everything under it, the Plugins page's "incompatible plugins only"
+ * switch: a display preference of this browser, not server configuration, which commits when
+ * flipped and which the page, open under this dialog, follows at once (incompatible-only.ts).
+ *
+ * Under it, ruled off, plugin options (admin only, server-global): one card per settings entry
+ * — a group a module contributes (the sandbox) or a loaded plugin's declared configuration —
+ * drawn from its schema: a string, a secret, a boolean, a number, a choice, a list of lines or
+ * a table (a row per preset, say; plugin-config-table.tsx) per field, so the page knows nothing
+ * about any particular entry. Fields a group marks `advanced` sit in a fold under the others,
+ * collapsed by default (advanced-fold.tsx). A group with a `switch` draws that field alone while
+ * it is off, and one that reports a `backend` it lacks offers to install it when the switch is
+ * turned on (sandbox-backend-prompt.tsx). An entry naming a
  * `parent` is drawn inside that card (a sandbox backend's own options inside the sandbox's) and
  * saved with it; notices the entry reports sit under its title. How a card commits — switches
  * when flipped, everything typed on the card's own Save — is plugin-config-card.tsx. A secret
@@ -41,13 +45,19 @@ import {
 } from "../../lib/sandbox-backend-prompt";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { MachinePicker } from "../machines/machine-picker";
+import {
+  usePluginsIncompatibleOnly,
+  writePluginsIncompatibleOnly,
+} from "../plugins/incompatible-only";
 import { PluginCard } from "./plugin-config-card";
 import { withLiveParts } from "./plugin-config-live";
 import { SandboxBackendPrompt } from "./sandbox-backend-prompt";
 import {
   ConfirmModal,
   NoticeStrip,
+  SettingsGroup,
   SettingsSection,
+  ToggleRow,
   guardLeave,
   toastError,
   toastSuccess,
@@ -109,6 +119,9 @@ export function ConfigMachinePicker({
   );
 }
 
+/** The server's part of the page: the machine picker and the cards, under a rule. */
+const SERVER_PART = "space-y-4 border-t border-line-muted pt-4";
+
 export function PluginsSection({ focus }: { focus?: string } = {}) {
   const { locale } = useLocale();
   const localized = (en: string | undefined, zhText: string | undefined) =>
@@ -135,6 +148,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   /** The backend package the install prompt offers, while it is open. */
   const [offered, setOffered] = useState<string[] | null>(null);
   const [installing, setInstalling] = useState(false);
+  const incompatibleOnly = usePluginsIncompatibleOnly();
 
   /** The machine's answer becomes what every card shows; a card with unsaved edits keeps them. */
   const adopt = (list: PluginConfigEntry[]) => setEntries(list);
@@ -306,7 +320,25 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       />
     ) : null;
 
-  if (entries === null) return <SettingsSection>{picker}</SettingsSection>;
+  // This browser's view of the Plugins page, ruled off from the server's settings below it.
+  const viewRow = (
+    <SettingsGroup>
+      <ToggleRow
+        label={S.settings.pluginsIncompatibleOnly}
+        checked={incompatibleOnly}
+        onChange={(on) => writePluginsIncompatibleOnly(on)}
+      />
+    </SettingsGroup>
+  );
+
+  if (entries === null) {
+    return (
+      <SettingsSection>
+        {viewRow}
+        {picker !== null && <div className={SERVER_PART}>{picker}</div>}
+      </SettingsSection>
+    );
+  }
 
   // A card per entry with no parent on the page; an entry whose parent is not listed stands
   // on its own rather than disappearing.
@@ -314,27 +346,32 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   const cards = entries.filter((e) => e.parent === undefined || !names.has(e.parent));
   return (
     <SettingsSection>
-      {picker}
-      {machine !== null && loadError !== null && (
-        <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
-          {S.plugins.machineUnreadable(nameOf(machine), loadError)}
-        </NoticeStrip>
+      {viewRow}
+      {(picker !== null || loadError !== null || cards.length > 0) && (
+        <div className={SERVER_PART}>
+          {picker}
+          {machine !== null && loadError !== null && (
+            <NoticeStrip tone="attention" as="p" className="rounded-md px-3 py-2 text-xs">
+              {S.plugins.machineUnreadable(nameOf(machine), loadError)}
+            </NoticeStrip>
+          )}
+          <FocusCard focus={focus} ready={entries.length > 0} />
+          {cards.map((card) => (
+            <PluginCard
+              key={card.name}
+              members={[card, ...entries.filter((e) => e.parent === card.name)]}
+              machine={machine}
+              busy={busy}
+              setBusy={setBusy}
+              locale={locale}
+              onStored={adoptOne}
+              onStoredAll={adopt}
+              onAction={askAction}
+              onSwitchedOn={offerBackend}
+            />
+          ))}
+        </div>
       )}
-      <FocusCard focus={focus} ready={entries.length > 0} />
-      {cards.map((card) => (
-        <PluginCard
-          key={card.name}
-          members={[card, ...entries.filter((e) => e.parent === card.name)]}
-          machine={machine}
-          busy={busy}
-          setBusy={setBusy}
-          locale={locale}
-          onStored={adoptOne}
-          onStoredAll={adopt}
-          onAction={askAction}
-          onSwitchedOn={offerBackend}
-        />
-      ))}
       <ConfirmModal
         open={pendingAction !== null}
         title={S.settings.pluginActionTitle}
