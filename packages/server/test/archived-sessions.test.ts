@@ -35,7 +35,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestBegin, sessionMeta, subagentEvent, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
@@ -61,10 +61,14 @@ describe("the archive page", () => {
   let worlds = 0;
   let seq = 0;
 
-  beforeAll(async () => {
+  // One app per scenario, so each teardown removes one world's data root. Every Project
+  // carries the built-in Agent's skills and the built-in Benchmarks (about 380 entries, six
+  // Projects to a world): one root shared by all the worlds grew to some 35,000 entries, and
+  // removing them in a single afterAll outran the 30 s hook budget on the Windows runner.
+  beforeEach(async () => {
     t = await createTestApp();
   });
-  afterAll(async () => {
+  afterEach(async () => {
     await t.cleanup();
   });
 
