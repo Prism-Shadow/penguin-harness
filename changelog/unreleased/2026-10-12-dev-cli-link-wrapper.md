@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** fix
 - **Scope:** `cli`, `tooling`
+- **PR:** [#1065](https://github.com/Prism-Shadow/penguin-harness/pull/1065)
 
 [中文版](2026-10-12-dev-cli-link-wrapper.zh.md)
 
