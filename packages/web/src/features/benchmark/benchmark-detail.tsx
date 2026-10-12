@@ -304,7 +304,7 @@ function caseAskParams(
  * Cases per page of the list: a Benchmark of many cases pages them rather than lengthening the
  * page, each case one line.
  */
-const CASES_PER_PAGE = 10;
+const CASES_PER_PAGE = 5;
 
 function CasesSection({
   cases,
