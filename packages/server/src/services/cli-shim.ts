@@ -220,11 +220,14 @@ export interface ShimLaunch {
 
 /**
  * The database a launcher names besides the root: `dbPath` unless it is the root's default
- * file, or a database no other process can open (`:memory:`).
+ * file, or a database no other process can open (`:memory:`). Named by its absolute path: the
+ * server opened a relative PENGUIN_WEB_DB against its own working directory, and the CLI runs in
+ * whichever directory it is called from.
  */
 function nonDefaultDatabase(root: string, dbPath: string | undefined): string | null {
   if (dbPath === undefined || dbPath === ":memory:") return null;
-  return path.resolve(dbPath) === path.resolve(root, "web.db") ? null : dbPath;
+  const file = path.resolve(dbPath);
+  return file === path.resolve(root, "web.db") ? null : file;
 }
 
 /** A string as one POSIX shell word: single-quoted, with each embedded quote spliced as `'\''`. */

@@ -422,6 +422,11 @@ describe.skipIf(!POSIX)("a penguin started through the shim", () => {
     // A caller who chose another root chose its database too: nothing of this server's is added.
     expect(seen({ PENGUIN_HOME: "/elsewhere" })).toEqual({ home: "/elsewhere", db: null });
 
+    // A relative PENGUIN_WEB_DB is the file the server opened from its own working directory,
+    // whichever directory the CLI is then run in (here the root, not this process's cwd).
+    write(path.join("state", "web.db"));
+    expect(seen({})).toEqual({ home: root, db: path.resolve("state", "web.db") });
+
     // The default file, and a database only the server's own process can open, go unnamed.
     for (const dbPath of [path.join(root, "web.db"), ":memory:"]) {
       write(dbPath);
