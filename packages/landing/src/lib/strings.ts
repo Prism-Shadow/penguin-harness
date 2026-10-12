@@ -55,8 +55,10 @@ export const zh = {
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
-      { value: "1000+ 模型", label: "接入主流供应商，随时切换" },
-      { value: "100% 开源", label: "Apache-2.0 协议，本地部署" },
+      { value: "1000+ 模型", label: "支持主流供应商" },
+      { value: "跨平台部署", label: "Linux · Windows · macOS" },
+      { value: "100% 开源", label: "Apache 2.0 协议" },
+      { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],
     /** The three catalogue rows under the stat tiles; their entries live in lib/rsi-stats.ts. */
     supportedModelsLabel: "支持模型",

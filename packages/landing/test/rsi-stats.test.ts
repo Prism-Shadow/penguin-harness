@@ -95,9 +95,9 @@ describe("hero catalogue ↔ its sources", () => {
   });
 
   for (const { file, dict } of DICTIONARIES) {
-    it(`${file} has one kind per Benchmark and no counts in the stat tiles`, () => {
+    it(`${file} has one kind per Benchmark and no catalogue counts in the stat tiles`, () => {
       expect(dict.hero.benchmarkKinds).toHaveLength(BENCHMARKS.length);
-      expect(dict.hero.stats).toHaveLength(2);
+      expect(dict.hero.stats).toHaveLength(4);
       for (const stat of dict.hero.stats) {
         expect(stat.value).not.toMatch(/算法|Benchmark|Algorithms|Reproductions/);
       }
