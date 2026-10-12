@@ -243,7 +243,7 @@ describe("trace-service", () => {
     ];
   };
 
-  it("prices each Request at the tier its own timestamp ran in, and the file adds up to what the cost center bills the same rows", async () => {
+  it("prices each Request at the tier its own timestamp ran in, and the file adds up to what the cost center bills the same rows, bucket by bucket", async () => {
     // A DeepSeek reference carries the catalog's Beijing-hours schedule; the lookup answers
     // both tiers, as project-config-service does for a row still at the catalog's price.
     const REF = { provider: "deepseek", model_id: "deepseek-flash" };
@@ -273,10 +273,17 @@ describe("trace-service", () => {
       const peakCost = (10 * 1 + 1 * 2 + 5 * 4) / 1e6;
       expect(a.tasks.map((t) => t.cost)).toEqual([peakCost, peakCost / 2, peakCost / 2]);
       expect(a.cost).toBeCloseTo(peakCost * 2, 12);
+      // Split at the same per-Request tiers: one Request at peak and two at half the rate make
+      // each bucket twice its peak price, and the three parts add up to the file's cost.
+      const parts = a.costParts!;
+      expect(parts.cacheRead).toBeCloseTo((10 * 1 * 2) / 1e6, 12);
+      expect(parts.cacheWrite).toBeCloseTo((1 * 2 * 2) / 1e6, 12);
+      expect(parts.output).toBeCloseTo((5 * 4 * 2) / 1e6, 12);
+      expect(parts.cacheRead + parts.cacheWrite + parts.output).toBeCloseTo(a.cost!, 12);
       expect(lookups).toEqual([`${P}/deepseek/deepseek-flash`]);
 
       // The same three requests as usage rows, priced by the cost center's session grouping —
-      // the figure the conversation toolbar shows — land on the file's total.
+      // the figure the conversation toolbar shows — land on the file's total and its split.
       const db = openDatabase(":memory:");
       try {
         const rows = wire(UsageRepo, { db });
@@ -304,7 +311,11 @@ describe("trace-service", () => {
           clock: { now: () => new Date() },
         });
         const res = await center.query(P, { groupBy: "session" });
-        expect(res.groups.find((g) => g.key === S)?.cost).toBeCloseTo(a.cost!, 12);
+        const row = res.groups.find((g) => g.key === S);
+        expect(row?.cost).toBeCloseTo(a.cost!, 12);
+        for (const k of ["cacheRead", "cacheWrite", "output"] as const) {
+          expect(row?.costParts?.[k], k).toBeCloseTo(parts[k], 12);
+        }
       } finally {
         db.close();
       }
@@ -345,6 +356,7 @@ describe("trace-service", () => {
       const unpriced = await priced.service.analyze(P, A, S, 2);
       expect(unpriced.tasks.map((t) => t.cost)).toEqual([undefined]);
       expect(unpriced.cost).toBeUndefined();
+      expect(unpriced.costParts).toBeUndefined();
 
       const legacy = metaPayload({ model_id: "m1" }) as Partial<SessionMetaPayload>;
       delete legacy.provider;

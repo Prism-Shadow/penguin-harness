@@ -54,7 +54,13 @@ import type { SessionRow } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
-import { ratesAt, requestCostUsd } from "./usage-service.js";
+import {
+  ratesAt,
+  requestCostParts,
+  requestCostUsd,
+  sumCostParts,
+  ZERO_COST_PARTS,
+} from "./usage-service.js";
 import type { PricingLookup, TieredRates } from "./usage-service.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import {
@@ -1092,6 +1098,9 @@ export class TraceService implements Traces {
       }
       return t;
     };
+    // The file's cost split by pricing bucket, summed where each turn's `cost` is, from the same
+    // Request's Tokens and rates: it covers exactly the Requests the file's `cost` does.
+    let costParts = ZERO_COST_PARTS;
 
     /**
      * Which turn each message belongs to: **decided definitively in one
@@ -1367,21 +1376,19 @@ export class TraceService implements Traces {
               // Priced per Request, at the tier this Request's own timestamp fell in — the
               // rule the cost center applies to the usage row this same event produced, so
               // the two figures for one request are the same figure.
-              t.cost =
-                (t.cost ?? 0) +
-                requestCostUsd(
-                  {
-                    cacheRead: request?.cache_read ?? 0,
-                    cacheWrite: request?.cache_write ?? 0,
-                    output: request?.output ?? 0,
-                  },
-                  ratesAt(
-                    pricing.rates,
-                    pricing.provider,
-                    pricing.modelId,
-                    new Date(msg.timestamp),
-                  ),
-                );
+              const counts = {
+                cacheRead: request?.cache_read ?? 0,
+                cacheWrite: request?.cache_write ?? 0,
+                output: request?.output ?? 0,
+              };
+              const rates = ratesAt(
+                pricing.rates,
+                pricing.provider,
+                pricing.modelId,
+                new Date(msg.timestamp),
+              );
+              t.cost = (t.cost ?? 0) + requestCostUsd(counts, rates);
+              costParts = sumCostParts(costParts, requestCostParts(counts, rates));
             }
             if (!compactionActive) {
               // The context snapshot only takes non-compaction Requests: tokens
@@ -1557,7 +1564,7 @@ export class TraceService implements Traces {
       elapsedMs,
       apiMs,
       toolMs,
-      ...(cost !== undefined ? { cost } : {}),
+      ...(cost !== undefined ? { cost, costParts } : {}),
       ...(modelContextWindow !== undefined ? { modelContextWindow } : {}),
       requests,
       tasks,

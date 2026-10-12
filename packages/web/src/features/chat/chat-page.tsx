@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
+  CostParts,
   ModelRefDto,
   ModelsResponse,
   SessionInfo,
@@ -95,6 +96,7 @@ import { useTheme } from "../../state/theme";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Truncated } from "../../components/ui/truncated";
+import { CostPartsRows, StatHint } from "../../components/ui/stat-hint";
 import { MessageStream } from "./message-stream";
 import type { A2uiActions, StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
@@ -234,7 +236,8 @@ interface HeaderStats {
   /**
    * The elapsed time's API / tool breakdown, already parenthesised, or null when neither
    * component has anything to report yet (a conversation that has not run shows the bare
-   * time rather than a row of zeroes).
+   * time rather than a row of zeroes). Printed in the details card only: the chip is the
+   * card's trigger and shows the total alone.
    */
   elapsedSplit: string | null;
 }
@@ -353,6 +356,10 @@ export function ChatPage() {
     cacheWrite: number;
     output: number;
   } | null>(null);
+  // The recorded cost's priced parts from the same fetch (the details card's cost "?"). They
+  // sum to the recorded cost, not to the live estimate the chip adds on top mid-run, so they
+  // can trail it until the idle refresh reconciles the two.
+  const [usageCostParts, setUsageCostParts] = useState<CostParts | null>(null);
   // A mid-chat thinking-level pick staged behind the confirm dialog (issue #310): some
   // providers key their prompt PREFIX on the thinking level, so switching with history in
   // place invalidates the provider's prefix cache and the next request re-bills the whole
@@ -1049,7 +1056,7 @@ export function ChatPage() {
   // thinking-level switch staged behind its dialog (per-session UI state — a compaction
   // that self-heals to a new session id routes through here too and drops the held pick),
   // a model switch waiting behind its own dialog (it was asked of the conversation left),
-  // and the popover's per-session data (process list / token buckets),
+  // and the popover's per-session data (process list / token buckets / cost parts),
   // avoiding stale data from the previous Session (the panel jump commands reset in their
   // own effect above, and the cost hold re-keys itself inside advanceCostStat). The thinking level itself needs no reset — it is read off the
   // selected Session row, so it changes with the session by construction.
@@ -1060,6 +1067,7 @@ export function ChatPage() {
     statCacheRef.current = new Map();
     setProcesses([]);
     setUsageBuckets(null);
+    setUsageCostParts(null);
   }, [routeSessionId]);
 
   // Batched existence check for file summaries: cache stable positive results and share in-flight
@@ -1127,6 +1135,7 @@ export function ChatPage() {
         setUsageBuckets(
           row ? { cacheRead: row.cacheRead, cacheWrite: row.cacheWrite, output: row.output } : null,
         );
+        setUsageCostParts(row?.costParts ?? null);
         bumpUsageStamp((n) => n + 1);
       })
       .catch(() => undefined);
@@ -2335,8 +2344,10 @@ export function ChatPage() {
                   infoOpen ? "bg-gray-100 dark:bg-gray-800" : ""
                 }`}
               >
-                {/* Wide: the chip row (icon + tooltip per chip carries the full meaning). The
-                    row sets the chips' face and ink, and keeps each on one line. */}
+                {/* Wide: the chip row, a glyph and a total per chip, each named by its label.
+                    No breakdown rides on a chip: a hover hint on a visible reading never opens,
+                    and this button holds no "?", so the breakdowns are in the details card it
+                    opens. The row sets the chips' face and ink, and keeps each on one line. */}
                 <span className="hidden items-center gap-3 whitespace-nowrap px-2 font-mono text-xs text-gray-500 sm:flex dark:text-gray-400">
                   <StatChip
                     glyph={STAT_ICONS.tokens}
@@ -2351,13 +2362,13 @@ export function ChatPage() {
                     <StatChip
                       glyph={STAT_ICONS.cost}
                       value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
-                      label={`${S.common.cost}（${currency}）${hs.costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
+                      label={`${S.common.cost}（${currency}）`}
                     />
                   )}
                   <StatChip
                     glyph={STAT_ICONS.elapsed}
                     value={hs.elapsedNode}
-                    label={`${S.chat.statElapsed}${hs.elapsedSplit ?? ""}`}
+                    label={S.chat.statElapsed}
                   />
                   {/* Right of the time, only while the conversation still owns background
                       work — command processes past their yield window, background subagents
@@ -2439,10 +2450,13 @@ export function ChatPage() {
                   {S.chat.sessionStats}
                 </p>
                 {/* A bulleted list, one stat per line. The tokens bullet carries the cache
-                    hit rate in parentheses (cacheRead ÷ all recorded input); the rate comes
-                    from the usage fetch, so it can trail the live total mid-run and
-                    reconciles on idle. No-cost sessions omit the cost bullet entirely, as
-                    the chip does. */}
+                    hit rate in parentheses (cacheRead ÷ all recorded input), and the cost
+                    bullet a "?" right of the figure with its priced parts; both come from the
+                    usage fetch — recorded usage, without the live estimate the cost adds
+                    mid-run — so they can trail the live totals and reconcile on idle. The
+                    elapsed bullet prints its API / tool components inline. No-cost sessions
+                    omit the cost bullet entirely, as the chip does. Each bullet stays inline
+                    content (no flex), which is what keeps its marker. */}
                 <ul className="list-inside list-disc space-y-1 font-mono text-xs">
                   <li>
                     {S.chat.statTotalTokens} {hs.tokensText}
@@ -2453,6 +2467,15 @@ export function ChatPage() {
                     <li>
                       {S.common.cost} {hs.costText}
                       {hs.costUncosted ? " *" : ""}
+                      {usageCostParts !== null && (
+                        <StatHint label={S.common.cost} className="ml-1 align-middle">
+                          <CostPartsRows
+                            parts={usageCostParts}
+                            currency={currency}
+                            uncosted={hs.costUncosted}
+                          />
+                        </StatHint>
+                      )}
                     </li>
                   )}
                   <li>

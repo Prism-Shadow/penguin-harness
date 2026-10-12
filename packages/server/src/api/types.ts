@@ -3608,6 +3608,12 @@ export interface TraceAnalysisResponse {
    */
   cost?: number;
   /**
+   * `cost` split by pricing bucket: every Request's Tokens at the rates and tier its share of
+   * `cost` was priced at, summed per bucket over the file. Present exactly when `cost` is; the
+   * turns carry no split.
+   */
+  costParts?: CostParts;
+  /**
    * The model's context window as the file's head `session_meta` records it
    * (`model_context_window`), for the context ring. The panel no longer reads every event, so the
    * analysis carries it; absent when the head records none (an older server, or a file without
@@ -3720,6 +3726,18 @@ export interface TraceImportResponse {
 
 export type UsageGroupBy = "date" | "agent" | "model" | "session";
 
+/**
+ * A cost split by the three pricing buckets, in USD: cached input (`cacheRead`), uncached input
+ * (`cacheWrite`, input Tokens on a cache miss) and output. Each part is its bucket's Tokens at the
+ * rate the whole cost was priced at, so the three sum to the cost they accompany (up to
+ * floating-point rounding).
+ */
+export interface CostParts {
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+}
+
 export interface UsageBucket {
   total: number;
   requests: number;
@@ -3740,6 +3758,12 @@ export interface UsageGroupRow {
   total: number;
   requests: number;
   cost: number | null;
+  /**
+   * `cost` split by pricing bucket, each record at the same rates, tier and promotion that
+   * priced it in `cost`. Present exactly when `cost` is not null; a row's unpriced usage is in
+   * neither.
+   */
+  costParts?: CostParts;
   hasUncosted: boolean;
 }
 
