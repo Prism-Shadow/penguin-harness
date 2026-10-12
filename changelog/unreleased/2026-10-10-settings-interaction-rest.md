@@ -7,7 +7,7 @@
 
 [中文版](2026-10-10-settings-interaction-rest.zh.md)
 
-The settings commit model of the [Settings dialog](2026-10-10-settings-interaction.md) reached the rest of the Web App: the models page and its dialogs, the Project dialogs, messaging, company mode, the plugin market's Set up and import dialogs, the ssh host form, the manual Benchmark form, the chat's shortcuts and the built-in browser's homepage. Each form's Save (or Create, Add, Hire) is live only once something changed and nothing is wrong, a malformed value is said under its field as it is typed, and leaving a form with unsaved edits asks 「放弃未保存的修改？」 first — Esc, the ×, a press outside, Cancel, a tab or document switch, a route change. A record dialog does not close while its own write is in flight.
+The settings commit model of the [Settings dialog](2026-10-10-settings-interaction.md) reached the rest of the Web App: the models page and its dialogs, the Project dialogs, messaging, company mode, the plugin market's Set up dialog, the plugin, Skills, Hooks and Benchmark import dialogs, the ssh host form, the manual Benchmark form, the chat's shortcuts and the built-in browser's homepage. Each form's Save (or Create, Add, Hire) is live only once something changed and nothing is wrong, a malformed value is said under its field as it is typed, and leaving a form with unsaved edits asks 「放弃未保存的修改？」 first — Esc, the ×, a press outside, Cancel, a tab or document switch, a route change. A record dialog does not close while its own write is in flight.
 
 ## Models
 
@@ -31,14 +31,17 @@ The settings commit model of the [Settings dialog](2026-10-10-settings-interacti
 
 - **Organization settings, hire, budget, reporting line, desk renewal, new channel, rename and purpose, new document, new ticket, calendar events, a ticket's sections, and blocking a ticket** gained the guard and the held verb. Pausing or resuming an organization still writes at once, and the fields being typed beside it keep their edits.
 - **An employee's name and picture:** the name waits for Save, live only once it differs from the stored one, and closing with a typed name asks first; the picture is still written as it is picked. Nothing closes the dialog while a write is in flight.
-- **Confirmations before an ordinary save were removed:** hiring, a budget, reporting-line or thinking-level change, saving a calendar event and saving a ticket section write at once. Moving a ticket, deleting and the desk renewal keep their confirmations. A hire still asks first when the new Agent's picked plugin runs a stdio MCP server, showing the command it runs on this server. The reporting-line hint now says the employee's subordinates move with it.
+- **Confirmations before an ordinary save were removed:** hiring, a budget, reporting-line or thinking-level change, saving a calendar event and saving a ticket section write at once. Moving a ticket, deleting and the desk renewal keep their confirmations. A hire still asks first when the new Agent's picked plugin runs a stdio MCP server: a question of its own, 「招募 <name>？」 as Create Agent asks 「创建 <name>？」, with the command its MCP server runs on this server under it, and the hire as its button. The reporting-line hint now says the employee's subordinates move with it.
 - **The finance page's budget editor** no longer saves when focus leaves the box: Enter or the check saves, Esc or the cross cancels, and an edited box asks before the page is left.
 - **The handbook editor's** Save waits for an edit; Cancel, another document and New document ask through the app's one prompt, and so do a route change, an organization switch and a reload.
 
 ## Plugins
 
 - **An MCP server's Set up** (the vault values a plugin's server waits for): Save is live once a value is typed, closing with one typed asks first, and nothing closes the dialog while it writes.
-- **The import dialog:** closing it with a package name, a link or a source typed asks first, and nothing closes it while an install or an upload is in flight. Opening the chat with the source moves on without asking.
+
+## Import dialogs
+
+- **Import plugin, Import skill, Import hook and Import benchmark:** what their fields hold — a package name, a link, or the source an Agent is asked to import — is the dialog's draft. Closing the dialog with one typed (Esc, the ×, a press outside) asks first, and nothing closes it while an install or a zip upload is in flight. Opening the chat hands the source over, so it moves on without asking.
 
 ## The rest
 
