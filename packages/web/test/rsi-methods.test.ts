@@ -1,19 +1,14 @@
 /**
- * The Web App's two RSI surfaces.
- *
- * - The Optimize tab's Method select (src/features/benchmark/rsi-methods.ts) is pinned to the
- *   plugin library: one row per plugin of the `rsi` category, each naming Skills its plugin
- *   ships, each labelled and described in both dictionaries. A toolkit added to plugins/ without
- *   a row — or a row whose plugin left — fails here rather than as a missing or dead option.
- * - The draft screen's counts line links each half of `S.chat.draftStats` to its own page, so
- *   both dictionaries keep exactly one " · " between the two counts, and both pages are ones the
- *   router mounts.
+ * The Optimize tab's Method select (src/features/benchmark/rsi-methods.ts) is pinned to the
+ * plugin library: one row per plugin of the `rsi` category, each naming Skills its plugin ships,
+ * each labelled and described in both dictionaries. A toolkit added to plugins/ without a row —
+ * or a row whose plugin left — fails here rather than as a missing or dead option, and the start
+ * page's toolkit cards, which follow the same rows, cannot lose one either.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { RSI_METHODS } from "../src/features/benchmark/rsi-methods";
-import { PAGES } from "../src/lib/pages";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { REPO_ROOT } from "./helpers/roots";
@@ -58,31 +53,5 @@ describe("RSI_METHODS", () => {
         expect(dict.benchmark.methods[m.id].blurb.trim()).not.toBe("");
       }
     }
-  });
-});
-
-describe("the draft screen's counts line", () => {
-  it.each([
-    { locale: "zh", dict: zh },
-    { locale: "en", dict: en },
-  ])("$locale reads as two halves, one count each", ({ dict }) => {
-    const halves = dict.chat.draftStats(5, 7).split(" · ");
-    expect(halves).toHaveLength(2);
-    expect(halves[0]).toContain("5");
-    expect(halves[1]).toContain("7");
-  });
-
-  it("links each half to a page the router mounts", () => {
-    // A path the router does not mount falls through to /chat without a word.
-    const source = readFileSync(
-      join(REPO_ROOT, "packages/web/src/features/chat/draft-view.tsx"),
-      "utf8",
-    );
-    const start = source.indexOf("function RsiStatsLine");
-    const body = source.slice(start, source.indexOf("\nfunction ", start + 1));
-    const targets = [...body.matchAll(/<Link\s+to="([^"]+)"/g)].map((m) => m[1] ?? "");
-    expect(targets).toEqual(["/plugins", "/benchmark"]);
-    const mounted = new Set(PAGES.map((page) => page.path));
-    for (const target of targets) expect(mounted.has(target)).toBe(true);
   });
 });

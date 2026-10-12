@@ -1,15 +1,15 @@
 /**
- * Draft-screen example cards, filed into collapsible folders in display order.
+ * The start page's example cards, filed into collapsible folders in display order.
  *
  * Folders are what lets the showcase grow past a flat list: exactly ONE folder is open at a
  * time (bookmark-style — opening one closes the other), so the block's height is one row per
  * folder plus the open folder's own rows, never the whole catalog. Adding an example means
  * appending it to the folder it belongs to, not lengthening the page.
  *
- * Keep the folders within one row of each other (3–4 examples each today): the draft page
+ * Keep the folders within one row of each other (3–4 examples each today): the start page
  * reserves no scroll area for this block, so its height is the folder rows plus the open
  * folder's rows — a folder much longer than its siblings is what would make that height jump
- * as folders are switched. The draft screen appends one more folder that this registry does not
+ * as folders are switched. The start page appends one more folder that this registry does not
  * describe — the user's own saved shortcuts, whose length is theirs and not ours; it is exempt
  * from the rule by capping how many shortcuts it holds, not by scrolling (shortcuts-folder.tsx).
  *
@@ -18,16 +18,17 @@
  * stated. Skills listed here are preselected in the composer only when the selected Agent has
  * them installed; an empty list fills the prompt alone.
  *
- * The first folder is the one open on arrival: reproducing a self-evolution algorithm. Its two
- * toolkit demos are their plugins' quick starts word for word, skills included.
+ * The first folder is the one open on arrival: building an AI app from one sentence. The
+ * self-evolution toolkits' demos are not examples here: each toolkit's card above the examples
+ * fills its plugin's own quick start, read from the server, so the two cannot drift apart.
  */
 export const EXAMPLE_FOLDERS = [
   {
-    id: "rsi",
+    id: "apps",
     tasks: [
-      { id: "agentOptimization", skills: [] },
-      { id: "rsiApe", skills: ["rsi-ape"] },
-      { id: "rsiOpro", skills: ["rsi-opro"] },
+      { id: "ragDocsExpert", skills: ["penguin-sdk", "web-design"] },
+      { id: "investmentCopilot", skills: ["penguin-sdk", "web-design"] },
+      { id: "missionControl", skills: ["penguin-sdk", "web-design"] },
     ],
   },
   {
@@ -40,11 +41,11 @@ export const EXAMPLE_FOLDERS = [
     ],
   },
   {
-    id: "agents",
+    id: "evolve",
     tasks: [
-      { id: "investmentCopilot", skills: ["penguin-sdk", "web-design"] },
-      { id: "missionControl", skills: ["penguin-sdk", "web-design"] },
       { id: "agentBenchmarkBuild", skills: [] },
+      { id: "agentOptimization", skills: [] },
+      { id: "benchmarkImport", skills: ["benchmark-design"] },
     ],
   },
   {
@@ -61,12 +62,3 @@ export type ExampleFolder = (typeof EXAMPLE_FOLDERS)[number];
 export type ExampleFolderId = ExampleFolder["id"];
 export type ExampleTask = ExampleFolder["tasks"][number];
 export type ExampleTaskId = ExampleTask["id"];
-
-/**
- * Flat view of every example across folders, in display order. The folders drive the UI; this
- * is for whole-catalog work that doesn't care which folder an example sits in — looking one up
- * by id, or asserting across all of them.
- */
-export const EXAMPLE_TASKS: readonly ExampleTask[] = EXAMPLE_FOLDERS.flatMap((folder) => [
-  ...folder.tasks,
-]);

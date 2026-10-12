@@ -122,7 +122,7 @@ describe("loadLibraryPlugins", () => {
     // Each algorithm toolkit evaluates through its own copy of one reference, so that it needs
     // no other plugin; the copies must not drift apart.
     const toolkits = loadLibraryPlugins().filter(
-      (p) => p.category === "rsi" && p.name !== "rsi-default",
+      (p) => p.category === "rsi" && p.name !== "default-rsi-toolkit",
     );
     expect(toolkits.length).toBeGreaterThan(1);
     const references = toolkits.map((plugin) => {
@@ -219,7 +219,13 @@ describe("groupPlugins / loadPluginGroups", () => {
     const groups = loadPluginGroups();
     expect(groups.map((g) => g.id)).toEqual(PLUGIN_CATEGORIES.map((c) => c.id));
     const names = (id: string) => groups.find((g) => g.id === id)?.plugins.map((p) => p.name);
-    expect(names("rsi")).toEqual(["rsi-ace", "rsi-ape", "rsi-awm", "rsi-default", "rsi-opro"]);
+    expect(names("rsi")).toEqual([
+      "ace-rsi-toolkit",
+      "ape-rsi-toolkit",
+      "awm-rsi-toolkit",
+      "default-rsi-toolkit",
+      "opro-rsi-toolkit",
+    ]);
     expect(names("office-productivity")).toEqual([
       "a2ui",
       "browser-automation",

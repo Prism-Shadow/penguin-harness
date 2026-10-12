@@ -1,9 +1,9 @@
 /**
- * The header row of one draft-screen example folder.
+ * The header row of one start-page example folder.
  *
  * A tab, not a disclosure: the open folder stays open (clicking it is a no-op) and carries the
  * block's whole body, so exactly one folder's rows are ever on screen. It lives in its own module
- * because two callers render it — the built-in folders in draft-view.tsx and the user's own
+ * because two callers render it — the built-in folders in start-dashboard.tsx and the user's own
  * shortcuts folder in shortcuts-folder.tsx — and a folder row that reads differently from its
  * neighbours would be read as a different kind of thing.
  */

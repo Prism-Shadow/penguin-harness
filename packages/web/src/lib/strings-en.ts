@@ -2849,22 +2849,37 @@ export const en: Strings = {
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The most comprehensive agent self-evolution platform",
-    /**
-     * The derived counts under the slogan (GET /api/rsi). The draft screen links each half to the
-     * page that lists it, so the two halves stay joined by exactly one " · ".
-     */
-    draftStats: (toolkits: number, benchmarks: number): string =>
-      `${toolkits} self-evolution algorithm${toolkits === 1 ? "" : "s"} · ` +
-      `${benchmarks} Benchmark reproduction${benchmarks === 1 ? "" : "s"}`,
-    /** Where each half of that line leads, as its accessible description. */
-    draftStatsToolkits: "See the self-evolution toolkits in the plugin library",
-    draftStatsBenchmarks: "Open the Evaluation Center",
-    /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
+    start: {
+      metrics: {
+        toolkits: "Self-evolution algorithms",
+        reproductions: "Benchmark reproductions",
+        agents: "Agents",
+        evaluations: "Evaluations",
+      },
+      toolkitsTitle: "Self-evolution algorithms",
+      toolkitsInfo:
+        "Each algorithm is an RSI toolkit from the plugin library, run the way its paper describes. Start fills the composer with the toolkit's demo request, and nothing runs until you send it; when the selected agent lacks the toolkit, the button reads Install and start and installs it once you confirm.",
+      toolkitTitle: { default: "Default", opro: "OPRO", ape: "APE", ace: "ACE", awm: "AWM" },
+      toolkitInstalled: (agent: string): string => `Installed on ${agent}`,
+      toolkitStart: "Start",
+      toolkitInstallStart: "Install and start",
+      toolkitAfterInstall:
+        "Once it is installed, its demo request fills the composer; nothing runs until you send it.",
+      benchmarksTitle: "Evaluation Center",
+      benchmarksInfo:
+        "This Project's Benchmarks on this server, each with the score, agent and version of its latest evaluation; a row opens its page.",
+      benchmarksAll: (n: number): string => `All ${n} Benchmark${n === 1 ? "" : "s"}`,
+      benchmarkLatestBy: (agent: string, version: number): string => `latest ${agent} v${version}`,
+      benchmarksEmpty: "This Project has no Benchmarks yet",
+      benchmarksEmptyAction: "Create or import one in the Evaluation Center",
+      examplesTitle: "Examples and shortcuts",
+    },
+    /** Folder names for the start page's collapsible examples (bookmark-style: exactly one open at a time). */
     exampleFolders: {
-      rsi: "Reproduce self-evolution algorithms",
-      webapps: "Build web apps",
-      agents: "Build agents",
-      schedules: "Create scheduled tasks",
+      apps: "Build an AI app from one sentence",
+      webapps: "Web pages and mini games",
+      evolve: "Evaluate and optimize agents",
+      schedules: "Scheduled tasks",
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "Click to fill the composer — edit it if you like, then send",
@@ -2961,6 +2976,13 @@ When done, open index.html in a browser and self-test once.`,
           "Great / Miss for each hit, score combos, and let the difficulty climb as the track goes " +
           "on. Pure front end, one file, playable straight from file://.",
       },
+      ragDocsExpert: {
+        label: "A RAG docs expert from one sentence",
+        desc: "Collect the Claude Code docs and build a RAG Q&A app that cites its sources",
+        prompt:
+          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG " +
+          "app that answers Claude Code questions as a configuration expert, citing its sources.",
+      },
       investmentCopilot: {
         label: "Conversational investment analyst",
         desc: "A conversational market Copilot on the Penguin SDK: the home page lists what is trending, with the market factors behind every call",
@@ -3007,7 +3029,7 @@ Scenarios:
 3. Choose investment actions from a strategy, historical markets, and current indicators.`,
       },
       agentOptimization: {
-        label: "Default RSI Toolkit: improve the decision agent's accuracy",
+        label: "Default optimization: improve the decision agent's accuracy",
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
@@ -3018,22 +3040,13 @@ Scenarios:
 - desired_score: \`>=95\`
 - candidate_round_limit: \`5\``,
       },
-      rsiApe: {
-        label: "Reproduce APE: induce an instruction from examples",
-        desc: "Run APE on the house-style brief task shipped with rsi-ape; and compare six held-out cases before and after",
+      benchmarkImport: {
+        label: "Import a Benchmark: list the packages in the repository",
+        desc: "List the importable Benchmark packages in penguin-harness-benchmark and import the one I pick through benchmark-design",
         prompt:
-          "Reproduce APE (Automatic Prompt Engineer, Zhou et al. 2022) on the house-style brief " +
-          "task that ships with the `rsi-ape` Skill: a fresh agent, a 6-case Benchmark, and the " +
-          "score before and after.",
-      },
-      rsiOpro: {
-        label: "Reproduce OPRO: optimize an instruction from scores",
-        desc: "Run 2 steps × 4 proposals on the precise-summary task shipped with rsi-opro and watch the instruction evolve with the scores",
-        prompt:
-          "Use the `rsi-opro` Skill to reproduce OPRO on the precise-summary demo task that " +
-          "ships with it: create the Target agent `summary_writer` and the Benchmark " +
-          "`precise-summary`, measure the seed instruction, run 2 steps × 4 proposals, and " +
-          "report the baseline and best scores.",
+          "Use the `benchmark-design` Skill: list the Benchmark packages under " +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages, mark the " +
+          "ones this Project already has, and import the one I pick once I say so.",
       },
       dailyPlan: {
         label: "A 9am daily planning check-in",
@@ -4529,7 +4542,7 @@ Scenarios:
     evaluatorAgentHint:
       "The one that spawns the evaluation subagents, scores against the rubric and writes the scoreboard; needs the agent-evaluation Skill",
     evaluatorMissingSkill:
-      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the rsi-default plugin (Default RSI Toolkit) on it first.",
+      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the default-rsi-toolkit plugin (Default RSI Toolkit) on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
       "The model this conversation runs on, the Project's default model unless changed; the tested agent is evaluated on this same model, at the thinking level it is configured with",
@@ -4557,7 +4570,7 @@ Scenarios:
     optimizerAgentHint:
       "The one that reads the scores and Traces and edits the Test Agent; needs the agent-optimization Skill",
     optimizerMissingSkill:
-      "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the rsi-default plugin (Default RSI Toolkit) on it first.",
+      "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the default-rsi-toolkit plugin (Default RSI Toolkit) on it first.",
     testedAgentHint:
       "The agent whose Agent State is edited; its scores are recorded under it and compared only against its own same-label history",
     sessionModel: "Model of the optimizer's conversation",
@@ -4651,7 +4664,7 @@ Scenarios:
     importBenchmark: "Import benchmark",
     importChatTitle: "Recommended: import it by chatting with the agent",
     importChatWhy:
-      "The agent pins the link to one commit, fetches only that folder and reads every file before writing it to the Evaluation Center — more reliable than a bare upload.",
+      "The agent follows the benchmark-design Skill's import procedure: it pins the link to a commit, fetches only that folder and reads every file before anything is written — more dependable than a raw upload.",
     importSourceLabel: "Benchmark source",
     importSourceHint:
       "A folder link in a GitHub repository (such as …/tree/<commit>/packages/<id>), a local path, or a description",
@@ -4667,11 +4680,11 @@ Scenarios:
     },
     importPromptTail: (projectId: string): string =>
       [
+        'If the `benchmark-design` Skill is installed, follow its `reference/package.md`, section "Importing a package" — source resolution, the pinned commit, companion train/test packages, the post-import check and the optional smoke probe are all there; without that Skill, the rules below are enough:',
         "The package is a folder with `benchmark_config.toml` (keys: id, title, description, version `YYYY.MM.DD.N`, status, runs, and an `[origin]` table) and one `CASE-*/` per case, holding `statement/README.md` and `rubric/README.md`.",
         "Fetch only that folder, at a commit, into a temporary directory: resolve the link's branch or tag to its 40-hex commit (`git ls-remote`), download it (a codeload tarball or a sparse checkout), and read every file before importing anything — refuse if it is not a Benchmark package, if its `status` is not `published`, or if it holds anything but text materials. Do not copy large upstream materials; the statements link them.",
         `Import it with \`penguin benchmark import <the folder> --project-id ${projectId} --origin-url <the link as given> --origin-ref <the 40-hex commit> --origin-path <the folder inside the repository>\` (without the \`--origin-*\` options for a source that is not a repository folder). The server checks it as it checks an uploaded zip and writes \`benchmarks/<id>/\` itself, with the git origin, the package's \`version\` and a \`scoreboard.yaml\` holding \`evaluations: []\`; never write under \`benchmarks/\` yourself.`,
         "If the command says the Benchmark already exists, stop and ask me before overwriting — an overwrite (`--overwrite`) replaces the whole directory, its `scoreboard.yaml` and `.jobs/` included, and the server refuses it while an evaluation of that Benchmark is still running. Then report the id, title, version and case count the command printed; the Evaluation Center lists it from then on.",
-        'If the `benchmark-design` skill is installed, read its `reference/package.md` ("Importing a package") first.',
       ].join("\n"),
     importCopyPrompt: "Copy prompt",
     importOpenChat: "Open a new chat",

@@ -11,14 +11,14 @@
 export const RSI_METHODS = [
   {
     id: "default",
-    plugin: "rsi-default",
+    plugin: "default-rsi-toolkit",
     skill: "agent-optimization",
     evaluationSkill: "agent-evaluation",
   },
-  { id: "opro", plugin: "rsi-opro", skill: "rsi-opro" },
-  { id: "ape", plugin: "rsi-ape", skill: "rsi-ape" },
-  { id: "ace", plugin: "rsi-ace", skill: "rsi-ace" },
-  { id: "awm", plugin: "rsi-awm", skill: "rsi-awm" },
+  { id: "opro", plugin: "opro-rsi-toolkit", skill: "opro-rsi-toolkit" },
+  { id: "ape", plugin: "ape-rsi-toolkit", skill: "ape-rsi-toolkit" },
+  { id: "ace", plugin: "ace-rsi-toolkit", skill: "ace-rsi-toolkit" },
+  { id: "awm", plugin: "awm-rsi-toolkit", skill: "awm-rsi-toolkit" },
 ] as const;
 
 export type RsiMethod = (typeof RSI_METHODS)[number];

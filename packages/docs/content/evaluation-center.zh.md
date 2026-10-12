@@ -60,7 +60,7 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 - 执行评估的 Agent 所在机器装有 Docker（含 Compose v2）和 [uv](https://docs.astral.sh/uv/)，并能访问 GitHub、Docker Hub、nodejs.org、npm 仓库和模型服务。
 - 评估所用的模型，即评估会话的模型，已在**模型库**页面保存了 API key。评估会把这一条模型配置复制进每个任务容器，不需要 Vault。
-- 执行评估的 Agent 的 `agent-evaluation` Skill 为 2026.10.09.1 或更新版本。它随 `rsi-default` 提供，该插件在 2026.10.09.5 及更早的版本中名为 `agent-tuning`。在此之前创建的 Agent 保留着旧副本，需要在**插件市场**页面更新这个插件。
+- 执行评估的 Agent 的 `agent-evaluation` Skill 为 2026.10.09.1 或更新版本。它随 `default-rsi-toolkit` 提供，该插件在 2026.10.09.5 及更早的版本中名为 `agent-tuning`。在此之前创建的 Agent 保留着旧副本，需要在**插件市场**页面更新这个插件。
 
 它们和其他 Benchmark 一样评估，见[评估 Agent](#评估-agent)。执行评估的 Agent 的 `agent-evaluation` Skill 从题干认出这类题，并按仓库里的规则运行：评估先按题干给出的提交取一次仓库，再为每道题的每次运行跑一次 Harbor trial。每个 trial 都要独占一个 Docker 网络，而主机上的网络数量有限，所以同时至多跑四个；你另给了上限时以你的为准（最多八个），例如写在评估的**说明**里。同一台机器上的几个评估分摊这个上限。一个 trial 结束，下一个随即开始，不按批次等待。评估还会为每份仓库检出构建一次安装包，内含 Node.js 和 PenguinHarness CLI：trial 直接解包，不必再在各自的任务容器里安装，每个约省两分钟；安装包构建失败时，容器改为联网安装。被测 Agent 带着自己的 Agent State 在任务容器里运行，一次 trial 从几分钟到一小时左右不等（含镜像构建）。每次 trial 的文件，包括 Agent 的 Trace 和验证器的输出，都留在该 Benchmark 的 `.jobs/` 目录下；这次运行记在 Session id `harbor:<trial 名>` 名下，评估详情弹窗里可以复制它。
 
@@ -213,7 +213,7 @@ Agent 会把链接解析到一个固定提交，只把那一个文件夹取回�
 1. 在 Benchmark 卡片或 Benchmark 页面的页头上，选择**使用**，再切到**优化**标签页。
 2. 在**方法**中选择 **Default（试跑 → 反思 → 提升）**、**OPRO**、**APE**、**ACE** 或 **AWM**。字段下方的提示说明所选方法做什么。
 3. 在**被测智能体**中，选择要改进的 Agent。标签页上会显示它当前的基线分和目标分数。
-4. 在**执行优化的智能体**中，选择实际执行优化的 Agent。它需要装有该方法的 Skill：Default 为 `agent-optimization`，其他方法为与其插件同名的 Skill（`rsi-opro`、`rsi-ape`、`rsi-ace` 或 `rsi-awm`）。没装时对话框会提醒你。
+4. 在**执行优化的智能体**中，选择实际执行优化的 Agent。它需要装有该方法的 Skill：Default 为 `agent-optimization`，其他方法为与其插件同名的 Skill（`opro-rsi-toolkit`、`ape-rsi-toolkit`、`ace-rsi-toolkit` 或 `awm-rsi-toolkit`）。没装时对话框会提醒你。
 5. 设置**每题运行次数**。使用 Default 时，还要设置**最多轮数**（默认 3）和**目标分数**；目标分数默认是基线分向上取整后加 10，最高 100。
 6. 可选：修改**优化会话使用的模型**（预设为 Project 的默认模型），并填写**优化重点**。
 7. 选择**在新对话中编辑**，检查提示词，然后发送。

@@ -152,7 +152,7 @@ describe("optimizeTail / buildOptimizePrompt", () => {
 
 describe("rsiOptimizeTail (a toolkit other than the default)", () => {
   const params = {
-    skill: "rsi-opro",
+    skill: "opro-rsi-toolkit",
     label: "OPRO",
     targetAgentId: "report-writer",
     benchmarkId: "report-writing-v1",
@@ -171,7 +171,7 @@ describe("rsiOptimizeTail (a toolkit other than the default)", () => {
   for (const [locale, dict] of Object.entries({ zh, en })) {
     it(`${locale}: names the toolkit's Skill and the three inputs every toolkit takes`, () => {
       const tail = dict.benchmark.rsiOptimizeTail(params);
-      expect(tail).toContain("`rsi-opro`");
+      expect(tail).toContain("`opro-rsi-toolkit`");
       expect(tail).toContain("OPRO");
       expect(tail).toContain("`report-writer`");
       expect(tail).toContain("`report-writing-v1`");

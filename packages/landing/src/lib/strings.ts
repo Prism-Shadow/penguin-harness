@@ -6,8 +6,6 @@
  * reads inside components. English marketing copy uses lowercase `agent`; preserve the
  * established casing of Workspace, Token, Task, Skill, Trace, and other product terms.
  */
-import { BENCHMARK_REPRODUCTIONS, RSI_TOOLKITS } from "./rsi-stats";
-
 export const zh = {
   siteName: "PenguinHarness",
 
@@ -51,38 +49,28 @@ export const zh = {
   },
 
   hero: {
-    platformLead: "大一统、稳定的 ",
-    platformActions: ["RSI"],
-    platformTail: " 框架",
-    automationLead: "全自动优化",
-    automationActions: ["模型 × Harness", "任何模型", "任何算法", "任何 Agent"],
-    automationTail: "",
+    positioning: "统一、稳定的 Agent 自进化框架",
+    automation: "全自动优化模型 × Agent Harness",
     downloadCta: "下载桌面版",
     cliInstall: "命令行安装",
     stats: [
-      { value: "1000+ 模型", label: "支持主流供应商" },
-      {
-        value: `${RSI_TOOLKITS.length} 种自进化算法`,
-        label: "Default · OPRO · APE · ACE · AWM",
-      },
-      {
-        value: `${BENCHMARK_REPRODUCTIONS.length} 个 Benchmark 复现`,
-        label: "数据分析 · SWE · 自动化 · 科学 · 终端",
-      },
-      { value: "100% 开源", label: "Apache 2.0 协议" },
+      { value: "1000+ 模型", label: "接入主流供应商，随时切换" },
+      { value: "100% 开源", label: "Apache-2.0 协议，本地部署" },
     ],
+    /** The three catalogue rows under the stat tiles; their entries live in lib/rsi-stats.ts. */
     supportedModelsLabel: "支持模型",
-    supportedModels: [
-      "OpenAI",
-      "Anthropic",
-      "Gemini",
-      "DeepSeek",
-      "Zai",
-      "MoonShot",
-      "Qwen",
-      "Openrouter",
-    ],
-    supportedModelsMore: "+992 more",
+    supportedModelsMore: "以及更多",
+    algorithmsLabel: "自进化算法",
+    benchmarksLabel: "Benchmark 复现",
+    /** One per BENCHMARK_REPRODUCTIONS entry, in its order (Sec A to Sec E). */
+    benchmarkKinds: ["数据分析", "软件工程", "业务自动化", "科学计算", "终端任务"],
+    /** The confirmation an outside link in the catalogue rows asks before it opens. */
+    externalLink: {
+      title: "即将打开外部链接",
+      body: "这个链接指向 PenguinHarness 之外的网站，会在新标签页中打开：",
+      cancel: "取消",
+      open: "继续打开",
+    },
   },
 
   /** Install-method switcher (quick start step 1): OS tabs, online/offline methods. */
@@ -163,9 +151,9 @@ export const zh = {
 
   pillars: {
     eyebrow: "三大特色",
-    title: "为进化 Agent 而生——任何模型、任何算法、任何 Agent",
+    title: "极简的 Harness，构建 Agent，也让 Agent 自进化",
     subtitle:
-      "PenguinHarness 是开源的 RSI 框架：模型 × Harness 全自动优化——模型固定，Harness 进化，每一种算法都按原论文的流程运行。",
+      "PenguinHarness 是开源的 Agent 自进化框架：模型固定，进化的是 Harness，也就是提示词、Skill、工具与钩子。",
     root: "PenguinHarness",
     concepts: ["Penguin Message", "Penguin SDK", "Penguin Skills"],
     diagramLabel:
@@ -174,17 +162,17 @@ export const zh = {
       {
         title: "Simplest Is the Best",
         tag: "",
-        desc: "坚持最小化工具集与简洁的底层接口，以更少的工具调用与 Token 消耗，高效完成复杂任务。",
+        desc: "工具集刻意做小，底层接口保持简洁：同样的复杂任务，工具调用更少，Token 也更省。",
       },
       {
         title: "Harness for Building Agents",
         tag: "",
-        desc: "通过 PenguinHarness SDK，让 Agent 从零自主完成 Agent 应用的构建。",
+        desc: "一句话描述需求，Agent 用 PenguinHarness SDK 从零生成会思考、可运行的 AI 应用。",
       },
       {
         title: "Harness for Recursive Self-Improvement",
         tag: "",
-        desc: "借助 RSI 工具包，Agent 自己评估、自己优化——默认循环或 OPRO、APE、ACE、AWM——随时间递归进化。",
+        desc: "一句话启动 Agent 自进化：Agent 自己出题、打分、优化，算法可选默认循环或 OPRO、APE、ACE、AWM，每次改动前都先存快照。",
       },
     ],
   },
@@ -212,11 +200,11 @@ export const zh = {
 
   selfImprove: {
     eyebrow: "RSI 循环",
-    title: "任何模型、任何算法、任何 Agent——进化自动发生",
+    title: "从 vN 到 vN+1，靠分数说话",
     subtitle:
-      "Default RSI Toolkit 跑「试跑 → 反思 → 提升」：Optimizer 组织多个 Evaluator 并行打分，依据分数与运行轨迹定位失分原因，把 Agent 从版本 N 优化到 N+1，每一轮都有快照。其余工具包按原论文的流程运行 OPRO、APE、ACE、AWM——同一套 Benchmark，同一张记分板。",
-    videoLabel: "自我进化演示视频",
-    videoCaption: "自我进化演示：Agent 跑评测、定位失分点、发布下一版——完整一轮。",
+      "Default RSI Toolkit 按「试跑 → 反思 → 提升」循环：Optimizer 组织多个 Evaluator 并行打分，依据分数与运行轨迹定位失分原因，把 Agent 从版本 N 优化到 N+1，每一轮都有快照。其余工具包按原论文的流程运行 OPRO、APE、ACE、AWM——同一套 Benchmark，同一张记分板。",
+    videoLabel: "Agent 自进化演示视频",
+    videoCaption: "Agent 自进化演示：跑评测、定位失分点、发布下一版，完整的一轮。",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Target Agent",
@@ -232,7 +220,7 @@ export const zh = {
       { label: "耗时", hint: "不断减少" },
     ],
     diagramLabel:
-      "自我提升循环示意：Optimizer 组织多个 Evaluator 打分，依据分数与轨迹把 Target Agent 从 vN 优化到 vN+1",
+      "RSI 循环示意：Optimizer 组织多个 Evaluator 打分，依据分数与轨迹把 Target Agent 从 vN 优化到 vN+1",
   },
 
   quickstart: {
@@ -256,7 +244,7 @@ export const zh = {
       steps: [
         "下载适合当前系统的安装包",
         "打开 PenguinHarness，按引导配置模型",
-        "输入一句话，创建第一个 Agent 应用",
+        "输入一句话，生成第一个 AI 应用",
       ],
     },
     install: {
@@ -287,22 +275,23 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
 
   cases: {
     eyebrow: "案例",
-    title: "一句话进去，一个结果出来",
+    title: "一句话生成 AI 应用，一句话启动自进化",
     subtitle:
-      "一句话生成会思考、能运行的 AI 应用；再一句话，复现一个 Agent 自进化算法——端到端，在 DeepSeek Flash 上跑完。",
+      "第一句话生成一个会思考、可运行的 RAG 问答应用，回答附带来源引用；第二句话在 APE 工具包自带的任务上复现这个算法，优化前后的分数都记录在评估中心。",
     tabs: [
       {
-        label: "生成 AI 应用",
+        label: "RAG 文档专家",
         prompt:
           "收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
-        caption: "生成的 RAG 应用成品：Claude Code 配置专家，回答带可点击的来源引用与示例问题",
-        cost: "而生成整个 RAG 应用，仅消耗了 0.2 元（$0.02）的 token——使用 DeepSeek V4 Pro 模型。",
+        caption: "生成的 RAG 应用：Claude Code 配置专家，回答附可点击的来源引用，并内置示例问题",
+        cost: "用 DeepSeek V4 Pro 生成整个 RAG 应用，Token 只花了 0.2 元（$0.02）。",
       },
       {
-        label: "复现自进化算法",
+        label: "复现 APE",
+        /** The ape-rsi-toolkit plugin's quick start, word for word (test/rsi-stats.test.ts). */
         prompt:
-          "在 rsi-ape 技能自带的「公司格式简报」任务上复现 APE（Automatic Prompt Engineer，Zhou 等，2022）：新建一个 Agent、一套 6 题的 Benchmark，给我看优化前后的分数。",
-        caption: "评估中心的分数图：复现的基线分与最终分都记录在这里",
+          "在 `ape-rsi-toolkit` 技能自带的「公司格式简报」任务上复现 APE（Automatic Prompt Engineer，Zhou 等，2022）：新建一个 Agent、一套 6 题的 Benchmark，给我看优化前后的分数。",
+        caption: "评估中心的分数曲线：复现跑完后，基线分与最终分都记录在这里",
         cost: "",
       },
     ],
@@ -334,7 +323,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     items: [
       {
         term: "工作边界",
-        text: "所有 Agent 都运行在同一个 Harness 之上：Agent 之下创建 Session，Session 之中执行 Task；自我进化只发生在 Workspace 与 Skill 之内，Harness 内核与安全机制始终不变。",
+        text: "所有 Agent 都运行在同一个 Harness 之上：Agent 之下创建 Session，Session 之中执行 Task；自进化只改 Agent State 里的提示词、Skill、工具与钩子，Harness 内核与安全机制始终不变。",
       },
       {
         term: "可编辑文件",
@@ -451,7 +440,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   skills: {
     eyebrow: "内置 Skill",
     title: "内置 Skill 库一览",
-    subtitle: "开箱五组 Skill——Agent 也能编写并优化自己的。",
+    subtitle: "从数据分析到 Agent 自进化，开箱即用；Agent 也能编写、优化自己的 Skill。",
     groups: [
       {
         title: "Agent 自进化",
@@ -460,10 +449,10 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
           "benchmark-design",
           "agent-evaluation",
           "agent-optimization",
-          "rsi-opro",
-          "rsi-ape",
-          "rsi-ace",
-          "rsi-awm",
+          "opro-rsi-toolkit",
+          "ape-rsi-toolkit",
+          "ace-rsi-toolkit",
+          "awm-rsi-toolkit",
         ],
       },
       {
@@ -511,16 +500,16 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
 
   security: {
     eyebrow: "安全",
-    title: "进化不越界，数据不出域",
-    subtitle: "为企业级数据安全而设计的运行边界。",
+    title: "进化不越界，数据存本地",
+    subtitle: "企业最先问的两件事：数据存在哪里，Agent 能改什么。",
     items: [
       {
         title: "开源，本地部署",
-        desc: "内核完全开源可审计，数据保存在本地目录，不经过任何第三方服务。",
+        desc: "内核完全开源、可审计；数据保存在本地目录，除了你配置的模型服务，不经过任何第三方。",
       },
       {
         title: "进化范围受限",
-        desc: "自我进化严格限制在 Workspace 与 Skill 内，不修改 Harness 核心安全边界。",
+        desc: "自进化只改 Agent State 里的提示词、Skill、工具与钩子，改不到 Harness 内核与安全边界。",
       },
       {
         title: "权限审批与审计",
@@ -546,16 +535,15 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cta: {
-    title: "任何 Agent，都能自动进化",
-    subtitle:
-      "PenguinHarness 让模型 × Harness 持续优化：一版比一版更高效、更可靠、更低幻觉、更低成本。",
+    title: "让你的 Agent 开始自进化",
+    subtitle: "模型不动，Harness 进化：每一版都有分数、有快照，随时可以回滚。",
     download: "下载桌面版",
     quickstart: "快速开始",
     docs: "阅读文档",
   },
 
   footer: {
-    tagline: "Unified and Stable RSI Framework.",
+    tagline: "统一、稳定的 Agent 自进化框架",
     product: "产品",
     resources: "资源",
     quickstart: "快速开始",

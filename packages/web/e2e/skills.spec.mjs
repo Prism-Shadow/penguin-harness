@@ -47,7 +47,7 @@ const CATEGORIES = [
 const INSTALLED_HEADER = /已安装的插件|Installed plugins/;
 // Library plugin cards the page renders (merged plugins carry several skills each).
 const PLUGINS = [
-  "rsi-default",
+  "default-rsi-toolkit",
   "agent-development",
   "model-development",
   "software-development",
@@ -59,10 +59,10 @@ const SKILLS = [
   "benchmark-design",
   "agent-evaluation",
   "agent-optimization",
-  "rsi-opro",
-  "rsi-ape",
-  "rsi-ace",
-  "rsi-awm",
+  "opro-rsi-toolkit",
+  "ape-rsi-toolkit",
+  "ace-rsi-toolkit",
+  "awm-rsi-toolkit",
   "data-analysis",
   "penguin-sdk",
   "penguin-config",
@@ -145,7 +145,7 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   // layout has the icon spanning two rows on the left, with the name and short description as
   // separate text columns, so it can no longer be located by "the innermost div containing the name").
   const creationCard = page
-    .getByText("rsi-default", { exact: true })
+    .getByText("default-rsi-toolkit", { exact: true })
     .locator("xpath=ancestor::div[contains(@class,'rounded-md')][1]");
   await expect(creationCard.locator("span[aria-hidden] > svg")).toHaveCount(1);
   await expect(creationCard.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);

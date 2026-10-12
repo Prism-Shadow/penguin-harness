@@ -1,45 +1,54 @@
 /**
- * Hero counts ↔ their sources: RSI_TOOLKITS must name exactly the library plugins whose
- * plugin.json files them under the `rsi` category, and BENCHMARK_REPRODUCTIONS exactly core's
- * built-in Benchmarks, so a new toolkit or built-in fails here instead of leaving the landing
- * page's count quietly behind. Both dictionaries must print the two counts in the stat tiles.
+ * The hero's catalogue rows ↔ their sources. RSI_TOOLKITS must name exactly the library plugins
+ * whose plugin.json files them under the `rsi` category, and BENCHMARK_REPRODUCTIONS exactly core's
+ * built-in Benchmarks, each linked to the upstream repository core records for it, so a new
+ * toolkit or built-in, or a moved upstream, fails here instead of leaving the landing page behind.
+ * Every link that leaves the site is absolute https; both dictionaries carry one Benchmark kind per
+ * reproduction and no derived count in the stat tiles; and the cases section's APE prompt is that
+ * toolkit's quick start, word for word.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { BENCHMARK_REPRODUCTIONS, RSI_TOOLKITS } from "../src/lib/rsi-stats";
+import { BENCHMARK_REPRODUCTIONS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../src/lib/rsi-stats";
 import { zh } from "../src/lib/strings";
 import type { Strings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 const pluginsRoot = join(__dirname, "..", "..", "..", "plugins");
 
+interface Manifest {
+  category?: unknown;
+  quick_start?: { prompt?: string; prompt_zh?: string };
+}
+
+const manifest = (plugin: string): Manifest =>
+  JSON.parse(readFileSync(join(pluginsRoot, plugin, "plugin.json"), "utf8")) as Manifest;
+
 /** Library plugins (directories with a plugin.json) whose category is `rsi`. */
 const rsiPlugins = readdirSync(pluginsRoot, { withFileTypes: true })
   .filter(
     (entry) => entry.isDirectory() && existsSync(join(pluginsRoot, entry.name, "plugin.json")),
   )
-  .filter((entry) => {
-    const manifest = JSON.parse(
-      readFileSync(join(pluginsRoot, entry.name, "plugin.json"), "utf8"),
-    ) as { category?: unknown };
-    return manifest.category === "rsi";
-  })
+  .filter((entry) => manifest(entry.name).category === "rsi")
   .map((entry) => entry.name)
   .sort();
 
 /**
- * Core's built-in Benchmark ids. Imported at run time through a URL rather than statically: a
+ * Core's built-in Benchmarks. Imported at run time through a URL rather than statically: a
  * static import would pull core's sources, and everything they import, into this package's
  * typecheck.
  */
-async function builtinBenchmarkIds(): Promise<string[]> {
+async function builtinBenchmarks(): Promise<Array<{ id: string; upstream: string }>> {
   const file = join(__dirname, "..", "..", "core", "src", "state", "builtin-benchmarks-data.ts");
   const data = (await import(pathToFileURL(file).href)) as {
-    BUILTIN_BENCHMARKS: ReadonlyArray<{ id: string }>;
+    BUILTIN_BENCHMARKS: ReadonlyArray<{ id: string; upstream: { url: string } }>;
   };
-  return data.BUILTIN_BENCHMARKS.map((benchmark) => benchmark.id);
+  return data.BUILTIN_BENCHMARKS.map((benchmark) => ({
+    id: benchmark.id,
+    upstream: benchmark.upstream.url,
+  }));
 }
 
 const DICTIONARIES: ReadonlyArray<{ file: string; dict: Strings }> = [
@@ -47,21 +56,53 @@ const DICTIONARIES: ReadonlyArray<{ file: string; dict: Strings }> = [
   { file: "strings-en.ts", dict: en },
 ];
 
-describe("hero counts ↔ their sources", () => {
+describe("hero catalogue ↔ its sources", () => {
   it("RSI_TOOLKITS names exactly the library's rsi plugins", () => {
     expect(rsiPlugins.length).toBeGreaterThan(0);
-    expect([...RSI_TOOLKITS].sort()).toEqual(rsiPlugins);
+    expect(RSI_TOOLKITS.map((toolkit) => toolkit.plugin).sort()).toEqual(rsiPlugins);
   });
 
-  it("BENCHMARK_REPRODUCTIONS names exactly core's built-in Benchmarks", async () => {
-    expect([...BENCHMARK_REPRODUCTIONS]).toEqual(await builtinBenchmarkIds());
+  it("BENCHMARK_REPRODUCTIONS names core's built-in Benchmarks and links their upstreams", async () => {
+    expect(
+      BENCHMARK_REPRODUCTIONS.map((benchmark) => ({ id: benchmark.id, upstream: benchmark.href })),
+    ).toEqual(await builtinBenchmarks());
+  });
+
+  it("links outside the site are absolute https; the Default toolkit links into the docs", () => {
+    expect(MODEL_PROVIDERS.map((provider) => provider.id)).toEqual([
+      "openai",
+      "anthropic",
+      "gemini",
+      "deepseek",
+      "zai",
+      "moonshot",
+      "qwen",
+      "openrouter",
+    ]);
+    const outside = [
+      ...MODEL_PROVIDERS.map((provider) => provider.href),
+      ...RSI_TOOLKITS.filter((toolkit) => toolkit.external).map((toolkit) => toolkit.href),
+      ...BENCHMARK_REPRODUCTIONS.map((benchmark) => benchmark.href),
+    ];
+    for (const href of outside) expect(new URL(href).protocol, href).toBe("https:");
+    const internal = RSI_TOOLKITS.filter((toolkit) => !toolkit.external);
+    expect(internal.map((toolkit) => toolkit.plugin)).toEqual(["default-rsi-toolkit"]);
+    expect(internal[0]?.href).toMatch(/docs\/self-improvement$/);
   });
 
   for (const { file, dict } of DICTIONARIES) {
-    it(`${file} prints both counts in the stat tiles`, () => {
-      const [, toolkits, benchmarks] = dict.hero.stats;
-      expect(toolkits?.value).toMatch(new RegExp(`^${RSI_TOOLKITS.length} `));
-      expect(benchmarks?.value).toMatch(new RegExp(`^${BENCHMARK_REPRODUCTIONS.length} `));
+    it(`${file} has one Benchmark kind per reproduction and no counts in the stat tiles`, () => {
+      expect(dict.hero.benchmarkKinds).toHaveLength(BENCHMARK_REPRODUCTIONS.length);
+      expect(dict.hero.stats).toHaveLength(2);
+      for (const stat of dict.hero.stats) {
+        expect(stat.value).not.toMatch(/算法|Benchmark|Algorithms|Reproductions/);
+      }
     });
   }
+
+  it("the APE case prompt is the ape-rsi-toolkit quick start, word for word", () => {
+    const quickStart = manifest("ape-rsi-toolkit").quick_start;
+    expect(zh.cases.tabs[1]?.prompt).toBe(quickStart?.prompt_zh);
+    expect(en.cases.tabs[1]?.prompt).toBe(quickStart?.prompt);
+  });
 });

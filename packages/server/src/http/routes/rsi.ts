@@ -1,8 +1,8 @@
 /**
  *   GET /api/rsi   # the self-evolution catalogue this build ships: one entry per RSI toolkit
  *                  # (the plugin library's `rsi` category) and one per built-in Benchmark
- *                  # reproduction. Any logged-in user; no Project check. The draft screen's
- *                  # counts read it.
+ *                  # reproduction. Any logged-in user; no Project check. The start page's
+ *                  # metric tiles read it.
  *
  * Both lists are derived, never counted by hand: the toolkits are whatever the library files
  * under the `rsi` category, read fresh per request like GET /api/plugins, and the reproductions

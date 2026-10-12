@@ -1,7 +1,7 @@
 /**
  * Use-case gallery as switchable tabs, each under its one-sentence prompt: an AI app built from
  * one sentence (the RAG docs expert), and a self-evolution algorithm reproduced from one sentence
- * (APE on the demo task that ships with the rsi-ape Skill). Video entries use a matching
+ * (APE on the demo task that ships with the ape-rsi-toolkit Skill). Video entries use a matching
  * PenguinHarness run as their poster; still-only entries show the result.
  * Tab order follows S.cases.tabs; CASE_STILLS is index-aligned with it. A tab may carry a `cost`
  * line (the RAG one does) — an emphasized token-cost hook under the caption; an empty one

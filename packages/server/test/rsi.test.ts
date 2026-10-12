@@ -1,8 +1,8 @@
 /**
- * GET /api/rsi: the self-evolution catalogue the draft screen counts. Both lists are derived —
- * the toolkits from the library's `rsi` category, the reproductions from core's built-in
- * Benchmarks — so what is checked is that the route answers exactly those two sources, to any
- * logged-in user and to nobody else.
+ * GET /api/rsi: the self-evolution catalogue the start page's metric tiles read. Both lists are
+ * derived — the toolkits from the library's `rsi` category, the reproductions from core's
+ * built-in Benchmarks — so what is checked is that the route answers exactly those two sources,
+ * to any logged-in user and to nobody else.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BUILTIN_BENCHMARKS, loadPluginGroups } from "@prismshadow/penguin-core";

@@ -3,7 +3,7 @@ title: 产品介绍
 description: PenguinHarness 是什么，它由哪些部分组成，以及从哪里开始。
 ---
 
-欢迎阅读 PenguinHarness 文档。PenguinHarness 是**大一统、稳定的 RSI 框架**（Unified and Stable RSI Framework）：一个开源的 Agent Harness，全自动优化模型 × Harness，让任何模型、任何算法、任何 Agent 都能递归自我进化。模型固定不动，进化的是 Harness——提示词、Skill、工具与钩子——每一种自进化算法都跑在同一套 Benchmark、记分板与快照之上。它整体是一套 TypeScript 技术栈，完全本地部署，最低一颗 CPU 即可运行，通过统一的模型网关可以接入 1000+ 在线与本地模型。
+欢迎阅读 PenguinHarness 文档。PenguinHarness 是**统一、稳定的 Agent 自进化框架**（Unified and Stable RSI Framework）：一个开源的 Agent Harness，全自动优化模型 × Agent Harness。模型固定不动，进化的是 Harness——提示词、Skill、工具与钩子——每一种自进化算法都跑在同一套 Benchmark、记分板与快照之上。它整体是一套 TypeScript 技术栈，完全本地部署，最低一颗 CPU 即可运行，通过统一的模型网关可以接入 1000+ 在线与本地模型。
 
 ## 开始使用
 
@@ -29,7 +29,7 @@ PenguinHarness 由下面这些组件构成。它们共用同一个数据目录�
 
 ## 三大支柱
 
-PenguinHarness 可以用一句话概括：**大一统、稳定的 RSI 框架，全自动优化模型 × Harness**。它围绕三个概念展开，即消息协议、SDK 和技能库，每个概念支撑一个支柱：
+PenguinHarness 可以用一句话概括：**统一、稳定的 Agent 自进化框架，全自动优化模型 × Agent Harness**。它围绕三个概念展开，即消息协议、SDK 和技能库，每个概念支撑一个支柱：
 
 | 支柱 | 含义 |
 | --- | --- |

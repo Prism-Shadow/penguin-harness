@@ -1650,7 +1650,7 @@ export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plug
 export const getPluginFiles = (plugin: string) =>
   apiFetch<PluginFilesResponse>(`/api/plugins/${encodeURIComponent(plugin)}/files`);
 
-/** The self-evolution catalogue (any logged-in user): the library's RSI toolkits and the built-in Benchmark reproductions, which the draft screen counts. */
+/** The self-evolution catalogue (any logged-in user): the library's RSI toolkits and the built-in Benchmark reproductions, which the start page's metric tiles count. */
 export const getRsiCatalog = () => apiFetch<RsiCatalogResponse>("/api/rsi");
 
 /**
