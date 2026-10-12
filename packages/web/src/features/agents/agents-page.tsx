@@ -453,6 +453,7 @@ export function AgentsPage() {
               <span
                 className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
                 data-tooltip={elsewhereTitle}
+                data-tooltip-extra
               >
                 {S.chat.machineTag(machineName)}
               </span>
@@ -577,6 +578,7 @@ export function AgentsPage() {
             <span
               className="inline-flex shrink-0 items-center gap-1"
               data-tooltip={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
+              data-tooltip-extra={Boolean(a.updatedAt)}
             >
               <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
               {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
@@ -611,7 +613,7 @@ export function AgentsPage() {
           <Button
             size="sm"
             disabled={elsewhere}
-            {...(elsewhere ? { title: elsewhereTitle } : {})}
+            {...(elsewhere ? { title: elsewhereTitle, "data-tooltip-extra": true } : {})}
             onClick={() => {
               setCurrentAgentId(a.agentId);
               navigate(`/agents/${a.agentId}`);

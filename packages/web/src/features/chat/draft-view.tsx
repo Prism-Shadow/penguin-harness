@@ -1000,6 +1000,7 @@ export function DraftView({
                           <button
                             type="button"
                             data-tooltip={`${copy.desc}\n${S.chat.exampleFillHint}`}
+                            data-tooltip-extra
                             disabled={!skillsLoaded}
                             onClick={() => fillExample(task)}
                             className={`flex w-full items-center gap-2 ${exampleRowClass}`}
@@ -1097,6 +1098,7 @@ function VersionBadge() {
       type="button"
       onClick={openAppInfo}
       data-tooltip={note}
+      data-tooltip-extra
       aria-label={note}
       className={`${versionBadgeClass} hover:underline`}
     >

@@ -164,6 +164,7 @@ export interface NavRowLinkProps {
   "aria-current"?: "page";
   "aria-label"?: string;
   "data-tooltip"?: string;
+  "data-tooltip-extra"?: true;
   /** `false`: the link starts no drag of its own address (the row around it is the handle). */
   draggable?: false;
   onClick?: () => void;
@@ -202,6 +203,8 @@ export interface NavRowProps {
   ariaLabel?: string;
   /** A hint on hover and focus. */
   tooltip?: string;
+  /** `tooltip` holds what the label leaves out (a shortcut, a full path): it shows over the label in full. */
+  tooltipExtra?: boolean;
   className?: string;
 }
 
@@ -220,6 +223,7 @@ export function NavRow({
   onClick,
   ariaLabel,
   tooltip,
+  tooltipExtra = false,
   className = "",
 }: NavRowProps) {
   const orientation = useContext(NavOrientationContext);
@@ -228,6 +232,7 @@ export function NavRow({
   const named = {
     ...(ariaLabel !== undefined ? { "aria-label": ariaLabel } : {}),
     ...(tooltip !== undefined ? { "data-tooltip": tooltip } : {}),
+    ...(tooltip !== undefined && tooltipExtra ? { "data-tooltip-extra": true as const } : {}),
   };
   const dragless = draggable === false ? { draggable: false as const } : {};
   const content = (

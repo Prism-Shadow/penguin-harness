@@ -31,7 +31,10 @@ export interface LegendItem {
   shape?: ChartSwatchShape;
   /** Drawn in the swatch's place. */
   mark?: ReactNode;
-  /** The tooltip over a truncated label, when it should say more than the label (a file's path). */
+  /**
+   * The tooltip, when it should say more than the label (a file's path): it then shows over the
+   * label in full. Without it the label is its own tooltip, shown only when cut off.
+   */
   title?: string;
   /** What a `list` row prints after its label. */
   value?: ReactNode;
@@ -87,6 +90,7 @@ export function Legend({
             <span
               data-tooltip={item.title ?? item.label}
               data-tooltip-content={mono ? "code" : "text"}
+              data-tooltip-extra={(item.title ?? item.label) !== item.label || undefined}
               className={`min-w-0 truncate ${list ? "flex-1" : ""} ${mono ? "font-mono" : ""}`}
             >
               {item.label}

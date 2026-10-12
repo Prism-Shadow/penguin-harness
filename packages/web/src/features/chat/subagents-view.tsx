@@ -259,6 +259,7 @@ export function SubagentsView({
             </span>
             <span
               data-tooltip={active.sessionId}
+              data-tooltip-extra
               className="shrink-0 font-mono text-xs text-fg-subtle"
             >
               {shortSessionId(active.sessionId)}

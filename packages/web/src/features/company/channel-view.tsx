@@ -516,6 +516,7 @@ export function ChannelView() {
         <div key={m.id} id={m.id} className="my-2 flex justify-center">
           <p
             data-tooltip={formatDateTime(m.time)}
+            data-tooltip-extra
             className="max-w-[85%] rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-center text-xs leading-relaxed text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
           >
             <span className="sr-only">{S.company.channels.systemMessage} </span>
@@ -558,7 +559,11 @@ export function ChannelView() {
           // The relay chip names what it is and carries the @-chain rule in its tooltip: "hop 3"
           // alone tells a reader nothing about why a message arrived.
           hopChipShown(item.hop) ? (
-            <span data-tooltip={S.company.channels.hopInfo} className="text-fg-muted">
+            <span
+              data-tooltip={S.company.channels.hopInfo}
+              data-tooltip-extra
+              className="text-fg-muted"
+            >
               {S.company.channels.hop(item.hop)}
             </span>
           ) : undefined
@@ -758,6 +763,7 @@ function RefChip({
     <button
       type="button"
       data-tooltip={title}
+      data-tooltip-extra
       onClick={onClick}
       className={`inline-flex items-center ${ICON_GAP.tight} rounded-[var(--ui-radius-pill)] border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
     >

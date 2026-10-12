@@ -399,6 +399,7 @@ export function CalendarPage() {
         key={i.key}
         type="button"
         data-tooltip={title}
+        data-tooltip-extra
         onClick={() => {
           opts.onOpen?.();
           openEdit(i.event);
@@ -757,6 +758,7 @@ export function CalendarPage() {
                 data-tooltip={
                   active ? S.company.calendar.allEmployees : S.company.calendar.legendFilter(e.name)
                 }
+                data-tooltip-extra
                 aria-pressed={active}
                 onClick={() => setEmployeeFilter(active ? "" : e.agentId)}
                 className={`inline-flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
@@ -779,6 +781,7 @@ export function CalendarPage() {
                   className={`truncate ${struck ? "text-gray-400 dark:text-gray-500" : "text-gray-500 dark:text-gray-400"}`}
                   data-tooltip={cadences.join(" · ")}
                   data-tooltip-content="text"
+                  data-tooltip-extra={rest > 0}
                 >
                   {cadences.length === 0
                     ? S.company.calendar.legendEmpty

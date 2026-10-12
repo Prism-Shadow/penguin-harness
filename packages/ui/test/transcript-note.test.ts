@@ -27,12 +27,12 @@ describe("TranscriptNote", () => {
     expect(html).not.toContain("<button");
   });
 
-  it("leads somewhere as one button named by the sentence, the arrow hidden", () => {
+  it("leads somewhere as one button named by the sentence, the arrow hidden, its hint marked as adding to the words", () => {
     const html = note({
       action: { onClick: () => {}, hint: "Back", name: "Using the pdf and docx skills" },
     });
     expect(html).toMatch(
-      /<button type="button" aria-label="Using the pdf and docx skills" data-tooltip="Back" class="ui-activity /,
+      /<button type="button" aria-label="Using the pdf and docx skills" data-tooltip="Back" data-tooltip-extra="true" class="ui-activity /,
     );
     expect(html).toContain('<span aria-hidden="true" class="shrink-0 text-fg-subtle">→</span>');
   });

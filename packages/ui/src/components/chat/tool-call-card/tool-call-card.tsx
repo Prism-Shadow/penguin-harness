@@ -151,6 +151,8 @@ export function ToolCallCard({
                 variant="link"
                 size="sm"
                 title={action.hint}
+                // What the click does to the call is not in its label.
+                data-tooltip-extra
                 onClick={action.onClick}
                 className="shrink-0"
               >

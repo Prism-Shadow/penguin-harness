@@ -308,6 +308,7 @@ function SteerModeRow({
     <button
       type="button"
       data-tooltip={hint}
+      data-tooltip-extra
       aria-pressed={steerMode === mode}
       onClick={() => onChangeSteerMode(mode)}
       className={`h-5 whitespace-nowrap rounded px-1.5 text-xs transition-colors duration-150 ${
@@ -2026,6 +2027,7 @@ export function ChatInput({
               />
             ),
             tooltip: S.chat.handoffTargetTitle(agentDisplayName(target)),
+            tooltipExtra: true,
             removeLabel: S.chat.handoffRemove,
           },
         ]
@@ -2039,6 +2041,7 @@ export function ChatInput({
               <ProviderLogo provider={pendingModel.provider} className="h-3.5 w-3.5 shrink-0" />
             ),
             tooltip: S.chat.modelSwitchTargetTitle(modelLabel(pendingModel)),
+            tooltipExtra: true,
             removeLabel: S.chat.modelSwitchRemove,
           },
         ]
@@ -2050,7 +2053,7 @@ export function ChatInput({
         label: name,
         mono: true,
         glyph: <SkillIcon icon={meta?.icon} size={13} className="shrink-0 text-fg-muted" />,
-        ...(meta ? { tooltip: localizedShortText(locale, meta) } : {}),
+        ...(meta ? { tooltip: localizedShortText(locale, meta), tooltipExtra: true } : {}),
         removeLabel: `${S.chat.skillRemove} ${name}`,
       };
     }),
@@ -2396,6 +2399,7 @@ export function ChatInput({
                     label={S.chat.goalMode}
                     glyph={<GlyphIcon d={GOAL_ICON} size={13} className="text-fg-muted" />}
                     tooltip={S.chat.goalModeDesc}
+                    tooltipExtra
                     removeLabel={S.chat.goalRemove}
                     onRemove={() => toggleGoal(false)}
                     control={goalBudgetPicker}
@@ -2598,6 +2602,7 @@ export function ChatInput({
                  fields (no prefix parsing). */
               <span
                 data-tooltip={modelRef?.modelId ?? ""}
+                data-tooltip-extra={lockedModelLabel !== modelRef?.modelId}
                 className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-md px-1 text-gray-400 dark:text-gray-500"
               >
                 <ProviderLogo

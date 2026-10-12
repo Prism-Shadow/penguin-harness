@@ -566,6 +566,7 @@ export function FinancePage() {
                         },
                         (value) => formatMoney(value, currency),
                       )}
+                      data-tooltip-extra
                     >
                       <TableCell style={{ paddingLeft: 8 + depth * INDENT_PX }}>
                         <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>

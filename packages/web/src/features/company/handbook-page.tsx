@@ -392,6 +392,7 @@ export function HandbookPage() {
                     formatDateTime(selectedFile.updatedAt),
                     formatBytes(selectedFile.size),
                   )}
+                  data-tooltip-extra
                 >
                   {formatRelativeShort(selectedFile.updatedAt, locale)}
                 </span>
