@@ -337,6 +337,59 @@ export class TraceService implements Traces {
    * cost one extra scan, never a false 404. Note this retry only covers a WHOLE-session
    * miss: a session with some shards indexed and a later one missed is served as-is.
    */
+  /**
+   * Register ONE Session's shards by listing the Agent's date directories.
+   *
+   * Answers "does this Session have Trace files, and how big are they" without walking the
+   * tree: a shard is named `<sessionId>_NNN.jsonl` inside a `yyyy-mm-dd` directory, so one
+   * listing per date directory is the whole search. Returns whether anything was found —
+   * false leaves the caller's full reconcile as the fallback, so a probe that cannot see a
+   * file (a date directory it failed to read, say) costs a walk, never a wrong answer.
+   */
+  private async probeSessionShards(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<boolean> {
+    const dir = tracesDir(this.root, projectId, agentId);
+    let dates: string[];
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      dates = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch {
+      return false; // no traces directory at all: nothing to find, and the walk agrees
+    }
+    let found = false;
+    for (const date of dates) {
+      let names: string[];
+      try {
+        names = await fs.readdir(path.join(dir, date));
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        const m = TRACE_FILE_RE.exec(name);
+        if (m === null || m[1] !== sessionId) continue;
+        let sizeBytes = 0;
+        try {
+          sizeBytes = (await fs.stat(path.join(dir, date, name))).size;
+        } catch {
+          continue; // vanished between the listing and the stat: the walk would not see it either
+        }
+        this.store.upsertFile({
+          projectId,
+          agentId,
+          sessionId,
+          fileIndex: Number.parseInt(m[2]!, 10),
+          date,
+          sizeBytes,
+        });
+        found = true;
+      }
+    }
+    return found;
+  }
+
   private async locateAll(
     projectId: string,
     agentId: string,
@@ -344,6 +397,16 @@ export class TraceService implements Traces {
   ): Promise<LocatedFile[]> {
     await this.index.reconcileAgent(projectId, agentId);
     let rows = this.store.listFilesBySession(projectId, agentId, sessionId);
+    if (rows.length === 0) {
+      // A Session the index has not seen (just created, or written by another process) used
+      // to cost a FORCE-reconciled walk of the Agent's whole trace tree on every read —
+      // thousands of shards to answer a question about one Session. The shard file name
+      // carries the Session id, so probe the date directories instead; the walk stays the
+      // fallback for a Session that turns up nowhere.
+      if (await this.probeSessionShards(projectId, agentId, sessionId)) {
+        rows = this.store.listFilesBySession(projectId, agentId, sessionId);
+      }
+    }
     if (rows.length === 0) {
       await this.index.reconcileAgent(projectId, agentId, { force: true });
       rows = this.store.listFilesBySession(projectId, agentId, sessionId);
@@ -432,6 +495,13 @@ private async resolveChildAgent(
   ): Promise<string | null> {
     const hit = this.store.findAgentBySession(projectId, childSid);
     if (hit !== null) return hit;
+    // The Session index already records which Agent owns a Session, and the Trace index is
+    // only a cache of files on disk — so an indexed Session answers this with one row lookup
+    // and no walk at all. This is the COMMON case (a subagent run creates its Session row),
+    // and going to the tree first is what made Projects expensive to open: the walk runs on
+    // the server's event loop, so its cost is paid by every route, not just this read.
+    const known = this.sessions?.findById(childSid);
+    if (known !== undefined && known !== null && known.agentId.length > 0) return known.agentId;
     // Known-dead: a full scan already passed and this id was still missing. Same-agent
     // children are unaffected — locateAll's mtime-gated reconcile indexes those first.
     if (this.unresolvableChildren.has(childSid)) return null;
