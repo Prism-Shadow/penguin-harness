@@ -10,13 +10,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionsResponse } from "@prismshadow/penguin-server/api";
 
-vi.mock("../src/api/endpoints", () => ({ listSessions: vi.fn() }));
+vi.mock("../src/api/endpoints", () => ({ batchSessions: vi.fn() }));
 
 import * as api from "../src/api/endpoints";
 import { ApiError } from "../src/api/client";
 import { MACHINE_REST_MIN_MS, createSessionsStore } from "../src/state/sessions";
 
-const listSessions = vi.mocked(api.listSessions);
+const batchSessions = vi.mocked(api.batchSessions);
 const COUNTS = { active: 0, background: 0, archived: 0 };
 const OK: SessionsResponse = { sessions: [], counts: COUNTS };
 const AGENTS = ["a1", "a2", "a3"];
@@ -24,15 +24,17 @@ const AGENTS = ["a1", "a2", "a3"];
 /** Whether m1 answers; this server always does. */
 let m1Answers = false;
 const askedOf = (machineId: string | null) =>
-  listSessions.mock.calls.filter((c) => (c[3] ?? null) === machineId).length;
+  batchSessions.mock.calls
+    .filter((c) => (c[2] ?? null) === machineId)
+    .reduce((total, c) => total + c[1].length, 0);
 
 beforeEach(() => {
   vi.useFakeTimers();
   m1Answers = false;
-  listSessions.mockReset();
-  listSessions.mockImplementation(async (_p, _a, _o, machineId) => {
+  batchSessions.mockReset();
+  batchSessions.mockImplementation(async (_p, requests, machineId) => {
     if (machineId === "m1" && !m1Answers) throw new ApiError(0, "machine_no_answer", "no answer");
-    return OK;
+    return { results: requests.map(() => ({ ok: true as const, ...OK })) };
   });
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
 });
@@ -53,7 +55,7 @@ describe("a machine that answers nothing", () => {
     const store = storeWithMachine();
     await store.getState().reload();
     expect(askedOf("m1")).toBe(3);
-    listSessions.mockClear();
+    batchSessions.mockClear();
     await store.getState().reload();
     expect(askedOf("m1")).toBe(0);
     expect(askedOf(null)).toBe(3);
@@ -62,10 +64,10 @@ describe("a machine that answers nothing", () => {
   it("is probed with ONE question when its rest is over, and rests twice as long when that fails", async () => {
     const store = storeWithMachine();
     await store.getState().reload();
-    listSessions.mockClear();
+    batchSessions.mockClear();
     await vi.advanceTimersByTimeAsync(MACHINE_REST_MIN_MS); // the booked reload probes
     expect(askedOf("m1")).toBe(1);
-    listSessions.mockClear();
+    batchSessions.mockClear();
     await vi.advanceTimersByTimeAsync(MACHINE_REST_MIN_MS); // still resting: 2 × the first rest
     await store.getState().reload();
     expect(askedOf("m1")).toBe(0);
@@ -77,22 +79,27 @@ describe("a machine that answers nothing", () => {
     const store = storeWithMachine();
     await store.getState().reload();
     m1Answers = true;
-    listSessions.mockClear();
+    batchSessions.mockClear();
     await vi.advanceTimersByTimeAsync(MACHINE_REST_MIN_MS); // probe answers → the full round
     expect(askedOf("m1")).toBe(1 + 3);
-    listSessions.mockClear();
+    batchSessions.mockClear();
     await store.getState().reload();
     expect(askedOf("m1")).toBe(3);
   });
 
   it("a machine that answers about one Agent (404 on the rest) is not resting", async () => {
-    listSessions.mockImplementation(async (_p, agentId, _o, machineId) => {
-      if (machineId === "m1" && agentId !== "a1") throw new ApiError(404, "not_found", "no agent");
-      return OK;
+    batchSessions.mockImplementation(async (_p, requests, machineId) => {
+      return {
+        results: requests.map((request) =>
+          machineId === "m1" && request.agentId !== "a1"
+            ? { ok: false as const, reason: "absent" as const }
+            : { ok: true as const, ...OK },
+        ),
+      };
     });
     const store = storeWithMachine();
     await store.getState().reload();
-    listSessions.mockClear();
+    batchSessions.mockClear();
     await store.getState().reload();
     expect(askedOf("m1")).toBe(3);
   });
