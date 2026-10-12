@@ -21,8 +21,17 @@ export {
   connectionTo,
 } from "./connection.js";
 export type { MachineChannel } from "./connection.js";
-export { heldSessionOf, onSessionChange, sessionOf } from "./ssh-session.js";
-export type { SessionListener, ShellSession } from "./ssh-session.js";
+export {
+  MACHINE_SESSION_IFACE,
+  MachineSession,
+  SESSION_GROUP,
+  SESSION_SHAPE_ID,
+  attachSessionRegistry,
+  heldSessionOf,
+  onSessionChange,
+  sessionOf,
+} from "./ssh-session.js";
+export type { HeldSession, SessionListener, ShellSession } from "./ssh-session.js";
 export { PASSWORD_ENV, forgetRefusal, passwordSignIn } from "./login.js";
 export type { AskpassPlan } from "./login.js";
 export { execFailureText } from "./exec.js";

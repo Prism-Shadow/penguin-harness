@@ -1,19 +1,71 @@
-/** Product-first hero with two direct installation paths. */
+/**
+ * Product-first hero: the positioning line, two direct installation paths, four stat tiles (the
+ * small label over the big value), and three catalogue rows (supported models, self-evolution
+ * algorithms, Benchmarks) whose outside links confirm before they open. What the rows list, and
+ * where each entry links, is lib/rsi-stats.ts.
+ */
+import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { RELEASE_VERSION } from "../lib/version";
-import { DownloadIcon, ModelProviderLogo, TerminalIcon } from "../components/icons";
+import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../lib/rsi-stats";
+import {
+  DownloadIcon,
+  ExternalLinkIcon,
+  ModelProviderLogo,
+  TerminalIcon,
+} from "../components/icons";
+import { ExternalLink, ExternalLinkScope } from "../components/external-link";
+import { useLocale } from "../state/locale";
 
-const MODEL_PROVIDERS = [
-  "openai",
-  "anthropic",
-  "gemini",
-  "deepseek",
-  "zai",
-  "moonshot",
-  "qwen",
-  "openrouter",
-] as const;
+/**
+ * An entry of a text catalogue row: plain text on the page, no box of its own — the row is a
+ * list, read the way the model logos beside it are.
+ */
+const ENTRY = "inline-flex items-center gap-1 text-sm font-medium text-gray-700 dark:text-gray-300";
+
+/** An entry that links out: the same text, underlined on hover, with the outside-link mark. */
+const ENTRY_LINK = `${ENTRY} underline-offset-4 decoration-gray-300 transition-colors hover:text-gray-950 hover:underline dark:decoration-gray-600 dark:hover:text-white`;
+
+/**
+ * One labelled row of the catalogue: label above the items on phones; from `sm` up, label and
+ * items share the catalogue's two columns (subgrid), so the three labels line up.
+ */
+function CatalogRow({
+  label,
+  delay,
+  listClassName,
+  children,
+}: {
+  label: string;
+  delay: number;
+  listClassName: string;
+  children: ReactNode;
+}) {
+  // Uppercase suits the English labels; on a Chinese label it would only shout whatever Latin
+  // word the label carries.
+  const { locale } = useLocale();
+  return (
+    <div
+      className="anim-rise flex flex-col items-center sm:col-span-2 sm:grid sm:grid-cols-subgrid sm:items-center"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <dt
+        className={`text-xs font-semibold tracking-wide text-gray-500 sm:text-right ${locale === "en" ? "uppercase" : ""}`}
+      >
+        {label}
+      </dt>
+      {/* Spaced by margin, not `gap`: a gap on the subgrid would override the catalogue's own. */}
+      <dd className="mt-2.5 sm:mt-0">
+        <ul
+          className={`flex flex-wrap items-center justify-center sm:justify-start ${listClassName}`}
+        >
+          {children}
+        </ul>
+      </dd>
+    </div>
+  );
+}
 
 export function Hero() {
   return (
@@ -35,32 +87,14 @@ export function Hero() {
           className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance"
           style={{ animationDelay: "70ms" }}
         >
-          {S.hero.platformLead}
-          <span className="text-brand-600 dark:text-brand-300">
-            <span className="sr-only">{S.hero.platformActions.join(" / ")}</span>
-            <span className="hero-rotator" aria-hidden="true">
-              {S.hero.platformActions.map((action) => (
-                <span key={action} className="hero-rotator-word">
-                  {action}
-                </span>
-              ))}
-            </span>
-          </span>
-          {S.hero.platformTail}
+          {S.hero.positioning}
         </p>
 
         <p
           className="hero-automation anim-rise mt-5 leading-6 text-balance text-gray-600 sm:leading-8 dark:text-gray-300"
           style={{ animationDelay: "120ms" }}
         >
-          {S.hero.automationLead}
-          {S.hero.automationActions.map((action, index) => (
-            <span key={action}>
-              {index > 0 && <span className="font-normal"> · </span>}
-              <strong className="font-semibold text-gray-900 dark:text-gray-100">{action}</strong>
-            </span>
-          ))}{" "}
-          {S.hero.automationTail}
+          {S.hero.automation}
         </p>
 
         <div
@@ -102,27 +136,65 @@ export function Hero() {
           ))}
         </dl>
 
-        <div
-          className="anim-rise mx-auto mt-12 flex max-w-5xl flex-wrap items-center justify-center gap-x-5 gap-y-4 text-center text-sm sm:gap-x-6"
-          style={{ animationDelay: "300ms" }}
-        >
-          <span className="mr-1 basis-full text-xs font-semibold tracking-wide text-gray-400 uppercase sm:basis-auto dark:text-gray-500">
-            {S.hero.supportedModelsLabel}
-          </span>
-          {MODEL_PROVIDERS.map((provider, index) => (
-            <span
-              key={provider}
-              aria-label={S.hero.supportedModels[index]}
-              title={S.hero.supportedModels[index]}
-              className="inline-flex items-center text-gray-700 dark:text-gray-300"
+        <ExternalLinkScope>
+          <dl className="mx-auto mt-10 grid w-fit max-w-full gap-y-6 sm:mt-12 sm:grid-cols-[max-content_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-4">
+            <CatalogRow
+              label={S.hero.supportedModelsLabel}
+              delay={300}
+              listClassName="gap-x-2 gap-y-1"
             >
-              <ModelProviderLogo provider={provider} className="h-6 w-6" />
-            </span>
-          ))}
-          <span className="basis-full whitespace-nowrap font-medium text-gray-400 sm:basis-auto dark:text-gray-500">
-            {S.hero.supportedModelsMore}
-          </span>
-        </div>
+              {MODEL_PROVIDERS.map((provider) => (
+                <li key={provider.id}>
+                  <ExternalLink
+                    href={provider.href}
+                    aria-label={provider.name}
+                    title={provider.name}
+                    className="inline-flex rounded-md p-1 text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    <ModelProviderLogo provider={provider.id} className="h-6 w-6" />
+                  </ExternalLink>
+                </li>
+              ))}
+              <li className="ml-1 text-sm font-medium whitespace-nowrap text-gray-500 dark:text-gray-400">
+                {S.hero.supportedModelsMore}
+              </li>
+            </CatalogRow>
+
+            <CatalogRow
+              label={S.hero.algorithmsLabel}
+              delay={340}
+              listClassName="gap-x-5 gap-y-1.5"
+            >
+              {RSI_TOOLKITS.map((toolkit) => (
+                <li key={toolkit.plugin}>
+                  {toolkit.href !== null ? (
+                    <ExternalLink href={toolkit.href} className={ENTRY_LINK}>
+                      {toolkit.label}
+                      <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                    </ExternalLink>
+                  ) : (
+                    <span className={ENTRY}>{toolkit.label}</span>
+                  )}
+                </li>
+              ))}
+            </CatalogRow>
+
+            <CatalogRow
+              label={S.hero.benchmarksLabel}
+              delay={380}
+              listClassName="gap-x-5 gap-y-1.5"
+            >
+              {BENCHMARKS.map((benchmark, index) => (
+                <li key={benchmark.id}>
+                  <ExternalLink href={benchmark.href} className={ENTRY_LINK}>
+                    {S.hero.benchmarkKinds[index]}
+                    <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                  </ExternalLink>
+                </li>
+              ))}
+            </CatalogRow>
+          </dl>
+        </ExternalLinkScope>
       </div>
     </section>
   );

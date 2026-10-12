@@ -83,6 +83,14 @@
         line-height: 1.25;
         color: #8ab4f8;
       }
+      /* The hero's second line, under the tagline rather than in the foot: at 25px it does not
+         fit on one line beside the other facts and the domain. */
+      .subline {
+        margin: 12px 0 0;
+        font-size: 27px;
+        line-height: 1.3;
+        color: #d4d4d4;
+      }
       .foot {
         display: flex;
         align-items: center;
@@ -111,11 +119,12 @@
         <img class="logo" src="../public/penguin-logo.svg" alt="" />
         <div>
           <h1>PenguinHarness</h1>
-          <p class="tagline">Efficient Self-Improving Harness for Everyone</p>
+          <p class="tagline">Unified and Stable RSI Framework</p>
+          <p class="subline">Automatically improve model × agent harness</p>
         </div>
         <div class="foot">
           <div class="facts">
-            <span>Zero-code CLI &amp; Web UI</span><span>1,000+ models</span><span>Apache-2.0</span>
+            <span>1,000+ models</span><span>Apache-2.0</span><span>Runs locally</span>
           </div>
           <div class="domain">penguin.ooo</div>
         </div>

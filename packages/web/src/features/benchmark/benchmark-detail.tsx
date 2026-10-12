@@ -24,6 +24,7 @@ import {
   ICON_SIZE,
   Legend,
   Modal,
+  Pager,
   Table,
   TableBody,
   TableCell,
@@ -40,6 +41,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import { toneInk } from "../../lib/tone";
+import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { NEUTRAL_SERIES } from "../../lib/category-colors";
@@ -47,6 +49,7 @@ import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
 import { fetchBenchmarkCases } from "./benchmark-sources";
 import {
+  benchmarkDescription,
   evaluationLabel,
   labelSeries,
   scoreScale,
@@ -297,6 +300,12 @@ function caseAskParams(
   };
 }
 
+/**
+ * Cases per page of the list: a Benchmark of many cases pages them rather than lengthening the
+ * page, each case one line.
+ */
+const CASES_PER_PAGE = 10;
+
 function CasesSection({
   cases,
   error,
@@ -306,13 +315,21 @@ function CasesSection({
   error: string | null;
   onOpenCase: (caseId: string) => void;
 }) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil((cases?.length ?? 0) / CASES_PER_PAGE));
+  // A list that shrank under the reader (a reload) keeps them on its last page, not a blank one.
+  const current = Math.min(page, pageCount - 1);
+  const shown = cases?.slice(current * CASES_PER_PAGE, (current + 1) * CASES_PER_PAGE);
   return (
     <div>
-      <p className="mb-1 text-xs font-semibold text-gray-500">{S.benchmark.cases}</p>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-gray-500">{S.benchmark.cases}</p>
+        {pageCount > 1 && <Pager page={current} pageCount={pageCount} onChange={setPage} />}
+      </div>
       <Card padding="none">
         {error && <p className={`px-3 py-2 text-xs ${toneInk.danger}`}>{error}</p>}
         {!cases && !error && <p className="px-3 py-2 text-xs text-gray-400">{S.common.loading}</p>}
-        {cases?.map((item) => {
+        {shown?.map((item) => {
           return (
             <button
               key={item.id}
@@ -320,11 +337,13 @@ function CasesSection({
               onClick={() => onOpenCase(item.id)}
               className="flex w-full items-center gap-3 border-b border-gray-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-gray-800/70 dark:hover:bg-gray-800/50"
             >
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">
-                  {item.title}
-                </span>
-                <span className="block truncate font-mono text-xs text-gray-400">{item.id}</span>
+              {/* One line: the case's name, cut short with the whole of it in the tooltip. */}
+              <span
+                className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800 dark:text-gray-200"
+                data-tooltip={item.title}
+                data-tooltip-content="text"
+              >
+                {item.title}
               </span>
               {/* Styled as the quiet gray action the Workspace download link is, not as a
                   link: the row itself is the button, so an accent-colored label here read as
@@ -351,6 +370,8 @@ export function BenchmarkDetail({
   machineNameOf: (machineId: string | null) => string | null;
 }) {
   const { currency } = useTheme();
+  const { locale } = useLocale();
+  const description = benchmarkDescription(bm, locale);
   const [caseStatements, setCaseStatements] = useState<MergedCase[] | null>(null);
   const [caseError, setCaseError] = useState<string | null>(null);
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
@@ -397,8 +418,8 @@ export function BenchmarkDetail({
         <p className="text-xs text-gray-500">
           {S.benchmark.caseCount(bm.caseCount)} · {S.benchmark.runsPerCase(bm.runs ?? 1)}
         </p>
-        {bm.description && (
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{bm.description}</p>
+        {description && (
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{description}</p>
         )}
       </div>
 
@@ -448,7 +469,6 @@ export function BenchmarkDetail({
           benchmarkId={bm.id}
           evaluation={openEvaluation}
           caseTitles={caseTitles}
-          onOpenCase={setOpenCaseId}
           currency={currency}
           onClose={() => setOpenEvaluationIndex(null)}
         />

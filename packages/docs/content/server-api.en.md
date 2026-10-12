@@ -446,7 +446,7 @@ A flow id that names no live flow is `404 platform_auth_flow_not_found`. `sync` 
 
 ## Agents
 
-The paths below omit the `/api/projects/:projectId` prefix, except the four global `/api/plugins` routes.
+The paths below omit the `/api/projects/:projectId` prefix, except the global `/api/plugins` routes.
 
 | Method | Path | Description |
 | --- | --- | --- |

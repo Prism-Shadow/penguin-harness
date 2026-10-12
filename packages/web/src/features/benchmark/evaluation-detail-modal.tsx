@@ -4,11 +4,14 @@
  * carries what the row could only summarize: the series this score belongs to, the Agent State
  * version it tested (the version no longer splits a series, so this is where a reader finds
  * it), the three stored metrics, the evaluation's own summary, and the per-case scores with the
- * raw result of every Run and the Session it ran in. Nothing here is recomputed: every number
+ * raw result of every Run, each Run a link to the Session it ran in — or, for a Session that is
+ * archived and so in no sidebar, a note naming it and where to find it. Nothing here is
+ * recomputed: every number
  * is the one the scoreboard stores. Its footer asks the Project's default agent about the
  * result instead of explaining it on screen, since the explanation lives in the Traces.
  */
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import type { BenchmarkCaseScore, BenchmarkEvaluation } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
@@ -20,8 +23,12 @@ import {
   ICON_GAP,
   ICON_SIZE,
   Modal,
+  toastError,
 } from "@prismshadow/penguin-ui";
+import * as api from "../../api/endpoints";
+import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
+import { SettingsDialog } from "../settings/settings-dialog";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import type { Currency } from "../../state/theme";
 import { AskAiModal } from "./ask-ai-modal";
@@ -38,21 +45,42 @@ export function harborTrialName(sessionId: string): string | null {
 }
 
 /**
- * A run's Session id, for correlating it with what the side panel shows: identification only,
- * reading a Trace is the side panel's job. A run recorded as a Harbor trial is no Session the
- * app can open, so its id comes with a button that copies the trial's name — the directory to
- * look for under the Benchmark's `.jobs/`. It keys off the recorded id alone.
+ * A run's label — "Run #N" under its Case. A run in a Session is a link to that Session
+ * (`onOpen` decides what opening means: the Session may be archived). A run recorded as a Harbor
+ * trial is no Session the app can open, so it stays text with a button that copies the trial's
+ * name — the directory to look for under the Benchmark's `.jobs/`; a run with no id is text.
  */
-export function RunSessionId({ sessionId }: { sessionId?: string }) {
-  if (!sessionId) return <span className="text-gray-400">—</span>;
-  const id = <span className="font-mono text-gray-600 dark:text-gray-300">{sessionId}</span>;
+export function RunLabel({
+  index,
+  sessionId,
+  onOpen,
+}: {
+  /** 1-based, as the label reads. */
+  index: number;
+  sessionId?: string;
+  onOpen: (sessionId: string) => void;
+}) {
+  const label = `${S.benchmark.colRun} #${index}`;
+  if (!sessionId) return <span>{label}</span>;
   const trial = harborTrialName(sessionId);
-  if (trial === null) return id;
+  if (trial !== null) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <CopyButton text={trial} label={S.benchmark.copyTrialName} size="sm" className="shrink-0" />
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex items-center gap-1">
-      {id}
-      <CopyButton text={trial} label={S.benchmark.copyTrialName} size="sm" className="shrink-0" />
-    </span>
+    <button
+      type="button"
+      data-tooltip={S.benchmark.runOpenSession}
+      data-tooltip-extra
+      onClick={() => onOpen(sessionId)}
+      className="text-link underline-offset-2 transition-colors duration-150 hover:text-link-hover hover:underline"
+    >
+      {label}
+    </button>
   );
 }
 
@@ -63,13 +91,13 @@ export function RunSessionId({ sessionId }: { sessionId?: string }) {
 function CaseRow({
   caseScore: c,
   title,
-  onOpenCase,
   currency,
+  onOpenRun,
 }: {
   caseScore: BenchmarkCaseScore;
   title?: string;
-  onOpenCase?: (caseId: string) => void;
   currency: Currency;
+  onOpenRun: (sessionId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const runs = c.runs;
@@ -83,22 +111,9 @@ function CaseRow({
           <span className="flex items-start gap-1.5">
             <Chevron open={open} size={12} className="text-gray-400" />
             <span className="min-w-0">
-              {onOpenCase ? (
-                <button
-                  type="button"
-                  className="block text-left font-medium text-gray-800 hover:underline dark:text-gray-200"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenCase(c.case);
-                  }}
-                >
-                  {title ?? c.case}
-                </button>
-              ) : (
-                <span className="block font-medium text-gray-800 dark:text-gray-200">
-                  {title ?? c.case}
-                </span>
-              )}
+              <span className="block font-medium text-gray-800 dark:text-gray-200">
+                {title ?? c.case}
+              </span>
               {title && title !== c.case && (
                 <span className="block font-mono text-xs text-gray-400">{c.case}</span>
               )}
@@ -112,24 +127,23 @@ function CaseRow({
         <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
           {c.durationMs !== undefined ? humanizeDuration(c.durationMs) : "—"}
         </td>
-        <td className="px-2 py-1">
-          <span className="text-gray-400">—</span>
-        </td>
       </tr>
       {open &&
         runs.map((run, i) => (
           <tr key={i} className="text-xs text-gray-500 dark:text-gray-400">
-            {/* Indented run index row: #1, #2, ... (case-level metrics are their average) */}
+            {/* Indented run row: Run #1, #2, ... (the case's metrics are their average), each
+                opening the Session it ran in. */}
             <td className="py-1 pl-7 pr-2 font-mono">
-              {S.benchmark.colRun} #{i + 1}
+              <RunLabel
+                index={i + 1}
+                {...(run.sessionId ? { sessionId: run.sessionId } : {})}
+                onOpen={onOpenRun}
+              />
             </td>
             <td className="px-2 py-1 font-mono tabular-nums">{formatScore(run.score)}</td>
             <td className="px-2 py-1 font-mono tabular-nums">{formatMoney(run.cost, currency)}</td>
             <td className="px-2 py-1 font-mono tabular-nums">
               {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
-            </td>
-            <td className="px-2 py-1">
-              <RunSessionId {...(run.sessionId ? { sessionId: run.sessionId } : {})} />
             </td>
           </tr>
         ))}
@@ -188,18 +202,39 @@ export function EvaluationDetailModal({
   benchmarkId,
   evaluation,
   caseTitles,
-  onOpenCase,
   currency,
   onClose,
 }: {
   benchmarkId: string;
   evaluation: BenchmarkEvaluation;
   caseTitles: ReadonlyMap<string, string>;
-  onOpenCase: (caseId: string) => void;
   currency: Currency;
   onClose: () => void;
 }) {
+  const navigate = useNavigate();
   const [asking, setAsking] = useState(false);
+  /** The archived Session a run link was pressed for: no sidebar lists it, so it is named here. */
+  const [archivedRun, setArchivedRun] = useState<{ sessionId: string; title: string } | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+
+  /**
+   * A run link: the Session opens in the chat page, unless it is archived — then a note names it
+   * (title and ID) and points to Settings › Archived chats, where it is listed. Read at click
+   * time, so the answer is the Session's state now, not when the dialog opened.
+   */
+  const openRun = async (sessionId: string) => {
+    try {
+      const { session } = await api.getSession(sessionId);
+      if (session.archived) {
+        setArchivedRun({ sessionId, title: session.title ?? "" });
+        return;
+      }
+      onClose();
+      navigate(`/chat/${encodeURIComponent(sessionId)}`);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
   const label = evaluationLabel(evaluation);
   const labelText = label.unlabeled ? S.benchmark.unlabeled : label.text;
 
@@ -280,7 +315,6 @@ export function EvaluationDetailModal({
                     <th className="px-2 py-1.5 font-medium">{S.benchmark.colScore}</th>
                     <th className="px-2 py-1.5 font-medium">{S.common.cost}</th>
                     <th className="px-2 py-1.5 font-medium">{S.benchmark.colDuration}</th>
-                    <th className="px-2 py-1.5 font-medium">{S.benchmark.colSession}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -289,8 +323,8 @@ export function EvaluationDetailModal({
                       key={c.case}
                       caseScore={c}
                       title={caseTitles.get(c.case)}
-                      onOpenCase={caseTitles.has(c.case) ? onOpenCase : undefined}
                       currency={currency}
+                      onOpenRun={(id) => void openRun(id)}
                     />
                   ))}
                 </tbody>
@@ -299,6 +333,44 @@ export function EvaluationDetailModal({
           </div>
         </div>
       </Modal>
+
+      {archivedRun !== null && (
+        <Modal
+          open
+          title={S.benchmark.runArchivedTitle}
+          widthClass="sm:max-w-md"
+          onClose={() => setArchivedRun(null)}
+          footer={
+            <>
+              <Button size="sm" onClick={() => setArchivedRun(null)}>
+                {S.common.close}
+              </Button>
+              <Button size="sm" variant="primary" onClick={() => setArchiveOpen(true)}>
+                {S.benchmark.runArchivedOpen}
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-fg">{S.benchmark.runArchivedBody}</p>
+          <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
+            <dt className="text-fg-muted">{S.benchmark.runArchivedSessionTitle}</dt>
+            <dd className="min-w-0 break-words text-fg">
+              {archivedRun.title || S.benchmark.runSessionUntitled}
+            </dd>
+            <dt className="text-fg-muted">{S.benchmark.runArchivedSessionId}</dt>
+            <dd className="flex min-w-0 items-center gap-1">
+              <span className="min-w-0 break-all font-mono text-fg">{archivedRun.sessionId}</span>
+              <CopyButton
+                text={archivedRun.sessionId}
+                label={S.benchmark.runArchivedCopyId}
+                size="sm"
+                className="shrink-0"
+              />
+            </dd>
+          </dl>
+        </Modal>
+      )}
+      <SettingsDialog open={archiveOpen} onClose={() => setArchiveOpen(false)} section="archived" />
 
       {asking && (
         <AskAiModal

@@ -186,6 +186,10 @@ class Renderer {
       );
       return `{ ${members.join("; ")} }`;
     }
+    // A Map or a Set is its own TypeScript type, not an object of members: an interface may
+    // carry one (the Agent state does), and the comparison is the same one `sig.ts` makes.
+    if ("map" in e) return `Map<${this.expr(e.map[0], where)}, ${this.expr(e.map[1], where)}>`;
+    if ("set" in e) return `Set<${this.expr(e.set, where)}>`;
     if ("maybe" in e) return `(${this.expr(e.maybe, where)} | null | undefined)`;
     if ("oneOf" in e) return `(${e.oneOf.map((x) => this.expr(x, where)).join(" | ")})`;
     // A type of the language's own library is the same type in every program: it is written

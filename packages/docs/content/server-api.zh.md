@@ -446,7 +446,7 @@ flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`
 
 ## Agent
 
-下面的路径省略了 `/api/projects/:projectId` 前缀，只有四个全局的 `/api/plugins` 路由是例外。
+下面的路径省略了 `/api/projects/:projectId` 前缀，全局的 `/api/plugins` 路由是例外。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

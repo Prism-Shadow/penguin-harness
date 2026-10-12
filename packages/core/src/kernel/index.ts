@@ -24,7 +24,7 @@ export { boot, BootError, initialDoc } from "./boot.js";
 export type { UpgradeBlocked, UpgradeFailed, UpgradeResult } from "./upgrade.js";
 export { upgrade } from "./upgrade.js";
 export type { IfaceDecl, IfaceTable, Mismatch, Sig, SlotDecl, TableLike, TypeExpr } from "./sig.js";
-export { assignable, extendsExpr, satisfies, show, tableOf } from "./sig.js";
+export { assignable, closedShape, extendsExpr, satisfies, show, tableOf } from "./sig.js";
 export type { ChildRef, ContextDecl, Manifest, Requirement } from "./manifest.js";
 export { ifaceKey, parseManifest, splitSlotKey } from "./manifest.js";
 export type { CheckResult, ManifestNode, Problem, Published } from "./check.js";

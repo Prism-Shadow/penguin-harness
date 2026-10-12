@@ -477,6 +477,8 @@ export function PluginCard(props: PluginCardProps) {
           open
           title={S.plugins.updateConfirmTitle(title)}
           tone="primary"
+          // Wide enough for a Skill's name beside its `old → new` versions, read whole.
+          widthClass="sm:max-w-lg"
           confirmLabel={S.skills.updateAction}
           cancelLabel={S.common.cancel}
           busy={updating}

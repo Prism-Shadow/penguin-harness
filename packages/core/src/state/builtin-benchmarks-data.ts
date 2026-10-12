@@ -54,6 +54,12 @@ const BUILT_IN =
   "repository Prism-Shadow/penguin-harness-benchmark. It is written when the Project is " +
   "created; a deleted one stays deleted.";
 
+/** The same, in Chinese: the shared tail of every built-in's `descriptionZh`. */
+const BUILT_IN_ZH =
+  "选题时要求能在仅有 CPU 的 Docker 中运行。这是内置 Benchmark：每道题经 Harbor 框架在 Docker 中运行、" +
+  "由它自带的验证器评分，题目文件在公开仓库 Prism-Shadow/penguin-harness-benchmark 中。它在创建 Project " +
+  "时写入，删除后不会再写回。";
+
 export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
   {
     id: "penguinharness-benchmark-sec-a",
@@ -62,7 +68,11 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
       "Sec A is rag-bench-essential (Data Analysis Bench): data analysis over long reports, " +
       "hierarchical tables, spreadsheets, document libraries, a 144 MB survey microdata file and " +
       `a Formula 1 SQLite database, scored pass or fail by each case's own scorer. ${BUILT_IN}`,
-    version: "2026.10.09.1",
+    descriptionZh:
+      "Sec A 即 rag-bench-essential（Data Analysis Bench）：在长报告、多级表头的表格、电子表格、文档库、" +
+      "一份 144 MB 的调查微观数据和一个 Formula 1 SQLite 数据库上做数据分析，由每道题自带的评分器判定通过与否。" +
+      BUILT_IN_ZH,
+    version: "2026.10.12.1",
     repoDir: "rag-bench-essential",
     source: "rag-bench-essential, Data Analysis Bench (converted to Harbor tasks)",
     upstream: {
@@ -174,7 +184,10 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     description:
       "Sec B is DeepSWE v1.1: features and fixes in real open-source repositories, graded by the " +
       `projects' own tests on what the agent commits. ${BUILT_IN}`,
-    version: "2026.10.09.1",
+    descriptionZh:
+      "Sec B 即 DeepSWE v1.1：在真实的开源仓库里实现功能、修复缺陷，按 Agent 提交的代码由项目自己的测试评分。" +
+      BUILT_IN_ZH,
+    version: "2026.10.12.1",
     repoDir: "deep-swe",
     source: "DeepSWE v1.1 (Harbor Hub `datacurve/deep-swe-1-1`, revision 1)",
     upstream: { url: "https://github.com/datacurve-ai/deep-swe", license: "Apache-2.0" },
@@ -284,7 +297,10 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     description:
       "Sec C is AutomationBench: business workflows across simulated SaaS apps, driven through " +
       `a command-line tool and graded by the upstream rubric. ${BUILT_IN}`,
-    version: "2026.10.09.1",
+    descriptionZh:
+      "Sec C 即 AutomationBench：在模拟的 SaaS 应用之间完成业务流程，经命令行工具操作，按上游的评分细则打分。" +
+      BUILT_IN_ZH,
+    version: "2026.10.12.1",
     repoDir: "automation-bench",
     source: "AutomationBench 1.0.6 (converted to Harbor tasks)",
     upstream: { url: "https://github.com/zapier/AutomationBench", license: "MIT" },
@@ -394,7 +410,9 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     description:
       "Sec D is Terminal-Bench-Science 0.1: research-grade scientific computing done in a " +
       `terminal. ${BUILT_IN}`,
-    version: "2026.10.09.1",
+    descriptionZh:
+      "Sec D 即 Terminal-Bench-Science 0.1：在终端里完成研究级的科学计算任务。" + BUILT_IN_ZH,
+    version: "2026.10.12.1",
     repoDir: "terminal-bench-science",
     source:
       "Terminal-Bench-Science 0.1 (Harbor Hub `terminal-bench-science/terminal-bench-science`, revision 10)",
@@ -525,7 +543,10 @@ export const BUILTIN_BENCHMARKS: BuiltinBenchmark[] = [
     description:
       "Sec E is Terminal-Bench 4.0: hard, realistic tasks done in a terminal, across software, " +
       `security, science, machine learning, operations, hardware and media. ${BUILT_IN}`,
-    version: "2026.10.09.1",
+    descriptionZh:
+      "Sec E 即 Terminal-Bench 4.0：在终端里完成困难而真实的任务，涵盖软件、安全、科学、机器学习、运维、硬件与媒体。" +
+      BUILT_IN_ZH,
+    version: "2026.10.12.1",
     repoDir: "terminal-bench",
     source: "Terminal-Bench 4.0 (Harbor Hub `terminal-bench/terminal-bench`, revision 4)",
     upstream: { url: "https://github.com/harbor-framework/terminal-bench", license: "Apache-2.0" },

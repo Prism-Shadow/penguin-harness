@@ -11,7 +11,8 @@
  *   its source while the server itself runs from source, its build otherwise, each falling back
  *   to the other; Electron has the build only. A checkout with neither gets a stub that says why.
  * - Through the shim, the real CLI's data root is `--root` > an explicit PENGUIN_HOME > the
- *   shim's root; without the shim, `~/.penguin/data` as before.
+ *   shim's root; without the shim, this checkout's CLI takes the dev CLI's root
+ *   (`~/.penguin/dev-data-cli`), never the installed `~/.penguin/data`.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
@@ -447,7 +448,7 @@ describe.skipIf(!POSIX)("a penguin started through the shim", () => {
     expect(posixStubScript("$HOME `id`")).toContain("$HOME `id`");
   });
 
-  it("the real CLI's data root: --root, then an explicit PENGUIN_HOME, then the shim's, then ~/.penguin/data", async () => {
+  it("the real CLI's data root: --root, then an explicit PENGUIN_HOME, then the shim's, then the checkout's default", async () => {
     const root = await tempRoot();
     const home = await tempRoot();
     ensureCliShim(root, THIS_CHECKOUT_CLI.entry, {
@@ -468,10 +469,11 @@ describe.skipIf(!POSIX)("a penguin started through the shim", () => {
     expect(rootOf(shim, [], {})).toBe(root);
     expect(rootOf(shim, [], { PENGUIN_HOME: elsewhere })).toBe(elsewhere);
     expect(rootOf(shim, ["--root", flagged], { PENGUIN_HOME: elsewhere })).toBe(flagged);
-    // Without the shim the CLI is what it always was: the default root under HOME.
+    // Without the shim, a checkout's CLI started bare (the globally linked `penguin`) takes the
+    // dev CLI's root under HOME — never the installed release's `~/.penguin/data`.
     const direct = [...THIS_CHECKOUT_CLI.execArgs, THIS_CHECKOUT_CLI.entry!];
     const res = run(process.execPath, [...direct, "auth", "status"], { HOME: home }, home);
-    expect(res.stdout).toContain(path.join(home, ".penguin", "data", "cli-session.json"));
+    expect(res.stdout).toContain(path.join(home, ".penguin", "dev-data-cli", "cli-session.json"));
   }, 60_000);
 });
 

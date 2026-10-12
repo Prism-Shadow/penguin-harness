@@ -10,6 +10,8 @@ import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import type { ScheduleStateRow } from "../db/repos/schedules.js";
 import type { ScheduleFileCache } from "../runtime/schedule-store.js";
 import type { ScheduleEntryView } from "../runtime/scheduler.js";
+import type { LiveTail } from "../runtime/live-tail.js";
+import type { RuntimeEntry } from "../runtime/session-manager.js";
 
 /** SessionIndex: the mechanism SessionsRepo implements. */
 @Interface()
@@ -54,6 +56,30 @@ export abstract class SessionDrivers {
   /** The human `sessionId` acts for; null for a Session the server does not know. */
   abstract driverOf(sessionId: string): string | null;
 }
+
+/**
+ * What a run that has just ended asks of the CURRENT generation: start the next queued
+ * follow-up, or deliver background notices that raced the run's exit. A run outlives the
+ * generation that launched it (see AgentState.current), and what it starts next is the
+ * current logic's to start.
+ */
+export interface RunStarter {
+  startQueuedFollowUp(sessionId: string): Promise<void>;
+  startBackgroundNoticeTask(sessionId: string): Promise<void>;
+}
+
+/** AgentState: the mechanism AgentStateStore implements — the Session runtime's in-memory state, data only. */
+export abstract class AgentState extends Interface<{
+  readonly entries: Map<string, RuntimeEntry>;
+  readonly childRoots: Map<string, string>;
+  readonly locks: Map<string, Promise<unknown>>;
+  readonly deletingAgents: Set<string>;
+  readonly deletingSessions: Set<string>;
+  readonly agentGenerations: Map<string, number>;
+  readonly liveTail: LiveTail;
+  /** The generation working on this state right now; every generation points it at itself when it takes the state over. */
+  current: RunStarter | null;
+}>() {}
 
 /** SessionOrigins: the mechanism SessionSources implements. */
 @Interface()

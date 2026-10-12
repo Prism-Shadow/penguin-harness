@@ -1,7 +1,7 @@
 ---
 name: company-hr
-description: Run HR for a PenguinHarness organization — guarantee every employee has an enabled calendar event, hire and offboard employees (channels included), evaluate and improve them (with the agent-tuning plugin's agent-optimization skill), and keep the handbook's role conventions current.
-version: 2026.10.10.1
+description: Run HR for a PenguinHarness organization — guarantee every employee has an enabled calendar event, hire and offboard employees (channels included), evaluate and improve them (with the default-rsi-toolkit plugin's agent-optimization skill), and keep the handbook's role conventions current.
+version: 2026.10.12.1
 ---
 
 # Company HR
@@ -79,7 +79,7 @@ Fixes, cheapest first:
 1. **The brief** — rewrite the employee's `agent_state/AGENTS.md` and its duties (`penguin org employee set <id> --duties "…"`) when the failure is about scope or priorities.
 2. **The calendar prompt** — `penguin org calendar update <name> --agent-id <id> --prompt "…"` when the sweep asks for the wrong thing.
 3. **The model** — propose `penguin org employee set <id> --model-id <id> --provider <p>` to the CEO for a role the current model underserves (or, with finance, a cheaper one for a role it overserves). Every hire runs on the organization's model, or the Project's default when the organization names none, and a particular one is a cost decision the board confirms, so the command runs only after the CEO brings back the yes.
-4. **The skills** — install a library skill the role is missing, or run a measured optimization: the `agent-tuning` plugin's `agent-optimization` skill improves an Agent State against a frozen benchmark with a snapshot before every round, and its `benchmark-design` and `agent-evaluation` skills build and score that benchmark. Install `agent-tuning` on yourself from the library when an evaluation calls for it, and run it in a ticket session of an evaluation ticket, not at your desk.
+4. **The skills** — install a library skill the role is missing, or run a measured optimization: the `agent-optimization` skill of the `default-rsi-toolkit` plugin (the Default RSI Toolkit) improves an Agent State against a frozen benchmark with a snapshot before every round, and the `benchmark-design` and `agent-evaluation` skills of the `agent-evaluation` plugin (Agent Evaluation) build and score that benchmark. Install both plugins on yourself from the library when an evaluation calls for it, and run it in a ticket session of an evaluation ticket, not at your desk.
 
 Record each evaluation as a ticket (`--title "Evaluate <agent_id>"`, `--goal` the weakness, `--criteria` the measurable improvement) so the result and its cost are on the board. Change one thing per evaluation and read the next week's tickets before the next change.
 

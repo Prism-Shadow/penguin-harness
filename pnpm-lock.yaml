@@ -90,15 +90,24 @@ importers:
       '@penguinharness/a2ui':
         specifier: workspace:*
         version: link:../../plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ace-rsi-toolkit
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
-      '@penguinharness/agent-tuning':
+      '@penguinharness/agent-evaluation':
         specifier: workspace:*
-        version: link:../../plugins/agent-tuning
+        version: link:../../plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
@@ -108,6 +117,9 @@ importers:
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/default-rsi-toolkit
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -117,6 +129,9 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/opro-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/opro-rsi-toolkit
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -181,15 +196,24 @@ importers:
       '@penguinharness/a2ui':
         specifier: workspace:*
         version: link:../../plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ace-rsi-toolkit
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
-      '@penguinharness/agent-tuning':
+      '@penguinharness/agent-evaluation':
         specifier: workspace:*
-        version: link:../../plugins/agent-tuning
+        version: link:../../plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
@@ -199,6 +223,9 @@ importers:
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/default-rsi-toolkit
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -208,6 +235,9 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/opro-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/opro-rsi-toolkit
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -266,15 +296,24 @@ importers:
       '@penguinharness/a2ui':
         specifier: workspace:*
         version: link:../../plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ace-rsi-toolkit
       '@penguinharness/agent-company':
         specifier: workspace:*
         version: link:../../plugins/agent-company
       '@penguinharness/agent-development':
         specifier: workspace:*
         version: link:../../plugins/agent-development
-      '@penguinharness/agent-tuning':
+      '@penguinharness/agent-evaluation':
         specifier: workspace:*
-        version: link:../../plugins/agent-tuning
+        version: link:../../plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation':
         specifier: workspace:*
         version: link:../../plugins/browser-automation
@@ -284,6 +323,9 @@ importers:
       '@penguinharness/data-analysis':
         specifier: workspace:*
         version: link:../../plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/default-rsi-toolkit
       '@penguinharness/goal':
         specifier: workspace:*
         version: link:../../plugins/goal
@@ -293,6 +335,9 @@ importers:
       '@penguinharness/model-development':
         specifier: workspace:*
         version: link:../../plugins/model-development
+      '@penguinharness/opro-rsi-toolkit':
+        specifier: workspace:*
+        version: link:../../plugins/opro-rsi-toolkit
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -745,11 +790,17 @@ importers:
 
   plugins/a2ui: {}
 
+  plugins/ace-rsi-toolkit: {}
+
   plugins/agent-company: {}
 
   plugins/agent-development: {}
 
-  plugins/agent-tuning: {}
+  plugins/agent-evaluation: {}
+
+  plugins/ape-rsi-toolkit: {}
+
+  plugins/awm-rsi-toolkit: {}
 
   plugins/browser-automation: {}
 
@@ -757,11 +808,15 @@ importers:
 
   plugins/data-analysis: {}
 
+  plugins/default-rsi-toolkit: {}
+
   plugins/goal: {}
 
   plugins/humanizer: {}
 
   plugins/model-development: {}
+
+  plugins/opro-rsi-toolkit: {}
 
   plugins/sandbox-bwrap:
     devDependencies:
@@ -1783,14 +1838,23 @@ packages:
   '@penguinharness/a2ui@file:plugins/a2ui':
     resolution: {directory: plugins/a2ui, type: directory}
 
+  '@penguinharness/ace-rsi-toolkit@file:plugins/ace-rsi-toolkit':
+    resolution: {directory: plugins/ace-rsi-toolkit, type: directory}
+
   '@penguinharness/agent-company@file:plugins/agent-company':
     resolution: {directory: plugins/agent-company, type: directory}
 
   '@penguinharness/agent-development@file:plugins/agent-development':
     resolution: {directory: plugins/agent-development, type: directory}
 
-  '@penguinharness/agent-tuning@file:plugins/agent-tuning':
-    resolution: {directory: plugins/agent-tuning, type: directory}
+  '@penguinharness/agent-evaluation@file:plugins/agent-evaluation':
+    resolution: {directory: plugins/agent-evaluation, type: directory}
+
+  '@penguinharness/ape-rsi-toolkit@file:plugins/ape-rsi-toolkit':
+    resolution: {directory: plugins/ape-rsi-toolkit, type: directory}
+
+  '@penguinharness/awm-rsi-toolkit@file:plugins/awm-rsi-toolkit':
+    resolution: {directory: plugins/awm-rsi-toolkit, type: directory}
 
   '@penguinharness/browser-automation@file:plugins/browser-automation':
     resolution: {directory: plugins/browser-automation, type: directory}
@@ -1801,6 +1865,9 @@ packages:
   '@penguinharness/data-analysis@file:plugins/data-analysis':
     resolution: {directory: plugins/data-analysis, type: directory}
 
+  '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit':
+    resolution: {directory: plugins/default-rsi-toolkit, type: directory}
+
   '@penguinharness/goal@file:plugins/goal':
     resolution: {directory: plugins/goal, type: directory}
 
@@ -1809,6 +1876,9 @@ packages:
 
   '@penguinharness/model-development@file:plugins/model-development':
     resolution: {directory: plugins/model-development, type: directory}
+
+  '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit':
+    resolution: {directory: plugins/opro-rsi-toolkit, type: directory}
 
   '@penguinharness/skill-porting@file:plugins/skill-porting':
     resolution: {directory: plugins/skill-porting, type: directory}
@@ -6358,11 +6428,17 @@ snapshots:
 
   '@penguinharness/a2ui@file:plugins/a2ui': {}
 
+  '@penguinharness/ace-rsi-toolkit@file:plugins/ace-rsi-toolkit': {}
+
   '@penguinharness/agent-company@file:plugins/agent-company': {}
 
   '@penguinharness/agent-development@file:plugins/agent-development': {}
 
-  '@penguinharness/agent-tuning@file:plugins/agent-tuning': {}
+  '@penguinharness/agent-evaluation@file:plugins/agent-evaluation': {}
+
+  '@penguinharness/ape-rsi-toolkit@file:plugins/ape-rsi-toolkit': {}
+
+  '@penguinharness/awm-rsi-toolkit@file:plugins/awm-rsi-toolkit': {}
 
   '@penguinharness/browser-automation@file:plugins/browser-automation': {}
 
@@ -6370,11 +6446,15 @@ snapshots:
 
   '@penguinharness/data-analysis@file:plugins/data-analysis': {}
 
+  '@penguinharness/default-rsi-toolkit@file:plugins/default-rsi-toolkit': {}
+
   '@penguinharness/goal@file:plugins/goal': {}
 
   '@penguinharness/humanizer@file:plugins/humanizer': {}
 
   '@penguinharness/model-development@file:plugins/model-development': {}
+
+  '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit': {}
 
   '@penguinharness/skill-porting@file:plugins/skill-porting': {}
 
@@ -6429,15 +6509,20 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
       '@penguinharness/a2ui': file:plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -6448,6 +6533,7 @@ snapshots:
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
       commander: 13.1.0
       dotenv: 17.4.2
+      fflate: 0.8.3
       smol-toml: 1.6.1
       yaml: 2.9.0
     transitivePeerDependencies:
@@ -6463,15 +6549,20 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
       '@penguinharness/a2ui': file:plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -6493,15 +6584,20 @@ snapshots:
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
       '@penguinharness/a2ui': file:plugins/a2ui
+      '@penguinharness/ace-rsi-toolkit': file:plugins/ace-rsi-toolkit
       '@penguinharness/agent-company': file:plugins/agent-company
       '@penguinharness/agent-development': file:plugins/agent-development
-      '@penguinharness/agent-tuning': file:plugins/agent-tuning
+      '@penguinharness/agent-evaluation': file:plugins/agent-evaluation
+      '@penguinharness/ape-rsi-toolkit': file:plugins/ape-rsi-toolkit
+      '@penguinharness/awm-rsi-toolkit': file:plugins/awm-rsi-toolkit
       '@penguinharness/browser-automation': file:plugins/browser-automation
       '@penguinharness/continual-learning': file:plugins/continual-learning
       '@penguinharness/data-analysis': file:plugins/data-analysis
+      '@penguinharness/default-rsi-toolkit': file:plugins/default-rsi-toolkit
       '@penguinharness/goal': file:plugins/goal
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
+      '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides

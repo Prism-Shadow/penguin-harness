@@ -1,7 +1,9 @@
 /**
  * Draft view (/chat/new): the pre-persistence form of a new
- * conversation, before any Session exists. The input card sits vertically centered;
- * before sending, this is where Agent / Workspace / approval mode / Model are all
+ * conversation, before any Session exists. The page around the input card is the start
+ * dashboard (start-dashboard.tsx: the brand and its counts above the card, the examples and
+ * shortcuts below it); this module keeps the draft itself. Before sending,
+ * this is where Agent / Workspace / approval mode / Model are all
  * chosen in one place — two small dropdown pills sit right below the card (pill
  * buttons, styled after ChatGPT's project picker): Agent selection and Workspace
  * directory selection (the menu browses server-side directories, and the current
@@ -56,18 +58,14 @@ import {
   AgentAvatar,
   Chevron,
   Dropdown,
-  ICONS,
   MenuItem,
   MenuLabel,
-  PenguinLogo,
   toastError,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
-import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
 import { S } from "../../lib/strings";
 import { UNCONFINED, draftSandboxAfter } from "../../lib/permission-level";
 import type { PermissionPick } from "../../lib/permission-level";
-import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { rememberSessionMachine } from "../../lib/session-machines";
 import { cachedMachineAgents, rememberMachineAgents } from "../../lib/machine-cache";
@@ -75,22 +73,15 @@ import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
 import type { MachineLink } from "../../lib/machine-link";
 import { useMachines } from "../../state/machines";
 import { useAuth } from "../../state/auth";
-import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { useVersionInfo } from "../../lib/use-version-info";
-import { versionBadgeFor } from "../../lib/update-flow";
-import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { employeesLast, isEmployee } from "../agents/agent-employment";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import { APPROVAL_MODES } from "./approval-mode";
 import { adoptDockScope } from "../dock/dock-state";
 import { setDockCwd } from "../dock/dock-terminal";
-import { EXAMPLE_FOLDERS } from "./example-tasks";
-import type { ExampleFolderId, ExampleTask } from "./example-tasks";
-import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
-import { SHORTCUTS_FOLDER_ID, ShortcutsFolder } from "./shortcuts-folder";
+import { StartDashboard } from "./start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import {
@@ -139,24 +130,6 @@ function saveAppliedRouteKey(field: RouteStateField, key: string): void {
     /* best-effort: the dedup marker falls back to the per-mount ref */
   }
 }
-
-/**
- * One glyph per example folder, 16×16. Icons live on the folder rather than on each example:
- * with the examples reduced to single-line titles, a column of per-row icons was noise
- * competing with the titles, while the folder row is exactly where a glyph earns its place —
- * it is what you scan to pick a category.
- *
- * webapps: a browser window (chrome bar + two dots). agents: the registry's robot itself — the
- * one glyph in the app that means "agent", worn by the sidebar's Agents entry and its grouping
- * option — imported rather than copied, because a hand-copied duplicate is what silently drifts
- * the day that glyph is redrawn. schedules: a clock face with hands — the plainest mark for
- * "fires on a timer", and distinct from the hourglass that already means a Session is waiting.
- */
-const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
-  webapps: ICONS.appWindow,
-  agents: ICONS.robot,
-  schedules: ICONS.clock,
-};
 
 export function DraftView({
   projectId,
@@ -856,40 +829,23 @@ export function DraftView({
   );
 
   /**
-   * Example tasks: a click FILLS the composer — the prompt into the text body, the example's
-   * skills into the skills dropdown — and sends nothing. The user reads what landed, edits it
-   * if they want, and presses Send, which then builds the very message this card used to
-   * submit by itself (the `[use_skills]` block is the send path's job, so the textarea never
-   * shows a marker block). Filling is instant and local: there is no busy state and no
-   * in-flight guard to keep here, and everything else — where the prompt goes when text is
-   * already typed, focus, the caret — is the composer's, reached through this handle.
+   * The start dashboard's examples and shortcuts: a click FILLS the composer —
+   * the prompt into the text body, the Skills it pins into the skills dropdown — and sends
+   * nothing. The user reads what landed, edits it if they want, and presses Send, which then
+   * builds the very message the card used to submit by itself (the `[use_skills]` block is the
+   * send path's job, so the textarea never shows a marker block). A saved shortcut pins no
+   * Skills: its prompt is the user's own text, and an empty pin list leaves the composer's Skill
+   * selection exactly as the user set it (see user-shortcuts.ts). Filling is instant and local:
+   * there is no busy state and no in-flight guard to keep here, and everything else — where the
+   * prompt goes when text is already typed, focus, the caret — is the composer's, reached
+   * through this handle.
    */
   const ownComposerRef = useRef<ComposerControl | null>(null);
   const composerRef = pageComposerRef ?? ownComposerRef;
-  const fillExample = useCallback((task: ExampleTask) => {
-    // S is a live binding swapped on locale change: read the prompt at click time, not at render.
-    composerRef.current?.fillPrompt(S.chat.exampleTasks[task.id].prompt, task.skills);
+  const fillComposer = useCallback((prompt: string, skills: readonly string[]) => {
+    composerRef.current?.fillPrompt(prompt, skills);
   }, []);
-  /**
-   * A saved shortcut takes the same path with no Skills to pin: its prompt is the user's own text,
-   * not a card authored against the Skill catalog this product ships (see user-shortcuts.ts). An
-   * empty pin list leaves the composer's Skill selection exactly as the user set it.
-   */
-  const fillShortcut = useCallback((prompt: string) => {
-    composerRef.current?.fillPrompt(prompt, []);
-  }, []);
-
-  /**
-   * The open example folder — bookmark-style, and ALWAYS exactly one: selecting another closes
-   * the previous, and clicking the open one is a no-op rather than collapsing it. Never
-   * nullable on purpose. With the folders kept within one row of each other, "one open" is
-   * what keeps the block's height near-constant: the examples area can neither collapse to
-   * bare folder rows nor grow to the whole catalog, so switching folders moves what sits
-   * below it by at most one row.
-   */
-  const [openFolder, setOpenFolder] = useState<ExampleFolderId | typeof SHORTCUTS_FOLDER_ID>(
-    EXAMPLE_FOLDERS[0].id,
-  );
+  const readComposerText = useCallback(() => textRef.current, []);
 
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
 
@@ -898,226 +854,92 @@ export function DraftView({
   const contextWindow = modelInfo?.contextWindow;
   const vision = modelInfo?.vision !== false;
 
+  // The composer and the ownership pills under it, which the dashboard sets between its brand
+  // and its examples.
+  const composer = (
+    <>
+      <ChatInput
+        status="idle"
+        controlRef={composerRef}
+        onSend={onSend}
+        onStop={async () => undefined}
+        modelRef={modelRef}
+        models={models?.models ?? []}
+        onChangeModel={setModelRef}
+        thinkingLevel={thinkingLevel}
+        onChangeThinkingLevel={onChangeThinkingLevel}
+        {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
+        {...(contextWindow !== undefined ? { contextWindow } : {})}
+        contextNow={0}
+        vision={vision}
+        approvalMode={approvalMode}
+        // A draft becomes an ordinary conversation, never an organization's: every mode.
+        approvalModes={APPROVAL_MODES}
+        sandbox={{ ...(chatDefaults?.sandbox ?? UNCONFINED), ...sandboxPick }}
+        onChangePermission={changePermission}
+        modeSaving={false}
+        autoFocus
+        agents={agents}
+        {...(agentId ? { currentAgentId: agentId } : {})}
+        skills={agentSkills}
+        {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
+        {...(cached.goal === true ? { initialGoal: true } : {})}
+        onSkillsChange={onSkillsChange}
+        initialText={cached.text ?? ""}
+        onTextChange={onTextChange}
+      />
+
+      {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <AgentSelect
+          agents={agents}
+          selected={selectedAgent}
+          onSelect={selectAgent}
+          empty={remoteAgentsEmpty(remoteLink, remoteAgentsFailure)}
+        />
+        <WorkspaceSelect
+          projectId={projectId}
+          workspace={workspace}
+          machineId={workspaceMachine}
+          onChange={changeWorkspace}
+          chooseMachine
+          {...(agentId ? { agentId } : {})}
+        />
+        {/* The dock's Files panel on the folder picked beside it; a temporary Workspace has
+            none yet (see FilesPanelToggle). */}
+        <FilesPanelToggle available={workspace.trim() !== ""} />
+      </div>
+    </>
+  );
+
   return (
     <div className="anim-fade flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-6 md:px-4">
       {/*
-       * Vertical layout: everything visible — brand, input card, ownership pills, example tasks —
-       * lives in ONE block between two empty flex-1 spacers, so the block is centred and the free
-       * space above and below it is exactly equal. The brand deliberately sits inside that block
-       * rather than in the upper spacer: keeping it in the spacer made the upper gap shorter than
-       * the lower one by the brand's own height, which pushed the card up the viewport and left
-       * the slash menu — it opens upward, `bottom-full` — too little room, so it clipped against
-       * the top of this scroll container. When the viewport is too short the spacers collapse to
-       * nothing, the container's own py-6 keeps the content off the edges, and the page falls back
-       * to natural scrolling.
+       * Vertical layout: everything visible — the dashboard's brand and tiles, the input card,
+       * the ownership pills, the dashboard's examples — lives in ONE block between two empty flex-1
+       * spacers, so the block is centred and the free space above and below it is exactly equal.
+       * The header deliberately sits inside that block rather than in the upper spacer: keeping
+       * the brand in the spacer made the upper gap shorter than the lower one by the brand's own
+       * height, which pushed the card up the viewport. When the viewport is too short the spacers
+       * collapse to nothing, the container's own py-6 keeps the content off the edges, and the
+       * page falls back to natural scrolling; the composer's upward menus measure the room above
+       * the card (chat-input.tsx) rather than assume it.
        */}
       <div className="flex-1" />
 
       <div className="mx-auto w-full max-w-3xl">
-        {/* Large brand logo + brand name + subtitle (e2e tests identify the draft page by this
-            heading). The asset is square-cropped and the graphic already has a bit of built-in
-            padding, so a small margin is enough to sit visually close to the title. */}
-        <div className="mb-10 text-center">
-          <PenguinLogo src={PENGUIN_LOGO_URL} className="mx-auto mb-1 h-36 w-36 rounded-3xl" />
-          <h1 className="ui-display text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-            {S.appName}
-          </h1>
-          <p className="mt-2 text-base text-gray-400 dark:text-gray-500">{S.chat.draftSubtitle}</p>
-          <VersionLine />
-        </div>
-
-        <ChatInput
-          status="idle"
-          controlRef={composerRef}
-          onSend={onSend}
-          onStop={async () => undefined}
-          modelRef={modelRef}
-          models={models?.models ?? []}
-          onChangeModel={setModelRef}
-          thinkingLevel={thinkingLevel}
-          onChangeThinkingLevel={onChangeThinkingLevel}
-          {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
-          {...(contextWindow !== undefined ? { contextWindow } : {})}
-          contextNow={0}
-          vision={vision}
-          approvalMode={approvalMode}
-          // A draft becomes an ordinary conversation, never an organization's: every mode.
-          approvalModes={APPROVAL_MODES}
-          sandbox={{ ...(chatDefaults?.sandbox ?? UNCONFINED), ...sandboxPick }}
-          onChangePermission={changePermission}
-          modeSaving={false}
-          autoFocus
-          agents={agents}
-          {...(agentId ? { currentAgentId: agentId } : {})}
-          skills={agentSkills}
-          {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
-          {...(cached.goal === true ? { initialGoal: true } : {})}
-          onSkillsChange={onSkillsChange}
-          initialText={cached.text ?? ""}
-          onTextChange={onTextChange}
+        <StartDashboard
+          projectId={projectId}
+          composer={composer}
+          skillsLoaded={skillsLoaded}
+          fill={fillComposer}
+          readComposerText={readComposerText}
         />
-
-        {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <AgentSelect
-            agents={agents}
-            selected={selectedAgent}
-            onSelect={selectAgent}
-            empty={remoteAgentsEmpty(remoteLink, remoteAgentsFailure)}
-          />
-          <WorkspaceSelect
-            projectId={projectId}
-            workspace={workspace}
-            machineId={workspaceMachine}
-            onChange={changeWorkspace}
-            chooseMachine
-            {...(agentId ? { agentId } : {})}
-          />
-          {/* The dock's Files panel on the folder picked beside it; a temporary Workspace has
-              none yet (see FilesPanelToggle). */}
-          <FilesPanelToggle available={workspace.trim() !== ""} />
-        </div>
-
-        {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
-            the composer with the prompt and the user sends it (see fillPrompt). The last folder
-            is the user's own saved prompts (see shortcuts-folder.tsx).
-            Bookmark-style folders with ALWAYS exactly one open — selecting another closes the
-            previous, and the open one cannot be collapsed. The block is therefore four folder
-            rows plus one folder's rows, with every folder kept within one row of the others
-            (3–4 examples each; the user folder is capped so its shortcuts plus its add row come
-            to the same), so switching folders moves what sits below by at most one row and no
-            folder needs a scroll container — a scrollbar inside a short showcase reads as a
-            defect. Each example is a single-line title; its one-sentence description rides in
-            the row tooltip rather than a second line. Rows stay disabled until the Agent's
-            installed skills are known — that is all a fill still waits for, and without it the
-            preselect would silently drop the example's skills (a saved shortcut pins none, so
-            it never waits). */}
-        <div className="mt-6 space-y-1">
-          {EXAMPLE_FOLDERS.map((folder) => {
-            const open = folder.id === openFolder;
-            return (
-              <div key={folder.id}>
-                <ExampleFolderRow
-                  open={open}
-                  glyph={FOLDER_GLYPHS[folder.id]}
-                  label={S.chat.exampleFolders[folder.id]}
-                  count={folder.tasks.length}
-                  onOpen={() => setOpenFolder(folder.id)}
-                />
-
-                {open && (
-                  <ul className="mt-0.5 space-y-1 pl-4">
-                    {folder.tasks.map((task) => {
-                      const copy = S.chat.exampleTasks[task.id];
-                      return (
-                        <li key={task.id}>
-                          <button
-                            type="button"
-                            data-tooltip={`${copy.desc}\n${S.chat.exampleFillHint}`}
-                            data-tooltip-extra
-                            disabled={!skillsLoaded}
-                            onClick={() => fillExample(task)}
-                            className={`flex w-full items-center gap-2 ${exampleRowClass}`}
-                          >
-                            <span className="min-w-0 flex-1 truncate">{copy.label}</span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
-          <ShortcutsFolder
-            open={openFolder === SHORTCUTS_FOLDER_ID}
-            onOpen={() => setOpenFolder(SHORTCUTS_FOLDER_ID)}
-            readComposerText={() => textRef.current}
-            onFill={fillShortcut}
-          />
-        </div>
       </div>
 
       {/* Lower symmetric space — empty, so it matches the upper one exactly */}
       <div className="flex-1" />
     </div>
-  );
-}
-
-/**
- * Superscript "new version" hint on the version line: plain small text raised via
- * align-super, in the version line's own muted color and weight. Deliberately not a pill —
- * user feedback was that the earlier accent-colored pill read as a button; the link case
- * only adds a hover underline. The only remaining copy: the sidebar's version row dropped
- * its badge when the three update rows collapsed into one whose label already names the
- * new version.
- */
-const versionBadgeClass =
-  "ml-1.5 inline-block align-super text-xs leading-4 text-gray-400 dark:text-gray-500";
-
-/**
- * Quiet version line under the brand subtitle: `vX.Y.Z · Last updated Jul 26`
- * (localized per dictionary). The product name is not repeated here — the brand wordmark
- * sits directly above, and the sidebar's version footer is bare `vX.Y.Z` too. The date is
- * the running version's release
- * date, stamped into core's BUILD_DATE at build time — displayed as-is, no network;
- * dev builds and releases that predate the stamping (v0.1.2 and earlier) carry null
- * and show the version alone. When the update flow has something waiting — a release
- * offered, a download in the background, a restart pending — a small superscript badge
- * follows, a button into the App info dialog (the same dialog the sidebar's App info row opens).
- * Fetching starts on mount — useVersionInfo caches at module level, so after the first
- * resolution anywhere in the app this renders instantly and never refetches. Nothing
- * renders until the version resolves (no placeholder flicker under the brand).
- */
-function VersionLine() {
-  const { locale } = useLocale();
-  const { version } = useVersionInfo(true);
-  if (version === null) return null;
-  const date = version.buildDate;
-  return (
-    <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
-      {`v${version.version}${
-        date !== null ? ` · ${S.update.lastUpdated(formatMonthDay(date, locale))}` : ""
-      }`}
-      <VersionBadge />
-    </p>
-  );
-}
-
-/**
- * The superscript on the version line: a button into the App info dialog, worded by where the
- * flow stands. Its title and accessible name carry the App info row's own sentence, so the
- * two surfaces say the same thing about the same release.
- */
-function VersionBadge() {
-  const { mode, flow } = useUpdateFlow();
-  const badge = versionBadgeFor(flow);
-  if (mode === "none" || badge === null) return null;
-  const text =
-    badge === "available"
-      ? S.update.newVersionBadge
-      : badge === "downloading"
-        ? S.update.badgeDownloading
-        : S.update.badgeReady;
-  const note =
-    flow.kind === "available"
-      ? S.update.newVersion(flow.version)
-      : flow.kind === "downloading"
-        ? S.update.rowDownloading(flow.version, flow.percent)
-        : flow.kind === "ready"
-          ? S.update.restartToUpdate(flow.version)
-          : text;
-  return (
-    <button
-      type="button"
-      onClick={openAppInfo}
-      data-tooltip={note}
-      data-tooltip-extra
-      aria-label={note}
-      className={`${versionBadgeClass} hover:underline`}
-    >
-      {text}
-    </button>
   );
 }
 

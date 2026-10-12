@@ -13,6 +13,7 @@
  */
 import type { PeakWindows } from "../features/models/model-grouping";
 import type { ModelGroupSort } from "../features/models/model-sort";
+import type { RsiMethodId } from "../features/benchmark/rsi-methods";
 
 export const zh = {
   appName: "PenguinHarness",
@@ -3330,12 +3331,23 @@ export const zh = {
     /** The same mark on its own, for a row that is attributed to a machine rather than named after one. */
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
-    draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
-    /** Collapsed group names for the home-page examples (bookmark style; only one open at a time). */
+    draftSubtitle: "最全面的 Agent 自进化平台",
+    /** The start page's dashboard (features/chat/start-dashboard.tsx): three counts beside the brand, and the examples block under the composer. */
+    start: {
+      /** What each count counts; the label and the number open the page that lists it. Short: the three share the brand's line. */
+      metrics: {
+        agents: "智能体",
+        toolkits: "自进化算法",
+        benchmarks: "评估集",
+      },
+      examplesTitle: "示例与快捷指令",
+    },
+    /** Collapsed group names for the start page's examples (bookmark style; only one open at a time). */
     exampleFolders: {
-      webapps: "搭建网页应用",
-      agents: "搭建和优化智能体",
-      schedules: "创建定时任务",
+      apps: "一句话生成 AI 应用",
+      webapps: "网页与小游戏",
+      evolve: "评测与优化智能体",
+      schedules: "定时任务",
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "点击填入输入框，可修改后自行发送",
@@ -3442,6 +3454,13 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "音符画成音符图标，严格踩着节拍飞来，玩家按键击打，判定显示 Perfect / Great / Miss 三档，" +
           "连击计分，难度随曲子推进。纯前端单文件，file:// 直接打开即玩。",
       },
+      ragDocsExpert: {
+        label: "一句话生成 RAG 文档专家",
+        desc: "收集 Claude Code 文档，生成一个带来源引用的 RAG 问答应用",
+        prompt:
+          "收集 https://github.com/ericbuess/claude-code-docs 的文档，" +
+          "做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
+      },
       investmentCopilot: {
         label: "对话式投资分析助理",
         desc: "用 Penguin SDK 做对话式看盘 Copilot：首页列出近期走势较好的股票，每个判断都说清市场因素",
@@ -3452,14 +3471,14 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "只做分析不是投资建议。它的查股工具要能答「帮我查一下智谱的股票」这类问题：" +
           "按公司名（中文也行）自己对应到股票代码，查不到或没上市就直说，不要编。",
       },
-      missionControl: {
-        label: "搭建自定义工作流界面：Agent 指挥台",
-        desc: "聊天旁的 Workflow 标签页：把一个任务同时派给多个 Agent，实时看每个 Session 的状态",
+      legalDesk: {
+        label: "法务智能体：上传文件，下载分析报告",
+        desc: "新建一个法务 Agent，配一个 Workflow 标签页：只有上传、文件列表和报告下载，看不到对话过程",
         prompt:
-          "给你自己做一个 Workflow：聊天旁边的一张「指挥台」标签页。我输入一个任务、勾选本 Project 里的一个或多个 Agent，" +
-          "它就为每个 Agent 开一个 Session 并行跑起来。每次运行是一张卡片，带实时的动态状态（排队、运行中、完成）和耗时，" +
-          "刷新页面后看板仍在。再加第二张标签页放统计——各 Agent 的运行次数与平均耗时——以及一个占满整个应用的按钮，当作大屏来用。" +
-          "颜色一律取自主题变量，明暗两种主题下都要好看。",
+          "新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。" +
+          "再给你自己做一个 Workflow 标签页，当作它的工作台：我上传文件后，交给法务智能体在后台分析，" +
+          "完成后生成一份分析报告供我下载。页面上只要上传、文件列表（每个文件的处理状态）和报告下载，" +
+          "不显示任何对话过程；颜色一律取自主题变量，明暗两种主题下都要好看。",
       },
       agentBenchmarkBuild: {
         label: "构建通用决策智能体和评测基准",
@@ -3483,7 +3502,7 @@ Benchmark：
 3. 根据投资策略、历史市场与当前指标选择投资动作。`,
       },
       agentOptimization: {
-        label: "优化通用决策智能体的准确率",
+        label: "Default 优化：提升决策智能体的准确率",
         desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
         prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
 
@@ -3493,6 +3512,13 @@ Benchmark：
 - runs：\`3\`
 - desired_score：\`>=95\`
 - candidate_round_limit：\`5\``,
+      },
+      benchmarkImport: {
+        label: "导入评测集：看看仓库里有哪些 Benchmark 包",
+        desc: "列出 penguin-harness-benchmark 仓库里可导入的 Benchmark 包，选定后由 benchmark-design 导入",
+        prompt:
+          "使用 `benchmark-design` 技能：列出 https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages " +
+          "下可导入的 Benchmark 包，标出本 Project 已有的，等我选定后再导入。",
       },
       dailyPlan: {
         label: "每天早 9 点的计划对话",
@@ -4734,7 +4760,7 @@ Benchmark：
       },
       {
         title: "优化",
-        text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本。",
+        text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本，也可以换一种自进化算法。",
       },
     ],
     /** The first step card's text for a Project member: no Create manually, which is the owner's. */
@@ -4817,7 +4843,16 @@ Benchmark：
     colDuration: "耗时",
     colCase: "题目",
     colRun: "运行",
-    colSession: "Session",
+    /** A run label in the evaluation dialog opens the Session the run ran in. */
+    runOpenSession: "打开这次运行的会话",
+    /** The note a run link shows instead when its Session is archived, so in no sidebar. */
+    runArchivedTitle: "这次运行的会话已归档",
+    runArchivedBody: "已归档的会话不在侧栏里。请到「设置 › 已归档对话」里按标题或 ID 找到它。",
+    runArchivedSessionTitle: "标题",
+    runArchivedSessionId: "ID",
+    runArchivedCopyId: "复制会话 ID",
+    runArchivedOpen: "打开已归档对话",
+    runSessionUntitled: "（未命名会话）",
     /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
     copyTrialName: "复制 Harbor trial 名称",
     // The evaluation detail dialog, and the Ask AI dialog both detail dialogs open.
@@ -5020,7 +5055,7 @@ Benchmark：
     evaluatorAgentHint:
       "派发评测子会话、按评分细则打分并写入记分的一方；需要装有 agent-evaluation 技能",
     evaluatorMissingSkill:
-      "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
+      "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-evaluation 插件（Agent Evaluation）。",
     evaluateSessionModel: "评估会话使用的模型",
     evaluateSessionModelHint:
       "这个会话运行所用的模型，缺省为 Project 默认模型；被测智能体也在这个模型上评测，思考等级沿用它自己的配置",
@@ -5045,7 +5080,7 @@ Benchmark：
     optimizerAgent: "执行优化的智能体",
     optimizerAgentHint: "读分数与 Trace、修改被测智能体的一方；需要装有 agent-optimization 技能",
     optimizerMissingSkill:
-      "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
+      "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 default-rsi-toolkit 插件（Default RSI Toolkit）。",
     testedAgentHint: "优化改的是它的 Agent State；分数记在它名下，只与它自己同标签的历史分数比较",
     sessionModel: "优化会话使用的模型",
     sessionModelHint:
@@ -5078,12 +5113,68 @@ Benchmark：
       "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
       "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
+    // The Optimize tab's Method select: one option per RSI toolkit (benchmark/rsi-methods.ts).
+    methodField: "方法",
+    /** Semantics behind the Method field's "?". */
+    methodHint: "改进智能体所用的自进化算法；每一种都是插件库里的一个工具包",
+    /** Each method's option label, and the line the field shows under it once it is picked. */
+    methods: {
+      default: {
+        label: "Default（试跑 → 反思 → 提升）",
+        blurb: "默认循环：每轮一个可证伪的假设、一处有界改动，分数严格提升才保留",
+      },
+      opro: { label: "OPRO", blurb: "由历史指令与分数提出新指令（Yang 等，2023）" },
+      ape: { label: "APE", blurb: "从输入 / 输出示例归纳指令（Zhou 等，2022）" },
+      ace: { label: "ACE", blurb: "从训练轨迹进化规则手册（Zhang 等，2025）" },
+      awm: { label: "AWM", blurb: "从成功轨迹归纳工作流记忆（Wang 等，2024）" },
+    } satisfies Record<RsiMethodId, { label: string; blurb: string }>,
+    /**
+     * Shown where the default's round limit and target score are: any other toolkit sets its own
+     * budget.
+     */
+    methodBudgetHint: "这个方法用它自己的预算：论文默认值降为冒烟档，除非在「优化重点」里另行指定",
+    /** The optimizer field's hint under any other toolkit: the Skill that agent must carry. */
+    methodOptimizerHint: (skill: string): string =>
+      `运行该方法、修改被测智能体的一方；需要装有 ${skill} 技能`,
+    methodMissingSkill: (plugin: string, skill: string): string =>
+      `该智能体没有安装 ${skill} 技能，无法运行这个方法——先在插件库为它安装 ${plugin} 插件，或换用默认智能体。`,
+    /**
+     * The tail for a toolkit other than the default: its own Skill, the three inputs every toolkit
+     * takes, and its paper's loop and budget. Given the baseline's provider and model, it pins the
+     * evaluations to them, as the default loop does, so they join the baseline's series.
+     */
+    rsiOptimizeTail: (p: {
+      skill: string;
+      label: string;
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      provider?: string;
+      modelId?: string;
+    }): string => {
+      const pinned =
+        p.provider && p.modelId
+          ? `- provider：\`${p.provider}\`\n- model_id：\`${p.modelId}\`\n`
+          : "";
+      return (
+        `请使用 \`${p.skill}\` 技能，在冻结的 Benchmark 上对被测智能体复现 ${p.label}。\n\n` +
+        `- test_agent_id：\`${p.targetAgentId}\`\n` +
+        `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+        `- runs：\`${p.runs}\`\n` +
+        pinned +
+        "\n" +
+        (pinned !== "" ? "评测固定使用这组 provider 与模型。" : "") +
+        "按原论文的流程运行，预算用技能的冒烟档（上文另有要求时以上文为准）；只问我方法必需而我没给的输入。" +
+        "基线与每个候选都经技能自带的评测参考测量，固定被测智能体的运行时，每条完整评估都以同一标签记入 scoreboard.yaml；" +
+        "结束时报告基线分、最终分、保留的版本与方法改了什么。"
+      );
+    },
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     /** The header button and the dialog's title: the one place the page uses the user's own word for a Benchmark. */
     importBenchmark: "导入评估集",
     importChatTitle: "推荐：让 Agent 在对话中导入",
     importChatWhy:
-      "Agent 会把链接固定到一个提交、只取这一个文件夹，读过每个文件后再写入评估中心，比直接上传更可靠。",
+      "Agent 会按 benchmark-design 技能的导入流程把链接固定到一个提交、只取这一个文件夹，读过每个文件再写入评估中心，比直接上传更可靠。",
     importSourceLabel: "Benchmark 来源",
     importSourceHint:
       "GitHub 仓库里的文件夹链接（如 …/tree/<commit>/packages/<id>）/ 本地路径 / 一段描述",
@@ -5099,14 +5190,14 @@ Benchmark：
       localPath: (s: string): string => `导入这个本地路径下的 Benchmark 包：${s}。`,
       reference: (s: string): string => `找到这个 Benchmark，并把它作为包导入：${s}。`,
     },
-    /** The fixed tail: the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
+    /** The fixed tail: the benchmark-design Skill's import procedure when the Agent has it, then the rules for one that does not — the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
     importPromptTail: (projectId: string): string =>
       [
+        "如果装有 `benchmark-design` 技能，按它的 `reference/package.md`「Importing a package」一节操作——来源解析、固定提交、配对的 train / test 包、导入后核对与可选的冒烟探测都写在那里；没有这个技能时，按下面的规则做：",
         "包是一个文件夹：根下有 `benchmark_config.toml`（键：id、title、description、version（`YYYY.MM.DD.N`）、status、runs 与 `[origin]` 表），每题一个 `CASE-*/`，内含 `statement/README.md` 与 `rubric/README.md`。",
         "只取这一个文件夹，固定在一个提交上，放进临时目录：先把链接里的分支或标签解析成 40 位提交号（`git ls-remote`），再下载它（codeload 的 tarball 或 sparse checkout）；导入之前读完每个文件——不是 Benchmark 包、`status` 不是 `published`、或含有文本材料以外的东西，就拒绝导入。不要拷贝上游的大文件，题干里有它们的链接。",
         `用 \`penguin benchmark import <那个文件夹> --project-id ${projectId} --origin-url <原样的链接> --origin-ref <40 位提交号> --origin-path <仓库里的文件夹路径>\` 导入（来源不是仓库文件夹时不带 \`--origin-*\` 选项）。服务端按检查上传 zip 的规则检查它，并自己写入 \`benchmarks/<id>/\`：来源记为 git，版本保持包里的值，\`scoreboard.yaml\` 只含 \`evaluations: []\`；你自己不要往 \`benchmarks/\` 下写任何东西。`,
         "命令提示该 Benchmark 已存在时，先停下问我再覆盖——覆盖（`--overwrite`）会替换整个目录，连同 `scoreboard.yaml` 与 `.jobs/`；该 Benchmark 还有评估在运行时，服务端也会拒绝覆盖。最后报告命令输出的 id、标题、版本与题数；评估中心随即列出它。",
-        "如果你装有 `benchmark-design` 技能，先读它的 `reference/package.md`（「Importing a package」一节）。",
       ].join("\n"),
     importCopyPrompt: "复制 Prompt",
     importOpenChat: "打开新对话",

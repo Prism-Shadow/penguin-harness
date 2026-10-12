@@ -58,6 +58,8 @@ import http from "node:http";
 import {
   appendHostBlock,
   closeAllConnections,
+  SESSION_GROUP,
+  attachSessionRegistry,
   closeConnectionTo,
   connectionTo,
   forgetRefusal,
@@ -127,7 +129,7 @@ import type { Access } from "../mechanisms/projects.js";
 import { Hono } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
-import type { Channels, Db, Hmr, Paths } from "../hmr/capabilities.js";
+import type { Channels, Db, Hmr, Paths, ResourceGroups } from "../hmr/capabilities.js";
 import type { Users } from "../mechanisms/identity.js";
 import { userChannelKey } from "../http/routes/events.js";
 import { currentRemoteLayout } from "./layout.js";
@@ -2142,10 +2144,11 @@ export class MachinesService {
   }
 
   /**
-   * Closes every connection THIS generation opened — the platform's dispose effect on a hot
-   * push — and every subscription and timer with them. The record of which machines are kept
-   * connected stays, so the successor's start() brings each back. Nothing here closes by a
-   * remembered pid: the child handles are this generation's own.
+   * Lets go of every connection THIS generation opened — the platform's dispose effect on a hot
+   * push — and every subscription and timer with them: a transient session is closed, a held one
+   * is left in the resource registry for the successor to claim (transport/ssh-session.ts). The
+   * record of which machines are kept connected stays, so the successor's start() brings each
+   * back. Nothing here closes by a remembered pid: the child handles are this generation's own.
    */
   stop(): void {
     this.#stopped = true;
@@ -2886,6 +2889,7 @@ export class MachinesModule {
   @Use() private readonly access!: Access;
   @Use() private readonly channels!: Channels;
   @Use() private readonly users!: Users;
+  @Use() private readonly resourceGroups!: ResourceGroups;
   @Provide() machines!: Machines;
   @Bind("MachinesModule.routes") routes!: Hono<AppEnv>;
   @Bind("MachinesModule.server-proxy") serverProxyRoutes!: Hono<AppEnv>;
@@ -2894,6 +2898,9 @@ export class MachinesModule {
     // after — every stored reference to this machine, here and on the machines it reaches,
     // points at it. A test that supplies its own service mints none.
     const repo = new MachinesRepo(this.db as unknown as DatabaseSync);
+    // The held ssh sessions a predecessor left in the registry are claimed back only when the
+    // platform judged their contract this build's; this generation's are registered there too.
+    attachSessionRegistry(this.hmr.resources, this.resourceGroups.adoptable(SESSION_GROUP));
     // A server running from a checkout builds the image its installs need (checkout-image.ts);
     // asked of this module's own file, which a packaged program or a pushed platform keeps
     // outside any checkout.
@@ -2927,8 +2934,8 @@ export class MachinesModule {
     this.machines = machines;
     this.routes = machinesRoutes({ machines, access: this.access });
     this.serverProxyRoutes = machinesServerProxyRoutes(machines);
-    // Every ssh session THIS generation opened closes with it; the successor's setup
-    // re-holds each one the install record says was held.
+    // Every transient ssh session THIS generation opened closes with it, and every held one is
+    // left for the successor, whose start() re-holds each one the record says was held.
     effect(() => machines.stop());
   }
 }

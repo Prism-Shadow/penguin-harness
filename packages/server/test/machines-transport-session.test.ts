@@ -17,12 +17,19 @@
  * - A machine with a stored password signs in through the askpass helper, the password in the
  *   child's environment and never its argv; a refused password is not offered again — not by the
  *   held session's own reopen, not by the next command — until it is saved anew.
+ * - A held session outlives its generation in the resource registry: a successor judged to speak
+ *   another contract opens its own, and one that adopts it is the one told when it drops — not
+ *   the generation that opened it.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Resources } from "@prismshadow/penguin-core/kernel";
 import {
+  SESSION_GROUP,
+  attachSessionRegistry,
+  closeAllConnections,
   closeConnectionTo,
   connectionTo,
   forgetRefusal,
@@ -34,6 +41,42 @@ import { SshPasswords } from "../src/machines/ssh-passwords.js";
 // The stub `ssh` below is a shell script, which execFile cannot run on Windows; what stays
 // unmeasured on Windows is listed in ci.yml's test-windows note.
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
+
+/**
+ * The runtime's resource registry as the transport uses it: one entry per id, a later
+ * registration takes the slot over, and a release whose registration lost the slot does nothing.
+ */
+function fakeRegistry(): {
+  registry: Resources;
+  entry: (id: string) => { resource: unknown; dispose?: () => void } | undefined;
+} {
+  const store = new Map<string, { resource: unknown; dispose?: () => void }>();
+  const registry: Resources = {
+    register(id, resource, dispose) {
+      const entry = { resource, dispose };
+      store.delete(id);
+      store.set(id, entry);
+      return () => {
+        if (store.get(id) !== entry) return;
+        store.delete(id);
+        entry.dispose?.();
+      };
+    },
+    claim: <T>(id: string) => store.get(id)?.resource as T | undefined,
+  };
+  return { registry, entry: (id) => store.get(id) };
+}
+
+/**
+ * The transport's session module imported afresh, as a hot push re-imports the platform bundle
+ * (hmr/host.ts): a generation with its own map of sessions and its own listeners.
+ */
+async function generation(
+  n: number,
+): Promise<typeof import("../src/machines/transport/ssh-session.js")> {
+  const file = path.join(import.meta.dirname, "../src/machines/transport/ssh-session.ts");
+  return import(/* @vite-ignore */ `${file}?generation=${n}`);
+}
 
 posixOnly("the session", () => {
   let stubBin: string;
@@ -206,6 +249,74 @@ exit 1
     expect(sessionOf("ssh:nas")).toBeNull();
     await conn.exec("true");
     expect(spawns()).toHaveLength(2);
+  });
+
+  it("does not claim a delivered session the platform judged another contract — it opens its own", async () => {
+    const { registry, entry } = fakeRegistry();
+    attachSessionRegistry(registry);
+    try {
+      const held = await connectionTo({ alias: "nas", user: "deploy" }).hold();
+      expect(held.ok).toBe(true);
+      closeAllConnections(); // the generation leaves; its held session stays in the registry
+      const delivered = entry(`${SESSION_GROUP}:ssh:nas`);
+      // The next generation was told the contract differs: it opens a session of its own…
+      attachSessionRegistry(registry, false);
+      const again = await connectionTo({ alias: "nas", user: "deploy" }).hold();
+      expect(again.ok && held.ok && again.session.pid !== held.session.pid).toBe(true);
+      expect(spawns().filter((line) => line.endsWith(" nas sh"))).toHaveLength(2);
+      // …and the platform's disposal of the doomed group ends the old one. Its entry is taken
+      // before the successor's hold took the slot over, as the platform's commit disposes it.
+      delivered?.dispose?.();
+    } finally {
+      closeConnectionTo("ssh:nas");
+      attachSessionRegistry(null);
+    }
+  });
+
+  it("a held session the next generation adopts tells that generation when it drops, not the one that opened it", async () => {
+    // Inside the test's own deadline, so a drop told to the wrong generation fails by name.
+    const until = async (condition: () => boolean, what: string): Promise<void> => {
+      const deadline = Date.now() + 2_000;
+      while (!condition()) {
+        if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    };
+    const { registry } = fakeRegistry();
+    const older = await generation(1);
+    const newer = await generation(2);
+    const heardByOlder: string[] = [];
+    const heardByNewer: string[] = [];
+    const hear = (heard: string[]) => (address: string, up: boolean) =>
+      heard.push(`${address} ${up ? "up" : "down"}`);
+    const unwatchOlder = older.onSessionChange(hear(heardByOlder));
+    const unwatchNewer = newer.onSessionChange(hear(heardByNewer));
+    const target = { alias: "nas", user: "deploy" };
+    try {
+      older.attachSessionRegistry(registry);
+      const held = await older.holdShell("ssh:nas", target);
+      if (!held.ok) throw new Error(held.detail);
+      expect(heardByOlder).toEqual(["ssh:nas up"]);
+      older.closeAllShells(); // the older generation leaves; its held session stays registered
+
+      // The newer one holds the machine again and gets the live session, not a second ssh.
+      newer.attachSessionRegistry(registry);
+      const adopted = await newer.holdShell("ssh:nas", target);
+      expect(adopted.ok && adopted.session.pid).toBe(held.session.pid);
+      expect(spawns()).toHaveLength(1);
+
+      // The link drops: the generation keeping the machine connected is the one told.
+      process.kill(held.session.pid);
+      await until(() => heardByNewer.includes("ssh:nas down"), "the drop to be told");
+      expect(heardByOlder).toEqual(["ssh:nas up"]);
+    } finally {
+      unwatchOlder();
+      unwatchNewer();
+      newer.closeShell("ssh:nas");
+      older.closeShell("ssh:nas");
+      older.attachSessionRegistry(null);
+      newer.attachSessionRegistry(null);
+    }
   });
 });
 

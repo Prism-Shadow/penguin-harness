@@ -80,6 +80,7 @@ import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { MessagingConversationsRepo } from "./db/repos/messaging-conversations.js";
 import { OrgCacheRepo } from "./db/repos/organizations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
+import { AgentStateStore } from "./runtime/agent-state.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { SessionDriverRegistry } from "./runtime/session-drivers.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
@@ -149,6 +150,7 @@ import {
   Projects,
 } from "./mechanisms/projects.js";
 import {
+  AgentState,
   Schedules,
   Scheduling,
   SessionDrivers,
@@ -319,6 +321,7 @@ export class ProjectsModule {}
     SessionsRepo,
     SessionSources,
     SessionDriverRegistry,
+    AgentStateStore,
     SchedulesRepo,
     Scheduler,
     CoreSessionLoaders,
@@ -332,6 +335,7 @@ export class ProjectsModule {}
     SessionIndex,
     SessionOrigins,
     SessionDrivers,
+    AgentState,
     Schedules,
     Scheduling,
     Sessions,
@@ -511,6 +515,8 @@ export function platformDef(
     await change?.write();
     return false;
   },
+  /** Nodes the previous App hands over, booted as they are in place of fresh ones (hmr/platform.ts: the Agent state). */
+  inherited: ReadonlyMap<ModuleClass, object> = new Map(),
 ): ModuleDef {
   const instances = new Map<ModuleClass, object>([
     [RuntimeConfig, new RuntimeConfig(caps)],
@@ -524,6 +530,7 @@ export function platformDef(
     [RuntimeAuthState, new RuntimeAuthState(caps)],
     [RuntimeResourceGroups, new RuntimeResourceGroups(adoptable)],
   ]);
+  for (const [cls, instance] of inherited) instances.set(cls, instance);
   for (const [cls, instance] of caps.replacements) instances.set(cls, instance);
   return moduleDefOf(PlatformModule, {
     manifests: table.modules as ManifestTable,

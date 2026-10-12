@@ -891,6 +891,8 @@ export function PluginsPage() {
           open
           title={S.todo.pluginsConfirmTitle(pendingBulk.plugins.length)}
           tone="primary"
+          // As wide as a single plugin's update confirmation, which lists versions.
+          widthClass="sm:max-w-lg"
           confirmLabel={S.skills.updateAction}
           cancelLabel={S.common.cancel}
           busy={bulkRunning}

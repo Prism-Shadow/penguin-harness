@@ -2,11 +2,14 @@
  * Local directory layout for Agent State and Project config.
  *
  * Strictly follows the `~/.penguin/data/<project>/agents/<agent>/...` structure.
- * This module only provides constants and pure path functions; it never creates directories or reads/writes files.
+ * This module only provides constants and pure path functions; it never creates directories or
+ * reads/writes files. The one exception is resolveRoot's default, which asks where this code
+ * runs from (internal/source-checkout.ts).
  * Docs: /docs/sessions-and-traces § "Data layout".
  */
 import os from "node:os";
 import path from "node:path";
+import { runsFromSourceCheckout } from "../internal/source-checkout.js";
 
 /** Default Project id used when none is specified. */
 export const DEFAULT_PROJECT_ID = "default_project";
@@ -15,13 +18,25 @@ export const DEFAULT_PROJECT_ID = "default_project";
 export const DEFAULT_AGENT_ID = "default_agent";
 
 /**
- * Resolves the local data root directory.
- * Prefers the `PENGUIN_HOME` environment variable, otherwise falls back to `~/.penguin/data`
- * (under the hidden `~/.penguin` home so it never collides with unrelated folders, and in a
- * `data/` subdir kept separate from the installer's binaries under `~/.penguin`).
+ * Resolves the local data root directory: the `PENGUIN_HOME` environment variable whenever it
+ * is set, otherwise a default that depends on where this code runs from.
+ *
+ * - An installation (the installer's CLI, the desktop app, an npm install of the SDK) defaults
+ *   to `~/.penguin/data`: under the hidden `~/.penguin` home so it never collides with unrelated
+ *   folders, and in a `data/` subdir kept separate from the installer's binaries there. The
+ *   desktop app and the CLI of a release share it by design.
+ * - Code running from a source checkout defaults to `~/.penguin/dev-data-cli`, the root of
+ *   `pnpm penguin`. The dev entry points that start a server set their own root through
+ *   run-with-env (`pnpm dev:server` and `pnpm desktop` take `~/.penguin/dev-data`), so this
+ *   default is reached by a checkout's code started any other way: above all the `penguin`
+ *   that `pnpm build` links globally, the same CLI as `pnpm penguin` and so on the same data,
+ *   together with the server it starts. A checkout's code must never default to the installed
+ *   root: it migrates config files there into a shape the installed release cannot read.
  */
 export function resolveRoot(): string {
-  return process.env.PENGUIN_HOME ?? path.join(os.homedir(), ".penguin", "data");
+  const explicit = process.env.PENGUIN_HOME;
+  if (explicit !== undefined) return explicit;
+  return path.join(os.homedir(), ".penguin", runsFromSourceCheckout() ? "dev-data-cli" : "data");
 }
 
 /** `<root>/<projectId>`. */

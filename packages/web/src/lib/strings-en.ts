@@ -3173,12 +3173,21 @@ export const en: Strings = {
     onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
-    draftSubtitle: "The self-evolving agent that excels at AI development tasks",
-    /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
+    draftSubtitle: "The most comprehensive agent self-evolution platform",
+    start: {
+      metrics: {
+        agents: "Agents",
+        toolkits: "RSI algorithms",
+        benchmarks: "Benchmarks",
+      },
+      examplesTitle: "Examples and shortcuts",
+    },
+    /** Folder names for the start page's collapsible examples (bookmark-style: exactly one open at a time). */
     exampleFolders: {
-      webapps: "Build web apps",
-      agents: "Build and optimize agents",
-      schedules: "Create scheduled tasks",
+      apps: "Build an AI app from one sentence",
+      webapps: "Web pages and mini games",
+      evolve: "Evaluate and optimize agents",
+      schedules: "Scheduled tasks",
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "Click to fill the composer — edit it if you like, then send",
@@ -3275,6 +3284,13 @@ When done, open index.html in a browser and self-test once.`,
           "Great / Miss for each hit, score combos, and let the difficulty climb as the track goes " +
           "on. Pure front end, one file, playable straight from file://.",
       },
+      ragDocsExpert: {
+        label: "A RAG docs expert from one sentence",
+        desc: "Collect the Claude Code docs and build a RAG Q&A app that cites its sources",
+        prompt:
+          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG " +
+          "app that answers Claude Code questions as a configuration expert, citing its sources.",
+      },
       investmentCopilot: {
         label: "Conversational investment analyst",
         desc: "A conversational market Copilot on the Penguin SDK: the home page lists what is trending, with the market factors behind every call",
@@ -3288,16 +3304,17 @@ When done, open index.html in a browser and self-test once.`,
           'stock for me": resolve a company name to its ticker itself, and when there is no match ' +
           "or the company is not listed, say so rather than inventing a quote.",
       },
-      missionControl: {
-        label: "Build a custom workflow UI: mission control",
-        desc: "A workflow tab beside the chat: dispatch a task to several agents at once and watch every Session's live status",
+      legalDesk: {
+        label: "A legal agent: upload documents, download reports",
+        desc: "A new legal agent behind a workflow tab with only an upload, a file list and report downloads — no conversation in sight",
         prompt:
-          "Build yourself a workflow: a mission-control tab beside this chat. I type a task and pick " +
-          "one or more of this Project's Agents; it opens a Session for each and runs them in " +
-          "parallel. Every run is a card with a live, animated status (queued, running, done) and " +
-          "its elapsed time, and the board survives a reload. Add a second tab with the numbers — " +
-          "runs per Agent, average duration — and a button that fills the whole app, like a wall " +
-          "display. Take every colour from the theme variables so it looks right in light and dark.",
+          "Create a legal agent that reviews contracts, agreements and other legal documents: it " +
+          "finds risky clauses, explains why, and suggests revisions. Then build yourself a " +
+          "workflow tab as its desk: when I upload a file, the legal agent analyzes it in the " +
+          "background and produces an analysis report for me to download. The page has only an " +
+          "upload, a file list (each file's processing status) and the report downloads, with no " +
+          "conversation shown. Take every colour from the theme variables so it looks right in " +
+          "light and dark.",
       },
       agentBenchmarkBuild: {
         label: "Build a general-purpose decision agent and its benchmark",
@@ -3321,7 +3338,7 @@ Scenarios:
 3. Choose investment actions from a strategy, historical markets, and current indicators.`,
       },
       agentOptimization: {
-        label: "Improve the general-purpose decision agent's accuracy",
+        label: "Default optimization: improve the decision agent's accuracy",
         desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
         prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
 
@@ -3331,6 +3348,14 @@ Scenarios:
 - runs: \`3\`
 - desired_score: \`>=95\`
 - candidate_round_limit: \`5\``,
+      },
+      benchmarkImport: {
+        label: "Import a Benchmark: list the packages in the repository",
+        desc: "List the importable Benchmark packages in penguin-harness-benchmark and import the one I pick through benchmark-design",
+        prompt:
+          "Use the `benchmark-design` Skill: list the Benchmark packages under " +
+          "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages, mark the " +
+          "ones this Project already has, and import the one I pick once I say so.",
       },
       dailyPlan: {
         label: "A 9am daily planning check-in",
@@ -4567,7 +4592,7 @@ Scenarios:
       },
       {
         title: "Optimize",
-        text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves.",
+        text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves. You can also pick another self-evolution algorithm.",
       },
     ],
     /** The first step card's text for a Project member: no Create manually, which is the owner's. */
@@ -4644,7 +4669,15 @@ Scenarios:
     colDuration: "Duration",
     colCase: "Case",
     colRun: "Run",
-    colSession: "Session",
+    runOpenSession: "Open the Session this run ran in",
+    runArchivedTitle: "This run's Session is archived",
+    runArchivedBody:
+      "Archived Sessions are not in the sidebar. Find it in Settings › Archived chats by its title or ID.",
+    runArchivedSessionTitle: "Title",
+    runArchivedSessionId: "ID",
+    runArchivedCopyId: "Copy Session ID",
+    runArchivedOpen: "Open Archived chats",
+    runSessionUntitled: "(untitled Session)",
     /** Copy button beside a run recorded as a Harbor trial, which is no Session the app opens. */
     copyTrialName: "Copy Harbor trial name",
     askAi: "Ask AI",
@@ -4852,7 +4885,7 @@ Scenarios:
     evaluatorAgentHint:
       "The one that spawns the evaluation subagents, scores against the rubric and writes the scoreboard; needs the agent-evaluation Skill",
     evaluatorMissingSkill:
-      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
+      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-evaluation plugin (Agent Evaluation) on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
       "The model this conversation runs on, the Project's default model unless changed; the tested agent is evaluated on this same model, at the thinking level it is configured with",
@@ -4880,7 +4913,7 @@ Scenarios:
     optimizerAgentHint:
       "The one that reads the scores and Traces and edits the Test Agent; needs the agent-optimization Skill",
     optimizerMissingSkill:
-      "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the agent-tuning plugin on it first.",
+      "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the default-rsi-toolkit plugin (Default RSI Toolkit) on it first.",
     testedAgentHint:
       "The agent whose Agent State is edited; its scores are recorded under it and compared only against its own same-label history",
     sessionModel: "Model of the optimizer's conversation",
@@ -4915,11 +4948,66 @@ Scenarios:
       "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
       "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
       "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
+    methodField: "Method",
+    methodHint:
+      "The self-evolution algorithm that improves the agent; each one is a toolkit from the plugin library",
+    methods: {
+      default: {
+        label: "Default (trial → reflect → improve)",
+        blurb:
+          "The default loop: one falsifiable hypothesis and one bounded change per round; kept only when the score strictly improves",
+      },
+      opro: {
+        label: "OPRO",
+        blurb: "Proposes instructions from the scored history (Yang et al., 2023)",
+      },
+      ape: {
+        label: "APE",
+        blurb: "Induces an instruction from input/output examples (Zhou et al., 2022)",
+      },
+      ace: { label: "ACE", blurb: "Evolves a playbook from training Traces (Zhang et al., 2025)" },
+      awm: {
+        label: "AWM",
+        blurb: "Induces workflow memory from successful trajectories (Wang et al., 2024)",
+      },
+    },
+    methodBudgetHint:
+      "This method sets its own budget: the paper's defaults reduced to a smoke profile, unless Focus says otherwise",
+    methodOptimizerHint: (skill: string): string =>
+      `The one that runs the method and edits the Test Agent; needs the ${skill} Skill`,
+    methodMissingSkill: (plugin: string, skill: string): string =>
+      `This agent does not have the ${skill} Skill installed and cannot run this method — install the ${plugin} plugin on it from the plugin library, or switch to the default agent.`,
+    rsiOptimizeTail: (p: {
+      skill: string;
+      label: string;
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      provider?: string;
+      modelId?: string;
+    }): string => {
+      const pinned =
+        p.provider && p.modelId
+          ? `- provider: \`${p.provider}\`\n- model_id: \`${p.modelId}\`\n`
+          : "";
+      return (
+        `Use the \`${p.skill}\` Skill to reproduce ${p.label} on the Test Agent against its frozen Benchmark.\n\n` +
+        `- test_agent_id: \`${p.targetAgentId}\`\n` +
+        `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
+        `- runs: \`${p.runs}\`\n` +
+        pinned +
+        "\n" +
+        (pinned !== "" ? "Evaluate with exactly this provider and model. " : "") +
+        "Run the method the way its paper does, at the Skill's smoke budget unless I set one above; ask me only for inputs the method requires and I have not given. " +
+        "Measure the baseline and every candidate through the Skill's own evaluation reference, keep the Test Agent's runtime fixed, record every complete evaluation in `scoreboard.yaml` under the same label, " +
+        "and finish by reporting the baseline score, the final score, the retained version and what the method changed."
+      );
+    },
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     importBenchmark: "Import benchmark",
     importChatTitle: "Recommended: import it by chatting with the agent",
     importChatWhy:
-      "The agent pins the link to one commit, fetches only that folder and reads every file before writing it to the Evaluation Center — more reliable than a bare upload.",
+      "The agent follows the benchmark-design Skill's import procedure: it pins the link to a commit, fetches only that folder and reads every file before anything is written — more dependable than a raw upload.",
     importSourceLabel: "Benchmark source",
     importSourceHint:
       "A folder link in a GitHub repository (such as …/tree/<commit>/packages/<id>), a local path, or a description",
@@ -4935,11 +5023,11 @@ Scenarios:
     },
     importPromptTail: (projectId: string): string =>
       [
+        'If the `benchmark-design` Skill is installed, follow its `reference/package.md`, section "Importing a package" — source resolution, the pinned commit, companion train/test packages, the post-import check and the optional smoke probe are all there; without that Skill, the rules below are enough:',
         "The package is a folder with `benchmark_config.toml` (keys: id, title, description, version `YYYY.MM.DD.N`, status, runs, and an `[origin]` table) and one `CASE-*/` per case, holding `statement/README.md` and `rubric/README.md`.",
         "Fetch only that folder, at a commit, into a temporary directory: resolve the link's branch or tag to its 40-hex commit (`git ls-remote`), download it (a codeload tarball or a sparse checkout), and read every file before importing anything — refuse if it is not a Benchmark package, if its `status` is not `published`, or if it holds anything but text materials. Do not copy large upstream materials; the statements link them.",
         `Import it with \`penguin benchmark import <the folder> --project-id ${projectId} --origin-url <the link as given> --origin-ref <the 40-hex commit> --origin-path <the folder inside the repository>\` (without the \`--origin-*\` options for a source that is not a repository folder). The server checks it as it checks an uploaded zip and writes \`benchmarks/<id>/\` itself, with the git origin, the package's \`version\` and a \`scoreboard.yaml\` holding \`evaluations: []\`; never write under \`benchmarks/\` yourself.`,
         "If the command says the Benchmark already exists, stop and ask me before overwriting — an overwrite (`--overwrite`) replaces the whole directory, its `scoreboard.yaml` and `.jobs/` included, and the server refuses it while an evaluation of that Benchmark is still running. Then report the id, title, version and case count the command printed; the Evaluation Center lists it from then on.",
-        'If the `benchmark-design` skill is installed, read its `reference/package.md` ("Importing a package") first.',
       ].join("\n"),
     importCopyPrompt: "Copy prompt",
     importOpenChat: "Open a new chat",
