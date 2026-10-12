@@ -26,6 +26,7 @@ export const SURFACE_IDS = [
   "chat-approval",
   "chat-harness",
   "chat-org",
+  "chat-rsi",
   "chat-new",
   "agents",
   "agent-settings",
@@ -63,7 +64,9 @@ export const SURFACES: readonly Surface[] = [
   { id: "chat-approval", group: "conversation", route: "/chat/s-publish" },
   { id: "chat-harness", group: "conversation", route: "/chat/s-harness-rows" },
   { id: "chat-org", group: "conversation", route: "/chat/s-org-digest" },
-  { id: "chat-new", group: "conversation", route: "/chat" },
+  { id: "chat-rsi", group: "conversation", route: "/chat/s-optimize-docs" },
+  // The draft's own route: a bare `/chat` opens the newest conversation instead.
+  { id: "chat-new", group: "conversation", route: "/chat/new" },
   { id: "agents", group: "workbench", route: "/agents" },
   { id: "agent-settings", group: "workbench", route: "/agents/docs-expert" },
   { id: "schedules", group: "workbench", route: "/agents/docs-expert?tab=schedules" },

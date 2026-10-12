@@ -16,6 +16,9 @@ export default defineConfig({
     // without depending on whatever embeds it.
     "src/plugin/index.ts",
     "src/state/model-catalog.ts",
+    // The built-in Benchmarks as data: no Node dependency, so the component gallery's demo
+    // Project lists them as a new Project gets them.
+    "src/state/builtin-benchmarks-data.ts",
     // Window/threshold arithmetic plus its two defaults: pure numbers, no Node dependency, so
     // the web app can bundle the compaction-threshold derivation its context ring fills against.
     "src/llm/context-limits.ts",

@@ -1,9 +1,10 @@
 /**
  * The demo world the mocked API answers from, built for one language at a time: a signed-in
- * admin, one Project with two Agents, their conversations, the model table, the plugin
- * library and what is installed, thirty days of usage, three Benchmarks, schedules, the
- * machines, the memory and vault of the docs Agent, a small Workspace and the server's
- * settings. Every row is typed by the server's own DTOs, so the compiler is what keeps this
+ * admin, one Project with two Agents and its built-in General Agent, their conversations (the
+ * General Agent's is a self-evolution round on the docs Agent, rsi-transcript.ts), the model
+ * table, the plugin library and what is installed, thirty days of usage, the docs Agent's
+ * Benchmark, a draft and the built-in Benchmarks, schedules, the machines, the memory and vault
+ * of the docs Agent, a small Workspace and the server's settings. Every row is typed by the server's own DTOs, so the compiler is what keeps this
  * data in step with the app that reads it.
  */
 import type {
@@ -11,6 +12,7 @@ import type {
   AgentConfigResponse,
   AgentSummary,
   BenchmarkCaseSummary,
+  BenchmarkEvaluation,
   BenchmarkSummary,
   CaseMaterial,
   ChatDefaultsDto,
@@ -57,16 +59,41 @@ import {
   presetPromotions,
   presetProviderTable,
 } from "../../../../core/dist/state/model-catalog.js";
+// The built-in Benchmarks as core writes them into a new Project: their cards and their cases.
+import {
+  BENCHMARK_REPO,
+  BENCHMARK_RUN_RULES,
+  BUILTIN_BENCHMARKS,
+  HARBOR_AGENT,
+  HARBOR_VERSION,
+} from "../../../../core/dist/state/builtin-benchmarks-data.js";
 // The AMSP wire types, by path: the gallery reads them as types only and takes no dependency.
 import type { AmspEvent } from "../../../../amsp/src/types";
 import { harnessTimeline, orgDeskTimeline, SWITCHED_MODEL } from "./harness-transcript";
 import { IDS } from "./ids";
+import { agentEvaluationPlugin, rsiToolkitPlugins } from "./library-plugins";
+import {
+  docsAgentsMd,
+  RSI_ROUND,
+  RSI_WORKSPACE,
+  rsiCandidateEvaluation,
+  rsiEvaluatorTitle,
+  rsiReferenceScore,
+  rsiSummary,
+  rsiTestTitle,
+  rsiTestWorkspace,
+  rsiTimeline,
+  rsiTitle,
+} from "./rsi-transcript";
 import type { Lang } from "./types";
 import type { ModelRef } from "./transcripts";
 
 // ---------------------------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------------------------
+
+/** One built-in Benchmark, as core's data module holds it. */
+type BuiltinBenchmark = (typeof BUILTIN_BENCHMARKS)[number];
 
 /**
  * What a model is used with, as GET /models reports it: its own values, else its group's
@@ -214,6 +241,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     return Array.from({ length: 30 }, (_, i) => Math.round(rnd() * peak * (0.4 + i / 30)));
   };
 
+  const rsi = rsiTimeline(now);
   const agents: AgentSummary[] = [
     {
       agentId: IDS.agents.docs,
@@ -223,12 +251,13 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "Answers questions about the Claude Code docs, citing a real corpus file for every claim.",
       ),
       createdAt: iso(ago(90)),
-      updatedAt: iso(ago(1, 30)),
+      // The self-evolution round's accepted candidate: its version, written when the round edited it.
+      updatedAt: iso(rsi.evaluatedAt),
       activeSessionCount: 4,
       sessionCount: 12,
       sessionActivity: activity(7, 6),
       toolCount: 6,
-      version: 14,
+      version: RSI_ROUND.candidate,
       kernelOutdated: false,
       vaultKeyCount: 2,
       scheduleCount: 2,
@@ -262,17 +291,44 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       memoryCount: 0,
       apiEnabled: false,
     },
+    // The Project's built-in Agent, with the self-evolution toolkits installed: it ran the round.
+    {
+      agentId: IDS.agents.general,
+      name: L("通用智能体", "General Agent"),
+      description: L(
+        "通用型智能体，用工具完成你交代的事。",
+        "General-purpose agent that completes the user's requests with its tools.",
+      ),
+      createdAt: iso(ago(120)),
+      updatedAt: iso(ago(30)),
+      activeSessionCount: 0,
+      sessionCount: 1,
+      sessionActivity: activity(5, 1),
+      toolCount: 9,
+      version: 1,
+      kernelOutdated: false,
+      vaultKeyCount: 0,
+      scheduleCount: 0,
+      skillCount: 7,
+      hookCount: 0,
+      pluginUpdates: [],
+      memoryCount: 0,
+      apiEnabled: false,
+    },
   ];
 
   const systemPrompt = L(
     "你是文档专家。回答问题时引用语料库中真实存在的文件。\n\n{{MEMORY}}\n\n{{SKILLS}}\n\n{{VAULT}}\n\n{{SCHEDULES}}",
     "You are Docs Expert. Cite a real corpus file for every claim.\n\n{{MEMORY}}\n\n{{SKILLS}}\n\n{{VAULT}}\n\n{{SCHEDULES}}",
   );
+  // The built-in Agent ships with an empty AGENTS.md; the docs Agent's carries the round's rule.
+  const agentsMdOf = (agent: AgentSummary): string => {
+    if (agent.agentId === IDS.agents.general) return "";
+    const md = docsAgentsMd(lang, agent.name ?? agent.agentId);
+    return agent.agentId === IDS.agents.docs ? `${md.reference}\n\n${md.rule}` : md.reference;
+  };
   const agentConfig = (agent: AgentSummary, full: boolean): AgentConfigResponse => ({
-    agentsMd: L(
-      `# ${agent.name}\n\n回答前先检索语料库；引用格式为 \`[n] path\`。`,
-      `# ${agent.name}\n\nSearch the corpus before answering; cite as \`[n] path\`.`,
-    ),
+    agentsMd: agentsMdOf(agent),
     systemConfigYaml: `version: ${agent.version}\nkernel_version: "2026-09-11"\nname: ${agent.name}\nmodel:\n  thinking_level: medium\n  max_tokens: 32000\ncompaction:\n  max_context_length: 800000\n  mode: summarize\n`,
     config: {
       name: agent.name,
@@ -637,6 +693,28 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         source: "company",
       },
     ),
+    // The General Agent's self-evolution round on the docs Agent, on the model it was run with.
+    session(IDS.sessions.optimize, IDS.agents.general, rsiTitle(lang), rsi.startedAt, {
+      workspace: RSI_WORKSPACE,
+      lastActiveAt: iso(rsi.endedAt),
+    }),
+    // Its evaluator subagents, which its tool cards open, and the Test Sessions they ran with
+    // `penguin run`: CLI Sessions, archived until kept.
+    ...IDS.sessions.evaluators.map((id, i) =>
+      session(id, IDS.agents.general, rsiEvaluatorTitle(lang, i), rsi.startedAt + 54_000, {
+        workspace: RSI_WORKSPACE,
+        source: "subagent",
+        lastActiveAt: iso(rsi.evaluatedAt - 20_000),
+      }),
+    ),
+    ...IDS.sessions.tests.map((id, i) =>
+      session(id, IDS.agents.docs, rsiTestTitle(lang, i), rsi.startedAt + 61_000, {
+        workspace: rsiTestWorkspace(i),
+        source: "cli",
+        archived: true,
+        lastActiveAt: iso(rsi.startedAt + 61_000 + RSI_ROUND.cases[i]!.after.durationMs),
+      }),
+    ),
   ];
 
   const schedules: ProjectScheduleItem[] = [
@@ -698,8 +776,13 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     shortDescriptionZh: zh,
     version,
   });
+  // The self-evolution toolkits and the evaluator are the shipped packages' own listings; the
+  // other groups are the demo's.
+  const toolkits = rsiToolkitPlugins();
+  const evaluationPlugin = agentEvaluationPlugin();
   const library: PluginLibraryResponse = {
     groups: [
+      { id: "rsi", title: "Agent Self-Evolution", titleZh: "Agent 自进化", plugins: toolkits },
       {
         id: "developer",
         title: "Developer",
@@ -805,6 +888,12 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
           },
         ],
       },
+      {
+        id: "ai-app-development",
+        title: "AI App Development",
+        titleZh: "AI 应用开发",
+        plugins: [evaluationPlugin],
+      },
     ],
   };
   const pluginFiles: Record<string, Record<string, string>> = {
@@ -823,7 +912,10 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
         "export default async function stop(ctx) { return ctx.goal.done ? 'stop' : 'continue'; }\n",
     },
   };
-  const docsSkills = library.groups[0]!.plugins[0]!.skills.map((s) => ({
+  const registryPlugin = library.groups
+    .flatMap((group) => group.plugins)
+    .find((plugin) => plugin.name === IDS.plugins.registry)!;
+  const docsSkills = registryPlugin.skills.map((s) => ({
     ...s,
     version: s.name === "claude-code-expert" ? "2026.09.11.1" : s.version,
   }));
@@ -847,6 +939,13 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       skills: [
         skill("report-writer", "撰写结构化报告", "Write structured reports", "2026.09.02.1"),
       ],
+      hooks: [],
+    },
+    // Every toolkit and the evaluator, each Skill wearing its plugin's icon, as an install writes it.
+    [IDS.agents.general]: {
+      skills: [...toolkits, evaluationPlugin].flatMap((plugin) =>
+        plugin.skills.map((s) => ({ ...s, ...(plugin.icon ? { icon: plugin.icon } : {}) })),
+      ),
       hooks: [],
     },
   };
@@ -957,133 +1056,238 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       "# messaging-feishu\n\nBinds a Session to a Feishu bot so replies reach a chat.\n",
   };
 
-  const evaluation = (
-    days: number,
+  /** One case's record in an evaluation: its score, cost and duration, and the one run behind them. */
+  const caseRecord = (
+    id: string,
+    score: number,
+    cost: number,
+    durationMs: number,
+    sessionId: string,
+  ): BenchmarkEvaluation["cases"][number] => ({
+    case: id,
+    score,
+    cost,
+    durationMs,
+    runs: [{ score, cost, durationMs, sessionId }],
+  });
+  const mean = (values: readonly number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+  /** An evaluation's top line, averaged from its cases as the scoreboard writes it. */
+  const totals = (cases: BenchmarkEvaluation["cases"]) => ({
+    cost: Math.round(mean(cases.map((c) => c.cost ?? 0)) * 1e6) / 1e6,
+    durationMs: Math.round(mean(cases.map((c) => c.durationMs))),
+  });
+  /**
+   * An evaluation of the docs Agent on its Benchmark, one run per case. The cases spread around
+   * `score` (seeded, so every load draws the same) and average to it, unless they are given: the
+   * self-evolution round's Reference and its accepted candidate carry the round's own numbers.
+   */
+  const docsEvaluation = (
+    at: number,
     score: number,
     version: number,
-    agentId: string,
     modelId: string,
     provider = "deepseek",
-  ): BenchmarkSummary["evaluations"][number] => {
-    const rnd = seeded(Math.round(score * 100));
-    const cases = ["CASE-001-hooks", "CASE-002-mcp", "CASE-003-memory", "CASE-004-citations"].map(
-      (id, i) => {
-        const caseScore = Math.max(0, Math.min(100, Math.round(score + (rnd() - 0.5) * 24)));
-        return {
-          case: id,
-          score: caseScore,
-          cost: Math.round((0.012 + rnd() * 0.02) * 10_000) / 10_000,
-          durationMs: 40_000 + Math.round(rnd() * 50_000),
-          runs: [
-            {
-              score: caseScore,
-              cost: 0.014,
-              durationMs: 52_000 + i * 3_000,
-              sessionId: IDS.sessions.benchmark,
-            },
-          ],
-        };
-      },
+    given?: {
+      scores: readonly number[];
+      costs?: readonly number[];
+      durations?: readonly number[];
+      sessions?: readonly string[];
+      summary?: { title: string; text: string };
+    },
+  ): BenchmarkEvaluation => {
+    const rnd = seeded(Math.round(score * 100) + version);
+    const spread = RSI_ROUND.cases.map(() => (rnd() - 0.5) * 24);
+    const centre = mean(spread);
+    const drawn = spread.map((d) => Math.max(0, Math.min(100, Math.round(score + d - centre))));
+    drawn[drawn.length - 1] = Math.max(
+      0,
+      Math.min(100, score * drawn.length - drawn.slice(0, -1).reduce((a, b) => a + b, 0)),
+    );
+    const cases = RSI_ROUND.cases.map((c, i) =>
+      caseRecord(
+        c.id,
+        given?.scores[i] ?? drawn[i]!,
+        given?.costs?.[i] ?? Math.round((0.012 + rnd() * 0.02) * 10_000) / 10_000,
+        given?.durations?.[i] ?? 40_000 + Math.round(rnd() * 50_000),
+        given?.sessions?.[i] ?? IDS.sessions.benchmark,
+      ),
     );
     return {
-      time: iso(ago(days)),
-      agentId,
-      summaryTitle: L(
-        score > 78 ? "引用命中率明显提升" : "hooks 用例仍是短板",
-        score > 78 ? "Citation accuracy up markedly" : "The hooks case is still the weak spot",
-      ),
-      summary: L(
-        "四个用例平均分见上；本轮把语料库扫描改为按文件存在性过滤后，引用类失分消失。",
-        "Average over four cases above; filtering the corpus walk on file existence removed the citation losses this round.",
-      ),
+      time: iso(at),
+      agentId: IDS.agents.docs,
+      summaryTitle:
+        given?.summary?.title ??
+        L(
+          score > 78 ? "引用命中率明显提升" : "hooks 用例仍是短板",
+          score > 78 ? "Citation accuracy up markedly" : "The hooks case is still the weak spot",
+        ),
+      summary:
+        given?.summary?.text ??
+        L(
+          "四个用例平均分见上；本轮把语料库扫描改为按文件存在性过滤后，引用类失分消失。",
+          "Average over four cases above; filtering the corpus walk on file existence removed the citation losses this round.",
+        ),
       modelId,
       provider,
       thinkingLevel: "medium",
       version,
       score,
-      cost:
-        Math.round((cases.reduce((sum, c) => sum + (c.cost ?? 0), 0) / cases.length) * 10_000) /
-        10_000,
-      durationMs: Math.round(cases.reduce((sum, c) => sum + c.durationMs, 0) / cases.length),
+      ...totals(cases),
       cases,
     };
   };
-  /**
-   * The built-in Benchmark's cases (Sec E, Terminal-Bench): one task each, and the trial its one
-   * run recorded. Their statements and rubric are the ones core writes, word for word.
-   */
-  const harborCases = [
-    {
-      id: "CASE-001-music-harmony",
-      task: "music-harmony",
-      title: "Harmonize a chorale excerpt in four parts",
-      summary:
-        "Complete a four-voice (SATB) harmonization of the excerpt in a score PDF, in the style of a Bach chorale, and label every chord with a Roman numeral. The deliverable is a MusicXML file with the harmony annotations embedded.",
-      category: "Media / Music",
-      expertHours: 1,
-      cpus: 2,
-      memoryGb: 4,
-      trial: "music-harmony__3xQpL7a",
-    },
-    {
-      id: "CASE-002-html-js-filter",
-      task: "html-js-filter",
-      title: "Strip JavaScript from HTML without breaking it",
-      summary:
-        "Write a Python script that removes every way to run JavaScript from an HTML file in place, while keeping legitimate markup, formatting and harmless attributes intact. The deliverable is the script, run by the verifier on its own HTML samples.",
-      category: "Security / AppSec",
-      expertHours: 0.75,
-      cpus: 2,
-      memoryGb: 8,
-      trial: "html-js-filter__Vb81mKd",
-    },
-    {
-      id: "CASE-003-foodstuff-beta-activity",
-      task: "foodstuff-beta-activity",
-      title: "Determine the beta activity of a foodstuff",
-      summary:
-        "From liquid-scintillation measurements and Sr-90 reference tables, derive the counting efficiency, the volumetric and gravimetric factors, the detection limit and the sample's activity concentration. The results go into a text file in a fixed format, which the verifier compares with the expected values.",
-      category: "Science / Chemistry",
-      expertHours: 1.5,
-      cpus: 2,
-      memoryGb: 4,
-      trial: "foodstuff-beta-activit__Qe2Rt9s",
-    },
+  const candidate = rsiCandidateEvaluation();
+  const docsEvaluations: BenchmarkEvaluation[] = [
+    docsEvaluation(ago(18), 48, 9, "deepseek-flash"),
+    docsEvaluation(ago(13), 62, 11, "deepseek-flash"),
+    docsEvaluation(ago(10), 69, 12, "deepseek-flash"),
+    docsEvaluation(ago(7), 74, 13, "deepseek-flash"),
+    docsEvaluation(ago(6), 72, 13, "claude-sonnet-5", "anthropic"),
+    // The self-evolution round's Reference and the candidate it accepted (rsi-transcript.ts).
+    docsEvaluation(
+      rsi.referenceAt,
+      rsiReferenceScore(),
+      RSI_ROUND.reference,
+      "deepseek-flash",
+      "deepseek",
+      {
+        scores: RSI_ROUND.cases.map((c) => c.before),
+      },
+    ),
+    docsEvaluation(
+      rsi.evaluatedAt,
+      candidate.score,
+      RSI_ROUND.candidate,
+      "deepseek-flash",
+      "deepseek",
+      {
+        scores: RSI_ROUND.cases.map((c) => c.after.score),
+        costs: RSI_ROUND.cases.map((c) => c.after.cost),
+        durations: RSI_ROUND.cases.map((c) => c.after.durationMs),
+        sessions: IDS.sessions.tests,
+        summary: rsiSummary(lang),
+      },
+    ),
   ];
-  const harborStatement = (c: (typeof harborCases)[number]): string =>
-    [
-      `# ${c.title}`,
+
+  // The built-in Benchmarks, as core writes them into a new Project: every case is a Harbor task
+  // whose statement and rubric are text only. The writer is core's (builtin-benchmarks.ts), kept
+  // private there beside the file system, so the two texts are spelled again here, word for word.
+  const builtinCaseId = (index: number, task: string) =>
+    `CASE-${String(index).padStart(3, "0")}-${task}`;
+  const taskPath = (bench: BuiltinBenchmark) => `benchmarks/${bench.repoDir}/tasks`;
+  const repoLink = (bench: BuiltinBenchmark, kind: "tree" | "blob", rel: string) =>
+    `${BENCHMARK_REPO}/${kind}/${bench.ref}/${rel}`;
+  const shellWord = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
+  const builtinStatement = (
+    bench: BuiltinBenchmark,
+    item: BuiltinBenchmark["cases"][number],
+  ): string => {
+    const offline = bench.agentNetwork === "no-network";
+    const facts = [
+      `- Benchmark: ${bench.title} — ${bench.source} · Category: ${item.category}` +
+        (item.expertHours !== undefined ? ` · Expert estimate: ${item.expertHours} h` : ""),
+      `- Task: \`${item.task}\` in ${repoLink(bench, "tree", `${taskPath(bench)}/${item.task}`)}`,
+      `- Upstream: ${bench.upstream.url} (${bench.upstream.license})` +
+        (item.upstreamTask !== undefined ? `, ${item.upstreamTask}` : ""),
+      `- Container: ${item.cpus} CPU, ${item.memoryMb / 1024} GB RAM, CPU only · Agent network: ` +
+        (offline ? "none, except the model provider's API host" : "public") +
+        ` · Verifier: ${bench.verifier}`,
+    ];
+    const command = [
+      'export PYTHONPATH="$PWD/agents"',
+      `uvx --from harbor==${HARBOR_VERSION} harbor run -p ${taskPath(bench)} -i ${item.task} \\`,
+      `  -a ${HARBOR_AGENT} -m <provider>/<model_id> \\`,
+      "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
+      `  --ak run_timeout=${bench.runTimeout} --ak max_turns=${bench.maxTurns} \\`,
+      ...(bench.timeBudgetNote !== undefined
+        ? [`  --ak time_budget_note=${shellWord(bench.timeBudgetNote)} \\`]
+        : []),
+      ...(offline ? ["  --allow-agent-host <model provider API host> \\"] : []),
+      ...(bench.sharedNetwork
+        ? ["  --extra-docker-compose tools/docker/shared-network.yaml \\"]
+        : []),
+      "  --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name <job name> -o <jobs dir> -y",
+    ];
+    return [
+      `# ${item.title}`,
       "",
-      c.summary,
+      item.summary,
       "",
-      `- Benchmark: PenguinHarness Benchmark Sec E — Terminal-Bench 4.0 (Harbor Hub \`terminal-bench/terminal-bench\`, revision 4) · Category: ${c.category} · Expert estimate: ${c.expertHours} h`,
-      `- Task: \`${c.task}\` in https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/c12d65bc20beb5130ed57b3b7983c62d497b7d2f/benchmarks/terminal-bench/tasks/${c.task}`,
-      "- Upstream: https://github.com/harbor-framework/terminal-bench (Apache-2.0)",
-      `- Container: ${c.cpus} CPU, ${c.memoryGb} GB RAM, CPU only · Agent network: public · Verifier: separate container`,
+      ...facts,
       "",
       "## How this case is run",
       "",
-      "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker with Harbor 0.23.0 and the PenguinHarness adapter from the repository above, following that repository's rules for agents — https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/c12d65bc20beb5130ed57b3b7983c62d497b7d2f/README.md#running-a-task-for-agents — from the root of a checkout at commit `c12d65bc20beb5130ed57b3b7983c62d497b7d2f`:",
+      "This case does not run in a Workspace. It is a Harbor task: the evaluator runs it in Docker " +
+        `with Harbor ${HARBOR_VERSION} and the PenguinHarness adapter from the repository above, ` +
+        `following that repository's rules for agents — ${repoLink(bench, "blob", BENCHMARK_RUN_RULES)} — ` +
+        `from the root of a checkout at commit \`${bench.ref}\`:`,
       "",
       "```bash",
-      'export PYTHONPATH="$PWD/agents"',
-      `uvx --from harbor==0.23.0 harbor run -p benchmarks/terminal-bench/tasks -i ${c.task} \\`,
-      "  -a penguin_agent:PenguinAgent -m <provider>/<model_id> \\",
-      "  --ak thinking=<level> --ak penguin_version=<penguin version> \\",
-      "  --ak run_timeout=25m --ak max_turns=200 \\",
-      "  --extra-docker-compose tools/docker/shared-network.yaml \\",
-      "  --agent-setup-timeout-multiplier 2.5 -k 1 -n 1 --job-name <job name> -o <jobs dir> -y",
+      ...command,
       "```",
       "",
-      "Caps: the agent is stopped at 25m and after 200 turns. Run at most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker with Compose v2; uv; network access to Docker Hub (the prebuilt task images), nodejs.org, the npm registry and the model provider; the model under test configured in this machine's PenguinHarness with its API key saved (the adapter copies that one entry into the container, outside the trial's log directory). The instruction keeps upstream's own time budget; the run stops the agent at `run_timeout`.",
+      `Caps: the agent is stopped at ${bench.runTimeout} and after ${bench.maxTurns} turns. Run at ` +
+        "most four trials at a time on one machine. Prerequisites on the evaluating machine: Docker " +
+        `with Compose v2; uv; network access to ${bench.downloads}, nodejs.org, the npm registry and ` +
+        "the model provider; the model under test configured in this machine's PenguinHarness with " +
+        "its API key saved (the adapter copies that one entry into the container, outside the " +
+        "trial's log directory)." +
+        (bench.note !== undefined ? ` ${bench.note}` : ""),
       "",
-      "The score is the verifier's reward × 100: a pass (1) scores 100, a fail (0) scores 0, and a fractional reward r scores 100·r. An evaluation from the Evaluation Center keeps every trial under this Benchmark's `.jobs/` directory and records its Session id as `harbor:<trial name>`.",
+      "The score is the verifier's reward × 100: " +
+        (bench.grader?.scale ??
+          "a pass (1) scores 100, a fail (0) scores 0, and a fractional reward r scores 100·r") +
+        ". An evaluation from the Evaluation Center keeps every trial under this Benchmark's " +
+        "`.jobs/` directory and records its Session id as `harbor:<trial name>`.",
       "",
-      "Measured results of PenguinHarness on these tasks: https://github.com/Prism-Shadow/penguin-harness-benchmark/blob/c12d65bc20beb5130ed57b3b7983c62d497b7d2f/results/v0.2.13/README.md",
-      "",
+      ...(bench.results !== undefined
+        ? [
+            `Measured results of PenguinHarness on these tasks: ${repoLink(bench, "blob", bench.results)}`,
+            "",
+          ]
+        : []),
     ].join("\n");
-  const harborRubric =
-    "# Scoring rubric (max 100 points)\n\n- 100 pts: the Harbor verifier's reward for this trial (`/logs/verifier/reward.txt` or the `reward` key of `reward.json`) multiplied by 100. The task's own tests decide; there is no manual judging and no partial credit beyond what the verifier itself reports.\n";
+  };
+  const builtinRubric = (bench: BuiltinBenchmark) =>
+    `# Scoring rubric (max 100 points)\n\n- 100 pts: the Harbor verifier's reward for this trial (\`/logs/verifier/reward.txt\` or the \`reward\` key of \`reward.json\`) multiplied by 100. The task's own ${bench.grader !== undefined ? "grader decides" : "tests decide"}; there is no manual judging and no partial credit beyond what the verifier itself reports.\n`;
+
+  /**
+   * The one built-in Benchmark the docs Agent has been through: one Harbor trial per case, the
+   * verifier passing three of them. A run's Session id names its trial (`harbor:<trial>`).
+   */
+  const harborBaseline = (bench: BuiltinBenchmark): BenchmarkEvaluation => {
+    const rnd = seeded(4040);
+    const cases = bench.cases.map((item, i) => {
+      const score = i === 0 || i === 3 || i === 7 ? 100 : 0;
+      const trial = `${item.task.slice(0, 22)}__${Math.floor(rnd() * 36 ** 7)
+        .toString(36)
+        .padStart(7, "0")}`;
+      return caseRecord(
+        builtinCaseId(i + 1, item.task),
+        score,
+        Math.round((0.04 + rnd() * 0.06) * 10_000) / 10_000,
+        420_000 + Math.round(rnd() * 600_000),
+        `harbor:${trial}`,
+      );
+    });
+    return {
+      time: iso(ago(1)),
+      agentId: IDS.agents.docs,
+      summaryTitle: L("首个 Harbor 基线", "First Harbor baseline"),
+      summary: L(
+        "每题一次 Harbor trial；分数即验证器的 reward × 100。",
+        "One Harbor trial per case; each score is the verifier's reward × 100.",
+      ),
+      modelId: "deepseek-flash",
+      provider: "deepseek",
+      thinkingLevel: "max",
+      version: RSI_ROUND.reference,
+      score: Math.round(mean(cases.map((c) => c.score)) * 100) / 100,
+      ...totals(cases),
+      cases,
+    };
+  };
 
   const benchmarks: BenchmarkSummary[] = [
     {
@@ -1097,13 +1301,8 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       status: "published",
       version: "2026.10.08.2",
       origin: { kind: "agent" },
-      caseCount: 4,
-      evaluations: [
-        evaluation(12, 62, 11, IDS.agents.docs, "deepseek-flash"),
-        evaluation(7, 74, 13, IDS.agents.docs, "deepseek-flash"),
-        evaluation(2, 81, 14, IDS.agents.docs, "deepseek-flash"),
-        evaluation(1, 77, 14, IDS.agents.docs, "claude-sonnet-5", "anthropic"),
-      ],
+      caseCount: RSI_ROUND.cases.length,
+      evaluations: docsEvaluations,
       agentIds: [IDS.agents.docs],
     },
     {
@@ -1116,71 +1315,41 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       evaluations: [],
       agentIds: [],
     },
-    // Built in, English in either locale like the product's own; one evaluation, whose runs
-    // are Harbor trials rather than Sessions.
-    {
-      id: IDS.benchmarks.builtin,
-      title: "PenguinHarness Benchmark Sec E",
-      description:
-        "Sec E is Terminal-Bench 4.0: hard, realistic tasks done in a terminal, across software, security, science, machine learning, operations, hardware and media. Chosen to run on CPU-only Docker. A built-in benchmark: each task runs in Docker through the Harbor framework and is scored by its own verifier; the task files are in the public repository Prism-Shadow/penguin-harness-benchmark. It is written when the Project is created; a deleted one stays deleted.",
+    // Built in, as a new Project gets them: English titles in either locale, like the product's.
+    ...BUILTIN_BENCHMARKS.map((bench): BenchmarkSummary => ({
+      id: bench.id,
+      title: bench.title,
+      description: bench.description,
+      descriptionZh: bench.descriptionZh,
       runs: 1,
       status: "published",
-      version: "2026.10.09.1",
+      version: bench.version,
       origin: { kind: "builtin" },
-      caseCount: harborCases.length,
-      evaluations: [
-        {
-          time: iso(ago(1)),
-          agentId: IDS.agents.docs,
-          summaryTitle: L("首个 Harbor 基线", "First Harbor baseline"),
-          summary: L(
-            "每题一次 Harbor trial；分数即验证器的 reward × 100。",
-            "One Harbor trial per case; each score is the verifier's reward × 100.",
-          ),
-          modelId: "deepseek-flash",
-          provider: "deepseek",
-          thinkingLevel: "max",
-          version: 14,
-          score: 33.33,
-          cost: 0.0712,
-          durationMs: 694_000,
-          cases: harborCases.map((c, i) => {
-            const score = i === 0 ? 100 : 0;
-            const cost = [0.0521, 0.0934, 0.0681][i]!;
-            const durationMs = [512_000, 903_000, 667_000][i]!;
-            return {
-              case: c.id,
-              score,
-              cost,
-              durationMs,
-              runs: [{ score, cost, durationMs, sessionId: `harbor:${c.trial}` }],
-            };
-          }),
-        },
-      ],
-      agentIds: [IDS.agents.docs],
-    },
+      caseCount: bench.cases.length,
+      evaluations: bench.id === IDS.benchmarks.builtin ? [harborBaseline(bench)] : [],
+      agentIds: bench.id === IDS.benchmarks.builtin ? [IDS.agents.docs] : [],
+    })),
   ];
   const benchmarkCases: Record<string, BenchmarkCaseSummary[]> = {
-    [IDS.benchmarks.docs]: [
-      { id: "CASE-001-hooks", title: L("hooks 是怎么配置的？", "How are hooks configured?") },
-      { id: "CASE-002-mcp", title: L("接入一个 MCP 服务器", "Connect an MCP server") },
-      { id: "CASE-003-memory", title: L("记忆何时写入", "When memory is written") },
-      {
-        id: "CASE-004-citations",
-        title: L("引用必须指向真实文件", "Citations must open a real file"),
-      },
-    ],
+    [IDS.benchmarks.docs]: RSI_ROUND.cases.map((c, i) => ({
+      id: c.id,
+      title: rsiTestTitle(lang, i),
+    })),
     [IDS.benchmarks.draft]: [
       { id: "CASE-001-lead", title: L("写一段导语", "Write a lead paragraph") },
       { id: "CASE-002-breaking", title: L("列出破坏性变更", "List the breaking changes") },
     ],
-    [IDS.benchmarks.builtin]: harborCases.map((c) => ({ id: c.id, title: c.title })),
   };
+  for (const bench of BUILTIN_BENCHMARKS) {
+    benchmarkCases[bench.id] = bench.cases.map((item, i) => ({
+      id: builtinCaseId(i + 1, item.task),
+      title: item.title,
+    }));
+  }
   const caseFiles: DemoFixtures["caseFiles"] = {};
-  for (const [benchmarkId, cases] of Object.entries(benchmarkCases)) {
-    for (const item of cases) {
-      caseFiles[`${benchmarkId}/${item.id}`] = {
+  for (const id of [IDS.benchmarks.docs, IDS.benchmarks.draft]) {
+    for (const item of benchmarkCases[id]!) {
+      caseFiles[`${id}/${item.id}`] = {
         statement: {
           "README.md": `# ${item.title}\n\n${L("回答这个问题，并引用语料库里的文件。", "Answer the question, citing corpus files.")}\n`,
           "input/question.txt": `${item.title}\n`,
@@ -1192,11 +1361,13 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     }
   }
   // A Harbor case is text only: what the task is, where its folder is, and how it is launched.
-  for (const c of harborCases) {
-    caseFiles[`${IDS.benchmarks.builtin}/${c.id}`] = {
-      statement: { "README.md": harborStatement(c) },
-      rubric: { "README.md": harborRubric },
-    };
+  for (const bench of BUILTIN_BENCHMARKS) {
+    bench.cases.forEach((item, i) => {
+      caseFiles[`${bench.id}/${builtinCaseId(i + 1, item.task)}`] = {
+        statement: { "README.md": builtinStatement(bench, item) },
+        rubric: { "README.md": builtinRubric(bench) },
+      };
+    });
   }
 
   const machines: MachinesResponse = {
@@ -1343,6 +1514,15 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       },
       files: [],
     },
+    [IDS.agents.general]: {
+      overview: {
+        enabled: true,
+        templateHasMemory: true,
+        memoryDir: `/home/demo/.penguin/data/projects/${IDS.project}/agents/${IDS.agents.general}/agent_state/memory`,
+        scopes: [{ scopeKey: "user", kind: "user", fileCount: 0, hasIndex: false }],
+      },
+      files: [],
+    },
   };
 
   const vault: DemoFixtures["vault"] = {
@@ -1353,6 +1533,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       ],
     },
     [IDS.agents.notes]: { entries: [] },
+    [IDS.agents.general]: { entries: [] },
   };
 
   // The docs Agent answers programs: one key in daily use, one minted and never used.
@@ -1709,6 +1890,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
     agentConfigs: {
       [IDS.agents.docs]: agentConfig(agents[0]!, true),
       [IDS.agents.notes]: agentConfig(agents[1]!, false),
+      [IDS.agents.general]: agentConfig(agents[2]!, true),
     },
     models: modelsResponse,
     sessions,

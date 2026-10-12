@@ -1,7 +1,8 @@
 /**
  * The demo store: the same world in both languages, models the built-in catalog knows, the
  * running states the gallery exists to show, and the scripts that move them — a sent message
- * streams a reply and settles, an approval decides the pending command, an abort stops a run.
+ * streams a reply and settles, an approval decides the pending command, an abort stops a run —
+ * and the self-evolution round, which reads as one round and reports what the scoreboard holds.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
@@ -113,6 +114,20 @@ describe("the fixtures", () => {
     ]);
     for (const s of f.sessions)
       expect(f.models.models.some((m) => m.modelId === s.modelId)).toBe(true);
+  });
+
+  it("list a plugin update only for an Agent that carries that plugin", () => {
+    const f = buildFixtures("en", NOW);
+    const plugins = f.library.groups.flatMap((group) => group.plugins);
+    for (const agent of f.agents) {
+      const carried = new Set(f.installed[agent.agentId]?.skills.map((skill) => skill.name));
+      for (const update of agent.pluginUpdates) {
+        const plugin = plugins.find((p) => p.name === update.name)!;
+        for (const skill of plugin.skills)
+          expect(carried, `${agent.agentId}: ${skill.name}`).toContain(skill.name);
+      }
+    }
+    expect(f.agents.some((agent) => agent.pluginUpdates.length > 0)).toBe(true);
   });
 
   it("carry thirty days of usage in both Agents' names", () => {
@@ -280,6 +295,69 @@ describe("the harness Session", () => {
     const text = (payloadOf(first) as { text: string }).text;
     expect(parseOrgTriggerMessage(text)?.origin.kind).toBe("event");
     expect(store.session(IDS.sessions.orgDesk)?.client).toBe("org");
+  });
+});
+
+describe("the self-evolution round", () => {
+  it("reads, through the chat's own stream model, as one round: each evaluator under its own call, the report last", () => {
+    const store = resetStore({ lang: "en", signedIn: true, now: NOW });
+    const model = createStreamModel();
+    pushMessages(model, store.transcript(IDS.sessions.optimize)!.history, NOW);
+    finalizeHistory(model);
+    const calls = model.items.flatMap((item) =>
+      item.kind === "tool_call" && item.name === "run_subagent" ? [item] : [],
+    );
+    // Each evaluator binds to the call that started it, none is left over as a loose card, and
+    // every call has its evaluator's result.
+    expect(calls.map((call) => call.subagentSessionId)).toEqual([...IDS.sessions.evaluators]);
+    expect(model.items.some((item) => item.kind === "subagent")).toBe(false);
+    expect(calls.every((call) => call.outputComplete && call.decision === "allow")).toBe(true);
+    const prompt = model.items.find((item) => item.kind === "user_text");
+    expect(prompt?.kind === "user_text" && parseSkillsMessage(prompt.text)?.skills).toEqual([
+      "agent-optimization",
+    ]);
+    expect(model.items.at(-1)?.kind).toBe("task_stats");
+    // Each evaluator's own Session is the history that rode in its parent.
+    for (const id of IDS.sessions.evaluators) {
+      const own = store.transcript(id)!.history;
+      expect(own[0]!.type).toBe("session_meta");
+      expect(own.at(-1)!.payload).toMatchObject({ type: "request_end" });
+    }
+  });
+
+  it("reports what the Benchmark records: the kept version is the docs Agent's and the scoreboard's newest, above its Reference", () => {
+    for (const lang of ["en", "zh"] as const) {
+      const store = resetStore({ lang, signedIn: true, now: NOW });
+      const benchmark = store.f.benchmarks.find((b) => b.id === IDS.benchmarks.docs)!;
+      const [reference, kept] = benchmark.evaluations.slice(-2);
+      const docs = store.f.agents.find((a) => a.agentId === IDS.agents.docs)!;
+      expect(kept!.version).toBe(docs.version);
+      expect(kept!.score).toBeGreaterThan(reference!.score);
+      // The docs Agent's line climbs from its first evaluation to the kept one.
+      const line = benchmark.evaluations
+        .filter((e) => e.provider === kept!.provider && e.modelId === kept!.modelId)
+        .map((e) => e.score);
+      expect(line).toEqual([...line].sort((a, b) => a - b));
+      // The Test Sessions the scoreboard names exist, archived as `penguin run` Sessions are.
+      expect(kept!.cases.map((c) => c.runs[0]!.sessionId)).toEqual([...IDS.sessions.tests]);
+      for (const id of IDS.sessions.tests) {
+        expect(store.session(id)).toMatchObject({ source: "cli", archived: true });
+      }
+      // The report quotes the scoreboard's numbers, both versions, case by case.
+      const history = store.transcript(IDS.sessions.optimize)!.history;
+      const report = history.flatMap((m) => {
+        const p = payloadOf(m);
+        return p?.type === "text" && p.role === "assistant" && m.origin === undefined
+          ? [p.text]
+          : [];
+      });
+      expect(report).toHaveLength(1);
+      reference!.cases.forEach((c, i) => {
+        const row = report[0]!.split("\n").find((line) => line.startsWith(`| ${c.case} |`));
+        expect(row).toBe(`| ${c.case} | ${c.score} | ${kept!.cases[i]!.score} |`);
+      });
+      expect(report[0]).toContain(String(kept!.score));
+    }
   });
 });
 

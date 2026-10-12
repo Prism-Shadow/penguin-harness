@@ -6,7 +6,8 @@
 export const IDS = {
   project: "demo",
   users: { admin: "admin", member: "alice" },
-  agents: { docs: "docs-expert", notes: "release-notes" },
+  /** The two Agents of the demo, and the Project's built-in one, which optimizes the docs Agent. */
+  agents: { docs: "docs-expert", notes: "release-notes", general: "default_agent" },
   sessions: {
     /** A finished Task: thinking, three tools, a diff, a Markdown answer. */
     done: "s-hooks-index",
@@ -36,6 +37,12 @@ export const IDS = {
     notes: ["s-notes-0213", "s-notes-0212"],
     /** The release-notes Agent's desk, opened by an organization's scheduler; never listed. */
     orgDesk: "s-org-digest",
+    /** The General Agent's self-evolution round on the docs Agent: evaluators, scores, an edit, a re-evaluation. */
+    optimize: "s-optimize-docs",
+    /** The round's four evaluator subagents, one per case, in case order; never listed. */
+    evaluators: ["s-eval-hooks", "s-eval-mcp", "s-eval-memory", "s-eval-citations"],
+    /** The Test Sessions the evaluators ran the docs Agent in (`penguin run`): archived until kept. */
+    tests: ["s-test-hooks", "s-test-mcp", "s-test-memory", "s-test-citations"],
   },
   /** A Benchmark the docs agent wrote, one still being built, and a built-in one. */
   benchmarks: {
@@ -67,4 +74,7 @@ export const ALL_SESSION_IDS: readonly string[] = [
   IDS.sessions.harness,
   ...IDS.sessions.notes,
   IDS.sessions.orgDesk,
+  IDS.sessions.optimize,
+  ...IDS.sessions.evaluators,
+  ...IDS.sessions.tests,
 ];

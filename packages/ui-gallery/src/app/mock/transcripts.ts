@@ -30,11 +30,16 @@ export const event = (ms: number, payload: OmniMessage["payload"]): OmniMessage 
   payload,
 });
 
+/**
+ * A Session's opening record. The docs Agent's, started by a person, unless `who` names another
+ * Agent (its system prompt) or another starter (a subagent's parent).
+ */
 export const meta = (
   ms: number,
   sessionId: string,
   ref: { provider: string; modelId: string; contextWindow: number },
   workspace: string,
+  who: { agentId?: string; systemPrompt?: string; source?: "user" | "subagent" | "cli" } = {},
 ): OmniMessage => ({
   timestamp: iso(ms),
   type: "session_meta",
@@ -43,16 +48,22 @@ export const meta = (
     provider: ref.provider,
     model_id: ref.modelId,
     model_context_window: ref.contextWindow,
-    system_prompt: "You are Docs Expert. Cite a real file for every claim.",
-    agent_state: `/home/demo/.penguin/data/projects/${IDS.project}/agents/${IDS.agents.docs}/agent_state`,
+    system_prompt: who.systemPrompt ?? "You are Docs Expert. Cite a real file for every claim.",
+    agent_state: `/home/demo/.penguin/data/projects/${IDS.project}/agents/${who.agentId ?? IDS.agents.docs}/agent_state`,
     workspace,
-    source: "user",
+    source: who.source ?? "user",
   },
 });
 
-/** A user-role text; `sender` names who wrote it when the person did not (absent = the person). */
-export const userText = (ms: number, text: string, sender?: "harness" | "server"): OmniMessage =>
-  model(ms, { type: "text", role: "user", text, ...(sender ? { sender } : {}) });
+/**
+ * A user-role text; `sender` names who wrote it when the person did not (absent = the person):
+ * the harness, the server, or the parent agent that drives a subagent.
+ */
+export const userText = (
+  ms: number,
+  text: string,
+  sender?: "harness" | "server" | "parent_agent",
+): OmniMessage => model(ms, { type: "text", role: "user", text, ...(sender ? { sender } : {}) });
 
 export const assistantText = (
   ms: number,

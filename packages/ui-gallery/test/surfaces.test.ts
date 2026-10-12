@@ -64,8 +64,9 @@ describe("the surfaces", () => {
     const store = resetStore({ lang: "en", signedIn: true });
     for (const surface of SURFACES) {
       expect(surface.route.startsWith("/"), surface.id).toBe(true);
+      // `/chat/new` is the draft, which names no Session.
       const session = /^\/chat\/([^/?]+)/.exec(surface.route)?.[1];
-      if (session) expect(store.session(session), surface.id).toBeDefined();
+      if (session && session !== "new") expect(store.session(session), surface.id).toBeDefined();
       const agent = /^\/agents\/([^/?]+)/.exec(surface.route)?.[1];
       if (agent)
         expect(
@@ -101,6 +102,8 @@ describe("the surfaces", () => {
     expect(surfaceById("chat-approval")?.route).toBe(`/chat/${IDS.sessions.approval}`);
     expect(surfaceById("chat-harness")?.route).toBe(`/chat/${IDS.sessions.harness}`);
     expect(surfaceById("chat-org")?.route).toBe(`/chat/${IDS.sessions.orgDesk}`);
+    expect(surfaceById("chat-rsi")?.route).toBe(`/chat/${IDS.sessions.optimize}`);
+    expect(surfaceById("chat-new")?.route).toBe("/chat/new");
     expect(surfaceById("settings")?.route).toBe(`/chat/${IDS.sessions.done}`);
     expect(surfaceById("agent-settings")?.route).toBe(`/agents/${IDS.agents.docs}`);
     expect(surfaceById("schedules")?.route).toBe(`/agents/${IDS.agents.docs}?tab=schedules`);

@@ -13,6 +13,7 @@ import { buildFixtures, DEFAULT_MODEL } from "./fixtures";
 import type { DemoFixtures } from "./fixtures";
 import { harnessTranscript, orgDeskTranscript } from "./harness-transcript";
 import { IDS } from "./ids";
+import { rsiEvaluatorTranscript, rsiTestTranscript, rsiTranscript } from "./rsi-transcript";
 import { streamScript } from "./stream-script";
 import {
   abortEvent,
@@ -121,7 +122,14 @@ export class DemoStore {
       [IDS.sessions.approval]: approvalTranscript(lang, now, ref),
       [IDS.sessions.harness]: harnessTranscript(lang, now, ref),
       [IDS.sessions.orgDesk]: orgDeskTranscript(lang, now, ref),
+      [IDS.sessions.optimize]: rsiTranscript(lang, now, ref),
     };
+    IDS.sessions.evaluators.forEach((id, i) => {
+      seeded[id] = rsiEvaluatorTranscript(lang, now, ref, i);
+    });
+    IDS.sessions.tests.forEach((id, i) => {
+      seeded[id] = rsiTestTranscript(lang, now, ref, i);
+    });
     for (const row of this.f.sessions) {
       const transcript =
         seeded[row.sessionId] ??

@@ -79,6 +79,12 @@ export const en: GalleryStrings = {
         "A desk Session an organization's scheduler opened: the first message's trigger block folds into a one-line origin notice.",
       how: "Company mode › an employee's desk.",
     },
+    "chat-rsi": {
+      title: "Chat · self-evolution round",
+      description:
+        "The General Agent improves the docs Agent with the Default RSI Toolkit: it reads the Reference score and the weakest case's Trace, snapshots the Agent State and edits it, evaluates every case through parallel evaluator subagents, and keeps the new version because it scores higher.",
+      how: "Sidebar › General Agent › “Improve Docs Expert on Docs QA v1”. A round starts from Evaluation Center › a Benchmark › Use › Optimize.",
+    },
     "chat-new": {
       title: "New chat",
       description:

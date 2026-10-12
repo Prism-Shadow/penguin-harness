@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import * as api from "../../web/src/api/endpoints";
 import { ApiError, UNMOCKED } from "../src/app/mock/errors";
+import { IDS } from "../src/app/mock/ids";
 import { answerAsResponse } from "../src/app/mock/fetch-shim";
 import { router } from "../src/app/mock/routes";
 import { resetStore } from "../src/app/mock/store";
@@ -70,7 +71,11 @@ describe("the mocked API", () => {
     const projects = await api.listProjects();
     expect(projects.projects.map((p) => p.projectId)).toEqual([store.f.project.projectId]);
     const agents = await api.listAgents(store.f.project.projectId);
-    expect(agents.agents.length).toBe(2);
+    expect(agents.agents.map((a) => a.agentId)).toEqual([
+      IDS.agents.docs,
+      IDS.agents.notes,
+      IDS.agents.general,
+    ]);
     await expect(api.getSession("nope")).rejects.toMatchObject({ status: 404, code: "not_found" });
   });
 
@@ -87,9 +92,10 @@ describe("the mocked API", () => {
     });
     expect(first.sessions.length).toBe(3);
     expect(first.counts?.active).toBeGreaterThan(3);
-    // Archived by hand, plus the scheduled run and the evaluation nobody kept; the subagent is
-    // in no category, and the kept CLI run is one of the active rows.
-    expect(first.counts?.archived).toBe(3);
+    // Archived by hand, plus the scheduled run, the evaluation nobody kept and the Test Sessions
+    // of the self-evolution round; the subagent is in no category, and the kept CLI run is one
+    // of the active rows.
+    expect(first.counts?.archived).toBe(3 + IDS.sessions.tests.length);
     expect(first.workspaceCounts).toBeDefined();
     const rest = await api.listSessions(project, agent, {
       offset: 3,
@@ -131,8 +137,9 @@ describe("the mocked API", () => {
   it("lists the archived rows by group, pages a group, and unarchives and deletes them", async () => {
     const store = resetStore({ lang: "en", signedIn: true });
     const groups = await api.listArchivedSessionGroups();
-    expect(groups.total).toBe(3);
-    expect(groups.groups.reduce((n, g) => n + g.count, 0)).toBe(3);
+    const archived = 3 + IDS.sessions.tests.length;
+    expect(groups.total).toBe(archived);
+    expect(groups.groups.reduce((n, g) => n + g.count, 0)).toBe(archived);
     const temp = groups.groups.find((g) => g.workspace === "temp")!;
     const page = await api.listArchivedSessions({
       projectId: temp.projectId,
@@ -144,12 +151,12 @@ describe("the mocked API", () => {
     const first = page.sessions[0]!.sessionId;
     expect(await api.unarchiveSessions({ sessionIds: [first] })).toEqual({ done: 1, missing: [] });
     expect(store.session(first)?.archived).toBe(false);
-    expect((await api.listArchivedSessionGroups()).total).toBe(2);
+    expect((await api.listArchivedSessionGroups()).total).toBe(archived - 1);
     expect(await api.deleteSessions({ filter: { source: "schedule" } })).toEqual({
       done: 1,
       missing: [],
     });
-    expect((await api.listArchivedSessionGroups()).total).toBe(1);
+    expect((await api.listArchivedSessionGroups()).total).toBe(archived - 2);
   });
 
   it("pages the list by last activity with a cursor, as the sidebar asks for it", async () => {
