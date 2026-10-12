@@ -35,7 +35,6 @@ import type {
 } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
-import { mayWriteBackMigration } from "./migration-write-back.js";
 import {
   canonicalClientType,
   groupKeyReaches,
@@ -366,9 +365,7 @@ const LEGACY_CLIENT_TYPES: readonly (readonly [RegExp, string])[] = [
  * the table back the moment this returns true, so a file is rewritten once and an old name
  * that reappears later (a models PUT from a page opened before the upgrade, a machine sync
  * from an older install) is repaired at its next read. Nothing is written when nothing
- * matched, nor while a server older than this code serves the data root
- * (mayWriteBackMigration): it would fail every Session on the new names, so the loader then
- * uses the migrated table in memory only. Entries the catalog has since unpinned (`deepseek/deepseek-flash`,
+ * matched. Entries the catalog has since unpinned (`deepseek/deepseek-flash`,
  * `minimax/MiniMax-M3`) come out pinned to their vendor's official client, which routes; the
  * Models page's "Restore defaults" puts the row and its group's table back to the catalog's,
  * which pins none. It runs first in migrateProjectConfigTable, so hoistProviderConnections
@@ -378,9 +375,7 @@ const LEGACY_CLIENT_TYPES: readonly (readonly [RegExp, string])[] = [
  * say a Project last opened before the release that shipped this migration must be opened once
  * on a 0.2.x release first. Takes out LEGACY_CLIENT_TYPES, this function, the write-back in the
  * two loaders, and their tests (core `state.test.ts`, server `models.test.ts`); see
- * changelog/unreleased/2026-10-01-backward-compatibility.md. The same release preparation takes
- * out mayWriteBackMigration's branch for a lock without a version (see
- * changelog/unreleased/2026-10-12-backward-compatibility.md).
+ * changelog/unreleased/2026-10-01-backward-compatibility.md.
  */
 export function migrateLegacyClientTypes(table: Record<string, unknown>): boolean {
   let changed = false;
@@ -557,13 +552,41 @@ export function hoistProviderConnections(table: Record<string, unknown>): boolea
  * hoist (hoistProviderConnections), which compares the rows' protocols with each other in
  * MMSP's names. Both loaders — `loadProjectConfig` here and the server's
  * `ProjectConfigService.readTable` — call this and write the raw table back once when it
- * returns true, unless mayWriteBackMigration says an older server holds the data root.
- * Removed with the two migrations at the 0.3.0 release preparation.
+ * returns true. Removed with the two migrations at the 0.3.0 release preparation.
  */
 export function migrateProjectConfigTable(table: Record<string, unknown>): boolean {
   const legacy = migrateLegacyClientTypes(table);
   const hoisted = hoistProviderConnections(table);
   return legacy || hoisted;
+}
+
+/**
+ * Whether a loader may write a migrated table back to `root`'s config files. Not while another
+ * live process holds the root's server lock (`<root>/server.lock`): that server may be an older
+ * release, which cannot read the client types the migration writes and would fail its every
+ * Session, so the migrated table is used in memory only and the file is left to the server that
+ * owns the root (a current one migrates it on its own reads). No lock, an unreadable one, one
+ * naming this process, or one whose process is gone all allow the write. Removed with the two
+ * migrations at the 0.3.0 release preparation.
+ */
+export async function migrationMayWriteBack(root: string): Promise<boolean> {
+  let pid: unknown;
+  try {
+    const raw = await fs.readFile(path.join(root, "server.lock"), "utf8");
+    pid = (JSON.parse(raw) as { pid?: unknown }).pid;
+  } catch {
+    return true;
+  }
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0 || pid === process.pid) {
+    return true;
+  }
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (err) {
+    // EPERM: the process exists but belongs to another user, so the root is still held.
+    return (err as NodeJS.ErrnoException).code !== "EPERM";
+  }
 }
 
 /**
@@ -831,7 +854,7 @@ export async function loadProjectConfig(root: string, projectId: string): Promis
   const table = (parseToml(raw) ?? {}) as Record<string, unknown>;
   // The raw table is written back, not the typed config, so every key the file carries
   // survives the rewrite (this loader keeps known keys only).
-  if (migrateProjectConfigTable(table) && (await mayWriteBackMigration(root, file))) {
+  if (migrateProjectConfigTable(table) && (await migrationMayWriteBack(root))) {
     await atomicWriteFile(file, renderProjectConfigToml(table), {
       mode: 0o600,
       followSymlinks: true,

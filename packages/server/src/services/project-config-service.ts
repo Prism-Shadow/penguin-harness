@@ -52,8 +52,8 @@ import {
   groupKeyReaches,
   imageUrlMessage,
   metaMaxTokens,
-  mayWriteBackMigration,
   migrateProjectConfigTable,
+  migrationMayWriteBack,
   parseProviderTable,
   presetModelEntries,
   presetPromotions,
@@ -833,10 +833,10 @@ export class ProjectConfigService implements ProjectConfigStore {
     // migrateProjectConfigTable): rewritten once, before it is served; the next read parses
     // the rewritten file (writeRaw drops the cache). Every file writeRaw renders carries a
     // `[providers]` table, which is what keeps the key hoist from ever running on it again.
-    // While an older server holds the data root the migrated table is served from memory and
-    // cached against the file as it stands, as an unmigrated one is. Removed with the two
+    // While another server holds the data root (migrationMayWriteBack) the migrated table is
+    // served from memory and cached against the file as it stands. Removed with the two
     // migrations at the 0.3.0 release preparation.
-    if (migrateProjectConfigTable(table) && (await mayWriteBackMigration(this.root, file))) {
+    if (migrateProjectConfigTable(table) && (await migrationMayWriteBack(this.root))) {
       await this.writeRaw(projectId, table);
       return table;
     }

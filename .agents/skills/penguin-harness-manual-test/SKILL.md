@@ -15,15 +15,13 @@ workspace deps); `pnpm desktop` runs a full `pnpm -r build`, so it is slow to st
 | `pnpm dev` | http://localhost:7365 | `~/.penguin/dev-data` |
 | `pnpm desktop` | its own window | `~/.penguin/dev-data` |
 | installed app, launched with `--dev` | its own window | `~/.penguin/dev-data` |
-| `pnpm penguin web`, or the `penguin` that `pnpm build` links globally | http://localhost:7369 (the linked one: 7364 unless `PORT` is set) | `~/.penguin/dev-data-cli` |
 | `pnpm dev:landing` | http://localhost:7366 | none (static) |
 | `pnpm dev:docs` | http://localhost:7367 | none (static) |
 | `pnpm dev:gallery` | http://localhost:7372 | none (static) |
 
 Other fixed ports (`packages/core/src/internal/ports.ts`): 7364 installed server, 7368 dev backend,
 7369 `pnpm penguin web` (data root `~/.penguin/dev-data-cli` — its own, so it can serve while an
-Agent it hosts runs `pnpm dev`; the lock is per root). Anything run from the checkout without
-`PENGUIN_HOME` — the linked `penguin` above all — defaults to that same root, never the installed one. On a shared box, `ss -tln` before assuming
+Agent it hosts runs `pnpm dev`; the lock is per root). On a shared box, `ss -tln` before assuming
 one is free; `PORT=` inline moves it. The gallery's port is strict — a busy 7372 fails instead of
 drifting, because quoted gallery links and `pnpm --filter @prismshadow/penguin-ui-gallery shots`
 name it.

@@ -81,11 +81,7 @@ shared root that Agent's `dev:server` would refuse to start, blocked by the harn
 own lock (the same coexistence that already gives it port 7369, see
 `packages/core/src/internal/ports.ts`). To aim a dev CLI command at the `pnpm dev`
 dataset anyway, say so per command — `PENGUIN_HOME=~/.penguin/dev-data pnpm penguin ...`,
-or `--root` where the subcommand takes it. The `penguin` that `pnpm build` links globally, and
-anything else run from the checkout without `PENGUIN_HOME`, defaults to that same
-`~/.penguin/dev-data-cli`: core's `resolveRoot` tells a checkout by where it is loaded from, so
-only an installation defaults to `~/.penguin/data` (reach it on purpose with
-`PENGUIN_HOME=~/.penguin/data`). Need a different root?
+or `--root` where the subcommand takes it. Need a different root?
 Pass `PENGUIN_HOME` inline, for the single
 command that needs it (`PENGUIN_HOME=~/.penguin/dev-data-<topic> pnpm dev`) — never export
 it into your shell: those defaults apply only when the variable is unset or empty

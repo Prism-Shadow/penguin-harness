@@ -10,8 +10,7 @@
  *   2. `PENGUIN_API_URL` — the same, from the environment. Server-driven sessions inject
  *      it (with PENGUIN_API_TOKEN) into tool subprocesses, which is how an agent's own
  *      `penguin` calls find the server that runs them.
- *   3. A live `server.lock` at the data root (core's resolveRoot: PENGUIN_HOME, else
- *      ~/.penguin/data, or ~/.penguin/dev-data-cli for a CLI run from a checkout): attach to
+ *   3. A live `server.lock` at the data root (PENGUIN_HOME or ~/.penguin/data): attach to
  *      the running local server on `http://localhost:<port>`. A `penguin` started through a
  *      server's `<root>/bin/penguin` shim — in that server's terminals and Agent commands —
  *      gets that server's root as PENGUIN_HOME unless its caller set one (the server's
