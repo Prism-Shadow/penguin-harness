@@ -237,6 +237,13 @@ export class FakeServer {
       ) => { messages: unknown[]; completed: boolean }) = "inline";
   /** POST /steer behavior: accept (202) or reject (409 not_running). */
   steerMode: "accept" | "reject" = "accept";
+  /** How many Session-create POSTs still fail, with a 503 the way a server that is down or restarting answers. */
+  failSessionCreates = 0;
+  /** The Project's default model GET models reports: what a Session created without one runs on. */
+  defaultModel: { provider: string; modelId: string } | null = {
+    provider: "prov-default",
+    modelId: "model-default",
+  };
   /** When true, a task POST emits `running` + the script's messages but never `idle` — the turn hangs (soft-yield timeout tests). */
   hangTasks = false;
   usage: Json = {
@@ -1860,10 +1867,23 @@ export class FakeServer {
       return this.json(view());
     }
 
+    // The Project's model config: only the default the CLI reads.
+    let m = /^\/api\/projects\/([^/]+)\/models$/.exec(apiPath);
+    if (m && method === "GET") {
+      return this.json({
+        ...(this.defaultModel !== null ? { defaultModel: this.defaultModel } : {}),
+        models: [],
+      });
+    }
+
     // Session create
-    let m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/sessions$/.exec(apiPath);
+    m = /^\/api\/projects\/([^/]+)\/agents\/([^/]+)\/sessions$/.exec(apiPath);
     if (m) {
       if (method === "POST") {
+        if (this.failSessionCreates > 0) {
+          this.failSessionCreates -= 1;
+          return this.error(503, "server_unavailable", "The server is restarting.");
+        }
         const s = this.addSession({
           projectId: decodeURIComponent(m[1]!),
           agentId: decodeURIComponent(m[2]!),
