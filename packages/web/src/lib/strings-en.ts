@@ -54,9 +54,8 @@ export const en: Strings = {
     checkoutImageFailed:
       "This server runs from a source checkout and could not build the install image it puts on machines. The build said:",
     localTitle: "this server",
-    noneInUse: "No machine in use yet.",
-    sshHint:
-      "A machine can be added when this server's account can ssh into it: by key (`ssh <name>` works in a terminal here), or with a password saved here. Add machine picks one from the ssh config, or fills in a new one.",
+    noneInUse: "No machine in use yet",
+    sshHint: "Add machine picks one from the ssh config, or fills in a new one.",
     host: {
       configureVerb: "Configure",
       name: "Name",

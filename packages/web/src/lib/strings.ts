@@ -63,9 +63,8 @@ export const zh = {
     checkoutImageFailed: "本服务端从源码检出运行，未能构建要装到机器上的安装镜像。构建输出：",
     /** The tag on this server's own row. */
     localTitle: "本服务端",
-    noneInUse: "还没有在用的机器。",
-    sshHint:
-      "能加的机器，是本服务端账户能 ssh 上去的主机：用密钥（在这里的终端里 `ssh <名称>` 能直接进），或用在这里保存的密码。用「添加机器」从 ssh 配置里选一台，或手动填写一台新的。",
+    noneInUse: "还没有在用的机器",
+    sshHint: "用「添加机器」从 ssh 配置里选一台，或手动填写一台新的。",
     /** The ssh host form — the add dialog's manual tab, and configuring a host this app wrote. */
     host: {
       configureVerb: "配置",
