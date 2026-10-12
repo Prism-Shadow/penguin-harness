@@ -19,7 +19,7 @@ const SRC = fileURLToPath(new URL("../src", import.meta.url));
 /** Each create dialog, the kind its id field asks for, and the label of the field above it. */
 const DIALOGS = [
   { file: "components/layout/project-dialogs.tsx", kind: "project", name: "S.project.displayName" },
-  { file: "features/agents/agents-page.tsx", kind: "agent", name: "S.common.name" },
+  { file: "features/agents/create-agent-dialog.tsx", kind: "agent", name: "S.common.name" },
   {
     file: "features/benchmark/create-benchmark-modal.tsx",
     kind: "benchmark",

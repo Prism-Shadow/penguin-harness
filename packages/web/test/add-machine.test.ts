@@ -76,7 +76,6 @@ function body(over: Partial<AddMachineBodyProps> = {}) {
     form: NEW_HOST_FORM,
     errors: {},
     onField: vi.fn(),
-    onEnter: vi.fn(),
     error: null,
     ...over,
   };

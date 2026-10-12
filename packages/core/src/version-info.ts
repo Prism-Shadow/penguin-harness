@@ -98,6 +98,14 @@ export interface HarnessInfo {
     cli: string | null;
     web: string | null;
   };
+  /**
+   * The committed native-assets directory, relative to `<root>/hmr` and named by its content
+   * like the bundles; null when the version carries no assets. Only the version report fills
+   * it — absent from the history's records, which identify a version by its three bundles.
+   * With it, a pusher can tell "the target already runs exactly this build" without pushing:
+   * a change to a builtin plugin moves this pointer and none of the three bundles.
+   */
+  assets?: string | null;
 }
 
 /** What a stored interface table says about itself, without reading it. */

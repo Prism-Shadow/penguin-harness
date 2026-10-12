@@ -2,8 +2,13 @@
  * The ssh host form: the name a machine goes by and what ssh needs to reach it — the fields the
  * add dialog's manual tab writes a new host with, and the dialog that configures a host this app
  * wrote. Validated here the way the server validates it — one word per value, a port in range —
- * so a bad value is said under its field rather than in a toast after a round trip. Only an
- * invalid value is said in the danger ink; what a field wants is its muted hint.
+ * so a bad value is said under its field as it is typed rather than in a toast after a round
+ * trip. Only an invalid value is said in the danger ink; what a field wants is its muted hint, and
+ * an empty required field is marked by its asterisk alone.
+ *
+ * The verb (Add, Save) is live once a field changed and nothing in the form is wrong; Enter does
+ * not press it, the form having more than one field. Closing a dialog with edits asks first, and
+ * nothing closes it while its write is in flight.
  *
  * Writing goes through the server, which appends or rewrites the block and answers the machines
  * list; the caller takes that list as its state. A block written by hand is shown but not saved:
@@ -11,19 +16,27 @@
  * so and points at the file.
  */
 import { useState } from "react";
-import type { KeyboardEvent } from "react";
 import type {
   MachinesResponse,
   SshHostRequest,
   SshHostResponse,
 } from "@prismshadow/penguin-server/api";
-import { Button, Input, Modal, NoticeStrip, toastSuccess } from "@prismshadow/penguin-ui";
+import {
+  Button,
+  Input,
+  Modal,
+  NoticeStrip,
+  toastSuccess,
+  useFormDraft,
+  useGuardedClose,
+} from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 
 export type HostField = "alias" | "hostName" | "user" | "port" | "identityFile";
 export type HostForm = Record<HostField, string>;
+export type HostErrors = Partial<Record<HostField, string>>;
 
 /** A new host's form: the port filled in with ssh's own default, so the default is said. */
 export const NEW_HOST_FORM: HostForm = {
@@ -45,13 +58,24 @@ export function hostForm(host: SshHostResponse): HostForm {
   };
 }
 
+/** The form as a write would send it, every value trimmed: typing a space is not an edit. */
+export function normalizeHostForm(form: HostForm): HostForm {
+  return {
+    alias: form.alias.trim(),
+    hostName: form.hostName.trim(),
+    user: form.user.trim(),
+    port: form.port.trim(),
+    identityFile: form.identityFile.trim(),
+  };
+}
+
 /** One word: no whitespace and no `#`, which would comment out the rest of the config line. */
 const isToken = (value: string) => value !== "" && !/[\s#]/.test(value);
 
 /** The first thing wrong with the form, per field, or nothing. */
-export function validateHostForm(form: HostForm): Partial<Record<HostField, string>> {
+export function validateHostForm(form: HostForm): HostErrors {
   const m = S.machines.host;
-  const errors: Partial<Record<HostField, string>> = {};
+  const errors: HostErrors = {};
   if (form.alias.trim() === "") errors.alias = S.common.requiredField;
   else if (!isToken(form.alias.trim()) || /[*?!]/.test(form.alias)) errors.alias = m.oneWord;
   if (form.hostName.trim() === "") errors.hostName = S.common.requiredField;
@@ -68,8 +92,20 @@ export function validateHostForm(form: HostForm): Partial<Record<HostField, stri
 }
 
 /** Whether a validation found anything. */
-export const hasErrors = (errors: Partial<Record<HostField, string>>) =>
+export const hasErrors = (errors: HostErrors) =>
   Object.values(errors).some((error) => error !== undefined);
+
+/**
+ * What the fields say as the form is typed: each malformed value under its field. An empty
+ * required field is left to its asterisk, so a blank form does not open in the danger ink.
+ */
+export function shownErrors(found: HostErrors): HostErrors {
+  const shown: HostErrors = {};
+  for (const [field, error] of Object.entries(found) as Array<[HostField, string | undefined]>) {
+    if (error !== undefined && error !== S.common.requiredField) shown[field] = error;
+  }
+  return shown;
+}
 
 /** The request the server takes, from a form that passed validation. */
 export function hostRequest(form: HostForm): SshHostRequest {
@@ -90,15 +126,13 @@ export function HostFields({
   form,
   errors,
   onChange,
-  onEnter,
   fixedName = false,
   locked = false,
   autoFocus = "alias",
 }: {
   form: HostForm;
-  errors: Partial<Record<HostField, string>>;
+  errors: HostErrors;
   onChange: (field: HostField, value: string) => void;
-  onEnter: () => void;
   fixedName?: boolean;
   locked?: boolean;
   autoFocus?: HostField | null;
@@ -109,9 +143,6 @@ export function HostFields({
     value: form[name],
     error: errors[name],
     onChange: (event: { target: { value: string } }) => onChange(name, event.target.value),
-    onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === "Enter") onEnter();
-    },
     autoFocus: autoFocus === name,
     autoComplete: "off",
     spellCheck: false,
@@ -186,22 +217,24 @@ export function SshHostDialog({
 }) {
   const m = S.machines.host;
   const locked = !host.editable;
-  const [form, setForm] = useState<HostForm>(() => hostForm(host));
-  const [errors, setErrors] = useState<Partial<Record<HostField, string>>>({});
+  const draft = useFormDraft<HostForm>(hostForm(host), { normalize: normalizeHostForm });
+  const form = draft.draft;
+  /** What the server refused, under the host (the name is fixed); cleared by the next keystroke. */
+  const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const requestClose = useGuardedClose(onClose, draft.scope, { locked: busy });
+  const found = validateHostForm(form);
+  const canSave = draft.dirty && !hasErrors(found) && !busy && !locked;
+  const errors = shownErrors(found);
+  if (refused !== undefined) errors.hostName = refused;
 
   const change = (field: HostField, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-    setErrors((prev) => (prev[field] === undefined ? prev : { ...prev, [field]: undefined }));
+    draft.patch({ [field]: value } as Partial<HostForm>);
+    setRefused(undefined);
   };
 
   const submit = async () => {
-    if (locked || busy) return;
-    const found = validateHostForm(form);
-    if (hasErrors(found)) {
-      setErrors(found);
-      return;
-    }
+    if (!canSave) return;
     setBusy(true);
     try {
       const { alias, ...rest } = hostRequest(form);
@@ -210,7 +243,7 @@ export function SshHostDialog({
       onSaved(state);
       onClose();
     } catch (err) {
-      setErrors({ hostName: apiErrorText(err) });
+      setRefused(apiErrorText(err));
     } finally {
       setBusy(false);
     }
@@ -220,18 +253,13 @@ export function SshHostDialog({
     <Modal
       open
       title={m.editTitle}
-      onClose={onClose}
+      onClose={requestClose}
       footer={
         <>
-          <Button size="sm" onClick={onClose}>
+          <Button size="sm" disabled={busy} onClick={requestClose}>
             {S.common.cancel}
           </Button>
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={busy || locked}
-            onClick={() => void submit()}
-          >
+          <Button size="sm" variant="primary" disabled={!canSave} onClick={() => void submit()}>
             {busy ? S.common.saving : S.common.save}
           </Button>
         </>
@@ -247,7 +275,6 @@ export function SshHostDialog({
           form={form}
           errors={errors}
           onChange={change}
-          onEnter={() => void submit()}
           fixedName
           locked={locked}
           autoFocus="hostName"

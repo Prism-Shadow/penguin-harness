@@ -29,6 +29,10 @@
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531 --force
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs https://box.example.com
  *   node scripts/deploy.mjs --out /tmp/version.gz
+ *
+ * A target that has already committed this exact build is left alone: the push would only make
+ * it import the same platform as another generation (see deploy-same-build.mjs). `--force`
+ * pushes anyway.
  */
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
@@ -59,6 +63,7 @@ import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
 import { typescriptPayload } from "./typescript-payload.mjs";
 import { libraryPayload } from "./library-payload.mjs";
 import { createHash } from "node:crypto";
+import { buildPointers, committedBuildMatches } from "./deploy-same-build.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -96,14 +101,14 @@ function usage(problem) {
       "  <port>  a port on this machine (an ssh -L tunnel to the target runtime, or a local server)\n" +
       "  <url>   a full origin, when the target is not reached over loopback\n" +
       "  <file>  where to write the version instead of pushing it (gzipped upgrade body)\n" +
-      "  --force push even when the target has plugins this build cannot run; it runs without them\n",
+      "  --force push even if the target has this build or has plugins it cannot run; unsupported plugins are left out\n",
   );
   process.exit(1);
 }
 
 const args = process.argv.slice(2);
 const skipWebBuild = args.includes("--skip-web-build");
-/** Push even when the target has plugins this build cannot run; it then runs without them. */
+/** Override same-build skipping and allow a push that leaves unsupported plugins out. */
 const force = args.includes("--force");
 const outIndex = args.indexOf("--out");
 const outFile = outIndex === -1 ? null : (args[outIndex + 1] ?? "");
@@ -209,6 +214,31 @@ async function login() {
   const setCookie = res.headers["set-cookie"];
   if (!setCookie?.length) throw new Error("login succeeded but set no session cookie");
   return setCookie.map((c) => c.split(";")[0]).join("; ");
+}
+
+/**
+ * Whether the target has already committed `build`, from its GET /api/version. Anything short of a
+ * readable report that matches is an answer of "no", with the reason: the push goes ahead
+ * exactly as it did before this check.
+ */
+async function targetRunsThisBuild(auth, build) {
+  let res;
+  try {
+    res = await request(`${baseUrl}/api/version`, { headers: auth });
+  } catch (err) {
+    return {
+      same: false,
+      reason: `GET /api/version failed: ${err instanceof Error ? err.message : err}`,
+    };
+  }
+  if (res.status !== 200) return { same: false, reason: `GET /api/version → ${res.status}` };
+  let report;
+  try {
+    report = JSON.parse(res.body.toString("utf8"));
+  } catch {
+    return { same: false, reason: "GET /api/version answered something that is not JSON" };
+  }
+  return committedBuildMatches(report, buildPointers(build));
 }
 
 /**
@@ -433,6 +463,24 @@ async function main() {
   }
 
   const auth = await authHeaders();
+  if (force) {
+    log("--force: pushing without asking what the target runs");
+  } else {
+    const running = await targetRunsThisBuild(auth, {
+      platform,
+      cli,
+      web: files,
+      assets: assets.files,
+    });
+    if (running.same) {
+      log(
+        `the target already has this build (${source?.revision ?? "no provenance"}); nothing pushed. ` +
+          "--force pushes it again.",
+      );
+      return;
+    }
+    log(`pushing: ${running.reason}`);
+  }
   // Content-addressed transfer, the way git pushes: name every part by its sha256, ask the
   // target which blobs it lacks, PUT only those (raw), then push a body of names. A target
   // without the probe (an older runtime) answers 404 and gets every part inline.

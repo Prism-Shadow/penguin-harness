@@ -354,6 +354,26 @@ describe("buildToolConfig", () => {
     ]);
   });
 
+  it("selectBuiltinToolsForModel hands read_file's prompt argument to a text-only model only", () => {
+    const stored = defaultSystemConfig().tools!.builtin!;
+    const props = (tools: typeof stored) =>
+      Object.keys(
+        (
+          tools.find((t) => t.name === "read_file")!.parameters as {
+            properties: Record<string, unknown>;
+          }
+        ).properties,
+      );
+    expect(props(selectBuiltinToolsForModel(stored, true))).toEqual([
+      "file_path",
+      "offset",
+      "limit",
+    ]);
+    expect(props(selectBuiltinToolsForModel(stored, false))).toContain("prompt");
+    // The trim works on a clone: the stored entry keeps its argument.
+    expect(props(stored)).toContain("prompt");
+  });
+
   it("loads MCP Server config from system_config.yaml", () => {
     const state = {
       root: tmpRoot,

@@ -74,14 +74,14 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai、openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、modelscope、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai、openrouter、fireworks、siliconflow、atlascloud、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、modelscope、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。opencode-go 分组中走 Anthropic Messages 的模型同理，其客户端读取的是 `ANTHROPIC_*`。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，分组上存的是通用 Responses 客户端；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）的模型只在解析不出 `base_url` 时读取 `MMSP_API_KEY` 与 `MMSP_BASE_URL`（缺省为 `http://127.0.0.1:25752/v1`）；有 `base_url` 而没有 `api_key` 时不发送任何 key，开放的 MMSP 服务器正是这样接受请求。供应商分组和内置模型目录见[模型与供应商](/models)。
+openrouter、fireworks、siliconflow、atlascloud、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。opencode-go 分组中走 Anthropic Messages 的模型同理，其客户端读取的是 `ANTHROPIC_*`。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，分组上存的是通用 Responses 客户端；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）的模型只在解析不出 `base_url` 时读取 `MMSP_API_KEY` 与 `MMSP_BASE_URL`（缺省为 `http://127.0.0.1:25752/v1`）；有 `base_url` 而没有 `api_key` 时不发送任何 key，开放的 MMSP 服务器正是这样接受请求。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 

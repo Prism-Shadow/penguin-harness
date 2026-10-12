@@ -97,7 +97,7 @@ test("company mode: create the organization, meet the CEO, see the board and the
   // initialization run is still streaming (the trigger banner and the live state appear at
   // once, not after the run ends).
   await expect(page).toHaveURL(/\/chat\/session-/, { timeout: 30_000 });
-  await expect(page.getByText(/由组织「marketplace」触发/).first()).toBeVisible({ timeout: 3_000 });
+  await expect(page.getByText(/组织触发\s*marketplace/).first()).toBeVisible({ timeout: 3_000 });
   const detail = await (await page.request.get(api(`/organizations/${ORG}`))).json();
   expect(detail.employeeCount).toBe(1);
   expect(detail.ceoDeskSessionId).toBeTruthy();
@@ -131,7 +131,7 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await expect(sidebar.getByRole("button", { name: /^工位（/ })).toBeVisible();
   await ceoDeskRow.click();
   await expect(page).toHaveURL(new RegExp(`/chat/${detail.ceoDeskSessionId}$`));
-  await expect(page.getByText(/由组织「marketplace」触发/).first()).toBeVisible();
+  await expect(page.getByText(/组织触发\s*marketplace/).first()).toBeVisible();
   await expect(sidebar.getByRole("link", { name: /^全员频道/ })).toBeVisible();
   await expect(ceoDeskRow).toHaveAttribute("aria-current", "true");
 

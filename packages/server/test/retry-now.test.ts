@@ -7,6 +7,9 @@
  * - Given a running Session parked in a wait, it answers `{skipped:true}` and the skip reaches
  *   the runtime.
  * - A foreign or unknown Session is a 404, as on every other Session route.
+ *
+ * Beside it, POST /api/sessions/:id/retry — "Retry" on a run that ended in an error — refuses
+ * with 409 `nothing_to_retry` when the Session holds no input to resend, and starts nothing.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
@@ -79,5 +82,27 @@ describe("retry-now route", () => {
     expect((await outsider.post(`/api/sessions/${sid}/retry-now`, {})).status).toBe(404);
     expect((await api.post(`/api/sessions/session-ghost/retry-now`, {})).status).toBe(404);
     expect(skips).toBe(0);
+  });
+
+  it("retry with nothing held → 409 nothing_to_retry, and no Task starts", async () => {
+    let runs = 0;
+    const idle = uniqueSessionId();
+    adoptSession(
+      t.deps,
+      fakeSession(idle, {
+        hasPendingInput: () => false,
+        // eslint-disable-next-line require-yield
+        async *run() {
+          runs += 1;
+        },
+      }),
+      { projectId: "retrier-default_project" },
+    );
+
+    const res = await api.post(`/api/sessions/${idle}/retry`, {});
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("nothing_to_retry");
+    // A launched Task would have started the run before the response went out.
+    expect(runs).toBe(0);
   });
 });

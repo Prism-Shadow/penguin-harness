@@ -8,12 +8,18 @@
  *   at the other one.
  * - Fill in by hand: a new host — name, host, user name, port (22 unless said), private key — which
  *   the server writes into its ssh config before adding it. Each field's hint says what it wants
- *   in the muted ink; only a value that is wrong is said in the danger ink, under its field.
+ *   in the muted ink; only a value that is wrong is said in the danger ink, under its field, as it
+ *   is typed — a name the page or the config already has among them.
  *
  * The footer: Cancel and Add, and a box ticked from the start, "Install and connect right after
  * adding". Ticked, Add enables the machines (`use`: install, start, connect, hand over the Model
  * config), and their cards show the progress; unticked, it only puts them on the page, each card
- * offering Enable.
+ * offering Enable. Add waits for a ticked host, or for a filled-in host with nothing wrong; Enter
+ * does not press it.
+ *
+ * The dialog is one form, as every dialog that creates a record is: the hosts ticked, the host
+ * typed in and the box are its draft (the search and the tab are not), so closing it with any of
+ * them changed asks first, and nothing closes it while Add is in flight.
  *
  * `AddMachineBody` and `AddMachineFooter` are pure functions of their props; the dialog around them
  * holds the state, reads the hosts' lines once when it opens, and makes the requests.
@@ -35,6 +41,8 @@ import {
   NoticeStrip,
   SearchInput,
   Tabs,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -49,9 +57,11 @@ import {
   NEW_HOST_FORM,
   hasErrors,
   hostRequest,
+  normalizeHostForm,
+  shownErrors,
   validateHostForm,
 } from "./ssh-host-dialog";
-import type { HostField, HostForm } from "./ssh-host-dialog";
+import type { HostErrors, HostField, HostForm } from "./ssh-host-dialog";
 
 export interface AddMachineBodyProps {
   tab: AddTab;
@@ -66,10 +76,9 @@ export interface AddMachineBodyProps {
   picked: ReadonlySet<string>;
   onPick: (id: string) => void;
   form: HostForm;
-  errors: Partial<Record<HostField, string>>;
+  /** What the fields say: each malformed value, or a name already taken, under its field. */
+  errors: HostErrors;
   onField: (field: HostField, value: string) => void;
-  /** Enter in a field: the same as pressing Add. */
-  onEnter: () => void;
   /** Why the last Add did not go through, when the server said so; null otherwise. */
   error: string | null;
 }
@@ -194,7 +203,7 @@ function ConfigPanel({
 
 export function AddMachineBody(props: AddMachineBodyProps) {
   const a = S.machines.addDialog;
-  const { tab, onTab, form, errors, onField, onEnter, error } = props;
+  const { tab, onTab, form, errors, onField, error } = props;
   return (
     <div className="space-y-4">
       <p className="text-sm">{a.intro}</p>
@@ -208,7 +217,7 @@ export function AddMachineBody(props: AddMachineBodyProps) {
           {tab === "config" ? (
             <ConfigPanel {...props} />
           ) : (
-            <HostFields form={form} errors={errors} onChange={onField} onEnter={onEnter} />
+            <HostFields form={form} errors={errors} onChange={onField} />
           )}
         </div>
       </div>
@@ -265,7 +274,7 @@ export function AddMachineFooter({
         data-option="install-now"
         className="mr-auto basis-full self-center sm:basis-auto"
       />
-      <Button size="sm" onClick={onCancel}>
+      <Button size="sm" disabled={busy} onClick={onCancel}>
         {S.common.cancel}
       </Button>
       <Button
@@ -282,6 +291,22 @@ export function AddMachineFooter({
     </>
   );
 }
+
+/** What the dialog would add: the hosts ticked, the host typed in by hand, and the box. */
+interface AddDraft {
+  picked: readonly string[];
+  host: HostForm;
+  installNow: boolean;
+}
+
+const NEW_DRAFT: AddDraft = { picked: [], host: NEW_HOST_FORM, installNow: true };
+
+/** The draft as Add would send it: the ticks in any order, the host trimmed. */
+const normalizeDraft = (draft: AddDraft) => ({
+  picked: [...draft.picked].sort(),
+  host: normalizeHostForm(draft.host),
+  installNow: draft.installNow,
+});
 
 /** What the page hears once machines are on it: the list as the server answered, and how they came. */
 export interface AddedMachines {
@@ -306,10 +331,11 @@ export function AddMachineDialog({
   const [tab, setTab] = useState<AddTab>(ADD_TABS[0]);
   const [hosts, setHosts] = useState<SshHostSummary[]>([]);
   const [query, setQuery] = useState("");
-  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
-  const [form, setForm] = useState<HostForm>(NEW_HOST_FORM);
-  const [errors, setErrors] = useState<Partial<Record<HostField, string>>>({});
-  const [installNow, setInstallNow] = useState(true);
+  const draft = useFormDraft<AddDraft>(NEW_DRAFT, { normalize: normalizeDraft });
+  const { host: form, installNow } = draft.draft;
+  const picked: ReadonlySet<string> = new Set(draft.draft.picked);
+  /** The name the server refused, said under it; cleared by the next keystroke. */
+  const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The host this dialog wrote into the ssh config, when what followed failed: a second Add
@@ -333,39 +359,36 @@ export function AddMachineDialog({
 
   const rows = hostRows(state, hosts, query);
   const offered = hostRows(state, hosts, "").length;
+  const requestClose = useGuardedClose(onClose, draft.scope, { locked: busy });
+
+  const name = form.alias.trim();
+  const found = validateHostForm(form);
+  if (
+    found.alias === undefined &&
+    name !== written &&
+    state.machines.some((machine) => machine.alias === name)
+  ) {
+    found.alias = S.machines.host.exists;
+  }
+  const errors = shownErrors(found);
+  if (refused !== undefined) errors.alias = refused;
+  const canSubmit = tab === "manual" ? !hasErrors(found) : picked.size > 0;
 
   const pick = (id: string) =>
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const field = (name: HostField, value: string) => {
-    setForm((prev) => ({ ...prev, [name]: value }));
-    setErrors((prev) => (prev[name] === undefined ? prev : { ...prev, [name]: undefined }));
+    draft.setDraft((prev) => ({
+      ...prev,
+      picked: prev.picked.includes(id)
+        ? prev.picked.filter((one) => one !== id)
+        : [...prev.picked, id],
+    }));
+  const field = (key: HostField, value: string) => {
+    draft.setDraft((prev) => ({ ...prev, host: { ...prev.host, [key]: value } }));
+    setRefused(undefined);
   };
 
   const submit = async () => {
-    if (busy) return;
+    if (busy || !canSubmit) return;
     setError(null);
-    const name = form.alias.trim();
-    if (tab === "manual") {
-      const found = validateHostForm(form);
-      if (
-        found.alias === undefined &&
-        name !== written &&
-        state.machines.some((machine) => machine.alias === name)
-      ) {
-        found.alias = S.machines.host.exists;
-      }
-      if (hasErrors(found)) {
-        setErrors(found);
-        return;
-      }
-    } else if (picked.size === 0) {
-      return;
-    }
     const plan = addPlan(tab, [...picked], form.alias, installNow);
     setBusy(true);
     try {
@@ -385,7 +408,7 @@ export function AddMachineDialog({
     } catch (err) {
       // A name the config already has belongs under its field; anything else under the form.
       if (err instanceof ApiError && err.code === "ssh_host_exists") {
-        setErrors({ alias: S.machines.host.exists });
+        setRefused(S.machines.host.exists);
       } else {
         setError(apiErrorText(err));
       }
@@ -399,16 +422,16 @@ export function AddMachineDialog({
     <Modal
       open
       title={a.title}
-      onClose={onClose}
+      onClose={requestClose}
       widthClass="sm:max-w-lg"
       footer={
         <AddMachineFooter
           installNow={installNow}
-          onInstallNow={setInstallNow}
+          onInstallNow={(on) => draft.patch({ installNow: on })}
           submitLabel={count > 1 ? a.submitCount(count) : a.submit}
-          canSubmit={tab === "manual" || picked.size > 0}
+          canSubmit={canSubmit}
           busy={busy}
-          onCancel={onClose}
+          onCancel={requestClose}
           onSubmit={() => void submit()}
         />
       }
@@ -428,7 +451,6 @@ export function AddMachineDialog({
         form={form}
         errors={errors}
         onField={field}
-        onEnter={() => void submit()}
         error={error}
       />
     </Modal>
