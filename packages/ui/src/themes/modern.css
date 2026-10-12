@@ -539,11 +539,11 @@
    * `animate-spin`, `.ui-glass` replace a panel's opaque fill and `.ui-shell` re-paint the
    * window's columns.
    *
-   * Frost gives fourteen of the sixteen a recipe: glass, eyebrow (its ink; the rung is
+   * Frost gives fifteen of the seventeen a recipe: glass, eyebrow (its ink; the rung is
    * theme.css's), display, live, frame, underline-nav, shell, icon-decor, tree, field, activity,
-   * notice, chart, stream. `.ui-scrim` is a documented no-op: the page behind a dialog is the
-   * host's dim alone. `.ui-glyph` needs none: the line drawings theme.css shows are Frost's own,
-   * and their duotone bodies show through `--ui-icon-duo-opacity`.
+   * notice, chart, stream, widget. `.ui-scrim` is a documented no-op: the page behind a dialog is
+   * the host's dim alone. `.ui-glyph` needs none: the line drawings theme.css shows are Frost's
+   * own, and their duotone bodies show through `--ui-icon-duo-opacity`.
    */
 
   /* Frosted transient layer: menus, popovers, tooltips and the floating composer — the small
@@ -1085,6 +1085,21 @@
   :root[data-theme="modern"] .ui-chart [data-part="point"] {
     stroke: var(--ui-surface);
     stroke-width: 1.5;
+  }
+
+  /* Widgets: a glanceable reading as a soft tile — no hairline, the muted fill with white tiles
+     inside, and numerals at the regular weight with tight tracking, the way Frost sets a title
+     large. The box radius is the host's md rung, so its p-3 clears the corners. */
+  :root[data-theme="modern"] .ui-widget {
+    border-color: transparent;
+    background-color: var(--ui-surface-muted);
+  }
+  :root[data-theme="modern"] .ui-widget [data-tile] {
+    background-color: var(--ui-surface);
+  }
+  :root[data-theme="modern"] .ui-widget [data-figure] {
+    font-weight: var(--ui-weight-body);
+    letter-spacing: -0.02em;
   }
 
   /* MiSans ships Regular (400) and Medium (500) only. A heavier request renders in Medium rather

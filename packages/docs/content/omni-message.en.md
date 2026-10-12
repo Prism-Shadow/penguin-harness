@@ -43,11 +43,22 @@ interface SessionMetaPayload {
   system_prompt: string;                  // fully assembled, placeholders substituted
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
-  source?: "subagent" | "schedule" | "benchmark"; // spawned by a subagent / a scheduled task / a Benchmark run; absent = user-created
+  source: "user" | "api" | "schedule" | "subagent" | "cli" | "company"; // what kind of conversation this is
 }
 ```
 
 The Workspace is fixed for the Session's lifetime. The model and the system prompt are fixed per context: an in-session model switch opens its new context on another model, and this record is the only place that says so.
+
+`source` says what kind of conversation the Session is, and is fixed for its lifetime too:
+
+- `user`: a person's conversation, the Web App's composer, `penguin chat` and forks included;
+- `api`: one an external program opened through the Agent API;
+- `schedule`: a scheduled task's run;
+- `subagent`: a `run_subagent` child;
+- `cli`: one `penguin run` created;
+- `company`: a desk or ticket Session that [company mode](/company-mode) opened.
+
+A Trace written by an older release may have no `source`, which reads as `user`, or as `company` when the server's index row says company mode opened the Session. It may also carry the retired `benchmark`, which reads as `cli`. The file itself is never rewritten.
 
 Every Trace file opens with a `session_meta`. When a compaction opens a new context, the new file's `session_meta` carries the system prompt assembled for that context from the Agent State as it stands at that moment (see [Compaction](/agent-loop#compaction)). On resume, the engine takes the latest file's `session_meta` as the runtime configuration. See [Sessions & Traces](/sessions-and-traces).
 
@@ -224,8 +235,10 @@ type ErrorCode =
   | "rejected"                // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
   | "unsupported"             // a deterministic client-side rejection (fast mode without a fast tier)
   | "invalid_input"           // the input failed to assemble into a request
-  // MCP connect failures
-  | "connect_failed";
+  // MCP connect failures (per-server results of mcp_connect_end)
+  | "connect_failed"          // the server could not connect or list its tools
+  | "mcp_needs_setup"         // not contacted: the vault lacks a key the entry references
+  | "mcp_sign_in_required";   // not contacted: the entry needs an OAuth sign-in
 
 interface ToolListReadyPayload {
   type: "tool_list_ready";
@@ -370,6 +383,8 @@ interface HookPayload {
 }
 ```
 
+A server that is skipped rather than contacted, because its entry references a vault key the agent lacks or because it needs an OAuth sign-in, appears in `results` as `fatal` with `mcp_needs_setup` or `mcp_sign_in_required`; its `error_message` names the missing keys, never a value. See [Vault references](/tools#vault-references).
+
 `compaction_end` never carries `retry_in_ms`: compaction retries are announced on the compaction request's own `request_end`, which stays in the Trace. Older Traces may still spell an MCP connect failure or an abandoned compaction as `failed`, and carry a per-server `error` field instead of the error pair.
 
 ## stop_reason
@@ -436,6 +451,8 @@ The payload is opaque to PenguinHarness: it passes through and persists verbatim
 | SDK boundary (`session.run` output) | complete `model_msg` + streaming `partial_*` + all `event_msg` |
 | Trace on disk | `session_meta` + complete `model_msg` + all `event_msg` (no partials, no `origin`-tagged messages) |
 | Server SSE stream | same as the SDK boundary, verbatim single-line JSON — see [Server API](/server-api) |
+
+The [Agent API](/agent-api) does not stream OmniMessage: its stream is [AMSP](/amsp), a projection the server makes of the same live stream for programs outside PenguinHarness. Nothing in OmniMessage changes for it: no field, type or value is added.
 
 How messages travel along these surfaces, and every ordering guarantee, is covered on [Message Flow & Ordering](/message-flow).
 

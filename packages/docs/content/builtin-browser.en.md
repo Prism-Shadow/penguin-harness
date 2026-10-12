@@ -115,14 +115,21 @@ Your agents can work in your own Chrome instead of the built-in browser: with yo
 
 ### Install the extension
 
-The extension is published with each release as a zip file; a Chrome Web Store listing will follow.
+We recommend installing from the Chrome Web Store, which keeps the extension up to date:
+
+1. Open [PenguinHarness Browser](https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp) in the Chrome Web Store and select **Add to Chrome**.
+2. Pin **PenguinHarness Browser** to the toolbar from the extensions menu, so its icon shows whether it is connected.
+
+Where the Chrome Web Store cannot be reached, install the zip file published with each release instead:
 
 1. Download [penguin-browser-extension.zip](https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/penguin-browser-extension.zip) and unzip it.
 2. In Chrome, open `chrome://extensions` and turn on **Developer mode** at the top right.
 3. Select **Load unpacked** and pick the unzipped folder.
-4. Pin **PenguinHarness Browser** to the toolbar from the extensions menu, so its icon shows whether it is connected.
+4. Pin the extension to the toolbar as above.
 
-Chrome then opens the extension's pairing page. Chrome reminds you about extensions in developer mode when it starts; the extension keeps working. To update, unzip the new release over the same folder and select the reload icon on the extension's card.
+Chrome reminds you about extensions in developer mode when it starts; the extension keeps working. To update, unzip the new release over the same folder and select the reload icon on the extension's card.
+
+Either way, Chrome opens the extension's pairing page once it is installed. Both carry the same extension ID, so Chrome holds only one of them: to move from the zip to the store, remove the loaded copy in `chrome://extensions` first, then install from the store and pair it again.
 
 The extension's pages are in English whatever Chrome's language. **EN / 中文** at the top of the pairing page and at the bottom of the popup switches both pages, and the toolbar icon's tooltip, at once.
 

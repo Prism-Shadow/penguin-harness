@@ -3,7 +3,7 @@ title: Server API
 description: Reference for the PenguinHarness server's HTTP API, covering authentication, every route group, the SSE streaming protocol and DTO type imports.
 ---
 
-The PenguinHarness server exposes a same-origin HTTP API that the bundled Web App and any other HTTP client use. This page covers authentication first, then the routes grouped by area, each with a route table followed by details, and ends with the SSE streaming protocol. To start the server, see the [Quickstart](/quickstart).
+The PenguinHarness server exposes a same-origin HTTP API that the bundled Web App and any other HTTP client use. This page covers authentication first, then the routes grouped by area, each with a route table followed by details, and ends with the SSE streaming protocol. To start the server, see the [Quickstart](/quickstart). The API that programs outside PenguinHarness call with an agent's key is on its own page, [Agent API](/agent-api).
 
 ## Overview
 
@@ -16,6 +16,8 @@ The PenguinHarness server exposes a same-origin HTTP API that the bundled Web Ap
 ```text
 { "error": { "code": "<machine-readable code>", "message": "<user-facing text>" } }
 ```
+
+An error that names something a client acts on adds `details`, an object of strings beside `code` and `message`: a 409 `benchmark_exists` names the id in `details.benchmarkId`. Read such facts from `details`, never from the message, which is prose.
 
 ## Source layout
 
@@ -42,7 +44,7 @@ The API accepts two credentials: a cookie session and the local API token.
 - Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 30 days with sliding renewal.
 - Passwords are stored as scrypt hashes. A session is a row in `auth_sessions`, keyed by the sha256 of a random cookie token; the raw token is never stored. A session survives a restart and renews in place, and logout deletes the row.
 - There is no open registration. At startup the server seeds the built-in admin `admin` with a random password, which it hashes and discards without anyone seeing it. Until a password is set, every start prints a first-login link that claims the account. For automation, `PENGUIN_SEED_ADMIN_PASSWORD` pins a known password instead. An admin creates all other accounts.
-- Same-origin only: no CORS middleware is enabled.
+- Same-origin only: no CORS middleware is enabled, except on the Agent API's `/api/amsp/v1`, which answers a preflight from any origin and sends `Access-Control-Allow-Origin: *` on a request that carries `Authorization`. That group takes neither credential above: a request presents the agent's API key, or none when the agent allows keyless access. See [Agent API](/agent-api).
 - Routes marked admin only answer other users with `403` `admin_required`.
 
 ```bash
@@ -59,6 +61,7 @@ Every protected route also accepts `Authorization: Bearer <token>` with the **lo
 - The server mints a fresh token at every boot and writes it to `<root>/api-token` with owner-only permissions (`0600`). The previous boot's token stops working as soon as the new one is minted.
 - A valid Bearer token authenticates as the built-in `admin`. This is the authorization model by design: local filesystem access to the data root already is admin authority, since whoever can read `api-token` can also read `web.db` next to it. `penguin server reset-admin-password` relies on the same rule.
 - Server-driven sessions inject the current token into every tool subprocess as `PENGUIN_API_TOKEN`, together with `PENGUIN_API_URL`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID`. That is what authorizes an agent's own `penguin` and API calls to reach the server that runs them.
+- The token cannot change an agent's exposure. `PUT …/agents/:agentId/api`, `POST …/api/keys`, `DELETE …/api/keys/:keyId`, `POST …/api/try`, and a `PUT /api/admin/settings` whose body carries `agentApiEnabled` answer it `403` `human_required` and write nothing; they take a cookie session. It is the same refusal the [agent browser](#agent-browser) gives the token for choosing a backend and minting a pairing code. The reads stay open to it. Since every tool subprocess holds the token, an agent could otherwise open itself to the network from its own shell. This narrows the credential an agent is handed; it is not a boundary. A process that runs as the data root's OS account outside the sandbox can mint a session itself with `penguin auth token`. The sandbox is the boundary.
 - SSE endpoints accept the header like any other route. Consume them with `fetch`, not `EventSource`, which cannot send headers.
 - The JSON-only Content-Type check on writes applies to Bearer requests too.
 
@@ -106,11 +109,11 @@ In desktop mode (a server spawned by the desktop app), every route in this group
 
 ## Server Settings (admin only)
 
-Server-wide proxy, attachment, company-mode and Chrome extension settings, and the settings groups plugins declare.
+Server-wide proxy, attachment, company-mode, Chrome extension and Agent API settings, and the settings groups plugins declare.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled}}` |
+| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode, browserExtensionsEnabled, agentApiEnabled}}` |
 | PUT | `/api/admin/settings` | Updates settings; omitted fields keep their current value, and an invalid field rejects the whole PUT. Returns the full updated settings |
 | GET | `/api/admin/settings/proxy-probe` | The reachability probe's targets: `{targets: [{provider, url}]}`. Makes no request |
 | POST | `/api/admin/settings/proxy-probe/:provider` | Probes one target over the server's outbound path, sending no credential: `{probe: {provider, url, outcome, ms, status?}}` |
@@ -166,6 +169,10 @@ Two limits cannot be changed: the number of files per message (20) and the inlin
 ### Chrome extension switch
 
 `browserExtensionsEnabled` is the server's **Allow Chrome extension connections** switch, on by default. Turning it off closes every connected PenguinHarness Browser extension at once (WebSocket close code `4009`), refuses new connections and pairing codes, and makes the Chrome backend unavailable for every user (`extension_disabled`). Pairings are kept, so turning it back on lets the extensions reconnect. See [Agent Browser](#agent-browser).
+
+### Agent API switch
+
+`agentApiEnabled` is the server's **Allow the Agent API** switch, on by default. Off, every request under `/api/amsp/v1` but a CORS preflight is refused with `403` `agent_api_disabled`. Each agent's API switch, approval mode and keys are kept, and the routes under [Agent API settings](#agent-api-settings) keep working. A change applies from the next request, with no restart. Changing it takes a sign-in: the local API token may change every other setting here, but a body that carries `agentApiEnabled` is refused to it with `403` `human_required`, and none of that body's fields is written. Every member reads the switch as `serverEnabled` in an agent's API settings. See [The admin switch](/agent-api#the-admin-switch).
 
 ### Plugin settings
 
@@ -395,14 +402,14 @@ A flow id that names no live flow is `404 platform_auth_flow_not_found`. `sync` 
 
 ## Agents
 
-The paths below omit the `/api/projects/:projectId` prefix, except the two global `/api/plugins` routes.
+The paths below omit the `/api/projects/:projectId` prefix, except the four global `/api/plugins` routes.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | GET / POST | `/agents` | Lists agents / creates one |
 | DELETE | `/agents/:agentId` | Deletes an agent (owner only) |
 | GET / PUT | `/agents/:agentId/config` | Reads / writes the config (`AGENTS.md` and `system_config.yaml`; PUT preserves YAML comments) |
-| POST | `/agents/:agentId/config/mcp-test` | Tests one MCP server entry: `{name, config}` → `{ok, tools?, error?, latencyMs?}` |
+| POST | `/agents/:agentId/config/mcp-test` | Tests one MCP server entry: `{name, config}` → `{ok, tools?, error?, latencyMs?, saveFirst?}` |
 | POST | `/agents/:agentId/config/kernel-update` | Merges the config up to the current defaults: → `{advanced, kept, kernelVersion}` |
 | POST | `/agents/:agentId/config/reset` | Overwrites `system_config.yaml` with the current defaults and returns the fresh config |
 | GET / PUT | `/agents/:agentId/vault` | Vault environment variables (values masked; PUT replaces all of them and is owner only) |
@@ -420,18 +427,25 @@ The paths below omit the `/api/projects/:projectId` prefix, except the two globa
 | POST | `/agents/:agentId/skills/archive` | Installs a Skill from a zip: `{dataBase64, overwrite?}` → 201 with the Skill list |
 | GET | `/agents/:agentId/skills/:name/archive` | Exports an installed Skill as a zip |
 | DELETE | `/agents/:agentId/skills/:name` | Uninstalls a Skill |
-| POST | `/agents/:agentId/plugins` | Installs library plugins by name: `{names}` → 201 `{skills, hooks}` |
+| POST | `/agents/:agentId/plugins` | Installs library plugins by name: `{names}` → 201 `{skills, hooks, mcpServers}` |
 | GET | `/agents/:agentId/hooks` | Installed hook packages |
 | POST | `/agents/:agentId/hooks/archive` | Installs a hook package from a zip: `{dataBase64, overwrite?}` |
 | GET | `/agents/:agentId/hooks/:name/archive` | Exports an installed hook package as a zip |
 | DELETE | `/agents/:agentId/hooks/:name` | Uninstalls a hook package |
+| GET | `/agents/:agentId/mcp-servers` | The agent's MCP server entries, with their plugin and what they still need: `{servers}` |
+| DELETE | `/agents/:agentId/mcp-servers/:name` | Removes one MCP server entry |
+| GET / PUT | `/agents/:agentId/api` | The agent's API settings: its switch, keyless access, the approval mode and the keys (PUT is owner only) |
+| POST | `/agents/:agentId/api/keys` | Creates an API key: `{name}` → 201 `{key, secret}` (owner only) |
+| DELETE | `/agents/:agentId/api/keys/:keyId` | Deletes an API key (owner only) |
 | GET | `/api/plugins` (global) | The plugin library by category (any signed-in user) |
 | GET | `/api/plugins/:plugin/files` (global) | The files one library plugin ships, as text keyed by path (any signed-in user) |
+| GET | `/api/plugins/:plugin/readme` (global) | A library plugin's `README.md`, from its package root: `{name, readme}`; 404 without one (any signed-in user) |
+| GET | `/api/plugins/:plugin/archive` (global) | A library plugin's package as a zip (any signed-in user) |
 
 ### Agent routes
 
 - `POST /agents` takes `{agentId, name?, description?, plugins?, skillsDirectory?, directorySkills?, dataBase64?}` and answers 201 `{agent}`. `plugins` names library plugins to preinstall, and unknown names are rejected before the agent's directory exists. `skillsDirectory` and `directorySkills` import Skills from a directory the user picked (see `GET /dir-skills` under [Session Creation and Directory Browsing](#session-creation-and-directory-browsing)) and must be sent together. `dataBase64` starts the agent from an exported snapshot instead of the default template.
-- `POST …/config/mcp-test` connects to one MCP server entry from this host, lists its tools and disconnects, and writes nothing to the Agent State. A malformed entry returns 400. An unreachable server is a normal `{ok: false, error}` result.
+- `POST …/config/mcp-test` connects to one MCP server entry from this host, lists its tools and disconnects, and writes nothing to the Agent State. A malformed entry returns 400. An unreachable server is a normal `{ok: false, error}` result. The entry's `${KEY}` references are filled in from the agent's vault only when the entry is saved on the agent exactly as sent, same name and same `config`, as when a conversation connects; when the vault lacks a key, the answer is `{ok: false, error}` with an `error` that starts `needs setup:` and names the keys, and nothing is contacted. A new or changed entry that references the vault answers `{ok: false, saveFirst: true, error}`: nothing is filled in and nothing is contacted, so a caller cannot send a vault value to an address of its own. Save the entry, then test it. The response never echoes the entry.
 - `POST …/config/kernel-update` is the non-destructive sibling of `reset`. It moves settings tabs that are absent or still hold an old default up to the current defaults (`advanced`), keeps customized tabs whole (`kept`), and writes the new defaults generation (`kernelVersion`).
 - The `template-placeholder` routes are idempotent. The vault and Skills routes insert `{{VAULT}}` or `{{SKILLS}}` into the prompt template, or turn a legacy hard-coded `# Vault` or `# Skills` section into the placeholder. The Memory route inserts `{{MEMORY}}` and is how an agent created before Memory adopts it.
 - `POST …/skills/archive` accepts a zip of up to 14MB. Without `overwrite`, a Skill that is already installed returns 409 `skill_exists`. `GET …/skills/:name/archive` names the file `<name>.zip`, or `<name>-v<version>.zip` when the Skill's `SKILL.md` declares a version. The export and uninstall routes return 404 `not_found` for a Skill that is not installed.
@@ -447,29 +461,69 @@ The paths below omit the `/api/projects/:projectId` prefix, except the two globa
 
 ### Plugins and hooks
 
-- `POST …/plugins` installs each named plugin's Skills and hook package, and reinstalling updates them. An unknown name returns 404 `unknown_plugin`, and nothing is written.
+- `POST …/plugins` installs each named plugin's Skills, hook package and MCP servers, and reinstalling updates them. An unknown name returns 404 `unknown_plugin`, and nothing is written. The MCP servers are appended to the agent's `tools.mcpServers`, each with `plugin` set to the plugin's name; reinstalling replaces exactly the entries carrying that name. When the agent already has a server of the same name that the plugin does not own, the route returns 409 `mcp_server_name_taken`, naming the server and whether another plugin or a hand-written entry holds it, and nothing is written. The 201 answer is `{skills, hooks, mcpServers}`, with `mcpServers` in the shape `GET …/mcp-servers` lists.
+- `GET …/mcp-servers` returns `{servers}`, one item per `tools.mcpServers` entry: `{name, transport, target, plugin?, missingKeys, signIn}`. `target` is the URL, or the command line of a stdio server, with `${KEY}` references as written; `plugin` names the plugin that installed the entry and is absent on one the user added; `missingKeys` lists the keys the entry references that the agent's vault does not hold, by name only; `signIn` marks an entry that needs an OAuth sign-in, which this version cannot do. No header, `env` or `oauth` value is ever returned.
+- `DELETE …/mcp-servers/:name` removes the named entry whatever installed it and answers 204; a name the agent does not have returns 404 `unknown_mcp_server`. Any member may call it, as any member may rewrite the whole list through `PUT …/config`.
 - `GET …/hooks` returns each installed hook package's name, description, version, hook points and plugin icon.
 - `POST …/hooks/archive` expects `hooks.json` and its scripts at the root of the zip or inside one top-level directory, and every listed command must name a file inside the package. Without `overwrite`, an installed package of the same name returns 409 `hook_exists`. The zip that `GET …/hooks/:name/archive` exports can be installed again through this route.
-- `GET /api/plugins` returns every library plugin by category, with its Skills' metadata and hook points.
-- `GET /api/plugins/:plugin/files` returns everything one library plugin ships, as text keyed by path: each Skill's installable `SKILL.md` and reference files under `skills/<name>/`, and the hook scripts under `hooks/`. The plugin detail view's file browser uses it.
+- `GET /api/plugins` returns every library plugin by category: its npm `version`, its npm `package` name and its `source` (`builtin` for a plugin the build ships, `installed` for one an admin installed on the server), its Skills' metadata with each Skill's own date `version`, its hook points and the hook package's `hookVersion`. The library lists every package of the server's plugin prefix that carries `skills/` or `hooks/` beside its `package.json`, or declares MCP servers in its `penguin.mcp_servers`; a name the build ships stays the build's. A plugin also carries the display fields its package declares — `title`, `titleZh`, `author`, `license`, `homepage`, `repository` — each only when it is there, and its `description` may be empty. `mcpServers` lists the MCP servers it declares, `[]` for none: `{name, transport, target, setup, oauth, signIn}`, where `setup` holds the vault keys the server needs (`{key, label?, labelZh?, help?}`), `oauth` whether it signs in with OAuth, and `signIn` whether it needs that sign-in, having no `Authorization` header of its own; no header or `env` value is included.
+- `GET /api/plugins/:plugin/files` returns everything one library plugin ships, as text keyed by path: each Skill's installable `SKILL.md` and reference files under `skills/<name>/`, and the hook scripts under `hooks/`. The plugin detail dialog's file browser uses it.
+- `GET /api/plugins/:plugin/readme` returns the `README.md` at a library plugin's package root, for the detail dialog. A plugin that ships none returns 404 `readme_not_found`, and a name the library does not carry 404 `unknown_plugin`.
+- `GET /api/plugins/:plugin/archive` downloads a library plugin's package directory as a zip, without `node_modules/`, under a top-level `<name>/` directory and named `<name>-v<version>.zip`; another server imports it as it is. A package past the import caps returns 413 `plugin_too_large`, and a name the library does not carry 404 `unknown_plugin`.
+
+### Agent API settings
+
+These routes back the agent's **API** tab and `penguin agent api`. The settings belong to this server and live in its database, outside the Agent State and the Project file, so an agent can neither expose itself nor loosen its own approval mode. Any member reads them. Writes and keys are the Project owner's; a member gets `403` `owner_required`. They also take a sign-in: the local API token gets `403` `human_required`, as described under [Local API token (Bearer)](#local-api-token-bearer).
+
+```ts
+interface AgentApiResponse {
+  api: {
+    enabled: boolean;      // the API tab's switch; off = every /api/amsp/v1 request for the agent is 404 agent_not_found
+    open: boolean;         // keyless access: a request without Authorization is accepted
+    approvalMode: "allow-all" | "deny-all" | "read-only" | "always-ask";
+    keys: AgentApiKeyInfo[];
+  };
+  serverEnabled: boolean;  // the admin's agentApiEnabled, readable by every member
+}
+
+interface AgentApiKeyInfo {
+  keyId: string;
+  name: string;            // 1-64 characters
+  prefix: string;          // the key's first 16 characters
+  createdBy: string;       // the owner who created it
+  createdAt: string;
+  lastUsedAt: string | null; // null until a run authenticates with it
+}
+```
+
+- An agent never configured reads as off, keyed and `allow-all`, with no keys.
+- `PUT …/api` takes `{enabled?, open?, approvalMode?}` and answers the whole `AgentApiResponse`. Omitted fields keep their value, and every field is checked before any is written. Each API Session copies `approvalMode` when it is created, so a change applies to API Sessions created afterwards.
+- `POST …/api/keys` takes `{name}` and answers 201 `{key, secret}`. The `secret`, `penguin_` followed by 43 characters, is in this answer and nowhere else: the server stores its SHA-256 and lists the key by `prefix`.
+- `DELETE …/api/keys/:keyId` answers 204, and the key is refused from its next request. An unknown key returns `404` `key_not_found`.
+- `GET /agents` marks each agent with `apiEnabled`, the same switch, which the Agents page shows as an icon. Deleting an agent deletes its API settings and keys; deleting a Project deletes those of all its agents.
+- What a program does with a key is on [Agent API](/agent-api), and the stream it reads is [AMSP](/amsp).
 
 ## Plugin Registry and Project Plugins
 
-The plugins in this section are server-side packages: modules the server loads into its own module tree, such as the sandbox backends. They are not the library plugins installed on an agent, which are covered under [Plugins and hooks](#plugins-and-hooks). The registry routes are global and open to any signed-in user; the installed-plugin routes belong to one Project.
+The plugins in this section are packages installed on the server: modules the server loads into its own module tree, such as the sandbox backends, and the packages of Skills, hooks or MCP servers an admin installs, which join the library (see [Plugins and hooks](#plugins-and-hooks)). The registry routes are global and open to any signed-in user; the installed-plugin routes belong to one Project, and only an admin writes them.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/api/plugins/registry` | The plugin index: `{plugins: PluginIndexEntry[], failures: {source, error}[]}` |
 | GET | `/api/plugins/registry/readme?name=…` | One listed entry's readme: `{name, readme}` |
+| GET | `/api/plugins/registry/archive?name=…` | One listed package on this server, as a zip |
 | GET | `/api/projects/:projectId/plugins/installed` | The plugins this Project asks for, joined with what the process runs: `{plugins, shipped, file, restartPending}` |
-| POST | `/api/projects/:projectId/plugins/installed` | Admin only. Adds a plugin the build ships: `{specifier}` |
+| POST | `/api/projects/:projectId/plugins/installed` | Admin only. Installs a plugin by npm name or https link: `{specifier, machineId?}` |
+| POST | `/api/projects/:projectId/plugins/installed/archive` | Admin only. Installs a plugin from a zip: `{dataBase64, overwrite?}` |
 | PUT | `/api/projects/:projectId/plugins/installed` | Admin only. Replaces the list: `{plugins}` |
 | DELETE | `/api/projects/:projectId/plugins/installed?specifier=…` | Admin only. Removes a plugin from the list |
 
-- The index follows the schema of typst/packages' `index.json`: a flat array of per-version entries with `name`, `version`, `description`, `authors` and `license`, plus optional `repository`, `homepage`, `keywords`, `categories` and `updatedAt`. An entry's `name` is the package name a Project's list uses. Two sources are merged: the index built into the server package, and the one the index repository publishes — a release asset on a fixed tag (`releases/download/nightly/index.json`), fetched at most every 30 minutes and replaced by a six-hourly workflow. A source that cannot be read shortens the listing rather than emptying it, and is named in `failures`; inside one document, though, a single malformed entry still fails that whole index. `PENGUIN_PLUGIN_INDEX=off` turns the published lookup off (no outbound request), and any other value replaces its URL. A registry is for discovery only and never imports plugin code.
-- `GET …/readme` returns the package's own `README.md`, read from the copy on this machine; `readme` is `null` when there is none. A name the index does not list returns `404` `not_found`, and a request without `name` returns `400` `bad_request`.
-- `GET …/installed` is open to any member of the Project. Each entry in `plugins` is `{specifier, active, builtin, modules, replaces, error?}`: `active` means the process has loaded the package, `builtin` that it ships with this build, `modules` and `replaces` are the nodes its generated `ifaces.json` declares, and `error` says why it is not running, such as a package that is not on this machine or a load that failed. `shipped` lists every plugin package the build ships, asked for or not. `file` names the file that holds the list. `restartPending` is true when a listed plugin is neither running nor failed, which a server restart resolves. A Project whose `.project_config.toml` cannot be read returns `400` `invalid_plugins_file`.
-- The writes answer with the same body as the GET. A specifier must be a package name, never a path, a URL or a version range (`400` `bad_request`). A name that enters the list must be a package the build ships, otherwise the route returns `400` `plugin_not_shipped`: nothing is downloaded. `PUT` sends names only, and a name that stays in the list keeps the requirement the file records for it. `DELETE` edits the list only and removes nothing from disk.
+- The index follows the schema of typst/packages' `index.json`: a flat array of per-version entries with `name`, `version`, `description`, `authors` and `license`, plus optional `repository`, `homepage`, `keywords`, `categories` and `updatedAt`, and the optional card fields `descriptionZh`, `shortDescription`, `shortDescriptionZh` and `icon` (raw SVG). For a package on this machine the listing takes those card fields from the `penguin` block of the package's own `package.json` and from its icon instead, and sends no icon that is not a plain SVG. The published index never supplies `icon`: the server drops it from every remote entry, since the Web App inlines the SVG into the page. An entry's `name` is the package name a Project's list uses. Two sources are merged: the index built into the server package, and the one the index repository publishes — a release asset on a fixed tag (`releases/download/nightly/index.json`), fetched at most every 30 minutes and replaced by a six-hourly workflow. A source that cannot be read shortens the listing rather than emptying it, and is named in `failures`; inside one document, though, a single malformed entry still fails that whole index. `PENGUIN_PLUGIN_INDEX=off` turns the published lookup off (no outbound request), and any other value replaces its URL. A registry is for discovery only and never imports plugin code.
+- Besides the indexes' entries, the listing has a row for each package of server modules an admin installed from a link or a zip, described by its own `package.json`.
+- `GET …/readme` returns the package's own `README.md`, read from the copy on this machine; `readme` is `null` when there is none. A name the listing does not have returns `404` `not_found`, and a request without `name` returns `400` `bad_request`. `GET …/archive` downloads a listed package on this server as a zip, the way the library route does; one not on this server returns `404` `plugin_not_here`.
+- `GET …/installed` is open to any member of the Project. Each entry in `plugins` is `{specifier, active, builtin, modules, replaces, error?, unsatisfied?}`: `active` means the process has loaded the package and runs it, `builtin` that it ships with this build, `modules` and `replaces` are the nodes its generated `ifaces.json` declares, and `error` says why it is not running, such as a package that is not on this machine or a load that failed. `unsatisfied` is `{disabled, reason}` when the running build cannot fully run the package because it lacks a slot, module or interface the package was built against: with `disabled` the package is left out and `active` is false, without it the package runs minus the contributions this build has no slot for. `shipped` lists every plugin package the build ships, asked for or not. `file` names the file that holds the list. `restartPending` is true when a listed plugin is neither running, nor failed, nor `unsatisfied`, which a server restart resolves. A Project whose `.project_config.toml` cannot be read returns `400` `invalid_plugins_file`.
+- The writes answer with the same body as the GET; an install adds `installed: {name, version, library, modules, unchanged?}`, what landed on the server. `POST` takes an npm package name, optionally with a version, range or tag (`@scope/name@^1.2`), or an https link npm fetches: a git repository (`https://github.com/o/r`, `git+https://…`, `github:o/r#tag`) or a tarball. A path, a `file:`, `http:` or ssh link, credentials inside a link, an `npm:` or `file:` alias behind a name, and a link to a folder or a file inside a GitHub repository (`…/tree/…`, `…/blob/…`) are refused with `400` `bad_request` before npm runs. A link install fetches whatever https URL the admin gives, internal addresses included: npm runs on the server, inside its network. After installing, a package under the name of a module the build ships is removed again and refused with `409` `plugin_shipped` (it would replace that module for every Project), and a package that is no plugin with `400` `not_a_plugin`; its install scripts have run by then, and the message says so. A plugin the build ships is listed without a download; anything else is installed with `npm install` into the data root's `plugins/` prefix first, and npm's refusal returns `400` `plugin_install_failed`. What is installed decides what is listed: a package of server modules is listed — a link's for this machine only, in its own `[plugins.<machineId>]` table, because another machine handed its name would fetch whatever the registry has under that name — while a package of Skills, hooks or MCP servers alone joins the library and is not listed. `PUT` sends names only, and a name that stays in the list keeps the requirement the file records for it. `DELETE` removes the name from the list, and uninstalls the package from the prefix once no Project lists it for this server.
+- `POST …/installed/archive` installs the package directory of an uploaded zip: `package.json` at its root or inside its one top-level directory, with a valid npm name (whose part after the scope is a plugin name) and a release version, no `node_modules/`, and the content of a plugin — `skills/`, `hooks/` or MCP servers in `penguin.mcp_servers` that the library would read as it is, or an `ifaces.json` of server modules. The caps are 14 MB of zip and 2,000 files, 5 MB each and 50 MB in all, read before anything inflates (`413` `plugin_too_large`); anything else wrong is `400` `plugin_archive_invalid`. The server packs the files with `npm pack --ignore-scripts` and installs the tarball, which it keeps in the prefix's `archives/`. The zip may not carry a `.npmrc`, which would configure npm while it packs, and a package under the name of a module the build ships is refused with `409` `plugin_shipped` before anything installs. The same version already installed answers `200` with `unchanged`; another version answers `409` `plugin_exists` unless `overwrite` is true. A package of server modules from a zip is listed for this machine only.
 - A write takes effect without a restart: the App [re-assembles itself](/server-boot#re-assembly) around the new list, with the effects of a hot swap. Agent runs in progress are stopped in every Project, because all Projects share one module tree. If the new App fails to boot, the edit is undone and the previous App is restored.
 - The list is the `[plugins]` table of the Project's `.project_config.toml` (see [Project config](/configuration#project-config)). The process loads the union of every Project's table, so a plugin one Project asks for is loaded for all of them.
 
@@ -503,15 +557,19 @@ Benchmarks belong to the Project, not to an agent: one Benchmark can evaluate an
 | --- | --- | --- |
 | GET | `/benchmarks` | Benchmark scoring data |
 | POST | `/benchmarks` | Creates a Benchmark by hand (owner only) |
-| DELETE | `/benchmarks/:benchmarkId` | Deletes a Benchmark directory with its cases, config and scoreboard (owner only; 204, or 404 when absent) |
+| DELETE | `/benchmarks/:benchmarkId` | Deletes a Benchmark directory with its cases, manifest and scoreboard (owner only; 204, or 404 when absent) |
+| POST | `/benchmarks/archive` | Imports a Benchmark package from a zip: `{dataBase64, overwrite?, origin?}` → 201 `{benchmark}` (any member) |
+| GET | `/benchmarks/:benchmarkId/archive` | Exports a published Benchmark's package as a zip (any member) |
 | GET | `/benchmarks/:benchmarkId/cases` | A Benchmark's cases: each case's id and the heading of its statement README. Rubrics are never returned |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files` | Browses one case's `statement/` |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/files/content` | Reads one file of the statement (`?path=`, `?preview=1`, `?download=1`) |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files` | Browses one case's `rubric/` |
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content` | Reads one file of the rubric, with the same parameters |
 
-- `GET /benchmarks` lists only directories that hold a `benchmark_config.toml`. A directory without one, which is what a Benchmark deleted during an evaluation leaves behind, is skipped. Each entry carries `status`: `draft` while the Skill is still building the Benchmark, `failed` when its calibration never finished, and `published` otherwise.
-- `POST /benchmarks` takes `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}` and answers 201 `{benchmark}`. The server writes `benchmark_config.toml` (with `status = "published"`), a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (with the title as its heading) and `rubric/README.md`. Ids use the same characters as agent ids, and case ids start with `CASE-`. If the directory already exists, the route returns 409 `benchmark_exists`.
+- `GET /benchmarks` lists only directories that hold a `benchmark_config.toml`. A directory without one, which is what a Benchmark deleted during an evaluation leaves behind, is skipped. Each entry carries `status` (`draft` while the Skill is still building the Benchmark, `failed` when its calibration never finished, and `published` otherwise) and, when the manifest has them, the date `version` and the `origin` (`{kind, url?, ref?, path?, importedAt?}`, `kind` one of `builtin`, `manual`, `agent`, `git`, `zip`); a manifest written by an earlier release has neither. A Benchmark whose manifest cannot be used is listed under its directory name as `failed`, with `manifestError` (`{code, message}`; `code` is `benchmark_manifest_invalid` or `benchmark_id_mismatch`) and without `version` or `origin`. A manifest the filesystem cannot read fails the request.
+- `POST /benchmarks` takes `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}` and answers 201 `{benchmark}`. The server writes `benchmark_config.toml` (with the `id`, `status = "published"`, the day's first version and origin `manual`), a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (with the title as its heading) and `rubric/README.md`. Ids use the same characters as agent ids, and case ids start with `CASE-`. If the directory already exists, the route returns 409 `benchmark_exists`.
+- `POST /benchmarks/archive` takes a zip of up to 14MB holding `benchmark_config.toml` and the `CASE-*` directories, at its root or inside exactly one top-level directory named by the manifest's `id`; a manifest at the root, with no directory to name it, must give its `id`. Anything else at the top level, `scoreboard.yaml` and `.jobs/` included, an entry starting with `.` there, a symbolic link, an entry name holding a control character or matching another but for letter case, a case without `statement/README.md` and `rubric/README.md`, a manifest the list would mark as unusable, or one past the limits the server writes to (a title of 1 to 200 characters, a description of at most 2,000, at most 1,000 runs) is refused with 400 (`benchmark_archive_invalid`, `benchmark_case_invalid`, or the manifest's own code); a `status` other than `published` is 400 `benchmark_not_published`. Over 14MB, 1000 files, 5MB in one file or 20MB in all, it is 413 `benchmark_too_large`. The server writes the cases as they are, the manifest with its `id`, the origin `{kind: "zip", imported_at}` and the package's own version (none when the package has none), and a `scoreboard.yaml` with `evaluations: []`. A request that names the repository folder the package was fetched from, `origin: {kind: "git", url, ref, path}` (an http(s) link, the 40-character commit it resolved to and the folder, as [`penguin benchmark import`](/cli#penguin-benchmark) sends it), gets the origin `git` with those fields and `imported_at` instead; any other `origin` is 400. An id that is taken returns 409 `benchmark_exists`, whose `details.benchmarkId` names it, unless `overwrite` is true, which replaces the whole directory, its scoreboard and `.jobs/` included. While `.jobs/` holds a trial without its `result.json`, or a Test Agent State packed for one (`*.agent-state.tar.gz`), an evaluation is still writing there, and an overwrite returns 409 `benchmark_busy` instead.
+- `GET /benchmarks/:benchmarkId/archive` names the file `<id>-v<version>.zip` (`<id>.zip` for a Benchmark without a version) and packs `<id>/benchmark_config.toml` as it reads on disk with every `CASE-*` tree, leaving out the scoreboard, `.jobs/`, other entries starting with `.` and symbolic links; the zip imports back through `POST /benchmarks/archive` unchanged. Every entry carries the same fixed time, so exporting an unchanged Benchmark again gives the same bytes. A draft or failed Benchmark returns 409 `benchmark_not_published`; one whose manifest cannot be used, or is past the limits an import holds it to, returns 409 with the manifest's code; a missing one 404, and one past the import's size limits 413 `benchmark_too_large`.
 - The file-content routes apply the same inline hardening as Workspace files; see [Workspace file responses](#workspace-file-responses).
 
 ## Organizations (company mode)
@@ -642,13 +700,14 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET | `/workspace-files/search?workspace=&q=` | Searches that directory by entry name |
 | POST | `/workspace-files/reveal?workspace=&path=` | Shows the file in the machine's own file manager |
 
-- The Session list accepts optional query parameters. `limit` and `offset` page the list (`offset` requires `limit`). `category` (`active`, `subagent`, `schedule`, `benchmark` or `archived`) filters it before paging, and `workspaceGroup` filters it to one Workspace. `counts=1` adds `counts` (totals per category over the whole list, whatever the page), `workspaceCounts` (the same totals per Workspace path) and `workspaceLatest` (each Workspace's newest Session). Without paging parameters, the full list is returned.
+- The Session list accepts optional query parameters. `limit` and `offset` page the list (`offset` requires `limit`). `category` (`active`, `background` or `archived`) filters it before paging, and `workspaceGroup` filters it to one Workspace. `counts=1` adds `counts` (totals per category over the whole list, whatever the page), `workspaceCounts` (the same totals per Workspace path) and `workspaceLatest` (each Workspace's newest Session). Without paging parameters, the full list is returned.
 - `order` picks the list's order: `created` (the default) is newest creation first; `activity` is most recent `lastActiveAt` first, equal stamps by `sessionId` descending, both compared by code point rather than by locale. Under `order=activity`, `before=<lastActiveAt>,<sessionId>` with `limit` pages by cursor instead of offset: it returns the rows strictly below that key, typically the last row the client already shows. A Session that becomes active between two pages moves above the cursor, so it is not served again and no other row goes missing. `before` without `order=activity`, together with `offset`, without `limit`, or not a date and a valid id split at the first comma is a 400.
 - `excludeOrg=1` leaves an organization's desk, ticket and subagent Sessions out of the page and out of the `counts=1` totals together, which is what development mode's list asks for. Any other value is a 400.
 - On creation, `modelId` and `provider` go together: send the complete pair to pick a model, or omit both to use the Project's default model. Sending only one is a 400.
 - An explicit `workspace` must be an existing directory; it is never created. When omitted, the Workspace is a temporary one created automatically. The approval mode defaults to `allow-all`.
-- `client` is a provenance hint stored on the row: `"cli"` from the CLI, `"web"` by default. The server itself writes `"org"` on an organization's desk and ticket sessions, and a client cannot send that value. Only `excludeOrg` reads it as a filter, and only to drop those rows.
-- `source` accepts only `"benchmark"`, for a Session created by a Benchmark evaluation or optimization. The server sets `subagent` and `schedule` itself.
+- `client` is a provenance hint stored on the row: `"cli"` from the CLI, `"web"` by default. The server itself writes `"org"` on an organization's desk and ticket sessions and `"api"` on a Session an Agent API run created, and a client can send neither. `excludeOrg` reads it to drop the `org` rows, and the Agent API continues only `api` Sessions; see [Agent API](/agent-api#conversations). An `"org"` row whose Trace records no `source` (written by an older release, or not run yet) reads as a `company` Session.
+- A Session's `source` says what kind of conversation it is (see [session_meta](/omni-message#sessionmeta)). Its category follows from it: a `company` Session is in no category, archived or not, so a request with `category`, `workspaceGroup` or `counts=1` leaves it out of the page and every total; only the plain list serves it. Otherwise an archived Session is `archived` whatever its source; a `user` Session is `active`, and an `api`, `schedule`, `subagent` or `cli` Session is `background`. A row whose Trace head has not been read yet carries no `source` and counts as `active`.
+- On creation, `source` accepts only `"cli"`, which `penguin run` sends. Every other source is the server's own to write, and omitting it creates a `user` Session. The retired `"benchmark"` is still accepted, as `"cli"`.
 - `GET /dirs` starts at the home directory when `path` is omitted; an explicit `path` must be absolute. It answers `{path, parent, entries, platform}`: every entry carries its `kind` (`dir` or `file`) and `mtime`, and on Windows an entry the system hides (the hidden attribute: `AppData`, `NTUSER.DAT`) carries `hidden: true`. A bare drive such as `D:` is taken as its root `D:\`. The home request with `places=1` adds what the picker's sidebar shows: `standardFolders` (Desktop, Documents, Downloads and Pictures as the machine resolves them — Windows known folders, Linux XDG user directories — omitted when they could not be read) and `locations` (Windows drives, macOS volumes, the Linux root and its mounts under `/media`, `/run/media` and `/mnt`, each with its `kind` and, when it has one, its `label`). A directory the server may not read answers `403 dir_permission_denied` rather than an empty list — on macOS that is usually a Files and Folders permission the user has not granted.
 - `POST /dirs/access` is the Workspace picker's **Allow access** in the desktop app. macOS asks about Desktop, Documents and Downloads only on behalf of the app it holds responsible for the read, so the desktop shell's main process reads the absolute `path` once, and the answer waits for the user. `granted` says whether the read succeeded (always `true` off macOS, where nothing is read). `packaged` is `false` for a development instance started from a terminal, whose reads macOS charges to that terminal. The route returns `400` `dir_not_absolute` for a path that is not absolute, `503` `shell_unreachable` when the server has no desktop shell to ask, and `504` `timeout` when the shell has not answered within 120 seconds. Only the desktop app's own window may call it; any other session gets `403` `desktop_shell_only`.
 - `GET /dir-skills` reads only `<path>/.agents/skills` and `<path>/.claude/skills` of an absolute `path`, and answers `{path, skills}`. A directory without Skills answers with an empty list. See `POST /agents` under [Agents](#agents).
@@ -683,7 +742,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 - `GET /usage/errors` takes `offset`, `limit`, the same `from` / `to` / `fromTs` / `toTs` / `agentId` filter, and an optional `kind` (`unexpected` or `expected`).
 - The error table folds the records of one day that share a source, code, kind and message into one row, with its `count`, its latest time `ts` and its first time `firstTs`. `offset`, `limit` and `rows` count those rows; `total` and the dashboard's summary figures count records. `GET /usage` and `GET /usage/errors` take an optional `utcOffsetMinutes`, the reader's offset east of UTC (−840 to 840), which decides the day; without it the day is the server's own.
 - `DELETE /usage/errors` takes the same filter as the reads, `from` / `to` / `fromTs` / `toTs` / `agentId`, but no `kind`, because the panel offers no such control. `from` and `to` are both required here (400 otherwise), because an open bound would clear the whole history rather than a filtered part. The clear reaches exactly what the caller's reads reach: an admin's clear also removes the unattributed rows that only an admin's read shows, and a member's clear never does.
-- `GET /agents/:agentId/traces` also accepts `limit` and `offset` for paging, and `category` (which requires `limit`) to list one category of Sessions.
+- `GET /agents/:agentId/traces` also accepts `limit` and `offset` for paging, and `category` (which requires `limit`) to list one category of Sessions. The paged listing leaves out `company` Sessions, which are in no category; the full drill-down without `limit` lists every Trace.
 - Any member can download a Trace. Import is owner only, like the Agent State snapshot import, and capped at 14MB. The imported file must be valid Trace JSONL whose first record is a `session_meta` with a filename-safe `session_id`. A session id the agent already has is rejected (409 `trace_session_exists`), so an imported file always becomes index 001 of a new Session, stored in the local date directory of its first record's timestamp.
 
 ## Session-Level Endpoints
@@ -708,6 +767,7 @@ Two conventions apply to every route here. A Session the caller cannot access al
 
 - `GET /` returns the Session's info. Unlike the list rows, the single-Session response also carries `tracePath`, the absolute path of the latest Trace file. `orgId` marks a Session that company mode's caches own (a desk session, or a session contributing to one of that organization's tickets); it is absent on every ordinary Session, and the list route sets it too.
 - `PATCH /` checks every field before it writes any, the `sandbox` pick (`{mode?, network?}`) included: a non-admin's pick wider than the server's sandbox settings is `403` `sandbox_forbidden`, a level no backend here can enforce `400` `sandbox_unsupported`, and a refused request stores nothing — not its `approvalMode` or `title` either. The Session's `sandbox` view marks each row of its `presets` that is wider than the server's settings with `aboveCeiling: true` (response-only), by the same comparison: a non-admin's pick of such a row is refused.
+- `PATCH /` with `title` sets a manual title, which the auto-generated title never replaces. Runs of whitespace, newlines and tabs included, are stored as one space, and the result must be 1–120 characters. A control character or a bidirectional embedding, override or isolate (U+202A–U+202E, U+2066–U+2069) in it is `400` `invalid_title`.
 - `PATCH /` with `thinkingLevel` pins the level on this Session durably, from its very next LLM request. The thinking level is soft-limited: it can change mid-context, at the cost of the provider's cached context, which is why the level picker advises compacting first. The pinned level comes back as `SessionInfo.thinkingLevel`; when that is absent, no level was ever pinned and the agent config applies.
 - `GET /messages` without parameters returns the full OmniMessage history. `tailLimit=n` reads the newest n Task-aligned units instead, and `before=<cursor>&limit=n` reads the n units before a cursor. The two forms are exclusive, `n` is between 1 and 1000, and `limit` defaults to 200. A window also stays within 4 MiB of serialized messages: it stops before the unit that would pass that, but always holds at least one, so it can hold fewer units than asked for and still carry a `before` cursor. The bundled Web App opens a conversation on its latest 20 turns and loads 20 more each time you scroll to the top. A windowed response carries `page`, with the cursor for the next page (`before`), the number of turns before the window (`earlierTurns`), the cumulative stats before it (`prior`), and the model of the context the window starts in (`contextModel`): a Session can switch models between contexts, and a window that starts partway into one does not hold the `session_meta` that names its model. While a Task runs, the response also carries `live`; see [The live field on GET /messages](#the-live-field-on-get-messages).
 - A windowed page serves images by reference. In each record that carries a `tracePosition`, a PNG, JPEG, GIF or WebP `data:` URL, whether a user's `image_url` or an entry of a tool output's `images`, is replaced by `/api/sessions/:sessionId/trace-image?file=<fileIndex>&ordinal=<ordinal>`, with `&i=<k>` for the k-th entry of `images`. That route answers the decoded image with its own type, `Cache-Control: private, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`. It returns 404 `trace_image_not_found` when the record holds no such image, and 400 for a missing or malformed parameter. Subagent messages, other image types and the full read keep their `data:` URLs.
@@ -946,7 +1006,7 @@ A Session can be connected to a messaging bot. The channels today are Feishu, Te
 - A PUT has no effect on the connection, with one exception: when the binding is enabled, its connector restarts with the new credentials, so the stored config and the live connection never diverge. A save therefore never conflicts across Sessions, except when it points an enabled binding at an account that another Session has enabled. That returns 409 `account_enabled_elsewhere`, because the restart would otherwise bring a second live connection onto the account without passing the enable check.
 - `POST …/state` with `{enabled: true}` connects with the stored credentials, and `{enabled: false}` disconnects. It returns 409 `another_channel_enabled` while another channel of this Session is enabled, and 409 `account_enabled_elsewhere` while another Session has the same account enabled. Both mean: turn that one off first. The second names nothing about the holder, which may be in a Project the caller cannot see. Without a stored secret, the toggle returns 400 `feishu_secret_required`, `telegram_token_required`, `qq_secret_required` or `wechat_token_required`.
 - The Feishu, Telegram and QQ test routes probe with the draft values in the request, each falling back to the stored config; the WeChat test takes no body (see below). A rejected credential is `ok: false`, not an HTTP error.
-- The test-message routes return 409 `feishu_no_chat`, `telegram_no_chat`, `qq_no_chat` or `wechat_no_chat` until someone has messaged the bot once in that app.
+- The test-message routes return 409 `feishu_no_chat`, `telegram_no_chat`, `qq_no_chat` or `wechat_no_chat` until someone has messaged the bot once in that app. On WeChat the route also returns 409 `wechat_needs_recent_message` when WeChat will not take a bot message until the user messages the bot again. The test message is never held.
 
 ### Per-channel details
 
@@ -1037,6 +1097,8 @@ Besides its state, a binding's runtime status reports what the live connection h
 
 All three live in the server process and reset on every connect or reconnect, and re-enabling the channel or saving credentials opens a new connection. An absent `lastInboundAt` therefore means "nothing since this connection opened", never "nothing ever". These fields exist because a channel that withholds messages still shows `connected` with no error.
 
+On WeChat, `heldReplySince` reports since when text replies have been waiting for the user's next WeChat message, and is absent when none are waiting. WeChat takes a bot message only with a recent session token from that user, and about 10 messages per token; a reply it will not take yet is held and sent first when the user's next message arrives. Held replies are stored with the conversation, so they survive a restart, and they are not a delivery failure: they never set `lastDeliveryError`.
+
 A connection failure is also filed as an error record, `messaging_connect_failed`, once per outage, and a reply that never reached the chat as `messaging_send_failed`. On Telegram, QQ and WeChat both are `expected` when the next attempt clears them by itself: a request that never completed, a timeout, HTTP 408, 429 or 5xx, a QQ gateway that stopped answering heartbeats or asked to reconnect, or WeChat's session timeout. They are `unexpected` when they repeat until someone acts, such as a rejected credential, a missing permission, or a webhook or a second poller on a Telegram bot. When an outage starts with an `expected` failure, the first `unexpected` one after it is filed too.
 
 ## Terminals
@@ -1120,7 +1182,7 @@ Routes that serve the desktop shell, hot updates and the Web App's own module sy
 | POST | `/api/desktop/privacy-settings` | Has the shell open a macOS Privacy & Security pane: `{pane}` (`files` or `fullDisk`) → 202 |
 | POST | `/api/hmr/assets/probe` | Hot update: reports which blobs the store lacks |
 | PUT | `/api/hmr/blobs/:sha` | Hot update: uploads one blob under its sha256 |
-| POST | `/api/hmr/upgrade` | Hot update: moves the platform, CLI and web bundles to a new version together |
+| POST | `/api/hmr/upgrade` | Hot update: moves the platform, CLI and web bundles to a new version together. A build that cannot fully run every installed plugin is refused with `409` `plugins_unsatisfied`, and `error.plugins` lists each as `{specifier, disabled, reason}`; sent again with the header `x-penguin-unsatisfied-plugins: leave-out`, the push goes through and its outcome carries the same list as `unsatisfiedPlugins` |
 | GET | `/api/contributions` | The pages and tabs that server modules and plugins contribute to the Web App, as data |
 
 - Outside desktop mode, the desktop routes return `404` `not_found`.
@@ -1136,11 +1198,11 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two kinds of chann
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | `GET /api/sessions/:sessionId/stream` | The Session's message stream and run events, including `session_created` for its subagent Sessions and the goal-mode events |
-| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_state`, `session_background`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated` and company mode's `org_*` events |
+| Per user | `GET /api/events` | The `hello` handshake and notifications across Sessions: `session_created`, `session_state`, `session_background`, `session_approvals`, `session_title`, `schedule_fired`, `schedule_queued`, `web_updated` and company mode's `org_*` events |
 
 ### Wire Format
 
-Default (unnamed) SSE events carry raw OmniMessage envelopes as single-line JSON: the same protocol the SDK yields and the Trace stores (see [OmniMessage Protocol](/omni-message)). Events named `server_event` carry the `ServerEvent` union:
+Default (unnamed) SSE events carry raw OmniMessage envelopes as single-line JSON: the same protocol the SDK yields and the Trace stores (see [OmniMessage Protocol](/omni-message)). Events named `ping` are the heartbeat (see [Delivery Guarantees](#delivery-guarantees)). Events named `server_event` carry the `ServerEvent` union:
 
 ```ts
 export type ServerEvent =
@@ -1157,11 +1219,12 @@ export type ServerEvent =
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "session_state"; sessionId: string; projectId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
+  | { type: "session_approvals"; sessionId: string; count: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
   | { type: "web_updated"; rev: string }
-  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source?: SessionSource }
+  | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string }
   | { type: "goal_started"; sessionId: string; objective: string; budget: number }
@@ -1180,6 +1243,7 @@ export type ServerEvent =
 | `session_title` | The model-generated title is saved after the first turn |
 | `session_state` | A Session's run state changes; the user-channel counterpart of `task_state` |
 | `session_background` | A Session's background-task counts change |
+| `session_approvals` | A Session's count of tool calls waiting for approval changes |
 | `resync_required` | The `Last-Event-ID` was evicted from the buffer; the client must refetch history |
 | `credentials_updated` | The Project's model credentials changed |
 | `hello` | Handshake on the user channel |
@@ -1200,9 +1264,10 @@ export type ServerEvent =
 - `session_title` is sent on the Session's channel and on the user channels of the Project's owner and members.
 - `session_state` names the Session by `sessionId` and its Project by `projectId`, so every row of a Session list stays live, not only the conversation a client has open, and a list can tell a Session of its own Project that it holds no row for, which it can then fetch by id. It carries the row fields needed to redraw the row without refetching: `lastActiveAt` as just stamped, and `hasTrace`, which is true whenever the state is `running` or `compacting`, because a running Session has by definition started a Task. It is sent to the user channels of the Project's owner and members.
 - `session_background` fires when a command moves to the background past its yield window or starts with `run_in_background`, when a process exits or is stopped, and when a background subagent starts, settles or is released. It carries `SessionInfo.backgroundTasks` as it now stands (`processes` = background command sessions still running, `subagents` = subagent Sessions moved to the background and mid-round), zeros included, so a list can clear its mark without refetching. The list rows and the single-Session GET omit the field when both counts are zero. Its audience is the same as for `session_state`.
+- `session_approvals` fires when a tool call is escalated to a person (every call under `always-ask`, read-write or unknown-permission calls under `read-only`), when one is answered, and when an interrupt denies the waiting ones (one event for all of them). `count` is the Session's `pendingApprovalCount` as it now stands, zeros included. The calls themselves arrive on the Session's own stream as `approval_request` and are replayed on subscribe. Its audience is the same as for `session_state`.
 - `credentials_updated` follows `PUT /models` or a completed key-minting flow. Cached runtimes were invalidated, so the client clears any composer state disabled by an auth failure.
 - `web_updated` carries the new web revision as `rev` and is sent to every user channel.
-- `session_created` is sent for every creation to the user channels of the Project's owner and members, and for a subagent also on the parent Session's channel. `source` is absent for a user-created Session, as it is on the row. A title set through `PATCH /api/sessions/:id` is announced as `session_title` the same way.
+- `session_created` is sent for every creation to the user channels of the Project's owner and members, and for a subagent also on the parent Session's channel. `source` is what the new Session's `session_meta` records. A title set through `PATCH /api/sessions/:id` is announced as `session_title` the same way.
 - `schedule_fired` names in `sessionId` the Session that received the prompt, which in new-Session mode is a new Session. A queued firing is sent once the Session is idle.
 - `goal_round` carries `used`, the tokens counted so far.
 - The `org_*` events are sent to the user channels of the Project's members. `org_channel` includes the message's mentions, so a client can tell whether it is addressed. These events are best effort; the organization routes carry the durable state.
@@ -1211,9 +1276,10 @@ export type ServerEvent =
 
 - Event ids increase monotonically per channel and have the form `<epoch>-<seq>`.
 - Each channel keeps a bounded replay buffer: the most recent 10,000 events or 8MB.
-- On reconnect with `Last-Event-ID`, the server replays the gap if the id is still in the buffer. Otherwise it first sends `resync_required`, and the client refetches `/messages` before continuing.
-- A heartbeat comment line is written every 20 seconds. The same beat re-checks the session behind the connection and ends the stream when that session is gone or has expired, so a client whose sign-in was revoked stops streaming instead of waiting for its next request to fail. Revoking sessions directly — an admin resetting a password or deleting an account — ends that user's open streams at once; the heartbeat is the catch-all. A stream authenticated by the local API token has no session row and is left alone.
-- Event order: on a reconnect that carries `Last-Event-ID`, the replayed gap (or `resync_required`) arrives first, then the initial events (the authoritative `task_state` snapshot and any still-pending `approval_request`s), then the live stream. A fresh connection without `Last-Event-ID` skips the replay, so its first event is the `task_state` snapshot.
+- On reconnect with `Last-Event-ID`, the server replays the gap if the id is still in the buffer. Otherwise it first sends `resync_required`, and the client refetches `/messages` before continuing. A client that opens a new connection itself can pass the id as the `lastEventId` query parameter instead, since an `EventSource` cannot set headers. When both are present, the header wins.
+- A `ping` event (`data: {}`, no `id:` line) is sent right after the initial events and then every 20 seconds. A browser hands it to the page, unlike a comment line, so a client that has received one can treat a long silence as a dead connection. Without an id it moves neither the client's `Last-Event-ID` nor the replay position. The same beat re-checks the session behind the connection and ends the stream when that session is gone or has expired, so a client whose sign-in was revoked stops streaming instead of waiting for its next request to fail. Revoking sessions directly — an admin resetting a password or deleting an account — ends that user's open streams at once; the heartbeat is the catch-all. A stream authenticated by the local API token has no session row and is left alone.
+- A stream whose socket sends nothing for 40 seconds (up to 80 while a write is pending) is closed. With a `ping` every 20 seconds, only a peer that stopped reading, as behind a half-open connection or a stuck proxy, lets a stream go that quiet. A client that is still there finds the stream ended, reconnects and resumes from its last event id.
+- Event order: on a reconnect that carries `Last-Event-ID` (or `lastEventId`), the replayed gap (or `resync_required`) arrives first, then the initial events (the authoritative `task_state` snapshot and any still-pending `approval_request`s), then a `ping`, then the live stream. A fresh connection without either skips the replay, so its first event is the `task_state` snapshot.
 
 ### Recommended Client Pattern
 
@@ -1224,6 +1290,7 @@ The bundled Web App connects in this order:
 3. If the response carries `live` (a Task is running), drop the buffered partial events the cursor already covers and apply `live.fragments` on top of the history. The in-progress message reappears with its streamed prefix intact.
 4. Replay the buffer, removing the overlap.
 5. Continue with the live stream.
+6. Once the stream has sent a `ping`, treat 50 seconds without any event as a dead connection: close it and reconnect with `?lastEventId=` set to the last id received. Check at once when the page becomes visible, since background timers run late. A stream that never sends `ping` comes from a server older than the heartbeat event; leave it to the browser's own reconnection.
 
 ## Type Imports
 

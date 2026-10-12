@@ -26,12 +26,14 @@ export const SANDBOX_GROUP = "sandbox";
       {
         id: "sandbox",
         order: 0,
-        title: "Sandbox",
-        titleZh: "沙盒",
+        // The name the Plugins page gives the sandbox backends' category, so the card and the
+        // plugins it is enforced by read as one thing.
+        title: "Agent Sandbox",
+        titleZh: "Agent 运行沙箱",
         description:
           "The confinement new sessions start with, enforced by a sandbox backend plugin. A session keeps the policy it started with; change it from that session's permission button.",
         descriptionZh:
-          "新建会话的初始封禁策略，由沙盒后端插件实施。已有会话保留创建时的策略，可在该会话的权限按钮中修改。",
+          "新建会话的初始封禁策略，由沙箱后端插件实施。已有会话保留创建时的策略，可在该会话的权限按钮中修改。",
         // Off, the card shows the switch alone: the presets, notices and backends' own settings
         // matter only to a confined Session.
         switch: "enabled",
@@ -107,14 +109,14 @@ export const SANDBOX_GROUP = "sandbox";
                 title: "Files",
                 titleZh: "文件",
                 description:
-                  "What a confined command may write. Off: anywhere. Workspace: the session's workspace, its scratchpad and the temp directory. Read-only: the temp directory only. Needs a sandbox backend unless Off.",
+                  "What a confined command may write. Full access: anywhere. Workspace: the session's workspace, its scratchpad and the temp directory. Read-only: the temp directory only. Needs a sandbox backend unless Full access.",
                 descriptionZh:
-                  "被封禁的命令能写哪里。关闭：任何位置。仅工作区：会话的工作区、scratchpad 与临时目录。只读：只有临时目录。除「关闭」外都需要沙盒后端。",
+                  "被封禁的命令能写哪里。完全访问：任何位置。仅工作区：会话的工作区、scratchpad 与临时目录。只读：只有临时目录。除「完全访问」外都需要沙盒后端。",
                 options: [
                   {
                     value: "danger-full-access",
-                    title: "Off (full access)",
-                    titleZh: "关闭（完全访问）",
+                    title: "Full access",
+                    titleZh: "完全访问",
                     description: "Commands and file tools may write anywhere.",
                     descriptionZh: "命令与文件工具可以写任何位置。",
                   },

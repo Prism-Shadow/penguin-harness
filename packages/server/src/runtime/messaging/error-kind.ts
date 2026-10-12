@@ -33,7 +33,11 @@
  * while routine noise miscounted as a fault is merely loud.
  */
 import type { ErrorKind } from "../error-recorder.js";
-import { MessagingChannelError } from "./connector.js";
+import {
+  MessagingChannelError,
+  MessagingNeedsRecentMessageError,
+  MessagingReplyHeldError,
+} from "./connector.js";
 import {
   MessagingMediaTooLargeError,
   MessagingOutboundCapError,
@@ -153,8 +157,17 @@ const ROUTINE_OUTBOUND_FILE_REFUSALS: ReadonlyMap<string, RefusalType> = new Map
  *
  * {@link MessagingConnectionClosedError} is classified by that verdict wherever it is caught:
  * the gateway is the only place that raises it, and it raises it about the connection.
+ *
+ * {@link MessagingReplyHeldError} and {@link MessagingNeedsRecentMessageError} are `expected`
+ * wherever they are caught. Neither is a fault: the platform lets the bot speak only after the
+ * user has (WeChat), a held reply is delivered with the user's next message, and a refused
+ * probe tells the person pressing the button exactly that. The bridge files neither as an
+ * error, and neither would be a defect if a capture point ever did.
  */
 export function messagingErrorKind(err: unknown, code: string): ErrorKind {
+  if (err instanceof MessagingReplyHeldError || err instanceof MessagingNeedsRecentMessageError) {
+    return "expected";
+  }
   if (err instanceof MessagingConnectionClosedError) {
     return err.recovers ? "expected" : "unexpected";
   }

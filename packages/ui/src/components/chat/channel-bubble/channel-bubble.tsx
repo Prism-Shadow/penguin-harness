@@ -10,8 +10,8 @@
  * its own tint, with no avatar and no name; a screen reader hears `ownLabel` instead, since a side
  * and a colour are not something every reader can read.
  *
- * Each bubble carries its own time at its end, inside it, bottom-aligned: on a one-line message it
- * lands beside the words, on a longer one it settles into the bottom-right corner, and it never
+ * Each bubble carries its own time in its bottom-right corner, with a spacer on the body’s last
+ * line: it lands beside the words, or under their last line, and it never
  * overlaps the body. A time that only appeared on hover would be one a touch reader never sees, and
  * one time per run would leave every later message in a long run unstamped. The body is Markdown in
  * the compact reading box; what the caller renders into it is its own (a channel keeps its
@@ -44,8 +44,11 @@ export interface ChannelSender {
   name: string;
 }
 
-/** The avatar that leads somebody else's run, in pixels: a tile, one rung above a line glyph. */
-const RUN_AVATAR_PX = 28;
+/**
+ * The avatar that leads somebody else's run, in pixels: a chat product's size rather than the
+ * icon scale's, large enough to recognise a face at a glance, as every messenger draws it.
+ */
+export const CHANNEL_RUN_AVATAR_PX = 36;
 
 /** The run's leading tile. Decorative: the name beside it is what names the sender. */
 function SenderAvatar({ sender }: { sender: ChannelSender }) {
@@ -54,15 +57,16 @@ function SenderAvatar({ sender }: { sender: ChannelSender }) {
       <AgentAvatar
         id={sender.id}
         name={sender.name}
-        size={RUN_AVATAR_PX}
-        className="shrink-0 rounded-md"
+        size={CHANNEL_RUN_AVATAR_PX}
+        className="shrink-0 rounded-lg"
       />
     );
   }
   return (
     <span
       aria-hidden
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-fg text-xs font-bold text-canvas"
+      // A person's tile, the same size as an employee's face beside it.
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-fg text-sm font-bold text-canvas"
     >
       {avatarInitial(sender.name, sender.id)}
     </span>
@@ -81,15 +85,27 @@ export interface ChannelRunProps {
   ownLabel?: string;
   /** After the name on somebody else's run: a relay chip, with its tooltip. */
   meta?: ReactNode;
+  /**
+   * The run's leading picture in place of the sender's default tile — an employee's own avatar,
+   * which only the app knows. Drawn at the tile's size (`CHANNEL_RUN_AVATAR_PX`).
+   */
+  avatar?: ReactNode;
   /** The run's bubbles, in order. */
   children: ReactNode;
 }
 
 /** One sender's run of consecutive messages. */
-export function ChannelRun({ sender, own = false, ownLabel, meta, children }: ChannelRunProps) {
+export function ChannelRun({
+  sender,
+  own = false,
+  ownLabel,
+  meta,
+  avatar,
+  children,
+}: ChannelRunProps) {
   return (
     <div className={`flex items-start ${ICON_GAP.card} py-1.5`}>
-      {!own && <SenderAvatar sender={sender} />}
+      {!own && (avatar ?? <SenderAvatar sender={sender} />)}
       <div className={`flex min-w-0 flex-1 flex-col gap-1 ${own ? "items-end" : "items-start"}`}>
         {own ? (
           <span className="sr-only">{ownLabel ?? sender.name}</span>
@@ -158,21 +174,24 @@ export function ChannelBubble({
     <div
       id={id}
       data-side={own ? "own" : "other"}
-      className={`channel-bubble max-w-[75%] px-3 py-1.5 text-sm leading-relaxed ${corners(own, last)} ${own ? SURFACE.own : SURFACE.other}`}
+      className={`channel-bubble relative max-w-[88%] px-3 py-1.5 text-base leading-relaxed sm:max-w-[75%] sm:text-sm ${corners(own, last)} ${own ? SURFACE.own : SURFACE.other}`}
     >
-      <div className={`flex items-end ${ICON_GAP.menu}`}>
-        <div className="min-w-0 flex-1">
-          <div className="md-body md-compact">{children}</div>
-          {footer}
-        </div>
-        <span
-          data-tooltip={timeTooltip}
-          className="shrink-0 text-xs tabular-nums text-tone-neutral-fg"
-        >
-          <span className="sr-only">{timeLabel}</span>
-          <span aria-hidden>{time}</span>
-        </span>
+      <div className="min-w-0">
+        <div className="md-body md-compact">{children}</div>
+        {footer != null && (
+          <>
+            {footer}
+            <span aria-hidden className="channel-time-gap" />
+          </>
+        )}
       </div>
+      <span
+        data-tooltip={timeTooltip}
+        className="absolute bottom-1.5 right-3 text-xs tabular-nums text-tone-neutral-fg"
+      >
+        <span className="sr-only">{timeLabel}</span>
+        <span aria-hidden>{time}</span>
+      </span>
     </div>
   );
 }

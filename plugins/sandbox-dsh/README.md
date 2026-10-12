@@ -41,7 +41,7 @@ What every rung leaves open, disclosed on the card under what the machine enforc
   (Linux 6.2) neither is truncating a file. The launcher reports this on every run; the harness
   drops that line from the command's stderr.
 
-On Linux this is the floor the Sandbox card installs beside bubblewrap. Ubuntu 23.10 and later
+On Linux this is the floor the Agent Sandbox card installs beside bubblewrap. Ubuntu 23.10 and later
 restrict unprivileged user namespaces to AppArmor-profiled programs, which refuses bubblewrap
 on an install that could not add a profile; Landlock needs neither a namespace nor root, so file
 writes stay confined there with no host step.

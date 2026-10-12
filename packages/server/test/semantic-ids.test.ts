@@ -7,8 +7,9 @@
  * - An admin creates a Project under a valid id (its display name defaulting to the id) and is
  *   refused an invalid one; a DB-taken, directory-only-taken or reserved id is a 409.
  * - A non-admin's Project id must carry their own prefix and a valid suffix.
- * - A Project creation that fails midway rolls back its row and directory, so the same id can
- *   be retried; an Agent creation that fails midway rolls back its directory the same way.
+ * - A Project creation that fails midway — writing its config, or its Benchmarks — rolls back
+ *   its row and directory, so the same id can be retried; an Agent creation that fails midway
+ *   rolls back its directory the same way.
  * - An Agent id is validated the same way, initializes the Agent, collides within its Project
  *   (built-ins included) but not across Projects, and its display name is free-form.
  *
@@ -101,6 +102,31 @@ describe("semantic ids", () => {
       t.deps.db.prepare("SELECT 1 AS x FROM projects WHERE project_id = ?").get("flaky"),
     ).toBeUndefined();
     expect((await admin.post("/api/projects", { projectId: "flaky", name: "x" })).status).toBe(201);
+  });
+
+  it("rolls back a Project creation whose Benchmarks cannot be written, so the same id can be retried", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const config = t.deps.projectConfigService;
+    const original = config.seedPresetPromotions;
+    // The step right before the Benchmarks are written leaves a file where benchmarks/ goes.
+    config.seedPresetPromotions = async (projectId: string) => {
+      await original.call(config, projectId);
+      await fs.writeFile(path.join(t.root, projectId, "benchmarks"), "");
+    };
+    try {
+      expect(
+        (await admin.post("/api/projects", { projectId: "flaky_bench", name: "x" })).status,
+      ).toBe(500);
+    } finally {
+      config.seedPresetPromotions = original;
+    }
+    await expect(fs.access(path.join(t.root, "flaky_bench"))).rejects.toThrow();
+    expect(
+      t.deps.db.prepare("SELECT 1 AS x FROM projects WHERE project_id = ?").get("flaky_bench"),
+    ).toBeUndefined();
+    expect(
+      (await admin.post("/api/projects", { projectId: "flaky_bench", name: "x" })).status,
+    ).toBe(201);
   });
 
   it("rolls back an Agent creation that fails midway, so the same id can be retried", async () => {

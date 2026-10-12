@@ -68,6 +68,10 @@ export function WorkspaceTreeView({
       }
       emptyLabel={S.files.empty}
       className="min-h-0 flex-1 overflow-auto"
+      // Find-in-page region (components/find/find-bar.tsx): the Workspace tree is searchable by
+      // file name. The lib/workspace search box on this same panel matches *contents* server
+      // side and is a different thing — this one is look-at-what-is-on-screen.
+      findRegion="files"
       onToggleDir={onToggleDir}
       onOpenFile={onOpenFile}
     >

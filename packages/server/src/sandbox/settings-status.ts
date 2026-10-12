@@ -250,8 +250,8 @@ export class SandboxSettingsStatus {
           declined.length === 0 ? "" : `已安装 ${declined.join("、")}，但它们适用于其他平台。`;
         notices.push({
           tone: "attention",
-          text: `This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command and hook script.${elsewhere}`,
-          textZh: `当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，除「关闭」外的任何模式都会拒绝 Agent 的每条命令与钩子脚本。${elsewhereZh}`,
+          text: `This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Full access refuses every agent command and hook script.${elsewhere}`,
+          textZh: `当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，除「完全访问」外的任何模式都会拒绝 Agent 的每条命令与钩子脚本。${elsewhereZh}`,
         });
         // With nothing serving, why each installed backend is not in use is the headline.
         for (const { name, reason } of sandbox.failures()) {

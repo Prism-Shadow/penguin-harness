@@ -105,19 +105,21 @@ describe("ShortcutsSection", () => {
   });
 
   it("notes a chord the browser also uses, muted, and names the desktop menu's claim first in the desktop app", () => {
-    // Save's default takes over the browser's Save Page; no other default touches the browser.
-    expect(count(render(), S.shortcuts.browserCommon)).toBe(1);
+    // Save's and find's defaults take over the browser's Save Page and find; no other default
+    // touches the browser.
+    expect(count(render(), S.shortcuts.browserCommon)).toBe(2);
     configureKeybindingsStoreForTests({
       storage: keybindings({ v: 1, linux: { "palette.toggle": "Mod+KeyR" } }),
     });
     const browser = render();
-    expect(count(browser, S.shortcuts.browserCommon)).toBe(2);
+    expect(count(browser, S.shortcuts.browserCommon)).toBe(3);
     expect(browser).not.toContain(ATTENTION);
     setHostForTests("desktop");
     const desktop = render();
-    // Reload is the desktop menu's too, so that row names the menu; Save keeps the browser's note.
+    // Reload is the desktop menu's too, so that row names the menu; Save and find keep the
+    // browser's note.
     expect(count(desktop, S.shortcuts.desktopMenuReserved)).toBe(1);
-    expect(count(desktop, S.shortcuts.browserCommon)).toBe(1);
+    expect(count(desktop, S.shortcuts.browserCommon)).toBe(2);
   });
 
   it("shows a binding's note as soon as the binding lands", () => {

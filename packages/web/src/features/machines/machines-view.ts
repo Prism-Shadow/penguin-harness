@@ -1,6 +1,6 @@
 /**
  * What the Machines page derives from the server's answer: which machines are in use, the
- * one sentence each row says, and what the batch selects by default.
+ * one reading each card gives, and which machines the update notice counts.
  *
  * A row's reading follows a fixed precedence. The server's job for that machine is the
  * freshest word (queued, working, failed); a held connection settles "ready" whatever an
@@ -15,6 +15,7 @@ import type {
   MachinePhase,
   MachinesResponse,
 } from "@prismshadow/penguin-server/api";
+import { S } from "../../lib/strings";
 import type { Tone } from "../../lib/tone";
 
 export type MachineReading =
@@ -68,6 +69,17 @@ const PHASE_COMPLETE: Record<MachinePhase, true> = {
 };
 void PHASE_COMPLETE;
 
+const isPhase = (step: string): step is MachinePhase =>
+  (MACHINE_PHASES as readonly string[]).includes(step);
+
+/**
+ * A step as the interface names it: one of the pipeline's six by its name in the reader's
+ * language, any other step the server names (a sub-step) as the server named it.
+ */
+export function stepLabel(step: string): string {
+  return isPhase(step) ? S.machines.step[step] : step;
+}
+
 /** The job the server has for a machine — queued, running, or its last finished one. */
 export function jobFor(jobs: readonly MachineJob[], machineId: string): MachineJob | null {
   return jobs.find((job) => job.machineId === machineId) ?? null;
@@ -116,14 +128,17 @@ export function readMachine(
   return { kind: "notConnected" };
 }
 
-/** The tone a reading's mark carries — by what it means, as tone.ts asks; a held connection is `link`, never `success`. */
+/**
+ * The tone a reading's mark carries — by what it means, as tone.ts asks; a held connection is
+ * `link`, never `success`. Only a failed job is `danger`: a machine out of reach is waiting on
+ * someone (its network, its host), which is `attention`, and red stays for what failed.
+ */
 export function readingTone(reading: MachineReading): Tone {
   switch (reading.kind) {
     case "queued":
     case "working":
       return "busy";
     case "failed":
-    case "unreachable":
       return "danger";
     case "ready":
       // A held connection is a live link, not a verdict: blue, never green.
@@ -131,6 +146,10 @@ export function readingTone(reading: MachineReading): Tone {
     case "linkedStopped":
       // The link is up and nothing is serving: something for a person to do, not a failure.
       return "attention";
+    case "installedOnly":
+      // As far as this server can take it (a Windows machine): nothing waits on anyone, so the
+      // mark recedes rather than asking for attention.
+      return "muted";
     case "unknown":
       return "muted";
     default:
@@ -177,6 +196,25 @@ export function outOfDate(machine: MachineInfo, imageVersion: string | null): bo
 /** The machines in use that carry another build — what "update all" brings forward, in list order. */
 export function behindMachines(state: MachinesResponse): MachineInfo[] {
   return installedMachines(state).filter((machine) => outOfDate(machine, state.imageVersion));
+}
+
+/**
+ * The notice under the title while machines in use carry another build than this server's: which
+ * machines, and the keys that waving it away records — each machine at this server's build.
+ *
+ * Waved away, the notice stays down while every machine behind was already behind at that build,
+ * and comes back when another machine falls behind or this server moves to a newer build. The
+ * keys live as long as the page does: nothing is stored.
+ */
+export function updateNotice(
+  state: MachinesResponse,
+  dismissed: ReadonlySet<string>,
+): { ids: string[]; keys: string[] } | null {
+  const behind = behindMachines(state);
+  if (behind.length === 0) return null;
+  const keys = behind.map((machine) => `${machine.id} ${state.imageVersion}`);
+  if (keys.every((key) => dismissed.has(key))) return null;
+  return { ids: behind.map((machine) => machine.id), keys };
 }
 
 /** Whether any job is still to come, which is when the page keeps polling. */

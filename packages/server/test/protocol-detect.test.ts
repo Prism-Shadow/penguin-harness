@@ -10,7 +10,8 @@
  *   exactly as typed), joined to protocol paths the way the wrapped SDKs do.
  * - Probes run openai-responses → ant-messages → openai-chat, candidate by candidate, stop at the
  *   first served protocol and report the base URL it was served on; a probe that fails or
- *   floods (abandoned at the body cap) does not stop the sequence.
+ *   floods (abandoned at the body cap) does not stop the sequence. The protocols the dialogs
+ *   offer by hand only, Google GenAI and MMSP, are never probed: an MMSP server detects nothing.
  * - Auth headers mirror MMSP's clients (Bearer for the OpenAI protocols; x-api-key, Bearer
  *   and anthropic-version for ant-messages); a keyless probe sends no credential; the key never
  *   reaches a URL or the reported probes.
@@ -325,6 +326,34 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
       "https://gw.example.com/responses",
       "https://gw.example.com/v1/messages",
       "https://gw.example.com/chat/completions",
+    ]);
+  });
+
+  it("an MMSP server is never detected: Google GenAI and MMSP are picked by hand, not probed", async () => {
+    // An MMSP server answers its /v1/stream like any API (a JSON 400 for the {} probe) and 404s
+    // every other route; detection still tries only the three protocols and finds nothing.
+    const seen: SeenCall[] = [];
+    const res = await detectModelProtocol({
+      baseUrl: "http://127.0.0.1:25752/v1",
+      fetchImpl: gateway(
+        {
+          "/v1/stream": {
+            status: 400,
+            body: JSON.stringify({ error: { type: "InvalidRequestError", message: "no model" } }),
+          },
+          "/v1/v1beta/models": { status: 400, body: OPENAI_ERROR },
+        },
+        seen,
+      ),
+    });
+    expect(res.detected).toBeUndefined();
+    expect(seen.map((c) => new URL(c.url).pathname)).toEqual([
+      "/v1/responses",
+      "/v1/v1/messages",
+      "/v1/chat/completions",
+      "/responses",
+      "/v1/messages",
+      "/chat/completions",
     ]);
   });
 

@@ -15,19 +15,24 @@
  *   control environment's API token; a signed-in member's claim is dropped.
  * - The sessions route marks a desk whose Session has an enabled messaging binding, read from
  *   the real bindings table for an organization written straight to disk.
+ * - The sessions route finds an employee's desk and a ticket's session, company Sessions that
+ *   the employee's own session list leaves out of every category and total.
  */
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { sessionMeta, userText } from "@prismshadow/penguin-core";
+import type { SessionSource } from "@prismshadow/penguin-core";
 import type {
   MeResponse,
   OrgSessionsResponse,
   ServerSettingsResponse,
   SessionResponse,
+  SessionsResponse,
 } from "../src/api/types.js";
 import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
 import { OrgStore } from "../src/organization/store.js";
 import type { OrganizationService } from "../src/runtime/organization/service.js";
-import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin, provisionUser, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 type Call = { method: string; args: unknown[] };
@@ -662,6 +667,119 @@ describe("organization sessions route over the real service", () => {
       // Unbinding takes the mark away with it.
       t.deps.messagingRepo.setEnabled(ceoDesk, "telegram", false);
       expect((await desks()).get("acme_ceo")).not.toHaveProperty("messagingChannel");
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("finds an employee's desk and a ticket's session, which the employee's session list leaves out", async () => {
+    const t = await createTestApp();
+    try {
+      t.deps.serverSettingsRepo.setCompanyMode(true);
+      const u = await provisionUser(t.app, "piper");
+      const api = apiClient(t.app, u.cookie);
+      const projectId = "piper-default_project";
+      const agentId = "acme_ceo";
+      expect((await api.post(`/api/projects/${projectId}/agents`, { agentId })).status).toBe(201);
+      const desk = "session-2026-09-01-09-00-00-0abc0031";
+      const ticketSession = "session-2026-09-02-10-00-00-0abc0032";
+      const own = "session-2026-09-03-11-00-00-0abc0033";
+
+      const store = new OrgStore(t.deps.config.root);
+      const dir = store.dir(projectId, "acme");
+      await store.createLayout(dir);
+      await store.writeConfig(dir, {
+        ...ORG_CONFIG_DEFAULTS,
+        name: "Acme",
+        mission: "Ship the site",
+        timezone: "UTC",
+        createdBy: "piper",
+      });
+      await store.writeChart(dir, {
+        employees: [{ agentId, title: "CEO", reportsTo: null, workspace: "." }],
+      });
+      const workspace = path.join(dir, "workspace");
+      await store.writeDesks(dir, {
+        [agentId]: {
+          sessionId: desk,
+          workspace,
+          openedAt: "2026-09-01T09:00:00.000Z",
+          previous: [],
+        },
+      });
+      await store.writeTicket(dir, "2026-09-02-site", "in_progress", {
+        title: "Launch the site",
+        status: "in_progress",
+        owner: `agent:${agentId}`,
+        notify: [],
+        priority: "P2",
+        sessions: [ticketSession],
+        history: [],
+        goal: "",
+        acceptanceCriteria: "",
+        progress: [],
+        result: "",
+        extra: {},
+        extraSections: [],
+      });
+      // The desk has not run yet (no Trace); the ticket's session ran and recorded `company`;
+      // the person's own conversation recorded `user`.
+      for (const [sessionId, client, source] of [
+        [desk, "org", undefined],
+        [ticketSession, "org", "company"],
+        [own, "web", "user"],
+      ] as const) {
+        const stamp = `${sessionId.slice(8, 18)}T09:00:00.000Z`;
+        t.deps.sessionsRepo.insert({
+          sessionId,
+          projectId,
+          agentId,
+          provider: "custom",
+          modelId: "m-org",
+          workspace,
+          approvalMode: "allow-all",
+          title: null,
+          client,
+          createdAt: stamp,
+          lastActiveAt: stamp,
+        });
+        if (source === undefined) continue;
+        await writeTraceFile(t.root, projectId, agentId, sessionId.slice(8, 18), sessionId, 1, [
+          sessionMeta({
+            session_id: sessionId,
+            model_id: "m-org",
+            provider: "custom",
+            model_context_window: 1000,
+            system_prompt: "",
+            agent_state: "/tmp/a",
+            workspace,
+            source: source satisfies SessionSource,
+          }),
+          userText("work"),
+        ]);
+      }
+
+      const org = (await (
+        await api.get(`/api/projects/${projectId}/organizations/acme/sessions`)
+      ).json()) as OrgSessionsResponse;
+      expect(org.desks.map((d) => d.sessionId)).toEqual([desk]);
+      expect(org.tickets.flatMap((tk) => tk.sessions.map((s) => s.sessionId))).toEqual([
+        ticketSession,
+      ]);
+
+      const list = async (qs: string) =>
+        (await (
+          await api.get(`/api/projects/${projectId}/agents/${agentId}/sessions${qs}`)
+        ).json()) as SessionsResponse;
+      const counted = await list("?category=active&counts=1");
+      expect(counted.sessions.map((s) => s.sessionId)).toEqual([own]);
+      expect(counted.counts).toEqual({ active: 1, background: 0, archived: 0 });
+      expect((await list("?category=background")).sessions).toEqual([]);
+      expect((await list("?category=archived")).sessions).toEqual([]);
+      // Both are company Sessions as the list reads them.
+      const sources = new Map((await list("")).sessions.map((s) => [s.sessionId, s.source]));
+      expect(sources.get(desk)).toBe("company");
+      expect(sources.get(ticketSession)).toBe("company");
     } finally {
       await t.cleanup();
     }

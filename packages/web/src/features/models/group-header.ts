@@ -6,11 +6,12 @@
  * divider, the connection (groups whose key comes from an authorization flow: "Not connected",
  * which connects when pressed, or one "Connected" menu holding Sync models, Reconnect and
  * Disconnect), Add model (groups that take hand-added models; an icon), Delete group
- * (user-defined groups), the speed test, and the group settings last — every group ends on the
- * speed test and the gear, so the pair stands at the same right edge down the page. The group
+ * (user-defined groups), the speed test, and the gear last — every owner's group ends on the
+ * speed test and the gear, so the pair stands at the same right edge down the page. The gear
+ * opens a menu (group-settings-menu.tsx): the group's sort, then the group settings. The group
  * key is set in the settings (or by Connect); the header has no field of its own for it. A
- * member sees what they can read — the balance with its menu, and the connection status as
- * plain text; every action that writes is the owner's.
+ * member sees what they can read — the balance with its menu, the connection status as plain
+ * text — and the gear, whose menu holds the sort alone; every action that writes is the owner's.
  */
 import {
   MODEL_PROVIDERS,
@@ -103,7 +104,8 @@ export function groupHeaderActions(
     actions.push("balance");
   }
   if (hasConnectFlow(provider)) actions.push("connect");
-  if (!isOwner) return actions;
+  // The sort is a view preference that writes nothing, so a member keeps the gear for it.
+  if (!isOwner) return [...actions, "settings"];
   if (isAddableGroup(provider.id)) actions.push("addModel");
   // A built-in group is catalog identity; a user-defined one exists only through its rows.
   if (!MODEL_PROVIDERS.some((p) => p.id === provider.id)) actions.push("deleteGroup");

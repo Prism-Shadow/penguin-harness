@@ -330,7 +330,7 @@ export class OrgCacheRepo implements OrgCache {
     orgId: string,
     agentId: string,
     name: string,
-    slotMs: number,
+    slotMs: number | null,
   ): void {
     this.db
       .prepare(

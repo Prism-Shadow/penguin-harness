@@ -13,9 +13,14 @@
  * rests on preselected — the evaluator on both tabs, the optimizer on its own — so the
  * `[use_skills]` block names them on send and the model reads them before it acts; a model
  * left to its own devices sometimes scored the runs itself instead of delegating to
- * agent-evaluation. The evaluation runtime is never picked in this dialog —
- * Evaluate takes the tested agent's own configured model and thinking level, and Optimize reuses
- * what that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
+ * agent-evaluation. Evaluate tests on that conversation's own model, at the tested agent's
+ * configured thinking level: an agent stores no model of its own. The prompt names no model —
+ * the evaluator reads its Session's model from its Environment — so one changed in the composer
+ * after the prefill is still the one tested, and the text never goes stale. Optimize reuses what
+ * that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
+ *
+ * The conversation is an ordinary Session, listed with the agent's own: only the Test Sessions
+ * it starts through `penguin run` (CLI Sessions) are filed under the Background folder.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -184,9 +189,6 @@ export function UseBenchmarkModal({
       text,
       skills: tab === "evaluate" ? [EVALUATION_SKILL] : [OPTIMIZATION_SKILL, EVALUATION_SKILL],
       ...(ref !== undefined ? { modelRef: ref } : {}),
-      // An evaluation / optimization run, not a conversation of the user's own: the session
-      // list files it, and the Test Sessions it launches, under the Evaluations folder.
-      source: "benchmark",
     });
     onClose();
   };

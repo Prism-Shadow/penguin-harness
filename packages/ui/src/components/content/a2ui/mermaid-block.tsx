@@ -12,6 +12,10 @@
  * one. A diagram that fails to draw falls back to its source with a notice naming the error, the
  * way an invalid block does. A drawn diagram keeps a toggle that shows its source under it.
  *
+ * The drawing sits in the blocks' box — the md radius, the surface fill, a padding wider than the
+ * radius — and arrives under `data-reveal` when it replaces its placeholder, the way a block
+ * arrives on the settle.
+ *
  * While the reply streams the block is the quiet placeholder; it draws once, on the settle.
  */
 import { useEffect, useMemo, useState } from "react";
@@ -115,9 +119,16 @@ function MermaidDiagram({ source }: { source: string }) {
   }
   if (html === undefined) return <A2uiPending label={strings.diagram} />;
   return (
-    <figure className="a2ui-block my-3" data-a2ui="mermaid" aria-label={strings.diagram}>
+    <figure
+      className="a2ui-block my-3"
+      data-a2ui="mermaid"
+      aria-label={strings.diagram}
+      data-reveal
+    >
+      {/* The diagram's stylesheet knocks a label out of the line under it in the canvas colour,
+          written for a diagram on the page; inside the box, the canvas is the box's fill. */}
       <div
-        className="overflow-x-auto rounded-lg border border-line px-4 py-3 [&>svg]:mx-auto"
+        className="overflow-x-auto rounded-md border border-line bg-surface px-4 py-3 [--ui-canvas:var(--ui-surface)] [&>svg]:mx-auto"
         dangerouslySetInnerHTML={html}
       />
       <div className="mt-1 flex justify-end">

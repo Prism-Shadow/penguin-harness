@@ -50,6 +50,10 @@
       "types": "./dist/secret-file.d.ts",
       "import": "./dist/secret-file.js"
     },
+    "./benchmark-package": {
+      "types": "./dist/benchmark-package.d.ts",
+      "import": "./dist/benchmark-package.js"
+    },
     "./plugin": {
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
@@ -71,6 +75,7 @@
   "dependencies": {
     "@hono/node-server": "^2.0.5",
     "@larksuiteoapi/node-sdk": "^1.73.0",
+    "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@xterm/headless": "^5.5.0",
     "dotenv": "^17.0.0",

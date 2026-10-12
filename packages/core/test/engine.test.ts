@@ -879,6 +879,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         system_prompt: "sys",
         agent_state: "/root/p/worker/agent_state",
         workspace: "/tmp/w",
+        source: "user",
       });
     // Custom Environment: on execution, first forwards origin-tagged child session messages
     // (child meta / child text / grandchild meta), then yields the complete output (simulates

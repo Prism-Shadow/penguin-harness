@@ -9,6 +9,9 @@
  *   full matrix without offering an optimization; the Optimize tail carries every input the
  *   agent-optimization Skill requires; a note or focus text goes before the tail, a blank one
  *   is left out.
+ * - The Evaluate tail, one for every Benchmark (Harbor or not), takes the model under test from
+ *   the evaluator's own Session, since an agent stores none: in both dictionaries it names the
+ *   Environment lines that carry the provider and the model id in the system prompt core renders.
  * - The evaluation dialog's Ask AI question carries the facts on screen, every case and the
  *   Session of every run, and names no Skill to run; the case dialog's names both material
  *   paths and the latest runs; each box opens on the default question, which leads its examples.
@@ -16,7 +19,9 @@
  *   runs count is 1..MAX_RUNS.
  */
 import { describe, expect, it } from "vitest";
-import { S } from "../src/lib/strings";
+import { defaultSystemConfig } from "@prismshadow/penguin-core";
+import { S, zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
 import {
   MAX_RUNS,
   askCaseExamples,
@@ -83,6 +88,25 @@ describe("evaluateTail / buildEvaluatePrompt", () => {
     expect(tail).not.toContain("agent-optimization");
     expect(tail).not.toContain("desired_score");
   });
+
+  // The label of the default system prompt's Environment line that renders `placeholder`: what
+  // the evaluator finds its own Session's provider or model id under.
+  const environmentLabel = (placeholder: string): string => {
+    const line = defaultSystemConfig()
+      .system_prompt.split("\n")
+      .find((l) => l.endsWith(`: ${placeholder}`));
+    const label = /^- (.+): \{\{[A-Z_]+\}\}$/.exec(line ?? "")?.[1];
+    if (label === undefined) throw new Error(`no Environment line renders ${placeholder}`);
+    return label;
+  };
+
+  for (const [locale, dict] of Object.entries({ zh, en })) {
+    it(`${locale}: tests on the evaluator's own model, read from the Environment lines core renders`, () => {
+      const tail = dict.benchmark.evaluateTail(params);
+      for (const placeholder of ["{{PROVIDER}}", "{{MODEL_ID}}"])
+        expect(tail).toContain(`\`${environmentLabel(placeholder)}\``);
+    });
+  }
 
   it("puts the note before the tail, and sends the tail alone when the note is blank", () => {
     expect(buildEvaluatePrompt("Watch the citation cases.", params)).toBe(

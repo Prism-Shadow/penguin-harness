@@ -44,10 +44,12 @@ export interface Messages {
     json: string;
     /** --server: explicit server URL (overrides PENGUIN_API_URL, the local lock and auto-start). */
     server: string;
-    /** --timeout: soft-yield wait budget on run/input/logs -f (30s / 5m / 2h / bare seconds). */
+    /** --timeout: soft-yield wait budget on run / session input / session log -f (30s / 5m / 2h / bare seconds). */
     timeout: string;
-    /** input/logs' --agent-id: whose most recent session the omitted session argument means. */
+    /** The session group's --agent-id: whose most recent session the omitted session argument means. */
     latestAgentId: string;
+    /** run's --title and session rename's -t/--title: empty or over `max` characters once whitespace is collapsed. */
+    titleInvalid(length: number, max: number): string;
   };
   /** Commander's own parse failures, rebuilt in the user's language (see usage-error.ts). */
   usage: {
@@ -114,16 +116,31 @@ export interface Messages {
     goal: string;
     /** run's --session: reuse an existing Session (full id or unique fragment). */
     session: string;
-    /** run's --source: mark the NEW Session as created by a Benchmark evaluation. */
-    source: string;
     /** run's --background: POST the task and exit immediately, printing the session id. */
     background: string;
-    /** --session combined with --workspace / the model pair / --source: all fixed at creation. */
+    /** --session combined with --workspace / the model pair: both fixed at creation. */
     sessionNoOverride(): string;
-    /** --source given a value other than `benchmark` (the only origin a client may set). */
+    /** The retired --source given a value other than `benchmark`. Removed at 0.3.0 with the flag. */
     sourceInvalid(value: string): string;
+    /** The retired `--source benchmark`, accepted as a no-op until 0.3.0: why it is ignored. */
+    sourceIgnored(): string;
     /** --background never waits, so a wait budget cannot apply to it. */
     timeoutWithBackground(): string;
+    /** run's --title: name the Session being run (manual rename; the auto-title never overwrites it; with --session it renames the reused Session). */
+    title: string;
+  };
+  /** `penguin session`: the group that lists, reads, messages and renames sessions. */
+  session: {
+    /** Group description. */
+    desc: string;
+    /** `penguin session rename`'s own description. */
+    renameDesc: string;
+    /** rename's optional session_id argument. */
+    renameSessionId: string;
+    /** rename's required -t/--title option. */
+    renameTitle: string;
+    /** The success line (short id form; the full id is what --json prints). */
+    renamed(sessionId: string, title: string): string;
   };
   chat: {
     desc: string;
@@ -131,7 +148,7 @@ export interface Messages {
     /** chat's --verbose: start with full tool output (collapsing off). */
     verbose: string;
   };
-  /** `penguin ls`: session listing. */
+  /** `penguin session ls`: session listing. */
   ls: {
     desc: string;
     /** -a/--all: include archived sessions. */
@@ -149,15 +166,15 @@ export interface Messages {
     stateIdle(): string;
     stateRunning(): string;
   };
-  /** `penguin input`: send a message into an existing session (steer when running, task when idle). */
+  /** `penguin session input`: send a message into an existing session (steer when running, task when idle). */
   input: {
     desc: string;
     message: string;
     /** Poll form on a session that has produced no assistant text yet. */
     noReplyYet(): string;
   };
-  /** `penguin logs`: render a session's history, optionally following the live stream. */
-  logs: {
+  /** `penguin session log`: render a session's history, optionally following the live stream. */
+  log: {
     desc: string;
     tail: string;
     follow: string;
@@ -180,6 +197,58 @@ export interface Messages {
     colName(): string;
     colSessions(): string;
     colDescription(): string;
+    /** `penguin agent api …`: an agent's public API (this server's switches, approval mode and keys). */
+    apiDesc: string;
+    apiStatusDesc: string;
+    apiEnableDesc: string;
+    apiDisableDesc: string;
+    apiSetDesc: string;
+    /** --open / --no-open: keyless access on or off. */
+    apiOpen: string;
+    apiNoOpen: string;
+    /** --approve on enable/set: the mode API conversations are created with. */
+    apiApprove: string;
+    /** `set` given nothing to change. */
+    apiNothingToSet(): string;
+    apiKeysDesc: string;
+    apiKeysLsDesc: string;
+    apiKeysCreateDesc: string;
+    apiKeysRmDesc: string;
+    /** --name of `keys create`. */
+    apiKeyName: string;
+    apiServerDesc: string;
+    /** `server <state>` given something other than on/off. */
+    apiServerStateInvalid(value: string): string;
+    /** The status block: its heading, then one labelled line per fact. */
+    apiStatusTitle(agentRef: string): string;
+    apiFieldEnabled(): string;
+    apiFieldOpen(): string;
+    apiFieldApproval(): string;
+    apiFieldBaseUrl(): string;
+    apiFieldAgentId(): string;
+    apiFieldKeys(): string;
+    apiFieldServer(): string;
+    apiYes(): string;
+    apiNo(): string;
+    apiServerOn(): string;
+    apiServerOff(): string;
+    /** `keys ls` columns, and the line for an agent with none. */
+    apiColKeyId(): string;
+    apiColKeyName(): string;
+    apiColPrefix(): string;
+    apiColCreated(): string;
+    apiColLastUsed(): string;
+    apiKeyNever(): string;
+    apiKeysEmpty(agentRef: string): string;
+    /** stderr beside the bare secret on stdout. */
+    apiKeyCreated(name: string, prefix: string, agentRef: string): string;
+    apiKeyDeleted(keyId: string, agentRef: string): string;
+    /** After `server on|off`. */
+    apiServerSet(on: boolean): string;
+    /** A write refused 403 human_required: it carried the local API token, and no stored sign-in stood in. */
+    apiSignInRequired(): string;
+    /** On stderr after `--open` switched keyless access on. */
+    apiOpenWarning(): string;
   };
   /** `penguin project`: project listing. */
   project: {
@@ -188,6 +257,51 @@ export interface Messages {
     colId(): string;
     colName(): string;
     colRole(): string;
+  };
+  /** `penguin plugin`: the plugins installed on the server (an admin's, via the local API token). */
+  plugin: {
+    desc: string;
+    listDesc: string;
+    installDesc: string;
+    /** `install --overwrite`: replace another version of an uploaded package directory. */
+    overwriteOpt: string;
+    removeDesc: string;
+    colName(): string;
+    colKind(): string;
+    colState(): string;
+    /** What a row is: a package of server modules the Project lists, or a package of Skills, hooks or MCP servers in the library. */
+    kindModules(): string;
+    kindLibrary(): string;
+    active(): string;
+    pending(): string;
+    failed(reason: string): string;
+    /** Listed for other machines of the Project only. */
+    elsewhere(): string;
+    none(): string;
+    installed(name: string, version: string | null): string;
+    /** The server already has this version of an uploaded package directory: nothing was installed. */
+    unchanged(name: string, version: string | null): string;
+    /** A package directory the plugin library would refuse, with the reader's reason; nothing was sent. */
+    dirRefused(dir: string, reason: string): string;
+    /** A package directory with neither skills/, hooks/, MCP servers nor ifaces.json; nothing was sent. */
+    dirNotPlugin(dir: string): string;
+    /** A package directory past the server's upload caps; nothing was sent. */
+    dirTooLarge(dir: string): string;
+    /** On stderr while a package directory goes up as a zip. */
+    uploading(name: string, version: string, files: number): string;
+    /** After the server's 409 `plugin_exists` (its message comes first). */
+    overwriteHint(): string;
+    /** A plugin the build ships: listing it is all an install does. */
+    listedOnly(specifier: string, projectId: string): string;
+    /** After installing a package of Skills, hooks or MCP servers. */
+    libraryNext(): string;
+    /** After installing a package directory: one line per MCP server it carries. */
+    mcpServerLine(name: string, transport: string, target: string): string;
+    /** After installing a package of server modules, applied without a restart. */
+    modulesLoaded(projectId: string): string;
+    /** After installing a package of server modules this server could not apply in place. */
+    restartNext(): string;
+    removed(name: string): string;
   };
   /** `penguin cost`: token/cost aggregates. */
   cost: {
@@ -255,6 +369,27 @@ export interface Messages {
     colLastFired(): string;
     colStatus(): string;
   };
+  /** `penguin benchmark`: Benchmark packages into the Project's Evaluation Center, through the server's zip import. */
+  benchmark: {
+    desc: string;
+    importDesc: string;
+    overwrite: string;
+    originUrl: string;
+    originRef: string;
+    originPath: string;
+    /** The three --origin-* options were not given together. */
+    originIncomplete(): string;
+    /** The path cannot go up as a package: nothing there, neither a folder nor a file, or past a cap. */
+    missing(path: string): string;
+    unsupported(path: string): string;
+    tooManyFiles(path: string, limit: number): string;
+    fileTooLarge(file: string, limitMb: number): string;
+    tooLarge(path: string, limitMb: number): string;
+    zipTooLarge(path: string, limitMb: number): string;
+    /** 409 benchmark_exists without --overwrite: which Benchmark is there, and how to replace it. */
+    exists(id: string, projectId: string): string;
+    imported(id: string, version: string, cases: number, projectId: string): string;
+  };
   /** `penguin org`: company mode — a thin client over the organization API (the organization's files stay the single source of truth; every DTO is a projection). */
   org: {
     desc: string;
@@ -265,6 +400,12 @@ export interface Messages {
     hireDesc: string;
     employeeDesc: string;
     employeeSetDesc: string;
+    /** `employee avatar`: set or clear an employee's picture. */
+    employeeAvatarDesc: string;
+    /** `employee avatar --file`. */
+    avatarFile: string;
+    /** `employee avatar --clear`. */
+    avatarClear: string;
     leaveDesc: string;
     deskDesc: string;
     deskShowDesc: string;
@@ -322,6 +463,7 @@ export interface Messages {
     title: string;
     reportsTo: string;
     /** Employee workspace: a sub-directory of the shared workspace (`.` = all of it) or an absolute path, written as given. */
+    employeeName: string;
     employeeWorkspace: string;
     /** hire's --workspace: the same spec, with the default the employee's own sub-directory. */
     hireWorkspace: string;
@@ -411,6 +553,15 @@ export interface Messages {
     created(orgId: string, ceoDeskSessionId: string | undefined): string;
     hired(agentId: string, title: string, reportsTo: string | null): string;
     employeeUpdated(agentId: string): string;
+    /** `employee avatar` takes exactly one of --file and --clear. */
+    avatarNeedsOne(): string;
+    /** `employee avatar` without an id outside a desk or ticket session. */
+    avatarNoAgent(): string;
+    avatarUnreadable(file: string, reason: string): string;
+    avatarFormat(file: string): string;
+    avatarTooLarge(file: string, kib: number, maxKib: number): string;
+    avatarSet(agentId: string): string;
+    avatarCleared(agentId: string): string;
     left(agentId: string): string;
     desk(
       agentId: string,
@@ -701,9 +852,9 @@ export interface Messages {
     stillRunning(shortId: string): string;
     /** Caller-context lookup failed (PENGUIN_SESSION_ID names a session this server cannot answer for): plain defaults apply. */
     callerDefaultsFailed(sessionId: string): string;
-    /** Dim stderr note naming the session a bare `logs` / `input` resolved to (the agent's most recent). */
+    /** Dim stderr note naming the session a bare `session log` / `input` / `rename` resolved to (the agent's most recent). */
     latestSession(sessionId: string): string;
-    /** Bare `logs` / `input` when the agent has no session at all: what to run to get one. */
+    /** Bare `session log` / `input` / `rename` when the agent has no session at all: what to run to get one. */
     noSessionsYet(agentId: string, projectId: string): string;
   };
   /** `/thinking` display when the Session pins no level: the Agent's configured default applies. */
@@ -1070,6 +1221,7 @@ const en: Messages = {
     timeout:
       "Wait at most this long (30s / 5m / 2h, or bare seconds), then detach and leave the task running (exit 0)",
     latestAgentId: "Agent whose most recent session is used when no session id is given",
+    titleInvalid: (length, max) => `--title must be 1–${max} characters (got ${length}).`,
   },
   usage: {
     missingArgument: (name) => `missing required argument <${name}>`,
@@ -1102,7 +1254,7 @@ const en: Messages = {
     addMaxTokens:
       "Per-model max output tokens (positive integer); when set it overrides the Agent's max_tokens, omit to inherit — lower it for small-context models",
     addClientType:
-      "MMSP client type (e.g. openai-chat): the model's own with --model-id, else the group's; a model without one follows its group, else MMSP routes it by id (a new custom or own-group model gets openai-chat when its group sets none)",
+      "MMSP client type (openai-responses, ant-messages, openai-chat, google-genai or mmsp, or a vendor's official client such as google-official): the model's own with --model-id, else the group's; a model without one follows its group, else MMSP routes it by id (a new custom or own-group model gets openai-chat when its group sets none)",
     addClearClientType:
       "Remove the stored client type: the model's own with --model-id, else the group's",
     addVision: "Mark the model as supporting image input (vision)",
@@ -1142,13 +1294,15 @@ const en: Messages = {
     message: "Prompt for this Task",
     goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
     session: "Reuse an existing Session (full id or a unique fragment, e.g. the 8-hex tail)",
-    source:
-      "Mark the new session as created by a Benchmark evaluation (`benchmark`); the Web App files it under the Evaluations folder",
     background: "Post the task and exit immediately, printing the session id",
+    title:
+      "Name the Session (manual rename; the auto-generated title never overwrites it; with --session, renames the reused Session)",
     sessionNoOverride: () =>
-      "--session reuses an existing Session: --workspace, --model-id, --provider and --source cannot be combined with it (the Session keeps its own; /switch-model inside penguin chat --resume changes its model, compacting first).",
+      "--session reuses an existing Session: --workspace, --model-id and --provider cannot be combined with it (the Session keeps its own; /switch-model inside penguin chat --resume changes its model, compacting first).",
     sourceInvalid: (value) =>
-      `Invalid --source value "${value}". The only accepted value is benchmark.`,
+      `Invalid --source value "${value}". penguin run takes no --source: every Session it creates is a CLI Session.`,
+    sourceIgnored: () =>
+      "--source benchmark is no longer needed and is ignored: every Session penguin run creates is a CLI Session, listed in the Web App's Background folder.",
     timeoutWithBackground: () =>
       "--timeout bounds the wait, and --background does not wait: drop one of them.",
   },
@@ -1179,13 +1333,22 @@ const en: Messages = {
     message: "Message text (omit to poll the session's last assistant reply instead)",
     noReplyYet: () => "(no assistant reply yet)",
   },
-  logs: {
+  session: {
+    desc: "Work with the project's sessions: list them, read a session's history, send it a message, rename it",
+    renameDesc:
+      "Set a session's title (the manual rename; the auto-generated title never overwrites it)",
+    renameSessionId:
+      "The session to rename (full id or a unique fragment, e.g. the 8-hex tail; default: PENGUIN_SESSION_ID, else the agent's most recent session)",
+    renameTitle: "The new title",
+    renamed: (sessionId, title) => `Renamed ${sessionId} to \u201c${title}\u201d`,
+  },
+  log: {
     desc: "Render a session's history (defaults to the agent's most recent session)",
     tail: "Show only the last <n> entries",
     follow: "Keep following the live stream after the history",
     tailInvalid: (value) => `Invalid --tail value "${value}": expected a positive integer.`,
     timeoutNeedsFollow: () =>
-      "--timeout only applies to -f/--follow: without it, logs never waits.",
+      "--timeout only applies to -f/--follow: without it, session log never waits.",
   },
   agent: {
     desc: "Manage the project's agents",
@@ -1201,6 +1364,53 @@ const en: Messages = {
     colName: () => "NAME",
     colSessions: () => "SESSIONS",
     colDescription: () => "DESCRIPTION",
+    apiDesc: "Manage an agent's public API: the switch, keyless access, approval mode and keys",
+    apiStatusDesc: "Show the agent's API settings, its address and the server-wide switch",
+    apiEnableDesc: "Turn the agent's API on",
+    apiDisableDesc: "Turn the agent's API off (settings and keys are kept)",
+    apiSetDesc: "Change keyless access or the approval mode without turning the API on or off",
+    apiOpen: "Allow keyless access: anything that can reach the server can talk to the agent",
+    apiNoOpen: "Require a key",
+    apiApprove:
+      "Approval mode new API conversations start with: allow-all, deny-all, read-only or always-ask (asks go to the caller)",
+    apiNothingToSet: () => "Nothing to change: pass --open, --no-open or --approve <mode>.",
+    apiKeysDesc: "Manage the agent's API keys",
+    apiKeysLsDesc: "List the agent's API keys",
+    apiKeysCreateDesc: "Create an API key; the key is printed once, alone on stdout",
+    apiKeysRmDesc: "Delete an API key; programs using it are refused from then on",
+    apiKeyName: "Name of the key (1-64 characters)",
+    apiServerDesc: "Turn the Agent API on or off for the whole server (admins only)",
+    apiServerStateInvalid: (value) => `Invalid state "${value}": expected on or off.`,
+    apiStatusTitle: (agentRef) => `Agent API of ${agentRef}`,
+    apiFieldEnabled: () => "Enabled",
+    apiFieldOpen: () => "Keyless access",
+    apiFieldApproval: () => "Approval mode",
+    apiFieldBaseUrl: () => "Base URL",
+    apiFieldAgentId: () => "Agent ID",
+    apiFieldKeys: () => "Keys",
+    apiFieldServer: () => "Server switch",
+    apiYes: () => "yes",
+    apiNo: () => "no",
+    apiServerOn: () => "on",
+    apiServerOff: () => "off (every API request is refused)",
+    apiColKeyId: () => "ID",
+    apiColKeyName: () => "NAME",
+    apiColPrefix: () => "PREFIX",
+    apiColCreated: () => "CREATED",
+    apiColLastUsed: () => "LAST USED",
+    apiKeyNever: () => "never",
+    apiKeysEmpty: (agentRef) => `${agentRef} has no API keys.`,
+    apiKeyCreated: (name, prefix, agentRef) =>
+      `Created key "${name}" (${prefix}…) for ${agentRef}. It is shown once, above; store it now.`,
+    apiKeyDeleted: (keyId, agentRef) => `Deleted key ${keyId} of ${agentRef}.`,
+    apiServerSet: (on) =>
+      on
+        ? "The Agent API is on for this server."
+        : "The Agent API is off for this server: every request is refused; per-agent settings and keys are kept.",
+    apiSignInRequired: () =>
+      "Sign in first: `penguin auth login` (or `penguin auth token` on the server's machine). The local API token may not change an Agent's exposure.",
+    apiOpenWarning: () =>
+      "Warning: keyless access is on. Anything that can reach this server's address can now talk to the agent without a key, on the Project's models and credentials. Keep it on only for a server that listens on loopback; `--no-open` turns it off.",
   },
   project: {
     desc: "Manage projects",
@@ -1208,6 +1418,46 @@ const en: Messages = {
     colId: () => "ID",
     colName: () => "NAME",
     colRole: () => "ROLE",
+  },
+  plugin: {
+    desc: "Manage the plugins installed on the server (admin)",
+    listDesc:
+      "List the server modules the Project lists and the plugins of Skills, hooks or MCP servers installed on the server",
+    installDesc:
+      "Install a plugin on the server: an npm package name (@scope/name, name@1.2.3), an https link to a git repository or a tarball, or a local package directory, which is read with the plugin library's reader, zipped without node_modules and uploaded. A plugin of server modules is loaded at once, which stops the agent runs in progress",
+    overwriteOpt:
+      "Replace another version of the package already on the server (a package directory only)",
+    removeDesc: "Remove a plugin from the Project, and from the server once nothing else lists it",
+    colName: () => "PLUGIN",
+    colKind: () => "KIND",
+    colState: () => "STATE",
+    kindModules: () => "server modules",
+    kindLibrary: () => "skills / hooks / MCP",
+    active: () => "running",
+    pending: () => "waits for a restart",
+    failed: (reason) => `failed to load: ${reason}`,
+    elsewhere: () => "on other machines only",
+    none: () => "No plugins installed on the server.",
+    installed: (name, version) =>
+      version === null ? `Installed ${name}.` : `Installed ${name} ${version}.`,
+    unchanged: (name, version) =>
+      `${name}${version === null ? "" : ` ${version}`} is already installed on the server; nothing changed.`,
+    dirRefused: (dir, reason) =>
+      `${dir} is not a package the plugin library can read, so nothing was sent: ${reason}`,
+    dirNotPlugin: (dir) =>
+      `${dir} is not a PenguinHarness plugin: it carries neither skills/ nor hooks/ nor MCP servers (penguin.mcp_servers) nor the ifaces.json of server modules. Nothing was sent.`,
+    dirTooLarge: (dir) =>
+      `${dir} exceeds what a plugin package may hold (2000 files, 5MB per file, 50MB in all, a 14MB zip). Nothing was sent.`,
+    uploading: (name, version, files) => `Uploading ${name} ${version} (${files} files)…`,
+    overwriteHint: () => "Re-run with --overwrite to replace it.",
+    listedOnly: (specifier, projectId) =>
+      `${specifier} ships with this server; listed for Project ${projectId}.`,
+    libraryNext: () =>
+      "It is in the plugin library: install it on an agent from the Plugins page (Manage installs).",
+    mcpServerLine: (name, transport, target) => `MCP server: ${name} (${transport}) ${target}`,
+    modulesLoaded: (projectId) => `Listed for Project ${projectId} on this server and loaded.`,
+    restartNext: () => "Listed; restart the server to load it.",
+    removed: (name) => `Removed ${name}.`,
   },
   cost: {
     desc: "Show token usage and cost (summary card by default; --by prints a grouped table)",
@@ -1264,6 +1514,31 @@ const en: Messages = {
     colLastFired: () => "LAST FIRED",
     colStatus: () => "STATUS",
   },
+  benchmark: {
+    desc: "Bring Benchmark packages into the Project's Evaluation Center",
+    importDesc:
+      "Import a Benchmark package (a folder holding benchmark_config.toml and its CASE-* folders, or a zip of one) through the server, which checks it as it checks an uploaded zip",
+    overwrite:
+      "Replace a Benchmark of the same id whole: its evaluation records and run results are deleted",
+    originUrl:
+      "The repository folder link the package was fetched from, as given (with --origin-ref and --origin-path)",
+    originRef: "The 40-character commit that link was resolved to",
+    originPath: "The folder inside the repository",
+    originIncomplete: () =>
+      "--origin-url, --origin-ref and --origin-path go together: give all three, or none.",
+    missing: (p) => `Nothing at ${p}: give a Benchmark package folder or its zip.`,
+    unsupported: (p) => `${p} is neither a folder nor a file.`,
+    tooManyFiles: (p, limit) =>
+      `${p} holds more than ${limit} files, the most a Benchmark package may hold.`,
+    fileTooLarge: (file, mb) =>
+      `${file} is larger than ${mb}MB, the most one file of a Benchmark package may be.`,
+    tooLarge: (p, mb) => `${p} holds more than ${mb}MB, the most a Benchmark package may hold.`,
+    zipTooLarge: (p, mb) => `${p} is larger than ${mb}MB zipped, the most an import takes.`,
+    exists: (id, projectId) =>
+      `Benchmark ${id} already exists in Project ${projectId}. To replace it, run the command again with --overwrite: its evaluation records and run results are deleted with it.`,
+    imported: (id, version, cases, projectId) =>
+      `Imported Benchmark ${id}${version ? ` v${version}` : ""} (${cases} ${cases === 1 ? "case" : "cases"}) into Project ${projectId}.`,
+  },
   org: {
     desc: "Company mode: manage an organization (employees, desks, calendar, tickets, channels, finance)",
     lsDesc: "List the project's organizations",
@@ -1276,6 +1551,10 @@ const en: Messages = {
       "Employ an Agent: an existing one (--agent-id) or a new one (--new-agent), under --reports-to",
     employeeDesc: "Manage employees",
     employeeSetDesc: "Update an employee's entry in the tree (only the given fields change)",
+    employeeAvatarDesc:
+      "Set or clear an employee's avatar (the employee defaults to PENGUIN_AGENT_ID, so an employee can set its own)",
+    avatarFile: "Image file to use: PNG, JPEG or WebP, at most about 96 KiB",
+    avatarClear: "Remove the avatar",
     leaveDesc: "Remove an employee from the organization (not the CEO); the Agent itself stays",
     deskDesc: "Desk sessions (one standing session per employee)",
     deskShowDesc: "The employee's desk session id and Workspace (opens the desk if it has none)",
@@ -1338,6 +1617,8 @@ const en: Messages = {
       "Extra library plugins for the new Agent, comma-separated (added to agent-company,agent-development)",
     title: "Job title",
     reportsTo: "Agent id of the manager",
+    employeeName:
+      "What the organization calls the employee — any language, works after @ like the id; an empty value clears it",
     employeeWorkspace:
       "Workspace: a sub-directory of the shared workspace (. = all of it) or an absolute path, written as given",
     hireWorkspace:
@@ -1413,6 +1694,15 @@ const en: Messages = {
     hired: (agentId, title, reportsTo) =>
       `Employee ${agentId} hired as ${title}${reportsTo !== null ? `, reporting to ${reportsTo}` : ""}.`,
     employeeUpdated: (agentId) => `Employee ${agentId} updated.`,
+    avatarNeedsOne: () => "Give exactly one of --file <path> and --clear.",
+    avatarNoAgent: () =>
+      "Name the employee: pass <agent_id>, or run inside a desk or ticket session (PENGUIN_AGENT_ID).",
+    avatarUnreadable: (file, reason) => `Cannot read ${file}: ${reason}`,
+    avatarFormat: (file) => `${file} is not a PNG, JPEG or WebP image.`,
+    avatarTooLarge: (file, kib, maxKib) =>
+      `${file} is ${kib} KiB; an avatar is at most ${maxKib} KiB. Scale it down (256×256 is plenty) and try again.`,
+    avatarSet: (agentId) => `Avatar of ${agentId} set.`,
+    avatarCleared: (agentId) => `Avatar of ${agentId} removed.`,
     left: (agentId) => `Employee ${agentId} left the organization.`,
     desk: (agentId, sessionId, workspace, openedAt, created) =>
       `Desk of ${agentId}: session ${sessionId} (workspace ${workspace}, opened ${openedAt})${created ? " — opened just now" : ""}`,
@@ -1697,16 +1987,16 @@ const en: Messages = {
     httpError: (status, code, message) =>
       `Server error ${status} (${code})${message ? `: ${message}` : ""}`,
     sessionNotFound: (ref, projectId) =>
-      `No session matching "${ref}" in project ${projectId} (try \`penguin ls\`).`,
+      `No session matching "${ref}" in project ${projectId} (try \`penguin session ls\`).`,
     sessionAmbiguous: (ref, candidates) =>
       `"${ref}" matches ${candidates.length} sessions:\n  ${candidates.join("\n  ")}\nUse a longer fragment or the full id.`,
     streamLost: (detail) => `Lost the server stream and reconnecting failed: ${detail}`,
     streamResynced: () =>
-      "[stream] reconnected past the server's replay buffer; some output may be missing here (penguin logs shows the full history)",
+      "[stream] reconnected past the server's replay buffer; some output may be missing here (penguin session log shows the full history)",
     timeoutInvalid: (value) =>
       `Invalid --timeout value "${value}": expected 30s, 5m, 2h, or a bare number of seconds.`,
     stillRunning: (shortId) =>
-      `[still running] session ${shortId} continues on the server — follow with \`penguin logs -f ${shortId}\` or poll with \`penguin input ${shortId}\``,
+      `[still running] session ${shortId} continues on the server — follow with \`penguin session log -f ${shortId}\` or poll with \`penguin session input ${shortId}\``,
     callerDefaultsFailed: (sessionId) =>
       `[caller context] could not read calling session ${sessionId}; using the plain defaults`,
     latestSession: (sessionId) => `[latest] session ${sessionId}`,
@@ -2088,6 +2378,7 @@ const zh: Messages = {
     timeout:
       "最长等待时长（30s / 5m / 2h，或纯数字秒数）；到时脱开、任务继续在服务端运行（退出码 0）",
     latestAgentId: "省略 session id 时，取哪个 Agent 的最近一次会话",
+    titleInvalid: (length, max) => `--title 须为 1–${max} 个字符（实际 ${length} 个）。`,
   },
   usage: {
     missingArgument: (name) => `缺少必填参数 <${name}>`,
@@ -2117,7 +2408,7 @@ const zh: Messages = {
     addMaxTokens:
       "该模型的最大输出长度（正整数）；设置后覆盖 Agent 的 max_tokens，缺省沿用——小上下文模型建议调低",
     addClientType:
-      "MMSP 客户端协议（如 openai-chat）：带 --model-id 为该模型自己的，否则为分组的；模型没有自己的即跟随分组，分组也没有即由 MMSP 按 id 路由（custom 与自建分组的新模型在分组未设协议时取 openai-chat）",
+      "MMSP 客户端协议（openai-responses、ant-messages、openai-chat、google-genai 或 mmsp，或厂商的官方客户端，如 google-official）：带 --model-id 为该模型自己的，否则为分组的；模型没有自己的即跟随分组，分组也没有即由 MMSP 按 id 路由（custom 与自建分组的新模型在分组未设协议时取 openai-chat）",
     addClearClientType: "清除已存的协议：带 --model-id 为该模型自己的，否则为分组的",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",
@@ -2152,11 +2443,15 @@ const zh: Messages = {
     message: "本次 Task 的 Prompt",
     goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
     session: "复用既有 Session（完整 id 或唯一片段，如末尾 8 位十六进制）",
-    source: "把新建会话标记为 Benchmark 评估创建（`benchmark`）；Web App 将其归入「评估任务」子夹",
     background: "提交任务后立即退出，打印 session id",
+    title:
+      "为 Session 命名（手动重命名；自动生成的标题不会覆盖它；配合 --session 时重命名被复用的 Session）",
     sessionNoOverride: () =>
-      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider、--source 同时使用（均沿用该 Session；如需换模型，在 penguin chat --resume 内用 /switch-model，会先压缩上下文）。",
-    sourceInvalid: (value) => `无效的 --source 取值 "${value}"。唯一可用取值为 benchmark。`,
+      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider 同时使用（均沿用该 Session；如需换模型，在 penguin chat --resume 内用 /switch-model，会先压缩上下文）。",
+    sourceInvalid: (value) =>
+      `无效的 --source 取值 "${value}"。penguin run 不再接受 --source：它创建的每个会话都是 CLI 会话。`,
+    sourceIgnored: () =>
+      "--source benchmark 已不再需要，已忽略：penguin run 创建的每个会话都是 CLI 会话，列在 Web App 的「后台会话」折叠夹中。",
     timeoutWithBackground: () => "--timeout 限定等待，而 --background 不等待：二者去其一。",
   },
   chat: {
@@ -2185,12 +2480,20 @@ const zh: Messages = {
     message: "消息文本（省略时改为轮询该会话的最近助手回复）",
     noReplyYet: () => "（还没有助手回复）",
   },
-  logs: {
+  session: {
+    desc: "管理 Project 的会话：列出会话、查看历史、发送消息、重命名",
+    renameDesc: "设置会话标题（手动重命名；自动生成的标题不会覆盖它）",
+    renameSessionId:
+      "要重命名的会话，完整 id 或唯一片段（如末尾 8 位十六进制；缺省 PENGUIN_SESSION_ID，再缺省取当前 Agent 最近一次会话）",
+    renameTitle: "新标题",
+    renamed: (sessionId, title) => `已将 ${sessionId} 重命名为「${title}」`,
+  },
+  log: {
     desc: "渲染会话的历史消息（省略 session id 即取当前 Agent 最近一次会话）",
     tail: "只显示最后 <n> 条",
     follow: "渲染历史后继续跟随实时输出流",
     tailInvalid: (value) => `--tail 值「${value}」无效：应为正整数。`,
-    timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 logs 不等待。",
+    timeoutNeedsFollow: () => "--timeout 只与 -f/--follow 搭配：不跟随时 session log 不等待。",
   },
   agent: {
     desc: "管理 Project 的 Agent",
@@ -2205,6 +2508,53 @@ const zh: Messages = {
     colName: () => "名称",
     colSessions: () => "会话数",
     colDescription: () => "描述",
+    apiDesc: "管理 Agent 的对外 API：开关、无密钥访问、审批模式与密钥",
+    apiStatusDesc: "查看 Agent 的 API 设置、访问地址与服务器总开关",
+    apiEnableDesc: "开启 Agent 的 API 访问",
+    apiDisableDesc: "关闭 Agent 的 API 访问（设置与密钥保留）",
+    apiSetDesc: "更改无密钥访问或审批模式，不改变开关",
+    apiOpen: "允许无密钥访问：任何能访问服务器的程序都能与该 Agent 对话",
+    apiNoOpen: "要求密钥",
+    apiApprove:
+      "新建 API 会话使用的审批模式：allow-all、deny-all、read-only 或 always-ask（需要确认时发给调用方）",
+    apiNothingToSet: () => "没有要更改的内容：请给出 --open、--no-open 或 --approve <mode>。",
+    apiKeysDesc: "管理 Agent 的 API 密钥",
+    apiKeysLsDesc: "列出 Agent 的 API 密钥",
+    apiKeysCreateDesc: "新建 API 密钥；密钥只输出一次，单独占据 stdout",
+    apiKeysRmDesc: "删除 API 密钥；使用它的程序此后会被拒绝",
+    apiKeyName: "密钥名称（1–64 个字符）",
+    apiServerDesc: "为整个服务器开启或关闭 Agent API（仅管理员）",
+    apiServerStateInvalid: (value) => `状态「${value}」无效：应为 on 或 off。`,
+    apiStatusTitle: (agentRef) => `${agentRef} 的 Agent API`,
+    apiFieldEnabled: () => "已开启",
+    apiFieldOpen: () => "无密钥访问",
+    apiFieldApproval: () => "审批模式",
+    apiFieldBaseUrl: () => "Base URL",
+    apiFieldAgentId: () => "Agent ID",
+    apiFieldKeys: () => "密钥数",
+    apiFieldServer: () => "服务器总开关",
+    apiYes: () => "是",
+    apiNo: () => "否",
+    apiServerOn: () => "开",
+    apiServerOff: () => "关（所有 API 请求均被拒绝）",
+    apiColKeyId: () => "ID",
+    apiColKeyName: () => "名称",
+    apiColPrefix: () => "前缀",
+    apiColCreated: () => "创建时间",
+    apiColLastUsed: () => "最近使用",
+    apiKeyNever: () => "从未",
+    apiKeysEmpty: (agentRef) => `${agentRef} 还没有 API 密钥。`,
+    apiKeyCreated: (name, prefix, agentRef) =>
+      `已为 ${agentRef} 新建密钥「${name}」（${prefix}…）。密钥只在上方显示这一次，请立即保存。`,
+    apiKeyDeleted: (keyId, agentRef) => `已删除 ${agentRef} 的密钥 ${keyId}。`,
+    apiServerSet: (on) =>
+      on
+        ? "这台服务器的 Agent API 已开启。"
+        : "这台服务器的 Agent API 已关闭：所有请求均被拒绝，各 Agent 的设置与密钥保留。",
+    apiSignInRequired: () =>
+      "请先登录：`penguin auth login`（或在服务器本机运行 `penguin auth token`）。本机 API token 不能改变 Agent 的对外暴露。",
+    apiOpenWarning: () =>
+      "警告：已开启无密钥访问。任何能访问此服务器地址的程序现在都无需密钥即可与该 Agent 对话，用的是本 Project 的模型与凭据。仅建议在只监听本机的服务器上保持开启；`--no-open` 可关闭。",
   },
   project: {
     desc: "管理 Project",
@@ -2212,6 +2562,42 @@ const zh: Messages = {
     colId: () => "ID",
     colName: () => "名称",
     colRole: () => "角色",
+  },
+  plugin: {
+    desc: "管理服务端安装的插件（管理员）",
+    listDesc: "列出 Project 启用的服务端模块，以及服务端安装的 Skill / 钩子 / MCP Server 插件",
+    installDesc:
+      "把插件安装到服务端：npm 包名（@scope/name、name@1.2.3）、指向 git 仓库或 tarball 的 https 链接，或本地插件包目录（先用插件库的读取器校验，去掉 node_modules 打成 zip 后上传）。服务端模块插件会立即载入，正在进行的 Agent 运行会被中止",
+    overwriteOpt: "替换服务端上已安装的该包的其他版本（仅用于插件包目录）",
+    removeDesc: "从 Project 中移除插件；没有其他 Project 使用时一并从服务端删除",
+    colName: () => "插件",
+    colKind: () => "类型",
+    colState: () => "状态",
+    kindModules: () => "服务端模块",
+    kindLibrary: () => "技能 / 钩子 / MCP",
+    active: () => "运行中",
+    pending: () => "待重启",
+    failed: (reason) => `加载失败：${reason}`,
+    elsewhere: () => "只在其他机器上",
+    none: () => "服务端没有安装插件。",
+    installed: (name, version) =>
+      version === null ? `已安装 ${name}。` : `已安装 ${name} ${version}。`,
+    unchanged: (name, version) =>
+      `服务端已安装 ${name}${version === null ? "" : ` ${version}`}，没有任何改动。`,
+    dirRefused: (dir, reason) => `插件库无法读取 ${dir} 中的包，未发送任何内容：${reason}`,
+    dirNotPlugin: (dir) =>
+      `${dir} 不是 PenguinHarness 插件：既没有 skills/、hooks/ 与 MCP Server（penguin.mcp_servers），也没有服务端模块的 ifaces.json。未发送任何内容。`,
+    dirTooLarge: (dir) =>
+      `${dir} 超出插件包的上限（2000 个文件、单个文件 5MB、合计 50MB、zip 14MB）。未发送任何内容。`,
+    uploading: (name, version, files) => `正在上传 ${name} ${version}（${files} 个文件）…`,
+    overwriteHint: () => "加上 --overwrite 重新运行即可替换。",
+    listedOnly: (specifier, projectId) =>
+      `${specifier} 随本服务端自带，已为 Project ${projectId} 启用。`,
+    libraryNext: () => "它已进入插件库：请在插件页通过「管理安装」把它安装到 Agent 上。",
+    mcpServerLine: (name, transport, target) => `MCP Server：${name}（${transport}）${target}`,
+    modulesLoaded: (projectId) => `已在本服务端为 Project ${projectId} 启用并载入。`,
+    restartNext: () => "已启用；重启服务端后载入。",
+    removed: (name) => `已移除 ${name}。`,
   },
   cost: {
     desc: "查看 Token 用量与成本（缺省打印汇总卡片；--by 打印分组表格）",
@@ -2266,6 +2652,27 @@ const zh: Messages = {
     colLastFired: () => "最近触发",
     colStatus: () => "状态",
   },
+  benchmark: {
+    desc: "把 Benchmark 包导入 Project 的评估中心",
+    importDesc:
+      "经服务端导入一个 Benchmark 包（含 benchmark_config.toml 与各个 CASE-* 文件夹的文件夹，或它的 zip），服务端按检查上传 zip 的规则检查它",
+    overwrite: "整体替换同 id 的 Benchmark：它的评估记录与运行结果会被删除",
+    originUrl: "包所取自的仓库文件夹链接，按原样填写（与 --origin-ref、--origin-path 一起给出）",
+    originRef: "该链接解析到的 40 位提交号",
+    originPath: "仓库里的文件夹路径",
+    originIncomplete: () =>
+      "--origin-url、--origin-ref 与 --origin-path 要么三个都给，要么都不给。",
+    missing: (p) => `${p} 不存在：请给出 Benchmark 包的文件夹或它的 zip。`,
+    unsupported: (p) => `${p} 既不是文件夹，也不是文件。`,
+    tooManyFiles: (p, limit) => `${p} 里的文件超过 ${limit} 个，超出了 Benchmark 包的上限。`,
+    fileTooLarge: (file, mb) => `${file} 超过 ${mb}MB，超出了 Benchmark 包单个文件的上限。`,
+    tooLarge: (p, mb) => `${p} 合计超过 ${mb}MB，超出了 Benchmark 包的上限。`,
+    zipTooLarge: (p, mb) => `${p} 打包后超过 ${mb}MB，超出了导入的上限。`,
+    exists: (id, projectId) =>
+      `Project ${projectId} 里已有 Benchmark ${id}。如要替换它，请加 --overwrite 再运行一次：它的评估记录与运行结果会一并删除。`,
+    imported: (id, version, cases, projectId) =>
+      `已把 Benchmark ${id}${version ? ` v${version}` : ""}（${cases} 题）导入 Project ${projectId}。`,
+  },
   org: {
     desc: "公司模式：管理组织（员工、工位、日程、工单、频道、财务）",
     lsDesc: "列出 Project 的组织",
@@ -2275,6 +2682,9 @@ const zh: Messages = {
     hireDesc: "招募员工：既有 Agent（--agent-id）或新建 Agent（--new-agent），汇报给 --reports-to",
     employeeDesc: "管理员工",
     employeeSetDesc: "更新员工树条目（只改动给出的字段）",
+    employeeAvatarDesc: "设置或清除员工头像（员工缺省为 PENGUIN_AGENT_ID，员工可以给自己设）",
+    avatarFile: "要用的图片文件：PNG、JPEG 或 WebP，最大约 96 KiB",
+    avatarClear: "清除头像",
     leaveDesc: "将员工移出组织（CEO 不可）；Agent 本身保留",
     deskDesc: "工位会话（每位员工一个常设会话）",
     deskShowDesc: "员工的工位会话 id 与 Workspace（尚无工位时开一个）",
@@ -2326,6 +2736,7 @@ const zh: Messages = {
     skills: "新 Agent 额外的插件库插件，逗号分隔（在 agent-company,agent-development 之上追加）",
     title: "头衔",
     reportsTo: "上级的 Agent id",
+    employeeName: "组织里对这位员工的称呼——可以是中文，和 id 一样可用在 @ 后面；传空值即清除",
     employeeWorkspace: "Workspace：公共工作区的子目录（. 即整个工作区）或绝对路径，原样写入",
     hireWorkspace:
       "Workspace：公共工作区的子目录或绝对路径，原样写入（缺省为以该员工命名的子目录）",
@@ -2393,6 +2804,15 @@ const zh: Messages = {
     hired: (agentId, title, reportsTo) =>
       `已招募员工 ${agentId}，头衔 ${title}${reportsTo !== null ? `，汇报给 ${reportsTo}` : ""}。`,
     employeeUpdated: (agentId) => `已更新员工 ${agentId}。`,
+    avatarNeedsOne: () => "--file <路径> 与 --clear 二者恰好给一个。",
+    avatarNoAgent: () =>
+      "请指明员工：传入 <agent_id>，或在工位 / 工单 Session 里运行（PENGUIN_AGENT_ID）。",
+    avatarUnreadable: (file, reason) => `无法读取 ${file}：${reason}`,
+    avatarFormat: (file) => `${file} 不是 PNG、JPEG 或 WebP 图片。`,
+    avatarTooLarge: (file, kib, maxKib) =>
+      `${file} 有 ${kib} KiB；头像最大 ${maxKib} KiB。请缩小后再试（256×256 足够）。`,
+    avatarSet: (agentId) => `已设置 ${agentId} 的头像。`,
+    avatarCleared: (agentId) => `已清除 ${agentId} 的头像。`,
     left: (agentId) => `员工 ${agentId} 已离开组织。`,
     desk: (agentId, sessionId, workspace, openedAt, created) =>
       `${agentId} 的工位：会话 ${sessionId}（Workspace ${workspace}，开于 ${openedAt}）${created ? "——刚刚新开" : ""}`,
@@ -2667,15 +3087,15 @@ const zh: Messages = {
     httpError: (status, code, message) =>
       `服务器错误 ${status}（${code}）${message ? `：${message}` : ""}`,
     sessionNotFound: (ref, projectId) =>
-      `Project ${projectId} 中没有匹配「${ref}」的会话（可用 \`penguin ls\` 查看）。`,
+      `Project ${projectId} 中没有匹配「${ref}」的会话（可用 \`penguin session ls\` 查看）。`,
     sessionAmbiguous: (ref, candidates) =>
       `「${ref}」匹配到 ${candidates.length} 个会话：\n  ${candidates.join("\n  ")}\n请使用更长的片段或完整 id。`,
     streamLost: (detail) => `与服务器的输出流断开且重连失败：${detail}`,
     streamResynced: () =>
-      "[stream] 重连时已超出服务端回放缓冲，此处可能缺少部分输出（penguin logs 可查看完整历史）",
+      "[stream] 重连时已超出服务端回放缓冲，此处可能缺少部分输出（penguin session log 可查看完整历史）",
     timeoutInvalid: (value) => `--timeout 值「${value}」无效：应为 30s、5m、2h 或纯数字秒数。`,
     stillRunning: (shortId) =>
-      `[仍在运行] 会话 ${shortId} 继续在服务端执行——可用 \`penguin logs -f ${shortId}\` 跟随，或 \`penguin input ${shortId}\` 轮询`,
+      `[仍在运行] 会话 ${shortId} 继续在服务端执行——可用 \`penguin session log -f ${shortId}\` 跟随，或 \`penguin session input ${shortId}\` 轮询`,
     callerDefaultsFailed: (sessionId) =>
       `[调用方上下文] 无法读取调用方会话 ${sessionId}，改用普通缺省值`,
     latestSession: (sessionId) => `[latest] 会话 ${sessionId}`,

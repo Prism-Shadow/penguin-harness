@@ -115,14 +115,21 @@ Agent 可以在你自己的 Chrome 里工作，而不是在内置浏览器里：
 
 ### 安装扩展
 
-扩展随每个版本以 zip 文件发布，之后会上架 Chrome Web Store。
+推荐从 Chrome 应用商店（Chrome Web Store）安装，Chrome 会自动更新扩展：
+
+1. 在 Chrome 应用商店打开 [PenguinHarness Browser](https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp)，选择**添加至 Chrome**。
+2. 在扩展菜单里把 **PenguinHarness Browser** 固定到工具栏，它的图标会显示是否已连接。
+
+无法访问 Chrome 应用商店时，改用随每个版本发布的 zip 文件：
 
 1. 下载 [penguin-browser-extension.zip](https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/penguin-browser-extension.zip) 并解压。
 2. 在 Chrome 中打开 `chrome://extensions`，打开右上角的**开发者模式**。
 3. 选择**加载已解压的扩展程序**，选中解压出的文件夹。
-4. 在扩展菜单里把 **PenguinHarness Browser** 固定到工具栏，它的图标会显示是否已连接。
+4. 同上，把扩展固定到工具栏。
 
-随后 Chrome 会打开扩展的配对页。Chrome 每次启动时会提醒你有处于开发者模式的扩展，扩展照常工作。更新时，把新版本解压覆盖到同一个文件夹，再选择扩展卡片上的重新加载图标。
+Chrome 每次启动时会提醒你有处于开发者模式的扩展，扩展照常工作。更新时，把新版本解压覆盖到同一个文件夹，再选择扩展卡片上的重新加载图标。
+
+无论哪种方式，装好后 Chrome 都会打开扩展的配对页。两种方式装的是同一个扩展 ID，Chrome 中只能保留其一：从 zip 改为商店安装时，先在 `chrome://extensions` 中移除已加载的那份，再从商店安装并重新配对。
 
 扩展的页面缺省为英文，不随 Chrome 的语言变化。配对页顶部和弹窗底部的 **EN / 中文** 可切换语言，两个页面和工具栏图标的提示文字随即一同切换。
 

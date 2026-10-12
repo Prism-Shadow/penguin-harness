@@ -17,6 +17,7 @@ import type { ChannelConfig, TicketDoc } from "../../organization/files.js";
 import { parseChannelMessageLine, serializeChannelMessageLine } from "../../organization/files.js";
 import { agentPrincipal, parsePrincipal, principalAgentId } from "../../organization/principal.js";
 import { DEFAULT_CHANNEL_ID } from "../../organization/paths.js";
+import type { TicketFile } from "../../organization/store.js";
 import { zonedDate } from "../../organization/zoned.js";
 import { latestSlotAt, slotInWindow } from "../schedule-file.js";
 import { budgetLine, computeSpend, pausedEmployees } from "./budget.js";
@@ -58,20 +59,35 @@ function recordError(
   });
 }
 
-/** Every ticket file, parsed; an unparsable file or a duplicated id is reported and left out. */
+/** Every ticket file, parsed; an unparsable file is reported and left out, a duplicated id keeps its newest copy (the rest reported). */
 export async function listTickets(deps: OrgDeps, org: LoadedOrg): Promise<TicketListing> {
   const files = await deps.store.listTickets(org.dir);
-  const seen = new Map<string, number>();
-  for (const f of files) seen.set(f.ticketId, (seen.get(f.ticketId) ?? 0) + 1);
+  // A crash between moveTicket's write of the new column and its unlink of the old one
+  // leaves the id in two columns. Dropping both used to take the ticket off the board
+  // until someone edited files by hand; the newest file is the move's target (the new
+  // column is written before the old one is removed), so that copy is kept and the stale
+  // one is reported instead.
+  const keep = new Map<string, TicketFile>();
+  const stale = new Map<string, TicketFile[]>();
+  for (const f of files) {
+    const current = keep.get(f.ticketId);
+    if (current === undefined) {
+      keep.set(f.ticketId, f);
+    } else if (f.mtimeMs >= current.mtimeMs) {
+      stale.set(f.ticketId, [...(stale.get(f.ticketId) ?? []), current]);
+      keep.set(f.ticketId, f);
+    } else {
+      stale.set(f.ticketId, [...(stale.get(f.ticketId) ?? []), f]);
+    }
+  }
   const tickets: LoadedTicket[] = [];
   const invalid: Array<{ path: string; error: string }> = [];
-  for (const f of files) {
-    if ((seen.get(f.ticketId) ?? 0) > 1) {
+  for (const f of keep.values()) {
+    for (const s of stale.get(f.ticketId) ?? []) {
       invalid.push({
-        path: f.relPath,
-        error: `ticket id ${f.ticketId} appears in more than one column`,
+        path: s.relPath,
+        error: `ticket id ${f.ticketId} appears in more than one column; keeping the newest copy (${f.relPath})`,
       });
-      continue;
     }
     if (!f.parsed.ok) {
       invalid.push({ path: f.relPath, error: f.parsed.error });
@@ -354,6 +370,21 @@ async function reconcileCalendar(
       // back on the queue in their order, so the slot that does fire still carries them.
       for (const row of notices) deps.cache.queueDeskNotice(row);
       mark("error");
+      // A one-shot event unwinds its consumed slot, or the failure would be the last word:
+      // this dispatch is the only thing that drains the desk notices just re-queued, and a
+      // consumed one-shot slot never comes again. Retrying is safe — the run never started —
+      // and a persistent failure keeps surfacing as mark("error") every pass instead of
+      // stranding the notices with nothing on the errors panel. A periodic event needs no
+      // unwind: its next slot fires regardless.
+      if (def.periodMs === undefined) {
+        deps.cache.markCalendarSlot(
+          key.projectId,
+          key.orgId,
+          key.agentId,
+          key.name,
+          state.lastSlotMs,
+        );
+      }
       continue;
     }
     deps.cache.markCalendarFired(

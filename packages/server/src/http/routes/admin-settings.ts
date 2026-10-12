@@ -3,14 +3,18 @@
  * GET|PUT /api/admin/settings — the server-global settings stored in server_settings:
  * the proxy settings (the "application uses the proxy" and "agent environment uses the
  * proxy" switches and their shared explicit address) and the upload limits (the
- * per-file and per-message attachment caps, in whole MB), the company-mode switch, and the
- * switch that lets users drive their own Chrome through the extension.
+ * per-file and per-message attachment caps, in whole MB), the company-mode switch, the
+ * switch that lets users drive their own Chrome through the extension, and the Agent API
+ * switch.
  * A PUT applies immediately: everything is validated first (a rejected request writes
  * nothing), then the persisted values are written, then the process dispatcher is
  * rebuilt so new outbound connections follow the change without a restart (the agent
  * switch needs no push — the command-subprocess policy getter re-reads the repo at
  * every spawn). The upload limits need no push either, for the same reason: the
  * attachment validators and the request body cap both read the repo per request.
+ * A PUT carrying `agentApiEnabled` takes a person's sign-in: the local API token is refused
+ * with 403 `human_required`, and nothing in that body is written. The token may change every
+ * other field.
  *
  * GET /api/admin/settings/proxy-probe names the model provider hosts the reachability probe
  * would request; POST .../proxy-probe/:provider measures one of them — unauthenticated, see
@@ -23,6 +27,7 @@ import type {
   ServerSettingsResponse,
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
+import { requireHuman } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { optionalBoolean, readJson } from "../validate.js";
 import type { ProxyControl } from "../../hmr/capabilities.js";
@@ -95,6 +100,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
       ...deps.serverSettingsRepo.getAttachmentLimitsMb(),
       companyMode: deps.serverSettingsRepo.getCompanyMode(),
       browserExtensionsEnabled: deps.serverSettingsRepo.getBrowserExtensionsEnabled(),
+      agentApiEnabled: deps.serverSettingsRepo.getAgentApiEnabled(),
     },
   });
 
@@ -102,12 +108,17 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
 
   app.put("/", async (c) => {
     const body = await readJson(c);
+    // The Agent API switch decides whether any Agent can be reached from outside, so it takes a
+    // person's sign-in, never the local API token every tool subprocess holds (see
+    // requireHuman). Refused before any field is written.
+    if (body.agentApiEnabled !== undefined) requireHuman(c);
     // Validate every provided field before writing any: a partial PUT with one invalid
     // field must leave the others untouched too.
     const proxyForApp = optionalBoolean(body, "proxyForApp");
     const proxyForAgent = optionalBoolean(body, "proxyForAgent");
     const companyMode = optionalBoolean(body, "companyMode");
     const browserExtensionsEnabled = optionalBoolean(body, "browserExtensionsEnabled");
+    const agentApiEnabled = optionalBoolean(body, "agentApiEnabled");
     const proxyUrlProvided = body.proxyUrl !== undefined;
     const proxyUrl = proxyUrlProvided ? parseProxyUrl(body.proxyUrl) : null;
     const attachmentMaxMb =
@@ -140,6 +151,9 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     if (browserExtensionsEnabled !== undefined) {
       deps.serverSettingsRepo.setBrowserExtensionsEnabled(browserExtensionsEnabled);
     }
+    // Read per request by the /api/amsp/v1 gate: off refuses every Agent API call from the next
+    // request on (403 agent_api_disabled); each Agent's switch, approval mode and keys stay.
+    if (agentApiEnabled !== undefined) deps.serverSettingsRepo.setAgentApiEnabled(agentApiEnabled);
     if (proxyForApp !== undefined) deps.serverSettingsRepo.setProxyForApp(proxyForApp);
     if (proxyForAgent !== undefined) deps.serverSettingsRepo.setProxyForAgent(proxyForAgent);
     if (proxyUrlProvided) deps.serverSettingsRepo.setProxyUrl(proxyUrl);

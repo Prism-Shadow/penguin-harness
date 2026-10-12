@@ -235,6 +235,24 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.modelsGroupSort",
+    scope: "browser",
+    why: "How each model group orders its models, as differences from price low to high; a view preference, and a user-defined group name is inert where no Project has it.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.pluginsGroupBy",
+    scope: "browser",
+    why: "How the Plugins page groups its cards (category, status, contents or none) — the MODE, valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.pluginsGroupsFolded",
+    scope: "browser",
+    why: "Which of the Plugins page's sections are folded, keyed by grouping and category, status or contents id; those ids ship with the build and name nothing on the server.",
+  },
+  {
+    kind: "exact",
     key: "penguin.steerMode",
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",
@@ -258,6 +276,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.chatDrafts.",
     scope: "install",
     why: "Parked draft conversations — the same contents as an active draft, kept as a list.",
+  },
+  {
+    kind: "family",
+    key: "penguin.channelDraft.",
+    scope: "install",
+    why: "A channel composer's unsent text, keyed by user, Project, organization and channel — all four name things that live in one data root.",
   },
   {
     kind: "family",
@@ -330,6 +354,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.sidebarPinnedGroups.",
     scope: "install",
     why: "Pinned sidebar groups, same key space.",
+  },
+  {
+    kind: "family",
+    key: "penguin.a2uiDraft.",
+    scope: "install",
+    why: "A reply's A2UI form or multi-select answers in progress, keyed by Session id: a new root has no such Session.",
   },
   {
     kind: "exact",

@@ -58,8 +58,9 @@ jobs:
           # workflows this change does not touch are a separate conversation.
           ./actionlint -shellcheck=
 
-  # A plugin's files changed without its plugin.json version moving: installed copies would
-  # never learn about the change (the update flag reads the version). Compared against the
+  # A plugin's installable part changed without its dated version moving — a skill's SKILL.md
+  # `version`, or the hook package's `penguin.hooks.version` in package.json: installed copies
+  # would never learn about the change (the update flag reads the version). Compared against the
   # pull request's base; a push has no base and the script passes on an empty one.
   plugin-versions:
     name: plugin versions
@@ -95,12 +96,12 @@ jobs:
       # release.yml does, so the dry run lists the real tarball.
       - name: Stage what the release stages
         run: |
-          for p in core server cli; do cp LICENSE "packages/$p/LICENSE"; done
+          for p in amsp core server cli; do cp LICENSE "packages/$p/LICENSE"; done
           rm -rf packages/server/web-dist
           cp -r packages/web/dist packages/server/web-dist
       - name: Pack the publishable packages
         run: |
-          for p in core server cli; do
+          for p in amsp core server cli; do
             echo "--- packages/$p"
             (cd "packages/$p" && npm pack --dry-run)
           done
@@ -159,7 +160,7 @@ jobs:
               pnpm --filter @prismshadow/penguin-web --filter @prismshadow/penguin-ui
               --filter @prismshadow/penguin-cli test
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/penguin-plugin-claude-code...,@prismshadow/penguin-plugin-discord-bot..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/penguin-plugin-claude-code...,@prismshadow/penguin-plugin-discord-bot...,@prismshadow/amsp..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server'
               --filter '!@prismshadow/penguin-web' --filter '!@prismshadow/penguin-ui'
@@ -228,7 +229,7 @@ jobs:
             tests: pnpm --filter @prismshadow/penguin-server test
             smoke: false
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/amsp..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
             smoke: true
@@ -289,7 +290,7 @@ jobs:
             build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/3
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/amsp..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
             # PENGUIN_MUST_RUN, as on ubuntu and macOS: the DSH live suite must run here

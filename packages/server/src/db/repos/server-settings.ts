@@ -38,6 +38,8 @@ const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
 const COMPANY_MODE_KEY = "companyMode";
 /** Key of the Chrome extension switch; default on (see getBrowserExtensionsEnabled). */
 export const BROWSER_EXTENSIONS_KEY = "browserExtensionsEnabled";
+/** Key of the Agent API switch; default on (see getAgentApiEnabled). */
+const AGENT_API_KEY = "agentApiEnabled";
 
 @Component()
 export class ServerSettingsRepo implements Settings {
@@ -193,5 +195,18 @@ export class ServerSettingsRepo implements Settings {
 
   setBrowserExtensionsEnabled(value: boolean): void {
     this.set(BROWSER_EXTENSIONS_KEY, JSON.stringify(value));
+  }
+
+  /**
+   * Whether external programs may reach Agents through the Agent API (default ON): only a stored
+   * `false` turns it off, so an unreadable row leaves the feature as it ships. Read per request
+   * by the `/api/amsp/v1` gate, so flipping it needs no restart.
+   */
+  getAgentApiEnabled(): boolean {
+    return this.get(AGENT_API_KEY) !== "false";
+  }
+
+  setAgentApiEnabled(value: boolean): void {
+    this.set(AGENT_API_KEY, JSON.stringify(value));
   }
 }

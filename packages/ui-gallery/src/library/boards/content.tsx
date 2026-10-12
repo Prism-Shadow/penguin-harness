@@ -5,8 +5,13 @@
  * blocks — all from the package. Code is highlighted by the highlighter the frame provides, as in
  * the app.
  *
- * The A2UI reply is live: a pick or a submit shows the text the app would put in the composer as
- * a toast, in the gallery's language, and its invalid block shows the fallback every surface does.
+ * The A2UI reply carries every block the catalog has, in each of its layouts: the four widgets
+ * (weather, clock, countdown, metrics), a choice as cards, as chips and as a multi-select, a form
+ * whose fields take a segmented control, toggle chips, a stepper and an input, a timeline of
+ * steps, two callouts, a diagram, and a block that cannot be drawn. It is live: the clock ticks
+ * and the countdown counts down, a pick or a submit shows the text the app would put in the
+ * composer as a toast, in the gallery's language, and the invalid block shows the fallback every
+ * surface does. The widgets' data is a fixed snapshot, as a model's would be.
  */
 import { useMemo } from "react";
 import {
@@ -74,10 +79,15 @@ const PATCH = `diff --git a/src/limits.ts b/src/limits.ts
  };
 `;
 
-/** The board's A2UI actions, one stable object per language: a fill shows up as a toast. */
+/** A fill shows up as a toast; the empty fill of "Other…" (a cleared composer) shows nothing. */
+const showFill = (text: string): void => {
+  if (text !== "") toastInfo(text);
+};
+
+/** The board's A2UI actions, one stable object per language. */
 const A2UI_ACTIONS: Readonly<Record<"zh" | "en", A2uiActions>> = {
-  zh: { interactive: true, fill: toastInfo, lang: "zh" },
-  en: { interactive: true, fill: toastInfo, lang: "en" },
+  zh: { interactive: true, fill: showFill, lang: "zh" },
+  en: { interactive: true, fill: showFill, lang: "en" },
 };
 
 /** A block the grammar refuses (no such type), the same in both languages. */

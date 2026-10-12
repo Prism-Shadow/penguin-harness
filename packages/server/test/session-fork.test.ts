@@ -3,6 +3,8 @@
  *
  * - A fork copies the history through the selected reply, snapshots the scratchpad, rewrites
  *   the local attachment markers to its own copy, and outlives the source's deletion.
+ * - A fork is a person's conversation (`user`), whatever kind its source was: a fork of a
+ *   `penguin run` (`cli`) Session lists as `user` and its Trace head records `user`.
  * - Forks of one source share a persistent number sequence, whatever reply they start from; a
  *   source with no title forks under a readable numbered fallback.
  * - A fork that fails after its row was committed removes the row and the cloned files.
@@ -120,7 +122,7 @@ describe("session fork", () => {
       system_prompt: `Session ${SID}; scratchpad ${modelVisiblePath(scratch)}`,
       agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
       workspace,
-      source: "schedule",
+      source: "cli",
     };
     await writeTraceFile(t.root, projectId, "default_agent", "2026-08-14", SID, 1, [
       at("2026-08-14T10:00:00.000Z", sessionMeta(meta)),
@@ -176,7 +178,7 @@ describe("session fork", () => {
       archived: false,
       hasTrace: true,
     });
-    expect(session.source).toBeUndefined();
+    expect(session.source).toBe("user");
 
     const forked = (await (
       await api.get(`/api/sessions/${session.sessionId}/messages`)
@@ -203,6 +205,8 @@ describe("session fork", () => {
     expect((forkMeta?.payload as SessionMetaPayload).session_id).toBe(session.sessionId);
     expect((forkMeta?.payload as SessionMetaPayload).system_prompt).toContain(session.sessionId);
     expect((forkMeta?.payload as SessionMetaPayload).system_prompt).not.toContain(SID);
+    // The head records what the fork is, so a restart reads it the same way.
+    expect((forkMeta?.payload as SessionMetaPayload).source).toBe("user");
 
     const forkScratch = path.join(
       scratchpadDir(t.root, projectId, "default_agent"),
@@ -381,6 +385,7 @@ describe("session fork", () => {
       system_prompt: `Session ${SID}; scratchpad ${modelVisiblePath(scratch)}`,
       agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
       workspace,
+      source: "user",
     };
     const compaction = [
       at(
@@ -463,6 +468,7 @@ describe("session fork", () => {
       system_prompt: `Session ${SID}`,
       agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
       workspace,
+      source: "user",
     };
     await writeTraceFile(t.root, projectId, "default_agent", "2026-08-15", SID, 2, [
       at("2026-08-15T10:00:00.000Z", sessionMeta(meta)),
@@ -544,6 +550,7 @@ describe("session fork", () => {
       system_prompt: `Session ${SID}; scratchpad ${modelVisiblePath(scratch)}`,
       agent_state: path.join(t.root, projectId, "agents", "default_agent", "agent_state"),
       workspace,
+      source: "user",
     };
     await writeTraceFile(t.root, projectId, "default_agent", "2026-08-14", SID, 2, [
       at("2026-08-14T10:01:05.000Z", sessionMeta(metaB)),

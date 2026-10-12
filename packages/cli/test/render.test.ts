@@ -417,6 +417,7 @@ describe("StreamRenderer", () => {
         system_prompt: "sp",
         agent_state: "/a",
         workspace: "/w",
+        source: "user",
       }),
     );
     // Two turns: request total 1500, 4000. Per-task token delta = 5500; session cumulative = 12000;

@@ -1,12 +1,19 @@
 /**
  * session-project.ts unit tests: the Project isolation of a deep-linked Session, the probe
- * key that scopes a failed lookup to its Project, and how the chat page settles which Session
- * the route names when the loaded list does not hold it.
+ * key that scopes a failed lookup to its Project, how the chat page settles which Session
+ * the route names when the loaded list does not hold it, and what it does once that is settled:
+ *
+ * - a Session on screen is shown, and one nobody has answered for yet is waited for;
+ * - a route naming no Session, a Session deleted from this page and one of another Project
+ *   (a Project switch) all open the latest conversation;
+ * - a Session the server says does not exist is owned up to in place, never replaced by
+ *   another conversation.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
   resolveRoutedSession,
+  routeSessionOutcome,
   sessionForProject,
   sessionProbeKey,
 } from "../src/features/chat/session-project";
@@ -67,5 +74,39 @@ describe("resolveRoutedSession", () => {
   it("ignores a fetched row for another id, and answers nothing without a route", () => {
     expect(resolveRoutedSession("session-a", [], other)).toBeNull();
     expect(resolveRoutedSession(null, [SESSION], SESSION)).toBeNull();
+  });
+});
+
+describe("routeSessionOutcome", () => {
+  const settled = {
+    shown: false,
+    pending: false,
+    routeSessionId: "session-a",
+    deletedHere: false,
+    missing: false,
+  };
+
+  it("shows a Session on screen, and waits for one nobody has answered for yet", () => {
+    expect(routeSessionOutcome({ ...settled, shown: true, missing: true })).toBe("show");
+    expect(routeSessionOutcome({ ...settled, pending: true })).toBe("wait");
+  });
+
+  it("opens the latest conversation when the route names no Session", () => {
+    expect(routeSessionOutcome({ ...settled, routeSessionId: null })).toBe("redirect");
+  });
+
+  it("opens the latest conversation after the one on screen was deleted from this page", () => {
+    // The lookup of a Session deleted here is never sent, so nothing says "missing"; and even
+    // a 404 that raced the delete does not turn it into a dead link.
+    expect(routeSessionOutcome({ ...settled, deletedHere: true })).toBe("redirect");
+    expect(routeSessionOutcome({ ...settled, deletedHere: true, missing: true })).toBe("redirect");
+  });
+
+  it("opens the latest conversation for a Session of another Project, as a Project switch leaves behind", () => {
+    expect(routeSessionOutcome(settled)).toBe("redirect");
+  });
+
+  it("says in place that a Session the server does not have is gone, rather than opening another", () => {
+    expect(routeSessionOutcome({ ...settled, missing: true })).toBe("notFound");
   });
 });

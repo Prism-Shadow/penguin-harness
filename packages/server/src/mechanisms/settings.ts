@@ -23,6 +23,8 @@ export abstract class Settings {
   abstract setCompanyMode(value: boolean): void;
   abstract getBrowserExtensionsEnabled(): boolean;
   abstract setBrowserExtensionsEnabled(value: boolean): void;
+  abstract getAgentApiEnabled(): boolean;
+  abstract setAgentApiEnabled(value: boolean): void;
   /** Hears every write, by key (a switch that must act at once, not on its next read). Returns the unsubscribe. */
   abstract watch(listener: (key: string) => void): () => void;
 }

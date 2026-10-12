@@ -771,7 +771,8 @@ describe("the themes' own faces (round 6)", () => {
   it("sets Console in Plex Sans, and the mono face only on code and technical marks", () => {
     // The owner's call (2026-09-30): IBM Plex Sans is Console's main face, chrome included, and
     // JetBrains Mono (in place of Commit Mono) is kept for code — `code` / `pre` in theme.css —
-    // and for the marks that are technical on purpose. No other Console recipe names it.
+    // and for the marks that are technical on purpose, a widget's reading among them
+    // (2026-10-04). No other Console recipe names it.
     expect(THEME_FONTS.geek).toEqual({
       latin: "IBM Plex Sans",
       cjk: "Noto Sans SC",
@@ -786,6 +787,7 @@ describe("the themes' own faces (round 6)", () => {
       ':root[data-theme="geek"] .ui-activity [data-slot="label"]',
       ':root[data-theme="geek"] .ui-notice::before',
       ':root[data-theme="geek"] .ui-chart text:is([data-part="axis"], [data-part="label"])',
+      ':root[data-theme="geek"] .ui-widget [data-figure]',
     ]);
   });
 

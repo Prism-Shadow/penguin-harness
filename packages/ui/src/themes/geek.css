@@ -535,7 +535,8 @@
    * `animate-spin` and `.ui-frame` redraw a card's box.
    *
    * Console gives a recipe to: eyebrow (its ink; the rung is theme.css's), display, live, frame,
-   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart, stream, glyph.
+   * underline-nav, shell, icon-decor, tree, field, activity, notice, chart, stream, glyph,
+   * widget.
    * `.ui-glass` and `.ui-scrim` are no-ops here: the overlay is opaque through the glass tokens,
    * and the page behind a dialog is dimmed, not blurred.
    */
@@ -964,6 +965,33 @@
   /* A point is a rect the chart rounds to a circle by its `rx`; squared off here. */
   :root[data-theme="geek"] .ui-chart [data-part="point"] {
     rx: 0;
+    shape-rendering: crispEdges;
+  }
+
+  /* Widgets as text-first panels: a hairline box with a ruled head, no fill anywhere, numerals in
+     the mono face (a reading is data), the illustration with square caps on crisp edges, and its
+     loops stepping (the live timing token) rather than gliding. */
+  :root[data-theme="geek"] .ui-widget {
+    border: var(--ui-border-w) solid var(--ui-line);
+    border-radius: 0;
+    background-color: transparent;
+  }
+  :root[data-theme="geek"] .ui-widget > [data-slot="head"] {
+    padding-bottom: calc(var(--ui-space-unit) * 2);
+    border-bottom: var(--ui-border-w) solid var(--ui-line);
+  }
+  :root[data-theme="geek"] .ui-widget [data-tile] {
+    border: var(--ui-border-w) solid var(--ui-line);
+    border-radius: 0;
+    background-color: transparent;
+  }
+  :root[data-theme="geek"] .ui-widget [data-figure] {
+    font-family: var(--ui-font-mono);
+    letter-spacing: var(--ui-tracking-mono);
+  }
+  :root[data-theme="geek"] .ui-widget [data-art] {
+    stroke-linecap: butt;
+    stroke-linejoin: miter;
     shape-rendering: crispEdges;
   }
 }

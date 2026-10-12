@@ -1,12 +1,12 @@
 /**
  * Which component draws each A2UI block type.
  *
- * The four built-ins are here from module load. `registerA2uiRenderer` is the door anything else
- * comes in by — a host that wants its own choice, a plugin that brings a type the grammar has
- * learned — and a registration takes precedence over the built-in of the same type until it is
- * unregistered, when the built-in is back. A block reads the registry when it renders and
- * re-renders when it changes, so a renderer registered late still reaches blocks already on
- * screen.
+ * The eight built-ins — four blocks and four widgets — are here from module load.
+ * `registerA2uiRenderer` is the door anything else comes in by — a host that wants its own
+ * choice, a plugin that brings a type the grammar has learned — and a registration takes
+ * precedence over the built-in of the same type until it is unregistered, when the built-in is
+ * back. A block reads the registry when it renders and re-renders when it changes, so a renderer
+ * registered late still reaches blocks already on screen.
  *
  * The registry draws, it does not admit: a block reaches a renderer only after the grammar has
  * parsed and validated it, so a renderer never sees a spec the catalog does not allow.
@@ -16,8 +16,12 @@ import type { ComponentType } from "react";
 import type { A2uiSpec } from "@prismshadow/penguin-core/a2ui";
 import { CalloutBlock } from "./callout-block";
 import { ChoiceBlock } from "./choice-block";
+import { ClockBlock } from "./clock-block";
+import { CountdownBlock } from "./countdown-block";
 import { FormBlock } from "./form-block";
+import { MetricsBlock } from "./metrics-block";
 import { StepsBlock } from "./steps-block";
+import { WeatherBlock } from "./weather-block";
 
 /** A block type the grammar knows. */
 export type A2uiBlockType = A2uiSpec["type"];
@@ -33,6 +37,10 @@ const BUILT_IN: { readonly [T in A2uiBlockType]: A2uiRenderer<A2uiSpecOf<T>> } =
   form: FormBlock,
   steps: StepsBlock,
   callout: CalloutBlock,
+  weather: WeatherBlock,
+  clock: ClockBlock,
+  countdown: CountdownBlock,
+  metrics: MetricsBlock,
 };
 
 // Keyed by string so a type the grammar adds later can be registered before this file names it.

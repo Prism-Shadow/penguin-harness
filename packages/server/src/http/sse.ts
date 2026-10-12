@@ -5,12 +5,17 @@
  *
  * - Response headers: text/event-stream, no-cache, `X-Accel-Buffering: no` (disables
  *   buffering on reverse proxies);
- * - Heartbeat: writes a `: ping` comment line every 20s; the connection is torn down on write failure;
+ * - Heartbeat: a named `ping` event (`data: {}`, no `id:` line) right after the initial
+ *   events and every 20s after. A browser hides comment lines from the page, so only an
+ *   event lets it tell a quiet stream from a dead one (web api/sse.ts); without an id it
+ *   moves neither Last-Event-ID nor the replay cursor. A peer that stops reading is cut off
+ *   by the host's idle timeout ({@link STREAM_IDLE_MS}, app.ts);
  * - Replay protocol: a fresh subscription without Last-Event-ID does not replay the buffer
  *   (history is served by the messages endpoint) — it only sends the initial events the
  *   caller supplied (pending approvals / hello). With a Last-Event-ID that hits the buffer,
  *   replay resumes from there; on a miss, `resync_required` is sent first, then the
- *   connection continues.
+ *   connection continues. A page cannot set headers on an EventSource it opens itself, so
+ *   the id may come as the `lastEventId` query parameter instead; the header wins.
  * - Revocation: a stream is authorised at connect and never again by the request path, so
  *   an authenticated route hands over {@link SseRevocation} — the registry that can end
  *   this stream from outside, and the check the heartbeat runs on it.
@@ -26,6 +31,12 @@ import type { Auth } from "../mechanisms/identity.js";
 import { SESSION_COOKIE, bearerToken } from "../auth/middleware.js";
 
 const HEARTBEAT_MS = 20_000;
+
+/** An event stream's socket that sends nothing for this long is destroyed (app.ts): two missed beats. */
+export const STREAM_IDLE_MS = 2 * HEARTBEAT_MS;
+
+/** The heartbeat frame: named so a page can see it, id-less so it moves no cursor. */
+const PING = { event: "ping", data: "{}" } as const;
 
 /** How the session behind one connection reaches the stream it authorised. */
 export interface SseRevocation {
@@ -72,7 +83,9 @@ export function streamRevocation(
 
 /** Stream out a Channel as an SSE response. */
 export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptions = {}): Response {
-  const lastEventIdHeader = c.req.header("Last-Event-ID");
+  // The header wins: the browser sets it on its own reconnects, and it is newer than the id
+  // the page wrote into the URL when it opened this EventSource.
+  const lastEventId = c.req.header("Last-Event-ID") ?? c.req.query("lastEventId");
   const revocation = opts.revocation;
   c.header("X-Accel-Buffering", "no");
   c.header("Cache-Control", "no-cache");
@@ -95,7 +108,9 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
     let unsubscribe: (() => void) | null = null;
     let heartbeat: ReturnType<typeof setInterval> | null = null;
     try {
-      // Write serialization: SSE events must be written fully and in order; any write failure tears down the connection.
+      // Write serialization: SSE events must be written fully and in order. A write to a peer
+      // that stopped reading never completes; the host's idle timeout then destroys the
+      // socket, which aborts the stream and lands in finish() below.
       let chain: Promise<void> = Promise.resolve();
       const enqueue = (write: () => Promise<unknown>): void => {
         chain = chain
@@ -118,9 +133,9 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
       unsubscribe = channel.subscribe(listener);
       // Subscribe first (to avoid dropping events in a race with broadcasts), then replay
       // synchronously — event order: buffered replay (or resync_required) -> initial events
-      // (task_state snapshot / pending approvals / hello) -> live stream.
-      if (lastEventIdHeader !== undefined) {
-        const replay = channel.replayAfter(lastEventIdHeader);
+      // (task_state snapshot / pending approvals / hello) -> ping -> live stream.
+      if (lastEventId !== undefined) {
+        const replay = channel.replayAfter(lastEventId);
         if (!replay.hit) {
           const resync: ServerEvent = { type: "resync_required" };
           channel.sendTo(listener, resync, "server_event");
@@ -131,6 +146,9 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
       for (const event of opts.initialEvents ?? []) {
         channel.sendTo(listener, event, "server_event");
       }
+      // The first beat goes out at once, so a client knows from the first second that this
+      // stream pings — not only after the first interval has passed.
+      enqueue(() => stream.writeSSE(PING));
 
       heartbeat = setInterval(() => {
         // The heartbeat is the one beat an open stream already has, so re-asking whether
@@ -143,7 +161,7 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
           finish();
           return;
         }
-        enqueue(() => stream.write(": ping\n\n"));
+        enqueue(() => stream.writeSSE(PING));
       }, HEARTBEAT_MS);
 
       stream.onAbort(() => finish());

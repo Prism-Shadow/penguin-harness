@@ -60,7 +60,7 @@ function codeText(children: unknown): string {
  * source either way, so the settle changes the typesetting and nothing else.
  *
  * Two languages are components rather than code: an `a2ui` fence is a block from the A2UI
- * catalog (a choice, a form, steps, a callout) and a `mermaid` fence a diagram. Both take
+ * catalog (a choice, a form, steps, a callout, a widget) and a `mermaid` fence a diagram. Both take
  * `streaming` the way the highlighter does — a quiet placeholder while deltas arrive, drawn once
  * on the settle — and both fall back to their source in a CodeBlock when they cannot be drawn.
  * They are module-level components, so routing to them adds no element type per render.

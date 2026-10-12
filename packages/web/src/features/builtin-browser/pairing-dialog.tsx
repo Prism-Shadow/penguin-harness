@@ -1,6 +1,7 @@
 /**
  * Connecting the user's own Chrome: three steps — install the PenguinHarness Browser extension
- * from the release zip, open its pairing page, paste the server's address and a one-time code —
+ * (from the Chrome Web Store, or from the release zip where the store is out of reach), open its
+ * pairing page, paste the server's address and a one-time code —
  * as a dialog ("Connect your Chrome…" in the Browser panel's menu, Settings › Browser) and inline
  * in the panel while no Chrome is paired.
  *
@@ -37,7 +38,14 @@ import {
   type PairingCodeState,
 } from "./pairing-code";
 
-/** The extension's release zip; a later Chrome Web Store listing keeps the extension's id. */
+/** The extension's Chrome Web Store listing: the recommended install, which Chrome keeps updated. */
+export const EXTENSION_STORE_URL =
+  "https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp";
+
+/**
+ * The extension's release zip, loaded unpacked where the store is out of reach. The manifest's
+ * pinned key gives it the store listing's id, so either install pairs the same way.
+ */
 export const EXTENSION_DOWNLOAD_URL =
   "https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/penguin-browser-extension.zip";
 
@@ -145,6 +153,12 @@ export function PairingSteps({ origin }: { origin: string }) {
     <ol className="list-decimal space-y-3 pl-5 text-sm marker:text-fg-subtle">
       <li>
         <p>{S.builtinBrowser.pairStepInstall}</p>
+        <Link href={EXTENSION_STORE_URL} external variant="standalone" className="mt-1 text-xs">
+          <GlyphIcon d={ICONS.puzzle} size={ICON_SIZE.inlineGlyph} />
+          {S.builtinBrowser.pairStore}
+        </Link>
+        {/* The zip is the way round a store the network cannot reach: a quieter second option. */}
+        <p className="mt-2 text-xs text-fg-muted">{S.builtinBrowser.pairStepInstallZip}</p>
         <Link href={EXTENSION_DOWNLOAD_URL} external variant="standalone" className="mt-1 text-xs">
           <GlyphIcon d={ICONS.download} size={ICON_SIZE.inlineGlyph} />
           {S.builtinBrowser.pairDownload}

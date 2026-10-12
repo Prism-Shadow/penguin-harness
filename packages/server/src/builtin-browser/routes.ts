@@ -33,8 +33,9 @@
  * acts for the human driving that session (runtime/session-drivers.ts), whose Chrome it is.
  * The built-in browser and its import, history and data are admins' (403 `admin_required`); on
  * chrome those answer 405 `not_supported`. Choosing a backend and minting a pairing code are the
- * signed-in person's own gestures: the API token gets 403 `human_required`. An unavailable
- * browser answers 503 `browser_unavailable` with a `reason` beside the code.
+ * signed-in person's own gestures: the API token gets 403 `human_required` (requireHuman, in
+ * auth/middleware.ts). An unavailable browser answers 503 `browser_unavailable` with a `reason`
+ * beside the code.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -52,6 +53,7 @@ import type {
   BuiltinBrowserStatus,
   BuiltinBrowserTab,
 } from "../api/types.js";
+import { requireHuman } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError, errorBody } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
@@ -142,17 +144,6 @@ export interface BrowserRouteDeps {
 
 const adminRequired = () =>
   new HttpError(403, "admin_required", "The built-in browser is for admins only.");
-
-/** The signed-in person's own gesture: never the API token an agent holds. */
-function requireHuman(c: Context<AppEnv>): void {
-  if (c.var.sessionVia === "token") {
-    throw new HttpError(
-      403,
-      "human_required",
-      "Only the signed-in user can do this, in the app; an API token cannot.",
-    );
-  }
-}
 
 export function builtinBrowserRoutes(
   browser: BuiltinBrowser,

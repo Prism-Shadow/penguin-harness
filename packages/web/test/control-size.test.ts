@@ -166,6 +166,7 @@ const DIALOG_BODY_MODULES = new Set([
   "components/account/credits-list.tsx",
   "components/account/release-notes-list.tsx",
   "features/settings/account-section.tsx",
+  "features/settings/agent-api-section.tsx",
   "features/settings/profile-section.tsx",
   "features/settings/appearance-section.tsx",
   "features/settings/browser-section.tsx",

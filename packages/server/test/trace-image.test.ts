@@ -63,6 +63,7 @@ describe("images by reference", () => {
         system_prompt: "sp",
         agent_state: "/tmp/a",
         workspace: "/tmp/w",
+        source: "user",
       }),
       userText("look at these"), // 1
       imageUrlMessage(dataUrl("image/png", PNG)), // 2

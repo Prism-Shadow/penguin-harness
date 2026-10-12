@@ -62,10 +62,12 @@ import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
+import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
 import { orgKey } from "./company-nav";
 import { ChannelComposer } from "./channel-composer";
+import { useChannelDraft } from "./channel-draft";
 import { ChannelHeader } from "./channel-header";
 import { ChannelMessageBody, ChannelReaderProvider, MentionChip } from "./channel-markdown";
 import { noticeText } from "./channel-notices";
@@ -76,6 +78,8 @@ import {
   mentionCandidates,
   mentionIsMe,
   mentionLabel,
+  mentionNameHandles,
+  mentionNote,
   mentionRuns,
 } from "./channel-mentions";
 import {
@@ -351,9 +355,13 @@ export function ChannelView() {
     syncScrollState();
   };
 
+  // The unsent text outlives the view: leaving a channel (or reloading) must not lose it.
+  const draft = useChannelDraft(projectId, orgId, channelId);
+
   const send = async (text: string): Promise<boolean> => {
     try {
       const msg = await api.sendOrgChannelMessage(projectId, orgId, channelId, { text });
+      draft.discard();
       follow.resume();
       setDays((prev) =>
         prev === null ? prev : appendMessage(prev, meta?.today ?? msg.time.slice(0, 10), msg),
@@ -382,10 +390,15 @@ export function ChannelView() {
   };
 
   const names = useMemo(() => new Map(employees.map((e) => [e.agentId, e.name])), [employees]);
+  const titles = useMemo(() => new Map(employees.map((e) => [e.agentId, e.title])), [employees]);
+  const nameHandles = useMemo(() => mentionNameHandles(names), [names]);
   const employeeIds = useMemo(() => new Set(employees.map((e) => e.agentId)), [employees]);
   // Who the mention chips inside the rendered bodies are measured against. Memoized because it
   // is a context value: a fresh object per render would re-render every message body.
-  const reader = useMemo(() => ({ names, me, employeeIds }), [names, me, employeeIds]);
+  const reader = useMemo(
+    () => ({ names, titles, me, employeeIds }),
+    [names, titles, me, employeeIds],
+  );
   const memberPrincipals = useMemo(
     () => (detail === null ? null : new Set(detail.members.map((m) => m.principal))),
     [detail],
@@ -412,7 +425,7 @@ export function ChannelView() {
     document.getElementById(id)?.scrollIntoView({ block: "center" });
 
   const renderText = (m: OrgChannelMessage) =>
-    mentionRuns(m.text).map((run, i) =>
+    mentionRuns(m.text, nameHandles).map((run, i) =>
       run.mention === null ? (
         <span key={i}>{run.text}</span>
       ) : (
@@ -420,6 +433,7 @@ export function ChannelView() {
           key={i}
           raw={run.text}
           label={mentionLabel(run.mention, names, S.company.principalAll)}
+          note={mentionNote(run.mention, titles)}
           me={mentionIsMe(run.mention, me, employeeIds)}
         />
       ),
@@ -514,6 +528,7 @@ export function ChannelView() {
                   <MentionChip
                     raw={`@${principal}`}
                     label={mentionLabel(principal, names, S.company.principalAll)}
+                    note={mentionNote(principal, titles)}
                     me={mentionIsMe(principal, me, employeeIds)}
                   />
                 </span>
@@ -546,6 +561,16 @@ export function ChannelView() {
             <span data-tooltip={S.company.channels.hopInfo} className="text-fg-muted">
               {S.company.channels.hop(item.hop)}
             </span>
+          ) : undefined
+        }
+        avatar={
+          p.kind === "agent" ? (
+            <EmployeeAvatar
+              id={p.id}
+              name={sender.name}
+              size={FACE_PX.message}
+              className="shrink-0 rounded-lg"
+            />
           ) : undefined
         }
       >
@@ -665,7 +690,15 @@ export function ChannelView() {
           </div>
           <div className="mx-auto w-full max-w-5xl">
             {canPost ? (
-              <ChannelComposer candidates={candidates} names={names} onSend={send} />
+              <ChannelComposer
+                // Remounted per draft: the box starts from the text this channel was left with.
+                key={draft.key ?? channelId}
+                candidates={candidates}
+                names={names}
+                initialText={draft.initial}
+                onTextChange={draft.onTextChange}
+                onSend={send}
+              />
             ) : detail !== null && detail.archived ? (
               <NoticeStrip
                 tone="neutral"

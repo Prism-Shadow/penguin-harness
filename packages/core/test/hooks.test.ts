@@ -384,6 +384,7 @@ describe("Session user-prompt hook", () => {
       system_prompt: "sp",
       agent_state: dir,
       workspace: dir,
+      source: "user",
     };
     const scratchpad = path.join(dir, "scratchpad", "session-1");
     const session = new Session({
@@ -466,6 +467,7 @@ describe("Session stop hooks", () => {
       system_prompt: "sp",
       agent_state: dir,
       workspace: dir,
+      source: "user",
     };
     return new Session({
       meta,
@@ -691,6 +693,7 @@ describe("Session pre-tool-use hooks", () => {
       system_prompt: "sp",
       agent_state: dir,
       workspace: dir,
+      source: "user",
     };
     return new Session({
       meta,

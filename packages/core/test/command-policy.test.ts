@@ -402,6 +402,7 @@ describe("Session applies the policy at the approval boundary", () => {
     system_prompt: "sp",
     agent_state: tmp,
     workspace: tmp,
+    source: "user",
   });
 
   it("denies a vetoed command under allow-all, and the tool never reaches the Environment", async () => {

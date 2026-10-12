@@ -575,14 +575,19 @@ export function TraceFileBody({
       {/* Global summary: split into three groups by nature (count / Token
           usage / duration·cost·TPS), separated by vertical rules — a dozen
           metrics laid out in one row would read as a blur of digits; grouping lets you spot the kind you want at a glance. */}
-      <Card>
+      <Card className="@container">
         <CardHeader title={S.traces.globalSummary} />
         {/* Three groups side by side as columns, each item within a group
             taking its own row (name on the left, value on the right): laid
             out in one row it's a blur of digits, while giving each group a
             full row only uses a small strip on the left and wastes the rest.
-            Splitting into columns fills the width and keeps it to three rows tall. */}
-        <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
+            Splitting into columns fills the width and keeps it to three rows tall.
+            Side by side only where the card itself has the room — it is the container
+            queried, not the viewport: the Trace tab is a dock panel, a few hundred pixels
+            wide on a wide screen, where three columns cut every value short. `@2xl` leaves
+            each column about a third wider than its longest label and value need; narrower,
+            the groups stack. */}
+        <div className="grid grid-cols-1 gap-x-6 gap-y-4 @2xl:grid-cols-3">
           {/* Counts */}
           <div>
             {/* Rounds = every round in the file (a compaction round counts as

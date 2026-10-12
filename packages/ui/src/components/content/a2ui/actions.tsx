@@ -1,12 +1,13 @@
 /**
  * What an A2UI block may do on the page it renders in: whether its controls work at all, how a
- * pick reaches the composer, and which language the filled text is written in.
+ * pick reaches the composer, which language the filled text is written in, and where answers in
+ * progress are kept.
  *
  * The blocks render inside Markdown, several components below whatever owns the conversation, so
  * these arrive through context rather than props. The default is inert — `interactive: false`, a
- * `fill` that does nothing — because most places a reply renders (an older turn, a Trace, a
- * subagent's transcript, the gallery) must show a question without letting anyone answer it. The
- * host opts in for the one reply that is waiting for an answer.
+ * `fill` that does nothing, no drafts — because most places a reply renders (an older turn, a
+ * Trace, a subagent's transcript, the gallery) must show a question without letting anyone
+ * answer it. The host opts in for the one reply that is waiting for an answer.
  *
  * A pick never sends anything: `fill` puts plain text in the composer, the person may edit it,
  * and the model reads it next turn as an ordinary user message.
@@ -14,18 +15,40 @@
 import { createContext, useContext } from "react";
 import type { ReactElement, ReactNode } from "react";
 
+/**
+ * The host's store for answers in progress (draft.ts names the entries and decides when to read
+ * and write them). A block checks whatever `load` returns before using it, so the store may hand
+ * back anything; a call that throws costs the draft, never the block.
+ */
+export interface A2uiDrafts {
+  /** What was last saved under `key`, or undefined when nothing is. */
+  load(key: string): unknown;
+  /** Replaces what is saved under `key`; `state` is plain JSON. */
+  save(key: string, state: unknown): void;
+  /** Removes what is saved under `key`. */
+  clear(key: string): void;
+}
+
 export interface A2uiActions {
   /** The controls work. Off, a choice or a form shows its options with every control disabled. */
   interactive: boolean;
-  /** Puts the answer in the composer; the host decides what happens to text already typed there. */
+  /**
+   * Puts the answer in the composer; the host decides what happens to text already typed there.
+   * An empty text empties it: a choice's "Other…", whose answer the person writes themselves.
+   */
   fill: (text: string) => void;
   /** The language the filled text is written in (its list separator, its "label: answer" colon). */
   lang: "zh" | "en";
   /**
-   * Moves focus to the composer, for a choice's "Other…": the person writes their own answer
-   * there. Without it the control is still drawn, and pressing it does nothing.
+   * Keeps an open form's answers, and an open multi-select's ticks, across a reload. Without it
+   * (or without a `draftScope`) they last as long as the block stays mounted.
    */
-  focus?: () => void;
+  drafts?: A2uiDrafts;
+  /**
+   * The conversation the answers belong to: every draft key is `<draftScope>:<block hash>`, the
+   * hash taken over the block's source, so a scope must stay the same across a reload.
+   */
+  draftScope?: string;
 }
 
 const noop = () => {};

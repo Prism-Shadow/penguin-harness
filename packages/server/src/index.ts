@@ -290,7 +290,8 @@ class PenguinServer {
     });
     this.httpServer = serve(
       {
-        fetch: (request: Request) => this.app?.fetch(request) ?? startingResponse(),
+        // `env` carries the Node request: app.ts sets an event stream's idle timeout on its socket.
+        fetch: (request: Request, env) => this.app?.fetch(request, env) ?? startingResponse(),
         hostname: this.config.host,
         port: this.config.port,
       },
@@ -443,7 +444,7 @@ class PenguinServer {
    */
   private openIpv6Loopback(port: number): void {
     const loopback = serve({
-      fetch: (request: Request) => this.app?.fetch(request) ?? startingResponse(),
+      fetch: (request: Request, env) => this.app?.fetch(request, env) ?? startingResponse(),
       hostname: "::1",
       port,
     });

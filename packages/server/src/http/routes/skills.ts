@@ -38,9 +38,11 @@ import { HttpError } from "../errors.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import { toSkillItem } from "../../services/plugin-library.js";
 import {
+  MAX_ARCHIVE_BYTES,
   MAX_ARCHIVE_FILES,
   MAX_FILE_BYTES,
   MAX_TOTAL_BYTES,
+  assertSafeEntryPath,
   skillTooLarge,
   unzipBounded,
 } from "../../services/skill-import-limits.js";
@@ -48,24 +50,6 @@ import { Bind, Component } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
-
-/** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). Shared with the hooks archive routes. */
-export const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
-
-/**
- * Validates one zip entry path (zip-slip guard): rejects absolute paths (leading "/" or a
- * drive letter), backslashes and any ".." segment — a malicious archive must never write
- * outside the target Skill directory. Shared with the hooks archive routes.
- */
-export function assertSafeEntryPath(name: string): void {
-  if (name.includes("\\")) throw badRequest(`Invalid zip entry path (backslash): ${name}`);
-  if (name.startsWith("/") || /^[A-Za-z]:/.test(name)) {
-    throw badRequest(`Invalid zip entry path (absolute): ${name}`);
-  }
-  if (name.split("/").some((segment) => segment === "..")) {
-    throw badRequest(`Invalid zip entry path (traversal): ${name}`);
-  }
-}
 
 /** A skill decoded from an uploaded zip: name + file bytes keyed by path relative to the skill directory. */
 interface ArchiveSkill {

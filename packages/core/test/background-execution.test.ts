@@ -995,6 +995,7 @@ const META: SessionMetaPayload = {
   system_prompt: "sp",
   agent_state: "/tmp/state",
   workspace: "/tmp/w",
+  source: "user",
 };
 const IMAGES = { imagesDir: "/tmp/scratchpad/session-bg-1", modelHasVision: true } as const;
 

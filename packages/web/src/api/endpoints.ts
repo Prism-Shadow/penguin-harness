@@ -9,11 +9,16 @@ import type {
   AdminUserCreateRequest,
   AdminUserCreateResponse,
   AdminUsersResponse,
+  AgentApiKeyCreateRequest,
+  AgentApiKeyCreateResponse,
+  AgentApiResponse,
+  AgentApiUpdateRequest,
   AgentConfigResponse,
   AgentConfigUpdateRequest,
   AgentCreateRequest,
   AgentCreateResponse,
   AgentHooksResponse,
+  AgentMcpServersResponse,
   AgentImportRequest,
   AgentImportResponse,
   AgentKernelUpdateResponse,
@@ -26,6 +31,8 @@ import type {
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
+  BenchmarkArchiveImportRequest,
+  BenchmarkArchiveImportResponse,
   BenchmarkCasesResponse,
   BenchmarkCreateRequest,
   BenchmarkCreateResponse,
@@ -209,6 +216,7 @@ import type {
   VaultResponse,
   VaultUpdateRequest,
   InstalledPluginsResponse,
+  PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
   WorkflowInfo,
@@ -237,7 +245,8 @@ import type {
   DesktopBrowserCommand,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
-import { apiFetch, apiFetchWithMeta } from "./client";
+import type { RunRequest } from "@prismshadow/amsp";
+import { apiFetch, apiFetchStream, apiFetchWithMeta } from "./client";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 import { activityCursorParam } from "../lib/session-grouping";
@@ -708,6 +717,53 @@ export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
     { method: "POST" },
   );
 
+// An Agent's public API (the stream itself is AMSP under /api/amsp/v1; these are its settings) ---
+
+const agentApiBase = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/api`;
+
+/** The Agent's API switch, keyless switch, approval mode and keys (any member may read them). */
+export const getAgentApi = (projectId: string, agentId: string) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId));
+
+/** Changes the given settings and keeps the rest (owner only). */
+export const putAgentApi = (projectId: string, agentId: string, body: AgentApiUpdateRequest) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId), { method: "PUT", body });
+
+/** Mints a key (owner only): the answer is the one place the secret is ever shown. */
+export const createAgentApiKey = (
+  projectId: string,
+  agentId: string,
+  body: AgentApiKeyCreateRequest,
+) =>
+  apiFetch<AgentApiKeyCreateResponse>(`${agentApiBase(projectId, agentId)}/keys`, {
+    method: "POST",
+    body,
+  });
+
+/** Deletes a key for good (owner only): a program presenting it is refused from the next request on. */
+export const deleteAgentApiKey = (projectId: string, agentId: string, keyId: string) =>
+  apiFetch<void>(`${agentApiBase(projectId, agentId)}/keys/${encodeURIComponent(keyId)}`, {
+    method: "DELETE",
+  });
+
+/**
+ * Runs the Agent once through its API for the owner's sign-in (the API tab's Try it): the body is
+ * the public runs route's, and the answer the same AMSP event stream, handed back unread for
+ * `readSse` (or the same JSON refusal, as an ApiError).
+ */
+export const tryAgentApi = (
+  projectId: string,
+  agentId: string,
+  body: RunRequest,
+  opts: { signal?: AbortSignal } = {},
+) =>
+  apiFetchStream(`${agentApiBase(projectId, agentId)}/try`, {
+    method: "POST",
+    body,
+    ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
+  });
+
 // Session ---------------------------------------------------------------------
 
 /**
@@ -999,7 +1055,7 @@ export const testQQBinding = (sessionId: string, body: QQTestRequest) =>
     body,
   });
 
-/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to). */
+/** Short fixed text to the binding's last known chat (409 `feishu_no_chat` / `telegram_no_chat` / `qq_no_chat` / `wechat_no_chat` before one exists; on QQ the send can still fail with 502 when no recent QQ message can be replied to, and on WeChat it answers 409 `wechat_needs_recent_message` when the platform will not take a bot message until the user messages the bot again). */
 export const sendMessagingTestMessage = (sessionId: string, channel: MessagingChannel) =>
   apiFetch<MessagingTestMessageResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messaging/${channel}/test-message`,
@@ -1595,6 +1651,10 @@ export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plug
 export const getPluginFiles = (plugin: string) =>
   apiFetch<PluginFilesResponse>(`/api/plugins/${encodeURIComponent(plugin)}/files`);
 
+/** A library plugin's README.md, from its package root, for the detail dialog; 404 when the package ships none. */
+export const getLibraryPluginReadme = (plugin: string) =>
+  apiFetch<PluginReadmeResponse>(`/api/plugins/${encodeURIComponent(plugin)}/readme`);
+
 /**
  * Installs whole library plugins — each one's skills and hook package; an already-installed
  * plugin is overwritten with the library content (i.e. updated). 201 returns the Agent's
@@ -1612,6 +1672,7 @@ export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/
 /** Languages plugins contributed; the grammars themselves are fetched by the highlighter. */
 export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/languages");
 
+/** An index entry's README.md, read from the package on this server; `readme` is null when the package is not here or has none. */
 export const getPluginReadme = (name: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
 
@@ -1623,6 +1684,20 @@ export const getAgentSkills = (projectId: string, agentId: string) =>
 export const getAgentHooks = (projectId: string, agentId: string) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/hooks`,
+  );
+
+/** The Agent's MCP servers in config order: target, the plugin that installed each, the vault keys still missing and whether a sign-in is needed (never a value). */
+export const getAgentMcpServers = (projectId: string, agentId: string) =>
+  apiFetch<AgentMcpServersResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/mcp-servers`,
+  );
+
+/** Removes one MCP server entry from the Agent, whoever added it; 204, 404 unknown_mcp_server when it is not there. */
+export const uninstallAgentMcpServer = (projectId: string, agentId: string, name: string) =>
+  apiFetch<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/mcp-servers/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
   );
 
 /** Uninstalls one hook package (deletes agent_state/hooks/<name>/ whole); 204, 404 not_found when it is not installed. */
@@ -1712,6 +1787,28 @@ export const deleteBenchmark = (projectId: string, benchmarkId: string) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}`,
     { method: "DELETE" },
+  );
+
+/** Imports a Benchmark package from a zip (base64; any member); 409 `benchmark_exists` on a taken id unless overwrite; 201 returns the Benchmark as listed. */
+export const importBenchmarkArchive = (projectId: string, body: BenchmarkArchiveImportRequest) =>
+  apiFetch<BenchmarkArchiveImportResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/archive`,
+    { method: "POST", body },
+  );
+
+/**
+ * Download URL of a published Benchmark's package (a zip; the server names it `<id>-v<version>.zip`
+ * in Content-Disposition), from the machine holding the copy — null for this server. The export
+ * round-trips through importBenchmarkArchive.
+ */
+export const benchmarkArchiveUrl = (
+  projectId: string,
+  benchmarkId: string,
+  machineId?: string | null,
+): string =>
+  apiUrl(
+    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}/archive`,
+    machineId ?? null,
   );
 
 const benchmarkCaseFilesPath = (
@@ -1972,6 +2069,27 @@ export const getOrgChart = (projectId: string, orgId: string) =>
 
 export const hireOrgEmployee = (projectId: string, orgId: string, body: OrgHireRequest) =>
   apiFetch<OrgEmployeeItem>(`${orgBase(projectId, orgId)}/employees`, { method: "POST", body });
+
+/** Where an employee's avatar is served from; `rev` (its `avatarRev`) makes the URL the image's own, so it is cached for good. */
+export const orgEmployeeAvatarUrl = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  rev: string,
+): string =>
+  `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}/avatar?rev=${encodeURIComponent(rev)}`;
+
+/** Sets the employee's avatar from a data URL (png, jpeg or webp); `null` removes it. */
+export const putOrgEmployeeAvatar = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  avatar: string | null,
+) =>
+  apiFetch<OrgEmployeeItem>(
+    `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}/avatar`,
+    { method: "PUT", body: { avatar } },
+  );
 
 export const patchOrgEmployee = (
   projectId: string,
@@ -2350,6 +2468,26 @@ export const uninstallPlugin = (
     }`,
     { method: "DELETE" },
   );
+
+/**
+ * Admin only: installs a plugin package from an uploaded zip on this server — 409
+ * plugin_exists while another version is installed, unless `overwrite`. A package of server
+ * modules is listed for this machine and applied; a package of Skills or hooks joins the
+ * library. `installed` says which.
+ */
+export const importPluginArchive = (projectId: string, body: PluginArchiveImportRequest) =>
+  apiFetch<InstalledPluginsResponse>(`${pluginsPath(projectId)}/archive`, {
+    method: "POST",
+    body,
+  });
+
+/** Zip download URL of a library plugin's package (any member; the server names the file, `<name>-v<version>.zip`). */
+export const libraryPluginArchiveUrl = (plugin: string): string =>
+  `/api/plugins/${encodeURIComponent(plugin)}/archive`;
+
+/** Zip download URL of a listed server module's package on this server (any member). */
+export const registryPluginArchiveUrl = (name: string): string =>
+  `/api/plugins/registry/archive?name=${encodeURIComponent(name)}`;
 
 // ---- The agent browser: the desktop's built-in browser, or the user's own Chrome ----
 /**

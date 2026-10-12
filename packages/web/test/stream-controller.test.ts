@@ -711,6 +711,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
         system_prompt: "",
         agent_state: "/tmp/a",
         workspace: "/tmp/w",
+        source: "user",
       });
     const A = { provider: "anthropic", modelId: "a-1" };
     const B = { provider: "openai", modelId: "b-2" };

@@ -46,6 +46,7 @@ export const meta = (
     system_prompt: "You are Docs Expert. Cite a real file for every claim.",
     agent_state: `/home/demo/.penguin/data/projects/${IDS.project}/agents/${IDS.agents.docs}/agent_state`,
     workspace,
+    source: "user",
   },
 });
 

@@ -1,8 +1,8 @@
 /**
  * The whole-reply check (a2ui/check.ts), its report (a2ui/report.ts) and the CLI's argument
  * handling (a2ui/cli.ts): L1 issues carry absolute lines and the block index, the L2 heuristics
- * fire on overuse / a question that is not last / an unintroduced block, prose issues are
- * tagged, and the score follows A2UI_SCORING exactly.
+ * fire on overuse / a question that is not last / an unintroduced block / a snapshot with no
+ * time, prose issues are tagged, and the score follows A2UI_SCORING exactly.
  */
 import { describe, expect, it } from "vitest";
 import { A2UI_RUBRIC, A2UI_SCORING, checkReply, formatReport } from "../src/a2ui/index.js";
@@ -59,6 +59,25 @@ describe("checkReply", () => {
     expect(heading.issues.map((i) => i.code)).toEqual(["ungrounded_block"]);
     expect(checkReply(callout).issues.map((i) => i.code)).toEqual(["ungrounded_block"]);
     expect(checkReply(`Here is a note.\n\n${callout}`).issues).toEqual([]);
+  });
+
+  it("L2: a snapshot without `asOf`; a widget is no question, so prose may follow it", () => {
+    const fence = (spec: object) => `\`\`\`a2ui\n${JSON.stringify(spec)}\n\`\`\``;
+    const metrics = { type: "metrics", items: [{ label: "CPU", value: 37, max: 100, unit: "%" }] };
+    const bare = checkReply(`Here is the machine now.\n\n${fence(metrics)}\n`);
+    expect(bare.issues.map((i) => [i.code, i.block, i.line])).toEqual([["no_as_of", 1, 3]]);
+    const dated = fence({ ...metrics, asOf: "2026-10-04T06:05:00Z" });
+    expect(checkReply(`Here is the machine now.\n\n${dated}\n`).issues).toEqual([]);
+    const weather = fence({
+      type: "weather",
+      place: "Beijing",
+      condition: "rain",
+      temp: 12,
+      asOf: "2026-10-04T14:05+08:00",
+    });
+    expect(checkReply(`Here is the weather.\n\n${weather}\n\nTake an umbrella.`).issues).toEqual(
+      [],
+    );
   });
 
   it("scores: 15 per L2 warning, 5 per prose warning, the rounded mean when there is no error", () => {

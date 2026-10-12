@@ -1,8 +1,9 @@
 /**
  * The pieces every A2UI block shares: the four tones and how each is drawn, the note a callout and
- * a step's notices are drawn as, the placeholder a block shows while its reply is still streaming, the source-plus-notice a block falls back to
- * when it cannot be drawn, the inline text renderer for the strings a model writes, an option's
- * label, and the arrow-key walk of an option group.
+ * a step's notices are drawn as, the placeholder a block shows while its reply is still streaming,
+ * the source-plus-notice a block falls back to when it cannot be drawn, the inline text renderer
+ * for the strings a model writes, an option's label, the arrow-key walk of an option group, and
+ * the looks the blocks share so they read as one family: the title, the chip, the card.
  */
 import type { ReactNode } from "react";
 import type { A2uiOption } from "@prismshadow/penguin-core/a2ui";
@@ -102,6 +103,103 @@ export function InlineText({ text }: { text: string }): ReactNode {
     .map((part, i) => (i % 2 === 1 ? <code key={i}>{part}</code> : part === "" ? null : part));
 }
 
+/**
+ * A block's title — a choice's question, a form's or a steps list's title: one style for every
+ * block, a rung under the reading text, so the block's own controls lead rather than its heading.
+ */
+export const A2UI_TITLE = "mb-2 text-sm font-medium text-fg";
+
+/** The keyboard ring a block's pressable parts draw, the theme's own. */
+const FOCUS_RING =
+  "focus-visible:[outline:var(--ui-focus-ring)] " +
+  "focus-visible:[outline-offset:var(--ui-focus-ring-offset)]";
+
+/**
+ * A pressable option's state: pressed takes the accent's line and a wash of it, the selected look
+ * every block shares; at rest the hover darkens the line and fills the box. Chosen where the state
+ * is known rather than through an `aria-pressed:` variant, because an `enabled:hover:` rule
+ * outranks an `aria-pressed:` one on specificity and a pressed option under the pointer would
+ * lose its accent line.
+ */
+export function pressLook(pressed: boolean): string {
+  return pressed
+    ? "border-accent bg-accent-muted"
+    : "border-line bg-surface enabled:hover:border-line-emphasis enabled:hover:bg-surface-muted";
+}
+
+/**
+ * Shared by the chip and the card: the line, the colour-only motion, focus, and the closed state,
+ * which dims the way a disabled checkbox dims, so an older reply's question reads as answered.
+ */
+const PRESSABLE =
+  "border transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60 " +
+  FOCUS_RING;
+
+/**
+ * A chip: one short option in a wrapping row, the control's shape. Two rungs, as the controls
+ * have: `base` for a choice in the reply's text, `sm` for a form, whose other controls are on the
+ * small rung. The padding never falls under the radius, so a label clears a pill's curve.
+ */
+export const A2UI_CHIP: Readonly<Record<"base" | "sm", string>> = {
+  base: `rounded-control px-3 py-1.5 text-sm ${PRESSABLE}`,
+  sm: `rounded-control px-3 py-1 text-xs ${PRESSABLE}`,
+};
+
+/**
+ * A card: one option with room for a sentence — a leading mark in the first column (the radio's
+ * disc, or a checkbox), the label and its description in the second. The box's radius is the md
+ * rung and its side padding at least that, so the text clears the corners in every theme.
+ */
+export const A2UI_CARD =
+  "grid w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 rounded-md px-3 py-2 " +
+  `text-left text-base ${PRESSABLE}`;
+
+/**
+ * Whether a set of options is short enough to sit in one row: at most `count` of them, none with
+ * a description, and every label at most `label` characters (code points, as the grammar counts).
+ */
+export function shortOptions(
+  options: readonly A2uiOption[],
+  count: number,
+  label: number,
+): boolean {
+  return (
+    options.length <= count &&
+    options.every((option) => option.description === undefined && [...option.label].length <= label)
+  );
+}
+
+/**
+ * How many columns a text takes on screen, approximately: a CJK or fullwidth character two, any
+ * other one. For a row that cannot wrap, where ten Chinese characters take twice the room ten
+ * Latin letters do.
+ */
+export function displayWidth(text: string): number {
+  let width = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    const wide =
+      (code >= 0x1100 && code <= 0x115f) ||
+      (code >= 0x2e80 && code <= 0xa4cf) ||
+      (code >= 0xac00 && code <= 0xd7a3) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xfe30 && code <= 0xfe4f) ||
+      (code >= 0xff00 && code <= 0xff60) ||
+      (code >= 0xffe0 && code <= 0xffe6) ||
+      (code >= 0x20000 && code <= 0x3fffd);
+    width += wide ? 2 : 1;
+  }
+  return width;
+}
+
+/**
+ * A model's string as plain text, its backtick spans unwrapped: for a control that takes a string
+ * label, where {@link InlineText} cannot draw the code.
+ */
+export function plainText(text: string): string {
+  return text.replace(/`([^`\n]+)`/g, "$1");
+}
+
 /** An option's label with the mark of the one the model recommends after it. */
 export function OptionLabel({ option, strings }: { option: A2uiOption; strings: A2uiStrings }) {
   return (
@@ -118,14 +216,15 @@ export function OptionLabel({ option, strings }: { option: A2uiOption; strings: 
 
 /**
  * What a block shows while its reply is still arriving: a quiet line in place of the block, so a
- * half-written fence is never parsed, and the block is drawn once, when the reply settles.
+ * half-written fence is never parsed, and the block is drawn once, when the reply settles. It
+ * takes the blocks' margin and box radius, so the settle swaps one box for another in place.
  */
 export function A2uiPending({ label }: { label?: string }) {
   const strings = useUiStrings().a2ui;
   return (
     <div
       aria-busy="true"
-      className="a2ui-block my-2 rounded-lg border border-dashed border-line px-3 py-2 text-xs text-fg-muted"
+      className="a2ui-block my-3 rounded-md border border-dashed border-line px-3 py-2 text-xs text-fg-muted"
     >
       {label ?? strings.composing}
     </div>
@@ -150,7 +249,7 @@ export function A2uiInvalid({
 }) {
   const strings = useUiStrings().a2ui;
   return (
-    <div className="a2ui-block my-2" data-a2ui="invalid">
+    <div className="a2ui-block my-3" data-a2ui="invalid">
       <Notice tone="attention" variant="inline" glyph={ICONS.alertCircle}>
         {strings.cannotShow(reason)}
       </Notice>

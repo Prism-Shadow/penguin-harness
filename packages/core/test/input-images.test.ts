@@ -198,6 +198,7 @@ describe("Session input-image wiring", () => {
     system_prompt: "sp",
     agent_state: tmp,
     workspace: tmp,
+    source: "user",
   });
 
   /** An LLM that steers once from inside its first request, then answers. */

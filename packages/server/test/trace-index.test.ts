@@ -2,12 +2,15 @@
  * Trace-file index tests: mtime-gated reconciliation (an unchanged tree costs zero
  * directory scans), registration-time classification, gate blind spots recovered by
  * the consumers' force-retry, write-time registration (import) and delete coherence.
+ * A cache row registered before the source was required (NULL, or the retired `benchmark`)
+ * reads as a head that records no source (which the session list reads with the row's client)
+ * / as `cli`, without being rewritten.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
-import type { SessionMetaPayload } from "@prismshadow/penguin-core";
+import type { SessionMetaPayload, SessionSource } from "@prismshadow/penguin-core";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
 
 const P = "project-i";
@@ -45,6 +48,7 @@ function meta(sessionId: string, over: Partial<SessionMetaPayload> = {}): Sessio
     system_prompt: "sp",
     agent_state: "/tmp/a",
     workspace: "/ws/one",
+    source: "user",
     ...over,
   };
 }
@@ -201,6 +205,28 @@ describe("trace-index", () => {
     // The files are gone from disk too, and a fresh reconcile does not resurrect rows.
     await h.traceIndex.reconcileAgent(P, A, { force: true });
     expect(h.traceIndex.repo.listFilesBySession(P, A, IMP)).toEqual([]);
+  });
+
+  it("reads a cache row registered before the source was required: NULL as no recorded source, benchmark as cli", async () => {
+    // The derived cache is never migrated: rows an older release registered keep the string
+    // (or the NULL) their head carried, and are read through the same narrowing. NULL stays
+    // "records none": whether that is a person's conversation or a company Session is the
+    // index row's to say (readRecordedSource).
+    const row = {
+      sessionId: S1,
+      projectId: P,
+      agentId: A,
+      workspace: "/ws/one",
+      title: null,
+      provider: "custom",
+      modelId: "m1",
+      firstTs: null,
+      metaRead: true,
+    };
+    h.traceIndex.repo.upsertSession({ ...row, source: null });
+    expect(h.traceIndex.repo.getSession(S1)?.source).toBeNull();
+    h.traceIndex.repo.upsertSession({ ...row, source: "benchmark" as unknown as SessionSource });
+    expect(h.traceIndex.repo.getSession(S1)?.source).toBe("cli");
   });
 
   it("externally deleted files and date dirs fall out of the index on the next changed-dir pass", async () => {

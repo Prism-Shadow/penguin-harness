@@ -64,6 +64,8 @@ import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/sessi
 import type { TitleNotifier } from "../src/runtime/title-generator.js";
 import { UpdateCheckService } from "../src/services/update-check-service.js";
 import { RevealService } from "../src/services/reveal-path.js";
+import { NpmPluginPackages } from "../src/plugin/install.js";
+import type { PluginPackages } from "../src/mechanisms/plugins.js";
 import { DefaultMessagingTuning } from "../src/runtime/messaging/bridge.js";
 import { FeishuSdkProvider } from "../src/runtime/messaging/feishu-connector.js";
 import type { FeishuSdk } from "../src/runtime/messaging/feishu-sdk.js";
@@ -302,6 +304,8 @@ export interface TestAppOptions {
   orgService?: OrganizationService;
   /** Test double: the desktop reveal, so a test never opens a file manager. */
   reveal?: (filePath: string) => Promise<void>;
+  /** Test double: how plugin packages reach the data root's prefix, so a test never runs npm. */
+  pluginPackages?: PluginPackages;
   /** Test double: the desktop shell's port as the built-in browser reaches it (a fake shell). */
   browserShellPort?: BrowserShellPort;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
@@ -343,6 +347,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   }
   if (o.updateCheck) out.push([UpdateCheckService, o.updateCheck]);
   if (o.reveal) out.push([RevealService, { reveal: o.reveal }]);
+  if (o.pluginPackages) out.push([NpmPluginPackages, o.pluginPackages]);
   if (o.browserShellPort) {
     const port = o.browserShellPort;
     out.push([ProcessShellPort, { current: () => port }]);
@@ -510,17 +515,29 @@ export async function provisionUser(
 
 /** JSON request client that carries the cookie. */
 export function apiClient(app: Hono<AppEnv>, cookie: string) {
+  return clientWith(app, { cookie });
+}
+
+/**
+ * JSON request client as a Session's tool subprocess calls the server: the boot's local API
+ * token (`t.deps.authService.localApiToken()`) as a Bearer header, and no cookie.
+ */
+export function tokenClient(app: Hono<AppEnv>, token: string) {
+  return clientWith(app, { authorization: `Bearer ${token}` });
+}
+
+function clientWith(app: Hono<AppEnv>, credential: Record<string, string>) {
   const call = (method: string) => (apiPath: string, body?: unknown) =>
     app.request(apiPath, {
       method,
       headers: {
-        cookie,
+        ...credential,
         ...(body !== undefined ? { "content-type": "application/json" } : {}),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
   return {
-    get: (apiPath: string) => app.request(apiPath, { headers: { cookie } }),
+    get: (apiPath: string) => app.request(apiPath, { headers: credential }),
     post: call("POST"),
     put: call("PUT"),
     patch: call("PATCH"),

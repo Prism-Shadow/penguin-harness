@@ -96,7 +96,7 @@ When you quit, the chat prints a `penguin chat --resume <sessionId>` command tha
 
 `run`, `chat` and the other Session commands are thin clients of the server. They attach to the local server when one is running, and quietly start one when none is. On the local machine they need no login; the [CLI Reference](/cli) describes the connection rules.
 
-Everything these commands create also shows up in the Web App, and `penguin ls`, `penguin logs` and `penguin input` work with those Sessions from the terminal. The [CLI Reference](/cli) lists every command and option.
+Everything these commands create also shows up in the Web App, and the `penguin session` commands (`ls`, `log`, `input` and `rename`) work with those Sessions from the terminal. The [CLI Reference](/cli) lists every command and option.
 
 ## Installation reference
 
@@ -218,9 +218,9 @@ EOF
 sudo apparmor_parser -r /etc/apparmor.d/penguin-sandbox-bwrap
 ```
 
-Then select **Save** on the Sandbox card: the backends are checked again without a restart, and the card names bubblewrap. The profile loads again at every boot. Its pattern matches every place the backend's bubblewrap is unpacked under `~/.penguin`: a download into the data root (`~/.penguin/data/plugins/`), the installation's bundled plugins (`~/.penguin/lib/plugins/`) and the plugins a hot push carries (under `~/.penguin/data/hmr/`). An upgrade replaces the package at the same path, so later versions stay covered. If `PENGUIN_HOME` or `PENGUIN_INSTALL_DIR` points outside `~/.penguin`, load a copy of the profile under another name with `@{HOME}/.penguin` replaced by that directory.
+Then select **Save** on the Agent Sandbox card: the backends are checked again without a restart, and the card names bubblewrap. The profile loads again at every boot. Its pattern matches every place the backend's bubblewrap is unpacked under `~/.penguin`: a download into the data root (`~/.penguin/data/plugins/`), the installation's bundled plugins (`~/.penguin/lib/plugins/`) and the plugins a hot push carries (under `~/.penguin/data/hmr/`). An upgrade replaces the package at the same path, so later versions stay covered. If `PENGUIN_HOME` or `PENGUIN_INSTALL_DIR` points outside `~/.penguin`, load a copy of the profile under another name with `@{HOME}/.penguin` replaced by that directory.
 
-The profile applies to whatever program is at that path, and you can write to that path. On a machine shared with users you do not trust, set the bwrap program on the Sandbox card to a root-owned copy, such as `/usr/bin/bwrap` from `apt install bubblewrap`, and name that path in the profile instead. The other option is to lift the restriction for every program with `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. To keep that setting after a reboot, add the same line without `sudo sysctl -w` to a file in `/etc/sysctl.d/`.
+The profile applies to whatever program is at that path, and you can write to that path. On a machine shared with users you do not trust, set the bwrap program on the Agent Sandbox card to a root-owned copy, such as `/usr/bin/bwrap` from `apt install bubblewrap`, and name that path in the profile instead. The other option is to lift the restriction for every program with `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. To keep that setting after a reboot, add the same line without `sudo sysctl -w` to a file in `/etc/sysctl.d/`.
 
 ### Published npm packages
 
