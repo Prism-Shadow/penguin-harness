@@ -7,5 +7,5 @@
 
 [中文版](2026-10-12-benchmark-cases-five-per-page.zh.md)
 
-The question list on a Benchmark's page in the Evaluation Center showed five questions per page
-instead of ten.
+The question list on a Benchmark's page in the Evaluation Center went from ten questions per page
+to five.
