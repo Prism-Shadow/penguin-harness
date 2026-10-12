@@ -33,12 +33,7 @@ export function Scenarios() {
   }, [paused, items.length]);
 
   return (
-    <Section
-      id="scenarios"
-      eyebrow={S.scenarios.eyebrow}
-      title={S.scenarios.title}
-      subtitle={S.scenarios.subtitle}
-    >
+    <Section id="scenarios" title={S.scenarios.title} subtitle={S.scenarios.subtitle}>
       <div
         className="mx-auto max-w-5xl"
         onMouseEnter={() => setPaused(true)}

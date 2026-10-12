@@ -53,7 +53,7 @@ function CatalogRow({
       style={{ animationDelay: `${delay}ms` }}
     >
       <dt className="flex items-baseline gap-2 sm:text-left">
-        <span className="text-lg leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
+        <span className="text-2xl leading-none font-semibold tracking-tight text-brand-600 tabular-nums dark:text-brand-300">
           {count}
         </span>
         <span className="text-xs font-semibold tracking-wide text-gray-500 dark:text-gray-400">
@@ -89,7 +89,7 @@ export function Hero() {
         </h1>
 
         <p
-          className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance"
+          className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word]"
           style={{ animationDelay: "70ms" }}
         >
           {/* The badge hangs off the line's top-right corner; on a phone it sits above the

@@ -166,27 +166,26 @@ export const en: Strings = {
     start: "Start page (live demo)",
     evolve: {
       title: "Start agent self-evolution with one sentence",
-      text: "Name the agent, the Benchmark and the target score. It edits the agent, evaluates it again, and keeps the version that scores higher.",
+      text: "Name the agent, the Benchmark and the target score. PenguinHarness edits the agent, evaluates it again, and keeps the version that scores higher.",
       link: "How self-evolution works",
       frame: "A self-evolution round in a conversation (live demo)",
     },
     evaluate: {
       title: "Every version gets a score",
-      text: "Every evaluation on a Benchmark joins one line per agent and model, so the better version is plain to see.",
+      text: "Each evaluation on a Benchmark adds a point to its agent and model's line, so the better version is plain to see.",
       link: "About the Evaluation Center",
       frame: "A Benchmark in the Evaluation Center (live demo)",
     },
     toolkits: {
       title: "Self-evolution algorithms are plugins",
       text: (names: string) =>
-        `Besides the default loop, ${names} each come as a toolkit that runs the algorithm the way its paper does.`,
+        `Besides the default loop, ${names} each come as a toolkit that runs the algorithm the way its paper describes.`,
       link: "Browse the plugin library",
       frame: "The plugin market (live demo)",
     },
   },
 
   quickstart: {
-    eyebrow: "Quick start",
     title: "Install PenguinHarness, then pick how to start it",
     subtitle:
       "The desktop app works as soon as it is installed. After a command-line install, open the Web UI or use it in the terminal.",
@@ -243,22 +242,20 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    eyebrow: "Case",
     title: "One sentence builds an AI app that thinks and runs",
     subtitle:
-      "This sentence had an agent collect the Claude Code docs and turn them into a question-answering app that cites its sources. It wrote the index, the retrieval and the interface.",
+      "This sentence had an agent collect the Claude Code docs and turn them into a question-answering app that cites its sources. The agent wrote the index, the retrieval and the interface.",
     prompt:
       "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.",
     caption:
-      "The app it built answers Claude Code configuration questions with clickable citations, and comes with example questions",
+      "The app it built answers Claude Code configuration questions with clickable citations and comes with example questions",
     cost: "Built on DeepSeek V4 Pro for $0.02 (¥0.2) in Tokens.",
   },
 
   scenarios: {
-    eyebrow: "Scenarios",
     title: "From screening centers to factory floors",
     subtitle:
-      "Two companies had PenguinHarness build their agents, and now run them in production.",
+      "Two companies had PenguinHarness build their agents. Both now run them in production.",
     items: [
       {
         title: "Screening-report QC",
@@ -274,10 +271,9 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   benchmark: {
-    eyebrow: "Benchmark",
     title: "Accuracy on par with Claude Code and Codex, at a fraction of the cost",
     subtitle:
-      "Each product runs on the model it is usually paired with, on two task suites: accuracy, Tokens used and cost.",
+      "Each product runs on the model it is usually paired with, on two task suites. We compare accuracy, Tokens used and cost.",
     higherBetter: "higher is better",
     lowerBetter: "lower is better",
     dimScore: "Accuracy",

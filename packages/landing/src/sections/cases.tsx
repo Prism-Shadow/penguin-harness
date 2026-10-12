@@ -32,7 +32,7 @@ export function Cases() {
   const c = S.cases;
 
   return (
-    <Section id="cases" eyebrow={c.eyebrow} title={c.title} subtitle={c.subtitle}>
+    <Section id="cases" title={c.title} subtitle={c.subtitle}>
       <figure className="mx-auto max-w-5xl">
         <div className="mx-auto mb-5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-left sm:w-fit sm:max-w-full sm:overflow-x-auto dark:border-gray-800 dark:bg-gray-900">
           <code className="font-mono text-[12px] leading-5 whitespace-pre-wrap text-gray-800 sm:text-[13px] sm:whitespace-nowrap dark:text-gray-200">

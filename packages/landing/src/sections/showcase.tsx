@@ -48,7 +48,7 @@ function Row({
     >
       <div className={`flex flex-col lg:justify-end lg:pb-2 ${flip ? "lg:order-2" : ""}`}>
         {/* Title and sentence at one size, the sentence in grey: one statement, two weights. */}
-        <h2 className="text-xl leading-snug font-semibold tracking-tight text-balance text-gray-900 lg:text-[22px] dark:text-gray-100">
+        <h2 className="text-xl leading-snug font-semibold tracking-tight text-balance break-keep [overflow-wrap:break-word] text-gray-900 lg:text-[22px] dark:text-gray-100">
           {title}
         </h2>
         <p className="mt-1 text-xl leading-snug text-pretty text-gray-500 lg:text-[22px] dark:text-gray-400">

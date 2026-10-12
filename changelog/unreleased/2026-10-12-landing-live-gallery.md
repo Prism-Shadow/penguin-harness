@@ -19,7 +19,7 @@ The landing home page was rebuilt around the real Web App, framed live from the 
 - The hero puts a "for free" badge on the corner of the positioning line, keeps three stat tiles (the model-count tile went), and leads each catalogue row with its count in the brand accent: 1000+ supported models from the dictionaries, the algorithm and Benchmark counts from `RSI_TOOLKITS` and `BENCHMARKS`. The Web App's start page follows, live.
 - Three rows alternate a live frame with a title, one sentence and a docs link: a self-evolution round in a conversation, a Benchmark's score line in the Evaluation Center, and the RSI toolkits in the plugin market.
 - Latest updates shows the four newest news and practice posts of the blog index, by date, and links to all posts.
-- The copy in both dictionaries was rewritten. The Cases section keeps the RAG app only, with posters recaptured from the current app; `capture-shots.mjs` now captures only those, and the images and scripts nothing referenced any more were deleted.
+- The copy in both dictionaries was rewritten, and the home page's sections dropped their eyebrows. The Cases section keeps the RAG app only; `capture-shots.mjs` now captures only its posters, and the images and scripts nothing referenced any more were deleted.
 
 ## Live frames
 

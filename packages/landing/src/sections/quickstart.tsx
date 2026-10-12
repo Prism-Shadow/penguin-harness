@@ -102,12 +102,7 @@ export function Quickstart() {
   const installCommand = os === "windows" ? INSTALL_CMD_WINDOWS : INSTALL_CMD;
 
   return (
-    <Section
-      id="quickstart"
-      eyebrow={S.quickstart.eyebrow}
-      title={S.quickstart.title}
-      subtitle={S.quickstart.subtitle}
-    >
+    <Section id="quickstart" title={S.quickstart.title} subtitle={S.quickstart.subtitle}>
       <div className="mx-auto max-w-4xl">
         <StepHeading step={S.quickstart.stepOne} title={S.quickstart.chooseInstall} />
         <div

@@ -35,7 +35,7 @@ export function Updates() {
                 {" · "}
                 {S.blog[post.category]}
               </p>
-              <h3 className="mt-2 text-[15px] leading-snug font-medium text-gray-900 group-hover:text-brand-700 dark:text-gray-100 dark:group-hover:text-brand-300">
+              <h3 className="mt-2 text-[15px] leading-snug font-medium break-keep [overflow-wrap:break-word] text-gray-900 group-hover:text-brand-700 dark:text-gray-100 dark:group-hover:text-brand-300">
                 {post.title}
               </h3>
             </Link>

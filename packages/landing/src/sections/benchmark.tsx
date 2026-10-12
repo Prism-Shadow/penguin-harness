@@ -290,12 +290,7 @@ function SuiteBlock({
 
 export function Benchmark() {
   return (
-    <Section
-      id="benchmark"
-      eyebrow={S.benchmark.eyebrow}
-      title={S.benchmark.title}
-      subtitle={S.benchmark.subtitle}
-    >
+    <Section id="benchmark" title={S.benchmark.title} subtitle={S.benchmark.subtitle}>
       <div className="mx-auto flex max-w-4xl flex-col gap-14">
         <SuiteBlock
           title={S.benchmark.dataTitle}

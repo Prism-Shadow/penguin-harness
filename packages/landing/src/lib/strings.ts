@@ -164,7 +164,7 @@ export const zh = {
     start: "开始页（实时演示）",
     evolve: {
       title: "一句话启动 Agent 自进化",
-      text: "说出要优化的智能体、评估集和目标分数。它改智能体、重新评测，分数更高才保留。",
+      text: "说出要优化的智能体、评估集和目标分数，PenguinHarness 就会修改它、重新评测，分数更高才保留。",
       link: "自进化怎么运作",
       frame: "一轮自进化的对话（实时演示）",
     },
@@ -177,14 +177,13 @@ export const zh = {
     toolkits: {
       title: "自进化算法就是插件",
       /** `names`: the paper toolkits, already listed (OPRO、APE、…). */
-      text: (names: string) => `除了默认循环，${names} 各是一个工具包，按原论文的流程运行。`,
+      text: (names: string) => `除了默认循环，${names} 各自是一个工具包，按原论文的流程运行。`,
       link: "浏览插件库",
       frame: "插件市场（实时演示）",
     },
   },
 
   quickstart: {
-    eyebrow: "快速开始",
     title: "装好 PenguinHarness，选一种方式启动",
     subtitle: "桌面版装好就能用；用命令行安装的，可以开 Web 界面，也可以直接在终端里用。",
     stepOne: "第一步",
@@ -234,10 +233,9 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
-    eyebrow: "案例",
     title: "一句话生成会思考、可运行的 AI 应用",
     subtitle:
-      "下面这句话让 Agent 收集 Claude Code 的文档，做成一个带来源引用的问答应用；索引、检索和界面都是它写的。",
+      "下面这句话让 Agent 收集 Claude Code 的文档，做出带来源引用的问答应用；索引、检索和界面都是它写的。",
     prompt:
       "收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
     caption: "生成的应用：回答 Claude Code 的配置问题，引用可以点开，自带示例问题",
@@ -245,9 +243,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   scenarios: {
-    eyebrow: "应用场景",
     title: "从体检中心到工厂车间",
-    subtitle: "两家企业用 PenguinHarness 自动开发 Agent，现已用在生产环境。",
+    subtitle: "两家企业用 PenguinHarness 自动开发 Agent，已用于生产环境。",
     items: [
       {
         title: "体检报告质控",
@@ -263,7 +260,6 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   benchmark: {
-    eyebrow: "Benchmark",
     title: "与 Claude Code、Codex 准确率相当，成本低几十倍",
     subtitle: "三个产品各用常配的模型，在两套题上比准确率、Token 用量和花费。",
     higherBetter: "越高越好",
