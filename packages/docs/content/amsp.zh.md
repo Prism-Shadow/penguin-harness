@@ -188,6 +188,7 @@ data: [DONE]
 | `malformed` | 模型响应解析失败或被截断 |
 | `auth` | 供应商拒绝了凭据 |
 | `rejected` | 供应商明确拒绝了请求（参数、配额） |
+| `image_rejected` | 带图片的请求被供应商以 4xx 拒绝；引擎不看报文，一律视为图片被拒。图片换成一句固定说明后立即重试，供应商的报错原文由重试输入的 `[request_error]` 行携带（`retryable`，`retry_in_ms: 0`） |
 | `unsupported` | 请求要求了模型做不到的事 |
 | `invalid_input` | 输入无法组装成请求 |
 | `connect_failed` | 某个 MCP Server 连接失败（出现在 `mcp_connect.done` 上） |

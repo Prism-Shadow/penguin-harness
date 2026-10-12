@@ -55,6 +55,7 @@ import type { ReactNode } from "react";
 import type {
   ServerEvent,
   SessionBackgroundTasks,
+  SessionBatchResult,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -445,6 +446,69 @@ function rememberStatus(
   return next;
 }
 
+/** One (Agent, page) pair the sidebar's reload wants from a given source. */
+type WantedPage = {
+  agentId: string;
+  category: SessionCategory;
+  scope: string;
+  counts: boolean;
+};
+
+/** What the reload merge consumes per answered page. */
+type PageAnswer = {
+  agentId: string;
+  source: string | null;
+  pages: Array<{
+    category: SessionCategory;
+    scope: string;
+    counts?: SessionCategoryCounts;
+    workspaceCounts?: Record<string, SessionCategoryCounts>;
+    workspaceLatest?: Record<string, string>;
+    items: SessionInfo[];
+    hasMore: boolean;
+  }>;
+  answered: boolean;
+};
+
+/**
+ * One batch entry → the answer shape the merge expects.
+ *
+ * `ok: false` is a real answer about THAT Agent, and the two reasons are not the same thing:
+ * `absent` (this server does not host the Agent — its rows come from the machine that does)
+ * is the ordinary case, while `error` is a failure to answer at all. Treating them alike is
+ * what emptied the sidebar once already: an empty result standing in for a failure replaces
+ * rows that are perfectly alive.
+ */
+function oneAnswer(
+  want: WantedPage,
+  source: string | null,
+  result: SessionBatchResult | undefined,
+): PageAnswer {
+  if (result === undefined || !result.ok) {
+    return {
+      agentId: want.agentId,
+      source,
+      pages: [],
+      answered: result?.reason === "absent",
+    };
+  }
+  return {
+    agentId: want.agentId,
+    source,
+    pages: [
+      {
+        category: want.category,
+        scope: want.scope,
+        counts: result.counts,
+        workspaceCounts: result.workspaceCounts,
+        workspaceLatest: result.workspaceLatest,
+        ...splitPage(result.sessions, SIDEBAR_PAGE_SIZE),
+      },
+    ],
+    answered: true,
+  };
+}
+
 /**
  * Builds one Provider's store. Exported as a test seam: vitest runs this package in Node with
  * no DOM, so the list's own behaviour is exercised against the store directly rather than
@@ -580,62 +644,72 @@ export function createSessionsStore() {
               : [...new Set([...agentIds, ...(agentIdsByMachine[source] ?? [])])];
           return ids.map((agentId) => ({ agentId, source }));
         });
+        // One request per SOURCE, carrying every (Agent, page) pair that source owes us.
+        // These were one GET each — with several Agents and machines that is dozens fired at
+        // once, serialised by the browser's six-connections-per-host limit, and the
+        // conversation pane's own message read queued behind all of them.
+        const bySource = new Map<string | null, WantedPage[]>();
+        for (const { agentId, source } of jobs) {
+          // The Agent's whole-stream active first page (with per-category totals)
+          // always; plus the first page of every other pair already on screen — an
+          // open folder, and each Workspace group paging its own stream — because a
+          // reload triggered by a server event must refresh them, not blank them.
+          const pairs: { category: SessionCategory; scope: string }[] = [
+            { category: "active", scope: "" },
+          ];
+          for (const key of get().pageState.keys()) {
+            const parsed = parsePageKey(key);
+            if (parsed === null || parsed.agentId !== agentId || parsed.source !== source) continue;
+            if (parsed.category === "active" && parsed.scope === "") continue;
+            pairs.push({ category: parsed.category, scope: parsed.scope });
+          }
+          const list = bySource.get(source) ?? [];
+          for (const { category, scope } of pairs) {
+            list.push({
+              agentId,
+              category,
+              scope,
+              counts: category === "active" && scope === "",
+            });
+          }
+          bySource.set(source, list);
+        }
         try {
-          const results = await Promise.all(
-            jobs.map(async ({ agentId, source }) => {
-              // The Agent's whole-stream active first page (with per-category totals)
-              // always; plus the first page of every other pair already on screen — an
-              // open folder, and each Workspace group paging its own stream — because a
-              // reload triggered by a server event must refresh them, not blank them.
-              const pairs: { category: SessionCategory; scope: string }[] = [
-                { category: "active", scope: "" },
-              ];
-              for (const key of get().pageState.keys()) {
-                const parsed = parsePageKey(key);
-                if (parsed === null || parsed.agentId !== agentId || parsed.source !== source)
-                  continue;
-                if (parsed.category === "active" && parsed.scope === "") continue;
-                pairs.push({ category: parsed.category, scope: parsed.scope });
-              }
-              try {
-                const pages = await Promise.all(
-                  pairs.map(async ({ category, scope }) => {
-                    const res = await api.listSessions(
-                      projectId,
-                      agentId,
-                      {
-                        limit: SIDEBAR_PAGE_SIZE + 1,
-                        order: "activity",
-                        category,
-                        excludeOrg: true,
-                        ...(scope === "" ? {} : { workspaceGroup: scope }),
-                        ...(category === "active" && scope === "" ? { withCounts: true } : {}),
-                      },
-                      source,
-                    );
-                    return {
-                      category,
-                      scope,
-                      counts: res.counts,
-                      workspaceCounts: res.workspaceCounts,
-                      workspaceLatest: res.workspaceLatest,
-                      ...splitPage(res.sessions, SIDEBAR_PAGE_SIZE),
-                    };
-                  }),
-                );
-                return { agentId, source, pages, answered: true };
-              } catch (err) {
-                // Two very different things arrive here, and treating them alike is what
-                // emptied the sidebar. An Agent is per-server, so a server simply not
-                // having this one answers 404: an ANSWER, and the ordinary case. Anything
-                // else — this server mid-swap, a connection held to a server that is not
-                // serving, the network — is a failure to answer at all, and an empty
-                // result standing in for it replaces rows that are perfectly alive.
-                const absent = err instanceof ApiError && err.status === 404;
-                return { agentId, source, pages: [], answered: absent };
-              }
-            }),
-          );
+          const results = (
+            await Promise.all(
+              [...bySource].map(async ([source, wanted]) => {
+                let answered: PageAnswer[];
+                try {
+                  const res = await api.batchSessions(
+                    projectId,
+                    wanted.map((w) => ({
+                      agentId: w.agentId,
+                      limit: SIDEBAR_PAGE_SIZE + 1,
+                      order: "activity",
+                      category: w.category,
+                      excludeOrg: true,
+                      ...(w.scope === "" ? {} : { workspaceGroup: w.scope }),
+                      ...(w.counts ? { withCounts: true } : {}),
+                    })),
+                    source,
+                  );
+                  answered = wanted.map((w, i) => oneAnswer(w, source, res.results[i]));
+                } catch {
+                  // The whole SOURCE failed to answer — this server mid-swap, a connection
+                  // held to a server that is not serving, the network. Nothing is applied
+                  // for it below, which is the point: an empty result standing in for a
+                  // failure replaces rows that are perfectly alive (see oneAnswer).
+                  answered = wanted.map((w) => ({
+                    agentId: w.agentId,
+                    source,
+                    pages: [],
+                    answered: false,
+                  }));
+                }
+                return answered;
+              }),
+            )
+          ).flat();
           if (g !== gen) return;
           // Agents this server did not answer about. Per Agent, not per server: a damaged
           // index or a 500 on ONE Agent is a different event from this server being
@@ -896,32 +970,57 @@ export function createSessionsStore() {
         }
         if (targets.length === 0 && settled.length === 0) return;
         const g = gen;
-        const results = await Promise.all(
-          targets.map(async ({ agentId, source, before }) => {
-            try {
-              const fetched = (
-                await api.listSessions(
+        // One request per SOURCE, carrying every (Agent, cursor) it owes that source — the
+        // same fan-out as reload(), and for the same reason: workspace grouping asks for one
+        // page per group per Agent on first paint, which as individual requests was a second
+        // dozen-request wave behind the conversation.
+        const pagesBySource = new Map<string | null, typeof targets>();
+        for (const target of targets) {
+          pagesBySource.set(target.source, [...(pagesBySource.get(target.source) ?? []), target]);
+        }
+        const results = (
+          await Promise.all(
+            [...pagesBySource].map(async ([source, wants]) => {
+              let fetched: Array<{ target: (typeof targets)[number]; rows: SessionInfo[] } | null>;
+              try {
+                const res = await api.batchSessions(
                   projectId,
-                  agentId,
-                  {
+                  wants.map((w) => ({
+                    agentId: w.agentId,
                     limit: SIDEBAR_PAGE_SIZE + 1,
                     order: "activity",
-                    ...(before === null ? {} : { before }),
+                    ...(w.before === null ? {} : { before: w.before }),
                     category,
                     excludeOrg: true,
                     ...(scope === "" ? {} : { workspaceGroup: scope }),
-                  },
+                  })),
                   source,
-                )
-              ).sessions;
-              return { agentId, source, before, ...splitPage(fetched, SIDEBAR_PAGE_SIZE) };
-            } catch {
-              // Transient failure: leave the pair's state untouched (still unloaded / still
-              // has-more), so the affordance stays and the user can retry.
-              return null;
-            }
-          }),
-        );
+                );
+                fetched = wants.map((w, i) => {
+                  const answer = res.results[i];
+                  // An Agent this server does not host, or one that failed to answer, is
+                  // nothing to append — the pair's own state is left untouched below, so the
+                  // affordance stays and the user can retry.
+                  if (answer === undefined || !answer.ok) return null;
+                  return { target: w, rows: answer.sessions };
+                });
+              } catch {
+                // Transient failure: same as above, for the whole source.
+                fetched = wants.map(() => null);
+              }
+              return fetched.map((f) =>
+                f === null
+                  ? null
+                  : {
+                      agentId: f.target.agentId,
+                      source,
+                      before: f.target.before,
+                      ...splitPage(f.rows, SIDEBAR_PAGE_SIZE),
+                    },
+              );
+            }),
+          )
+        ).flat();
         if (g !== gen) return; // Project switch / reload raced this page: drop it.
         const ok = results.filter((r) => r !== null);
         const prev = get().sessions;

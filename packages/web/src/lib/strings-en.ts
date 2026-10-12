@@ -711,7 +711,7 @@ export const en: Strings = {
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
     notifications: "Task completion notifications",
     notificationsInfo:
-      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
+      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot and shows a confirmation notification — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
     notificationsDenied:
       "The system has denied notifications for this app. Allow them in your system notification settings, then turn this on again.",
     notificationsDismissed:
@@ -1021,6 +1021,9 @@ export const en: Strings = {
 
   /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
+    enabledTitle: "System notifications enabled",
+    enabledBody:
+      "You will be notified here when a Task finishes while the window is in the background.",
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
     taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
@@ -3393,9 +3396,11 @@ Scenarios:
             ? "Response incomplete or unparseable"
             : kind === "network"
               ? "Network or service temporarily unavailable"
-              : kind === "failed"
-                ? "The model provider returned an error"
-                : "The request failed";
+              : kind === "image_rejected"
+                ? "The model provider rejected an image in this turn's input (replaced with a note)"
+                : kind === "failed"
+                  ? "The model provider returned an error"
+                  : "The request failed";
       const action =
         state === "gaveUp"
           ? `giving up after attempt ${attempt}${errorMessage ? `: ${errorMessage}` : ""}`
@@ -3413,6 +3418,10 @@ Scenarios:
     reconnectRetryNow: "Retry now",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */
     reconnectGiveUp: "Give up",
+    /** "Retry" on a failed run's last line (the error banner, or a reconnect line that gave up): sends the failed turn's input again, with no new message. */
+    retryFailedRun: "Retry",
+    /** Toast when Retry finds nothing held: the failed turn's input already went out with a later message. */
+    retryNothing: "Nothing to retry: the failed turn's input has already been sent.",
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:

@@ -79,6 +79,35 @@ export function transcribeToolCallOutput(
   );
 }
 
+/**
+ * `[request_error code=…]message[/request_error]` — how the last failed attempt's request
+ * ended: the unified error code, and the provider's or transport's text exactly as it came
+ * (empty when the failure carried none, such as an idle timeout). Written so the model can
+ * judge for itself what went wrong before it carries on; the harness adds no reading of its
+ * own. A block holds at most one such line, the latest failure's: see stripRequestErrorLines.
+ */
+export function transcribeRequestError(
+  code: string | undefined,
+  message: string | undefined,
+): string {
+  return transcriptLine(TRANSCRIPT_TAGS.requestError, message ?? "", code ? ` code="${code}"` : "");
+}
+
+const REQUEST_ERROR_LINE = new RegExp(
+  `^ {2}\\[${TRANSCRIPT_TAGS.requestError}(?: [^\\]]*)?\\][\\s\\S]*?\\[/${TRANSCRIPT_TAGS.requestError}\\]\\n?`,
+  "gm",
+);
+
+/**
+ * The inner lines of a synthetic block without their request_error line. A block carries at
+ * most one, the latest failure's, so a block rebuilt from an older one (a `[turn_retried]`
+ * merged into a `[turn_aborted]`, or a previous run's carry-over) drops the old line before
+ * the new outcome's goes in — or stays without one when the new outcome is a user interruption.
+ */
+export function stripRequestErrorLines(inner: string): string {
+  return inner.replace(REQUEST_ERROR_LINE, "").replace(/\n$/, "");
+}
+
 /** Wraps transcribed lines as the interruption block resent as carry-over. */
 export function buildTurnAbortedBlock(lines: readonly string[]): string {
   return [`[${MARKER_TAGS.turnAborted}]`, ...lines, `[/${MARKER_TAGS.turnAborted}]`].join("\n");
