@@ -4,8 +4,9 @@
  * one menu and no other action: it opens the desk session, and holds the personnel actions
  * below that — hire a subordinate, set budget, set the thinking level (the employee's Agent
  * config, which its desk reads), change the reporting line, renew the desk (a fresh desk
- * session, and the workspace it runs in), leave. Every one of the personnel actions confirms
- * before it writes. An employee whose Agent was deleted keeps only what needs no Agent — no
+ * session, and the workspace it runs in), leave. The hire, budget, thinking-level and reporting
+ * line dialogs write on their Save (employee-dialogs.tsx); the desk renewal is a confirmation of
+ * its own, and leaving confirms before it writes. An employee whose Agent was deleted keeps only what needs no Agent — no
  * desk to open or renew, no config to write — so 「离任」 is how it is removed; a deleted CEO
  * cannot leave, and the page says how to restore it instead. The card owns when that menu is open (three
  * gestures reach it — see chart-card.tsx); this page only supplies the rows, against the

@@ -6,9 +6,16 @@
  * go through visibleSettingsSections, so a viewer neither sees a page they may not open
  * nor lands on one: the active page is re-resolved against that list on every render, and
  * anything not on it falls back to the first page they can actually open.
+ *
+ * A page with a typed form registers it under the dialog's scope while it holds unsaved
+ * edits, and both ways of leaving that page ask first: switching pages on the rail (which
+ * unmounts the page and its drafts) and closing the dialog by Esc, the ×, or a press on the
+ * scrim. Switches, selects and other instant controls never make a page dirty. A page's Save
+ * registers under the same scope while it is in flight (`useSaving`), and the dialog's close
+ * does nothing until it answers; an instant control's write holds nothing.
  */
 import { useEffect, useState } from "react";
-import { ICONS, PagedDialog } from "@prismshadow/penguin-ui";
+import { ICONS, PagedDialog, guardLeave, useGuardedClose } from "@prismshadow/penguin-ui";
 import type { PagedDialogGroup } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import {
@@ -17,6 +24,7 @@ import {
   visibleSettingsSections,
 } from "../../lib/settings-sections";
 import type { SettingsGroupKey, SettingsSectionKey } from "../../lib/settings-sections";
+import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { useAuth } from "../../state/auth";
 import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";
@@ -82,6 +90,7 @@ export function SettingsDialog({
     sessionVia,
   });
   const [active, setActive] = useState<SettingsSectionKey | null>(null);
+  const requestClose = useGuardedClose(onClose, SETTINGS_SCOPE);
 
   // Each opening starts on the requested page, or the viewer's first: `current` below
   // resolves the choice against the live list. Deliberately keyed on `open` (and the
@@ -144,11 +153,13 @@ export function SettingsDialog({
   return (
     <PagedDialog
       open={open}
-      onClose={onClose}
+      onClose={requestClose}
       title={S.settings.title}
       groups={groups}
       active={current}
-      onSelect={setActive}
+      onSelect={(key) => {
+        if (key !== current) void guardLeave(() => setActive(key), SETTINGS_SCOPE);
+      }}
     >
       {current === "profile" && <ProfileSection />}
       {current === "general" && <GeneralSection />}

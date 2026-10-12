@@ -13,6 +13,12 @@
  *   and its run results.
  *
  * Any member of the Project may take either path: a Benchmark belongs to the Project.
+ *
+ * The page mounts the dialog only while it is open, so every opening starts with nothing typed.
+ * The source is its draft under the settings commit model: closing the dialog with one typed
+ * (Esc, the ×, a press outside) asks first, and nothing closes it while an upload is in flight.
+ * Opening the chat hands the source over, so the draft is forgotten before the page moves to the
+ * conversation.
  */
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
@@ -26,8 +32,11 @@ import {
   Modal,
   Textarea,
   buttonClass,
+  discardUnsaved,
   toastSuccess,
   useCopied,
+  useFormDraft,
+  useGuardedClose,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -90,7 +99,9 @@ export function ImportBenchmarkModal({
   onImported: (benchmark: BenchmarkSummary) => void;
 }) {
   const { openAiChat } = useAiBridge();
-  const [source, setSource] = useState("");
+  // The source, compared without the spaces around it: what closing the dialog asks about.
+  const form = useFormDraft<string>("", { normalize: (text) => text.trim() });
+  const source = form.draft;
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   // A refusal lands under the upload button, at the foot of a dialog whose body may scroll — an
@@ -103,6 +114,8 @@ export function ImportBenchmarkModal({
   const [overwriting, setOverwriting] = useState<PendingOverwrite | null>(null);
   // Copy feedback lives at the button: its glyph flips to the check while copied.
   const promptCopy = useCopied();
+  // An upload in flight holds every way of closing until it answers.
+  const requestClose = useGuardedClose(onClose, form.scope, { locked: uploading });
 
   const trimmedSource = source.trim();
   // The preview stands a placeholder in for the source until one is entered.
@@ -115,6 +128,9 @@ export function ImportBenchmarkModal({
 
   const openChat = () => {
     if (chat === null) return;
+    // The source goes with the chat, so nothing typed is left to lose; forgotten first, or the
+    // leave guard would hold the move to the conversation.
+    discardUnsaved(form.scope);
     openAiChat(chat);
     onClose();
   };
@@ -155,7 +171,12 @@ export function ImportBenchmarkModal({
   return (
     <>
       {/* Recommended chat import on top, zip upload below (the Skills tab's shape). */}
-      <Modal open title={S.benchmark.importBenchmark} onClose={onClose} widthClass="sm:max-w-lg">
+      <Modal
+        open
+        title={S.benchmark.importBenchmark}
+        onClose={requestClose}
+        widthClass="sm:max-w-lg"
+      >
         <div className="space-y-4">
           <section>
             <p className="text-sm font-medium">{S.benchmark.importChatTitle}</p>
@@ -168,7 +189,7 @@ export function ImportBenchmarkModal({
                 size="sm"
                 rows={3}
                 value={source}
-                onChange={(e) => setSource(e.target.value)}
+                onChange={(e) => form.setDraft(e.target.value)}
                 placeholder={S.benchmark.importSourcePlaceholder}
               />
               <Textarea

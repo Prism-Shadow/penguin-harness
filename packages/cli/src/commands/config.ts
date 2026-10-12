@@ -480,9 +480,9 @@ export function registerConfigCommand(program: Command, t: Messages): void {
         return;
       }
       // The route's second rule, enforced here for the same reason: only the groups that take
-      // hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow and user-defined
-      // groups) do, and every other built-in group carries its catalog presets. A preset may be
-      // added back; an entry already stored is left alone.
+      // hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and
+      // user-defined groups) do, and every other built-in group carries its catalog presets. A
+      // preset may be added back; an entry already stored is left alone.
       if (!existed && unaddableModel(provider, modelId)) {
         refuse(t, t.modelNotAddable(formatModelRef(ref), pInfo?.label ?? provider));
         return;

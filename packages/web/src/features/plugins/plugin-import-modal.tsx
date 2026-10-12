@@ -24,6 +24,11 @@
  * The tabs and their fields live in the dialog's body, so every opening starts on the npm tab
  * with nothing typed; the body can be opened on another tab holding a value instead, the state
  * the link tab's hand-off leaves it in.
+ *
+ * What the three fields hold is the dialog's draft under the settings commit model: a look at
+ * another tab keeps it, and closing the dialog with anything typed (Esc, the ×, a press outside)
+ * asks first. Nothing closes it while an install or an upload is in flight. Opening the chat
+ * hands the source over, so the draft is forgotten before the page moves to the conversation.
  */
 import { useState } from "react";
 import type { ChangeEvent } from "react";
@@ -40,8 +45,12 @@ import {
   Tabs,
   Textarea,
   buttonClass,
+  discardUnsaved,
   toastSuccess,
   useCopied,
+  useFormDraft,
+  useGuardedClose,
+  useSaving,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -59,6 +68,23 @@ import {
 } from "./plugin-import-prompt";
 
 const UPLOAD_LABEL_CLASS = buttonClass("secondary", "sm");
+
+/** The import dialog's typed fields: what its close asks about, and what an install in flight holds. */
+const PLUGIN_IMPORT_SCOPE = "plugin-import";
+
+/** The dialog's draft: the npm and the link tab's values, and the agent tab's source. */
+interface ImportDraft {
+  npm: string;
+  link: string;
+  source: string;
+}
+
+/** What the fields hold as the dialog reads them: without the spaces around them. */
+const trimmedDraft = (draft: ImportDraft): ImportDraft => ({
+  npm: draft.npm.trim(),
+  link: draft.link.trim(),
+  source: draft.source.trim(),
+});
 
 /** The dialog's tabs, in order; the first is the one it opens on. */
 export const IMPORT_TABS = ["npm", "link", "zip", "agent"] as const;
@@ -166,15 +192,18 @@ export function ImportPluginTabs({
 }: ImportPluginTabsProps) {
   const opened = (at: ImportTab) => (initial.tab === at ? (initial.value ?? "") : "");
   const [tab, setTab] = useState<ImportTab>(initial.tab);
-  // What each direct tab holds survives a look at another tab.
-  const [typed, setTyped] = useState<Record<DirectTab, string>>(() => ({
-    npm: opened("npm"),
-    link: opened("link"),
-  }));
+  // What each tab holds survives a look at another tab.
+  const form = useFormDraft<ImportDraft>(
+    { npm: opened("npm"), link: opened("link"), source: opened("agent") },
+    { scope: PLUGIN_IMPORT_SCOPE, normalize: trimmedDraft },
+  );
+  const typed = form.draft;
+  const source = form.draft.source;
   const [installing, setInstalling] = useState(false);
   const [directError, setDirectError] = useState<string | null>(null);
-  const [source, setSource] = useState(() => opened("agent"));
   const [uploading, setUploading] = useState(false);
+  // An install or an upload in flight holds the dialog's close until it answers.
+  useSaving(installing || uploading, PLUGIN_IMPORT_SCOPE);
   const [uploadError, setUploadError] = useState<string | null>(null);
   // Non-null shows the replace confirm (the upload answered 409 plugin_exists).
   const [replacing, setReplacing] = useState<{
@@ -231,7 +260,7 @@ export function ImportPluginTabs({
 
   /** The link tab's way out for a repository folder: the agent tab, the link as its source. */
   const askAgentWith = (link: string) => {
-    setSource(link.trim());
+    form.patch({ source: link.trim() });
     setTab("agent");
     setDirectError(null);
   };
@@ -260,7 +289,7 @@ export function ImportPluginTabs({
               size="sm"
               aria-label={npm ? S.plugins.importNpmLabel : S.plugins.importLinkLabel}
               value={value}
-              onChange={(e) => setTyped({ ...typed, [from]: e.target.value })}
+              onChange={(e) => form.setDraft((d) => ({ ...d, [from]: e.target.value }))}
               placeholder={npm ? S.plugins.importNpmPlaceholder : S.plugins.importLinkPlaceholder}
               autoComplete="off"
               spellCheck={false}
@@ -320,7 +349,7 @@ export function ImportPluginTabs({
           size="sm"
           label={S.plugins.importSourceLabel}
           value={source}
-          onChange={(e) => setSource(e.target.value)}
+          onChange={(e) => form.patch({ source: e.target.value })}
           placeholder={S.plugins.importSourcePlaceholder}
           autoComplete="off"
         />
@@ -428,6 +457,7 @@ export function ImportPluginModal({
   onInstalled,
 }: ImportPluginModalProps) {
   const { openAiChat } = useAiBridge();
+  const requestClose = useGuardedClose(onClose, PLUGIN_IMPORT_SCOPE);
 
   const landed = (outcome: PluginInstallOutcome | null, fallbackName: string) => {
     toastSuccess(
@@ -440,13 +470,21 @@ export function ImportPluginModal({
   };
 
   return (
-    <Modal open={open} title={S.plugins.importPlugin} onClose={onClose} widthClass="sm:max-w-lg">
+    <Modal
+      open={open}
+      title={S.plugins.importPlugin}
+      onClose={requestClose}
+      widthClass="sm:max-w-lg"
+    >
       <ImportPluginTabs
         projectId={projectId}
         onOpenChat={
           agentId === null
             ? null
             : (text) => {
+                // The source goes with the chat, so nothing typed is left to lose; forgotten
+                // first, or the leave guard would hold the move to the conversation.
+                discardUnsaved(PLUGIN_IMPORT_SCOPE);
                 openAiChat({ agentId, text });
                 onClose();
               }
