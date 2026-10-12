@@ -1062,12 +1062,15 @@ export function Sidebar({
 
   /**
    * Archive: persists immediately and moves the row out of the list in place (fails silently;
-   * the next list refresh self-corrects). The store keeps the row for a page showing it, so
-   * archiving the open conversation turns it into the archived stub, which unarchives it again.
+   * the next list refresh self-corrects). Archiving the conversation on screen leaves it for a
+   * new chat, as the New chat button does — it is filed away, not something to read on; only
+   * its URL, opened again later, shows the archived stub.
    */
   const archiveSession = async (s: SessionInfo) => {
     try {
       const res = await api.patchSession(s.sessionId, { archived: true });
+      // Leave first, so the page never paints the stub for the row it is about to drop.
+      if (activeSessionId === s.sessionId) newChat();
       replace(res.session);
     } catch {
       /* Ignore: non-critical operation */
