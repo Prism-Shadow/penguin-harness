@@ -3006,27 +3006,19 @@ export const en: Strings = {
     draftSubtitle: "The most comprehensive agent self-evolution platform",
     start: {
       metrics: {
-        toolkits: "Self-evolution algorithms",
-        reproductions: "Benchmark reproductions",
         agents: "Agents",
-        evaluations: "Evaluations",
+        toolkits: "Self-evolution algorithms",
+        benchmarks: "Benchmarks",
       },
-      toolkitsTitle: "Self-evolution algorithms",
-      toolkitsInfo:
-        "Each algorithm is an RSI toolkit from the plugin library, run the way its paper describes. Start fills the composer with the toolkit's demo request, and nothing runs until you send it; when the selected agent lacks the toolkit, the button reads Install and start and installs it once you confirm.",
       toolkitTitle: { default: "Default", opro: "OPRO", ape: "APE", ace: "ACE", awm: "AWM" },
+      toolkitPick: "Switch self-evolution algorithm",
       toolkitInstalled: (agent: string): string => `Installed on ${agent}`,
       toolkitStart: "Start",
       toolkitInstallStart: "Install and start",
       toolkitAfterInstall:
         "Once it is installed, its demo request fills the composer; nothing runs until you send it.",
-      benchmarksTitle: "Evaluation Center",
-      benchmarksInfo:
-        "This Project's Benchmarks on this server, each with the score, agent and version of its latest evaluation; a row opens its page.",
-      benchmarksAll: (n: number): string => `All ${n} Benchmark${n === 1 ? "" : "s"}`,
-      benchmarkLatestBy: (agent: string, version: number): string => `latest ${agent} v${version}`,
-      benchmarksEmpty: "This Project has no Benchmarks yet",
       benchmarksEmptyAction: "Create or import one in the Evaluation Center",
+      agentsEmptyAction: "Create an agent",
       examplesTitle: "Examples and shortcuts",
     },
     /** Folder names for the start page's collapsible examples (bookmark-style: exactly one open at a time). */

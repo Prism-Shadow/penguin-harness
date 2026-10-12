@@ -402,7 +402,7 @@ A flow id that names no live flow is `404 platform_auth_flow_not_found`. `sync` 
 
 ## Agents
 
-The paths below omit the `/api/projects/:projectId` prefix, except the global `/api/plugins` and `/api/rsi` routes.
+The paths below omit the `/api/projects/:projectId` prefix, except the global `/api/plugins` routes.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -441,7 +441,6 @@ The paths below omit the `/api/projects/:projectId` prefix, except the global `/
 | GET | `/api/plugins/:plugin/files` (global) | The files one library plugin ships, as text keyed by path (any signed-in user) |
 | GET | `/api/plugins/:plugin/readme` (global) | A library plugin's `README.md`, from its package root: `{name, readme}`; 404 without one (any signed-in user) |
 | GET | `/api/plugins/:plugin/archive` (global) | A library plugin's package as a zip (any signed-in user) |
-| GET | `/api/rsi` (global) | The self-evolution catalogue: the RSI toolkits in the plugin library and the built-in Benchmark reproductions (any signed-in user) |
 
 ### Agent routes
 
@@ -471,7 +470,6 @@ The paths below omit the `/api/projects/:projectId` prefix, except the global `/
 - `GET /api/plugins/:plugin/files` returns everything one library plugin ships, as text keyed by path: each Skill's installable `SKILL.md` and reference files under `skills/<name>/`, and the hook scripts under `hooks/`. The plugin detail dialog's file browser uses it.
 - `GET /api/plugins/:plugin/readme` returns the `README.md` at a library plugin's package root, for the detail dialog. A plugin that ships none returns 404 `readme_not_found`, and a name the library does not carry 404 `unknown_plugin`.
 - `GET /api/plugins/:plugin/archive` downloads a library plugin's package directory as a zip, without `node_modules/`, under a top-level `<name>/` directory and named `<name>-v<version>.zip`; another server imports it as it is. A package past the import caps returns 413 `plugin_too_large`, and a name the library does not carry 404 `unknown_plugin`.
-- `GET /api/rsi` returns `{toolkits, benchmarks}`: one entry per plugin of the library's `rsi` category (`plugin`, its `skills`, and whether it is preinstalled) and one per built-in Benchmark (`id`, `title`). The draft page's metric tiles read it.
 
 ### Agent API settings
 

@@ -1,8 +1,8 @@
 /**
  * What the start page shows, decided without React (start-dashboard.tsx renders it; unit tested
- * in test/start-dashboard-data.test.ts): the toolkit cards and their order, a Benchmark's latest
- * evaluation, the order of the Evaluation Center rows, and whether the selected agent has a
- * toolkit.
+ * in test/start-dashboard-data.test.ts): the toolkits in their order and which one the toolkit
+ * tile offers, a Benchmark's latest evaluation and which Benchmark the Benchmarks tile shows,
+ * which agent the agents tile shows, and whether the selected agent has a toolkit.
  */
 
 /** A method row as the ordering reads it (`RSI_METHODS` rows are a superset). */
@@ -17,7 +17,7 @@ export interface ToolkitPluginLike {
   readonly skills: readonly { readonly name: string }[];
 }
 
-/** One toolkit card: the method row it stands for, if any, and its plugin once loaded. */
+/** One toolkit: the method row it stands for, if any, and its plugin once loaded. */
 export interface ToolkitEntry<M extends ToolkitMethodLike, P extends ToolkitPluginLike> {
   readonly key: string;
   readonly method: M | null;
@@ -25,11 +25,11 @@ export interface ToolkitEntry<M extends ToolkitMethodLike, P extends ToolkitPlug
 }
 
 /**
- * The toolkit cards in display order. Before the library has answered (`plugins` null) there is
- * one card per method row, so the grid has its final shape from the first paint. Once it has,
- * the methods' own plugins come first, in method order — the default loop leads, as it does in
- * the Method select — and a row whose plugin the library does not carry is dropped; any other
- * plugin of the category follows, by name.
+ * The toolkits in display order (the toolkit tile's menu). Before the library has answered
+ * (`plugins` null) there is one entry per method row, so the tile has a name from the first
+ * paint. Once it has, the methods' own plugins come first, in method order — the default loop
+ * leads, as it does in the Method select — and a row whose plugin the library does not carry is
+ * dropped; any other plugin of the category follows, by name.
  */
 export function orderToolkits<M extends ToolkitMethodLike, P extends ToolkitPluginLike>(
   plugins: readonly P[] | null,
@@ -49,6 +49,19 @@ export function orderToolkits<M extends ToolkitMethodLike, P extends ToolkitPlug
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((plugin) => ({ key: plugin.name, method: null, plugin }));
   return [...known, ...others];
+}
+
+/**
+ * The toolkit the tile offers to start: the one the user last picked or started on this
+ * browser (`remembered`, its plugin name), else the first in display order — the default loop.
+ * A remembered name the library no longer carries falls back the same way; null only when
+ * there are no toolkits at all.
+ */
+export function recentToolkit<M extends ToolkitMethodLike, P extends ToolkitPluginLike>(
+  entries: readonly ToolkitEntry<M, P>[],
+  remembered: string | null,
+): ToolkitEntry<M, P> | null {
+  return entries.find((entry) => entry.key === remembered) ?? entries[0] ?? null;
 }
 
 /** The fields of an evaluation the start page orders by and shows. */
@@ -85,8 +98,9 @@ export interface BenchmarkLike {
 }
 
 /**
- * The Evaluation Center section's order: the Benchmarks with an evaluation first, the most
- * recently evaluated on top, then the rest by title (and by id, so equal titles keep one order).
+ * The Benchmarks in the order the tile reads them — its row is the first: the Benchmarks with an
+ * evaluation first, the most recently evaluated on top, then the rest by title (and by id, so
+ * equal titles keep one order).
  */
 export function sortBenchmarks<B extends BenchmarkLike>(benchmarks: readonly B[]): B[] {
   const keyed = benchmarks.map((benchmark) => {
@@ -108,7 +122,7 @@ export function sortBenchmarks<B extends BenchmarkLike>(benchmarks: readonly B[]
 /**
  * Whether the selected agent has a toolkit: every Skill the plugin ships is among the agent's
  * installed Skills. A partial copy — an older version that shipped fewer, or one with a Skill
- * removed — is not: the card then offers the install, which completes it, since the demo may
+ * removed — is not: the tile then offers the install, which completes it, since the demo may
  * need any of them. A plugin without Skills is never a toolkit the agent has.
  */
 export function isInstalled(
@@ -118,11 +132,31 @@ export function isInstalled(
   return plugin.skills.length > 0 && plugin.skills.every((skill) => installed.has(skill.name));
 }
 
-/** Every evaluation the Benchmarks have recorded: the evaluations tile's number. */
-export function evaluationCount(
-  benchmarks: readonly { readonly evaluations: readonly unknown[] }[],
-): number {
-  return benchmarks.reduce((sum, benchmark) => sum + benchmark.evaluations.length, 0);
+/** The agent fields the agents tile reads (`AgentSummary` is a superset). */
+export interface AgentLike {
+  readonly agentId: string;
+  /** When the Agent State last changed; absent when the server could not tell. */
+  readonly updatedAt?: string;
+}
+
+/**
+ * The agent the agents tile shows: the one whose Agent State changed most recently — a
+ * self-evolution run ends in exactly such a change — and, among agents the server gives no time
+ * for, or at the same time, the first listed. Null for a Project without agents.
+ */
+export function recentAgent<A extends AgentLike>(agents: readonly A[]): A | null {
+  let recent: A | null = null;
+  for (const agent of agents) {
+    if (recent === null) {
+      recent = agent;
+      continue;
+    }
+    const at = agent.updatedAt === undefined ? Number.NEGATIVE_INFINITY : timeOf(agent.updatedAt);
+    const best =
+      recent.updatedAt === undefined ? Number.NEGATIVE_INFINITY : timeOf(recent.updatedAt);
+    if (at > best) recent = agent;
+  }
+  return recent;
 }
 
 /** A quick start as the library carries it (`QuickStartItem` is a superset). */
@@ -132,7 +166,7 @@ export interface QuickStartLike {
   readonly skills?: readonly string[];
 }
 
-/** What a toolkit card's Start puts in the composer, in both languages, with the Skills it pins. */
+/** What the toolkit tile's Start puts in the composer, in both languages, with the Skills it pins. */
 export interface ToolkitDemo {
   readonly prompt: string;
   readonly promptZh?: string;

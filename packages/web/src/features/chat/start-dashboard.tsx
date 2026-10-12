@@ -1,63 +1,62 @@
 /**
- * The start page (/chat/new) as a dashboard: the brand and four metric tiles above the composer,
- * three ruled sections under it. The draft view owns every piece of draft state — the Agent, the
- * Workspace, the composer — and hands this module the composer as a slot, a way to fill it, and
- * what it knows about the selected Agent; everything this page reads from the server for its own
- * sake is read here (use-start-dashboard.ts) and shaped without React (start-dashboard-data.ts).
+ * The start page (/chat/new) as a dashboard that fits one screen: the brand, three metric tiles,
+ * the composer, and the examples block. The draft view owns every piece of draft state — the
+ * Agent, the Workspace, the composer — and hands this module the composer as a slot, a way to
+ * fill it, and what it knows about the selected Agent; everything this page reads from the
+ * server for its own sake is read here (use-start-dashboard.ts) and shaped without React
+ * (start-dashboard-data.ts).
  *
- * - **Header.** The logo, the product's name (the page's one h1, which the e2e suite finds the
- *   page by), the slogan and the version line, beside the tiles once the column is wide enough
- *   to hold both and above them when it is not. A tile counts one thing and opens the page that
- *   lists it: the self-evolution algorithms and the Benchmark reproductions this build ships
- *   (GET /api/rsi) — the plugin library holds the former (it offers no category link, so the tile
- *   opens the library itself), the Evaluation Center the latter — this Project's agents, and the
- *   evaluations its Benchmarks have recorded. A count that has not arrived reads "—".
- * - **Self-evolution algorithms.** One card per toolkit of the library's `rsi` category, in the
- *   Method select's order: its short name, its one-line blurb, a mark when the selected Agent has
- *   it, and Start, which fills the composer with the plugin's own quick start and sends nothing.
- *   Where the Agent lacks the toolkit the button installs it first, behind the Plugins page's
- *   confirmation; an Agent on another machine is not installed to from here.
- * - **Evaluation Center.** This Project's Benchmarks on this server, the most recently evaluated
- *   first, at most five, each with its latest score and who earned it; a row opens its page.
- * - **Examples and shortcuts.** The example folders and the user's own shortcuts, one folder open
- *   at a time (example-tasks.ts, shortcuts-folder.tsx).
+ * - **Brand.** The logo, the product's name (the page's one h1, which the e2e suite finds the
+ *   page by), the slogan and the version line.
+ * - **Tiles.** Three readings, one row, each the same shape so they read as a stats panel at a
+ *   glance: the label and the big number on top — this Project's agents, the self-evolution
+ *   toolkits of the library's `rsi` category, this Project's Benchmarks on this server — which
+ *   open the page that lists them, and under a hairline the most recent item of each, in a
+ *   quieter line. For the agents, the one whose Agent State changed last; for the toolkits, the
+ *   one the user last picked or started here (remembered per browser), with Start — which fills
+ *   the composer with the plugin's own quick start and sends nothing; where the Agent lacks the
+ *   toolkit the button installs it first, behind the Plugins page's confirmation, and an Agent on
+ *   another machine is not installed to from here — and a menu over its name to pick another;
+ *   for the Benchmarks, the most recently evaluated one with its latest score, which opens its
+ *   page. A count that has not arrived reads "—"; a recent line waits as a placeholder of the
+ *   same height.
+ * - **Examples and shortcuts.** The example folders and the user's own shortcuts, one folder
+ *   open at a time (example-tasks.ts, shortcuts-folder.tsx): the folders down one column and the
+ *   open folder's rows beside them, so switching folders moves nothing; stacked on a phone.
  *
- * Nothing moves while it loads: the tiles hold "—", the toolkit cards are drawn from the Method
- * select's rows before the library answers, the Benchmark list stands in as five placeholder
- * rows, and the version line keeps its height. Nothing scrolls inside the page either — the
- * draft view's column is the one scroll container. Breakpoints are container queries on the
- * column rather than viewport ones: the sidebar and the dock take their width from it, so the
- * viewport cannot say how much room the dashboard has. The header and the sections are each
- * their own query container and the composer is neither, so the composer's panels never sit
- * inside a container's containment.
+ * Nothing moves while it loads and nothing scrolls inside the page — the draft view's column is
+ * the one scroll container, and at a laptop viewport the page needs none. Breakpoints are
+ * container queries on the column rather than viewport ones: the sidebar and the dock take their
+ * width from it, so the viewport cannot say how much room the dashboard has. The tiles and the
+ * examples block are each their own query container and the composer is neither, so the
+ * composer's panels never sit inside a container's containment.
  *
  * Colours, lines, radii and type come from the tokens and the package's components, so the three
- * themes restyle the page through them: a `Card`'s frame is squared and unfilled in Console and
- * softened in Frost, the section titles are the theme's eyebrow, the h1 is its display title.
+ * themes restyle the page through them: the tiles' `Card` is squared and unfilled in Console and
+ * softened in Frost, the section title is the theme's eyebrow, the h1 is its display title.
  */
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
-import type {
-  BenchmarkSummary,
-  PluginItem,
-  SkillMetadataItem,
-} from "@prismshadow/penguin-server/api";
+import type { AgentSummary, PluginItem, SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import {
+  AgentAvatar,
   Badge,
   Button,
   Card,
+  Chevron,
   ConfirmModal,
-  EmptyState,
+  Dropdown,
   GlyphIcon,
   Heading,
   ICONS,
+  ICON_GAP,
   ICON_SIZE,
-  ListRow,
+  Menu,
+  MenuRadioItem,
   PenguinLogo,
   RuledSection,
   Skeleton,
-  Sparkline,
   Text,
   toastError,
   toastSuccess,
@@ -71,27 +70,32 @@ import { versionBadgeFor } from "../../lib/update-flow";
 import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { useLocale } from "../../state/locale";
-import { useProject } from "../../state/project";
+import { agentDisplayName, useProject } from "../../state/project";
 import { RSI_METHODS } from "../benchmark/rsi-methods";
 import type { RsiMethod } from "../benchmark/rsi-methods";
-import { sparklineSeries } from "../benchmark/benchmark-metrics";
 import { benchmarkRoute } from "../benchmark/benchmark-route";
 import { SkillTile } from "../skills/skill-icon-view";
 import { EXAMPLE_FOLDERS } from "./example-tasks";
 import type { ExampleFolderId } from "./example-tasks";
-import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
+import {
+  ExampleFolderRow,
+  exampleGridClass,
+  examplePanelClass,
+  exampleRowClass,
+} from "./example-folder-row";
 import { SHORTCUTS_FOLDER_ID, ShortcutsFolder } from "./shortcuts-folder";
 import { localizedShortText, localizedText } from "./skill-use";
 import {
-  evaluationCount,
   isInstalled,
   latestEvaluation,
   orderToolkits,
+  recentAgent,
+  recentToolkit,
   sortBenchmarks,
   toolkitDemo,
 } from "./start-dashboard-data";
-import type { ToolkitDemo } from "./start-dashboard-data";
-import { useProjectBenchmarks, useRsiCatalog, useRsiToolkits } from "./use-start-dashboard";
+import type { ToolkitDemo, ToolkitEntry } from "./start-dashboard-data";
+import { useProjectBenchmarks, useRsiToolkits } from "./use-start-dashboard";
 import type { ProjectBenchmarks } from "./use-start-dashboard";
 
 /** A prompt for the composer and the Skills it pins, sent by nothing until the user sends it. */
@@ -102,7 +106,7 @@ export interface StartFill {
 
 export interface StartDashboardProps {
   projectId: string;
-  /** The composer and the pills under it: set between the header and the sections. */
+  /** The composer and the pills under it: set between the tiles and the examples. */
   composer: ReactNode;
   /** The draft's Agent (null until it resolves), its display name, and the Skills it has. */
   agentId: string | null;
@@ -117,14 +121,46 @@ export interface StartDashboardProps {
   /** The composer's text at this moment: a new shortcut starts from it. */
   readComposerText: () => string;
   /**
-   * A toolkit was installed on `agentId` from its card: the Agent's Skills as the install
-   * answered them, and the demo to fill once the composer has those Skills to pin.
+   * A toolkit was installed on `agentId` from the toolkit tile: the Agent's Skills as the
+   * install answered them, and the demo to fill once the composer has those Skills to pin.
    */
   onToolkitInstalled: (
     agentId: string,
     skills: SkillMetadataItem[],
     demo: StartFill | null,
   ) => void;
+}
+
+/**
+ * Where the toolkit tile's Start stands for the selected Agent: still waiting on the library or
+ * the Agent's Skills, installed, missing (Start installs first), or unknown because the Agent is
+ * on another machine — this server's Skill list does not describe it, so Start only fills.
+ */
+type ToolkitStatus = "waiting" | "installed" | "missing" | "remote";
+
+type Toolkit = ToolkitEntry<RsiMethod, PluginItem>;
+
+/**
+ * The toolkit the tile last offered, per browser. Storage may be absent or refuse (a private
+ * window, a blocked origin): a read that fails is "nothing remembered", a write that fails is
+ * forgotten, and the page is whole either way.
+ */
+const RECENT_TOOLKIT_KEY = "penguin.recentToolkit";
+
+function readRecentToolkit(): string | null {
+  try {
+    return localStorage.getItem(RECENT_TOOLKIT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeRecentToolkit(name: string): void {
+  try {
+    localStorage.setItem(RECENT_TOOLKIT_KEY, name);
+  } catch {
+    // Not remembered past this page: the tile keeps showing it meanwhile.
+  }
 }
 
 export function StartDashboard({
@@ -141,40 +177,59 @@ export function StartDashboard({
 }: StartDashboardProps) {
   const { locale } = useLocale();
   const { agents, agentsLoading } = useProject();
-  const catalog = useRsiCatalog();
   const toolkits = useRsiToolkits();
   const benchmarks = useProjectBenchmarks(projectId);
 
-  const metrics: Record<MetricKey, number | null> = {
-    toolkits: catalog?.toolkits.length ?? null,
-    reproductions: catalog?.benchmarks.length ?? null,
-    agents: agentsLoading ? null : agents.length,
-    evaluations: benchmarks.benchmarks === null ? null : evaluationCount(benchmarks.benchmarks),
-  };
-
   const installed = useMemo(() => new Set(agentSkills.map((skill) => skill.name)), [agentSkills]);
   const entries = orderToolkits(toolkits, RSI_METHODS);
+  const [remembered, setRemembered] = useState<string | null>(readRecentToolkit);
+  const current = recentToolkit(entries, remembered);
+  const pick = (name: string) => {
+    setRemembered(name);
+    writeRecentToolkit(name);
+  };
+
+  const plugin = current?.plugin ?? null;
+  const demo = plugin === null ? null : toolkitDemo(plugin, S.skills.quickInvokeText);
+  const status: ToolkitStatus =
+    plugin === null || demo === null || agentId === null || !skillsLoaded
+      ? "waiting"
+      : workspaceMachine !== null
+        ? "remote"
+        : isInstalled(plugin, installed)
+          ? "installed"
+          : "missing";
 
   /** The toolkit waiting for "install on this Agent, then start" to be confirmed. */
   const [pending, setPending] = useState<PluginItem | null>(null);
   const [installing, setInstalling] = useState(false);
 
   /** The demo as the composer takes it: the prompt in the UI language, read at click time. */
-  const asFill = (demo: ToolkitDemo): StartFill => ({
-    prompt: localizedText(locale, demo.prompt, demo.promptZh),
-    skills: demo.skills,
+  const asFill = (d: ToolkitDemo): StartFill => ({
+    prompt: localizedText(locale, d.prompt, d.promptZh),
+    skills: d.skills,
   });
 
+  const start = () => {
+    if (plugin === null || demo === null) return;
+    pick(plugin.name);
+    if (status === "missing") setPending(plugin);
+    else {
+      const s = asFill(demo);
+      fill(s.prompt, s.skills);
+    }
+  };
+
   const confirmInstall = async () => {
-    const plugin = pending;
+    const target = pending;
     const forAgent = agentId;
-    if (plugin === null || forAgent === null) return;
-    const demo = toolkitDemo(plugin, S.skills.quickInvokeText);
+    if (target === null || forAgent === null) return;
+    const targetDemo = toolkitDemo(target, S.skills.quickInvokeText);
     setInstalling(true);
     try {
-      const res = await api.installAgentPlugins(projectId, forAgent, [plugin.name]);
-      toastSuccess(S.plugins.installedToast(plugin.name, agentName));
-      onToolkitInstalled(forAgent, res.skills, demo === null ? null : asFill(demo));
+      const res = await api.installAgentPlugins(projectId, forAgent, [target.name]);
+      toastSuccess(S.plugins.installedToast(target.name, agentName));
+      onToolkitInstalled(forAgent, res.skills, targetDemo === null ? null : asFill(targetDemo));
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -185,53 +240,48 @@ export function StartDashboard({
 
   return (
     <>
-      <StartHeader metrics={metrics} />
+      <StartHeader />
+      <div className="@container mb-5">
+        <Card padding="none">
+          {/* The hairlines between the tiles are the list's colour showing through the gaps. */}
+          <ul className="grid grid-cols-1 gap-px bg-line @md:grid-cols-3">
+            <MetricTile
+              glyph={NAV_ICONS.agents}
+              label={S.chat.start.metrics.agents}
+              to="/agents"
+              value={agentsLoading ? null : agents.length}
+            >
+              <AgentLine agents={agents} loading={agentsLoading} />
+            </MetricTile>
+            <MetricTile
+              // The loop every self-evolution toolkit runs; the library holds the toolkits.
+              glyph={ICONS.refresh}
+              label={S.chat.start.metrics.toolkits}
+              to="/plugins"
+              value={toolkits?.length ?? null}
+            >
+              <ToolkitLine
+                entries={entries}
+                current={current}
+                status={status}
+                agentName={agentName}
+                onPick={pick}
+                onStart={start}
+              />
+            </MetricTile>
+            <MetricTile
+              glyph={NAV_ICONS.benchmark}
+              label={S.chat.start.metrics.benchmarks}
+              to="/benchmark"
+              value={benchmarks.benchmarks?.length ?? null}
+            >
+              <BenchmarkLine list={benchmarks} />
+            </MetricTile>
+          </ul>
+        </Card>
+      </div>
       {composer}
-      <div className="@container mt-10">
-        {/* An empty `rsi` category (a library without the toolkits) leaves no section behind. */}
-        {entries.length > 0 && (
-          <RuledSection
-            title={S.chat.start.toolkitsTitle}
-            info={S.chat.start.toolkitsInfo}
-            className="mt-8 first:mt-0"
-          >
-            <ul className="grid grid-cols-2 gap-2 @lg:grid-cols-3 @3xl:grid-cols-5">
-              {entries.map((entry, index) => {
-                const { plugin } = entry;
-                const demo = plugin === null ? null : toolkitDemo(plugin, S.skills.quickInvokeText);
-                const status: ToolkitStatus =
-                  plugin === null || demo === null || agentId === null || !skillsLoaded
-                    ? "waiting"
-                    : workspaceMachine !== null
-                      ? "remote"
-                      : isInstalled(plugin, installed)
-                        ? "installed"
-                        : "missing";
-                return (
-                  <ToolkitCard
-                    key={entry.key}
-                    method={entry.method}
-                    plugin={plugin}
-                    // An odd count leaves the narrow grids a hole in their last row; the first
-                    // card (the default loop) takes two columns there instead.
-                    featured={index === 0 && entries.length % 2 === 1}
-                    status={status}
-                    agentName={agentName}
-                    onStart={() => {
-                      if (plugin === null || demo === null) return;
-                      if (status === "missing") setPending(plugin);
-                      else {
-                        const start = asFill(demo);
-                        fill(start.prompt, start.skills);
-                      }
-                    }}
-                  />
-                );
-              })}
-            </ul>
-          </RuledSection>
-        )}
-        <BenchmarksSection list={benchmarks} />
+      <div className="@container mt-6">
         <ExamplesSection ready={skillsLoaded} fill={fill} readComposerText={readComposerText} />
       </div>
       {/* A toolkit the selected Agent lacks: installing comes first, and is asked, as on the
@@ -259,66 +309,21 @@ export function StartDashboard({
 }
 
 // ---------------------------------------------------------------------------
-// Header: the brand and the metric tiles
+// Brand
 // ---------------------------------------------------------------------------
 
-type MetricKey = "toolkits" | "reproductions" | "agents" | "evaluations";
-
-/** The tiles in order: what each counts, the glyph it wears, and the page that lists it. */
-const METRICS: readonly { key: MetricKey; glyph: string; to: string }[] = [
-  // The loop every self-evolution toolkit runs; the library holds the toolkits.
-  { key: "toolkits", glyph: ICONS.refresh, to: "/plugins" },
-  { key: "reproductions", glyph: NAV_ICONS.benchmark, to: "/benchmark" },
-  { key: "agents", glyph: NAV_ICONS.agents, to: "/agents" },
-  { key: "evaluations", glyph: ICONS.barChart, to: "/benchmark" },
-];
-
-/**
- * The brand beside the tiles in a full-width column, above them in a narrower one. Beside the
- * brand the four tiles go two by two: a row of four there leaves a tile too narrow for its label
- * in English. Above, they run four abreast where an English label still breaks between words
- * rather than inside one, and two by two below that.
- */
-function StartHeader({ metrics }: { metrics: Record<MetricKey, number | null> }) {
+/** The logo beside the name, the slogan and the version line: one strip above the tiles. */
+function StartHeader() {
   return (
-    <div className="@container mb-6">
-      <div className="flex flex-col gap-4 @3xl:flex-row @3xl:items-center @3xl:gap-6">
-        <div className="flex min-w-0 items-center gap-3 @3xl:shrink-0">
-          {/* Square asset with its own padding; a white tile in dark mode, like an app icon. */}
-          <PenguinLogo src="/penguin-logo.svg" className="h-14 w-14 shrink-0 rounded-xl" />
-          {/* Capped, so a long slogan wraps under the name instead of starving the tiles. */}
-          <div className="min-w-0 max-w-72">
-            <Heading level={1} display>
-              {S.appName}
-            </Heading>
-            <Text className="mt-0.5 text-fg-muted">{S.chat.draftSubtitle}</Text>
-            <VersionLine />
-          </div>
-        </div>
-        <Card padding="none" className="min-w-0 @3xl:flex-1">
-          {/* The hairlines between the tiles are the list's colour showing through the gaps. */}
-          <ul className="grid grid-cols-2 gap-px bg-line @xl:grid-cols-4 @3xl:grid-cols-2">
-            {METRICS.map(({ key, glyph, to }) => {
-              const value = metrics[key];
-              return (
-                <li key={key} className="flex min-w-0">
-                  <Link
-                    to={to}
-                    className="flex w-full min-w-0 flex-col bg-surface px-3 py-2 transition-colors duration-150 hover:bg-surface-muted focus-visible:-outline-offset-2"
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
-                      <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
-                      <span className="min-w-0">{S.chat.start.metrics[key]}</span>
-                    </span>
-                    <span className="mt-0.5 text-xl font-semibold leading-7 tabular-nums text-fg">
-                      {value === null ? "—" : value}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </Card>
+    <div className={`mb-4 flex items-center ${ICON_GAP.card}`}>
+      {/* Square asset with its own padding; a white tile in dark mode, like an app icon. */}
+      <PenguinLogo src="/penguin-logo.svg" className="h-12 w-12 shrink-0 rounded-xl" />
+      <div className="min-w-0">
+        <Heading level={1} display>
+          {S.appName}
+        </Heading>
+        <Text className="mt-0.5 text-fg-muted">{S.chat.draftSubtitle}</Text>
+        <VersionLine />
       </div>
     </div>
   );
@@ -344,7 +349,7 @@ function VersionLine() {
   if (version === null) {
     return (
       <p aria-hidden className="mt-1 text-xs">
-        {"\u00a0"}
+        {" "}
       </p>
     );
   }
@@ -395,251 +400,288 @@ function VersionBadge() {
 }
 
 // ---------------------------------------------------------------------------
-// Self-evolution algorithms
+// The metric tiles
 // ---------------------------------------------------------------------------
 
 /**
- * Where a card's Start stands for the selected Agent: still waiting on the library or the Agent's
- * Skills, installed, missing (Start installs first), or unknown because the Agent is on another
- * machine — this server's Skill list does not describe it, so Start only fills.
+ * One tile: the glyph, the label and the big number are one link to the page that lists what
+ * the tile counts; the line under the hairline is the tile's most recent item, with its own
+ * controls, so the tile is not one click — a whole-tile link would swallow them. The line is a
+ * fixed height, taken by a placeholder while the item is on its way and by a dash where there
+ * is nothing to show, so the three tiles keep one height whatever each knows.
  */
-type ToolkitStatus = "waiting" | "installed" | "missing" | "remote";
+function MetricTile({
+  glyph,
+  label,
+  to,
+  value,
+  children,
+}: {
+  glyph: string;
+  label: string;
+  to: string;
+  /** The count; null while it has not arrived. */
+  value: number | null;
+  children: ReactNode;
+}) {
+  return (
+    <li className="flex min-w-0 flex-col bg-surface">
+      <Link
+        to={to}
+        className="flex min-w-0 flex-col px-3 pt-2.5 pb-1.5 transition-colors duration-150 hover:bg-surface-muted focus-visible:-outline-offset-2"
+      >
+        <span className={`flex min-w-0 items-center ${ICON_GAP.row} text-xs text-fg-muted`}>
+          <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
+          <span className="min-w-0 truncate">{label}</span>
+        </span>
+        <span className="mt-0.5 text-2xl font-semibold leading-8 tabular-nums text-fg">
+          {value === null ? "—" : value}
+        </span>
+      </Link>
+      <div
+        className={`flex h-9 min-w-0 items-center ${ICON_GAP.row} border-t border-line-muted px-3 text-xs`}
+      >
+        {children}
+      </div>
+    </li>
+  );
+}
 
-function ToolkitCard({
-  method,
-  plugin,
-  featured,
+/** A link standing alone on a tile's recent line, where there is nothing recent yet. */
+const tileLinkClass =
+  "truncate text-link underline-offset-2 transition-colors duration-150 hover:text-link-hover hover:underline";
+
+/** The name on a recent line: the row's primary text, one line, whole in its tooltip when cut. */
+function TileName({ children }: { children: string }) {
+  return (
+    <span
+      className="min-w-0 flex-1 truncate text-sm font-medium text-fg"
+      data-tooltip={children}
+      data-tooltip-content="text"
+    >
+      {children}
+    </span>
+  );
+}
+
+/** The recent line's stand-in while its list is on its way. */
+function TilePlaceholder() {
+  return <Skeleton className="h-3 w-32 max-w-full" />;
+}
+
+/**
+ * The agents tile's recent line: the agent whose Agent State changed last, its avatar and name
+ * opening its page, its Agent State version and how long ago it changed at the end. A Project
+ * without agents offers the Agents page instead.
+ */
+function AgentLine({ agents, loading }: { agents: readonly AgentSummary[]; loading: boolean }) {
+  const navigate = useNavigate();
+  const { locale } = useLocale();
+  if (loading) return <TilePlaceholder />;
+  const agent = recentAgent(agents);
+  if (agent === null) {
+    return (
+      <Link to="/agents" className={tileLinkClass}>
+        {S.chat.start.agentsEmptyAction}
+      </Link>
+    );
+  }
+  const name = agentDisplayName(agent);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => navigate(`/agents/${agent.agentId}`)}
+        className={`flex min-w-0 flex-1 items-center ${ICON_GAP.row} text-left`}
+      >
+        <AgentAvatar id={agent.agentId} name={name} size={16} className="shrink-0 rounded" />
+        <TileName>{name}</TileName>
+      </button>
+      <span className="shrink-0 whitespace-nowrap tabular-nums text-fg-subtle">
+        {`v${agent.version}${
+          agent.updatedAt !== undefined ? ` · ${formatRelativeShort(agent.updatedAt, locale)}` : ""
+        }`}
+      </span>
+    </>
+  );
+}
+
+/**
+ * The toolkit tile's recent line: the toolkit Start will start — its tile and name, the name a
+ * menu over every toolkit of the category (picking one only changes what Start starts), the
+ * mark when the selected Agent has it, and Start at the end, which reads Install and start
+ * while the Agent lacks it. Before the library answers the tile is a placeholder and the name
+ * comes from the Method select's row; a library without the category leaves a dash.
+ */
+function ToolkitLine({
+  entries,
+  current,
   status,
   agentName,
+  onPick,
   onStart,
 }: {
-  /** The Method select's row for this toolkit; null for a plugin no row names yet. */
-  method: RsiMethod | null;
-  /** The library's entry; null until the library answers. */
-  plugin: PluginItem | null;
-  featured: boolean;
+  entries: readonly Toolkit[];
+  current: Toolkit | null;
   status: ToolkitStatus;
   agentName: string;
+  onPick: (name: string) => void;
   onStart: () => void;
 }) {
   const { locale } = useLocale();
-  const title = method !== null ? S.chat.start.toolkitTitle[method.id] : (plugin?.name ?? "");
-  const blurb =
-    method !== null
-      ? S.benchmark.methods[method.id].blurb
-      : plugin !== null
-        ? localizedShortText(locale, plugin)
-        : "";
+  const [open, setOpen] = useState(false);
+  if (current === null) return <span className="text-fg-subtle">—</span>;
+  const title = toolkitTitle(current);
   const installedLabel = S.chat.start.toolkitInstalled(agentName);
   const action =
     status === "missing" ? S.chat.start.toolkitInstallStart : S.chat.start.toolkitStart;
   return (
-    <Card
-      as="li"
-      padding="sm"
-      className={`flex min-w-0 flex-col ${featured ? "col-span-2 @3xl:col-span-1" : ""}`}
-    >
-      <div className="flex min-w-0 items-center gap-2">
-        {plugin !== null ? (
-          <SkillTile
-            icon={plugin.icon}
-            name={plugin.name}
-            fallback={ICONS.puzzle}
-            size={28}
-            glyph={16}
-          />
-        ) : (
-          <Skeleton className="h-[28px] w-[28px] shrink-0" />
-        )}
-        <Heading level={5} as="h3" className="min-w-0 flex-1 truncate">
-          {title}
-        </Heading>
-        {status === "installed" && (
-          <span
-            role="img"
-            aria-label={installedLabel}
-            data-tooltip={installedLabel}
-            className="shrink-0 text-tone-success-fg"
-          >
-            <GlyphIcon d={ICONS.checkCircle} size={ICON_SIZE.inlineGlyph} />
-          </span>
-        )}
-      </div>
-      {/* A fixed number of lines whatever the blurb's length, so the cards of a row keep one
-          height — three in the narrow five-across row, where a paper's citation would otherwise
-          be the part cut off; a clamped blurb is whole in its tooltip. */}
-      <p
-        className="mt-2 line-clamp-2 min-h-[2lh] text-xs text-fg-muted @3xl:line-clamp-3 @3xl:min-h-[3lh]"
-        data-tooltip={blurb}
-        data-tooltip-content="text"
-      >
-        {blurb}
-      </p>
-      <div className="mt-auto pt-3">
-        {/* Five buttons share one word, so each one's name carries its toolkit's after it. */}
-        <Button
-          size="sm"
-          variant="secondary"
-          aria-label={`${action} ${title}`}
-          disabled={status === "waiting"}
-          onClick={onStart}
-        >
-          {action}
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Evaluation Center
-// ---------------------------------------------------------------------------
-
-/** How many Benchmarks the section lists; the section's link counts the rest. */
-const BENCHMARK_ROWS = 5;
-
-/** A link standing alone in a section's header or an empty state. */
-const sectionLinkClass =
-  "text-xs text-link underline-offset-2 transition-colors duration-150 hover:text-link-hover hover:underline";
-
-/**
- * This Project's Benchmarks on this server. While the first list is on its way five placeholder
- * rows stand where the rows will be — a new Project is seeded with five; a list that cannot be
- * read leaves no section rather than an error the page cannot act on.
- */
-function BenchmarksSection({ list }: { list: ProjectBenchmarks }) {
-  const navigate = useNavigate();
-  const { locale } = useLocale();
-  if (list.failed) return null;
-  const all = list.benchmarks;
-  const rows = all === null ? null : sortBenchmarks(all).slice(0, BENCHMARK_ROWS);
-  return (
-    <RuledSection
-      title={S.chat.start.benchmarksTitle}
-      info={S.chat.start.benchmarksInfo}
-      className="mt-8 first:mt-0"
-      actions={
-        all !== null && all.length > 0 ? (
-          <Link to="/benchmark" className={sectionLinkClass}>
-            {S.chat.start.benchmarksAll(all.length)}
-          </Link>
-        ) : undefined
-      }
-    >
-      {rows !== null && rows.length === 0 ? (
-        <EmptyState
-          dashed
-          title={S.chat.start.benchmarksEmpty}
-          action={
-            <Link to="/benchmark" className={sectionLinkClass}>
-              {S.chat.start.benchmarksEmptyAction}
-            </Link>
-          }
+    <>
+      {current.plugin !== null ? (
+        <SkillTile
+          icon={current.plugin.icon}
+          name={current.plugin.name}
+          fallback={ICONS.puzzle}
+          size={20}
+          glyph={12}
         />
       ) : (
-        <Card padding="none">
-          <ul aria-busy={rows === null || undefined}>
-            {rows === null
-              ? Array.from({ length: BENCHMARK_ROWS }, (_, i) => (
-                  <BenchmarkRowPlaceholder key={i} />
-                ))
-              : rows.map((benchmark) => (
-                  <BenchmarkRow
-                    key={benchmark.id}
-                    benchmark={benchmark}
-                    locale={locale}
-                    onOpen={() => navigate(benchmarkRoute(benchmark.id))}
-                  />
-                ))}
-          </ul>
-        </Card>
+        <Skeleton className="h-5 w-5 shrink-0" />
       )}
-    </RuledSection>
+      <Dropdown
+        open={open}
+        setOpen={setOpen}
+        className="flex min-w-0"
+        menuClass="w-72"
+        // Portaled: the tiles' card clips its overflow, and the menu must hang below the tile.
+        portal={{ direction: "down", align: "left" }}
+        button={
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+            className={`flex min-w-0 items-center ${ICON_GAP.tight} text-left text-sm font-medium text-fg transition-colors duration-150 hover:text-link`}
+          >
+            <span className="min-w-0 truncate" data-tooltip={title} data-tooltip-content="text">
+              {title}
+            </span>
+            <Chevron
+              open={open}
+              size={ICON_SIZE.chevronDense}
+              className="shrink-0 text-fg-subtle"
+            />
+          </button>
+        }
+      >
+        <Menu label={S.chat.start.toolkitPick} density="sm">
+          {entries.map((entry) => (
+            <MenuRadioItem
+              key={entry.key}
+              label={toolkitTitle(entry)}
+              description={toolkitBlurb(entry, locale)}
+              checked={entry.key === current.key}
+              onSelect={() => {
+                onPick(entry.key);
+                setOpen(false);
+              }}
+            />
+          ))}
+        </Menu>
+      </Dropdown>
+      {status === "installed" && (
+        <span
+          role="img"
+          aria-label={installedLabel}
+          data-tooltip={installedLabel}
+          className="shrink-0 text-tone-success-fg"
+        >
+          <GlyphIcon d={ICONS.checkCircle} size={ICON_SIZE.inlineGlyph} />
+        </span>
+      )}
+      <span className="flex-1" />
+      {/* One word for every toolkit, so the button's name carries its toolkit's after it. */}
+      <Button
+        size="xs"
+        variant="secondary"
+        aria-label={`${action} ${title}`}
+        disabled={status === "waiting"}
+        onClick={onStart}
+      >
+        {action}
+      </Button>
+    </>
   );
+}
+
+/** A toolkit's short name: the Method select's, or the plugin's own for one no row names. */
+function toolkitTitle(entry: Toolkit): string {
+  if (entry.method !== null) return S.chat.start.toolkitTitle[entry.method.id];
+  return entry.plugin?.name ?? "";
+}
+
+/** A toolkit's one-line blurb for the menu: the Method select's, or the plugin's own description. */
+function toolkitBlurb(entry: Toolkit, locale: "zh" | "en"): string {
+  if (entry.method !== null) return S.benchmark.methods[entry.method.id].blurb;
+  return entry.plugin === null ? "" : localizedShortText(locale, entry.plugin);
 }
 
 /**
- * One Benchmark: its title over its size and its latest evaluation's label, the scoreboard's
- * trend, and the latest score with how long ago it landed. A Benchmark that is not published —
- * still being built, or failed — names that state where the score would be and opens nothing,
- * as its card in the Evaluation Center does.
+ * The Benchmarks tile's recent line: the Benchmark in front of the tile's order — the most
+ * recently evaluated, else the first by title — its title opening its page, and at the end its
+ * latest score with how long ago it landed, or "not evaluated". A Benchmark that is not
+ * published (still being built, or failed) names that state where the score would be and opens
+ * nothing, as its card in the Evaluation Center does. A Project without Benchmarks offers the
+ * Evaluation Center; a list that cannot be read leaves a dash, the count being "—" already.
  */
-function BenchmarkRow({
-  benchmark,
-  locale,
-  onOpen,
-}: {
-  benchmark: BenchmarkSummary;
-  locale: "zh" | "en";
-  onOpen: () => void;
-}) {
+function BenchmarkLine({ list }: { list: ProjectBenchmarks }) {
+  const navigate = useNavigate();
+  const { locale } = useLocale();
+  if (list.failed) return <span className="text-fg-subtle">—</span>;
+  if (list.benchmarks === null) return <TilePlaceholder />;
+  const benchmark = sortBenchmarks(list.benchmarks)[0];
+  if (benchmark === undefined) {
+    return (
+      <Link to="/benchmark" className={tileLinkClass}>
+        {S.chat.start.benchmarksEmptyAction}
+      </Link>
+    );
+  }
   const latest = latestEvaluation(benchmark.evaluations);
-  const series = sparklineSeries(benchmark.evaluations);
   const masked = benchmark.status !== "published";
   const failed = benchmark.status === "failed";
-  const about = [
-    S.benchmark.caseCount(benchmark.caseCount),
-    S.benchmark.runsPerCase(benchmark.runs ?? 1),
-    ...(latest !== null && latest.agentId !== null
-      ? [S.chat.start.benchmarkLatestBy(latest.agentId, latest.version)]
-      : []),
-  ].join(" · ");
   return (
-    <ListRow
-      as="li"
-      title={benchmark.title}
-      description={about}
-      {...(masked ? {} : { onClick: onOpen })}
-      meta={
-        series.length > 1 ? (
-          // The trend needs the row's width; on a phone the score beside it says enough.
-          <span className="hidden @md:block">
-            <Sparkline
-              values={series}
-              label={S.benchmark.sparklineLabel(series.length)}
-              scale="range"
-              marker
-            />
-          </span>
-        ) : undefined
-      }
-      trailing={
-        masked ? (
-          <Badge tone={failed ? "danger" : "neutral"} size="sm">
-            {benchmark.manifestError !== undefined
-              ? S.benchmark.manifestBroken
-              : failed
-                ? S.benchmark.creationFailed
-                : S.benchmark.building}
-          </Badge>
-        ) : latest === null ? (
-          <span className="whitespace-nowrap text-xs text-fg-subtle">
-            {S.benchmark.notEvaluated}
-          </span>
-        ) : (
-          <span className="block text-right">
-            <span className="block text-sm font-semibold tabular-nums text-fg">
-              {formatScore(latest.score)}
-            </span>
-            <span className="block whitespace-nowrap text-xs tabular-nums text-fg-subtle">
-              {formatRelativeShort(latest.time, locale)}
-            </span>
-          </span>
-        )
-      }
-    />
-  );
-}
-
-/** A row's stand-in: the same two lines of text, so the list keeps its height when rows land. */
-function BenchmarkRowPlaceholder() {
-  return (
-    <ListRow
-      as="li"
-      title={<Skeleton className="inline-block h-3 w-40 max-w-full align-middle" />}
-      description={<Skeleton className="inline-block h-2.5 w-28 max-w-full align-middle" />}
-      trailing={<Skeleton className="h-4 w-10" />}
-    />
+    <>
+      {masked ? (
+        <TileName>{benchmark.title}</TileName>
+      ) : (
+        <button
+          type="button"
+          onClick={() => navigate(benchmarkRoute(benchmark.id))}
+          className="flex min-w-0 flex-1 items-center text-left"
+        >
+          <TileName>{benchmark.title}</TileName>
+        </button>
+      )}
+      {masked ? (
+        <Badge tone={failed ? "danger" : "neutral"} size="sm">
+          {benchmark.manifestError !== undefined
+            ? S.benchmark.manifestBroken
+            : failed
+              ? S.benchmark.creationFailed
+              : S.benchmark.building}
+        </Badge>
+      ) : latest === null ? (
+        <span className="shrink-0 whitespace-nowrap text-fg-subtle">
+          {S.benchmark.notEvaluated}
+        </span>
+      ) : (
+        <span className="shrink-0 whitespace-nowrap tabular-nums text-fg-subtle">
+          <span className="text-sm font-semibold text-fg">{formatScore(latest.score)}</span>
+          {` · ${formatRelativeShort(latest.time, locale)}`}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -665,12 +707,14 @@ const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
 /**
  * Canned one-sentence requests in bookmark-style folders, ALWAYS exactly one open — selecting
  * another closes the previous, and the open one cannot be collapsed — then the user's own saved
- * prompts. The block is therefore the folder rows plus one folder's rows, every folder within a
- * row of the others (shortcuts-folder.tsx caps the user's), so switching folders moves what sits
- * below by at most one row and no folder needs a scroll container. A click fills the composer and
- * sends nothing; each example is a single-line title, its one-sentence description in the row's
- * tooltip. Rows wait for the Agent's installed Skills — without them the fill would silently drop
- * the example's Skills (a saved shortcut pins none, so it never waits).
+ * prompts. The folders stand in one column and the open folder's rows beside them, so the
+ * block's height is the folder rows' and switching folders moves nothing below; on a phone the
+ * open folder's rows sit under its row, as an accordion. Every folder is within a row of the
+ * others (shortcuts-folder.tsx caps the user's), so no folder's rows outgrow the folder column
+ * and no folder needs a scroll container. A click fills the composer and sends nothing; each
+ * example is a single-line title, its one-sentence description in the row's tooltip. Rows wait
+ * for the Agent's installed Skills — without them the fill would silently drop the example's
+ * Skills (a saved shortcut pins none, so it never waits).
  */
 function ExamplesSection({
   ready,
@@ -685,16 +729,12 @@ function ExamplesSection({
     EXAMPLE_FOLDERS[0].id,
   );
   return (
-    <RuledSection
-      title={S.chat.start.examplesTitle}
-      info={S.chat.exampleFillHint}
-      className="mt-8 first:mt-0"
-    >
-      <div className="space-y-1">
+    <RuledSection title={S.chat.start.examplesTitle} info={S.chat.exampleFillHint}>
+      <div className={exampleGridClass}>
         {EXAMPLE_FOLDERS.map((folder) => {
           const open = folder.id === openFolder;
           return (
-            <div key={folder.id}>
+            <Fragment key={folder.id}>
               <ExampleFolderRow
                 open={open}
                 glyph={FOLDER_GLYPHS[folder.id]}
@@ -703,7 +743,7 @@ function ExamplesSection({
                 onOpen={() => setOpenFolder(folder.id)}
               />
               {open && (
-                <ul className="mt-0.5 space-y-1 pl-4">
+                <ul className={`space-y-1 ${examplePanelClass}`}>
                   {folder.tasks.map((task) => {
                     const copy = S.chat.exampleTasks[task.id];
                     return (
@@ -715,7 +755,7 @@ function ExamplesSection({
                           // S is a live binding swapped on a locale change: the prompt is read
                           // at click time, not at render.
                           onClick={() => fill(S.chat.exampleTasks[task.id].prompt, task.skills)}
-                          className={`flex w-full items-center gap-2 ${exampleRowClass}`}
+                          className={`flex w-full items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                         >
                           <span className="min-w-0 flex-1 truncate">{copy.label}</span>
                         </button>
@@ -724,7 +764,7 @@ function ExamplesSection({
                   })}
                 </ul>
               )}
-            </div>
+            </Fragment>
           );
         })}
         <ShortcutsFolder

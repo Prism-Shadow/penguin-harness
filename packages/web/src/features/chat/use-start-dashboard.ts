@@ -1,22 +1,17 @@
 /**
  * The start page's server reads (start-dashboard.tsx).
  *
- * The self-evolution catalogue (GET /api/rsi) and the plugin library's RSI toolkits (GET
- * /api/plugins) are the same for every Project and change only with the build, so each is read
- * once per page load and shared by every later mount: a locale switch remounts the whole tree,
- * and a new chat must not flash placeholders the last one had already filled. A failed read is
- * not kept, so the next mount asks again.
+ * The plugin library's RSI toolkits (GET /api/plugins) are the same for every Project and change
+ * only with the build, so they are read once per page load and shared by every later mount: a
+ * locale switch remounts the whole tree, and a new chat must not flash placeholders the last one
+ * had already filled. A failed read is not kept, so the next mount asks again.
  *
  * A Project's Benchmarks change as evaluations land, so they are read again on every mount —
- * starting from the list the previous mount saw, which keeps the section and the evaluations
- * tile steady instead of dropping back to placeholders while the fresh list is on its way.
+ * starting from the list the previous mount saw, which keeps the Benchmarks tile steady instead
+ * of dropping back to a placeholder while the fresh list is on its way.
  */
 import { useEffect, useState } from "react";
-import type {
-  BenchmarkSummary,
-  PluginItem,
-  RsiCatalogResponse,
-} from "@prismshadow/penguin-server/api";
+import type { BenchmarkSummary, PluginItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 
 /** The plugin library's category the self-evolution toolkits are filed under. */
@@ -55,10 +50,7 @@ function readOncePerPageLoad<T>(read: () => Promise<T>): () => T | null {
   };
 }
 
-/** GET /api/rsi: how many self-evolution toolkits and Benchmark reproductions this build ships. */
-export const useRsiCatalog = readOncePerPageLoad<RsiCatalogResponse>(api.getRsiCatalog);
-
-/** The library's self-evolution toolkits: the plugins of its `rsi` category (GET /api/plugins). */
+/** The library's self-evolution toolkits: the plugins of its `rsi` category (GET /api/plugins), which the toolkit tile counts and offers. */
 export const useRsiToolkits = readOncePerPageLoad<PluginItem[]>(async () => {
   const library = await api.getPluginLibrary();
   return library.groups.find((group) => group.id === RSI_CATEGORY)?.plugins ?? [];

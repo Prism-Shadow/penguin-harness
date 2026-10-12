@@ -11,8 +11,8 @@
  * - **Its length is the user's**, not the registry's — but bounded to SHORTCUT_MAX_COUNT, chosen
  *   so the folder plus its New-shortcut row stays within a row of a built-in folder's height. The
  *   examples block reserves no scroll area, and rather than pinning a height and scrolling inside
- *   it, the cap is what keeps this folder the same shape as its siblings: no scrollbar, and the
- *   block below moves by at most one row.
+ *   it, the cap is what keeps this folder the same shape as its siblings: no scrollbar, and its
+ *   rows never outgrow the folder column they stand beside.
  * - **Its rows carry their own actions.** Edit and delete are plain icon buttons that are always
  *   visible, deliberately not the sidebar's hover-revealed pair: those rows have a long-press menu
  *   behind them on touch, and these have nothing, so hover-gating would put a user's own prompts
@@ -24,6 +24,7 @@ import {
   ConfirmModal,
   GlyphIcon,
   ICONS,
+  ICON_GAP,
   ICON_SIZE,
   Input,
   Modal,
@@ -34,7 +35,7 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { ExampleFolderRow, exampleRowClass } from "./example-folder-row";
+import { ExampleFolderRow, examplePanelClass, exampleRowClass } from "./example-folder-row";
 import {
   SHORTCUT_MAX_COUNT,
   SHORTCUT_PROMPT_MAX,
@@ -80,10 +81,8 @@ function RowAction({
       data-tooltip={label}
       aria-label={label}
       onClick={onClick}
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 dark:text-gray-500 ${
-        danger
-          ? "hover:text-red-600 dark:hover:text-red-400"
-          : "hover:text-gray-700 dark:hover:text-gray-200"
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-fg-subtle transition-colors duration-150 ${
+        danger ? "hover:text-tone-danger-fg" : "hover:text-fg"
       }`}
     >
       <GlyphIcon d={glyph} size={ICON_SIZE.rowLead} />
@@ -154,8 +153,10 @@ export function ShortcutsFolder({
   const draftError = draft === null ? null : shortcutDraftError(draft);
   const editing = draft !== null && draft.id !== null;
 
+  // A fragment, not a wrapper: the row and the panel are cells of the examples grid, placed by
+  // it like a built-in folder's (the dialogs are portals and take no cell).
   return (
-    <div>
+    <>
       <ExampleFolderRow
         open={open}
         glyph={SHORTCUTS_GLYPH}
@@ -167,7 +168,7 @@ export function ShortcutsFolder({
       {open && (
         /* No fixed height and no scroll: SHORTCUT_MAX_COUNT bounds this folder to a built-in
            folder's height plus the New-shortcut row. */
-        <div className="mt-0.5 pl-4">
+        <div className={examplePanelClass}>
           {loaded && (
             <ul className="space-y-1">
               {shortcuts.map((shortcut) => (
@@ -176,7 +177,7 @@ export function ShortcutsFolder({
                     type="button"
                     data-tooltip={`${shortcut.title}\n${S.chat.exampleFillHint}`}
                     onClick={() => onFill(shortcut.prompt)}
-                    className={`flex min-w-0 flex-1 items-center gap-2 ${exampleRowClass}`}
+                    className={`flex min-w-0 flex-1 items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                   >
                     <span className="min-w-0 flex-1 truncate">{shortcut.title}</span>
                   </button>
@@ -201,7 +202,7 @@ export function ShortcutsFolder({
                     type="button"
                     data-tooltip={S.chat.shortcuts.newFromComposer}
                     onClick={startCreate}
-                    className={`flex w-full items-center gap-2 ${exampleRowClass}`}
+                    className={`flex w-full items-center ${ICON_GAP.menu} ${exampleRowClass}`}
                   >
                     <PlusIcon size={ICON_SIZE.inlineGlyph} />
                     <span className="min-w-0 flex-1 truncate">{S.chat.shortcuts.new}</span>
@@ -284,10 +285,10 @@ export function ShortcutsFolder({
           setDeleting(null);
         }}
       >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
+        <p className="text-sm text-fg-muted">
           {deleting !== null ? S.chat.shortcuts.deleteConfirm(deleting.title) : ""}
         </p>
       </ConfirmModal>
-    </div>
+    </>
   );
 }

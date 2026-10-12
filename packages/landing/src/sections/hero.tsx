@@ -1,6 +1,6 @@
 /**
  * Product-first hero: the positioning line, two direct installation paths, two stat tiles, and
- * three catalogue rows (supported models, self-evolution algorithms, Benchmark reproductions)
+ * three catalogue rows (supported models, self-evolution algorithms, Benchmarks)
  * whose outside links confirm before they open. What the rows list, and where each entry links,
  * is lib/rsi-stats.ts.
  */
@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { RELEASE_VERSION } from "../lib/version";
-import { BENCHMARK_REPRODUCTIONS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../lib/rsi-stats";
+import { BENCHMARKS, MODEL_PROVIDERS, RSI_TOOLKITS } from "../lib/rsi-stats";
 import {
   DownloadIcon,
   ExternalLinkIcon,
@@ -18,8 +18,11 @@ import {
 import { ExternalLink, ExternalLinkScope } from "../components/external-link";
 import { useLocale } from "../state/locale";
 
-const CHIP =
-  "inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800";
+const CHIP_STATIC =
+  "inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300";
+
+/** A chip that links somewhere: the static chip plus a hover that says it can be clicked. */
+const CHIP = `${CHIP_STATIC} transition-colors hover:border-gray-300 hover:bg-gray-50 dark:hover:border-gray-700 dark:hover:bg-gray-800`;
 
 /**
  * One labelled row of the catalogue: label above the items on phones; from `sm` up, label and
@@ -36,8 +39,8 @@ function CatalogRow({
   listClassName: string;
   children: ReactNode;
 }) {
-  // Uppercase suits the English labels; on a Chinese label it would only shout its Latin word
-  // ("BENCHMARK 复现").
+  // Uppercase suits the English labels; on a Chinese label it would only shout whatever Latin
+  // word the label carries.
   const { locale } = useLocale();
   return (
     <div
@@ -157,28 +160,22 @@ export function Hero() {
             <CatalogRow label={S.hero.algorithmsLabel} delay={340} listClassName="gap-2">
               {RSI_TOOLKITS.map((toolkit) => (
                 <li key={toolkit.plugin}>
-                  {toolkit.external ? (
+                  {toolkit.href !== null ? (
                     <ExternalLink href={toolkit.href} className={CHIP}>
                       {toolkit.label}
                       <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
                     </ExternalLink>
                   ) : (
-                    <a href={toolkit.href} className={CHIP}>
-                      {toolkit.label}
-                    </a>
+                    <span className={CHIP_STATIC}>{toolkit.label}</span>
                   )}
                 </li>
               ))}
             </CatalogRow>
 
             <CatalogRow label={S.hero.benchmarksLabel} delay={380} listClassName="gap-2">
-              {BENCHMARK_REPRODUCTIONS.map((benchmark, index) => (
+              {BENCHMARKS.map((benchmark, index) => (
                 <li key={benchmark.id}>
                   <ExternalLink href={benchmark.href} className={CHIP}>
-                    <span className="text-gray-500 dark:text-gray-400">{benchmark.label}</span>
-                    <span aria-hidden="true" className="text-gray-300 dark:text-gray-600">
-                      ·
-                    </span>
                     {S.hero.benchmarkKinds[index]}
                     <ExternalLinkIcon className="h-3 w-3 text-gray-400 dark:text-gray-500" />
                   </ExternalLink>

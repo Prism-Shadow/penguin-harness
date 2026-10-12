@@ -61,9 +61,9 @@ export const zh = {
     supportedModelsLabel: "支持模型",
     supportedModelsMore: "以及更多",
     algorithmsLabel: "自进化算法",
-    benchmarksLabel: "Benchmark 复现",
-    /** One per BENCHMARK_REPRODUCTIONS entry, in its order (Sec A to Sec E). */
-    benchmarkKinds: ["数据分析", "软件工程", "业务自动化", "科学计算", "终端任务"],
+    benchmarksLabel: "评估集",
+    /** One per BENCHMARKS entry, in its order (the built-ins Sec A to Sec E): the kind each is drawn from. */
+    benchmarkKinds: ["数据分析", "软件工程", "业务自动化", "科学研究", "终端任务"],
     /** The confirmation an outside link in the catalogue rows asks before it opens. */
     externalLink: {
       title: "即将打开外部链接",

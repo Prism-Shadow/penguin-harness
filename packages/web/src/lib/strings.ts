@@ -3135,20 +3135,15 @@ export const zh = {
     machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最全面的 Agent 自进化平台",
-    /** The start page's dashboard (features/chat/start-dashboard.tsx): the metric tiles beside the brand and the three sections under the composer. */
+    /** The start page's dashboard (features/chat/start-dashboard.tsx): the three metric tiles under the brand, each with its most recent item, and the examples block under the composer. */
     start: {
-      /** What each metric tile counts; the tile opens the page that lists it. */
+      /** What each metric tile counts; the label and the number open the page that lists it. */
       metrics: {
-        toolkits: "自进化算法",
-        reproductions: "Benchmark 复现",
         agents: "智能体",
-        evaluations: "评估记录",
+        toolkits: "自进化算法",
+        benchmarks: "评估集",
       },
-      toolkitsTitle: "自进化算法",
-      /** Semantics behind the section's "?". */
-      toolkitsInfo:
-        "每种算法是插件库里的一个 RSI 工具包，按原论文的流程运行。「开始」把它的演示请求填入输入框，发送后才会运行；所选智能体没装这个工具包时，按钮是「安装并开始」，确认后先安装。",
-      /** A card's title: the method's short name (the Method select's label adds the default loop's steps). */
+      /** A toolkit's name on the tile and in its menu: the method's short name (the Method select's label adds the default loop's steps). */
       toolkitTitle: {
         default: "Default",
         opro: "OPRO",
@@ -3156,21 +3151,18 @@ export const zh = {
         ace: "ACE",
         awm: "AWM",
       } satisfies Record<RsiMethodId, string>,
-      /** The mark beside a card's title: the selected agent has every Skill the toolkit ships. */
+      /** The menu over the toolkit tile's name: picking another one is what Start will start. */
+      toolkitPick: "切换自进化算法",
+      /** The mark beside the toolkit's name: the selected agent has every Skill the toolkit ships. */
       toolkitInstalled: (agent: string): string => `已安装到 ${agent}`,
       toolkitStart: "开始",
       toolkitInstallStart: "安装并开始",
       /** The install confirmation's second line, under the plugin library's own question. */
       toolkitAfterInstall: "装好后它的演示请求会填入输入框；点发送之前什么都不会运行。",
-      benchmarksTitle: "评估中心",
-      benchmarksInfo:
-        "本 Project 在这台服务器上的 Benchmark，以及每个 Benchmark 最近一次评估的分数、被测智能体与版本；点一行进入它的页面。",
-      /** The section's link to the Evaluation Center, naming how many there are in all. */
-      benchmarksAll: (n: number): string => `全部 ${n} 个 Benchmark`,
-      /** A row's latest evaluation: the agent evaluated and its Agent State version. */
-      benchmarkLatestBy: (agent: string, version: number): string => `最近 ${agent} v${version}`,
-      benchmarksEmpty: "这个 Project 还没有 Benchmark",
+      /** The Benchmarks tile's second line when this Project has none. */
       benchmarksEmptyAction: "前往评估中心创建或导入",
+      /** The agents tile's second line when this Project has none. */
+      agentsEmptyAction: "前往创建智能体",
       examplesTitle: "示例与快捷指令",
     },
     /** Collapsed group names for the start page's examples (bookmark style; only one open at a time). */
