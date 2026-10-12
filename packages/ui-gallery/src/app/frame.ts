@@ -13,6 +13,10 @@
  * preferences, three frames of one page can each show a different theme without fighting over
  * the shared origin storage, and what the app writes (a preference changed in its Settings, a
  * collapsed sidebar) stays in that frame.
+ *
+ * A page outside the gallery frames the same document with `embeddedFrameSrc`: it names only the
+ * theme, the mode and the language, and adds `embed=1`, which makes the app the guest of that
+ * page (guest-frame.ts).
  */
 import { THEME_STORAGE_KEYS } from "../../../ui/src/boot";
 
@@ -62,6 +66,12 @@ export interface FrameTarget {
   signedOut?: boolean;
   /** A dialog to open once the app is up. */
   open?: string;
+  /**
+   * Framed by a page other than the gallery (the public landing page), which goes on scrolling
+   * around it. Until the reader clicks into the frame, the app takes no focus, scrolls nothing,
+   * and hands the wheel to the page (app/main.tsx).
+   */
+  embedded?: boolean;
 }
 
 /** The frame's URL: the document, then the target and the preferences as query params. */
@@ -71,6 +81,25 @@ export function appFrameSrc(base: string, prefs: FramePrefs, target: FrameTarget
   for (const key of Object.keys(SEEDED_KEYS)) params.set(key, prefs[key as keyof FramePrefs]);
   if (target.signedOut) params.set("auth", "out");
   if (target.open) params.set("open", target.open);
+  if (target.embedded) params.set("embed", "1");
+  return `${base}${APP_FRAME_PATH}?${params.toString()}`;
+}
+
+/** The preferences a page outside the gallery sets: the rest stay the app's own defaults. */
+export type EmbeddedPrefs = Pick<FramePrefs, "theme" | "mode" | "lang">;
+
+/**
+ * The frame's URL for a page outside the gallery (the public landing page), embedded: only the
+ * theme, the mode and the language are named, and the seeding script writes only what is named,
+ * so the app boots on its own defaults for everything else, as for a first-time user.
+ */
+export function embeddedFrameSrc(base: string, prefs: EmbeddedPrefs, route: string): string {
+  const params = new URLSearchParams();
+  params.set("route", route);
+  params.set("theme", prefs.theme);
+  params.set("mode", prefs.mode);
+  params.set("lang", prefs.lang);
+  params.set("embed", "1");
   return `${base}${APP_FRAME_PATH}?${params.toString()}`;
 }
 
@@ -88,6 +117,7 @@ export function parseFrameParams(search: string): FrameParams {
     lang: params.get("lang") === "zh" ? "zh" : "en",
     ...(params.get("auth") === "out" ? { signedOut: true } : {}),
     ...(open ? { open } : {}),
+    ...(params.get("embed") === "1" ? { embedded: true } : {}),
   };
 }
 

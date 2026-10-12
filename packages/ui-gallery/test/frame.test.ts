@@ -1,7 +1,7 @@
 /**
  * The frame's contract: the URL the gallery builds is the URL the frame reads back, the seeding
  * script writes the app's own storage keys, and the one key the package does not export is the
- * app's.
+ * app's. A page outside the gallery names three preferences and leaves the rest to the app.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ import {
   APP_FRAME_PATH,
   APP_LANG_KEY,
   appFrameSrc,
+  embeddedFrameSrc,
   parseFrameParams,
   SEEDED_KEYS,
   storageSeedScript,
@@ -46,6 +47,37 @@ describe("the frame URL", () => {
     for (const [param, key] of Object.entries(SEEDED_KEYS)) {
       expect(src, key).toContain(`${param}=`);
     }
+  });
+
+  it("for a page outside the gallery, names the theme, the mode and the language, and reads back as embedded", () => {
+    const src = embeddedFrameSrc(
+      "/gallery",
+      { theme: "modern", mode: "dark", lang: "zh" },
+      "/plugins",
+    );
+    expect(src.startsWith(`/gallery${APP_FRAME_PATH}?`)).toBe(true);
+    expect(parseFrameParams(src.slice(src.indexOf("?")))).toEqual({
+      route: "/plugins",
+      lang: "zh",
+      embedded: true,
+    });
+    // The seeding script writes what is named and nothing else: every other preference is the
+    // app's own default.
+    const window: Record<string, unknown> = {};
+    vm.runInContext(
+      storageSeedScript(),
+      vm.createContext({
+        window,
+        location: { search: src.slice(src.indexOf("?")) },
+        URLSearchParams,
+        Object,
+      }),
+    );
+    const storage = window.localStorage as Storage;
+    expect(storage.getItem(THEME_STORAGE_KEYS.themeId)).toBe("modern");
+    expect(storage.getItem(THEME_STORAGE_KEYS.mode)).toBe("dark");
+    expect(storage.getItem(APP_LANG_KEY)).toBe("zh");
+    expect(storage.length).toBe(3);
   });
 
   it("opens the chat when the route is missing or not a path, signed in by default", () => {

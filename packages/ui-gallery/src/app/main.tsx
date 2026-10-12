@@ -11,7 +11,8 @@
  * component imports it), as it does in the app.
  *
  * `open=settings` (or `settings.<page>`) asks the app for its Settings dialog through the
- * app's own request seam, which the account menu answers as soon as it mounts.
+ * app's own request seam, which the account menu answers as soon as it mounts; `embed=1` makes
+ * the app the guest of the page that frames it (guest-frame.ts).
  */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -20,6 +21,7 @@ import { requestSettings } from "../../../web/src/features/settings/settings-req
 import type { SettingsSectionKey } from "../../../web/src/lib/settings-sections";
 import "./app.css";
 import { parseFrameParams } from "./frame";
+import { installGuestFrame } from "./guest-frame";
 import { installFetchShim } from "./mock/fetch-shim";
 import { getStore } from "./mock/store";
 
@@ -47,12 +49,18 @@ installFetchShim();
 // on mount, and the browser scrolls every ancestor document to centre a newly focused element,
 // which dragged the gallery page down until the frame's top sat under the sticky bar. The frame
 // is scaled to fit, so nothing in it is ever out of view; the app's own scroll-on-focus is not
-// missed. Standalone (opened in its own tab) keeps the browser's behaviour.
+// missed. Framed by another page (`embed=1`), the app is that page's guest until the reader
+// clicks into it (guest-frame.ts). Standalone (opened in its own tab) keeps the browser's
+// behaviour.
 if (window.parent !== window) {
-  const focus = HTMLElement.prototype.focus;
-  HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
-    focus.call(this, { ...options, preventScroll: true });
-  };
+  if (params.embedded) {
+    installGuestFrame(window);
+  } else {
+    const focus = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+      focus.call(this, { ...options, preventScroll: true });
+    };
+  }
 }
 
 const container = document.getElementById("root");
