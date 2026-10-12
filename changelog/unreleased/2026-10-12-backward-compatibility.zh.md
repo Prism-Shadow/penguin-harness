@@ -1,8 +1,9 @@
 # 向后兼容：Penguin Go 路由
 
-- **日期：** 2026-10-12
-- **类型：** process
-- **范围：** `core`、`server`
+- **Date:** 2026-10-12
+- **Type:** process
+- **Scope:** `core`, `server`
+- **PR:** [#1063](https://github.com/Prism-Shadow/penguin-harness/pull/1063)
 
 [English](2026-10-12-backward-compatibility.md)
 

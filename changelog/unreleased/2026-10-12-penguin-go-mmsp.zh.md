@@ -1,8 +1,9 @@
 # Penguin Go MMSP 路由
 
-- **日期：** 2026-10-12
-- **类型：** feature
-- **范围：** `core`、`server`、`docs`
+- **Date:** 2026-10-12
+- **Type:** feature
+- **Scope:** `core`, `server`, `docs`
+- **PR:** [#1063](https://github.com/Prism-Shadow/penguin-harness/pull/1063)
 
 [English](2026-10-12-penguin-go-mmsp.md)
 
