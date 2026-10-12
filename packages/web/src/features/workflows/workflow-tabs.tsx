@@ -123,6 +123,7 @@ export function WorkflowTabStrip({
           className="shrink-0 truncate px-3 py-1 text-xs"
           data-tooltip={n.error ?? n.hints.join("\n")}
           data-tooltip-content="text"
+          data-tooltip-extra={n.error === null && n.hints.length > 1}
         >
           <span className="font-mono">{n.workflowId}</span>: {n.error ?? n.hints[0]}
         </NoticeStrip>
@@ -149,6 +150,7 @@ export function WorkflowTabStrip({
               role="tab"
               aria-selected={active === t.tabId}
               data-tooltip={t.error ?? undefined}
+              data-tooltip-extra={t.error !== null}
               className={`${TAB_BASE} ${active === t.tabId ? TAB_ACTIVE : TAB_IDLE}`}
               onClick={() => onSelect(t.tabId)}
             >
@@ -320,6 +322,7 @@ export function WorkflowFrame({
           variant="secondary"
           size="sm"
           title={S.workflows.fillAppHint(paletteShortcut)}
+          data-tooltip-extra
           onClick={fillApp}
         >
           {S.workflows.fillApp}

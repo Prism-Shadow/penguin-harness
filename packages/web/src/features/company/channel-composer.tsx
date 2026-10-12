@@ -49,6 +49,7 @@ import type {
 } from "react";
 import { Button, Dropdown, ICON_GAP, MenuLabel, noAutofill } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { fitTextarea } from "../../lib/textarea-fit";
 import { PrincipalChip } from "./shared";
 import {
   mentionInsertId,
@@ -181,15 +182,17 @@ export function ChannelComposer({
   // 2px short and the box would scroll against itself from the very first one.
   //
   // The resting height is not set here: `min-h-10` on the box and `h-10` on the button are the
-  // same 2.5rem, so an empty or single-line draft sits exactly as tall as 发送 at every font
-  // scale, and `min-height` outranks the height written below. The row is `items-end`, so the
-  // button stays welded to the box's bottom edge as the box grows.
+  // same 2.5rem, so an empty or single-line draft sits exactly as tall as the Send button at
+  // every font scale, and `min-height` outranks the height written below. The row is
+  // `items-end`, so the button stays welded to the box's bottom edge as the box grows. The
+  // measurement holds the box's wrapper at its height (see textarea-fit.ts), so the channel's
+  // message list above is never resized by the collapse and keeps its place on every keystroke.
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    const border = el.offsetHeight - el.clientHeight;
-    el.style.height = `${Math.min(el.scrollHeight + border, MAX_BOX_PX)}px`;
+    fitTextarea(el, (box) =>
+      Math.min(box.scrollHeight + box.offsetHeight - box.clientHeight, MAX_BOX_PX),
+    );
     syncLayer();
   }, [text]);
 

@@ -641,7 +641,9 @@ export const en: Strings = {
     pluginPositionOn: "On",
     pluginPositionOff: "Off",
     pluginsInfo:
-      "The options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here.",
+      "Below the switch: the options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here. The switch only changes what this browser lists on the Plugins page.",
+    /** The page's own switch, above the server's cards: a display preference of this browser. */
+    pluginsIncompatibleOnly: "Show only incompatible plugins",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",
     pluginSecretClear: "Clear stored value",
@@ -2499,6 +2501,10 @@ export const en: Strings = {
         : `This build cannot fully run ${n} installed plugins. Their rows say why.`,
     /** The notice's action: filters the list down to those rows. */
     unsatisfiedShow: "Show",
+    /** Page notice while Settings › Plugins narrows the list to the incompatible plugins. */
+    incompatibleOnlyNotice: "Only incompatible plugins are shown.",
+    /** That notice's action: turns the filter off. */
+    incompatibleOnlyShowAll: "Show all",
     repair: "Fix with AI",
     repairTitle: (name: string) => `Fix ${name} with AI?`,
     repairBody: (name: string) =>

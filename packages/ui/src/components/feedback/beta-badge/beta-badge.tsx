@@ -9,7 +9,7 @@
 export function BetaBadge({ label, title }: { label: string; title?: string }) {
   return (
     <span
-      {...(title !== undefined ? { "data-tooltip": title } : {})}
+      {...(title !== undefined ? { "data-tooltip": title, "data-tooltip-extra": true } : {})}
       className="whitespace-nowrap rounded-sm border border-line-emphasis px-0.5 py-px text-xs font-medium leading-none text-fg-muted"
     >
       {label}

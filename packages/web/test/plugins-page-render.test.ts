@@ -40,6 +40,9 @@
  * - In Manage installs, an Agent whose copy waits for vault values says which; its owner gets
  *   Set up, a member is told the owner sets them. Saving writes the vault with every existing
  *   key kept, the new values added, an empty field left out.
+ * - While the list holds only the incompatible plugins, the page says so and offers the whole
+ *   list back, not Show again; otherwise it counts what this build cannot fully run and offers
+ *   Show, and says nothing when there is none.
  *
  * Rendered to static markup inside the locale provider, as `owner-only-actions.test.ts` renders
  * its cards. Static markup has no layout, so how the header row wraps on a phone is not here.
@@ -78,7 +81,7 @@ import {
 } from "../src/features/plugins/plugin-groups";
 import { rowTitle, webLink } from "../src/features/plugins/plugin-marks";
 import type { PluginStatus } from "../src/features/plugins/plugin-status";
-import { PluginsHeaderActions } from "../src/features/plugins/plugins-page";
+import { IncompatibleNotice, PluginsHeaderActions } from "../src/features/plugins/plugins-page";
 import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { LocaleProvider } from "../src/state/locale";
@@ -151,6 +154,27 @@ describe("the plugins page header", () => {
       en.plugins.importPlugin,
       en.plugins.openSettings,
     ]);
+  });
+});
+
+describe("the notice about incompatible plugins", () => {
+  const notice = (filtered: boolean, unsatisfied: number) =>
+    inLocale(IncompatibleNotice, { filtered, unsatisfied });
+
+  it("says the list is filtered and offers it whole again, not Show, while it is", () => {
+    for (const unsatisfied of [0, 2]) {
+      const html = notice(true, unsatisfied);
+      expect(text(html)).toContain(en.plugins.incompatibleOnlyNotice);
+      expect(text(html)).not.toContain(en.plugins.unsatisfiedNotice(unsatisfied));
+      expect(buttonWords(html)).toEqual([en.plugins.incompatibleOnlyShowAll]);
+    }
+  });
+
+  it("counts what this build cannot fully run and offers Show, and says nothing with none", () => {
+    const html = notice(false, 2);
+    expect(text(html)).toContain(en.plugins.unsatisfiedNotice(2));
+    expect(buttonWords(html)).toEqual([en.plugins.unsatisfiedShow]);
+    expect(notice(false, 0)).toBe("");
   });
 });
 

@@ -514,6 +514,7 @@ function ContextPanel({
                     ranking === "tools" ? S.chat.contextTopToolsHint : S.chat.contextTopFilesHint
                   }
                   data-tooltip-content="text"
+                  data-tooltip-extra
                   className="min-w-0 truncate text-gray-400 dark:text-gray-500"
                 >
                   {ranking === "tools" ? S.chat.contextTopTools : S.chat.contextTopFiles}

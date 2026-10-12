@@ -1,8 +1,10 @@
 /**
  * The archive page's routes (`/api/me/archived-sessions*`) and the archive marks behind them.
  *
- * Every scenario builds its own world: an owner, a peer and a stranger; the owner's Project P1
- * (the peer a member), the peer's P2 (the owner a member) and the peer's P3 (the owner kept out).
+ * Every scenario builds its own world with only the users it needs. The owner's own Project is P1.
+ * A scenario that spans Projects adds the peer: a member of P1, whose own Project P2 has the owner
+ * as a member. P3 is the admin's `default_project`, which the owner is never let into, and the
+ * admin, a member of neither P1 nor P2, is the stranger.
  *
  * - Given Sessions of every kind, the groups count only the archived rows of the Projects the
  *   user can open — a hand-archived conversation, unkept api / schedule / cli Sessions, an api
@@ -35,19 +37,19 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestBegin, sessionMeta, subagentEvent, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type {
   ArchivedSessionGroupsResponse,
   ArchivedSessionsBatchResponse,
   ArchivedSessionsResponse,
-  ProjectCreateResponse,
   ServerEvent,
   SessionResponse,
   SessionSource,
   SessionsResponse,
 } from "../src/api/types.js";
+import { ADMIN_USER_ID } from "../src/auth/service.js";
 import { userChannelKey } from "../src/http/routes/events.js";
 import { apiClient, createTestApp, provisionUser, waitFor, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -58,39 +60,39 @@ const DAY = "2026-10-11";
 
 describe("the archive page", () => {
   let t: TestApp;
-  let worlds = 0;
   let seq = 0;
 
-  beforeAll(async () => {
+  // Every Project is written with the built-in Agent's skills and the built-in Benchmarks (about
+  // 380 files and directories), and on the Windows runner writing and removing them takes most
+  // of a scenario's time. So each scenario boots its own app and removes its own data root (one
+  // root shared by all of them outgrew the 30 s hook budget), and provisions only the users it
+  // needs; each user brings a default Project.
+  beforeEach(async () => {
     t = await createTestApp();
   });
-  afterAll(async () => {
+  afterEach(async () => {
     await t.cleanup();
   });
 
-  /** A fresh owner, peer and stranger, and the three Projects described in the header. */
+  /** The owner and its own Project P1; P3 is the admin's, which the owner cannot open. */
   async function world() {
-    const n = ++worlds;
-    const names = { owner: `ar_owner${n}`, peer: `ar_peer${n}`, stranger: `ar_strange${n}` };
+    const names = { owner: "ar_owner", peer: "ar_peer", stranger: ADMIN_USER_ID };
     const owner = apiClient(t.app, (await provisionUser(t.app, names.owner)).cookie);
-    const peer = apiClient(t.app, (await provisionUser(t.app, names.peer)).cookie);
-    await provisionUser(t.app, names.stranger);
-    const create = async (client: typeof owner, projectId: string, name: string) =>
-      (
-        (await (
-          await client.post("/api/projects", { projectId, name })
-        ).json()) as ProjectCreateResponse
-      ).project.projectId;
-    const p1 = await create(owner, `${names.owner}-one`, "Project One");
-    const p2 = await create(peer, `${names.peer}-two`, "Project Two");
-    const p3 = await create(peer, `${names.peer}-three`, "Project Three");
-    expect((await owner.post(`/api/projects/${p1}/members`, { userId: names.peer })).status).toBe(
+    return { names, owner, p1: `${names.owner}-default_project`, p3: "default_project" };
+  }
+
+  /** `world()` and the peer: a member of P1, whose own Project P2 has the owner as a member. */
+  async function worldWithPeer() {
+    const w = await world();
+    const peer = apiClient(t.app, (await provisionUser(t.app, w.names.peer)).cookie);
+    const p2 = `${w.names.peer}-default_project`;
+    expect(
+      (await w.owner.post(`/api/projects/${w.p1}/members`, { userId: w.names.peer })).status,
+    ).toBe(201);
+    expect((await peer.post(`/api/projects/${p2}/members`, { userId: w.names.owner })).status).toBe(
       201,
     );
-    expect((await peer.post(`/api/projects/${p2}/members`, { userId: names.owner })).status).toBe(
-      201,
-    );
-    return { names, owner, peer, p1, p2, p3 };
+    return { ...w, p2 };
   }
 
   const traceFile = (projectId: string, sessionId: string) =>
@@ -161,7 +163,7 @@ describe("the archive page", () => {
     path.join(t.root, projectId, "agents", AGENT, "workspaces", "tmp-0000abcd");
 
   /** One Session of every kind, in this order (so `latest` rises down the list). */
-  async function seedEveryKind(w: Awaited<ReturnType<typeof world>>) {
+  async function seedEveryKind(w: Awaited<ReturnType<typeof worldWithPeer>>) {
     const active = await seed(w.p1);
     const byHand = await seed(w.p1, { title: "Quarterly report" });
     expect((await w.owner.patch(`/api/sessions/${byHand}`, { archived: true })).status).toBe(200);
@@ -209,20 +211,20 @@ describe("the archive page", () => {
     events.filter((e) => e.type === "session_archived" || e.type === "session_deleted");
 
   it("counts only the archived rows of the Projects the user can open, by Workspace under Project, newest first", async () => {
-    const w = await world();
+    const w = await worldWithPeer();
     await seedEveryKind(w);
     const body = await groups(w.owner);
     expect(body.groups.map((g) => [g.projectId, g.projectName, g.workspace, g.count])).toEqual([
-      [w.p2, "Project Two", "/tmp/arch-ws-c", 1],
-      [w.p1, "Project One", "/tmp/arch-ws-b", 2],
-      [w.p1, "Project One", "temp", 1],
-      [w.p1, "Project One", "/tmp/arch-ws-a", 2],
+      [w.p2, w.names.peer, "/tmp/arch-ws-c", 1],
+      [w.p1, w.names.owner, "/tmp/arch-ws-b", 2],
+      [w.p1, w.names.owner, "temp", 1],
+      [w.p1, w.names.owner, "/tmp/arch-ws-a", 2],
     ]);
     expect(body.total).toBe(6);
   });
 
   it("pages a group's rows newest first by cursor, each row exactly once", async () => {
-    const w = await world();
+    const w = await worldWithPeer();
     const ids = await seedEveryKind(w);
     const group = `projectId=${w.p1}&workspace=${enc("/tmp/arch-ws-a")}`;
     const first = await rows(w.owner, `${group}&limit=1`);
@@ -285,7 +287,7 @@ describe("the archive page", () => {
   });
 
   it("matches a stored title and a first-prompt title, and filters by source and by Project", async () => {
-    const w = await world();
+    const w = await worldWithPeer();
     const ids = await seedEveryKind(w);
     const counted = async (qs: string) =>
       (await groups(w.owner, qs)).groups.map((g) => [g.projectId, g.workspace, g.count]);
@@ -306,7 +308,7 @@ describe("the archive page", () => {
   });
 
   it("unarchives by id into the sidebar's list, for good; counts only archived rows and reports what the user cannot open", async () => {
-    const w = await world();
+    const w = await worldWithPeer();
     const ids = await seedEveryKind(w);
     const done = await batch(w.owner, "unarchive", {
       sessionIds: [ids.cliA, ids.active, ids.hidden, "session-nobody"],
@@ -335,7 +337,7 @@ describe("the archive page", () => {
   });
 
   it("files a kept Session away again when it is archived, and keeps it when PATCH unarchives it", async () => {
-    const w = await world();
+    const w = await worldWithPeer();
     const ids = await seedEveryKind(w);
     expect((await w.owner.patch(`/api/sessions/${ids.cliB}`, { archived: false })).status).toBe(
       200,
@@ -353,7 +355,7 @@ describe("the archive page", () => {
   });
 
   it("unarchives every archived row of one Workspace through a filter, and nothing else", async () => {
-    const w = await world();
+    const w = await worldWithPeer();
     const ids = await seedEveryKind(w);
     const done = await batch(w.owner, "unarchive", {
       filter: { projectId: w.p1, workspace: "/tmp/arch-ws-b" },
@@ -366,7 +368,7 @@ describe("the archive page", () => {
   });
 
   it("deletes by id: the files, the row and the subagent children go; what the user cannot open is missing", async () => {
-    const w = await world();
+    const w = await worldWithPeer();
     const ids = await seedEveryKind(w);
     const child = await seed(w.p1, { source: "subagent" });
     const parent = await seed(w.p1, { extra: [subagentEvent(child)] });
@@ -491,7 +493,7 @@ describe("the archive page", () => {
   });
 
   it("tells the Project's owner and members about each change, and nobody else", async () => {
-    const w = await world();
+    const w = await worldWithPeer();
     const boxes = {
       owner: inbox(w.names.owner),
       peer: inbox(w.names.peer),
@@ -527,7 +529,7 @@ describe("the archive page", () => {
   });
 
   it("refuses a malformed request with a 400, and an unknown Project with a 404, moving nothing", async () => {
-    const w = await world();
+    const w = await worldWithPeer();
     const ids = await seedEveryKind(w);
     const status = async (res: Response | Promise<Response>) => (await res).status;
     const group = `projectId=${w.p1}&workspace=${enc("/tmp/arch-ws-a")}`;

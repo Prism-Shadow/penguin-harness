@@ -71,6 +71,7 @@ export function ReferenceChip({
         />
       }
       tooltip={title}
+      tooltipExtra
       mono
       // An excerpt is named by its label here: its tooltip is the whole passage, which is far too
       // long to announce as the name of a remove button.

@@ -284,6 +284,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
                         // otherwise be the one surface that cannot show it in full.
                         data-tooltip={`${item.name}\n${item.prompt}`}
                         data-tooltip-content="text"
+                        data-tooltip-extra
                       >
                         {item.name}
                       </span>
@@ -293,6 +294,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
                       className="truncate text-xs text-gray-500 dark:text-gray-400"
                       data-tooltip={item.invalidReason ?? line}
                       data-tooltip-content="text"
+                      data-tooltip-extra={item.invalidReason !== undefined}
                     >
                       {line}
                     </div>

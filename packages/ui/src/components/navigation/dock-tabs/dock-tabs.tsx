@@ -23,7 +23,10 @@ export interface DockTabItem {
   /** Stable id: the tab's `data-tab-id`, and what `onSelect` / `onClose` receive. */
   key: string;
   label: string;
-  /** The hover hint; the label when omitted (a terminal's names its shell and directory). */
+  /**
+   * The hover hint; the label when omitted (a terminal's names its shell and directory). One that
+   * says more than the label shows over it in full.
+   */
   title?: string;
   glyph: ReactNode;
   /** An attention dot beside the name (a pending approval behind the tab). */
@@ -68,6 +71,7 @@ export function DockTabButton({
         role="tab"
         aria-selected={active}
         data-tooltip={tab.title ?? tab.label}
+        data-tooltip-extra={(tab.title ?? tab.label) !== tab.label || undefined}
         onClick={onSelect}
         className="flex h-full min-w-0 flex-1 items-center gap-1.5 pl-2 pr-1 text-left text-xs"
       >

@@ -212,7 +212,7 @@ export function SchedulesTab({
                 </TableCell>
                 <TableCell nowrap>
                   {/* invalid reason is folded into the hover title. */}
-                  <span data-tooltip={item.invalidReason}>
+                  <span data-tooltip={item.invalidReason} data-tooltip-extra>
                     <Badge {...STATUS_BADGE[item.status]}>
                       {S.schedule.statusNames[item.status] ?? item.status}
                     </Badge>

@@ -90,6 +90,7 @@ function TestBadge({ result }: { result: RowTestResult | undefined }) {
     return (
       <span
         data-tooltip={S.agent.mcpTestSaveFirst}
+        data-tooltip-extra
         data-tooltip-content="text"
         className="text-xs whitespace-nowrap text-fg-muted"
       >
@@ -100,6 +101,7 @@ function TestBadge({ result }: { result: RowTestResult | undefined }) {
   return (
     <span
       data-tooltip={result.error}
+      data-tooltip-extra
       className={`text-xs font-medium whitespace-nowrap ${toneInk.danger}`}
     >
       {S.agent.mcpTestBadgeFail}
