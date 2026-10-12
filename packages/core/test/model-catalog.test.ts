@@ -1917,8 +1917,8 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
     expect(isVendorGroup("my-own-group")).toBe(false);
   });
 
-  it("isAddableGroup: custom, vLLM, OpenRouter, TokenDance, SiliconFlow and user-defined groups take hand-added models, no other built-in group does", () => {
-    const open = ["custom", "vllm", "openrouter", "tokendance", "siliconflow"];
+  it("isAddableGroup: custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud and user-defined groups take hand-added models, no other built-in group does", () => {
+    const open = ["custom", "vllm", "openrouter", "tokendance", "siliconflow", "atlascloud"];
     for (const id of [...open, "my-own-group"]) {
       expect(isAddableGroup(id), id).toBe(true);
     }
@@ -1949,6 +1949,7 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
       "openrouter",
       "tokendance",
       "siliconflow",
+      "atlascloud",
       "my-own-group",
     ]) {
       expect(unaddableModel(id, "someone/new-model"), id).toBe(false);

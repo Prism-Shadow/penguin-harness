@@ -42,7 +42,7 @@ A group's header shows the provider's logo, the group's name, its model count an
 
 - the group's balance, for TokenDance and DeepSeek once the group has a key; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
 - the connection, for TokenDance, Penguin Go and ModelScope: **Not connected**, which you select to connect, or **Connected**, a menu with **Sync models** (Penguin Go only), **Reconnect** and **Disconnect**; see [Connect an account](#connect-an-account);
-- **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow** and groups you created; see [Add a model](#add-a-model);
+- **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **Atlas Cloud** and groups you created; see [Add a model](#add-a-model);
 - the speed test and **Settings** (a gear), which end every group, **Custom** included, so the two stand at the same right edge on every group; see [Measure speed](#measure-speed). The gear opens a menu: the group's sort, then **Group settings…**; see [Group settings](#group-settings).
 
 While the TokenDance group has no key, a banner above the groups offers to connect your TokenDance wallet, so the models there need no key set by hand. Its **Connect** runs the same flow as the group's. Select × to hide the banner in this browser.
@@ -97,14 +97,14 @@ All of the group's models, their API keys and the group's settings are removed. 
 
 ## Add a model
 
-**Add model** is on the headers of **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow** and the groups you created. The other built-in groups — the vendors and the other gateways — carry their built-in models only; see [Built-in models only](#built-in-models-only).
+**Add model** is on the headers of **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **Atlas Cloud** and the groups you created. The other built-in groups — the vendors and the other gateways — carry their built-in models only; see [Built-in models only](#built-in-models-only).
 
 1. On the group's header, select **Add model** (the plus icon).
 2. In **Model ID**, enter the model id exactly as the provider's API expects it, for example `qwen3-32b`. **Get model IDs** opens the provider's model list.
 3. Optional: in **Display name**, enter a display name. An empty display name shows the model id.
 4. Check **Group**: it starts on the group whose header you used.
 5. Optional: open **Details**, collapsed by default, for everything else. A new model follows its group's connection, so the connection fields there are overrides:
-   - **API key** and **Custom base URL**: a field the group sets reads "Leave blank to use the group's setting"; leave it empty to follow the group, or type a value of the model's own. The model needs a key, its own or the group key: these groups point at endpoints that are not a vendor's own, and no environment variable is used for such an endpoint. On **OpenRouter**, **TokenDance** and **SiliconFlow**, an empty base URL uses the gateway's endpoint on the group; on the other groups the base URL is required unless the group's settings give one.
+   - **API key** and **Custom base URL**: a field the group sets reads "Leave blank to use the group's setting"; leave it empty to follow the group, or type a value of the model's own. The model needs a key, its own or the group key: these groups point at endpoints that are not a vendor's own, and no environment variable is used for such an endpoint. On **OpenRouter**, **TokenDance**, **SiliconFlow** and **Atlas Cloud**, an empty base URL uses the gateway's endpoint on the group; on the other groups the base URL is required unless the group's settings give one.
    - The protocol, picked from the suffix of the base URL field or found with **Detect**; see [Detect a custom model's protocol](#detect-a-custom-models-protocol).
    - **Context window**: the model's context window in Tokens. For a model that is not in the built-in catalog, an empty field saves as 1000000.
    - **Max output tokens**: the most output Tokens per request. Leave it empty to use the agent's setting; lower it for models with a small context.
@@ -116,12 +116,12 @@ All of the group's models, their API keys and the group's settings are removed. 
 
 Which protocol a new model uses depends on its group:
 
-- **vLLM** uses `openai-chat-vllm-adapter`, **OpenRouter** `openai-responses`, and **TokenDance** and **SiliconFlow** `openai-chat`, the protocol a new Project stores in the group's settings. The model stores none and follows its group.
+- **vLLM** uses `openai-chat-vllm-adapter`, **OpenRouter** `openai-responses`, and **TokenDance**, **SiliconFlow** and **Atlas Cloud** `openai-chat`, the protocol a new Project stores in the group's settings. The model stores none and follows its group.
 - **Custom** and groups you created: the group's protocol when its settings set one; otherwise pick the protocol from the base URL field, or detect it. See [Detect a custom model's protocol](#detect-a-custom-models-protocol).
 
 ### Built-in models only
 
-Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance** and **SiliconFlow** carries the models in PenguinHarness's built-in catalog and nothing else. Their keys are managed per group, and which models they hold is the catalog's to decide.
+Every built-in group except **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow** and **Atlas Cloud** carries the models in PenguinHarness's built-in catalog and nothing else. Their keys are managed per group, and which models they hold is the catalog's to decide.
 
 - These groups have no **Add model**, and **Model settings** does not offer them as a group to move a model into.
 - The server refuses a new model in one of these groups unless it is one of the group's built-in models: saving it fails with "This group carries its built-in models only". `penguin config model add` refuses it the same way. A built-in model you deleted can be added back, which is what **Add new models** does.

@@ -1126,7 +1126,7 @@ export interface Messages {
   modelNotConfigured(model: string): string;
   /** `model add` refused: a new entry in a first-party vendor group under a model id MMSP cannot route (it begins with no known vendor prefix). */
   modelNotRoutable(model: string): string;
-  /** A new entry in a built-in group that takes no hand-added models (every one but custom, vLLM, OpenRouter, TokenDance and SiliconFlow). */
+  /** A new entry in a built-in group that takes no hand-added models (every one but custom, vLLM, OpenRouter, TokenDance, SiliconFlow and Atlas Cloud). */
   modelNotAddable(model: string, group: string): string;
   /** Follows modelRemoved when the removed entry was also the vision model. */
   visionModelCleared(): string;

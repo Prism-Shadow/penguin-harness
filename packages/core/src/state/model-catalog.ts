@@ -49,19 +49,20 @@
  * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
  * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
  * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
- * auto-routed by MMSP and leave client_type unset; seven gateway groups (OpenRouter,
- * Fireworks AI, SiliconFlow, TokenDance, OpenCode Go, Qwen Pay-As-You-Go and Qwen Token Plan)
- * can't be auto-routed, so every gateway row **always pins an explicit client_type** and
- * names its preset base URL. ModelScope's rows pin one protocol too (see below).
+ * auto-routed by MMSP and leave client_type unset; eight gateway groups (OpenRouter,
+ * Fireworks AI, SiliconFlow, Atlas Cloud, TokenDance, OpenCode Go, Qwen Pay-As-You-Go and Qwen
+ * Token Plan) can't be auto-routed, so every gateway row **always pins an explicit
+ * client_type** and names its preset base URL. ModelScope's rows pin one protocol too (see below).
  * These are reference values, never runtime fallbacks: a new Project's file receives them
  * once — a group's shared endpoint and protocol in its `[providers.<id>]` table
  * (presetProviderTable), a row's own only where it differs from its group's
  * (catalogModelEntry) — as do "Add new models" and "Restore defaults"; from then on the file
  * alone says where a request goes (effectiveConnection reads no catalog).
- * Four groups pin at GROUP level as well (ModelProviderInfo.clientType, read
+ * Five groups pin at GROUP level as well (ModelProviderInfo.clientType, read
  * through providerClientType), so that a model the user adds there speaks the same protocol
  * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
- * OpenRouter, TokenDance and SiliconFlow, whose do — see each group's own block comment.
+ * OpenRouter, TokenDance, SiliconFlow and Atlas Cloud, whose do — see each group's own block
+ * comment.
  * That pin is load-bearing, not decoration: MMSP's AutoLLMClient routes an unpinned id by
  * the family its spelling begins with and never looks at base_url (see routedClientType), so
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
@@ -194,11 +195,12 @@ export interface ModelProviderInfo {
   balance?: ModelProviderBalance;
   /**
    * The group takes models the user adds by hand: `custom` and vLLM, whose rows point at an
-   * endpoint the catalog cannot know, and the three gateways whose catalogs list a fraction of
-   * what they serve — OpenRouter, TokenDance and SiliconFlow — where an added model follows
-   * the group's connection (its endpoint, key and protocol) exactly as the presets do. Every
-   * other built-in group carries its catalog presets and the rows it already stores, and
-   * nothing else. Read it through isAddableGroup, which also answers for user-defined groups.
+   * endpoint the catalog cannot know, and the four gateways whose catalogs list a fraction of
+   * what they serve — OpenRouter, TokenDance, SiliconFlow and Atlas Cloud — where an added
+   * model follows the group's connection (its endpoint, key and protocol) exactly as the
+   * presets do. Every other built-in group carries its catalog presets and the rows it already
+   * stores, and nothing else. Read it through isAddableGroup, which also answers for
+   * user-defined groups.
    */
   addable?: boolean;
   /**
@@ -206,10 +208,10 @@ export interface ModelProviderInfo {
    *
    * Set it where the group itself decides the answer for a row the catalog does not list:
    * every group that takes hand-added models and speaks one protocol (vLLM, OpenRouter,
-   * TokenDance, SiliconFlow). The other gateways hold catalog rows only, each carrying its own
-   * pin, and `custom` / user-defined groups deliberately declare nothing — their whole point
-   * is that the protocol is detected from the endpoint or picked by hand, and a pin here
-   * would take that choice away.
+   * TokenDance, SiliconFlow, Atlas Cloud). The other gateways hold catalog rows only, each
+   * carrying its own pin, and `custom` / user-defined groups deliberately declare nothing —
+   * their whole point is that the protocol is detected from the endpoint or picked by hand,
+   * and a pin here would take that choice away.
    *
    * Where it IS set, a new Project writes it as the group's `[providers.<id>]` protocol
    * (catalogGroupConnection), and the rows — models added by hand included — follow that
@@ -329,8 +331,8 @@ export const MODELSCOPE_PROVIDER_ID = "modelscope";
  * moves when the curation changes: a Project that has ever reordered its groups has every
  * key stored already, so it keeps the arrangement its user built.
  *
- * The seven gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance, OpenCode Go,
- * Qwen Pay-As-You-Go and Qwen Token Plan — reach their models through MMSP's generic
+ * The eight gateway groups — OpenRouter, Fireworks AI, SiliconFlow, Atlas Cloud, TokenDance,
+ * OpenCode Go, Qwen Pay-As-You-Go and Qwen Token Plan — reach their models through MMSP's generic
  * protocol clients (`openai-responses` for OpenRouter, `openai-chat` for the rest, and all
  * three generic clients within OpenCode Go). Those clients read the vendor variables
  * (**OPENAI_API_KEY / OPENAI_BASE_URL**, and ANTHROPIC_* for OpenCode Go's `ant-messages`
@@ -473,6 +475,10 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://atlascloud.ai/docs/api-keys",
     modelsUrl: "https://atlascloud.ai/models",
     gatewayBaseUrl: ATLASCLOUD_BASE_URL,
+    // As SiliconFlow: Chat Completions throughout, and the catalog lists a fraction of what
+    // the gateway serves, so the group takes models added by hand, which follow the group.
+    clientType: "openai-chat",
+    addable: true,
   },
   {
     id: "zhipu",
@@ -3278,9 +3284,9 @@ export function providerInfo(providerId: string): ModelProviderInfo | undefined 
  * The protocol a group pins on every one of its entries (ModelProviderInfo.clientType), or
  * undefined when the group pins none — an unknown id (a user-defined group) included.
  *
- * Four groups pin: vLLM, whose models are served by the user's own vLLM adapter,
+ * Five groups pin: vLLM, whose models are served by the user's own vLLM adapter,
  * OpenRouter, whose models all speak the Responses API OpenRouter serves at its preset base
- * URL, and TokenDance and SiliconFlow, whose models all speak Chat Completions.
+ * URL, and TokenDance, SiliconFlow and Atlas Cloud, whose models all speak Chat Completions.
  *
  * A reference value, read when a file is written from the catalog (catalogGroupConnection:
  * a new Project, "Add new models" for a group new to the file, "Restore defaults") and by
@@ -3343,9 +3349,9 @@ export function unroutableVendorModel(
 
 /**
  * Whether models may be added to this group by hand: `custom`, vLLM, OpenRouter, TokenDance,
- * SiliconFlow (ModelProviderInfo.addable) and every user-defined group, i.e. an id this
- * catalog does not know. Every other built-in group — the first-party vendors and the other
- * gateways — carries its catalog presets and the rows it already stores: the models page
+ * SiliconFlow, Atlas Cloud (ModelProviderInfo.addable) and every user-defined group, i.e. an
+ * id this catalog does not know. Every other built-in group — the first-party vendors and the
+ * other gateways — carries its catalog presets and the rows it already stores: the models page
  * offers no add-model entry point there, and the models PUT and the CLI's `config model add`
  * refuse a new row that is not a preset (unaddableModel).
  */

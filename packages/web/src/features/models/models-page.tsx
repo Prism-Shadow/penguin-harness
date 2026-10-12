@@ -17,9 +17,9 @@
  * (group-header.ts): its balance (one menu: pin, refresh, when it was read), the connection
  * ("Not connected", which connects, or one "Connected" menu: Sync models on Penguin Go,
  * Reconnect, Disconnect — group-connection.tsx), Add model (an icon) on the groups
- * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, user-defined),
- * the speed test, and the gear last on every group: a menu with the group's sort and the group
- * settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
+ * that take hand-added models (custom, vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud,
+ * user-defined), the speed test, and the gear last on every group: a menu with the group's sort
+ * and the group settings (group-settings-menu.tsx, provider-settings-dialog.tsx).
  *
  * Each group orders its own models (model-sort.ts): by the price billed right now, low to high
  * unless the user picked otherwise from the gear, or by name. The choice is remembered per group
@@ -1441,7 +1441,7 @@ export function ModelsPage() {
         );
       }
       case "addModel":
-        // Only the groups that take hand-added models: custom, vLLM, the three gateways that
+        // Only the groups that take hand-added models: custom, vLLM, the four gateways that
         // list a fraction of what they serve, and user-defined ones. The rest carry the catalog's
         // presets, which the server enforces too (model_not_addable). An icon, like the speed
         // test and the gear it stands beside.
@@ -3356,10 +3356,10 @@ function ModelDialog({
           }}
         >
           {/* Built-in groups: the ones that take hand-added models (custom, vLLM, OpenRouter,
-              TokenDance, SiliconFlow), and the group the row was loaded in — a row already in
-              another gateway or a vendor group may stay there, but no other row may be moved
-              into one (the server refuses that as an addition, model_not_addable). The current
-              value stays listed so it is valid. */}
+              TokenDance, SiliconFlow, Atlas Cloud), and the group the row was loaded in — a row
+              already in another gateway or a vendor group may stay there, but no other row may
+              be moved into one (the server refuses that as an addition, model_not_addable). The
+              current value stays listed so it is valid. */}
           {MODEL_PROVIDERS.filter(
             (p) =>
               isAddableGroup(p.id) || p.id === row?.original?.provider || p.id === form.provider,
