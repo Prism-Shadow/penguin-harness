@@ -37,8 +37,9 @@ The fixed path:
    the model credential from the plan (skip with "none" and record what later steps say about the
    missing credential).
 6. **A task.** `penguin run` with a one-line prompt; then `penguin ls`, `penguin logs` and
-   `penguin cost` for the Session it made. Record whether the Session also shows in the Web App
-   under the same Project.
+   `penguin cost` for the Session it made. A Session `penguin run` opens is archived: `ls` lists
+   it with `-a`, and the Web App shows it under Settings › Archived chats of the same Project,
+   not in the sidebar. Record whether both hold.
 7. **Mistakes.** An unknown command, a missing required argument, a wrong option value. Each
    error must say what was wrong and what to do; quote it.
 
