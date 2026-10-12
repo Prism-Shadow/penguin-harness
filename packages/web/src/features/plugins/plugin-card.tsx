@@ -131,6 +131,7 @@ export interface PluginCardProps {
   /** Asks to install (true) or remove (false) the server module; the page confirms first. */
   onModuleApply: (install: boolean) => void;
   /** An Agent's vault changed under the plugin's MCP servers (Set up saved): its servers are read again. */
+  onRepair?: (() => void) | null;
   onMcpChanged: (agentId: string) => void;
 }
 
@@ -314,6 +315,22 @@ export function PluginCard(props: PluginCardProps) {
         </Button>,
       );
     }
+    if (props.onRepair != null && row.module?.unsatisfied !== undefined) {
+      out.push(
+        <Button
+          key="repair"
+          size="sm"
+          className={look}
+          aria-label={`${S.plugins.repair} ${row.name}`}
+          title={S.plugins.repair}
+          disabled={props.busy || props.blocked}
+          onClick={props.onRepair}
+        >
+          <GlyphIcon d={ICONS.sparkles} size={ICON_SIZE.iconButton} />
+          {words(S.plugins.repair)}
+        </Button>,
+      );
+    }
     return out;
   };
 
@@ -378,6 +395,13 @@ export function PluginCard(props: PluginCardProps) {
             </p>
           </div>
         </div>
+        {row.module?.unsatisfied !== undefined && (
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {row.module.state === "disabled"
+              ? row.module.unsatisfied
+              : S.plugins.runsPartly(row.module.unsatisfied)}
+          </p>
+        )}
         <div className="mt-2.5">
           <MetaLine>
             {version !== undefined && <span className="shrink-0 font-mono">v{version}</span>}

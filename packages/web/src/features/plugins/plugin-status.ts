@@ -49,6 +49,7 @@ export const PLUGIN_STATUSES = [
   "installed",
   "restart",
   "failed",
+  "incompatible",
   "not-here",
   "available",
 ] as const;
@@ -61,7 +62,8 @@ export type PluginStatus = (typeof PLUGIN_STATUSES)[number];
  * plugin listed only for other machines, which this server neither installs nor loads;
  * `unsynced` — listed for a machine that has not reported running it; `none` — not listed.
  */
-export type ModuleState = "none" | "pending" | "active" | "failed" | "elsewhere" | "unsynced";
+export type ModuleState =
+  "none" | "pending" | "active" | "failed" | "disabled" | "elsewhere" | "unsynced";
 
 /** The Agent's entry of one of the plugin's MCP servers: one by that name the plugin installed — a server the user added under the same name is not the plugin's. */
 function pluginServer(
@@ -177,6 +179,8 @@ export function moduleStatus(state: ModuleState): PluginStatus {
       return "restart";
     case "failed":
       return "failed";
+    case "disabled":
+      return "incompatible";
     case "elsewhere":
     case "unsynced":
       return "not-here";

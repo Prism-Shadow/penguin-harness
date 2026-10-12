@@ -196,7 +196,11 @@ export type ReadmeState =
  */
 export function moduleOnThisServer(part: ModulePart): boolean {
   return (
-    part.shipped || part.state === "active" || part.state === "pending" || part.state === "failed"
+    part.shipped ||
+    part.state === "active" ||
+    part.state === "pending" ||
+    part.state === "failed" ||
+    part.state === "disabled"
   );
 }
 

@@ -1297,6 +1297,10 @@ export const zh = {
     /** Disclosed by the "?" beside that label: when a picked image takes effect. */
     avatarInfo:
       "选择图片后立即生效，无需另行保存；旁边的昵称是输入的文本，因此保留了自己的保存按钮。",
+    cropAvatar: "裁剪头像",
+    cropAvatarHint: "拖动调整位置，滚轮或滑块缩放",
+    cropZoom: "缩放",
+    useAvatar: "使用",
     changeAvatar: "更换头像",
     /**
      * Shared label of the two buttons that put a field back to what an account with nothing set
@@ -2602,6 +2606,33 @@ export const zh = {
   plugins: {
     builtin: "内置",
     builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
+    installedRestart: "待重启",
+    stateFailed: "加载失败",
+    /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
+    stateDisabled: "此构建上已停用",
+    /** Under a running row: this build has no slot for part of what the plugin contributes. */
+    runsPartly: (reason: string) => `此构建上有一部分未生效：${reason}`,
+    /** Page notice while this build cannot fully run a listed plugin. */
+    unsatisfiedNotice: (n: number) => `当前构建无法完整运行 ${n} 个已装插件，原因见各自的条目。`,
+    /** The notice's action: filters the list down to those rows. */
+    unsatisfiedShow: "查看",
+    repair: "用 AI 修复",
+    repairTitle: (name: string) => `用 AI 修复 ${name}？`,
+    repairBody: (name: string) =>
+      `将打开一个使用临时 Workspace 的新对话，输入框里已写好修复 ${name} 的提示词；在你发送之前不会执行任何操作。`,
+    repairOpen: "打开对话",
+    repairNoAgent: "当前 Project 没有可以接手修复的 Agent。",
+    /** The repair prompt written into the new chat's composer; the user reads and sends it. */
+    repairPrompt: (name: string, disabled: boolean, reason: string) =>
+      [
+        `这台服务器上装着插件 \`${name}\`，但当前运行的构建${
+          disabled ? "无法运行它：它已被停用。" : "无法完整运行它：它的一部分贡献没有生效。"
+        }`,
+        `平台给出的原因：\n${reason}`,
+        "请查明这份构建与插件为什么对不上，然后修复。已安装的插件在服务器数据根目录的 `plugins/node_modules/` 下；随构建自带的插件在构建自己的 `plugins/` 目录下。常见的修法是安装与这份构建匹配的插件版本，或修改插件，使它不再依赖这份构建没有的东西。如果只有更新服务器的构建才能解决，请直接说明，不要改动任何东西。",
+        "改动已安装的插件之前，先告诉我你打算改什么。",
+      ].join("\n\n"),
+    replacesLabel: "替换",
     restartPending: "有已列出但未运行的插件，且本服务器无法免重启应用：重启服务器后加载。",
     uninstall: "移除",
     install: "安装",
@@ -2652,6 +2683,7 @@ export const zh = {
       restart: "待重启",
       failed: "加载失败",
       "not-here": "不在本机",
+      incompatible: "不兼容",
       available: "可安装",
     },
     /** What a status means for this plugin, on hover over its glyph. */
@@ -4185,8 +4217,16 @@ Benchmark：
     },
     /** Why the enable switch is gated while the OTHER channel holds the connection. */
     otherEnabledHint: (other: string): string => `同一会话只能启用一个渠道：先停用${other}连接`,
-    /** Why the enable switch is gated while the selected channel has no stored credential. */
-    credentialMissingHint: "先填写并保存凭证，再启用连接",
+    /**
+     * Why the enable switch is gated while the selected channel has no stored credential — one
+     * per channel, because what is missing differs: a scan, typed fields, or either.
+     */
+    credentialMissingHint: {
+      feishu: "先填写 App ID 与 App Secret 并保存，再启用连接",
+      telegram: "先填写 Bot Token 并保存，再启用连接",
+      qq: "先扫码，或填写 App ID 与 App Secret 并保存，再启用连接",
+      wechat: "先扫码绑定微信，再启用连接",
+    },
     /** Why the clear checkbox is gated while the channel's connection is enabled. */
     disableBeforeClearHint: "先停用连接，才能清除凭证",
     /** The saved delivery option: render a reply's Markdown in the channel's own markup. */
@@ -4241,6 +4281,12 @@ Benchmark：
       `${when} 收到过一条消息，但任务没有开始：${detail}`,
     deliveryFailedSend: (when: string, detail: string) =>
       `任务已完成，但回复于 ${when} 发送失败：${detail}`,
+    /**
+     * WeChat only, in the delivery-failure line's place: replies the platform would not take
+     * yet are held for the user's next WeChat message, which is not a failure.
+     */
+    repliesHeld: (when: string) =>
+      `${when} 起有回复暂未送达：微信只在你给机器人发消息后的一段时间内接受它的回复，条数也有限。你下次在微信里给它发消息时，会先补发这些回复。`,
     /** A connection failure the connection has since recovered from (lastError is gone by then). */
     lastConnectionError: (when: string, detail: string) => `连接曾于 ${when} 中断：${detail}`,
     /** The collapsed FAQ folds below the save area. */
@@ -4250,7 +4296,7 @@ Benchmark：
     faqWhatBinding:
       "同一个机器人可以同时保存在多个对话里，但同一时刻只能有一个对话启用它的连接。要换一个对话使用，先在原对话停用连接，再在这里启用——凭证不必删除。",
     faqTroubleTitle: "常见问题",
-    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent). */
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent; WeChat direct chats only; WeChat's per-message reply budget and window). */
     troubleNoChat: "「发送测试消息」不可用？机器人要先收到过一条消息，才知道要发到哪个会话。",
     troubleConnError:
       "连接状态显示错误？检查凭证是否正确；飞书还需确认 API 域名与事件订阅方式（长连接）。",
@@ -4260,6 +4306,9 @@ Benchmark：
       "在 Telegram 群里发消息，机器人毫无反应？Telegram 的 Group Privacy 默认开启，此时不担任该群管理员的机器人只能收到明确指向它的命令（如 /start@your_bot）和对它自己消息的回复，普通群消息根本不会送达，连接本身也没有任何异常。把机器人设为该群的管理员即可单独解决，管理员始终收到全部消息。也可以到 @BotFather 用 /setprivacy 关闭 Group Privacy，然后把机器人移出该群再重新拉入——已在的群不会自动生效。",
     /** WeChat has no group inbound at all — the answer to "I @-ed it in a group and nothing happened". */
     troubleWeChatDirect: "微信渠道只接收单聊消息：在群里 @机器人不会有任何反应，请直接私聊它。",
+    /** WeChat's reply budget and window — the answer to "replies arrive combined, or late". */
+    troubleWeChatReplyWindow:
+      "微信里的回复被合并，或迟迟不到？你每给机器人发一条消息，微信只允许它回复约 10 条，而且只在你发消息后的一段时间内有效。一次运行产生的消息更多时，会合并成更少的几条发出；微信暂时不接受的回复会先存下，在你下次给机器人发消息时补发。",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "QQ 里收不到回复？QQ 只允许机器人回复你刚发出的消息：在网页端发起的对话不会同步过去，距离你上一条 QQ 消息过去几分钟后也发不出。在 QQ 里再发一条消息即可继续。",
@@ -5164,6 +5213,13 @@ Benchmark：
       hire: "招募下属",
       setBudget: "设预算",
       changeReportsTo: "调整汇报线",
+      nameAndAvatar: "名字与头像",
+      profileTitle: (name: string) => `名字与头像——${name}`,
+      employeeName: "名字",
+      employeeNameHint: (agentId: string) =>
+        `大家在这个组织里怎么称呼这位员工，可以是中文；和 id（${agentId}）一样可以用在 @ 后面。两位员工同名时，会各自带上 id 作备注。留空则用 Agent 自己的名字。`,
+      employeeNameHireHint:
+        "大家在这个组织里怎么称呼这位员工，可以是中文；和 id 一样可以用在 @ 后面。留空则用 Agent 自己的名字。",
       renewDesk: "换工位",
       leave: "离任",
       ceoCannotLeave: "CEO 不能离任",
@@ -5772,6 +5828,10 @@ Benchmark：
       telegram_not_bound: "该 Session 尚未绑定 Telegram。",
       telegram_no_chat: "尚未收到 Telegram 消息：先在 Telegram 中给机器人发一条消息。",
       telegram_send_failed: "Telegram 消息发送失败。",
+      wechat_no_chat: "尚未收到微信消息：先在微信中给机器人发一条消息。",
+      wechat_send_failed: "微信消息发送失败。",
+      wechat_needs_recent_message:
+        "微信暂时不接受机器人发消息：先在微信里给机器人发一条消息，再发送测试消息。",
       another_channel_enabled: "该会话已启用另一渠道的连接：先停用它，再启用当前渠道。",
       // Deliberately names nothing about the other conversation: it may live in a Project
       // this user cannot see, and the remedy does not depend on knowing which one it is.

@@ -1202,6 +1202,10 @@ export const en: Strings = {
     /** Disclosed by the "?" beside that label: when a picked image takes effect. */
     avatarInfo:
       "A picture takes effect as soon as you choose it — there is no separate Save for it. The nickname beside it is typed text, so it keeps a Save of its own.",
+    cropAvatar: "Crop avatar",
+    cropAvatarHint: "Drag to position, scroll or use the slider to zoom",
+    cropZoom: "Zoom",
+    useAvatar: "Use this",
     changeAvatar: "Change avatar",
     /**
      * Shared label of the two buttons that put a field back to what an account with nothing set
@@ -2469,6 +2473,38 @@ export const en: Strings = {
     builtin: "built in",
     builtinHint:
       "Ships with this build: installing it downloads nothing, and it loads only once you install it.",
+    installedRestart: "restart to load",
+    stateFailed: "failed to load",
+    /** A module plugin the running build cannot run at all: it needs a module or interface this build lacks. */
+    stateDisabled: "disabled on this build",
+    /** Under a running row: this build has no slot for part of what the plugin contributes. */
+    runsPartly: (reason: string) => `Part of it is not in use on this build: ${reason}`,
+    /** Page notice while this build cannot fully run a listed plugin. */
+    unsatisfiedNotice: (n: number) =>
+      n === 1
+        ? "This build cannot fully run 1 installed plugin. Its row says why."
+        : `This build cannot fully run ${n} installed plugins. Their rows say why.`,
+    /** The notice's action: filters the list down to those rows. */
+    unsatisfiedShow: "Show",
+    repair: "Fix with AI",
+    repairTitle: (name: string) => `Fix ${name} with AI?`,
+    repairBody: (name: string) =>
+      `A new chat opens in a temporary workspace, with a prompt to repair ${name} already written. Nothing is sent until you send it.`,
+    repairOpen: "Open the chat",
+    repairNoAgent: "This Project has no Agent to hand the repair to.",
+    /** The repair prompt written into the new chat's composer; the user reads and sends it. */
+    repairPrompt: (name: string, disabled: boolean, reason: string) =>
+      [
+        `The plugin \`${name}\` is installed on this server, but the running build cannot ${
+          disabled
+            ? "run it: it is disabled."
+            : "fully run it: part of what it contributes is not in use."
+        }`,
+        `The platform's reason:\n${reason}`,
+        "Find out why this build and the plugin disagree, then fix it. Installed plugins are under the server's data root in `plugins/node_modules/`; a plugin that ships with the build is under the build's own `plugins/` directory. The usual fixes are installing a version of the plugin that matches this build, or changing the plugin so it no longer needs what this build lacks. If only a newer build of the server can fix it, say so and change nothing.",
+        "Tell me what you intend to change before you change an installed plugin.",
+      ].join("\n\n"),
+    replacesLabel: "replaces",
     restartPending:
       "A listed plugin is not running and this server could not apply it without a restart: restart the server to load it.",
     uninstall: "Remove",
@@ -2522,6 +2558,7 @@ export const en: Strings = {
       restart: "Restart to load",
       failed: "Failed to load",
       "not-here": "Not on this server",
+      incompatible: "Incompatible",
       available: "Available",
     },
     /** What a status means for this plugin, on hover over its glyph. */
@@ -4024,8 +4061,16 @@ Scenarios:
     /** Why the enable switch is gated while the OTHER channel holds the connection. */
     otherEnabledHint: (other: string): string =>
       `Only one channel can be enabled per conversation: turn off the ${other} connection first`,
-    /** Why the enable switch is gated while the selected channel has no stored credential. */
-    credentialMissingHint: "Enter and save the credential first, then enable the connection",
+    /**
+     * Why the enable switch is gated while the selected channel has no stored credential — one
+     * per channel, because what is missing differs: a scan, typed fields, or either.
+     */
+    credentialMissingHint: {
+      feishu: "Enter and save the App ID and App Secret first, then enable the connection",
+      telegram: "Enter and save the Bot Token first, then enable the connection",
+      qq: "Scan the QR code, or enter and save the App ID and App Secret, then enable the connection",
+      wechat: "Scan the QR code to link WeChat first, then enable the connection",
+    },
     /** Why the clear checkbox is gated while the channel's connection is enabled. */
     disableBeforeClearHint: "Disable the connection before clearing the credential",
     /** The saved delivery option: render a reply's Markdown in the channel's own markup. */
@@ -4080,6 +4125,12 @@ Scenarios:
       `A message arrived at ${when} but its task never started: ${detail}`,
     deliveryFailedSend: (when: string, detail: string) =>
       `The task ran but its reply failed to go out at ${when}: ${detail}`,
+    /**
+     * WeChat only, in the delivery-failure line's place: replies the platform would not take
+     * yet are held for the user's next WeChat message, which is not a failure.
+     */
+    repliesHeld: (when: string) =>
+      `Replies waiting since ${when}: WeChat accepts only a limited number of the bot's replies, and only for a while after you message it. They go out as soon as you next message the bot in WeChat.`,
     /** A connection failure the connection has since recovered from (lastError is gone by then). */
     lastConnectionError: (when: string, detail: string) =>
       `The connection dropped at ${when}: ${detail}`,
@@ -4090,7 +4141,7 @@ Scenarios:
     faqWhatBinding:
       "The same bot can stay saved in several conversations, but only one of them may have its connection enabled at a time. To move it, turn the connection off where it is on and enable it here — no credential has to be deleted.",
     faqTroubleTitle: "Troubleshooting",
-    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent). */
+    /** Troubleshooting entries (bot must be messaged once; connection errors point at credentials; one poller per Telegram token; Telegram Group Privacy withholds group messages from a non-admin bot; QQ answers only a message just sent; WeChat direct chats only; WeChat's per-message reply budget and window). */
     troubleNoChat:
       "“Send test message” disabled? The bot must have received one message first, so it knows which chat to send to.",
     troubleConnError:
@@ -4102,6 +4153,9 @@ Scenarios:
     /** WeChat has no group inbound at all — the answer to "I @-ed it in a group and nothing happened". */
     troubleWeChatDirect:
       "The WeChat channel receives direct chats only: @-mentioning the bot in a group does nothing at all. Message it directly instead.",
+    /** WeChat's reply budget and window — the answer to "replies arrive combined, or late". */
+    troubleWeChatReplyWindow:
+      "Replies in WeChat arrive combined, or late? WeChat lets the bot send about 10 messages for each message you send it, and only for a while after your last one. A run that produces more is combined into fewer messages, and anything WeChat will not take yet is held and sent as soon as you next message the bot.",
     /** The QQ-only failure a user will otherwise read as "the bot is broken". */
     troubleQQPassive:
       "No replies arriving in QQ? QQ only lets a bot answer a message you just sent: a turn started in the web app is not mirrored there, and replies stop being deliverable a few minutes after your last QQ message. Send another message in QQ to continue.",
@@ -5008,6 +5062,13 @@ Scenarios:
       hire: "Hire a subordinate",
       setBudget: "Set budget",
       changeReportsTo: "Change reporting line",
+      nameAndAvatar: "Name and avatar",
+      profileTitle: (name: string) => `Name and avatar — ${name}`,
+      employeeName: "Name",
+      employeeNameHint: (agentId: string) =>
+        `What people call this employee here, in any language; it works after @ like the id (${agentId}). Two employees with the same name are shown with their ids noted. Empty: the Agent's own name.`,
+      employeeNameHireHint:
+        "What people call this employee here, in any language — it works after @ like the id. Empty: the Agent's own name.",
       renewDesk: "New desk session",
       leave: "Leave the organization",
       ceoCannotLeave: "The CEO cannot leave",
@@ -5634,6 +5695,10 @@ Scenarios:
       telegram_no_chat:
         "No Telegram message received yet — message the bot once in Telegram first.",
       telegram_send_failed: "Sending the Telegram message failed.",
+      wechat_no_chat: "No WeChat message received yet — message the bot once in WeChat first.",
+      wechat_send_failed: "Sending the WeChat message failed.",
+      wechat_needs_recent_message:
+        "WeChat is not accepting messages from the bot right now — message the bot in WeChat first, then send the test message.",
       another_channel_enabled:
         "Another channel's connection is enabled on this conversation: disable it first.",
       // Deliberately names nothing about the other conversation: it may live in a Project

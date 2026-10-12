@@ -530,7 +530,7 @@ interface AgentApiKeyInfo {
 - 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`，以及卡片字段 `descriptionZh`、`shortDescription`、`shortDescriptionZh` 和 `icon`（SVG 原文），均可选。包在本机上时，列表改用包自带 `package.json` 的 `penguin` 块与图标中的这几项，且不发送不是纯 SVG 的图标。已发布的索引不提供 `icon`：Web App 会把 SVG 内联进页面，因此服务端丢弃每个远程条目的 `icon`。条目的 `name` 就是 Project 列表里使用的包名。索引合并两个来源：内嵌在 server 包中的那份，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让那份索引整体失败。`PENGUIN_PLUGIN_INDEX=off` 关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。注册表只用于发现，从不导入插件代码。
 - 除索引条目外，列表还为管理员从链接或 zip 安装的每个服务端模块包列出一行，描述取自包自己的 `package.json`。
 - `GET …/readme` 返回包自带的 `README.md`，从本机上的副本读取；没有时 `readme` 为 `null`。列表中没有的名称返回 `404` `not_found`，缺少 `name` 的请求返回 `400` `bad_request`。`GET …/archive` 与插件库的导出路由一样，把本机上一个已列出的包打成 zip 下载；包不在本机上时返回 `404` `plugin_not_here`。
-- `GET …/installed` 对该 Project 的任何成员开放。`plugins` 的每个元素是 `{specifier, active, builtin, modules, replaces, error?}`：`active` 表示进程已加载这个包，`builtin` 表示它随本次构建发布，`modules` 和 `replaces` 是其生成的 `ifaces.json` 声明的节点，`error` 说明它为什么没有运行，例如本机上没有这个包，或加载失败。`shipped` 列出构建发布的全部插件包，无论是否被要求。`file` 是保存列表的文件名。已列出的插件既没有运行、也没有加载失败时，`restartPending` 为 true，重启服务器即可解决。Project 的 `.project_config.toml` 无法读取时返回 `400` `invalid_plugins_file`。
+- `GET …/installed` 对该 Project 的任何成员开放。`plugins` 的每个元素是 `{specifier, active, builtin, modules, replaces, error?, unsatisfied?}`：`active` 表示进程已加载并运行这个包，`builtin` 表示它随本次构建发布，`modules` 和 `replaces` 是其生成的 `ifaces.json` 声明的节点，`error` 说明它为什么没有运行，例如本机上没有这个包，或加载失败。运行中的构建缺少这个包所依赖的槽位、模块或接口，因而无法完整运行它时，`unsatisfied` 为 `{disabled, reason}`：`disabled` 为 true 表示整个包被停用，此时 `active` 为 false；为 false 表示包仍在运行，只是这份构建没有槽位可接的那部分贡献没有生效。`shipped` 列出构建发布的全部插件包，无论是否被要求。`file` 是保存列表的文件名。已列出的插件既没有运行、也没有加载失败、也不属于 `unsatisfied` 时，`restartPending` 为 true，重启服务器即可解决。Project 的 `.project_config.toml` 无法读取时返回 `400` `invalid_plugins_file`。
 - 写操作返回与 GET 相同的响应体；安装还会附带 `installed: {name, version, library, modules, unchanged?}`，说明装到服务端的是什么。`POST` 接受 npm 包名，可带版本、范围或标签（`@scope/name@^1.2`），或 npm 能直接获取的 https 链接：git 仓库（`https://github.com/o/r`、`git+https://…`、`github:o/r#tag`）或 tarball。路径、`file:`、`http:` 和 ssh 链接、链接中带凭据、包名后的 `npm:` 或 `file:` 别名，以及指向 GitHub 仓库中某个文件夹或文件的链接（`…/tree/…`、`…/blob/…`），都会在运行 npm 之前以 `400` `bad_request` 拒绝。从链接安装会获取管理员给出的任意 https 地址，包括内网地址：npm 在服务端、在它所在的网络里运行。安装后，与构建自带的服务端模块同名的包会被重新卸载，并以 `409` `plugin_shipped` 拒绝（它会替换掉所有 Project 的这个模块）；不是插件的包以 `400` `not_a_plugin` 拒绝。此时它的安装脚本已经运行过，错误信息会说明这一点。构建自带的插件直接加入列表，不下载；其余的先用 `npm install` 装进数据根目录的 `plugins/` 前缀，npm 拒绝时返回 `400` `plugin_install_failed`。装上的内容决定列表怎么写：服务端模块包会加入列表——从链接安装的只加入本机自己的 `[plugins.<machineId>]` 表，因为另一台机器拿到它的包名后，会从 npm 仓库取回同名的任意一个包——只含 Skill、钩子或 MCP 服务器的包进入插件库，不加入列表。`PUT` 只发送名称，留在列表中的名称保留文件为它记录的要求。`DELETE` 从列表中移除该名称；没有任何 Project 再为本机要求它时，从前缀中卸载这个包。
 - `POST …/installed/archive` 安装上传 zip 中的包目录：`package.json` 位于 zip 根目录或唯一的顶层目录内，带合法的 npm 包名（去掉 scope 后须是插件名）和发行版本号，不含 `node_modules/`，内容须是插件——带 `skills/`、`hooks/` 或 `penguin.mcp_servers` 中的 MCP 服务器且插件库能原样读取，或带服务端模块的 `ifaces.json`。上限为 zip 14 MB、2,000 个文件、单个文件 5 MB、合计 50 MB，在解压任何内容之前检查（`413` `plugin_too_large`）；其他问题返回 `400` `plugin_archive_invalid`。服务端用 `npm pack --ignore-scripts` 打包这些文件，再安装生成的 tarball，并把它保存在前缀的 `archives/` 中。zip 中不能带 `.npmrc`（打包时它会配置 npm）；与构建自带的服务端模块同名的包会在安装任何内容之前以 `409` `plugin_shipped` 拒绝。已安装同一版本时返回 `200` 并带 `unchanged`；已安装其他版本时，不带 `overwrite: true` 会返回 `409` `plugin_exists`。从 zip 安装的服务端模块包只加入本机的表。
 - 写操作无需重启即可生效：App 围绕新列表[自行重组](/server-boot#重组)，效果与热替换相同。所有 Project 中正在进行的 Agent 运行都会被中止，因为所有 Project 共用同一棵模块树。新 App 启动失败时，改动会被撤销，之前的 App 随之恢复。
@@ -1017,7 +1017,7 @@ Session 可以连接消息机器人。目前支持的渠道是飞书、Telegram�
 - PUT 不影响连接，只有一个例外：绑定为启用状态时，连接器会用新凭据重启，因此已存储的配置和活跃连接永远不会出现偏差。也正因为如此，保存操作不会在 Session 之间产生冲突，除非它把一个已启用的绑定指向了另一个 Session 已启用的账号。这种情况返回 409 `account_enabled_elsewhere`——否则重启会让这个账号出现第二条活跃连接，等于绕过了启用检查。
 - `POST …/state` 传入 `{enabled: true}` 时用已存储的凭据建立连接，传入 `{enabled: false}` 时断开。本 Session 的另一个渠道处于启用状态时，返回 409 `another_channel_enabled`；另一个 Session 已启用同一账号时，返回 409 `account_enabled_elsewhere`。两种情况的含义相同：先把那一个停用。第二种错误不会透露占用者是谁，对方可能位于调用者看不到的 Project 里。没有已存储的密钥时，开关操作返回 400 `feishu_secret_required`、`telegram_token_required`、`qq_secret_required` 或 `wechat_token_required`。
 - 飞书、Telegram 和 QQ 的 test 路由用请求中的草稿值探测，缺少的值回退到已存储的配置；微信的 test 不接受请求体（见下文）。凭据未通过验证时返回 `ok: false`，而不是 HTTP 错误。
-- test-message 路由在有人在对应应用里给机器人发过消息之前，返回 409 `feishu_no_chat`、`telegram_no_chat`、`qq_no_chat` 或 `wechat_no_chat`。
+- test-message 路由在有人在对应应用里给机器人发过消息之前，返回 409 `feishu_no_chat`、`telegram_no_chat`、`qq_no_chat` 或 `wechat_no_chat`。微信的 test-message 路由在微信暂不接受机器人发消息、需要用户先给机器人发一条消息时，另外返回 409 `wechat_needs_recent_message`。测试消息从不暂存。
 
 ### 各渠道细节
 
@@ -1108,6 +1108,8 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 
 这三个字段都保存在服务器进程中，每次连接或重连都会重置；重新启用渠道或保存凭据都会开启新连接。因此 `lastInboundAt` 缺失意味着「本次连接建立以来没有消息」，绝不是「从来没有过消息」。提供这些字段，是因为一个扣着消息不投递的渠道，照样显示 `connected`，而且没有任何报错。
 
+在微信上，`heldReplySince` 报告文字回复从何时起在等待用户的下一条微信消息；没有等待中的回复时，这个字段不存在。微信只接受带着该用户近期会话令牌的机器人消息，每枚令牌约 10 条；它暂时不接受的回复会先暂存，用户的下一条消息到达时先行补发。暂存的回复随会话一起落库，重启后仍在；它也不算投递失败，从不写入 `lastDeliveryError`。
+
 连接失败还会记一条错误记录 `messaging_connect_failed`，每次故障一条；从未到达聊天的回复记为 `messaging_send_failed`。在 Telegram、QQ 和微信上，下一次尝试就能自行解决的失败属于 `expected`：请求根本没有完成、超时、HTTP 408、429 或 5xx、QQ 网关不再响应心跳或要求重连，以及微信的会话超时。会一直重复、直到有人处理的失败属于 `unexpected`，例如凭据被拒、缺少权限，或者 Telegram 机器人上登记了 webhook、另有程序在轮询同一个机器人。一次故障以 `expected` 的失败开头时，随后第一个 `unexpected` 的失败也会记录。
 
 ## 终端
@@ -1191,7 +1193,7 @@ Agent 用 `penguin browser` 驱动的浏览器，路由位于 `/api/builtin-brow
 | POST | `/api/desktop/privacy-settings` | 请 shell 打开 macOS「隐私与安全性」的某个面板：`{pane}`（`files` 或 `fullDisk`）→ 202 |
 | POST | `/api/hmr/assets/probe` | 热更新：报告存储缺少哪些 blob |
 | PUT | `/api/hmr/blobs/:sha` | 热更新：按 sha256 上传一个 blob |
-| POST | `/api/hmr/upgrade` | 热更新：把 platform、CLI 和 web bundle 一并升到新版本 |
+| POST | `/api/hmr/upgrade` | 热更新：把 platform、CLI 和 web bundle 一并升到新版本。构建无法完整运行全部已装插件时返回 `409` `plugins_unsatisfied`，`error.plugins` 逐个列出 `{specifier, disabled, reason}`；带上请求头 `x-penguin-unsatisfied-plugins: leave-out` 重发，推送照常完成，应答里以 `unsatisfiedPlugins` 附上同一份清单 |
 | GET | `/api/contributions` | 以数据形式返回服务器模块和插件贡献给 Web App 的页面和标签页 |
 
 - 非桌面模式下，桌面路由返回 `404` `not_found`。

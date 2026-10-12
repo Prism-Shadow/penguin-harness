@@ -70,6 +70,7 @@ import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { localizedText } from "../chat/skill-use";
+import { usePluginRepair } from "./plugin-repair";
 import { SettingsDialog } from "../settings/settings-dialog";
 import { pickDefaultAgent } from "../ai-create";
 import { toneInk } from "../../lib/tone";
@@ -159,6 +160,7 @@ export function PluginsPage() {
   const { user } = useAuth();
   const userId = user?.userId ?? null;
   const { currentProject, agents, currentAgent, setCurrentAgentId, reloadAgents } = useProject();
+  const { repair, modal: repairModal } = usePluginRepair(agents);
   const projectId = currentProject?.projectId ?? null;
 
   /** The plugins trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
@@ -191,6 +193,7 @@ export function PluginsPage() {
   const [reloadKey, setReloadKey] = useState(0);
   /** Free text over names, descriptions and keywords. */
   const [query, setQuery] = useState("");
+  const [incompatibleOnly, setIncompatibleOnly] = useState(false);
   const [groupBy, setGroupBy] = useState<PluginGroupBy>(() => initialPluginsGroupBy());
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => initialFoldedGroups());
 
@@ -652,8 +655,11 @@ export function PluginsPage() {
     }
   }
   const statusOf = (row: PluginRow): PluginStatus => pluginStatus(row, usages.get(row.key) ?? null);
-  const searching = query.trim() !== "";
-  const visible = rows.filter((row) => rowMatches(row, query));
+  const unsatisfiedCount = rows.filter((row) => row.module?.unsatisfied !== undefined).length;
+  const searching = query.trim() !== "" || incompatibleOnly;
+  const visible = rows.filter(
+    (row) => rowMatches(row, query) && (!incompatibleOnly || row.module?.unsatisfied !== undefined),
+  );
   const sections = groupRows(visible, statusOf, groupBy, categories);
   const categoryTitle = (id: string) => categories.find((c) => c.id === id)?.title ?? id;
 
@@ -686,6 +692,16 @@ export function PluginsPage() {
           setPendingApply({ specifier: row.module.specifier, name: row.name, install });
         }
       }}
+      onRepair={
+        isAdmin && row.module?.unsatisfied !== undefined
+          ? () =>
+              repair({
+                specifier: row.module!.specifier,
+                disabled: row.module!.state === "disabled",
+                reason: row.module!.unsatisfied!,
+              })
+          : null
+      }
       onMcpChanged={refreshAgentMcp}
     />
   );
@@ -753,6 +769,23 @@ export function PluginsPage() {
             {S.plugins.restartPending}
           </Notice>
         )}
+        {unsatisfiedCount > 0 && (
+          <Notice
+            tone="attention"
+            className="mt-4"
+            action={{ label: S.plugins.unsatisfiedShow, onClick: () => setIncompatibleOnly(true) }}
+          >
+            {S.plugins.unsatisfiedNotice(unsatisfiedCount)}
+          </Notice>
+        )}
+        <label className="mt-4 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={incompatibleOnly}
+            onChange={(e) => setIncompatibleOnly(e.target.checked)}
+          />
+          {S.plugins.status.incompatible}
+        </label>
       </PageHeader>
       <SettingsDialog
         open={settingsOpen}
@@ -836,6 +869,7 @@ export function PluginsPage() {
           <ModuleApplyBody install={pendingApply.install} name={pendingApply.name} />
         </ConfirmModal>
       )}
+      {repairModal}
       {/* A library plugin's quick start on an Agent that lacks it: installing comes first, and is asked. */}
       {pendingQuickStart !== null && currentAgent && (
         <ConfirmModal

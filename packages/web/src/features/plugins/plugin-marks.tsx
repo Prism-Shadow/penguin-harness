@@ -26,6 +26,7 @@ const STATUS_GLYPH: Record<PluginStatus, string> = {
   update: ICONS.rotateCw,
   restart: ICONS.hourglass,
   failed: ICONS.alertCircle,
+  incompatible: ICONS.alertCircle,
   "not-here": ICONS.server,
   available: ICONS.download,
 };
@@ -36,6 +37,7 @@ const STATUS_TONE: Record<PluginStatus, Tone> = {
   update: "attention",
   restart: "attention",
   failed: "danger",
+  incompatible: "attention",
   "not-here": "muted",
   available: "muted",
 };
@@ -78,6 +80,8 @@ export function statusHint(
         : S.plugins.statusHint.libraryAvailable;
     case "restart":
       return S.plugins.statusHint.restart;
+    case "incompatible":
+      return S.plugins.stateDisabled;
     case "failed":
       return S.plugins.statusHint.failed(mod?.error ?? "");
     case "not-here":
@@ -122,7 +126,10 @@ export function rowInstalledOnServer(row: PluginRow): boolean {
   return (
     part !== undefined &&
     !part.shipped &&
-    (part.state === "active" || part.state === "pending" || part.state === "failed")
+    (part.state === "active" ||
+      part.state === "pending" ||
+      part.state === "failed" ||
+      part.state === "disabled")
   );
 }
 

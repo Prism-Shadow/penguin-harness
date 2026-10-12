@@ -433,3 +433,46 @@ function memoryStorage() {
     setItem: (key: string, value: string) => void data.set(key, value),
   };
 }
+
+describe("a plugin the running build cannot fully run", () => {
+  const view: PluginView = { machineId: SELF, remote: null, nameOf };
+  const here = { everywhere: true, machines: [], here: true };
+
+  it("is disabled with its reason, not waiting for a restart", () => {
+    const unmet = {
+      ...listed("@acme/unmet", here, false),
+      unsatisfied: { disabled: true, reason: "names interface Nope" },
+    };
+    const parts = moduleParts({ ...deployment, plugins: [unmet] }, [], view);
+    expect(parts[0]).toMatchObject({ state: "disabled", unsatisfied: "names interface Nope" });
+    expect(pluginStatus({ module: parts[0]! }, null)).toBe("incompatible");
+  });
+
+  it("keeps a partial plugin running and carries the reason", () => {
+    const partial = {
+      ...listed("@acme/partial", here, true),
+      unsatisfied: { disabled: false, reason: "contributes to nowhere.slot" },
+    };
+    const parts = moduleParts({ ...deployment, plugins: [partial] }, [], view);
+    expect(parts[0]).toMatchObject({ state: "active", unsatisfied: "contributes to nowhere.slot" });
+    expect(pluginStatus({ module: parts[0]! }, null)).toBe("installed");
+  });
+
+  it("reads another machine's own report", () => {
+    const remote: InstalledPluginsResponse = {
+      ...deployment,
+      machineId: GPU,
+      plugins: [
+        {
+          ...listed("@acme/gpu-only", here, false),
+          unsatisfied: { disabled: true, reason: "names interface Nope" },
+        },
+      ],
+    };
+    const parts = moduleParts(deployment, [], { machineId: GPU, remote, nameOf });
+    expect(parts.find((m) => m.specifier === "@acme/gpu-only")).toMatchObject({
+      state: "disabled",
+      unsatisfied: "names interface Nope",
+    });
+  });
+});

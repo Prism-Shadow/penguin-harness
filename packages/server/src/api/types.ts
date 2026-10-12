@@ -2617,6 +2617,20 @@ export interface MessagingRuntimeStatus {
    * behind — for the life of the connection, like the two above it.
    */
   lastConnectionError?: { at: string; detail: string };
+  /**
+   * Since when (ISO 8601) the bot has been HOLDING replies it could not deliver yet, to send
+   * them with the chat's next inbound message; absent while nothing is held. WeChat only: the
+   * platform accepts a bot's messages only for a while after the user's last one, and only
+   * about ten per message, so a long run or a quiet user leaves replies waiting rather than
+   * lost.
+   *
+   * Not a failure, and deliberately not `lastDeliveryError`: nothing is broken and nobody has
+   * to act beyond what the panel says — message the bot in WeChat and the held replies arrive
+   * first. Cleared the moment they have been delivered. Unlike the fields above it is not
+   * scoped to one connection: held replies are stored, so a backlog from before a restart is
+   * reported again as soon as the connection opens.
+   */
+  heldReplySince?: string;
 }
 
 /**
@@ -5227,8 +5241,20 @@ export interface OrganizationsResponse {
 
 export interface OrgEmployeeItem {
   agentId: string;
-  /** Agent display name (system_config.yaml); falls back to the id. */
+  /**
+   * What this employee goes by in the organization, unique across it: the chart's `name`, else
+   * the Agent's display name, else the id — with the id noted (`name (id)`) when the name is
+   * not this employee's alone. It is what every surface shows and what works after `@`.
+   */
   name: string;
+  /** The `name` as written in the chart, for editing; absent when the entry has none. */
+  givenName?: string;
+  /**
+   * Present when the employee has an avatar: the content revision of the image served at
+   * `GET …/employees/:agentId/avatar` (append it as `?rev=` — the image is cached for good).
+   * Absent, surfaces draw the letter tile.
+   */
+  avatarRev?: string;
   title: string;
   /** null for the CEO (the root). */
   reportsTo: string | null;
@@ -5706,6 +5732,11 @@ export interface OrgHireRequest {
   agentId?: string;
   /** … or create one (the two are exclusive). Plugins default to agent-company + agent-development. */
   newAgent?: { agentId: string; name?: string; description?: string; plugins?: string[] };
+  /**
+   * What the organization calls the employee (any script, one line, no `@`, ≤ 64 characters).
+   * Omitted, a new Agent's `name` is used; with neither, the Agent's display name stands in.
+   */
+  name?: string;
   title: string;
   reportsTo: string;
   workspace?: string;
@@ -5715,6 +5746,8 @@ export interface OrgHireRequest {
 }
 
 export interface OrgEmployeePatchRequest {
+  /** null (or an empty string) clears the name: back to the Agent's display name. */
+  name?: string | null;
   title?: string;
   reportsTo?: string;
   workspace?: string;
@@ -6194,6 +6227,20 @@ export interface PluginConfigUpdateRequest {
   values: Record<string, unknown>;
 }
 
+/**
+ * An installed plugin the running build cannot fully run (plugin/unsatisfied.ts): it
+ * contributes to a slot, or wires to a module or interface, that this build does not have.
+ * Also what a refused push names (`plugins_unsatisfied`) and a confirmed one reports.
+ */
+export interface UnsatisfiedPlugin {
+  /** The package specifier, as the installed-plugins list spells it. */
+  specifier: string;
+  /** True when the whole plugin is left out of this generation; false when only the contributions this build has no slot for were dropped and the rest of it runs. */
+  disabled: boolean;
+  /** What this build lacks, in the platform's own words. */
+  reason: string;
+}
+
 /** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
 export interface InstalledPlugin {
   /** The package specifier as written in the file. */
@@ -6216,6 +6263,13 @@ export interface InstalledPlugin {
    * reported for a plugin this server is asked to run (`here`).
    */
   error?: string;
+  /**
+   * Present when this build cannot fully run the package (see {@link UnsatisfiedPlugin}).
+   * With `disabled`, `active` is false and a restart would not load it; without, the package
+   * runs minus the contributions this build has no slot for. Only reported for a plugin this
+   * server is asked to run (`here`).
+   */
+  unsatisfied?: Pick<UnsatisfiedPlugin, "disabled" | "reason">;
   /** Listed in the shared `[plugins]` table: every machine runs it. */
   everywhere: boolean;
   /** The machines whose own `[plugins.<machineId>]` table lists it, by machine id. */
@@ -6261,7 +6315,7 @@ export interface InstalledPluginsResponse {
   file: string;
   /** This server's own machine id — the key of its `[plugins.<machineId>]` table. */
   machineId: string;
-  /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
+  /** A listed plugin neither runs, nor failed to load, nor is one this build cannot run: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
 }
 
