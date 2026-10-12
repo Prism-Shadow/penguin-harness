@@ -250,7 +250,7 @@ mode, machines, workflows:
 - **Typed controls commit on Save.** `Input`, `Textarea`, `PasswordInput`, numbers, URLs,
   key-value and lines editors, `TagInput`, table/list editors, prompt editors. Never on blur, never
   debounced, and never on Enter in a form of more than one field — Enter may submit a form whose
-  only field it is (the vault value, a rename), and that is still the Save. Build the form on `useFormDraft(loaded, { scope })` from `@prismshadow/penguin-ui`:
+  only field it is (an API key's name, a rename), and that is still the Save. Build the form on `useFormDraft(loaded, { scope })` from `@prismshadow/penguin-ui`:
   bind `draft`/`patch`, compute inline `errors` from the draft, and render
   `<Button size="sm" variant="primary" disabled={!dirty || errors !== null || busy}>{S.common.save}</Button>`
   plus Cancel (a dialog) or Reset (`S.common.reset` on a page; `disabled={!dirty}`, no confirm).
@@ -268,7 +268,10 @@ mode, machines, workflows:
   `useGuardedClose(onClose, form.scope, { locked: busy })` as its `onClose` **and** to its Cancel
   button, which covers Esc, the ×, the scrim and Cancel — and while its save is in flight
   (`locked`) none of them does anything, since a close then would "discard" what the request is
-  about to store; any other state switch that would replace a form (a
+  about to store. A dialog whose pages save on their own (the Settings and Project settings
+  dialogs) cannot see those saves: each page holds the close with `useSaving(busy, scope)` on the
+  dialog's scope while its Save is in flight (a switch's write holds nothing). Any other state
+  switch that would replace a form (a
   rail, a local tab strip, a machine picker, a document switch) goes through
   `guardLeave(action, scope)`. The card is `UnsavedChangesHost` in `App`: 「放弃未保存的修改？」,
   danger 「放弃修改」, 「继续编辑」. Never render a second discard dialog, never offer "save and
@@ -285,14 +288,15 @@ Checklist for a new settings surface:
 2. Typed → `useFormDraft` with the surface's `scope` (one shared scope per dialog or rail, none
    for a record dialog, which gets its own); Save gated on dirty **and** valid; Reset or Cancel;
    errors inline; `adopt` on success only.
-3. Dialog → `useGuardedClose` on `onClose` and Cancel, `locked` while its save is in flight.
+3. Dialog → `useGuardedClose` on `onClose` and Cancel, `locked` while its save is in flight; a
+   page inside a dialog it shares a scope with → `useSaving(busy, scope)` around its Save.
    Page tabs in `?tab=` need nothing more. Non-router switches → `guardLeave`. A dialog whose
    success hands off to a navigation (open the new record, switch Project, re-read the session)
    calls `discardUnsaved(form.scope)` once the write lands: its form is still mounted and dirty
    when the caller navigates, and the router would hold that navigation behind the prompt.
 4. Add the module to `FORM_MODULES` in `test/form-commit-guard.test.ts`; it fails on an `onBlur`
-   save, a Save form that does not register, and a `Modal` in a form module whose `onClose` is
-   not the guarded one.
+   save, a Save form that does not register, a `Modal` in a form module whose `onClose` is not
+   the guarded one, and a Save form in the Settings or Project settings scope without `useSaving`.
 5. Scenarios (a `@vitest-environment jsdom` suite on `test/helpers/dom.ts`): asks on each leave
    path when dirty, not when clean; Save held while clean or invalid; a failed save stays dirty;
    the switch beside the form writes alone and rolls back with a toast.
