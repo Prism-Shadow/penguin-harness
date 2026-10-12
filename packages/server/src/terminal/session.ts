@@ -142,8 +142,9 @@ export type TerminalTitleListener = (title: string | null) => void;
  * `PENGUIN_API_URL`, token and Session id — and `PORT` / `HOST` are this server's listener.
  * None of it describes the user's shell, and all of it misdirects what runs there: `penguin`
  * would talk to whatever server those name, and `pnpm dev` or `npm run dev` would take this
- * server's data root and port over their own defaults. Core strips the same set from an Agent's
- * commands (see its command session manager), matched the same case-insensitive way.
+ * server's data root and port over their own defaults. Core strips these from an Agent's
+ * commands too (see its command session manager), matched the same case-insensitive way; it
+ * also strips FORCE_COLOR and CLICOLOR_FORCE there, which a terminal, being a real one, keeps.
  *
  * The user's startup files still set any of them they export, and `penguin` needs none of
  * them: the shim names this server's data root itself (services/cli-shim.ts). Where no shim
