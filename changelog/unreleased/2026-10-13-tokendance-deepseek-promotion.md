@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `model-catalog`, `docs`
+- **PR:** [#1087](https://github.com/Prism-Shadow/penguin-harness/pull/1087)
 
 [中文版](2026-10-13-tokendance-deepseek-promotion.zh.md)
 
