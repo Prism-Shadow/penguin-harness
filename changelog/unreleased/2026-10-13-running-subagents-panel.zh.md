@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1110](https://github.com/Prism-Shadow/penguin-harness/pull/1110)
 
 [English](2026-10-13-running-subagents-panel.md)
 
