@@ -372,6 +372,8 @@ A policy hit therefore never reads as a person cancelling. See [ApproveFn](/inte
 
 The `tools.builtin` array in `system_config.yaml` declares the toolset, with entries of the same `ToolDefinitionConfig` shape. It **replaces the defaults wholesale; it is not merged with them**. Omit the section to keep the full default toolset. Once you write it, the default list is gone, and every tool you keep needs its complete definition, including the `parameters` JSON Schema, because a tool's schema comes entirely from config.
 
+In the Web App, Agent settings → Tools lets you choose read-only or read-and-write permissions for each built-in tool and delete it after confirmation. Deletion saves immediately and preserves other unsaved parameters. A deleted tool is no longer available to the Agent: new conversations apply the change immediately, and existing conversations apply it when their context is next rebuilt. Deleting every tool leaves an empty toolset; it does not restore the defaults.
+
 `tools.mcpServers` holds the MCP Server configuration, covered in the next section. See also [Configuration](/configuration).
 
 ```yaml

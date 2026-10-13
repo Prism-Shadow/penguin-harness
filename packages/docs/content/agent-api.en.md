@@ -26,7 +26,7 @@ Where to go:
 1. Open the agent's settings (see [Agent settings](/agents#agent-settings)) and select the **API** tab, at `/agents/<agentId>?tab=api`.
 2. Turn on **Enable API access**.
 3. Under **New session settings**, choose the model, thinking level and workspace. Each choice saves immediately and applies to new API conversations. Leave them unset to use the Project default model, the Agent/Project thinking configuration and a temporary workspace. Choose the **Approval mode for API conversations** below; see [Approval mode](#approval-mode).
-4. Under **Run limits**, enter a positive **Maximum concurrent runs** and select **Save**. The default is 4.
+4. Under **Run settings**, enter a positive **Maximum concurrent runs** and select **Save**. The default is 4.
 5. Under **Keys**, select **New key**, name it and copy the key. It is shown once.
 6. Copy the **Base URL** and the **Agent ID** under **Connection**. **Examples** holds a curl command and a TypeScript snippet with both filled in and `$PENGUIN_AGENT_KEY` in place of the key.
 
@@ -139,7 +139,7 @@ type InputItem =
 
 - A new API conversation uses the model, thinking level, workspace and approval mode chosen on the agent's API tab, plus the server's new-chat sandbox. Its title is generated from the first input, and its usage and cost count toward the Project, as for any conversation.
 - API conversations are archived by rule, so they are listed under [Settings › Archived chats](/settings#archived-chats) rather than in the sidebar. Unarchive one to read it, answer its approvals and type into it; it then stays in the sidebar through later runs, marked with the API icon. A program can continue an archived conversation, and it stays archived.
-- A conversation runs one thing at a time: a run on a conversation that is still working is refused with `409`. The owner sets **Maximum concurrent runs** under **Run limits** on the API tab (default: 4, a positive integer). Running conversations, including those started in the Web App, and API conversations still starting count toward it. At the limit, a new API run or a run on an idle conversation is refused with `429` and `Retry-After: 2` before another conversation is created. Saving a new limit takes effect for subsequent requests and does not interrupt running conversations.
+- A conversation runs one thing at a time: a run on a conversation that is still working is refused with `409`. The owner sets **Maximum concurrent runs** under **Run settings** on the API tab (default: 4, a positive integer). Running conversations, including those started in the Web App, and API conversations still starting count toward it. At the limit, a new API run or a run on an idle conversation is refused with `429` and `Retry-After: 2` before another conversation is created. Saving a new limit takes effect for subsequent requests and does not interrupt running conversations.
 - Disconnecting aborts the run. To stop a run and still receive how it ended, `POST /sessions/:sessionId/abort`: the stream stays open and ends with `run.done` and `status: "aborted"`.
 
 ### Errors

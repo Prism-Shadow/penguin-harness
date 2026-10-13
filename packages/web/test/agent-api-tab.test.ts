@@ -107,6 +107,7 @@ function props(over: Partial<ApiTabViewProps> = {}): ApiTabViewProps {
     draftName: null,
     secret: null,
     sessionSettings: null,
+    concurrencySettings: null,
     onToggleEnabled: noop,
     onApprovalMode: noop,
     onToggleOpen: noop,

@@ -10,7 +10,6 @@ import {
   Button,
   FieldLabel,
   Input,
-  OptionMenu,
   RuledSection,
   useFormDraft,
   useSaving,
@@ -21,7 +20,8 @@ import { useInstantSetting } from "../../lib/instant-setting";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { ModelCatalogSelect } from "../chat/model-select";
-import { thinkingLevelOptionsFor } from "../chat/thinking-level";
+import { effectiveThinkingLevel } from "../chat/thinking-level";
+import { ThinkingLevelSelect } from "../chat/thinking-level-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 
 interface ApiSettingsProps {
@@ -33,7 +33,7 @@ interface ApiSettingsProps {
   onBusy: (busy: boolean) => void;
 }
 
-function ApiConcurrencySettings({
+export function ApiConcurrencySettings({
   projectId,
   agentId,
   settings,
@@ -65,53 +65,51 @@ function ApiConcurrencySettings({
     }
   };
   return (
-    <RuledSection title={S.agent.apiRunLimits}>
-      <form
-        className="max-w-sm space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save();
+    <form
+      className="min-w-0 space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <Input
+        size="sm"
+        type="number"
+        min={1}
+        step={1}
+        label={S.agent.apiConcurrency}
+        info={S.agent.apiConcurrencyHint}
+        value={form.draft.limit}
+        disabled={disabled || busy}
+        error={error ?? undefined}
+        onChange={(e) => {
+          form.patch({ limit: e.target.value });
+          setSaveError(null);
         }}
-      >
-        <Input
+      />
+      <div className="flex gap-2">
+        <Button
           size="sm"
-          type="number"
-          min={1}
-          step={1}
-          label={S.agent.apiConcurrency}
-          info={S.agent.apiConcurrencyHint}
-          value={form.draft.limit}
-          disabled={disabled || busy}
-          error={error ?? undefined}
-          onChange={(e) => {
-            form.patch({ limit: e.target.value });
+          variant="primary"
+          type="submit"
+          loading={busy}
+          disabled={disabled || !form.dirty || !valid}
+        >
+          {S.common.save}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={disabled || busy || !form.dirty}
+          onClick={() => {
+            form.reset();
             setSaveError(null);
           }}
-        />
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="primary"
-            type="submit"
-            loading={busy}
-            disabled={disabled || !form.dirty || !valid}
-          >
-            {S.common.save}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={disabled || busy || !form.dirty}
-            onClick={() => {
-              form.reset();
-              setSaveError(null);
-            }}
-          >
-            {S.common.reset}
-          </Button>
-        </div>
-      </form>
-    </RuledSection>
+        >
+          {S.common.reset}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -123,15 +121,26 @@ export function ApiSessionSettings({
   onSaved,
   onBusy,
 }: ApiSettingsProps) {
+  const [defaultThinking, setDefaultThinking] = useState<string | null>(null);
   const [models, setModels] = useState<ModelsResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     setModels(null);
+    setDefaultThinking(null);
     setLoadError(null);
-    void api.getModels(projectId).then(
+    void Promise.all([
+      api.getModels(projectId),
+      api.getAgentConfig(projectId, agentId),
+      api.getChatDefaults(projectId),
+    ]).then(
       (res) => {
-        if (!cancelled) setModels(res);
+        if (!cancelled) {
+          setModels(res[0]);
+          setDefaultThinking(
+            effectiveThinkingLevel(res[1].config.model?.thinkingLevel ?? "", res[2].thinkingLevel),
+          );
+        }
       },
       (error: unknown) => {
         if (!cancelled) setLoadError(apiErrorText(error));
@@ -140,7 +149,7 @@ export function ApiSessionSettings({
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, agentId]);
 
   const write = useInstantSetting<AgentApiUpdateRequest>({}, async (patch) => {
     onBusy(true);
@@ -153,83 +162,67 @@ export function ApiSessionSettings({
   const value = { ...settings, ...write.value };
   const locked = disabled || write.busy;
   return (
-    <>
-      <RuledSection title={S.agent.apiSessionSettings} info={S.agent.apiSessionSettingsHint}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="min-w-0">
-            <FieldLabel>{S.chat.model}</FieldLabel>
-            <ModelCatalogSelect
-              models={models?.models ?? []}
-              value={value.model}
-              {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
-              onChange={(model) => void write.set({ model })}
-              disabled={locked || models === null}
-              variant="form"
-              emptyLabel={S.company.modelProjectDefault}
-            />
-            {loadError !== null && <p className={`mt-1 text-xs ${toneInk.danger}`}>{loadError}</p>}
-            {value.model !== null && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={locked}
-                onClick={() => void write.set({ model: null })}
-              >
-                {S.company.modelClear}
-              </Button>
-            )}
-          </div>
-          <div className="min-w-0">
-            <OptionMenu
-              label={S.chat.thinkingLevel}
-              fullWidth
+    <RuledSection title={S.agent.apiSessionSettings} info={S.agent.apiSessionSettingsHint}>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="min-w-0">
+          <FieldLabel>{S.chat.model}</FieldLabel>
+          <ModelCatalogSelect
+            models={models?.models ?? []}
+            value={value.model}
+            {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
+            onChange={(model) => void write.set({ model })}
+            disabled={locked || models === null}
+            variant="form"
+            emptyLabel={S.company.modelProjectDefault}
+          />
+          {loadError !== null && <p className={`mt-1 text-xs ${toneInk.danger}`}>{loadError}</p>}
+          {value.model !== null && (
+            <Button
               size="sm"
-              placeholder={S.agent.defaultValue}
-              value={value.thinkingLevel ?? ""}
+              variant="ghost"
               disabled={locked}
-              options={thinkingLevelOptionsFor(
-                S.agent.thinkingLevelOptions,
-                S.agent.thinkingLevelNoneKept,
-                settings.thinkingLevel ?? undefined,
-              )}
-              onChange={(level) =>
-                void write.set({
-                  thinkingLevel: level as NonNullable<AgentApiSettings["thinkingLevel"]>,
-                })
-              }
-            />
-            {value.thinkingLevel !== null && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={locked}
-                onClick={() => void write.set({ thinkingLevel: null })}
-              >
-                {S.common.reset}
-              </Button>
-            )}
-          </div>
-          <div className="min-w-0 md:col-span-2">
-            <FieldLabel>{S.chat.workspace}</FieldLabel>
-            <WorkspaceSelect
-              projectId={projectId}
-              agentId={agentId}
-              workspace={value.workspace ?? ""}
-              onChange={(workspace) => void write.set({ workspace: workspace || null })}
-              variant="form"
-              disabled={locked}
-            />
-          </div>
+              onClick={() => void write.set({ model: null })}
+            >
+              {S.company.modelClear}
+            </Button>
+          )}
         </div>
-      </RuledSection>
-      <ApiConcurrencySettings
-        projectId={projectId}
-        agentId={agentId}
-        settings={settings}
-        disabled={locked}
-        onSaved={onSaved}
-        onBusy={onBusy}
-      />
-    </>
+        <div className="min-w-0">
+          <FieldLabel>{S.chat.thinkingLevel}</FieldLabel>
+          <ThinkingLevelSelect
+            variant="form"
+            value={value.thinkingLevel ?? defaultThinking}
+            disabled={locked}
+            {...(settings.thinkingLevel !== null ? { storedLevel: settings.thinkingLevel } : {})}
+            onChange={(level) =>
+              void write.set({
+                thinkingLevel: level as NonNullable<AgentApiSettings["thinkingLevel"]>,
+              })
+            }
+          />
+          {value.thinkingLevel !== null && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={locked}
+              onClick={() => void write.set({ thinkingLevel: null })}
+            >
+              {S.common.reset}
+            </Button>
+          )}
+        </div>
+        <div className="min-w-0 md:col-span-2">
+          <FieldLabel>{S.chat.workspace}</FieldLabel>
+          <WorkspaceSelect
+            projectId={projectId}
+            agentId={agentId}
+            workspace={value.workspace ?? ""}
+            onChange={(workspace) => void write.set({ workspace: workspace || null })}
+            variant="form"
+            disabled={locked}
+          />
+        </div>
+      </div>
+    </RuledSection>
   );
 }

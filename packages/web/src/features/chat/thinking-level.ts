@@ -86,54 +86,6 @@ export function sessionThinkingLevel(pinned: string, agentLevel: string): string
   return pinned || agentLevel;
 }
 
-/** One dropdown row of the agent-settings thinking-level menu (shape of OptionMenuChoice<string>). */
-export interface ThinkingLevelOptionRow {
-  value: string;
-  /** Compact text on the trigger button. */
-  triggerLabel: string;
-  /** Panel row title. */
-  label: string;
-  /** Panel row description. */
-  description: string;
-}
-
-/**
- * Assembles the agent-settings thinking-level dropdown rows from the dictionary's
- * [value, description] pairs, composing both review decisions:
- * - the "" (inherit) row is **filtered** — the menu offers only concrete tiers, the user
- *   picks explicitly; an unset value shows the OptionMenu's (default) placeholder and the
- *   reset link next to the menu rewinds a local pick back to it;
- * - `none` is no longer offered (many models cannot disable thinking) but stays a valid
- *   stored value: when the **persisted** config already carries it, a display-only row is
- *   appended — the trigger shows the real stored state and nothing is silently rewritten.
- *   Gating on the persisted value (not the local edit state) means a misclick onto another
- *   tier keeps the row until the change is actually saved, so the user can always click
- *   back to the value still stored on disk.
- */
-export function thinkingLevelOptionsFor(
-  options: ReadonlyArray<readonly [string, string]>,
-  noneKeptDescription: string,
-  storedLevel: string | undefined,
-): ThinkingLevelOptionRow[] {
-  const rows = options
-    .filter(([value]) => value !== "")
-    .map(([value, description]) => ({
-      value,
-      triggerLabel: value,
-      label: value,
-      description,
-    }));
-  if (storedLevel === "none") {
-    rows.push({
-      value: "none",
-      triggerLabel: "none",
-      label: "none",
-      description: noneKeptDescription,
-    });
-  }
-  return rows;
-}
-
 /**
  * Structural subset of a stream ChatItem that the mid-chat switch guard inspects: the
  * item kind plus the compaction items' outcome fields (`running`/`status` — string unions

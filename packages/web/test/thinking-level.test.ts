@@ -10,8 +10,6 @@
  *   label; a level missing from the name table shows its raw value.
  * - The draft picker resolves the Agent's explicit level, then the Project's chat default, then
  *   medium, the chain core applies.
- * - The Agent settings dropdown lists the dictionary's tiers without the inherit row, adding a
- *   display-only "none" row when the stored config holds one.
  * - The provider's prefix cache is at risk once there is history, unless the transcript ends in
  *   a successful compaction.
  * - A mid-chat pick asks for confirmation only when history exists and the pick differs from
@@ -36,7 +34,6 @@ import {
   prefixCacheAtRisk,
   sessionThinkingLevel,
   thinkingLevelLabel,
-  thinkingLevelOptionsFor,
 } from "../src/features/chat/thinking-level";
 import type { ThinkingSwitchItem } from "../src/features/chat/thinking-level";
 
@@ -108,42 +105,6 @@ describe("effectiveThinkingLevel (draft picker display — mirrors core agent.ts
     expect(effectiveThinkingLevel("", "low")).toBe("low");
     // Neither -> the built-in "medium" (the documented Agent default).
     expect(effectiveThinkingLevel("", undefined)).toBe("medium");
-  });
-});
-
-describe("thinkingLevelOptionsFor (agent-settings dropdown assembly)", () => {
-  /** Mirrors the shape of S.agent.thinkingLevelOptions after the none row's removal. */
-  const OPTIONS: ReadonlyArray<readonly [string, string]> = [
-    ["", "Send no override."],
-    ["low", "Low tier."],
-    ["medium", "Medium tier."],
-    ["high", "High tier."],
-    ["xhigh", "Extra-high tier."],
-    ["max", "Max tier."],
-  ];
-
-  it("filters the '' inherit row and keeps dictionary order; no none row normally", () => {
-    for (const stored of [undefined, "", "medium", "xhigh", "max"]) {
-      const rows = thinkingLevelOptionsFor(OPTIONS, "legacy none", stored);
-      expect(rows.map((r) => r.value)).toEqual(["low", "medium", "high", "xhigh", "max"]);
-      expect(rows.some((r) => r.value === "none")).toBe(false);
-      expect(rows[0]).toMatchObject({
-        triggerLabel: "low",
-        label: "low",
-        description: "Low tier.",
-      });
-    }
-  });
-
-  it("appends a display-only none row when the persisted config stores none (backward compat)", () => {
-    const rows = thinkingLevelOptionsFor(OPTIONS, "legacy none", "none");
-    expect(rows.map((r) => r.value)).toEqual(["low", "medium", "high", "xhigh", "max", "none"]);
-    expect(rows.at(-1)).toEqual({
-      value: "none",
-      triggerLabel: "none",
-      label: "none",
-      description: "legacy none",
-    });
   });
 });
 

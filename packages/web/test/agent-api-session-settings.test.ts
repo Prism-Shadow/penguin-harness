@@ -2,9 +2,13 @@
 /**
  * - Given an owner's API tab, choosing a model, thinking tier and workspace through the shared
  *   pickers writes only that setting; reopening shows it and resets restore the defaults.
+ * - Given inherited thinking settings, the concrete Agent, Project or built-in tier is shown
+ *   without writing an override; a saved API tier wins and clearing it restores that fallback.
  * - Given a refused choice, the stored value stays selected and an error reaches the screen.
  * - Given a concurrency edit, no write happens before Save; invalid input blocks Save, Reset
  *   restores the stored number, refused writes keep the draft, and successful writes persist.
+ * - Given a dirty concurrency field, changing approvals writes only approvalMode and keeps
+ *   the typed limit until it is saved.
  * - Given the example actions, documentation opens at the guide and copying gives an Agent the
  *   current address and id with key handling instructions, never a key.
  * - Given a non-owner, all three pickers are disabled and no settings can be written.
@@ -12,11 +16,15 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
 import { Toaster, hasUnsaved, ClipboardWriterProvider } from "@prismshadow/penguin-ui";
-import type { ModelInfo } from "@prismshadow/penguin-server/api";
+import type {
+  ModelInfo,
+  AgentConfigResponse,
+  ChatDefaultsDto,
+} from "@prismshadow/penguin-server/api";
 import { ApiTab } from "../src/features/agents/api-tab";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp } from "./helpers/agent-app";
+import { AGENT_ID, PROJECT_ID, agentConfig, agentServer, mountAgentApp } from "./helpers/agent-app";
 import { button, click, field, type, run, unmountAll, waitFor } from "./helpers/dom";
 
 const model: ModelInfo = {
@@ -28,8 +36,13 @@ const model: ModelInfo = {
   effective: { apiKeySource: "model", baseUrlSource: "none", clientTypeSource: "none" },
 };
 
-async function open(isOwner = true) {
-  const server = agentServer(undefined, {
+async function open(
+  isOwner = true,
+  config: AgentConfigResponse = agentConfig(),
+  chatDefaults: ChatDefaultsDto = {},
+) {
+  const server = agentServer(config, {
+    chatDefaults,
     models: { models: [model], providers: {} },
     directory: { path: "/work", parent: "/", entries: [] },
   });
@@ -50,11 +63,11 @@ async function open(isOwner = true) {
   await waitFor(
     () => document.querySelector('button[aria-label="' + en.chat.chooseModel + '"]') !== null,
   );
+  await waitFor(() => button(en.chat.thinkingLevel).textContent !== "…");
   return { server, router, copied };
 }
 
-const thinking = () =>
-  document.querySelector<HTMLButtonElement>('button[aria-haspopup="listbox"]')!;
+const thinking = () => button(en.chat.thinkingLevel);
 const option = (value: string) =>
   [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((el) =>
     el.textContent?.startsWith(value),
@@ -70,7 +83,7 @@ describe("API Session settings", () => {
     await click(button(en.chat.chooseModel));
     await click(option("API test model").querySelector("button")!);
     await click(thinking());
-    await click(option("high"));
+    await click(button("high"));
     await click(button(en.chat.workspace));
     await waitFor(() => !button(en.chat.finder.choose).disabled);
     await click(button(en.chat.finder.choose));
@@ -89,7 +102,12 @@ describe("API Session settings", () => {
     expect(button(en.chat.workspace).textContent).toContain("work");
     expect(hasUnsaved()).toBe(false);
     await click(button(en.company.modelClear));
-    await click(button(en.common.reset));
+    await click(
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (el) => el.textContent === en.common.reset && !el.disabled,
+      )!,
+    );
+    expect(thinking().textContent).toContain("medium");
     await click(button(en.chat.workspace));
     await click(button(en.chat.workspaceClear));
     expect(
@@ -100,12 +118,42 @@ describe("API Session settings", () => {
     ).toEqual([{ model: null }, { thinkingLevel: null }, { workspace: null }]);
   });
 
+  it.each([
+    [undefined, undefined, "medium"],
+    [undefined, "low", "low"],
+    ["xhigh", "low", "xhigh"],
+    ["none", "low", "none"],
+  ] as const)(
+    "resolves Agent %s and Project %s to %s without writing",
+    async (agent, project, expected) => {
+      const config = agentConfig();
+      if (agent !== undefined)
+        config.config.model = { ...config.config.model, thinkingLevel: agent };
+      const { server } = await open(
+        true,
+        config,
+        project === undefined ? {} : { thinkingLevel: project },
+      );
+      expect(thinking().textContent).toContain(expected);
+      expect(server.writes()).toEqual([]);
+      await click(thinking());
+      await click(button("high"));
+      expect(thinking().textContent).toContain("high");
+      await click(
+        [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+          (el) => el.textContent === en.common.reset && !el.disabled,
+        )!,
+      );
+      expect(thinking().textContent).toContain(expected);
+    },
+  );
+
   it("rolls back a refused choice and displays the failure", async () => {
     const { server } = await open();
     server.refuseNext(400, "bad_request", "Cannot save this choice.");
     await click(thinking());
-    await click(option("high"));
-    expect(thinking().textContent).toContain(en.agent.defaultValue);
+    await click(button("high"));
+    expect(thinking().textContent).toContain("medium");
     expect(document.body.textContent).toContain("Cannot save this choice.");
     expect(hasUnsaved()).toBe(false);
   });
@@ -131,6 +179,18 @@ describe("API Session settings", () => {
     await click(button(en.common.save));
     expect(server.writes("/api").at(-1)?.body).toEqual({ maxConcurrentRuns: 2 });
     expect(hasUnsaved()).toBe(false);
+  });
+
+  it("keeps an unsaved concurrency edit when the adjacent approval mode changes", async () => {
+    const { server } = await open();
+    await type(field(en.agent.apiConcurrency), "7");
+    await click(button(en.chat.approvalModeNames["read-only"]!));
+    await click(option(en.chat.approvalModeNames["always-ask"]!));
+    expect(server.writes("/api").map((r) => r.body)).toEqual([{ approvalMode: "always-ask" }]);
+    expect(field(en.agent.apiConcurrency).value).toBe("7");
+    expect(hasUnsaved()).toBe(true);
+    await click(button(en.common.save));
+    expect(server.writes("/api").at(-1)?.body).toEqual({ maxConcurrentRuns: 7 });
   });
 
   it("links to the usage guide and copies a prompt with this Agent's connection details", async () => {

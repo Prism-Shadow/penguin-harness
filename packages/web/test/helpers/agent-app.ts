@@ -23,6 +23,7 @@ import { Link, Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentConfigResponse,
+  ChatDefaultsDto,
   AgentApiSettings,
   ModelsResponse,
   DirListResponse,
@@ -150,7 +151,11 @@ export interface AgentServer {
 
 export function agentServer(
   initial: AgentConfigResponse = agentConfig(),
-  options: { models?: ModelsResponse; directory?: DirListResponse } = {},
+  options: {
+    models?: ModelsResponse;
+    directory?: DirListResponse;
+    chatDefaults?: ChatDefaultsDto;
+  } = {},
 ): AgentServer {
   let apiSettings: AgentApiSettings = {
     enabled: true,
@@ -214,6 +219,8 @@ export function agentServer(
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "GET") {
       return json({ agents: [{ ...summaryOf(AGENT_ID), name: stored.config.name }] });
     }
+    if (path === `/api/projects/${PROJECT_ID}/chat-defaults`)
+      return json(options.chatDefaults ?? {});
     if (path === `/api/projects/${PROJECT_ID}/models`)
       return json(options.models ?? { models: [], providers: {} });
     if (path === `/api/projects/${PROJECT_ID}/machines`) {

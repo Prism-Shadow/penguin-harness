@@ -158,13 +158,13 @@ export function McpServerDialog({
     },
     {
       value: "r",
-      triggerLabel: "r",
+      triggerLabel: S.agent.permissionReadLabel,
       label: S.agent.permissionReadLabel,
       description: S.agent.mcpPermissionReadDescription,
     },
     {
       value: "rw",
-      triggerLabel: "rw",
+      triggerLabel: S.agent.permissionReadWriteLabel,
       label: S.agent.permissionReadWriteLabel,
       description: S.agent.mcpPermissionReadWriteDescription,
     },
@@ -382,7 +382,6 @@ export function McpServerDialog({
         )}
         <div className="space-y-1">
           <OptionMenu
-            mono
             size="sm"
             fullWidth
             label={S.agent.mcpPermission}

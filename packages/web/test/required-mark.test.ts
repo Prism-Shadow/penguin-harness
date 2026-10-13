@@ -121,10 +121,8 @@ function optionalWording(dict: unknown, path = ""): string[] {
  * is itself optional", not "this label is optional".
  */
 const PROSE_EXCEPTIONS: Record<"zh" | "en", ReadonlySet<string>> = {
-  // Describes the tool schema's own `description` argument, which really is an optional argument.
-  zh: new Set(["agent.callDescriptionHint"]),
+  zh: new Set(),
   en: new Set([
-    "agent.callDescriptionHint",
     // States the accepted number format: the k/m suffix may be left off.
     "chat.goalBudgetInvalid",
   ]),

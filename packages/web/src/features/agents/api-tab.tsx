@@ -5,8 +5,9 @@
  *
  * Everything here is this server's, kept in its database — not in the Agent State, not in the
  * synced Project file — so the Agent can neither expose itself nor loosen its own approvals. Any
- * member reads it; only the Project owner changes it. Each control applies on the flip, with no
- * Save: turning the API on writes at once, while turning it off and deleting a key ask first,
+ * member reads it; only the Project owner changes it. Selectors apply immediately; typed
+ * concurrency changes use Save. Turning the API on writes at once, while turning it off and
+ * deleting a key ask first,
  * because a program using them is refused from then on. A new key's secret exists only in the
  * create response: it is shown once, in a panel with its copy button, until Done, and afterwards
  * the list names the key by its prefix alone. The name typed for a new key is a one-field form:
@@ -56,7 +57,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useProject } from "../../state/project";
 import { APPROVAL_MODES } from "../chat/approval-mode";
-import { ApiSessionSettings } from "./api-session-settings";
+import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
 
 export const AGENT_API_DOCS_URL = "https://penguin.ooo/docs/agent-api";
@@ -346,6 +347,7 @@ export interface ApiTabViewProps {
   /** A just-created key's secret, until Done; null otherwise. */
   secret: string | null;
   sessionSettings: ReactNode;
+  concurrencySettings: ReactNode;
   onToggleEnabled: (next: boolean) => void;
   onApprovalMode: (mode: ApprovalMode) => void;
   onToggleOpen: (next: boolean) => void;
@@ -384,26 +386,30 @@ export function ApiTabView(p: ApiTabViewProps) {
       {p.settings.enabled && (
         <>
           {p.sessionSettings}
-          {/* A width on a box around the field: the select's own w-full would beat one passed in. */}
-          <div className="max-w-sm">
-            <Select
-              size="sm"
-              label={S.agent.apiApprovalMode}
-              info={S.agent.apiApprovalModeHint}
-              value={p.settings.approvalMode}
-              disabled={!p.isOwner || p.busy}
-              onChange={(e) => {
-                const mode = APPROVAL_MODES.find((m) => m === e.target.value);
-                if (mode !== undefined) p.onApprovalMode(mode);
-              }}
-            >
-              {APPROVAL_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {S.chat.approvalModeNames[mode] ?? mode}
-                </option>
-              ))}
-            </Select>
-          </div>
+          <RuledSection title={S.agent.apiRunLimits}>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {p.concurrencySettings}
+              <div className="min-w-0">
+                <Select
+                  size="sm"
+                  label={S.agent.apiApprovalMode}
+                  info={S.agent.apiApprovalModeHint}
+                  value={p.settings.approvalMode}
+                  disabled={!p.isOwner || p.busy}
+                  onChange={(e) => {
+                    const mode = APPROVAL_MODES.find((m) => m === e.target.value);
+                    if (mode !== undefined) p.onApprovalMode(mode);
+                  }}
+                >
+                  {APPROVAL_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {S.chat.approvalModeNames[mode] ?? mode}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+          </RuledSection>
 
           <RuledSection title={S.agent.apiConnection}>
             <div className="space-y-3">
@@ -605,6 +611,20 @@ export function ApiTab({
         sessionSettings={
           <ApiSessionSettings
             key={`settings:${projectId}/${agentId}`}
+            projectId={projectId}
+            agentId={agentId}
+            settings={settings}
+            disabled={!isOwner || busy}
+            onSaved={(res) => {
+              setSettings(res.api);
+              setServerEnabled(res.serverEnabled);
+            }}
+            onBusy={setBusy}
+          />
+        }
+        concurrencySettings={
+          <ApiConcurrencySettings
+            key={`concurrency:${projectId}/${agentId}`}
             projectId={projectId}
             agentId={agentId}
             settings={settings}
