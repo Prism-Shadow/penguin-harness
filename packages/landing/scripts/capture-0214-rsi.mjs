@@ -1173,8 +1173,7 @@ try {
         await page.waitForFunction(
           () =>
             [...document.querySelectorAll('[role="dialog"] button[aria-haspopup="listbox"]')].some(
-              // A toolkit's title, or its package name where it has none.
-              (b) => !b.disabled && /rsi-toolkit|RSI Toolkit|RSI 工具包/.test(b.textContent ?? ""),
+              (b) => !b.disabled && /rsi-toolkit/.test(b.textContent ?? ""),
             ),
           null,
           { timeout: 30000 },
@@ -1312,15 +1311,11 @@ try {
       try {
         const title = page.getByText(t.rsiGroup, { exact: true }).first();
         await title.waitFor({ timeout: 30000 });
-        // A card names its toolkit by title, or by package name where it has none.
-        await page
-          .getByText(/ace-rsi-toolkit|ACE RSI/)
-          .first()
-          .waitFor({ timeout: 30000 });
+        await page.getByText("ace-rsi-toolkit").first().waitFor({ timeout: 30000 });
         await page.waitForTimeout(1500);
         // The category's section: the nearest ancestor of its title that holds all five cards.
         const section = title.locator(
-          "xpath=ancestor::*[count(.//*[contains(text(),'rsi-toolkit') or contains(text(),'RSI Toolkit') or contains(text(),'RSI 工具包')]) >= 5][1]",
+          "xpath=ancestor::*[count(.//*[contains(text(),'rsi-toolkit')]) >= 5][1]",
         );
         await shootUnion(page, [section], `penguinharness-0-2-14-rsi-plugins-${lang}.png`, 12);
       } catch (err) {
