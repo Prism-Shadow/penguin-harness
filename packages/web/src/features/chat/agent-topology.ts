@@ -394,15 +394,6 @@ function extractFromSlice(
   return nodes;
 }
 
-/** A running child introduces the panel even while its parent is idle or only polling it. */
-export function shouldAutoOpenSubagents(
-  model: StreamModel,
-  taskRunning: boolean,
-  subagents: readonly { running: boolean }[],
-): boolean {
-  return subagents.some((child) => child.running) || (taskRunning && latestTaskHasSubagent(model));
-}
-
 /**
  * Whether the LATEST Task's slice references any spawned child (a bound run_subagent card or a
  * standalone SubagentItem). The chat page's auto-open trigger: combined with the running task

@@ -11,8 +11,6 @@
  *   then the default panel keeps both visible with their own conversations.
  * - Given an explicit historical task selection, when another task has a running child,
  *   then the historical graph stays scoped to the requested task.
- * - Given a live background child, when entering an idle parent or a later polling task,
- *   then the panel can auto-open; idle children alone never open it.
  */
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -51,7 +49,6 @@ import {
   PAD,
   resolveAgentLabel,
   shortSessionId,
-  shouldAutoOpenSubagents,
   taskStartCount,
 } from "../src/features/chat/agent-topology";
 
@@ -311,19 +308,6 @@ describe("extractTopologyForChild (historical Task slice)", () => {
 });
 
 describe("latestTaskHasSubagent (auto-open trigger)", () => {
-  it("opens for a running child while the parent is idle or polling in another task", () => {
-    const m = createStreamModel();
-    pushMessage(m, userText("launch"));
-    spawnChild(m, "t1", "child1");
-    pushMessage(m, toolCallOutput({ output: "yielded", toolCallId: "t1" }));
-    expect(shouldAutoOpenSubagents(m, false, [{ running: true }])).toBe(true);
-    pushMessage(m, userText("check the paper"));
-    pushMessage(m, toolCall({ name: "input_subagent", arguments: "{}", toolCallId: "poll" }));
-    expect(shouldAutoOpenSubagents(m, true, [{ running: true }])).toBe(true);
-    expect(shouldAutoOpenSubagents(m, false, [{ running: false }])).toBe(false);
-    expect(shouldAutoOpenSubagents(m, true, [])).toBe(false);
-  });
-
   it("true only while the LATEST Task references a spawn; a plain follow-up Task resets it", () => {
     const m = createStreamModel();
     pushMessage(m, userText("task 1"));

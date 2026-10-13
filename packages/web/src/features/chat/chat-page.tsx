@@ -100,7 +100,7 @@ import { CostPartsRows, StatHint } from "../../components/ui/stat-hint";
 import { MessageStream } from "./message-stream";
 import type { A2uiActions, StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
-import { shouldAutoOpenSubagents, modelTaskStartCount, taskStartCount } from "./agent-topology";
+import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import { onPluginConfigSaved } from "../../lib/plugin-config-event";
@@ -718,8 +718,8 @@ export function ChatPage() {
   }, [selectedSessionId, selectedAgentId, selectedAgentKnown, setCurrentAgentId]);
 
   // Agents tab AUTO-OPEN (the one automatic tab action): the pure tracker
-  // (advancePanelTaskScope, unit-tested) brings the agents tab to the front when a child is
-  // running or the current task first spawns one, re-armed at every task boundary so a manual close is respected
+  // (advancePanelTaskScope, unit-tested) brings the agents tab to the front on the CURRENT
+  // task's first live spawn, re-armed at every task boundary so a manual close is respected
   // until the next one. It never re-triggers an already-shown tab (that would yank a pinned
   // historical graph back to the latest Task); the tracker consumes the attempt regardless.
   const panelTaskScopeRef = useRef(createPanelTaskScope());
@@ -728,11 +728,7 @@ export function ChatPage() {
   // the count would spuriously re-arm the auto-open mid-conversation. The latest Task
   // always lives in the live tail window, so live-only loses nothing.
   const taskCount = taskStartCount(stream.model.items);
-  const liveSpawn = shouldAutoOpenSubagents(
-    stream.model,
-    stream.taskState !== "idle",
-    stream.subagents,
-  );
+  const liveSpawn = stream.taskState !== "idle" && latestTaskHasSubagent(stream.model);
   useEffect(() => {
     const action = advancePanelTaskScope(panelTaskScopeRef.current, {
       sessionId: selectedSessionId,

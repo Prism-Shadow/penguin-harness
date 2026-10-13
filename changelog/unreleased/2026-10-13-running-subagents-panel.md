@@ -11,5 +11,5 @@ The agents panel kept earlier running subagents visible when a later task spawne
 
 ## Details
 
-- Entering a conversation with running background subagents opened the panel even when the parent was idle or waiting in a later task.
-- Closing the panel manually kept it closed for the rest of that task. Selecting a historical subagent chip kept its task-specific graph.
+- A running child kept its place in the default graph alongside the later task's children.
+- Selecting a historical subagent chip kept its task-specific graph.
