@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#1103](https://github.com/Prism-Shadow/penguin-harness/pull/1103)
 
 [English](2026-10-13-server-side-4xx-is-not-fatal.md)
 
