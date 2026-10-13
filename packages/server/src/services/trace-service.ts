@@ -54,7 +54,8 @@ import type { SessionRow } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
-import { readTraceTailLines } from "../internal/trace-tail.js";
+import { readTraceTailLines, readTraceWindowBefore } from "../internal/trace-tail.js";
+import type { TraceTailRead } from "../internal/trace-tail.js";
 import {
   ratesAt,
   requestCostParts,
@@ -351,11 +352,33 @@ export class TraceService implements Traces {
    * units instead of parsing the whole shard. Passing it is only sound when the caller
    * genuinely needs nothing older — every other caller must omit it, because a
    * truncated read would silently drop history.
+   *
+   * The returned `firstOrdinal` is where the shard's unit numbering resumes: a whole
+   * shard starts at 0, a bounded window at the number of units it skipped. Callers
+   * that number units (tracePosition) or reason about reaching the start of history
+   * MUST offset by it; treating a truncated window as a whole shard is what makes a
+   * mid-shard window look like the beginning of the transcript.
    */
-  private async readShard(path: string, tailFromEnd?: number): Promise<OmniMessage[]> {
+  private async readShard(
+    path: string,
+    tailFromEnd?: number,
+    beforeOrdinal?: number,
+    beforeCount?: number,
+  ): Promise<{ messages: OmniMessage[]; firstOrdinal: number }> {
     this.observeShardRead?.(path);
-    if (tailFromEnd !== undefined) return readTraceTailLines(path, tailFromEnd);
-    return readTraceTolerant(path);
+    if (beforeOrdinal !== undefined) {
+      const read: TraceTailRead = await readTraceWindowBefore(
+        path,
+        beforeOrdinal,
+        beforeCount ?? beforeOrdinal,
+      );
+      return { messages: read.messages, firstOrdinal: read.skippedUnits };
+    }
+    if (tailFromEnd !== undefined) {
+      const read: TraceTailRead = await readTraceTailLines(path, tailFromEnd);
+      return { messages: read.messages, firstOrdinal: read.skippedUnits };
+    }
+    return { messages: await readTraceTolerant(path), firstOrdinal: 0 };
   }
 
   /**
@@ -443,7 +466,7 @@ export class TraceService implements Traces {
     const files = await this.locateAll(projectId, agentId, sessionId);
     const out: OmniMessage[] = [];
     for (const file of files) {
-      const raw = await this.readShard(file.path);
+      const { messages: raw } = await this.readShard(file.path);
       out.push(...(await this.expandMessages(projectId, positioned(raw, file.index), ctx)));
     }
     return out;
@@ -482,7 +505,10 @@ export class TraceService implements Traces {
       const files = await this.locateAll(projectId, childAgent, childSid);
       if (files.length > 0) {
         raw = [];
-        for (const file of files) raw.push(...(await this.readShard(file.path)));
+        for (const file of files) {
+          const { messages } = await this.readShard(file.path);
+          raw.push(...messages);
+        }
       }
     }
     ctx.raw.set(childSid, raw);
@@ -596,7 +622,7 @@ export class TraceService implements Traces {
         continue;
       }
       const state = cloneScanState(j === 0 ? initialScanState() : states[j - 1]!);
-      const messages = await this.readShard(file.path);
+      const { messages } = await this.readShard(file.path);
       await scanMessages(
         state,
         messages,
@@ -668,6 +694,11 @@ export class TraceService implements Traces {
     // Walk backward from the end, scanning whole shards (each from its cached carry-in)
     // until the window has more units than requested or the beginning is reached.
     const shardMessages = new Map<number, OmniMessage[]>();
+    // Where each visited shard's unit numbering resumes. A bounded read skips the head
+    // of its shard, so unit 0 of what it returned is NOT unit 0 of the shard — every
+    // ordinal below is rebased through this, and only a read that still holds unit 0
+    // may claim the window reached the beginning of the transcript.
+    const shardFirstOrdinal = new Map<number, number>();
     let boundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
     let startPos = endPos + 1;
     while (boundaries.length <= req.limit && startPos > 0) {
@@ -676,15 +707,34 @@ export class TraceService implements Traces {
       // asked for, so a generous multiple of `limit` is always enough. The margin
       // absorbs subagent expansion (one pointer can splice in a whole child history)
       // and the coarse unit counting that decides the loop's exit condition.
-      const messages = await this.readShard(files[startPos]!.path, req.limit * 8 + 64);
+      // A `before` cursor names a position, so that page is read backwards from it; a
+      // tail page reads the newest units. Reading a `before` page from the tail would
+      // hand back the newest units — the very history the client already has — and
+      // paging with them would walk forward instead of back.
+      const read =
+        req.kind === "before" && startPos === endPos && endOrdinal !== null
+          ? await this.readShard(
+              files[startPos]!.path,
+              undefined,
+              endOrdinal,
+              req.limit * 8 + 64,
+            )
+          : await this.readShard(files[startPos]!.path, req.limit * 8 + 64);
+      const messages = read.messages;
       shardMessages.set(startPos, messages);
+      shardFirstOrdinal.set(startPos, read.firstOrdinal);
+      const rebase = read.firstOrdinal;
       const state = cloneScanState(startPos === 0 ? initialScanState() : prefixes[startPos - 1]!);
       const shardBoundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
-      const to = startPos === endPos && endOrdinal !== null ? endOrdinal : messages.length;
+      // The cursor is a shard-global ordinal; index into the window with it rebased.
+      const to =
+        startPos === endPos && endOrdinal !== null
+          ? Math.min(endOrdinal - rebase, messages.length)
+          : messages.length;
       await scanMessages(
         state,
         messages,
-        (ordinal, stats) => shardBoundaries.push({ pos: startPos, ordinal, stats }),
+        (ordinal, stats) => shardBoundaries.push({ pos: startPos, ordinal: ordinal + rebase, stats }),
         (sid) => this.aggregateChild(projectId, sid, ctx),
         0,
         Math.min(to, messages.length),
@@ -695,7 +745,24 @@ export class TraceService implements Traces {
     // The widest window the unit count allows: the last `limit` units, or the very
     // beginning (preamble included) when the whole remaining history holds no more.
     type Boundary = (typeof boundaries)[number];
-    const reachesStart = boundaries.length <= req.limit;
+    // Reaching the beginning needs BOTH conditions: enough boundaries to satisfy the
+    // request, AND a read of shard 0 that actually holds its first unit. A bounded read
+    // that stopped mid-shard satisfies neither — reading it as "the beginning" is what
+    // silently truncated the transcript and withheld the `before` cursor with it.
+    const reachedFirstShard = startPos === 0 && (shardFirstOrdinal.get(0) ?? 0) === 0;
+    // A window can hold units without holding a single Task boundary (a run of tool
+    // output, a resumed tail). Anchoring on the window's own first unit keeps such a
+    // window pageable: its `before` cursor points just ahead of what was read, so the
+    // next page continues from there instead of the window silently becoming the whole
+    // transcript. Without this there is no `units[0]` to anchor on at all.
+    if (boundaries.length === 0) {
+      const anchorPos = startPos;
+      const anchorOrdinal = shardFirstOrdinal.get(anchorPos) ?? 0;
+      const anchorStats =
+        anchorPos === 0 ? initialScanState().totals : prefixes[anchorPos - 1]!.totals;
+      boundaries = [{ pos: anchorPos, ordinal: anchorOrdinal, stats: anchorStats }];
+    }
+    const reachesStart = boundaries.length <= req.limit && reachedFirstShard;
     const units = reachesStart ? boundaries : boundaries.slice(boundaries.length - req.limit);
     const widest = reachesStart ? { pos: 0, ordinal: 0 } : units[0]!;
 
@@ -706,15 +773,28 @@ export class TraceService implements Traces {
       : [];
     let nextUnit = 0;
     for (let pos = widest.pos; pos <= endPos; pos++) {
-      const messages = shardMessages.get(pos) ?? (await this.readShard(files[pos]!.path));
-      const from = pos === widest.pos ? widest.ordinal : 0;
+      const cached = shardMessages.get(pos);
+      const read =
+        cached !== undefined
+          ? { messages: cached, firstOrdinal: shardFirstOrdinal.get(pos) ?? 0 }
+          : pos === endPos && endOrdinal !== null
+            ? await this.readShard(files[pos]!.path, undefined, endOrdinal, req.limit * 8 + 64)
+            : await this.readShard(files[pos]!.path);
+      const messages = read.messages;
+      // Indices into `messages` are window-local; ordinals are shard-global.
+      const rebase = read.firstOrdinal;
+      const from = pos === widest.pos ? Math.max(0, widest.ordinal - rebase) : 0;
       const to =
         pos === endPos && endOrdinal !== null
-          ? Math.min(endOrdinal, messages.length)
+          ? Math.min(endOrdinal - rebase, messages.length)
           : messages.length;
       for (let i = from; i < to; i++) {
+        // Units are numbered on the shard's scale, so the walk compares shard-global
+        // ordinals: comparing a window-local index against one would never match, and
+        // every candidate start (every `before` cursor) would silently vanish.
+        const ordinal = i + rebase;
         const unit = units[nextUnit];
-        if (unit !== undefined && unit.pos === pos && unit.ordinal === i) {
+        if (unit !== undefined && unit.pos === pos && unit.ordinal === ordinal) {
           // A unit opening the very first record IS the beginning: no cursor precedes it.
           if (starts.at(-1)?.at !== spanRaw.length) {
             starts.push({ at: spanRaw.length, boundary: unit });
@@ -723,7 +803,10 @@ export class TraceService implements Traces {
         }
         spanRaw.push({
           ...messages[i]!,
-          tracePosition: { fileIndex: files[pos]!.index, ordinal: i },
+          // The position a fork cuts at: shard-global, so a bounded window's units are
+          // rebased onto the shard's own numbering. A window-local index here sends every
+          // fork on a truncated read back to the wrong record.
+          tracePosition: { fileIndex: files[pos]!.index, ordinal },
         });
       }
     }
@@ -800,7 +883,10 @@ export class TraceService implements Traces {
     if (targetFilePos < 0) throw invalid("The selected reply no longer exists in this Session.");
 
     const shards: OmniMessage[][] = [];
-    for (let i = 0; i <= targetFilePos; i++) shards.push(await this.readShard(files[i]!.path));
+    for (let i = 0; i <= targetFilePos; i++) {
+      const { messages } = await this.readShard(files[i]!.path);
+      shards.push(messages);
+    }
     const targetShard = shards[targetFilePos]!;
     const target = targetShard[position.ordinal];
     if (!target || !isAssistantText(target)) {
@@ -976,7 +1062,8 @@ export class TraceService implements Traces {
       null,
     );
     if (newest === null) return emptyContextBreakdown();
-    return buildContextBreakdown(await this.readShard(newest.path));
+    const { messages } = await this.readShard(newest.path);
+    return buildContextBreakdown(messages);
   }
 
   /** List of Trace files (index / date / size / mtime). */
