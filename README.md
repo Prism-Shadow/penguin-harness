@@ -154,15 +154,19 @@ Each family's latest generation only — the app's **Models** page lists every b
 
 ## Install
 
-| | |
-| --- | --- |
-| **Desktop app** | [penguin.ooo/download](https://penguin.ooo/download): macOS 11+ (dmg), Windows 10+ (exe), Linux x64 (AppImage, deb). Opens signed in, no terminal. |
-| **Linux / macOS** | `curl -fsSL https://penguin.ooo/install.sh \| sh` then `penguin web` |
-| **Windows** | `irm https://penguin.ooo/install.ps1 \| iex` then `penguin web` |
-| **npm** (Node >= 24) | `npm install -g @prismshadow/penguin-cli` then `penguin web` |
-| **Chrome extension** (optional) | [PenguinHarness Browser](https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp) lets agents drive the tabs you hand them in your own Chrome |
+### Desktop app
 
-`penguin web` serves the Web App at `http://127.0.0.1:7364`. The desktop app and the CLI share `~/.penguin/data`. On a CLI install, the server prints a first-login link until a password is set; models are configured on the **Models** page.
+Download the installer from [penguin.ooo/download](https://penguin.ooo/download): macOS 11+ (dmg), Windows 10+ (exe) or Linux x64 (AppImage, deb). The app opens signed in and needs no terminal.
+
+### CLI and server
+
+| Platform | Install command |
+| --- | --- |
+| Linux / macOS | `curl -fsSL https://penguin.ooo/install.sh \| sh` |
+| Windows (PowerShell) | `irm https://penguin.ooo/install.ps1 \| iex` |
+| npm (Node >= 24) | `npm install -g @prismshadow/penguin-cli` |
+
+Then run `penguin web`. It serves the Web App at `http://127.0.0.1:7364` and prints a first-login link until a password is set; models are configured on the **Models** page. The desktop app and the CLI share `~/.penguin/data`.
 
 ### Docker
 
@@ -203,6 +207,10 @@ cd penguin-install
 ```
 
 </details>
+
+### Chrome extension (optional)
+
+[PenguinHarness Browser](https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp) lets agents drive the tabs you hand them in your own Chrome.
 
 ## CLI and SDK
 
@@ -246,6 +254,8 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 pnpm install && pnpm build   # build first: core's exports point at dist/
 pnpm dev                     # backend + web app together (prefixed logs, deps built once)
 ```
+
+Working on this repository with a coding agent: its development Skills are in `.agents/skills/` (`penguin-harness-dev`, `penguin-harness-frontend`, `penguin-harness-manual-test`). Claude Code loads them with no install, through the `.claude` → `.agents` symlink; for another agent, link or copy `.agents/skills/*` into the directory it reads Skills from.
 
 See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the full workspace guide: dev commands, quality gates, repo layout, and the changelog rule.
 

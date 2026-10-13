@@ -154,15 +154,19 @@ Agent 还能编写并优化自己的 Skill（[文档](https://penguin.ooo/docs/s
 
 ## 安装
 
-| | |
-| --- | --- |
-| **桌面端** | [penguin.ooo/download](https://penguin.ooo/download)：macOS 11+（dmg）、Windows 10+（exe）、Linux x64（AppImage、deb）。打开即已登录，无需终端。 |
-| **Linux / macOS** | `curl -fsSL https://penguin.ooo/install.sh \| sh`，然后运行 `penguin web` |
-| **Windows** | `irm https://penguin.ooo/install.ps1 \| iex`，然后运行 `penguin web` |
-| **npm**（Node >= 24） | `npm install -g @prismshadow/penguin-cli`，然后运行 `penguin web` |
-| **Chrome 扩展**（可选） | [PenguinHarness Browser](https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp) 让 Agent 在你自己的 Chrome 里操控你交给它们的标签页 |
+### 桌面端
 
-`penguin web` 会在 `http://127.0.0.1:7364` 上提供 Web App。桌面端和 CLI 共用 `~/.penguin/data`。用 CLI 安装时，服务器会一直打印首次登录链接，直到设置密码；模型在**模型库**页面配置。
+从 [penguin.ooo/download](https://penguin.ooo/download) 下载安装包：macOS 11+（dmg）、Windows 10+（exe）或 Linux x64（AppImage、deb）。应用打开即已登录，无需终端。
+
+### CLI 与服务器
+
+| 平台 | 安装命令 |
+| --- | --- |
+| Linux / macOS | `curl -fsSL https://penguin.ooo/install.sh \| sh` |
+| Windows（PowerShell） | `irm https://penguin.ooo/install.ps1 \| iex` |
+| npm（Node >= 24） | `npm install -g @prismshadow/penguin-cli` |
+
+然后运行 `penguin web`：它在 `http://127.0.0.1:7364` 上提供 Web App，在设置密码之前会打印首次登录链接；模型在**模型库**页面配置。桌面端和 CLI 共用 `~/.penguin/data`。
 
 ### Docker
 
@@ -203,6 +207,10 @@ cd penguin-install
 ```
 
 </details>
+
+### Chrome 扩展（可选）
+
+[PenguinHarness Browser](https://chromewebstore.google.com/detail/penguinharness-browser/dodgfhpcbmkjfcbgnoidablfgjjhhmgp) 让 Agent 在你自己的 Chrome 里操控你交给它们的标签页。
 
 ## CLI 与 SDK
 
@@ -246,6 +254,8 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 pnpm install && pnpm build   # 先构建：core 的导出指向 dist/
 pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，依赖只构建一次）
 ```
+
+用编码 Agent 开发本仓库：开发用的 Skill 在 `.agents/skills/` 下（`penguin-harness-dev`、`penguin-harness-frontend`、`penguin-harness-manual-test`）。Claude Code 通过 `.claude` → `.agents` 软链接直接加载，无需安装；换用其他 Agent 时，把 `.agents/skills/*` 链接或复制到它读取 Skill 的目录即可。
 
 完整的 Workspace 开发指南见 [CONTRIBUTING.md](.github/CONTRIBUTING.md)：开发命令、质量门禁、仓库布局和 changelog 规则。
 
