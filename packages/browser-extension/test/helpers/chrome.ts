@@ -204,6 +204,9 @@ export function installChrome(): FakeChrome {
       getURL: (path: string) => `chrome-extension://dodgfhpcbmkjfcbgnoidablfgjjhhmgp/${path}`,
     },
     storage: { local: fake.local, session: fake.session, onChanged: storageChanged },
+    // Chrome's UI language is what its pages see as navigator.language: the language openPage
+    // gives the browser.
+    i18n: { getUILanguage: () => navigator.language },
     windows: {
       async get(windowId: number) {
         const window = fake.windows.get(windowId);

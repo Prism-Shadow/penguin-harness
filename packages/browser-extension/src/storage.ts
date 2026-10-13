@@ -2,15 +2,15 @@
  * What the extension keeps, and where.
  *
  * `chrome.storage.local` (survives restarts): the paired servers with their tokens, the Pause
- * switch, the language the user picked for the pages, and the holds a server's close code put
- * on reconnecting. `chrome.storage.session`
+ * switch, the language and the theme the user picked for the pages, and the holds a server's
+ * close code put on reconnecting. `chrome.storage.session`
  * (survives a worker restart, not a Chrome restart): the driven-tab set and each connection's
  * status, which the pages read and follow.
  *
  * Nothing here is reachable from a web page: the extension has no content scripts and no
  * `externally_connectable`, and session storage keeps its default trusted-contexts access.
  */
-import type { UiLanguage } from "./strings.js";
+import { resolveLanguage, type LanguagePref, type UiLanguage } from "./strings.js";
 import { parseTabSet, type TabSetState } from "./tab-set.js";
 
 export interface PairedServer {
@@ -114,18 +114,36 @@ export async function setPaused(paused: boolean): Promise<void> {
   await chrome.storage.local.set({ paused });
 }
 
-/** The stored language choice: Chinese only when the user picked it, English otherwise. */
-export function parseUiLanguage(value: unknown): UiLanguage {
-  return value === "zh" ? "zh" : "en";
+/** The stored language choice: a language the user picked, or nothing, which follows Chrome. */
+export function parseLanguagePref(value: unknown): LanguagePref {
+  return value === "en" || value === "zh" ? value : "system";
 }
 
+/** The language the pages and the toolbar title are in now. */
 export async function readUiLanguage(): Promise<UiLanguage> {
   const { uiLanguage } = await chrome.storage.local.get("uiLanguage");
-  return parseUiLanguage(uiLanguage);
+  return resolveLanguage(parseLanguagePref(uiLanguage));
 }
 
-export async function setUiLanguage(language: UiLanguage): Promise<void> {
-  await chrome.storage.local.set({ uiLanguage: language });
+export async function setLanguagePref(pref: LanguagePref): Promise<void> {
+  await chrome.storage.local.set({ uiLanguage: pref });
+}
+
+/** The pages' colours: a theme the user picked, or "system" to follow the device's. */
+export type ThemePref = "light" | "dark" | "system";
+
+export function parseThemePref(value: unknown): ThemePref {
+  return value === "light" || value === "dark" ? value : "system";
+}
+
+export async function setThemePref(pref: ThemePref): Promise<void> {
+  await chrome.storage.local.set({ uiTheme: pref });
+}
+
+/** Both page preferences in one read, so a page opens with its language and theme together. */
+export async function readPagePrefs(): Promise<{ language: LanguagePref; theme: ThemePref }> {
+  const { uiLanguage, uiTheme } = await chrome.storage.local.get(["uiLanguage", "uiTheme"]);
+  return { language: parseLanguagePref(uiLanguage), theme: parseThemePref(uiTheme) };
 }
 
 export async function readHolds(): Promise<Record<string, Hold>> {

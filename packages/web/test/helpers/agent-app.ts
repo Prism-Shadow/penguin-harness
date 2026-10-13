@@ -23,6 +23,10 @@ import { Link, Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentConfigResponse,
+  ChatDefaultsDto,
+  AgentApiSettings,
+  ModelsResponse,
+  DirListResponse,
   AgentConfigUpdateRequest,
   McpServerTestResponse,
   ScheduleItem,
@@ -145,7 +149,24 @@ export interface AgentServer {
   answerMcpTest(answer: (entry: MCPServerConfig) => McpServerTestResponse): void;
 }
 
-export function agentServer(initial: AgentConfigResponse = agentConfig()): AgentServer {
+export function agentServer(
+  initial: AgentConfigResponse = agentConfig(),
+  options: {
+    models?: ModelsResponse;
+    directory?: DirListResponse;
+    chatDefaults?: ChatDefaultsDto;
+  } = {},
+): AgentServer {
+  let apiSettings: AgentApiSettings = {
+    enabled: true,
+    open: false,
+    approvalMode: "read-only",
+    keys: [],
+    model: null,
+    thinkingLevel: null,
+    maxConcurrentRuns: 4,
+    workspace: null,
+  };
   let stored = initial;
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
   let schedules: ScheduleItem[] = [];
@@ -198,7 +219,10 @@ export function agentServer(initial: AgentConfigResponse = agentConfig()): Agent
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "GET") {
       return json({ agents: [{ ...summaryOf(AGENT_ID), name: stored.config.name }] });
     }
-    if (path === `/api/projects/${PROJECT_ID}/models`) return json({ models: [], providers: {} });
+    if (path === `/api/projects/${PROJECT_ID}/chat-defaults`)
+      return json(options.chatDefaults ?? {});
+    if (path === `/api/projects/${PROJECT_ID}/models`)
+      return json(options.models ?? { models: [], providers: {} });
     if (path === `/api/projects/${PROJECT_ID}/machines`) {
       return json({ machines: [], imageVersion: null, job: null });
     }
@@ -269,9 +293,13 @@ export function agentServer(initial: AgentConfigResponse = agentConfig()): Agent
         scopes: [],
       });
     }
+    if (path === `/api/projects/${PROJECT_ID}/dirs` && options.directory)
+      return json(options.directory);
     if (path === `${AGENT_PATH}/api`) {
+      if (method === "PUT")
+        apiSettings = { ...apiSettings, ...(request.body as Partial<AgentApiSettings>) };
       return json({
-        api: { enabled: true, open: false, approvalMode: "read-only", keys: [] },
+        api: apiSettings,
         serverEnabled: true,
       });
     }

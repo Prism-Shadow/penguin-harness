@@ -1,12 +1,13 @@
 /**
  * Agent settings page "API" tab: whether external programs may talk to this Agent over its public
- * API (the AMSP stream under /api/amsp/v1), the approval mode its API conversations start with,
+ * API (the AMSP stream under /api/amsp/v1), the defaults its API conversations start with,
  * the address and id a program needs, the keys, and two examples that call it.
  *
  * Everything here is this server's, kept in its database — not in the Agent State, not in the
  * synced Project file — so the Agent can neither expose itself nor loosen its own approvals. Any
- * member reads it; only the Project owner changes it. Each control applies on the flip, with no
- * Save: turning the API on writes at once, while turning it off and deleting a key ask first,
+ * member reads it; only the Project owner changes it. Selectors apply immediately; typed
+ * concurrency changes use Save. Turning the API on writes at once, while turning it off and
+ * deleting a key ask first,
  * because a program using them is refused from then on. A new key's secret exists only in the
  * create response: it is shown once, in a panel with its copy button, until Done, and afterwards
  * the list names the key by its prefix alone. The name typed for a new key is a one-field form:
@@ -21,7 +22,7 @@
  * its stream shown as a program would receive it.
  */
 import { useCallback, useEffect, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import type {
   AgentApiKeyInfo,
   AgentApiResponse,
@@ -34,6 +35,10 @@ import {
   CodeBlock,
   ConfirmModal,
   CopyButton,
+  CopyCheckGlyph,
+  CopiedStatus,
+  buttonClass,
+  useCopied,
   GlyphIcon,
   ICON_SIZE,
   ICONS,
@@ -52,7 +57,34 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useProject } from "../../state/project";
 import { APPROVAL_MODES } from "../chat/approval-mode";
+import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
+
+export const AGENT_API_DOCS_URL = "https://penguin.ooo/docs/agent-api";
+
+function ApiUsageActions({ baseUrl, agentRef }: { baseUrl: string; agentRef: string }) {
+  const { copied, flash } = useCopied();
+  return (
+    <div className="mb-3 flex flex-wrap gap-2">
+      <a
+        href={AGENT_API_DOCS_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={buttonClass("secondary", "sm")}
+      >
+        {S.agent.apiReadDocs}
+      </a>
+      <Button
+        size="sm"
+        leading={<CopyCheckGlyph copied={copied} />}
+        onClick={() => flash(S.agent.apiAgentPrompt(AGENT_API_DOCS_URL, baseUrl, agentRef))}
+      >
+        {S.agent.apiCopyAgentPrompt}
+      </Button>
+      <CopiedStatus copied={copied} />
+    </div>
+  );
+}
 
 /** The public API's root on the server this page was served from. */
 export function agentApiBaseUrl(origin: string): string {
@@ -81,7 +113,7 @@ export function agentApiExamples(baseUrl: string, agentRef: string): { curl: str
     `  apiKey: process.env.PENGUIN_AGENT_KEY,`,
     `});`,
     ``,
-    `const result = await client.ask({ input: "Hello" });`,
+    `const result = await client.run({ input: "Hello" });`,
     `console.log(result.text);`,
   ].join("\n");
   return { curl, sdk };
@@ -314,6 +346,8 @@ export interface ApiTabViewProps {
   draftError?: string;
   /** A just-created key's secret, until Done; null otherwise. */
   secret: string | null;
+  sessionSettings: ReactNode;
+  concurrencySettings: ReactNode;
   onToggleEnabled: (next: boolean) => void;
   onApprovalMode: (mode: ApprovalMode) => void;
   onToggleOpen: (next: boolean) => void;
@@ -351,26 +385,31 @@ export function ApiTabView(p: ApiTabViewProps) {
 
       {p.settings.enabled && (
         <>
-          {/* A width on a box around the field: the select's own w-full would beat one passed in. */}
-          <div className="max-w-sm">
-            <Select
-              size="sm"
-              label={S.agent.apiApprovalMode}
-              hint={S.agent.apiApprovalModeHint}
-              value={p.settings.approvalMode}
-              disabled={!p.isOwner || p.busy}
-              onChange={(e) => {
-                const mode = APPROVAL_MODES.find((m) => m === e.target.value);
-                if (mode !== undefined) p.onApprovalMode(mode);
-              }}
-            >
-              {APPROVAL_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {S.chat.approvalModeNames[mode] ?? mode}
-                </option>
-              ))}
-            </Select>
-          </div>
+          {p.sessionSettings}
+          <RuledSection title={S.agent.apiRunLimits}>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {p.concurrencySettings}
+              <div className="min-w-0">
+                <Select
+                  size="sm"
+                  label={S.agent.apiApprovalMode}
+                  info={S.agent.apiApprovalModeHint}
+                  value={p.settings.approvalMode}
+                  disabled={!p.isOwner || p.busy}
+                  onChange={(e) => {
+                    const mode = APPROVAL_MODES.find((m) => m === e.target.value);
+                    if (mode !== undefined) p.onApprovalMode(mode);
+                  }}
+                >
+                  {APPROVAL_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {S.chat.approvalModeNames[mode] ?? mode}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+          </RuledSection>
 
           <RuledSection title={S.agent.apiConnection}>
             <div className="space-y-3">
@@ -447,6 +486,7 @@ export function ApiTabView(p: ApiTabViewProps) {
           </RuledSection>
 
           <RuledSection title={S.agent.apiExamples}>
+            <ApiUsageActions baseUrl={p.baseUrl} agentRef={p.agentRef} />
             <CodeBlock language="bash" code={examples.curl} />
             <CodeBlock language="typescript" code={examples.sdk} />
           </RuledSection>
@@ -568,6 +608,34 @@ export function ApiTab({
         draftName={draftName}
         {...(draftError !== undefined ? { draftError } : {})}
         secret={secret}
+        sessionSettings={
+          <ApiSessionSettings
+            key={`settings:${projectId}/${agentId}`}
+            projectId={projectId}
+            agentId={agentId}
+            settings={settings}
+            disabled={!isOwner || busy}
+            onSaved={(res) => {
+              setSettings(res.api);
+              setServerEnabled(res.serverEnabled);
+            }}
+            onBusy={setBusy}
+          />
+        }
+        concurrencySettings={
+          <ApiConcurrencySettings
+            key={`concurrency:${projectId}/${agentId}`}
+            projectId={projectId}
+            agentId={agentId}
+            settings={settings}
+            disabled={!isOwner || busy}
+            onSaved={(res) => {
+              setSettings(res.api);
+              setServerEnabled(res.serverEnabled);
+            }}
+            onBusy={setBusy}
+          />
+        }
         onToggleEnabled={(next) => {
           if (next) void write({ enabled: true });
           else setConfirmOff(true);

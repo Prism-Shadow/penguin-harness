@@ -1,7 +1,7 @@
 ---
 name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline, or import a published Benchmark package.
-version: 2026.10.12.1
+version: 2026.10.14.1
 ---
 
 # Benchmark Design
@@ -12,7 +12,7 @@ This Skill changes the Benchmark, never the Test Agent. It does not run or score
 
 A Benchmark whose Cases are run through Harbor (their statements say so; the built-in PenguinHarness Benchmarks) is a frozen upstream task set that ships with PenguinHarness: never create, refine, recalibrate or re-baseline one.
 
-Importing an existing Benchmark is not design and runs none of the workflow below. When the request is to import — a folder link in a repository such as Prism-Shadow/penguin-harness-benchmark, a local folder or zip, or the name of a package to find — follow `reference/package.md`, section **Importing a package**: it resolves the source, pins the commit, fetches only that folder, reads every file, imports through `penguin benchmark import`, brings a companion train/test package along, verifies the copy and offers (never starts) a one-case smoke probe. Stop after its report: a Benchmark that arrives as a package was calibrated by whoever published it.
+To import an existing Benchmark, follow **Importing a package** in `reference/package.md`: fetch the selected package, read its files, and copy the manifest and cases directly into the Project's `benchmarks/<id>/` with an empty scoreboard. Preserve its version, record the source, and ask before replacing an existing directory. Importing does not run the design, calibration or evaluation workflow below.
 
 ## Before you start
 

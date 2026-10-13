@@ -116,6 +116,11 @@ export function McpServersSection({
   agentId: string;
   initial: MCPServerConfig[];
 }) {
+  const permissionNames = {
+    auto: S.agent.mcpPermissionAuto,
+    r: S.agent.permissionReadLabel,
+    rw: S.agent.permissionReadWriteLabel,
+  };
   const { currentProject } = useProject();
   const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
@@ -294,8 +299,8 @@ export function McpServersSection({
                 <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">
                   {transportOf(entry)}
                 </TableCell>
-                <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">
-                  {permissionOf(entry)}
+                <TableCell className="text-xs text-gray-500 dark:text-gray-400">
+                  {permissionNames[permissionOf(entry)]}
                 </TableCell>
                 {/* The target takes the width the other columns leave and truncates in it: a
                     max-width of 0 keeps the URL's own length out of the column sizing, and the

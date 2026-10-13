@@ -23,6 +23,8 @@ export interface OpenRequest {
   activate: boolean;
   /** The tab whose popup (or "Open link in new tab") this is. */
   openerTabId?: number;
+  sessionId?: string;
+  partition?: string;
   createdAt: number;
   /** The tab that claimed it; null until then. */
   claimedTabId: number | null;
@@ -46,6 +48,9 @@ export class TabRegistry {
   /** In creation order: the last entry is the most recently created tab. */
   private tabs = new Map<number, BuiltinBrowserTab>();
   private active: number | null = null;
+  private readonly partitions = new Map<number, string>();
+  private readonly owners = new Map<number, string>();
+  private readonly activeBySession = new Map<string, number>();
   /** A tab activated before the shell reported it. */
   private pendingActive: number | null = null;
   private readonly opens = new Map<string, OpenState>();
@@ -55,8 +60,50 @@ export class TabRegistry {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  list(): BuiltinBrowserTab[] {
-    return [...this.tabs.values()];
+  list(sessionId?: string): BuiltinBrowserTab[] {
+    return [...this.tabs.values()].filter(
+      (tab) => sessionId === undefined || tab.sessionId === sessionId,
+    );
+  }
+
+  activeFor(sessionId?: string): number | null {
+    if (sessionId === undefined) return this.activeTabId;
+    const id = this.activeBySession.get(sessionId);
+    if (id !== undefined && this.tabs.get(id)?.sessionId === sessionId) return id;
+    return this.list(sessionId).at(-1)?.id ?? null;
+  }
+
+  /** Transfer existing pages and pending popups without recreating their guests. */
+  adoptSession(fromSessionId: string, sessionId: string): void {
+    if (fromSessionId === sessionId) return;
+    const active = this.activeFor(fromSessionId);
+    const targetActive = this.activeFor(sessionId);
+    for (const [id, owner] of this.owners) {
+      if (owner !== fromSessionId) continue;
+      this.owners.set(id, sessionId);
+      const tab = this.tabs.get(id);
+      if (tab) this.tabs.set(id, { ...tab, sessionId });
+    }
+    for (const open of this.opens.values()) {
+      if (open.sessionId === fromSessionId) open.sessionId = sessionId;
+    }
+    this.activeBySession.delete(fromSessionId);
+    if (targetActive === null && active !== null) this.activeBySession.set(sessionId, active);
+  }
+
+  private owned(tab: BuiltinBrowserTab): BuiltinBrowserTab {
+    const sessionId = this.owners.get(tab.id);
+    const partition = this.partitions.get(tab.id);
+    return {
+      ...tab,
+      ...(sessionId === undefined ? {} : { sessionId }),
+      ...(partition === undefined ? {} : { partition }),
+    };
+  }
+
+  private rememberActive(id: number): void {
+    const owner = this.owners.get(id);
+    if (owner !== undefined) this.activeBySession.set(owner, id);
   }
 
   ids(): number[] {
@@ -91,15 +138,17 @@ export class TabRegistry {
     this.pendingActive = null;
     const before = this.activeTabId;
     this.active = id;
+    this.rememberActive(id);
     return before !== id;
   }
 
   /** Applies one `tab` event; returns the tab as it was before (undefined for a new one). */
   upsert(tab: BuiltinBrowserTab): BuiltinBrowserTab | undefined {
     const previous = this.tabs.get(tab.id);
-    this.tabs.set(tab.id, tab);
+    this.tabs.set(tab.id, this.owned(tab));
     if (this.pendingActive === tab.id) {
       this.active = tab.id;
+      this.rememberActive(tab.id);
       this.pendingActive = null;
     }
     if (firstPageStarted(tab)) this.settleFirstPage(tab.id, true);
@@ -121,6 +170,7 @@ export class TabRegistry {
   /** Applies a `tab-closed` event; true when the tab was known. */
   remove(id: number): boolean {
     const known = this.tabs.delete(id);
+    this.forgetOwner(id);
     if (this.active === id) this.active = null;
     this.settleClose(id);
     this.settleFirstPage(id, true);
@@ -132,7 +182,7 @@ export class TabRegistry {
    * and the active tab while it is still open. Returns whether anything changed.
    */
   replaceAll(tabs: readonly BuiltinBrowserTab[]): boolean {
-    const incoming = new Map(tabs.map((tab) => [tab.id, tab]));
+    const incoming = new Map(tabs.map((tab) => [tab.id, this.owned(tab)]));
     const next = new Map<number, BuiltinBrowserTab>();
     for (const id of this.tabs.keys()) {
       const tab = incoming.get(id);
@@ -146,10 +196,14 @@ export class TabRegistry {
     this.tabs = next;
     if (this.pendingActive !== null && next.has(this.pendingActive)) {
       this.active = this.pendingActive;
+      this.rememberActive(this.pendingActive);
       this.pendingActive = null;
     }
     if (this.active !== null && !next.has(this.active)) this.active = null;
-    for (const id of gone) this.settleClose(id);
+    for (const id of gone) {
+      this.forgetOwner(id);
+      this.settleClose(id);
+    }
     for (const id of [...this.firstPageWaiters.keys()]) {
       const tab = next.get(id);
       if (tab === undefined ? gone.includes(id) : firstPageStarted(tab)) {
@@ -206,13 +260,21 @@ export class TabRegistry {
   // --- open requests ---------------------------------------------------------
 
   /** Records a tab the Web App is about to be asked to create. */
-  createOpen(opts: { url: string; activate: boolean; openerTabId?: number }): OpenRequest {
+  createOpen(opts: {
+    url: string;
+    activate: boolean;
+    openerTabId?: number;
+    sessionId?: string;
+    partition?: string;
+  }): OpenRequest {
     this.prune();
     const state: OpenState = {
       requestId: randomUUID(),
       url: opts.url,
       activate: opts.activate,
       ...(opts.openerTabId !== undefined ? { openerTabId: opts.openerTabId } : {}),
+      ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
+      ...(opts.partition !== undefined ? { partition: opts.partition } : {}),
       createdAt: this.now(),
       claimedTabId: null,
       waiters: new Set(),
@@ -232,6 +294,13 @@ export class TabRegistry {
     if (state === undefined) return "unknown";
     if (state.claimedTabId !== null) return state.claimedTabId === tabId ? "claimed" : "duplicate";
     state.claimedTabId = tabId;
+    if (state.partition !== undefined) this.partitions.set(tabId, state.partition);
+    if (state.sessionId !== undefined) {
+      this.owners.set(tabId, state.sessionId);
+      if (state.activate) this.rememberActive(tabId);
+    }
+    const tab = this.tabs.get(tabId);
+    if (tab !== undefined) this.tabs.set(tabId, this.owned(tab));
     for (const waiter of state.waiters) waiter(tabId);
     state.waiters.clear();
     return "claimed";
@@ -286,6 +355,14 @@ export class TabRegistry {
     }
     this.closeWaiters.clear();
     for (const id of [...this.firstPageWaiters.keys()]) this.settleFirstPage(id, false);
+  }
+
+  private forgetOwner(id: number): void {
+    const owner = this.owners.get(id);
+    if (owner !== undefined && this.activeBySession.get(owner) === id)
+      this.activeBySession.delete(owner);
+    this.owners.delete(id);
+    this.partitions.delete(id);
   }
 
   private settleFirstPage(id: number, started: boolean): void {

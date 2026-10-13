@@ -4,7 +4,8 @@
  * checkout's image, one running release 0.2.13 on a root that holds that image.
  *
  * - A source build beside the pushed harness on its disk is that build; a release answering
- *   beside one is not running it, whatever its disk says.
+ *   beside one is not running it, whatever its disk says — unless the harness is that same
+ *   release's own image, which records the release as its revision.
  * - A build is compared by its pushed platform, not by the release half of its version.
  * - What a machine runs is spelled as the plan for the same harness is: its platform, CLI and web
  *   bundles together, so a page and a log name one build by one version.
@@ -71,6 +72,26 @@ describe("runningBuild", () => {
 
   it("reads a release answering beside a pushed image as not running it", () => {
     expect(runningBuild(RELEASE_RUNNING)).toMatchObject({ release: "0.2.13", foreign: true });
+    // A source push recorded at a revision past the release is still another build.
+    const pushed = {
+      ...HARNESS,
+      source: { repo: "penguin-harness", revision: "v0.2.13-4-g9e8f7d6" },
+    };
+    expect(runningBuild({ ...RELEASE_RUNNING, harness: pushed })).toMatchObject({ foreign: true });
+  });
+
+  it("reads a release answering beside its own release's image as running it", () => {
+    // The image a release ships is compiled from that release, and records it as its revision:
+    // whichever of the two copies the runtime loaded, the code is that release's.
+    const own = { ...HARNESS, source: { repo: "penguin-harness", revision: "v0.2.13" } };
+    expect(runningBuild({ ...RELEASE_RUNNING, harness: own })).toMatchObject({
+      release: "0.2.13",
+      version: IMAGE.version,
+      foreign: false,
+    });
+    // Another release's image is not.
+    const older = { ...HARNESS, source: { repo: "penguin-harness", revision: "v0.2.12" } };
+    expect(runningBuild({ ...RELEASE_RUNNING, harness: older })).toMatchObject({ foreign: true });
   });
 
   it("reads a release with nothing pushed as that release", () => {

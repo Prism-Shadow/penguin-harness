@@ -20,6 +20,7 @@
  * Import, history and clearing data belong to the built-in browser: on chrome they answer 405
  * `not_supported` (Chrome keeps its own).
  */
+import { createHash } from "node:crypto";
 import type {
   BrowserBackend,
   BrowserBackendInfo,
@@ -164,6 +165,7 @@ export function homepageUrl(raw: unknown): string | null {
 export interface BuiltinBrowserDeps {
   /** The shell's message port; null when this server is not the desktop shell's child. */
   port: BrowserShellPort | null;
+  projectOf?(sessionId: string): string | null;
   /** The data root; the history and the settings live under it. */
   root: string;
   /** Sends one built-in browser event to every admin's user channel. */
@@ -224,6 +226,7 @@ export class BuiltinBrowser {
             link: new ShellLink(deps.port, deps.timing, now, deps.log),
             publish: deps.publish,
             history: this.history,
+            partition: (sessionId, projectId) => this.partition(sessionId, projectId),
             ...(deps.systemMemory ? { systemMemory: deps.systemMemory } : {}),
             ...(deps.platform !== undefined ? { platform: deps.platform } : {}),
           });
@@ -302,7 +305,7 @@ export class BuiltinBrowser {
   }
 
   /** GET /status: never 503 — an unavailable backend says why. Retries a failed shell handshake. */
-  async status(actor: Actor): Promise<BuiltinBrowserStatus> {
+  async status(actor: Actor, sessionId?: string): Promise<BuiltinBrowserStatus> {
     const backend = this.backendOf(actor);
     if (backend === "builtin" && this.builtin !== null && !actor.isAdmin) throw adminRequired();
     const backends: BrowserBackendInfo[] = [];
@@ -326,8 +329,8 @@ export class BuiltinBrowser {
       ...(current?.reason !== undefined ? { reason: current.reason } : {}),
       backend,
       backends,
-      tabs: runtime?.tabs.list() ?? [],
-      activeTabId: runtime?.tabs.activeTabId ?? null,
+      tabs: runtime?.tabs.list(backend === "builtin" ? sessionId : undefined) ?? [],
+      activeTabId: runtime?.tabs.activeFor(backend === "builtin" ? sessionId : undefined) ?? null,
       ...(metrics !== null ? { metrics } : {}),
     };
   }
@@ -335,14 +338,14 @@ export class BuiltinBrowser {
   // --- tabs and the agent's actions, on the actor's backend -----------------------
 
   /** GET /tabs. */
-  listTabs(actor: Actor): Promise<BuiltinBrowserTabsResponse> {
-    return this.runtime(actor).listTabs();
+  listTabs(actor: Actor, sessionId?: string): Promise<BuiltinBrowserTabsResponse> {
+    return this.runtime(actor).listTabs(sessionId);
   }
 
   /** POST /tabs. */
   openTab(
     actor: Actor,
-    opts: { url?: unknown; sessionId?: string; activate?: boolean },
+    opts: { url?: unknown; sessionId?: string; projectId?: string; activate?: boolean },
   ): Promise<BuiltinBrowserTab> {
     return this.runtime(actor).openTab(opts);
   }
@@ -353,8 +356,12 @@ export class BuiltinBrowser {
   }
 
   /** POST /tabs/:tab/activate. */
-  activate(actor: Actor, tab: string): Promise<BuiltinBrowserTab> {
-    return this.runtime(actor).activate(tab);
+  activate(actor: Actor, tab: string, sessionId?: string): Promise<BuiltinBrowserTab> {
+    return this.runtime(actor).activate(tab, sessionId);
+  }
+
+  adoptSession(actor: Actor, fromSessionId: string, sessionId: string): void {
+    this.builtinRuntime(actor).adoptSession(fromSessionId, sessionId);
   }
 
   /** POST /tabs/on-screen: the built-in browser's tab a window shows; nothing to do elsewhere. */
@@ -363,8 +370,8 @@ export class BuiltinBrowser {
   }
 
   /** DELETE /tabs/:tab. */
-  close(actor: Actor, tab: string): Promise<void> {
-    return this.runtime(actor).close(tab);
+  close(actor: Actor, tab: string, sessionId?: string): Promise<void> {
+    return this.runtime(actor).close(tab, sessionId);
   }
 
   navigate(
@@ -494,7 +501,11 @@ export class BuiltinBrowser {
       let written = { set: 0, failed: 0, errors: [] as string[] };
       if (read.cookies.length > 0) {
         written = (await runtime.request(
-          { op: "set-cookies", cookies: read.cookies },
+          {
+            op: "set-cookies",
+            cookies: read.cookies,
+            partition: this.partition(req.sessionId, req.projectId),
+          },
           30_000 + read.cookies.length * 20,
         )) as typeof written;
       }
@@ -536,9 +547,17 @@ export class BuiltinBrowser {
   }
 
   /** POST /clear-data: the browser's cookies, cache or site storage. */
-  async clearData(actor: Actor, storages: ("cookies" | "cache" | "storage")[]): Promise<void> {
+  async clearData(
+    actor: Actor,
+    storages: ("cookies" | "cache" | "storage")[],
+    sessionId?: string,
+    projectId?: string,
+  ): Promise<void> {
     this.builtinOnly(actor, "Clearing the browser's data");
-    await this.shellRuntime().request({ op: "clear-data", storages }, 60_000);
+    await this.shellRuntime().request(
+      { op: "clear-data", storages, partition: this.partition(sessionId, projectId) },
+      60_000,
+    );
   }
 
   dispose(): void {
@@ -548,6 +567,14 @@ export class BuiltinBrowser {
     this.extensions?.dispose();
     this.noTabs.dispose();
     void this.history.dispose();
+  }
+
+  private partition(sessionId?: string, projectId?: string): string {
+    const project =
+      (sessionId === undefined ? null : this.deps.projectOf?.(sessionId)) ?? projectId;
+    return project === undefined || project === null
+      ? "persist:penguin-browser"
+      : `persist:penguin-browser-project-${createHash("sha256").update(project).digest("hex")}`;
   }
 
   // --- internals ---------------------------------------------------------------

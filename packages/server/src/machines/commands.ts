@@ -122,7 +122,9 @@ function connectionOptions(target: RemoteTarget): string[] {
  * shipped in the archive since long before any of this, so a machine installed by any
  * release can run the current CLI. What it cannot do is run one that was never pushed: a
  * machine with an empty store answers `no CLI pushed to <root>`, and the remedy is to
- * install — which replicates the store on its way through (install-server.ts).
+ * install — which replicates the store on its way through (install-server.ts). Every install
+ * carries one: a pushed server's own state, the image a release ships (shipped-image.ts), or
+ * the image a checkout builds (checkout-image.ts).
  *
  * Invoked through the bundled runtime rather than the launcher, because there is no
  * launcher for this entry. Machines installed from here always carry that runtime: the

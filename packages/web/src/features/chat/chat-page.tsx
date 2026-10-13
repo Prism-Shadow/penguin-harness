@@ -16,6 +16,7 @@
  * chosen before sending, and everything except approval mode is locked once the Session is
  * created. The Session list and the new-chat entry point live in the global sidebar.
  */
+import { adoptBrowserSession } from "../builtin-browser/browser-actions";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
@@ -61,12 +62,7 @@ import { apiErrorText } from "../../lib/api-error";
 import type { PermissionPick } from "../../lib/permission-level";
 import { configuredCompactionLimit } from "../../lib/context";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import {
-  formatDateTime,
-  humanizeDuration,
-  humanizeDurationLive,
-  humanizeTokens,
-} from "../../lib/format";
+import { formatDateTime, humanizeTokens } from "../../lib/format";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import {
   sessionActivity,
@@ -84,19 +80,14 @@ import {
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
 import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import {
-  bucketCostUsd,
-  liveSessionElapsedMs,
-  sessionElapsedBreakdown,
-} from "../../lib/omni/task-stats";
-import type { TaskStatsTracker } from "../../lib/omni/task-stats";
+import { bucketCostUsd } from "../../lib/omni/task-stats";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Truncated } from "../../components/ui/truncated";
-import { CostPartsRows, StatHint } from "../../components/ui/stat-hint";
+import { SessionElapsed, SessionStatsList, sessionElapsedSplit } from "./session-stats";
 import { MessageStream } from "./message-stream";
 import type { A2uiActions, StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
@@ -196,37 +187,6 @@ function SessionIdRow({ sessionId }: { sessionId: string }) {
   );
 }
 
-/**
- * Elapsed value for the header statistics: while a Task runs it ticks once per second over the
- * live cumulative (settled cross-Task total + the running Task's wall clock so far, see
- * liveSessionElapsedMs); when idle no timer runs and it renders exactly the settled total.
- * Whole seconds while ticking, decimals only on the settled value — same convention as
- * LiveDuration on running tool/thinking cards.
- */
-function SessionElapsed({
-  stats,
-  taskOpen,
-  taskStartLocalMs,
-}: {
-  stats: TaskStatsTracker;
-  taskOpen: boolean;
-  taskStartLocalMs: number;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!taskOpen) return;
-    // Load-bearing, not redundant: `now` still holds whatever the state last saw (mount time,
-    // or the final tick of a previous Task), and the first interval callback is a full second
-    // away. The first live render after a Task starts must not compute from that stale clock,
-    // so re-anchor immediately on entering the running state.
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [taskOpen]);
-  if (!taskOpen) return <>{humanizeDuration(stats.sessionElapsedMs)}</>;
-  return <>{humanizeDurationLive(liveSessionElapsedMs(stats, taskOpen, taskStartLocalMs, now))}</>;
-}
-
 /** The header's three statistics — the chip row and the info dropdown render these verbatim. */
 interface HeaderStats {
   tokensText: string;
@@ -236,12 +196,11 @@ interface HeaderStats {
   costUncosted: boolean;
   elapsedNode: ReactNode;
   /**
-   * The elapsed time's API / tool breakdown, already parenthesised, or null when neither
-   * component has anything to report yet (a conversation that has not run shows the bare
-   * time rather than a row of zeroes). Printed in the details card only: the chip is the
+   * The elapsed time's API / tool breakdown, what its "?" opens in the details card, or null
+   * when neither component has anything to report yet. The details card only: the chip is the
    * card's trigger and shows the total alone.
    */
-  elapsedSplit: string | null;
+  elapsedSplit: ReactNode | null;
 }
 
 /**
@@ -256,36 +215,18 @@ interface HeaderStats {
  */
 function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderStats {
   const stats = model.stats;
+  const elapsed = {
+    stats,
+    taskOpen: model.taskOpen,
+    taskStartLocalMs: model.taskStartLocalMs,
+  };
   return {
     tokensText: humanizeTokens(stats.sessionTotal + stats.subagentTotal),
     costText: cost.costText,
     costUncosted: cost.costUncosted,
-    elapsedNode: (
-      <SessionElapsed
-        stats={stats}
-        taskOpen={model.taskOpen}
-        taskStartLocalMs={model.taskStartLocalMs}
-      />
-    ),
-    elapsedSplit: elapsedSplitText(stats),
+    elapsedNode: <SessionElapsed {...elapsed} />,
+    elapsedSplit: sessionElapsedSplit(elapsed),
   };
-}
-
-/**
- * The parenthesised API / tool breakdown of the elapsed time, or null when both components are
- * still zero. A component that is genuinely zero beside a non-zero one still prints: "no tool
- * time" is worth reading. Unlike the total beside it this does not tick — it advances as each
- * Request and tool closes, so mid-turn it trails the running total, and the two components can
- * also overlap each other. Both are why it is rendered as two measurements, not as a split of
- * the total (see sessionElapsedBreakdown).
- */
-function elapsedSplitText(stats: TaskStatsTracker): string | null {
-  const { apiMs, toolMs } = sessionElapsedBreakdown(stats);
-  if (apiMs <= 0 && toolMs <= 0) return null;
-  return `${S.chat.statParenOpen}${S.chat.statElapsedSplit(
-    humanizeDuration(apiMs),
-    humanizeDuration(toolMs),
-  )}${S.chat.statParenClose}`;
 }
 
 /**
@@ -1337,6 +1278,7 @@ export function ChatPage() {
       await reloadSessions();
       // Same conversation under a new id: its docks follow, or they are stranded under
       // an id nothing routes to again.
+      await adoptBrowserSession(currentId, respondedId);
       adoptDockScope(respondedId);
       navigate(`/chat/${respondedId}`, { replace: true });
     },
@@ -1511,10 +1453,10 @@ export function ChatPage() {
     await api.postAbort(selected.sessionId).catch(() => undefined);
   }, [selected]);
 
-  // "Retry" on the line a failed run ended on: the Session runs once with no new input and
-  // sends the failed turn's held input on its own. A refusal surfaces as a toast — nothing held
-  // (a later message already sent it) has its own sentence, anything else reads like a failed
-  // send — and is rethrown, which enables the button again.
+  // "Retry" on the line a failed or stopped run ended on: the Session runs once with no new
+  // input and sends the unfinished turn's held input on its own. A refusal surfaces as a toast —
+  // nothing held (a later message already sent it) has its own sentence, anything else reads
+  // like a failed send — and is rethrown, which enables the button again.
   const onRetry = useCallback(async (): Promise<void> => {
     if (!selected) return;
     try {
@@ -2033,8 +1975,8 @@ export function ChatPage() {
     onGiveUp: () => {
       void onStop();
     },
-    // Retry after a failed run: offered only while the composer could send — a Session on
-    // screen with nothing running or compacting, the same state its Send requires.
+    // Retry after a failed or stopped run: offered only while the composer could send — a
+    // Session on screen with nothing running or compacting, the same state its Send requires.
     ...(selected && stream.taskState === "idle" ? { onRetry } : {}),
     onOpenFile: openWorkspaceFile,
     onOpenSubagent: (sessionId, origin) => {
@@ -2164,14 +2106,6 @@ export function ChatPage() {
       currency,
     }),
   );
-  // Cache hit rate over the recorded input buckets (cacheRead = hits, cacheWrite =
-  // uncached input) — the details card's tokens-line parenthetical. Null until a usage
-  // row with any input has applied, so a fresh session shows no "0%" out of thin air.
-  const recordedInput = usageBuckets ? usageBuckets.cacheRead + usageBuckets.cacheWrite : 0;
-  const cacheHitRate =
-    usageBuckets && recordedInput > 0
-      ? `${Math.round((100 * usageBuckets.cacheRead) / recordedInput)}%`
-      : null;
   // Display name of the Session's own Agent for the details card — null when the Agent has
   // no name of its own (agentDisplayName then returns the id, which the row already shows)
   // or when the Agent list hasn't arrived yet.
@@ -2473,40 +2407,21 @@ export function ChatPage() {
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.sessionStats}
                 </p>
-                {/* A bulleted list, one stat per line. The tokens bullet carries the cache
-                    hit rate in parentheses (cacheRead ÷ all recorded input), and the cost
-                    bullet a "?" right of the figure with its priced parts; both come from the
-                    usage fetch — recorded usage, without the live estimate the cost adds
-                    mid-run — so they can trail the live totals and reconcile on idle. The
-                    elapsed bullet prints its API / tool components inline. No-cost sessions
-                    omit the cost bullet entirely, as the chip does. Each bullet stays inline
-                    content (no flex), which is what keeps its marker. */}
-                <ul className="list-inside list-disc space-y-1 font-mono text-xs">
-                  <li>
-                    {S.chat.statTotalTokens} {hs.tokensText}
-                    {cacheHitRate !== null &&
-                      `${S.chat.statParenOpen}${S.chat.statCacheHit(cacheHitRate)}${S.chat.statParenClose}`}
-                  </li>
-                  {hs.costText != null && (
-                    <li>
-                      {S.common.cost} {hs.costText}
-                      {hs.costUncosted ? " *" : ""}
-                      {usageCostParts !== null && (
-                        <StatHint label={S.common.cost} className="ml-1 align-middle">
-                          <CostPartsRows
-                            parts={usageCostParts}
-                            currency={currency}
-                            uncosted={hs.costUncosted}
-                          />
-                        </StatHint>
-                      )}
-                    </li>
-                  )}
-                  <li>
-                    {S.chat.statElapsed} {hs.elapsedNode}
-                    {hs.elapsedSplit}
-                  </li>
-                </ul>
+                {/* One total per bullet, each from the usage fetch or the live stream as its
+                    reading needs, with its breakdown behind a "?" right of it. No-cost
+                    sessions omit the cost bullet entirely, as the chip does. */}
+                <SessionStatsList
+                  tokens={hs.tokensText}
+                  usage={usageBuckets}
+                  cost={
+                    hs.costText != null
+                      ? { text: hs.costText, uncosted: hs.costUncosted, parts: usageCostParts }
+                      : null
+                  }
+                  currency={currency}
+                  elapsed={hs.elapsedNode}
+                  elapsedSplit={hs.elapsedSplit}
+                />
               </div>
               {/* Background processes the conversation started (e.g. a dev server on
                   localhost:3000): live rows carry a stop button — the kill signals the whole

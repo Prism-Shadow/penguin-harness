@@ -664,7 +664,8 @@ export const zh = {
     pairConnected: "已连接",
     /** The import dialog: copies sign-ins and history from a browser installed on this computer. */
     importTitle: "从浏览器导入",
-    importIntro: "把系统浏览器里的登录状态和历史记录复制到内置浏览器，原浏览器中的数据不会改变。",
+    importIntro:
+      "将系统浏览器的登录状态导入当前 Project，历史记录导入内置浏览器。其他 Project 的登录状态和原浏览器的数据不会改变。",
     importLoading: "正在查找浏览器…",
     importNone: "这台电脑上没有找到可以导入的浏览器。",
     importSourcesFailed: (reason: string): string => `无法读取浏览器列表：${reason}`,
@@ -693,7 +694,8 @@ export const zh = {
     importFailed: (reason: string): string => `导入失败：${reason}`,
     /** The clear-browsing-data confirmation. */
     clearTitle: "清除浏览数据",
-    clearBody: "选择要从内置浏览器中删除的数据，此操作无法撤销。",
+    clearBody:
+      "Cookie、缓存和网站存储仅清除当前 Project 的数据；历史记录会从整个内置浏览器中清除。此操作无法撤销。",
     clearCookies: "Cookie 与登录状态",
     clearCache: "缓存的图片和文件",
     clearStorage: "网站存储的数据",
@@ -1231,6 +1233,9 @@ export const zh = {
     /** Nothing supervises the server process (not started through penguin web / penguin server), so the restart is the user's. */
     readyBodyManual:
       "新版本已安装。当前服务不是由 penguin web 或 penguin server 托管，无法从这里重启：请在终端重新运行 penguin web（或 penguin server）。",
+    /** The shell was asked to restart into the downloaded build and this window is still here. */
+    readyBodyManualClient:
+      "PenguinHarness 没有重启，更新尚未完成。请重试，或退出 PenguinHarness 后重新打开。",
     restartNow: "重启并更新",
     restarting: "正在重启…",
     restartingBodyRelease: "服务回来后页面会自动刷新。",
@@ -1254,6 +1259,7 @@ export const zh = {
     /** A download / restart request failed before the backend could act; `detail` is apiErrorText output. */
     requestFailed: (detail: string) => `无法执行更新操作：${detail}`,
     restartTimedOut: "服务迟迟没有回来，请查看终端里 penguin web 的输出后手动刷新页面",
+    restartTimedOutClient: "PenguinHarness 没有重启，打开应用信息重试",
   },
 
   /**
@@ -1727,9 +1733,9 @@ export const zh = {
     stateDir: "State 路径",
     copyStateDir: "复制 State 路径",
     agentsMd: "AGENTS.md",
-    systemPrompt: "system_prompt 模板",
+    systemPrompt: "系统提示词",
     placeholdersTitle: "可用占位符（点击插入）",
-    insertPlaceholder: "插入到 system_prompt 光标处",
+    insertPlaceholder: "插入到系统提示词光标处",
     /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). Inner tokens ({{VAULT_KEYS}} 等) live in each feature tab's promptPlaceholders instead. */
     placeholders: [
       ["{{AGENTS_MD}}", "注入 AGENTS.md 内容"],
@@ -1754,47 +1760,42 @@ export const zh = {
       ["{{MODEL_ID}}", "上游模型 id"],
       ["{{SESSION_ID}}", "当前 Session id"],
     ] as ReadonlyArray<readonly [string, string]>,
-    maxTurns: "max_turns（单 Task 最大轮次，-1 不限制）",
-    maxTokens: "model.max_tokens",
-    thinkingLevel: "model.thinking_level",
-    /** Selectable tiers exclude `none` (many models cannot disable thinking); a stored `none` still displays — see `thinkingLevelNoneKept`. */
-    thinkingLevelOptions: [
-      ["", "不提交覆盖值，沿用当前生效的配置。"],
-      ["low", "开启较低强度的扩展推理。"],
-      ["medium", "开启中等强度的扩展推理（新建 Agent 的缺省档位）。"],
-      ["high", "开启较高强度的扩展推理，响应更慢。"],
-      ["xhigh", "在 high 之上再进一步的扩展推理，部分模型上效果与 high 相同。"],
-      ["max", "开启最高强度的扩展推理，最慢，部分模型上效果与 xhigh 相同。"],
-    ] as ReadonlyArray<readonly [string, string]>,
-    /** Row description shown only while the stored config is `none`: displayed as-is, never rewritten, and no longer offered as a choice. */
-    thinkingLevelNoneKept: "已存的历史档位：新选择不再提供关闭档（多数模型不支持关闭思考）。",
-    timeoutMs: "model.timeoutMs",
+    maxTurns: "单次任务最大轮数",
+    maxTurnsHint: "-1 表示不限制",
+    maxTokens: "最大输出 Token 数",
+    timeoutMs: "模型响应超时（毫秒）",
     timeoutMsHint: "等待上游下一个事件的空闲上限，毫秒；不是整次请求的总时长上限",
-    compaction: "上下文压缩（compaction）",
-    maxContextLength: "max_context_length",
+    compaction: "上下文压缩",
+    maxContextLength: "上下文 Token 阈值",
     maxContextLengthHint: "触发压缩的上下文阈值",
-    maxSessionTurns: "max_session_turns",
+    maxSessionTurns: "会话轮数阈值",
     maxSessionTurnsHint: "触发压缩的轮数阈值",
-    compactionMode: "mode（压缩方式）",
+    compactionMode: "压缩方式",
+    compactionModeNames: { summarize: "生成摘要", discard: "丢弃上下文" } as Readonly<
+      Record<string, string>
+    >,
     compactionModeOptions: [
-      ["", "不提交覆盖值，沿用当前生效的配置。"],
       ["summarize", "先让模型为旧上下文生成摘要，再从摘要续接新的上下文窗口（缺省）。"],
       ["discard", "不生成摘要，直接丢弃旧上下文，下一轮从新窗口重新开始。"],
     ] as ReadonlyArray<readonly [string, string]>,
-    compactionPrompt: "prompt（摘要提示词）",
+    compactionPrompt: "摘要提示词",
     numberInvalid: "必须是 > 0 的整数或 -1",
     numberCannotClear: "已保存的值不能清空：请填写数值，或点「重置」还原",
     toolFieldInvalid: (name: string, field: string) => `${name}: ${field} 必须是 > 0 的整数或 -1`,
-    toolPermission: "permission",
-    permissionReadLabel: "Read-only",
-    permissionReadDescription: "仅读取。审批模式为 read-only 时自动放行，无需确认。",
-    permissionReadWriteLabel: "Read & write",
-    permissionReadWriteDescription: "可修改。审批模式为 read-only 时需人工确认。",
-    toolTimeout: "timeoutMs",
-    toolMaxOutput: "maxOutputLength",
-    toolCallDescription: "call_description",
+    deleteTool: "删除工具",
+    deleteToolNamed: (name: string): string => `删除工具 ${name}`,
+    deleteToolBody: (name: string): string =>
+      `删除「${name}」后，此 Agent 将无法使用该工具。新会话立即采用，已有会话在下一次重建上下文后采用。其他未保存的设置不会一并提交。`,
+    toolPermission: "访问权限",
+    permissionReadLabel: "只读",
+    permissionReadDescription: "仅读取。审批模式为「只读」时自动放行，无需确认。",
+    permissionReadWriteLabel: "可读写",
+    permissionReadWriteDescription: "可修改。审批模式为「只读」时需人工确认。",
+    toolTimeout: "执行超时（毫秒）",
+    toolMaxOutput: "最大输出字符数",
+    toolCallDescription: "调用说明",
     callDescriptionHint:
-      "call_description：开启（缺省）时该工具的 schema 保留可选的 description 参数——模型为每次调用写一句说明，运行期间展示给用户；关闭则装配时从 schema 滤除该参数。仅参数中定义了 description 属性的工具可切换。",
+      "开启后，模型会为每次工具调用写一句说明，并在运行时显示。关闭后不再请求这段说明。仅支持带说明参数的工具。",
     mcpServers: "MCP Server",
     mcpDesc:
       "连接外部 MCP Server：其工具以 mcp__<name>__<tool> 并入本 Agent 的工具列表。此区块的改动即时保存。",
@@ -1802,37 +1803,37 @@ export const zh = {
     mcpAdd: "添加 MCP Server",
     mcpEditTitle: "编辑 MCP Server",
     mcpRemove: "删除",
-    mcpName: "name",
+    mcpName: "名称",
     mcpNameHint: "工具名前缀：mcp__<name>__<tool>；限字母、数字、_ 和 -",
-    mcpTransport: "transport",
+    mcpTransport: "连接方式",
     mcpTransportStdio: "本地进程：启动 command 后经 stdin/stdout 通信",
     mcpTransportHttp: "Streamable HTTP：当前规范的远程 transport",
     mcpTransportSse: "旧版 HTTP+SSE：仅为未迁移的服务保留",
-    mcpTarget: "command / url",
-    mcpCommand: "command",
-    mcpArgs: "args",
+    mcpTarget: "启动命令 / 地址",
+    mcpCommand: "启动命令",
+    mcpArgs: "命令参数",
     mcpArgsHint: "每行一个参数",
-    mcpEnv: "env",
+    mcpEnv: "环境变量",
     mcpEnvHint:
       "每行一条 KEY=value；值中的 ${KEY} 在连接时取自该 Agent 的密钥保险柜，保险柜的其余内容不注入 MCP Server 进程",
-    mcpCwd: "cwd",
+    mcpCwd: "工作目录",
     mcpCwdHint: "留空则使用本次 Session 的 Workspace",
-    mcpUrl: "url",
-    mcpHeaders: "headers",
+    mcpUrl: "服务地址",
+    mcpHeaders: "请求头",
     mcpHeadersHint:
       "每行一条 Header-Name: value（如 Authorization 等认证头）；值中的 ${KEY} 在连接时取自该 Agent 的密钥保险柜",
-    mcpPermission: "permission",
-    mcpPermissionAuto: "auto",
-    mcpPermissionAutoLabel: "Auto（readOnlyHint）",
+    mcpPermission: "访问权限",
+    mcpPermissionAuto: "自动识别",
+    mcpPermissionAutoLabel: "自动识别",
     mcpPermissionAutoDescription:
       "每个工具按自己的 readOnlyHint 注解取值：声明了就是只读，否则为读写。",
     mcpPermissionReadDescription:
-      "该 Server 的全部工具一律视为只读，无论其自身声明。审批模式为 read-only 时自动放行。",
+      "该 Server 的全部工具一律视为只读，无论其自身声明。审批模式为「只读」时自动放行。",
     mcpPermissionReadWriteDescription:
-      "该 Server 的全部工具一律视为读写，无论其自身声明。审批模式为 read-only 时需人工确认。",
+      "该 Server 的全部工具一律视为读写，无论其自身声明。审批模式为「只读」时需人工确认。",
     mcpPermissionHint:
       "只有 read-only 审批模式会读这个等级，allow-all / deny-all / always-ask 一律不看。它不限制 Server 本身能做什么——把并非只读的 Server 标为只读，只是撤掉了 read-only 模式本会索要的那次确认。",
-    mcpConnectTimeout: "connectTimeoutMs",
+    mcpConnectTimeout: "连接超时（毫秒）",
     mcpBudgetsHint:
       "留空使用默认值：connectTimeoutMs 是连接与工具发现预算（默认 10000）；timeoutMs / maxOutputLength 作用于该 Server 的全部工具。",
     mcpNameInvalid: "限字母、数字、_ 和 -，且以字母或数字开头",
@@ -1934,7 +1935,19 @@ export const zh = {
     apiOwnerOnly: "只有 Project 所有者可以更改这些设置。",
     apiAdminOff:
       "管理员已在服务器设置中关闭 Agent API：所有 API 请求都会被拒绝，这里的设置与密钥保留。",
-    apiApprovalMode: "API 会话的审批模式",
+    apiRunLimits: "运行设置",
+    apiConcurrency: "最大并发数",
+    apiConcurrencyHint:
+      "本 Agent 同时运行的会话上限。达到上限后，新的 API 运行请求返回 HTTP 429。保存后立即生效，不中断正在运行的会话。",
+    apiConcurrencyInvalid: "请输入大于 0 的整数。",
+    apiReadDocs: "查看使用文档",
+    apiCopyAgentPrompt: "复制给 Agent 的提示词",
+    apiAgentPrompt: (docsUrl: string, baseUrl: string, agentRef: string) =>
+      `请先阅读 PenguinHarness Agent API 使用文档：${docsUrl}，然后帮我编写调用此 Agent 的代码。\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\n使用 @prismshadow/amsp SDK：stream() 读取事件流，await run() 获取完整结果。需要密钥时，从 PENGUIN_AGENT_KEY 环境变量读取，不要硬编码。用 sessionId 继续已有会话。按文档处理审批请求和 HTTP 429；收到 429 时遵循 Retry-After。`,
+    apiSessionSettings: "新会话设置",
+    apiSessionSettingsHint:
+      "应用于之后新建的 API 会话。模型留空使用 Project 默认模型，思考等级留空使用 Agent 配置，工作区留空则创建临时工作区。",
+    apiApprovalMode: "审批模式",
     apiApprovalModeHint:
       "应用于之后新建的 API 会话；需要确认时，确认请求会发给调用方，也可在 Web App 中回答。",
     apiConnection: "连接",
@@ -2906,39 +2919,37 @@ export const zh = {
       `将从服务端删除 ${name}，插件库不再列出它；各 Agent 已安装的技能与钩子副本不受影响。`,
     deletedToast: (name: string) => `已从服务端删除 ${name}`,
     /** The import dialog (admin): a tab for each way in — npm, a link, a zip, or an Agent in a chat. */
+    importDestination: "服务端插件库",
     importPlugin: "导入插件",
     importServerWide: "插件安装到整个服务端，所有 Project 共用。",
     importTabs: {
-      npm: "从 npm 安装",
-      link: "从链接安装",
-      zip: "上传 zip 包",
-      agent: "让 Agent 安装",
+      npm: "npm",
+      link: "链接",
+      zip: "zip",
+      agent: "Agent 安装",
     },
     /** The npm tab: a package name, which the server installs from the registry itself. */
     importNpmWhy: "npm 包名，可带版本、范围或标签，由服务端直接从 npm 仓库安装。",
     importNpmLabel: "npm 包名",
     importNpmPlaceholder: "@scope/name 或 name@1.2.0",
-    importNpmInvalid: "不是 npm 包名；链接请在「从链接安装」中填写，其他来源请让 Agent 安装。",
+    importNpmInvalid: "请输入 npm 包名；链接请用「链接」，其他来源请用「Agent 安装」。",
     /** The link tab: an https link npm fetches, from wherever the server's network reaches. */
     importLinkWhy:
       "指向 git 仓库或 tarball 的 https 链接，由服务端直接获取并安装；服务端会访问你给出的任意 https 地址，包括内网地址。",
     importLinkLabel: "链接",
     importLinkPlaceholder: "https://github.com/… 或 github:owner/repo",
-    importLinkInvalid: "不是 https 链接；包名请在「从 npm 安装」中填写，其他来源请让 Agent 安装。",
+    importLinkInvalid: "请输入仓库或 tarball 链接；包名请用「npm」，其他来源请用「Agent 安装」。",
     /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
-    importLinkSubpath: "这是仓库中的文件夹或文件，npm 无法直接安装：请让 Agent 把它转成插件包。",
+    importLinkSubpath: "仓库内的文件夹或文件请用「Agent 安装」。",
     importLinkAskAgent: "改为让 Agent 安装",
-    importCost:
-      "插件带有服务端模块时，安装会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。",
+    importCost: "含服务端模块的插件会重新装载服务器插件，中止所有 Project 中正在运行的 Agent。",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
-    importScriptsRun: "这个包的安装脚本会以服务端用户的身份在服务器上运行。",
+    importScriptsRun: "安装脚本将在服务器上运行，请确认来源可信。",
     importAgentWhy:
-      "适合网页、仓库、仓库中的文件夹，或 Codex / Claude Code 插件（连同其 Skill 与 MCP 服务器）：Agent 先审阅它——不是 PenguinHarness 插件包时先转成插件包——再用 penguin plugin install 安装。",
+      "Agent 审阅来源，必要时转换格式，再用 penguin plugin install 安装。支持 Codex 和 Claude Code 插件。",
     importSourceLabel: "插件来源",
-    importSourcePlaceholder:
-      "链接（如 https://github.com/owner/repo/tree/main/plugins/name）、本地路径或一段描述",
+    importSourcePlaceholder: "链接、本地路径或描述",
     importSourceToken: "<插件来源>",
-    importPromptLabel: "发送给 Agent 的 Prompt",
     /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
     importPromptLead: {
       link: (source: string) => `把 ${source} 处的 PenguinHarness 插件安装到本服务端。`,
@@ -2949,9 +2960,30 @@ export const zh = {
     },
     importPromptTail: (projectId: string) =>
       `PenguinHarness 插件是一个 npm 包：package.json（name、version、description，以及插件卡片读取的 \`penguin\` 块，其中 \`penguin.mcp_servers\` 声明插件的 MCP 服务器）旁边是 \`skills/<name>/SKILL.md\` 和／或 \`hooks/\`。无论来源是什么，安装前先读完它的 package.json 和随附的全部脚本，说明它做什么、会运行什么；有任何可疑之处就停下来告诉我。来源本身已是这样的包时——在 npm 上、在指向 git 仓库或 tarball 的 https 链接处，或在本地文件夹中——用 \`penguin plugin install <npm 包名、https 链接或文件夹> --project-id ${projectId}\` 安装。来源是其他形态时——GitHub 仓库中的文件夹或文件、Codex（\`.codex-plugin\`）或 Claude Code（\`.claude-plugin\`）插件、Skill 仓库——先读 \`plugin-porting\` Skill 并照做：在固定的 commit 上获取来源，在临时文件夹中构建插件包并审阅，再以同样的方式安装该文件夹。插件的 MCP 服务器（\`.mcp.json\` 或 \`mcpServers\` 映射）是插件的一部分：把它们转成 \`penguin.mcp_servers\` 带入，包内绝不写入任何密钥值。最后报告装上的包名和版本、包含的 Skill 与 MCP 服务器、我需要为这些服务器在密钥保险柜中设置的键，以及你舍弃了哪些内容。`,
-    importUploadDesc:
-      "插件包目录的 zip：package.json 在根目录或唯一的顶层目录内，不含 node_modules，例如另一台服务端「导出」的文件。只上传你信任的来源。",
+    importUploadDesc: "package.json 位于 zip 根目录或唯一顶层目录，不含 node_modules。",
     importUploadAction: "选择 zip 文件",
+    importExamples: [
+      {
+        key: "browser-automation",
+        label: "浏览器自动化",
+        description: "浏览网页、填写表单",
+      },
+      {
+        key: "data-analysis",
+        label: "数据分析",
+        description: "分析数据、制作图表",
+      },
+      {
+        key: "humanizer",
+        label: "Humanizer",
+        description: "去除文字中的 AI 腔",
+      },
+      {
+        key: "use-bento-slides",
+        label: "Bento Slides",
+        description: "制作演示文稿",
+      },
+    ],
     importedToast: (name: string, version: string | null) =>
       version === null ? `已安装 ${name}` : `已安装 ${name} ${version}`,
     importUnchangedToast: (name: string, version: string | null) =>
@@ -3780,10 +3812,10 @@ Benchmark：
     reconnectRetryNow: "立即重试",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */
     reconnectGiveUp: "放弃",
-    /** "Retry" on a failed run's last line (the error banner, or a reconnect line that gave up): sends the failed turn's input again, with no new message. */
-    retryFailedRun: "重试",
-    /** Toast when Retry finds nothing held: the failed turn's input already went out with a later message. */
-    retryNothing: "没有可重试的内容：失败那一轮的输入已随后续消息发出。",
+    /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
+    retryRun: "重试",
+    /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
+    retryNothing: "没有可重试的内容：那一轮的输入已随后续消息发出。",
     imageAlt: "用户上传的图片",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:
@@ -3819,18 +3851,16 @@ Benchmark：
     statCacheHit: (pct: string) => `缓存命中率 ${pct}`,
     statElapsed: "用时",
     /**
-     * The elapsed time's two measured components, shown in parentheses after it. They may
-     * overlap (a background tool runs while the model decodes) and may leave a remainder
-     * (approval waits, harness overhead), so this reads as two measurements, never as a split.
+     * The elapsed time's two measured components, as rows behind the "?" beside an elapsed
+     * total. They may overlap (a background tool runs while the model decodes) and may leave a
+     * remainder (approval waits, harness overhead), so they read as two measurements, never as a split.
      */
-    statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}，工具 ${toolMs}`,
-    /** The same two components as rows, behind the "?" beside an elapsed total. */
     statApiTime: "模型 API 时间",
     statToolTime: "工具 wall time",
-    /** The three priced parts behind the "?" beside a cost total; they sum to that total. */
-    costPartCacheRead: "缓存输入",
-    costPartCacheWrite: "未缓存输入",
-    costPartOutput: "输出",
+    /** The three usage parts behind the "?" beside a token or cost total; they sum to that total. */
+    usagePartCacheRead: "缓存输入",
+    usagePartCacheWrite: "未缓存输入",
+    usagePartOutput: "输出",
     statInput: "输入 tokens",
     statCached: "已缓存",
     statOutput: "输出 tokens",
@@ -4137,12 +4167,10 @@ Benchmark：
     pinnedSession: "已置顶",
     /** The hover ellipsis button that opens the row's full context menu. */
     moreActions: "更多操作",
-    /** Sidebar group "reveal/load next page" row (display cap + server paging). */
+    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default, the Trace panel's file pills). */
     loadMore: "更多",
-    /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
+    /** A list's one reveal row (a sidebar group, time mode's whole list, an archive group): n = conversations that list still hides; a click shows ten more, fetching when the loaded ones run out. */
     expandRestSessions: (n: number) => `展开其余 ${n} 个对话`,
-    /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
-    loadMoreSessions: "加载更多会话",
     /**
      * Who opened a Session: a person (`user`), or the program behind it — the mark a row of one
      * a program opened carries, as its tooltip and hidden text, and the archive page's source
@@ -5188,17 +5216,35 @@ Benchmark：
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     /** The header button and the dialog's title: the one place the page uses the user's own word for a Benchmark. */
     importBenchmark: "导入评估集",
-    importChatTitle: "推荐：让 Agent 在对话中导入",
-    importChatWhy:
-      "Agent 会按 benchmark-design 技能的导入流程把链接固定到一个提交、只取这一个文件夹，读过每个文件再写入评估中心，比直接上传更可靠。",
-    importSourceLabel: "Benchmark 来源",
-    importSourceHint:
-      "GitHub 仓库里的文件夹链接（如 …/tree/<commit>/packages/<id>）/ 本地路径 / 一段描述",
-    importSourcePlaceholder:
-      "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/…",
+    importChatTitle: "让 Agent 导入",
+    importChatWhy: "Agent 读取来源后，将评估集文件复制到本 Project；打开对话后发送即可开始。",
+    importSourceLabel: "评估集来源",
+    importSourceHint: "仓库文件夹链接、本地路径或描述",
+    importSourcePlaceholder: "粘贴来源，或选择下方示例",
+    importExamples: [
+      {
+        key: "penguinharness-benchmark-sec-a",
+        label: "Sec A · 数据分析",
+        description: "Data Analysis Bench 子集",
+      },
+      {
+        key: "penguinharness-benchmark-sec-b",
+        label: "Sec B · 软件工程",
+        description: "DeepSWE v1.1 子集",
+      },
+      {
+        key: "penguinharness-benchmark-sec-c",
+        label: "Sec C · 自动化",
+        description: "AutomationBench 子集",
+      },
+      {
+        key: "penguinharness-benchmark-sec-e",
+        label: "Sec E · 终端任务",
+        description: "Terminal-Bench 4.0 CPU 子集",
+      },
+    ],
     /** Preview placeholder shown in the generated prompt before a source is entered. */
     importSourceToken: "<来源>",
-    importPromptLabel: "发送给 Agent 的 Prompt（预览）",
     /** The prompt's lead sentence per kind of source (features/benchmark/benchmark-import-prompt.ts), joined to importPromptTail. */
     importPromptLead: {
       repoFolderUrl: (s: string): string =>
@@ -5209,17 +5255,16 @@ Benchmark：
     /** The fixed tail: the benchmark-design Skill's import procedure when the Agent has it, then the rules for one that does not — the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
     importPromptTail: (projectId: string): string =>
       [
-        "如果装有 `benchmark-design` 技能，按它的 `reference/package.md`「Importing a package」一节操作——来源解析、固定提交、配对的 train / test 包、导入后核对与可选的冒烟探测都写在那里；没有这个技能时，按下面的规则做：",
-        "包是一个文件夹：根下有 `benchmark_config.toml`（键：id、title、description、version（`YYYY.MM.DD.N`）、status、runs 与 `[origin]` 表），每题一个 `CASE-*/`，内含 `statement/README.md` 与 `rubric/README.md`。",
-        "只取这一个文件夹，固定在一个提交上，放进临时目录：先把链接里的分支或标签解析成 40 位提交号（`git ls-remote`），再下载它（codeload 的 tarball 或 sparse checkout）；导入之前读完每个文件——不是 Benchmark 包、`status` 不是 `published`、或含有文本材料以外的东西，就拒绝导入。不要拷贝上游的大文件，题干里有它们的链接。",
-        `用 \`penguin benchmark import <那个文件夹> --project-id ${projectId} --origin-url <原样的链接> --origin-ref <40 位提交号> --origin-path <仓库里的文件夹路径>\` 导入（来源不是仓库文件夹时不带 \`--origin-*\` 选项）。服务端按检查上传 zip 的规则检查它，并自己写入 \`benchmarks/<id>/\`：来源记为 git，版本保持包里的值，\`scoreboard.yaml\` 只含 \`evaluations: []\`；你自己不要往 \`benchmarks/\` 下写任何东西。`,
-        "命令提示该 Benchmark 已存在时，先停下问我再覆盖——覆盖（`--overwrite`）会替换整个目录，连同 `scoreboard.yaml` 与 `.jobs/`；该 Benchmark 还有评估在运行时，服务端也会拒绝覆盖。最后报告命令输出的 id、标题、版本与题数；评估中心随即列出它。",
+        "若有 `benchmark-design` 技能，先读 `reference/package.md` 的导入说明。仓库来源先用 `git ls-remote` 将分支或标签固定到 40 位提交号，只获取所选包；本地 zip 先解压到临时目录。",
+        '检查包内的 `benchmark_config.toml`（`status = "published"`）及各个 `CASE-*/statement/README.md`、`CASE-*/rubric/README.md`。读完所有文件，拒绝符号链接、可执行文件及无关内容。',
+        `在 Project \`${projectId}\` 的 \`<app_data_dir>/benchmarks/<id>/\` 中直接复制清单和各个 \`CASE-*/\`，保留包的 id、版本与题目；不要复制上游的 \`scoreboard.yaml\` 或 \`.jobs/\`。新建 \`scoreboard.yaml\`，内容为 \`evaluations: []\`。`,
+        '更新清单的 `[origin]`：仓库来源用 `kind = "git"`，记录 `url`、`ref`（提交号）、`path` 和 `imported_at`；本地来源用 `kind = "zip"` 与导入时间。目标目录已存在时先问我，未经同意不得覆盖；仍在评估的目录不得替换。',
+        "核对复制后的清单和题数，报告 id、标题、版本、题数与路径。导入不运行评估。",
       ].join("\n"),
-    importCopyPrompt: "复制 Prompt",
     importOpenChat: "打开新对话",
-    importUploadTitle: "上传 Benchmark zip 包",
-    importUploadDesc:
-      "从评估中心导出的 zip，或根目录（或唯一的顶层目录）里有 benchmark_config.toml 与各题 CASE-*/ 的 zip。导入的是题目，不带评估记录：记录从空开始。只导入你信任的来源。",
+    importUploadTitle: "上传 zip",
+    importUploadDesc: "包含 benchmark_config.toml 和 CASE-*/，可置于同一个顶层目录内。",
+    importUploadInfo: "可直接上传评估中心导出的 zip。只导入题目，评估记录从空开始。",
     importUploadAction: "选择 zip 文件",
     importUploading: "上传中…",
     importDoneToast: "Benchmark 已导入",

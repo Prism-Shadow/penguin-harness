@@ -112,12 +112,13 @@ hint that repeats the visible words, or only names the glyph a figure sits besid
 is never marked and never shows; a data row's detail goes unmarked when it is one click away (the
 dialog its title opens).
 
-A total's breakdown is never a marked hint: the cost's priced parts and the elapsed time's API /
-tool components go behind a circled "?" right of the total (`StatHint` in
-`components/ui/stat-hint.tsx`), and only totals carry one: a per-round reading shows its total
-alone, and a reading that is itself a button (the chat header's chips) gets no "?" — its breakdown
-lives in what it opens. Nor does a marked hint earn a "?" of its own: the "?" stays with titles and
-totals.
+A total's breakdown is never a marked hint: the token total's and the cost's three usage parts and
+the elapsed time's API / tool components go behind a circled "?" right of the total (`StatHint` in
+`components/ui/stat-hint.tsx`, whose rows the Trace overview and the chat details card share), and
+only totals carry one: a per-round reading shows its total alone, and a reading that is itself a
+button (the chat header's chips) gets no "?" — its breakdown lives in what it opens. A rate is a
+reading, not a part: the cache hit rate stays inline beside the token total. Nor does a marked hint
+earn a "?" of its own: the "?" stays with titles and totals.
 
 ### Which disclosure — the "?" or the fold
 

@@ -5,8 +5,9 @@
  * The rules pinned here are the ones a user sees: nothing is fetched until they confirm (a
  * check ends in `available`, never `downloading`), a download that outlives the dialog still
  * reports through the row, an installed release waits for an explicit restart — and where the
- * process cannot be restarted from the page, the dialog says so instead of pretending. The row
- * speaks under its label only while something moves or waits.
+ * process cannot be restarted from the page, the dialog says so instead of pretending. A
+ * restart the shell was asked for and did not make ends the wait: the restart step comes back
+ * as the user's. The row speaks under its label only while something moves or waits.
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -217,6 +218,15 @@ describe("clientFlow (the desktop shell's own window)", () => {
         restart: "requested",
       }),
     ).toEqual({ kind: "restarting", version: "0.3.0" });
+  });
+
+  it("a restart the shell did not make leaves the spinner for the restart step, as the user's", () => {
+    expect(
+      clientFlow(shell({ state: "downloaded", version: "0.3.0" }), {
+        ...NO_LOCAL,
+        restart: "manual",
+      }),
+    ).toEqual({ kind: "ready", version: "0.3.0", restart: "manual" });
   });
 
   it("carries the shell's own failure text, and names why a form cannot update itself", () => {

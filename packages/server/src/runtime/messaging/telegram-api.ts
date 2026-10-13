@@ -10,6 +10,7 @@
  * Wire types below mirror the Bot API JSON verbatim (snake_case): the transport does not
  * reshape payloads, so a test fake constructs exactly what the real API returns.
  */
+import { userAgent } from "@prismshadow/penguin-core";
 import { FormData, fetch as undiciFetch } from "undici";
 import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
 import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
@@ -251,19 +252,16 @@ export interface TelegramTransport {
 /**
  * `fetch` AND `FormData` are imported from undici on purpose, and must stay a matched pair.
  *
- * The startup entry replaces `globalThis.fetch` with undici's so outbound traffic follows
- * the proxy dispatcher (see net/proxy.ts). undici's fetch brand-checks a FormData body
- * against ITS OWN class, and Node's built-in `FormData` is a different class, so a global
- * `new FormData()` fell through undici's body handling to `String(body)` — the Bot API
- * received the 17 bytes `[object FormData]` as `text/plain` and answered "there is no
- * document in the request". Every upload failed in production and none did in CI, where
- * `globalThis.fetch` is still the runtime's own and the pairing happens to match.
- *
- * Importing FormData from undici while calling `globalThis.fetch` inverts the same bug, so
- * the transport calls undici's fetch directly. That keeps the proxy: undici's fetch
- * resolves the global dispatcher per call, which is the contract net/proxy.ts is written
- * against. `Blob` needs no such treatment — `globalThis.Blob` IS node:buffer's Blob, and
- * undici's FormData accepts it (verified on the wire, not assumed).
+ * undici's fetch brand-checks a FormData body against ITS OWN class, and Node's built-in
+ * `FormData` belongs to the runtime's separate copy of undici, so a global `new FormData()`
+ * handed to undici's fetch falls through its body handling to `String(body)`: the Bot API
+ * receives the 17 bytes `[object FormData]` as `text/plain` and answers "there is no
+ * document in the request". Importing FormData from undici while calling
+ * `globalThis.fetch` is the same bug the other way round, so the transport takes both from
+ * undici. That keeps the proxy: undici's fetch resolves the global dispatcher per call,
+ * which is the contract net/proxy.ts is written against. `Blob` needs no such treatment —
+ * `globalThis.Blob` IS node:buffer's Blob, and undici's FormData accepts it (verified on
+ * the wire, not assumed).
  */
 type TelegramFetch = typeof undiciFetch;
 
@@ -394,7 +392,7 @@ export function createTelegramTransport(opts: TelegramTransportOpts = {}): Teleg
         try {
           res = await doFetch(`${TELEGRAM_API_BASE}/bot${creds.botToken}/${method}`, {
             method: "POST",
-            headers,
+            headers: { ...headers, "user-agent": userAgent() },
             body,
             signal,
           });
@@ -492,6 +490,7 @@ export function createTelegramTransport(opts: TelegramTransportOpts = {}): Teleg
             res = await doFetch(
               `${TELEGRAM_API_BASE}/file/bot${creds.botToken}/${file.file_path}`,
               {
+                headers: { "user-agent": userAgent() },
                 signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
               },
             );

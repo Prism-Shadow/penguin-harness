@@ -24,7 +24,9 @@
 import { useEffect } from "react";
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand/react";
+import { toastError } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
+import { apiErrorText } from "./api-error";
 import type { TodoKey } from "./todo-badges";
 
 /** The `ui_prefs` key the whole map is stored under. */
@@ -119,17 +121,23 @@ export function useTodoDismissals(projectId: string | null, eager = false): Todo
   );
 }
 
-/** Dismisses one trail at the signature it is showing right now, and persists it (best-effort). */
+// Each write carries the whole map. Serialize them so a slower earlier request cannot
+// overwrite a later dismissal, and compose each map from the last successful write.
+let saving: Promise<void> = Promise.resolve();
+
+/** Dismisses the shown signature once saved; a failed write leaves it available to retry. */
 export function dismissTodo(projectId: string | null, key: TodoKey, signature: string): void {
   if (projectId === null) return;
-  const { map } = dismissStore.getState();
   // No markers means no dot was raised, so there is nothing to wave away — and writing now
   // would persist a map missing every Project this session never read.
-  if (map === null) return;
-  if (map[projectId]?.[key] === signature) return; // No-op: skip the write and the re-render.
-  const next = withDismissal(map, projectId, key, signature);
-  dismissStore.setState({ map: next });
-  // Fire-and-forget, the initial-password banner's pattern: a lost write only costs
-  // persistence, the dot is already down in this tab.
-  void api.putPrefs({ [TODO_PREFS_KEY]: next }).catch(() => undefined);
+  if (dismissStore.getState().map === null) return;
+  saving = saving
+    .then(async () => {
+      const map = dismissStore.getState().map!;
+      if (map[projectId]?.[key] === signature) return;
+      const next = withDismissal(map, projectId, key, signature);
+      await api.putPrefs({ [TODO_PREFS_KEY]: next });
+      dismissStore.setState({ map: next });
+    })
+    .catch((e: unknown) => toastError(apiErrorText(e)));
 }

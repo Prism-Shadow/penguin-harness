@@ -103,6 +103,26 @@ export async function probeServerState(
   return second.state.kind === "unreachable" ? first : second;
 }
 
+/**
+ * What a machine's `penguin-hmr` says when its data root's store holds no CLI it can run
+ * (packages/cli/src/penguin-hmr.ts): `no CLI pushed to <root>; use \`penguin\` instead`, or
+ * `the CLI pushed to <root> is unusable: <why>`. Every release ships that entry with these
+ * words, and an install is what puts a CLI there — so this is the one far-side answer whose
+ * remedy is known here, and the advice to run `penguin` is not one a person on the Machines
+ * page can take.
+ */
+const NO_PUSHED_CLI =
+  /^(no CLI pushed to \S.*; use `penguin` instead|the CLI pushed to \S.* is unusable: .*)$/m;
+
+/** The page's sentence for a machine whose store has no CLI to run, with the far side's words after it. */
+export function noPushedCliDetail(said: string): string | null {
+  const line = NO_PUSHED_CLI.exec(said)?.[0];
+  return line === undefined
+    ? null
+    : "PenguinHarness is installed on that machine without the build this server runs there, so it cannot be started or asked anything. Install it again from this page (Update, or Force install): that puts the build there. " +
+        `(It said: ${line})`;
+}
+
 async function probeIn(
   target: RemoteTarget,
   layout: RemoteLayout,
@@ -119,7 +139,8 @@ async function probeIn(
     return {
       state: {
         kind: "unreachable",
-        detail: detail === "" ? "ssh exited without a message." : detail,
+        detail:
+          detail === "" ? "ssh exited without a message." : (noPushedCliDetail(detail) ?? detail),
       },
       machineId: null,
     };

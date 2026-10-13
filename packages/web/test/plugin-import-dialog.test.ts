@@ -98,7 +98,7 @@ describe("the import dialog's tabs", () => {
     const panel = panelOf(html);
     expect(words(panel)).toContain(en.plugins.importSourceLabel);
     expect(panel.match(/<input/g)).toHaveLength(1);
-    expect(panel.match(/<textarea/g)).toHaveLength(1);
+    expect(panel).toContain('aria-expanded="false"');
     expect(panel).not.toContain('type="file"');
     expect(panel).not.toContain(`aria-label="${en.plugins.importNpmLabel}"`);
   });
@@ -179,7 +179,7 @@ describe("a repository folder on the link tab", () => {
     // Where Ask an agent leads: the agent tab holding the link, in the prompt there is to send.
     const agentTab = render({ tab: "agent", value: FOLDER });
     expect(selectedTab(agentTab)).toBe(en.plugins.importTabs.agent);
-    const prompt = /<textarea[^>]*>(.*?)<\/textarea>/s.exec(agentTab)?.[1] ?? "";
+    const prompt = /<pre[^>]*>(.*?)<\/pre>/s.exec(agentTab)?.[1] ?? "";
     expect(prompt).toContain(FOLDER);
     expect(prompt).toContain("plugin-porting");
   });

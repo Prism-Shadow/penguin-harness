@@ -5,19 +5,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PenguinHarness Browser</title>
     <link rel="stylesheet" href="pages.css" />
+    <!-- The header's glyphs are the product site's own icon set. deslop-ignore-file 24 -->
   </head>
-  <body>
+  <body class="options">
+    <header class="bar">
+      <div class="bar-inner">
+        <img class="logo" src="../icons/penguin-logo.svg" alt="" width="28" height="28" />
+        <h1 id="heading" class="brand"></h1>
+        <div class="prefs">
+          <div class="pref">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <path
+                d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z"
+              />
+            </svg>
+            <span id="language-current" class="pref-label"></span>
+            <svg class="icon chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+            <select id="language"></select>
+          </div>
+          <button id="theme" class="icon-button" type="button" data-mode="system">
+            <svg class="icon" data-icon="light" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path
+                d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+              />
+            </svg>
+            <svg class="icon" data-icon="dark" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+            </svg>
+            <svg class="icon" data-icon="system" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <path d="M8 21h8M12 17v4" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
     <main class="page">
-      <header>
-        <img src="../icons/icon-48.png" alt="" width="32" height="32" />
-        <h1 id="heading"></h1>
-        <div id="language" class="language"></div>
-      </header>
-      <p id="intro" class="muted"></p>
+      <p id="intro" class="intro"></p>
 
       <section>
         <h2 id="paired-title"></h2>
-        <ul id="servers"></ul>
+        <ul id="servers" class="plain"></ul>
         <p id="servers-empty" class="muted" hidden></p>
         <p id="remove-hint" class="muted small" hidden></p>
       </section>

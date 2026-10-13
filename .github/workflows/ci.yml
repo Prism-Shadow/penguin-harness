@@ -404,6 +404,11 @@ jobs:
       - name: Preflight the packed tree's inputs
         run: node packages/desktop/scripts/preflight.mjs
 
+      # What the packed app installs on other machines, packed the way desktop-build.yml packs
+      # it; verify-packed-cli.mjs below checks the packed tree carries it.
+      - name: Pack the install image
+        run: pnpm --dir packages/desktop run image
+
       - name: Build unpacked runtime
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"

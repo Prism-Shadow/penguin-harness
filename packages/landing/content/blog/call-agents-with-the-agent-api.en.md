@@ -105,7 +105,7 @@ const client = new AgentClient({
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
 
-const run = client.run({ input: "What time is it now?" });
+const run = client.stream({ input: "What time is it now?" });
 for await (const event of run) {
   if (event.type === "tool_call.done") console.log(`[tool] ${event.name} ${event.arguments}`);
   if (event.type === "text.delta") process.stdout.write(event.text);
@@ -113,7 +113,7 @@ for await (const event of run) {
 const first = await run.result();
 console.log(`\n[${first.status}] ${first.requests} requests, ${first.usage.total} tokens`);
 
-const second = await client.ask({ sessionId: first.sessionId, input: "And in UTC?" });
+const second = await client.run({ sessionId: first.sessionId, input: "And in UTC?" });
 console.log(second.text);
 ```
 
@@ -126,7 +126,7 @@ It's 01:47 on October 13, 2026, by the server's clock (CST).
 That is 17:47 UTC on Monday, October 12.
 ```
 
-`client.run()` returns the run to iterate as events arrive. `run.result()` resolves once it ends. `client.ask()` waits for the end and returns only the result. Passing `sessionId` continues the conversation, as `session_id` does for curl.
+`client.stream()` returns the run to iterate as events arrive. `run.result()` resolves once it ends. `client.run()` waits for the end and returns only the result. Passing `sessionId` continues the conversation, as `session_id` does for curl.
 
 ## Where the conversations go
 

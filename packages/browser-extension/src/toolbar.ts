@@ -1,7 +1,7 @@
 /**
  * The toolbar button: a grey icon while no server is connected (or while paused), the coloured
  * one while at least one is; the badge counts the tabs handed over; the title says which, in the
- * language the user picked for the pages.
+ * pages' language.
  *
  * A click on an ordinary tab hands it over at once (the user's consent gesture) when exactly one
  * server is paired and nothing needs the user's attention. Everywhere else (a tab already handed
@@ -44,7 +44,8 @@ export async function applyToolbar(input: ToolbarInput): Promise<void> {
     chrome.action.setIcon({ path: iconSet(lit ? "icon" : "icon-grey") }),
     chrome.action.setTitle({ title }),
     chrome.action.setBadgeText({ text: badge }),
-    chrome.action.setBadgeBackgroundColor({ color: "#1d4ed8" }),
+    // The brand blue of the pages and the product site.
+    chrome.action.setBadgeBackgroundColor({ color: "#1a73e8" }),
   ]).catch(() => {});
 }
 

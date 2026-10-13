@@ -290,19 +290,19 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     items: [
       {
         concept: "OmniMessage",
-        title: "One message format from engine to screen",
+        title: "Simplest is the best",
         desc: "The engine streams OmniMessage, the Trace stores it and the Web App renders it, with no second format in between. Models are reached over MMSP. The Agent API streams each run as AMSP.",
         link: "The OmniMessage protocol",
       },
       {
         concept: "Penguin SDK",
-        title: "The engine, as a TypeScript library",
+        title: "Harness for building agents",
         desc: "Every Task in PenguinHarness runs on @prismshadow/penguin-core. You can install the same package from npm. With the penguin-sdk Skill, an agent builds a standalone app on it, such as a RAG app that cites its sources.",
         link: "SDK quick start",
       },
       {
         concept: "Agent State",
-        title: "An agent is a folder of files",
+        title: "Harness for recursive self-improvement",
         desc: "Its prompt, Skills and settings are files in its Agent State. Self-evolution edits these files and snapshots each version before changing it.",
         link: "Configuration reference",
       },

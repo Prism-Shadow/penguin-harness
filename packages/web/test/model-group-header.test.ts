@@ -4,7 +4,7 @@
  * order they stand, the connection of a group whose key comes from an authorization flow, the
  * balance's menu, and the gear's menu.
  *
- * - The matrix, per group kind: the balance where the catalog declares one (TokenDance, DeepSeek)
+ * - The matrix, per group kind: the balance where the catalog declares one (TokenDance, Penguin Go, DeepSeek)
  *   and the group holds a key (or the environment lends one, or it is pinned); the connection on
  *   the three groups with a flow; Add model only where hand-added models are taken (custom,
  *   vLLM, OpenRouter, TokenDance, SiliconFlow, Atlas Cloud, user-defined); Delete group only on
@@ -95,10 +95,11 @@ describe("the group header's actions, in order, by group kind", () => {
     expect(owner("tokendance", false)).toEqual(["connect", "addModel", "speedTest", "settings"]);
   });
 
-  it("Penguin Go and ModelScope connect, keyed or not; the sync lives in the Connected menu", () => {
+  it("Penguin Go shows its balance with a group key; ModelScope only connects", () => {
     for (const id of ["penguin-go", "modelscope"]) {
       for (const keyStored of [false, true]) {
         expect(owner(id, keyStored), `${id} keyStored=${keyStored}`).toEqual([
+          ...(id === "penguin-go" && keyStored ? ["balance"] : []),
           "connect",
           "speedTest",
           "settings",
@@ -151,7 +152,7 @@ describe("the group header's actions, in order, by group kind", () => {
   it("a member keeps the balance, the connection status and the gear, and nothing that writes", () => {
     // The gear stays for its sort, a view preference; its menu offers a member nothing else.
     expect(member("tokendance", true)).toEqual(["balance", "connect", "settings"]);
-    expect(member("penguin-go", true)).toEqual(["connect", "settings"]);
+    expect(member("penguin-go", true)).toEqual(["balance", "connect", "settings"]);
     expect(member("deepseek", true)).toEqual(["balance", "settings"]);
     expect(member("vllm")).toEqual(["settings"]);
     expect(member("custom")).toEqual(["settings"]);

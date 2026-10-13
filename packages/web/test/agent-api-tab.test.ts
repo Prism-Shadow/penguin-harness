@@ -84,6 +84,10 @@ const ON: AgentApiSettings = {
   open: false,
   approvalMode: "read-only",
   keys: [USED, FRESH],
+  model: null,
+  thinkingLevel: null,
+  maxConcurrentRuns: 4,
+  workspace: null,
 };
 const BASE = agentApiBaseUrl("http://127.0.0.1:7369");
 /** Obviously fake and short: no key-shaped literal lives in the tests. */
@@ -102,6 +106,8 @@ function props(over: Partial<ApiTabViewProps> = {}): ApiTabViewProps {
     agentRef: "demo/coder",
     draftName: null,
     secret: null,
+    sessionSettings: null,
+    concurrencySettings: null,
     onToggleEnabled: noop,
     onApprovalMode: noop,
     onToggleOpen: noop,

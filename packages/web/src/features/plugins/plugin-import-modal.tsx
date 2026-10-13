@@ -1,34 +1,8 @@
 /**
- * The Plugins page's import dialog — an admin's: the page shows its button to admins alone, and
- * the server refuses anyone else. A plugin goes on the whole server, shared by every Project, and
- * the dialog says so above its tabs: one per way in, each holding only its own form, its hint,
- * where installing runs the package's scripts, the line that says so, and the line saying what a
- * plugin's MCP servers are (a command run on this server, or an address it connects to). It
- * opens on the agent tab, the way in that takes any source; the direct installs follow.
- *
- * - Ask an agent: any source — a page, a repository or a folder in one, a Codex or Claude Code
- *   plugin, a description — becomes a prompt (previewed read-only) for the Project's default
- *   Agent, which reviews the source, ports it into a PenguinHarness package first when it is not
- *   one (the `plugin-porting` skill), and installs it with `penguin plugin install`; nothing is
- *   sent until the user sends it.
- * - Upload a zip: the package directory, what another server's Export downloads. Another version
- *   on the server answers 409, and the replace confirm names both versions.
- * - From npm / From a link: a package name, or an https link to a git repository or a tarball
- *   (each checked here the way the server reads it, plugin-import-prompt.ts), installed by the
- *   server itself through the Project's plugin route; what it may cost the runs in progress sits
- *   under the button in small type. A value the tab does not take is said so at the field and
- *   never sent. A link to a folder or a file inside a repository, which npm cannot install, is
- *   said so with an "Ask an agent" action under the field: it moves to the agent tab with the
- *   link as the source.
- *
- * The tabs and their fields live in the dialog's body, so every opening starts on the agent tab
- * with nothing typed; the body can be opened on another tab holding a value instead, the state
- * the link tab's hand-off leaves it in.
- *
- * What the three fields hold is the dialog's draft under the settings commit model: a look at
- * another tab keeps it, and closing the dialog with anything typed (Esc, the ×, a press outside)
- * asks first. Nothing closes it while an install or an upload is in flight. Opening the chat
- * hands the source over, so the draft is forgotten before the page moves to the conversation.
+ * Server-wide plugin imports: an Agent reviews any source, while npm, repository links and zip
+ * packages can be installed directly. Each tab keeps its own draft; leaving asks before losing
+ * typed input, and an install in flight holds the dialog open. Examples only fill the source;
+ * the folded prompt becomes a new chat draft when requested.
  */
 import { useState } from "react";
 import type { ChangeEvent } from "react";
@@ -36,18 +10,16 @@ import type { PluginInstallOutcome } from "@prismshadow/penguin-server/api";
 import {
   Button,
   ConfirmModal,
-  CopiedStatus,
-  CopyCheckGlyph,
+  FieldLabel,
   HiddenFileInput,
+  InfoPopover,
   ICONS,
   Input,
   Modal,
   Tabs,
-  Textarea,
   buttonClass,
   discardUnsaved,
   toastSuccess,
-  useCopied,
   useFormDraft,
   useGuardedClose,
   useSaving,
@@ -57,7 +29,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { useAiBridge } from "../ai-create";
+import { AiExamples, PromptFold, useAiBridge } from "../ai-create";
 import {
   buildPluginImportPrompt,
   isNpmPluginName,
@@ -210,8 +182,6 @@ export function ImportPluginTabs({
     dataBase64: string;
     question: ReplaceQuestion;
   } | null>(null);
-  // Copy feedback lives at the button: its glyph flips to the check while copied.
-  const promptCopy = useCopied();
 
   const trimmedSource = source.trim();
   const prompt = buildPluginImportPrompt(trimmedSource || S.plugins.importSourceToken, projectId);
@@ -280,10 +250,15 @@ export function ImportPluginTabs({
       fault === "invalid" ? (npm ? S.plugins.importNpmInvalid : S.plugins.importLinkInvalid) : null;
     return (
       <>
-        <p className="text-xs text-fg-muted">
-          {npm ? S.plugins.importNpmWhy : S.plugins.importLinkWhy}
-        </p>
-        <div className="mt-2.5 flex items-start gap-2">
+        <div className="flex items-center gap-1">
+          <FieldLabel block={false}>
+            {npm ? S.plugins.importNpmLabel : S.plugins.importLinkLabel}
+          </FieldLabel>
+          <InfoPopover label={npm ? S.plugins.importNpmLabel : S.plugins.importLinkLabel}>
+            {npm ? S.plugins.importNpmWhy : S.plugins.importLinkWhy}
+          </InfoPopover>
+        </div>
+        <div className="mt-1.5 flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <Input
               size="sm"
@@ -317,7 +292,6 @@ export function ImportPluginTabs({
         </div>
         <p className="mt-1.5 text-xs text-fg-muted">{S.plugins.importCost}</p>
         <p className="mt-1 text-xs text-fg-muted">{S.plugins.importScriptsRun}</p>
-        <p className="mt-1 text-xs text-fg-muted">{S.plugins.importMcpNote}</p>
         {directError !== null && (
           <p className={`mt-1.5 text-xs ${toneInk.danger}`}>{directError}</p>
         )}
@@ -335,42 +309,33 @@ export function ImportPluginTabs({
         {uploading ? S.plugins.installing : S.plugins.importUploadAction}
       </label>
       <p className="mt-1.5 text-xs text-fg-muted">{S.plugins.importScriptsRun}</p>
-      <p className="mt-1 text-xs text-fg-muted">{S.plugins.importMcpNote}</p>
       {uploadError !== null && <p className={`mt-1.5 text-xs ${toneInk.danger}`}>{uploadError}</p>}
     </>
   );
 
   const agentPanel = (
     <>
-      <p className="text-xs text-fg-muted">{S.plugins.importAgentWhy}</p>
-      <p className="mt-1 text-xs text-fg-muted">{S.plugins.importMcpNote}</p>
       <div className="mt-2.5 space-y-3">
         <Input
           size="sm"
           label={S.plugins.importSourceLabel}
+          info={S.plugins.importAgentWhy}
+          infoLabel={S.plugins.importSourceLabel}
           value={source}
           onChange={(e) => form.patch({ source: e.target.value })}
           placeholder={S.plugins.importSourcePlaceholder}
           autoComplete="off"
         />
-        <Textarea
-          label={S.plugins.importPromptLabel}
-          size="sm"
-          rows={5}
-          readOnly
-          value={prompt}
-          className="text-gray-600 dark:text-gray-300"
+        <AiExamples
+          examples={S.plugins.importExamples.map((example) => ({
+            ...example,
+            prompt: `https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins/${example.key}`,
+          }))}
+          value={source}
+          onChange={(source) => form.patch({ source })}
         />
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            disabled={trimmedSource === ""}
-            onClick={() => promptCopy.flash(buildPluginImportPrompt(trimmedSource, projectId))}
-          >
-            <CopyCheckGlyph copied={promptCopy.copied} size={12} />
-            {S.skills.importCopyPrompt}
-          </Button>
-          <CopiedStatus copied={promptCopy.copied} />
+        <PromptFold text={prompt} />
+        <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             variant="primary"
@@ -386,7 +351,13 @@ export function ImportPluginTabs({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm">{S.plugins.importServerWide}</p>
+      <h3 className="flex items-center gap-1 text-sm font-medium">
+        {S.plugins.importDestination}
+        <InfoPopover label={S.plugins.importDestination}>
+          <p>{S.plugins.importServerWide}</p>
+          <p className="mt-2">{S.plugins.importMcpNote}</p>
+        </InfoPopover>
+      </h3>
       <div>
         <Tabs
           items={IMPORT_TABS.map((key) => ({ key, label: S.plugins.importTabs[key] }))}

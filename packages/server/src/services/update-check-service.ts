@@ -12,11 +12,17 @@
  * network call), for air-gapped or privacy-sensitive deployments.
  *
  * The request mirrors the CLI's fetchLatestVersion (packages/cli/src/commands/update.ts):
- * same endpoint, same accept / user-agent header shape, same 15s timeout — the server
+ * same endpoint, same accept / user-agent headers, same 15s timeout — the server
  * cannot import the CLI package (the dependency runs the other way), hence the small
  * duplication. fetch and the clock are injectable so tests never touch the network.
  */
-import { BUILD_DATE, VERSION, compareVersions, normalizeVersion } from "@prismshadow/penguin-core";
+import {
+  BUILD_DATE,
+  VERSION,
+  compareVersions,
+  normalizeVersion,
+  userAgent,
+} from "@prismshadow/penguin-core";
 import type { UpdateCheckResponse } from "../api/types.js";
 import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
@@ -124,7 +130,7 @@ export class UpdateCheckService implements UpdateCheck {
     let res: Response;
     try {
       res = await this.http.fetch(LATEST_RELEASE_API, {
-        headers: { accept: "application/vnd.github+json", "user-agent": "penguin-server" },
+        headers: { accept: "application/vnd.github+json", "user-agent": userAgent() },
         signal: AbortSignal.timeout(15_000),
       });
     } catch {

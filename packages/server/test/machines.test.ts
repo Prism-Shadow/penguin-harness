@@ -35,7 +35,7 @@ import {
   sshArgs,
   sessionArgs,
 } from "../src/machines/commands.js";
-import { resolvePushPlan } from "../src/machines/install-server.js";
+import { installedRelease, resolvePushPlan, shippedImage } from "../src/machines/install-server.js";
 import { askpassPlan, passwordEnv } from "../src/machines/transport/login.js";
 import { explainSshFailure, sshFailureText } from "../src/machines/ssh-failure.js";
 import { SshPasswords, passwordProblem } from "../src/machines/ssh-passwords.js";
@@ -482,132 +482,134 @@ describe("ssh / scp invocations", () => {
   });
 });
 
-describe("resolvePushPlan", () => {
+describe("the release a server stands on, and what it installs", () => {
   const manifest = JSON.stringify({ name: "@prismshadow/penguin-cli", version: "0.2.4" });
-
-  it("tarball install: the base release, with no pushed state", () => {
+  const works: string[] = [];
+  afterEach(() => {
+    for (const work of works.splice(0)) fs.rmSync(work, { recursive: true, force: true });
+  });
+  /** A tarball install's program directory under a fresh temp dir, with its entry. */
+  const tarball = () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
-    try {
-      const root = path.join(work, "penguin");
-      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
-      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
-      fs.writeFileSync(path.join(root, "lib", "package.json"), manifest);
+    works.push(work);
+    const lib = path.join(work, "penguin", "lib");
+    fs.mkdirSync(path.join(lib, "dist"), { recursive: true });
+    fs.writeFileSync(path.join(lib, "dist", "penguin.js"), "//\n");
+    fs.writeFileSync(path.join(lib, "package.json"), manifest);
+    return { work, lib, entry: path.join(lib, "dist", "penguin.js") };
+  };
 
-      const plan = resolvePushPlan(work, path.join(root, "lib", "dist", "penguin.js"));
-      expect(plan).toMatchObject({ baseVersion: "0.2.4", harness: null, version: "0.2.4" });
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
+  it("a tarball install stands on the release its lib/ names, and installs no bare release", () => {
+    const { work, lib, entry } = tarball();
+    expect(installedRelease(entry)).toEqual({ version: "0.2.4", dir: lib });
+    // Nothing pushed here: what it installs is the image its release ships, not the bare
+    // release, which would leave a machine with an empty store.
+    expect(resolvePushPlan(work, entry)).toBeNull();
+  });
+
+  it("names the image its release ships beside the entry, and none when it ships none", () => {
+    const { lib, entry } = tarball();
+    expect(shippedImage(entry)).toBeNull();
+    fs.writeFileSync(path.join(lib, "dist", "install-image.gz"), "x");
+    expect(shippedImage(entry)).toEqual({
+      baseVersion: "0.2.4",
+      body: path.join(lib, "dist", "install-image.gz"),
+    });
   });
 
   it("a pushed server adds its hmr state, sha-suffixed", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
-    try {
-      const root = path.join(work, "penguin");
-      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
-      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
-      fs.writeFileSync(path.join(root, "lib", "package.json"), manifest);
-      const hmrDir = path.join(work, "data", "hmr");
-      fs.mkdirSync(hmrDir, { recursive: true });
-      const harness = JSON.stringify({
-        platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
-      });
-      fs.writeFileSync(path.join(hmrDir, "harness.json"), harness);
+    const { work, entry } = tarball();
+    const hmrDir = path.join(work, "data", "hmr");
+    fs.mkdirSync(hmrDir, { recursive: true });
+    const harness = JSON.stringify({
+      platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
+    });
+    fs.writeFileSync(path.join(hmrDir, "harness.json"), harness);
 
-      const plan = resolvePushPlan(
-        path.join(work, "data"),
-        path.join(root, "lib", "dist", "penguin.js"),
-      );
-      expect(plan).toMatchObject({
-        baseVersion: "0.2.4",
-        harness,
-        hmrDir,
-        version: "0.2.4+hmr.cafe01234567",
-      });
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
+    expect(resolvePushPlan(path.join(work, "data"), entry)).toMatchObject({
+      baseVersion: "0.2.4",
+      harness,
+      hmrDir,
+      version: "0.2.4+hmr.cafe01234567",
+    });
   });
 
   it("names the harness, not its platform bundle: a web-only or CLI-only push is a new version, an assets-only one is not", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
-    try {
-      const root = path.join(work, "penguin");
-      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
-      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
+    const { work, entry } = tarball();
+    const hmrDir = path.join(work, "data", "hmr");
+    fs.mkdirSync(hmrDir, { recursive: true });
+    const versionOf = (over: Record<string, unknown>) => {
       fs.writeFileSync(
-        path.join(root, "lib", "package.json"),
-        JSON.stringify({ version: "0.2.4" }),
+        path.join(hmrDir, "harness.json"),
+        JSON.stringify({
+          platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
+          cli: { bundle: "store/cli/0123456789abcdef.mjs" },
+          web: { manifest: "store/web/89abcdef01234567.webz" },
+          assets: { dir: "store/assets/1111111111111111" },
+          ...over,
+        }),
       );
-      const hmrDir = path.join(work, "data", "hmr");
-      fs.mkdirSync(hmrDir, { recursive: true });
-      const versionOf = (over: Record<string, unknown>) => {
-        fs.writeFileSync(
-          path.join(hmrDir, "harness.json"),
-          JSON.stringify({
-            platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
-            cli: { bundle: "store/cli/0123456789abcdef.mjs" },
-            web: { manifest: "store/web/89abcdef01234567.webz" },
-            assets: { dir: "store/assets/1111111111111111" },
-            ...over,
-          }),
-        );
-        return resolvePushPlan(
-          path.join(work, "data"),
-          path.join(root, "lib", "dist", "penguin.js"),
-        )!.version;
-      };
-      const base = versionOf({});
-      expect(base).toMatch(/^0\.2\.4\+hmr\.[0-9a-f]{12}$/);
-      // The machines sweep compares this string, so each part of the harness has to move it.
-      expect(versionOf({ web: { manifest: "store/web/ffffffffffffffff.webz" } })).not.toBe(base);
-      expect(versionOf({ cli: { bundle: "store/cli/ffffffffffffffff.mjs" } })).not.toBe(base);
-      expect(versionOf({ platform: { bundle: "store/platform/ffffffffffffffff.mjs" } })).not.toBe(
-        base,
-      );
-      // Assets are what a harness loads, not the harness.
-      expect(versionOf({ assets: { dir: "store/assets/2222222222222222" } })).toBe(base);
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
+      return resolvePushPlan(path.join(work, "data"), entry)!.version;
+    };
+    const base = versionOf({});
+    expect(base).toMatch(/^0\.2\.4\+hmr\.[0-9a-f]{12}$/);
+    // The machines sweep compares this string, so each part of the harness has to move it.
+    expect(versionOf({ web: { manifest: "store/web/ffffffffffffffff.webz" } })).not.toBe(base);
+    expect(versionOf({ cli: { bundle: "store/cli/ffffffffffffffff.mjs" } })).not.toBe(base);
+    expect(versionOf({ platform: { bundle: "store/platform/ffffffffffffffff.mjs" } })).not.toBe(
+      base,
+    );
+    // Assets are what a harness loads, not the harness.
+    expect(versionOf({ assets: { dir: "store/assets/2222222222222222" } })).toBe(base);
   });
 
-  it("packaged desktop app: its own manifest names the release it shipped under", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
-    try {
-      const appDir = path.join(work, "resources", "app");
+  // Where electron-builder puts the app directory (asar off): beside the executable on Windows
+  // and Linux, inside the bundle on macOS, whose resources directory is capitalized.
+  it.each([
+    { os: "Windows and Linux", appPath: ["resources", "app"] },
+    { os: "macOS", appPath: ["PenguinHarness.app", "Contents", "Resources", "app"] },
+  ])(
+    "packaged desktop app on $os: its own manifest names the release, and its dist/ the image it ships",
+    ({ appPath }) => {
+      const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
+      works.push(work);
+      const appDir = path.join(work, ...appPath);
       fs.mkdirSync(path.join(appDir, "dist"), { recursive: true });
+      // The packed manifest: electron-builder's extraMetadata renames it, the version stays.
       fs.writeFileSync(
         path.join(appDir, "package.json"),
-        JSON.stringify({ name: "@prismshadow/penguin-desktop", version: "0.2.4" }),
+        JSON.stringify({ name: "penguin-harness-desktop", version: "0.2.4" }),
       );
+      fs.writeFileSync(path.join(appDir, "dist", "install-image.gz"), "x");
 
-      const plan = resolvePushPlan(null, path.join(appDir, "dist", "server.js"));
-      expect(plan).toMatchObject({ baseVersion: "0.2.4" });
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
-  });
+      const entry = path.join(appDir, "dist", "server.js");
+      expect(installedRelease(entry)).toEqual({ version: "0.2.4", dir: appDir });
+      expect(shippedImage(entry)).toEqual({
+        baseVersion: "0.2.4",
+        body: path.join(appDir, "dist", "install-image.gz"),
+      });
+    },
+  );
 
   it("a desktop SOURCE run stands on no release: packages/desktop is not under resources/", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
-    try {
-      const pkgDir = path.join(work, "packages", "desktop");
-      fs.mkdirSync(path.join(pkgDir, "dist"), { recursive: true });
-      fs.writeFileSync(
-        path.join(pkgDir, "package.json"),
-        JSON.stringify({ name: "@prismshadow/penguin-desktop", version: "0.2.4" }),
-      );
+    works.push(work);
+    const pkgDir = path.join(work, "packages", "desktop");
+    fs.mkdirSync(path.join(pkgDir, "dist"), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkgDir, "package.json"),
+      JSON.stringify({ name: "@prismshadow/penguin-desktop", version: "0.2.4" }),
+    );
+    fs.writeFileSync(path.join(pkgDir, "dist", "install-image.gz"), "x");
 
-      expect(resolvePushPlan(null, path.join(pkgDir, "dist", "server.js"))).toBeNull();
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
+    expect(installedRelease(path.join(pkgDir, "dist", "server.js"))).toBeNull();
+    expect(shippedImage(path.join(pkgDir, "dist", "server.js"))).toBeNull();
   });
 
   it("a dev checkout stands on no release and answers null", () => {
+    expect(installedRelease("/repo/packages/server/src/index.ts")).toBeNull();
+    expect(installedRelease(undefined)).toBeNull();
     expect(resolvePushPlan(null, "/repo/packages/server/src/index.ts")).toBeNull();
-    expect(resolvePushPlan(null, undefined)).toBeNull();
   });
 });
 
@@ -711,6 +713,27 @@ describe("asking `penguin server status` in the machine's own dialect", () => {
       kind: "unreachable",
       detail: expect.stringContaining("Connection refused"),
     });
+  });
+
+  it("a machine whose store holds no CLI is said to need installing again, not to run `penguin`", async () => {
+    // What every release's `penguin-hmr` answers on a root nothing was installed into: its advice
+    // is for a person at that machine's terminal, and the remedy from here is an install.
+    for (const said of [
+      "no CLI pushed to /home/cnns/.penguin/data; use `penguin` instead",
+      "the CLI pushed to /home/cnns/.penguin/data is unusable: the committed CLI bundle is missing from the store: /home/cnns/.penguin/data/hmr/store/cli/x.mjs",
+    ]) {
+      const probe = await probeServerState(
+        target,
+        RELEASE,
+        async () => ({ code: 1, stdout: `${said}\n`, stderr: "", timedOut: false }),
+        "linux",
+      );
+      expect(probe.state).toMatchObject({ kind: "unreachable" });
+      const detail = (probe.state as { detail: string }).detail;
+      expect(detail).toMatch(/^PenguinHarness is installed on that machine without the build/);
+      expect(detail).toContain("Install it again from this page");
+      expect(detail).toContain(said);
+    }
   });
 });
 

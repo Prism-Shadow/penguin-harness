@@ -615,6 +615,7 @@ export class BrowserActions {
       if (id !== null) found.set(id, this.tabs.get(id)?.url || request.url);
     }
     for (const tab of this.tabs.list()) {
+      if (tab.sessionId !== this.tabs.get(tabId)?.sessionId) continue;
       if (!before.has(tab.id) && !found.has(tab.id)) found.set(tab.id, tab.url);
     }
     return [...found].map(([id, url]) => ({ id, url }));

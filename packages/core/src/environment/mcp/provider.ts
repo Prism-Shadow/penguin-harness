@@ -46,7 +46,7 @@ import type { CallToolResult, FetchLike, Tool, Transport } from "@modelcontextpr
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/client/stdio";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage } from "../../omnimessage/index.js";
-import { VERSION } from "../../index.js";
+import { VERSION, userAgent } from "../../index.js";
 import type {
   ConfinedSpawn,
   MCPServerConfig,
@@ -174,13 +174,17 @@ function redactError(err: unknown, values: VaultValues): unknown {
   return out;
 }
 
-/** Wraps global fetch to add the configured headers to every request (stream GET and POSTs alike). */
-function fetchWithHeaders(headers: Record<string, string>): FetchLike {
+/**
+ * Wraps global fetch to add the configured headers to every request (stream GET and POSTs
+ * alike), with PenguinHarness's User-Agent among them unless the entry configures its own.
+ */
+function fetchWithHeaders(headers: Record<string, string> | undefined): FetchLike {
   return (url, init) => {
     const merged = new Headers(init?.headers);
-    for (const [key, value] of Object.entries(headers)) {
+    for (const [key, value] of Object.entries(headers ?? {})) {
       if (!merged.has(key)) merged.set(key, value);
     }
+    if (!merged.has("user-agent")) merged.set("user-agent", userAgent());
     return fetch(url, { ...init, headers: merged });
   };
 }
@@ -546,15 +550,11 @@ export class McpToolProvider {
       });
       transport = stdio;
     } else if (t.kind === "http") {
-      transport = new StreamableHTTPClientTransport(
-        new URL(t.url),
-        t.headers ? { fetch: fetchWithHeaders(t.headers) } : {},
-      );
+      transport = new StreamableHTTPClientTransport(new URL(t.url), {
+        fetch: fetchWithHeaders(t.headers),
+      });
     } else {
-      transport = new SSEClientTransport(
-        new URL(t.url),
-        t.headers ? { fetch: fetchWithHeaders(t.headers) } : {},
-      );
+      transport = new SSEClientTransport(new URL(t.url), { fetch: fetchWithHeaders(t.headers) });
     }
     try {
       const startedAt = Date.now();

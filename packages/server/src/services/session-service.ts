@@ -25,6 +25,7 @@ import type {
   ControlEnvContext,
   ProxyEnvPolicy,
   SpawnConfiner,
+  ThinkingLevelName,
 } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
@@ -733,6 +734,7 @@ export class SessionService {
     /** The provider group for `modelId`; always paired with modelId, never inferred. */
     provider?: string;
     workspace?: string;
+    thinkingLevel?: ThinkingLevelName;
     approvalMode?: ApprovalMode;
     /** The composer's sandbox picks; omitted halves take the server's settings. */
     sandbox?: Partial<SessionSandbox>;
@@ -795,6 +797,7 @@ export class SessionService {
         modelId,
         provider,
         ...(args.workspace !== undefined ? { workspaceDir: args.workspace } : {}),
+        ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
         // The source is recorded in core session_meta (Trace); the index row stores none.
         ...(args.source !== undefined ? { source: args.source } : {}),
       });
@@ -825,6 +828,7 @@ export class SessionService {
       provider: session.provider,
       modelId: session.modelId,
       workspace: session.workspaceDir,
+      ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
       approvalMode: this.startApproval(args.approvalMode, args.client),
       sandbox,
       title: null,

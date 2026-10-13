@@ -18,6 +18,7 @@
  * errors — callers collapse errors into their outcome shape, nothing is caught here.
  */
 import { AutoLLMClient } from "@prismshadow/mmsp";
+import { userAgent } from "../index.js";
 import {
   ModelCredentialError,
   endpointEnvApiKey,
@@ -69,6 +70,8 @@ export async function listEndpointModels(options: ListEndpointModelsOptions): Pr
     clientType: options.clientType,
     apiKey,
     ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
+    // Spelled exactly so, as GenerativeModel spells it (see its constructor).
+    defaultHeaders: { "User-Agent": userAgent() },
   });
   return client.listModels();
 }

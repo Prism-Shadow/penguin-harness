@@ -3,10 +3,21 @@
  *
  * Node 24's built-in fetch does not read the proxy environment variables
  * (NODE_USE_ENV_PROXY is ineffective on 24.18), so the server routes ALL of its own
- * outbound traffic through undici: the startup entry replaces `globalThis.fetch` with
- * undici's fetch once, and this module keeps undici's global dispatcher in line with the
- * admin-level settings — undici's fetch resolves the global dispatcher per call, so a
- * settings change takes effect for newly initiated connections without a restart.
+ * outbound traffic through a dispatcher built from the npm `undici`: the startup entry
+ * installs it as the process-global dispatcher once, and this module keeps it in line with
+ * the admin-level settings. The runtime's own fetch is built on its bundled copy of undici,
+ * which resolves the global dispatcher per call from the same process-wide slot npm
+ * undici's `setGlobalDispatcher` writes, so every caller — this server and every SDK —
+ * follows the settings, and a change takes effect for newly initiated connections without
+ * a restart.
+ *
+ * `globalThis.fetch` itself is left alone. The runtime's fetch, Request, Response, Headers
+ * and FormData are one copy of undici; npm undici's fetch is another, and it brand-checks its
+ * arguments against its OWN classes. As the global fetch it would read a Request an SDK
+ * built with the global class as the string "[object Request]" ("Failed to parse URL from
+ * [object Request]" — the Gemini SDK's Interactions client builds every request that way)
+ * and a global FormData body as "[object FormData]". Code that imports undici's fetch on
+ * purpose pairs it with undici's own classes (runtime/messaging/telegram-api.ts).
  *
  * Dispatcher per settings state (keyed on the "application uses the proxy" switch; the
  * separate agent-environment switch never touches the dispatcher — it only drives the
@@ -55,14 +66,7 @@
  * ProxyEnvPolicy getter), not here.
  */
 import net from "node:net";
-import {
-  Agent,
-  Dispatcher,
-  EnvHttpProxyAgent,
-  ProxyAgent,
-  fetch as undiciFetch,
-  setGlobalDispatcher,
-} from "undici";
+import { Agent, Dispatcher, EnvHttpProxyAgent, ProxyAgent, setGlobalDispatcher } from "undici";
 
 /** Loopback names every effective NO_PROXY must contain (see module doc). */
 export const LOOPBACK_NO_PROXY = ["localhost", "127.0.0.1", "::1"] as const;
@@ -285,23 +289,19 @@ export function buildProxyDispatcher(
 
 /** Current settings mirrored for the dispatcher (the DB rows are the persisted truth). */
 let current: ProxySettings = { proxyForApp: true, proxyUrl: null };
-/** True once the startup entry has installed undici globally (never in tests). */
+/** True once {@link installGlobalProxyDispatcher} has run; until then settings are only recorded. */
 let installed = false;
 
 /**
- * One-time install at the startup entry (index.ts), before anything can fetch: replaces
- * `globalThis.fetch` with undici's and sets the initial dispatcher. Starts from the
- * defaults (on, no explicit address) — the entry applies the persisted values via
- * {@link applyProxySettings} as soon as the database is open, before any outbound
- * request exists. Tests never call this, so they keep the runtime's own fetch (and
- * their fetch stubs).
+ * One-time install at the startup entry (index.ts), before anything can fetch: sets the
+ * initial process-global dispatcher, which the runtime's fetch resolves per call. Starts
+ * from the defaults (on, no explicit address) — the entry applies the persisted values
+ * via {@link applyProxySettings} as soon as the database is open, before any outbound
+ * request exists. `globalThis.fetch` is not replaced (see module doc).
  */
 export function installGlobalProxyDispatcher(): void {
   installed = true;
   setGlobalDispatcher(buildProxyDispatcher(current));
-  // Cast: undici's fetch is typed against its own RequestInit/Response declarations,
-  // which are structurally compatible with the runtime globals for every caller here.
-  globalThis.fetch = undiciFetch as unknown as typeof globalThis.fetch;
 }
 
 /**

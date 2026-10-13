@@ -548,8 +548,8 @@ export class ContextEngine {
   /**
    * Whether a run with no new input would still send something: the carry-over a failed or
    * interrupted run left behind, or a Task-boundary compaction's summary waiting to lead the
-   * next request. A host's retry of a failed run is exactly such a run, so this is what it
-   * checks before starting one.
+   * next request. A host's Retry of a failed or interrupted run is exactly such a run, so this
+   * is what it checks before starting one.
    */
   hasPendingInput(): boolean {
     return this.pendingCarryOver.length > 0 || this.pendingSummary !== null;
@@ -613,7 +613,8 @@ export class ContextEngine {
    * Prompt (only the newly added input, not the full history — history is maintained by the
    * stateful GenerativeModel); `opts.signal` is the abort signal, `opts.approve` is the
    * per-tool approval callback. An empty `newMessages` sends only what is held (see
-   * `hasPendingInput`) — a retry of a failed run — and returns null at once when nothing is.
+   * `hasPendingInput`) — a Retry of a failed or interrupted run — and returns null at once
+   * when nothing is.
    * Docs: /docs/agent-loop § "The loop at a glance".
    */
   async *run(
@@ -749,10 +750,11 @@ export class ContextEngine {
     this.pendingCarryOver = [];
     const prefix = summary ? [summary, ...carryOver] : carryOver;
     let input = prefix.length ? [...prefix, ...newMessages] : newMessages;
-    // A run with no Prompt of its own (a host's retry of a failed run) sends what is held. With
-    // nothing held either — no summary, no carry-over, no background notice to ride the first
-    // request — there is no request to make: end here, before anything is written, rather than
-    // send the provider an empty input. Hosts ask `hasPendingInput` first; this is the backstop.
+    // A run with no Prompt of its own (a host's Retry of a failed or interrupted run) sends what
+    // is held. With nothing held either — no summary, no carry-over, no background notice to
+    // ride the first request — there is no request to make: end here, before anything is
+    // written, rather than send the provider an empty input. Hosts ask `hasPendingInput` first;
+    // this is the backstop.
     if (input.length === 0 && this.pendingNoticeCount() === 0) return null;
 
     // Input is written to Trace (Prompt record, incl. audit trail) but not replayed to

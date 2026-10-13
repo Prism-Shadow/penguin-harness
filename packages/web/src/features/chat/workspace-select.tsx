@@ -45,6 +45,7 @@ export function WorkspaceSelect({
   emptyLabel,
   clearLabel,
   clearable = true,
+  disabled = false,
 }: {
   projectId: string;
   workspace: string;
@@ -84,6 +85,7 @@ export function WorkspaceSelect({
    * folder and has no empty value to go back to.
    */
   clearable?: boolean;
+  disabled?: boolean;
 }) {
   const fieldName = fieldLabel ?? S.chat.workspace;
   const [open, setOpen] = useState(false);
@@ -147,6 +149,7 @@ export function WorkspaceSelect({
       <>
         <FormPickerTrigger
           size="sm"
+          disabled={disabled}
           expanded={open}
           onClick={() => setOpen(!open)}
           leading={folderIcon("")}
@@ -167,6 +170,7 @@ export function WorkspaceSelect({
     <>
       <button
         type="button"
+        disabled={disabled}
         data-tooltip={title}
         data-tooltip-extra={pathHidden}
         aria-label={fieldName}

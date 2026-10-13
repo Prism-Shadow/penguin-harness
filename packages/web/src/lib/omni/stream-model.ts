@@ -17,9 +17,11 @@
  *     on a sub-session's first message it binds to "the most recent allowed
  *     (decision=allow) and not-yet-complete run_subagent tool card that
  *     hasn't been bound to an origin yet", falling back to a standalone
- *     SubagentItem if none is found; inside the nested model, the same
- *     reducer recurses (with the first origin hop stripped). Sub-session
- *     token_usage counts toward this level's stats (same convention as the CLI).
+ *     SubagentItem if none is found; its opening prompt then moves it onto the
+ *     card of the call that carried that prompt (see moveToSpawningCard).
+ *     Inside the nested model, the same reducer recurses (with the first
+ *     origin hop stripped). Sub-session token_usage counts toward this
+ *     level's stats (same convention as the CLI).
  *   - Events: approval_decision annotates the corresponding tool card
  *     (labeled "manual" if clicked on this end, "automatic" otherwise);
  *     abort → an interruption marker item; request_end ending in any status
@@ -40,8 +42,8 @@
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
  *     session's user side starts a new Task, and so does the first request
- *     after a request_end that ended the run (a Retry, which sends no new
- *     message — see StreamModel.runEnded); a Task ends when the live
+ *     after a request_end or abort that ended the run (a Retry, which sends no
+ *     new message — see StreamModel.runEnded); a Task ends when the live
  *     stream receives task_state:idle (notifyTaskIdle), or — during history
  *     rebuild — when the next Task starts / the stream ends
  *     (finalizeHistory). Either way the duration comes from Trace timestamps
@@ -54,6 +56,7 @@
  */
 import {
   isEventMessage,
+  isModelMessage,
   isPartialPayload,
   normalizeSessionSource,
   parseBackgroundTaskDoneMessage,
@@ -556,6 +559,12 @@ export interface StreamModel {
   toolCards: Map<string, ToolCallItem>;
   /** Direct child Session id → nested model. */
   subagents: Map<string, StreamModel>;
+  /**
+   * Direct children bound before their opening prompt arrived, by position alone: the prompt
+   * names the call that spawned them, and may still move them onto its card (see
+   * moveToSpawningCard).
+   */
+  unconfirmedSubagents: Set<string>;
   /** toolCallIds whose approval was clicked on this end (shares the reference with nested models, labeled "manual"). */
   localDecisions: Set<string>;
   /** Approval decisions that arrived before their tool card (backfilled when the card is created). */
@@ -647,13 +656,14 @@ export interface StreamModel {
    */
   reopenTaskAtSteering: boolean;
   /**
-   * The last request_end ended the run — `fatal`, or a `retryable` the ladder gave up on (no
-   * `retry_in_ms`) — and no Task has opened since. The failed turn's input is then held, and a
-   * Retry sends it with no new message: its request_begin is the new run's first record, so it
-   * opens a Task of its own, footer and all (see startsRetryRun). Nothing else in a Trace issues
-   * a request after such an end without a user message first (a stop hook's continue writes a
-   * harness user text), so the rule reads the same live and on a history rebuild — where no
-   * task_state:idle closed the failed Task first.
+   * The run ended short of its answer — the last request_end was `fatal` or a `retryable` the
+   * ladder gave up on (no `retry_in_ms`), or an abort event followed (the user stopped it) — and
+   * no Task has opened since. The unfinished turn's input is then held, and a Retry sends it
+   * with no new message: its request_begin is the new run's first record, so it opens a Task of
+   * its own, footer and all (see startsRetryRun). Nothing else in a Trace issues a request after
+   * such an end without a user message first (a stop hook's continue writes a harness user
+   * text), so the rule reads the same live and on a history rebuild — where no task_state:idle
+   * closed the cut-short Task first.
    */
   runEnded: boolean;
   nextItemId: number;
@@ -675,6 +685,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openSteering: null,
     toolCards: new Map(),
     subagents: new Map(),
+    unconfirmedSubagents: new Set(),
     localDecisions,
     pendingDecisions: new Map(),
     pendingDecisionTs: new Map(),
@@ -785,7 +796,7 @@ export function pushMessage(
   }
   if (isEventMessage(msg)) {
     // A Retry's first request opens its Task here, before anything is timed against the
-    // failed one — the same point a Prompt opens its own (see StreamModel.runEnded).
+    // cut-short one — the same point a Prompt opens its own (see StreamModel.runEnded).
     if (startsRetryRun(model, msg)) startTask(model, msg.timestamp, nowMs);
     touchTask(model, msg.timestamp);
     handleEvent(model, msg.payload as EventPayload, tsOf(msg.timestamp), nowMs);
@@ -1017,7 +1028,7 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   model.openApprovalWaitMs = 0;
   model.turnToolOutputs = false;
   model.reopenTaskAtSteering = false;
-  // A failed run's held input goes out with whatever opened this Task: a Prompt sends it
+  // A cut-short run's held input goes out with whatever opened this Task: a Prompt sends it
   // along, and the Task's own next request belongs to it.
   model.runEnded = false;
   model.taskOpen = true;
@@ -1714,6 +1725,8 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (typeof p.error_message === "string") item.errorMessage = p.error_message;
       if (p.reason != null) item.reason = p.reason;
       model.items.push(item);
+      // The stop ended the run with its turn held: a Retry's first request opens a new Task.
+      model.runEnded = true;
       return;
     }
     case "token_usage":
@@ -2112,6 +2125,16 @@ function routeNested(model: StreamModel, msg: OmniMessage, nowMs: number): void 
     sub.firstSeenLocalMs = nowMs;
     model.subagents.set(head, sub);
     bindSubagent(model, head, sub);
+    model.unconfirmedSubagents.add(head);
+  }
+  // The child's first model message is the opening prompt its spawning call handed it — right
+  // behind its session_meta, live and in its spliced Trace alike — and that prompt settles which
+  // card it belongs on. A deeper descendant's message reaching it first means the prompt was
+  // missed, and the binding by position stands.
+  if (model.unconfirmedSubagents.has(head) && isModelMessage(msg)) {
+    model.unconfirmedSubagents.delete(head);
+    const prompt = msg.origin!.length === 1 ? openingPrompt(msg) : null;
+    if (prompt !== null) moveToSpawningCard(model, head, sub, prompt);
   }
   // Elapsed-time stamps (see the StreamModel field docs): every message routed into this child's
   // subtree — its own or a deeper descendant's — counts as its activity; the recursive pushMessage
@@ -2153,6 +2176,109 @@ function bindSubagent(model: StreamModel, sessionId: string, sub: StreamModel): 
     }
   }
   model.items.push({ kind: "subagent", id: nextId(model), sessionId, model: sub });
+}
+
+/**
+ * Moves a child onto the card of the run_subagent call that spawned it. Its first binding goes
+ * by position, which picks the wrong card as soon as several calls run at once; the opening
+ * prompt is exact, because core starts a child with the call's `prompt` argument verbatim as its
+ * first user text. The spawning card is an allowed run_subagent card with that prompt, whose
+ * `agent_id`, `model_id` and `provider` (including inherited parent values) are what the child's
+ * session_meta records, and which holds no child yet or one still unconfirmed. When missing
+ * metadata leaves different selectors ambiguous, its positional binding stands. Otherwise,
+ * calls identical in all of that use the earliest one still running (calls start in
+ * order), else the latest finished one (a background launch returns before its child's prompt
+ * has streamed in). An unconfirmed child already on the spawning card trades places with this
+ * one and moves again on its own prompt. A child bound standalone stays: no open card was left
+ * for it, so its own was not open either.
+ */
+function moveToSpawningCard(
+  model: StreamModel,
+  sessionId: string,
+  sub: StreamModel,
+  prompt: string,
+): void {
+  const from = model.items.find(
+    (item): item is ToolCallItem =>
+      item.kind === "tool_call" && item.subagentSessionId === sessionId,
+  );
+  if (!from) return;
+  const target = spawningCard(model, sessionId, prompt, sub.meta);
+  if (target === null || target === from) return;
+  const displacedId = target.subagentSessionId;
+  const displaced = target.subagent;
+  target.subagent = sub;
+  target.subagentSessionId = sessionId;
+  if (displaced !== undefined && displacedId !== undefined) {
+    from.subagent = displaced;
+    from.subagentSessionId = displacedId;
+  } else {
+    delete from.subagent;
+    delete from.subagentSessionId;
+  }
+}
+
+/** The opening prompt a child's first model message carries: a user text from its parent agent (or, in a Trace older than `sender`, from no one named). */
+function openingPrompt(msg: OmniMessage): string | null {
+  const p = msg.payload as { type?: string; role?: string; text?: unknown; sender?: string };
+  if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") return null;
+  return p.sender === undefined || p.sender === "parent_agent" ? p.text : null;
+}
+
+/** The card of the call that spawned `sessionId`, judged by its opening prompt (see moveToSpawningCard). */
+function spawningCard(
+  model: StreamModel,
+  sessionId: string,
+  prompt: string,
+  meta: NestedSessionMeta | null,
+): ToolCallItem | null {
+  const inherited = [
+    model.agentState === null ? null : agentIdFromStatePath(model.agentState),
+    model.contextModel?.modelId ?? null,
+    model.contextModel?.provider ?? null,
+  ];
+  const actual = meta === null ? null : [meta.agentId, meta.modelId, meta.provider];
+  let matchedIdentity: (string | null)[] | null = null;
+  let earliestRunning: ToolCallItem | null = null;
+  let latestFinished: ToolCallItem | null = null;
+  for (const item of model.items) {
+    if (item.kind !== "tool_call" || item.name !== "run_subagent" || item.decision !== "allow") {
+      continue;
+    }
+    const holder = item.subagentSessionId;
+    if (holder !== undefined && holder !== sessionId && !model.unconfirmedSubagents.has(holder)) {
+      continue;
+    }
+    const args = callArguments(item.argumentsText);
+    if (args === null || args.prompt !== prompt) continue;
+    const expected = ["agent_id", "model_id", "provider"].map((field, i) =>
+      typeof args[field] === "string" ? args[field] : inherited[i]!,
+    );
+    if (
+      actual !== null &&
+      expected.some((value, i) => value !== null && actual[i] !== null && value !== actual[i])
+    ) {
+      continue;
+    }
+    // A window without parent metadata cannot distinguish inheritance from an override.
+    // Preserve the existing binding instead of confirming an arbitrary same-prompt card.
+    if (matchedIdentity !== null && expected.some((value, i) => value !== matchedIdentity![i])) {
+      return null;
+    }
+    matchedIdentity = expected;
+    if (!item.outputComplete) earliestRunning ??= item;
+    else latestFinished = item;
+  }
+  return earliestRunning ?? latestFinished;
+}
+
+function callArguments(argumentsText: string): Record<string, unknown> | null {
+  try {
+    const args: unknown = JSON.parse(argumentsText);
+    return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

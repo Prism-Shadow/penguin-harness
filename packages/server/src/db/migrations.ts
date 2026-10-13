@@ -648,6 +648,34 @@ export const MIGRATIONS: readonly Migration[] = [
     // background Session away again.
     down() {},
   },
+  {
+    version: 17,
+    name: "agent-api-session-settings",
+    // Retain until the minimum supported database version exceeds 16; the maintainer raising
+    // that baseline removes this upgrade after all supported data roots have these columns.
+    // Nullable additions preserve existing keys, exposure, approvals and new-Session defaults.
+    swapSafe: true,
+    up(db) {
+      ensureColumn(db, "agent_api", "provider", "TEXT");
+      ensureColumn(db, "agent_api", "model_id", "TEXT");
+      ensureColumn(db, "agent_api", "thinking_level", "TEXT");
+      ensureColumn(db, "agent_api", "workspace", "TEXT");
+    },
+    // Keep the saved defaults on rollback; older builds ignore the additional columns.
+    down() {},
+  },
+  {
+    version: 18,
+    name: "agent-api-concurrency",
+    // Retain until the minimum supported database version exceeds 17. The maintainer raising
+    // that baseline removes this upgrade once every supported data root has the column.
+    swapSafe: true,
+    up(db) {
+      ensureColumn(db, "agent_api", "max_concurrent_runs", "INTEGER NOT NULL DEFAULT 4");
+    },
+    // Keep the configured limit on rollback; older builds ignore this column.
+    down() {},
+  },
 ];
 
 /** The highest version this build knows how to reach. */

@@ -1,9 +1,23 @@
+/**
+ * The gallery's view state: what a URL pins, and what a visit restores where the URL is silent.
+ *
+ * - Given any view, its canonical query parses back to the same view, the seven preferences always
+ *   written out and the phone view only when set; unknown values fall back to the remembered
+ *   value, then to the default.
+ * - Given the site's light/dark and language are stored (by any of the three sites), a visit
+ *   restores those, over what the gallery stored itself before the sites shared them.
+ * - Given only the gallery's own older `mode` and `lang` are stored, a returning visit keeps them.
+ * - Given nothing stored, a visit follows the system, as the landing page and the docs do: the
+ *   system mode, and the device's language (Chinese for any zh locale, English otherwise).
+ * - The gallery's other preferences (theme, size, fonts, accent) stay its own.
+ */
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_STATE,
   formatGalleryQuery,
   parseGalleryState,
   PREF_KEYS,
+  rememberedPrefs,
   resolveMode,
 } from "../src/lib/url-state";
 
@@ -84,5 +98,48 @@ describe("gallery URL state", () => {
     expect(resolveMode("system", true)).toBe("dark");
     expect(resolveMode("system", false)).toBe("light");
     expect(resolveMode("light", true)).toBe("light");
+  });
+});
+
+describe("what a visit restores where the URL is silent", () => {
+  const nothing = { gallery: {}, siteTheme: null, siteLang: null };
+
+  it("opens in the site's light/dark and language, over the gallery's older own", () => {
+    const stored = {
+      gallery: { mode: "light", lang: "en" },
+      siteTheme: "dark" as const,
+      siteLang: "zh" as const,
+    };
+    expect(rememberedPrefs(stored, "en-US")).toMatchObject({ mode: "dark", lang: "zh" });
+    // The URL still beats it: a quoted link opens as quoted.
+    const state = parseGalleryState("?mode=light&lang=en", rememberedPrefs(stored, "en-US"));
+    expect(state).toMatchObject({ mode: "light", lang: "en" });
+  });
+
+  it("keeps a returning reader's own choice while the site has none", () => {
+    const stored = { ...nothing, gallery: { mode: "dark", lang: "zh" } };
+    expect(rememberedPrefs(stored, "en-US")).toMatchObject({ mode: "dark", lang: "zh" });
+  });
+
+  it("follows the system when nothing is stored, as the other two sites do", () => {
+    expect(rememberedPrefs(nothing, "zh-CN")).toMatchObject({ mode: "system", lang: "zh" });
+    expect(rememberedPrefs(nothing, "fr-FR")).toMatchObject({ mode: "system", lang: "en" });
+    expect(rememberedPrefs(nothing, undefined)).toMatchObject({ mode: "system", lang: "en" });
+    // The site's language set to follow the system resolves the same way.
+    expect(rememberedPrefs({ ...nothing, siteLang: "system" as const }, "zh-TW").lang).toBe("zh");
+  });
+
+  it("ignores an unreadable older value and keeps the gallery's other preferences its own", () => {
+    const stored = {
+      ...nothing,
+      gallery: { mode: "dusk", lang: "fr", theme: "geek", size: "l", accent: "blue" },
+    };
+    expect(rememberedPrefs(stored, "en-US")).toEqual({
+      theme: "geek",
+      size: "l",
+      accent: "blue",
+      mode: "system",
+      lang: "en",
+    });
   });
 });

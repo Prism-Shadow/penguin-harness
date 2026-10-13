@@ -3,6 +3,10 @@
  * itself may follow Tailwind's palette or the `dark:` variant: the chrome reads its own `--g-*`
  * variables and the Foundations pages read `--ui-*` tokens. A `gray-*` class or a `dark:` variant
  * here would move with the theme bridge and muddy every comparison.
+ *
+ * The one exception is the site navbar (src/site): it is the landing page's markup, classes and
+ * all, kept so the three sites' navbars stay one diff apart, and its scope (site.css) pins every
+ * value those classes read back to the landing page's.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -19,7 +23,8 @@ function walk(dir: string): string[] {
 }
 
 describe("gallery sources stay off the palette the themes re-point", () => {
-  const files = walk(SRC);
+  const site = path.join(SRC, "site") + path.sep;
+  const files = walk(SRC).filter((file) => !file.startsWith(site));
 
   it("scans a non-empty tree", () => {
     expect(files.length).toBeGreaterThan(20);

@@ -6,6 +6,28 @@
  * resolution (session_meta capture vs. the run_subagent agent_id argument, agent_state path
  * parsing), the pending-approval subtree predicate, and layered-tree layout
  * determinism/geometry.
+ *
+ * Which call a child belongs to (its node shows that call's description and thinking level):
+ * - Given three run_subagent calls running at once, when their children start and finish in
+ *   another order than the calls were made, then each child shows its own call's description
+ *   and thinking level — live, and rebuilt from history alike.
+ * - Given two calls with the same prompt to different agents, when the second agent's child
+ *   speaks first, then each child stays on the call that named its agent.
+ * - Given an inherited and an explicit agent or model share a prompt, when either child
+ *   starts first, then their descriptions and thinking levels stay with their own calls.
+ * - Given the parent metadata is missing and same-prompt calls have different selectors,
+ *   when a child's prompt arrives, then an ambiguous match does not move it to another card.
+ * - Given two background launches whose cards finish before their children's prompts arrive,
+ *   then each child still lands on its own launch.
+ * - Given a denied call carrying the same prompt as a child with no open call, then the denied
+ *   call never takes the child.
+ *
+ * - Given an earlier child is still running, when a later task spawns another child,
+ *   then the default panel keeps both visible with their own conversations.
+ * - Given two children are spawned during one task, when both continue streaming,
+ *   then neither node nor conversation replaces the other.
+ * - Given an explicit historical task selection, when another task has a running child,
+ *   then the historical graph stays scoped to the requested task.
  */
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -73,6 +95,74 @@ function at<M extends OmniMessage>(msg: M, ts: string): M {
 }
 
 describe("extractTopology", () => {
+  it("keeps an earlier running child visible beside the latest task's children", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("write the paper"));
+    spawnChild(m, "paper-call", "paper", '{"description":"Write version 9"}');
+    pushMessage(m, withOrigin(assistantText("Working on version 9"), "paper"));
+    pushMessage(m, toolCallOutput({ output: "yielded", toolCallId: "paper-call" }));
+    pushMessage(m, userText("check the references"));
+    spawnChild(m, "references-call", "references");
+    const live = new Map([
+      ["paper", true],
+      ["references", true],
+    ]);
+    const nodes = extractTopology(m, "root", true, live);
+    expect(nodes.map((n) => n.sessionId)).toEqual(["root", "references", "paper"]);
+    expect(nodes.filter((n) => n.depth > 0).every((n) => n.running)).toBe(true);
+    expect(nodes.find((n) => n.sessionId === "paper")).toMatchObject({
+      description: "Write version 9",
+      running: true,
+      origin: ["paper"],
+      parentId: "root",
+    });
+    expect(modelAtOrigin(m, nodes.find((n) => n.sessionId === "paper")!.origin)?.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ text: "Working on version 9" })]),
+    );
+    // A settled older child no longer crowds the current graph.
+    live.set("paper", false);
+    expect(extractTopology(m, "root", true, live).map((n) => n.sessionId)).toEqual([
+      "root",
+      "references",
+    ]);
+  });
+
+  it("keeps both running children and their conversations during the same task", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("write the paper and check its references"));
+    spawnChild(m, "paper-call", "paper", '{"description":"Write version 9"}');
+    pushMessage(m, withOrigin(assistantText("Writing the paper"), "paper"));
+    pushMessage(m, toolCallOutput({ output: "yielded", toolCallId: "paper-call" }));
+    spawnChild(m, "references-call", "references", '{"description":"Check references"}');
+    pushMessage(m, withOrigin(assistantText("Checking references"), "references"));
+    pushMessage(m, withOrigin(assistantText("Paper progress"), "paper"));
+
+    const nodes = extractTopology(
+      m,
+      "root",
+      true,
+      new Map([
+        ["paper", true],
+        ["references", true],
+      ]),
+    );
+    expect(nodes.map((n) => n.sessionId)).toEqual(["root", "paper", "references"]);
+    expect(nodes.slice(1).map((n) => [n.description, n.running])).toEqual([
+      ["Write version 9", true],
+      ["Check references", true],
+    ]);
+    for (const node of nodes.slice(1)) {
+      const texts = modelAtOrigin(m, node.origin)?.items.flatMap((item) =>
+        item.kind === "assistant_text" ? [item.text] : [],
+      );
+      expect(texts).toEqual(
+        node.sessionId === "paper"
+          ? ["Writing the paper", "Paper progress"]
+          : ["Checking references"],
+      );
+    }
+  });
+
   it("returns only the root (with the Task's running state) when nothing is spawned", () => {
     const m = createStreamModel();
     pushMessage(m, userText("hello"));
@@ -220,6 +310,292 @@ describe("extractTopology", () => {
   });
 });
 
+describe("which call a child belongs to", () => {
+  interface Call {
+    toolCallId: string;
+    child: string;
+    agent: string;
+    args: Record<string, unknown>;
+  }
+
+  const CALLS: Call[] = [
+    {
+      toolCallId: "call-a",
+      child: "child-a",
+      agent: "web_scout",
+      args: {
+        description: "Collect the pricing pages",
+        prompt: "Task A: collect the pricing pages of the three vendors.",
+        agent_id: "web_scout",
+      },
+    },
+    {
+      toolCallId: "call-b",
+      child: "child-b",
+      agent: "data_analyst",
+      args: {
+        description: "Compare the plans",
+        prompt: "Task B: compare the plans and flag per-seat billing.",
+        agent_id: "data_analyst",
+        thinking_level: "high",
+      },
+    },
+    {
+      toolCallId: "call-c",
+      child: "child-c",
+      agent: "default_agent",
+      args: { description: "Draft the summary table", prompt: "Task C: draft the summary table." },
+    },
+  ];
+  const [A, B, C] = CALLS as [Call, Call, Call];
+
+  const card = (call: Call): OmniMessage[] => [
+    toolCall({
+      name: "run_subagent",
+      arguments: JSON.stringify(call.args),
+      toolCallId: call.toolCallId,
+    }),
+    approvalDecision("allow", call.toolCallId),
+  ];
+  const childMeta = (call: Call): OmniMessage =>
+    withOrigin(meta(call.child, `/data/p/agents/${call.agent}/agent_state`), call.child);
+  const childPrompt = (call: Call): OmniMessage =>
+    withOrigin(userText(call.args.prompt as string, "parent_agent"), call.child);
+  const childReply = (call: Call): OmniMessage =>
+    withOrigin(assistantText(`${call.child} done`), call.child);
+  const output = (call: Call, text = "done"): OmniMessage =>
+    toolCallOutput({ output: text, toolCallId: call.toolCallId });
+
+  const shown = (m: StreamModel) =>
+    Object.fromEntries(
+      extractTopology(m, "root", false)
+        .slice(1)
+        .map((n) => [n.sessionId, [n.description, n.spawnThinkingLevel]]),
+    );
+  const OWN_CALLS = {
+    "child-a": ["Collect the pricing pages", null],
+    "child-b": ["Compare the plans", "high"],
+    "child-c": ["Draft the summary table", null],
+  };
+
+  const build = (messages: OmniMessage[]): StreamModel => {
+    const m = createStreamModel();
+    for (const msg of messages) pushMessage(m, msg);
+    return m;
+  };
+
+  it("live: children starting and finishing out of call order each show their own call", () => {
+    const m = build([
+      userText("go"),
+      ...card(A),
+      ...card(B),
+      ...card(C),
+      // B and C start before A, both session_metas ahead of either prompt.
+      childMeta(B),
+      childMeta(C),
+      childPrompt(C),
+      childMeta(A),
+      childPrompt(B),
+      childPrompt(A),
+      childReply(C),
+      output(C),
+      childReply(A),
+      output(A),
+      childReply(B),
+      output(B),
+    ]);
+    expect(shown(m)).toEqual(OWN_CALLS);
+  });
+
+  it("history: the same run rebuilt from its Trace (each child's Trace spliced at its start) shows the same", () => {
+    const spliced = (call: Call): OmniMessage[] => [
+      childMeta(call),
+      childPrompt(call),
+      childReply(call),
+    ];
+    const m = build([
+      userText("go"),
+      ...card(A),
+      ...card(B),
+      ...card(C),
+      ...spliced(B),
+      ...spliced(C),
+      ...spliced(A),
+      output(C),
+      output(A),
+      output(B),
+    ]);
+    expect(shown(m)).toEqual(OWN_CALLS);
+  });
+
+  it("the same prompt to two agents: each child stays on the call that named its agent", () => {
+    const ask = (toolCallId: string, child: string, agent: string, description: string): Call => ({
+      toolCallId,
+      child,
+      agent,
+      args: { description, prompt: "Which plan is cheapest for ten seats?", agent_id: agent },
+    });
+    const scout = ask("call-1", "child-1", "web_scout", "Ask the scout");
+    const analyst = ask("call-2", "child-2", "data_analyst", "Ask the analyst");
+    const m = build([
+      userText("go"),
+      ...card(scout),
+      ...card(analyst),
+      childMeta(analyst),
+      childMeta(scout),
+      childPrompt(analyst),
+      childPrompt(scout),
+    ]);
+    expect(shown(m)).toEqual({
+      "child-1": ["Ask the scout", null],
+      "child-2": ["Ask the analyst", null],
+    });
+  });
+
+  it.each(
+    [
+      {
+        name: "agent",
+        agent: "reviewer",
+        model: "m",
+        provider: "custom",
+        args: { agent_id: "reviewer" },
+      },
+      {
+        name: "model",
+        agent: "parent",
+        model: "other",
+        provider: "custom",
+        args: { model_id: "other", provider: "custom" },
+      },
+      {
+        name: "provider",
+        agent: "parent",
+        model: "m",
+        provider: "other",
+        args: { model_id: "m", provider: "other" },
+      },
+    ].flatMap((variant) => [true, false].map((explicitFirst) => ({ ...variant, explicitFirst }))),
+  )(
+    "inherits the parent's $name when omitted (explicit child first: $explicitFirst)",
+    (variant) => {
+      const inherited: Call = {
+        toolCallId: "inherited-call",
+        child: "inherited-child",
+        agent: "parent",
+        args: {
+          prompt: "Review this change",
+          description: "Inherited settings",
+          thinking_level: "low",
+        },
+      };
+      const explicit: Call = {
+        toolCallId: "explicit-call",
+        child: "explicit-child",
+        agent: variant.agent,
+        args: {
+          ...variant.args,
+          prompt: inherited.args.prompt,
+          description: "Explicit settings",
+          thinking_level: "high",
+        },
+      };
+      const explicitMeta = meta(explicit.child, `/data/p/agents/${explicit.agent}/agent_state`);
+      const first = variant.explicitFirst ? explicit : inherited;
+      const second = variant.explicitFirst ? inherited : explicit;
+      const records = new Map([
+        [inherited.child, childMeta(inherited)],
+        [
+          explicit.child,
+          withOrigin(
+            {
+              ...explicitMeta,
+              payload: {
+                ...explicitMeta.payload,
+                model_id: variant.model,
+                provider: variant.provider,
+              },
+            },
+            explicit.child,
+          ),
+        ],
+      ]);
+      const m = build([
+        meta("root", "/data/p/agents/parent/agent_state"),
+        userText("go"),
+        ...card(inherited),
+        ...card(explicit),
+        records.get(first.child)!,
+        records.get(second.child)!,
+        childPrompt(first),
+        childPrompt(second),
+      ]);
+      expect(shown(m)).toEqual({
+        "inherited-child": ["Inherited settings", "low"],
+        "explicit-child": ["Explicit settings", "high"],
+      });
+    },
+  );
+
+  it("keeps a positional binding when missing parent metadata leaves the same prompt ambiguous", () => {
+    const inherited: Call = {
+      ...C,
+      args: { prompt: "Review this change", description: "Self review" },
+    };
+    const explicit: Call = {
+      ...A,
+      args: { prompt: inherited.args.prompt, agent_id: A.agent, description: "Scout review" },
+    };
+    const m = build([
+      userText("go"),
+      ...card(inherited),
+      ...card(explicit),
+      childMeta(explicit),
+      childMeta(inherited),
+      childPrompt(explicit),
+      childPrompt(inherited),
+    ]);
+    expect(shown(m)).toEqual({
+      "child-c": ["Self review", null],
+      "child-a": ["Scout review", null],
+    });
+  });
+
+  it("background launches: a card that finished before its child's prompt arrived still gets that child", () => {
+    const launch = (call: Call): Call => ({
+      ...call,
+      args: { ...call.args, run_in_background: true },
+    });
+    const [bgA, bgB] = [launch(A), launch(B)];
+    const m = build([
+      userText("go"),
+      ...card(bgA),
+      ...card(bgB),
+      childMeta(bgA),
+      childMeta(bgB),
+      output(bgA, "[subagent running in background with subagent_id subagent-aaaa1111]"),
+      output(bgB, "[subagent running in background with subagent_id subagent-bbbb2222]"),
+      childPrompt(bgA),
+      childPrompt(bgB),
+    ]);
+    expect(shown(m)).toEqual({
+      "child-a": ["Collect the pricing pages", null],
+      "child-b": ["Compare the plans", "high"],
+    });
+  });
+
+  it("a denied call carrying the child's prompt never takes the child", () => {
+    const m = build([
+      userText("go"),
+      toolCall({ name: "run_subagent", arguments: JSON.stringify(A.args), toolCallId: "denied" }),
+      approvalDecision("deny", "denied"),
+      childMeta(A),
+      childPrompt(A),
+    ]);
+    expect(shown(m)).toEqual({ "child-a": [null, null] });
+  });
+});
+
 describe("extractTopologyForChild (historical Task slice)", () => {
   /** Task 1 spawns child1 (finished), then Task 2 spawns child2 (still running). */
   const twoTasks = (): StreamModel => {
@@ -241,6 +617,10 @@ describe("extractTopologyForChild (historical Task slice)", () => {
     // done even while the LATEST Task is running.
     expect(historical[0]!.running).toBe(false);
     expect(historical[1]!.running).toBe(false);
+    const live = new Map([["child2", true]]);
+    expect(
+      extractTopologyForChild(m, "root", true, "child1", live)!.map((n) => n.sessionId),
+    ).toEqual(["root", "child1"]);
   });
 
   it("anchoring on a latest-Task child returns the live latest slice (root keeps the running state)", () => {

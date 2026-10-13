@@ -121,6 +121,8 @@ import {
   isSidebarRow,
   matchesSessionQuery,
   revealPlan,
+  revealStep,
+  sectionWindow,
   workspaceGroupKey,
   workspaceLabel,
 } from "../../lib/session-grouping";
@@ -528,9 +530,9 @@ export function Sidebar({
     setGroupCaps(new Map());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapseStoreKey, pinStoreKey, currentProjectId]);
-  /** "More" rows with a fetch in flight, keyed by group key — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
+  /** Reveal rows with a fetch in flight, keyed by list key (a group, or time mode's whole list) — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
-  /** Per-group display cap (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
+  /** Per-list display cap (keyed by group key, or TIME_LIST_KEY for time mode's whole list; absent = SIDEBAR_PAGE_SIZE). The list's reveal row raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
   /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
   const [groupPage, setGroupPage] = useState(0);
@@ -816,7 +818,7 @@ export function Sidebar({
    * Time mode's rows, cut at the list's watermark BEFORE bucketing. Every Agent (on every
    * machine) pages its own stream, so only the rows above the most recent cursor that still
    * has more are a true prefix of the Project's activity order; the rows below it stay in
-   * memory until "load more" lowers it. That is what makes the list grow only at its bottom —
+   * memory until a reveal fetches past it. That is what makes the list grow only at its bottom —
    * a fetched page can no longer land rows in "Last day" above an "Earlier" the user is
    * reading. A search sees every loaded row (a hidden match would read as no match), and the
    * open conversation always shows.
@@ -831,7 +833,7 @@ export function Sidebar({
         );
   const timeGroups = timeRows === null ? [] : groupSessionsByTime(timeVisible, Date.now());
 
-  /** Agents with an unfetched page left; the whole-list "More" of time mode pages all of them at once. */
+  /** Agents with an unfetched page left: the streams time mode's reveal row pages, all at once. */
   const timeMoreAgents = projectActiveAgents.filter((id) => hasMoreFor(id));
 
   /** Close the search row and drop the filter (the toggle button, the clear ×, and Escape all land here). */
@@ -981,8 +983,8 @@ export function Sidebar({
   /**
    * The server stream a group's fetches walk: its own, under Workspace grouping, or the
    * Agent's whole one otherwise. Only Workspace groups need their own — an Agent group IS
-   * the whole stream, and a time bucket is cut from rows that are already loaded, so it
-   * fetches nothing of its own at all.
+   * the whole stream, and time mode's list pages every Agent's whole stream at once (a
+   * bucket is cut from rows that are already loaded, so it fetches nothing of its own).
    *
    * This is what makes the groups independent. Sharing one per-Agent cursor meant a group's
    * "load more" consumed the page its siblings were about to read: their rows appeared,
@@ -992,7 +994,7 @@ export function Sidebar({
   const fetchScope = (groupKey: string): string | undefined =>
     groupMode === "workspace" ? groupKey : undefined;
 
-  /** loadMoreFor with an in-flight marker for the triggering "More" row (disable + loading text). */
+  /** loadMoreFor with an in-flight marker for the triggering reveal row (disable + loading text). */
   const trackedLoadMore = (groupKey: string, agentIds: string[]) => {
     setPendingLoads((prev) => new Set(prev).add(groupKey));
     void loadMoreFor(agentIds, fetchScope(groupKey)).finally(() => {
@@ -1015,7 +1017,7 @@ export function Sidebar({
    * Only the groups on screen ask — the pager bounds that to one page of groups — and a
    * search is left alone, since it renders loaded matches only and fetching cannot find more.
    *
-   * The ask is marked in flight like a "More" click (pendingLoads), for two reasons: a group
+   * The ask is marked in flight like a reveal click (pendingLoads), for two reasons: a group
    * the counts know but no page has loaded rows of starts out empty, and its body must read
    * as loading rather than as having no conversations; and the marker is what keeps this
    * effect from asking twice — every landed page changes the group list and re-runs it, and
@@ -1428,36 +1430,78 @@ export function Sidebar({
   );
 
   /**
-   * "Show N more chats": reveal one more page of this group's already-loaded rows, and fetch
-   * the next server page only when the reveal actually runs past what is loaded. A group
-   * whose next page is already in memory spends no request — in workspace mode a fetch fans
-   * out to every Agent contributing to the group and its rows may land in other groups
-   * entirely, so a pointless one is not free.
+   * "Show N more chats" on one list (a group, or time mode's whole list): one page more on
+   * screen, and a fetch of the next server page only when that page runs past the rows
+   * already loaded (revealStep). A list whose next page is already in memory spends no
+   * request — in workspace mode a fetch fans out to every Agent contributing to the group and
+   * its rows may land in other groups entirely, so a pointless one is not free. `agents` is
+   * the list's fetch fan-out, and `canFetch` whether any of their streams still holds rows.
    */
-  const showMore = (groupKey: string, agentIds: string[], loaded: number) => {
-    const nextCap = (groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE;
-    setGroupCaps((prev) => {
-      const next = new Map(prev);
-      next.set(groupKey, nextCap);
-      return next;
-    });
-    if (agentIds.length > 0 && loaded < nextCap) trackedLoadMore(groupKey, agentIds);
+  const showMore = (
+    listKey: string,
+    agents: string[],
+    { shown, loaded, canFetch }: { shown: number; loaded: number; canFetch: boolean },
+  ) => {
+    const cap = groupCaps.get(listKey) ?? SIDEBAR_PAGE_SIZE;
+    const step = revealStep({ cap, shown, loaded, canFetch });
+    setGroupCaps((prev) => new Map(prev).set(listKey, step.cap));
+    if (step.fetch) trackedLoadMore(listKey, agents);
   };
 
-  /** "Show less": drop one group's reveal back to the first page (rows already fetched stay in memory). */
-  const collapseRows = (groupKey: string) => {
+  /** "Show less": drop one list's reveal back to the first page (rows already fetched stay in memory). */
+  const collapseRows = (listKey: string) => {
     setGroupCaps((prev) => {
-      if (!prev.has(groupKey)) return prev;
+      if (!prev.has(listKey)) return prev;
       const next = new Map(prev);
-      next.delete(groupKey);
+      next.delete(listKey);
       return next;
     });
   };
 
   /**
-   * Expanded group body shared by every mode: the group's conversations, display-capped;
-   * "More" reveals and loads further pages. `total` is the group's exact server share of
-   * active rows and `activeAgents` the Agents that may hold one — its fetch fan-out set.
+   * The one reveal row of a list, "Show N more chats" with N what the list still hides, and
+   * its "Show less". Both can stand at once: a list revealed part-way still has more to show
+   * AND something to fold back.
+   */
+  const renderRevealRows = (
+    listKey: string,
+    plan: { hidden: number; canCollapse: boolean },
+    onMore: () => void,
+  ) => (
+    <>
+      {plan.hidden > 0 && (
+        <MoreRow
+          label={S.chat.expandRestSessions(plan.hidden)}
+          ariaLabel={S.chat.expandRestSessions(plan.hidden)}
+          pending={pendingLoads.has(listKey)}
+          onClick={onMore}
+          className="mt-0.5"
+        />
+      )}
+      {plan.canCollapse && (
+        <MoreRow
+          label={S.chat.showLess}
+          ariaLabel={S.chat.showLess}
+          onClick={() => collapseRows(listKey)}
+          {...(plan.hidden > 0 ? {} : { className: "mt-0.5" })}
+        />
+      )}
+    </>
+  );
+
+  /** One list's rows in display order: the pinned cluster first, then the sort mode within each pin partition. */
+  const orderRows = (rows: SessionInfo[]) =>
+    orderSessionRows(rows, (s) => s.sessionId, {
+      pinned: pinnedSessions,
+      sortMode: effectiveSortMode,
+      order: sessionOrder,
+      recencyOf: (s) => s.lastActiveAt,
+    });
+
+  /**
+   * Expanded body of an Agent or Workspace group: the group's conversations, display-capped,
+   * and its reveal row. `total` is the group's exact server share of active rows and
+   * `activeAgents` the Agents that may hold one — its fetch fan-out set.
    */
   const renderGroupBody = (
     groupKey: string,
@@ -1469,18 +1513,17 @@ export function Sidebar({
     // Row order: the pinned cluster first, then — under manual sort — the stored order
     // within each pin partition (lib/session-order.ts). Both reorder only rows already
     // FETCHED: a pinned conversation that lives past the loaded pages does not surface
-    // until "More" pulls its page in (the list has no server-side pin), so the pinned
-    // cluster leads what is loaded, not the Agent's whole history.
-    // While searching, the display cap is bypassed — every loaded match shows, and
-    // "More" hides (it pages the unfiltered list and would read as "more matches",
+    // until the reveal row pulls its page in (the list has no server-side pin), so the
+    // pinned cluster leads what is loaded, not the Agent's whole history.
+    // While searching, the display cap is bypassed — every loaded match shows, and the
+    // reveal row hides (it pages the unfiltered list and would read as "more matches",
     // which the server cannot promise).
     //
     // Before any of that, the rows are cut at the group's watermark: an Agent group on
     // several machines and a Workspace group spanning Agents both merge several streams,
     // and only the rows above the most recent cursor that still has more are a true prefix
-    // of the group's activity order. The rest wait in memory, so "More" only ever adds rows
-    // below the ones on screen. A time bucket has no streams of its own (its rows arrive
-    // already cut), and a search sees every loaded row.
+    // of the group's activity order. The rest wait in memory, so a reveal only ever adds
+    // rows below the ones on screen. A search sees every loaded row.
     const visibleActive = cutAtWatermark(
       rows,
       searching || activeAgents.length === 0
@@ -1488,12 +1531,7 @@ export function Sidebar({
         : activityWatermarkFor(activeAgents, fetchScope(groupKey)),
       activeSessionId,
     );
-    const orderedActive = orderSessionRows(visibleActive, (s) => s.sessionId, {
-      pinned: pinnedSessions,
-      sortMode: effectiveSortMode,
-      order: sessionOrder,
-      recencyOf: (s) => s.lastActiveAt,
-    });
+    const orderedActive = orderRows(visibleActive);
     /** Manual sort only (never on a search-filtered view): drag scope + the group's full ordered list, so a drop commits the whole partition. */
     const dragCtx =
       effectiveSortMode === "manual" && !searching
@@ -1501,22 +1539,20 @@ export function Sidebar({
         : undefined;
     // The reveal row counts THIS group's own hidden conversations and nothing else — no other
     // group's numbers reach it. `fullyLoaded` says the group's whole active share is already in
-    // memory (every Agent that could hold a row of it is fetched out), which is when the
+    // memory (no Agent that could hold a row of it has more to serve), which is when the
     // loaded rows become the truth: server counts refresh only on reload, so a count drifting
     // above reality would otherwise leave a row that reveals nothing behind it.
-    const fullyLoaded =
-      activeAgents.length > 0 && !activeAgents.some((id) => hasMoreFor(id, fetchScope(groupKey)));
+    const canFetch = activeAgents.some((id) => hasMoreFor(id, fetchScope(groupKey)));
     // One page of rows at a time, what the reveal row still hides, and whether "Show less"
     // has anything to fold away: the single rule revealPlan states.
     const plan = revealPlan({
       cap: groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE,
       loaded: visibleActive.length,
       total: total ?? 0,
-      fullyLoaded,
+      fullyLoaded: activeAgents.length > 0 && !canFetch,
     });
     const shownActive = searching ? orderedActive : orderedActive.slice(0, plan.shown);
     const hiddenActive = searching ? 0 : plan.hidden;
-    const canCollapse = !searching && plan.canCollapse;
     const empty = visibleActive.length === 0;
     const activePending = pendingLoads.has(groupKey);
     // Rows the server counts that no page has loaded yet — a Workspace group known from
@@ -1541,25 +1577,88 @@ export function Sidebar({
           renderRows(shownActive, withAgentHint, dragCtx)
         )}
 
-        {/* Reveal / collapse this group's own conversations. Both rows can stand at once: a
-            group revealed part-way still has more to show AND something to fold back. */}
-        {hiddenActive > 0 && (
-          <MoreRow
-            label={S.chat.expandRestSessions(hiddenActive)}
-            ariaLabel={S.chat.expandRestSessions(hiddenActive)}
-            pending={activePending}
-            onClick={() => showMore(groupKey, activeAgents, visibleActive.length)}
-            className="mt-0.5"
-          />
-        )}
-        {canCollapse && (
-          <MoreRow
-            label={S.chat.showLess}
-            ariaLabel={S.chat.showLess}
-            onClick={() => collapseRows(groupKey)}
-            {...(hiddenActive > 0 ? {} : { className: "mt-0.5" })}
-          />
-        )}
+        {!searching &&
+          renderRevealRows(groupKey, plan, () =>
+            showMore(groupKey, activeAgents, {
+              shown: plan.shown,
+              loaded: visibleActive.length,
+              canFetch,
+            }),
+          )}
+      </>
+    );
+  };
+
+  /**
+   * Time mode's list: the buckets, then the list's one reveal row. The buckets are stretches of
+   * ONE activity-ordered list, not lists of their own: no bucket can know how many of its rows
+   * the server still holds (the counts are per Agent, not per time span), and a fetch lands its
+   * rows below the last one shown, in whichever bucket their activity puts them. So the window,
+   * the count and the reveal row belong to the list (sectionWindow): N is the Project's exact
+   * active total — the sum of the Agents' totals, the numbers the Agent groups count from —
+   * minus the rows on screen and those behind a folded bucket. Each bucket's rows are ordered
+   * as a group orders its own (pins first, then the sort mode) before the window is cut. A
+   * search shows every loaded match and no reveal row.
+   */
+  const renderTimeList = () => {
+    const ordered = timeGroups.map((group) => orderRows(group.sessions));
+    const timeWindow = sectionWindow({
+      sections: timeGroups.map((group, i) => ({
+        rows: ordered[i] ?? [],
+        folded: collapsedGroups.has(group.key),
+      })),
+      cap: groupCaps.get(TIME_LIST_KEY) ?? SIDEBAR_PAGE_SIZE,
+      total: projectActiveAgents.reduce((sum, id) => sum + (countsByAgent.get(id)?.active ?? 0), 0),
+      fullyLoaded: projectActiveAgents.length > 0 && timeMoreAgents.length === 0,
+    });
+    const shown = searching ? ordered : timeWindow.rows;
+    return (
+      <>
+        {timeGroups.map((group, i) => {
+          const rows = shown[i];
+          // Past the window's edge: not drawn, the reveal row below counts its rows.
+          if (rows === null || rows === undefined) return null;
+          const collapsed = !searching && collapsedGroups.has(group.key);
+          /** Manual sort only: a drop commits the bucket's whole ordered partition, not the windowed slice. */
+          const dragCtx =
+            effectiveSortMode === "manual" && !searching
+              ? { scope: group.key, fullRows: ordered[i] ?? [] }
+              : undefined;
+          return (
+            <div key={group.key} className="pt-2.5">
+              <GroupHeader
+                open={!collapsed}
+                onToggle={() => toggleGroup(group.key)}
+                glyph={GROUP_MODE_ICONS.time}
+                label={S.chat.timeGroups[group.bucket]}
+                uppercase
+                count={group.sessions.length}
+              />
+              <Fold open={!collapsed}>{() => renderRows(rows, true, dragCtx)}</Fold>
+            </div>
+          );
+        })}
+
+        {/* Nothing loaded: "no conversations" only when the counts agree; rows the server
+            counts but no page holds yet wait on the reveal row below instead. */}
+        {timeGroups.length === 0 &&
+          !searching &&
+          (timeWindow.hidden === 0 ? (
+            <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
+              {S.chat.noSessions}
+            </p>
+          ) : pendingLoads.has(TIME_LIST_KEY) ? (
+            <SkeletonList rows={2} />
+          ) : null)}
+
+        {!searching &&
+          renderRevealRows(TIME_LIST_KEY, timeWindow, () =>
+            showMore(TIME_LIST_KEY, timeMoreAgents, {
+              shown: timeWindow.shown,
+              loaded: timeWindow.reachable,
+              canFetch: timeMoreAgents.length > 0,
+            }),
+          )}
       </>
     );
   };
@@ -2409,7 +2508,7 @@ export function Sidebar({
                       }
                     />
 
-                    {/* A workspace group can span Agents: the group body fans "More" out to the
+                    {/* A workspace group can span Agents: the group body fans its reveal out to the
                   Agents whose share of THIS group is non-zero (plus the Agents already
                   contributing loaded rows). */}
                     <Fold open={!collapsed}>
@@ -2430,56 +2529,14 @@ export function Sidebar({
             {groupMode === "workspace" ? groupPagerRow() : null}
 
             {/* Time mode: last day / last month / earlier, bucketed on each conversation's last
-          activity — the same stamp the rows' compact timestamps and the recency sort read,
-          so a row can never sit under a bucket its own timestamp contradicts. Empty buckets
-          are dropped, and there are at most three, so this mode never paginates its groups.
-          The buckets span every Agent and every Workspace: a bucket's "More" only reveals
-          further rows already shown in it, while fetching the next page happens once for the
-          whole Project, below. */}
+                activity — the same stamp the rows' compact timestamps and the recency sort
+                read, so a row can never sit under a bucket its own timestamp contradicts.
+                Empty buckets are dropped, and there are at most three, so this mode never
+                paginates its groups. */}
             {groupMode !== "time" || timeRows === null ? null : loading && sessions.length === 0 ? (
               <SkeletonList rows={5} />
             ) : (
-              <>
-                {timeGroups.map((group) => {
-                  const collapsed = !searching && collapsedGroups.has(group.key);
-                  return (
-                    <div key={group.key} className="pt-2.5">
-                      <GroupHeader
-                        open={!collapsed}
-                        onToggle={() => toggleGroup(group.key)}
-                        glyph={GROUP_MODE_ICONS.time}
-                        label={S.chat.timeGroups[group.bucket]}
-                        uppercase
-                        count={group.sessions.length}
-                      />
-                      <Fold open={!collapsed}>
-                        {() => renderGroupBody(group.key, group.sessions, true, undefined, [])}
-                      </Fold>
-                    </div>
-                  );
-                })}
-
-                {timeGroups.length === 0 && !searching && (
-                  <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
-                    {S.chat.noSessions}
-                  </p>
-                )}
-
-                {/* Whole-list paging: every Agent stream with more advances a page, which lowers
-              the watermark and adds rows below the last one shown — in whichever bucket
-              their activity puts them, so the row that pulls them belongs to the list, not
-              to a bucket, and its label says "conversations" where a bucket's says "more".
-              It stands while any stream has more (the server's limit+1 answer). */}
-                {!searching && timeMoreAgents.length > 0 && (
-                  <MoreRow
-                    label={S.chat.loadMoreSessions}
-                    ariaLabel={S.chat.loadMoreSessions}
-                    pending={pendingLoads.has(TIME_LIST_KEY)}
-                    onClick={() => trackedLoadMore(TIME_LIST_KEY, timeMoreAgents)}
-                    className="mt-1"
-                  />
-                )}
-              </>
+              renderTimeList()
             )}
           </div>
 

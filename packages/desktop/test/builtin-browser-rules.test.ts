@@ -1,3 +1,8 @@
+/**
+ * Guests attach only to browser storage with hardened preferences. Project partitions keep
+ * their own profile even when an element supplies a conflicting webpreferences partition;
+ * cookie import and clear preserve the selected profile and refuse arbitrary app partitions.
+ */
 import { describe, expect, it } from "vitest";
 import {
   BUILTIN_BROWSER_PARTITION,
@@ -443,5 +448,43 @@ describe("load", () => {
     expect(privateMemoryKB("win32", memory, null)).toBe(250_000);
     expect(privateMemoryKB("win32", { workingSetSize: 812_004 }, null)).toBe(812_004);
     expect(privateMemoryKB("darwin", memory, null)).toBe(812_004);
+  });
+});
+
+describe("Project partitions", () => {
+  it("keeps an admitted Project partition through preference hardening", () => {
+    const partition = "persist:penguin-browser-project-" + "a".repeat(64);
+    expect(mayAttachGuest({ partition, src: "https://example.test" })).toBe(true);
+    const prefs: Record<string, unknown> = {
+      partition: "persist:elsewhere",
+      nodeIntegration: true,
+    };
+    hardenGuestPreferences(prefs, partition);
+    expect(prefs.partition).toBe(partition);
+    expect(prefs.nodeIntegration).toBe(false);
+  });
+
+  it("targets cookie writes and clearing only at valid browser partitions", () => {
+    const partition = "persist:penguin-browser-project-" + "b".repeat(64);
+    for (const command of [
+      { op: "set-cookies", cookies: [] },
+      { op: "clear-data", storages: ["cookies"] },
+    ]) {
+      const parsed = parseBrowserCommand({
+        type: "desktop-browser-command",
+        id: "1",
+        command: { ...command, partition },
+      });
+      expect(parsed).toMatchObject({ command: { ...command, partition } });
+      for (const foreign of ["", "persist:app", "persist:penguin-browser-project-../app"]) {
+        expect(
+          parseBrowserCommand({
+            type: "desktop-browser-command",
+            id: "1",
+            command: { ...command, partition: foreign },
+          }),
+        ).toEqual({ id: "1", error: "bad_command" });
+      }
+    }
   });
 });

@@ -1,8 +1,7 @@
 /**
  * The built-in browser's dock panel: its tab strip, its toolbar, and the viewport slot the
- * browser layer (browser-layer.tsx) lays the page on screen over. The browser is one set of
- * pages shared by every conversation, so every dock that shows this panel shows the same
- * tabs — the panel holds no page itself, it only registers where the page should appear.
+ * browser layer (browser-layer.tsx) lays the page on screen over. The panel lists only the current
+ * conversation's pages, while the layer keeps other conversations' pages alive off screen — the panel holds no page itself, it only registers where the page should appear.
  *
  * The panel always has a tab: the layer opens the new-tab page when it shows none. A new tab
  * opens the homepage when one is set, and reads as that homepage while it loads. A blank one
@@ -30,6 +29,7 @@ import {
 } from "./browser-actions";
 import {
   activeTab,
+  sessionTabs,
   addressOf,
   builtinUsable,
   chromeInfo,
@@ -187,8 +187,8 @@ function BrowserSurface({ state, active }: { state: BrowserState; active: boolea
   return (
     <div ref={rootRef} className="flex h-full min-h-0 flex-col">
       <BrowserTabStrip
-        tabs={state.tabs}
-        activeTabId={state.activeTabId}
+        tabs={sessionTabs(state)}
+        activeTabId={tab?.id ?? null}
         address={(shown) => addressOf(state, shown)}
         busy={(id) => tabBusy(state, id)}
         heavyMemory={(id) => heavyTabMemory(state.metrics, id)}

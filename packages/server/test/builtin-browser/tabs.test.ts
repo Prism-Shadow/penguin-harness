@@ -1,6 +1,8 @@
 /**
  * The tab registry: the shell's reflection, the active tab's fallback rule, the refresh after a
  * handshake, and open requests — the first claim wins, a second window's is a duplicate.
+ * Session ownership survives a claim arriving before a tab event and later shell refreshes;
+ * closing a selected tab falls back only within its Session.
  */
 import { describe, expect, it } from "vitest";
 import { TabRegistry } from "../../src/builtin-browser/tabs.js";
@@ -168,4 +170,29 @@ describe("TabRegistry open requests", () => {
     tabs.dispose();
     await expect(waiting).resolves.toBeNull();
   });
+});
+
+it("retains Session ownership through early claims and shell refreshes", () => {
+  const tabs = new TabRegistry();
+  for (const [id, sessionId] of [
+    [1, "a"],
+    [2, "b"],
+    [3, "a"],
+  ] as const) {
+    const request = tabs.createOpen({ url: "about:blank", activate: true, sessionId });
+    tabs.claim(request.requestId, id);
+    tabs.activate(id);
+    tabs.upsert(tab(id));
+  }
+  tabs.activate(1);
+  tabs.replaceAll([tab(1), tab(2), tab(3)]);
+  expect(tabs.list("a").map((tab) => tab.id)).toEqual([1, 3]);
+  expect(tabs.activeFor("a")).toBe(1);
+  expect(tabs.activeFor("b")).toBe(2);
+  tabs.remove(1);
+  expect(tabs.activeFor("a")).toBe(3);
+  tabs.replaceAll([tab(2)]);
+  expect(tabs.activeFor("a")).toBeNull();
+  expect(tabs.activeFor("b")).toBe(2);
+  tabs.dispose();
 });
