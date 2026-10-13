@@ -83,7 +83,9 @@ async function machine(options: { beatMs?: number } = {}) {
         cancel?: boolean;
       };
       if (frame.cancel === true) {
-        const call = [...active].find((candidate) => candidate.ws === ws && candidate.id === frame.id);
+        const call = [...active].find(
+          (candidate) => candidate.ws === ws && candidate.id === frame.id,
+        );
         if (call !== undefined) cancel(call);
         return;
       }
@@ -140,7 +142,9 @@ async function machine(options: { beatMs?: number } = {}) {
     },
     /** The machine's `/api/events` says something: one event, as its own SSE writer frames it. */
     emit(eventId: string, event: unknown) {
-      const call = [...active].filter((entry) => entry.path.split("?")[0] === "/api/events").at(-1);
+      const call = [...active]
+        .filter((entry) => entry.path.split("?")[0] === "/api/events")
+        .at(-1);
       if (call === undefined) throw new Error("the machine has no open /api/events stream");
       call.ws.send(
         JSON.stringify({
@@ -647,11 +651,10 @@ describe("the machine event hub", () => {
     );
     await new Promise<void>((resolve) => refusing.listen(0, "127.0.0.1", resolve));
     machineStops.push(() => new Promise<void>((resolve) => refusing.close(() => resolve())));
-    const refused = await relay.stream(
-      "m2",
-      targetOf((refusing.address() as { port: number }).port),
-      { path: "/api/events", lastEventId: null },
-    );
+    const refused = await relay.stream("m2", targetOf((refusing.address() as { port: number }).port), {
+      path: "/api/events",
+      lastEventId: null,
+    });
     expect(refused.status).toBe(502);
     expect(sockets.fact("m2")).toMatchObject({
       state: "refused",

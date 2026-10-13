@@ -155,7 +155,11 @@ export function machineEventsStream(
 
   // Read before the replay: the machines watched at open are what a `last-event-id` reaches.
   join(watched());
-  detachAggregate = hub.aggregate.subscribe(watching, (id, event, data) => write(event, data, id), stop);
+  detachAggregate = hub.aggregate.subscribe(
+    watching,
+    (id, event, data) => write(event, data, id),
+    stop,
+  );
 
   if (lastEventId === null) {
     // As on /api/events: a fresh subscriber is handed the handshake, not the history.

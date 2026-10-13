@@ -226,7 +226,10 @@ export class MachineSockets {
   close(): void {
     this.#closed = true;
     for (const entry of this.#sockets.values()) {
-      entry.pending.then((socket) => socket.terminate(), () => undefined);
+      entry.pending.then(
+        (socket) => socket.terminate(),
+        () => undefined,
+      );
     }
     this.#sockets.clear();
     this.#facts.clear();
