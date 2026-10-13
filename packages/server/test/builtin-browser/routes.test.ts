@@ -3,6 +3,12 @@
  * an injected importer): availability and its 503 reasons, the admin gate, opening a tab
  * through a window's claim, the shape of what each agent action answers, and the homepage.
  *
+ * Session isolation: lists, status and active targets stay within the caller's Session;
+ * explicit foreign targets are refused; a new Session navigates its own fresh tab. Popups
+ * inherit the opener's Session and Project storage after an action has finished. Sessions in
+ * one Project share a partition; another Project has a different one. Draft adoption moves
+ * claimed and pending pages without changing storage. Cookie import/clear select that Project.
+ *
  * module.test.ts covers the same routes assembled in the real platform tree.
  */
 import fs from "node:fs/promises";
@@ -66,6 +72,7 @@ interface Harness {
   shell: FakeShell;
   browser: BuiltinBrowser;
   events: BuiltinBrowserServerEvent[];
+  nextOpen(): Promise<Extract<BuiltinBrowserServerEvent, { type: "builtin_browser_open" }>>;
   call(method: string, url: string, body?: unknown): Promise<Response>;
 }
 
@@ -73,6 +80,8 @@ function mount(
   opts: {
     shell?: FakeShell | null;
     admin?: boolean;
+    human?: boolean;
+    projectOf?: (sessionId: string) => string | null;
     importer?: Importer;
     now?: () => number;
     log?: (line: string) => void;
@@ -80,10 +89,21 @@ function mount(
 ): Harness {
   const shell = opts.shell === undefined ? new FakeShell() : opts.shell;
   const events: BuiltinBrowserServerEvent[] = [];
+  let opened:
+    | ((event: Extract<BuiltinBrowserServerEvent, { type: "builtin_browser_open" }>) => void)
+    | undefined;
   const browser = new BuiltinBrowser({
     port: shell?.port ?? null,
     root,
-    publish: (event) => events.push(event),
+    publish: (event) => {
+      events.push(event);
+      if (event.type === "builtin_browser_open") {
+        const next = opened;
+        opened = undefined;
+        next?.(event);
+      }
+    },
+    ...(opts.projectOf ? { projectOf: opts.projectOf } : {}),
     log: opts.log ?? (() => {}),
     sleep: async () => {},
     timing: FAST,
@@ -96,7 +116,7 @@ function mount(
   app.use("*", async (c, next) => {
     const isAdmin = opts.admin !== false;
     c.set("user", { userId: isAdmin ? "admin" : "bob", isAdmin } as UserRow);
-    c.set("sessionVia", "token");
+    c.set("sessionVia", opts.human ? "desktop" : "token");
     await next();
   });
   app.route("/api/builtin-browser", builtinBrowserRoutes(browser));
@@ -104,6 +124,10 @@ function mount(
     shell: shell ?? new FakeShell(),
     browser,
     events,
+    nextOpen: () =>
+      new Promise((resolve) => {
+        opened = resolve;
+      }),
     call: async (method, url, body) =>
       app.request(`/api/builtin-browser${url}`, {
         method,
@@ -158,6 +182,23 @@ function page(
     }
     return rest(tabId, method, params);
   };
+}
+
+/** Create an owned page through the same open/claim exchange as a real window. */
+async function openOwned(h: Harness, id: number, sessionId: string, projectId?: string) {
+  const announced = h.nextOpen();
+  const response = h.call("POST", "/tabs", {
+    url: "about:blank",
+    sessionId,
+    ...(projectId ? { projectId } : {}),
+  });
+  const event = await announced;
+  h.shell.show(tab(id));
+  expect(
+    (await h.call("POST", "/tabs/claim", { requestId: event.requestId, tabId: id })).status,
+  ).toBe(204);
+  expect((await response).status).toBe(200);
+  return event;
 }
 
 describe("availability", () => {
@@ -370,6 +411,7 @@ describe("tabs", () => {
 describe("agent actions", () => {
   it("navigates an open tab and returns it loaded", async () => {
     const h = mount();
+    await openOwned(h, 3, "s9");
     h.shell.show(tab(3, { url: "https://before.test/" }));
     h.shell.cdp = page((tabId, method, params) => {
       if (method === "Page.navigate") {
@@ -469,7 +511,7 @@ describe("agent actions", () => {
 
   it("answers exec with the value, the transients and the diff", async () => {
     const h = mount();
-    h.shell.show(tab(2));
+    await openOwned(h, 2, "s1");
     let script = "";
     h.shell.cdp = page(
       (_t, method, params) => {
@@ -686,7 +728,8 @@ describe("agent actions", () => {
 
   it("lists the popup a script opened as a new tab", async () => {
     const h = mount();
-    h.shell.show(tab(2));
+    await openOwned(h, 2, "s4");
+    h.events.length = 0;
     h.shell.cdp = page(() => {
       // The page calls window.open: the shell denies it and asks for a tab instead.
       h.shell.event({ kind: "open-request", url: "https://popup.test/", openerTabId: 2 });
@@ -943,6 +986,27 @@ describe("import, history and data", () => {
     );
   });
 
+  it("imports and clears cookies only in the Session's Project, ignoring another Project hint", async () => {
+    const h = mount({ importer, projectOf: () => "project-a" });
+    const page = await openOwned(h, 1, "session-a");
+    await h.call("POST", "/import", {
+      sourceId: "chrome",
+      cookies: true,
+      history: false,
+      sessionId: "session-a",
+      projectId: "project-b",
+    });
+    expect(h.shell.commands.find((command) => command.op === "set-cookies")).toMatchObject({
+      partition: page.partition,
+    });
+    await h.call("POST", "/clear-data", {
+      storages: ["cookies"],
+      sessionId: "session-a",
+      projectId: "project-b",
+    });
+    expect(h.shell.commands.at(-1)).toMatchObject({ op: "clear-data", partition: page.partition });
+  });
+
   it("imports only what is asked for, and names a missing source", async () => {
     const h = mount({ importer });
     const history = await json<BuiltinBrowserImportResult>(
@@ -994,7 +1058,11 @@ describe("import, history and data", () => {
     expect((await h.call("POST", "/clear-data", { storages: ["cookies", "cache"] })).status).toBe(
       204,
     );
-    expect(h.shell.commands.at(-1)).toEqual({ op: "clear-data", storages: ["cookies", "cache"] });
+    expect(h.shell.commands.at(-1)).toEqual({
+      op: "clear-data",
+      storages: ["cookies", "cache"],
+      partition: "persist:penguin-browser",
+    });
     expect((await h.call("POST", "/clear-data", { storages: ["everything"] })).status).toBe(400);
   });
 
@@ -1129,5 +1197,141 @@ describe("browserUrl", () => {
     for (const bad of [undefined, "", "about:blank", "chrome://gpu", 7]) {
       expect(() => homepageUrl(bad)).toThrow(/not a web address a homepage can be/);
     }
+  });
+});
+
+describe("Session and Project isolation", () => {
+  it("keeps lists, status, active targets and all explicit commands inside the Session", async () => {
+    const h = mount({ projectOf: () => "project-a" });
+    await openOwned(h, 11, "session-a");
+    await openOwned(h, 12, "session-b");
+    for (const path of ["/tabs", "/status"]) {
+      const result = await json<BuiltinBrowserStatus>(
+        await h.call("GET", `${path}?sessionId=session-a`),
+      );
+      expect(result.tabs.map((tab) => tab.id)).toEqual([11]);
+      expect(result.activeTabId).toBe(11);
+    }
+    expect(
+      (
+        await json<{ tab: BuiltinBrowserTab }>(
+          await h.call("POST", "/tabs/active/activate", { sessionId: "session-a" }),
+        )
+      ).tab.id,
+    ).toBe(11);
+    for (const [action, body] of [
+      ["activate", {}],
+      ["navigate", { url: "https://example.test" }],
+      ["scan", {}],
+      ["exec", { script: "return 1" }],
+      ["click", { selector: "button" }],
+      ["type", { selector: "input", text: "hello" }],
+      ["screenshot", {}],
+      ["cdp", { method: "Runtime.evaluate", params: { expression: "1" } }],
+    ] as const) {
+      const response = await h.call("POST", `/tabs/12/${action}`, {
+        ...body,
+        sessionId: "session-a",
+      });
+      expect(response.status, action).toBe(404);
+      expect((await errorOf(response)).error.code).toBe("no_such_tab");
+    }
+    expect((await h.call("DELETE", "/tabs/12?sessionId=session-a")).status).toBe(404);
+    expect((await h.call("POST", "/tabs/active/activate", { sessionId: "empty" })).status).toBe(
+      404,
+    );
+    // Target-free CDP domains must not escape the selected guest's Project context.
+    expect(
+      (
+        await h.call("POST", "/tabs/11/cdp", {
+          sessionId: "session-a",
+          method: "Storage.getCookies",
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("does not report another Session's concurrent open as its own script result", async () => {
+    const h = mount();
+    await openOwned(h, 11, "session-a");
+    h.shell.cdp = page(async () => {
+      await openOwned(h, 12, "session-b");
+      return evaluated({ ok: true, data: 1 });
+    });
+    const response = await h.call("POST", "/tabs/active/exec", {
+      sessionId: "session-a",
+      script: "return 1",
+      noMonitor: true,
+    });
+    const result = await json<BuiltinBrowserExecResult>(response);
+    expect(response.status).toBe(200);
+    expect(result.tabId).toBe(11);
+    expect(result.newTabs).toBeUndefined();
+  });
+
+  it("navigates a fresh page for an empty Session while another Session has tabs", async () => {
+    const h = mount();
+    await openOwned(h, 11, "session-a");
+    const announced = h.nextOpen();
+    const navigation = h.call("POST", "/tabs/active/navigate", {
+      sessionId: "session-b",
+      url: "about:blank",
+    });
+    const opening = await announced;
+    h.shell.show(tab(12));
+    await h.call("POST", "/tabs/claim", { requestId: opening.requestId, tabId: 12 });
+    expect((await json<{ tab: BuiltinBrowserTab }>(await navigation)).tab).toMatchObject({
+      id: 12,
+      sessionId: "session-b",
+    });
+    expect(
+      (await json<BuiltinBrowserStatus>(await h.call("GET", "/tabs?sessionId=session-a"))).tabs.map(
+        (tab) => tab.id,
+      ),
+    ).toEqual([11]);
+  });
+
+  it("shares Project storage and lets idle popups inherit their opener's ownership", async () => {
+    const h = mount({ projectOf: (id) => (id === "session-c" ? "project-b" : "project-a") });
+    const a = await openOwned(h, 11, "session-a");
+    const b = await openOwned(h, 12, "session-b");
+    const c = await openOwned(h, 13, "session-c");
+    expect(a.partition).toBe(b.partition);
+    expect(a.partition).not.toBe(c.partition);
+    const announced = h.nextOpen();
+    h.shell.event({ kind: "open-request", openerTabId: 11, url: "https://example.test" });
+    const popup = await announced;
+    expect(popup).toMatchObject({ sessionId: "session-a", partition: a.partition });
+    h.shell.show(tab(14));
+    await h.call("POST", "/tabs/claim", { requestId: popup.requestId, tabId: 14 });
+    expect(
+      (await json<BuiltinBrowserStatus>(await h.call("GET", "/tabs?sessionId=session-a"))).tabs.map(
+        (tab) => tab.id,
+      ),
+    ).toEqual([11, 14]);
+  });
+
+  it("adopts a draft and its pending popup without moving its storage", async () => {
+    const h = mount({ human: true, projectOf: (id) => (id === "session-a" ? "project-a" : null) });
+    const draft = await openOwned(h, 11, "draft-a", "project-a");
+    const announced = h.nextOpen();
+    h.shell.event({ kind: "open-request", openerTabId: 11, url: "https://example.test" });
+    const popup = await announced;
+    expect(
+      (await h.call("POST", "/tabs/session", { fromSessionId: "draft-a", sessionId: "session-a" }))
+        .status,
+    ).toBe(204);
+    h.shell.show(tab(12));
+    await h.call("POST", "/tabs/claim", { requestId: popup.requestId, tabId: 12 });
+    const adopted = await json<BuiltinBrowserStatus>(
+      await h.call("GET", "/tabs?sessionId=session-a"),
+    );
+    expect(adopted.tabs.map((tab) => [tab.id, tab.partition])).toEqual([
+      [11, draft.partition],
+      [12, draft.partition],
+    ]);
+    expect(
+      (await json<BuiltinBrowserStatus>(await h.call("GET", "/tabs?sessionId=draft-a"))).tabs,
+    ).toEqual([]);
   });
 });

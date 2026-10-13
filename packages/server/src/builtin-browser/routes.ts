@@ -179,7 +179,7 @@ export function builtinBrowserRoutes(
   };
 
   app.get("/status", async (c) =>
-    c.json((await browser.status(queryActor(c))) satisfies BuiltinBrowserStatus),
+    c.json((await browser.status(queryActor(c), sessionIdQuery(c))) satisfies BuiltinBrowserStatus),
   );
 
   app.get("/backend", (c) =>
@@ -224,19 +224,30 @@ export function builtinBrowserRoutes(
     return c.body(null, 204);
   });
 
-  app.get("/tabs", async (c) => c.json(await browser.listTabs(queryActor(c))));
+  app.get("/tabs", async (c) => c.json(await browser.listTabs(queryActor(c), sessionIdQuery(c))));
 
   app.post("/tabs", async (c) => {
     const body = await jsonBody(c);
     const url = optString(body, "url");
     const activate = optBool(body, "activate");
     const sessionId = sessionIdOf(body);
+    const projectId = c.var.sessionVia === "token" ? undefined : optString(body, "projectId");
     const tab = await browser.openTab(bodyActor(c, body), {
+      ...(projectId !== undefined ? { projectId } : {}),
       ...(url !== undefined ? { url } : {}),
       ...(activate !== undefined ? { activate } : {}),
       ...(sessionId !== undefined ? { sessionId } : {}),
     });
     return c.json({ tab } satisfies { tab: BuiltinBrowserTab });
+  });
+
+  app.post("/tabs/session", async (c) => {
+    requireHuman(c);
+    const body = await jsonBody(c);
+    const fromSessionId = requiredString(body, "fromSessionId").slice(0, 200);
+    const sessionId = requiredString(body, "sessionId").slice(0, 200);
+    browser.adoptSession(actorOf(c, undefined), fromSessionId, sessionId);
+    return c.body(null, 204);
   });
 
   app.post("/tabs/claim", async (c) => {
@@ -263,12 +274,16 @@ export function builtinBrowserRoutes(
 
   app.post("/tabs/:tab/activate", async (c) => {
     const body = await jsonBody(c);
-    const tab = await browser.activate(bodyActor(c, body), c.req.param("tab"));
+    const tab = await browser.activate(
+      bodyActor(c, body),
+      c.req.param("tab"),
+      sessionIdOf(body) ?? sessionIdQuery(c),
+    );
     return c.json({ tab } satisfies { tab: BuiltinBrowserTab });
   });
 
   app.delete("/tabs/:tab", async (c) => {
-    await browser.close(queryActor(c), c.req.param("tab"));
+    await browser.close(queryActor(c), c.req.param("tab"), sessionIdQuery(c));
     return c.body(null, 204);
   });
 
@@ -278,7 +293,7 @@ export function builtinBrowserRoutes(
       bodyActor(c, body),
       c.req.param("tab"),
       body.url,
-      sessionIdOf(body),
+      sessionIdOf(body) ?? sessionIdQuery(c),
     );
     return c.json({ tab } satisfies { tab: BuiltinBrowserTab });
   });
@@ -296,7 +311,7 @@ export function builtinBrowserRoutes(
         ...(maxChars !== undefined ? { maxChars } : {}),
         ...(instruction !== undefined ? { instruction } : {}),
       },
-      sessionIdOf(body),
+      sessionIdOf(body) ?? sessionIdQuery(c),
     );
     return c.json(result);
   });
@@ -316,7 +331,7 @@ export function builtinBrowserRoutes(
         ...(timeoutMs !== undefined ? { timeoutMs } : {}),
         ...(acceptDialogs !== undefined ? { acceptDialogs } : {}),
       },
-      sessionIdOf(body),
+      sessionIdOf(body) ?? sessionIdQuery(c),
     );
     return c.json(result);
   });
@@ -344,7 +359,7 @@ export function builtinBrowserRoutes(
         c.req.param("tab"),
         target,
         acceptDialogs !== undefined ? { acceptDialogs } : {},
-        sessionIdOf(body),
+        sessionIdOf(body) ?? sessionIdQuery(c),
       ),
     );
   });
@@ -365,7 +380,7 @@ export function builtinBrowserRoutes(
           ...(submit !== undefined ? { submit } : {}),
           ...(acceptDialogs !== undefined ? { acceptDialogs } : {}),
         },
-        sessionIdOf(body),
+        sessionIdOf(body) ?? sessionIdQuery(c),
       ),
     );
   });
@@ -377,7 +392,7 @@ export function builtinBrowserRoutes(
       bodyActor(c, body),
       c.req.param("tab"),
       fullPage !== undefined ? { fullPage } : {},
-      sessionIdOf(body),
+      sessionIdOf(body) ?? sessionIdQuery(c),
     );
     return c.json(shot satisfies BuiltinBrowserScreenshot);
   });
@@ -400,7 +415,7 @@ export function builtinBrowserRoutes(
       c.req.param("tab"),
       method,
       params as Record<string, unknown> | undefined,
-      sessionIdOf(body),
+      sessionIdOf(body) ?? sessionIdQuery(c),
     );
     return c.json({ result });
   });
@@ -425,6 +440,10 @@ export function builtinBrowserRoutes(
     }
     const result = await browser.importFrom(bodyActor(c, body), {
       sourceId,
+      ...(sessionIdOf(body) !== undefined ? { sessionId: sessionIdOf(body)! } : {}),
+      ...(c.var.sessionVia !== "token" && typeof body.projectId === "string"
+        ? { projectId: body.projectId }
+        : {}),
       ...(cookies !== undefined ? { cookies } : {}),
       ...(history !== undefined ? { history } : {}),
       ...(Array.isArray(domains)
@@ -474,7 +493,12 @@ export function builtinBrowserRoutes(
     ) {
       throw badRequest('storages is a non-empty list of "cookies", "cache" and "storage".');
     }
-    await browser.clearData(bodyActor(c, body), storages as ("cookies" | "cache" | "storage")[]);
+    await browser.clearData(
+      bodyActor(c, body),
+      storages as ("cookies" | "cache" | "storage")[],
+      sessionIdOf(body),
+      c.var.sessionVia === "token" ? undefined : optString(body, "projectId"),
+    );
     return c.body(null, 204);
   });
 

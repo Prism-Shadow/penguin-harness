@@ -2487,6 +2487,7 @@ router
   .delete("/api/builtin-browser/extension/:id", () => notFound("Paired Chrome"))
   .post("/api/builtin-browser/tabs/:tab/navigate", browserUnavailable)
   .post("/api/builtin-browser/tabs", browserUnavailable)
+  .post("/api/builtin-browser/tabs/session", browserUnavailable)
   .post("/api/builtin-browser/tabs/claim", browserUnavailable)
   .post("/api/builtin-browser/tabs/on-screen", browserUnavailable)
   .post("/api/builtin-browser/tabs/:tab/activate", browserUnavailable)

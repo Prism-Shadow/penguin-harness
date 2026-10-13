@@ -6738,6 +6738,10 @@ export interface BrowserLinkCapabilities {
  */
 export interface BuiltinBrowserTab {
   id: number;
+  /** The built-in tab belongs to this conversation; absent for pages opened outside a conversation. */
+  sessionId?: string;
+  /** Electron storage partition, shared only within this tab's Project. */
+  partition?: string;
   url: string;
   title: string;
   loading: boolean;
@@ -6988,6 +6992,8 @@ export interface BuiltinBrowserImportSourcesResponse {
 
 /** POST /api/builtin-browser/import. */
 export interface BuiltinBrowserImportRequest {
+  sessionId?: string;
+  projectId?: string;
   sourceId: string;
   cookies?: boolean;
   history?: boolean;
@@ -7051,6 +7057,7 @@ export type BuiltinBrowserServerEvent =
   /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
   | {
       type: "builtin_browser_open";
+      partition?: string;
       requestId: string;
       url: string;
       activate: boolean;
@@ -7058,6 +7065,8 @@ export type BuiltinBrowserServerEvent =
       sessionId?: string;
     }
   | { type: "builtin_browser_close"; tabId: number }
+  /** A draft or healed conversation acquired its permanent id. */
+  | { type: "builtin_browser_session"; fromSessionId: string; sessionId: string }
   | {
       type: "builtin_browser_activity";
       tabId: number;
@@ -7114,9 +7123,9 @@ export type DesktopBrowserCommand =
       events?: string[];
     }
   /** Reply: `{ set: number; failed: number; errors: string[] }` (at most 10 errors). */
-  | { op: "set-cookies"; cookies: DesktopBrowserCookie[] }
+  | { op: "set-cookies"; cookies: DesktopBrowserCookie[]; partition?: string }
   /** Reply: `{}`. */
-  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[] }
+  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[]; partition?: string }
   /**
    * Reply: `{}`. The tabs whose pages may be throttled while out of sight (Electron's background
    * throttling, applied at once); every other tab runs at full speed. It replaces the list

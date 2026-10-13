@@ -47,6 +47,10 @@ import { BLANK_URL, isBlankUrl, tabAddress } from "./address";
 export interface BrowserGuest {
   /** Stable for the element's whole life: it is the React key, and a remount reloads the page. */
   key: string;
+  /** Conversation that owns this page, including while its claim is pending. */
+  scope: string;
+  /** Immutable: moving a conversation must not reload its pages. */
+  partition: string;
   /** The address the element was created with. Never changes, even as the page navigates. */
   src: string;
   /** The open request this guest answers, claimed once it has a tab id. */
@@ -82,6 +86,11 @@ export interface ExtensionNews {
 }
 
 export interface BrowserState {
+  /** The conversation on screen; all guests remain mounted across scope changes. */
+  scope: string;
+  projectId: string | null;
+  activeByScope: Readonly<Record<string, number>>;
+  openingByScope: Readonly<Record<string, number>>;
   /** This window can host guests at all: Electron's `<webview>` element exists here. */
   supported: boolean;
   /** The backend this user's agents drive: built-in until the server says otherwise. */
@@ -112,6 +121,7 @@ export interface BrowserState {
 }
 
 export type BrowserAction =
+  | { type: "scope"; scope: string | null; projectId?: string | null }
   | { type: "supported"; supported: boolean }
   | { type: "status"; status: BuiltinBrowserStatus }
   /** The status could not be read at all (an older server, a member account, no network). */
@@ -135,11 +145,17 @@ export type BrowserAction =
   /** The browser's settings as the server holds them (read, or answered to a save). */
   | { type: "settings"; settings: BuiltinBrowserSettings }
   /** This window asked for a new tab (1), or heard the answer (-1). */
-  | { type: "opening"; delta: 1 | -1 };
+  | { type: "opening"; delta: 1 | -1; scope?: string };
 
 const NO_TABS: BrowserRegistry = { tabs: [], activeTabId: null, closing: [] };
 
+export const NO_BROWSER_SCOPE = "~none";
+
 export const INITIAL_BROWSER_STATE: BrowserState = {
+  scope: NO_BROWSER_SCOPE,
+  projectId: null,
+  activeByScope: {},
+  openingByScope: {},
   supported: false,
   backend: "builtin",
   backends: [],
@@ -198,9 +214,17 @@ function applyTabs(
     tabs,
     activeTabId,
   );
+  const selected = registry.tabs.find((tab) => tab.id === registry.activeTabId);
   return {
     ...state,
     ...registry,
+    activeByScope:
+      selected === undefined
+        ? state.activeByScope
+        : {
+            ...state.activeByScope,
+            [tabScope(state, selected)]: selected.id,
+          },
     ...(state.backend === "builtin" ? { available: true, reason: null } : {}),
   };
 }
@@ -284,6 +308,11 @@ function applyEvent(state: BrowserState, event: BuiltinBrowserServerEvent): Brow
         return state;
       const guest: BrowserGuest = {
         key: guestKey(event.requestId),
+        partition: event.partition ?? "persist:penguin-browser",
+        scope:
+          event.sessionId ??
+          guestForTab(state, event.openerTabId ?? null)?.scope ??
+          NO_BROWSER_SCOPE,
         // A webview with no address never creates its page, so it would never be claimed.
         src: event.url === "" ? BLANK_URL : event.url,
         requestId: event.requestId,
@@ -293,6 +322,25 @@ function applyEvent(state: BrowserState, event: BuiltinBrowserServerEvent): Brow
       // A request from the shell is word that the built-in browser runs, while it is the one chosen.
       const running = state.backend === "builtin" ? { available: true, reason: null } : {};
       return { ...state, ...running, guests: [...state.guests, guest] };
+    }
+    case "builtin_browser_session": {
+      const from = event.fromSessionId;
+      const to = event.sessionId;
+      if (from === to) return state;
+      const { [from]: previous, ...rest } = state.activeByScope;
+      const activeByScope: Record<string, number> = { ...rest };
+      if (previous !== undefined && activeByScope[to] === undefined) activeByScope[to] = previous;
+      return {
+        ...state,
+        scope: state.scope === from ? to : state.scope,
+        activeByScope,
+        tabs: state.tabs.map((tab) =>
+          tabScope(state, tab) === from ? { ...tab, sessionId: to } : tab,
+        ),
+        guests: state.guests.map((guest) =>
+          guest.scope === from ? { ...guest, scope: to } : guest,
+        ),
+      };
     }
     case "builtin_browser_close":
       return closeTab(state, event.tabId);
@@ -345,12 +393,27 @@ function closeTab(state: BrowserState, tabId: number): BrowserState {
 
 export function reduceBrowser(state: BrowserState, action: BrowserAction): BrowserState {
   switch (action.type) {
+    case "scope":
+      return {
+        ...state,
+        scope: action.scope ?? NO_BROWSER_SCOPE,
+        projectId: action.projectId ?? null,
+      };
     case "supported":
       if (state.supported === action.supported) return state;
       // A window that stops hosting (the layer unmounting on sign-out) takes its pages with it.
       return action.supported
         ? { ...state, supported: true }
-        : { ...state, supported: false, guests: [], activity: {} };
+        : {
+            ...state,
+            supported: false,
+            guests: [],
+            activity: {},
+            scope: NO_BROWSER_SCOPE,
+            activeByScope: {},
+            openingByScope: {},
+            opening: 0,
+          };
     case "status": {
       const { status } = action;
       // A server older than the backends answers for the built-in browser alone.
@@ -414,7 +477,22 @@ export function reduceBrowser(state: BrowserState, action: BrowserAction): Brows
           ? state
           : { ...state, chrome: { ...state.chrome, activeTabId: action.tabId } };
       }
-      return state.activeTabId === action.tabId ? state : { ...state, activeTabId: action.tabId };
+      const tab = state.tabs.find((tab) => tab.id === action.tabId);
+      const scope =
+        tab !== undefined ? tabScope(state, tab) : guestForTab(state, action.tabId)?.scope;
+      if (
+        state.activeTabId === action.tabId &&
+        (scope === undefined || state.activeByScope[scope] === action.tabId)
+      )
+        return state;
+      return {
+        ...state,
+        activeTabId: action.tabId,
+        activeByScope:
+          scope === undefined
+            ? state.activeByScope
+            : { ...state.activeByScope, [scope]: action.tabId },
+      };
     }
     case "resync":
       return { ...state, activity: {} };
@@ -422,8 +500,17 @@ export function reduceBrowser(state: BrowserState, action: BrowserAction): Brows
       return state.homepage === action.settings.homepage
         ? state
         : { ...state, homepage: action.settings.homepage };
-    case "opening":
-      return { ...state, opening: Math.max(0, state.opening + action.delta) };
+    case "opening": {
+      const scope = action.scope ?? state.scope;
+      return {
+        ...state,
+        opening: Math.max(0, state.opening + action.delta),
+        openingByScope: {
+          ...state.openingByScope,
+          [scope]: Math.max(0, (state.openingByScope[scope] ?? 0) + action.delta),
+        },
+      };
+    }
   }
 }
 
@@ -459,14 +546,29 @@ export function linkTarget(state: BrowserState): BrowserBackend | null {
 
 /** The built-in browser's tab on top (the one its layer lays over the panel). */
 export function activeTab(state: BrowserState): BuiltinBrowserTab | null {
-  return state.tabs.find((tab) => tab.id === state.activeTabId) ?? null;
+  const tabs = sessionTabs(state);
+  const selected = state.activeByScope[state.scope] ?? state.activeTabId;
+  return tabs.find((tab) => tab.id === selected) ?? tabs.at(-1) ?? null;
+}
+
+function tabScope(state: BrowserState, tab: BuiltinBrowserTab): string {
+  return tab.sessionId ?? guestForTab(state, tab.id)?.scope ?? NO_BROWSER_SCOPE;
+}
+
+/** Only the current conversation's tabs belong in its strip. */
+export function sessionTabs(state: BrowserState): BuiltinBrowserTab[] {
+  return state.tabs.filter((tab) => tabScope(state, tab) === state.scope);
 }
 
 /** The chosen backend's tabs: what the panel's strip lists. */
 export function shownTabs(state: BrowserState): BrowserRegistry {
   return state.backend === "chrome"
     ? state.chrome
-    : { tabs: state.tabs, activeTabId: state.activeTabId, closing: state.closing };
+    : {
+        tabs: sessionTabs(state),
+        activeTabId: activeTab(state)?.id ?? null,
+        closing: state.closing,
+      };
 }
 
 /** The chosen backend's active tab. */
@@ -517,9 +619,9 @@ export function wantsNewTabPage(state: BrowserState, panelOnScreen: boolean): bo
   return (
     panelOnScreen &&
     builtinUsable(state) &&
-    state.tabs.length === 0 &&
-    state.guests.length === 0 &&
-    state.opening === 0
+    sessionTabs(state).length === 0 &&
+    !state.guests.some((guest) => guest.scope === state.scope) &&
+    (state.openingByScope[state.scope] ?? 0) === 0
   );
 }
 
@@ -530,7 +632,14 @@ export function currentActivity(state: BrowserState): BrowserActivity | null {
     const active = state.activity[activeTabId];
     if (active !== undefined) return active;
   }
-  const first = Object.values(state.activity)[0];
+  const first =
+    state.backend === "chrome"
+      ? Object.values(state.activity)[0]
+      : Object.entries(state.activity).find(
+          ([id, mark]) =>
+            mark.sessionId === state.scope ||
+            sessionTabs(state).some((tab) => tab.id === Number(id)),
+        )?.[1];
   return first ?? null;
 }
 

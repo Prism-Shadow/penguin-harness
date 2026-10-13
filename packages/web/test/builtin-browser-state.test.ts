@@ -21,6 +21,11 @@
  * - Chrome never gets the new-tab page by itself, and a link opens where the chosen backend can
  *   take it: the built-in browser while it runs here, Chrome while it is connected, else nowhere.
  * - A refused status read stops offering the browser.
+ * - Session switches show only their own tabs and remember each active page; background opens
+ *   never replace the foreground page, and guest order/identity stay intact for playback.
+ * - Pending opens belong to their original scope, so an empty incoming Session gets its own page.
+ * - Draft adoption keeps pages and Project storage, including a pending popup; closing the last
+ *   page cannot reveal another Session's page.
  */
 import { describe, expect, it } from "vitest";
 import type {
@@ -135,6 +140,8 @@ describe("pages this window hosts", () => {
     expect(state.guests).toEqual([
       {
         key: guestKey("r1"),
+        scope: "~none",
+        partition: "persist:penguin-browser",
         src: "https://amazon.com/",
         requestId: "r1",
         tabId: null,
@@ -273,7 +280,7 @@ describe("agent activity", () => {
     });
 
   it("marks a tab while an agent acts in it", () => {
-    const state = run(READY, busy(4, true, "s1"));
+    const state = run(READY, { type: "scope", scope: "s1" }, busy(4, true, "s1"));
     expect(tabBusy(state, 4)).toBe(true);
     expect(currentActivity(state)).toEqual({ action: "scan", sessionId: "s1" });
     const done = reduceBrowser(state, busy(4, false));
@@ -794,5 +801,107 @@ describe("where a link opens", () => {
       event({ type: "builtin_browser_extension", state: "disconnected" }),
     );
     expect(linkTarget(gone)).toBeNull();
+  });
+});
+
+describe("conversation browser scopes", () => {
+  const owned = (id: number, sessionId: string) => tab(id, { sessionId });
+  const snapshot = (tabs: BuiltinBrowserTab[], activeTabId: number) =>
+    event({ type: "builtin_browser_tabs", backend: "builtin", tabs, activeTabId });
+
+  it("switches only the visible pages and remembers active tabs without changing guests", () => {
+    let state = run(
+      READY,
+      { type: "scope", scope: "a" },
+      event({
+        type: "builtin_browser_open",
+        requestId: "a1",
+        sessionId: "a",
+        url: "https://a.test",
+        activate: true,
+      }),
+      { type: "attached", key: guestKey("a1"), tabId: 1 },
+      snapshot([owned(1, "a"), owned(2, "a"), owned(3, "b")], 1),
+    );
+    const guest = state.guests[0];
+    expect(shownTabs(state).tabs.map((tab) => tab.id)).toEqual([1, 2]);
+    state = run(
+      state,
+      { type: "scope", scope: "b" },
+      { type: "activated", tabId: 3 },
+      { type: "scope", scope: "a" },
+    );
+    expect(activeTab(state)?.id).toBe(1);
+    state = run(state, snapshot([owned(1, "a"), owned(2, "a"), owned(3, "b"), owned(4, "b")], 4));
+    expect(activeTab(state)?.id).toBe(1);
+    expect(state.guests[0]).toBe(guest);
+    state = run(state, { type: "closed", tabId: 1 });
+    expect(activeTab(state)?.id).toBe(2);
+    state = run(state, { type: "closed", tabId: 2 });
+    expect(activeTab(state)).toBeNull();
+    expect(shownTabs(state).tabs).toEqual([]);
+    expect(wantsNewTabPage(state, true)).toBe(true);
+  });
+
+  it("counts outstanding opens in the scope that requested them", () => {
+    let state = run(
+      READY,
+      { type: "scope", scope: "a" },
+      { type: "opening", delta: 1, scope: "a" },
+    );
+    expect(wantsNewTabPage(state, true)).toBe(false);
+    state = run(state, { type: "scope", scope: "b" });
+    expect(wantsNewTabPage(state, true)).toBe(true);
+    state = run(
+      state,
+      event({
+        type: "builtin_browser_open",
+        requestId: "slow-a",
+        sessionId: "a",
+        activate: true,
+        url: "https://a.test",
+      }),
+    );
+    expect(wantsNewTabPage(state, true)).toBe(true);
+    state = run(state, { type: "opening", delta: -1, scope: "a" }, { type: "scope", scope: "a" });
+    expect(wantsNewTabPage(state, true)).toBe(false);
+  });
+
+  it("adopts draft pages and a pending popup without replacing elements or storage", () => {
+    const partition = "persist:penguin-browser-project-" + "a".repeat(64);
+    let state = run(
+      READY,
+      { type: "scope", scope: "draft" },
+      event({
+        type: "builtin_browser_open",
+        requestId: "first",
+        sessionId: "draft",
+        partition,
+        url: "https://a.test",
+        activate: true,
+      }),
+      { type: "attached", key: guestKey("first"), tabId: 1 },
+      snapshot([owned(1, "draft")], 1),
+      event({
+        type: "builtin_browser_open",
+        requestId: "popup",
+        sessionId: "draft",
+        partition,
+        url: "https://a.test/popup",
+        activate: true,
+      }),
+    );
+    const before = state.guests.map(({ key, src, partition }) => ({ key, src, partition }));
+    state = run(
+      state,
+      event({ type: "builtin_browser_session", fromSessionId: "draft", sessionId: "saved" }),
+    );
+    expect(activeTab(state)?.id).toBe(1);
+    expect(state.guests.map(({ key, src, partition }) => ({ key, src, partition }))).toEqual(
+      before,
+    );
+    expect(state.guests.every((guest) => guest.scope === "saved")).toBe(true);
+    state = run(state, { type: "scope", scope: "draft" });
+    expect(wantsNewTabPage(state, true)).toBe(true);
   });
 });

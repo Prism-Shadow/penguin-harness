@@ -1,0 +1,109 @@
+/*
+ * The site navbar's scope (site/nav.tsx). The navbar is the landing page's markup and Tailwind
+ * classes, but on this page the theme under test re-points what those classes read: the gray
+ * ramp and white, the spacing unit, the radii, the small and body type rungs, the overlay shadow,
+ * the transition speed, the page's face and ink — and the root font-size, which scales every rem.
+ * `.g-sitebar` pins each back to the value the landing page renders with (its own styles.css), so
+ * the navbar is the same on all three sites whatever theme, mode, size or font the gallery shows.
+ * It follows only `.dark` on <html>, which the gallery's mode sets.
+ *
+ * `display: contents` keeps the scope out of the layout, so the sticky header stays a child of
+ * the page. Unlayered, like chrome.css: the focus ring here outranks the theme's base rule, and
+ * the scope sets nothing a utility on a descendant sets, so every class still wins where it says.
+ */
+
+.g-sitebar {
+  display: contents;
+
+  /* Tailwind's stock grays: the landing page's light ramp. */
+  --color-white: #fff;
+  --color-black: #000;
+  --color-gray-50: oklch(98.5% 0.002 247.839);
+  --color-gray-100: oklch(96.7% 0.003 264.542);
+  --color-gray-200: oklch(92.8% 0.006 264.531);
+  --color-gray-300: oklch(87.2% 0.01 258.338);
+  --color-gray-400: oklch(70.7% 0.022 261.325);
+  --color-gray-500: oklch(55.1% 0.027 264.364);
+  --color-gray-600: oklch(44.6% 0.03 256.802);
+  --color-gray-700: oklch(37.3% 0.034 259.733);
+  --color-gray-800: oklch(27.8% 0.033 256.848);
+  --color-gray-900: oklch(21% 0.034 264.665);
+  --color-gray-950: oklch(13% 0.028 261.692);
+
+  /* What the theme bridge (penguin-ui theme.css) points at its own tokens, in Tailwind's stock
+     values, in px: the root font-size under test must not reach the navbar. */
+  --ui-space-unit: 4px;
+  --ui-radius-md: 6px;
+  --ui-radius-lg: 8px;
+  --ui-text-small-size: 12px;
+  --ui-text-small-lh: calc(1 / 0.75);
+  --ui-text-body-size: 14px;
+  --ui-text-body-lh: calc(1.25 / 0.875);
+  --ui-shadow-overlay: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --ui-dur-fast: 150ms;
+  --container-7xl: 1280px;
+
+  /* The landing page's body. */
+  color: var(--color-gray-900);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: normal;
+  text-transform: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The landing page's dark ramp: true neutrals, the canvas lifted off black. */
+:root.dark .g-sitebar {
+  --color-gray-950: #141414;
+  --color-gray-900: #1c1c1c;
+  --color-gray-800: #2a2a2a;
+  --color-gray-700: #383838;
+  --color-gray-600: #575757;
+  --color-gray-500: #8f8f8f;
+  --color-gray-400: #ababab;
+  --color-gray-300: #d4d4d4;
+  --color-gray-200: #e3e3e3;
+  --color-gray-100: #f0f0f0;
+  --color-gray-50: #f7f7f7;
+  color: var(--color-gray-100);
+}
+
+.g-sitebar :is(button, a):focus-visible {
+  outline: 3px solid rgb(107 114 128 / 0.4);
+  outline-offset: 2px;
+}
+.g-sitebar button:not(:disabled) {
+  cursor: pointer;
+}
+
+/* The landing page's menu fade. */
+@keyframes g-site-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.g-sitebar .anim-fade {
+  animation: g-site-fade-in 120ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .g-sitebar *,
+  .g-sitebar *::before,
+  .g-sitebar *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
