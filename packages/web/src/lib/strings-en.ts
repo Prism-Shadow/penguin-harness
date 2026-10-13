@@ -3028,7 +3028,6 @@ export const en: Strings = {
     },
   },
 
-
   search: {
     title: "Search chats",
     placeholder: "Search every chat in this project — titles and message content",
@@ -3072,6 +3071,7 @@ export const en: Strings = {
     roleOther: "Record",
   },
   chat: {
+    searchAllSessions: "Search all conversations",
     newSessionMenu: "New chat",
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",

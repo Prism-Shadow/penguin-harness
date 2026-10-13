@@ -3165,7 +3165,6 @@ export const zh = {
     },
   },
 
-
   search: {
     title: "搜索会话",
     /** The search field itself; the hint under it names the two ways to focus it. */
@@ -3210,6 +3209,7 @@ export const zh = {
     roleOther: "记录",
   },
   chat: {
+    searchAllSessions: "搜索全部会话",
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
