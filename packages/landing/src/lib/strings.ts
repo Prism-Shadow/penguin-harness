@@ -262,7 +262,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
-    title: "一句话 + 0.2 元构建法务应用",
+    title: "一句话 + 0.6 元构建法务应用",
     subtitle:
       "用一句话描述需求，PenguinHarness 就能构建法务智能体应用：上传合同、识别风险并生成审阅报告。",
     prompt:

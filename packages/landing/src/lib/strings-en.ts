@@ -271,7 +271,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    title: "One sentence and ¥0.2 build a legal agent app",
+    title: "One sentence and $0.10 build a legal agent app",
     subtitle:
       "Describe what you need in one request. PenguinHarness builds a legal agent app that takes contract uploads, identifies risks and produces review reports to download.",
     prompt:
