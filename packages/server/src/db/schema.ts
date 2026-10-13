@@ -237,7 +237,7 @@ CREATE TABLE IF NOT EXISTS trace_files (       -- DERIVED CACHE of the on-disk T
 CREATE INDEX IF NOT EXISTS idx_trace_files_agent_date ON trace_files(project_id, agent_id, date);
 CREATE INDEX IF NOT EXISTS idx_trace_files_session ON trace_files(session_id);
 CREATE TABLE IF NOT EXISTS trace_sessions (    -- per-session facts read ONCE at registration from the earliest shard's head (same derived-cache rules as trace_files; listing needs zero head-reads)
-  session_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,
   source     TEXT,                           -- session_meta source as the head carried it: 'user' | 'api' | 'schedule' | 'subagent' | 'cli' | 'company'; NULL = the head records none (written before the source was required: read as 'company' for an 'org' row, else 'user' — readRecordedSource); 'benchmark' from older rows reads as 'cli' (normalizeSessionSource; meaningless while meta_read = 0)
@@ -246,9 +246,9 @@ CREATE TABLE IF NOT EXISTS trace_sessions (    -- per-session facts read ONCE at
   provider   TEXT,                           -- model reference from session_meta: the model the Session was created on (CLI adoption reads it from here, and the runtime's own answer corrects the row at load; NULL = meta unreadable / legacy without provider)
   model_id   TEXT,
   first_ts   TEXT,                           -- first record's timestamp (adoption's createdAt fallback when the id embeds no time)
-  meta_read  INTEGER NOT NULL DEFAULT 0      -- 1 once the head parsed; 0 = facts unknown, retried by the next reconcile that touches the session
+  meta_read  INTEGER NOT NULL DEFAULT 0,     -- 1 once the head parsed; 0 = facts unknown, retried by the next reconcile that touches the session
+  PRIMARY KEY (project_id, agent_id, session_id)  -- session ids are unique per Agent, not globally: one Agent's import or Session delete must never rewrite or remove another Agent's facts (the same id exported from Agent A and imported into Agent B is two conversations). The key's prefix covers (project_id, agent_id), so no separate Agent index
 );
-CREATE INDEX IF NOT EXISTS idx_trace_sessions_agent ON trace_sessions(project_id, agent_id);
 CREATE TABLE IF NOT EXISTS org_sessions (      -- DERIVED CACHE (company mode): desk sessions, rebuilt from each organization's desks.toml (current + previous); trigger_hop is mention-chain accounting and reads 0 after a rebuild
   session_id  TEXT PRIMARY KEY,
   project_id  TEXT NOT NULL,

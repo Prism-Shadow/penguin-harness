@@ -427,7 +427,7 @@ export class SessionService {
     const known = this.deps.sources.get(row.sessionId);
     if (known !== undefined) return readRecordedSource(known, row.client);
     if (!hasTrace) return unrunSource(row.client);
-    const facts = this.deps.traceStore.getSession(row.sessionId);
+    const facts = this.deps.traceStore.getSession(row.projectId, row.agentId, row.sessionId);
     if (!facts?.metaRead) return undefined; // Unreadable/unregistered: stay unknown, retry on the next list.
     this.deps.sources.set(row.sessionId, facts.source);
     return readRecordedSource(facts.source, row.client);
@@ -940,7 +940,7 @@ export class SessionService {
     agentId: string,
     sessionId: string,
   ): SessionRow | null {
-    const facts = this.deps.traceStore.getSession(sessionId);
+    const facts = this.deps.traceStore.getSession(projectId, agentId, sessionId);
     if (!facts?.metaRead) return null; // Corrupt/unreadable head: skip (does not block the list; retried by a later reconcile)
     // An older Trace version's session_meta lacks provider (the model reference
     // wasn't split into separate fields yet): no backward compat, skip adoption

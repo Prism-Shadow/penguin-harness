@@ -250,7 +250,8 @@ export class TraceIndexService implements TraceIndex {
         }
         this.repo.upsertFile({ projectId, agentId, sessionId, fileIndex, date, sizeBytes: size });
         known.delete(fileKey);
-        if (this.repo.getSession(sessionId)?.metaRead !== true) newSessions.add(sessionId);
+        if (this.repo.getSession(projectId, agentId, sessionId)?.metaRead !== true)
+          newSessions.add(sessionId);
       }
       // Rows whose files vanished from this dir (external delete / rename).
       for (const row of known.values()) {
@@ -324,7 +325,7 @@ export class TraceIndexService implements TraceIndex {
 
   /** Write-time removal for Session deletion (files are being rm'ed by the caller). */
   removeSession(projectId: string, agentId: string, sessionId: string): void {
-    this.repo.deleteBySession(sessionId);
+    this.repo.deleteBySession(projectId, agentId, sessionId);
     this.seen.delete(`${projectId}\0${agentId}`);
   }
 

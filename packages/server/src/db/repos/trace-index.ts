@@ -180,12 +180,13 @@ export class TraceIndexRepo implements TraceIndexStore {
   }
 
   upsertSession(row: TraceSessionRow): void {
+    // Keyed per Agent (see schema.ts): the same session id under another Agent of the
+    // Project is a different conversation and must not have its facts rewritten here.
     this.db
       .prepare(
         `INSERT INTO trace_sessions (session_id, project_id, agent_id, source, workspace, title, provider, model_id, first_ts, meta_read)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(session_id) DO UPDATE SET
-           project_id = excluded.project_id, agent_id = excluded.agent_id,
+         ON CONFLICT(project_id, agent_id, session_id) DO UPDATE SET
            source = excluded.source, workspace = excluded.workspace, title = excluded.title,
            provider = excluded.provider, model_id = excluded.model_id,
            first_ts = excluded.first_ts, meta_read = excluded.meta_read`,
@@ -204,8 +205,13 @@ export class TraceIndexRepo implements TraceIndexStore {
       );
   }
 
-  getSession(sessionId: string): TraceSessionRow | null {
-    const r = this.db.prepare("SELECT * FROM trace_sessions WHERE session_id = ?").get(sessionId);
+  /** One Session's facts, scoped to the owning Agent; null when unindexed there. */
+  getSession(projectId: string, agentId: string, sessionId: string): TraceSessionRow | null {
+    const r = this.db
+      .prepare(
+        "SELECT * FROM trace_sessions WHERE project_id = ? AND agent_id = ? AND session_id = ?",
+      )
+      .get(projectId, agentId, sessionId);
     return r ? mapSession(r) : null;
   }
 
@@ -216,10 +222,16 @@ export class TraceIndexRepo implements TraceIndexStore {
     return rows.map(mapSession);
   }
 
-  /** Removes one Session's rows from both tables (Session delete keeps the cache coherent). */
-  deleteBySession(sessionId: string): void {
-    this.db.prepare("DELETE FROM trace_files WHERE session_id = ?").run(sessionId);
-    this.db.prepare("DELETE FROM trace_sessions WHERE session_id = ?").run(sessionId);
+  /** Removes one Session's rows from both tables, scoped to the owning Agent (Session delete keeps the cache coherent). */
+  deleteBySession(projectId: string, agentId: string, sessionId: string): void {
+    this.db
+      .prepare("DELETE FROM trace_files WHERE project_id = ? AND agent_id = ? AND session_id = ?")
+      .run(projectId, agentId, sessionId);
+    this.db
+      .prepare(
+        "DELETE FROM trace_sessions WHERE project_id = ? AND agent_id = ? AND session_id = ?",
+      )
+      .run(projectId, agentId, sessionId);
   }
 
   deleteByAgent(projectId: string, agentId: string): void {

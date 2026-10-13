@@ -79,7 +79,7 @@ describe("trace-index", () => {
     ).toEqual([{ sessionId: S1, fileIndex: 1, date: "2026-07-05" }]);
     expect(rows[0]!.sizeBytes).toBeGreaterThan(0);
     // Registration-time facts: origin / workspace / first-prompt title, one head-read.
-    const facts = h.traceIndex.repo.getSession(S1);
+    const facts = h.traceIndex.repo.getSession(P, A, S1);
     expect(facts?.source).toBe("subagent");
     expect(facts?.workspace).toBe("/ws/one");
     expect(facts?.title).toBe("你好，请检查代码");
@@ -106,7 +106,7 @@ describe("trace-index", () => {
     await h.traceIndex.reconcileAgent(P, A);
     expect(h.traceIndex.repo.listFilesByAgent(P, A)).toHaveLength(2);
     expect(h.traceIndex.counters.dirScans).toBe(scans + 1);
-    expect(h.traceIndex.repo.getSession(S2)?.metaRead).toBe(true);
+    expect(h.traceIndex.repo.getSession(P, A, S2)?.metaRead).toBe(true);
   });
 
   it("a new shard (compaction rotate) in a NON-newest date dir is caught by the gate", async () => {
@@ -142,6 +142,27 @@ describe("trace-index", () => {
     await h.traceIndex.reconcileAgent(P, A);
     expect(h.traceIndex.repo.listFilesBySession(P, A, S2)).toHaveLength(2);
     expect(h.traceIndex.counters.gateStats).toBe(gate + 2); // root + newest only
+  });
+
+  it("a date dir with a FUTURE mtime does not wedge the gate into a full scan per request", async () => {
+    // A restored backup, rsync -t from a faster host, or an NFS/container clock skew can
+    // leave a date dir's mtime in the future. Cached as the never-matching sentinel, that
+    // dir defeated the gate on every request, forever (each pass re-cached the sentinel;
+    // not even a restart helped — the gate is rebuilt from disk). It must be cacheable:
+    // any real change moves the mtime off the cached value, so the gate still notices.
+    await writeTraceFile(root, P, A, "2026-07-05", S1, 1, [userText("older day")]);
+    await writeTraceFile(root, P, A, "2026-07-06", S2, 1, [userText("newest day")]);
+    await backdate(tracesRoot(root), path.join(tracesRoot(root), "2026-07-06"));
+    const future = new Date(Date.now() + 60 * 60 * 1000);
+    await fs.utimes(path.join(tracesRoot(root), "2026-07-05"), future, future);
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.repo.listFilesByAgent(P, A)).toHaveLength(2);
+
+    // The tree is otherwise quiet: further no-op reconciles are pure gate hits.
+    const scans = h.traceIndex.counters.dirScans;
+    await h.traceIndex.reconcileAgent(P, A);
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.counters.dirScans).toBe(scans);
   });
 
   it("a write into an OLD date dir with backdated mtime slips past the gate; the consumers' force-retry (locateAll) recovers it", async () => {
@@ -194,14 +215,14 @@ describe("trace-index", () => {
     // Registered without any head-read (the records were already in memory).
     expect(h.traceIndex.counters.headReads).toBe(headReads);
     expect(h.traceIndex.repo.listFilesBySession(P, A, IMP)).toHaveLength(1);
-    const facts = h.traceIndex.repo.getSession(IMP);
+    const facts = h.traceIndex.repo.getSession(P, A, IMP);
     expect(facts?.source).toBe("schedule");
     expect(facts?.workspace).toBe("/ws/imp");
     expect(facts?.title).toBe("imported prompt");
 
     await h.service.deleteSessionTraces(P, A, IMP);
     expect(h.traceIndex.repo.listFilesBySession(P, A, IMP)).toEqual([]);
-    expect(h.traceIndex.repo.getSession(IMP)).toBeNull();
+    expect(h.traceIndex.repo.getSession(P, A, IMP)).toBeNull();
     // The files are gone from disk too, and a fresh reconcile does not resurrect rows.
     await h.traceIndex.reconcileAgent(P, A, { force: true });
     expect(h.traceIndex.repo.listFilesBySession(P, A, IMP)).toEqual([]);
@@ -224,9 +245,51 @@ describe("trace-index", () => {
       metaRead: true,
     };
     h.traceIndex.repo.upsertSession({ ...row, source: null });
-    expect(h.traceIndex.repo.getSession(S1)?.source).toBeNull();
+    expect(h.traceIndex.repo.getSession(P, A, S1)?.source).toBeNull();
     h.traceIndex.repo.upsertSession({ ...row, source: "benchmark" as unknown as SessionSource });
-    expect(h.traceIndex.repo.getSession(S1)?.source).toBe("cli");
+    expect(h.traceIndex.repo.getSession(P, A, S1)?.source).toBe("cli");
+  });
+
+  it("trace_sessions is keyed per Agent: the same session id under two Agents neither overwrites nor cross-deletes", async () => {
+    // The same id exported from Agent A and imported into Agent B is two conversations:
+    // a session id is unique per Agent, not globally. Under the old single-column key the
+    // second registration rewrote the first Agent's facts, and a delete by session id
+    // alone removed every Agent's rows while the other Agent's files stayed on disk.
+    const B = "agent-ii";
+    const row = (agentId: string, workspace: string) => ({
+      sessionId: S1,
+      projectId: P,
+      agentId,
+      source: "user" as SessionSource,
+      workspace,
+      title: null,
+      provider: "custom",
+      modelId: "m1",
+      firstTs: null,
+      metaRead: true,
+    });
+    for (const agentId of [A, B]) {
+      h.traceIndex.repo.upsertFile({
+        projectId: P,
+        agentId,
+        sessionId: S1,
+        fileIndex: 1,
+        date: "2026-07-05",
+        sizeBytes: 10,
+      });
+      h.traceIndex.repo.upsertSession(row(agentId, agentId === A ? "/ws/one" : "/ws/two"));
+    }
+    expect(h.traceIndex.repo.getSession(P, A, S1)?.workspace).toBe("/ws/one");
+    expect(h.traceIndex.repo.getSession(P, B, S1)?.workspace).toBe("/ws/two");
+    expect(h.traceIndex.repo.listFilesBySession(P, A, S1)).toHaveLength(1);
+    expect(h.traceIndex.repo.listFilesBySession(P, B, S1)).toHaveLength(1);
+
+    // Deleting one Agent's Session leaves the other Agent's index alone.
+    h.traceIndex.repo.deleteBySession(P, A, S1);
+    expect(h.traceIndex.repo.getSession(P, A, S1)).toBeNull();
+    expect(h.traceIndex.repo.listFilesBySession(P, A, S1)).toEqual([]);
+    expect(h.traceIndex.repo.getSession(P, B, S1)?.workspace).toBe("/ws/two");
+    expect(h.traceIndex.repo.listFilesBySession(P, B, S1)).toHaveLength(1);
   });
 
   it("externally deleted files and date dirs fall out of the index on the next changed-dir pass", async () => {

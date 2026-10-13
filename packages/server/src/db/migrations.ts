@@ -648,6 +648,76 @@ export const MIGRATIONS: readonly Migration[] = [
     // background Session away again.
     down() {},
   },
+  {
+    version: 17,
+    name: "trace-sessions-agent-scoped-key",
+    // trace_sessions' key widens from session_id alone to (project_id, agent_id,
+    // session_id): session ids are unique per Agent, not globally, and the single-column
+    // key let one Agent's Trace import rewrite another Agent's facts row and one Agent's
+    // Session delete remove it. Constraining (reshaping), so a predecessor build — which
+    // still reads and writes the single-column key — cannot survive it on the swap path.
+    swapSafe: false,
+    up(db) {
+      // Rebuild only when the table still carries the OLD single-column key: a database
+      // the declarative track already created at the current shape (fresh, or rebuilt
+      // here once) needs no copy. The rows are a derived cache, and the old shape held at
+      // most one row per session id, so copying them all loses nothing.
+      const cols = db.prepare("PRAGMA table_info(trace_sessions)").all() as {
+        name: string;
+        pk: number;
+      }[];
+      const keyed = cols.filter((c) => c.pk > 0).map((c) => c.name);
+      if (keyed.length !== 1 || keyed[0] !== "session_id") return;
+      // Frozen copy of the DDL as of this change (column order unchanged); do not
+      // re-derive from schema.ts.
+      db.exec(`
+        CREATE TABLE trace_sessions_scoped (
+          session_id TEXT NOT NULL,
+          project_id TEXT NOT NULL,
+          agent_id   TEXT NOT NULL,
+          source     TEXT,
+          workspace  TEXT NOT NULL DEFAULT '',
+          title      TEXT,
+          provider   TEXT,
+          model_id   TEXT,
+          first_ts   TEXT,
+          meta_read  INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (project_id, agent_id, session_id)
+        );
+        INSERT INTO trace_sessions_scoped
+          SELECT session_id, project_id, agent_id, source, workspace, title, provider, model_id, first_ts, meta_read
+          FROM trace_sessions;
+        DROP TABLE trace_sessions;
+        ALTER TABLE trace_sessions_scoped RENAME TO trace_sessions;
+        DROP INDEX IF EXISTS idx_trace_sessions_agent;
+      `);
+    },
+    // Restores the global key. Only the first row per session id survives the narrowing —
+    // the Agent-scoped siblings the widened key admitted are lost (the old shape could not
+    // hold them). The index comes back with the table it served.
+    down(db) {
+      db.exec(`
+        CREATE TABLE trace_sessions_global (
+          session_id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          agent_id   TEXT NOT NULL,
+          source     TEXT,
+          workspace  TEXT NOT NULL DEFAULT '',
+          title      TEXT,
+          provider   TEXT,
+          model_id   TEXT,
+          first_ts   TEXT,
+          meta_read  INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT OR IGNORE INTO trace_sessions_global
+          SELECT session_id, project_id, agent_id, source, workspace, title, provider, model_id, first_ts, meta_read
+          FROM trace_sessions;
+        DROP TABLE trace_sessions;
+        ALTER TABLE trace_sessions_global RENAME TO trace_sessions;
+        CREATE INDEX idx_trace_sessions_agent ON trace_sessions(project_id, agent_id);
+      `);
+    },
+  },
 ];
 
 /** The highest version this build knows how to reach. */

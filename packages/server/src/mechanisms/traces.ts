@@ -87,9 +87,13 @@ export abstract class TraceIndexStore {
   ): TraceFileRow[];
   abstract findAgentBySession(projectId: string, sessionId: string): string | null;
   abstract upsertSession(row: TraceSessionRow): void;
-  abstract getSession(sessionId: string): TraceSessionRow | null;
+  abstract getSession(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): TraceSessionRow | null;
   abstract listSessionsByAgent(projectId: string, agentId: string): TraceSessionRow[];
-  abstract deleteBySession(sessionId: string): void;
+  abstract deleteBySession(projectId: string, agentId: string, sessionId: string): void;
   abstract deleteByAgent(projectId: string, agentId: string): void;
   abstract deleteByProject(projectId: string): void;
 }

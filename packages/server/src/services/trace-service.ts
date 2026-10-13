@@ -1910,7 +1910,7 @@ export class TraceService implements Traces {
   private indexImportedSession(projectId: string, agentId: string, sessionId: string): void {
     const sessions = this.sessions;
     if (!sessions) return;
-    const facts = this.store.getSession(sessionId);
+    const facts = this.store.getSession(projectId, agentId, sessionId);
     if (!facts?.metaRead || facts.provider === null || facts.modelId === null) return;
     this.sources?.set(sessionId, facts.source);
     const createdAt = sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString();

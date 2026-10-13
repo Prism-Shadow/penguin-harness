@@ -87,6 +87,7 @@ function dropCompanyModeTables(db: DatabaseSync): void {
 function open024(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
@@ -132,6 +133,7 @@ const PRE_CHANNEL_CHAT_DDL = `
 function open6(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
@@ -148,6 +150,7 @@ function open6(): DatabaseSync {
 function open7(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
@@ -162,6 +165,7 @@ function open7(): DatabaseSync {
 function open8(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
@@ -175,6 +179,7 @@ function open8(): DatabaseSync {
 function open9(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
@@ -187,6 +192,7 @@ function open9(): DatabaseSync {
 function open029(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
@@ -211,6 +217,7 @@ function open029(): DatabaseSync {
 function openPreProfile(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   db.exec("DROP TABLE IF EXISTS model_provider_auth_tokens");
   dropBrowserExtensions(db);
   dropAgentApi(db);
@@ -254,14 +261,21 @@ function userColumns(db: DatabaseSync): string[] {
 }
 
 /** Runs `fn` with the restart-only migration taken off the list, so a swap-path case can see swap-safe ones apply. */
+/**
+ * Runs `fn` with every restart-only migration lifted out of MIGRATIONS, restored to their
+ * original positions afterwards: the swap-path assertions exercise the additive set a
+ * pushed platform CAN apply, whatever restart-only migrations the list also carries.
+ */
 function withoutRestartOnly<T>(fn: () => T): T {
   const list = MIGRATIONS as unknown as (typeof MIGRATIONS)[number][];
-  const removed = list.splice(2, 1);
+  const removed: { index: number; migration: (typeof list)[number] }[] = [];
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (!list[i]!.swapSafe) removed.unshift({ index: i, migration: list.splice(i, 1)[0]! });
+  }
   try {
     return fn();
   } finally {
-    // Back where it was: appending would reorder the list once later migrations exist.
-    list.splice(2, 0, ...removed);
+    for (const { index, migration } of removed) list.splice(index, 0, migration);
   }
 }
 
@@ -617,8 +631,9 @@ describe("migration 8 → current: model-promotions", () => {
         "agent-api",
         "messaging-conversations",
         "sessions-kept-at",
+        "trace-sessions-agent-scoped-key",
       ]);
-      expect(schemaVersion(db)).toBe(16);
+      expect(schemaVersion(db)).toBe(17);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -634,7 +649,7 @@ describe("migration 8 → current: model-promotions", () => {
   it("is safe to create while a pushed platform boots", () => {
     const db = open8();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
+      expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual([
         "model-promotions",
         "model-provider-auth-tokens",
         "sessions-sandbox",
@@ -669,8 +684,9 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         "agent-api",
         "messaging-conversations",
         "sessions-kept-at",
+        "trace-sessions-agent-scoped-key",
       ]);
-      expect(schemaVersion(db)).toBe(16);
+      expect(schemaVersion(db)).toBe(17);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -701,6 +717,7 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
 function open12(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   dropBrowserExtensions(db);
   dropAgentApi(db);
   dropMessagingConversations(db);
@@ -712,7 +729,7 @@ describe("migration 12 → current: browser-extensions", () => {
   it("creates the pairings table, which holds one row per token and cascades with its user", () => {
     const db = open12();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
+      expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual([
         "browser-extensions",
         "agent-api",
         "messaging-conversations",
@@ -764,17 +781,37 @@ describe("migration 12 → current: browser-extensions", () => {
 function open13(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   dropAgentApi(db);
   dropMessagingConversations(db);
   db.exec("PRAGMA user_version = 13");
   return db;
 }
 
+/** trace_sessions as the releases before migration 17 declared it (frozen: the live schema
+ *  keys it per Agent now, and the migration that rebuilds it must not learn a new shape). */
+const PRE_SCOPED_TRACE_SESSIONS_DDL = `
+  DROP TABLE IF EXISTS trace_sessions;
+  CREATE TABLE trace_sessions (
+    session_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    agent_id   TEXT NOT NULL,
+    source     TEXT,
+    workspace  TEXT NOT NULL DEFAULT '',
+    title      TEXT,
+    provider   TEXT,
+    model_id   TEXT,
+    first_ts   TEXT,
+    meta_read  INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX idx_trace_sessions_agent ON trace_sessions(project_id, agent_id);
+`;
+
 describe("migration 13 → current: agent-api", () => {
   it("creates the settings table while a pushed platform boots: one row per Agent, keyed and allow-all unless set", () => {
     const db = open13();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
+      expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual([
         "agent-api",
         "messaging-conversations",
         "sessions-kept-at",
@@ -851,6 +888,7 @@ describe("migration 13 → current: agent-api", () => {
 function open14(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   dropMessagingConversations(db);
   db.exec("PRAGMA user_version = 14");
   return db;
@@ -861,7 +899,7 @@ describe("migration 14 → current: messaging-conversations", () => {
     const db = open14();
     const at14 = open14();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual([
+      expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual([
         "messaging-conversations",
         "sessions-kept-at",
       ]);
@@ -888,8 +926,18 @@ describe("migration 14 → current: messaging-conversations", () => {
 function open15(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
   db.exec("ALTER TABLE sessions DROP COLUMN kept_at");
   db.exec("PRAGMA user_version = 15");
+  return db;
+}
+
+/** A database stamped at migration 16: Sessions carry the keep mark; trace_sessions is still keyed globally. */
+function open16(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  db.exec(PRE_SCOPED_TRACE_SESSIONS_DDL);
+  db.exec("PRAGMA user_version = 16");
   return db;
 }
 
@@ -904,7 +952,9 @@ describe("migration 15 → current: sessions-kept-at", () => {
     const db = open15();
     try {
       insertSession(db);
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["sessions-kept-at"]);
+      expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual([
+        "sessions-kept-at",
+      ]);
       expect(schemaVersion(db)).toBe(16);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -927,6 +977,81 @@ describe("migration 15 → current: sessions-kept-at", () => {
       });
     } finally {
       db.close();
+    }
+  });
+});
+
+describe("migration 16 → current: trace-sessions-agent-scoped-key", () => {
+  const put = (db: DatabaseSync, agentId: string, workspace: string) =>
+    db
+      .prepare(
+        "INSERT INTO trace_sessions (session_id, project_id, agent_id, source, workspace, title, provider, model_id, first_ts, meta_read)" +
+          " VALUES ('s1', 'p1', ?, 'user', ?, NULL, 'custom', 'm1', NULL, 1)",
+      )
+      .run(agentId, workspace);
+
+  it("rebuilds the table under the (project_id, agent_id, session_id) key, keeping every row, and drops the now-redundant Agent index", () => {
+    const db = open16();
+    try {
+      put(db, "a1", "/ws/one");
+      expect(migrate(db).applied).toEqual(["trace-sessions-agent-scoped-key"]);
+      expect(schemaVersion(db)).toBe(17);
+      // The same id under a second Agent now coexists instead of overwriting — the
+      // collision the single-column key resolved by silently rewriting the first row.
+      put(db, "a2", "/ws/two");
+      expect(
+        db
+          .prepare(
+            "SELECT agent_id, workspace FROM trace_sessions WHERE session_id = 's1' ORDER BY agent_id",
+          )
+          .all(),
+      ).toEqual([
+        { agent_id: "a1", workspace: "/ws/one" },
+        { agent_id: "a2", workspace: "/ws/two" },
+      ]);
+      // The key's prefix covers (project_id, agent_id): the explicit index is gone.
+      expect(
+        db
+          .prepare(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_trace_sessions_agent'",
+          )
+          .get(),
+      ).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("refuses the swap path whole: a predecessor still reads and writes the single-column key", () => {
+    const db = open16();
+    try {
+      expect(() => migrate(db, { swapPath: true })).toThrow(RestartRequiredError);
+      expect(schemaVersion(db)).toBe(16);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down restores the global key, keeping the first row per session id, and a second up rebuilds from there", () => {
+    const db = open16();
+    const at16 = open16();
+    try {
+      put(db, "a1", "/ws/one");
+      migrate(db);
+      put(db, "a2", "/ws/two"); // the sibling only the widened key admits
+      rollbackTo(db, 16);
+      expect(schemaVersion(db)).toBe(16);
+      expect(shape(db)).toBe(shape(at16));
+      // The narrowed key cannot hold both rows: the first per session id survives.
+      expect(db.prepare("SELECT agent_id, workspace FROM trace_sessions").all()).toEqual([
+        { agent_id: "a1", workspace: "/ws/one" },
+      ]);
+      migrate(db);
+      // The row the down kept re-lands under the widened key.
+      expect(db.prepare("SELECT COUNT(*) AS n FROM trace_sessions").get()).toEqual({ n: 1 });
+    } finally {
+      db.close();
+      at16.close();
     }
   });
 });
