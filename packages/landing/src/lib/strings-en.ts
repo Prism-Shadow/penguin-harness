@@ -252,6 +252,22 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
     cost: "Built on DeepSeek V4 Pro for $0.02 (¥0.2) in Tokens.",
   },
 
+  compare: {
+    title: "The parts around the agent are already built",
+    subtitle:
+      "An agent library runs the loop that calls the model and its tools. Around that loop you still need an interface, a record of each run, a way to score the agent and an API to call it.",
+    library: {
+      name: "Agent library",
+      mode: "You build each piece",
+      note: "Write each part yourself, or wire in a separate product for it.",
+    },
+    penguin: {
+      name: "PenguinHarness",
+      mode: "Already built",
+      note: "A Web App, Traces, the Evaluation Center with built-in Benchmarks, self-evolution toolkits, a sandbox and the Agent API.",
+    },
+  },
+
   scenarios: {
     title: "From screening centers to factory floors",
     subtitle:

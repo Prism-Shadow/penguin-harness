@@ -5,6 +5,7 @@
 import { Hero } from "../sections/hero";
 import { Showcase } from "../sections/showcase";
 import { Cases } from "../sections/cases";
+import { Compare } from "../sections/compare";
 import { Benchmark } from "../sections/benchmark";
 import { Scenarios } from "../sections/scenarios";
 import { Updates } from "../sections/updates";
@@ -18,6 +19,7 @@ export function HomePage() {
       <Hero />
       <Showcase />
       <Cases />
+      <Compare />
       <Benchmark />
       <Scenarios />
       <Updates />
