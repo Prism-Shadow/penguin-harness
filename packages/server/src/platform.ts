@@ -76,6 +76,7 @@ import { AgentsRepo } from "./db/repos/agents.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { TraceIndexRepo } from "./db/repos/trace-index.js";
+import { SessionSearchRepo } from "./db/repos/session-search.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
 import { MessagingConversationsRepo } from "./db/repos/messaging-conversations.js";
 import { OrgCacheRepo } from "./db/repos/organizations.js";
@@ -91,6 +92,7 @@ import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
+import { SessionSearchService } from "./services/session-search.js";
 import { TraceService } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { RevealService } from "./services/reveal-path.js";
@@ -168,6 +170,7 @@ import {
   UsageStore,
 } from "./mechanisms/observability.js";
 import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
+import { SessionSearch, SessionSearchStore } from "./mechanisms/conversation-search.js";
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
@@ -391,6 +394,16 @@ export class ObservabilityModule {}
 })
 export class TracesModule {}
 
+/**
+ * Conversation search: an index over the Trace tree, rebuilt from disk rather than being
+ * authority for anything. Exported so the session routes can reach it.
+ */
+@Module({
+  children: [SessionSearchRepo, SessionSearchService],
+  exports: [SessionSearchStore, SessionSearch],
+})
+export class ConversationSearchModule {}
+
 @Module({
   children: [
     AgentConfigService,
@@ -482,6 +495,7 @@ export class WorkflowsModule {}
     SessionRuntimeModule,
     ObservabilityModule,
     TracesModule,
+    ConversationSearchModule,
     AgentsModule,
     WorkspaceModule,
     MessagingHubModule,
