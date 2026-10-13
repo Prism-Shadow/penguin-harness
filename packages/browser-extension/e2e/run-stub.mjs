@@ -7,7 +7,8 @@
 // Covers: pairing through the options page (token in the subprotocol, never in a URL); the
 // pages and the toolbar title in Chrome's language (Chinese here) until the user picks another,
 // which turns both over at once, and the manifest's messages from _locales; the pages following
-// the device's dark setting until the user picks a theme; the hello handshake and pings; open-tab into the "Penguin" group; a scan-like Runtime.evaluate;
+// the device's dark setting until the user picks a theme; the switches' focus ring, drawn for the
+// keyboard and never left by a click; the hello handshake and pings; open-tab into the "Penguin" group; a scan-like Runtime.evaluate;
 // a trusted click and typing through Input.*; a relayed CDP event; a page the tab opens joining
 // the group; refusals (a cookie method, a tab the server does not drive); close-tab; and a
 // revoke closing the socket for good.
@@ -187,6 +188,30 @@ try {
   check("picking Dark holds it dark on a light device", await becomes(DARK));
   await options.click("#theme");
   check("picking System follows the device again", await becomes(LIGHT));
+
+  // --- focus rings: a click leaves none, the keyboard draws one ---------------------------------
+  const ring = (selector) =>
+    options.evaluate((s) => getComputedStyle(document.querySelector(s)).outlineStyle, selector);
+  await options.click("#language");
+  await options.keyboard.press("Escape");
+  const clicked = { language: await ring(".pref") };
+  // Three steps go round to System again.
+  for (let i = 0; i < 3; i++) await options.click("#theme");
+  clicked.theme = await ring("#theme");
+  check(
+    "a click on the language or theme switch leaves no focus ring",
+    clicked.language === "none" && clicked.theme === "none",
+    JSON.stringify(clicked),
+  );
+  await options.keyboard.press("Shift+Tab");
+  const keyed = { language: await ring(".pref") };
+  await options.keyboard.press("Tab");
+  keyed.theme = await ring("#theme");
+  check(
+    "focus by keyboard draws the ring on both",
+    keyed.language === "solid" && keyed.theme === "solid",
+    JSON.stringify(keyed),
+  );
 
   const pairRequest = stub.state.pairRequests[0];
   check(

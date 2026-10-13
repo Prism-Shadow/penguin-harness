@@ -109,7 +109,10 @@ export function followPreferences(render: (strings: Strings) => void): void {
   };
 
   const select = document.getElementById("language") as HTMLSelectElement | null;
-  select?.addEventListener("change", () => void setLanguagePref(parseLanguagePref(select.value)));
+  if (select !== null) {
+    select.addEventListener("change", () => void setLanguagePref(parseLanguagePref(select.value)));
+    markKeyboardFocus(select);
+  }
   document
     .getElementById("theme")
     ?.addEventListener("click", () => void setThemePref(NEXT_THEME[theme]));
@@ -134,6 +137,30 @@ export function isPreferenceChange(changes: Record<string, unknown>, area: strin
     area === "local" &&
     Object.keys(changes).every((key) => key === "uiLanguage" || key === "uiTheme")
   );
+}
+
+/**
+ * Chrome counts a mouse click on a <select> as :focus-visible, so its focus ring would stay after
+ * every pick made with the mouse. The language switch marks keyboard focus itself, the way
+ * :focus-visible treats a button: a ring for focus that arrives or carries on by key, none after a
+ * click.
+ */
+function markKeyboardFocus(select: HTMLSelectElement): void {
+  let pointer = false;
+  const mark = (keyboard: boolean) => {
+    if (keyboard) select.dataset.focus = "keyboard";
+    else delete select.dataset.focus;
+  };
+  select.addEventListener("pointerdown", () => {
+    pointer = true;
+    mark(false);
+  });
+  select.addEventListener("focus", () => mark(!pointer));
+  select.addEventListener("keydown", () => mark(true));
+  select.addEventListener("blur", () => {
+    pointer = false;
+    mark(false);
+  });
 }
 
 /** The theme switch steps through the three the way the product site's does. */

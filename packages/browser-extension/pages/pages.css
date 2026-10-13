@@ -185,9 +185,10 @@ button:disabled {
   cursor: default;
 }
 
+/* Keyboard focus only: a click leaves no ring (view.ts marks the select's keyboard focus). */
 button:focus-visible,
 a:focus-visible,
-.pref:has(select:focus-visible) {
+.pref:has(select[data-focus="keyboard"]) {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
