@@ -6,9 +6,9 @@
  * take" — the outbound path the admin proxy settings configure. That path is the server's
  * own: the browser reaches the internet by a different route entirely and could not be
  * asked (a cross-origin request to a provider host is refused before it is sent), so the
- * probe belongs here. It travels the configured path for free: the startup entry replaces
- * globalThis.fetch with undici's, which resolves the process-global dispatcher per call,
- * and that dispatcher is what the proxy settings drive (see net/proxy.ts).
+ * probe belongs here. It travels the configured path for free: the runtime's fetch
+ * resolves the process-global dispatcher per call, and that dispatcher is what the proxy
+ * settings drive (see net/proxy.ts).
  *
  * Reachable is judged by the fact that an answer arrived AT ALL, and any HTTP status counts
  * — 401 and 403 included. A refused credential still proves the name resolved, TCP
