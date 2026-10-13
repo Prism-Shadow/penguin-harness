@@ -614,6 +614,21 @@ export const FAST_MODE_UNSUPPORTED_GUIDANCE =
   "Fast mode is enabled for this model; turn it off in the model settings to use this model.";
 
 /**
+ * Whether any level of the error chain is an HTTP **429** — the provider's rate limit, or a
+ * quota that is exhausted for now. The outcome stays `retryable` (a short burst is exactly
+ * what the reconnect ladder is for), but it is classified apart from a transport drop: the
+ * code is what lets a host tell "the wire blipped" from "this model has no quota left", and
+ * act on the second.
+ */
+export function isRateLimitError(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    const err = level as { status?: unknown; statusCode?: unknown };
+    const status = typeof err.status === "number" ? err.status : err.statusCode;
+    return status === 429;
+  });
+}
+
+/**
  * Determines whether an error is a definitive provider rejection of the request itself —
  * the `fatal` detector for errored requests. Only an explicit HTTP client-error status
  * counts: 4xx minus 408 (request timeout) and 429 (rate limit), which are transient by
@@ -1002,8 +1017,18 @@ export class GenerativeModel implements LLMInterface {
         outcome = { status: "fatal", errorCode: "rejected", errorMessage: describeError(error) };
       } else if ((error as { name?: string })?.name === "AbortError") {
         outcome = { status: "aborted" }; // Fallback: an unexpected abort (neither timeout nor user)
+      } else if (isRateLimitError(error)) {
+        // A 429: the provider's rate limit, or a quota with nothing left in it. Retryable
+        // like a transport drop — the ladder may well outlast a burst — but classified
+        // apart, because a host that has somewhere else to run the Session can tell the two
+        // apart and move it.
+        outcome = {
+          status: "retryable",
+          errorCode: "rate_limited",
+          errorMessage: describeError(error),
+        };
       } else {
-        // Everything else — network/transport drops, 429/5xx, and anything unclassifiable —
+        // Everything else — network/transport drops, 5xx, and anything unclassifiable —
         // retries on the engine's ladder. The detail rides on the outcome so observability
         // (request_end -> the Cost center's errors panel) shows the real reason behind a
         // retried request.

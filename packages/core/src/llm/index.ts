@@ -14,6 +14,7 @@ export {
   usageToTokenCounts,
   isUnusableResponseError,
   isFatalProviderRejection,
+  isRateLimitError,
   isAuthenticationError,
   isFastModeUnsupportedError,
   FAST_MODE_UNSUPPORTED_GUIDANCE,

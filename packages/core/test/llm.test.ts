@@ -38,6 +38,7 @@ import {
   isFastModeUnsupportedError,
   isUnusableResponseError,
   isFatalProviderRejection,
+  isRateLimitError,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
   mapThinkingLevel,
   mergeOmniToUniMessage,
@@ -1409,6 +1410,11 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     throw Object.assign(new Error("invalid api key"), { status: 401 });
   }
 
+  // The provider answered 429: its rate limit, or a quota with nothing left in it.
+  async function* rateLimited(): AsyncGenerator<UniEvent> {
+    throw Object.assign(new Error("rate limit exceeded"), { status: 429 });
+  }
+
   // The response body is not valid JSON (e.g. the gateway returns HTML / a truncated response).
   async function* malformedJsonAfterText(): AsyncGenerator<UniEvent> {
     yield delta({ type: "text.delta", text: "hi" });
@@ -1512,6 +1518,17 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     expect((complete!.payload as TextPayload).text).toBe("hi");
     expect((complete!.payload as TextPayload).stop_reason).toBe("retryable");
     expect(messages.map(typeOf)).not.toContain("token_usage");
+  });
+
+  it("classifies a 429 apart from a transport drop, so a host can move the Session off it", async () => {
+    const model = new SeamModel(() => rateLimited());
+    const { outcome } = await drain(model.streamGenerate({ newMessages: [userText("go")] }));
+    // Still retryable — a short burst is exactly what the ladder is for — but named, so a
+    // host with somewhere else to run can tell "the wire blipped" from "no quota left".
+    expect(outcome.status).toBe("retryable");
+    expect(outcome.errorCode).toBe("rate_limited");
+    expect(isRateLimitError(Object.assign(new Error("x"), { status: 429 }))).toBe(true);
+    expect(isRateLimitError(new Error("socket hang up"))).toBe(false);
   });
 
   it("classifies a JSON parse exception as retryable and closes partial output", async () => {

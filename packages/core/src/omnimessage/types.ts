@@ -346,7 +346,8 @@ export type ErrorCode =
   // LLM request failures (request_end / compaction_end; the status carries the retry
   // decision, the code carries the classified cause).
   | "timeout" // idle timeout / connection went silent
-  | "network" // transport drops, provider 429/5xx, and anything unclassifiable
+  | "network" // transport drops, provider 4xx/5xx and anything unclassifiable
+  | "rate_limited" // the provider answered 429: its rate limit or an exhausted quota
   | "malformed" // response failed parsing/validation, or the stream was truncated
   | "auth" // the provider rejected the credentials
   | "rejected" // a definitive provider 4xx rejection (params, quota; 408/429 excluded)
