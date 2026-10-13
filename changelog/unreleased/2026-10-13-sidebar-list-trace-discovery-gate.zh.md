@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1106](https://github.com/Prism-Shadow/penguin-harness/pull/1106)
 
 [English](2026-10-13-sidebar-list-trace-discovery-gate.md)
 
