@@ -258,6 +258,8 @@ export interface CreateSessionOptions {
    * `company` for company mode's desk and ticket Sessions).
    */
   source?: SessionSource;
+  /** Squad tag recorded in session_meta (see {@link SubagentSpawnOptions.squad}); fixed at creation like `source`. */
+  squad?: string;
 }
 
 export interface ResumeSessionOptions {
@@ -296,6 +298,8 @@ interface SessionSpec {
   thinkingLevel: ThinkingLevelName | null | undefined;
   subagentDepth: number;
   source: SessionSource;
+  /** Squad tag (see {@link CreateSessionOptions.squad}); fixed at creation like `source`. */
+  squad?: string;
 }
 
 /**
@@ -636,6 +640,7 @@ export class Agent {
       agent_state: state.stateDir,
       workspace: spec.workspaceDir,
       source: spec.source,
+      ...(spec.squad !== undefined ? { squad: spec.squad } : {}),
     };
 
     return {
@@ -744,6 +749,7 @@ export class Agent {
       thinkingLevel: opts.thinkingLevel,
       subagentDepth: opts.subagentDepth ?? 0,
       source: opts.source ?? "user",
+      ...(opts.squad !== undefined ? { squad: opts.squad } : {}),
     };
     // The first context: assembled from the Agent State on disk now (never from this Agent
     // object's load-time snapshot — a long-lived Agent, a self-spawned subagent's for
@@ -1086,7 +1092,7 @@ export class Agent {
       // Spawn and run are separate: the same child Session can run for multiple turns
       // (continuing via input_subagent appending a prompt); resource cleanup is
       // consolidated in handle.dispose (called by the managing ManagedSubagentSession).
-      async spawn({ agentId, modelId, provider, thinkingLevel: spawnThinkingLevel }) {
+      async spawn({ agentId, modelId, provider, thinkingLevel: spawnThinkingLevel, squad }) {
         if (subagentDepth >= MAX_SUBAGENT_DEPTH) {
           throw new Error(
             `subagent depth limit ${MAX_SUBAGENT_DEPTH} reached; not spawning another subagent`,
@@ -1147,6 +1153,7 @@ export class Agent {
           thinkingLevel: spawnThinkingLevel ?? parentLevel ?? null,
           subagentDepth: subagentDepth + 1,
           source: "subagent",
+          ...(squad !== undefined ? { squad } : {}),
         });
         return subagentHandleFor(childSession);
       },

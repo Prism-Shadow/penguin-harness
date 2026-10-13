@@ -150,6 +150,12 @@ export interface SessionMetaPayload {
    * `benchmark`; readers narrow what they read through `normalizeSessionSource`.
    */
   source: SessionSource;
+  /**
+   * Squad tag: the multi-agent work group this Session belongs to, set at spawn through
+   * `run_subagent`'s `squad` argument and recorded here so cost attribution and parentage
+   * never depend on parsing a prompt. Absent = no squad.
+   */
+  squad?: string;
 }
 
 /**

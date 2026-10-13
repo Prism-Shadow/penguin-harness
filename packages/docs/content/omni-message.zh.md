@@ -44,6 +44,7 @@ interface SessionMetaPayload {
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
   source: "user" | "api" | "schedule" | "subagent" | "cli" | "company"; // what kind of conversation this is
+  squad?: string;                         // multi-agent work group tag (`run_subagent` squad arg); absent = no squad
 }
 ```
 

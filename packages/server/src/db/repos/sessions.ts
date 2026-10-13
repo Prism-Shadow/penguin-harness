@@ -71,6 +71,17 @@ export interface SessionRow {
   lastActiveAt: string;
   createdAt: string;
   /**
+   * Direct parent that spawned this Session (subagent registration writes the spawner);
+   * NULL/omitted = top-level or a row from before the column existed. Single source
+   * for squad parentage — the list API exposes it, the Trace stays out of it.
+   */
+  parentSessionId?: string | null;
+  /**
+   * Multi-agent work group tag from the child's session_meta (`run_subagent` squad arg);
+   * NULL/omitted = no squad. Cost groups on it via usage_records.origin_session_id.
+   */
+  squad?: string | null;
+  /**
    * The Session's own sandbox policy, snapshotted from the server's settings at creation.
    * NULL = a row from before the column: it takes the settings at its next command.
    */
@@ -118,6 +129,8 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     // somehow inserted as NULL (degrades to createdAt instead of surfacing undefined).
     lastActiveAt: (r.last_active_at as string | null) ?? (r.created_at as string),
     createdAt: r.created_at as string,
+    parentSessionId: (r.parent_session_id as string | null) ?? null,
+    squad: (r.squad as string | null) ?? null,
     sandbox: parseSandbox(r.sandbox),
   };
 }
@@ -175,8 +188,8 @@ export class SessionsRepo implements SessionIndex {
   private runInsert(verb: "INSERT" | "INSERT OR IGNORE", row: SessionRow): void {
     this.db
       .prepare(
-        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, sandbox)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?)`,
+        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, sandbox, parent_session_id, squad)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -193,6 +206,8 @@ export class SessionsRepo implements SessionIndex {
         row.createdAt,
         row.createdAt,
         row.sandbox ? JSON.stringify(row.sandbox) : null,
+        row.parentSessionId ?? null,
+        row.squad ?? null,
       );
   }
 

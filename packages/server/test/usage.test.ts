@@ -31,6 +31,7 @@ import { sessionMeta, tokenUsage, withOrigin } from "@prismshadow/penguin-core";
 import type { SessionMetaPayload, TokenCounts } from "@prismshadow/penguin-core";
 import { ORIGIN_MODELS_MAX, UsageRecorder } from "../src/runtime/usage-recorder.js";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
+import { SessionsRepo } from "../src/db/repos/sessions.js";
 import { UsageRepo } from "../src/db/repos/usage.js";
 import { UsageService } from "../src/services/usage-service.js";
 import type { PricingRates } from "../src/services/usage-service.js";
@@ -287,6 +288,37 @@ describe("usage-service (cost computed on the fly)", () => {
     // Not visible from another Project.
     const other = await svc.query("p-other", { groupBy: "date" });
     expect(other.groups).toEqual([]);
+  });
+
+  it("group aggregation: squad groups origin children by their sessions-row tag; main-session rows land in (none)", async () => {
+    // The squad tag lives on the ORIGIN child's sessions row (written at subagent
+    // registration from the child's session_meta); usage rows carry only ids.
+    const now = new Date("2026-07-06T10:00:00");
+    const sessions = wire(SessionsRepo, { db: db });
+    const row = (sessionId: string, squad: string | null) => ({
+      sessionId,
+      projectId: "p1",
+      agentId: "a1",
+      provider: "custom",
+      modelId: "m1",
+      workspace: "/tmp/w",
+      approvalMode: "allow-all" as const,
+      title: null,
+      parentSessionId: "main-1",
+      squad,
+      lastActiveAt: "2026-07-06T00:00:00.000Z",
+      createdAt: "2026-07-06T00:00:00.000Z",
+    });
+    sessions.insert(row("child-a", "alpha"));
+    sessions.insert(row("child-b", "beta"));
+    insert("2026-07-06", { sessionId: "main-1", originSessionId: "child-a", total: 100 });
+    insert("2026-07-06", { sessionId: "main-1", originSessionId: "child-b", total: 300 });
+    insert("2026-07-06", { sessionId: "main-1", originSessionId: null, total: 50 });
+    const svc = service(now);
+    const bySquad = await svc.query("p1", { groupBy: "squad" });
+    expect(bySquad.groups.map((g) => g.key)).toEqual(["beta", "alpha", "(none)"]); // total descending
+    expect(bySquad.groups.map((g) => g.total)).toEqual([300, 100, 50]);
+    expect(bySquad.groups.map((g) => g.requests)).toEqual([1, 1, 1]);
   });
 
   it("pricing is looked up for every reference the response prices, and only those", async () => {

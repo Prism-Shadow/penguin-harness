@@ -801,7 +801,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "run_subagent",
       description:
-        "Delegate a self-contained subtask to a subagent that runs autonomously in the same workspace and returns its final answer. Use it for focused sub-tasks you can fully specify in one prompt. Optionally choose a specific agent via `agent_id`, a model via `model_id`, and a thinking level via `thinking_level`. " +
+        "Delegate a self-contained subtask to a subagent that runs autonomously in the same workspace and returns its final answer. Use it for focused sub-tasks you can fully specify in one prompt. Optionally choose a specific agent via `agent_id`, a model via `model_id`, and a thinking level via `thinking_level`. Pass `squad` to tag the child session with a multi-agent work group (cost attribution and parentage group on it). " +
         'Begin the prompt by identifying yourself with your own agent id (from the Environment section), e.g. "Caller agent: default_agent" — the subagent cannot otherwise tell who invoked it.',
       parameters: {
         type: "object",
@@ -836,6 +836,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
             enum: [...SUBAGENT_THINKING_LEVELS],
             description:
               "Thinking level for the subagent. Omit to inherit the current session's level. Lower it for cheap mechanical subtasks; raise it for hard analysis or design subtasks.",
+          },
+          squad: {
+            type: "string",
+            description:
+              "Squad tag for the child session: a short label (1-64 chars) naming the multi-agent work group it belongs to. Recorded on the child's session_meta; cost attribution and parentage group on it. Omit for no squad.",
           },
           yield_time_ms: {
             type: "number",

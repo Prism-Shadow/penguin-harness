@@ -398,6 +398,8 @@ export class SessionService {
       ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
+      ...(row.parentSessionId ? { parentSessionId: row.parentSessionId } : {}),
+      ...(row.squad ? { squad: row.squad } : {}),
       createdAt: row.createdAt,
       lastActiveAt: row.lastActiveAt,
       status: this.deps.manager.statusOf(row.sessionId),

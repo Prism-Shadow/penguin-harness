@@ -1826,6 +1826,16 @@ export interface SessionInfo {
    * which renders as `user`.
    */
   source?: SessionSource;
+  /**
+   * Direct parent session id (squad parentage): set on rows spawned by another session, read
+   * straight from the index row; absent for top-level and legacy rows.
+   */
+  parentSessionId?: string;
+  /**
+   * Multi-agent work group tag from the child's session_meta (`run_subagent` squad arg);
+   * absent when the session belongs to no squad. `cost --by squad` groups on it.
+   */
+  squad?: string;
   createdAt: string;
   /**
    * Last activity the server drove for this Session (ISO 8601, same convention as
@@ -3871,7 +3881,7 @@ export interface TraceImportResponse {
 // Usage and cost statistics
 // ---------------------------------------------------------------------------
 
-export type UsageGroupBy = "date" | "agent" | "model" | "session";
+export type UsageGroupBy = "date" | "agent" | "model" | "session" | "squad";
 
 /**
  * A cost split by the three pricing buckets, in USD: cached input (`cacheRead`), uncached input

@@ -201,6 +201,13 @@ export interface SubagentRunner {
      * tool restricts its `thinking_level` argument to {@link SUBAGENT_THINKING_LEVELS}.
      */
     thinkingLevel?: ThinkingLevelName;
+    /**
+     * Squad tag for the child Session: a short free-text label (1-64 chars) naming the
+     * multi-agent work group it belongs to. Recorded on the child's `session_meta` so cost
+     * attribution (`penguin cost --by squad`) and parentage group on it without parsing the
+     * spawn prompt. Omitted = no squad.
+     */
+    squad?: string;
   }): Promise<SubagentHandle>;
   /**
    * Revives a released child Session by id (`resumeSession` semantics: its own history,

@@ -123,12 +123,13 @@ const BUCKET_EXPRS: Record<UsageSeriesGranularity, string> = {
   month: "substr(date, 1, 7)",
 };
 
-/** groupBy dimension -> column name allowlist (prevents injection; only these four columns can be group keys). */
+/** groupBy dimension -> column name allowlist (prevents injection; only these columns can be group keys). `squad` resolves through the origin child session's index row (see groupsByModel's FROM clause). */
 const GROUP_COLUMNS: Record<UsageGroupBy, string> = {
   date: "date",
   agent: "agent_id",
   model: "model_id",
   session: "session_id",
+  squad: "squad_key",
 };
 
 /**
@@ -284,7 +285,7 @@ export class UsageRepo implements UsageStore {
     return rows.map(toSums);
   }
 
-  /** Grouped aggregation (group key x paired reference breakdown): date range + optional agent/model filter. */
+  /** Grouped aggregation (group key x paired reference breakdown): date range + optional agent/model filter. `squad` groups by the origin child session's tag (COALESCE '(none)' for main-session rows with no child), so a leader's own tokens stay out of every squad bucket. */
   groupsByModel(
     projectId: string,
     groupBy: UsageGroupBy,
@@ -294,11 +295,18 @@ export class UsageRepo implements UsageStore {
     const col = GROUP_COLUMNS[groupBy];
     const { where, params } = this.conds(projectId, f);
     const peak = peakExpr(tiers);
+    // The squad tag lives on the sessions row of the ORIGIN child (usage rows carry
+    // only session/origin ids). A scalar subquery (not a JOIN) resolves it, so the
+    // shared unqualified WHERE conditions (project_id, agent_id, ...) stay unambiguous.
+    const keyExpr =
+      groupBy === "squad"
+        ? "COALESCE((SELECT squad FROM sessions WHERE session_id = usage_records.origin_session_id), '(none)')"
+        : col;
     const rows = this.db
       .prepare(
-        `SELECT ${col} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS}
+        `SELECT ${keyExpr} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS}
          FROM usage_records WHERE ${where}
-         GROUP BY ${col}, provider, model_id, peak`,
+         GROUP BY key, provider, model_id, peak`,
       )
       .all({ ...params, ...peak.params });
     return rows.map((r) => ({ key: r.key as string, ...toSums(r) }));
