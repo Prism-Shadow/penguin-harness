@@ -27,3 +27,4 @@ and missing comparison history triggered full validation.
 - SSH timeout and workflow-session tests established their own connection and model prerequisites.
 - Docker `latest` rebuilt for runtime or build-input changes on `main`; unrelated site and
   documentation edits stopped rebuilding both image architectures.
+- A new PR push cancelled its obsolete site preview build while production deployments finished.

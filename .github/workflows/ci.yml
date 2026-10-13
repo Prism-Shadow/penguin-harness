@@ -61,6 +61,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+          # Planning installs nothing, and pnpm is not on PATH until the next step.
+          package-manager-cache: false
       - uses: pnpm/action-setup@v6
       # A cancelled/failed main run must not become the next run's comparison base.
       - uses: nrwl/nx-set-shas@v5
