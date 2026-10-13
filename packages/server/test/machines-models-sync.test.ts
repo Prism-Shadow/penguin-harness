@@ -90,6 +90,7 @@ const local = (over: Partial<ModelEntry> = {}): ModelEntry => ({
 
 /** What that machine's GET answers: keys masked, exactly as the real endpoint reports them. */
 const remoteTable = (over: Partial<ModelsResponse> = {}): ModelsResponse => ({
+  fallbackChain: [],
   providers: {},
   models: [],
   ...over,

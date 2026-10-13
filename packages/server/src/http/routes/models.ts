@@ -274,6 +274,13 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
   if (body.visionModel !== undefined) {
     req.visionModel = parseRef(body.visionModel, "visionModel");
   }
+  if (body.fallbackChain !== undefined) {
+    if (!Array.isArray(body.fallbackChain)) throw badRequest("fallbackChain must be an array.");
+    if (body.fallbackChain.length > 16) {
+      throw badRequest("fallbackChain must hold at most 16 models.");
+    }
+    req.fallbackChain = body.fallbackChain.map((item, i) => parseRef(item, `fallbackChain[${i}]`));
+  }
   if (body.providers !== undefined) {
     const providers = body.providers;
     if (providers === null || typeof providers !== "object" || Array.isArray(providers)) {

@@ -658,6 +658,12 @@ export interface ModelsResponse {
    * (the key was fixed since). Absent when the Project has no config file yet.
    */
   updatedAt?: string;
+  /**
+   * The fallback chain, in priority order: the models a rate-limited Session is moved onto
+   * (see the `rate_limited` outcome code). Empty (or absent) when the Project has none,
+   * which is the default — a rate-limited turn then retries on its own model.
+   */
+  fallbackChain?: ModelRefDto[];
   /** Every group's stored connection (`[providers.<id>]`), keyed by provider id; a group with none is absent. */
   providers: Record<string, ProviderConnectionDto>;
   models: ModelInfo[];
@@ -734,6 +740,12 @@ export interface ModelsUpdateRequest {
   visionModel?: ModelRefDto;
   /** Group connection changes, merged per provider; a provider absent here keeps its table. */
   providers?: Record<string, ProviderConnectionUpdate>;
+  /**
+   * The whole fallback chain, in priority order (owner). Omitted keeps the stored one; an
+   * empty array clears it. Every entry must name a model the same request's `models` list
+   * (or the stored config) holds.
+   */
+  fallbackChain?: ModelRefDto[];
   models: ModelUpdateEntry[];
 }
 
