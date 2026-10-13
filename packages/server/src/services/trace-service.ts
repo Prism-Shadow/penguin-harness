@@ -54,6 +54,7 @@ import type { SessionRow } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
+import { readTraceTailLines } from "../internal/trace-tail.js";
 import {
   ratesAt,
   requestCostParts,
@@ -342,9 +343,18 @@ export class TraceService implements Traces {
     }));
   }
 
-  /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
-  private async readShard(path: string): Promise<OmniMessage[]> {
+  /**
+   * All shard reads funnel through here (deps.observeShardRead is the windowed-read
+   * tests' proof of which files were touched).
+   *
+   * `tailFromEnd` is the windowed-read fast path: it bounds the read to the newest N
+   * units instead of parsing the whole shard. Passing it is only sound when the caller
+   * genuinely needs nothing older — every other caller must omit it, because a
+   * truncated read would silently drop history.
+   */
+  private async readShard(path: string, tailFromEnd?: number): Promise<OmniMessage[]> {
     this.observeShardRead?.(path);
+    if (tailFromEnd !== undefined) return readTraceTailLines(path, tailFromEnd);
     return readTraceTolerant(path);
   }
 
@@ -662,7 +672,11 @@ export class TraceService implements Traces {
     let startPos = endPos + 1;
     while (boundaries.length <= req.limit && startPos > 0) {
       startPos -= 1;
-      const messages = await this.readShard(files[startPos]!.path);
+      // Bounded tail read: the walk stops as soon as the window holds more units than
+      // asked for, so a generous multiple of `limit` is always enough. The margin
+      // absorbs subagent expansion (one pointer can splice in a whole child history)
+      // and the coarse unit counting that decides the loop's exit condition.
+      const messages = await this.readShard(files[startPos]!.path, req.limit * 8 + 64);
       shardMessages.set(startPos, messages);
       const state = cloneScanState(startPos === 0 ? initialScanState() : prefixes[startPos - 1]!);
       const shardBoundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
