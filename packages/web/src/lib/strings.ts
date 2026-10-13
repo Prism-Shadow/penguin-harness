@@ -4141,12 +4141,10 @@ Benchmark：
     pinnedSession: "已置顶",
     /** The hover ellipsis button that opens the row's full context menu. */
     moreActions: "更多操作",
-    /** Sidebar group "reveal/load next page" row (display cap + server paging). */
+    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default, the Trace panel's file pills). */
     loadMore: "更多",
-    /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
+    /** A list's one reveal row (a sidebar group, time mode's whole list, an archive group): n = conversations that list still hides; a click shows ten more, fetching when the loaded ones run out. */
     expandRestSessions: (n: number) => `展开其余 ${n} 个对话`,
-    /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
-    loadMoreSessions: "加载更多会话",
     /**
      * Who opened a Session: a person (`user`), or the program behind it — the mark a row of one
      * a program opened carries, as its tooltip and hidden text, and the archive page's source

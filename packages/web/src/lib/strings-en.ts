@@ -3962,12 +3962,10 @@ Scenarios:
     pinnedSession: "Pinned",
     /** The hover ellipsis button that opens the row's full context menu. */
     moreActions: "More actions",
-    /** Sidebar group "reveal/load next page" row (display cap + server paging). */
+    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default, the Trace panel's file pills). */
     loadMore: "More",
-    /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
+    /** A list's one reveal row (a sidebar group, time mode's whole list, an archive group): n = conversations that list still hides; a click shows ten more, fetching when the loaded ones run out. */
     expandRestSessions: (n: number) => `Show ${n} more ${n === 1 ? "chat" : "chats"}`,
-    /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
-    loadMoreSessions: "Load more chats",
     sessionSource: {
       user: "User",
       api: "API",

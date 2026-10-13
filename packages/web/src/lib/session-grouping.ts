@@ -102,9 +102,9 @@ export function workspaceLabel(workspace: string): string {
 }
 
 /**
- * Sidebar page size: sessions fetched per (Agent, category) per page, and the per-group
- * display cap step for active rows — 10 conversations show by default and every "More"
- * click reveals/loads 10 more. Fetches use limit = SIDEBAR_PAGE_SIZE + 1 (see splitPage)
+ * Sidebar page size: sessions fetched per (Agent, category) per page, and the display cap
+ * step of every list — 10 conversations show by default and every click on the list's
+ * "Show N more chats" row reveals 10 more. Fetches use limit = SIDEBAR_PAGE_SIZE + 1 (see splitPage)
  * so one request both fills a page and answers "is there more" without a
  * response-envelope change. Pages run in activity order (compareActivityDesc), cut at the
  * watermark (cutAtWatermark) wherever several streams merge.
@@ -178,8 +178,10 @@ export function hiddenRowCount({
 
 /**
  * The display window of one list — a sidebar group's rows, or a group of the archive page;
- * both obey the same rule and both read it from here. The list shows `SIDEBAR_PAGE_SIZE`
- * rows, every "more" click reveals one page more, and a "show less" stands beside the reveal
+ * both obey the same rule and both read it from here (time mode's list spreads it over its
+ * buckets: sectionWindow). The list shows
+ * `SIDEBAR_PAGE_SIZE` rows, every click on its one reveal row ("Show N more chats", N =
+ * `hidden`) reveals one page more (revealStep), and a "show less" stands beside the reveal
  * row (not after it) from the moment the list is revealed past its first page, folding it
  * back to exactly that page. Rows beyond the cap stay in memory — a fetch that returned far
  * more than a page (a group fans out over every contributing Agent) is revealed a page at a
@@ -207,6 +209,92 @@ export function revealPlan({
     shown,
     hidden: hiddenRowCount({ shown, loaded, total, fullyLoaded }),
     canCollapse: cap > SIDEBAR_PAGE_SIZE && loaded > SIDEBAR_PAGE_SIZE,
+  };
+}
+
+/**
+ * One click on a list's reveal row: the cap becomes one page more than the rows on screen,
+ * and the click asks the server for the next page only when that cap runs past the rows
+ * already in memory and some stream behind the list still has more (`canFetch`). Rows a
+ * previous fetch over-returned are revealed without a request. Counting from what is shown
+ * rather than from the old cap keeps a click to one page even after a fetch that came back
+ * short or failed: the next click asks for the same page again instead of promising two. The
+ * cap never drops below where it was, though — a window whose rows sit behind a folded time
+ * bucket shows fewer than its cap, and a reveal must not shrink what that bucket opens onto.
+ */
+export function revealStep({
+  cap,
+  shown,
+  loaded,
+  canFetch,
+}: {
+  cap: number;
+  shown: number;
+  loaded: number;
+  canFetch: boolean;
+}): { cap: number; fetch: boolean } {
+  const next = Math.max(cap, Math.max(shown, 0) + SIDEBAR_PAGE_SIZE);
+  return { cap: next, fetch: canFetch && loaded < next };
+}
+
+/**
+ * The display window of one list drawn as consecutive sections that fold — time mode's
+ * buckets, which are stretches of a single activity-ordered list rather than lists of their
+ * own, so the cap, the count and the reveal row belong to the list: revealPlan's rule, spread
+ * over the sections.
+ *
+ * `cap` counts rows on screen and is spent section by section, in order, so the newest bucket
+ * fills first. A folded section spends none of it: its rows are behind the reader's own fold,
+ * not behind the reveal row, so folding a bucket lets the next rows into view instead of
+ * leaving the window spent on rows nobody can see. A section is drawn only while some of the
+ * cap is left when the walk reaches it; every section after that is past the window's edge and
+ * not drawn at all — which also means a drawn folded section, once opened, always gets a row.
+ *
+ * Per section, `rows` is null when it is not drawn, otherwise the rows it shows open; a folded
+ * one gets the rows it would show if opened, which is what its fold opens onto and closes
+ * from. `shown` counts the rows on screen and `hidden` what the reveal row still hides — the
+ * rows the window has not reached, counted as hiddenRowCount counts them. `reachable` is the
+ * loaded rows the cap could ever be spent on (those of open sections), which is what decides
+ * whether a reveal needs the next server page (revealStep).
+ */
+export function sectionWindow<T>({
+  sections,
+  cap,
+  total,
+  fullyLoaded,
+}: {
+  sections: readonly { rows: readonly T[]; folded: boolean }[];
+  cap: number;
+  total: number;
+  fullyLoaded: boolean;
+}): {
+  rows: (T[] | null)[];
+  shown: number;
+  hidden: number;
+  reachable: number;
+  canCollapse: boolean;
+} {
+  const budget = Math.max(cap, 0);
+  let left = budget;
+  let folded = 0;
+  let loaded = 0;
+  let reachable = 0;
+  const rows = sections.map((section) => {
+    loaded += section.rows.length;
+    if (!section.folded) reachable += section.rows.length;
+    if (left === 0) return null;
+    const taken = section.rows.slice(0, left);
+    if (section.folded) folded += section.rows.length;
+    else left -= taken.length;
+    return taken;
+  });
+  const shown = budget - left;
+  return {
+    rows,
+    shown,
+    hidden: hiddenRowCount({ shown: shown + folded, loaded, total, fullyLoaded }),
+    reachable,
+    canCollapse: shown > SIDEBAR_PAGE_SIZE,
   };
 }
 
@@ -558,7 +646,7 @@ const MONTH_MS = 30 * DAY_MS;
 /** Group key of a time bucket (collapse state / React key); "\0" can never appear in a Workspace path or an Agent id, so these never collide with the other modes' keys. */
 export const timeGroupKey = (bucket: TimeBucket): string => `\0time-${bucket}`;
 
-/** Key the whole time-mode list pages under (its one "load more" row spans every bucket). */
+/** Key of time mode's whole list: its display cap and its one reveal row span every bucket. */
 export const TIME_LIST_KEY = "\0time-list";
 
 /** The bucket an activity timestamp falls in, against `nowMs`. An unparseable stamp counts as the oldest bucket rather than jumping to the top. */
