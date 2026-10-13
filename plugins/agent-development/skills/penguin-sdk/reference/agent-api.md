@@ -79,12 +79,12 @@ const client = new AgentClient({
 });
 
 // One question, the whole answer.
-const first = await client.ask({ input: "Summarize README.md" });
+const first = await client.run({ input: "Summarize README.md" });
 if (first.status !== "completed") throw new Error(`${first.status}: ${first.error?.message ?? ""}`);
 console.log(first.text);
 
 // The same conversation, streamed: pass its Session id back.
-const run = client.run({
+const run = client.stream({
   sessionId: first.sessionId,
   input: "Now list its headings",
   onApproval: (request) => {
@@ -99,10 +99,10 @@ for await (const event of run) {
 const second = await run.result();
 ```
 
-- `ask()` runs to the end and resolves with the result: `status`, `error`, `sessionId`, `text` (the main conversation's answer), `items`, `usage`, `sessionUsage` and `requests`. `run()` starts the run and returns it at once: iterate it once for the events, await `run.session` for the Session id, and `run.result()` for the end.
+- `run()` runs to the end and resolves with the result: `status`, `error`, `sessionId`, `text` (the main conversation's answer), `items`, `usage`, `sessionUsage` and `requests`. `stream()` starts the run and returns it at once: iterate it once for the events, await `run.session` for the Session id, and `run.result()` for the end.
 - **Conversations.** Keep one `sessionId` per conversation of the program, such as one per end user or chat thread, and pass it back to continue. Omit it to start a new conversation. Only the Agent's own API conversations can be continued.
 - **Approvals.** `onApproval` is called only when the approval mode makes a call wait. Without it, or when it throws, the client answers `deny`. A person can answer the same request in the Web App; the first answer counts.
-- **Aborting.** Abort the `signal` passed to `run()` or `ask()` to drop the connection: the server aborts the run. `run.abort()` asks the server to abort and still delivers the final `run.done`, with `status: "aborted"`.
+- **Aborting.** Abort the `signal` passed to `stream()` or `run()` to drop the connection: the server aborts the run. `run.abort()` asks the server to abort and still delivers the final `run.done`, with `status: "aborted"`.
 - **Failures.** A refusal before the stream starts rejects with `AmspHttpError` (`status`, `code`, `message`; see section 5). After that, `result()` resolves for every run: check `status` (`completed`, `aborted`, `retryable` or `fatal`) and `error`. A stream that breaks before `run.done` rejects with `AmspStreamError`.
 - **Unknown events** are passed through. Switch on `event.type` with a default branch.
 - **A web app** keeps the key on its own server. The page posts to the app's server, which runs the Agent and relays the `text.delta` events to the page over SSE, aborting through `signal` when the page disconnects: the shape of the RAG recipe's `server.ts`. A key inside a page is readable by everyone who loads the page.

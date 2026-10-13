@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 /**
  * The built-in tools table on the Agent settings Tools tab (features/agents/tools-form.ts and
- * the tab in agent-settings-page.tsx): a typed table whose rows always exist, with a
+ * the tab in agent-settings-page.tsx): a typed table with deletable rows and a
  * `call_description` switch on each row that commits on its own.
  *
+ * - Permissions show semantic choices; a choice is saved as its wire value only on Save.
+ * - Deleting asks first: Cancel does nothing; confirmation removes only that tool while keeping
+ *   other typed edits unsent. A later Save cannot resurrect it, and every tool can be removed.
+ * - A refused deletion keeps the row and draft; retrying once commits one removal.
  * - The switch writes at once: the stored table with that one row flipped. A timeout typed
  *   beside it is neither sent nor reset — it stays typed and unsaved.
  * - A flip alone leaves nothing unsaved, so leaving the tab after it asks nothing.
@@ -54,6 +58,56 @@ describe("the built-in tools table", () => {
   beforeEach(() => toastStore.setState({ items: [] }));
   afterEach(async () => {
     await unmountAll();
+  });
+
+  it("presents semantic permissions and saves their wire values with the table", async () => {
+    const { server } = await openTools();
+    await click(button(`exec_command ${en.agent.toolPermission}`));
+    const pick = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((el) =>
+      el.textContent?.includes(en.agent.permissionReadLabel),
+    )!;
+    await click(pick);
+    expect(server.writes()).toEqual([]);
+    expect(button(`exec_command ${en.agent.toolPermission}`).textContent).toContain("Read-only");
+    await click(save());
+    expect(tableSent(server, 0).find((t) => t.name === "exec_command")?.permission).toBe("r");
+  });
+
+  it("confirms each deletion, preserves another draft and never restores removed tools on Save", async () => {
+    const { server } = await openTools();
+    await type(timeout(), "90000");
+    await click(button(en.agent.deleteToolNamed("read_file")));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("can no longer use");
+    await click(button(en.common.cancel));
+    expect(server.writes()).toEqual([]);
+    await click(button(en.agent.deleteToolNamed("read_file")));
+    await click(button(en.common.delete));
+    expect(tableSent(server, 0).map((t) => t.name)).toEqual(["exec_command"]);
+    expect(tableSent(server, 0)[0]?.timeoutMs).toBe(60000);
+    expect(timeout().value).toBe("90000");
+    expect(hasUnsaved()).toBe(true);
+    expect(hasButton(en.agent.deleteToolNamed("read_file"))).toBe(false);
+    await click(save());
+    expect(tableSent(server, 1).map((t) => t.name)).toEqual(["exec_command"]);
+    expect(tableSent(server, 1)[0]?.timeoutMs).toBe(90000);
+    await click(button(en.agent.deleteToolNamed("exec_command")));
+    await click(button(en.common.delete));
+    expect(tableSent(server, 2)).toEqual([]);
+    expect(hasUnsaved()).toBe(false);
+  });
+
+  it("retains the tool and unsaved cells after a refused deletion, then retries", async () => {
+    const { server } = await openTools();
+    await type(timeout(), "90000");
+    server.refuseNext(400, "invalid_config");
+    await click(button(en.agent.deleteToolNamed("exec_command")));
+    await click(button(en.common.delete));
+    expect(server.config().config.toolsBuiltin).toEqual(STORED_TOOLS);
+    expect(timeout().value).toBe("90000");
+    expect(hasUnsaved()).toBe(true);
+    await click(button(en.common.delete));
+    expect(server.config().config.toolsBuiltin.map((t) => t.name)).toEqual(["read_file"]);
+    expect(hasUnsaved()).toBe(false);
   });
 
   it("writes a flipped switch at once, alone, and leaves the typed timeout typed and unsent", async () => {
@@ -109,7 +163,7 @@ describe("the built-in tools table", () => {
     await type(timeout(), "0");
     expect(save().disabled).toBe(true);
     expect(document.body.textContent).toContain(
-      en.agent.toolFieldInvalid("exec_command", "timeoutMs"),
+      en.agent.toolFieldInvalid("exec_command", en.agent.toolTimeout),
     );
 
     await type(timeout(), "");

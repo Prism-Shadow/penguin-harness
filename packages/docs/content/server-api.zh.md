@@ -525,6 +525,10 @@ interface AgentApiResponse {
     enabled: boolean;      // the API tab's switch; off = every /api/amsp/v1 request for the agent is 404 agent_not_found
     open: boolean;         // keyless access: a request without Authorization is accepted
     approvalMode: "allow-all" | "deny-all" | "read-only" | "always-ask";
+    model: { provider: string; modelId: string } | null;
+    thinkingLevel: "none" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+    workspace: string | null;
+    maxConcurrentRuns: number; // positive integer, default 4
     keys: AgentApiKeyInfo[];
   };
   serverEnabled: boolean;  // the admin's agentApiEnabled, readable by every member
@@ -541,7 +545,9 @@ interface AgentApiKeyInfo {
 ```
 
 - 从未配置过的 Agent 读作：关闭、需要密钥、`allow-all`、没有密钥。
-- `PUT …/api` 接受 `{enabled?, open?, approvalMode?}`，返回完整的 `AgentApiResponse`。省略的字段保持原值；所有字段校验通过后才会写入任何一项。每个 API Session 在创建时复制 `approvalMode`，所以修改只影响之后新建的 API Session。
+- `PUT …/api` 接受 `{enabled?, open?, approvalMode?, model?, thinkingLevel?, workspace?, maxConcurrentRuns?}`，返回完整的 `AgentApiResponse`。省略的字段保持原值；所有字段校验通过后才会写入任何一项。每个 API Session 在创建时复制 `approvalMode`，所以修改只影响之后新建的 API Session。
+- `model`、`thinkingLevel` 和 `workspace` 只作用于之后新建的 API Session。`model: null` 使用 Project 默认模型，`thinkingLevel: null` 使用 Agent／Project 配置，`workspace: null` 创建临时工作区。模型必须是已配置的 `(provider, modelId)` 对，工作区必须是已有目录。
+- `maxConcurrentRuns` 为正的安全整数，默认 4。保存后作用于后续 API 运行请求（含试一试），不停止已有运行。正在运行的 Agent 会话和正在启动的 API 请求都计入上限；达到上限时返回 `429` `too_many_runs` 及 `Retry-After: 2`。
 - `POST …/api/keys` 接受 `{name}`，返回 201 `{key, secret}`。`secret` 形如 `penguin_` 加 43 个字符，只出现在这一次响应里：服务器只保存它的 SHA-256，列表中以 `prefix` 区分密钥。
 - `DELETE …/api/keys/:keyId` 返回 204，该密钥从下一个请求起即被拒绝。密钥不存在时返回 `404` `key_not_found`。
 - `GET /agents` 给每个 Agent 标上 `apiEnabled`，即同一个开关，智能体页面据此显示 API 图标。删除 Agent 会一并删除它的 API 设置和密钥；删除 Project 会删除其下所有 Agent 的这些数据。

@@ -13,7 +13,7 @@ import type {
   ToolCallDone,
 } from "./types.js";
 
-/** A finished run, as `Run.result()` and `AgentClient.ask()` return it. */
+/** A finished run, as `Run.result()` and `AgentClient.run()` return it. */
 export interface RunResult {
   /** `run.done.status`: `completed`, or how the run stopped. */
   status: StopReason;

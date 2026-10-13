@@ -525,6 +525,10 @@ interface AgentApiResponse {
     enabled: boolean;      // the API tab's switch; off = every /api/amsp/v1 request for the agent is 404 agent_not_found
     open: boolean;         // keyless access: a request without Authorization is accepted
     approvalMode: "allow-all" | "deny-all" | "read-only" | "always-ask";
+    model: { provider: string; modelId: string } | null;
+    thinkingLevel: "none" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+    workspace: string | null;
+    maxConcurrentRuns: number; // positive integer, default 4
     keys: AgentApiKeyInfo[];
   };
   serverEnabled: boolean;  // the admin's agentApiEnabled, readable by every member
@@ -541,7 +545,9 @@ interface AgentApiKeyInfo {
 ```
 
 - An agent never configured reads as off, keyed and `allow-all`, with no keys.
-- `PUT …/api` takes `{enabled?, open?, approvalMode?}` and answers the whole `AgentApiResponse`. Omitted fields keep their value, and every field is checked before any is written. Each API Session copies `approvalMode` when it is created, so a change applies to API Sessions created afterwards.
+- `PUT …/api` takes `{enabled?, open?, approvalMode?, model?, thinkingLevel?, workspace?, maxConcurrentRuns?}` and answers the whole `AgentApiResponse`. Omitted fields keep their value, and every field is checked before any is written. Each API Session copies `approvalMode` when it is created, so a change applies to API Sessions created afterwards.
+- `model`, `thinkingLevel` and `workspace` apply only to newly created API Sessions. `model: null` follows the Project default, `thinkingLevel: null` follows the Agent/Project configuration, and `workspace: null` creates a temporary workspace. A model must name a configured `(provider, modelId)` pair; a workspace must be an existing directory.
+- `maxConcurrentRuns` is a positive safe integer, default 4. It applies to subsequent API run requests, including Try it, without interrupting active sessions. Admission counts active Agent sessions and API starts still in progress; requests at capacity receive `429` `too_many_runs` with `Retry-After: 2`.
 - `POST …/api/keys` takes `{name}` and answers 201 `{key, secret}`. The `secret`, `penguin_` followed by 43 characters, is in this answer and nowhere else: the server stores its SHA-256 and lists the key by `prefix`.
 - `DELETE …/api/keys/:keyId` answers 204, and the key is refused from its next request. An unknown key returns `404` `key_not_found`.
 - `GET /agents` marks each agent with `apiEnabled`, the same switch, which the Agents page shows as an icon. Deleting an agent deletes its API settings and keys; deleting a Project deletes those of all its agents.

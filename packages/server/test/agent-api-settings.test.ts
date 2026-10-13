@@ -4,6 +4,10 @@
  * cascades, and the admin's switch.
  *
  * Scenarios:
+ * - Given a stored concurrency limit, only a positive integer from the owner changes it; invalid
+ *   or member writes change no fields, and unrelated edits preserve it.
+ * - Given an owner, model/thinking/workspace choices round-trip, survive partial updates and
+ *   clear to defaults; invalid values and non-owner writes change none of the stored settings.
  * - Given a Project member, the settings read back (off, keyed, allow-all, no keys for an Agent
  *   never configured); changing them — the switch, keyless access, the approval mode, a key —
  *   is the owner's alone, and a PUT with one invalid field changes nothing.
@@ -74,6 +78,10 @@ describe("Agent API settings", () => {
       enabled: false,
       open: false,
       approvalMode: "allow-all",
+      model: null,
+      thinkingLevel: null,
+      workspace: null,
+      maxConcurrentRuns: 4,
       keys: [],
     });
     for (const res of [
@@ -112,6 +120,70 @@ describe("Agent API settings", () => {
     expect((await stranger.get(tab("default_agent"))).status).toBe(404);
     // An Agent that does not exist has no settings to read.
     expect((await owner.get(tab("ghost_agent"))).status).toBe(404);
+  });
+
+  it("owner session defaults round-trip and clear; invalid or unauthorized patches change nothing", async () => {
+    const path = tab("quiet_agent");
+    const model = { provider: "custom", modelId: "api-test-model" };
+    expect(
+      (
+        await owner.put(`/api/projects/${projectId}/models`, {
+          models: [
+            { ...model, apiKey: "test-key", baseUrl: "http://localhost:1", contextWindow: 32000 },
+          ],
+        })
+      ).status,
+    ).toBe(200);
+    const workspace = await import("node:fs/promises").then((fs) => fs.realpath(t.root));
+    const defaults = { model, thinkingLevel: "high", workspace };
+    expect((await owner.put(path, defaults)).status).toBe(200);
+    expect(await read(member, "quiet_agent")).toMatchObject(defaults);
+    expect((await member.put(path, { thinkingLevel: "low" })).status).toBe(403);
+    for (const patch of [
+      { model: "invalid" },
+      { model: [] },
+      { model: { provider: "custom" } },
+      { model: { provider: "custom", modelId: "missing-model" } },
+      { thinkingLevel: "sometimes" },
+      { workspace: 123 },
+      { workspace: "" },
+      { workspace: `${t.root}/missing-directory` },
+    ]) {
+      expect((await owner.put(path, { enabled: true, ...patch })).status).toBe(400);
+      expect(await read(owner, "quiet_agent")).toMatchObject({ enabled: false, ...defaults });
+    }
+    await owner.put(path, { approvalMode: "read-only" });
+    expect(await read(owner, "quiet_agent")).toMatchObject(defaults);
+    await owner.put(path, { model: null, thinkingLevel: null, workspace: null });
+    expect(await read(member, "quiet_agent")).toMatchObject({
+      approvalMode: "read-only",
+      model: null,
+      thinkingLevel: null,
+      workspace: null,
+    });
+  });
+
+  it("saves the owner's concurrency limit without changing other fields, and refuses invalid or member writes", async () => {
+    const path = tab("concurrency_agent");
+    expect(
+      (await owner.post(`/api/projects/${projectId}/agents`, { agentId: "concurrency_agent" }))
+        .status,
+    ).toBe(201);
+    expect((await owner.put(path, { maxConcurrentRuns: 12 })).status).toBe(200);
+    expect(await read(member, "concurrency_agent")).toMatchObject({
+      maxConcurrentRuns: 12,
+      approvalMode: "allow-all",
+    });
+    await owner.put(path, { open: false });
+    for (const value of [0, -1, 1.5, "2", null, Number.MAX_SAFE_INTEGER + 1]) {
+      expect((await owner.put(path, { enabled: true, maxConcurrentRuns: value })).status).toBe(400);
+      expect(await read(owner, "concurrency_agent")).toMatchObject({
+        enabled: false,
+        maxConcurrentRuns: 12,
+      });
+    }
+    expect((await member.put(path, { maxConcurrentRuns: 1 })).status).toBe(403);
+    expect(await read(owner, "concurrency_agent")).toMatchObject({ maxConcurrentRuns: 12 });
   });
 
   it("creating a key returns the secret once; the listing shows the prefix and never the secret", async () => {
@@ -191,6 +263,10 @@ describe("Agent API settings", () => {
       enabled: false,
       open: false,
       approvalMode: "allow-all",
+      model: null,
+      thinkingLevel: null,
+      workspace: null,
+      maxConcurrentRuns: 4,
       keys: [],
     });
     await owner.put(tab("short_lived"), { enabled: true });

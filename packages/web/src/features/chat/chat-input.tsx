@@ -140,7 +140,7 @@ import { ModelCatalogSelect, modelLabel } from "./model-select";
 import { ModelPickerModal } from "./model-picker-modal";
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
-import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
+import { ThinkingLevelSelect } from "./thinking-level-select";
 import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { mergeRecalledDraft } from "./recall-draft";
@@ -211,65 +211,6 @@ function AgentMenuList({
           )}
         </>
       )}
-    />
-  );
-}
-
-/**
- * Conversation-time thinking-level picker, used in two places. Both variants list only the
- * concrete levels (per review: a title bar names the control; short names only, no
- * descriptions, no "default"/"follow" row, and no "none" — many models cannot disable
- * thinking; a stored legacy "none" still displays via the label table, just never offered):
- * - Draft state (docked left of the model selector): shows the **selected Agent's** current
- *   `model.thinking_level` and writes a picked level straight through to the Agent settings —
- *   it applies to the session created on first send and becomes the Agent's new default
- *   (switch-becomes-default). An Agent without an explicit override shows an em dash until a
- *   level is picked.
- * - Active session: the level is a **per-turn parameter** sent with each task. The displayed
- *   value initializes to the Agent config's level and auto-follows it while the user hasn't
- *   picked (the parent resolves the display value and keeps omitting the level from tasks
- *   until touched); an explicit pick sticks for the session and rides on every subsequent
- *   send, never writing through to the Agent config.
- */
-function ThinkingLevelSelect({
-  value,
-  onChange,
-  disabled,
-  direction = "down",
-}: {
-  /** Level to display and mark selected ("" = none to show yet); null = the Agent config is still loading (draft). */
-  value: string | null;
-  onChange: (level: string) => void;
-  disabled: boolean;
-  /** Popup direction: down for the draft card (room below), up for the bottom-docked session composer. */
-  direction?: "down" | "up";
-}) {
-  const label =
-    value === null ? "…" : (thinkingLevelLabel(S.chat.thinkingLevelNames, value) ?? "—");
-  // The one surface that annotates: a menu row is where the tier is CHOSEN, so it names the wire
-  // value the pick will send. The trigger stays the plain name — in zh that is
-  // 低/中/高/极高/最高, in en the annotation is a no-op. The title bar names the control; the
-  // rows are the tiers.
-  const options: MenuSelectOption<string>[] = SELECTABLE_THINKING_LEVELS.map((level) => ({
-    value: level,
-    label: S.chat.thinkingLevelMenuName(S.chat.thinkingLevelNames[level] ?? level, level),
-  }));
-  return (
-    <MenuSelect<string>
-      trigger={{
-        glyph: ICONS.sparkle,
-        label,
-        caret: true,
-        ariaLabel: S.chat.thinkingLevel,
-        tooltip: `${S.chat.thinkingLevel}：${label}`,
-        disabled: disabled || value === null,
-      }}
-      title={S.chat.thinkingLevel}
-      options={options}
-      value={value}
-      onChange={onChange}
-      direction={direction}
-      align="right"
     />
   );
 }

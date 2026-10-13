@@ -1525,6 +1525,14 @@ export interface AgentApiSettings {
    * change here applies to API Sessions created afterwards.
    */
   approvalMode: ApprovalMode;
+  /** Null follows the Project's default model. Applied only to new API Sessions. */
+  model: ModelRefDto | null;
+  /** Null follows the Agent/Project thinking configuration. */
+  thinkingLevel: ThinkingLevelName | null;
+  /** Null creates a temporary Workspace for each new API Session. */
+  workspace: string | null;
+  /** Positive integer. Checked for each API run; defaults to four concurrent Agent sessions. */
+  maxConcurrentRuns: number;
   keys: AgentApiKeyInfo[];
 }
 
@@ -1542,6 +1550,10 @@ export interface AgentApiUpdateRequest {
   enabled?: boolean;
   open?: boolean;
   approvalMode?: ApprovalMode;
+  model?: ModelRefDto | null;
+  thinkingLevel?: ThinkingLevelName | null;
+  workspace?: string | null;
+  maxConcurrentRuns?: number;
 }
 
 /** POST …/api/keys body (owner only). */

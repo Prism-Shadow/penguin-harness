@@ -1612,9 +1612,9 @@ export const en: Strings = {
     stateDir: "State path",
     copyStateDir: "Copy State path",
     agentsMd: "AGENTS.md",
-    systemPrompt: "system_prompt template",
+    systemPrompt: "System prompt",
     placeholdersTitle: "Available placeholders (click to insert)",
-    insertPlaceholder: "Insert at the system_prompt cursor",
+    insertPlaceholder: "Insert at the system prompt cursor",
     /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). Inner tokens ({{VAULT_KEYS}} etc.) live in each feature tab's promptPlaceholders instead. */
     placeholders: [
       ["{{AGENTS_MD}}", "Injects the AGENTS.md content"],
@@ -1648,38 +1648,21 @@ export const en: Strings = {
       ["{{MODEL_ID}}", "Upstream model id"],
       ["{{SESSION_ID}}", "Current Session id"],
     ] as ReadonlyArray<readonly [string, string]>,
-    maxTurns: "max_turns (max turns per Task, -1 = unlimited)",
-    maxTokens: "model.max_tokens",
-    thinkingLevel: "model.thinking_level",
-    thinkingLevelOptions: [
-      ["", "Send no override — keep whatever is currently configured."],
-      ["low", "Enables a lower tier of extended reasoning."],
-      [
-        "medium",
-        "Enables a medium tier of extended reasoning (the default tier for a newly created agent).",
-      ],
-      ["high", "Enables a higher tier of extended reasoning; slower responses."],
-      [
-        "xhigh",
-        "Enables an extended tier of reasoning beyond high; identical to high on some models.",
-      ],
-      [
-        "max",
-        "Enables the deepest tier of extended reasoning; slowest and identical to xhigh on some models.",
-      ],
-    ] as ReadonlyArray<readonly [string, string]>,
-    thinkingLevelNoneKept:
-      "Stored legacy tier: new selections no longer offer the off tier (many models cannot disable thinking).",
-    timeoutMs: "model.timeoutMs",
+    maxTurns: "Maximum turns per task",
+    maxTurnsHint: "-1 means unlimited",
+    maxTokens: "Maximum output tokens",
+    timeoutMs: "Model response timeout (ms)",
     timeoutMsHint: "Idle budget between upstream events, ms — not a cap on the whole request",
     compaction: "Context compaction",
-    maxContextLength: "max_context_length",
+    maxContextLength: "Context token threshold",
     maxContextLengthHint: "Context threshold that triggers compaction",
-    maxSessionTurns: "max_session_turns",
+    maxSessionTurns: "Session turn threshold",
     maxSessionTurnsHint: "Turn threshold that triggers compaction",
-    compactionMode: "mode (compaction strategy)",
+    compactionMode: "Compaction method",
+    compactionModeNames: { summarize: "Summarize", discard: "Discard context" } as Readonly<
+      Record<string, string>
+    >,
     compactionModeOptions: [
-      ["", "Send no override — keep whatever is currently configured."],
       [
         "summarize",
         "Summarizes the old context with the model, then continues from that summary in a fresh window (default).",
@@ -1689,22 +1672,26 @@ export const en: Strings = {
         "Drops the old context without summarizing; the next turn starts fresh in a new window.",
       ],
     ] as ReadonlyArray<readonly [string, string]>,
-    compactionPrompt: "prompt (summarization prompt)",
+    compactionPrompt: "Summary prompt",
     numberInvalid: "Must be a positive integer or -1",
     numberCannotClear: "A saved value can't be cleared: enter a number, or use Reset to restore it",
     toolFieldInvalid: (name: string, field: string) =>
       `${name}: ${field} must be a positive integer or -1`,
-    toolPermission: "permission",
+    deleteTool: "Delete tool",
+    deleteToolNamed: (name: string): string => `Delete tool ${name}`,
+    deleteToolBody: (name: string): string =>
+      `After deleting ${name}, this Agent can no longer use it. New conversations apply the change immediately; existing conversations apply it when their context is next rebuilt. Other unsaved settings are not submitted.`,
+    toolPermission: "Access permissions",
     permissionReadLabel: "Read-only",
     permissionReadDescription: "Only reads. Auto-approved when the approval mode is read-only.",
-    permissionReadWriteLabel: "Read & write",
+    permissionReadWriteLabel: "Read and write",
     permissionReadWriteDescription:
       "Can modify things. Needs manual confirmation when the approval mode is read-only.",
-    toolTimeout: "timeoutMs",
-    toolMaxOutput: "maxOutputLength",
-    toolCallDescription: "call_description",
+    toolTimeout: "Execution timeout (ms)",
+    toolMaxOutput: "Maximum output characters",
+    toolCallDescription: "Call description",
     callDescriptionHint:
-      "call_description: when on (the default), the tool's schema keeps the optional description argument — a model-written sentence about each call, shown to the user while it runs; when off, the argument is filtered out of the schema at assembly. Only tools whose parameters declare a description property can be toggled.",
+      "When enabled, the model writes a short description for each tool call, shown while it runs. Turning this off stops requesting that description. Available only for tools that accept a description.",
     mcpServers: "MCP Servers",
     mcpDesc:
       "Connect external MCP Servers: their tools join this agent's toolset as mcp__<name>__<tool>. Changes in this block save immediately.",
@@ -1712,28 +1699,28 @@ export const en: Strings = {
     mcpAdd: "Add MCP Server",
     mcpEditTitle: "Edit MCP Server",
     mcpRemove: "Remove",
-    mcpName: "name",
+    mcpName: "Name",
     mcpNameHint: "Tool-name prefix: mcp__<name>__<tool>; letters, digits, _ and - only",
-    mcpTransport: "transport",
+    mcpTransport: "Connection type",
     mcpTransportStdio: "Local process: spawns command and talks over stdin/stdout",
     mcpTransportHttp: "Streamable HTTP: the current spec's remote transport",
     mcpTransportSse: "Legacy HTTP+SSE: kept for servers that have not migrated",
-    mcpTarget: "command / url",
-    mcpCommand: "command",
-    mcpArgs: "args",
+    mcpTarget: "Command / URL",
+    mcpCommand: "Command",
+    mcpArgs: "Arguments",
     mcpArgsHint: "One argument per line",
-    mcpEnv: "env",
+    mcpEnv: "Environment variables",
     mcpEnvHint:
       "One KEY=value per line; a ${KEY} in a value is read from the agent's vault when the server connects, and nothing else from the vault reaches the process",
-    mcpCwd: "cwd",
+    mcpCwd: "Working directory",
     mcpCwdHint: "Leave empty to use the Session's Workspace",
-    mcpUrl: "url",
-    mcpHeaders: "headers",
+    mcpUrl: "Server URL",
+    mcpHeaders: "Request headers",
     mcpHeadersHint:
       "One Header-Name: value per line (auth headers such as Authorization); a ${KEY} in a value is read from the agent's vault when the server connects",
-    mcpPermission: "permission",
-    mcpPermissionAuto: "auto",
-    mcpPermissionAutoLabel: "Auto (readOnlyHint)",
+    mcpPermission: "Access permissions",
+    mcpPermissionAuto: "Automatic",
+    mcpPermissionAutoLabel: "Automatic",
     mcpPermissionAutoDescription:
       "Each tool gets the level its own readOnlyHint annotation implies: read-only when it declares one, read & write otherwise.",
     mcpPermissionReadDescription:
@@ -1742,7 +1729,7 @@ export const en: Strings = {
       "Treat every tool of this server as read & write, whatever it declares. Needs manual confirmation when the approval mode is read-only.",
     mcpPermissionHint:
       "Only the read-only approval mode reads this level; allow-all, deny-all and always-ask ignore it. It never restricts what the server itself can do — marking a server read-only that is not one only drops the confirmation read-only mode would have asked for.",
-    mcpConnectTimeout: "connectTimeoutMs",
+    mcpConnectTimeout: "Connection timeout (ms)",
     mcpBudgetsHint:
       "Leave empty for defaults: connectTimeoutMs is the connect + tool-discovery budget (default 10000); timeoutMs / maxOutputLength bound every tool of this Server.",
     mcpNameInvalid: "Letters, digits, _ and - only, starting with a letter or digit",
@@ -1834,7 +1821,19 @@ export const en: Strings = {
     apiOwnerOnly: "Only the Project owner can change these settings.",
     apiAdminOff:
       "An admin has turned the Agent API off for this server: every API request is refused, and the settings and keys here are kept.",
-    apiApprovalMode: "Approval mode for API conversations",
+    apiRunLimits: "Run settings",
+    apiConcurrency: "Maximum concurrent runs",
+    apiConcurrencyHint:
+      "The maximum number of running sessions for this Agent. New API runs receive HTTP 429 at the limit. Saving applies immediately without interrupting running sessions.",
+    apiConcurrencyInvalid: "Enter a whole number greater than 0.",
+    apiReadDocs: "Read the documentation",
+    apiCopyAgentPrompt: "Copy prompt for Agent",
+    apiAgentPrompt: (docsUrl: string, baseUrl: string, agentRef: string) =>
+      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call this Agent.\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\nUse the @prismshadow/amsp SDK: stream() for streamed events and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
+    apiSessionSettings: "New session settings",
+    apiSessionSettingsHint:
+      "Applies to new API sessions. An unset model follows the Project default; an unset thinking level follows the Agent configuration; an unset workspace creates a temporary workspace.",
+    apiApprovalMode: "Approval mode",
     apiApprovalModeHint:
       "Applies to API conversations created from now on; when a mode asks, the request goes to the caller and can also be answered here.",
     apiConnection: "Connection",

@@ -21,6 +21,13 @@
  *   then each child still lands on its own launch.
  * - Given a denied call carrying the same prompt as a child with no open call, then the denied
  *   call never takes the child.
+ *
+ * - Given an earlier child is still running, when a later task spawns another child,
+ *   then the default panel keeps both visible with their own conversations.
+ * - Given two children are spawned during one task, when both continue streaming,
+ *   then neither node nor conversation replaces the other.
+ * - Given an explicit historical task selection, when another task has a running child,
+ *   then the historical graph stays scoped to the requested task.
  */
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -88,6 +95,74 @@ function at<M extends OmniMessage>(msg: M, ts: string): M {
 }
 
 describe("extractTopology", () => {
+  it("keeps an earlier running child visible beside the latest task's children", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("write the paper"));
+    spawnChild(m, "paper-call", "paper", '{"description":"Write version 9"}');
+    pushMessage(m, withOrigin(assistantText("Working on version 9"), "paper"));
+    pushMessage(m, toolCallOutput({ output: "yielded", toolCallId: "paper-call" }));
+    pushMessage(m, userText("check the references"));
+    spawnChild(m, "references-call", "references");
+    const live = new Map([
+      ["paper", true],
+      ["references", true],
+    ]);
+    const nodes = extractTopology(m, "root", true, live);
+    expect(nodes.map((n) => n.sessionId)).toEqual(["root", "references", "paper"]);
+    expect(nodes.filter((n) => n.depth > 0).every((n) => n.running)).toBe(true);
+    expect(nodes.find((n) => n.sessionId === "paper")).toMatchObject({
+      description: "Write version 9",
+      running: true,
+      origin: ["paper"],
+      parentId: "root",
+    });
+    expect(modelAtOrigin(m, nodes.find((n) => n.sessionId === "paper")!.origin)?.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ text: "Working on version 9" })]),
+    );
+    // A settled older child no longer crowds the current graph.
+    live.set("paper", false);
+    expect(extractTopology(m, "root", true, live).map((n) => n.sessionId)).toEqual([
+      "root",
+      "references",
+    ]);
+  });
+
+  it("keeps both running children and their conversations during the same task", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("write the paper and check its references"));
+    spawnChild(m, "paper-call", "paper", '{"description":"Write version 9"}');
+    pushMessage(m, withOrigin(assistantText("Writing the paper"), "paper"));
+    pushMessage(m, toolCallOutput({ output: "yielded", toolCallId: "paper-call" }));
+    spawnChild(m, "references-call", "references", '{"description":"Check references"}');
+    pushMessage(m, withOrigin(assistantText("Checking references"), "references"));
+    pushMessage(m, withOrigin(assistantText("Paper progress"), "paper"));
+
+    const nodes = extractTopology(
+      m,
+      "root",
+      true,
+      new Map([
+        ["paper", true],
+        ["references", true],
+      ]),
+    );
+    expect(nodes.map((n) => n.sessionId)).toEqual(["root", "paper", "references"]);
+    expect(nodes.slice(1).map((n) => [n.description, n.running])).toEqual([
+      ["Write version 9", true],
+      ["Check references", true],
+    ]);
+    for (const node of nodes.slice(1)) {
+      const texts = modelAtOrigin(m, node.origin)?.items.flatMap((item) =>
+        item.kind === "assistant_text" ? [item.text] : [],
+      );
+      expect(texts).toEqual(
+        node.sessionId === "paper"
+          ? ["Writing the paper", "Paper progress"]
+          : ["Checking references"],
+      );
+    }
+  });
+
   it("returns only the root (with the Task's running state) when nothing is spawned", () => {
     const m = createStreamModel();
     pushMessage(m, userText("hello"));
@@ -542,6 +617,10 @@ describe("extractTopologyForChild (historical Task slice)", () => {
     // done even while the LATEST Task is running.
     expect(historical[0]!.running).toBe(false);
     expect(historical[1]!.running).toBe(false);
+    const live = new Map([["child2", true]]);
+    expect(
+      extractTopologyForChild(m, "root", true, "child1", live)!.map((n) => n.sessionId),
+    ).toEqual(["root", "child1"]);
   });
 
   it("anchoring on a latest-Task child returns the live latest slice (root keeps the running state)", () => {

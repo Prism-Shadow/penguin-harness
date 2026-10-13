@@ -1543,6 +1543,10 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       enabled: true,
       open: false,
       approvalMode: "allow-all",
+      model: null,
+      thinkingLevel: null,
+      maxConcurrentRuns: 4,
+      workspace: null,
       keys: [
         {
           keyId: "kq3VtX9cRb2LmN0a",

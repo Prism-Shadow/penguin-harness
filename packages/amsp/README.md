@@ -13,13 +13,13 @@ const client = new AgentClient({
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
 
-const run = client.run({ input: "Summarize README.md" });
+const run = client.stream({ input: "Summarize README.md" });
 for await (const event of run) {
   if (event.type === "text.delta") process.stdout.write(event.text);
 }
 const first = await run.result();
 
-const second = await client.ask({
+const second = await client.run({
   sessionId: first.sessionId,
   input: "Now list its headings",
   onApproval: () => "allow", // without a callback, approval requests are denied
@@ -27,7 +27,7 @@ const second = await client.ask({
 console.log(second.text, second.usage.total);
 ```
 
-- `run()` starts the run and returns it: iterate it once for the events, await `session` for the Session id, `result()` for the outcome, and call `abort()` to have the server abort it. `ask()` returns the result alone.
+- `stream()` starts the run and returns it: iterate it once for the events, await `session` for the Session id, `result()` for the outcome, and call `abort()` to have the server abort it. `run()` returns the result alone.
 - `result()` resolves for every run that reached `run.done`, whatever its `status`. A refusal before the stream rejects with `AmspHttpError` (`status`, `code`, `message`); a stream that ends or breaks before `run.done` rejects with `AmspStreamError`; aborting the `signal` rejects with its reason.
 - `onApproval` answers each `approval.requested`, and the client posts the answer; `parseArguments` reads a tool call's JSON arguments.
 - `agent()`, `session(id)`, `abort(id)` and `approve(id, toolCallId, decision)` call the API's other routes; `readSse` is the SSE reader, for a program that reads a run's body itself.

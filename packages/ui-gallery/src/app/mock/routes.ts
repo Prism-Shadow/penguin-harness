@@ -851,6 +851,10 @@ const apiOf = (ctx: Ctx): AgentApiSettings => {
     enabled: false,
     open: false,
     approvalMode: "allow-all",
+    model: null,
+    thinkingLevel: null,
+    maxConcurrentRuns: 4,
+    workspace: null,
     keys: [],
   };
   return ctx.store.f.agentApi[agentId];
@@ -869,6 +873,11 @@ router
       agentOf(ctx).apiEnabled = enabled;
     }
     if (typeof open === "boolean") settings.open = open;
+    const patch = ctx.body as Partial<AgentApiSettings>;
+    if (patch.model !== undefined) settings.model = patch.model;
+    if (patch.thinkingLevel !== undefined) settings.thinkingLevel = patch.thinkingLevel;
+    if (patch.workspace !== undefined) settings.workspace = patch.workspace;
+    if (patch.maxConcurrentRuns !== undefined) settings.maxConcurrentRuns = patch.maxConcurrentRuns;
     const mode = API_APPROVAL_MODES.find((m) => m === approvalMode);
     if (mode !== undefined) settings.approvalMode = mode;
     return {

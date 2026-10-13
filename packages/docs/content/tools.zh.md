@@ -372,6 +372,8 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDec
 
 `system_config.yaml` 中的 `tools.builtin` 数组声明工具集，每一项都采用相同的 `ToolDefinitionConfig` 结构。它**整体替换默认工具集，而不是与默认值合并**。省略这一节，即保留完整的默认工具集；一旦写了这一节，默认列表就不复存在，保留的每个工具都必须给出完整定义，包括 `parameters` 的 JSON Schema，因为工具的 schema 完全来自配置。
 
+在 Web App 的 Agent 设置 → 工具中，可以为每个内置工具选择「只读」或「可读写」权限，并在确认后删除工具。删除会立即保存，其他未保存的参数会保留。被删除的工具不再供该 Agent 使用；新会话立即采用，已有会话在下一次重建上下文后采用。删除全部工具会保留空工具列表，不会恢复默认工具。
+
 `tools.mcpServers` 存放 MCP Server 的配置，下一节详细介绍。另见[配置参考](/configuration)。
 
 ```yaml
