@@ -1,15 +1,18 @@
 /*
- * The gallery chrome: the top bar, a section's navigation list, the content column with its
- * sections and toolbars, "on this page", the framed app, the framed component library and the
- * fonts pages.
+ * The gallery chrome: the gallery's bar under the site navbar, a section's navigation list, the
+ * content column with its sections and toolbars, "on this page", the framed app, the framed
+ * component library and the fonts pages. The site navbar itself is the landing page's Tailwind
+ * markup, rendered in its own scope (site/site.css), not here.
  * Deliberately UNTHEMED — every colour is a `--g-*` variable and every length is px, never rem or
  * em — so switching the theme, the accent or the root size under test never moves the chrome; only
  * the previews follow `<html style="font-size">`. It follows only the mode (`.dark` on <html>).
  *
- * The layout is a docs site's: a quiet top bar; a left column with a search box and the surfaces
- * grouped, the current one marked by a thin rule and accent text; a reading-width content column
- * with an eyebrow, a large title, a one-line lead and H2 sections ruled underneath; a right column
- * listing what is on the page. One accent, hairlines, whitespace, the system sans at 14–16 px.
+ * The layout is a docs site's: the site's navbar, then the gallery's own bar — its pages ruled
+ * underneath, the theme and the view controls on the right; a left column with a search box and
+ * the surfaces grouped, the current one marked by a thin rule and accent text; a reading-width
+ * content column with an eyebrow, a large title, a one-line lead and H2 sections ruled
+ * underneath; a right column listing what is on the page. One accent, hairlines, whitespace, the
+ * system sans at 14–16 px.
  * The framed app sits in a hairline frame, nothing heavier.
  *
  * Unlayered on purpose: these rules outrank Tailwind's layers and theme.css's base rules (focus
@@ -36,8 +39,11 @@
   --g-bad: #c62828;
   --g-raise: 0 1px 2px rgb(0 0 0 / 0.06), 0 0 0 1px rgb(0 0 0 / 0.05);
   --g-float: 0 12px 32px rgb(0 0 0 / 0.12);
-  /* The page frame: the bar's height, the columns' widths, the side gutter. */
-  --g-bar: 56px;
+  /* The page frame: the site navbar's height (its `h-14`), the gallery bar's under it, the two
+     together, the columns' widths, the side gutter (the navbar's `px-4 sm:px-6`). */
+  --g-site-bar: 56px;
+  --g-bar: 44px;
+  --g-top: calc(var(--g-site-bar) + var(--g-bar));
   --g-nav: 236px;
   --g-toc: 200px;
   --g-column: 720px;
@@ -105,71 +111,74 @@
   flex-shrink: 0;
 }
 
-/* ---- The site: bar over body -------------------------------------------------------------- */
+/* ---- The site: the two bars over the body ------------------------------------------------ */
 
 .g-site {
   min-height: 100vh;
   overflow-x: clip;
   background: var(--g-page);
 }
+/* The chrome's subtree under the navbar, out of the layout: the bar and the body stay children of
+   the page, so the bar's `sticky` holds for the whole page. */
+.g-flow {
+  display: contents;
+}
 
-/* The top bar, one row: brand and page links left, the controls right; never wraps — what does
-   not fit the row lives in the popover, and at phone width in the drawer. */
-.g-topbar {
+/* The gallery's bar, one row under the site navbar and sticky with it: the pages left, ruled
+   underneath like tabs, the controls right. It never wraps: on a phone the pages scroll sideways
+   and the theme moves into the popover. Its row lines up with the navbar's. */
+.g-bar {
   position: sticky;
-  top: 0;
+  top: var(--g-site-bar);
   z-index: 30;
-  display: flex;
-  align-items: center;
-  gap: 20px;
   height: var(--g-bar);
-  padding: 0 var(--g-gutter);
   border-bottom: 1px solid var(--g-line);
   background: var(--g-page);
 }
-.g-brand {
+.g-bar-inner {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+  align-items: stretch;
+  gap: 16px;
+  max-width: 1280px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 var(--g-gutter);
 }
-.g-brand img {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-}
-.g-brand strong {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.15px;
-  white-space: nowrap;
-}
-.g-links {
+.g-bar-links {
   display: flex;
-  align-items: center;
-  gap: 2px;
+  align-items: stretch;
+  min-width: 0;
+  /* The first label starts where the navbar's logo does. */
+  margin-left: -10px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-/* The chrome's links move by colour alone, the same short ease everywhere: the chrome is
-   deliberately theme-independent, so its motion is a literal rather than the theme's tokens. */
-.g-link {
+.g-bar-links::-webkit-scrollbar {
+  display: none;
+}
+/* A page link's box is the same at rest and current — the 2px rule is always there, transparent
+   until the link is current, over the bar's own hairline — so moving between pages changes colour
+   and nothing else. Muted at rest, a step under the navbar's row; the chrome is deliberately
+   theme-independent, so its motion is a literal. Scoped to the bar to outrank `.g-chrome a`. */
+.g-bar .g-link {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  height: 28px;
-  padding: 0 9px;
-  border-radius: 6px;
+  margin-bottom: -1px;
+  padding: 0 10px;
+  border-bottom: 2px solid transparent;
   color: var(--g-ink-2);
   white-space: nowrap;
   transition:
     color 150ms ease-out,
-    background-color 150ms ease-out;
+    border-color 150ms ease-out;
 }
-.g-link:hover {
+.g-bar .g-link:hover {
   color: var(--g-ink);
-  background: var(--g-hover);
 }
-.g-link[aria-current="page"] {
-  color: var(--g-page);
-  background: var(--g-ink);
+.g-bar .g-link[aria-current="page"] {
+  border-bottom-color: var(--g-accent);
+  color: var(--g-accent);
 }
 .g-bar-controls {
   display: flex;
@@ -177,10 +186,6 @@
   flex-shrink: 0;
   gap: 10px;
   margin-left: auto;
-}
-/* The menu button is the phone bar's; it outranks the icon button's display below. */
-.g-topbar .g-menu {
-  display: none;
 }
 
 /* The body: the module list, the content column and "on this page", centred. */
@@ -221,6 +226,10 @@
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
+}
+/* The theme's row only where the bar has no room for the theme (the phone query below). */
+.g-control-narrow {
+  display: none;
 }
 .g-controls-foot {
   padding-top: 12px;
@@ -265,32 +274,6 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-}
-.g-mode {
-  display: inline-flex;
-  padding: 2px;
-  gap: 1px;
-  border-radius: 7px;
-  background: var(--g-inset);
-}
-.g-mode button {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 24px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--g-ink-3);
-  cursor: pointer;
-}
-.g-mode button:hover {
-  color: var(--g-ink);
-}
-.g-mode button[aria-pressed="true"] {
-  background: var(--g-page);
-  color: var(--g-ink);
-  box-shadow: var(--g-raise);
 }
 /* The accent row: each swatch painted in the colour it applies; the pressed one ringed. */
 .g-swatches {
@@ -467,9 +450,9 @@
 
 .g-sidenav {
   position: sticky;
-  top: var(--g-bar);
+  top: var(--g-top);
   align-self: start;
-  max-height: calc(100vh - var(--g-bar));
+  max-height: calc(100vh - var(--g-top));
   overflow-y: auto;
   padding: 28px 24px 40px 0;
   border-right: 1px solid var(--g-line);
@@ -598,7 +581,7 @@
 }
 .g-section,
 .g-variant {
-  scroll-margin-top: calc(var(--g-bar) + 16px);
+  scroll-margin-top: calc(var(--g-top) + 16px);
 }
 .g-section-lead,
 .g-variant-desc {
@@ -710,9 +693,9 @@
 
 .g-toc {
   position: sticky;
-  top: var(--g-bar);
+  top: var(--g-top);
   align-self: start;
-  max-height: calc(100vh - var(--g-bar));
+  max-height: calc(100vh - var(--g-top));
   overflow-y: auto;
   padding: 36px 0 40px;
   font-size: 13px;
@@ -977,52 +960,38 @@
   white-space: pre-wrap;
 }
 
-/* ---- Phone width: one column, the columns in a drawer, nothing sideways ------------------- */
+/* ---- Phone width: one column, the section's list in the drawer, nothing sideways -------- */
 
-/* The drawer only exists while open; at desktop widths it is never shown. */
+/* The drawer only exists while open, under the navbar and over the gallery's bar: the site's links
+   (their own `md:hidden`) and the section's list. At desktop widths it is never shown. */
 .g-drawer {
   display: none;
 }
 
-@media (max-width: 900px) {
+/* The navbar's own gutter, 16px below its `sm`. */
+@media (max-width: 639px) {
   :root {
     --g-gutter: 16px;
   }
-  .g-topbar {
-    gap: 12px;
-  }
-  .g-links,
-  .g-bar-controls {
+  .g-bar-theme {
     display: none;
   }
-  .g-topbar .g-menu {
-    display: inline-grid;
-    margin-left: auto;
+  .g-control-narrow {
+    display: flex;
   }
+}
+
+@media (max-width: 900px) {
   .g-drawer {
-    display: grid;
-    align-content: start;
-    gap: 24px;
+    display: block;
     position: fixed;
-    z-index: 29;
-    inset: var(--g-bar) 0 0 0;
+    z-index: 35;
+    inset: var(--g-site-bar) 0 0 0;
     overflow-y: auto;
-    padding: 16px var(--g-gutter) 40px;
     background: var(--g-page);
   }
-  .g-drawer-links {
-    display: grid;
-    gap: 2px;
-  }
-  .g-drawer-links .g-link {
-    height: 32px;
-  }
-  .g-drawer-controls {
-    display: grid;
-    gap: 12px;
-  }
-  .g-drawer-controls .g-select {
-    width: min(168px, 55vw);
+  .g-drawer-list {
+    padding: 8px var(--g-gutter) 40px;
   }
   .g-drawer .g-nav-group {
     margin-top: 16px;

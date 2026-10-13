@@ -5,13 +5,13 @@
  *
  * - Given a static build, every page has a copy of the document, and the address a static host
  *   serves it at (with the trailing slash it redirects to) names that page.
- * - Given the gallery built into the public site at `<site>/gallery/`, the brand leads back to
- *   `<site>/`; in dev or in a build of the gallery alone, there is no site to lead back to.
+ * - Given the gallery built into the public site at `<site>/gallery/`, the site navbar's links
+ *   lead to `<site>/`; in dev or in a build of the gallery alone, with no site around it, they
+ *   lead to the public site.
  */
 import { describe, expect, it } from "vitest";
 import { SURFACE_IDS } from "../src/app/surfaces";
 import { TOPIC_IDS } from "../src/library/topics";
-import { siteRootOf } from "../src/lib/location";
 import { deepPagePaths } from "../src/lib/page-paths";
 import {
   anchorOf,
@@ -27,6 +27,7 @@ import {
 } from "../src/lib/routes";
 import type { Route } from "../src/lib/routes";
 import { DEFAULT_STATE } from "../src/lib/url-state";
+import { PUBLIC_SITE_URL, siteUrlOf } from "../src/site/links";
 
 const PREFS = "theme=modern&mode=light&size=m&latin=theme&cjk=theme&lang=en&accent=neutral";
 
@@ -110,15 +111,15 @@ describe("on a static host", () => {
   });
 });
 
-describe("the brand link", () => {
-  it("leads back to the public site's root when the gallery is built at <site>/gallery/", () => {
-    expect(siteRootOf("/gallery/")).toBe("/");
-    expect(siteRootOf("/penguin-harness/gallery/")).toBe("/penguin-harness/");
+describe("the site navbar's links", () => {
+  it("lead to the site the gallery is built into at <site>/gallery/", () => {
+    expect(siteUrlOf("/gallery/")).toBe("/");
+    expect(siteUrlOf("/penguin-harness/gallery/")).toBe("/penguin-harness/");
   });
 
-  it("has no site to lead back to in dev, or in a build of the gallery alone", () => {
-    expect(siteRootOf("/")).toBeNull();
-    expect(siteRootOf("/ui/")).toBeNull();
-    expect(siteRootOf("/my-gallery/")).toBeNull();
+  it("lead to the public site in dev, or from a build of the gallery alone", () => {
+    expect(siteUrlOf("/")).toBe(PUBLIC_SITE_URL);
+    expect(siteUrlOf("/ui/")).toBe(PUBLIC_SITE_URL);
+    expect(siteUrlOf("/my-gallery/")).toBe(PUBLIC_SITE_URL);
   });
 });

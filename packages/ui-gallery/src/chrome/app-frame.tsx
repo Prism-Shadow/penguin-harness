@@ -7,7 +7,7 @@
  *
  * A change of theme, mode, size or fonts changes the frame's URL, and the frame reloads with
  * the new preferences — the URL is the state, as everywhere in the gallery. The frame reports
- * the fonts it is actually set in, for the readout in the top bar's popover and, when the page
+ * the fonts it is actually set in, for the readout in the gallery bar's popover and, when the page
  * asks, its own font line.
  */
 import type { ThemeId } from "@prismshadow/penguin-ui";

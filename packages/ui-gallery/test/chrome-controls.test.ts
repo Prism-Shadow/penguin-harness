@@ -3,7 +3,8 @@
  * placement rules are tested as the pure functions they are, and the components are held to
  * their idiom by source contract: the select is the app's — a trigger that owns a listbox, rows
  * that are options, the chosen one checked — with no native `<select>` left; hints are the
- * chrome's tooltip, with no native `title` left on anything but the frame itself.
+ * chrome's tooltip, with no native `title` left on anything but the frame itself and the site
+ * navbar, which is the landing page's markup and hints as it does there.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -140,9 +141,9 @@ describe("the chrome's idiom", () => {
     expect(select).toMatch(/option\.value === value && <ChromeIcon name="check"/);
     expect(select).toMatch(/createPortal\(/);
     // The font pairings go through it, each under its visible label.
-    const topbar = read("chrome/topbar.tsx");
-    expect(topbar).toMatch(/<Control label=\{S\.rail\.fontLatin\}>\s*<Select/);
-    expect(topbar).toMatch(/<Control label=\{S\.rail\.fontCjk\}>\s*<Select/);
+    const bar = read("chrome/gallery-bar.tsx");
+    expect(bar).toMatch(/<Control label=\{S\.rail\.fontLatin\}>\s*<Select/);
+    expect(bar).toMatch(/<Control label=\{S\.rail\.fontCjk\}>\s*<Select/);
   });
 
   it("renders no native select", () => {
@@ -150,8 +151,10 @@ describe("the chrome's idiom", () => {
     expect(offenders.map((file) => path.relative(SRC, file))).toEqual([]);
   });
 
-  it("hints with the chrome's tooltip, never a native title, except on the frame", () => {
+  it("hints with the chrome's tooltip, never a native title, but on the frame and the site navbar", () => {
+    const site = path.join(SRC, "site") + path.sep;
     const offenders = files.flatMap((file) => {
+      if (file.startsWith(site)) return [];
       // A `title=` on an intrinsic element; `title={title}` on a component is a prop.
       return [...code(file).matchAll(/<([a-z][\w-]*)\b[^>]*?\stitle=/gs)]
         .filter((m) => m[1] !== "iframe")
@@ -171,14 +174,10 @@ describe("the chrome's idiom", () => {
     expect(read("strings.ts")).not.toMatch(/\bcopied:/);
   });
 
-  it("keeps the bar to one row, with the menu button for phone width only", () => {
+  it("keeps the gallery bar to one row: its pages scroll sideways rather than wrap", () => {
     const css = read("chrome.css");
-    expect(css).toMatch(/\.g-topbar \{[^}]*height: var\(--g-bar\)/s);
-    expect(css).not.toMatch(/\.g-topbar \{[^}]*flex-wrap/s);
-    // The hiding rule carries the bar's selector, so the generic icon-button rule cannot outrank it.
-    expect(css).toMatch(/\.g-topbar \.g-menu \{\s*display: none;\s*\}/);
-    expect(css).toMatch(
-      /@media \(max-width: 900px\) \{[\s\S]*\.g-topbar \.g-menu \{\s*display: inline-grid/,
-    );
+    expect(css).toMatch(/\.g-bar \{[^}]*height: var\(--g-bar\)/s);
+    expect(css).not.toMatch(/\.g-bar(?:-inner|-links)? \{[^}]*flex-wrap/s);
+    expect(css).toMatch(/\.g-bar-links \{[^}]*overflow-x: auto/s);
   });
 });

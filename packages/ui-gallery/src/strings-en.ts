@@ -5,11 +5,33 @@
 import type { GalleryStrings } from "./strings";
 
 export const en: GalleryStrings = {
-  brand: {
-    title: "Penguin UI",
+  sitebar: {
+    siteName: "PenguinHarness",
+    nav: {
+      home: "Home",
+      blog: "Blog",
+      download: "Download",
+      docs: "Docs",
+      gallery: "Gallery",
+      github: "GitHub",
+      openMenu: "Open menu",
+      closeMenu: "Close menu",
+    },
+    theme: {
+      label: "Theme",
+      light: "Light",
+      dark: "Dark",
+      system: "System",
+    },
+    lang: {
+      label: "Language",
+      zh: "中文",
+      en: "English",
+      system: "System",
+    },
   },
   site: {
-    home: "Home",
+    home: "Overview",
     surfaces: "Surfaces",
     foundations: "Foundations",
     fonts: "Fonts",
@@ -20,8 +42,6 @@ export const en: GalleryStrings = {
     nav: "Surfaces",
     onThisPage: "On this page",
     settings: "View settings",
-    menu: "Open the menu",
-    closeMenu: "Close the menu",
     notFound: (id) => `There is no page named “${id}”.`,
     allSurfaces: "All surfaces",
     feedbackTitle: "Feedback",
@@ -182,7 +202,6 @@ export const en: GalleryStrings = {
   rail: {
     theme: "Theme",
     themeNames: { github: "Primer", modern: "Frost", geek: "Console" },
-    mode: "Mode",
     accent: "Accent",
     accentTheme: "Theme's own",
     size: "Size",
@@ -192,11 +211,9 @@ export const en: GalleryStrings = {
     fontCjk: "CJK font",
     fontTheme: "Theme default",
     fontSystem: "System",
-    language: "Language",
     viewport: "Viewport",
     viewports: { desktop: "Desktop", phone: "Phone" },
     langNames: { en: "EN", zh: "中文" },
-    modes: { light: "Light", dark: "Dark", system: "System" },
   },
   readout: {
     label: "Fonts in use",
@@ -392,7 +409,7 @@ export const en: GalleryStrings = {
     system: "System",
     current: "Current choice",
     currentHint:
-      "The pairing picked in the top bar; “theme default” is the active theme's row above. What actually renders is on the next line.",
+      "The pairing picked in View settings; “theme default” is the active theme's row above. What actually renders is on the next line.",
     followsTheme: (theme) => `Theme default (${theme})`,
     specimensTitle: "Specimens",
     licencesTitle: "Licences",

@@ -2,7 +2,7 @@
  * `/fonts`, `/fonts/specimens`, `/fonts/licences` — the 字体 section, three pages under one nav:
  *
  * - Defaults: each theme's default Latin, CJK and mono face as the package states them
- *   (lib/theme-fonts.ts), the active theme's row marked; then the pairing chosen in the top bar
+ *   (lib/theme-fonts.ts), the active theme's row marked; then the pairing chosen in the gallery bar
  *   and the faces actually rendering (the readout).
  * - Specimens: each theme's families, resolved from its tokens, set in an en and a zh paragraph
  *   at the five text sizes; then the `@font-face` rules the page's styles declare, one row per
