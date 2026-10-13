@@ -12,7 +12,7 @@
 
 ## 细节
 
-- **Server**：列出规则在每次读取时计算。`sessions` 表新增可空列 `kept_at`（schema 迁移 15）：取消归档时写入，归档时清除，运行从不改写，因此用户取消归档的后台会话在之后的运行中仍留在侧栏。`SessionInfo.archived` 即该规则的结果。从这个版本起，已有的 api、schedule、cli 会话按已归档列出；磁盘上的数据不做改写。
+- **Server**：列出规则在每次读取时计算。`sessions` 表新增可空列 `kept_at`（schema 迁移 16，`sessions-kept-at`）：取消归档时写入，归档时清除，运行从不改写，因此用户取消归档的后台会话在之后的运行中仍留在侧栏。`SessionInfo.archived` 即该规则的结果。从这个版本起，已有的 api、schedule、cli 会话按已归档列出；磁盘上的数据不做改写。
 - **Server**：`SessionCategory` 只有 `active` 与 `archived`；`?category=background` 返回 400。`subagent` 与 `company` 会话不属于任何类别，也不计入任何总数，在会话列表和分页的 Agent Traces 列表中都是如此。
 - **Server**：`PATCH /api/sessions/:id {archived}` 对 `subagent` 或 `company` 会话返回 `409 session_not_listed`，并向 Project 的用户发出 `session_archived`。`DELETE /api/sessions/:id` 会一并删除该会话自己派生的子 Agent 会话（从其 Trace 中的 `subagent` 指针记录找到；分叉随复制的历史带来的指针所指的子会话属于源会话，不随分叉删除），并为删除的每个会话发出 `session_deleted`。
 - **Server**：新增四个当前用户下的路由：`GET /api/me/archived-sessions/groups`（按 Project 下的 Workspace 分组，给出数量与取数时刻 `asOf`）、`GET /api/me/archived-sessions`（单个分组的会话，按最近活跃倒序、游标分页）、`POST /api/me/archived-sessions/unarchive` 与 `POST /api/me/archived-sessions/delete`（按 id 指定，最多 500 个，或按筛选条件）。范围是用户拥有或参与的所有 Project，可按标题搜索、按来源（`user`、`api`、`schedule`、`cli`）筛选。筛选条件可带 `until`（某次分组的 `asOf`），此时只作用于那一刻已归档、此后没有活动的会话；`exclude` 可把指定的会话排除在外。按筛选条件删除时跳过运行中的会话；按 id 指定的运行中会话仍先中止再删除。
