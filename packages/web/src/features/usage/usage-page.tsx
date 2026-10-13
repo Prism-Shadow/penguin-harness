@@ -202,6 +202,9 @@ export function UsagePage() {
 
   const load = useCallback(async () => {
     if (!projectId) return;
+    // The notice must acknowledge the errors fetched for this visit, not the timestamp
+    // cached when the app started; otherwise those errors return as unread after a reload.
+    refreshProjectTodos(projectId);
     setError(null);
     try {
       // The trailing presets recompute their window at load time, so a reload
@@ -462,11 +465,8 @@ export function UsagePage() {
             // Clearing the log is a Project-level management operation, gated on the owner
             // by the route; a member reads the panel without the action.
             canClear={currentProject?.role === "owner"}
-            // The badge and the notice above are gated on a probe cached per Project for the
-            // browser session, not on this response — without the re-probe an emptied table
-            // would sit under a dot still pointing at the rows that just went.
+            // Reload both the table and its notice after clearing the log.
             onCleared={() => {
-              refreshProjectTodos(projectId);
               void load();
             }}
           />
