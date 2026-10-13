@@ -365,7 +365,10 @@ async function callOverHttp(method: string, url: string, body: unknown): Promise
   const etag = response.headers.get("etag");
   if (response.status === 204) return { status: 204, body: null, date, retryAfterSeconds, etag };
   const text = await response.text();
-  if (!text) return { status: response.status, body: null, date, retryAfterSeconds, etag };
+  if (!text) {
+    if (!response.ok) throw notTheServer(response);
+    return { status: response.status, body: undefined, date, retryAfterSeconds, etag };
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);

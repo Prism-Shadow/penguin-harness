@@ -290,6 +290,8 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 
 ### 每台机器一条事件流
 
+Web App 从本地用户事件流消费远端机器事件，不同时消费两个入口。Project 聚合仍提供给显式订阅者；两个入口共享同一个上游 socket 订阅。不提供 API socket 的机器会明确被拒绝，不静默增加第二条 HTTP 流。
+
 盯住 N 台机器，过去要花掉标签页 N 条流：它对每台机器各调用一次 `/server/<machineId>/api/events`，于是有 T 个标签页的 hub 就持有 T × N 条上游订阅，一台机器静默下来，其重发风暴还要乘以标签页数。现在 hub 对一台机器的 `/api/events` 只持有唯一的那一次订阅，走的就是它对该机器持有的那条套接字，本地的每个读取方都由它供给——一台机器自己的流，或任意多个标签页：
 
 - `GET /api/projects/:projectId/machines/events` 是聚合流（与上文路由一样仅限管理员，且调用方须是该 Project 的成员）：无论机器多少，每个标签页只有一条流，承载每台已连接机器的事件，各自带上来源机器的标记。它的帧是 `event: machine_event`，`data: {"machineId": "…", "event": {…ServerEvent}}`，另有按 SSE 节奏发出的 `event: heartbeat`——标签页凭帧判断聚合流是活着还是停住了，与它在 `/api/events` 上的判断方式完全一致。

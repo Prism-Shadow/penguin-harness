@@ -189,6 +189,7 @@ export interface MachineEventHubOptions {
 interface AggregateReader {
   sources: ReadonlySet<string>;
   deliver: (id: string, event: string, data: string) => void;
+  end: () => void;
 }
 
 /**
@@ -230,10 +231,16 @@ class MachineEventAggregate {
   subscribe(
     sources: ReadonlySet<string>,
     deliver: (id: string, event: string, data: string) => void,
+    end: () => void = () => undefined,
   ): () => void {
-    const reader: AggregateReader = { sources, deliver };
+    const reader: AggregateReader = { sources, deliver, end };
     this.#readers.add(reader);
     return () => this.#readers.delete(reader);
+  }
+
+  close(): void {
+    for (const reader of [...this.#readers]) reader.end();
+    this.#readers.clear();
   }
 
   /** What that tab's `last-event-id` still reaches, or a miss it must resync from. */
@@ -258,6 +265,7 @@ export class MachineEventHub {
   readonly #openTimeoutMs: number;
   readonly #reissueMinMs: number;
   readonly #reissueMaxMs: number;
+  #closed = false;
 
   constructor(
     private readonly sockets: MachineSockets,
@@ -271,6 +279,17 @@ export class MachineEventHub {
     this.#reissueMinMs = options.reissueMinMs ?? REISSUE_MIN_MS;
     this.#reissueMaxMs = options.reissueMaxMs ?? REISSUE_MAX_MS;
     this.#aggregate = new MachineEventAggregate(this.#replayCount, this.#replayBytes);
+  }
+
+  /** Stops every reader, upstream call and retry owned by this generation. */
+  close(): void {
+    this.#closed = true;
+    this.#aggregate.close();
+    for (const subscription of [...this.#subscriptions.values()]) {
+      const readers = [...subscription.readers];
+      this.#drop(subscription);
+      for (const reader of readers) reader.sink.onEnd();
+    }
   }
 
   /** How many machines the hub is subscribed to right now — the number the aggregation is about. */
@@ -295,6 +314,10 @@ export class MachineEventHub {
     sink: Sink,
     hold?: Hold,
   ): () => void {
+    if (this.#closed) {
+      sink.onEnd();
+      return () => undefined;
+    }
     const subscription = this.#subscriptionFor(machineId, target);
     const reader: Reader = {
       sink,
