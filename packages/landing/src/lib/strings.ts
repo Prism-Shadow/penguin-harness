@@ -175,7 +175,7 @@ export const zh = {
       frame: "评估中心里的一套 Benchmark（实时演示）",
     },
     toolkits: {
-      title: "自进化算法就是插件",
+      title: "自进化算法通过插件接入",
       /** `names`: the paper toolkits, already listed (OPRO、APE、…). */
       text: (names: string) => `除了默认循环，${names} 各自是一个工具包，按原论文的流程运行。`,
       link: "浏览插件库",

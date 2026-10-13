@@ -92,11 +92,12 @@ export function Hero() {
           className="hero-positioning anim-rise mx-auto mt-6 leading-tight font-semibold tracking-[-0.035em] text-balance break-keep [overflow-wrap:break-word]"
           style={{ animationDelay: "70ms" }}
         >
-          {/* The badge hangs off the line's top-right corner; on a phone it sits above the
-              corner instead, inside the column, where the line already reaches the edge. */}
+          {/* The badge is a superscript on the line's top-right corner, set as type rather than a
+              chip: brand colour, no box. On a phone it sits above the corner instead, inside the
+              column, where the line already reaches the edge. */}
           <span className="relative inline-block">
             {S.hero.positioning}
-            <span className="absolute right-0 bottom-full mb-1 rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] leading-4 font-semibold tracking-normal whitespace-nowrap text-brand-700 sm:right-auto sm:bottom-full sm:left-full sm:mb-0 sm:-translate-x-3 sm:translate-y-2 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-300">
+            <span className="absolute right-0 bottom-full mb-1 text-sm leading-none font-semibold tracking-normal whitespace-nowrap text-brand-600 sm:right-auto sm:bottom-auto sm:top-[0.1em] sm:left-full sm:mb-0 sm:ml-[0.3em] sm:text-[0.42em] dark:text-brand-300">
               {S.hero.badge}
             </span>
           </span>

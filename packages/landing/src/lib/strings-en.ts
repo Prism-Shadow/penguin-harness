@@ -177,7 +177,7 @@ export const en: Strings = {
       frame: "A Benchmark in the Evaluation Center (live demo)",
     },
     toolkits: {
-      title: "Self-evolution algorithms are plugins",
+      title: "Self-evolution algorithms are added as plugins",
       text: (names: string) =>
         `Besides the default loop, ${names} each come as a toolkit that runs the algorithm the way its paper describes.`,
       link: "Browse the plugin library",
