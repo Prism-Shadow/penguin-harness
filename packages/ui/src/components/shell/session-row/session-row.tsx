@@ -161,6 +161,13 @@ export interface SessionRowProps {
    */
   sourceGlyph?: string;
   sourceLabel?: string;
+  /**
+   * The multi-agent work group it belongs to (`run_subagent` squad arg, with the short
+   * parent id in the name where known): the users glyph from the icon registry, drawn
+   * only when both are given, in the same dim cluster as the source mark.
+   */
+  squadGlyph?: string;
+  squadLabel?: string;
   /** Pinned to the top of its list: the pin mark, named by this. */
   pinnedLabel?: string;
   /** Relayed to a messaging channel: the paper plane, named by this (the channel's name). */
@@ -210,6 +217,8 @@ export function SessionRow({
   agent,
   sourceGlyph,
   sourceLabel,
+  squadGlyph,
+  squadLabel,
   pinnedLabel,
   relayLabel,
   scheduledLabel,
@@ -316,6 +325,9 @@ export function SessionRow({
           {renderTitle(`min-w-0 flex-1 font-sans text-sm ${titleInk}`)}
           {sourceGlyph !== undefined && sourceLabel !== undefined && (
             <RowMark glyph={sourceGlyph} label={sourceLabel} />
+          )}
+          {squadGlyph !== undefined && squadLabel !== undefined && (
+            <RowMark glyph={squadGlyph} label={squadLabel} />
           )}
           {pinnedLabel !== undefined && <RowMark glyph={ICONS.pin} label={pinnedLabel} />}
           {relayLabel !== undefined && <RowMark glyph={ICONS.paperPlane} label={relayLabel} />}

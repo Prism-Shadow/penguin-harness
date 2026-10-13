@@ -32,6 +32,12 @@ export function programSource(s: Pick<SessionInfo, "source">): ProgramSource | n
   return isProgramSource(s.source) ? s.source : null;
 }
 
+/** A row's squad mark, as `SessionRow` takes it (same dim cluster as the source mark). */
+export interface SquadMark {
+  squadGlyph: string;
+  squadLabel: string;
+}
+
 /** The mark of a Session a program opened; null for any other. */
 export function backgroundSourceMark(s: SessionInfo): SourceMark | null {
   const source = programSource(s);
@@ -41,4 +47,19 @@ export function backgroundSourceMark(s: SessionInfo): SourceMark | null {
 
 function isProgramSource(source: SessionSource | undefined): source is ProgramSource {
   return source === "api" || source === "schedule" || source === "cli";
+}
+
+/**
+ * A row's squad mark: the multi-agent work group (`run_subagent` squad arg) plus the
+ * short parent id when parentage is known. Drawn wherever the row is filed (not only
+ * the Background folder — a squad child can surface in search too); archived rows stay
+ * unmarked like every other provenance mark.
+ */
+export function squadMark(s: SessionInfo): SquadMark | null {
+  if (s.archived || !s.squad) return null;
+  const parent =
+    s.parentSessionId && s.parentSessionId !== s.sessionId
+      ? s.parentSessionId.slice(-6)
+      : undefined;
+  return { squadGlyph: ICONS.users, squadLabel: S.chat.squadSession(s.squad, parent) };
 }

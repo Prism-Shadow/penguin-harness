@@ -13,13 +13,20 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { SessionInfo, SessionSource } from "@prismshadow/penguin-server/api";
 import { ICONS } from "@prismshadow/penguin-ui";
-import { backgroundSourceMark } from "../src/lib/session-source-mark";
+import { backgroundSourceMark, squadMark } from "../src/lib/session-source-mark";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 afterEach(() => setActiveStrings(zh));
 
-function session(over: { source?: SessionSource; archived?: boolean } = {}): SessionInfo {
+function session(
+  over: {
+    source?: SessionSource;
+    archived?: boolean;
+    squad?: string;
+    parentSessionId?: string;
+  } = {},
+): SessionInfo {
   return {
     sessionId: "session-1",
     projectId: "proj",
@@ -37,6 +44,8 @@ function session(over: { source?: SessionSource; archived?: boolean } = {}): Ses
     hasTrace: true,
     archived: over.archived ?? false,
     ...(over.source !== undefined ? { source: over.source } : {}),
+    ...(over.squad !== undefined ? { squad: over.squad } : {}),
+    ...(over.parentSessionId !== undefined ? { parentSessionId: over.parentSessionId } : {}),
   };
 }
 
@@ -74,5 +83,34 @@ describe("backgroundSourceMark", () => {
     for (const source of PROGRAMS) {
       expect(backgroundSourceMark(session({ source }))?.sourceLabel).not.toMatch(/\p{Script=Han}/u);
     }
+  });
+});
+
+describe("squadMark", () => {
+  it("marks a squad row with the users glyph and names the tag", () => {
+    const mark = squadMark(session({ source: "subagent", squad: "e2e-live" }));
+    expect(mark?.squadGlyph).toBe(ICONS.users);
+    expect(mark?.squadLabel).toContain("e2e-live");
+  });
+
+  it("appends the short parent id when parentage is known", () => {
+    const withParent = squadMark(
+      session({ squad: "rc1", parentSessionId: "session-2026-10-12-12-13-26-b37b76" }),
+    )?.squadLabel;
+    const withoutParent = squadMark(session({ squad: "rc1" }))?.squadLabel;
+    expect(withParent).toContain("rc1");
+    expect(withParent).toContain("b37b76");
+    expect(withoutParent).not.toContain("b37b76");
+  });
+
+  it("leaves untagged and archived rows unmarked", () => {
+    expect(squadMark(session({ source: "subagent" }))).toBeNull();
+    expect(squadMark(session())).toBeNull();
+    expect(squadMark(session({ squad: "rc1", archived: true }))).toBeNull();
+  });
+
+  it("names the squad in English without falling back to Chinese", () => {
+    setActiveStrings(en);
+    expect(squadMark(session({ squad: "rc1" }))?.squadLabel).not.toMatch(/\p{Script=Han}/u);
   });
 });

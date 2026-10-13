@@ -93,6 +93,14 @@ describe("SessionRow", () => {
     expect(row({ sourceLabel: "API" })).not.toContain("API");
   });
 
+  it("draws a squad mark only when it has both a glyph and its words", () => {
+    expect(row({ squadGlyph: ICONS.users, squadLabel: "编队 e2e-live" })).toContain(
+      '<span data-tooltip="编队 e2e-live" class="shrink-0 text-fg-subtle">',
+    );
+    expect(row({ squadGlyph: ICONS.users })).not.toContain("编队");
+    expect(row({ squadLabel: "编队 e2e-live" })).not.toContain("编队 e2e-live");
+  });
+
   it("draws no background mark and no approval count at zero", () => {
     const html = row({
       background: { count: 0, label: "0 个后台任务" },

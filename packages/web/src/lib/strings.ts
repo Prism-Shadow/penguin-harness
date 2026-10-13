@@ -4162,6 +4162,17 @@ Benchmark：
     archivedStub: {
       note: "这个对话已归档。取消归档后可以查看内容，它会回到左侧列表。",
     },
+    /** A row's squad mark tooltip: work group + short parent id when known. */
+    squadSession: (squad: string, parent?: string) =>
+      `编队 ${squad}${parent ? ` · 上级 ${parent}` : ""}`,
+    /**
+     * Tooltip of a folder-only group's header — a group with no active conversation of its
+     * own, only rows inside its folders (it renders collapsed and sorts last). `n` is what
+     * those folders hold, which is also the count the dimmed header shows; the Workspace path
+     * follows where the header has one, since this sentence replaces the tooltip that carried it.
+     */
+    folderOnlyGroup: (n: number, path?: string) =>
+      `仅有折叠任务：${n} 个会话${path ? `（${path}）` : ""}`,
     /** The skills note's fixed phrase (the count picks the en plural); the skill names follow it as `nameList`. */
     skillsLabel: (_count: number): string => "使用技能",
     /** Attached-file notice above a user message: this fixed phrase, then the file names (only the names; the paths stay in the Trace) as `nameList`. */

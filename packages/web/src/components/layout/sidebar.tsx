@@ -125,7 +125,7 @@ import {
   workspaceLabel,
 } from "../../lib/session-grouping";
 import { machineForSession } from "../../lib/session-machines";
-import { backgroundSourceMark } from "../../lib/session-source-mark";
+import { backgroundSourceMark, squadMark } from "../../lib/session-source-mark";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import {
   initialNavGroupCollapsed,
@@ -2722,6 +2722,7 @@ function SidebarSessionRow({
       // nothing) and whether it owns work that outlives the turn (background tasks, live via
       // session_background).
       {...(backgroundSourceMark(s) ?? {})}
+      {...(squadMark(s) ?? {})}
       {...(pinned ? { pinnedLabel: S.chat.pinnedSession } : {})}
       {...(s.messagingChannel !== undefined
         ? { relayLabel: S.messaging.enabledIndicator[s.messagingChannel] }

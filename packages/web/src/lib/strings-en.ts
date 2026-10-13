@@ -3977,6 +3977,12 @@ Scenarios:
     archivedStub: {
       note: "This chat is archived. Unarchive it to read it; it returns to the sidebar.",
     },
+    /** A row's squad mark tooltip: work group + short parent id when known. */
+    squadSession: (squad: string, parent?: string) =>
+      `Squad ${squad}${parent ? ` · child of …${parent}` : ""}`,
+    /** Tooltip of a folder-only group's header (nothing active of its own): what its folders hold, plus the Workspace path where the header has one. */
+    folderOnlyGroup: (n: number, path?: string) =>
+      `Folded tasks only: ${n} conversation${n === 1 ? "" : "s"}${path ? ` (${path})` : ""}`,
     /** The skills note's fixed phrase (the count picks the plural); the skill names follow it as `nameList`. */
     skillsLabel: (count: number): string => `Using skill${count === 1 ? "" : "s"}`,
     /** Attached-file notice above a user message: this fixed phrase, then the file names as `nameList`. */
