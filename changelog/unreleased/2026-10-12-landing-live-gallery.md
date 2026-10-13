@@ -15,11 +15,13 @@ The landing home page was rebuilt around the real Web App, framed live from the 
 
 ## Home page
 
-- New order: the hero, three showcase rows, the one-sentence RAG case, the cost comparison, customer scenarios, latest updates, quick start, the call to action and the community links. The Pillars, LangChain comparison, RSI loop, CONTRACT.md, Features, Skills and Security sections were removed with their copy, media and tests.
+- New order: the hero, three showcase rows, the self-evolution loop with its demo, the one-request case, what PenguinHarness is made of, what is already built around the agent, the cost comparison, customer scenarios, latest updates, quick start, the call to action and the community links. The CONTRACT.md, Features, Skills and Security sections were removed with their copy, media and tests.
+- The three animated graphics of the old page stay, restyled to the new page and rewritten: the self-evolution loop (Optimizer, Evaluator subagents, the tested agent's version N to N+1, three illustrative trend charts), the radiating diagram (now OmniMessage, Penguin SDK and Agent State) and the construction animation (an agent library against what PenguinHarness already ships, without the LangChain name or the 1x/100x multiplier). Reduced motion stops all three.
+- New demo recordings, one per language, from the community repository: a decision agent's self-evolution under the loop (84 to 100 on the same model; six test-agent runs, $0.0373), and a legal app built from one request in the Cases section (five sample reviews, $0.0423), which replaces the RAG app. Each poster is the recording's own title frame; the RAG posters were deleted.
 - The hero sets "for free" as a brand-coloured superscript on the corner of the positioning line, keeps three stat tiles (the model-count tile went), and leads each catalogue row with its count in the brand accent: 1000+ supported models from the dictionaries, the algorithm and Benchmark counts from `RSI_TOOLKITS` and `BENCHMARKS`. The Web App's start page follows, live.
 - Three rows alternate a live frame with a title, one sentence and a docs link: a self-evolution round in a conversation, a Benchmark's score line in the Evaluation Center, and the RSI toolkits in the plugin market.
 - Latest updates shows the four newest news and practice posts of the blog index, by date, and links to all posts.
-- The copy in both dictionaries was rewritten, and the home page's sections dropped their eyebrows. The Cases section keeps the RAG app only; `capture-shots.mjs` now captures only its posters, and the images and scripts nothing referenced any more were deleted.
+- The copy in both dictionaries was rewritten, and the home page's sections dropped their eyebrows. The images and scripts nothing referenced any more were deleted.
 
 ## Live frames
 

@@ -52,7 +52,7 @@ export const zh = {
     stats: [
       { value: "跨平台部署", label: "Linux · Windows · macOS" },
       { value: "100% 开源", label: "Apache 2.0 协议" },
-      { value: "首个自进化 Harness", label: "智能体改进自己的提示词与 Skill" },
+      { value: "首个自进化 Harness", label: "原生 Agent 自进化引擎" },
     ],
     /**
      * The three catalogue rows under the stat tiles, each led by its count; their entries live in
@@ -187,7 +187,7 @@ export const zh = {
   selfImprove: {
     title: "自进化靠的是普通的 Agent 和 Skill",
     subtitle:
-      "默认由 General Agent 运行 agent-optimization Skill。每一轮，它只改被测 Agent 一处；运行 agent-evaluation Skill 的 Evaluator 子 Agent 则在 Benchmark 的每个题目上给修改后的 Agent 打分。",
+      "默认由 General Agent 运行优化 Skill，每一轮只改被测 Agent 的一处；Evaluator 子 Agent 运行评估 Skill，在 Benchmark 的每个题目上给修改后的 Agent 打分。",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "被测 Agent",
@@ -204,6 +204,10 @@ export const zh = {
       { label: "耗时", hint: "每次运行" },
     ],
     trendsNote: "记分板会记录每个版本的分数、成本和耗时。这里的数值仅为示意。",
+    demo: {
+      caption: "演示：决策智能体经过评测、一次工作方法改进和同模型复测，分数从 84 提升到 100。",
+      cost: "被测 Agent 的 6 次运行花费 $0.0373，不含出题、评分和优化的成本。",
+    },
     diagramLabel:
       "一轮自进化：Optimizer 运行 agent-optimization，并派发运行 agent-evaluation 的 Evaluator 子 Agent。它们在每个 Benchmark 题目上运行被测 Agent 并打分。Optimizer 根据分数和 Trace 把版本 N 修改为版本 N+1。只有分数更高，版本 N+1 才会保留。版本 N 在修改前会先保存为快照。",
   },
@@ -258,13 +262,13 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
-    title: "一句话生成会思考、可运行的 AI 应用",
+    title: "一句话构建法务应用",
     subtitle:
-      "下面这句话让 Agent 收集 Claude Code 的文档，做出带来源引用的问答应用；索引、检索和界面都是它写的。",
+      "用一句话描述需求，PenguinHarness 就能构建法务智能体应用：上传合同、识别风险并生成审阅报告。",
     prompt:
-      "收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
-    caption: "生成的应用：回答 Claude Code 的配置问题，引用可以点开，自带示例问题",
-    cost: "整个应用用 DeepSeek V4 Pro 生成，Token 只花了 0.2 元（$0.02）。",
+      "新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。再在法务智能体上做一个 Workflow 标签页，当作它的工作台：我上传文件后，由它在后台分析，完成后生成一份分析报告供我下载。页面上只要上传、文件列表（每个文件的处理状态）和报告下载，不显示任何对话过程；颜色一律取自主题变量，明暗两种主题下都要好看。",
+    caption: "生成的应用：上传合同，查看每个文件的处理状态，下载列出风险条款和修改建议的审阅报告",
+    cost: "5 次样件审阅的模型花费：$0.0423。",
   },
 
   /**
@@ -298,6 +302,8 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         link: "配置参考",
       },
     ],
+  },
+
   /** Building on an agent library against PenguinHarness (sections/compare.tsx). */
   compare: {
     title: "Agent 周边的部分，已经搭好了",

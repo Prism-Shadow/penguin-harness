@@ -90,8 +90,8 @@ const COMMUNITY_RAW =
   "https://github.com/Prism-Shadow/penguin-harness-community/raw/refs/heads/main";
 
 /**
- * Demo videos: ~9 MB each, against a whole repo history of ~17 MB — committing them here
- * would triple what every contributor clones. raw.githubusercontent sends
+ * Demo videos: several megabytes each — committing them here would multiply what every
+ * contributor clones. raw.githubusercontent sends
  * `accept-ranges: bytes`, so seeking works. The `application/octet-stream` content type
  * does not block playback — `nosniff` is only enforced for scripts and styles, and
  * `<video>` sniffs the container itself (verified in Chromium).

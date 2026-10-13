@@ -9,11 +9,18 @@
  * The chart values are illustrative and the section says so. Their shapes follow the rules, not a
  * wish: the score only rises because a version is kept only when it scores higher, while cost and
  * duration are recorded but never optimised, so they wander. Phones get the same loop as a stacked
- * reading. Reduced motion: the flow dots stay off and every line is drawn finished.
+ * reading. Reduced motion: the flow dots stay off and every line is drawn finished. Under the
+ * panel, the recorded demo of a decision agent's round, with what its test runs cost.
  */
 import { useEffect, useRef, useState } from "react";
 import { S } from "../lib/strings";
 import { Section } from "../components/section";
+import { DemoVideo } from "../components/demo-video";
+import { demoVideoUrl } from "../lib/links";
+import { useLocale } from "../state/locale";
+import type { Locale } from "../state/locale";
+import demoPosterZh from "../assets/shots/decision-evo-zh.webp";
+import demoPosterEn from "../assets/shots/decision-evo-en.webp";
 
 /** Skill names and version marks are identifiers, the same in every language. */
 const OPTIMIZER_SKILL = "agent-optimization";
@@ -533,8 +540,16 @@ function LoopDiagram() {
   );
 }
 
+/** The recorded demo and its title-frame poster, per language. */
+const DEMO: Record<Locale, { video: string; poster: string }> = {
+  zh: { video: demoVideoUrl("decision_evo_zh"), poster: demoPosterZh },
+  en: { video: demoVideoUrl("decision_evo_en"), poster: demoPosterEn },
+};
+
 export function SelfImprove() {
   const c = S.selfImprove;
+  const { locale } = useLocale();
+  const demo = DEMO[locale];
   return (
     <Section id="self-evolution" title={c.title} subtitle={c.subtitle}>
       <div className="rounded-2xl bg-gray-50 p-5 sm:p-8 dark:bg-gray-900/60">
@@ -561,6 +576,15 @@ export function SelfImprove() {
         </div>
         <p className="mt-6 text-xs leading-5 text-gray-500 dark:text-gray-400">{c.trendsNote}</p>
       </div>
+      <figure className="mx-auto mt-10 max-w-5xl">
+        <DemoVideo src={demo.video} poster={demo.poster} label={c.demo.caption} />
+        <figcaption className="mt-3 text-center text-xs text-gray-500 dark:text-gray-400">
+          {c.demo.caption}
+        </figcaption>
+        <p className="mt-2 text-center text-[13px] font-semibold text-brand-700 dark:text-brand-300">
+          {c.demo.cost}
+        </p>
+      </figure>
     </Section>
   );
 }

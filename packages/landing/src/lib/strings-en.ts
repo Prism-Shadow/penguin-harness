@@ -52,7 +52,7 @@ export const en: Strings = {
       { value: "100% open source", label: "Apache 2.0 licensed" },
       {
         value: "First self-improving harness",
-        label: "Agents improve their own prompts and Skills",
+        label: "A native agent self-evolution engine",
       },
     ],
     supportedModelsCount: "1000+",
@@ -188,7 +188,7 @@ export const en: Strings = {
   selfImprove: {
     title: "Self-evolution runs on ordinary agents and Skills",
     subtitle:
-      "By default the General Agent runs the agent-optimization Skill. Each round it makes one change to the tested agent, and Evaluator subagents with the agent-evaluation Skill score the changed agent on every case of the Benchmark.",
+      "By default the General Agent runs the optimization Skill. Each round it makes one change to the tested agent. Evaluator subagents running the evaluation Skill score the changed agent on every case of the Benchmark.",
     nodeOptimizer: "Optimizer",
     nodeEvaluator: "Evaluator × N",
     nodeTarget: "Tested agent",
@@ -205,6 +205,11 @@ export const en: Strings = {
     ],
     trendsNote:
       "The scoreboard records each version's score, cost and duration. The values here are illustrative.",
+    demo: {
+      caption:
+        "Demo: a decision agent is evaluated, revises its working method once and is retested on the same model. Its score goes from 84 to 100.",
+      cost: "Six test-agent runs cost $0.0373, not counting Benchmark creation, scoring or the optimizer.",
+    },
     diagramLabel:
       "One round of self-evolution: the Optimizer runs agent-optimization and dispatches Evaluator subagents running agent-evaluation. They run the tested agent on each Benchmark case and score it. From the scores and Traces, the Optimizer edits version N into version N+1. Version N+1 is kept only if its score is higher. Version N is saved as a snapshot before it is edited.",
   },
@@ -266,14 +271,14 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    title: "One sentence builds an AI app that thinks and runs",
+    title: "One request builds a legal agent app",
     subtitle:
-      "This sentence had an agent collect the Claude Code docs and turn them into a question-answering app that cites its sources. The agent wrote the index, the retrieval and the interface.",
+      "Describe what you need in one request. PenguinHarness builds a legal agent app that takes contract uploads, identifies risks and produces review reports to download.",
     prompt:
-      "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.",
+      "Build a legal review agent with a simple workspace where users upload contracts, track the review, and download a report with risky clauses, explanations, and suggested revisions.",
     caption:
-      "The app it built answers Claude Code configuration questions with clickable citations and comes with example questions",
-    cost: "Built on DeepSeek V4 Pro for $0.02 (¥0.2) in Tokens.",
+      "The app it built: upload contracts, follow each file's review and download a report of risky clauses with suggested revisions",
+    cost: "Five sample reviews cost $0.0423 in model calls.",
   },
 
   pillars: {
@@ -302,6 +307,8 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
         link: "Configuration reference",
       },
     ],
+  },
+
   compare: {
     title: "The parts around the agent are already built",
     subtitle:
