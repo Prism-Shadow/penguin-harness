@@ -122,7 +122,7 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
   const hosted = new WeakSet<BrowserWindow>();
   /** The pages of the hosted windows: the only embedders a guest may attach to. */
   const embedders = new WeakSet<WebContents>();
-  let partitionSession: Session | null = null;
+  const partitionSessions = new Map<string, Session>();
   let metricsTimer: NodeJS.Timeout | null = null;
   let metricsSoon: NodeJS.Timeout | null = null;
 
@@ -143,15 +143,16 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
    * see, and which permission prompts a page is granted. Downloads keep Electron's own save
    * dialog.
    */
-  function browserSession(): Session {
-    if (partitionSession !== null) return partitionSession;
-    const ses = session.fromPartition(BUILTIN_BROWSER_PARTITION);
+  function browserSession(partition = BUILTIN_BROWSER_PARTITION): Session {
+    const existing = partitionSessions.get(partition);
+    if (existing !== undefined) return existing;
+    const ses = session.fromPartition(partition);
     ses.setUserAgent(plainChromeUserAgent(ses.getUserAgent()));
     ses.setPermissionRequestHandler((_wc, permission, callback) =>
       callback(isGrantedPermission(permission)),
     );
     ses.setPermissionCheckHandler((_wc, permission) => isGrantedPermission(permission));
-    partitionSession = ses;
+    partitionSessions.set(partition, ses);
     return ses;
   }
 
@@ -353,8 +354,8 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
   }
 
   /** Writes cookies one by one, so a bad one costs itself only. Failures name the cookie, never its value. */
-  async function setCookies(cookies: DesktopBrowserCookie[]) {
-    const ses = browserSession();
+  async function setCookies(cookies: DesktopBrowserCookie[], partition?: string) {
+    const ses = browserSession(partition);
     let set = 0;
     let failed = 0;
     const errors: string[] = [];
@@ -401,10 +402,10 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
     wc.setBackgroundThrottling(allowed);
   }
 
-  async function clearData(storages: readonly string[]) {
+  async function clearData(storages: readonly string[], partition?: string) {
     const plan = clearDataPlan(storages);
     if (plan === null) throw new Error("bad_command");
-    const ses = browserSession();
+    const ses = browserSession(partition);
     if (plan.storageData.length > 0) await ses.clearStorageData({ storages: plan.storageData });
     if (plan.cache) await ses.clearCache();
     return {};
@@ -426,9 +427,9 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
         return sendCdp(guest, command.method, command.params);
       }
       case "set-cookies":
-        return setCookies(command.cookies);
+        return setCookies(command.cookies, command.partition);
       case "clear-data":
-        return clearData(command.storages);
+        return clearData(command.storages, command.partition);
       case "throttle":
         return throttle(command.tabIds);
     }
@@ -528,8 +529,11 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
           );
           return;
         }
-        browserSession();
-        hardenGuestPreferences(webPreferences as unknown as Record<string, unknown>);
+        browserSession(params.partition);
+        hardenGuestPreferences(
+          webPreferences as unknown as Record<string, unknown>,
+          params.partition,
+        );
       });
       embedder.on("did-attach-webview", (_event, wc) => adopt(wc));
     },

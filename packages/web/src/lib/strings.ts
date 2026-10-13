@@ -664,7 +664,8 @@ export const zh = {
     pairConnected: "已连接",
     /** The import dialog: copies sign-ins and history from a browser installed on this computer. */
     importTitle: "从浏览器导入",
-    importIntro: "把系统浏览器里的登录状态和历史记录复制到内置浏览器，原浏览器中的数据不会改变。",
+    importIntro:
+      "将系统浏览器的登录状态导入当前 Project，历史记录导入内置浏览器。其他 Project 的登录状态和原浏览器的数据不会改变。",
     importLoading: "正在查找浏览器…",
     importNone: "这台电脑上没有找到可以导入的浏览器。",
     importSourcesFailed: (reason: string): string => `无法读取浏览器列表：${reason}`,
@@ -693,7 +694,8 @@ export const zh = {
     importFailed: (reason: string): string => `导入失败：${reason}`,
     /** The clear-browsing-data confirmation. */
     clearTitle: "清除浏览数据",
-    clearBody: "选择要从内置浏览器中删除的数据，此操作无法撤销。",
+    clearBody:
+      "Cookie、缓存和网站存储仅清除当前 Project 的数据；历史记录会从整个内置浏览器中清除。此操作无法撤销。",
     clearCookies: "Cookie 与登录状态",
     clearCache: "缓存的图片和文件",
     clearStorage: "网站存储的数据",

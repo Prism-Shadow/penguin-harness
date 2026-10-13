@@ -19,6 +19,15 @@ import type { TrayLocale } from "./tray-menu.js";
 /** The guests' own session: independent sign-ins and profile, persisted under userData. */
 export const BUILTIN_BROWSER_PARTITION = "persist:penguin-browser";
 
+/** Only browser-owned storage partitions may be selected, never the app's own session. */
+export function isBrowserPartition(partition: unknown): partition is string {
+  return (
+    partition === BUILTIN_BROWSER_PARTITION ||
+    (typeof partition === "string" &&
+      /^persist:penguin-browser-project-[a-f0-9]{64}$/.test(partition))
+  );
+}
+
 /** What the shell answers `hello` with; the server learns from it that this shell hosts guests. */
 export const BUILTIN_BROWSER_PROTOCOL_VERSION = 1;
 
@@ -32,7 +41,7 @@ function schemeOf(url: string): string | null {
  * a web page or a blank one. An element with no `src` yet starts blank, which is harmless.
  */
 export function mayAttachGuest(params: { partition?: string; src?: string }): boolean {
-  if (params.partition !== BUILTIN_BROWSER_PARTITION) return false;
+  if (!isBrowserPartition(params.partition)) return false;
   const src = params.src ?? "";
   if (src === "" || src === "about:blank") return true;
   const scheme = schemeOf(src);
@@ -56,8 +65,11 @@ export function mayAttachGuest(params: { partition?: string; src?: string }): bo
  * and target=_blank before any handler runs, so a popup could never become a tab. The handler
  * then denies every one of them (builtin-browser.ts), so no guest ever opens a window.
  */
-export function hardenGuestPreferences(prefs: Record<string, unknown>): void {
-  prefs.partition = BUILTIN_BROWSER_PARTITION;
+export function hardenGuestPreferences(
+  prefs: Record<string, unknown>,
+  partition = BUILTIN_BROWSER_PARTITION,
+): void {
+  prefs.partition = isBrowserPartition(partition) ? partition : BUILTIN_BROWSER_PARTITION;
   delete prefs.preload;
   delete prefs.preloadURL;
   prefs.nodeIntegration = false;
@@ -246,17 +258,26 @@ export function parseBrowserCommand(data: unknown): ParsedBrowserCommand | null 
       };
     }
     case "set-cookies": {
-      const { cookies } = command;
+      const { cookies, partition } = command;
+      if (partition !== undefined && !isBrowserPartition(partition))
+        return { id, error: "bad_command" };
       if (!Array.isArray(cookies) || !cookies.every(isCookie)) return { id, error: "bad_command" };
-      return { id, command: { op: "set-cookies", cookies } };
+      return {
+        id,
+        command: { op: "set-cookies", cookies, ...(partition === undefined ? {} : { partition }) },
+      };
     }
     case "clear-data": {
+      const partition = command.partition;
+      if (partition !== undefined && !isBrowserPartition(partition))
+        return { id, error: "bad_command" };
       const plan = clearDataPlan(command.storages);
       if (plan === null) return { id, error: "bad_command" };
       return {
         id,
         command: {
           op: "clear-data",
+          ...(partition === undefined ? {} : { partition }),
           storages: command.storages as ("cookies" | "cache" | "storage")[],
         },
       };

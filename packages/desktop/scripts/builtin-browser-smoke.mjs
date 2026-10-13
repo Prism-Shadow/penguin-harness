@@ -12,7 +12,8 @@
  * (another partition, a file: start page) and a cross-origin iframe that tries to create a
  * guest of its own. It then drives the relay the way the server does — hello, tabs, cdp, the
  * page's canvas and icon, a dialog relayed as a CDP event and answered, a popup, DevTools opened
- * and closed around a command, cookies set and cleared, the guest's measured load, throttling
+ * and closed around a command, cookies set and cleared, Project storage shared within a Project
+ * and isolated across Projects (including targeted cookie import/clear), the guest's measured load, throttling
  * switched on and off, and the guest's renderer killed and the page reloaded — checks that a
  * window the page opens with `webviewTag=yes` cannot attach a guest, and prints
  * `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
@@ -652,6 +653,75 @@ async function run() {
     cleared,
   );
 
+  const projectA = "persist:penguin-browser-project-" + "a".repeat(64);
+  const projectB = "persist:penguin-browser-project-" + "b".repeat(64);
+  async function projectPage(name, partition) {
+    return win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+      const view = document.createElement("webview");
+      view.id = ${JSON.stringify(name)};
+      view.setAttribute("partition", ${JSON.stringify(partition)});
+      view.style.cssText = "position:absolute;left:-20000px;width:800px;height:600px";
+      view.addEventListener("did-finish-load", () => resolve(view.getWebContentsId()), {once:true});
+      view.addEventListener("did-fail-load", (event) => reject(new Error(event.errorDescription)), {once:true});
+      view.src = ${JSON.stringify(appOrigin + "/guest")};
+      document.body.appendChild(view);
+    })`);
+  }
+  const a1 = await projectPage("project-a1", projectA);
+  const a2 = await projectPage("project-a2", projectA);
+  const b1 = await projectPage("project-b1", projectB);
+  await evaluate(a1, "document.cookie='project=A;path=/';localStorage.setItem('project','A')");
+  await evaluate(b1, "document.cookie='project=B;path=/';localStorage.setItem('project','B')");
+  check(
+    "Sessions in one Project share cookies and storage",
+    await evaluate(
+      a2,
+      "document.cookie.includes('project=A') && localStorage.getItem('project') === 'A'",
+    ),
+  );
+  check(
+    "another Project has independent cookies and storage",
+    await evaluate(
+      b1,
+      "document.cookie.includes('project=B') && !document.cookie.includes('project=A') && localStorage.getItem('project') === 'B'",
+    ),
+  );
+  check(
+    "projectless storage stays separate",
+    await evaluate(
+      tabId,
+      "!document.cookie.includes('project=') && localStorage.getItem('project') === null",
+    ),
+  );
+  const projectImport = await send({
+    op: "set-cookies",
+    partition: projectA,
+    cookies: [{ url: appOrigin + "/", name: "imported", value: "A", path: "/" }],
+  });
+  check(
+    "cookie import only writes the selected Project",
+    projectImport.ok &&
+      (await evaluate(a2, "document.cookie.includes('imported=A')")) &&
+      (await evaluate(b1, "!document.cookie.includes('imported=')")),
+  );
+  const projectClear = await send({
+    op: "clear-data",
+    partition: projectA,
+    storages: ["cookies", "storage"],
+  });
+  check(
+    "clearing a Project leaves other Projects signed in",
+    projectClear.ok &&
+      (await evaluate(a2, "document.cookie === '' && localStorage.getItem('project') === null")) &&
+      (await evaluate(
+        b1,
+        "document.cookie.includes('project=B') && localStorage.getItem('project') === 'B'",
+      )),
+  );
+  await win.webContents.executeJavaScript(
+    "for (const id of ['project-a1','project-a2','project-b1']) document.getElementById(id).remove()",
+  );
+
   // The right-click menu: a real right-click (CDP input through the relay), the template the
   // module builds for it captured on its way to Menu, then two of its entries used.
   const menus = [];
@@ -769,6 +839,9 @@ async function run() {
   // The guest's renderer killed, as the system does when it runs out of memory: the tab stays,
   // reported crashed with why; CDP is refused at once rather than left waiting; a reload brings
   // the page back.
+  win.show();
+  win.focus();
+  await park("0px");
   const playingBeforeCrash = once(guest, "media-started-playing");
   await evaluate(
     tabId,
