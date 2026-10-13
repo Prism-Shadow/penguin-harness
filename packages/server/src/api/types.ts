@@ -741,10 +741,11 @@ export interface ModelsUpdateRequest {
  * `POST /models/sync-presets` (owner): `add` adds the catalog's presets the Project lacks
  * (retired rows never), as a new Project stores them, writes the catalog's
  * `[providers.<id>]` table for a group that has neither rows nor a table yet, and seeds the
- * added rows' promotions, touching nothing else; `restore` puts every built-in row and
- * built-in group table back to the catalog (facts reset, base URLs and protocols set on models
- * or groups return to the catalog's, keys and the user's own rows and groups kept, promotions
- * reset, deleted presets added back).
+ * added rows' promotions, touching nothing else; `restore` makes the model configuration a new
+ * Project's and keeps only the API keys: the presets in catalog order, the catalog's group
+ * tables, default model and promotions, no vision model, and every other row and every
+ * user-defined group deleted. Penguin Go included: its platform's next sync brings back the
+ * platform's own models and promotions.
  */
 export type PresetSyncMode = "add" | "restore";
 
@@ -755,7 +756,7 @@ export interface PresetSyncRequest {
 export interface PresetSyncResponse extends ModelsResponse {
   /** Preset rows added (both modes). */
   added: number;
-  /** Built-in rows reset to the catalog (`restore`; 0 for `add`). */
+  /** Preset rows the Project already had that `restore` changed (0 for `add`). */
   restored: number;
 }
 

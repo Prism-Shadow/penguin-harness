@@ -343,16 +343,18 @@ Adding:
 
 A catalog correction to a model the Project already has, such as a new price or context window, therefore reaches it only through **Restore defaults** or by editing the model.
 
-**Restore defaults**, beside **Add new models** and always available to the owner, puts the built-in models back to the catalog after a confirmation ("Restore default model settings"). It cannot be undone.
+**Restore defaults**, beside **Add new models** and always available to the owner, gives the Project the model configuration a new Project gets and keeps only the API keys. It asks for confirmation first and cannot be undone.
 
-- Built-in models, retired ones included, get the catalog's context window, prices and vision flag back, and lose their display name, **Max output tokens** and fast mode.
-- Base URLs and protocols on built-in models and in the settings of built-in groups other than **Custom** return to the catalog's, in a new Project's shape: settings the catalog has no value for are removed, and a built-in group missing its settings gets them back. **Custom**'s settings serve the models you added there and are kept, and so is **vLLM**'s base URL: it is your own server, so only the group's protocol returns to the catalog's.
-- Built-in models you deleted come back, at the end of the table.
-- Promotions are reset to the catalog's; the Penguin Go group's belong to the platform and are kept, and so are those of the models you added yourself.
-- Kept: every API key, the group's and the models' own; the models and groups you added yourself, with their settings; the default and proxy vision models, unless the default no longer names a model, which then becomes the catalog default, or the proxy vision model no longer accepts images, which is then cleared.
-- A built-in group with no group key gets one when every model in it that holds a key holds the same one, and the group key would reach all of those models; they drop their copies. Keys change place, never disappear.
+- The models become the catalog's presets in catalog order, with the catalog's context window, prices, vision flag, protocol and endpoint. Display names, **Max output tokens** and fast mode you set are cleared, and presets you deleted come back.
+- Every model that is not a preset is deleted: the models you added, in any group, and those an earlier version added that the catalog has since dropped, retired rows included. Groups you created are deleted with their settings and key.
+- Built-in groups' settings return to the catalog's base URL and protocol, **Custom**'s and **vLLM**'s base URLs included.
+- Promotions return to the catalog's.
+- As in a new Project, the default model is the catalog default and no proxy vision model is set.
+- The API keys of built-in groups and of preset models stay where they are. A built-in group with no group key gets one when every model in it that holds a key, deleted ones included, holds the same one and the group key would reach all of them; the models drop their copies. Other keys on deleted models go with them.
+- Penguin Go is reset like every other group, so the models the platform added beyond the presets and the platform's promotions go too. **Sync models** in the group's **Connected** menu brings them back; see [The Penguin Go group](#the-penguin-go-group).
+- The cost center reports usage recorded on a deleted model as uncosted, as it does after you delete a model yourself.
 
-The result says "Defaults restored: {added} added back, {restored} reset". Both actions run on the server, as `POST /api/projects/:id/models/sync-presets` with `mode` `add` or `restore` (owner only).
+Both actions run on the server, as `POST /api/projects/:id/models/sync-presets` with `mode` `add` or `restore` (owner only).
 
 ## Thinking levels
 
@@ -518,7 +520,7 @@ The group's key comes from its header; see [Connect an account](#connect-an-acco
 
 - Models the platform offers and the Project does not have are added, with their protocol, display name, context window, vision flag, list price and promotion. While the group's settings hold a base URL, an added model stores an endpoint only where it differs from the platform's relay URL, so a group you pointed at a proxy takes it along; with no base URL there, the model stores the platform's in full. They carry no key and use the group key. Pure embedding models are left out.
 - Existing models retain their ids, display names, prices, promotions, context and vision settings, keys and current selections. Only Go-managed routing changes; nothing is deleted. The detailed catalog remains `/api/client/models`, because `/api/v1/models` contains only the basic model list.
-- As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database. **Restore defaults** keeps this group's promotions, which belong to the platform. If that record is lost, usage is priced at the list price.
+- As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database. **Restore defaults** resets this group like any other and clears its promotions; **Sync models** brings the platform's models and promotions back. If that record is lost, usage is priced at the list price.
 
 The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their cards and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.
 
@@ -560,7 +562,7 @@ The preset catalog includes, among others:
 The list is not exhaustive.
 
 - **DeepSeek images.** `deepseek-flash` is V4.1 Flash and reads images; `deepseek-v4-pro` is the V4 Pro 0813 release and is text-only. To send an image, use `deepseek-flash`.
-- **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, and **Restore defaults** resets its price to the catalog's. A retired row is never added to a Project that does not have it, and a new Project never gets one.
+- **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, until **Restore defaults** deletes it with every other model that is not a preset. A retired row is never added to a Project that does not have it, and a new Project never gets one.
 - **OpenAI twice.** The whole OpenAI line-up is listed twice: directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions).
 - **GLM-5.3 Flash seven times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance and OpenCode Go, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash`, SiliconFlow's `zai-org/GLM-5.3-Flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: MMSP's Z.AI client (`zai-official`) forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
 - **OpenRouter free tier.** The catalog carries the `:free` model variant `nvidia/nemotron-3-ultra-550b-a55b:free` and the `openrouter/free` unified Free Models Router. They cost nothing, but OpenRouter's free-tier rate limits and data policy apply.

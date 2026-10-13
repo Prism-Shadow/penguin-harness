@@ -671,8 +671,8 @@ describe("model-catalog", () => {
   });
 
   it("the seed is honest: under a new Project's group tables, every catalog row resolves to its catalog protocol and endpoint from the file alone", () => {
-    // presetModelEntries and catalogModelEntries (what "Restore defaults" writes, retired rows
-    // included) beside presetProviderTable are the only place the catalog's connection values
+    // presetModelEntries and catalogModelEntries (retired rows included) beside
+    // presetProviderTable are the only place the catalog's connection values
     // enter a Project; after that nothing reads the catalog. So the file must say exactly
     // what the catalog says — a row resolving to anything else would run on another endpoint
     // or protocol than its catalog entry names.

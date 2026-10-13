@@ -2051,17 +2051,13 @@ export const zh = {
       "只补入内置目录里缺失的预置模型；已有的模型、你自己添加的模型、分组设置与 API key 一概不动",
     presetsAdded: (n: number): string => `已新增 ${n} 个预置模型`,
     presetsNone: "没有新的预置模型",
-    /** The header action that puts every built-in model back to the catalog, behind a danger confirmation. */
+    /** The header action that resets the model configuration to a new Project's, keeping only API keys, behind a danger confirmation. */
     restoreDefaults: "恢复默认",
     restoreDefaultsTitle: "恢复默认模型设置",
-    /** The confirmation's body, in three parts: what is reset, what is kept, and that it is final. */
-    restoreDefaultsResets:
-      "恢复：内置模型的上下文、价格与视觉标志回到目录值，显示名、输出上限与快速模式清除；模型与内置分组（Custom 除外）上自定的 base URL 与协议回到目录值；已删除的内置模型补回；促销折扣按目录重置（Penguin Go 的除外）。",
-    restoreDefaultsKeeps:
-      "保留：全部 API key（分组的与模型的）、你自己添加的模型（连同其折扣）与自建分组、Custom 的分组设置与 vLLM 的 base URL，以及默认模型与视觉模型的选择（所指模型不再适用时除外）。",
-    restoreDefaultsFinal: "此操作不可撤销。",
-    restoredDefaults: (added: number, restored: number): string =>
-      `已恢复默认：补回 ${added}、重置 ${restored}`,
+    /** The confirmation's body: what is kept, what is reset and deleted, and that it is final. */
+    restoreDefaultsBody:
+      "只保留 API key，其他模型设置全部恢复为内置默认，你添加的模型和分组都会被删除。此操作不可撤销。",
+    restoredDefaults: "已恢复默认模型设置",
     /**
      * The header's "Create with AI" entry: the dialog's title and lead, the prompt box's
      * placeholder, the examples and the fixed instruction tail. The tail

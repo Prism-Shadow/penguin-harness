@@ -1736,8 +1736,8 @@ export function ModelsPage() {
                 note={syncNote}
               />
             )}
-            {/* Always there for the owner, and quiet: it rewrites every built-in model, so it
-                waits behind a danger confirmation that says what it resets and what it keeps. */}
+            {/* Always there for the owner, and quiet: it resets the whole model configuration
+                but the API keys, so it waits behind a danger confirmation that says so. */}
             {isOwner && (
               <Button
                 size="sm"

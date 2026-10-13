@@ -1947,13 +1947,9 @@ export const en: Strings = {
     presetsNone: "No new preset models",
     restoreDefaults: "Restore defaults",
     restoreDefaultsTitle: "Restore default model settings",
-    restoreDefaultsResets:
-      "Reset: built-in models get the catalog's context window, prices and vision flag back, and lose their display name, output cap and fast mode; base URLs and protocols set on models or built-in groups (Custom excepted) return to the catalog's; deleted built-in models come back; promotions are reset to the catalog's (Penguin Go's excepted).",
-    restoreDefaultsKeeps:
-      "Kept: every API key (group and model), the models you added yourself (with their promotions) and the groups you created, Custom's group settings and vLLM's base URL, and your default and vision model choices (unless the model they name no longer qualifies).",
-    restoreDefaultsFinal: "This cannot be undone.",
-    restoredDefaults: (added: number, restored: number): string =>
-      `Defaults restored: ${added} added back, ${restored} reset`,
+    restoreDefaultsBody:
+      "Only API keys are kept. Every other model setting returns to the built-in defaults, and the models and groups you added are deleted. This cannot be undone.",
+    restoredDefaults: "Model settings restored to defaults",
     aiAddTitle: "Add a model group with AI",
     aiAddIntro:
       "Hand the agent a model listing page or a description of the service, and it adds the models as one group with penguin config commands. For an OpenAI-compatible endpoint that lists its own models, Add group → Import models is faster.",

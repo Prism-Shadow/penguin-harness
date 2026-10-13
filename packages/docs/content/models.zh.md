@@ -342,16 +342,18 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 因此目录对已有模型的修正（如新的价格或上下文窗口）只能经**恢复默认**或手动编辑该模型生效。
 
-**恢复默认**在**同步新增模型**旁边，owner 始终可见；确认（「恢复默认模型设置」）后把内置模型恢复为目录的出厂设置。此操作不可撤销。
+**恢复默认**在**同步新增模型**旁边，owner 始终可见。它把模型配置恢复成新建 Project 时的样子，只保留 API key。执行前会先确认，且不可撤销。
 
-- 内置模型（包括已退役的）的上下文窗口、价格和视觉标志回到目录值，显示名、**最大输出长度**和快速模式清除。
-- 内置模型上和 **Custom** 以外的内置分组设置里的 base URL 与协议回到目录值，形态与新建 Project 时相同：目录没有值的设置项移除，缺少分组设置的内置分组补建。**Custom** 的分组设置服务于你在其中添加的模型，保留不动；**vLLM** 的 base URL 是你自己的服务器，同样保留，只有分组协议回到目录值。
-- 你删掉的内置模型补回，追加在表尾。
-- 促销折扣按目录重置；Penguin Go 分组的折扣归平台所有，保留不动，你自己添加的模型的折扣同样保留。
-- 保留的内容：全部 API key（分组的与模型的）；你自己添加的模型与分组及其设置；默认模型与视觉代理模型——默认模型不再指向任何模型时改为目录默认，视觉代理模型不再支持图片时清除。
-- 内置分组没有分组密钥、组内带 key 的模型都用同一把 key，且这把 key 放到分组上仍能借给它们全部时，它移到分组上，模型上的副本随之删除。key 只换位置，不会删除。
+- 模型恢复为目录的预置模型，按目录顺序排列，上下文窗口、价格、视觉标志、协议与端点都回到目录值。你设置的显示名、**最大输出长度**和快速模式清除，删掉的预置模型补回。
+- 不属于预置的模型一律删除：你在任何分组里添加的模型，以及旧版本添加、后来被目录撤下的模型，退役条目也在内。你新建的分组连同其设置和 key 一并删除。
+- 内置分组的设置回到目录的 base URL 与协议，**Custom** 和 **vLLM** 的 base URL 也一样。
+- 促销折扣回到目录值。
+- 与新建 Project 一样，默认模型改为目录默认，不设视觉代理模型。
+- 内置分组和预置模型上的 API key 原样保留。内置分组没有分组密钥、组内带 key 的模型（包括要删除的）都用同一把 key，且这把 key 放到分组上仍能借给它们全部时，它移到分组上，模型上的副本随之删除。被删除模型上的其他 key 随模型一起删除。
+- Penguin Go 分组同样恢复，平台在预置之外添加的模型和平台的促销也会删除。用分组**已连接**菜单里的**同步模型**即可取回，见 [Penguin Go 分组](#penguin-go-分组)。
+- 被删除的模型此前产生的用量，成本中心报为未计价，与你手动删除模型后相同。
 
-结果提示「已恢复默认：补回 {added}、重置 {restored}」。两个操作都在服务端执行，即 `POST /api/projects/:id/models/sync-presets`，`mode` 为 `add` 或 `restore`（仅 owner 可用）。
+两个操作都在服务端执行，即 `POST /api/projects/:id/models/sync-presets`，`mode` 为 `add` 或 `restore`（仅 owner 可用）。
 
 ## 思考等级
 
@@ -517,7 +519,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 - 平台提供而 Project 没有的模型会被添加进来，连同协议、显示名、上下文窗口、视觉能力、牌价和促销折扣。分组设置里有 base URL 时，端点只在与平台的中转地址不同时写在条目上，因此指向代理的分组会把新模型一并带过去；分组设置里没有 base URL 时，条目带上平台的完整地址。它们不带 key，使用分组密钥。纯向量（embedding）模型不收录。
 - 已有模型保留 ID、显示名、价格、折扣、上下文、视觉设置、key 和当前选择；仅更新 Go 管理的路由，不删除模型。详细目录仍使用 `/api/client/models`，因为 `/api/v1/models` 只有基础模型列表。
-- 和其他分组一样，`.project_config.toml` 里存的是牌价，促销存在服务端的数据库里。**恢复默认**保留这个分组的促销，它们归平台所有。这条记录丢失后，用量按牌价计价。
+- 和其他分组一样，`.project_config.toml` 里存的是牌价，促销存在服务端的数据库里。**恢复默认**像对其他分组一样恢复这个分组，并清除它的促销；**同步模型**会取回平台的模型与促销。这条记录丢失后，用量按牌价计价。
 
 平台报的是高峰档费率，单位是每百万 Token 多少美元。分组里的 DeepSeek 条目跟随 DeepSeek 当前的模型阵容，只有 `deepseek-flash` 和 `deepseek-v4-pro`，并声明与直连 DeepSeek 分组相同的空闲时段，因此在北京时间工作日 9:00–12:00、14:00–18:00 之外，卡片和成本记录都按半价计算。
 
@@ -559,7 +561,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 列表并未穷尽所有模型。
 
 - **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
-- **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，**恢复默认**会把它的价格重置为目录值。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
+- **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，直到**恢复默认**把它连同其他非预置模型一起删除。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
 - **OpenAI 出现两次。** OpenAI 全系模型出现了两遍：一次直连（用你自己的 OpenAI key，官方牌价），一次在 OpenRouter 上以 `openai/<id>` 形式（网关费率，随其当前促销活动浮动）。
 - **GLM-5.3 Flash 出现七次。** 分别是直连的 `glm-5.3-flash`、TokenDance 与 OpenCode Go 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash`、SiliconFlow 的 `zai-org/GLM-5.3-Flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：MMSP 的 Z.AI 客户端（`zai-official`）只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
 - **OpenRouter 免费档。** 目录收录了 `:free` 变体 `nvidia/nemotron-3-ultra-550b-a55b:free`，以及 `openrouter/free` 这个统一的免费模型路由（Free Models Router）。它们不花钱，但 OpenRouter 免费档的限流和数据政策仍然适用。
