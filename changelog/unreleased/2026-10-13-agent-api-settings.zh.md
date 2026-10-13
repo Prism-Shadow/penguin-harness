@@ -14,7 +14,7 @@ Agent API 标签页增加了模型、思考等级和工作区设置，复用了�
 
 ## SDK 方法
 
-将流式 `AgentClient.run()` 改为 `stream()`，将返回完整结果的 `ask()` 改为 `run()`。同步更新了示例、SDK 参考和客户端测试。
+将流式 `AgentClient.run()` 改为 `stream()`，将返回完整结果的 `ask()` 改为 `run()`。同步更新了示例、SDK 参考和客户端测试，并递增内置 `penguin-sdk` 技能版本，让已安装的副本能够更新 API 参考。
 
 ## 兼容性
 

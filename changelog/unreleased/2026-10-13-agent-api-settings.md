@@ -14,7 +14,7 @@ Added an owner-configurable concurrency limit (default 4), with HTTP 429 and Ret
 
 ## SDK methods
 
-Renamed the streaming `AgentClient.run()` to `stream()` and the result-returning `ask()` to `run()`. Updated the examples, SDK reference and client tests.
+Renamed the streaming `AgentClient.run()` to `stream()` and the result-returning `ask()` to `run()`. Updated the examples, SDK reference and client tests. Raised the bundled `penguin-sdk` skill version so installed copies can receive the updated API reference.
 
 ## Compatibility
 
