@@ -204,12 +204,25 @@ export class MachineSockets {
   /** The failure each machine's dials have been repeating since its last good one. */
   readonly #failing = new Map<string, string>();
   readonly #dialTimeoutMs: number;
+  #closed = false;
 
   constructor(
     private readonly log: (line: string) => void,
     options: { dialTimeoutMs?: number } = {},
   ) {
     this.#dialTimeoutMs = options.dialTimeoutMs ?? SOCKET_DIAL_TIMEOUT_MS;
+  }
+
+  /** Ends this generation's sockets, including a dial that settles after disposal. */
+  close(): void {
+    this.#closed = true;
+    for (const entry of this.#sockets.values()) {
+      entry.pending.then((socket) => socket.terminate(), () => undefined);
+    }
+    this.#sockets.clear();
+    this.#facts.clear();
+    this.#refusedUntil.clear();
+    this.#failing.clear();
   }
 
   /** What the socket to one machine is doing, or null when none has been asked for yet. */
@@ -235,6 +248,7 @@ export class MachineSockets {
     machineId: string,
     target: MachineSocketTarget,
   ): Promise<{ socket: MachineSocket } | { answer: Response }> {
+    if (this.#closed) return { answer: unavailable(503, "unavailable", "The App was replaced.") };
     const refused = this.#refusedUntil.get(machineId);
     if (refused !== undefined && Date.now() < refused.until) {
       return { answer: refusedAnswer(machineId, refused.status) };
@@ -261,6 +275,10 @@ export class MachineSockets {
       };
       entry.pending.then(
         (socket) => {
+          if (this.#closed) {
+            socket.terminate();
+            return;
+          }
           this.#refusedUntil.delete(machineId);
           this.#failing.delete(machineId);
           this.#state(machineId, "connected");
@@ -274,6 +292,7 @@ export class MachineSockets {
           });
         },
         (err: unknown) => {
+          if (this.#closed) return;
           if (this.#sockets.get(machineId) === entry) this.#sockets.delete(machineId);
           // An ANSWERED refusal is remembered for a while (its build has no socket, or it
           // turned this server away): asking again on every stream would only repeat it. A
@@ -305,6 +324,7 @@ export class MachineSockets {
     }
     try {
       const socket = await cached.pending;
+      if (this.#closed) return { answer: unavailable(503, "unavailable", "The App was replaced.") };
       if (socket.closed) {
         if (this.#sockets.get(machineId) === cached) this.#sockets.delete(machineId);
         return this.socketFor(machineId, target);

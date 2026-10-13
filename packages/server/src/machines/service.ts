@@ -3205,7 +3205,11 @@ export class MachinesModule {
     this.serverProxyRoutes = machinesServerProxyRoutes(machines, { sockets, events });
     // Every transient ssh session THIS generation opened closes with it, and every held one is
     // left for the successor, whose start() re-holds each one the record says was held.
-    effect(() => machines.stop());
+    effect(() => {
+      machines.stop();
+      events.close();
+      sockets.close();
+    });
   }
 }
 

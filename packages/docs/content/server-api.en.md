@@ -293,6 +293,8 @@ The socket belongs to the ssh session it was dialled through, not to the machine
 
 ### One event stream per machine
 
+The Web App consumes remote machine events from the local user stream, not from both endpoints at once. The Project aggregate remains available to explicit readers; both endpoints share the same upstream socket subscription. Machines without an API socket are refused rather than silently given a second HTTP stream.
+
 Watching N machines used to cost a tab N streams: it called `/server/<machineId>/api/events` once per machine, so a hub with T tabs held T × N upstream subscriptions, and one machine going quiet multiplied its re-issue storm by the number of tabs. The hub now holds ONE subscription to a machine's `/api/events`, over the same socket it holds to that machine, and serves every local reader from it — one machine's own stream, or any number of tabs:
 
 - `GET /api/projects/:projectId/machines/events` is the aggregate (admin only, on a Project this caller is a member of, like the routes above): one stream per tab whatever the machine count, carrying every connected machine's events, each tagged with the machine it came from. Its frames are `event: machine_event` with `data: {"machineId": "…", "event": {…ServerEvent}}`, and `event: heartbeat` on the SSE cadence — a tab tells a live aggregate from a stalled one by its frames, exactly as it does on `/api/events`.
