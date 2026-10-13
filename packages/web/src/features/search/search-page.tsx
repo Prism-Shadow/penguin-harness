@@ -30,14 +30,16 @@ import type { SearchFilters, SearchRangePreset } from "../../lib/session-search"
 import { messageJumpPath } from "../../lib/message-jump";
 import { useConversationSearch } from "../../lib/use-conversation-search";
 import { useDocumentTitle } from "../../lib/use-document-title";
-import { EmptyState } from "../../components/ui/empty-state";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Input } from "../../components/ui/input";
-import { MoreRow } from "../../components/ui/group-list";
-import { Segmented } from "../../components/ui/segmented";
-import { Select } from "../../components/ui/select";
-import { SkeletonList } from "../../components/ui/skeleton";
-import { Switch } from "../../components/ui/switch";
+import {
+  Button,
+  EmptyState,
+  GlyphIcon,
+  Input,
+  Segmented,
+  Select,
+  SkeletonList,
+  Switch,
+} from "@prismshadow/penguin-ui";
 import { Truncated } from "../../components/ui/truncated";
 
 /** The match highlight: yellow in both themes, but the dark one dims rather than glares. */
@@ -292,13 +294,9 @@ export function SearchPage() {
       </ul>
 
       {hasMore && (
-        <MoreRow
-          label={loadingMore ? S.search.loadingMore : S.search.loadMore}
-          ariaLabel={S.search.loadMore}
-          pending={loadingMore}
-          onClick={loadMore}
-          className="mx-auto"
-        />
+        <Button onClick={loadMore} disabled={loadingMore} className="mx-auto">
+          {loadingMore ? S.search.loadingMore : S.search.loadMore}
+        </Button>
       )}
     </div>
   );
