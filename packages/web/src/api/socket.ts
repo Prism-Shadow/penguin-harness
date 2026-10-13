@@ -324,14 +324,19 @@ export class ApiSocket {
         // machine that is a forward held open on the very route that is not answering. The
         // cancel aborts the call's Request there (socket/serve.ts), which the machine proxy
         // answers by dropping its forward.
-        if (this.#state === "open" && this.#ws !== null) {
-          this.#ws.send(JSON.stringify({ id, cancel: true }));
-        }
+        this.#cancel(id);
         reject(new SocketTimeoutError(live));
       }, ANSWER_TIMEOUT_MS);
       this.#calls.set(id, { method, path, resolve, reject, deadline });
       this.#ws!.send(JSON.stringify(frame));
     });
+  }
+
+  /** Cancel only on the live socket; each caller owns its local cleanup and retry. */
+  #cancel(id: number): void {
+    if (this.#state === "open" && this.#ws !== null) {
+      this.#ws.send(JSON.stringify({ id, cancel: true }));
+    }
   }
 
   /** "open (last frame N ms ago)" or the state — the one fact that separates a dead socket from a silent endpoint. */
@@ -381,9 +386,7 @@ export class ApiSocket {
         this.#waiting.delete(entry);
         if (entry.id !== null) {
           this.#streams.delete(entry.id);
-          if (this.#ws !== null && this.#state === "open") {
-            this.#ws.send(JSON.stringify({ id: entry.id, cancel: true }));
-          }
+          this.#cancel(entry.id);
           entry.id = null;
         }
       },
@@ -517,9 +520,7 @@ export class ApiSocket {
       console.warn(
         `[api-socket] stream ${entry.path}: not opened in ${STREAM_OPEN_TIMEOUT_MS} ms over a socket that is ${this.#describeLiveness()}; issuing it again in ${delay} ms`,
       );
-      if (this.#ws !== null && this.#state === "open") {
-        this.#ws.send(JSON.stringify({ id, cancel: true }));
-      }
+      this.#cancel(id);
       this.#reissue(entry, delay);
     }, STREAM_OPEN_TIMEOUT_MS);
     this.#ws.send(JSON.stringify({ id, call: { method: "GET", path: entry.path, headers } }));
@@ -547,9 +548,7 @@ export class ApiSocket {
       console.warn(
         `[api-socket] stream ${entry.path}: no frame for ${2 * beatMs} ms (two beats at ${beatMs} ms) — ending it and re-subscribing from its last event id`,
       );
-      if (entry.id !== null && this.#ws !== null && this.#state === "open") {
-        this.#ws.send(JSON.stringify({ id: entry.id, cancel: true }));
-      }
+      if (entry.id !== null) this.#cancel(entry.id);
       entry.handlers.onError?.(false);
       this.#reissue(entry, REISSUE_MS);
     }, 2 * beatMs);

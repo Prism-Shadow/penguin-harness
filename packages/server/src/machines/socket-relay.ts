@@ -33,7 +33,7 @@ import {
   isUserEventsPath,
 } from "./event-hub.js";
 import type { MachineEventHubOptions } from "./event-hub.js";
-import { SOCKET_DIAL_TIMEOUT_MS, MachineSockets } from "./machine-sockets.js";
+import { SOCKET_DIAL_TIMEOUT_MS, MachineSockets, unavailable } from "./machine-sockets.js";
 import type { MachineSocket, MachineSocketTarget, Sink } from "./machine-sockets.js";
 
 export { SOCKET_DIAL_TIMEOUT_MS, STREAM_OPEN_TIMEOUT_MS };
@@ -198,14 +198,10 @@ export class MachineSocketRelay {
             ended = true;
             stop();
             resolve(
-              Response.json(
-                {
-                  error: {
-                    code: "server_unreachable",
-                    message: `The connection to ${machineId} closed before the stream began.`,
-                  },
-                },
-                { status: 502 },
+              unavailable(
+                502,
+                "server_unreachable",
+                `The connection to ${machineId} closed before the stream began.`,
               ),
             );
             return;
