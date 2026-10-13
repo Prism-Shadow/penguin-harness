@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1104](https://github.com/Prism-Shadow/penguin-harness/pull/1104)
 
 [English](2026-10-13-connectivity-probe-output-budget.md)
 
