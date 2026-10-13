@@ -30,6 +30,7 @@ import type {
   SessionStatus,
   SkillMetadataItem,
   TaskInputPart,
+  TracePosition,
 } from "@prismshadow/penguin-server/api";
 import {
   ActivityIcon,
@@ -82,6 +83,7 @@ import {
   pushMessage,
 } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
+import type { HistoryMessage } from "@prismshadow/penguin-server/api";
 import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
 import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
 import {
@@ -175,6 +177,14 @@ import { ArchivedSessionStub } from "./archived-session-stub";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
+
+/**
+ * Units per page when resolving a live turn's Trace position for a fork (see
+ * resolveForkPosition). Sized to cover the most recent turns in one round trip: the walk almost
+ * always finishes on the first page, and the server cuts a page at its own byte budget anyway, so
+ * a larger ask costs nothing when one Task spans hundreds of records.
+ */
+const FORK_SCAN_PAGE_UNITS = 200;
 
 /**
  * Session id row in the details card: the id is selectable mono text (styled like the other
@@ -1955,6 +1965,67 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.version, stream.model, stream.loading, selected, applySessionRow]);
 
+  /**
+   * Resolves a forked Task's immutable Trace position when the click came from a live turn, whose
+   * SSE-delivered records carry no disk coordinates yet (`ForkTarget.position === undefined`).
+   *
+   * The target is identified the way the UI shows it — by assistant text and turn timestamp — so
+   * the resolution walks the history **backwards from the newest page** and stops at the first
+   * page that yields the turn. It rebuilds the same StreamModel a full read would and applies the
+   * same match rule; only the retrieval differs.
+   *
+   * Why not one full read: a full read makes the server parse and ship every shard of the Session
+   * (tens of MB, ~1s on a long one), while a fork almost always targets one of the most recent
+   * turns — reachable in the first page. Pages are cheap (the server serves them through the
+   * per-shard line index), and the walk degrades gracefully: a target further back costs more
+   * pages, never a wrong answer.
+   *
+   * `page.before === undefined` means the walk has reached the beginning of the transcript, so a
+   * full read would not find the turn either — that is the stop condition, alongside a match.
+   */
+  const resolveForkPosition = useCallback(
+    async (sessionId: string, target: ForkTarget): Promise<TracePosition | undefined> => {
+      // Accumulated oldest-first, the order a full read delivers. Every page is older than what
+      // is already held (the tail page first, then successively earlier windows), so each one is
+      // PREPENDED: the model is then always built over a contiguous, gap-free suffix-to-prefix run
+      // of the transcript ending at the newest record — the same input a full read would give,
+      // minus the part not yet fetched.
+      const held: HistoryMessage[] = [];
+      let before: string | undefined;
+      for (;;) {
+        const res = await api.getMessages(
+          sessionId,
+          before === undefined
+            ? { kind: "tail", limit: FORK_SCAN_PAGE_UNITS }
+            : { kind: "before", cursor: before, limit: FORK_SCAN_PAGE_UNITS },
+        );
+        held.unshift(...res.messages);
+        const model = createStreamModel();
+        for (const message of held) pushMessage(model, message);
+        finalizeHistory(model);
+        const match = [...model.items]
+          .reverse()
+          .find(
+            (item) =>
+              item.kind === "task_stats" &&
+              item.assistantText === target.assistantText &&
+              item.atMs === target.atMs &&
+              item.forkPosition !== undefined,
+          );
+        // Narrowed by kind first, then by the position the predicate already required — the union
+        // does not narrow on a predicate, so the position is read off the narrowed kind.
+        if (match?.kind === "task_stats" && match.forkPosition !== undefined) return match.forkPosition;
+        const next = res.page?.before;
+        // No cursor left: this page reached the beginning of the transcript.
+        if (next === undefined) return undefined;
+        // A cursor that fails to advance would loop forever; refuse instead of spinning.
+        if (next === before) return undefined;
+        before = next;
+      }
+    },
+    [],
+  );
+
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
   // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft
   // conversation (a sidebar row, sendable anytime) instead of lingering invisibly in the
@@ -1976,20 +2047,7 @@ export function ChatPage() {
         // read resolves the just-finished footer onto the immutable Trace position; the fork
         // request itself always sends that position, never display text or a timestamp.
         if (position === undefined) {
-          const history = await api.getMessages(selected.sessionId);
-          const model = createStreamModel();
-          for (const message of history.messages) pushMessage(model, message);
-          finalizeHistory(model);
-          const match = [...model.items]
-            .reverse()
-            .find(
-              (item) =>
-                item.kind === "task_stats" &&
-                item.assistantText === target.assistantText &&
-                item.atMs === target.atMs &&
-                item.forkPosition !== undefined,
-            );
-          position = match?.kind === "task_stats" ? match.forkPosition : undefined;
+          position = await resolveForkPosition(selected.sessionId, target);
         }
         if (position === undefined) {
           toastError(S.chat.forkSessionFailed);
