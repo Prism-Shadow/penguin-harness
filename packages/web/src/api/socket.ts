@@ -380,7 +380,7 @@ export class ApiSocket {
       close: () => {
         entry.closed = true;
         entry.fallen?.close();
-        if (entry.retry !== null) clearTimeout(entry.retry);
+        this.#clearRetry(entry);
         this.#clearOpenDeadline(entry);
         this.#clearStreamDeadline(entry);
         this.#waiting.delete(entry);
@@ -493,8 +493,7 @@ export class ApiSocket {
   #fallBackWaiting(): void {
     for (const entry of this.#waiting) {
       if (entry.closed) continue;
-      if (entry.retry !== null) clearTimeout(entry.retry);
-      entry.retry = null;
+      this.#clearRetry(entry);
       entry.fallen = entry.fallback();
     }
     this.#waiting.clear();
@@ -502,8 +501,7 @@ export class ApiSocket {
 
   #issue(entry: StreamEntry): void {
     // Whatever issues it — a reconnect or its own retry — the other must not issue it again.
-    if (entry.retry !== null) clearTimeout(entry.retry);
-    entry.retry = null;
+    this.#clearRetry(entry);
     if (entry.closed || entry.fallen !== null || entry.id !== null) return;
     if (this.#ws === null || this.#state !== "open") return;
     this.#waiting.delete(entry);
@@ -524,6 +522,11 @@ export class ApiSocket {
       this.#reissue(entry, delay);
     }, STREAM_OPEN_TIMEOUT_MS);
     this.#ws.send(JSON.stringify({ id, call: { method: "GET", path: entry.path, headers } }));
+  }
+
+  #clearRetry(entry: StreamEntry): void {
+    if (entry.retry !== null) clearTimeout(entry.retry);
+    entry.retry = null;
   }
 
   #clearOpenDeadline(entry: StreamEntry): void {
@@ -574,7 +577,7 @@ export class ApiSocket {
     }
     if (entry.closed) return;
     this.#waiting.add(entry);
-    if (entry.retry !== null) clearTimeout(entry.retry);
+    this.#clearRetry(entry);
     entry.retry = setTimeout(() => {
       entry.retry = null;
       if (this.#state === "open") this.#issue(entry);
