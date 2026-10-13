@@ -1349,10 +1349,13 @@ router
     return empty();
   })
   .post("/api/sessions/:sessionId/retry-now", (): RetryNowResponse => ({ skipped: false }))
-  // No scripted run ever fails here, so a Retry has nothing held to resend.
-  .post("/api/sessions/:sessionId/retry", (): never =>
-    fail(409, "nothing_to_retry", "There is nothing to retry."),
-  )
+  // No scripted run ever fails here: a Retry resends the turn a stop left held, or is refused.
+  .post("/api/sessions/:sessionId/retry", ({ store, params }): unknown => {
+    const sessionId = params.sessionId!;
+    if (!store.session(sessionId)) notFound("Session");
+    if (!store.retryTask(sessionId)) fail(409, "nothing_to_retry", "There is nothing to retry.");
+    return json({ sessionId, queued: false } satisfies TaskCreateResponse, 202);
+  })
   .get("/api/sessions/:sessionId/processes", ({ store, params }): SessionProcessesResponse => {
     const row = store.session(params.sessionId!);
     return {

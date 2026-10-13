@@ -229,9 +229,9 @@ export interface RuntimeSession {
   skipReconnectWait(): boolean;
   /**
    * Whether a run with empty input would send anything (core `Session.hasPendingInput`): the
-   * failed turn's input held as carry-over — in process, or rebuilt from the Trace after a
-   * restart — or a compaction summary waiting for the next run. Optional: test fakes may omit
-   * it, reading as nothing held.
+   * input of a turn that failed or was stopped, held as carry-over — in process, or rebuilt
+   * from the Trace after a restart — or a compaction summary waiting for the next run.
+   * Optional: test fakes may omit it, reading as nothing held.
    */
   hasPendingInput?(): boolean;
   /**
@@ -1164,13 +1164,14 @@ export class SessionManager {
   }
 
   /**
-   * Retry a failed run (`POST /retry`): a Task started with EMPTY input, so core sends the
-   * input of the turn that failed — held as carry-over since the run ended `fatal` or gave
-   * up reconnecting — and nothing else. No user message is published or recorded, and with no
+   * Retry a failed or stopped run (`POST /retry`): a Task started with EMPTY input, so core
+   * sends the input of the turn that did not finish — held as carry-over since the run ended
+   * `fatal`, gave up reconnecting or was stopped by the user, with whatever the model had
+   * already written — and nothing else. No user message is published or recorded, and with no
    * Prompt there is no user_prompt consult. Gated like startTask (busy is the same 409) but
    * never queued, and refused with 409 `nothing_to_retry` when nothing is held — the user's
-   * next message already resent that input, or no run failed — since the run would end at
-   * once and the client would watch a Task start and stop with nothing sent. Not a person's
+   * next message already resent that input, or no run was cut short — since the run would end
+   * at once and the client would watch a Task start and stop with nothing sent. Not a person's
    * input for company mode's hop accounting: the turn it resends was counted, or not, when
    * it was first sent.
    */
@@ -1185,7 +1186,7 @@ export class SessionManager {
         throw new HttpError(
           409,
           "nothing_to_retry",
-          "There is nothing to retry: the failed turn's input has already been sent.",
+          "There is nothing to retry: the unfinished turn's input has already been sent.",
         );
       }
       this.launchTask(entry, []);

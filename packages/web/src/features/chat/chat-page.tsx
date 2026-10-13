@@ -1511,10 +1511,10 @@ export function ChatPage() {
     await api.postAbort(selected.sessionId).catch(() => undefined);
   }, [selected]);
 
-  // "Retry" on the line a failed run ended on: the Session runs once with no new input and
-  // sends the failed turn's held input on its own. A refusal surfaces as a toast — nothing held
-  // (a later message already sent it) has its own sentence, anything else reads like a failed
-  // send — and is rethrown, which enables the button again.
+  // "Retry" on the line a failed or stopped run ended on: the Session runs once with no new
+  // input and sends the unfinished turn's held input on its own. A refusal surfaces as a toast —
+  // nothing held (a later message already sent it) has its own sentence, anything else reads
+  // like a failed send — and is rethrown, which enables the button again.
   const onRetry = useCallback(async (): Promise<void> => {
     if (!selected) return;
     try {
@@ -2035,8 +2035,8 @@ export function ChatPage() {
     onGiveUp: () => {
       void onStop();
     },
-    // Retry after a failed run: offered only while the composer could send — a Session on
-    // screen with nothing running or compacting, the same state its Send requires.
+    // Retry after a failed or stopped run: offered only while the composer could send — a
+    // Session on screen with nothing running or compacting, the same state its Send requires.
     ...(selected && stream.taskState === "idle" ? { onRetry } : {}),
     onOpenFile: openWorkspaceFile,
     onOpenSubagent: (sessionId, origin) => {

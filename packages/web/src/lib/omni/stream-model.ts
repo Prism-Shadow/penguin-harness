@@ -40,8 +40,8 @@
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
  *     session's user side starts a new Task, and so does the first request
- *     after a request_end that ended the run (a Retry, which sends no new
- *     message — see StreamModel.runEnded); a Task ends when the live
+ *     after a request_end or abort that ended the run (a Retry, which sends no
+ *     new message — see StreamModel.runEnded); a Task ends when the live
  *     stream receives task_state:idle (notifyTaskIdle), or — during history
  *     rebuild — when the next Task starts / the stream ends
  *     (finalizeHistory). Either way the duration comes from Trace timestamps
@@ -647,13 +647,14 @@ export interface StreamModel {
    */
   reopenTaskAtSteering: boolean;
   /**
-   * The last request_end ended the run — `fatal`, or a `retryable` the ladder gave up on (no
-   * `retry_in_ms`) — and no Task has opened since. The failed turn's input is then held, and a
-   * Retry sends it with no new message: its request_begin is the new run's first record, so it
-   * opens a Task of its own, footer and all (see startsRetryRun). Nothing else in a Trace issues
-   * a request after such an end without a user message first (a stop hook's continue writes a
-   * harness user text), so the rule reads the same live and on a history rebuild — where no
-   * task_state:idle closed the failed Task first.
+   * The run ended short of its answer — the last request_end was `fatal` or a `retryable` the
+   * ladder gave up on (no `retry_in_ms`), or an abort event followed (the user stopped it) — and
+   * no Task has opened since. The unfinished turn's input is then held, and a Retry sends it
+   * with no new message: its request_begin is the new run's first record, so it opens a Task of
+   * its own, footer and all (see startsRetryRun). Nothing else in a Trace issues a request after
+   * such an end without a user message first (a stop hook's continue writes a harness user
+   * text), so the rule reads the same live and on a history rebuild — where no task_state:idle
+   * closed the cut-short Task first.
    */
   runEnded: boolean;
   nextItemId: number;
@@ -785,7 +786,7 @@ export function pushMessage(
   }
   if (isEventMessage(msg)) {
     // A Retry's first request opens its Task here, before anything is timed against the
-    // failed one — the same point a Prompt opens its own (see StreamModel.runEnded).
+    // cut-short one — the same point a Prompt opens its own (see StreamModel.runEnded).
     if (startsRetryRun(model, msg)) startTask(model, msg.timestamp, nowMs);
     touchTask(model, msg.timestamp);
     handleEvent(model, msg.payload as EventPayload, tsOf(msg.timestamp), nowMs);
@@ -1017,7 +1018,7 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   model.openApprovalWaitMs = 0;
   model.turnToolOutputs = false;
   model.reopenTaskAtSteering = false;
-  // A failed run's held input goes out with whatever opened this Task: a Prompt sends it
+  // A cut-short run's held input goes out with whatever opened this Task: a Prompt sends it
   // along, and the Task's own next request belongs to it.
   model.runEnded = false;
   model.taskOpen = true;
@@ -1714,6 +1715,8 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (typeof p.error_message === "string") item.errorMessage = p.error_message;
       if (p.reason != null) item.reason = p.reason;
       model.items.push(item);
+      // The stop ended the run with its turn held: a Retry's first request opens a new Task.
+      model.runEnded = true;
       return;
     }
     case "token_usage":

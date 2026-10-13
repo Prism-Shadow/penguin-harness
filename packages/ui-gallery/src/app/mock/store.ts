@@ -98,6 +98,8 @@ interface Live {
   timers: number[];
   /** The history length the looping reply rewinds to (the streaming Session only). */
   loopFrom?: number;
+  /** A stop left the turn held: the next message carries it, or a Retry resends it alone. */
+  held?: boolean;
 }
 
 export class DemoStore {
@@ -386,8 +388,29 @@ export class DemoStore {
     if (row.status !== "idle") return false;
     const firstTurn = live.transcript.history.length === 0;
     this.stopScript(sessionId);
+    delete live.held;
     this.setStatus(sessionId, "running");
     this.emit(live, userText(Date.now(), text));
+    this.playReply(sessionId, live, firstTurn);
+    return true;
+  }
+
+  /**
+   * Retry after a stop: the held turn goes out again with no message echoed, and the scripted
+   * reply plays. False when nothing is held (no stop, or a message already carried it) or a
+   * Task runs.
+   */
+  retryTask(sessionId: string): boolean {
+    const live = this.live.get(sessionId);
+    if (!live?.held || this.session(sessionId)?.status !== "idle") return false;
+    delete live.held;
+    this.setStatus(sessionId, "running");
+    this.playReply(sessionId, live, false);
+    return true;
+  }
+
+  /** The scripted reply of a running Task, then the Session settles (titled on its first turn). */
+  private playReply(sessionId: string, live: Live, firstTurn: boolean): void {
     const callId = `call_${Date.now().toString(36)}`;
     const steps = scriptedReply(this.lang, callId);
     for (const step of steps) this.schedule(live, step.at, () => this.emit(live, step.msg));
@@ -397,7 +420,6 @@ export class DemoStore {
       this.setStatus(sessionId, "idle");
       live.timers = [];
     });
-    return true;
   }
 
   abort(sessionId: string): void {
@@ -427,6 +449,7 @@ export class DemoStore {
       row.pendingApprovalCount = 0;
     }
     this.emit(live, abortEvent(Date.now()));
+    live.held = true;
     this.setStatus(sessionId, "idle");
   }
 

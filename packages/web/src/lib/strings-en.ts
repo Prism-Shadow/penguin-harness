@@ -3634,10 +3634,10 @@ Scenarios:
     reconnectRetryNow: "Retry now",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */
     reconnectGiveUp: "Give up",
-    /** "Retry" on a failed run's last line (the error banner, or a reconnect line that gave up): sends the failed turn's input again, with no new message. */
-    retryFailedRun: "Retry",
-    /** Toast when Retry finds nothing held: the failed turn's input already went out with a later message. */
-    retryNothing: "Nothing to retry: the failed turn's input has already been sent.",
+    /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
+    retryRun: "Retry",
+    /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
+    retryNothing: "Nothing to retry: that turn's input has already been sent.",
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:

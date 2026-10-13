@@ -3,8 +3,9 @@
  * (react-dom/server static markup, node env, no DOM). Static markup carries no handlers, so
  * replyLinkBehavior is wrapped rather than replaced: every call still returns the real behaviour,
  * and the test keeps what the link adapter spread onto each rendered anchor in order to click it.
- * It also draws a run-ending LLM failure as its error banner, with a hint under a context overflow
- * and a Retry while the banner is the stream's last item.
+ * It also draws a run-ending LLM failure as its error banner, with a hint under a context overflow.
+ * The line a run ended on — that banner, or the marker of a run the user stopped — offers Retry
+ * while it is the stream's last item and no Task runs.
  */
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
@@ -97,21 +98,25 @@ describe("MessageStream error banner", () => {
       }),
     );
 
-  it("the last banner offers Retry while no Task runs; a banner something follows does not", () => {
-    const stream = (items: ChatItem[]) =>
-      renderToStaticMarkup(
-        createElement(MessageStream, {
-          items,
-          version: 1,
-          ctx: { ...ctx, onRetry: async () => {} },
-          onAddExcerpt: () => {},
-        }),
-      );
-    const failed: ChatItem = { kind: "llm_error", id: 1, errorMessage: "400 Bad Request" };
-    // A Retry run's reply lands right after the banner: the failed input has been sent again.
-    const reply: ChatItem = { kind: "assistant_text", id: 2, text: "Done.", streaming: false };
-    const retry = `>${S.chat.retryFailedRun}</button>`;
-    expect(stream([failed])).toContain(retry);
-    expect(stream([failed, reply])).not.toContain(retry);
+  const stream = (items: ChatItem[], taskRunning = false) =>
+    renderToStaticMarkup(
+      createElement(MessageStream, {
+        items,
+        version: 1,
+        ctx: { ...ctx, taskRunning, onRetry: async () => {} },
+        onAddExcerpt: () => {},
+      }),
+    );
+  const retry = `>${S.chat.retryRun}</button>`;
+  // A Retry run's reply lands right after the line: the held input has been sent again.
+  const reply: ChatItem = { kind: "assistant_text", id: 2, text: "Done.", streaming: false };
+
+  it.each<[string, ChatItem]>([
+    ["a failed run's banner", { kind: "llm_error", id: 1, errorMessage: "400 Bad Request" }],
+    ["a stopped run's marker", { kind: "abort", id: 1, errorCode: "user_abort" }],
+  ])("%s offers Retry as the last line while no Task runs, and not otherwise", (_, ended) => {
+    expect(stream([ended])).toContain(retry);
+    expect(stream([ended, reply])).not.toContain(retry);
+    expect(stream([ended], true)).not.toContain(retry);
   });
 });

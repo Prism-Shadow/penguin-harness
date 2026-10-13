@@ -145,6 +145,8 @@ When a model request fails and the harness waits at least 2s before retrying, th
 
 A request the model provider rejects, for example because of an invalid API key, ends the run with an error line ("[Error]: llm request error: …"). Fix the problem, such as updating the key on the [Models](/models) page, and send again.
 
+While the error line, or the "[Aborted]" line left when you press **Stop**, is the last thing in the conversation, it offers **Retry**. Retry sends that turn again without a new message, and the model picks up from what it had already written.
+
 ## Change the thinking level
 
 The composer's thinking level picker offers low, medium, high, xhigh and max.

@@ -8,13 +8,24 @@
  *   the runtime.
  * - A foreign or unknown Session is a 404, as on every other Session route.
  *
- * Beside it, POST /api/sessions/:id/retry — "Retry" on a run that ended in an error — refuses
- * with 409 `nothing_to_retry` when the Session holds no input to resend, and starts nothing.
+ * Beside it, POST /api/sessions/:id/retry — "Retry" on a run that ended in an error or that the
+ * user stopped:
+ *
+ * - Given a run the user stopped, whose turn the Session now holds, the route answers 202 and the
+ *   Session runs once more with no input, and no user message is published a second time.
+ * - Given a Session holding no input to resend, it refuses with 409 `nothing_to_retry` and
+ *   starts nothing.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
+import {
+  abortEvent,
+  approvalDecision,
+  assistantText,
+  toolCall,
+  userText,
+} from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
-import type { RetryNowResponse } from "../src/api/types.js";
+import type { RetryNowResponse, TaskCreateResponse } from "../src/api/types.js";
 import { adoptSession, fakeSession, uniqueSessionId } from "./fixtures/session.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -82,6 +93,53 @@ describe("retry-now route", () => {
     expect((await outsider.post(`/api/sessions/${sid}/retry-now`, {})).status).toBe(404);
     expect((await api.post(`/api/sessions/session-ghost/retry-now`, {})).status).toBe(404);
     expect(skips).toBe(0);
+  });
+
+  it("retry after the user stopped a run → 202, one more run with no input, no user message republished", async () => {
+    // Stands in for core's carry-over: a stopped run leaves its turn held until the next run.
+    let held = false;
+    const runs: OmniMessage[][] = [];
+    const stopped = uniqueSessionId();
+    adoptSession(
+      t.deps,
+      fakeSession(stopped, {
+        hasPendingInput: () => held,
+        async *run(input: OmniMessage[], opts: { signal: AbortSignal }) {
+          runs.push(input);
+          held = false;
+          if (runs.length > 1) {
+            yield assistantText("picked up where it stopped");
+            return;
+          }
+          yield assistantText("half a reply");
+          await new Promise((resolve) => opts.signal.addEventListener("abort", resolve));
+          held = true;
+          yield abortEvent("user_abort");
+        },
+      }),
+      { projectId: "retrier-default_project" },
+    );
+    const published: OmniMessage[] = [];
+    const unsubscribe = t.deps.channels.get(stopped).subscribe((evt) => {
+      if (evt.event === undefined) published.push(JSON.parse(evt.data) as OmniMessage);
+    });
+
+    await api.post(`/api/sessions/${stopped}/tasks`, { input: [{ type: "text", text: "go" }] });
+    await waitFor(() => runs.length === 1);
+    await api.post(`/api/sessions/${stopped}/abort`, {});
+    await waitFor(() => t.deps.manager.statusOf(stopped) === "idle");
+
+    const res = await api.post(`/api/sessions/${stopped}/retry`, {});
+    expect(res.status).toBe(202);
+    expect((await res.json()) as TaskCreateResponse).toEqual({ sessionId: stopped, queued: false });
+    await waitFor(() => t.deps.manager.statusOf(stopped) === "idle" && runs.length === 2);
+    unsubscribe();
+
+    expect(runs[1]).toEqual([]);
+    const userTexts = published.filter(
+      (m) => (m.payload as { type?: string; role?: string }).role === "user",
+    );
+    expect(userTexts.map((m) => (m.payload as { text?: string }).text)).toEqual(["go"]);
   });
 
   it("retry with nothing held → 409 nothing_to_retry, and no Task starts", async () => {

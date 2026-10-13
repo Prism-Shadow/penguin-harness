@@ -1,8 +1,9 @@
 /**
  * The demo store: the same world in both languages, models the built-in catalog knows, the
  * running states the gallery exists to show, and the scripts that move them — a sent message
- * streams a reply and settles, an approval decides the pending command, an abort stops a run —
- * and the self-evolution round, which reads as one round and reports what the scoreboard holds.
+ * streams a reply and settles, an approval decides the pending command, an abort stops a run and a
+ * Retry then replays it without a new message (once) — and the self-evolution round, which reads
+ * as one round and reports what the scoreboard holds.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
@@ -418,5 +419,29 @@ describe("a sent message", () => {
     expect(store.session(row.sessionId)?.status).toBe("idle");
     const last = store.transcript(row.sessionId)!.history.at(-1);
     expect(last && typeOf(last)).toBe("abort");
+  });
+
+  it("a Retry after the stop replays the reply without a new message, and only once", () => {
+    vi.useFakeTimers();
+    const store = resetStore({ lang: "en", signedIn: true, now: NOW });
+    const row = store.createSession(IDS.agents.docs, {});
+    expect(store.retryTask(row.sessionId)).toBe(false);
+    store.startTask(row.sessionId, "hi");
+    vi.advanceTimersByTime(1000);
+    store.abort(row.sessionId);
+    const sub = collector();
+    store.channel(row.sessionId)!.subscribe(sub);
+
+    expect(store.retryTask(row.sessionId)).toBe(true);
+    vi.advanceTimersByTime(30_000);
+
+    const said = sub.messages.flatMap((m) => {
+      const p = payloadOf(m);
+      return p?.type === "text" ? [p.role] : [];
+    });
+    expect(said).toContain("assistant");
+    expect(said).not.toContain("user");
+    expect(store.session(row.sessionId)?.status).toBe("idle");
+    expect(store.retryTask(row.sessionId)).toBe(false);
   });
 });
