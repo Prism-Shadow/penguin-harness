@@ -9,6 +9,8 @@
  *
  * - Given an earlier child is still running, when a later task spawns another child,
  *   then the default panel keeps both visible with their own conversations.
+ * - Given two children are spawned during one task, when both continue streaming,
+ *   then neither node nor conversation replaces the other.
  * - Given an explicit historical task selection, when another task has a running child,
  *   then the historical graph stays scoped to the requested task.
  */
@@ -88,10 +90,11 @@ describe("extractTopology", () => {
     spawnChild(m, "references-call", "references");
     const live = new Map([
       ["paper", true],
-      ["references", false],
+      ["references", true],
     ]);
     const nodes = extractTopology(m, "root", true, live);
     expect(nodes.map((n) => n.sessionId)).toEqual(["root", "references", "paper"]);
+    expect(nodes.filter((n) => n.depth > 0).every((n) => n.running)).toBe(true);
     expect(nodes.find((n) => n.sessionId === "paper")).toMatchObject({
       description: "Write version 9",
       running: true,
@@ -107,6 +110,42 @@ describe("extractTopology", () => {
       "root",
       "references",
     ]);
+  });
+
+  it("keeps both running children and their conversations during the same task", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("write the paper and check its references"));
+    spawnChild(m, "paper-call", "paper", '{"description":"Write version 9"}');
+    pushMessage(m, withOrigin(assistantText("Writing the paper"), "paper"));
+    pushMessage(m, toolCallOutput({ output: "yielded", toolCallId: "paper-call" }));
+    spawnChild(m, "references-call", "references", '{"description":"Check references"}');
+    pushMessage(m, withOrigin(assistantText("Checking references"), "references"));
+    pushMessage(m, withOrigin(assistantText("Paper progress"), "paper"));
+
+    const nodes = extractTopology(
+      m,
+      "root",
+      true,
+      new Map([
+        ["paper", true],
+        ["references", true],
+      ]),
+    );
+    expect(nodes.map((n) => n.sessionId)).toEqual(["root", "paper", "references"]);
+    expect(nodes.slice(1).map((n) => [n.description, n.running])).toEqual([
+      ["Write version 9", true],
+      ["Check references", true],
+    ]);
+    for (const node of nodes.slice(1)) {
+      const texts = modelAtOrigin(m, node.origin)?.items.flatMap((item) =>
+        item.kind === "assistant_text" ? [item.text] : [],
+      );
+      expect(texts).toEqual(
+        node.sessionId === "paper"
+          ? ["Writing the paper", "Paper progress"]
+          : ["Checking references"],
+      );
+    }
   });
 
   it("returns only the root (with the Task's running state) when nothing is spawned", () => {
