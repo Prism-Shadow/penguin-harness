@@ -1,7 +1,7 @@
 /**
  * The options page: the paired servers with their connection status (Remove, Reconnect), and
- * "Add a server" — the server address and the pairing code from the Web App. Its copy follows the
- * EN / 中文 switch in its header, live.
+ * "Add a server" — the server address and the pairing code from the Web App. Its copy and colours
+ * follow the language and theme switches in its header, live.
  */
 import {
   currentPlatform,
@@ -12,14 +12,7 @@ import {
 } from "../src/pairing.js";
 import { readServers, readStatus, removeServer, type PairedServer } from "../src/storage.js";
 import { stringsFor, type Strings } from "../src/strings.js";
-import {
-  element,
-  followLanguage,
-  renderLanguageSwitch,
-  setText,
-  statusDot,
-  statusText,
-} from "./view.js";
+import { element, followPreferences, setText, statusDot, statusText } from "./view.js";
 
 const extensionVersion = chrome.runtime.getManifest().version;
 
@@ -168,9 +161,8 @@ function wireForm(): void {
 }
 
 wireForm();
-followLanguage((language, next) => {
+followPreferences((next) => {
   strings = next;
-  renderLanguageSwitch(language, strings);
   fillCopy();
   void renderServers();
 });

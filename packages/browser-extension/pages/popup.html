@@ -4,24 +4,56 @@
     <meta charset="utf-8" />
     <title>PenguinHarness Browser</title>
     <link rel="stylesheet" href="pages.css" />
+    <!-- The header's glyphs are the product site's own icon set. deslop-ignore-file 24 -->
   </head>
-  <body>
-    <main class="popup">
+  <body class="popup">
+    <header class="bar">
+      <img class="logo" src="../icons/penguin-logo.svg" alt="" width="20" height="20" />
+      <span class="brand">PenguinHarness Browser</span>
+      <div class="prefs">
+        <div class="pref">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" />
+            <path
+              d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z"
+            />
+          </svg>
+          <span id="language-current" class="pref-label"></span>
+          <svg class="icon chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+          <select id="language"></select>
+        </div>
+        <button id="theme" class="icon-button" type="button" data-mode="system">
+          <svg class="icon" data-icon="light" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+            />
+          </svg>
+          <svg class="icon" data-icon="dark" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+          </svg>
+          <svg class="icon" data-icon="system" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+          </svg>
+        </button>
+      </div>
+    </header>
+    <main>
       <ul id="servers" class="plain"></ul>
       <p id="count" class="muted small"></p>
       <div id="tab" class="tab">
-        <p id="tab-note" class="small"></p>
+        <p id="tab-note"></p>
         <div id="tab-buttons" class="buttons"></div>
       </div>
-      <p id="paused-note" class="small muted" hidden></p>
-      <footer>
-        <button id="pause" type="button"></button>
-        <div class="end">
-          <div id="language" class="language"></div>
-          <button id="settings" class="flat" type="button"></button>
-        </div>
-      </footer>
+      <p id="paused-note" class="muted small" hidden></p>
     </main>
+    <footer>
+      <button id="pause" type="button"></button>
+      <button id="settings" class="flat" type="button"></button>
+    </footer>
     <script type="module" src="popup.js"></script>
   </body>
 </html>

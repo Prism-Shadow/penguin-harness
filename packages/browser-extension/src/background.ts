@@ -13,7 +13,7 @@ import { currentPlatform, deviceName } from "./pairing.js";
 import { isNavigableUrl } from "./policy.js";
 import {
   clearHold,
-  parseUiLanguage,
+  parseLanguagePref,
   readHolds,
   readPaused,
   readServers,
@@ -28,7 +28,7 @@ import {
   type PairedServer,
   type ServerStatus,
 } from "./storage.js";
-import { stringsFor, type UiLanguage } from "./strings.js";
+import { resolveLanguage, stringsFor, type UiLanguage } from "./strings.js";
 import { drivenCount, type TabSetState } from "./tab-set.js";
 import { TabController } from "./tabs.js";
 import { applyToolbar, popupFor } from "./toolbar.js";
@@ -45,7 +45,7 @@ const log = (line: string) => console.debug(`[penguin] ${line}`);
 
 let servers: PairedServer[] = [];
 let paused = false;
-/** The language the user picked for the pages, which the toolbar title follows. */
+/** The pages' language (the user's pick, or Chrome's), which the toolbar title follows. */
 let language: UiLanguage = "en";
 const connections = new Map<string, ServerConnection>();
 const status: Record<string, ServerStatus> = {};
@@ -263,7 +263,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if ("uiLanguage" in changes) {
     void ready.then(async () => {
-      language = parseUiLanguage(changes.uiLanguage?.newValue);
+      language = resolveLanguage(parseLanguagePref(changes.uiLanguage?.newValue));
       await tabs.retitle();
       await refresh();
     });

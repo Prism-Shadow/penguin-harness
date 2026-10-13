@@ -2,6 +2,7 @@
 //
 //   dist/background.js, dist/pages/{pair,popup}.{html,js}, dist/pages/pages.css
 //   dist/icons/icon{,-grey}-{16,32,48,128}.png   (sized and greyed from icons/penguin-128.png)
+//   dist/icons/penguin-logo.svg                  (the site's logo, in the pages' headers)
 //   dist/_locales/{en,zh_CN}/messages.json       (the manifest's name and description)
 //   dist/manifest.json                           (manifest.json + the package version)
 //   dist/penguin-browser-extension-<version>.zip (everything above, manifest at the zip root)
@@ -57,6 +58,8 @@ for (const file of ["pair.html", "popup.html", "pages.css"]) {
   writeFileSync(path.join(dist, "pages", file), readFileSync(path.join(root, "pages", file)));
 }
 cpSync(path.join(root, "_locales"), path.join(dist, "_locales"), { recursive: true });
+
+cpSync(path.join(root, "icons", "penguin-logo.svg"), path.join(dist, "icons", "penguin-logo.svg"));
 
 const source = decodePng(readFileSync(path.join(root, "icons", "penguin-128.png")));
 for (const size of [16, 32, 48, 128]) {

@@ -131,7 +131,7 @@ Chrome reminds you about extensions in developer mode when it starts; the extens
 
 Either way, Chrome opens the extension's pairing page once it is installed. Both carry the same extension ID, so Chrome holds only one of them: to move from the zip to the store, remove the loaded copy in `chrome://extensions` first, then install from the store and pair it again.
 
-The extension's pages are in English whatever Chrome's language. **EN / 中文** at the top of the pairing page and at the bottom of the popup switches both pages, and the toolbar icon's tooltip, at once.
+The extension's pages follow Chrome's language (Chinese in a Chinese Chrome, English otherwise) and your system's light or dark setting. The globe and the theme button at the top of the pairing page and the popup change either one; the choice reaches both pages at once, and a language choice also the toolbar icon's tooltip.
 
 ### Pair it with the server
 
