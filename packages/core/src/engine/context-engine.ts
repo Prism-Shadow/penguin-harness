@@ -229,6 +229,14 @@ export interface ContextEngineDeps {
    */
   maxReconnects?: number;
   /**
+   * Whether a rate limit (the `rate_limited` outcome code) ends the turn instead of riding
+   * the reconnect ladder. Set by a host that has somewhere else to run the Session — another
+   * model of the Project's fallback chain — because the identical request 429s identically on
+   * every rung, and the ~60 s the ladder would spend on it buys nothing. The turn still ends
+   * `retryable` with the same code; the host decides what to do with it.
+   */
+  failoverOnRateLimit?: boolean;
+  /**
    * Absolute ceiling on the attempts a single turn may make, counting every attempt whether
    * or not it received anything. Defaults to 20. It only binds once received content has
    * reset the consecutive ladder (`maxReconnects`) at least once, and exists solely to keep
@@ -470,6 +478,8 @@ export class ContextEngine {
   /** Whether a `readCompaction` failure has already been reported; one line per Session, not one per checkpoint. */
   private compactionReadWarned = false;
   private readonly maxReconnects: number;
+  /** Whether a rate limit ends the turn rather than being retried (see the dep's note). */
+  private readonly failoverOnRateLimit: boolean;
   private readonly maxTurnAttempts: number;
   private readonly reconnectBackoffMs: number;
   private readonly reconnectBackoffMaxMs: number;
@@ -579,6 +589,7 @@ export class ContextEngine {
     this.pendingBootstrapRecords = deps.bootstrapRecords ?? null;
     this.maxTurns = deps.maxTurns ?? -1;
     this.maxReconnects = deps.maxReconnects ?? 5;
+    this.failoverOnRateLimit = deps.failoverOnRateLimit === true;
     this.maxTurnAttempts = deps.maxTurnAttempts ?? 20;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 2000;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
@@ -952,6 +963,18 @@ export class ContextEngine {
         // and the last failure's request_end (status `retryable` with no `retry_in_ms`,
         // since no retry is planned) is the terminal record frontends and observability
         // read; `attempt` and `error_message` ride on it.
+        // A rate limit with somewhere else to run: the ladder cannot fix a quota, and the
+        // host has another model to finish the turn on. Ends here, first rung included.
+        if (this.failoverOnRateLimit && turn.outcome.errorCode === "rate_limited") {
+          this.pendingCarryOver = attemptInput;
+          return {
+            kind: "llm_failure",
+            errorCode: "rate_limited",
+            ...(turn.outcome.errorMessage !== undefined
+              ? { errorMessage: turn.outcome.errorMessage }
+              : {}),
+          };
+        }
         if (consecutive >= this.maxReconnects || attempts >= this.maxTurnAttempts) {
           this.pendingCarryOver = attemptInput;
           return {
