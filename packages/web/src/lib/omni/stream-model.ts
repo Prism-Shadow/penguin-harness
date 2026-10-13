@@ -2180,9 +2180,10 @@ function bindSubagent(model: StreamModel, sessionId: string, sub: StreamModel): 
  * by position, which picks the wrong card as soon as several calls run at once; the opening
  * prompt is exact, because core starts a child with the call's `prompt` argument verbatim as its
  * first user text. The spawning card is an allowed run_subagent card with that prompt, whose
- * `agent_id`, `model_id` and `provider`, where it names them, are what the child's session_meta
- * records, and which holds no child yet or one still unconfirmed. Two cards fit only when those
- * calls were identical in all of that: the earliest one still running wins (calls start in
+ * `agent_id`, `model_id` and `provider` (including inherited parent values) are what the child's
+ * session_meta records, and which holds no child yet or one still unconfirmed. When missing
+ * metadata leaves different selectors ambiguous, its positional binding stands. Otherwise,
+ * calls identical in all of that use the earliest one still running (calls start in
  * order), else the latest finished one (a background launch returns before its child's prompt
  * has streamed in). An unconfirmed child already on the spawning card trades places with this
  * one and moves again on its own prompt. A child bound standalone stays: no open card was left
@@ -2228,6 +2229,14 @@ function spawningCard(
   prompt: string,
   meta: NestedSessionMeta | null,
 ): ToolCallItem | null {
+  const inherited = [
+    model.agentState === null ? null : agentIdFromStatePath(model.agentState),
+    model.contextModel?.modelId ?? null,
+    model.contextModel?.provider ?? null,
+  ];
+  const actual = meta === null ? null : [meta.agentId, meta.modelId, meta.provider];
+  let matchedIdentity: (string | null)[] | null = null;
+  let earliestRunning: ToolCallItem | null = null;
   let latestFinished: ToolCallItem | null = null;
   for (const item of model.items) {
     if (item.kind !== "tool_call" || item.name !== "run_subagent" || item.decision !== "allow") {
@@ -2238,23 +2247,26 @@ function spawningCard(
       continue;
     }
     const args = callArguments(item.argumentsText);
-    if (args === null || args.prompt !== prompt || !namesChild(args, meta)) continue;
-    if (!item.outputComplete) return item;
-    latestFinished = item;
+    if (args === null || args.prompt !== prompt) continue;
+    const expected = ["agent_id", "model_id", "provider"].map((field, i) =>
+      typeof args[field] === "string" ? args[field] : inherited[i]!,
+    );
+    if (
+      actual !== null &&
+      expected.some((value, i) => value !== null && actual[i] !== null && value !== actual[i])
+    ) {
+      continue;
+    }
+    // A window without parent metadata cannot distinguish inheritance from an override.
+    // Preserve the existing binding instead of confirming an arbitrary same-prompt card.
+    if (matchedIdentity !== null && expected.some((value, i) => value !== matchedIdentity![i])) {
+      return null;
+    }
+    matchedIdentity = expected;
+    if (!item.outputComplete) earliestRunning ??= item;
+    else latestFinished = item;
   }
-  return latestFinished;
-}
-
-/** Whether a call's `agent_id`, `model_id` and `provider`, where it names them, are what the child's session_meta records. */
-function namesChild(args: Record<string, unknown>, meta: NestedSessionMeta | null): boolean {
-  if (meta === null) return true;
-  const differs = (named: unknown, actual: string | null): boolean =>
-    typeof named === "string" && actual !== null && named !== actual;
-  return (
-    !differs(args.agent_id, meta.agentId) &&
-    !differs(args.model_id, meta.modelId) &&
-    !differs(args.provider, meta.provider)
-  );
+  return earliestRunning ?? latestFinished;
 }
 
 function callArguments(argumentsText: string): Record<string, unknown> | null {

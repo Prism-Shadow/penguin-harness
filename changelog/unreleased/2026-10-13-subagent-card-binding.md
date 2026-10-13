@@ -12,5 +12,6 @@ When one reply started several subagents at once, a child could be attached to a
 ## Details
 
 - A child still shows as soon as it appears. Its opening prompt then moves it onto the call that carried that prompt; if a sibling had taken that card, the two swap.
-- Calls with the same prompt are told apart by the `agent_id`, `model_id` and `provider` they name. Among calls identical in all of these, the earliest one still running takes the child.
+- Calls with the same prompt are told apart by their effective `agent_id`, `model_id` and `provider`, including values inherited from the parent when omitted. Among calls identical in all of these, the earliest one still running takes the child.
+- When missing session metadata leaves different same-prompt calls ambiguous, the child keeps its existing card binding.
 - A denied call never takes a child, even with the same prompt.

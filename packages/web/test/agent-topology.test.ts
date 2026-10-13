@@ -13,6 +13,10 @@
  *   and thinking level — live, and rebuilt from history alike.
  * - Given two calls with the same prompt to different agents, when the second agent's child
  *   speaks first, then each child stays on the call that named its agent.
+ * - Given an inherited and an explicit agent or model share a prompt, when either child
+ *   starts first, then their descriptions and thinking levels stay with their own calls.
+ * - Given the parent metadata is missing and same-prompt calls have different selectors,
+ *   when a child's prompt arrives, then an ambiguous match does not move it to another card.
  * - Given two background launches whose cards finish before their children's prompts arrive,
  *   then each child still lands on its own launch.
  * - Given a denied call carrying the same prompt as a child with no open call, then the denied
@@ -370,6 +374,115 @@ describe("which call a child belongs to", () => {
     expect(shown(m)).toEqual({
       "child-1": ["Ask the scout", null],
       "child-2": ["Ask the analyst", null],
+    });
+  });
+
+  it.each(
+    [
+      {
+        name: "agent",
+        agent: "reviewer",
+        model: "m",
+        provider: "custom",
+        args: { agent_id: "reviewer" },
+      },
+      {
+        name: "model",
+        agent: "parent",
+        model: "other",
+        provider: "custom",
+        args: { model_id: "other", provider: "custom" },
+      },
+      {
+        name: "provider",
+        agent: "parent",
+        model: "m",
+        provider: "other",
+        args: { model_id: "m", provider: "other" },
+      },
+    ].flatMap((variant) => [true, false].map((explicitFirst) => ({ ...variant, explicitFirst }))),
+  )(
+    "inherits the parent's $name when omitted (explicit child first: $explicitFirst)",
+    (variant) => {
+      const inherited: Call = {
+        toolCallId: "inherited-call",
+        child: "inherited-child",
+        agent: "parent",
+        args: {
+          prompt: "Review this change",
+          description: "Inherited settings",
+          thinking_level: "low",
+        },
+      };
+      const explicit: Call = {
+        toolCallId: "explicit-call",
+        child: "explicit-child",
+        agent: variant.agent,
+        args: {
+          ...variant.args,
+          prompt: inherited.args.prompt,
+          description: "Explicit settings",
+          thinking_level: "high",
+        },
+      };
+      const explicitMeta = meta(explicit.child, `/data/p/agents/${explicit.agent}/agent_state`);
+      const first = variant.explicitFirst ? explicit : inherited;
+      const second = variant.explicitFirst ? inherited : explicit;
+      const records = new Map([
+        [inherited.child, childMeta(inherited)],
+        [
+          explicit.child,
+          withOrigin(
+            {
+              ...explicitMeta,
+              payload: {
+                ...explicitMeta.payload,
+                model_id: variant.model,
+                provider: variant.provider,
+              },
+            },
+            explicit.child,
+          ),
+        ],
+      ]);
+      const m = build([
+        meta("root", "/data/p/agents/parent/agent_state"),
+        userText("go"),
+        ...card(inherited),
+        ...card(explicit),
+        records.get(first.child)!,
+        records.get(second.child)!,
+        childPrompt(first),
+        childPrompt(second),
+      ]);
+      expect(shown(m)).toEqual({
+        "inherited-child": ["Inherited settings", "low"],
+        "explicit-child": ["Explicit settings", "high"],
+      });
+    },
+  );
+
+  it("keeps a positional binding when missing parent metadata leaves the same prompt ambiguous", () => {
+    const inherited: Call = {
+      ...C,
+      args: { prompt: "Review this change", description: "Self review" },
+    };
+    const explicit: Call = {
+      ...A,
+      args: { prompt: inherited.args.prompt, agent_id: A.agent, description: "Scout review" },
+    };
+    const m = build([
+      userText("go"),
+      ...card(inherited),
+      ...card(explicit),
+      childMeta(explicit),
+      childMeta(inherited),
+      childPrompt(explicit),
+      childPrompt(inherited),
+    ]);
+    expect(shown(m)).toEqual({
+      "child-c": ["Self review", null],
+      "child-a": ["Scout review", null],
     });
   });
 
