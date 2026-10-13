@@ -51,6 +51,8 @@
  *   draft models, converges to ok:false with no credential, tests the draft (clearApiKey) rather
  *   than the stored key, and refuses a keyless gateway row or a Penguin Go probe without reaching
  *   for vendor environment keys or the network (a relay row with no endpoint anywhere included).
+ *   Its request names PenguinHarness and its version as the whole User-Agent, whichever SDK
+ *   the protocol runs on.
  * - A PUT invalidates the Project's cached Session runtimes (reads do not), tells the Project's
  *   open Session channels only, and GET/PUT report the file's updatedAt.
  *
@@ -72,6 +74,7 @@ import {
   providerInfo,
   renderProjectConfigToml,
   userText,
+  VERSION,
 } from "@prismshadow/penguin-core";
 import type {
   ErrorBody,
@@ -1628,6 +1631,49 @@ describe("model-reference rekeying and the connectivity test", () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+
+  describe("the User-Agent of the connectivity test's request", () => {
+    // One local endpoint for the block: it notes the User-Agent of every request and refuses
+    // the key, which ends the probe whatever the protocol.
+    const agents: Array<string | undefined> = [];
+    const server = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        agents.push(req.headers["user-agent"]);
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: { message: "test-reject", type: "invalid_request" } }));
+      });
+    });
+    let port = 0;
+    beforeAll(async () => {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      port = (server.address() as AddressInfo).port;
+    });
+    afterAll(async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    // A protocol for each SDK MMSP wraps (OpenAI, Anthropic, Gemini), and MMSP's own client.
+    it.each([
+      ["openai-chat", "/v1"],
+      ["ant-messages", ""],
+      ["google-genai", ""],
+      ["mmsp", ""],
+    ])("over %s names PenguinHarness and its version, and nothing else", async (clientType, at) => {
+      agents.length = 0;
+      const res = await api.post(testUrl(), {
+        provider: "custom",
+        modelId: "ua-probe-model",
+        clientType,
+        apiKey: "sk-test-local",
+        baseUrl: `http://127.0.0.1:${port}${at}`,
+      });
+      expect(res.status).toBe(200);
+      expect(agents.length).toBeGreaterThan(0);
+      expect(new Set(agents)).toEqual(new Set([`penguinharness/${VERSION}`]));
+    });
   });
 
   it("connectivity test: both a saved model and a **not-yet-saved** custom model can be tested (the LLM layer throws nothing, every outcome converges)", async () => {

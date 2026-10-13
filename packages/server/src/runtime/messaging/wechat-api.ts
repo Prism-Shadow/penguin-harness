@@ -45,6 +45,7 @@
  * fund is the connector's business (see wechat-connector.ts).
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { userAgent } from "@prismshadow/penguin-core";
 import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
 import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
 
@@ -388,6 +389,7 @@ function randomUin(): string {
 function headersFor(token: string): Record<string, string> {
   return {
     "content-type": "application/json",
+    "user-agent": userAgent(),
     AuthorizationType: "ilink_bot_token",
     Authorization: `Bearer ${token}`,
     "X-WECHAT-UIN": randomUin(),
@@ -712,7 +714,7 @@ export function createWeChatTransport(): WeChatTransport {
         try {
           res = await fetch(uploadUrl.trim(), {
             method: "POST",
-            headers: { "content-type": "application/octet-stream" },
+            headers: { "content-type": "application/octet-stream", "user-agent": userAgent() },
             body: new Uint8Array(encryptEcb(file.data, aesKey)),
             signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
           });
@@ -858,7 +860,10 @@ export function createWeChatTransport(): WeChatTransport {
         async fetchMedia(ref: WeChatMediaRef, maxBytes: number, what: string): Promise<Buffer> {
           let res: Response;
           try {
-            res = await fetch(ref.url, { signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS) });
+            res = await fetch(ref.url, {
+              headers: { "user-agent": userAgent() },
+              signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
+            });
           } catch (err) {
             // The URL never reaches this message: it carries the signed parameter that
             // authorizes the read.

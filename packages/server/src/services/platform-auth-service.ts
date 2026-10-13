@@ -8,6 +8,7 @@
  * metadata remain outside PenguinHarness.
  */
 import { randomBytes } from "node:crypto";
+import { userAgent } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import { PENGUIN_GO_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 import { HttpError } from "../http/errors.js";
@@ -275,8 +276,11 @@ export class PlatformAuthService {
   }
 
   private async request(path: string, init: RequestInit): Promise<Response> {
+    const headers = new Headers(init.headers);
+    headers.set("user-agent", userAgent());
     return this.fetchImpl(this.url(path), {
       ...init,
+      headers,
       redirect: "manual",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });

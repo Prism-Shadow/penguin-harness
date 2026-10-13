@@ -22,6 +22,7 @@
  *   relayed — only its HTTP status.
  */
 import { createHash } from "node:crypto";
+import { userAgent } from "@prismshadow/penguin-core";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderBalance } from "@prismshadow/penguin-core/model-catalog";
 import type {
@@ -196,7 +197,11 @@ export class ModelBalances {
     let res: Response;
     try {
       res = await fetchImpl(descriptor.url, {
-        headers: { authorization: `Bearer ${key}`, accept: "application/json" },
+        headers: {
+          authorization: `Bearer ${key}`,
+          accept: "application/json",
+          "user-agent": userAgent(),
+        },
         signal: AbortSignal.timeout(BALANCE_TIMEOUT_MS),
       });
     } catch (err) {

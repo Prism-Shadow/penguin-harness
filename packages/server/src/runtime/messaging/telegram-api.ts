@@ -10,6 +10,7 @@
  * Wire types below mirror the Bot API JSON verbatim (snake_case): the transport does not
  * reshape payloads, so a test fake constructs exactly what the real API returns.
  */
+import { userAgent } from "@prismshadow/penguin-core";
 import { FormData, fetch as undiciFetch } from "undici";
 import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
 import { MessagingMediaTooLargeError, collectUnderCap } from "./media.js";
@@ -394,7 +395,7 @@ export function createTelegramTransport(opts: TelegramTransportOpts = {}): Teleg
         try {
           res = await doFetch(`${TELEGRAM_API_BASE}/bot${creds.botToken}/${method}`, {
             method: "POST",
-            headers,
+            headers: { ...headers, "user-agent": userAgent() },
             body,
             signal,
           });
@@ -492,6 +493,7 @@ export function createTelegramTransport(opts: TelegramTransportOpts = {}): Teleg
             res = await doFetch(
               `${TELEGRAM_API_BASE}/file/bot${creds.botToken}/${file.file_path}`,
               {
+                headers: { "user-agent": userAgent() },
                 signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
               },
             );

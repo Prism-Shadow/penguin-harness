@@ -32,6 +32,7 @@
  * arrives; probing them together behind a single response would hold every row blank until
  * the slowest one landed, which for a black-holed host is the whole timeout.
  */
+import { userAgent } from "@prismshadow/penguin-core";
 import type { ProxyProbeDto, ProxyProbeOutcome, ProxyProbeTargetDto } from "../api/types.js";
 
 /**
@@ -145,7 +146,7 @@ async function probeTarget(
       // No Authorization, no x-api-key, no environment fallback: this probe is
       // unauthenticated by design and must stay that way even though the process has
       // OPENAI_API_KEY and its siblings to hand (see the module header).
-      headers: { accept: "application/json" },
+      headers: { accept: "application/json", "user-agent": userAgent() },
       signal: AbortSignal.timeout(timeoutMs),
     });
     // fetch settles when the response HEAD arrives, so this is the wall time of everything

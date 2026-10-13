@@ -1,5 +1,6 @@
 /**
  * GenerativeModel's attribution headers: what reaches MMSP's client as `defaultHeaders`.
+ * Every model names PenguinHarness and its version in the User-Agent, whatever the endpoint.
  * OpenCode refuses a request that does not name its conversation in `x-opencode-session`, so
  * a model built for a Session sends that Session's id, and one built outside any Session (the
  * connectivity test, the vision probe) sends a fresh id of its own — never nothing, and never
@@ -7,6 +8,7 @@
  * which rebuilds the client, keeps it.
  */
 import { describe, expect, it, vi } from "vitest";
+import { VERSION } from "../src/index.js";
 
 const captured = vi.hoisted(() => ({ options: [] as Record<string, unknown>[] }));
 
@@ -45,6 +47,7 @@ describe("GenerativeModel attribution headers", () => {
   it("names a Session's requests after the Session", () => {
     build({ baseUrl: OPENCODE_GO, sessionId: "session-2026-09-30-10-00-00-abcd1234" });
     expect(lastHeaders()).toEqual({
+      "User-Agent": `penguinharness/${VERSION}`,
       "x-opencode-session": "session-2026-09-30-10-00-00-abcd1234",
     });
   });
@@ -59,11 +62,11 @@ describe("GenerativeModel attribution headers", () => {
     expect(first).not.toBe(second);
   });
 
-  it("sends nothing extra to an endpoint that reads no such header", () => {
+  it("sends only the User-Agent to an endpoint that reads no attribution header", () => {
     build({ baseUrl: "https://api.deepseek.com" });
-    expect(lastHeaders()).toBeUndefined();
+    expect(lastHeaders()).toEqual({ "User-Agent": `penguinharness/${VERSION}` });
     build({});
-    expect(lastHeaders()).toBeUndefined();
+    expect(lastHeaders()).toEqual({ "User-Agent": `penguinharness/${VERSION}` });
   });
 
   it("keeps the id when a rotated credential rebuilds the client", async () => {

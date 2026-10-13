@@ -23,7 +23,7 @@ import type { PluginIndexEntry } from "../api/types.js";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parsePluginPackage, readPluginIcon } from "@prismshadow/penguin-core";
+import { parsePluginPackage, readPluginIcon, userAgent } from "@prismshadow/penguin-core";
 import type { PluginPackageFields } from "@prismshadow/penguin-core";
 import { resolvePluginPackage } from "./loader.js";
 import type { PluginBase } from "./loader.js";
@@ -213,7 +213,10 @@ export function httpPluginRegistry(
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        return await fetchImpl(indexUrl, { signal: AbortSignal.timeout(timeoutMs) });
+        return await fetchImpl(indexUrl, {
+          headers: { "user-agent": userAgent() },
+          signal: AbortSignal.timeout(timeoutMs),
+        });
       } catch (err) {
         lastError = err;
         if (attempt < attempts) await delay(attempt);

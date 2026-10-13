@@ -68,6 +68,7 @@ import type {
   ThinkingLevelName,
   ToolDefinition,
 } from "../interfaces/index.js";
+import { userAgent } from "../index.js";
 import { attributionHeaders } from "../state/model-catalog.js";
 import { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 import {
@@ -693,19 +694,25 @@ export class GenerativeModel implements LLMInterface {
     // variables. clientType determines which protocol to speak (`openai-chat` means OpenAI
     // Chat Completions compatible; the bare `openai` spelling is a deprecated upstream alias);
     // when omitted, MMSP infers it from model_id, so it only needs to be specified
-    // explicitly for custom-named models. `defaultHeaders` carries the app attribution the
-    // configured endpoint reads (see attributionHeaders); MMSP hands it to every request
-    // the routed client makes, and endpoints with no attribution scheme get no extra headers
-    // at all. The Session's id rides along for the schemes that name the conversation rather
-    // than the app; without one, attributionHeaders mints a fresh id. Computed once and kept
-    // in clientOptions, so every request of this instance — across a rotated credential too —
-    // names the same conversation.
-    const headers = attributionHeaders(config.baseUrl, config.sessionId);
+    // explicitly for custom-named models. `defaultHeaders` goes on every request the routed
+    // client makes. It names PenguinHarness in the User-Agent, which each provider SDK lets
+    // replace its own; the name is spelled `User-Agent` exactly, because the Gemini SDK
+    // merges these into its own defaults as a plain object, where `user-agent` would sit
+    // beside its `User-Agent` and both values would go out joined. It also carries the app
+    // attribution the configured endpoint reads (see attributionHeaders), and an endpoint with
+    // no attribution scheme gets nothing beyond the User-Agent. The Session's id rides along
+    // for the schemes that name the conversation rather than the app; without one,
+    // attributionHeaders mints a fresh id. Computed once and kept in clientOptions, so every
+    // request of this instance — across a rotated credential too — names the same
+    // conversation.
     this.clientOptions = {
       model: config.modelId,
       ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
       ...(config.clientType !== undefined ? { clientType: config.clientType } : {}),
-      ...(headers ? { defaultHeaders: headers } : {}),
+      defaultHeaders: {
+        "User-Agent": userAgent(),
+        ...attributionHeaders(config.baseUrl, config.sessionId),
+      },
     };
     this.currentApiKey = config.apiKey;
     this.resolveApiKey = config.resolveApiKey;
