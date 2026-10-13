@@ -97,6 +97,7 @@ import {
   runningBuild,
   runsPlan,
   sameBuild,
+  shippedImage,
 } from "./install-server.js";
 import { parseProbeOutput, posixProbe } from "./detect.js";
 import { explainSshFailure, sshRefusal } from "./ssh-failure.js";
@@ -106,6 +107,7 @@ import type { CarryRelease, PushPlan, RunningBuild } from "./install-server.js";
 import { releaseCache } from "./release-cache.js";
 import { CheckoutImage, deployPacker, findCheckout, imageAssets } from "./checkout-image.js";
 import type { CheckoutBuild, CheckoutPacker } from "./checkout-image.js";
+import { ShippedImage } from "./shipped-image.js";
 import { probeServerState } from "./server-state.js";
 import { upgradeRemote } from "./upgrade.js";
 import type { UpgradeOutcome } from "./upgrade.js";
@@ -301,6 +303,11 @@ export interface MachinesEffects {
    * does not run from a checkout, which is every server but a development one.
    */
   packCheckout: CheckoutPacker | null;
+  /**
+   * The install image this server's release shipped (install-server.ts's shippedImage) — or
+   * null when it stands on no installed release, or on one packaged without an image.
+   */
+  shippedImage: { baseVersion: string; body: string } | null;
   /** Injected so a test can pin the recorded timestamp instead of asserting around the clock. */
   now: () => Date;
   /** Tells this server's admins that the machines list changed (`machines_changed`). */
@@ -394,6 +401,8 @@ export class MachinesService {
   readonly #unwatch: () => void;
   /** The image a source checkout builds for its installs; null for every other server. */
   readonly #checkout: CheckoutImage | null;
+  /** The image an installed release shipped, laid down on first need; null for every other server. */
+  readonly #shipped: ShippedImage | null;
   /** The passwords machines sign in with, by alias, and the helper ssh asks for them. */
   readonly #passwords: SshPasswords;
   /** The boot's second sweep, pending (see start()). */
@@ -432,6 +441,7 @@ export class MachinesService {
       loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
       env: () => process.env,
       packCheckout: null,
+      shippedImage: null,
       now: () => new Date(),
       announce: () => {},
       publishEvent: () => {},
@@ -460,6 +470,16 @@ export class MachinesService {
         ? null
         : new CheckoutImage(path.join(dataRoot, "machines", "checkout-image"), VERSION, pack, () =>
             this.#effects.now(),
+          );
+    const shipped = this.#effects.shippedImage;
+    this.#shipped =
+      shipped === null
+        ? null
+        : new ShippedImage(
+            path.join(dataRoot, "machines", "release-image"),
+            shipped.baseVersion,
+            shipped.body,
+            () => this.#effects.now(),
           );
   }
 
@@ -707,36 +727,63 @@ export class MachinesService {
   }
 
   /**
-   * The version this server would install, or null when it has none to name. A source
-   * checkout names the image it last built — its next install builds again, from the checkout
-   * as it is then — and null before the first build; a server that is neither installed nor
-   * a checkout has no image at all. The page asks so it can say so up front, rather than
-   * letting every install fail at the same step.
+   * The version this server would install, or null when it has none to name. A hot-pushed
+   * server names its pushed state; a release nothing was pushed to names the image it
+   * shipped, once that is laid down (at boot, by start()'s sweep); a source checkout names the
+   * image it last built — its next install builds again, from the checkout as it is then —
+   * and null before the first build. A server that is none of these has no image at all. The
+   * page asks so it can say so up front, rather than letting every install fail at the same
+   * step.
    */
   imageVersion(): string | null {
     return this.#plan()?.version ?? null;
   }
 
-  /** The checkout's image, for the page to speak of; null unless this server runs from a checkout. */
+  /** The checkout's image, for the page to speak of; null unless this server builds its image from a checkout. */
   checkoutImage(): MachinesCheckoutImage | null {
-    if (this.#checkout === null || this.#effects.resolvePlan(this.dataRoot) !== null) return null;
+    if (this.#checkout === null || !this.#buildsImage()) return null;
     return this.#checkout.status();
   }
 
   /** The checkout's build, as the first step of a job that installs — on a server that builds its image. */
   #buildStep(): MachinePhase[] {
-    return this.#effects.resolvePlan(this.dataRoot) === null && this.#checkout !== null
-      ? ["build"]
-      : [];
+    return this.#buildsImage() ? ["build"] : [];
   }
 
-  /** What an install would put on a machine now: this install's own plan, else the checkout's last image. */
-  #plan(): PushPlan | null {
-    return this.#effects.resolvePlan(this.dataRoot) ?? this.#checkout?.plan() ?? null;
+  /** Whether this server's installs build their image from a checkout: it has neither pushed state nor a shipped image. */
+  #buildsImage(): boolean {
+    return (
+      this.#checkout !== null &&
+      this.#shipped === null &&
+      this.#effects.resolvePlan(this.dataRoot) === null
+    );
   }
 
   /**
-   * What the jobs of one batch install. An installed server's plan is fixed; a checkout builds
+   * What an install would put on a machine now: this server's pushed state, else the image
+   * its release shipped, else the checkout's last image.
+   */
+  #plan(): PushPlan | null {
+    const pushed = this.#effects.resolvePlan(this.dataRoot);
+    if (pushed !== null) return pushed;
+    if (this.#shipped !== null) return this.#shipped.plan();
+    return this.#checkout?.plan() ?? null;
+  }
+
+  /** #plan, with a shipped image laid down first if it is not yet. */
+  async #readyPlan(): Promise<PushPlan | null> {
+    if (this.#effects.resolvePlan(this.dataRoot) === null && this.#shipped !== null) {
+      const unlaid = this.#shipped.plan() === null;
+      await this.#shipped.ready();
+      // The page learns the version it names only now.
+      if (unlaid) this.#changed();
+    }
+    return this.#plan();
+  }
+
+  /**
+   * What the jobs of one batch install. A pushed server's plan is fixed; a release's shipped
+   * image is laid down by the first job that needs it, once; a checkout builds
    * its image from the source as the batch finds it, once for the whole batch — the first job
    * to ask starts the build, the others hear it out, and a job that starts after it is done
    * takes its result rather than building again — and each job holds that image until its
@@ -746,6 +793,25 @@ export class MachinesService {
   #imageForBatch(): WithImage | null {
     const installed = this.#effects.resolvePlan(this.dataRoot);
     if (installed !== null) return (_say, work) => work({ plan: installed, assets: this.#assets });
+    const shipped = this.#shipped;
+    if (shipped !== null) {
+      return async (say, work) => {
+        const unlaid = shipped.plan() === null;
+        if (unlaid) say("Unpacking the install image this release ships…");
+        const ready = await shipped.ready();
+        if (!ready.ok) {
+          return {
+            ok: false,
+            step: "prepare the install image",
+            message: ready.detail,
+            // This server's own lack: installing the program anyway would send nothing new.
+            canReplaceProgram: false,
+          };
+        }
+        if (unlaid) this.#changed();
+        return work({ plan: ready.plan, assets: this.#assets });
+      };
+    }
     const checkout = this.#checkout;
     if (checkout === null) return null;
     let built: CheckoutBuild | null = null;
@@ -835,6 +901,7 @@ export class MachinesService {
     // The release the image stands on: this install's own, or a checkout's VERSION.
     const version =
       this.#effects.resolvePlan(this.dataRoot)?.baseVersion ??
+      this.#effects.shippedImage?.baseVersion ??
       (this.#checkout === null ? null : VERSION);
     const port = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
     if (identity.platform === "win32") return done(parseDiagnosis(identity, "", { version, port }));
@@ -1642,7 +1709,7 @@ export class MachinesService {
       machine,
       ["check", "connect", "sync"],
       { offerReplaceProgram: true },
-      (say) => this.#connect(machine, say, "check", this.#plan()),
+      async (say) => this.#connect(machine, say, "check", await this.#readyPlan()),
     );
     return { ok: true };
   }
@@ -2025,7 +2092,7 @@ export class MachinesService {
     const result: MachineJob["result"] =
       machine === undefined
         ? { ok: false, step: "connect", message: "that host is no longer in the ssh config." }
-        : await this.#connect(machine, () => {}, "check", this.#plan());
+        : await this.#connect(machine, () => {}, "check", await this.#readyPlan());
     // Stopped, deleted or disposed meanwhile: what the attempt learned is nobody's now.
     if (this.#stopped || this.#reconnects.get(address) !== state) return;
     if (result !== null && result.ok) {
@@ -2709,7 +2776,7 @@ export class MachinesService {
       };
     }
     say("Asking what it runs…", "check");
-    const lined = await this.#inLine(address, target, port, this.#plan(), say, false);
+    const lined = await this.#inLine(address, target, port, await this.#readyPlan(), say, false);
     if (!lined.ok) {
       return { ok: false, step: "check", message: lined.message, canReplaceProgram: false };
     }
@@ -2794,7 +2861,7 @@ export class MachinesService {
    * dev server restarts on every edit.
    */
   async syncOutOfDate(): Promise<void> {
-    const plan = this.#plan();
+    const plan = await this.#readyPlan();
     if (plan === null) return;
     const behind = this.repo
       .all()
@@ -2943,6 +3010,8 @@ export class MachinesModule {
       repo,
       {
         ...(checkout === null ? {} : { packCheckout: deployPacker(checkout) }),
+        // An installed release installs the image its build shipped, unless it was pushed to.
+        shippedImage: shippedImage(),
         announce: () => toAdmins({ type: "machines_changed" }),
         publishEvent: (machineId, event) => toAdmins({ type: "machine_event", machineId, event }),
       },

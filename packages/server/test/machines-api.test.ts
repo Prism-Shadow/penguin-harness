@@ -54,9 +54,15 @@
  *   succeeds; an image a job is still installing outlives the builds that land meanwhile and
  *   goes at the next build after; the image outlives a restart; an installed server's own
  *   image wins.
+ * - Given an installed release nothing was pushed to, an install puts the image the release
+ *   ships: a whole store whose CLI the machine's `penguin-hmr` can load, under the release with
+ *   the image's suffix, laid down beside — never in — the server's own hmr store; the image is
+ *   laid down once and outlives a restart, an upgrade's image replaces the old one, an image
+ *   that cannot be read ends the job before any install, and a pushed server's own state wins.
  */
 import fs from "node:fs";
 import http from "node:http";
+import os from "node:os";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -79,6 +85,7 @@ import type { RemoteIdentity } from "../src/machines/detect.js";
 import type { CheckoutPacker } from "../src/machines/checkout-image.js";
 import type { EventRelay } from "../src/machines/event-relay.js";
 import { readPushedBuild } from "../src/hmr/pushed-build.js";
+import { readPushedCli } from "../src/hmr/manifest.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
 import {
   apiClient,
@@ -3293,6 +3300,148 @@ describe("machines API", () => {
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(t.deps.machines.job()?.result).toMatchObject({ ok: true, version: "9.9.9" });
       expect(packs).toEqual([]);
+    });
+  });
+
+  describe("a release's shipped install image", () => {
+    /** Release programs written by this describe's cases, removed after each. */
+    const programs: string[] = [];
+    afterEach(() => {
+      for (const dir of programs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+    });
+    /** A release's program, shipping `build` as its install image (what deploy.mjs --out writes). */
+    const shipping = (build: PushedBuild) => {
+      const program = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-release-program-"));
+      programs.push(program);
+      fs.mkdirSync(path.join(program, "dist"));
+      const body = path.join(program, "dist", "install-image.gz");
+      fs.writeFileSync(body, zlib.gzipSync(Buffer.from(JSON.stringify(build))));
+      return { baseVersion: "9.9.9", body };
+    };
+    /** An installed release nothing was pushed to: no pushed state, and the image it ships. */
+    const release = async (over: Partial<MachinesEffects> = {}) => {
+      const shippedImage = shipping(CHECKOUT_BUILD);
+      await boot({ resolvePlan: () => null, shippedImage, ...over });
+      return shippedImage;
+    };
+    const listed = async () =>
+      (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+    const installNas = async () => {
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      return t.deps.machines.job()!;
+    };
+    const imageRoot = () => path.join(machinesRoot, "machines", "release-image");
+
+    it("an install puts the image the release ships: a whole store with a CLI, under the release and the image's suffix", async () => {
+      const plans: PushPlan[] = [];
+      await release({
+        install: async (opts) => {
+          plans.push(opts.plan);
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      const job = await installNas();
+      expect(job.result).toMatchObject({ ok: true, installed: "installed" });
+      const version = (job.result as { version: string }).version;
+      expect(version.startsWith("9.9.9+hmr.")).toBe(true);
+      expect(plans[0]).toMatchObject({ baseVersion: "9.9.9", version });
+      // The store an install replicates: the shipped build, in the layout a push leaves, whose
+      // CLI is what the machine's `penguin-hmr` runs every command this server sends through.
+      const image = path.dirname(plans[0]!.hmrDir!);
+      expect(image.startsWith(imageRoot())).toBe(true);
+      expect(JSON.parse(zlib.gunzipSync(readPushedBuild(image)!).toString())).toMatchObject({
+        platform: CHECKOUT_BUILD.platform,
+        cli: CHECKOUT_BUILD.cli,
+        web: CHECKOUT_BUILD.web,
+      });
+      const cli = await readPushedCli(image);
+      expect(cli.kind).toBe("bundle");
+      expect(fs.readFileSync((cli as { file: string }).file, "utf8")).toBe(CHECKOUT_BUILD.cli);
+      expect(fs.existsSync(path.join(machinesRoot, "hmr"))).toBe(false);
+
+      expect(recordsInStore()["ssh:nas"]?.version).toBe(version);
+      expect((await listed()).imageVersion).toBe(version);
+    });
+
+    it("is laid down once: a restart names it at once, and an upgrade's image replaces it", async () => {
+      const shippedImage = await release();
+      await installNas();
+      const version = (await listed()).imageVersion!;
+      const laid = fs.readdirSync(imageRoot());
+      expect(laid).toHaveLength(1);
+
+      const reborn = new MachinesService(
+        machinesRoot,
+        LOCAL_ID,
+        machinesRepo,
+        effects({ resolvePlan: () => null, shippedImage }),
+      );
+      expect(reborn.imageVersion()).toBe(version);
+
+      const upgraded = new MachinesService(
+        machinesRoot,
+        LOCAL_ID,
+        machinesRepo,
+        effects({
+          resolvePlan: () => null,
+          shippedImage: shipping({
+            ...CHECKOUT_BUILD,
+            cli: "export async function cli() { return 1; }\n",
+          }),
+        }),
+      );
+      // Nothing on disk names the older release's image: before the new one is laid down there
+      // is no version to name, rather than the old one.
+      expect(upgraded.imageVersion()).toBeNull();
+      await upgraded.syncOutOfDate();
+      const next = upgraded.imageVersion();
+      expect(next).not.toBeNull();
+      expect(next).not.toBe(version);
+      expect(fs.readdirSync(imageRoot())).toHaveLength(1);
+      expect(fs.readdirSync(imageRoot())).not.toEqual(laid);
+      for (const svc of [reborn, upgraded]) svc.stop();
+    });
+
+    it("an image that cannot be read ends the install before anything is installed, in words, offering nothing", async () => {
+      const shippedImage = shipping(CHECKOUT_BUILD);
+      fs.writeFileSync(shippedImage.body, "not a gzip");
+      let installs = 0;
+      await boot({
+        resolvePlan: () => null,
+        shippedImage,
+        install: async () => {
+          installs += 1;
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      const job = await installNas();
+      expect(job.result).toMatchObject({
+        ok: false,
+        step: "prepare the install image",
+        message: expect.stringContaining("not readable"),
+        canReplaceProgram: false,
+      });
+      expect(installs).toBe(0);
+      expect((await listed()).imageVersion).toBeNull();
+    });
+
+    it("a pushed server's own state wins over the image its release ships", async () => {
+      const plans: PushPlan[] = [];
+      await boot({
+        resolvePlan: () => PUSHED_PLAN,
+        shippedImage: shipping(CHECKOUT_BUILD),
+        install: async (opts) => {
+          plans.push(opts.plan);
+          return { kind: "installed", output: "done", identity: IDENTITY };
+        },
+      });
+      expect((await listed()).imageVersion).toBe(PUSHED_PLAN.version);
+      await installNas();
+      expect(plans).toEqual([PUSHED_PLAN]);
+      expect(fs.existsSync(imageRoot())).toBe(false);
     });
   });
 

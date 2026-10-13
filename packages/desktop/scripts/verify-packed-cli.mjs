@@ -17,9 +17,10 @@
  *
  * It is also checked for what the Machines page installs on another computer from it: the
  * server bundle at the path the server recognizes as a packaged app, the release installers
- * beside it, and the app's own package.json naming this build's version — the release a
- * machine downloads. None of them is imported by anything, so an app without them builds,
- * starts and runs its CLI, and only an install on a machine fails.
+ * and the install image (the harness a machine runs, in the hot push's format) beside it,
+ * and the app's own package.json naming this build's version — the release a machine
+ * downloads. None of them is imported by anything, so an app without them builds, starts
+ * and runs its CLI, and only an install on a machine fails.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -123,6 +124,7 @@ for (const app of dirs) {
     "dist/penguin.js",
     "dist/server.js",
     ...FAR_SIDE_SCRIPTS.map(({ name }) => `dist/${name}`),
+    "dist/install-image.gz",
     "web-dist/index.html",
     ...pluginFiles,
     ...compilerFiles,

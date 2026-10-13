@@ -2,7 +2,8 @@
  * installOnRemote's orchestration, driven against a scripted channel: which dialect it probes
  * in and over what, that the release installer rides the session's stdin pinned to the base,
  * that the hmr store rides the same stdin as a tarball, that a Windows host gets its own
- * connection and a copied script, and each outcome the page renders. The channel is what a
+ * connection and a copied script, that a machine carrying the release with an empty store gets
+ * the store rather than a hand-over, and each outcome the page renders. The channel is what a
  * real MachineConnection speaks (transport/connection.ts); here every verb is recorded and
  * answered as the scenario dictates, so what is exercised is what the install asks of a
  * machine, not the far side.
@@ -29,7 +30,7 @@ interface Call {
 interface Script {
   probe: string;
   /**
-   * What the probe answers ONCE the installer has run. The install path asks twice, and the
+   * What the probe answers ONCE the installer has run, or the store was unpacked. The install path asks twice, and the
    * second answer is the machine reporting what it ended up with — a script that said the
    * same both times could not tell an install that took from one that ran cleanly and
    * changed nothing, which is the case the second ask exists for.
@@ -70,6 +71,10 @@ function scripted(script: Script): MachineChannel & { calls: Call[] } {
         : ok(identity());
     }
     if (command.includes("PROCESSOR_ARCHITECTURE")) return ok(identity());
+    if (command.includes("tar -xzf -")) {
+      ran = true;
+      return ok("");
+    }
     if (command.includes("sh -s") || command.includes("powershell")) {
       ran = true;
       const says = script.installSays ?? ["PenguinHarness 0.2.4 installed"];
@@ -250,7 +255,8 @@ describe("installOnRemote", () => {
     // default and keeps serving, so from here the restart reads as a success. The caller sends
     // this down the machine's own update channel, which answers.
     const channel = scripted({
-      probe: 'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
+      probe:
+        'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n{"platform":{"bundle":"store/platform/0123456789abcdef.mjs"}}\\n',
     });
     const outcome = await installOnRemote({
       target,
@@ -262,6 +268,29 @@ describe("installOnRemote", () => {
     expect(outcome).toMatchObject({ kind: "state-only" });
     // The probe, and nothing else: no installer, and no store either.
     expect(channel.calls).toHaveLength(1);
+  });
+
+  it("a matching base over an EMPTY store gets the store, without the installer", async () => {
+    // A release installed with nothing in its store — what a server that shipped no image of
+    // its own left behind. Every command this side runs there goes through the CLI in that
+    // store, so no server and no update channel can answer: the store crosses as a tarball,
+    // and the machine is asked what it ended up with.
+    const channel = scripted({
+      probe: 'Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n',
+      afterInstall: `Linux x86_64\\n---penguin---\\n{"version":"0.2.4"}\\n---penguin---\\n${HARNESS}`,
+    });
+    const outcome = await installOnRemote({
+      target,
+      plan: plan(),
+      assets,
+      channel,
+      layout: RELEASE,
+    });
+    expect(outcome).toMatchObject({ kind: "installed" });
+    const commands = channel.calls.map((c) => c.command);
+    expect(commands.some((c) => c.includes("sh -s"))).toBe(false);
+    expect(commands.filter((c) => c.includes("tar -xzf -"))).toHaveLength(1);
+    expect(commands.at(-1)).toContain("uname -s -m");
   });
 
   it("does nothing when the remote already matches base AND pushed state", async () => {

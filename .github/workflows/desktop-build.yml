@@ -128,7 +128,10 @@ jobs:
       # otherwise every installer carries the in-repo dev version (v0.2.1 shipped
       # Windows metadata saying 0.2.0 this way). node instead of sed -i: this matrix
       # includes macOS, whose BSD sed spells in-place editing differently. Dry runs
-      # (no tag) keep the dev versions.
+      # (no tag) keep the dev versions. BUILD_COMMIT is stamped as release.yml stamps it
+      # (and tolerated absent, as there): the install image this app packs and the one the
+      # tarballs carry are then compiled from the same source, so a machine installed from
+      # either reads as carrying the other's build.
       - name: Stamp release version
         if: inputs.tag != ''
         shell: bash
@@ -145,6 +148,9 @@ jobs:
             s = s.replace(/export const VERSION = "[^"]*"/, `export const VERSION = "${process.env.V}"`);
             if (!/export const BUILD_DATE: string \| null = /.test(s)) throw new Error("BUILD_DATE const not found");
             s = s.replace(/export const BUILD_DATE: string \| null = [^;]*/, `export const BUILD_DATE: string | null = "${process.env.D}"`);
+            if (/export const BUILD_COMMIT: string \| null = /.test(s) && process.env.GITHUB_SHA) {
+              s = s.replace(/export const BUILD_COMMIT: string \| null = [^;]*/, `export const BUILD_COMMIT: string | null = "${process.env.GITHUB_SHA}"`);
+            }
             fs.writeFileSync(p, s);
           '
           (cd packages/desktop && npm version --no-git-tag-version --allow-same-version "$V")
@@ -287,6 +293,12 @@ jobs:
       # `from:` source in silence, and a tree without the web build is a 404 app.
       - name: Preflight the packed tree's inputs
         run: node packages/desktop/scripts/preflight.mjs
+
+      # The harness the Machines page installs on other machines, in the hot push's format
+      # (dist/install-image.gz, which electron-builder packs with the rest of dist/): every
+      # command the app runs on a machine goes through the CLI it leaves in that machine's store.
+      - name: Pack the install image
+        run: pnpm --dir packages/desktop run image
 
       - name: Build packages
         env:

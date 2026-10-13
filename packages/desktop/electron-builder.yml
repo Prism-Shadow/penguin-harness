@@ -35,6 +35,9 @@ directories:
 # run scripts/preflight.mjs first and verify-packed-cli.mjs checks the packed tree for it —
 # and for the collected plugin packages, whose absence would fail nothing else either.
 files:
+  # dist/ includes install-image.gz, written by the `image` script that every pack runs after
+  # the build: the harness, in the hot push's format, that the Machines page installs on other
+  # machines (packages/server/src/machines/shipped-image.ts).
   - dist/**/*
   - "!dist/**/*.map"
   # The staged node-pty package (scripts/build-assets.mjs, src/pty-payload.ts). electron-builder
