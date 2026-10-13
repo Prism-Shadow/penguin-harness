@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `desktop`
+- **PR:** [#1105](https://github.com/Prism-Shadow/penguin-harness/pull/1105)
 
 [English](2026-10-13-browser-media-playback.md)
 
