@@ -1,5 +1,5 @@
 ---
-title: "PenguinHarness 0.2.14：五种自进化算法、内置 Benchmark，Agent 会浏览网页、展示 UI、随处运行"
+title: "PenguinHarness 0.2.14：最全面的自进化框架、浏览器自动化、A2UI、API 集成和机器管理"
 date: 2026-10-13
 category: news
 excerpt: "五种 RSI 算法以插件形式发布，可在七个内置 Benchmark 上运行。Agent 还有了浏览器、回复中的交互式 UI 和自己的热定制工作台，能运行在其他机器上，并能通过同一套 API 接入任意外部应用。"

@@ -1,5 +1,5 @@
 ---
-title: "PenguinHarness 0.2.14: five self-evolution algorithms, built-in Benchmarks, and agents that browse, show UI and run anywhere"
+title: "PenguinHarness 0.2.14: the most comprehensive self-evolution framework, browser automation, A2UI, API integration and machine management"
 date: 2026-10-13
 category: news
 excerpt: "Five RSI algorithms ship as plugins and run on seven built-in Benchmarks. Agents also get a browser, reply with interactive UI, build a hot-reloaded workbench of their own, run on other machines, and connect to any app through one API."
