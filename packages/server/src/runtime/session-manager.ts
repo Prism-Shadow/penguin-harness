@@ -157,6 +157,25 @@ function compactUnavailable(why: Exclude<CompactAvailability, "ok">): HttpError 
  * that broke — and is rethrown, so it reaches the 500 path and its logging instead of being
  * dressed up as a target problem.
  */
+/**
+ * The next model a rate-limited Session should run on: the first entry of the Project's
+ * fallback chain that is neither the model the Session is already on nor one it has already
+ * been moved onto. Undefined when the chain is unset or exhausted, which is when the turn
+ * ends as it always has rather than cycling.
+ */
+export function nextFailoverTarget(
+  chain: readonly ModelRefDto[],
+  current: { provider: string; modelId: string },
+  tried: ReadonlySet<string>,
+): { provider: string; modelId: string } | undefined {
+  for (const ref of chain) {
+    if (ref.provider === current.provider && ref.modelId === current.modelId) continue;
+    if (tried.has(`${ref.provider}/${ref.modelId}`)) continue;
+    return { provider: ref.provider, modelId: ref.modelId };
+  }
+  return undefined;
+}
+
 function switchRefusal(err: unknown, ref: ModelRefDto): HttpError {
   if (!(err instanceof ModelSwitchRefusedError)) throw err;
   const message =
@@ -476,6 +495,12 @@ export interface SessionManagerDeps {
    * the desk. Optional; unit tests that do not wire it get nothing.
    */
   onHumanInput?: (sessionId: string) => void;
+  /**
+   * The Project's model fallback chain, in priority order: where a rate-limited Session is
+   * moved next (see `RuntimeEntry.pendingFailover`). Absent = no failover, which is what an
+   * assembly that predates it gets.
+   */
+  fallbackChainOf?: (projectId: string) => Promise<ModelRefDto[]>;
 }
 
 /**
@@ -556,6 +581,16 @@ export interface RuntimeEntry {
    * Deliberately NOT discarded on abort: they are future tasks the user explicitly queued.
    */
   followUps: QueuedFollowUp[];
+  /**
+   * The model move this Session owes itself: set when a turn ended rate-limited and the
+   * Project's fallback chain still has somewhere to run it (see queueFailover). The move
+   * happens at a Task boundary, and the resent turn rides the queue behind it.
+   */
+  pendingFailover?: { provider: string; modelId: string };
+  /** Models this Session has already been moved onto for rate limiting, so a chain that 429s everywhere stops. */
+  failoverTried: Set<string>;
+  /** How the last LLM request of the latest run ended, for the failover decision above. */
+  lastRequestEnd?: { rateLimited: boolean };
   /**
    * The running Task's input messages, held from launch until the run ends. The engine
    * writes these exact envelopes to the Trace only after the session bootstrap (MCP
@@ -965,6 +1000,7 @@ export class SessionManager {
       generation: this.generationOf(row.projectId, row.agentId),
       followUps: [],
       pendingInputs: [],
+      failoverTried: new Set(),
       pendingBootstrap: [],
       pendingSteering: [],
       returnedSteering: [],
@@ -1420,7 +1456,70 @@ export class SessionManager {
       .filter(isPlainText("user"))
       .map((m) => m.payload.text)
       .join("\n");
-    entry.running = this.drive(entry, gen, { userExcerpt, echo: input });
+    entry.running = this.drive(entry, gen, { userExcerpt, echo: input }).then(() =>
+      this.afterRun(entry, input),
+    );
+  }
+
+  /**
+   * A run just ended: when the turn came back rate-limited and the Project's fallback chain
+   * still has somewhere to run it, queue the move and the resent turn.
+   *
+   * The move itself happens at the next Task boundary (`startQueuedFollowUp` → `runFailover`):
+   * switching a Session closes its context and opens another, which is not something to do
+   * from inside the run that just ended.
+   */
+  private async afterRun(entry: RuntimeEntry, input: OmniMessage[]): Promise<void> {
+    try {
+      const end = entry.lastRequestEnd;
+      entry.lastRequestEnd = undefined;
+      if (end?.rateLimited !== true || input.length === 0) return;
+      const target = await this.nextFailoverTarget(entry);
+      if (target === undefined) return;
+      entry.pendingFailover = target;
+      entry.failoverTried.add(`${target.provider}/${target.modelId}`);
+      // The resent turn goes AHEAD of whatever the user queued: it is the turn that did not
+      // finish, not a new one.
+      entry.followUps.unshift({ id: randomUUID(), input, recall: recallStoreOf(input) });
+      this.log(
+        `[failover] ${entry.sessionId} moves to ${target.provider}/${target.modelId} after a rate limit`,
+      );
+      // The run's own finally may have found an empty queue; there is one now.
+      if (entry.status === "idle") void this.startQueuedFollowUp(entry.sessionId);
+    } catch (err) {
+      this.log(`[failover] queueing failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Where a rate-limited Session should run next: the Project's fallback chain, minus the
+   * model it is already on and anything this Session has been moved onto before. Undefined
+   * when the chain is unset or exhausted — the turn then ends as it always has.
+   */
+  private async nextFailoverTarget(
+    entry: RuntimeEntry,
+  ): Promise<{ provider: string; modelId: string } | undefined> {
+    if (entry.session.switchModel === undefined) return undefined;
+    const chain = await (this.deps.fallbackChainOf?.(entry.projectId) ?? Promise.resolve([]));
+    return nextFailoverTarget(chain, entry, entry.failoverTried);
+  }
+
+  /**
+   * Carry out the queued move, at a Task boundary and through the same drive the manual switch
+   * uses (`POST /switch-model`), so the switch's events reach the channel and the Trace and its
+   * end starts the resent turn out of the queue.
+   */
+  private async runFailover(entry: RuntimeEntry): Promise<void> {
+    const target = entry.pendingFailover;
+    entry.pendingFailover = undefined;
+    if (target === undefined || entry.session.switchModel === undefined) return;
+    const ac = new AbortController();
+    entry.status = "running";
+    entry.abort = ac;
+    this.publishState(entry, "running");
+    const gen = entry.session.switchModel({ ...target, signal: ac.signal });
+    entry.running = this.drive(entry, gen);
+    await entry.running;
   }
 
   /**
@@ -1439,6 +1538,11 @@ export class SessionManager {
         if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
         const entry = this.entries.get(sessionId);
         if (!entry || entry.status !== "idle" || entry.followUps.length === 0) return;
+        if (entry.pendingFailover !== undefined) {
+          // The move runs first, and the drive behind it starts the queued turn itself.
+          await this.runFailover(entry);
+          return;
+        }
         const next = entry.followUps.shift()!;
         this.launchTask(entry, next.input);
       });
@@ -2175,6 +2279,7 @@ export class SessionManager {
       generation,
       followUps: [],
       pendingInputs: [],
+      failoverTried: new Set(),
       pendingBootstrap: [],
       pendingSteering: [],
       returnedSteering: [],
@@ -2394,6 +2499,16 @@ export class SessionManager {
           const bt = (msg.payload as { type?: string }).type;
           if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
             entry.pendingBootstrap.push(msg);
+          }
+          // The failover decision reads this after the run: a turn that ended rate-limited
+          // is one the Project's fallback chain may be able to finish somewhere else.
+          const endPayload = msg.payload as {
+            type?: string;
+            status?: StopReason;
+            error_code?: string;
+          };
+          if (endPayload.type === "request_end") {
+            entry.lastRequestEnd = { rateLimited: endPayload.error_code === "rate_limited" };
           }
           // First request of the run: the engine writes input → bootstrap records → tool
           // list to the Trace BEFORE issuing the request, so both holds are persisted by
@@ -2936,6 +3051,7 @@ export class SessionsModule {
       onHumanInput: (sessionId) => {
         if (orgCache.ownerOfSession(sessionId) !== null) orgCache.setTriggerHop(sessionId, 0);
       },
+      fallbackChainOf: (projectId) => this.projectConfig.getFallbackChain(projectId),
       now: () => this.clock.now(),
     });
     const sessionService = new SessionService({

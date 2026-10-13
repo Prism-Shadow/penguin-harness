@@ -892,6 +892,55 @@ describe("models preset & catalog enrichment", () => {
     expect(pick(after, "openrouter", "vendor/removed-from-catalog:free").isDefault).toBe(true);
   });
 
+  it("PUT fallbackChain: stored in priority order, read back through GET, an entry whose model is gone drops out, and an empty list clears the key", async () => {
+    const both = [
+      { provider: "custom", modelId: "local-llama", clientType: "openai" },
+      { provider: "custom", modelId: "local-qwen", clientType: "openai" },
+    ];
+    const put = await api.put(url(), {
+      models: both,
+      fallbackChain: [
+        { provider: "custom", modelId: "local-llama" },
+        { provider: "custom", modelId: "local-qwen" },
+      ],
+    });
+    expect(put.status).toBe(200);
+    const stored = ((await put.json()) as ModelsResponse).fallbackChain;
+    // The order IS the priority order: the first entry is tried first.
+    expect(stored).toEqual([
+      { provider: "custom", modelId: "local-llama" },
+      { provider: "custom", modelId: "local-qwen" },
+    ]);
+    expect(((await (await api.get(url())).json()) as ModelsResponse).fallbackChain).toEqual(stored);
+    expect(await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8")).toContain(
+      "model_fallback_chain",
+    );
+
+    // An entry naming a model the same request does not keep drops out rather than dangling.
+    const pruned = await api.put(url(), {
+      models: [{ provider: "custom", modelId: "local-qwen", clientType: "openai" }],
+      fallbackChain: [
+        { provider: "custom", modelId: "local-llama" },
+        { provider: "custom", modelId: "local-qwen" },
+      ],
+    });
+    expect(pruned.status).toBe(200);
+    expect(((await pruned.json()) as ModelsResponse).fallbackChain).toEqual([
+      { provider: "custom", modelId: "local-qwen" },
+    ]);
+
+    // An empty list clears the key instead of storing an empty one.
+    const cleared = await api.put(url(), {
+      models: [{ provider: "custom", modelId: "local-qwen", clientType: "openai" }],
+      fallbackChain: [],
+    });
+    expect(cleared.status).toBe(200);
+    expect(((await cleared.json()) as ModelsResponse).fallbackChain).toEqual([]);
+    expect(
+      await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8"),
+    ).not.toContain("model_fallback_chain");
+  });
+
   it("PUT maxTokens: persisted as max_tokens and read back through GET; omitting it table-wide clears it; 0 / negative / non-numeric 400", async () => {
     const put = await api.put(url(), {
       models: [

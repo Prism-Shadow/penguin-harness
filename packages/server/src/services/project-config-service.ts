@@ -1063,6 +1063,30 @@ export class ProjectConfigService implements ProjectConfigStore {
     return { provider: ref.provider, modelId: ref.modelId };
   }
 
+  /** The Project's ordered fallback chain; empty when the key is absent (see core's ProjectConfig). */
+  async getFallbackChain(projectId: string): Promise<ModelRefDto[]> {
+    const raw = await this.readRaw(projectId);
+    return asArray(raw.model_fallback_chain)
+      .map((v) => optRef(v))
+      .filter((ref): ref is ModelRef => ref !== undefined)
+      .map((ref) => ({ provider: ref.provider, modelId: ref.model_id }));
+  }
+
+  /**
+   * Replaces the fallback chain wholesale (the models page's PUT). An empty list clears the
+   * key rather than storing `[]`: absent and empty mean the same thing — no failover — and
+   * one spelling keeps the file honest.
+   */
+  async setFallbackChain(projectId: string, refs: readonly ModelRefDto[]): Promise<ModelRefDto[]> {
+    const raw = await this.readRaw(projectId);
+    const next = { ...raw };
+    if (refs.length === 0) delete next.model_fallback_chain;
+    else
+      next.model_fallback_chain = refs.map((r) => ({ provider: r.provider, model_id: r.modelId }));
+    await this.writeRaw(projectId, next);
+    return refs.map((r) => ({ provider: r.provider, modelId: r.modelId }));
+  }
+
   /**
    * New-chat defaults (`[default_chat]`): read leniently — same tolerance as core's
    * loadProjectConfig (an invalid value drops that key; a missing/malformed block reads as
@@ -1539,6 +1563,7 @@ export class ProjectConfigService implements ProjectConfigStore {
    */
   async getModels(projectId: string): Promise<ModelsResponse> {
     const raw = await this.readRaw(projectId);
+    const fallbackChain = await this.getFallbackChain(projectId);
     const defaultRef = optRef(raw.default_model);
     const visionRef = optRef(raw.vision_model);
     const providers = providerTableOf(raw);
@@ -1656,6 +1681,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       ...(defaultRef !== undefined ? { defaultModel: toDto(defaultRef) } : {}),
       ...(visionRef !== undefined ? { visionModel: toDto(visionRef) } : {}),
       ...(updatedAt !== undefined ? { updatedAt } : {}),
+      fallbackChain,
       providers: Object.fromEntries(
         Object.entries(providers).map(([id, connection]) => [id, providerDto(connection)]),
       ),
@@ -1996,6 +2022,15 @@ export class ProjectConfigService implements ProjectConfigStore {
       model_id: ref.modelId,
     });
     const next: RawTable = { ...raw, providers: providersTable, models: nextModels };
+    if (req.fallbackChain !== undefined) {
+      // The chain names models, never dangling references: an entry whose model this same
+      // request removed — or one that was never there — drops out rather than being stored.
+      const chain = req.fallbackChain
+        .filter((ref) => nextModels.some((m) => entryMatches(m, ref.provider, ref.modelId)))
+        .map(toRaw);
+      if (chain.length === 0) delete next.model_fallback_chain;
+      else next.model_fallback_chain = chain;
+    }
     if (defaultModel !== undefined) next.default_model = toRaw(defaultModel);
     else delete next.default_model;
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
