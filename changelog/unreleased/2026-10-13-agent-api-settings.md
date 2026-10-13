@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** feature
 - **Scope:** `server`, `web`, `amsp`, `docs`
+- **PR:** [#1111](https://github.com/Prism-Shadow/penguin-harness/pull/1111)
 - **Breaking:** yes — the streaming SDK method is now `stream()`; `run()` returns the completed result
 
 [中文版](2026-10-13-agent-api-settings.zh.md)

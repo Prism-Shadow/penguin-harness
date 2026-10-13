@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** feature
 - **Scope:** `server`, `web`, `amsp`, `docs`
+- **PR:** [#1111](https://github.com/Prism-Shadow/penguin-harness/pull/1111)
 - **Breaking:** yes — SDK 流式方法改为 `stream()`，`run()` 返回完成后的结果
 
 [English](2026-10-13-agent-api-settings.md)
