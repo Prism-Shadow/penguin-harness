@@ -1833,6 +1833,15 @@ export const en: Strings = {
     apiOwnerOnly: "Only the Project owner can change these settings.",
     apiAdminOff:
       "An admin has turned the Agent API off for this server: every API request is refused, and the settings and keys here are kept.",
+    apiRunLimits: "Run limits",
+    apiConcurrency: "Maximum concurrent runs",
+    apiConcurrencyHint:
+      "The maximum number of running sessions for this Agent. New API runs receive HTTP 429 at the limit. Saving applies immediately without interrupting running sessions.",
+    apiConcurrencyInvalid: "Enter a whole number greater than 0.",
+    apiReadDocs: "Read the documentation",
+    apiCopyAgentPrompt: "Copy prompt for Agent",
+    apiAgentPrompt: (docsUrl: string, baseUrl: string, agentRef: string) =>
+      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call this Agent.\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\nUse the @prismshadow/amsp SDK: stream() for streamed events and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
     apiSessionSettings: "New session settings",
     apiSessionSettingsHint:
       "Applies to new API sessions. An unset model follows the Project default; an unset thinking level follows the Agent configuration; an unset workspace creates a temporary workspace.",

@@ -34,6 +34,10 @@ import {
   CodeBlock,
   ConfirmModal,
   CopyButton,
+  CopyCheckGlyph,
+  CopiedStatus,
+  buttonClass,
+  useCopied,
   GlyphIcon,
   ICON_SIZE,
   ICONS,
@@ -54,6 +58,32 @@ import { useProject } from "../../state/project";
 import { APPROVAL_MODES } from "../chat/approval-mode";
 import { ApiSessionSettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
+
+export const AGENT_API_DOCS_URL = "https://penguin.ooo/docs/agent-api";
+
+function ApiUsageActions({ baseUrl, agentRef }: { baseUrl: string; agentRef: string }) {
+  const { copied, flash } = useCopied();
+  return (
+    <div className="mb-3 flex flex-wrap gap-2">
+      <a
+        href={AGENT_API_DOCS_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={buttonClass("secondary", "sm")}
+      >
+        {S.agent.apiReadDocs}
+      </a>
+      <Button
+        size="sm"
+        leading={<CopyCheckGlyph copied={copied} />}
+        onClick={() => flash(S.agent.apiAgentPrompt(AGENT_API_DOCS_URL, baseUrl, agentRef))}
+      >
+        {S.agent.apiCopyAgentPrompt}
+      </Button>
+      <CopiedStatus copied={copied} />
+    </div>
+  );
+}
 
 /** The public API's root on the server this page was served from. */
 export function agentApiBaseUrl(origin: string): string {
@@ -450,6 +480,7 @@ export function ApiTabView(p: ApiTabViewProps) {
           </RuledSection>
 
           <RuledSection title={S.agent.apiExamples}>
+            <ApiUsageActions baseUrl={p.baseUrl} agentRef={p.agentRef} />
             <CodeBlock language="bash" code={examples.curl} />
             <CodeBlock language="typescript" code={examples.sdk} />
           </RuledSection>

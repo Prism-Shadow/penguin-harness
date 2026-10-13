@@ -620,8 +620,9 @@ describe("migration 8 → current: model-promotions", () => {
         "messaging-conversations",
         "sessions-kept-at",
         "agent-api-session-settings",
+        "agent-api-concurrency",
       ]);
-      expect(schemaVersion(db)).toBe(17);
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -647,8 +648,9 @@ describe("migration 8 → current: model-promotions", () => {
         "messaging-conversations",
         "sessions-kept-at",
         "agent-api-session-settings",
+        "agent-api-concurrency",
       ]);
-      expect(schemaVersion(db)).toBe(17);
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
       db.close();
     }
@@ -674,8 +676,9 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         "messaging-conversations",
         "sessions-kept-at",
         "agent-api-session-settings",
+        "agent-api-concurrency",
       ]);
-      expect(schemaVersion(db)).toBe(17);
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -723,8 +726,9 @@ describe("migration 12 → current: browser-extensions", () => {
         "messaging-conversations",
         "sessions-kept-at",
         "agent-api-session-settings",
+        "agent-api-concurrency",
       ]);
-      expect(schemaVersion(db)).toBe(17);
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -785,8 +789,9 @@ describe("migration 13 → current: agent-api", () => {
         "messaging-conversations",
         "sessions-kept-at",
         "agent-api-session-settings",
+        "agent-api-concurrency",
       ]);
-      expect(schemaVersion(db)).toBe(17);
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       const enable = () =>
         db
           .prepare(
@@ -872,8 +877,9 @@ describe("migration 14 → current: messaging-conversations", () => {
         "messaging-conversations",
         "sessions-kept-at",
         "agent-api-session-settings",
+        "agent-api-concurrency",
       ]);
-      expect(schemaVersion(db)).toBe(17);
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       const put = () =>
         db
           .prepare(
@@ -915,8 +921,9 @@ describe("migration 15 → current: sessions-kept-at", () => {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "sessions-kept-at",
         "agent-api-session-settings",
+        "agent-api-concurrency",
       ]);
-      expect(schemaVersion(db)).toBe(17);
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
       ]);
@@ -1165,7 +1172,13 @@ describe("migration 16 → current: Agent API session settings", () => {
     const db = new sqlite.DatabaseSync(":memory:");
     try {
       db.exec(SCHEMA_SQL);
-      for (const column of ["provider", "model_id", "thinking_level", "workspace"]) {
+      for (const column of [
+        "provider",
+        "model_id",
+        "thinking_level",
+        "workspace",
+        "max_concurrent_runs",
+      ]) {
         db.exec(`ALTER TABLE agent_api DROP COLUMN ${column}`);
       }
       db.exec(`PRAGMA user_version = 16;
@@ -1181,6 +1194,7 @@ describe("migration 16 → current: Agent API session settings", () => {
         model_id: null,
         thinking_level: null,
         workspace: null,
+        max_concurrent_runs: 4,
       });
       expect(db.prepare("SELECT token_hash FROM agent_api_keys").get()).toEqual({
         token_hash: "hash",
@@ -1196,6 +1210,44 @@ describe("migration 16 → current: Agent API session settings", () => {
         model_id: "chosen",
         thinking_level: "high",
         workspace: "/work",
+      });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// Given a database that already has session settings, the concurrency upgrade preserves them
+// and its key, starts with the old limit, and retains a changed limit across repeated startup.
+describe("migration 17 → current: API concurrency", () => {
+  it("preserves session settings and keys while adding the concurrency limit", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(SCHEMA_SQL);
+      db.exec(`ALTER TABLE agent_api DROP COLUMN max_concurrent_runs;
+        PRAGMA user_version = 17;
+        INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('owner', 'hash', 0, 'now');
+        INSERT INTO agent_api (project_id, agent_id, enabled, open, approval_mode, provider, model_id, thinking_level, workspace, updated_at)
+          VALUES ('p', 'a', 1, 1, 'read-only', 'custom', 'chosen', 'high', '/work', 'now');
+        INSERT INTO agent_api_keys VALUES ('key', 'p', 'a', 'hash', 'prefix', 'ci', 'owner', 'now', NULL);`);
+      migrate(db, { swapPath: true });
+      expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
+        enabled: 1,
+        open: 1,
+        approval_mode: "read-only",
+        provider: "custom",
+        model_id: "chosen",
+        thinking_level: "high",
+        workspace: "/work",
+        max_concurrent_runs: 4,
+      });
+      expect(db.prepare("SELECT token_hash FROM agent_api_keys").get()).toEqual({
+        token_hash: "hash",
+      });
+      db.exec("UPDATE agent_api SET max_concurrent_runs = 9");
+      migrate(db);
+      expect(db.prepare("SELECT max_concurrent_runs FROM agent_api").get()).toEqual({
+        max_concurrent_runs: 9,
       });
     } finally {
       db.close();

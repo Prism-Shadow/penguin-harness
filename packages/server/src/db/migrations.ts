@@ -664,6 +664,18 @@ export const MIGRATIONS: readonly Migration[] = [
     // Keep the saved defaults on rollback; older builds ignore the additional columns.
     down() {},
   },
+  {
+    version: 18,
+    name: "agent-api-concurrency",
+    // Retain until the minimum supported database version exceeds 17. The maintainer raising
+    // that baseline removes this upgrade once every supported data root has the column.
+    swapSafe: true,
+    up(db) {
+      ensureColumn(db, "agent_api", "max_concurrent_runs", "INTEGER NOT NULL DEFAULT 4");
+    },
+    // Keep the configured limit on rollback; older builds ignore this column.
+    down() {},
+  },
 ];
 
 /** The highest version this build knows how to reach. */

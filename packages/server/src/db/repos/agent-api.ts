@@ -6,6 +6,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ApprovalMode } from "../../api/types.js";
+import { DEFAULT_API_CONCURRENT_RUNS } from "../../mechanisms/agent-api.js";
 import type { Db } from "../../hmr/capabilities.js";
 import type {
   AgentApi,
@@ -29,6 +30,7 @@ function settingsOf(r: Row): AgentApiRow {
         : { provider: r.provider as string, modelId: r.model_id as string },
     thinkingLevel: r.thinking_level as AgentApiRow["thinkingLevel"],
     workspace: r.workspace as string | null,
+    maxConcurrentRuns: Number(r.max_concurrent_runs),
     updatedAt: r.updated_at as string,
   };
 }
@@ -69,17 +71,20 @@ export class AgentApiRepo implements AgentApi {
       thinkingLevel:
         patch.thinkingLevel === undefined ? (current?.thinkingLevel ?? null) : patch.thinkingLevel,
       workspace: patch.workspace === undefined ? (current?.workspace ?? null) : patch.workspace,
+      maxConcurrentRuns:
+        patch.maxConcurrentRuns ?? current?.maxConcurrentRuns ?? DEFAULT_API_CONCURRENT_RUNS,
       updatedAt: at,
     };
     this.db
       .prepare(
-        `INSERT INTO agent_api (project_id, agent_id, enabled, open, approval_mode, provider, model_id, thinking_level, workspace, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO agent_api (project_id, agent_id, enabled, open, approval_mode, provider, model_id, thinking_level, workspace, max_concurrent_runs, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(project_id, agent_id) DO UPDATE SET
            enabled = excluded.enabled, open = excluded.open,
            approval_mode = excluded.approval_mode, provider = excluded.provider,
            model_id = excluded.model_id, thinking_level = excluded.thinking_level,
-           workspace = excluded.workspace, updated_at = excluded.updated_at`,
+           workspace = excluded.workspace, max_concurrent_runs = excluded.max_concurrent_runs,
+           updated_at = excluded.updated_at`,
       )
       .run(
         projectId,
@@ -91,6 +96,7 @@ export class AgentApiRepo implements AgentApi {
         next.model?.modelId ?? null,
         next.thinkingLevel,
         next.workspace,
+        next.maxConcurrentRuns,
         next.updatedAt,
       );
     return next;

@@ -3,17 +3,21 @@
  * - Given an owner's API tab, choosing a model, thinking tier and workspace through the shared
  *   pickers writes only that setting; reopening shows it and resets restore the defaults.
  * - Given a refused choice, the stored value stays selected and an error reaches the screen.
+ * - Given a concurrency edit, no write happens before Save; invalid input blocks Save, Reset
+ *   restores the stored number, refused writes keep the draft, and successful writes persist.
+ * - Given the example actions, documentation opens at the guide and copying gives an Agent the
+ *   current address and id with key handling instructions, never a key.
  * - Given a non-owner, all three pickers are disabled and no settings can be written.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
-import { Toaster, hasUnsaved } from "@prismshadow/penguin-ui";
+import { Toaster, hasUnsaved, ClipboardWriterProvider } from "@prismshadow/penguin-ui";
 import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import { ApiTab } from "../src/features/agents/api-tab";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp } from "./helpers/agent-app";
-import { button, click, run, unmountAll, waitFor } from "./helpers/dom";
+import { button, click, field, type, run, unmountAll, waitFor } from "./helpers/dom";
 
 const model: ModelInfo = {
   provider: "custom",
@@ -29,14 +33,24 @@ async function open(isOwner = true) {
     models: { models: [model], providers: {} },
     directory: { path: "/work", parent: "/", entries: [] },
   });
+  const copied: string[] = [];
   const router = await mountAgentApp(
-    h("div", null, h(ApiTab, { projectId: PROJECT_ID, agentId: AGENT_ID, isOwner }), h(Toaster)),
+    h(
+      ClipboardWriterProvider,
+      {
+        write: async (text: string) => {
+          copied.push(text);
+          return true;
+        },
+      },
+      h("div", null, h(ApiTab, { projectId: PROJECT_ID, agentId: AGENT_ID, isOwner }), h(Toaster)),
+    ),
     { at: `/agents/${AGENT_ID}?tab=api` },
   );
   await waitFor(
     () => document.querySelector('button[aria-label="' + en.chat.chooseModel + '"]') !== null,
   );
-  return { server, router };
+  return { server, router, copied };
 }
 
 const thinking = () =>
@@ -96,11 +110,55 @@ describe("API Session settings", () => {
     expect(hasUnsaved()).toBe(false);
   });
 
+  it("saves concurrency only on Save, rejects invalid input, and retains a failed draft", async () => {
+    const { server } = await open();
+    const limit = field(en.agent.apiConcurrency);
+    await type(limit, "0");
+    expect(button(en.common.save).disabled).toBe(true);
+    expect(document.body.textContent).toContain(en.agent.apiConcurrencyInvalid);
+    await type(limit, "2");
+    expect(server.writes("/api")).toEqual([]);
+    expect(hasUnsaved()).toBe(true);
+    await click(button(en.common.reset));
+    expect(field(en.agent.apiConcurrency).value).toBe("4");
+    expect(hasUnsaved()).toBe(false);
+    await type(limit, "2");
+    server.refuseNext(400, "bad_request", "Cannot save this limit.");
+    await click(button(en.common.save));
+    expect(field(en.agent.apiConcurrency).value).toBe("2");
+    expect(document.body.textContent).toContain("Cannot save this limit.");
+    expect(hasUnsaved()).toBe(true);
+    await click(button(en.common.save));
+    expect(server.writes("/api").at(-1)?.body).toEqual({ maxConcurrentRuns: 2 });
+    expect(hasUnsaved()).toBe(false);
+  });
+
+  it("links to the usage guide and copies a prompt with this Agent's connection details", async () => {
+    const { copied } = await open();
+    const link = [...document.querySelectorAll("a")].find(
+      (el) => el.textContent === en.agent.apiReadDocs,
+    )!;
+    expect(link.href).toBe("https://penguin.ooo/docs/agent-api");
+    expect(link.target).toBe("_blank");
+    const copy = button(en.agent.apiCopyAgentPrompt);
+    expect(link.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    await click(copy);
+    expect(copied).toHaveLength(1);
+    expect(copied[0]).toContain(link.href);
+    expect(copied[0]).toContain(`${window.location.origin}/api/amsp/v1`);
+    expect(copied[0]).toContain(`${PROJECT_ID}/${AGENT_ID}`);
+    expect(copied[0]).toContain("PENGUIN_AGENT_KEY");
+    expect(copied[0]).toContain("stream()");
+    expect(copied[0]).toContain("await run()");
+  });
+
   it("disables every picker for a member who is not the owner", async () => {
     const { server } = await open(false);
     expect(button(en.chat.chooseModel).disabled).toBe(true);
     expect(thinking().disabled).toBe(true);
     expect(button(en.chat.workspace).disabled).toBe(true);
+    expect(field(en.agent.apiConcurrency).disabled).toBe(true);
+    expect(button(en.common.save).disabled).toBe(true);
     expect(server.writes("/api")).toEqual([]);
   });
 });

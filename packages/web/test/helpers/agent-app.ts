@@ -159,6 +159,7 @@ export function agentServer(
     keys: [],
     model: null,
     thinkingLevel: null,
+    maxConcurrentRuns: 4,
     workspace: null,
   };
   let stored = initial;

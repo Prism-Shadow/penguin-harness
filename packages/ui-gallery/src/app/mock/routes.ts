@@ -853,6 +853,7 @@ const apiOf = (ctx: Ctx): AgentApiSettings => {
     approvalMode: "allow-all",
     model: null,
     thinkingLevel: null,
+    maxConcurrentRuns: 4,
     workspace: null,
     keys: [],
   };
@@ -876,6 +877,7 @@ router
     if (patch.model !== undefined) settings.model = patch.model;
     if (patch.thinkingLevel !== undefined) settings.thinkingLevel = patch.thinkingLevel;
     if (patch.workspace !== undefined) settings.workspace = patch.workspace;
+    if (patch.maxConcurrentRuns !== undefined) settings.maxConcurrentRuns = patch.maxConcurrentRuns;
     const mode = API_APPROVAL_MODES.find((m) => m === approvalMode);
     if (mode !== undefined) settings.approvalMode = mode;
     return {

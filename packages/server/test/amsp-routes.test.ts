@@ -22,6 +22,9 @@
  * - Given an unknown path under the prefix, the answer is a JSON 404 — not the SPA, not a 401.
  *
  * Scenarios — runs:
+ * - Given a configured limit, public and Try-it runs share it, concurrent arrivals reserve
+ *   capacity before creation, edits take effect immediately, and failed starts release it.
+ * - Simultaneous requests on one idle Session yield one run and a 409, preserving busy semantics.
  * - Given API model, thinking and workspace defaults, new public and Try-it Sessions use them;
  *   continuing a Session preserves its choices, clearing defaults restores normal creation,
  *   and a removed workspace refuses creation without leaving a Session behind.
@@ -554,14 +557,21 @@ describe("Agent API: runs", () => {
         thinkingLevel: "low",
       });
       expect((await session(tried)).workspace).not.toBe(workspace);
-      await admin.put(tab, { thinkingLevel: null, workspace });
+      await admin.put(tab, { thinkingLevel: null, workspace, maxConcurrentRuns: 1 });
       await fs.rm(workspace, { recursive: true });
       const count = t.deps.sessionsRepo.listByAgent(P, A).length;
       const refused = await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { input: "four" } });
       expect(await errorOf(refused)).toMatchObject({ status: 400, code: "workspace_not_found" });
       expect(t.deps.sessionsRepo.listByAgent(P, A)).toHaveLength(count);
+      await admin.put(tab, { workspace: null });
+      await firstId(await admin.post(`${tab}/try`, { input: "after failed creation" }));
     } finally {
-      await admin.put(tab, { model: null, thinkingLevel: null, workspace: null });
+      await admin.put(tab, {
+        model: null,
+        thinkingLevel: null,
+        workspace: null,
+        maxConcurrentRuns: 4,
+      });
     }
   });
 
@@ -725,6 +735,106 @@ describe("Agent API: runs", () => {
     expect(t.deps.sessionsRepo.listByAgent(P, "busy_agent")).toHaveLength(before);
     for (const r of running) r.release();
     for (const s of streams) await s.rest();
+  });
+
+  it("shares a configured limit across public and Try-it runs and applies edits without stopping active runs", async () => {
+    const agent = "limited_agent";
+    await createAgent(admin, agent);
+    const limitedKey = await expose(admin, agent);
+    const tab = `/api/projects/${P}/agents/${agent}/api`;
+    await admin.put(tab, { maxConcurrentRuns: 2 });
+    const running = Array.from({ length: 3 }, () => blocking(uniqueSessionId()));
+    const streams: ReturnType<typeof stream>[] = [];
+    for (const r of running)
+      adoptSession(t.deps, r.session, { projectId: P, agentId: agent, client: "api" });
+    const publicRun = (i: number) =>
+      amsp(t, `/agents/${P}/${agent}/runs`, {
+        key: limitedKey,
+        body: { session_id: running[i]!.session.sessionId, input: "go" },
+      });
+    try {
+      const responses = await Promise.all([
+        publicRun(0),
+        admin.post(`${tab}/try`, { session_id: running[1]!.session.sessionId, input: "go" }),
+      ]);
+      for (const res of responses) {
+        expect(res.status).toBe(200);
+        const events = stream(res);
+        streams.push(events);
+        await events.until("text.delta");
+      }
+      const refused = await publicRun(2);
+      expect(refused.headers.get("retry-after")).toBe("2");
+      expect(await errorOf(refused)).toMatchObject({ status: 429, code: "too_many_runs" });
+      // Raising admits the next run; lowering never aborts the three already underway.
+      await admin.put(tab, { maxConcurrentRuns: 3 });
+      const admitted = await publicRun(2);
+      expect(admitted.status).toBe(200);
+      const third = stream(admitted);
+      streams.push(third);
+      await third.until("text.delta");
+      await admin.put(tab, { maxConcurrentRuns: 1 });
+      expect(t.deps.manager.activeCountForAgent(P, agent)).toBe(3);
+      const before = t.deps.sessionsRepo.listByAgent(P, agent).length;
+      expect(await errorOf(await admin.post(`${tab}/try`, { input: "over limit" }))).toMatchObject({
+        status: 429,
+        code: "too_many_runs",
+      });
+      expect(t.deps.sessionsRepo.listByAgent(P, agent)).toHaveLength(before);
+    } finally {
+      for (const r of running) r.release();
+      for (const events of streams) await events.rest();
+    }
+    const next = await admin.post(`${tab}/try`, { input: "capacity returned" });
+    expect(next.status).toBe(200);
+    expect((await stream(next).rest()).at(-1)).toBe("[DONE]");
+  });
+
+  it("simultaneous requests on one idle Session keep the 409 busy response", async () => {
+    const agent = "same_session_agent";
+    await createAgent(admin, agent);
+    const sameKey = await expose(admin, agent);
+    const tab = `/api/projects/${P}/agents/${agent}/api`;
+    await admin.put(tab, { maxConcurrentRuns: 1 });
+    const running = blocking(uniqueSessionId());
+    adoptSession(t.deps, running.session, { projectId: P, agentId: agent, client: "api" });
+    const body = { session_id: running.session.sessionId, input: "go" };
+    const responses = await Promise.all([
+      amsp(t, `/agents/${P}/${agent}/runs`, { key: sameKey, body }),
+      admin.post(`${tab}/try`, body),
+    ]);
+    try {
+      expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+      expect(await errorOf(responses.find((r) => r.status === 409)!)).toMatchObject({
+        code: "task_in_progress",
+      });
+    } finally {
+      running.release();
+      for (const res of responses) if (res.status === 200) await stream(res).rest();
+    }
+  });
+
+  it("simultaneous new-session requests cannot both claim the last slot", async () => {
+    const agent = "racing_agent";
+    await createAgent(admin, agent);
+    const racingKey = await expose(admin, agent);
+    const tab = `/api/projects/${P}/agents/${agent}/api`;
+    await admin.put(tab, { maxConcurrentRuns: 1 });
+    const before = t.deps.sessionsRepo.listByAgent(P, agent).length;
+    const responses = await Promise.all([
+      amsp(t, `/agents/${P}/${agent}/runs`, { key: racingKey, body: { input: "public" } }),
+      admin.post(`${tab}/try`, { input: "try" }),
+      amsp(t, `/agents/${P}/${agent}/runs`, { key: racingKey, body: { input: "public again" } }),
+    ]);
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 429, 429]);
+    for (const response of responses) {
+      if (response.status === 200) expect((await stream(response).rest()).at(-1)).toBe("[DONE]");
+      else {
+        expect(response.headers.get("retry-after")).toBe("2");
+        expect(await errorOf(response)).toMatchObject({ code: "too_many_runs" });
+      }
+    }
+    expect(t.deps.sessionsRepo.listByAgent(P, agent)).toHaveLength(before + 1);
   });
 
   it.each(AMSP_STREAM_SCRIPTS.map((s) => [s.name, s] as const))(

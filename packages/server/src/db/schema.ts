@@ -192,6 +192,7 @@ CREATE TABLE IF NOT EXISTS agent_api (          -- per-Agent public API settings
   model_id      TEXT,
   thinking_level TEXT,                        -- NULL follows Agent/Project configuration
   workspace     TEXT,                         -- NULL creates a temporary Workspace
+  max_concurrent_runs INTEGER NOT NULL DEFAULT 4,
   updated_at    TEXT NOT NULL,
   PRIMARY KEY (project_id, agent_id)
 );

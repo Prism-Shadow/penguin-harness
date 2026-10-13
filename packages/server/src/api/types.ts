@@ -1531,6 +1531,8 @@ export interface AgentApiSettings {
   thinkingLevel: ThinkingLevelName | null;
   /** Null creates a temporary Workspace for each new API Session. */
   workspace: string | null;
+  /** Positive integer. Checked for each API run; defaults to four concurrent Agent sessions. */
+  maxConcurrentRuns: number;
   keys: AgentApiKeyInfo[];
 }
 
@@ -1551,6 +1553,7 @@ export interface AgentApiUpdateRequest {
   model?: ModelRefDto | null;
   thinkingLevel?: ThinkingLevelName | null;
   workspace?: string | null;
+  maxConcurrentRuns?: number;
 }
 
 /** POST …/api/keys body (owner only). */

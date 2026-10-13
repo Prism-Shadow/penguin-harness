@@ -9,6 +9,9 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AgentApiSettings, AgentApiUpdateRequest } from "../api/types.js";
 
+/** The default for API admission, preserved for Agents configured before this setting existed. */
+export const DEFAULT_API_CONCURRENT_RUNS = 4;
+
 /** One Agent's API settings row. */
 export interface AgentApiRow extends Omit<AgentApiSettings, "keys"> {
   projectId: string;

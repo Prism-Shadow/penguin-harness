@@ -33,12 +33,14 @@ import {
   badRequest,
   optionalString,
   optionalBoolean,
+  optionalNumber,
   optionalEnum,
   readJson,
   requireString,
   requireValidId,
 } from "../validate.js";
 import { APPROVAL_MODES } from "./sessions.js";
+import { DEFAULT_API_CONCURRENT_RUNS } from "../../mechanisms/agent-api.js";
 import type { AgentApi, AgentApiKeyRow } from "../../mechanisms/agent-api.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { ProjectConfigStore, Access } from "../../mechanisms/projects.js";
@@ -80,6 +82,7 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
         model: row?.model ?? null,
         thinkingLevel: row?.thinkingLevel ?? null,
         workspace: row?.workspace ?? null,
+        maxConcurrentRuns: row?.maxConcurrentRuns ?? DEFAULT_API_CONCURRENT_RUNS,
         keys: deps.agentApi.listKeys(projectId, agentId).map(keyInfo),
       },
       // The tab says when the admin has the whole API off: only an admin can read that setting.
@@ -113,6 +116,13 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
     const enabled = optionalBoolean(body, "enabled");
     const open = optionalBoolean(body, "open");
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
+    const maxConcurrentRuns = optionalNumber(body, "maxConcurrentRuns", { integer: true });
+    if (
+      maxConcurrentRuns !== undefined &&
+      (!Number.isSafeInteger(maxConcurrentRuns) || maxConcurrentRuns < 1)
+    ) {
+      throw badRequest("maxConcurrentRuns must be a positive safe integer.");
+    }
     let model: ModelRefDto | null | undefined;
     if (body.model === null) model = null;
     else if (body.model !== undefined) {
@@ -150,6 +160,7 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
         ...(model !== undefined ? { model } : {}),
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         ...(workspace !== undefined ? { workspace } : {}),
+        ...(maxConcurrentRuns !== undefined ? { maxConcurrentRuns } : {}),
       },
       deps.now().toISOString(),
     );

@@ -10,6 +10,8 @@
 
 Added model, thinking level and workspace choices to the Agent API tab using the existing pickers. Each choice saves immediately and applies to newly created API sessions. Moved the approval explanation into the label's question-mark popover.
 
+Added an owner-configurable concurrency limit (default 4), with HTTP 429 and Retry-After when full. Concurrent starts reserve capacity before creating a session, and rejected or failed starts leave that capacity available. Added documentation and copy-for-Agent prompt buttons above the examples.
+
 ## SDK methods
 
 Renamed the streaming `AgentClient.run()` to `stream()` and the result-returning `ask()` to `run()`. Updated the examples, SDK reference and client tests.

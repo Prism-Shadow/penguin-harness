@@ -1545,6 +1545,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       approvalMode: "allow-all",
       model: null,
       thinkingLevel: null,
+      maxConcurrentRuns: 4,
       workspace: null,
       keys: [
         {

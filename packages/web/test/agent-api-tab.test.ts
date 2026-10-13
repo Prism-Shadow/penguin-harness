@@ -86,6 +86,7 @@ const ON: AgentApiSettings = {
   keys: [USED, FRESH],
   model: null,
   thinkingLevel: null,
+  maxConcurrentRuns: 4,
   workspace: null,
 };
 const BASE = agentApiBaseUrl("http://127.0.0.1:7369");
