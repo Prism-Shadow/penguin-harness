@@ -1,4 +1,4 @@
-PenguinHarness 0.2.14 turns the harness into a framework for agent self-evolution: five RSI algorithms ship as plugins, and every new Project comes with seven Benchmarks to run them on. Agents also gained five capabilities — a browser, replies that carry interactive UI, hot-reloaded pages of their own, other machines to run on, and an HTTP API your programs can call.
+PenguinHarness 0.2.14 turns the harness into a framework for agent self-evolution: five RSI algorithms ship as plugins, and every new Project comes with seven Benchmarks to run them on. Agents also gained five capabilities — a browser, replies that carry interactive UI, a hot-reloaded workbench of their own, other machines to run on, and one unified API that connects them to any external app.
 
 ![The start page: the counts of agents, RSI algorithms and Benchmarks, and the examples](https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-start-page-en.png)
 
@@ -44,7 +44,7 @@ docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyoug
 
 ![GDPevo Train: three agents, each on its own model, climbing across versions](https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-benchmark-detail-en.png)
 
-**Browser automation.** Agents open and work in web pages — in the desktop app's built-in browser, or in your own Chrome through the PenguinHarness Browser extension from the Chrome Web Store, paired under **Settings** › **Browser**. They drive it from the shell with `penguin browser` (`open`, `scan`, `click`, `type`, `exec`), taught by the preinstalled `browser-automation` plugin. You follow their tabs in the **Browser** panel beside the conversation. The built-in browser keeps its own sign-ins and can import cookies and history from Chrome, Edge, Firefox and other browsers. In Chrome, agents only touch the tabs in the Penguin tab group.
+**Browser automation.** Agents open and work in web pages — in the desktop app's built-in browser, or in your own Chrome through the PenguinHarness Browser extension from the Chrome Web Store, paired under **Settings** › **Browser**. They drive it from the shell with `penguin browser` (`open`, `scan`, `click`, `type`, `exec`), taught by the preinstalled `browser-automation` plugin. You follow their tabs in the **Browser** panel beside the conversation. The built-in browser keeps its own sign-ins and can import cookies and history from Chrome, Edge, Firefox and other browsers. In Chrome, agents only touch the tabs in the Penguin tab group. Agents read a page as text with `scan` and act through a short `exec` script, taking a screenshot only when the layout matters, which keeps a step to a few dozen tokens. The design comes from [GenericAgent](https://github.com/lsdefine/genericagent); thanks to its authors.
 
 ![An agent reads the PenguinHarness blog in the Browser panel and lists the newest posts](https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-browser-en.png)
 
@@ -52,7 +52,7 @@ docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyoug
 
 ![A reply with a Mermaid flow, a steps block and a choice](https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-a2ui-blocks-en.png)
 
-**Workflows: an agent's own page, hot-reloaded.** Ask an agent for a page and it writes a workflow — a page with its own server code, shown as a tab beside its chat. The server type-checks each change and reloads the tab in place. An edit that fails to load leaves the previous version running. Up to 20 loaded versions are kept, and **History** › **Restore** brings one back. A page can also fill the whole window, which is what `penguin web --app <project>/<agent>/<workflow>` opens.
+**A hot-reloaded workbench for every agent.** Every agent can have a workbench of its own: ask for one, and the agent writes a workflow, a page with its own server code shown as a tab beside its chat. A legal agent's contract desk and a data agent's dashboard each stay with their own agent, and the rest of the app does not change. The server type-checks each change and reloads the tab in place. An edit that fails to load leaves the previous version running. Up to 20 loaded versions are kept, and **History** › **Restore** brings one back. A page can also fill the whole window, which is what `penguin web --app <project>/<agent>/<workflow>` opens.
 
 ![The legal agent's Contract desk, built from one sentence and changed by asking](https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-workflow-en.png)
 
@@ -60,11 +60,11 @@ docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyoug
 
 ![A conversation running on the machine devbox](https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-machines-en.png)
 
-**Agent API.** Each agent can have an HTTP API: a program sends input and reads the run back as a stream of AMSP events. Turn it on in the agent's **API** tab and create a key with **New key**. **Try it** runs the agent and shows the stream a program would receive. `@prismshadow/amsp` is a dependency-free TypeScript client for Node 24 and browsers. `penguin agent api` manages the same settings from a terminal. An agent has at most four conversations running at once, Web App ones included. Past that, a new run is refused with `429`.
+**Agent API.** One unified API connects any agent to any external app: the app sends input over HTTP and reads the run back as a stream of AMSP events, with the same endpoints and client whichever agent it calls. Turn it on in the agent's **API** tab and create a key with **New key**. **Try it** runs the agent and shows the stream a program would receive. `@prismshadow/amsp` is a dependency-free TypeScript client for Node 24 and browsers. `penguin agent api` manages the same settings from a terminal. An agent has at most four conversations running at once, Web App ones included. Past that, a new run is refused with `429`.
 
 ![Try it after one run: the tool call, the answer and the run totals](https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-agent-api-en.png)
 
-Each of these has a step-by-step tutorial on the blog: [self-evolution](https://penguin.ooo/blog/self-evolve-agents-with-rsi-toolkits), [the browser](https://penguin.ooo/blog/let-agents-use-the-browser), [workflows](https://penguin.ooo/blog/build-agent-apps-with-workflows), [remote machines](https://penguin.ooo/blog/run-agents-on-remote-machines) and [the Agent API](https://penguin.ooo/blog/call-agents-with-the-agent-api).
+Each of these has a step-by-step tutorial on the blog: [self-evolution](https://penguin.ooo/blog/self-evolve-agents-with-rsi-toolkits), [the browser extension](https://penguin.ooo/blog/let-agents-use-the-browser), [workbenches](https://penguin.ooo/blog/build-agent-apps-with-workflows), [remote machines](https://penguin.ooo/blog/run-agents-on-remote-machines) and [the Agent API](https://penguin.ooo/blog/call-agents-with-the-agent-api).
 
 ## Notable in this release
 
