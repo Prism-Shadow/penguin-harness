@@ -12,6 +12,8 @@
  *   refused, the typed source is still there and Esc asks again.
  * - Opening the chat with a typed source moves to the conversation without asking, and leaves
  *   nothing unsaved.
+ * - Choosing a Benchmark example fills the editable source without importing; opening the chat
+ *   carries the edited source and the instructions for copying files.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createElement as h, useState } from "react";
@@ -20,6 +22,8 @@ import type { AgentSummary } from "@prismshadow/penguin-server/api";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
+import { ADMIN_ME } from "./helpers/admin-settings";
 import { SkillsTab } from "../src/features/agents/skills-tab";
 import { HooksTab } from "../src/features/agents/hooks-tab";
 import { ImportBenchmarkModal } from "../src/features/benchmark/benchmark-import-modal";
@@ -175,5 +179,35 @@ describe.each(DIALOGS)("the $name dialog", (dialog) => {
     expect(promptOpen()).toBe(false);
     expect(hasUnsaved()).toBe(false);
     expect(dialogs()).toEqual([]);
+  });
+});
+
+describe("Benchmark import examples", () => {
+  beforeAll(() => setActiveStrings(en));
+  afterAll(() => setActiveStrings(zh));
+  afterEach(unmountAll);
+
+  it("fills the source without importing, and carries an edited source into the chat draft", async () => {
+    const server = agentServer();
+    const router = await mountAgentApp(h(BenchmarkHarness), {
+      route: "/chat/:sessionId",
+      at: "/chat/import",
+    });
+    const example = topDialog().querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!;
+    await click(example);
+    const source = fieldIn(topDialog(), en.benchmark.importSourceLabel);
+    expect(source.value).toMatch(
+      /^https:\/\/github.com\/Prism-Shadow\/penguin-harness-benchmark\/tree\/main\/packages\//,
+    );
+    expect(server.writes(`/api/projects/${PROJECT_ID}/benchmarks/archive`)).toEqual([]);
+    expect(whereIs(router)).toBe("/chat/import");
+    await type(source, SOURCE);
+    expect(example.getAttribute("aria-pressed")).toBe("false");
+    await click(buttonIn(topDialog(), en.benchmark.importOpenChat));
+    await waitFor(() => whereIs(router) === "/chat/new");
+    const text = loadDraft(draftKey(ADMIN_ME.user.userId, PROJECT_ID)).text as string;
+    expect(text).toContain(SOURCE);
+    expect(text).toContain("<app_data_dir>/benchmarks/<id>/");
+    expect(text).not.toContain("penguin benchmark");
   });
 });

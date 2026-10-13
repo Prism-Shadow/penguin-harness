@@ -6,8 +6,8 @@
  *
  * - A folder link in a repository opens a draft, to the Project's default Agent, whose prompt
  *   names the link and asks for the package at a pinned 40-hex commit, imported into this Project
- *   through `penguin benchmark import` with the folder as its git origin — the server writes the
- *   copy and its empty scoreboard — stopping before an overwrite, in either language.
+ *   by copying its manifest and cases to the Project directory, recording the git origin and
+ *   starting an empty scoreboard, in either language.
  * - The draft goes to the first Agent when the Project has no default_agent; with no Agent, or no
  *   source, there is nothing to open.
  * - A local path and a description get leads of their own, and the same tail.
@@ -32,19 +32,15 @@ const AGENTS = [agent("report_writer"), agent("default_agent")];
 /** What the Agent has to be told, whichever language the tail is in. */
 const CONTRACT = [
   "benchmark_config.toml",
-  "YYYY.MM.DD.N",
-  "statement/README.md",
-  "rubric/README.md",
+  "CASE-*/statement/README.md",
+  "CASE-*/rubric/README.md",
   "git ls-remote",
   "40",
-  "`published`",
-  "`penguin benchmark import ",
-  "--project-id proj_1",
-  "--origin-url",
-  "--origin-ref",
-  "--origin-path",
-  "`--overwrite`",
-  "`benchmarks/<id>/`",
+  'status = "published"',
+  "`proj_1`",
+  "`<app_data_dir>/benchmarks/<id>/`",
+  "`[origin]`",
+  "`imported_at`",
   "scoreboard.yaml",
   ".jobs/",
   "evaluations: []",
@@ -67,6 +63,7 @@ describe("importing a Benchmark through an Agent", () => {
         true,
       );
       for (const token of CONTRACT) expect(draft.text, token).toContain(token);
+      expect(draft.text).not.toContain("penguin benchmark");
     }
   });
 

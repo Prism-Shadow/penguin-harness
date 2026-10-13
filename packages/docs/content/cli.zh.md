@@ -403,38 +403,6 @@ penguin schedule update daily-report --period 12h --disable
 penguin schedule rm daily-report
 ```
 
-## penguin benchmark
-
-经服务器把一个 Benchmark 包导入 Project 的评估中心：与**导入评估集**弹窗里的上传 zip 是同一次导入、同一套检查。包里能有什么，见[导入 Benchmark](/evaluation-center#导入-benchmark)。
-
-```bash
-penguin benchmark import <dir-or-zip> [--overwrite]
-  [--origin-url <link> --origin-ref <commit> --origin-path <folder>]
-  [--project-id <id>] [--json] [--server <url>]
-```
-
-参数是一个包文件夹（含 `benchmark_config.toml` 与各个 `CASE-*` 文件夹），或它的 zip。zip 原样发送。文件夹先整个打成 zip，每个条目保持原样：CLI 不略去任何东西，也不跟随链接，所以包里不该有的东西（例如 `scoreboard.yaml`、`.jobs` 文件夹或链接）会由服务器拒收并点名，与上传时一样。Benchmark 由服务器写入；这个命令自己从不往 `benchmarks/` 下写东西。
-
-| 选项 | 说明 | 默认值 |
-| --- | --- | --- |
-| `--overwrite` | 整体替换同 id 的 Benchmark，删除它的评估记录与运行结果。该 Benchmark 的评估还有 trial 在运行时，服务器拒绝覆盖。 | id 已被占用时命令失败 |
-| `--origin-url <link>` / `--origin-ref <commit>` / `--origin-path <folder>` | 包所取自的仓库文件夹：原样的链接、它解析到的 40 位提交号，以及仓库里的文件夹路径。三个要么都给，要么都不给。服务器把它们记为 Benchmark 的来源 `git`，Benchmark 页面会链接这个文件夹。 | 来源为 `zip` |
-| `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。`--json` 打印导入后的 Benchmark。 | — |
-
-- 发送之前，文件夹先按导入的上限检查：1,000 个文件、单个文件 5 MB、合计 20 MB、打包后 14 MB。超出时命令立即失败。
-- id 已被占用时，命令以一行说明失败，并点出是哪个 Benchmark；加 `--overwrite` 再运行一次即可替换它。
-- 这个命令与其他走服务器的命令一样，用本机 API token 认证（见[服务器连接](#服务器连接)）。
-
-```bash
-penguin benchmark import ./report-writing-v1
-penguin benchmark import "$TMP/packages/penguinharness-benchmark-sec-a" \
-  --origin-url https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/penguinharness-benchmark-sec-a \
-  --origin-ref c12d65bc20beb5130ed57b3b7983c62d497b7d2f \
-  --origin-path packages/penguinharness-benchmark-sec-a
-```
-
-Agent 正是这样从仓库文件夹导入包的，做法见 `benchmark-design` Skill 的 `reference/package.md`。
-
 ## penguin org
 
 公司模式的命令族，是组织 API 之上的瘦客户端。组织在 Project 目录下的文件（员工树、工位台账、日历、工单和频道）始终是唯一事实来源。每个子命令要么读取这些文件的投影，要么通过编辑这些文件的路由写入；契约与 `schedule` 一致——CLI 是经过校验的写入方，API 错误原样打印，Agent 立即得到校验结果，不必像手工编辑那样等下一轮对账。按约定，生成的 id 带前缀：组织用 `co_`，频道用 `ch_`。服务器建议这些前缀但从不强制，这里传入的 id 会严格按输入原样创建。

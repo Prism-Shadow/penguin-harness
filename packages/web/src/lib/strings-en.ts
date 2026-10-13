@@ -2766,43 +2766,40 @@ export const en: Strings = {
       `${name} leaves the server and the plugin library; the copies of its skills and hooks installed on agents stay.`,
     deletedToast: (name: string) => `Deleted ${name} from the server`,
     /** The import dialog (admin): a tab for each way in — npm, a link, a zip, or an Agent in a chat. */
+    importDestination: "Server plugin library",
     importPlugin: "Import plugin",
     importServerWide: "A plugin is installed on the whole server and shared by every Project.",
     importTabs: {
-      npm: "From npm",
-      link: "From a link",
-      zip: "Upload a zip",
-      agent: "Ask an agent",
+      npm: "npm",
+      link: "Link",
+      zip: "Zip",
+      agent: "Agent",
     },
     /** The npm tab: a package name, which the server installs from the registry itself. */
     importNpmWhy:
       "An npm package name, which may carry a version, range or tag; the server installs it from the npm registry.",
     importNpmLabel: "npm package name",
     importNpmPlaceholder: "@scope/name or name@1.2.0",
-    importNpmInvalid:
-      "Not an npm package name; give a link under From a link, and let an agent install anything else.",
+    importNpmInvalid: "Enter an npm package name. Use Link for URLs or Agent for other sources.",
     /** The link tab: an https link npm fetches, from wherever the server's network reaches. */
     importLinkWhy:
       "An https link to a git repository or a tarball; the server fetches and installs it — from any https address you give, internal ones included.",
     importLinkLabel: "Link",
     importLinkPlaceholder: "https://github.com/… or github:owner/repo",
     importLinkInvalid:
-      "Not an https link; give a package name under From npm, and let an agent install anything else.",
+      "Enter a repository or tarball link. Use npm for package names or Agent for other sources.",
     /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
-    importLinkSubpath:
-      "A folder or a file inside a repository, which npm cannot install: let an agent port it.",
+    importLinkSubpath: "Use Agent for a folder or file inside a repository.",
     importLinkAskAgent: "Ask an agent",
     importCost:
-      "When the plugin carries server modules, installing reloads the server's plugins, which stops the agent runs in progress in every Project.",
+      "Plugins with server modules reload server plugins, stopping active agent runs in all Projects.",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
-    importScriptsRun: "The package's install scripts run on the server as the server's user.",
+    importScriptsRun: "Install scripts run on the server. Use a trusted source.",
     importAgentWhy:
-      "For a page, a repository, a folder in a repository, or a Codex or Claude Code plugin with its skills and MCP servers: the agent reviews it — porting it into a PenguinHarness package first when it is not one — then installs it with penguin plugin install.",
+      "The agent reviews the source, converts it if needed, and installs it with penguin plugin install. Codex and Claude Code plugins are supported.",
     importSourceLabel: "Plugin source",
-    importSourcePlaceholder:
-      "A link such as https://github.com/owner/repo/tree/main/plugins/name, a local path or a description",
+    importSourcePlaceholder: "Link, local path, or description",
     importSourceToken: "<plugin source>",
-    importPromptLabel: "Prompt for the agent",
     /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
     importPromptLead: {
       link: (source: string) => `Install the PenguinHarness plugin at ${source} on this server.`,
@@ -2814,8 +2811,30 @@ export const en: Strings = {
     importPromptTail: (projectId: string) =>
       `A PenguinHarness plugin is an npm package: its package.json (name, version, description, and a \`penguin\` block the plugin card reads, where \`penguin.mcp_servers\` declares its MCP servers) beside \`skills/<name>/SKILL.md\` and/or \`hooks/\`. Whatever the source, before installing anything, read its package.json and every script it ships, and say what it does and what it would run; if anything looks unsafe, stop and tell me. If the source already is such a package — on npm, at an https link to a git repository or a tarball, or in a local folder — install it with \`penguin plugin install <npm name, https link or folder> --project-id ${projectId}\`. If it is anything else — a folder or a file inside a GitHub repository, a Codex (\`.codex-plugin\`) or Claude Code (\`.claude-plugin\`) plugin, a skills repository — read the \`plugin-porting\` skill and follow it: fetch the source at a pinned commit, build the package in a scratch folder, review it, then install that folder the same way. The plugin's MCP servers (a \`.mcp.json\` or an \`mcpServers\` map) are part of it: carry them as \`penguin.mcp_servers\`, never with a secret value in the package. Report the installed name and version, the skills and MCP servers it carries, the vault keys I must set for those servers, and what you left out.`,
     importUploadDesc:
-      "A zip of the plugin's package directory: package.json at its root or in its one top-level directory, no node_modules — such as another server's Export. Upload only what you trust.",
+      "package.json at the zip root or in one top-level folder; exclude node_modules.",
     importUploadAction: "Choose a zip file",
+    importExamples: [
+      {
+        key: "browser-automation",
+        label: "Browser automation",
+        description: "Browse pages and fill forms",
+      },
+      {
+        key: "data-analysis",
+        label: "Data analysis",
+        description: "Analyze data and create charts",
+      },
+      {
+        key: "humanizer",
+        label: "Humanizer",
+        description: "Remove AI writing patterns",
+      },
+      {
+        key: "use-bento-slides",
+        label: "Bento Slides",
+        description: "Create presentations",
+      },
+    ],
     importedToast: (name: string, version: string | null) =>
       version === null ? `Installed ${name}` : `Installed ${name} ${version}`,
     importUnchangedToast: (name: string, version: string | null) =>
@@ -5009,16 +5028,35 @@ Scenarios:
     },
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     importBenchmark: "Import benchmark",
-    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatTitle: "Import with an agent",
     importChatWhy:
-      "The agent follows the benchmark-design Skill's import procedure: it pins the link to a commit, fetches only that folder and reads every file before anything is written — more dependable than a raw upload.",
+      "The agent reads the source and copies its files into this Project. Send the draft in the new chat to start.",
     importSourceLabel: "Benchmark source",
-    importSourceHint:
-      "A folder link in a GitHub repository (such as …/tree/<commit>/packages/<id>), a local path, or a description",
-    importSourcePlaceholder:
-      "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/…",
+    importSourceHint: "Repository folder link, local path, or description",
+    importSourcePlaceholder: "Paste a source or choose an example below",
+    importExamples: [
+      {
+        key: "penguinharness-benchmark-sec-a",
+        label: "Sec A · Data analysis",
+        description: "Data Analysis Bench subset",
+      },
+      {
+        key: "penguinharness-benchmark-sec-b",
+        label: "Sec B · Software engineering",
+        description: "DeepSWE v1.1 subset",
+      },
+      {
+        key: "penguinharness-benchmark-sec-c",
+        label: "Sec C · Automation",
+        description: "AutomationBench subset",
+      },
+      {
+        key: "penguinharness-benchmark-sec-e",
+        label: "Sec E · Terminal tasks",
+        description: "Terminal-Bench 4.0 CPU subset",
+      },
+    ],
     importSourceToken: "<source>",
-    importPromptLabel: "Prompt to send to the agent (preview)",
     importPromptLead: {
       repoFolderUrl: (s: string): string =>
         `Import the Benchmark package at this repository folder into this Project's Evaluation Center: ${s}.`,
@@ -5027,17 +5065,18 @@ Scenarios:
     },
     importPromptTail: (projectId: string): string =>
       [
-        'If the `benchmark-design` Skill is installed, follow its `reference/package.md`, section "Importing a package" — source resolution, the pinned commit, companion train/test packages, the post-import check and the optional smoke probe are all there; without that Skill, the rules below are enough:',
-        "The package is a folder with `benchmark_config.toml` (keys: id, title, description, version `YYYY.MM.DD.N`, status, runs, and an `[origin]` table) and one `CASE-*/` per case, holding `statement/README.md` and `rubric/README.md`.",
-        "Fetch only that folder, at a commit, into a temporary directory: resolve the link's branch or tag to its 40-hex commit (`git ls-remote`), download it (a codeload tarball or a sparse checkout), and read every file before importing anything — refuse if it is not a Benchmark package, if its `status` is not `published`, or if it holds anything but text materials. Do not copy large upstream materials; the statements link them.",
-        `Import it with \`penguin benchmark import <the folder> --project-id ${projectId} --origin-url <the link as given> --origin-ref <the 40-hex commit> --origin-path <the folder inside the repository>\` (without the \`--origin-*\` options for a source that is not a repository folder). The server checks it as it checks an uploaded zip and writes \`benchmarks/<id>/\` itself, with the git origin, the package's \`version\` and a \`scoreboard.yaml\` holding \`evaluations: []\`; never write under \`benchmarks/\` yourself.`,
-        "If the command says the Benchmark already exists, stop and ask me before overwriting — an overwrite (`--overwrite`) replaces the whole directory, its `scoreboard.yaml` and `.jobs/` included, and the server refuses it while an evaluation of that Benchmark is still running. Then report the id, title, version and case count the command printed; the Evaluation Center lists it from then on.",
+        "If the `benchmark-design` Skill is available, read the import instructions in `reference/package.md`. For a repository, use `git ls-remote` to pin the branch or tag to a 40-character commit and fetch the selected package. Extract a local zip into a temporary directory first.",
+        'Check `benchmark_config.toml` (`status = "published"`) and every `CASE-*/statement/README.md` and `CASE-*/rubric/README.md`. Read all files; refuse symlinks, executables and unrelated content.',
+        `Copy the manifest and \`CASE-*/\` folders directly into Project \`${projectId}\`'s \`<app_data_dir>/benchmarks/<id>/\`, preserving the package's id, version and cases. Do not copy its \`scoreboard.yaml\` or \`.jobs/\`. Create \`scoreboard.yaml\` containing \`evaluations: []\`.`,
+        'Update `[origin]`: for a repository, set `kind = "git"` and record `url`, `ref` (the commit), `path` and `imported_at`; for a local source, set `kind = "zip"` and the import time. Ask me before overwriting an existing directory. Never replace a Benchmark while it is being evaluated.',
+        "Verify the copied manifest and case count, then report the id, title, version, case count and path. Importing does not run an evaluation.",
       ].join("\n"),
-    importCopyPrompt: "Copy prompt",
     importOpenChat: "Open a new chat",
-    importUploadTitle: "Upload a Benchmark zip",
+    importUploadTitle: "Upload zip",
     importUploadDesc:
-      "A zip exported from the Evaluation Center, or one with benchmark_config.toml and the CASE-*/ folders at its root or in its only top-level folder. The cases come in, the evaluation records do not: they start empty. Import only sources you trust.",
+      "Include benchmark_config.toml and CASE-*/ at the root or in one top-level folder.",
+    importUploadInfo:
+      "Accepts zips exported from the Evaluation Center. Imports cases with an empty evaluation history.",
     importUploadAction: "Choose zip file",
     importUploading: "Uploading…",
     importDoneToast: "Benchmark imported",

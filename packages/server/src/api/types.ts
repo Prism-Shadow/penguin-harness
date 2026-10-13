@@ -4412,10 +4412,8 @@ export interface BenchmarkArchiveImportRequest {
    */
   overwrite?: boolean;
   /**
-   * The repository folder the package was fetched from, at one commit: what
-   * `penguin benchmark import --origin-url … --origin-ref … --origin-path …` sends for an Agent's
-   * import of a folder link. The copy's origin is then `git` with these fields and the time of the
-   * import, instead of `zip`.
+   * The repository folder the package was fetched from, pinned to one commit. The copy's origin
+   * is then `git` with these fields and the import time, instead of `zip`.
    */
   origin?: BenchmarkArchiveGitOrigin;
 }

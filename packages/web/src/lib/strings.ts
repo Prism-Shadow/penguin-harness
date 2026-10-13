@@ -2910,39 +2910,37 @@ export const zh = {
       `将从服务端删除 ${name}，插件库不再列出它；各 Agent 已安装的技能与钩子副本不受影响。`,
     deletedToast: (name: string) => `已从服务端删除 ${name}`,
     /** The import dialog (admin): a tab for each way in — npm, a link, a zip, or an Agent in a chat. */
+    importDestination: "服务端插件库",
     importPlugin: "导入插件",
     importServerWide: "插件安装到整个服务端，所有 Project 共用。",
     importTabs: {
-      npm: "从 npm 安装",
-      link: "从链接安装",
-      zip: "上传 zip 包",
-      agent: "让 Agent 安装",
+      npm: "npm",
+      link: "链接",
+      zip: "zip",
+      agent: "Agent 安装",
     },
     /** The npm tab: a package name, which the server installs from the registry itself. */
     importNpmWhy: "npm 包名，可带版本、范围或标签，由服务端直接从 npm 仓库安装。",
     importNpmLabel: "npm 包名",
     importNpmPlaceholder: "@scope/name 或 name@1.2.0",
-    importNpmInvalid: "不是 npm 包名；链接请在「从链接安装」中填写，其他来源请让 Agent 安装。",
+    importNpmInvalid: "请输入 npm 包名；链接请用「链接」，其他来源请用「Agent 安装」。",
     /** The link tab: an https link npm fetches, from wherever the server's network reaches. */
     importLinkWhy:
       "指向 git 仓库或 tarball 的 https 链接，由服务端直接获取并安装；服务端会访问你给出的任意 https 地址，包括内网地址。",
     importLinkLabel: "链接",
     importLinkPlaceholder: "https://github.com/… 或 github:owner/repo",
-    importLinkInvalid: "不是 https 链接；包名请在「从 npm 安装」中填写，其他来源请让 Agent 安装。",
+    importLinkInvalid: "请输入仓库或 tarball 链接；包名请用「npm」，其他来源请用「Agent 安装」。",
     /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
-    importLinkSubpath: "这是仓库中的文件夹或文件，npm 无法直接安装：请让 Agent 把它转成插件包。",
+    importLinkSubpath: "仓库内的文件夹或文件请用「Agent 安装」。",
     importLinkAskAgent: "改为让 Agent 安装",
-    importCost:
-      "插件带有服务端模块时，安装会重新装载服务器插件，所有 Project 中正在进行的 Agent 运行都会被中止。",
+    importCost: "含服务端模块的插件会重新装载服务器插件，中止所有 Project 中正在运行的 Agent。",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
-    importScriptsRun: "这个包的安装脚本会以服务端用户的身份在服务器上运行。",
+    importScriptsRun: "安装脚本将在服务器上运行，请确认来源可信。",
     importAgentWhy:
-      "适合网页、仓库、仓库中的文件夹，或 Codex / Claude Code 插件（连同其 Skill 与 MCP 服务器）：Agent 先审阅它——不是 PenguinHarness 插件包时先转成插件包——再用 penguin plugin install 安装。",
+      "Agent 审阅来源，必要时转换格式，再用 penguin plugin install 安装。支持 Codex 和 Claude Code 插件。",
     importSourceLabel: "插件来源",
-    importSourcePlaceholder:
-      "链接（如 https://github.com/owner/repo/tree/main/plugins/name）、本地路径或一段描述",
+    importSourcePlaceholder: "链接、本地路径或描述",
     importSourceToken: "<插件来源>",
-    importPromptLabel: "发送给 Agent 的 Prompt",
     /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
     importPromptLead: {
       link: (source: string) => `把 ${source} 处的 PenguinHarness 插件安装到本服务端。`,
@@ -2953,9 +2951,30 @@ export const zh = {
     },
     importPromptTail: (projectId: string) =>
       `PenguinHarness 插件是一个 npm 包：package.json（name、version、description，以及插件卡片读取的 \`penguin\` 块，其中 \`penguin.mcp_servers\` 声明插件的 MCP 服务器）旁边是 \`skills/<name>/SKILL.md\` 和／或 \`hooks/\`。无论来源是什么，安装前先读完它的 package.json 和随附的全部脚本，说明它做什么、会运行什么；有任何可疑之处就停下来告诉我。来源本身已是这样的包时——在 npm 上、在指向 git 仓库或 tarball 的 https 链接处，或在本地文件夹中——用 \`penguin plugin install <npm 包名、https 链接或文件夹> --project-id ${projectId}\` 安装。来源是其他形态时——GitHub 仓库中的文件夹或文件、Codex（\`.codex-plugin\`）或 Claude Code（\`.claude-plugin\`）插件、Skill 仓库——先读 \`plugin-porting\` Skill 并照做：在固定的 commit 上获取来源，在临时文件夹中构建插件包并审阅，再以同样的方式安装该文件夹。插件的 MCP 服务器（\`.mcp.json\` 或 \`mcpServers\` 映射）是插件的一部分：把它们转成 \`penguin.mcp_servers\` 带入，包内绝不写入任何密钥值。最后报告装上的包名和版本、包含的 Skill 与 MCP 服务器、我需要为这些服务器在密钥保险柜中设置的键，以及你舍弃了哪些内容。`,
-    importUploadDesc:
-      "插件包目录的 zip：package.json 在根目录或唯一的顶层目录内，不含 node_modules，例如另一台服务端「导出」的文件。只上传你信任的来源。",
+    importUploadDesc: "package.json 位于 zip 根目录或唯一顶层目录，不含 node_modules。",
     importUploadAction: "选择 zip 文件",
+    importExamples: [
+      {
+        key: "browser-automation",
+        label: "浏览器自动化",
+        description: "浏览网页、填写表单",
+      },
+      {
+        key: "data-analysis",
+        label: "数据分析",
+        description: "分析数据、制作图表",
+      },
+      {
+        key: "humanizer",
+        label: "Humanizer",
+        description: "去除文字中的 AI 腔",
+      },
+      {
+        key: "use-bento-slides",
+        label: "Bento Slides",
+        description: "制作演示文稿",
+      },
+    ],
     importedToast: (name: string, version: string | null) =>
       version === null ? `已安装 ${name}` : `已安装 ${name} ${version}`,
     importUnchangedToast: (name: string, version: string | null) =>
@@ -5192,17 +5211,35 @@ Benchmark：
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     /** The header button and the dialog's title: the one place the page uses the user's own word for a Benchmark. */
     importBenchmark: "导入评估集",
-    importChatTitle: "推荐：让 Agent 在对话中导入",
-    importChatWhy:
-      "Agent 会按 benchmark-design 技能的导入流程把链接固定到一个提交、只取这一个文件夹，读过每个文件再写入评估中心，比直接上传更可靠。",
-    importSourceLabel: "Benchmark 来源",
-    importSourceHint:
-      "GitHub 仓库里的文件夹链接（如 …/tree/<commit>/packages/<id>）/ 本地路径 / 一段描述",
-    importSourcePlaceholder:
-      "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/…",
+    importChatTitle: "让 Agent 导入",
+    importChatWhy: "Agent 读取来源后，将评估集文件复制到本 Project；打开对话后发送即可开始。",
+    importSourceLabel: "评估集来源",
+    importSourceHint: "仓库文件夹链接、本地路径或描述",
+    importSourcePlaceholder: "粘贴来源，或选择下方示例",
+    importExamples: [
+      {
+        key: "penguinharness-benchmark-sec-a",
+        label: "Sec A · 数据分析",
+        description: "Data Analysis Bench 子集",
+      },
+      {
+        key: "penguinharness-benchmark-sec-b",
+        label: "Sec B · 软件工程",
+        description: "DeepSWE v1.1 子集",
+      },
+      {
+        key: "penguinharness-benchmark-sec-c",
+        label: "Sec C · 自动化",
+        description: "AutomationBench 子集",
+      },
+      {
+        key: "penguinharness-benchmark-sec-e",
+        label: "Sec E · 终端任务",
+        description: "Terminal-Bench 4.0 CPU 子集",
+      },
+    ],
     /** Preview placeholder shown in the generated prompt before a source is entered. */
     importSourceToken: "<来源>",
-    importPromptLabel: "发送给 Agent 的 Prompt（预览）",
     /** The prompt's lead sentence per kind of source (features/benchmark/benchmark-import-prompt.ts), joined to importPromptTail. */
     importPromptLead: {
       repoFolderUrl: (s: string): string =>
@@ -5213,17 +5250,16 @@ Benchmark：
     /** The fixed tail: the benchmark-design Skill's import procedure when the Agent has it, then the rules for one that does not — the package format, the fetch pinned to a commit, where the copy goes and what it is written with. */
     importPromptTail: (projectId: string): string =>
       [
-        "如果装有 `benchmark-design` 技能，按它的 `reference/package.md`「Importing a package」一节操作——来源解析、固定提交、配对的 train / test 包、导入后核对与可选的冒烟探测都写在那里；没有这个技能时，按下面的规则做：",
-        "包是一个文件夹：根下有 `benchmark_config.toml`（键：id、title、description、version（`YYYY.MM.DD.N`）、status、runs 与 `[origin]` 表），每题一个 `CASE-*/`，内含 `statement/README.md` 与 `rubric/README.md`。",
-        "只取这一个文件夹，固定在一个提交上，放进临时目录：先把链接里的分支或标签解析成 40 位提交号（`git ls-remote`），再下载它（codeload 的 tarball 或 sparse checkout）；导入之前读完每个文件——不是 Benchmark 包、`status` 不是 `published`、或含有文本材料以外的东西，就拒绝导入。不要拷贝上游的大文件，题干里有它们的链接。",
-        `用 \`penguin benchmark import <那个文件夹> --project-id ${projectId} --origin-url <原样的链接> --origin-ref <40 位提交号> --origin-path <仓库里的文件夹路径>\` 导入（来源不是仓库文件夹时不带 \`--origin-*\` 选项）。服务端按检查上传 zip 的规则检查它，并自己写入 \`benchmarks/<id>/\`：来源记为 git，版本保持包里的值，\`scoreboard.yaml\` 只含 \`evaluations: []\`；你自己不要往 \`benchmarks/\` 下写任何东西。`,
-        "命令提示该 Benchmark 已存在时，先停下问我再覆盖——覆盖（`--overwrite`）会替换整个目录，连同 `scoreboard.yaml` 与 `.jobs/`；该 Benchmark 还有评估在运行时，服务端也会拒绝覆盖。最后报告命令输出的 id、标题、版本与题数；评估中心随即列出它。",
+        "若有 `benchmark-design` 技能，先读 `reference/package.md` 的导入说明。仓库来源先用 `git ls-remote` 将分支或标签固定到 40 位提交号，只获取所选包；本地 zip 先解压到临时目录。",
+        '检查包内的 `benchmark_config.toml`（`status = "published"`）及各个 `CASE-*/statement/README.md`、`CASE-*/rubric/README.md`。读完所有文件，拒绝符号链接、可执行文件及无关内容。',
+        `在 Project \`${projectId}\` 的 \`<app_data_dir>/benchmarks/<id>/\` 中直接复制清单和各个 \`CASE-*/\`，保留包的 id、版本与题目；不要复制上游的 \`scoreboard.yaml\` 或 \`.jobs/\`。新建 \`scoreboard.yaml\`，内容为 \`evaluations: []\`。`,
+        '更新清单的 `[origin]`：仓库来源用 `kind = "git"`，记录 `url`、`ref`（提交号）、`path` 和 `imported_at`；本地来源用 `kind = "zip"` 与导入时间。目标目录已存在时先问我，未经同意不得覆盖；仍在评估的目录不得替换。',
+        "核对复制后的清单和题数，报告 id、标题、版本、题数与路径。导入不运行评估。",
       ].join("\n"),
-    importCopyPrompt: "复制 Prompt",
     importOpenChat: "打开新对话",
-    importUploadTitle: "上传 Benchmark zip 包",
-    importUploadDesc:
-      "从评估中心导出的 zip，或根目录（或唯一的顶层目录）里有 benchmark_config.toml 与各题 CASE-*/ 的 zip。导入的是题目，不带评估记录：记录从空开始。只导入你信任的来源。",
+    importUploadTitle: "上传 zip",
+    importUploadDesc: "包含 benchmark_config.toml 和 CASE-*/，可置于同一个顶层目录内。",
+    importUploadInfo: "可直接上传评估中心导出的 zip。只导入题目，评估记录从空开始。",
     importUploadAction: "选择 zip 文件",
     importUploading: "上传中…",
     importDoneToast: "Benchmark 已导入",
