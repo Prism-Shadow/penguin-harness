@@ -89,12 +89,12 @@ https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
   <tr>
     <td width="50%" valign="top">
       <b>Browser automation</b><br />
-      Agents open and work in web pages — in the desktop app's built-in browser or in your own Chrome — while you watch in the Browser panel. <a href="https://penguin.ooo/blog/let-agents-use-the-browser">Tutorial</a><br /><br />
+      Agents drive your own Chrome through the PenguinHarness Browser extension, or the desktop app's built-in browser. They read pages as text and act through short scripts, so a step costs few tokens. <a href="https://penguin.ooo/blog/let-agents-use-the-browser">Tutorial</a><br /><br />
       <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-browser-en.png" alt="An agent reads the PenguinHarness blog in the Browser panel" />
     </td>
     <td width="50%" valign="top">
-      <b>Workflows</b><br />
-      Ask an agent for a page and it writes one, with its own server code. The page shows as a tab beside its chat and reloads on every change. <a href="https://penguin.ooo/blog/build-agent-apps-with-workflows">Tutorial</a><br /><br />
+      <b>Workbenches</b><br />
+      Every agent can have its own hot-reloaded workbench: ask for one and the agent writes the page and its server code. The workbench appears as a tab beside the agent's chat. <a href="https://penguin.ooo/blog/build-agent-apps-with-workflows">Tutorial</a><br /><br />
       <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-workflow-en.png" alt="A legal agent's Contract desk page" />
     </td>
   </tr>
@@ -106,7 +106,7 @@ https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
     </td>
     <td width="50%" valign="top">
       <b>Agent API</b><br />
-      Call an agent from your own program over HTTP and read the run back as a stream of AMSP events. <a href="https://penguin.ooo/blog/call-agents-with-the-agent-api">Tutorial</a><br /><br />
+      One unified API connects any agent to any external app: send input over HTTP and read the run back as a stream of AMSP events. <a href="https://penguin.ooo/blog/call-agents-with-the-agent-api">Tutorial</a><br /><br />
       <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-agent-api-en.png" alt="An agent's Try it panel after one run" />
     </td>
   </tr>

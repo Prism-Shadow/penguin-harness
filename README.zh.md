@@ -89,12 +89,12 @@ https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
   <tr>
     <td width="50%" valign="top">
       <b>浏览器自动化</b><br />
-      Agent 可以打开网页并在里面操作，用桌面端的内置浏览器或你自己的 Chrome 都行，整个过程都能在浏览器面板里看到。<a href="https://penguin.ooo/blog/let-agents-use-the-browser">教程</a><br /><br />
+      Agent 通过 PenguinHarness Browser 扩展操作你自己的 Chrome，也可以用桌面端的内置浏览器。读页面用文本、操作用短脚本，每一步只花很少的 Token。<a href="https://penguin.ooo/blog/let-agents-use-the-browser">教程</a><br /><br />
       <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-browser-zh.png" alt="Agent 在浏览器面板里阅读 PenguinHarness 博客" />
     </td>
     <td width="50%" valign="top">
-      <b>工作流</b><br />
-      跟 Agent 要一个页面，它就会写出来，服务端代码也一并写好。页面作为标签显示在会话旁边，每次改动都会重新加载。<a href="https://penguin.ooo/blog/build-agent-apps-with-workflows">教程</a><br /><br />
+      <b>工作台</b><br />
+      每个 Agent 都能有自己的热定制工作台：开口要一个，Agent 就把页面和服务端代码一起写好，作为标签页显示在对话旁边。<a href="https://penguin.ooo/blog/build-agent-apps-with-workflows">教程</a><br /><br />
       <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-workflow-zh.png" alt="法务 Agent 的合同工作台页面" />
     </td>
   </tr>
@@ -106,7 +106,7 @@ https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
     </td>
     <td width="50%" valign="top">
       <b>Agent API</b><br />
-      在自己的程序里通过 HTTP 调用 Agent，再把这次运行以 AMSP 事件流的形式读回来。<a href="https://penguin.ooo/blog/call-agents-with-the-agent-api">教程</a><br /><br />
+      通过统一 API 把任意 Agent 接入外部应用：经 HTTP 发送输入，再以 AMSP 事件流读回运行过程。<a href="https://penguin.ooo/blog/call-agents-with-the-agent-api">教程</a><br /><br />
       <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-agent-api-zh.png" alt="运行一次后的「试一试」面板" />
     </td>
   </tr>
