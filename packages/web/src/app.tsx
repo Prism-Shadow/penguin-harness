@@ -1,6 +1,6 @@
 /**
  * App root component: ClipboardWriter -> CodeHighlighter -> Locale -> Theme -> Background -> Auth -> LocaleScope ->
- * WebApp's root (the router, from the booted module tree — see web-root.ts) provider
+ * the shell's root (the router, from the booted module tree — see web-root.ts) provider
  * composition, with the app-wide overlays (toasts, tooltips, the unsaved-changes prompt)
  * beside the router. The shared UI package's copy controls get the app's clipboard
  * writer, and every code surface of the package gets the app's worker-backed code highlighter
@@ -13,8 +13,8 @@
  * The guard is deliberately silent: no overlay, no attachment, no toast. It does not make a
  * drop on the sidebar do something; it makes it do nothing.
  */
-import { useEffect } from "react";
-import type { ComponentType } from "react";
+import { useEffect, type ComponentType } from "react";
+
 import {
   ClipboardWriterProvider,
   CodeHighlighterProvider,
@@ -30,10 +30,10 @@ import type { AppRouterProps } from "./web-app/router";
 import { UnsavedPrompt } from "./lib/unsaved/unsaved-prompt";
 import { writeClipboard } from "./lib/clipboard";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
-import { highlightCode } from "./features/chat/code-highlight";
+import { highlightCode } from "./lib/code-highlight";
 
 /**
- * `Root`: WebApp's root component, which `bootWeb()` returns. `initialPath`: mount the app on
+ * `Root`: the shell's root component, which `bootWeb()` returns. `initialPath`: mount the app on
  * an in-memory router opened at that path instead of the browser's address bar (see AppRouter)
  * — for a host document that frames the app.
  */

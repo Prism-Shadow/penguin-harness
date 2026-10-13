@@ -16,10 +16,9 @@ import * as api from "../../api/endpoints";
 import { useWebAppPages } from "../../web-app";
 import { contributedPages, type PageEntry } from "../../web-app/page-table";
 import { useAuth } from "../../state/auth";
-import { ORG_PAGE_RENDERERS } from "./company-nav";
 
 /** The builtin renderers a contributed company-mode page may name; one naming another is skipped. */
-const ORG_RENDERER_NAMES: ReadonlySet<string> = new Set(Object.keys(ORG_PAGE_RENDERERS));
+const ORG_RENDERER_NAMES: ReadonlySet<string> = new Set();
 
 type RemotePages = ReadonlyArray<Record<string, unknown>>;
 

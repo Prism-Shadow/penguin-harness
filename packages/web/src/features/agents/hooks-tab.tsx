@@ -25,8 +25,8 @@
  * all — the packages are never touched by it. It is the owner's, like the Vault and Schedules
  * switches; members see the state. Hooks have no prompt half, so the card comes alone.
  */
-import { useCallback, useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+
 import type { HookItem } from "@prismshadow/penguin-server/api";
 import {
   Badge,
@@ -59,7 +59,7 @@ import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
 import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";

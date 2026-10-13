@@ -31,8 +31,7 @@ import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneDot } from "../../lib/tone";
-import { HEADER_TEXT, connectedMenuItems } from "./group-header";
-import type { ConnectedMenuItem } from "./group-header";
+import { HEADER_TEXT, connectedMenuItems, type ConnectedMenuItem } from "./group-header";
 
 /** What a menu row runs; the page supplies each. */
 export interface ConnectionActions {

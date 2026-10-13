@@ -21,8 +21,8 @@
  * that read the store at module scope is holding keys the sweep just removed. See
  * bootInstallScope for why that is the remedy rather than making those modules lazy.
  */
-import { StrictMode } from "react";
-import type { ComponentType } from "react";
+import { StrictMode, type ComponentType } from "react";
+
 import { createRoot } from "react-dom/client";
 import { hasEscLayers } from "@prismshadow/penguin-ui";
 import { App } from "./app";

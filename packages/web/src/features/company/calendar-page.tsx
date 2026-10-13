@@ -19,8 +19,8 @@
  * still opens its own event; its 「新建日程」 hint is lifted back above them, on a line of the
  * cell reserved for it, so a day that already has events still says what its empty space does.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import type {
@@ -57,8 +57,8 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { employeeColor } from "../../lib/category-colors";
-import { toneInk } from "../../lib/tone";
-import type { Tone } from "../../lib/tone";
+import { toneInk, type Tone } from "../../lib/tone";
+
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
 import { OrgPage, useOrg } from "./org-layout";
@@ -76,8 +76,12 @@ import {
   toLocalInput,
   viewRange,
   weekDays,
+  type Cadence,
+  type CalendarView,
+  type EventInstance,
+  type GridDay,
 } from "./calendar-geom";
-import type { Cadence, CalendarView, EventInstance, GridDay } from "./calendar-geom";
+
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 
 const OUTCOME_TONE: Record<OrgCalendarOutcome, Tone> = {

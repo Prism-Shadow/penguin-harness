@@ -1,3 +1,4 @@
+import type { WebAppPage } from "./index";
 /**
  * Router: /login is public; all other routes go through the RequireAuth guard (redirects to
  * /login when not authenticated) and are wrapped in ProjectProvider + AppLayout.

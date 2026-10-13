@@ -32,13 +32,19 @@
  * wear the text-control look, and the toolbar is the dialog's head — laid straight into the
  * dialog, as Modal's own footer is, so a theme's dialog recipe finds both.
  */
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type {
-  KeyboardEvent as ReactKeyboardEvent,
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
-  ReactNode,
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
+
 import type { DesktopPrivacyPane, DirListResponse } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -72,8 +78,13 @@ import { apiErrorText } from "../../lib/api-error";
 import { isElectronRenderer } from "../../lib/desktop-renderer";
 import { formatDateTime } from "../../lib/format";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { machineLabel, nameOnMachine, workspaceMachines } from "../../lib/workspace-machines";
-import type { WorkspaceMachine } from "../../lib/workspace-machines";
+import {
+  machineLabel,
+  nameOnMachine,
+  workspaceMachines,
+  type WorkspaceMachine,
+} from "../../lib/workspace-machines";
+
 import { useSessions } from "../../state/sessions";
 import { useMachines } from "../../state/machines";
 import {
@@ -106,14 +117,12 @@ import {
   stepSelection,
   typeSelectIndex,
   visibleEntries,
-} from "./workspace-finder-model";
-import type {
-  AccessAsk,
-  FinderAction,
-  FinderMenuItem,
-  FinderMenuTarget,
-  NavHistory,
-  Place,
+  type AccessAsk,
+  type FinderAction,
+  type FinderMenuItem,
+  type FinderMenuTarget,
+  type NavHistory,
+  type Place,
 } from "./workspace-finder-model";
 
 /**

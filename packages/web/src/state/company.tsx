@@ -45,8 +45,16 @@
  * State lives in a zustand vanilla store (one instance per Provider mount) like the Project
  * and Session stores; the Provider is the lifecycle component that hydrates it.
  */
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+
 import type {
   CompanyServerEvent,
   MessagingChannel,
@@ -66,8 +74,8 @@ import { isCurrentProject } from "../lib/project-scope";
 import { S } from "../lib/strings";
 import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/company-beta";
 import { channelBadgeCounts } from "../features/company/channel-list";
-import { homePath, orgKey, parseOrgKey } from "../features/company/company-nav";
-import type { WorkMode } from "../features/company/company-nav";
+import { homePath, orgKey, parseOrgKey, type WorkMode } from "../lib/company-nav";
+
 import { withDeskMessagingChannel } from "../features/company/org-sessions";
 import {
   clearLastOrgKey,

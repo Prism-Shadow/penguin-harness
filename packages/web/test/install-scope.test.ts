@@ -31,13 +31,18 @@ import {
   reconcileInstallScope,
   scopeOfKey,
   syncInstallScope,
+  type InstallScopeStorage,
 } from "../src/lib/install-scope";
-import type { InstallScopeStorage } from "../src/lib/install-scope";
+
 import { apiError, json, stubFetch } from "./helpers/fetch";
-import { expectEveryRootScanned, scanSources } from "./helpers/roots";
-import type { SourceScan } from "./helpers/roots";
-import { blockedStorage, memoryStorage, stubLocalStorage } from "./helpers/storage";
-import type { MemoryStorage } from "./helpers/storage";
+import { expectEveryRootScanned, scanSources, type SourceScan } from "./helpers/roots";
+
+import {
+  blockedStorage,
+  memoryStorage,
+  stubLocalStorage,
+  type MemoryStorage,
+} from "./helpers/storage";
 
 /** State that names the data root's Projects, Sessions, Workspaces and terminals. */
 const INSTALL_STATE: Record<string, string> = {

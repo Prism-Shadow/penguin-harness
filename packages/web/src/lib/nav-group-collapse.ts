@@ -16,7 +16,7 @@
  */
 
 /**
- * Page entries of the nav, in rendered order: WebApp's main-nav pages (web-app/page-table.ts,
+ * Page entries of the nav, in rendered order: the shell's main-nav pages (web-app/page-table.ts,
  * `navPagesOf`), passed in by the caller since they are module contributions read from the
  * booted tree. Each key names its route (`/<key>`), its S.nav label, and its NAV_ICONS glyph.
  * Some entries are admin-only and some not yet released (see below), so the sidebar renders

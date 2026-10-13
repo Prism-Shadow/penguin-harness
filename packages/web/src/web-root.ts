@@ -1,7 +1,7 @@
 /**
  * The composition root: the one file that lists the module classes, the web app's counterpart
  * of the server's platform.ts. `bootWeb()` boots the tree once, before the first render
- * (main.tsx), and hands back WebApp's root component — the routed app with every module's
+ * (main.tsx), and hands back the shell's root component — the routed app with every module's
  * contributions bound in.
  *
  * The manifests and interfaces come from `ifaces.json`, which scripts/gen-ifaces.mjs generates
@@ -11,11 +11,18 @@
  * entry bundle.
  */
 import type { ComponentType } from "react";
-import { bootModules, Module, moduleDefOf } from "@prismshadow/penguin-core/kernel";
-import type { IfaceTable, ManifestTable, Resources } from "@prismshadow/penguin-core/kernel";
+import {
+  bootModules,
+  Module,
+  moduleDefOf,
+  type IfaceTable,
+  type ManifestTable,
+  type Resources,
+} from "@prismshadow/penguin-core/kernel";
+
 import table from "./ifaces.json";
-import { WebAppModule } from "./web-app/module";
-import type { WebApp } from "./web-app/module";
+import { WebAppModule, type WebApp } from "./web-app/module";
+
 import type { AppRouterProps } from "./web-app/router";
 import { ChatModule } from "./features/chat/module";
 import { AgentsModule } from "./features/agents/module";

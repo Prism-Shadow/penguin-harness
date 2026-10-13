@@ -13,8 +13,7 @@
  */
 import type { ComponentType } from "react";
 import { Navigate, Route, Routes } from "react-router";
-import { ContributedPage, orgPagesOf } from "../../shell";
-import type { OrgPageRenderer } from "./company-nav";
+import { ContributedPage, orgPagesOf } from "../../web-app";
 import { OrgIndexRedirect, OrgLayout } from "./org-layout";
 import { OverviewPage } from "./overview-page";
 import { OrgChartPage } from "./org-chart-page";
@@ -27,8 +26,7 @@ import { useOrgPages } from "./use-org-pages";
 import { useCompany } from "../../state/company";
 
 /** The component of each builtin renderer a contributed company-mode page may name. */
-const ORG_PAGE_COMPONENTS: Readonly<Record<OrgPageRenderer, ComponentType>> = {
-};
+const ORG_PAGE_COMPONENTS: Readonly<Record<string, ComponentType>> = {};
 
 export function OrgRoutes() {
   const contributed = orgPagesOf(useOrgPages());

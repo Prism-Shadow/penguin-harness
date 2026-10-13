@@ -19,8 +19,8 @@
  * session pins only that session, which then no longer follows the config; the dialog says so
  * when the current desk is pinned.
  */
-import { useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
+
 import type {
   AgentModelConfigDto,
   OrgEmployeeItem,
@@ -57,29 +57,31 @@ import {
   avatarDataUrlFromImage,
   loadAvatarImage,
   releaseAvatarImage,
+  type AvatarCrop,
 } from "../../lib/avatar-image";
-import type { AvatarCrop } from "../../lib/avatar-image";
+
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
-import { SkillPickList } from "../skills/skill-pick-list";
-import type { PickableItem } from "../skills/skill-pick-list";
-import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
-import { StdioDisclosure } from "../plugins/plugin-mcp";
-import { stdioServers } from "../plugins/plugin-status";
+import {
+  SkillPickList,
+  type PickableItem,
+  addSkillNames,
+  removeSkillNames,
+  toggleSkillName,
+} from "../skills";
+
+import { StdioDisclosure, stdioServers } from "../plugins";
+
 import { InfoFieldLabel, MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
 import { EmployeeAvatar } from "./employee-avatar";
 import { managerCandidates } from "./org-chart-tree";
-import {
-  SELECTABLE_THINKING_LEVELS,
-  effectiveThinkingLevel,
-  thinkingLevelLabel,
-} from "../chat/thinking-level";
+import { SELECTABLE_THINKING_LEVELS, effectiveThinkingLevel, thinkingLevelLabel } from "../chat";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];

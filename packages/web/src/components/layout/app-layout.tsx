@@ -4,8 +4,8 @@
  *   user config), or the rail while it is folded, beside the page;
  * - <md: the phone's top bar (the drawer button + the product's name) above the page, and the
  *   sidebar in a drawer.
- * WebApp's chrome uses solid fills and makes no stacking context (a frosted glass or a
- * transform would trap the menus it opens); the package's components say how.
+ * The shell owns the wallpaper and navigation's separate glass layer, so the columns make no
+ * stacking context that could trap their menus.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useMatch, useNavigate } from "react-router";
@@ -43,7 +43,7 @@ import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows, DefaultChannelRailRow } from "../../features/company/channel-sidebar";
 import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
-import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../features/company/company-nav";
+import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../lib/company-nav";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { FindBar } from "../find/find-bar";
 import { UserMenu } from "./user-menu";
@@ -52,7 +52,7 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { AppInfoDialog } from "../account/app-info-dialog";
-import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { TerminalDockRuntime } from "../../features/terminal";
 import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
 import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
@@ -60,7 +60,7 @@ import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
 
 /**
- * Whether the pinned sidebar (or its rail) is on screen: WebApp's navigation column is
+ * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
  * `hidden md:block`, and Tailwind's `md` is 768px at the browser's default font size — a media
  * query ignores the app's 18px root. Below it the drawer's own sidebar answers the commands while
  * it is open.

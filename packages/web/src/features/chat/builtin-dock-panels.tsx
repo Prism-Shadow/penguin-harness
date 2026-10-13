@@ -13,19 +13,24 @@ import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { machineForSession } from "../../lib/session-machines";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { dockPanelDefinition, panelLabel, registerDockPanel } from "../dock/panel-registry";
-import type { DockPanelBodyProps, DockPanelDefinition, PanelId } from "../dock/panel-registry";
-import { isBrowserOffered, subscribeBrowser } from "../builtin-browser/browser-store";
-import { BuiltinBrowserPanel } from "../builtin-browser/browser-panel";
 import {
   TERMINAL_PANEL,
+  dockPanelDefinition,
+  panelLabel,
+  registerDockPanel,
   subscribeTerminalPanelOffered,
   terminalPanelOffered,
-} from "../dock/dock-terminal";
-import { TerminalPanel } from "../terminal/terminal-panel";
-import { TracePanel } from "../traces/trace-panel";
-import { MessagingPanel } from "../messaging/messaging-panel";
-import { SchedulePanel } from "../schedules/schedule-panel";
+  type DockPanelBodyProps,
+  type DockPanelDefinition,
+  type PanelId,
+} from "../dock";
+
+import { isBrowserOffered, subscribeBrowser, BuiltinBrowserPanel } from "../builtin-browser";
+
+import { TerminalPanel } from "../terminal";
+import { TracePanel } from "../traces";
+import { MessagingPanel } from "../messaging";
+import { SchedulePanel } from "../schedules";
 import { approvalModeChoices } from "./approval-mode";
 import { useChatDock } from "./chat-dock-context";
 import { ChatMemoryView } from "./memory-view";

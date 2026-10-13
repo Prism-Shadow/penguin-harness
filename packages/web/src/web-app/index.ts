@@ -1,5 +1,5 @@
 /**
- * WebApp's public face: the page table, for whatever renders under WebApp's root, and how
+ * The shell's public face: the page table, for whatever renders under WebApp's root, and how
  * a server-contributed page is drawn.
  */
 import { webAppDeps } from "./deps";

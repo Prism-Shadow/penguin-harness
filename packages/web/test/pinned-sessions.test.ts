@@ -21,8 +21,9 @@ import {
   removePinnedSession,
   savePinnedSessions,
   togglePinnedSession,
+  type PinnedSessionsStorage,
 } from "../src/lib/pinned-sessions";
-import type { PinnedSessionsStorage } from "../src/lib/pinned-sessions";
+
 import { isSidebarRow, pinnedFirst } from "../src/lib/session-grouping";
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 

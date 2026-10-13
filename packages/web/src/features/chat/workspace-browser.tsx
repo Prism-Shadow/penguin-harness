@@ -44,14 +44,19 @@
  * between them (`SplitPane`), the path strip (`Breadcrumbs`), the drop feedback (`DropOverlay`)
  * and the file menu's rows (`WorkspaceFileMenuRows`).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  ChangeEvent,
-  DragEvent as ReactDragEvent,
-  KeyboardEvent as ReactKeyboardEvent,
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
+
 import {
   Button,
   CloseIcon,
@@ -89,18 +94,17 @@ import {
   useFilesLayout,
   useMarkdownReader,
   useRowContextMenu,
+  type EditorScroll,
+  type FileMenuTarget,
+  type PreviewView,
+  type TreeToggle,
+  type WorkspaceFileMenuLabels,
 } from "@prismshadow/penguin-ui";
-import type {
-  EditorScroll,
-  FileMenuTarget,
-  PreviewView,
-  TreeToggle,
-  WorkspaceFileMenuLabels,
-} from "@prismshadow/penguin-ui";
+
 import type { WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import { ApiError } from "../../api/client";
-import { filesApi, filesScopeKey } from "../../api/workspace-files";
-import type { FilesScope } from "../../api/workspace-files";
+import { filesApi, filesScopeKey, type FilesScope } from "../../api/workspace-files";
+
 import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -112,8 +116,8 @@ import { currentPlatform } from "../../lib/shortcuts/platform";
 import { keymap } from "../../lib/shortcuts/store";
 import { joinWorkspacePath } from "../../lib/file-path";
 import { writeClipboard } from "../../lib/clipboard";
-import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
-import type { DragSignal } from "../../lib/file-drop";
+import { dropRegionAction, isFileDrag, type DragSignal } from "../../lib/file-drop";
+
 import { MB_BYTES, splitBySize } from "../../lib/upload-limits";
 import {
   DEFAULT_TEXT_FILE_NAME,
@@ -148,12 +152,15 @@ import {
   writeWrapLines,
   writeTreeVisible,
   writeTreeWidth,
+  type ComposerReference,
+  type EditorState,
+  type Listings,
 } from "../../lib/workspace-tree";
-import type { ComposerReference, EditorState, Listings } from "../../lib/workspace-tree";
+
 import { restoreSelection } from "../../components/ui/text-selection";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
-import { setCloseGuard } from "../dock/close-guard";
+import { setCloseGuard } from "../../lib/dock-close-guard";
 import { tabKey } from "../dock/dock-state";
 import { WorkspaceTreeView } from "./workspace-tree-view";
 

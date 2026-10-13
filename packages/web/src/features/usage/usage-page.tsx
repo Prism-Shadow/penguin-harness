@@ -62,7 +62,7 @@ import {
   rangeDays,
   type EntityCounts,
   type RangePreset,
-} from "./usage-controls";
+} from "../../lib/usage-controls";
 import { ErrorsPanel } from "./errors-panel";
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */

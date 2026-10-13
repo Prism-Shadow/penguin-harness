@@ -9,8 +9,13 @@
  *   without costing the click anything.
  */
 import { describe, expect, it } from "vitest";
-import type { HintStorage } from "../src/features/company/page-hints";
-import { dismissHint, hintKey, isHintDismissed } from "../src/features/company/page-hints";
+import {
+  type HintStorage,
+  dismissHint,
+  hintKey,
+  isHintDismissed,
+} from "../src/features/company/page-hints";
+
 import { blockedStorage, memoryStorage } from "./helpers/storage";
 
 const throwingStorage = blockedStorage();

@@ -28,8 +28,9 @@ import {
   presetEffects,
   presetPick,
   presetsOf,
+  type PermissionMenuRow,
 } from "../src/lib/permission-level";
-import type { PermissionMenuRow } from "../src/lib/permission-level";
+
 import { APPROVAL_MODES, approvalModeChoices } from "../src/features/chat/approval-mode";
 
 const FULL: SessionSandbox = { mode: "danger-full-access", network: "open" };

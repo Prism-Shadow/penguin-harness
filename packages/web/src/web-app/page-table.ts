@@ -18,6 +18,7 @@ export interface PageData {
   key: string;
   path: string;
   /** "bare" mounts outside the app shell (no sidebar, no Project context): the terminal, a workflow's app page. */
+  /** Keep the published layout discriminator; it is not a module address or terminal shell. */
   frame: "shell" | "bare";
   nav: "main" | "none";
   admin: boolean;

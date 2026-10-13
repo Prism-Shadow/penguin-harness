@@ -57,18 +57,26 @@ import { formatScore } from "../../lib/format";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
-import { ModelCatalogSelect } from "../chat/model-select";
+import { ModelCatalogSelect } from "../chat";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
-import { MAX_RUNS, evaluateTail, optimizeTail, rsiOptimizeTail } from "./benchmark-prompts";
-import type { EvaluateParams, OptimizeParams, RsiOptimizeParams } from "./benchmark-prompts";
+import {
+  MAX_RUNS,
+  evaluateTail,
+  optimizeTail,
+  rsiOptimizeTail,
+  type EvaluateParams,
+  type OptimizeParams,
+  type RsiOptimizeParams,
+} from "./benchmark-prompts";
+
 import {
   DEFAULT_TOOLKIT_PLUGIN,
   EVALUATION_SKILL,
   OPTIMIZATION_SKILL,
   pickRsiMethod,
   rsiMethods,
-} from "./rsi-methods";
-import { useRsiToolkits } from "./use-rsi-toolkits";
+} from "../../lib/rsi-methods";
+import { useRsiToolkits } from "../../lib/use-rsi-toolkits";
 
 /** Which half of the dialog is on screen. */
 export type UseTab = "evaluate" | "optimize";

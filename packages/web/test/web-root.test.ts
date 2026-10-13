@@ -2,7 +2,7 @@
  * The booted page table: the real composition root (web-root.ts) boots under vitest, and the
  * shell receives every page the modules contributed.
  *
- * - bootWeb() boots the tree and hands back WebApp's root component.
+ * - bootWeb() boots the tree and hands back the shell's root component.
  * - Every page has a unique id, key and path, and the component its module bound.
  * - Terminal and the workflow app pages mount outside the shell; everything else inside it.
  * - The main nav is Agents, Models, Plugins, Machines, Usage, Benchmark in that order, all
@@ -13,14 +13,20 @@
  * - Beside the booted table, a contributed page whose key the app owns is ignored, and the
  *   company-mode proposals page passes the renderers company mode carries.
  */
-import { bootModules, moduleDefOf } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx, IfaceTable, ManifestTable } from "@prismshadow/penguin-core/kernel";
+import {
+  bootModules,
+  moduleDefOf,
+  type ClassCtx,
+  type IfaceTable,
+  type ManifestTable,
+} from "@prismshadow/penguin-core/kernel";
+
 import { beforeAll, describe, expect, it } from "vitest";
 import table from "../src/ifaces.json";
 import { bootWeb, WebRoot } from "../src/web-root";
 import { WebAppModule } from "../src/web-app/module";
-import { navPagesOf } from "../src/web-app";
-import type { WebAppPage } from "../src/web-app";
+import { navPagesOf, type WebAppPage } from "../src/web-app";
+
 import { contributedPages, orgPagesOf, pageTableOf } from "../src/web-app/page-table";
 import { navKeysFor } from "../src/lib/nav-group-collapse";
 import { zh } from "../src/lib/strings";
@@ -28,7 +34,6 @@ import { NAV_ICONS } from "../src/lib/nav-icons";
 import { AgentsPage } from "../src/features/agents/agents-page";
 import { TerminalPage, TerminalDockRuntime } from "../src/features/terminal";
 import { OrgRoutes } from "../src/features/company/org-routes";
-import { ORG_PAGE_RENDERERS } from "../src/features/company/company-nav";
 import { ChatPage } from "../src/features/chat/chat-page";
 
 let pages: readonly WebAppPage[] = [];
@@ -57,7 +62,7 @@ beforeAll(async () => {
 });
 
 describe("the booted page table", () => {
-  it("bootWeb() hands back WebApp's root component", async () => {
+  it("bootWeb() hands back the shell's root component", async () => {
     expect(typeof (await bootWeb())).toBe("function");
   });
 
@@ -112,7 +117,7 @@ describe("the booted page table", () => {
 
   it("lets a contributed page in beside the table only under a key the app does not own", () => {
     const remote = [
-      { key: "dashboard", path: "/elsewhere", renderer: { iframe: { src: "/x", namespace: "x" } } },
+      { key: "agents", path: "/elsewhere", renderer: { iframe: { src: "/x", namespace: "x" } } },
       {
         key: "org-proposals",
         path: "proposals/:number?",
@@ -120,7 +125,7 @@ describe("the booted page table", () => {
         renderer: { builtin: "OrgProposalsPage" },
       },
     ];
-    const orgRenderers = new Set(Object.keys(ORG_PAGE_RENDERERS));
+    const orgRenderers = new Set(["OrgProposalsPage"]);
     expect(orgPagesOf(contributedPages(pages, remote, orgRenderers)).map((p) => p.key)).toEqual([
       "org-proposals",
     ]);

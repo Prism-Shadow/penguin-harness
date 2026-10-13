@@ -53,7 +53,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
-import { localizedText } from "../chat/skill-use";
+import { localizedText } from "../../lib/skill-use";
 import { McpServerMarks } from "../plugins/plugin-mcp";
 import { permissionOf, transportOf } from "./mcp-servers-form";
 import { McpServerDialog } from "./mcp-server-dialog";
