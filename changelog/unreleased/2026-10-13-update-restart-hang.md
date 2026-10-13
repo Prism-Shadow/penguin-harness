@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `desktop`, `web`
+- **PR:** [#1092](https://github.com/Prism-Shadow/penguin-harness/pull/1092)
 
 [中文版](2026-10-13-update-restart-hang.zh.md)
 
