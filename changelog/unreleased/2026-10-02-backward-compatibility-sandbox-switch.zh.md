@@ -1,7 +1,7 @@
 # 向后兼容：开关出现之前保存的沙盒设置
 
 - **Date:** 2026-10-02
-- **Type:** feat
+- **Type:** process
 - **Scope:** `server`
 - **PR:** [#975](https://github.com/Prism-Shadow/penguin-harness/pull/975)
 

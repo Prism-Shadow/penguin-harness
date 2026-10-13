@@ -1,7 +1,7 @@
 # Backward compatibility: a remote machine reporting one recommended sandbox backend
 
 - **Date:** 2026-10-03
-- **Type:** feature
+- **Type:** process
 - **Scope:** `web`
 - **PR:** [#978](https://github.com/Prism-Shadow/penguin-harness/pull/978)
 

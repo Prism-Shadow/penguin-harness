@@ -1,7 +1,7 @@
 # 沙盒后端：Windows 用 WSL、自带 bubblewrap、加载时自检，并移除 MXC
 
 - **Date:** 2026-09-17
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `core`, `server`, `plugins`, `build`, `tooling`
 - **PR:** [#771](https://github.com/Prism-Shadow/penguin-harness/pull/771)
 

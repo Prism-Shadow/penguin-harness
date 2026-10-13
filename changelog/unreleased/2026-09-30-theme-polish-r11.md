@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** fix
 - **Scope:** `ui`, `web`
+- **PR:** [#911](https://github.com/Prism-Shadow/penguin-harness/pull/911)
 
 [中文版](2026-09-30-theme-polish-r11.zh.md)
 

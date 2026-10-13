@@ -3,6 +3,7 @@
 - **Date:** 2026-10-01
 - **Type:** feature
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#941](https://github.com/Prism-Shadow/penguin-harness/pull/941)
 
 [中文版](2026-10-01-theme-icons-and-surfaces.zh.md)
 

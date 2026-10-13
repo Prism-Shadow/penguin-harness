@@ -3,7 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** process
 - **Scope:** `ui`, `web`
-- **PR:** [#762](https://github.com/Prism-Shadow/penguin-harness/pull/762)
+- **PR:** [#762](https://github.com/Prism-Shadow/penguin-harness/pull/762), [#892](https://github.com/Prism-Shadow/penguin-harness/pull/892)
 
 [中文版](2026-09-16-theme-w0-guards.zh.md)
 

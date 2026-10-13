@@ -3,6 +3,7 @@
 - **Date:** 2026-10-09
 - **Type:** feature
 - **Scope:** `plugins`, `docs`
+- **PR:** [#1000](https://github.com/Prism-Shadow/penguin-harness/pull/1000)
 
 [English](2026-10-09-skills-sdk-or-api.md)
 

@@ -1,7 +1,7 @@
 # 重试会告诉模型失败的原因
 
 - **Date:** 2026-10-11
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `core`
 - **PR:** [#1018](https://github.com/Prism-Shadow/penguin-harness/pull/1018)
 

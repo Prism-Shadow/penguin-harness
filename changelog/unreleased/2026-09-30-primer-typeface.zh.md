@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#894](https://github.com/Prism-Shadow/penguin-harness/pull/894)
 
 [English](2026-09-30-primer-typeface.md)
 

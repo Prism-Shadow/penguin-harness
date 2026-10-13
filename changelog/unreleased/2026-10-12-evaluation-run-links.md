@@ -1,7 +1,7 @@
 # Evaluation Center: each run opens its Session; long case lists page
 
 - **Date:** 2026-10-12
-- **Type:** improvement
+- **Type:** feature
 - **Scope:** `web`
 - **PR:** [#1030](https://github.com/Prism-Shadow/penguin-harness/pull/1030)
 

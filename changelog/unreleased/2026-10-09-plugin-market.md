@@ -3,7 +3,7 @@
 - **Date:** 2026-10-09
 - **Type:** feature
 - **Scope:** `web`, `server`, `core`, `skills`, `ci`
-- **PR:** [#1009](https://github.com/Prism-Shadow/penguin-harness/pull/1009)
+- **PR:** [#1009](https://github.com/Prism-Shadow/penguin-harness/pull/1009), [#1024](https://github.com/Prism-Shadow/penguin-harness/pull/1024)
 
 [中文版](2026-10-09-plugin-market.zh.md)
 

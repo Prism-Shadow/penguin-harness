@@ -1,7 +1,7 @@
 # Retries tell the model what failed
 
 - **Date:** 2026-10-11
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `core`
 - **PR:** [#1018](https://github.com/Prism-Shadow/penguin-harness/pull/1018)
 

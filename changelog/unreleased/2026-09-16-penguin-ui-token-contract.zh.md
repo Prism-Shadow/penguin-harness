@@ -3,7 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** refactor
 - **Scope:** `ui`, `web`, `ci`
-- **PR:** [#765](https://github.com/Prism-Shadow/penguin-harness/pull/765)
+- **PR:** [#765](https://github.com/Prism-Shadow/penguin-harness/pull/765), [#892](https://github.com/Prism-Shadow/penguin-harness/pull/892)
 
 [English](2026-09-16-penguin-ui-token-contract.md)
 

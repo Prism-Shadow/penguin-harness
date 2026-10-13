@@ -1,7 +1,7 @@
 # Sandbox backends: WSL on Windows, a bundled bubblewrap, load-time checks, and no MXC
 
 - **Date:** 2026-09-17
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `core`, `server`, `plugins`, `build`, `tooling`
 - **PR:** [#771](https://github.com/Prism-Shadow/penguin-harness/pull/771)
 

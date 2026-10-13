@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** refactor
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#895](https://github.com/Prism-Shadow/penguin-harness/pull/895)
 
 [中文版](2026-09-30-ui-migration-w1.zh.md)
 

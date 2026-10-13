@@ -1,7 +1,7 @@
 # The Machines page: use a machine, stop using it, and open a workspace on it
 
 - **Date:** 2026-09-09
-- **Type:** feature, fix
+- **Type:** feature
 - **Scope:** `web`, `server`
 - **PR:** [#448](https://github.com/Prism-Shadow/penguin-harness/pull/448)
 

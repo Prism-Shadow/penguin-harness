@@ -3,7 +3,7 @@
 - **Date:** 2026-09-14
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `plugins`, `docs`
-- **PR:** [#726](https://github.com/Prism-Shadow/penguin-harness/pull/726)
+- **PR:** [#726](https://github.com/Prism-Shadow/penguin-harness/pull/726), [#1024](https://github.com/Prism-Shadow/penguin-harness/pull/1024)
 
 [中文版](2026-09-14-plugin-quick-start.zh.md)
 

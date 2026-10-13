@@ -1,7 +1,7 @@
 # 权限菜单改为命名的预设
 
 - **Date:** 2026-09-30
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `server`, `web`, `ui`
 - **PR:** [#975](https://github.com/Prism-Shadow/penguin-harness/pull/975)
 

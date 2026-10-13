@@ -3,6 +3,7 @@
 - **Date:** 2026-10-06
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#995](https://github.com/Prism-Shadow/penguin-harness/pull/995)
 
 [中文版](2026-10-06-history-prepend-anchor.zh.md)
 

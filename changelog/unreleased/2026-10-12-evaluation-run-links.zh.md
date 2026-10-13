@@ -1,7 +1,7 @@
 # 评估中心：每次运行都能打开它的 Session；题目多时分页
 
 - **Date:** 2026-10-12
-- **Type:** improvement
+- **Type:** feature
 - **Scope:** `web`
 - **PR:** [#1030](https://github.com/Prism-Shadow/penguin-harness/pull/1030)
 

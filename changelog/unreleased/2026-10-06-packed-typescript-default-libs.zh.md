@@ -3,6 +3,7 @@
 - **Date:** 2026-10-06
 - **Type:** fix
 - **Scope:** `desktop`, `server`
+- **PR:** [#993](https://github.com/Prism-Shadow/penguin-harness/pull/993)
 
 [English](2026-10-06-packed-typescript-default-libs.md)
 

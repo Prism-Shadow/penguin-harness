@@ -3,7 +3,7 @@
 - **Date:** 2026-09-27
 - **Type:** process
 - **Scope:** `ui-gallery`, `ui`
-- **PR:** [#859](https://github.com/Prism-Shadow/penguin-harness/pull/859)
+- **PR:** [#859](https://github.com/Prism-Shadow/penguin-harness/pull/859), [#892](https://github.com/Prism-Shadow/penguin-harness/pull/892)
 
 [中文版](2026-09-27-gallery-docs-site.zh.md)
 

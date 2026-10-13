@@ -1,8 +1,9 @@
 # The sandbox is there on every install
 
 - **Date:** 2026-09-28
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `release`, `server`, `web`
+- **PR:** [#873](https://github.com/Prism-Shadow/penguin-harness/pull/873)
 
 [中文版](2026-09-28-sandbox-on-every-install.zh.md)
 

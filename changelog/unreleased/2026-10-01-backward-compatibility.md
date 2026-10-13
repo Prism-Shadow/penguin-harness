@@ -18,9 +18,9 @@ Chosen: **migrate the file once, on its first read.** `migrateLegacyClientTypes`
 
 The generic client types (`openai-chat` and its `openai` alias, `openai-responses`, `openai-chat-vllm-adapter`, `openai-embedding`, `ant-messages`) are unchanged and untouched.
 
-## What users need to do
+## Compatibility
 
-Nothing. The file is rewritten the first time the server, the CLI or a Session reads it after the upgrade, and the entries keep their place, key and settings.
+Upgrading needs no action. The file is rewritten the first time the server, the CLI or a Session reads it after the upgrade, and the entries keep their place, key and settings.
 
 Two entries come out of the migration pinned to a client the catalog no longer pins: `deepseek/deepseek-flash` and `minimax/MiniMax-M3`, whose ids route on their own under MMSP 0.5.0. They work as pinned; the Models page's preset badge counts the difference like any other catalog change, and **sync presets** clears the pin. A Penguin Go authorization or sync rewrites its rows to the platform's current protocol on its own.
 

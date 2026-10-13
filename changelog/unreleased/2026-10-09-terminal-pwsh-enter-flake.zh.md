@@ -1,7 +1,7 @@
 # 终端 PATH 测试在 macOS 上为 pwsh 补发丢失的回车
 
 - **Date:** 2026-10-09
-- **Type:** test
+- **Type:** process
 - **Scope:** `server`
 - **PR:** [#1005](https://github.com/Prism-Shadow/penguin-harness/pull/1005)
 

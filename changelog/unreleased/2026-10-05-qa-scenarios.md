@@ -5,7 +5,7 @@
 - **Scope:** `tests`
 - **PR:** [#988](https://github.com/Prism-Shadow/penguin-harness/pull/988)
 
-[中文](2026-10-05-qa-scenarios.zh.md)
+[中文版](2026-10-05-qa-scenarios.zh.md)
 
 `tests/scenarios/` holds QA tasks, one directory per task. Each `TASK.md` is the prompt a QA Agent is given.
 

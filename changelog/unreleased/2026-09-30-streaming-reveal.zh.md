@@ -3,6 +3,7 @@
 - **Date:** 2026-09-30
 - **Type:** feature
 - **Scope:** `web`, `ui`, `ui-gallery`
+- **PR:** [#898](https://github.com/Prism-Shadow/penguin-harness/pull/898)
 
 [English](2026-09-30-streaming-reveal.md)
 

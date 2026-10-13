@@ -3,7 +3,7 @@
 - **Date:** 2026-09-09
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`
-- **PR:** [#450](https://github.com/Prism-Shadow/penguin-harness/pull/450)
+- **PR:** [#450](https://github.com/Prism-Shadow/penguin-harness/pull/450), [#798](https://github.com/Prism-Shadow/penguin-harness/pull/798)
 
 [中文版](2026-09-09-machines-run-agent.zh.md)
 

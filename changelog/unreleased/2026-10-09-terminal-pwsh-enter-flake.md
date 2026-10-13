@@ -1,7 +1,7 @@
 # The terminal PATH test resends a lost Enter to pwsh on macOS
 
 - **Date:** 2026-10-09
-- **Type:** test
+- **Type:** process
 - **Scope:** `server`
 - **PR:** [#1005](https://github.com/Prism-Shadow/penguin-harness/pull/1005)
 

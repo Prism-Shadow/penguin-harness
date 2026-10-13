@@ -1,8 +1,9 @@
 # 每一种安装都有沙盒
 
 - **Date:** 2026-09-28
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `release`, `server`, `web`
+- **PR:** [#873](https://github.com/Prism-Shadow/penguin-harness/pull/873)
 
 [English](2026-09-28-sandbox-on-every-install.md)
 

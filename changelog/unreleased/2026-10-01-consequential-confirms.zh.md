@@ -3,6 +3,7 @@
 - **Date:** 2026-10-01
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#941](https://github.com/Prism-Shadow/penguin-harness/pull/941)
 
 [English](2026-10-01-consequential-confirms.md)
 

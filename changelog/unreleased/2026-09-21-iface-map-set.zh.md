@@ -3,7 +3,7 @@
 - **Date:** 2026-09-21
 - **Type:** feature
 - **Scope:** `core`, `server`
-- **PR:** [#817](https://github.com/Prism-Shadow/penguin-harness/pull/817)
+- **PR:** [#817](https://github.com/Prism-Shadow/penguin-harness/pull/817), [#1059](https://github.com/Prism-Shadow/penguin-harness/pull/1059)
 
 [English](2026-09-21-iface-map-set.md)
 

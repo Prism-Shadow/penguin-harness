@@ -30,9 +30,9 @@ Per group present in the rows, `custom` excepted:
 
 Typical results: the OpenAI-compatible gateways and ModelScope end with a base URL, a protocol and the key on the group and bare rows; Penguin Go with its relay base URL and the key on the group, each row keeping its protocol; OpenCode Go with its Chat Completions base URL and the key on the group, the Messages rows keeping their endpoint and every row its protocol; a vendor group with its key alone.
 
-## What users need to do
+## Compatibility
 
-Nothing. A group whose rows held different keys keeps them as per-model keys and reads **Not connected** until a group key is set in its settings. A row whose endpoint or protocol was not moved keeps it as its own; **Restore defaults** brings the built-in models and groups back to a new Project's shape.
+Upgrading needs no action. A group whose rows held different keys keeps them as per-model keys and reads **Not connected** until a group key is set in its settings. A row whose endpoint or protocol was not moved keeps it as its own; **Restore defaults** brings the built-in models and groups back to a new Project's shape.
 
 ## When it can be removed
 

@@ -1,8 +1,11 @@
 # A push asks before leaving out the installed plugins it cannot satisfy
 
-- Date: 2026-10-01
-- Type: fix
-- Scope: server, web
+- **Date:** 2026-10-01
+- **Type:** fix
+- **Scope:** `server`, `web`
+- **PR:** [#989](https://github.com/Prism-Shadow/penguin-harness/pull/989)
+
+[中文版](2026-10-01-push-skips-unsatisfied-plugins.zh.md)
 
 A hot push replaces the platform but leaves the installed plugins in place. Previously, when an installed plugin contributed to a slot, or wired to a module or interface, that the pushed platform does not have, the whole module tree was rejected and the push refused, whatever the pusher wanted.
 

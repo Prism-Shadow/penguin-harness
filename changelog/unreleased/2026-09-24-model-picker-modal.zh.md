@@ -3,6 +3,7 @@
 - **Date:** 2026-09-24
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#847](https://github.com/Prism-Shadow/penguin-harness/pull/847)
 
 [English](2026-09-24-model-picker-modal.md)
 

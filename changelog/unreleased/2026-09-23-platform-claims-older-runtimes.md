@@ -3,7 +3,7 @@
 - **Date:** 2026-09-23
 - **Type:** fix
 - **Scope:** `server`
-- **PR:** [#841](https://github.com/Prism-Shadow/penguin-harness/pull/841)
+- **PR:** [#841](https://github.com/Prism-Shadow/penguin-harness/pull/841), [#1058](https://github.com/Prism-Shadow/penguin-harness/pull/1058)
 
 [中文版](2026-09-23-platform-claims-older-runtimes.zh.md)
 

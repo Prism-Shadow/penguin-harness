@@ -3,6 +3,7 @@
 - **Date:** 2026-10-01
 - **Type:** fix
 - **Scope:** `web`, `docs`
+- **PR:** [#919](https://github.com/Prism-Shadow/penguin-harness/pull/919)
 
 [中文版](2026-10-01-long-paste-attachment.zh.md)
 

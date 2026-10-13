@@ -1,8 +1,11 @@
 # 推送遇到无法满足的已装插件时先询问
 
-- Date: 2026-10-01
-- Type: fix
-- Scope: server, web
+- **Date:** 2026-10-01
+- **Type:** fix
+- **Scope:** `server`, `web`
+- **PR:** [#989](https://github.com/Prism-Shadow/penguin-harness/pull/989)
+
+[English](2026-10-01-push-skips-unsatisfied-plugins.md)
 
 热推送替换平台，但已安装的插件原样保留。此前，若某个已装插件向推送来的平台所没有的槽位贡献、或依赖它所没有的模块与接口，整棵模块树会被拒绝，推送失败，推送的人没有选择。
 

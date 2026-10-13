@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** feature
 - **Scope:** `web`, `server`, `core`
+- **PR:** [#718](https://github.com/Prism-Shadow/penguin-harness/pull/718), [#768](https://github.com/Prism-Shadow/penguin-harness/pull/768)
 
 [English](2026-08-30-command-palette.md)
 

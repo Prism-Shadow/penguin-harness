@@ -18,9 +18,9 @@
 
 通用客户端类型（`openai-chat` 及其别名 `openai`、`openai-responses`、`openai-chat-vllm-adapter`、`openai-embedding`、`ant-messages`）没有变化，也不会被改动。
 
-## 用户需要做什么
+## 兼容性
 
-不需要做任何事。升级后服务端、CLI 或某个 Session 第一次读到该文件时就会改写它，条目的位置、键与设置原样保留。
+升级无需操作。升级后服务端、CLI 或某个 Session 第一次读到该文件时就会改写它，条目的位置、键与设置原样保留。
 
 有两个条目迁移后钉着目录已不再钉的客户端：`deepseek/deepseek-flash` 与 `minimax/MiniMax-M3`，它们的 id 在 MMSP 0.5.0 下自己就能路由。钉着也照常可用；模型页的预置角标把这项差异与其他目录变化一并计数，**同步内置目录**即清掉这个钉。Penguin Go 的授权或同步会自行把它的行改写为平台当前的协议。
 

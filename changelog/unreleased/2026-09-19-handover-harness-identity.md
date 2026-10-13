@@ -3,7 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** fix
 - **Scope:** `server`
-- **PR:** [#799](https://github.com/Prism-Shadow/penguin-harness/pull/799)
+- **PR:** [#799](https://github.com/Prism-Shadow/penguin-harness/pull/799), [#827](https://github.com/Prism-Shadow/penguin-harness/pull/827)
 
 [中文版](2026-09-19-handover-harness-identity.zh.md)
 

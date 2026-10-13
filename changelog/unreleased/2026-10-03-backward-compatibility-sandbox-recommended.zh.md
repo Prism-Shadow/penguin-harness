@@ -1,7 +1,7 @@
 # 向后兼容：只报告一个推荐沙盒后端的远程机器
 
 - **Date:** 2026-10-03
-- **Type:** feature
+- **Type:** process
 - **Scope:** `web`
 - **PR:** [#978](https://github.com/Prism-Shadow/penguin-harness/pull/978)
 

@@ -1,7 +1,7 @@
 # Machines 页面：使用一台机器、停用它，并在它上面打开工作区
 
 - **Date:** 2026-09-09
-- **Type:** feature, fix
+- **Type:** feature
 - **Scope:** `web`, `server`
 - **PR:** [#448](https://github.com/Prism-Shadow/penguin-harness/pull/448)
 

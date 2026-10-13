@@ -3,7 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** fix
 - **Scope:** `core`, `server`, `deploy`
-- **PR:** [#798](https://github.com/Prism-Shadow/penguin-harness/pull/798)
+- **PR:** [#798](https://github.com/Prism-Shadow/penguin-harness/pull/798), [#835](https://github.com/Prism-Shadow/penguin-harness/pull/835)
 
 [中文版](2026-09-19-pushed-plugin-library.zh.md)
 

@@ -1,7 +1,7 @@
 # Backward compatibility: sandbox settings saved before the switch
 
 - **Date:** 2026-10-02
-- **Type:** feat
+- **Type:** process
 - **Scope:** `server`
 - **PR:** [#975](https://github.com/Prism-Shadow/penguin-harness/pull/975)
 
