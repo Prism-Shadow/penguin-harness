@@ -6,6 +6,13 @@
  * resolution (session_meta capture vs. the run_subagent agent_id argument, agent_state path
  * parsing), the pending-approval subtree predicate, and layered-tree layout
  * determinism/geometry.
+ *
+ * - Given an earlier child is still running, when a later task spawns another child,
+ *   then the default panel keeps both visible with their own conversations.
+ * - Given an explicit historical task selection, when another task has a running child,
+ *   then the historical graph stays scoped to the requested task.
+ * - Given a live background child, when entering an idle parent or a later polling task,
+ *   then the panel can auto-open; idle children alone never open it.
  */
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -44,6 +51,7 @@ import {
   PAD,
   resolveAgentLabel,
   shortSessionId,
+  shouldAutoOpenSubagents,
   taskStartCount,
 } from "../src/features/chat/agent-topology";
 
@@ -73,6 +81,37 @@ function at<M extends OmniMessage>(msg: M, ts: string): M {
 }
 
 describe("extractTopology", () => {
+  it("keeps an earlier running child visible beside the latest task's children", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("write the paper"));
+    spawnChild(m, "paper-call", "paper", '{"description":"Write version 9"}');
+    pushMessage(m, withOrigin(assistantText("Working on version 9"), "paper"));
+    pushMessage(m, toolCallOutput({ output: "yielded", toolCallId: "paper-call" }));
+    pushMessage(m, userText("check the references"));
+    spawnChild(m, "references-call", "references");
+    const live = new Map([
+      ["paper", true],
+      ["references", false],
+    ]);
+    const nodes = extractTopology(m, "root", true, live);
+    expect(nodes.map((n) => n.sessionId)).toEqual(["root", "references", "paper"]);
+    expect(nodes.find((n) => n.sessionId === "paper")).toMatchObject({
+      description: "Write version 9",
+      running: true,
+      origin: ["paper"],
+      parentId: "root",
+    });
+    expect(modelAtOrigin(m, nodes.find((n) => n.sessionId === "paper")!.origin)?.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ text: "Working on version 9" })]),
+    );
+    // A settled older child no longer crowds the current graph.
+    live.set("paper", false);
+    expect(extractTopology(m, "root", true, live).map((n) => n.sessionId)).toEqual([
+      "root",
+      "references",
+    ]);
+  });
+
   it("returns only the root (with the Task's running state) when nothing is spawned", () => {
     const m = createStreamModel();
     pushMessage(m, userText("hello"));
@@ -241,6 +280,10 @@ describe("extractTopologyForChild (historical Task slice)", () => {
     // done even while the LATEST Task is running.
     expect(historical[0]!.running).toBe(false);
     expect(historical[1]!.running).toBe(false);
+    const live = new Map([["child2", true]]);
+    expect(
+      extractTopologyForChild(m, "root", true, "child1", live)!.map((n) => n.sessionId),
+    ).toEqual(["root", "child1"]);
   });
 
   it("anchoring on a latest-Task child returns the live latest slice (root keeps the running state)", () => {
@@ -268,6 +311,19 @@ describe("extractTopologyForChild (historical Task slice)", () => {
 });
 
 describe("latestTaskHasSubagent (auto-open trigger)", () => {
+  it("opens for a running child while the parent is idle or polling in another task", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("launch"));
+    spawnChild(m, "t1", "child1");
+    pushMessage(m, toolCallOutput({ output: "yielded", toolCallId: "t1" }));
+    expect(shouldAutoOpenSubagents(m, false, [{ running: true }])).toBe(true);
+    pushMessage(m, userText("check the paper"));
+    pushMessage(m, toolCall({ name: "input_subagent", arguments: "{}", toolCallId: "poll" }));
+    expect(shouldAutoOpenSubagents(m, true, [{ running: true }])).toBe(true);
+    expect(shouldAutoOpenSubagents(m, false, [{ running: false }])).toBe(false);
+    expect(shouldAutoOpenSubagents(m, true, [])).toBe(false);
+  });
+
   it("true only while the LATEST Task references a spawn; a plain follow-up Task resets it", () => {
     const m = createStreamModel();
     pushMessage(m, userText("task 1"));
