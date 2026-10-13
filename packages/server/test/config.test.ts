@@ -87,6 +87,15 @@ describe("resolveServerConfig: PENGUIN_CLI_ENTRY parsing", () => {
 });
 
 describe("resolveServerConfig: PENGUIN_GO_ORIGIN parsing", () => {
+  // Without an override, authorize on the primary domain; an explicit secondary stays selected.
+  it("defaults to the primary Go domain and keeps an explicitly selected secondary domain", () => {
+    expect(resolveServerConfig(base).penguinGoOrigin).toBe("https://go.penguin.ooo");
+    expect(
+      resolveServerConfig({ ...base, PENGUIN_GO_ORIGIN: "https://token.penguin.ooo" })
+        .penguinGoOrigin,
+    ).toBe("https://token.penguin.ooo");
+  });
+
   it("accepts a loopback HTTP origin for integration work, trimmed", () => {
     expect(
       resolveServerConfig({ ...base, PENGUIN_GO_ORIGIN: " http://127.0.0.1:3000 " })

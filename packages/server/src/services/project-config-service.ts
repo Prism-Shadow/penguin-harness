@@ -2130,12 +2130,18 @@ export class ProjectConfigService implements ProjectConfigStore {
    * more condition, because the balance request is the server's own rather than the routed
    * client's: the variable's official endpoint must be the balance endpoint's host, so a vendor
    * key never reaches another vendor. A DeepSeek group on DeepSeek's endpoint qualifies; a
-   * gateway's rows (TokenDance) get no fallback at all. Never returned to the browser.
+   * gateway's rows (TokenDance) get no fallback at all. Penguin Go alone has its own
+   * provider-scoped variable, queried at the trusted authorization origin. Never returned
+   * to the browser.
    */
   async getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined> {
     const raw = await this.readRaw(projectId);
     const group = providerTableOf(raw)[provider];
     if (group?.api_key !== undefined) return group.api_key;
+    // Penguin Go owns a provider-scoped key; no vendor variable may stand in for it.
+    if (provider === PENGUIN_GO_PROVIDER_ID) {
+      return process.env.PENGUIN_GO_API_KEY?.trim() || undefined;
+    }
     const balanceUrl = providerInfo(provider)?.balance?.url;
     if (balanceUrl === undefined) return undefined;
     const origin = (url: string): string | undefined => {

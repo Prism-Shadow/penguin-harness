@@ -147,8 +147,9 @@ export interface ModelProviderBalance {
    *   (1 CNY = 1,000,000);
    * - `deepseek`: `{ is_available, balance_infos: [{ currency, total_balance, … }] }`, one entry
    *   per currency the account holds.
+   * - `penguin-go`: `{ balance: { units, currency } }`, a CNY ledger integer in 10^-12 yuan.
    */
-  format: "tokendance" | "deepseek";
+  format: "tokendance" | "deepseek" | "penguin-go";
 }
 
 export interface ModelProviderInfo {
@@ -442,9 +443,13 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // on the group; the protocol is fixed (fixedClientType).
     envKey: "PENGUIN_GO_API_KEY",
     envBaseUrlKey: "PENGUIN_GO_BASE_URL",
-    apiKeyUrl: "https://token.penguin.ooo/",
-    modelsUrl: "https://token.penguin.ooo/",
+    apiKeyUrl: "https://go.penguin.ooo/",
+    modelsUrl: "https://go.penguin.ooo/",
     bridgeAuth: { flow: "penguin-go" },
+    balance: {
+      url: "https://go.penguin.ooo/api/me/by-key",
+      format: "penguin-go",
+    },
   },
   {
     // One key serves the whole group, but its models sit on three protocols (see the group's

@@ -184,7 +184,7 @@ describe("model-catalog", () => {
     }
   });
 
-  it("exactly TokenDance and DeepSeek publish a balance endpoint, on the host their keys already go to", () => {
+  it("TokenDance, Penguin Go and DeepSeek publish account balance endpoints", () => {
     // The descriptor is what puts a balance in a group's header, so the Web App never names a
     // group; each one names the reader for its vendor's response shape.
     const withBalance = MODEL_PROVIDERS.filter((p) => p.balance !== undefined).map((p) => [
@@ -193,6 +193,7 @@ describe("model-catalog", () => {
     ]);
     expect(withBalance).toEqual([
       ["tokendance", "tokendance"],
+      ["penguin-go", "penguin-go"],
       ["deepseek", "deepseek"],
     ]);
     // The server sends the group's stored key to this URL, so it is the vendor's own https
@@ -201,6 +202,7 @@ describe("model-catalog", () => {
       "https://tokendance.space/portal/api/v1/user/balance",
     );
     expect(providerInfo("deepseek")!.balance!.url).toBe("https://api.deepseek.com/user/balance");
+    expect(providerInfo("penguin-go")!.balance!.url).toBe("https://go.penguin.ooo/api/me/by-key");
   });
 
   it("prebuilds Penguin Go with fixed relay routes and list prices, leaving promotions to the platform", () => {

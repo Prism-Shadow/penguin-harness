@@ -72,6 +72,7 @@ import {
   requireValidId,
 } from "../validate.js";
 import type { ServerConfig } from "../../config.js";
+import { normalizePenguinGoOrigin } from "../../config.js";
 import type { ChannelHub } from "../../runtime/channel.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
@@ -2016,7 +2017,10 @@ export class SessionApiRoutes {
       sessionsRepo,
     };
     this.modelOauthCallbackRoutes = modelOAuthCallbackRoutes(modelOAuthDeps);
-    this.modelsRoutes = modelsRoutes(modelDeps);
+    this.modelsRoutes = modelsRoutes({
+      ...modelDeps,
+      penguinGoOrigin: this.config.penguinGoOrigin ?? normalizePenguinGoOrigin(undefined),
+    });
     this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
     this.platformAuthRoutes = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });
     this.modelScopeAuthRoutes = modelScopeAuthRoutes({

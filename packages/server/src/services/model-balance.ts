@@ -12,7 +12,7 @@
  *   one is a failure, never a zero.
  * - **Outbound.** The global `fetch`, which the server routes through the admin proxy
  *   settings (net/proxy.ts), with a 5 s limit.
- * - **Cache.** 60 s per Project and group, keyed on a digest of the key as well, so a key
+ * - **Cache.** 60 s per Project, group and endpoint, keyed on a digest of the key as well, so a key
  *   written by a new authorization misses it instead of serving the old account's balance.
  *   Vendor failures are cached too: a page load and a pinned balance asking at once must not
  *   become two calls to a vendor that is already failing. `force` skips the cache and
@@ -109,12 +109,36 @@ function readDeepSeek(body: unknown): BalanceFigures | undefined {
   };
 }
 
+/** The ledger stays in CNY even when Penguin Go's display amount has been converted to USD. */
+function readPenguinGo(body: unknown): BalanceFigures | undefined {
+  const wallet = isRecord(body) ? body.balance : undefined;
+  if (
+    !isRecord(wallet) ||
+    wallet.currency !== "CNY" ||
+    typeof wallet.units !== "string" ||
+    !/^-?\d+$/.test(wallet.units)
+  ) {
+    return undefined;
+  }
+  const units = BigInt(wallet.units);
+  const absolute = units < 0n ? -units : units;
+  const fraction = String(absolute % 1_000_000_000_000n)
+    .padStart(12, "0")
+    .replace(/0+$/, "")
+    .padEnd(2, "0");
+  return {
+    amount: `${units < 0n ? "-" : ""}${absolute / 1_000_000_000_000n}.${fraction}`,
+    currency: "CNY",
+  };
+}
+
 const READERS: Record<
   ModelProviderBalance["format"],
   (body: unknown) => BalanceFigures | undefined
 > = {
   tokendance: readTokenDance,
   deepseek: readDeepSeek,
+  "penguin-go": readPenguinGo,
 };
 
 /** Reads one vendor reply; undefined when it carries no balance the reader can vouch for. */
@@ -133,8 +157,10 @@ interface CacheEntry {
 }
 
 export interface ModelBalanceDeps {
-  /** The group's stored API key (the first of its rows that carries one), or undefined. */
+  /** The group's own key, or its permitted environment fallback; never a model's own key. */
   groupKey(projectId: string, provider: string): Promise<string | undefined>;
+  /** The same trusted origin used by Penguin Go authorization, resolved by the route owner. */
+  penguinGoOrigin?: string;
   /** Replaced in tests; defaults to the global fetch at call time, which carries the proxy settings. */
   fetchImpl?: typeof fetch;
   now?: () => number;
@@ -149,10 +175,17 @@ export class ModelBalances {
 
   async read(projectId: string, provider: string, force = false): Promise<ModelBalanceResponse> {
     const info = providerInfo(provider);
-    const descriptor = info?.balance;
-    if (info === undefined || descriptor === undefined) {
+    const published = info?.balance;
+    if (info === undefined || published === undefined) {
       return this.failure(provider, "unsupported", `The ${provider} group publishes no balance.`);
     }
+    const descriptor =
+      published.format === "penguin-go"
+        ? {
+            ...published,
+            url: new URL("/api/me/by-key", this.deps.penguinGoOrigin ?? published.url).href,
+          }
+        : published;
     const key = await this.deps.groupKey(projectId, provider);
     if (key === undefined) {
       return this.failure(
@@ -161,7 +194,7 @@ export class ModelBalances {
         `The ${info.label} group has no API key to ask with.`,
       );
     }
-    const slot = `${projectId}\u0000${provider}`;
+    const slot = `${projectId}\u0000${provider}\u0000${descriptor.url}`;
     const keyDigest = createHash("sha256").update(key).digest("hex");
     const cached = this.cache.get(slot);
     if (

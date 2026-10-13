@@ -37,6 +37,8 @@ import { ModelBalances } from "../../services/model-balance.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ModelsRouteDeps {
+  /** Trusted server configuration, never a caller's model endpoint. */
+  penguinGoOrigin?: string;
   /** The machines this Project uses receive a credential change too (machines/service.ts). */
   machines: Machines;
   channels: ChannelHub;
@@ -293,6 +295,7 @@ export function modelsRoutes(deps: ModelsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   /** The balance reader and its 60 s cache, one per route group. */
   const balances = new ModelBalances({
+    penguinGoOrigin: deps.penguinGoOrigin,
     groupKey: (projectId, provider) =>
       deps.projectConfigService.getGroupBalanceKey(projectId, provider),
   });
