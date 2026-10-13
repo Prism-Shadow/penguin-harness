@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-14
 - **Type:** refactor
-- **Scope:** `web`, `cli`, `server`, `docs`, `skills`
+- **Scope:** `web`, `cli`, `server`, `docs`, `skills`, `ui-gallery`
 - **PR:** [#1117](https://github.com/Prism-Shadow/penguin-harness/pull/1117)
 - **Breaking:** yes — 移除了 `penguin benchmark import` 命令及其服务端上传辅助模块导出。
 
