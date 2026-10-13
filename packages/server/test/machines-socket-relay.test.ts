@@ -111,6 +111,7 @@ describe("the relay subscription cleanup", () => {
       });
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toBe("text/event-stream");
+      expect(script.detach).toHaveBeenCalledTimes(mode === "cancel" ? 0 : 1);
       await response.body!.cancel();
       script.sink().onEnd();
       expect(script.detach).toHaveBeenCalledTimes(1);
