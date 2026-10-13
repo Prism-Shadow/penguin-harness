@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** process
 - **Scope:** `ci`, `tooling`, `web`
+- **PR:** [#1120](https://github.com/Prism-Shadow/penguin-harness/pull/1120)
 
 [English](2026-10-14-affected-ci.md)
 
