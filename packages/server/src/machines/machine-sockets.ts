@@ -157,9 +157,18 @@ export class MachineSocket {
     return this.#closed;
   }
 
-  onClose(listener: () => void): void {
-    this.#ws.once("close", listener);
-    this.#ws.once("error", listener);
+  onClose(listener: () => void): () => void {
+    const unsubscribe = (): void => {
+      this.#ws.off("close", closed);
+      this.#ws.off("error", closed);
+    };
+    const closed = (): void => {
+      unsubscribe();
+      listener();
+    };
+    this.#ws.once("close", closed);
+    this.#ws.once("error", closed);
+    return unsubscribe;
   }
 
   /** Issues a call; returns the id (for cancel). */
