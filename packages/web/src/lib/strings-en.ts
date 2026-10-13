@@ -1949,6 +1949,16 @@ export const en: Strings = {
   },
 
   models: {
+    fallbackChain: "Fallback chain",
+    /** The chain is what a rate-limited Session moves onto; the first entry is tried first. */
+    fallbackChainHint:
+      "When a model answers 429 (a rate limit or an exhausted quota), the Session moves down this list and finishes the turn there. Empty = no failover.",
+    fallbackChainEmpty: "Not configured: a rate-limited turn retries on its own model.",
+    fallbackChainAdd: "Add to the chain",
+    fallbackChainPick: "Pick a model…",
+    fallbackChainUp: "Move up",
+    fallbackChainDown: "Move down",
+    fallbackChainRemove: "Remove from the chain",
     title: "Models",
     addCustom: "Add custom model",
     addToGroup: "Add model",

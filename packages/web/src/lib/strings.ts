@@ -2068,6 +2068,16 @@ export const zh = {
   },
 
   models: {
+    fallbackChain: "降级链",
+    /** The chain is what a rate-limited Session moves onto; the first entry is tried first. */
+    fallbackChainHint:
+      "模型返回 429（限流或配额用尽）时，会话按此顺序改到下一个模型上跑完。留空则不降级。",
+    fallbackChainEmpty: "未配置：被限流的一轮仍在本模型上重试。",
+    fallbackChainAdd: "添加到降级链",
+    fallbackChainPick: "选择一个模型…",
+    fallbackChainUp: "上移一位",
+    fallbackChainDown: "下移一位",
+    fallbackChainRemove: "从降级链移除",
     title: "模型配置",
     addCustom: "添加自定义模型",
     addToGroup: "添加模型",

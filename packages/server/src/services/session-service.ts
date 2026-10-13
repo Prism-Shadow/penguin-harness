@@ -833,6 +833,10 @@ export class SessionService {
       session = await agent.createSession({
         modelId,
         provider,
+        // A rate limit ends the turn only where there is somewhere else to run it: the
+        // Project's fallback chain is the host's answer to that (see SessionManager).
+        failoverOnRateLimit:
+          (await this.deps.projectConfig.getFallbackChain(args.projectId)).length > 0,
         ...(args.workspace !== undefined ? { workspaceDir: args.workspace } : {}),
         ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
         // The source is recorded in core session_meta (Trace); the index row stores none.
