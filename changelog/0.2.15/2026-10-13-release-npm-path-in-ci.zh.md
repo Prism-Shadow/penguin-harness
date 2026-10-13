@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** process
 - **Scope:** `ci`, `tooling`
+- **PR:** [#1085](https://github.com/Prism-Shadow/penguin-harness/pull/1085)
 
 [English](2026-10-13-release-npm-path-in-ci.md)
 
