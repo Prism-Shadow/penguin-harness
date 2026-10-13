@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** feature
 - **Scope:** `desktop`, `web`, `ui`
+- **PR:** [#1099](https://github.com/Prism-Shadow/penguin-harness/pull/1099)
 
 [中文版](2026-10-13-desktop-integrated-titlebar.zh.md)
 
