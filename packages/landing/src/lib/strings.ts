@@ -183,6 +183,31 @@ export const zh = {
     },
   },
 
+  /** The self-evolution loop and its three recorded numbers (sections/self-improve.tsx). */
+  selfImprove: {
+    title: "自进化靠的是普通的 Agent 和 Skill",
+    subtitle:
+      "默认由 General Agent 运行 agent-optimization Skill。每一轮，它只改被测 Agent 一处；运行 agent-evaluation Skill 的 Evaluator 子 Agent 则在 Benchmark 的每个题目上给修改后的 Agent 打分。",
+    nodeOptimizer: "Optimizer",
+    nodeEvaluator: "Evaluator × N",
+    nodeTarget: "被测 Agent",
+    edgeSpawn: "并行派发",
+    edgeFeedback: "分数与 Trace",
+    edgeBench: "逐题运行并打分",
+    edgeImprove: "修改 AGENTS.md、Skill 或配置",
+    noteOld: "修改前先保存快照",
+    noteNew: "只有分数更高才保留",
+    /** Index-aligned with TRENDS in sections/self-improve.tsx. */
+    trends: [
+      { label: "分数", hint: "满分 100" },
+      { label: "成本", hint: "每次运行" },
+      { label: "耗时", hint: "每次运行" },
+    ],
+    trendsNote: "记分板会记录每个版本的分数、成本和耗时。这里的数值仅为示意。",
+    diagramLabel:
+      "一轮自进化：Optimizer 运行 agent-optimization，并派发运行 agent-evaluation 的 Evaluator 子 Agent。它们在每个 Benchmark 题目上运行被测 Agent 并打分。Optimizer 根据分数和 Trace 把版本 N 修改为版本 N+1。只有分数更高，版本 N+1 才会保留。版本 N 在修改前会先保存为快照。",
+  },
+
   quickstart: {
     title: "装好 PenguinHarness，选一种方式启动",
     subtitle: "桌面版装好就能用；用命令行安装的，可以开 Web 界面，也可以直接在终端里用。",

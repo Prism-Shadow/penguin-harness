@@ -4,6 +4,7 @@
  */
 import { Hero } from "../sections/hero";
 import { Showcase } from "../sections/showcase";
+import { SelfImprove } from "../sections/self-improve";
 import { Cases } from "../sections/cases";
 import { Benchmark } from "../sections/benchmark";
 import { Scenarios } from "../sections/scenarios";
@@ -17,6 +18,7 @@ export function HomePage() {
     <>
       <Hero />
       <Showcase />
+      <SelfImprove />
       <Cases />
       <Benchmark />
       <Scenarios />

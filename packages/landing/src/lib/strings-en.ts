@@ -185,6 +185,30 @@ export const en: Strings = {
     },
   },
 
+  selfImprove: {
+    title: "Self-evolution runs on ordinary agents and Skills",
+    subtitle:
+      "By default the General Agent runs the agent-optimization Skill. Each round it makes one change to the tested agent, and Evaluator subagents with the agent-evaluation Skill score the changed agent on every case of the Benchmark.",
+    nodeOptimizer: "Optimizer",
+    nodeEvaluator: "Evaluator × N",
+    nodeTarget: "Tested agent",
+    edgeSpawn: "dispatch in parallel",
+    edgeFeedback: "scores & Traces",
+    edgeBench: "run & score each case",
+    edgeImprove: "edit AGENTS.md, a Skill or config",
+    noteOld: "snapshot before editing",
+    noteNew: "kept only if the score is higher",
+    trends: [
+      { label: "Score", hint: "out of 100" },
+      { label: "Cost", hint: "per run" },
+      { label: "Duration", hint: "per run" },
+    ],
+    trendsNote:
+      "The scoreboard records each version's score, cost and duration. The values here are illustrative.",
+    diagramLabel:
+      "One round of self-evolution: the Optimizer runs agent-optimization and dispatches Evaluator subagents running agent-evaluation. They run the tested agent on each Benchmark case and score it. From the scores and Traces, the Optimizer edits version N into version N+1. Version N+1 is kept only if its score is higher. Version N is saved as a snapshot before it is edited.",
+  },
+
   quickstart: {
     title: "Install PenguinHarness, then pick how to start it",
     subtitle:
