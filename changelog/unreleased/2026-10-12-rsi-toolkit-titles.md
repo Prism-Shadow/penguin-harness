@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** fix
 - **Scope:** `plugins`, `web`
+- **PR:** [#1081](https://github.com/Prism-Shadow/penguin-harness/pull/1081)
 
 [中文版](2026-10-12-rsi-toolkit-titles.zh.md)
 
