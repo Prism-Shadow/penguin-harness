@@ -48,6 +48,7 @@ import {
   parseUserSteeringText,
   tracesDir,
   userText,
+  loadProjectConfig,
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
@@ -353,6 +354,21 @@ export interface SessionLoader {
  * `opts.pathPrepend` the directories every command of a resumed Session finds at the front
  * of its PATH (the harness's own CLI shim — see CreateAgentOptions.pathPrepend).
  */
+/**
+ * Whether the Project's config carries a fallback chain: only then is a rate limit worth
+ * ending a turn for, since only then is there somewhere else to run it (see
+ * ProjectConfig.model_fallback_chain). A config that cannot be read answers false — a
+ * Session that cannot be loaded is a bigger problem than how it handles a 429.
+ */
+async function projectHasFallbackChain(root: string, projectId: string): Promise<boolean> {
+  try {
+    const cfg = await loadProjectConfig(root, projectId);
+    return (cfg.model_fallback_chain?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function createCoreSessionLoader(
   root: string,
   sources?: SessionOrigins,
@@ -387,7 +403,10 @@ export function createCoreSessionLoader(
         // config / Trace missing session_meta, etc.) are converged to 409, preserving
         // the original message rather than bubbling up as 500.
         try {
-          const session = await agent.resumeSession({ sessionId: row.sessionId });
+          const session = await agent.resumeSession({
+            sessionId: row.sessionId,
+            failoverOnRateLimit: await projectHasFallbackChain(root, row.projectId),
+          });
           // The row's stored level — the knob position the user last chose — restored onto
           // the runtime as a plain assignment: it rides the resumed Session's requests.
           if (row.thinkingLevel) session.thinkingLevel = row.thinkingLevel;
@@ -423,6 +442,7 @@ export function createCoreSessionLoader(
           workspaceDir: row.workspace,
           modelId: row.modelId,
           provider: row.provider,
+          failoverOnRateLimit: await projectHasFallbackChain(root, row.projectId),
           // The rebuilt Session records that source in its fresh session_meta (an unknown one
           // is core's default, `user`), and starts its first context at the row's pinned level.
           ...(knownSource !== undefined ? { source: knownSource } : {}),

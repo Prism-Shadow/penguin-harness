@@ -3272,3 +3272,75 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     expect(followUpTexts).not.toContain("[user_steering]");
   });
 });
+
+describe("ContextEngine rate-limit failover (the host can finish the turn elsewhere)", () => {
+  let workspace: string;
+  beforeEach(async () => {
+    workspace = await mkdtemp(join(tmpdir(), "penguin-ws-429-"));
+  });
+  afterEach(async () => {
+    await rm(workspace, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  });
+
+  /** A model that is out of quota: every request comes back 429. */
+  const rateLimited = (): { llm: LLMInterface; calls: () => number } => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        return {
+          status: "retryable",
+          errorCode: "rate_limited",
+          errorMessage: "429 Too Many Requests",
+        };
+      },
+    };
+    return { llm, calls: () => calls };
+  };
+
+  const endOf = (all: OmniMessage[]): { status?: string; error_code?: string } => {
+    const end = all.findLast((m) => (m.payload as { type?: string }).type === "request_end");
+    return (end?.payload ?? {}) as { status?: string; error_code?: string };
+  };
+
+  it("ends the turn on the first 429 when the host has another model to finish it on", async () => {
+    const { llm, calls } = rateLimited();
+    const engine = new ContextEngine({
+      llm,
+      environment: new Environment({
+        workspaceDir: workspace,
+        toolConfig: execCommandToolConfig(),
+      }),
+      maxReconnects: 5,
+      reconnectBackoffMs: 0,
+      failoverOnRateLimit: true,
+    });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+
+    // One attempt, not six: the identical request 429s identically on every rung, and the
+    // host has somewhere else to run the turn (see ContextEngineDeps.failoverOnRateLimit).
+    expect(calls()).toBe(1);
+    // The turn still ends retryable with the same code — the host reads it, not the engine.
+    expect(endOf(all).status).toBe("retryable");
+    expect(endOf(all).error_code).toBe("rate_limited");
+  });
+
+  it("keeps the reconnect ladder when the host has nowhere else to run it", async () => {
+    const { llm, calls } = rateLimited();
+    const engine = new ContextEngine({
+      llm,
+      environment: new Environment({
+        workspaceDir: workspace,
+        toolConfig: execCommandToolConfig(),
+      }),
+      maxReconnects: 2,
+      reconnectBackoffMs: 0,
+    });
+
+    await collectRun(engine, [userText("go")], allowAll);
+
+    // The default: the first attempt plus two reconnects, exactly as before this option.
+    expect(calls()).toBe(3);
+  });
+});
