@@ -2,7 +2,7 @@
  * The event hub (machines/event-hub.ts) against scripted machines: ONE `/api/events`
  * subscription per machine however many readers ask for it — the aggregation PRFC-0011 named and
  * did not do — each machine's stream served in its own words out of that subscription's buffer,
- * the machine's heartbeat event arming the hub's silence watchdog, and the aggregate stream that
+ * the machine's stream ping arming the hub's silence watchdog, and the aggregate stream that
  * gives one tab ONE stream whatever the machine count, every event tagged with its machine.
  */
 import http from "node:http";
@@ -18,6 +18,10 @@ import type { WatchedMachine } from "../src/machines/aggregate-stream.js";
 import { MachineSockets } from "../src/machines/machine-sockets.js";
 import { MachineSocketRelay } from "../src/machines/socket-relay.js";
 
+const readerStops: Array<() => Promise<void>> = [];
+const machineStops: Array<() => Promise<void>> = [];
+const hubs: MachineEventHub[] = [];
+
 /** One call frame the machine received. */
 interface ScriptedCall {
   ws: WebSocket;
@@ -30,6 +34,7 @@ interface ScriptedCall {
  * A machine's socket endpoint, scripted: it opens every call it is given, records it, and pushes
  * whatever the test says — an event with an id, or the beat its `/api/events` writes itself. It
  * can also go dark: its sockets drop, and a dial reaches it but never gets the handshake answered.
+ * The stream beat models the production id-less ping, not the full seq-bearing server heartbeat.
  */
 async function machine(options: { beatMs?: number } = {}) {
   const server = http.createServer();
@@ -48,6 +53,15 @@ async function machine(options: { beatMs?: number } = {}) {
   const connections: WebSocket[] = [];
   const calls: ScriptedCall[] = [];
   const timers = new Map<WebSocket, ReturnType<typeof setInterval>>();
+  const streamTimers = new Map<ScriptedCall, ReturnType<typeof setInterval>>();
+  const active = new Set<ScriptedCall>();
+  let streamBeats = true;
+  const cancel = (call: ScriptedCall): void => {
+    active.delete(call);
+    const timer = streamTimers.get(call);
+    if (timer !== undefined) clearInterval(timer);
+    streamTimers.delete(call);
+  };
   wss.on("connection", (ws) => {
     connections.push(ws);
     timers.set(
@@ -58,6 +72,9 @@ async function machine(options: { beatMs?: number } = {}) {
       const timer = timers.get(ws);
       if (timer !== undefined) clearInterval(timer);
       timers.delete(ws);
+      for (const call of active) {
+        if (call.ws === ws) cancel(call);
+      }
     });
     ws.on("message", (raw) => {
       const frame = JSON.parse(raw.toString()) as {
@@ -65,9 +82,30 @@ async function machine(options: { beatMs?: number } = {}) {
         call?: { path: string; headers?: Record<string, string> };
         cancel?: boolean;
       };
-      if (frame.cancel === true || frame.call === undefined) return;
-      calls.push({ ws, id: frame.id, path: frame.call.path, headers: frame.call.headers ?? {} });
+      if (frame.cancel === true) {
+        const call = [...active].find((candidate) => candidate.ws === ws && candidate.id === frame.id);
+        if (call !== undefined) cancel(call);
+        return;
+      }
+      if (frame.call === undefined) return;
+      const call = { ws, id: frame.id, path: frame.call.path, headers: frame.call.headers ?? {} };
+      calls.push(call);
+      active.add(call);
       ws.send(JSON.stringify({ id: frame.id, status: 200, stream: true, headers: {} }));
+      if (call.path.split("?")[0] === "/api/events") {
+        const timer = setInterval(() => {
+          if (!streamBeats || !active.has(call)) return;
+          ws.send(
+            JSON.stringify({
+              id: call.id,
+              event: "ping",
+              eventId: null,
+              data: "{}",
+            }),
+          );
+        }, options.beatMs ?? 15);
+        streamTimers.set(call, timer);
+      }
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -102,7 +140,7 @@ async function machine(options: { beatMs?: number } = {}) {
     },
     /** The machine's `/api/events` says something: one event, as its own SSE writer frames it. */
     emit(eventId: string, event: unknown) {
-      const call = eventCalls().at(-1);
+      const call = [...active].filter((entry) => entry.path.split("?")[0] === "/api/events").at(-1);
       if (call === undefined) throw new Error("the machine has no open /api/events stream");
       call.ws.send(
         JSON.stringify({
@@ -115,11 +153,11 @@ async function machine(options: { beatMs?: number } = {}) {
     },
     /** The machine's App stops writing its beat — the socket stays healthy, the stream does not. */
     stopBeats() {
-      for (const timer of timers.values()) clearInterval(timer);
-      timers.clear();
+      streamBeats = false;
     },
     close: () =>
       new Promise<void>((resolve) => {
+        for (const call of active) cancel(call);
         for (const socket of unanswered.splice(0)) socket.destroy();
         for (const timer of timers.values()) clearInterval(timer);
         for (const ws of connections) ws.terminate();
@@ -137,6 +175,7 @@ class Tap {
   constructor(stream: ReadableStream<Uint8Array>) {
     const reader = stream.getReader();
     this.#reader = reader;
+    readerStops.push(() => this.close());
     const parser = new SseParser();
     const decoder = new TextDecoder();
     void (async () => {
@@ -165,12 +204,17 @@ class Tap {
     return this.events.filter((event) => event.event === name);
   }
 
+  /** Control frames do not satisfy a wait for the scripted business events. */
+  businessEvents(): SseEvent[] {
+    return this.events.filter((event) => event.event !== "ping" && event.event !== "heartbeat");
+  }
+
   async waitFor(count: number, ms = 3_000): Promise<SseEvent[]> {
     const until = Date.now() + ms;
-    while (this.events.length < count && Date.now() < until) {
+    while (this.businessEvents().length < count && Date.now() < until) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
-    return this.events;
+    return this.businessEvents();
   }
 
   async waitClosed(ms = 3_000): Promise<boolean> {
@@ -197,6 +241,7 @@ function setup() {
     reissueMinMs: 15,
     reissueMaxMs: 40,
   });
+  hubs.push(hub);
   const relay = new MachineSocketRelay(log, { sockets, events: hub });
   return { lines, log, sockets, hub, relay };
 }
@@ -223,14 +268,18 @@ const watch = (machineId: string, target: ReturnType<typeof targetOf>): WatchedM
 });
 
 describe("the machine event hub", () => {
-  const stops: Array<() => Promise<void>> = [];
   afterEach(async () => {
-    for (const stop of stops.splice(0)) await stop();
+    try {
+      for (const stop of readerStops.splice(0)) await stop();
+      for (const hub of hubs.splice(0)) expect(hub.subscriptions).toBe(0);
+    } finally {
+      for (const stop of machineStops.splice(0)) await stop();
+    }
   });
 
   it("subscribes ONCE per machine however many readers ask for its events", async () => {
     const m = await machine();
-    stops.push(m.close);
+    machineStops.push(m.close);
     const { sockets, hub, relay } = setup();
     void sockets;
 
@@ -238,18 +287,18 @@ describe("the machine event hub", () => {
       path: "/api/events",
       lastEventId: null,
     });
+    const a = new Tap(first.body!);
     const second = await relay.stream("m1", targetOf(m.port), {
       path: "/api/events",
       lastEventId: null,
     });
+    const b = new Tap(second.body!);
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     // The number the ticket is about: two readers, ONE upstream stream.
     expect(m.eventCalls()).toHaveLength(1);
     expect(hub.subscriptions).toBe(1);
 
-    const a = new Tap(first.body!);
-    const b = new Tap(second.body!);
     m.emit("3-1", { type: "credentials_updated" });
     expect((await a.waitFor(2)).map((event) => [event.id, event.event])).toContainEqual([
       "3-1",
@@ -262,7 +311,7 @@ describe("the machine event hub", () => {
 
   it("serves a machine's stream in the machine's own words, and replays `last-event-id` from its buffer", async () => {
     const m = await machine();
-    stops.push(m.close);
+    machineStops.push(m.close);
     const { relay } = setup();
     const target = targetOf(m.port);
 
@@ -292,7 +341,7 @@ describe("the machine event hub", () => {
 
   it("ends an upstream that misses two beats and re-subscribes it from the machine's last event id", async () => {
     const m = await machine();
-    stops.push(m.close);
+    machineStops.push(m.close);
     const { lines, relay } = setup();
     const target = targetOf(m.port);
 
@@ -322,7 +371,7 @@ describe("the machine event hub", () => {
   it("gives a tab ONE stream for every machine, each event tagged with the machine it came from", async () => {
     const a = await machine();
     const b = await machine();
-    stops.push(a.close, b.close);
+    machineStops.push(a.close, b.close);
     const { hub } = setup();
     const sources: WatchedMachine[] = [
       watch("mA", targetOf(a.port)),
@@ -379,7 +428,7 @@ describe("the machine event hub", () => {
 
   it("answers an aggregate `last-event-id` from a buffer that outlived the stream it was written on", async () => {
     const m = await machine();
-    stops.push(m.close);
+    machineStops.push(m.close);
     const { hub } = setup();
     const sources: WatchedMachine[] = [watch("mA", targetOf(m.port))];
 
@@ -424,13 +473,12 @@ describe("the machine event hub", () => {
 
   it("keeps dialling a machine a tab holds after a dial fails, and resumes it from its last event id", async () => {
     const m = await machine();
-    stops.push(m.close);
+    machineStops.push(m.close);
     const { hub, sockets, relay, lines } = setup();
     const failures = () => lines.filter((line) => line.includes("socket to mA failed"));
     const sources: WatchedMachine[] = [watch("mA", targetOf(m.port))];
     const tab = machineEventsStream(hub, () => sources, null, undefined, { heartbeatMs: 40 });
     const tap = new Tap(tab.body!);
-    stops.push(() => tap.close());
     await m.waitForCalls(1);
     m.emit("1-1", { type: "credentials_updated" });
     await waitUntil(() => tap.frames("machine_event").length === 1);
@@ -477,7 +525,7 @@ describe("the machine event hub", () => {
   it("re-reads the machine's connection before dialling it again for a tab", async () => {
     const old = await machine();
     const replaced = await machine();
-    stops.push(old.close, replaced.close);
+    machineStops.push(old.close, replaced.close);
     const { hub } = setup();
     // The ssh session the first dial rode is replaced: this server holds no connection for a
     // while, then a new one (another session, here another port). The first read is the tab's
@@ -491,7 +539,6 @@ describe("the machine event hub", () => {
     const sources: WatchedMachine[] = [{ machineId: "mA", target }];
     const tab = machineEventsStream(hub, () => sources, null, undefined, { heartbeatMs: 40 });
     const tap = new Tap(tab.body!);
-    stops.push(() => tap.close());
     await old.waitForCalls(1);
     old.emit("1-1", { type: "credentials_updated" });
     await waitUntil(() => tap.frames("machine_event").length === 1);
@@ -507,7 +554,7 @@ describe("the machine event hub", () => {
   it("attaches a machine connected after the tab opened, on the stream the tab already holds", async () => {
     const a = await machine();
     const b = await machine();
-    stops.push(a.close, b.close);
+    machineStops.push(a.close, b.close);
     const { hub } = setup();
     // mA is connected when the tab opens; mB only later — brought into use from this tab, or
     // re-held after a restart. The tab does not re-issue its stream when a machine appears.
@@ -516,7 +563,6 @@ describe("the machine event hub", () => {
       [...connected].map(([machineId, target]) => watch(machineId, target));
     const tab = machineEventsStream(hub, watched, null, undefined, { heartbeatMs: 40 });
     const tap = new Tap(tab.body!);
-    stops.push(() => tap.close());
     expect((await tap.waitFor(1))[0]?.data).toBe('{"type":"hello"}');
     await a.waitForCalls(1);
     expect(hub.subscriptions).toBe(1);
@@ -543,7 +589,7 @@ describe("the machine event hub", () => {
 
   it("attaches a watched machine once its connection can be read, and stops reading when the tab goes away", async () => {
     const m = await machine();
-    stops.push(m.close);
+    machineStops.push(m.close);
     const { hub } = setup();
     // Listed as connected, but its connection cannot be read yet (the ssh session is being
     // reopened, or no session could be had over there): the first two reads answer null.
@@ -563,7 +609,6 @@ describe("the machine event hub", () => {
     };
     const tab = machineEventsStream(hub, watched, null, undefined, { heartbeatMs: 40 });
     const tap = new Tap(tab.body!);
-    stops.push(() => tap.close());
     await m.waitForCalls(1);
     expect(asked).toBe(3);
     expect(hub.subscriptions).toBe(1);
@@ -582,7 +627,7 @@ describe("the machine event hub", () => {
 
   it("reports what each machine's socket is doing, for the Machines page", async () => {
     const m = await machine();
-    stops.push(m.close);
+    machineStops.push(m.close);
     const { sockets, relay } = setup();
     expect(sockets.fact("m1")).toBeNull();
 
@@ -590,6 +635,7 @@ describe("the machine event hub", () => {
       path: "/api/events",
       lastEventId: null,
     });
+    new Tap(stream.body!); // Registered for cancellation before the machine is closed.
     expect(stream.status).toBe(200);
     expect(sockets.fact("m1")).toMatchObject({ state: "connected" });
 
@@ -600,7 +646,7 @@ describe("the machine event hub", () => {
       sock.end("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"),
     );
     await new Promise<void>((resolve) => refusing.listen(0, "127.0.0.1", resolve));
-    stops.push(() => new Promise<void>((resolve) => refusing.close(() => resolve())));
+    machineStops.push(() => new Promise<void>((resolve) => refusing.close(() => resolve())));
     const refused = await relay.stream(
       "m2",
       targetOf((refusing.address() as { port: number }).port),
