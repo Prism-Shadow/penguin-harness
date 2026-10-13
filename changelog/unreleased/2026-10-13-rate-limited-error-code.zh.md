@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** feature
 - **Scope:** `core`
+- **PR:** [#1114](https://github.com/Prism-Shadow/penguin-harness/pull/1114)
 
 [English](2026-10-13-rate-limited-error-code.md)
 
