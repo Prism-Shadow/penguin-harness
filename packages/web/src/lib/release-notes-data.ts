@@ -9,6 +9,24 @@ import type { ReleaseNote } from "./release-notes";
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.2.14",
+    date: "2026-10-13",
+    zh: [
+      "Agent 自进化：五个 RSI 算法以插件提供，每个新建 Project 自带七个内置 Benchmark。",
+      "Agent 能用浏览器：桌面端的内置浏览器，或通过 PenguinHarness Browser 扩展接入你自己的 Chrome。",
+      "回复里可以带可交互的界面；Agent 还能在对话旁搭建自己的页面，改动即时生效。",
+      "对话可以在另一台机器上运行，你的程序也能通过 API 调用 Agent。",
+      "三套主题，默认改为 Frost。",
+    ],
+    en: [
+      "Agent self-evolution: five RSI algorithms ship as plugins, and every new Project comes with seven built-in Benchmarks.",
+      "Agents can use a browser: the desktop app's built-in one, or your own Chrome through the PenguinHarness Browser extension.",
+      "Replies can carry interactive UI, and an agent can build its own page beside the chat that updates as it edits.",
+      "Conversations can run on another machine, and your programs can call an agent through its API.",
+      "Three themes, with Frost as the new default.",
+    ],
+  },
+  {
     version: "0.2.13",
     date: "2026-09-15",
     zh: [

@@ -375,10 +375,10 @@ const LEGACY_CLIENT_TYPES: readonly (readonly [RegExp, string])[] = [
  * compares MMSP's names.
  *
  * Removal: at the 0.3.0 release preparation, by whoever prepares it, once its release notes
- * say a Project last opened before the release that shipped this migration must be opened once
- * on a 0.2.x release first. Takes out LEGACY_CLIENT_TYPES, this function, the write-back in the
+ * say a Project last opened before 0.2.14, the release that shipped this migration, must be
+ * opened once on a 0.2.x release first. Takes out LEGACY_CLIENT_TYPES, this function, the write-back in the
  * two loaders, and their tests (core `state.test.ts`, server `models.test.ts`); see
- * changelog/unreleased/2026-10-01-backward-compatibility.md.
+ * changelog/0.2.14/2026-10-01-backward-compatibility.md.
  */
 export function migrateLegacyClientTypes(table: Record<string, unknown>): boolean {
   let changed = false;
@@ -496,12 +496,12 @@ function pluralityField(
  * the result finds nothing.
  *
  * Removal: at the 0.3.0 release preparation, by whoever prepares it, together with
- * migrateLegacyClientTypes — once its release notes say a Project last opened before the
- * release that shipped this migration must be opened once on a 0.2.x release first. Takes out
+ * migrateLegacyClientTypes — once its release notes say a Project last opened before 0.2.14,
+ * the release that shipped this migration, must be opened once on a 0.2.x release first. Takes out
  * this function with unanimousField and pluralityField, its call in migrateProjectConfigTable
  * (and that wrapper with the other migration), the `providers` marker in
  * renderProjectConfigToml, and their tests (core `state.test.ts`, server `models.test.ts`); see
- * changelog/unreleased/2026-10-02-backward-compatibility.md.
+ * changelog/0.2.14/2026-10-02-backward-compatibility.md.
  */
 export function hoistProviderConnections(table: Record<string, unknown>): boolean {
   if (table.providers !== undefined) return false;
@@ -580,7 +580,7 @@ export function migrateProjectConfigTable(table: Record<string, unknown>): boole
  * migrateProjectConfigTable and the `endpoint === undefined` branch below, the pre-MMSP origin
  * and paths in isPenguinGoEndpoint, and the migration cases in core `state.test.ts` and server
  * `penguin-go-mmsp.test.ts` ("Penguin Go stored projects"); see
- * changelog/unreleased/2026-10-12-backward-compatibility.md. The `endpoint` path stays.
+ * changelog/0.2.14/2026-10-12-backward-compatibility.md. The `endpoint` path stays.
  */
 export function migratePenguinGoRoutes(table: Record<string, unknown>, endpoint?: string): number {
   if (!Array.isArray(table.models)) return 0;

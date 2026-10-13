@@ -12,7 +12,7 @@
 // the group; refusals (a cookie method, a tab the server does not drive); close-tab; and a
 // revoke closing the socket for good.
 import { chromium } from "@playwright/test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,8 @@ import { screenshotX } from "./xshot.mjs";
 const EXTENSION_ID = "dodgfhpcbmkjfcbgnoidablfgjjhhmgp";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.resolve(here, "..", "dist");
+// What the loaded extension reports as its version: the built manifest, stamped from package.json.
+const extensionVersion = JSON.parse(readFileSync(path.join(dist, "manifest.json"), "utf8")).version;
 
 const results = [];
 function check(name, ok, detail = "") {
@@ -168,7 +170,7 @@ try {
     "pairing posts the code, a device name and the version, without a cookie",
     pairRequest !== undefined &&
       /^Chrome \d+/.test(pairRequest.name) &&
-      pairRequest.version === "0.2.13" &&
+      pairRequest.version === extensionVersion &&
       pairRequest.cookie === null &&
       pairRequest.origin === `chrome-extension://${extensionId}`,
     JSON.stringify({ name: pairRequest?.name, version: pairRequest?.version }),
@@ -189,7 +191,7 @@ try {
     "hello answers version 1, backend chrome, the extension's version",
     hello?.version === 1 &&
       hello?.backend === "chrome" &&
-      hello?.extension?.version === "0.2.13" &&
+      hello?.extension?.version === extensionVersion &&
       /^\d+\./.test(hello?.extension?.chrome ?? ""),
     JSON.stringify(hello),
   );

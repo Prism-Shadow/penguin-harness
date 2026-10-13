@@ -1729,7 +1729,7 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
   it("every client type the mirror names is one the installed MMSP builds, the gemini-official alias included", () => {
     // The mirror may not route anything MMSP refuses: each row's client type constructs, and a
     // pin the table lacks is one MMSP refuses as well. When an MMSP upgrade drops an alias, its
-    // row fails here and goes (see changelog/unreleased/2026-10-10-backward-compatibility.md).
+    // row fails here and goes (see changelog/0.2.14/2026-10-10-backward-compatibility.md).
     for (const clientType of Object.keys(MMSP_CLIENTS)) {
       expect(
         () =>
