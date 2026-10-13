@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `ui`
+- **PR:** [#1098](https://github.com/Prism-Shadow/penguin-harness/pull/1098)
 
 [中文版](2026-10-13-context-ring-tooltip.zh.md)
 
