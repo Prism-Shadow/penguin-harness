@@ -130,7 +130,6 @@ import { machinesProxy } from "./proxy.js";
 import type { ProxyTarget } from "./proxy.js";
 import { MachineEventRelay } from "./event-relay.js";
 import type { EventRelay, EventRelayDeps, RelayDial } from "./event-relay.js";
-import { SocketEventRelay } from "./event-hub-relay.js";
 import { MachineEventHub } from "./event-hub.js";
 import { MachineSockets } from "./machine-sockets.js";
 import { HttpError } from "../http/errors.js";
@@ -3194,7 +3193,6 @@ export class MachinesModule {
         // An installed release installs the image its build shipped, unless it was pushed to.
         shippedImage: shippedImage(),
         socketFact: (machineId) => sockets.fact(machineId),
-        relay: (deps) => new SocketEventRelay(deps, events),
         announce: () => toAdmins({ type: "machines_changed" }),
         publishEvent: (machineId, event) => toAdmins({ type: "machine_event", machineId, event }),
       },
