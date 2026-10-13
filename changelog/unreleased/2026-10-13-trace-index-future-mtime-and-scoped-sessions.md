@@ -4,6 +4,7 @@
 - **Type:** fix
 - **Scope:** `trace-index`, `server`
 - **Issue:** [#301](https://github.com/Prism-Shadow/penguin-harness/issues/301)
+- **PR:** [#1112](https://github.com/Prism-Shadow/penguin-harness/pull/1112)
 
 [中文版](2026-10-13-trace-index-future-mtime-and-scoped-sessions.zh.md)
 
