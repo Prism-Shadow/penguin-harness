@@ -34,7 +34,9 @@ beforeEach(() => {
   batchSessions.mockReset();
   batchSessions.mockImplementation(async (_p, requests, machineId) => {
     if (machineId === "m1" && !m1Answers) throw new ApiError(0, "machine_no_answer", "no answer");
-    return { results: requests.map(() => ({ ok: true as const, ...OK })) };
+    return {
+      results: requests.map(({ agentId }) => ({ agentId, ok: true as const, ...OK })),
+    };
   });
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
 });
@@ -92,8 +94,8 @@ describe("a machine that answers nothing", () => {
       return {
         results: requests.map((request) =>
           machineId === "m1" && request.agentId !== "a1"
-            ? { ok: false as const, reason: "absent" as const }
-            : { ok: true as const, ...OK },
+            ? { agentId: request.agentId, ok: false as const, reason: "absent" as const }
+            : { agentId: request.agentId, ok: true as const, ...OK },
         ),
       };
     });
