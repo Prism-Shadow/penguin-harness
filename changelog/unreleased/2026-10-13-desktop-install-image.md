@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `server`, `desktop`
+- **PR:** [#1089](https://github.com/Prism-Shadow/penguin-harness/pull/1089)
 
 [中文版](2026-10-13-desktop-install-image.zh.md)
 
