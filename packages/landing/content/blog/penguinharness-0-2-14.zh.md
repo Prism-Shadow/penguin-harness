@@ -2,10 +2,10 @@
 title: "PenguinHarness 0.2.14：五种自进化算法、内置 Benchmark，Agent 会浏览网页、展示 UI、随处运行"
 date: 2026-10-13
 category: news
-excerpt: "五种 RSI 算法以插件形式发布，可在七个内置 Benchmark 上运行。Agent 还有了浏览器、回复中的交互式 UI 和专属的热更新页面，能运行在其他机器上，你的程序也可以直接调用。"
+excerpt: "五种 RSI 算法以插件形式发布，可在七个内置 Benchmark 上运行。Agent 还有了浏览器、回复中的交互式 UI 和自己的热定制工作台，能运行在其他机器上，并能通过同一套 API 接入任意外部应用。"
 ---
 
-从 0.2.14 起，PenguinHarness 成为一个 Agent 自进化框架。五种自进化（RSI）算法以插件形式发布，每个新建 Project 都自带七个内置 Benchmark 供它们运行。Agent 还多了五项能力：浏览器、回复中的交互式 UI、专属页面、在其他机器上运行，以及供你的程序调用的 API。
+从 0.2.14 起，PenguinHarness 成为一个 Agent 自进化框架。五种自进化（RSI）算法以插件形式发布，每个新建 Project 都自带七个内置 Benchmark 供它们运行。Agent 还多了五项能力：浏览器、回复中的交互式 UI、自己的工作台、在其他机器上运行，以及接入任意外部应用的统一 API。
 
 ![起始页：Agent、RSI 算法和 Benchmark 的数量，以及示例](/blog-assets/penguinharness-0-2-14-start-page-zh.png)
 
@@ -30,21 +30,22 @@ excerpt: "五种 RSI 算法以插件形式发布，可在七个内置 Benchmark 
 
 ![GDPevo Train：三个 Agent 各用一个模型，分数跨版本不断爬升](/blog-assets/penguinharness-0-2-14-benchmark-detail-zh.png)
 
-教程：[用 RSI 工具包让 Agent 自进化](/blog/self-evolve-agents-with-rsi-toolkits)。
+教程：[选一个算法，让 Agent 在 Benchmark 上自己进化](/blog/self-evolve-agents-with-rsi-toolkits)。
 
-## 会浏览网页、展示 UI、搭建页面的 Agent
+## 会浏览网页、展示 UI、给自己搭工作台的 Agent
 
 ### 浏览器自动化
 
 Agent 能打开网页并在里面操作，用桌面端的内置浏览器或你自己的 Chrome 都行；Agent 的标签页都能在对话旁边的**浏览器**面板里跟进。
 
 - Agent 在 shell 里用 `penguin browser` 驱动：`open`、`scan`、`click`、`type`、`exec`。预装的 `browser-automation` 插件会教它们这套循环。
+- 省 Token：Agent 用 `scan` 把页面读成文本，再用一小段 `exec` 脚本操作，只有布局要紧时才截图。这套设计来自 [GenericAgent](https://github.com/lsdefine/genericagent)，感谢它的作者。
 - 内置浏览器有自己独立的登录状态。**从浏览器导入…**可以复制 Chrome、Edge、Firefox 等浏览器的 cookie 和历史记录。
 - 想用自己的 Chrome，从 Chrome Web Store 安装 PenguinHarness Browser，再到**设置** › **浏览器**里配对。Agent 只会操作 Penguin 标签组里的标签页。
 
 ![Agent 在浏览器面板里阅读 PenguinHarness 博客，并列出最新文章](/blog-assets/penguinharness-0-2-14-browser-zh.png)
 
-教程：[让 Agent 使用浏览器](/blog/let-agents-use-the-browser)。
+教程：[浏览器扩展：Agent 低成本地丝滑操作 Chrome](/blog/let-agents-use-the-browser)。
 
 ### A2UI：回复里自带 UI
 
@@ -57,16 +58,16 @@ Agent 能打开网页并在里面操作，用桌面端的内置浏览器或你�
 
 ![一条带天气、时钟、倒计时和指标小组件的回复](/blog-assets/penguinharness-0-2-14-a2ui-widgets-zh.png)
 
-### workflow（工作流）：Agent 专属页面，热更新
+### 给每个 Agent 一个热定制工作台
 
-让 Agent 写个页面，它会直接写出一个工作流：自带服务端代码的页面，以标签页形式显示在对话旁边。
+每个 Agent 都可以有自己的工作台：开口要一个，Agent 就会写出一个 workflow（工作流），也就是带服务端代码的页面，作为标签页显示在对话旁边。法务 Agent 的合同工作台和数据 Agent 的仪表盘各归各的 Agent，应用的其他部分不受影响。
 
 - 服务端对每次改动做类型检查，并原地重新加载标签页。改动加载失败时，上一个版本继续运行。
 - 加载成功的版本会保留下来，最多 20 个。**历史**列出这些版本，**恢复**可以找回任意一个。
 
 ![法务 Agent 的合同工作台，一句话生成，说一声就能改](/blog-assets/penguinharness-0-2-14-workflow-zh.png)
 
-教程：[用工作流给 Agent 一个专属页面](/blog/build-agent-apps-with-workflows)。
+教程：[给每个 Agent 一个热定制工作台](/blog/build-agent-apps-with-workflows)。
 
 ## 随处运行，随处调用
 
@@ -80,7 +81,7 @@ Agent 能打开网页并在里面操作，用桌面端的内置浏览器或你�
 
 ![在机器 devbox 上运行的对话](/blog-assets/penguinharness-0-2-14-machines-zh.png)
 
-教程：[在另一台机器上运行 Agent](/blog/run-agents-on-remote-machines)。
+教程：[一个窗口，让 Agent 跑在你的每一台机器上](/blog/run-agents-on-remote-machines)。
 
 ### Agent API
 
@@ -91,7 +92,7 @@ Agent 能打开网页并在里面操作，用桌面端的内置浏览器或你�
 
 ![运行一次后的「试一试」：工具调用、回答和本次运行的总计](/blog-assets/penguinharness-0-2-14-agent-api-zh.png)
 
-教程：[从自己的程序里调用 Agent](/blog/call-agents-with-the-agent-api)。
+教程：[通过统一 API 将 Agent 接入任意外部应用](/blog/call-agents-with-the-agent-api)。
 
 ## 本版其他更新
 

@@ -1,5 +1,5 @@
 ---
-title: "在同一个窗口里运行远程机器上的 Agent"
+title: "一个窗口，让 Agent 跑在你的每一台机器上"
 date: 2026-10-13
 category: practice
 excerpt: "添加一台服务器能通过 ssh 访问的机器，让 PenguinHarness 把自己装上去，然后在机器的某个文件夹里开始会话。Agent 和命令都跑在机器上，你照常在同一个窗口里工作。"

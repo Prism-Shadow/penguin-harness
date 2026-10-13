@@ -2,10 +2,10 @@
 title: "PenguinHarness 0.2.14: five self-evolution algorithms, built-in Benchmarks, and agents that browse, show UI and run anywhere"
 date: 2026-10-13
 category: news
-excerpt: "Five RSI algorithms ship as plugins and run on seven built-in Benchmarks. Agents also get a browser, reply with interactive UI, keep their own hot-reloaded pages, run on other machines, and can be called from your own programs."
+excerpt: "Five RSI algorithms ship as plugins and run on seven built-in Benchmarks. Agents also get a browser, reply with interactive UI, build a hot-reloaded workbench of their own, run on other machines, and connect to any app through one API."
 ---
 
-With 0.2.14, PenguinHarness becomes a framework for agent self-evolution. Five self-evolution (RSI) algorithms ship as plugins, and every new Project comes with seven built-in Benchmarks to run them on. Agents also get five capabilities: a browser, interactive UI in replies, a page of their own, other machines to run on, and an API for your programs.
+With 0.2.14, PenguinHarness becomes a framework for agent self-evolution. Five self-evolution (RSI) algorithms ship as plugins, and every new Project comes with seven built-in Benchmarks to run them on. Agents also get five capabilities: a browser, interactive UI in replies, a workbench of their own, other machines to run on, and one API that connects them to any app.
 
 ![The start page: the counts of agents, RSI algorithms and Benchmarks, and the examples](/blog-assets/penguinharness-0-2-14-start-page-en.png)
 
@@ -30,21 +30,22 @@ A new Project comes with PenguinHarness Benchmark Sec A to Sec E, drawn from rag
 
 ![GDPevo Train: three agents, each on its own model, climbing across versions](/blog-assets/penguinharness-0-2-14-benchmark-detail-en.png)
 
-Tutorial: [Self-evolve your agents with the RSI toolkits](/blog/self-evolve-agents-with-rsi-toolkits).
+Tutorial: [Pick an algorithm and let your agent evolve itself on a Benchmark](/blog/self-evolve-agents-with-rsi-toolkits).
 
-## Agents that browse, show UI and build pages
+## Agents that browse, show UI and build their own workbench
 
 ### Browser automation
 
 Agents open and work in web pages, either in the desktop app's built-in browser or in your own Chrome, and you follow the agent's tabs in the **Browser** panel beside the conversation.
 
 - Agents drive it from the shell with `penguin browser`: `open`, `scan`, `click`, `type`, `exec`. The preinstalled `browser-automation` plugin teaches them the loop.
+- Token-efficient: an agent reads a page as text with `scan` and acts through a short `exec` script. It takes a screenshot only when the layout matters. The design comes from [GenericAgent](https://github.com/lsdefine/genericagent); thanks to its authors.
 - The built-in browser keeps its own sign-ins. **Import from browser…** copies cookies and history from Chrome, Edge, Firefox and other browsers.
 - To use your own Chrome, install PenguinHarness Browser from the Chrome Web Store and pair it in **Settings** › **Browser**. Agents only touch the tabs in the Penguin tab group.
 
 ![An agent reads the PenguinHarness blog in the Browser panel and lists the newest posts](/blog-assets/penguinharness-0-2-14-browser-en.png)
 
-Tutorial: [Let your agent use a browser](/blog/let-agents-use-the-browser).
+Tutorial: [The browser extension: agents drive your Chrome smoothly, at low cost](/blog/let-agents-use-the-browser).
 
 ### A2UI: replies that carry UI
 
@@ -57,16 +58,16 @@ A reply can now include components (choices, forms, steps, callouts, Mermaid dia
 
 ![A reply with the weather, clock, countdown and metrics widgets](/blog-assets/penguinharness-0-2-14-a2ui-widgets-en.png)
 
-### Workflows: an agent's own page, hot-reloaded
+### A hot-reloaded workbench for every agent
 
-Ask an agent for a page and it writes a workflow — a page with its own server code, shown as a tab beside its chat.
+Every agent can have a workbench of its own: ask for one, and the agent writes a workflow, a page with its own server code, shown as a tab beside its chat. A legal agent's contract desk and a data agent's dashboard each stay with their own agent, and the rest of the app does not change.
 
 - The server type-checks each change and reloads the tab in place. An edit that fails to load leaves the previous version running.
 - Each version that loaded is kept, up to 20. **History** lists them and **Restore** brings one back.
 
 ![The legal agent's Contract desk, built from one sentence and changed by asking](/blog-assets/penguinharness-0-2-14-workflow-en.png)
 
-Tutorial: [Give an agent its own page with workflows](/blog/build-agent-apps-with-workflows).
+Tutorial: [Give every agent its own hot-reloaded workbench](/blog/build-agent-apps-with-workflows).
 
 ## Run anywhere, call from anywhere
 
@@ -80,7 +81,7 @@ An admin adds a machine the server reaches over ssh. PenguinHarness installs its
 
 ![A conversation running on the machine devbox](/blog-assets/penguinharness-0-2-14-machines-en.png)
 
-Tutorial: [Run agents on another machine](/blog/run-agents-on-remote-machines).
+Tutorial: [One window, agents on every machine you have](/blog/run-agents-on-remote-machines).
 
 ### Agent API
 
@@ -91,7 +92,7 @@ Each agent can have an HTTP API: your program sends input and reads the run back
 
 ![Try it after one run: the tool call, the answer and the run totals](/blog-assets/penguinharness-0-2-14-agent-api-en.png)
 
-Tutorial: [Call an agent from your own program](/blog/call-agents-with-the-agent-api).
+Tutorial: [Connect agents to any external app through one unified API](/blog/call-agents-with-the-agent-api).
 
 ## Also in this release
 

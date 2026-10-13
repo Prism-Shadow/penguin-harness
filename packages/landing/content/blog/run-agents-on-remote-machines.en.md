@@ -1,5 +1,5 @@
 ---
-title: "Run agents on a remote machine from the same window"
+title: "One window, agents on every machine you have"
 date: 2026-10-13
 category: practice
 excerpt: "Add a machine your PenguinHarness server can reach over ssh, let the server install itself there, and start a conversation in a folder on that machine. The agent and its commands run on the machine; you keep working in the same window."

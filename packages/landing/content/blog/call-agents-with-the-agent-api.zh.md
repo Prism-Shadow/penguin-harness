@@ -1,11 +1,11 @@
 ---
-title: "用 Agent API 在自己的代码里调用 PenguinHarness Agent"
+title: "通过统一 API 将 Agent 接入任意外部应用"
 date: 2026-10-13
 category: practice
-excerpt: "开启 Agent 的 API，创建密钥，然后用 curl 或 TypeScript 配合 @prismshadow/amsp 客户端运行 Agent。运行过程以 AMSP 事件流返回，用返回的会话 id 就能继续对话。"
+excerpt: "PenguinHarness 里的每个 Agent 都用同一套 API 对外提供服务。开启 API、创建密钥后，任何应用都能运行这个 Agent：用 curl，或在 TypeScript 里用 @prismshadow/amsp 客户端。运行过程以 AMSP 事件流返回，用返回的会话 id 就能继续对话。"
 ---
 
-Agent API 让 PenguinHarness 之外的程序通过 HTTP 与你的某个 Agent 通信。程序发送输入，在运行过程中读取 AMSP 事件流，之后凭 Session id 继续对话。运行使用的是 Project 的模型和凭据，每次运行都会像普通对话一样留下记录。
+Agent API 通过 HTTP 把你的 Agent 接入 PenguinHarness 之外的任何应用，而且所有 Agent 用的是同一套 API：无论调用哪个 Agent，端点、AMSP 事件和客户端都一样。应用发送输入，在运行过程中读取 AMSP 事件流，之后凭 Session id 继续对话。运行使用的是 Project 的模型和凭据，每次运行都会像普通对话一样留下记录。
 
 本教程会把默认 Agent 的 API 开放出来，先用 curl 问它现在的时间，再用 Node 配合 `@prismshadow/amsp` 客户端做同样的事。
 

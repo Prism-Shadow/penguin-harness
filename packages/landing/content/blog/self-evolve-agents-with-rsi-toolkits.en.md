@@ -1,5 +1,5 @@
 ---
-title: "Self-evolve your agents with the RSI toolkits"
+title: "Pick an algorithm and let your agent evolve itself on a Benchmark"
 date: 2026-10-13
 category: practice
 excerpt: "Pick one of the five self-evolution algorithms in PenguinHarness 0.2.14, run it against your own agent on the built-in GDPevo Benchmark, read the result in the Evaluation Center, and keep or roll back the new version."

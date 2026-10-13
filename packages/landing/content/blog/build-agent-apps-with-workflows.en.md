@@ -1,11 +1,13 @@
 ---
-title: "Give an agent its own page: workflows in PenguinHarness"
+title: "Give every agent its own hot-reloaded workbench"
 date: 2026-10-13
 category: practice
-excerpt: "Ask an agent for a page and you get a tab beside its chat, with server code behind it. This tutorial builds a legal agent with an upload desk from one sentence, changes the desk by asking, and restores an earlier version."
+excerpt: "In PenguinHarness every agent can have a workbench of its own: a custom page with server code behind it, built from one sentence and reloaded live as the agent edits it. This tutorial builds a legal agent's contract desk, changes it by asking, and restores an earlier version."
 ---
 
-A workflow is a page and its server code that an agent keeps in its own folder. PenguinHarness shows it as a tab beside the agent's chat, reloads it whenever its files change, and keeps each version that loaded so an edit can be undone.
+A workbench is a custom AI app that belongs to one agent: a page beside its chat with server code behind it, kept in the agent's own folder as a *workflow*. The agent builds it from what you ask and changes it the same way. Each change is type-checked and hot-reloaded into the open tab, and every version that loaded is kept, so any edit can be undone.
+
+Because the workbench belongs to the agent, every agent can have a different one: a legal agent a contract desk, a data agent a dashboard, a support agent a ticket queue. [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) also lets plugins add panels to its Web UI, but those are client plugins a developer writes for the whole application. Here the agent writes its own workbench, and nothing else in the app changes.
 
 In this tutorial you start from the legal agent example on the start page: one message creates a legal agent and gives it a desk for uploading contracts and downloading review reports. Then you change the desk by asking, and restore the version before the change.
 

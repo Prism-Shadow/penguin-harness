@@ -1,11 +1,13 @@
 ---
-title: "给 Agent 一个专属页面：PenguinHarness 里的 workflow（工作流）"
+title: "给每个 Agent 一个热定制工作台"
 date: 2026-10-13
 category: practice
-excerpt: "向 Agent 要一个页面，它的对话旁边就会多出一个标签页，背后是服务端代码。本教程先用一句话构建一个带上传工作台的法务 Agent，再开口修改工作台，最后恢复到之前的版本。"
+excerpt: "在 PenguinHarness 里，每个 Agent 都能有自己的工作台：一个自定义页面，背后是服务端代码，一句话就能搭出来，Agent 每次修改都会热更新。本教程给法务 Agent 搭一个合同工作台，开口修改它，再恢复到之前的版本。"
 ---
 
-workflow（工作流）是一个页面加配套的服务端代码，Agent 把它保存在自己的文件夹里。PenguinHarness 在 Agent 对话旁边显示一个对应的标签页，文件一有变动就重新加载，并保留每个加载成功的版本，方便撤销修改。
+工作台是属于单个 Agent 的自定义 AI 应用：一个显示在对话旁边的页面，背后是服务端代码，以 workflow（工作流）的形式保存在 Agent 自己的文件夹里。Agent 按你的要求把它搭出来，之后也照样开口修改。每次修改都会先做类型检查，再热更新到已打开的标签页；加载成功过的每个版本都会保留，任何修改都能撤销。
+
+工作台属于 Agent 自己，所以每个 Agent 的工作台都可以不一样：法务 Agent 是合同工作台，数据 Agent 是仪表盘，客服 Agent 是工单队列。[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 也允许插件给它的 Web UI 添加面板，但那是开发者为整个应用编写的客户端插件。在 PenguinHarness 里，工作台由 Agent 自己写，应用的其他部分都不受影响。
 
 本教程从起始页上的法务 Agent 示例开始：一条消息就能创建一个法务 Agent，并给它一个工作台，用来上传合同、下载审查报告。然后你开口让它修改工作台，再恢复到修改前的版本。
 

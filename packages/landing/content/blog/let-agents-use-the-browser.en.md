@@ -1,35 +1,24 @@
 ---
-title: "Let your agents use a web browser"
+title: "The browser extension: agents drive your Chrome smoothly, at low cost"
 date: 2026-10-13
 category: practice
-excerpt: "Give an agent a real browser, either the one built into the desktop app or your own Chrome through the PenguinHarness Browser extension. Then hand it a task that needs a web page and watch it work in the Browser panel."
+excerpt: "Pair the PenguinHarness Browser extension, and your agents work in your own Chrome: in tabs you hand them, signed in where you are, reading pages as text rather than screenshots. The desktop app's built-in browser works the same way."
 ---
 
-Some tasks only work on a web page, such as reading an order history behind a sign-in. PenguinHarness agents can now use a browser. They drive it from their shell with `penguin browser`, and you follow their tabs in the **Browser** panel beside the conversation.
+Some tasks only work on a web page, such as reading an order history behind a sign-in. With the PenguinHarness Browser extension, an agent does them in your own Chrome: in a Penguin tab group beside your tabs, already signed in where you are, from the desktop app or from the Web App on any server. You keep using Chrome while it works, and you follow its tabs in the **Browser** panel beside the conversation.
 
-The browser has two backends. The built-in browser lives inside the desktop app. It keeps its own sign-ins. Your own Chrome connects through the PenguinHarness Browser extension, from the desktop app or from the Web App on any server. Set up one of them, then go to "Hand the agent a task".
+It works the page from its shell with `penguin browser`, and cheaply: it reads the page as text with `scan`, then acts with a short script through `exec`, which costs a few dozen tokens. A screenshot is taken only when the layout matters. This scan-then-exec design comes from [GenericAgent](https://github.com/lsdefine/genericagent), whose `web_scan` and `web_execute_js` work the same way in a real, signed-in browser. Thanks to its authors.
+
+The desktop app also has a built-in browser with its own sign-ins. Set up either one, then go to "Hand the agent a task".
 
 ## Before you start
 
 - PenguinHarness 0.2.14 or later, with a model set up on the **Models** page.
-- For the built-in browser, the desktop app on macOS, Windows or Linux. The Web App served by `penguin web`, Docker or a remote server does not have it.
 - For your own Chrome, Chrome 116 or later.
+- For the built-in browser, the desktop app on macOS, Windows or Linux. The Web App served by `penguin web`, Docker or a remote server does not have it.
 - The `browser-automation` plugin on the agent. PenguinHarness installs it on `default_agent` when it creates that agent. For any other agent, or a `default_agent` created before 0.2.14, install it from the **Plugins** page.
 
-## Option A: the built-in browser
-
-1. Open a conversation, select **Right sidebar** at the top right, and choose **Browser** (if the sidebar already shows panels, add it with **+**). A new tab shows a start page of common sites; pick one or type an address.
-
-   ![The Browser panel with a new tab: the address bar is focused above tiles for Google, Bing, Baidu, GitHub, Stack Overflow and Wikipedia](/blog-assets/browser-start-page-en.png)
-
-2. Sign in to the sites the agent will need, right in the panel. The built-in browser keeps these sign-ins between restarts, apart from your system browser.
-3. Or bring your sign-ins over: open the toolbar's menu and select **Import from browser…**. Pick a browser profile, keep **Cookies and sign-ins** checked, and list the sites under **Only these sites**, such as `amazon.com`, to copy only what the agent needs. Then select **Import**.
-
-   ![The toolbar menu of the Browser panel: Import from browser…, Clear browsing data…, Set homepage…, Open in system browser and Developer tools](/blog-assets/browser-menu-en.png)
-
-Import reads Chrome, Edge, Brave, Arc (macOS only), Vivaldi, Opera, Chromium and Firefox profiles. It never writes to them.
-
-## Option B: your own Chrome
+## Option A: your own Chrome, through the extension
 
 1. In PenguinHarness, select your name at the bottom of the sidebar, then **Settings**. On the **Browser** page, select **Connect your Chrome**.
 2. Select **Open the Chrome Web Store**, add PenguinHarness Browser to Chrome, and pin it to the toolbar. If the store cannot be reached, the dialog offers a zip to load in developer mode instead.
@@ -43,6 +32,19 @@ Import reads Chrome, Edge, Brave, Arc (macOS only), Vivaldi, Opera, Chromium and
 4. In the desktop app, an admin chooses **System Chrome** under **Browser agents use**. Members, and everyone on any other server, have only Chrome, so there is nothing to choose.
 
    ![Settings › Browser: agents use System Chrome, and the paired Chrome is connected](/blog-assets/browser-settings-en.png)
+
+## Option B: the built-in browser
+
+1. Open a conversation, select **Right sidebar** at the top right, and choose **Browser** (if the sidebar already shows panels, add it with **+**). A new tab shows a start page of common sites; pick one or type an address.
+
+   ![The Browser panel with a new tab: the address bar is focused above tiles for Google, Bing, Baidu, GitHub, Stack Overflow and Wikipedia](/blog-assets/browser-start-page-en.png)
+
+2. Sign in to the sites the agent will need, right in the panel. The built-in browser keeps these sign-ins between restarts, apart from your system browser.
+3. Or bring your sign-ins over: open the toolbar's menu and select **Import from browser…**. Pick a browser profile, keep **Cookies and sign-ins** checked, and list the sites under **Only these sites**, such as `amazon.com`, to copy only what the agent needs. Then select **Import**.
+
+   ![The toolbar menu of the Browser panel: Import from browser…, Clear browsing data…, Set homepage…, Open in system browser and Developer tools](/blog-assets/browser-menu-en.png)
+
+Import reads Chrome, Edge, Brave, Arc (macOS only), Vivaldi, Opera, Chromium and Firefox profiles. It never writes to them.
 
 ## Hand the agent a task
 

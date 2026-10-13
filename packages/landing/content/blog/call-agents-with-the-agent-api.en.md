@@ -1,11 +1,11 @@
 ---
-title: "Call a PenguinHarness agent from your own code with the Agent API"
+title: "Connect agents to any external app through one unified API"
 date: 2026-10-13
 category: practice
-excerpt: "Turn on an agent's API, create a key, and run the agent from curl or from TypeScript with the @prismshadow/amsp client. The run streams back as AMSP events, and the Session id it returns continues the conversation."
+excerpt: "Every agent in PenguinHarness answers on the same API. Turn it on, create a key, and any app can run the agent from curl or from TypeScript with the @prismshadow/amsp client: the run streams back as AMSP events, and the Session id it returns continues the conversation."
 ---
 
-The Agent API lets a program outside PenguinHarness talk to one of your agents over HTTP. The program sends its input, reads a stream of AMSP events as the run happens, and continues the conversation by its Session id. Runs use the Project's models and credentials, and each one is recorded like any other conversation.
+The Agent API connects your agents to any app outside PenguinHarness over HTTP, and it is the same API for every agent: the same endpoints, the same AMSP events and the same client, whichever agent you call. The app sends its input, reads a stream of AMSP events as the run happens, and continues the conversation by its Session id. Runs use the Project's models and credentials, and each one is recorded like any other conversation.
 
 This tutorial exposes the default agent, asks it for the time from curl, then does the same from Node with the `@prismshadow/amsp` client.
 

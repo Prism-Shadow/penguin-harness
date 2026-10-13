@@ -1,35 +1,24 @@
 ---
-title: "让 Agent 用上浏览器"
+title: "浏览器扩展：Agent 低成本地丝滑操作 Chrome"
 date: 2026-10-13
 category: practice
-excerpt: "给 Agent 一个真正的浏览器：可以用桌面端内置的那个，也可以用 PenguinHarness Browser 扩展接上你自己的 Chrome。然后交给它一个需要网页的任务，在浏览器面板里看它干活。"
+excerpt: "配好 PenguinHarness Browser 扩展，Agent 就能在你自己的 Chrome 里工作：只动你交给它的标签页，登录状态和你一致，读页面用文本而不是截图。桌面端的内置浏览器用法相同。"
 ---
 
-有些任务只能在网页上完成，比如读取登录后才能看到的订单记录。PenguinHarness 的 Agent 现在可以用浏览器了。它们在自己的 shell 里用 `penguin browser` 驱动浏览器，你可以在对话旁边的**浏览器**面板里跟进它们的标签页。
+有些任务只能在网页上完成，比如读取登录后才能看到的订单记录。有了 PenguinHarness Browser 扩展，Agent 就能在你自己的 Chrome 里做这些事：在你的标签页旁边开一个 Penguin 标签组，登录状态和你一致；桌面端和任何服务器上的 Web App 都能用。Agent 工作时你照常用 Chrome，并在对话旁边的**浏览器**面板里查看它的标签页。
 
-浏览器有两种后端。内置浏览器就在桌面端里，有自己独立的登录状态。你自己的 Chrome 则通过 PenguinHarness Browser 扩展接入，桌面端和任何服务器上的 Web App 都可以用。任选一种配好，然后跳到「给 Agent 派个任务」。
+Agent 在自己的 shell 里用 `penguin browser` 操作页面，而且开销很低：先用 `scan` 把页面读成文本，再用一小段 `exec` 脚本完成操作，只花几十个 Token；只有布局要紧时才截图。这套先 scan 再 exec 的设计来自 [GenericAgent](https://github.com/lsdefine/genericagent)，它的 `web_scan` 和 `web_execute_js` 也是这样在已登录的真实浏览器里工作的。感谢 GenericAgent 的作者。
+
+桌面端还有一个内置浏览器，登录状态独立保存。两种任选其一配好，然后跳到「给 Agent 派个任务」。
 
 ## 开始之前
 
 - PenguinHarness 0.2.14 或更高版本，并已在**模型库**页面配置好模型。
+- 用你自己的 Chrome 需要 Chrome 116 或更高版本。
 - 内置浏览器需要 macOS、Windows 或 Linux 上的桌面端。`penguin web`、Docker 或远程服务器提供的 Web App 没有内置浏览器。
-- 用你自己的 Chrome 则需要 Chrome 116 或更高版本。
 - Agent 要装 `browser-automation` 插件。PenguinHarness 创建 `default_agent` 时就会给它装上。其他 Agent，以及 0.2.14 之前创建的 `default_agent`，请到**插件市场**页面安装。
 
-## 方式 A：内置浏览器
-
-1. 打开一个对话，点击右上角的**右侧栏**，再选择**浏览器**（右侧栏里已有面板时，用**+**添加）。新标签页是常用网站的起始页，点一个站点，或直接输入网址。
-
-   ![浏览器面板的新标签页：地址栏已聚焦，下方是 Google、Bing、Baidu、GitHub、Stack Overflow 和 Wikipedia 的磁贴](/blog-assets/browser-start-page-zh.png)
-
-2. 直接在面板里登录 Agent 会用到的网站。内置浏览器会自己保存这些登录状态，重启后依然有效，与系统浏览器相互独立。
-3. 也可以把现有的登录状态搬过来：打开工具栏菜单，选择**从浏览器导入…**。选一个浏览器的用户配置（profile），保持**Cookie 与登录状态**勾选，再在**仅限这些网站**下面列出网站，比如 `amazon.com`，这样只会复制 Agent 需要的部分。最后点击**导入**。
-
-   ![浏览器面板的工具栏菜单：从浏览器导入…、清除浏览数据…、设置主页…、在系统浏览器中打开和开发者工具](/blog-assets/browser-menu-zh.png)
-
-导入支持 Chrome、Edge、Brave、Arc（仅 macOS）、Vivaldi、Opera、Chromium 和 Firefox 的用户配置，并且只读不写。
-
-## 方式 B：你自己的 Chrome
+## 方式 A：你自己的 Chrome（通过扩展）
 
 1. 在 PenguinHarness 里，点击侧边栏底部你的名字，再点**设置**。在**浏览器**页面选择**连接你的 Chrome**。
 2. 点击**打开 Chrome 应用商店**，把 PenguinHarness Browser 添加到 Chrome，并固定到工具栏。如果商店打不开，对话框会提供一个 zip 包，可以在开发者模式下加载。
@@ -43,6 +32,19 @@ excerpt: "给 Agent 一个真正的浏览器：可以用桌面端内置的那个
 4. 桌面端里，由管理员在**Agent 使用的浏览器**下选择**系统 Chrome**。普通成员，以及其他服务器上的所有人，都只有 Chrome 这一个后端，没什么可选的。
 
    ![设置 › 浏览器：Agent 使用系统 Chrome，配对的 Chrome 已连接](/blog-assets/browser-settings-zh.png)
+
+## 方式 B：内置浏览器
+
+1. 打开一个对话，点击右上角的**右侧栏**，再选择**浏览器**（右侧栏里已有面板时，用**+**添加）。新标签页是常用网站的起始页，点一个站点，或直接输入网址。
+
+   ![浏览器面板的新标签页：地址栏已聚焦，下方是 Google、Bing、Baidu、GitHub、Stack Overflow 和 Wikipedia 的磁贴](/blog-assets/browser-start-page-zh.png)
+
+2. 直接在面板里登录 Agent 会用到的网站。内置浏览器会自己保存这些登录状态，重启后依然有效，与系统浏览器相互独立。
+3. 也可以把现有的登录状态搬过来：打开工具栏菜单，选择**从浏览器导入…**。选一个浏览器的用户配置（profile），保持**Cookie 与登录状态**勾选，再在**仅限这些网站**下面列出网站，比如 `amazon.com`，这样只会复制 Agent 需要的部分。最后点击**导入**。
+
+   ![浏览器面板的工具栏菜单：从浏览器导入…、清除浏览数据…、设置主页…、在系统浏览器中打开和开发者工具](/blog-assets/browser-menu-zh.png)
+
+导入支持 Chrome、Edge、Brave、Arc（仅 macOS）、Vivaldi、Opera、Chromium 和 Firefox 的用户配置，并且只读不写。
 
 ## 给 Agent 派个任务
 

@@ -1,5 +1,5 @@
 ---
-title: "用 RSI 工具包让 Agent 自进化"
+title: "选一个算法，让 Agent 在 Benchmark 上自己进化"
 date: 2026-10-13
 category: practice
 excerpt: "从 PenguinHarness 0.2.14 的五个自进化算法里选一个，用内置的 GDPevo Benchmark 跑你的 Agent，到评估中心看结果，再决定保留还是回滚新版本。"
