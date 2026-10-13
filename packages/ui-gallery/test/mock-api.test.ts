@@ -34,7 +34,10 @@ function wrappers(): [name: string, fn: AnyFn][] {
 const ARGS = ["a", "b", "c", "d", "e", "f"];
 
 describe("the mocked API", () => {
-  it("routes every endpoint the app's wrappers name", async () => {
+  // One fresh store per wrapper rebuilds every fixture, the Self-evolution transcript and the
+  // built-in Benchmarks included, so this case outlasts vitest's 5 s default on the Windows
+  // runner; timed out, its loop would keep mutating the store the cases below share.
+  it("routes every endpoint the app's wrappers name", { timeout: 30_000 }, async () => {
     const gaps: string[] = [];
     const crashes: string[] = [];
     for (const [name, fn] of wrappers()) {
