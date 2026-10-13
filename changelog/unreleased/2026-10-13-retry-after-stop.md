@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** feature
 - **Scope:** `web`, `server`, `docs`, `ui-gallery`
+- **PR:** [#1097](https://github.com/Prism-Shadow/penguin-harness/pull/1097)
 
 [中文版](2026-10-13-retry-after-stop.zh.md)
 
