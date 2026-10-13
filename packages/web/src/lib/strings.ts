@@ -3823,18 +3823,16 @@ Benchmark：
     statCacheHit: (pct: string) => `缓存命中率 ${pct}`,
     statElapsed: "用时",
     /**
-     * The elapsed time's two measured components, shown in parentheses after it. They may
-     * overlap (a background tool runs while the model decodes) and may leave a remainder
-     * (approval waits, harness overhead), so this reads as two measurements, never as a split.
+     * The elapsed time's two measured components, as rows behind the "?" beside an elapsed
+     * total. They may overlap (a background tool runs while the model decodes) and may leave a
+     * remainder (approval waits, harness overhead), so they read as two measurements, never as a split.
      */
-    statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}，工具 ${toolMs}`,
-    /** The same two components as rows, behind the "?" beside an elapsed total. */
     statApiTime: "模型 API 时间",
     statToolTime: "工具 wall time",
-    /** The three priced parts behind the "?" beside a cost total; they sum to that total. */
-    costPartCacheRead: "缓存输入",
-    costPartCacheWrite: "未缓存输入",
-    costPartOutput: "输出",
+    /** The three usage parts behind the "?" beside a token or cost total; they sum to that total. */
+    usagePartCacheRead: "缓存输入",
+    usagePartCacheWrite: "未缓存输入",
+    usagePartOutput: "输出",
     statInput: "输入 tokens",
     statCached: "已缓存",
     statOutput: "输出 tokens",
