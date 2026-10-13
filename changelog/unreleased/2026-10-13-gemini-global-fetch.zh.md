@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1088](https://github.com/Prism-Shadow/penguin-harness/pull/1088)
 
 [English](2026-10-13-gemini-global-fetch.md)
 
