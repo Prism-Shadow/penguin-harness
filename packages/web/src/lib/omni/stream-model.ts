@@ -17,9 +17,11 @@
  *     on a sub-session's first message it binds to "the most recent allowed
  *     (decision=allow) and not-yet-complete run_subagent tool card that
  *     hasn't been bound to an origin yet", falling back to a standalone
- *     SubagentItem if none is found; inside the nested model, the same
- *     reducer recurses (with the first origin hop stripped). Sub-session
- *     token_usage counts toward this level's stats (same convention as the CLI).
+ *     SubagentItem if none is found; its opening prompt then moves it onto the
+ *     card of the call that carried that prompt (see moveToSpawningCard).
+ *     Inside the nested model, the same reducer recurses (with the first
+ *     origin hop stripped). Sub-session token_usage counts toward this
+ *     level's stats (same convention as the CLI).
  *   - Events: approval_decision annotates the corresponding tool card
  *     (labeled "manual" if clicked on this end, "automatic" otherwise);
  *     abort → an interruption marker item; request_end ending in any status
@@ -54,6 +56,7 @@
  */
 import {
   isEventMessage,
+  isModelMessage,
   isPartialPayload,
   normalizeSessionSource,
   parseBackgroundTaskDoneMessage,
@@ -556,6 +559,12 @@ export interface StreamModel {
   toolCards: Map<string, ToolCallItem>;
   /** Direct child Session id → nested model. */
   subagents: Map<string, StreamModel>;
+  /**
+   * Direct children bound before their opening prompt arrived, by position alone: the prompt
+   * names the call that spawned them, and may still move them onto its card (see
+   * moveToSpawningCard).
+   */
+  unconfirmedSubagents: Set<string>;
   /** toolCallIds whose approval was clicked on this end (shares the reference with nested models, labeled "manual"). */
   localDecisions: Set<string>;
   /** Approval decisions that arrived before their tool card (backfilled when the card is created). */
@@ -675,6 +684,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openSteering: null,
     toolCards: new Map(),
     subagents: new Map(),
+    unconfirmedSubagents: new Set(),
     localDecisions,
     pendingDecisions: new Map(),
     pendingDecisionTs: new Map(),
@@ -2112,6 +2122,16 @@ function routeNested(model: StreamModel, msg: OmniMessage, nowMs: number): void 
     sub.firstSeenLocalMs = nowMs;
     model.subagents.set(head, sub);
     bindSubagent(model, head, sub);
+    model.unconfirmedSubagents.add(head);
+  }
+  // The child's first model message is the opening prompt its spawning call handed it — right
+  // behind its session_meta, live and in its spliced Trace alike — and that prompt settles which
+  // card it belongs on. A deeper descendant's message reaching it first means the prompt was
+  // missed, and the binding by position stands.
+  if (model.unconfirmedSubagents.has(head) && isModelMessage(msg)) {
+    model.unconfirmedSubagents.delete(head);
+    const prompt = msg.origin!.length === 1 ? openingPrompt(msg) : null;
+    if (prompt !== null) moveToSpawningCard(model, head, sub, prompt);
   }
   // Elapsed-time stamps (see the StreamModel field docs): every message routed into this child's
   // subtree — its own or a deeper descendant's — counts as its activity; the recursive pushMessage
@@ -2153,6 +2173,97 @@ function bindSubagent(model: StreamModel, sessionId: string, sub: StreamModel): 
     }
   }
   model.items.push({ kind: "subagent", id: nextId(model), sessionId, model: sub });
+}
+
+/**
+ * Moves a child onto the card of the run_subagent call that spawned it. Its first binding goes
+ * by position, which picks the wrong card as soon as several calls run at once; the opening
+ * prompt is exact, because core starts a child with the call's `prompt` argument verbatim as its
+ * first user text. The spawning card is an allowed run_subagent card with that prompt, whose
+ * `agent_id`, `model_id` and `provider`, where it names them, are what the child's session_meta
+ * records, and which holds no child yet or one still unconfirmed. Two cards fit only when those
+ * calls were identical in all of that: the earliest one still running wins (calls start in
+ * order), else the latest finished one (a background launch returns before its child's prompt
+ * has streamed in). An unconfirmed child already on the spawning card trades places with this
+ * one and moves again on its own prompt. A child bound standalone stays: no open card was left
+ * for it, so its own was not open either.
+ */
+function moveToSpawningCard(
+  model: StreamModel,
+  sessionId: string,
+  sub: StreamModel,
+  prompt: string,
+): void {
+  const from = model.items.find(
+    (item): item is ToolCallItem =>
+      item.kind === "tool_call" && item.subagentSessionId === sessionId,
+  );
+  if (!from) return;
+  const target = spawningCard(model, sessionId, prompt, sub.meta);
+  if (target === null || target === from) return;
+  const displacedId = target.subagentSessionId;
+  const displaced = target.subagent;
+  target.subagent = sub;
+  target.subagentSessionId = sessionId;
+  if (displaced !== undefined && displacedId !== undefined) {
+    from.subagent = displaced;
+    from.subagentSessionId = displacedId;
+  } else {
+    delete from.subagent;
+    delete from.subagentSessionId;
+  }
+}
+
+/** The opening prompt a child's first model message carries: a user text from its parent agent (or, in a Trace older than `sender`, from no one named). */
+function openingPrompt(msg: OmniMessage): string | null {
+  const p = msg.payload as { type?: string; role?: string; text?: unknown; sender?: string };
+  if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") return null;
+  return p.sender === undefined || p.sender === "parent_agent" ? p.text : null;
+}
+
+/** The card of the call that spawned `sessionId`, judged by its opening prompt (see moveToSpawningCard). */
+function spawningCard(
+  model: StreamModel,
+  sessionId: string,
+  prompt: string,
+  meta: NestedSessionMeta | null,
+): ToolCallItem | null {
+  let latestFinished: ToolCallItem | null = null;
+  for (const item of model.items) {
+    if (item.kind !== "tool_call" || item.name !== "run_subagent" || item.decision !== "allow") {
+      continue;
+    }
+    const holder = item.subagentSessionId;
+    if (holder !== undefined && holder !== sessionId && !model.unconfirmedSubagents.has(holder)) {
+      continue;
+    }
+    const args = callArguments(item.argumentsText);
+    if (args === null || args.prompt !== prompt || !namesChild(args, meta)) continue;
+    if (!item.outputComplete) return item;
+    latestFinished = item;
+  }
+  return latestFinished;
+}
+
+/** Whether a call's `agent_id`, `model_id` and `provider`, where it names them, are what the child's session_meta records. */
+function namesChild(args: Record<string, unknown>, meta: NestedSessionMeta | null): boolean {
+  if (meta === null) return true;
+  const differs = (named: unknown, actual: string | null): boolean =>
+    typeof named === "string" && actual !== null && named !== actual;
+  return (
+    !differs(args.agent_id, meta.agentId) &&
+    !differs(args.model_id, meta.modelId) &&
+    !differs(args.provider, meta.provider)
+  );
+}
+
+function callArguments(argumentsText: string): Record<string, unknown> | null {
+  try {
+    const args: unknown = JSON.parse(argumentsText);
+    return typeof args === "object" && args !== null ? (args as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
