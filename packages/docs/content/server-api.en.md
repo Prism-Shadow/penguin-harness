@@ -290,7 +290,7 @@ The socket belongs to the ssh session it was dialled through, not to the machine
 
 ### One event stream per machine
 
-The Web App consumes remote machine events from the local user stream, not from both endpoints at once. The Project aggregate remains available to explicit readers; both endpoints share the same upstream socket subscription. Machines without an API socket are refused rather than silently given a second HTTP stream.
+The Web App consumes remote machine events from the local user stream. Its server-side relay retains HTTP `/api/events`, including for machines without an API socket. The Project aggregate and proxy streams retain their socket-only transport. An explicit aggregate reader can therefore cause a second upstream subscription alongside the HTTP relay; sharing these transports requires a separate compatibility decision.
 
 Watching N machines used to cost a tab N streams: it called `/server/<machineId>/api/events` once per machine, so a hub with T tabs held T × N upstream subscriptions, and one machine going quiet multiplied its re-issue storm by the number of tabs. The hub now holds ONE subscription to a machine's `/api/events`, over the same socket it holds to that machine, and serves every local reader from it — one machine's own stream, or any number of tabs:
 
