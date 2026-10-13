@@ -898,7 +898,7 @@ export function createSessionsStore() {
             // a hiccup used to sit on the skeleton until some event happened to fire.
             const reasons = results
               .filter((r) => r.source === null && !r.answered)
-              .map((r) => `${r.agentId}: ${r.reason ?? "no answer"}`);
+              .map((r) => `${r.agentId}: no answer`);
             const delay = Math.min(RELOAD_RETRY_MAX_MS, RELOAD_RETRY_MIN_MS * 2 ** retries);
             retries += 1;
             console.warn(
