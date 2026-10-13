@@ -91,14 +91,11 @@ export function StartDashboard({
 
   return (
     <>
-      {/* Its own query container. One grid: the logo, the name over the slogan, and — where the
-          column holds them (`@2xl`) — the counts, share the first row, centred on each other; the
-          version line is the second row, starting at the name's left edge and running on under
-          the counts, so it always has the column's width less the logo's; on a narrower column
-          the counts take a third row of their own. The brand gives way (its slogan wraps) rather
-          than the counts dropping. */}
+      {/* The logo spans the name, slogan and version line. The version starts at the name's
+          left edge and reaches under the counts at `@2xl`; below that, the counts take their
+          own third row. */}
       <div className="@container mb-10">
-        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 @2xl:grid-cols-[auto_minmax(0,1fr)_auto]">
+        <div className="grid grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)] items-center gap-x-3 @2xl:grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)_auto]">
           <StartBrand />
           <VersionLine />
           <Card
@@ -144,9 +141,9 @@ export function StartDashboard({
 // ---------------------------------------------------------------------------
 
 /**
- * The header grid's first two cells: the logo beside two lines, the name over the slogan. The
- * logo is the two lines' height, so the three read as one mark; a slogan that has to wrap to
- * make room for the counts breaks into even lines.
+ * The logo spans both brand rows, matching the name, slogan and version line together. Its
+ * square wrapper takes its height from the text; the image contributes no intrinsic size.
+ * Reserve its maximum width so wrapped text cannot enlarge the square into its own column.
  */
 function StartBrand() {
   return (
@@ -155,11 +152,13 @@ function StartBrand() {
           page, where white meets white. Its corner is the asset's own (the drawing clips at 24% of
           the side), not the theme's radius scale, which would make it a circle in Frost and a
           square in Console: the mark keeps one shape everywhere. */}
-      <PenguinLogo
-        src={PENGUIN_LOGO_URL}
-        className="h-14 w-14 shrink-0 rounded-[24%] ring-1 ring-line-muted"
-      />
-      <div className="min-w-0">
+      <div className="relative col-start-1 row-span-2 row-start-1 aspect-square max-h-24 justify-self-start self-stretch">
+        <PenguinLogo
+          src={PENGUIN_LOGO_URL}
+          className="absolute inset-0 h-full w-full rounded-[24%] ring-1 ring-line-muted"
+        />
+      </div>
+      <div className="col-start-2 row-start-1 min-w-0">
         <Heading level={1} display>
           <AppName />
         </Heading>
