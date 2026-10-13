@@ -33,10 +33,11 @@
  *   the row's key, else the group's, on the group's endpoint; a group key reaches only the rows
  *   on its endpoint's origin (never Atria, never a row re-pointed at another host); a
  *   user-defined group's table goes with its last row.
- * - "Add new models" adds only the missing, non-retired presets with their promotions, each
- *   stored against its group's table field by field (a field the table holds is followed, one it
- *   lacks is written on the row, a group with neither rows nor table gets the catalog's), and
- *   moves nothing else; "Restore defaults" puts built-in rows and built-in group tables back to
+ * - "Add new models" adds only the missing, non-retired presets with their promotions — a
+ *   scheduled row's included, billed on top of its off-peak tier — each stored against its
+ *   group's table field by field (a field the table holds is followed, one it lacks is written on
+ *   the row, a group with neither rows nor table gets the catalog's), and moves nothing else: a
+ *   row already there without a promotion stays without one; "Restore defaults" puts built-in rows and built-in group tables back to
  *   the catalog's shape, keeping keys (a key every keyed row of a group shares moves to the
  *   group), the user's own rows and groups, a self-hosted group's server (vLLM's base URL),
  *   Penguin Go's promotions, and the references that still name a valid row.
@@ -2289,6 +2290,45 @@ describe("preset sync: add new models / restore defaults", () => {
     const { mtimeMs } = await stat(cfgFile());
     expect(await (await sync("add")).json()).toMatchObject({ added: 0, restored: 0 });
     expect((await stat(cfgFile())).mtimeMs).toBe(mtimeMs);
+  });
+
+  it("adding new models brings a scheduled preset back with its seller's promotion on top of the off-peak tier, and leaves a row already there without one as it was", async () => {
+    const preset = (await (await api.get(url())).json()) as ModelsResponse;
+    const scheduled = catalogEntryFor("tokendance", "deepseek-v4.1-flash")!;
+    // The scheduled row was dropped; glm-5.3 has no promotion on record, as in a Project an
+    // older release wrote.
+    const put = await api.put(url(), {
+      models: asEntries(preset).filter((m) => !isPair("tokendance", "deepseek-v4.1-flash")(m)),
+    });
+    expect(put.status).toBe(200);
+    t.deps.db
+      .prepare("DELETE FROM model_promotions WHERE project_id = ? AND model_id = ?")
+      .run(projectId, "glm-5.3");
+
+    const body = (await (await sync("add")).json()) as PresetSyncResponse;
+    expect(body.added).toBe(1);
+    const added = pick(body, "tokendance", "deepseek-v4.1-flash");
+    // Stored at its peak list price, with the seller's promotion beside it.
+    expect(added.pricing).toEqual({
+      cacheRead: scheduled.pricing!.cache_read,
+      cacheWrite: scheduled.pricing!.cache_write,
+      output: scheduled.pricing!.output,
+    });
+    expect(added.discount).toBe(scheduled.discount);
+    expect(added.discount).toBeGreaterThan(0);
+    // The cost center bills the promotion at peak, and on top of the half-price tier off it.
+    const off = (v: number, fraction: number): number => Math.round(v * (1 - fraction) * 1e6) / 1e6;
+    const rates = (await t.deps.projectConfigService.getPricing(
+      projectId,
+      "tokendance",
+      "deepseek-v4.1-flash",
+    ))!;
+    expect(rates.peak.output).toBe(off(scheduled.pricing!.output, added.discount!));
+    expect(rates.offPeak.output).toBe(
+      off(off(scheduled.pricing!.output, scheduled.offPeakDiscount!.rate), added.discount!),
+    );
+    // The row already there is not given the promotion it lacks.
+    expect(pick(body, "tokendance", "glm-5.3")).not.toHaveProperty("discount");
   });
 
   it("an added model is stored against its group's table field by field: a field the table holds is followed, one it lacks is written out, and a group the file never had gets the catalog's table", async () => {
