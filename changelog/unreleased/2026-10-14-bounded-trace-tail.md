@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** fix
 - **Scope:** `core`, `server`, `web`
+- **PR:** [#1115](https://github.com/Prism-Shadow/penguin-harness/pull/1115)
 
 [中文版](2026-10-14-bounded-trace-tail.zh.md)
 
