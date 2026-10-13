@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** process
 - **Scope:** `changelog`
+- **PR:** [#1079](https://github.com/Prism-Shadow/penguin-harness/pull/1079)
 
 [English](2026-10-12-changelog-metadata-0-2-14.md)
 
