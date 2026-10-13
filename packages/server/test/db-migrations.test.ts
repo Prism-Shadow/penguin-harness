@@ -3,6 +3,8 @@
  * 0.2.9 → 0.2.10 drop that is its first restart-only one, the additive column pair that
  * the user profile added to `users`, and the channels migration that is its first table
  * recreation.
+ * - Given existing Agent API settings and a key, upgrading adds unset session defaults without
+ *   changing the saved exposure, approvals or key; reopening keeps the selected defaults.
  *
  * Two properties carry everything else: a real 0.2.4 database reaches exactly the shape a
  * fresh one is created with (so a runtime older than the platform pushed onto it becomes
@@ -617,8 +619,9 @@ describe("migration 8 → current: model-promotions", () => {
         "agent-api",
         "messaging-conversations",
         "sessions-kept-at",
+        "agent-api-session-settings",
       ]);
-      expect(schemaVersion(db)).toBe(16);
+      expect(schemaVersion(db)).toBe(17);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -643,8 +646,9 @@ describe("migration 8 → current: model-promotions", () => {
         "agent-api",
         "messaging-conversations",
         "sessions-kept-at",
+        "agent-api-session-settings",
       ]);
-      expect(schemaVersion(db)).toBe(16);
+      expect(schemaVersion(db)).toBe(17);
     } finally {
       db.close();
     }
@@ -669,8 +673,9 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         "agent-api",
         "messaging-conversations",
         "sessions-kept-at",
+        "agent-api-session-settings",
       ]);
-      expect(schemaVersion(db)).toBe(16);
+      expect(schemaVersion(db)).toBe(17);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -717,8 +722,9 @@ describe("migration 12 → current: browser-extensions", () => {
         "agent-api",
         "messaging-conversations",
         "sessions-kept-at",
+        "agent-api-session-settings",
       ]);
-      expect(schemaVersion(db)).toBe(16);
+      expect(schemaVersion(db)).toBe(17);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +
@@ -778,8 +784,9 @@ describe("migration 13 → current: agent-api", () => {
         "agent-api",
         "messaging-conversations",
         "sessions-kept-at",
+        "agent-api-session-settings",
       ]);
-      expect(schemaVersion(db)).toBe(16);
+      expect(schemaVersion(db)).toBe(17);
       const enable = () =>
         db
           .prepare(
@@ -864,8 +871,9 @@ describe("migration 14 → current: messaging-conversations", () => {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "messaging-conversations",
         "sessions-kept-at",
+        "agent-api-session-settings",
       ]);
-      expect(schemaVersion(db)).toBe(16);
+      expect(schemaVersion(db)).toBe(17);
       const put = () =>
         db
           .prepare(
@@ -904,8 +912,11 @@ describe("migration 15 → current: sessions-kept-at", () => {
     const db = open15();
     try {
       insertSession(db);
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["sessions-kept-at"]);
-      expect(schemaVersion(db)).toBe(16);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "sessions-kept-at",
+        "agent-api-session-settings",
+      ]);
+      expect(schemaVersion(db)).toBe(17);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
       ]);
@@ -1143,6 +1154,49 @@ describe("rollbackTo", () => {
       migrate(db);
       expect(() => rollbackTo(db, LATEST_VERSION + 5)).toThrow(/already below/);
       expect(() => rollbackTo(db, -1)).toThrow(/negative/);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("migration 16 → current: Agent API session settings", () => {
+  it("preserves exposure, approvals and keys while adding defaults, and keeps later choices on re-open", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(SCHEMA_SQL);
+      for (const column of ["provider", "model_id", "thinking_level", "workspace"]) {
+        db.exec(`ALTER TABLE agent_api DROP COLUMN ${column}`);
+      }
+      db.exec(`PRAGMA user_version = 16;
+        INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('owner', 'hash', 0, 'now');
+        INSERT INTO agent_api VALUES ('p', 'a', 1, 1, 'read-only', 'now');
+        INSERT INTO agent_api_keys VALUES ('key', 'p', 'a', 'hash', 'prefix', 'ci', 'owner', 'now', NULL);`);
+      migrate(db, { swapPath: true });
+      expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
+        enabled: 1,
+        open: 1,
+        approval_mode: "read-only",
+        provider: null,
+        model_id: null,
+        thinking_level: null,
+        workspace: null,
+      });
+      expect(db.prepare("SELECT token_hash FROM agent_api_keys").get()).toEqual({
+        token_hash: "hash",
+      });
+      db.exec(
+        "UPDATE agent_api SET provider = 'custom', model_id = 'chosen', thinking_level = 'high', workspace = '/work'",
+      );
+      migrate(db);
+      expect(
+        db.prepare("SELECT provider, model_id, thinking_level, workspace FROM agent_api").get(),
+      ).toEqual({
+        provider: "custom",
+        model_id: "chosen",
+        thinking_level: "high",
+        workspace: "/work",
+      });
     } finally {
       db.close();
     }

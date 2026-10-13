@@ -22,6 +22,9 @@
  * - Given an unknown path under the prefix, the answer is a JSON 404 — not the SPA, not a 401.
  *
  * Scenarios — runs:
+ * - Given API model, thinking and workspace defaults, new public and Try-it Sessions use them;
+ *   continuing a Session preserves its choices, clearing defaults restores normal creation,
+ *   and a removed workspace refuses creation without leaving a Session behind.
  * - Given a run without session_id, a Session is created with client `api` and source `api`
  *   and run.started names it; the stream is the real Session's projected — its toolset, one
  *   Request answering, run.done completed — and does not echo the input.
@@ -451,6 +454,14 @@ describe("Agent API: runs", () => {
       models: [
         {
           provider: "custom",
+          modelId: "claude-api-model",
+          clientType: "ant-messages",
+          apiKey: "sk-mock",
+          baseUrl: mock.url,
+          contextWindow: 200_000,
+        },
+        {
+          provider: "custom",
           modelId: MOCK_MODEL_ID,
           apiKey: "sk-mock",
           baseUrl: mock.url,
@@ -458,7 +469,7 @@ describe("Agent API: runs", () => {
         },
       ],
     });
-    expect(models.status).toBe(200);
+    expect(models.status, await models.text()).toBe(200);
     key = await expose(admin, A);
   });
   afterAll(async () => {
@@ -512,6 +523,46 @@ describe("Agent API: runs", () => {
         model_id: MOCK_MODEL_ID,
       },
     });
+  });
+
+  it("new runs use the API defaults, existing sessions keep theirs, and clearing restores defaults", async () => {
+    const fs = await import("node:fs/promises");
+    const workspace = await fs.realpath(await fs.mkdtemp(`${t.root}/api-workspace-`));
+    const tab = `/api/projects/${P}/agents/${A}/api`;
+    const model = { provider: "custom", modelId: "claude-api-model" };
+    const firstId = async (res: Response) => {
+      if (res.status !== 200) throw new Error(await res.text());
+      const events = await stream(res).rest();
+      expect(events.at(-2)).toMatchObject({ type: "run.done", status: "completed" });
+      return (events[0] as Extract<AmspEvent, { type: "run.started" }>).session_id;
+    };
+    try {
+      expect((await admin.put(tab, { model, thinkingLevel: "high", workspace })).status).toBe(200);
+      const id = await firstId(
+        await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { input: "one" } }),
+      );
+      expect(await session(id)).toMatchObject({ ...model, thinkingLevel: "high", workspace });
+      await admin.put(tab, { model: null, thinkingLevel: "low", workspace: null });
+      await firstId(
+        await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { session_id: id, input: "two" } }),
+      );
+      expect(await session(id)).toMatchObject({ ...model, thinkingLevel: "high", workspace });
+      const tried = await firstId(await admin.post(`${tab}/try`, { input: "three" }));
+      expect(await session(tried)).toMatchObject({
+        provider: "custom",
+        modelId: MOCK_MODEL_ID,
+        thinkingLevel: "low",
+      });
+      expect((await session(tried)).workspace).not.toBe(workspace);
+      await admin.put(tab, { thinkingLevel: null, workspace });
+      await fs.rm(workspace, { recursive: true });
+      const count = t.deps.sessionsRepo.listByAgent(P, A).length;
+      const refused = await amsp(t, `/agents/${P}/${A}/runs`, { key, body: { input: "four" } });
+      expect(await errorOf(refused)).toMatchObject({ status: 400, code: "workspace_not_found" });
+      expect(t.deps.sessionsRepo.listByAgent(P, A)).toHaveLength(count);
+    } finally {
+      await admin.put(tab, { model: null, thinkingLevel: null, workspace: null });
+    }
   });
 
   it("the created Session carries the Agent's API approval mode; the tab does not move it, a PATCH on the Session does", async () => {

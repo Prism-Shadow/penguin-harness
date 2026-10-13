@@ -1,6 +1,6 @@
 /**
  * Agent settings page "API" tab: whether external programs may talk to this Agent over its public
- * API (the AMSP stream under /api/amsp/v1), the approval mode its API conversations start with,
+ * API (the AMSP stream under /api/amsp/v1), the defaults its API conversations start with,
  * the address and id a program needs, the keys, and two examples that call it.
  *
  * Everything here is this server's, kept in its database — not in the Agent State, not in the
@@ -21,7 +21,7 @@
  * its stream shown as a program would receive it.
  */
 import { useCallback, useEffect, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import type {
   AgentApiKeyInfo,
   AgentApiResponse,
@@ -52,6 +52,7 @@ import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useProject } from "../../state/project";
 import { APPROVAL_MODES } from "../chat/approval-mode";
+import { ApiSessionSettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
 
 /** The public API's root on the server this page was served from. */
@@ -81,7 +82,7 @@ export function agentApiExamples(baseUrl: string, agentRef: string): { curl: str
     `  apiKey: process.env.PENGUIN_AGENT_KEY,`,
     `});`,
     ``,
-    `const result = await client.ask({ input: "Hello" });`,
+    `const result = await client.run({ input: "Hello" });`,
     `console.log(result.text);`,
   ].join("\n");
   return { curl, sdk };
@@ -314,6 +315,7 @@ export interface ApiTabViewProps {
   draftError?: string;
   /** A just-created key's secret, until Done; null otherwise. */
   secret: string | null;
+  sessionSettings: ReactNode;
   onToggleEnabled: (next: boolean) => void;
   onApprovalMode: (mode: ApprovalMode) => void;
   onToggleOpen: (next: boolean) => void;
@@ -351,12 +353,13 @@ export function ApiTabView(p: ApiTabViewProps) {
 
       {p.settings.enabled && (
         <>
+          {p.sessionSettings}
           {/* A width on a box around the field: the select's own w-full would beat one passed in. */}
           <div className="max-w-sm">
             <Select
               size="sm"
               label={S.agent.apiApprovalMode}
-              hint={S.agent.apiApprovalModeHint}
+              info={S.agent.apiApprovalModeHint}
               value={p.settings.approvalMode}
               disabled={!p.isOwner || p.busy}
               onChange={(e) => {
@@ -568,6 +571,20 @@ export function ApiTab({
         draftName={draftName}
         {...(draftError !== undefined ? { draftError } : {})}
         secret={secret}
+        sessionSettings={
+          <ApiSessionSettings
+            key={`settings:${projectId}/${agentId}`}
+            projectId={projectId}
+            agentId={agentId}
+            settings={settings}
+            disabled={!isOwner || busy}
+            onSaved={(res) => {
+              setSettings(res.api);
+              setServerEnabled(res.serverEnabled);
+            }}
+            onBusy={setBusy}
+          />
+        }
         onToggleEnabled={(next) => {
           if (next) void write({ enabled: true });
           else setConfirmOff(true);

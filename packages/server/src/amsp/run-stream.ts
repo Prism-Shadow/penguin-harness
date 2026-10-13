@@ -6,8 +6,7 @@
  * 2. The body is read and validated: `input` (a string, or text / image_url items) becomes the
  *    run's input messages — texts first, then images, as the composer submits them.
  * 3. The Session: without `session_id` a new one is created — source `api`, client `api`, the
- *    Agent's API approval mode copied onto its row, the model and sandbox the server's new-chat
- *    defaults; with one, it must be an API Session of this Agent. An Agent already running
+ *    Agent's API model, thinking, workspace and approval defaults, and the server's sandbox; with one, it must be an API Session of this Agent. An Agent already running
  *    AMSP_MAX_CONCURRENT_RUNS Sessions is refused 429 before a run would add one more.
  * 4. The handler subscribes to the Session's channel BEFORE the Task starts, so nothing of the
  *    run can be published unseen; a busy Session is refused (409) by `startTask` itself, with
@@ -25,8 +24,8 @@ import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { AmspEvent, RunStarted } from "@prismshadow/amsp";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import type { ApprovalMode } from "../api/types.js";
 import type { Channels, Log } from "../hmr/capabilities.js";
+import { assertWorkspaceAllowed } from "../services/workspace-guard.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest, readJson } from "../http/validate.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";
@@ -225,14 +224,20 @@ export async function runStream(c: Context<AmspEnv>, deps: RunStreamDeps): Promi
     if (deps.manager.statusOf(sessionId) === "idle" && full()) throw tooManyRuns();
   } else {
     if (full()) throw tooManyRuns();
-    const approvalMode: ApprovalMode =
-      deps.agentApi.get(projectId, agentId)?.approvalMode ?? "allow-all";
+    const settings = deps.agentApi.get(projectId, agentId);
+    const workspace =
+      settings?.workspace == null
+        ? undefined
+        : await assertWorkspaceAllowed({ workspace: settings.workspace });
     const created = await deps.sessionService.createSession({
       projectId,
       agentId,
       source: "api",
       client: "api",
-      approvalMode,
+      approvalMode: settings?.approvalMode ?? "allow-all",
+      ...(settings?.model ?? {}),
+      ...(settings?.thinkingLevel != null ? { thinkingLevel: settings.thinkingLevel } : {}),
+      ...(workspace !== undefined ? { workspace } : {}),
     });
     sessionId = created.sessionId;
   }

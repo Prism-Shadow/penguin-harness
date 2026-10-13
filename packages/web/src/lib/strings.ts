@@ -1934,6 +1934,9 @@ export const zh = {
     apiOwnerOnly: "只有 Project 所有者可以更改这些设置。",
     apiAdminOff:
       "管理员已在服务器设置中关闭 Agent API：所有 API 请求都会被拒绝，这里的设置与密钥保留。",
+    apiSessionSettings: "新会话设置",
+    apiSessionSettingsHint:
+      "应用于之后新建的 API 会话。模型留空使用 Project 默认模型，思考等级留空使用 Agent 配置，工作区留空则创建临时工作区。",
     apiApprovalMode: "API 会话的审批模式",
     apiApprovalModeHint:
       "应用于之后新建的 API 会话；需要确认时，确认请求会发给调用方，也可在 Web App 中回答。",

@@ -1833,6 +1833,9 @@ export const en: Strings = {
     apiOwnerOnly: "Only the Project owner can change these settings.",
     apiAdminOff:
       "An admin has turned the Agent API off for this server: every API request is refused, and the settings and keys here are kept.",
+    apiSessionSettings: "New session settings",
+    apiSessionSettingsHint:
+      "Applies to new API sessions. An unset model follows the Project default; an unset thinking level follows the Agent configuration; an unset workspace creates a temporary workspace.",
     apiApprovalMode: "Approval mode for API conversations",
     apiApprovalModeHint:
       "Applies to API conversations created from now on; when a mode asks, the request goes to the caller and can also be answered here.",

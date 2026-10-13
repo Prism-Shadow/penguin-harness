@@ -23,6 +23,12 @@ function settingsOf(r: Row): AgentApiRow {
     enabled: Number(r.enabled) === 1,
     open: Number(r.open) === 1,
     approvalMode: r.approval_mode as ApprovalMode,
+    model:
+      r.provider === null
+        ? null
+        : { provider: r.provider as string, modelId: r.model_id as string },
+    thinkingLevel: r.thinking_level as AgentApiRow["thinkingLevel"],
+    workspace: r.workspace as string | null,
     updatedAt: r.updated_at as string,
   };
 }
@@ -59,15 +65,21 @@ export class AgentApiRepo implements AgentApi {
       enabled: patch.enabled ?? current?.enabled ?? false,
       open: patch.open ?? current?.open ?? false,
       approvalMode: patch.approvalMode ?? current?.approvalMode ?? "allow-all",
+      model: patch.model === undefined ? (current?.model ?? null) : patch.model,
+      thinkingLevel:
+        patch.thinkingLevel === undefined ? (current?.thinkingLevel ?? null) : patch.thinkingLevel,
+      workspace: patch.workspace === undefined ? (current?.workspace ?? null) : patch.workspace,
       updatedAt: at,
     };
     this.db
       .prepare(
-        `INSERT INTO agent_api (project_id, agent_id, enabled, open, approval_mode, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO agent_api (project_id, agent_id, enabled, open, approval_mode, provider, model_id, thinking_level, workspace, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(project_id, agent_id) DO UPDATE SET
            enabled = excluded.enabled, open = excluded.open,
-           approval_mode = excluded.approval_mode, updated_at = excluded.updated_at`,
+           approval_mode = excluded.approval_mode, provider = excluded.provider,
+           model_id = excluded.model_id, thinking_level = excluded.thinking_level,
+           workspace = excluded.workspace, updated_at = excluded.updated_at`,
       )
       .run(
         projectId,
@@ -75,6 +87,10 @@ export class AgentApiRepo implements AgentApi {
         next.enabled ? 1 : 0,
         next.open ? 1 : 0,
         next.approvalMode,
+        next.model?.provider ?? null,
+        next.model?.modelId ?? null,
+        next.thinkingLevel,
+        next.workspace,
         next.updatedAt,
       );
     return next;

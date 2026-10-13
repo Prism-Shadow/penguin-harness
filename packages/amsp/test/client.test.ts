@@ -169,7 +169,7 @@ describe("a run's stream", () => {
       frame(ev("text.done", { role: "assistant", text: "after the end" })),
     ]);
 
-    expect(await collect(client.run({ input: "hi" }))).toEqual(PLAIN);
+    expect(await collect(client.stream({ input: "hi" }))).toEqual(PLAIN);
     expect(served.closed).toBe(true);
   });
 
@@ -186,7 +186,7 @@ describe("a run's stream", () => {
       { type: "image_url", image_url: "data:image/png;base64,iVBORw0KGgo=" },
     ];
 
-    await client.ask({ sessionId: SESSION, input });
+    await client.run({ sessionId: SESSION, input });
 
     expect(fake.calls).toHaveLength(1);
     const [call] = fake.calls;
@@ -205,7 +205,7 @@ describe("a run's stream", () => {
     client = new AgentClient({ baseUrl: BASE_URL, agent: "demo/coder" });
     fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
 
-    await client.ask({ input: "hi" });
+    await client.run({ input: "hi" });
 
     expect(fake.calls[0]!.headers.has("authorization")).toBe(false);
     expect(fake.calls[0]!.body).toEqual({ input: "hi" });
@@ -214,7 +214,7 @@ describe("a run's stream", () => {
   it("joins the main Session's assistant texts in result(), leaving deltas, user texts, a subagent's texts and a streamed summary out", async () => {
     fake.stream("POST", RUNS, [...MIXED_RUN.map(frame), DONE]);
 
-    const result = await client.ask({ input: "Fix the build" });
+    const result = await client.run({ input: "Fix the build" });
 
     expect(result).toMatchObject({
       status: "completed",
@@ -263,7 +263,7 @@ describe("a run's stream", () => {
       DONE,
     ]);
 
-    const result = await client.ask({ input: "hi" });
+    const result = await client.run({ input: "hi" });
 
     expect(result.text).toBe("Before.");
     expect(result.items.filter((item) => item.type.startsWith("summary."))).toEqual([summary]);
@@ -279,7 +279,7 @@ describe("a run's stream", () => {
       DONE,
     ]);
 
-    await expect(client.ask({ input: "hi" })).resolves.toMatchObject({
+    await expect(client.run({ input: "hi" })).resolves.toMatchObject({
       status: "fatal",
       error,
       text: "",
@@ -290,7 +290,7 @@ describe("a run's stream", () => {
     const hold = gate();
     fake.stream("POST", RUNS, [frame(started), hold.promise, ...PLAIN.slice(1).map(frame), DONE]);
 
-    const run = client.run({ input: "hi" });
+    const run = client.stream({ input: "hi" });
 
     await expect(run.session).resolves.toBe(SESSION);
     hold.open();
@@ -314,7 +314,7 @@ describe("a run's stream", () => {
     const chunks = wire.match(/[\s\S]{1,7}/g)!;
     fake.stream("POST", RUNS, chunks);
 
-    const events = await collect(client.run({ input: "hi" }));
+    const events = await collect(client.stream({ input: "hi" }));
 
     expect(events.map((event) => event.type)).toEqual([
       "run.started",
@@ -328,7 +328,7 @@ describe("a run's stream", () => {
   it("passes an event type it does not know to the iterator and the items", async () => {
     const unknown = ev("plan.updated", { steps: ["read", "summarize"] });
     fake.stream("POST", RUNS, [frame(started), frame(unknown), frame(runDone()), DONE]);
-    const run = client.run({ input: "hi" });
+    const run = client.stream({ input: "hi" });
 
     expect(await collect(run)).toContainEqual(unknown);
     expect((await run.result()).items).toContainEqual(unknown);
@@ -342,7 +342,7 @@ describe("a run's stream", () => {
       ...PLAIN.slice(1).map(frame),
       DONE,
     ]);
-    const run = client.run({ input: "hi" });
+    const run = client.stream({ input: "hi" });
 
     for await (const event of run) {
       expect(event.type).toBe("run.started");
@@ -357,7 +357,7 @@ describe("a run's stream", () => {
 
   it("keeps every event for an iteration that starts after the run ended", async () => {
     fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
-    const run = client.run({ input: "hi" });
+    const run = client.stream({ input: "hi" });
 
     await run.result();
 
@@ -366,7 +366,7 @@ describe("a run's stream", () => {
 
   it("keeps answering done once the iteration has finished", async () => {
     fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
-    const iterator = client.run({ input: "hi" })[Symbol.asyncIterator]();
+    const iterator = client.stream({ input: "hi" })[Symbol.asyncIterator]();
     while (!(await iterator.next()).done);
 
     await expect(iterator.next()).resolves.toEqual({ value: undefined, done: true });
@@ -374,7 +374,7 @@ describe("a run's stream", () => {
 
   it("refuses to iterate a run's events twice", async () => {
     fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
-    const run = client.run({ input: "hi" });
+    const run = client.stream({ input: "hi" });
     await collect(run);
 
     expect(() => run[Symbol.asyncIterator]()).toThrow(TypeError);
@@ -406,7 +406,7 @@ describe("a run that fails", () => {
     async ({ status, body, expected }) => {
       fake.text("POST", RUNS, status, body, "application/json");
 
-      const run = client.run({ input: "hi" });
+      const run = client.stream({ input: "hi" });
 
       for (const outcome of [run.result(), run.session, collect(run)]) {
         const error = await outcome.then(
@@ -427,7 +427,7 @@ describe("a run that fails", () => {
     "is an AmspStreamError, after the events that did arrive, when the stream $how before run.done",
     async ({ tail }) => {
       fake.stream("POST", RUNS, [...PLAIN.slice(0, 4).map(frame), ...tail]);
-      const run = client.run({ input: "hi" });
+      const run = client.stream({ input: "hi" });
 
       await expect(run.result()).rejects.toBeInstanceOf(AmspStreamError);
       const seen: AmspEvent[] = [];
@@ -445,7 +445,7 @@ describe("a run that fails", () => {
   ])("still resolves when the stream $how after run.done", async ({ tail }) => {
     fake.stream("POST", RUNS, [...PLAIN.map(frame), ...tail]);
 
-    await expect(client.ask({ input: "hi" })).resolves.toMatchObject({ status: "completed" });
+    await expect(client.run({ input: "hi" })).resolves.toMatchObject({ status: "completed" });
   });
 
   it.each([
@@ -464,7 +464,7 @@ describe("a run that fails", () => {
     async ({ serve, named }) => {
       serve(fake);
 
-      const error = await client.ask({ input: "hi" }).catch((err: unknown) => err);
+      const error = await client.run({ input: "hi" }).catch((err: unknown) => err);
 
       expect(error).toBeInstanceOf(AmspStreamError);
       expect((error as Error).message).toContain(named);
@@ -477,7 +477,7 @@ describe("a run that fails", () => {
   ])("is an AmspStreamError when a block is $block", async ({ data }) => {
     const served = fake.stream("POST", RUNS, [frame(started), data, never()]);
 
-    await expect(client.ask({ input: "hi" })).rejects.toBeInstanceOf(AmspStreamError);
+    await expect(client.run({ input: "hi" })).rejects.toBeInstanceOf(AmspStreamError);
     expect(served.closed).toBe(true);
   });
 });
@@ -504,7 +504,7 @@ describe("approvals", () => {
       fake.empty("POST", ROUND_TRIP_APPROVAL, 204);
       fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
 
-      await expect(client.ask({ input: "List the files", onApproval })).resolves.toMatchObject({
+      await expect(client.run({ input: "List the files", onApproval })).resolves.toMatchObject({
         status: "completed",
       });
 
@@ -519,7 +519,7 @@ describe("approvals", () => {
     fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
     const asked: unknown[] = [];
 
-    await client.ask({
+    await client.run({
       input: "List the files",
       onApproval: (request, ctx) => {
         asked.push({ request, ctx });
@@ -539,7 +539,7 @@ describe("approvals", () => {
     fake.empty("POST", ROUND_TRIP_APPROVAL, 204);
     fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
 
-    const result = await client.ask({ input: "List the files", onApproval: () => "allow" });
+    const result = await client.run({ input: "List the files", onApproval: () => "allow" });
 
     expect(result).toMatchObject({
       status: "completed",
@@ -574,7 +574,7 @@ describe("approvals", () => {
     fake.stream("POST", RUNS, approvalScript(fake.requested("POST", ROUND_TRIP_APPROVAL)));
 
     await expect(
-      client.ask({ input: "List the files", onApproval: () => "allow" }),
+      client.run({ input: "List the files", onApproval: () => "allow" }),
     ).resolves.toMatchObject({
       status: "completed",
     });
@@ -597,7 +597,7 @@ describe("approvals", () => {
       frame(runDone()),
       DONE,
     ]);
-    const run = client.run({ input: "list the files" });
+    const run = client.stream({ input: "list the files" });
     await expect(run.result()).resolves.toMatchObject({ status: "completed" });
 
     const answer = await fake.requested("POST", APPROVAL);
@@ -619,7 +619,7 @@ describe("approvals", () => {
     });
     const served = fake.stream("POST", RUNS, approvalScript(never()));
 
-    await expect(client.ask({ input: "List the files" })).rejects.toMatchObject({
+    await expect(client.run({ input: "List the files" })).rejects.toMatchObject({
       status: 401,
       code: "unauthorized",
     });
@@ -647,7 +647,7 @@ describe("aborting", () => {
         ],
         { abortErrorsBody },
       );
-      const run = client.run({ input: "hi", signal: controller.signal });
+      const run = client.stream({ input: "hi", signal: controller.signal });
 
       const error = await run.result().catch((err: unknown) => err);
 
@@ -661,7 +661,7 @@ describe("aborting", () => {
   it("stops the iteration at once when the loop aborts the signal", async () => {
     fake.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
     const controller = new AbortController();
-    const run = client.run({ input: "hi", signal: controller.signal });
+    const run = client.stream({ input: "hi", signal: controller.signal });
 
     const seen: string[] = [];
     const iteration = (async () => {
@@ -680,7 +680,7 @@ describe("aborting", () => {
   it("drops the events not yet read when the signal aborts while the reader lags behind", async () => {
     fake.stream("POST", RUNS, [...PLAIN.slice(0, 4).map(frame), never()]);
     const controller = new AbortController();
-    const run = client.run({ input: "hi", signal: controller.signal });
+    const run = client.stream({ input: "hi", signal: controller.signal });
     await run.session;
 
     controller.abort();
@@ -708,7 +708,7 @@ describe("aborting", () => {
       },
     });
 
-    const error = await client.ask({ input: "hi", signal: controller.signal }).catch((err) => err);
+    const error = await client.run({ input: "hi", signal: controller.signal }).catch((err) => err);
 
     expect(error).toBe(controller.signal.reason);
     expect(served.closed).toBe(true);
@@ -718,7 +718,7 @@ describe("aborting", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(client.ask({ input: "hi", signal: controller.signal })).rejects.toBe(
+    await expect(client.run({ input: "hi", signal: controller.signal })).rejects.toBe(
       controller.signal.reason,
     );
     expect(fake.calls).toEqual([]);
@@ -736,7 +736,7 @@ describe("aborting", () => {
       frame(runDone({ status: "aborted", error: userAbort, session_usage: null })),
       DONE,
     ]);
-    const run = client.run({ input: "hi" });
+    const run = client.stream({ input: "hi" });
 
     await run.session;
     await run.abort();
@@ -760,7 +760,7 @@ describe("aborting", () => {
     },
   ])("sends nothing when run.abort() is called on $run", async ({ script }) => {
     script(fake);
-    const run = client.run({ input: "hi" });
+    const run = client.stream({ input: "hi" });
     await run.result().catch(() => {});
 
     await run.abort();
@@ -861,7 +861,7 @@ describe("the rest of the client", () => {
     own.stream("POST", RUNS, [...PLAIN.map(frame), DONE]);
     client = new AgentClient({ baseUrl: BASE_URL, agent: "demo/coder", fetch: own.fetch });
 
-    await expect(client.ask({ input: "hi" })).resolves.toMatchObject({ text: "Hello!" });
+    await expect(client.run({ input: "hi" })).resolves.toMatchObject({ text: "Hello!" });
     expect(own.calls).toHaveLength(1);
     expect(fake.calls).toEqual([]);
   });
