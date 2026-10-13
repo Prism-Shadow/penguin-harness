@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#1093](https://github.com/Prism-Shadow/penguin-harness/pull/1093)
 
 [English](2026-10-13-model-restore-defaults.md)
 
