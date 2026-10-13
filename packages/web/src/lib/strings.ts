@@ -1231,6 +1231,9 @@ export const zh = {
     /** Nothing supervises the server process (not started through penguin web / penguin server), so the restart is the user's. */
     readyBodyManual:
       "新版本已安装。当前服务不是由 penguin web 或 penguin server 托管，无法从这里重启：请在终端重新运行 penguin web（或 penguin server）。",
+    /** The shell was asked to restart into the downloaded build and this window is still here. */
+    readyBodyManualClient:
+      "PenguinHarness 没有重启，更新尚未完成。请重试，或退出 PenguinHarness 后重新打开。",
     restartNow: "重启并更新",
     restarting: "正在重启…",
     restartingBodyRelease: "服务回来后页面会自动刷新。",
@@ -1254,6 +1257,7 @@ export const zh = {
     /** A download / restart request failed before the backend could act; `detail` is apiErrorText output. */
     requestFailed: (detail: string) => `无法执行更新操作：${detail}`,
     restartTimedOut: "服务迟迟没有回来，请查看终端里 penguin web 的输出后手动刷新页面",
+    restartTimedOutClient: "PenguinHarness 没有重启，打开应用信息重试",
   },
 
   /**

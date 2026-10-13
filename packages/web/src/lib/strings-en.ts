@@ -1114,6 +1114,9 @@ export const en: Strings = {
     /** Nothing supervises the server process (not started through penguin web / penguin server), so the restart is the user's. */
     readyBodyManual:
       "The new version is installed. This service is not supervised by penguin web or penguin server, so it cannot be restarted from here: re-run penguin web (or penguin server) in a terminal.",
+    /** The shell was asked to restart into the downloaded build and this window is still here. */
+    readyBodyManualClient:
+      "PenguinHarness did not restart to finish the update. Try again, or quit PenguinHarness and open it again.",
     restartNow: "Restart and update",
     restarting: "Restarting…",
     restartingBodyRelease: "This page reloads once the service is back.",
@@ -1140,6 +1143,7 @@ export const en: Strings = {
     requestFailed: (detail: string) => `Could not run the update action: ${detail}`,
     restartTimedOut:
       "The service has not come back — check penguin web's output in the terminal, then reload this page",
+    restartTimedOutClient: "PenguinHarness did not restart — open About to try again",
   },
 
   /**
