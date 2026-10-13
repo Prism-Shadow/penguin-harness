@@ -27,8 +27,8 @@ Agent API 让 PenguinHarness 之外的程序通过 HTTP 与你的某个 Agent �
 **连接方式**给出了程序需要的另外两项信息：**Base URL**，即你的服务器地址加上 `/api/amsp/v1`；以及**Agent ID**，即 `<projectId>/<agentId>`。把密钥和 Base URL 设为环境变量：
 
 ```bash
-export PENGUIN_AGENT_KEY='penguin_…'                       # the key you copied
-export PENGUIN_AGENT_URL=http://localhost:7364/api/amsp/v1  # your Base URL
+export PENGUIN_AGENT_KEY='penguin_…'                       # 刚复制的密钥
+export PENGUIN_AGENT_URL=http://localhost:7364/api/amsp/v1  # 你的 Base URL
 ```
 
 地址保持 `localhost` 不变：绑定在回环地址上的服务器会对发往 `127.0.0.1` 的 API 请求返回 `401`。
