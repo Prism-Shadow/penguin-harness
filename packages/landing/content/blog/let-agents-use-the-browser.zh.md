@@ -13,10 +13,10 @@ Agent 在自己的 shell 里用 `penguin browser` 操作页面，而且开销很
 
 ## 开始之前
 
-- PenguinHarness 0.2.14 或更高版本，并已在**模型库**页面配置好模型。
+- PenguinHarness 0.2.15 或更高版本，并已在**模型库**页面配置好模型。
 - 用你自己的 Chrome 需要 Chrome 116 或更高版本。
 - 内置浏览器需要 macOS、Windows 或 Linux 上的桌面端。`penguin web`、Docker 或远程服务器提供的 Web App 没有内置浏览器。
-- Agent 要装 `browser-automation` 插件。PenguinHarness 创建 `default_agent` 时就会给它装上。其他 Agent，以及 0.2.14 之前创建的 `default_agent`，请到**插件市场**页面安装。
+- Agent 要装 `browser-automation` 插件。PenguinHarness 创建 `default_agent` 时就会给它装上。其他 Agent，以及 0.2.15 之前创建的 `default_agent`，请到**插件市场**页面安装。
 
 ## 方式 A：你自己的 Chrome（通过扩展）
 

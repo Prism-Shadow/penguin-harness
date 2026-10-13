@@ -2,16 +2,16 @@
 title: "Pick an algorithm and let your agent evolve itself on a Benchmark"
 date: 2026-10-13
 category: practice
-excerpt: "Pick one of the five self-evolution algorithms in PenguinHarness 0.2.14, run it against your own agent on the built-in GDPevo Benchmark, read the result in the Evaluation Center, and keep or roll back the new version."
+excerpt: "Pick one of the five self-evolution algorithms in PenguinHarness 0.2.15, run it against your own agent on the built-in GDPevo Benchmark, read the result in the Evaluation Center, and keep or roll back the new version."
 ---
 
-PenguinHarness 0.2.14 ships five self-evolution algorithms as plugins, the RSI toolkits, and gives every new Project seven built-in Benchmarks to run them on. An RSI toolkit changes your agent's harness (its prompts and Skills) while the model stays fixed, and measures every change on a Benchmark.
+PenguinHarness 0.2.15 ships five self-evolution algorithms as plugins, the RSI toolkits, and gives every new Project seven built-in Benchmarks to run them on. An RSI toolkit changes your agent's harness (its prompts and Skills) while the model stays fixed, and measures every change on a Benchmark.
 
 In this tutorial you run one optimization of your own agent on GDPevo Train, read the result in the Evaluation Center, and decide whether to keep the new version.
 
 ## Prerequisites
 
-- PenguinHarness 0.2.14 and a Project created with it. The built-in Benchmarks are written when a Project is created; in an older Project, open **New chat** and pick **Import the GDPevo benchmark** under **Evaluate and optimize agents**.
+- PenguinHarness 0.2.15 and a Project created with it. The built-in Benchmarks are written when a Project is created; in an older Project, open **New chat** and pick **Import the GDPevo benchmark** under **Evaluate and optimize agents**.
 - A model with its API key saved on the **Models** page.
 - An agent of your own on the **Agents** page. The screenshots use one called Business Analyst (`biz_analyst`).
 - Docker with Compose v2 and [uv](https://docs.astral.sh/uv/) on the machine PenguinHarness runs on, with access to GitHub, Docker Hub, nodejs.org, the npm registry and your model provider. Every case of a built-in Benchmark runs as a [Harbor](https://github.com/harbor-framework/harbor) task in Docker.
@@ -28,7 +28,7 @@ Open **Plugins**. The **Agent Self-Evolution** category holds the five toolkits:
 
 ![The Agent Self-Evolution category on the Plugins page, with the five RSI toolkits](/blog-assets/penguinharness-0-2-14-rsi-plugins-en.png)
 
-The toolkit has to be installed on the agent that runs it, not on the agent being improved. By default that is General Agent, and in a Project created with 0.2.14 it has all five. In an older Project, or to run a toolkit from another agent, install it on that agent from the toolkit's card. This tutorial uses the default toolkit; the other four are picked the same way in Step 4.
+The toolkit has to be installed on the agent that runs it, not on the agent being improved. By default that is General Agent, and in a Project created with 0.2.15 it has all five. In an older Project, or to run a toolkit from another agent, install it on that agent from the toolkit's card. This tutorial uses the default toolkit; the other four are picked the same way in Step 4.
 
 ## Step 2: Open GDPevo Train
 
@@ -84,6 +84,6 @@ Select a row under **Evaluations** to see every case and run. A run recorded as 
 - One candidate on GDPevo Train is 30 Harbor trials at one run per case, and each trial costs model tokens.
 - Trials run four at a time unless you name another limit (in the evaluation's **Note**, for example), eight at most.
 - During a GDPevo task the agent can reach only the model provider's API host, because GDPevo's answers are public.
-- An agent created before 0.2.14 does not have the OPRO, APE, ACE and AWM toolkits until you install them, and a new agent has only the plugins picked when it was created.
+- An agent created before 0.2.15 does not have the OPRO, APE, ACE and AWM toolkits until you install them, and a new agent has only the plugins picked when it was created.
 
 For every field of the dialog, see the [Evaluation Center documentation](https://penguin.ooo/docs/evaluation-center). For how each algorithm runs, see [RSI toolkits](https://penguin.ooo/docs/self-improvement#rsi-toolkits).

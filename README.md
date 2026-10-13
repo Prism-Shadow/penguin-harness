@@ -114,7 +114,7 @@ https://github.com/user-attachments/assets/28c0ef95-1dfa-47be-bad0-7326ccdf4e7c
   </tr>
 </table>
 
-Replies can also carry UI: choices, forms, steps, Mermaid diagrams and live widgets ([A2UI](https://penguin.ooo/blog/penguinharness-0-2-14)).
+Replies can also carry UI: choices, forms, steps, Mermaid diagrams and live widgets ([A2UI](https://penguin.ooo/blog/penguinharness-0-2-15)).
 
 ## Results
 

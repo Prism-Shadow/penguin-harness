@@ -9,7 +9,7 @@ import type { ReleaseNote } from "./release-notes";
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
-    version: "0.2.14",
+    version: "0.2.15",
     date: "2026-10-13",
     zh: [
       "Agent 自进化：五个 RSI 算法以插件提供，每个新建 Project 自带七个内置 Benchmark。",

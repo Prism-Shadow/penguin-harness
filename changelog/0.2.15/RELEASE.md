@@ -1,4 +1,6 @@
-PenguinHarness 0.2.14 turns the harness into a framework for agent self-evolution: five RSI algorithms ship as plugins, and every new Project comes with seven Benchmarks to run them on. Agents also gained five capabilities — a browser, replies that carry interactive UI, a hot-reloaded workbench of their own, other machines to run on, and one unified API that connects them to any external app.
+PenguinHarness 0.2.15 is 0.2.14 shipped under a new number: that tag's release run failed in its npm job, at the test step, before anything was published — no npm packages, no Docker image and no Release page — so install 0.2.15 instead.
+
+PenguinHarness 0.2.15 turns the harness into a framework for agent self-evolution: five RSI algorithms ship as plugins, and every new Project comes with seven Benchmarks to run them on. Agents also gained five capabilities — a browser, replies that carry interactive UI, a hot-reloaded workbench of their own, other machines to run on, and one unified API that connects them to any external app.
 
 ![The start page: the counts of agents, RSI algorithms and Benchmarks, and the examples](https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-start-page-en.png)
 
@@ -32,7 +34,7 @@ Or the official Docker image (`linux/amd64` and `linux/arm64`):
 docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
 ```
 
-`latest` follows `main` and is rebuilt on every push. `0.2.14` is this release, built from its own tag. The example publishes the port on the host's loopback, so a fresh deployment answers only on the machine running Docker.
+`latest` follows `main` and is rebuilt on every push. `0.2.15` is this release, built from its own tag. The example publishes the port on the host's loopback, so a fresh deployment answers only on the machine running Docker.
 
 ## Highlights
 
@@ -73,10 +75,10 @@ Each of these has a step-by-step tutorial on the blog: [self-evolution](https://
   - A plugin's manifest is its `package.json`; `plugin.json` is no longer read. Move PenguinHarness's own fields into a `penguin` block. The data root's `plugins.json` is no longer read either: turn the sandbox on from the **Agent Sandbox** card in **Settings** › **Plugins**.
   - Gateway and custom model rows no longer borrow `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` from the server environment. Set the key under **Group settings…**. Rename `AGENTHUB_DEBUG` and `AGENTHUB_CACHE_DIR` to `MMSP_DEBUG` and `MMSP_CACHE_DIR`.
   - **Add new models** on the Models page (formerly Sync presets) brings the new presets into an existing Project.
-  - Update each agent's kernel with **Update now** on the **Agents** page, and update `goal`, `agent-development` and `agent-company` from the notice on the **Plugins** page. `browser-automation`, `a2ui` and the RSI toolkits are preinstalled only on the General Agent of a Project created with 0.2.14. Install them on other agents from the **Plugins** page.
+  - Update each agent's kernel with **Update now** on the **Agents** page, and update `goal`, `agent-development` and `agent-company` from the notice on the **Plugins** page. `browser-automation`, `a2ui` and the RSI toolkits are preinstalled only on the General Agent of a Project created with 0.2.15. Install them on other agents from the **Plugins** page.
   - CLI: `penguin ls`, `penguin logs` and `penguin input` are now `penguin session ls`, `penguin session log` and `penguin session input`; `penguin config provider` is gone — use `penguin config model add --provider <group>` without `--model-id`.
   - Sessions that the Agent API, a scheduled task or `penguin run` opened, older ones included, leave the sidebar and are listed under **Settings** › **Archived chats**. The Session list's `category=background` now answers 400; ask for `category=archived`.
-  - `.project_config.toml` is rewritten once on first read, and migrations 9 to 16 run when the database opens. Releases before 0.2.14 cannot read the rewritten file, so copy it first if you may roll back.
+  - `.project_config.toml` is rewritten once on first read, and migrations 9 to 16 run when the database opens. Releases before 0.2.15 cannot read the rewritten file, so copy it first if you may roll back.
   - SDK: `PartialAggregator`, `aggregateAll` and `Writer.aggregateAndWrite` are no longer exported by `@prismshadow/penguin-core`; the script hook helpers take an options object.
 - **Three themes.** Frost is the new default. Console and Primer are under **Settings** › **Appearance** › **Theme**, each with its own fonts, icons and streaming effect.
 - **One plugin market.** Every plugin is a card grouped by category. **Import plugin** takes an npm name, a link or a zip, and **Export** writes a plugin out as a zip.
@@ -93,4 +95,4 @@ Each of these has a step-by-step tutorial on the blog: [self-evolution](https://
 
 Linux or macOS (x64 / arm64), or Windows 10+ (x64). The desktop app and the CLI installers bundle their own runtime. Installing from npm needs Node >= 24; the official Docker image carries its own. Running the built-in Benchmarks needs Docker with Compose v2 and [uv](https://docs.astral.sh/uv/) on the server's machine. The Browser extension needs Chrome 116 or later. All data stays under `~/.penguin/data` — the `/data` volume in the container.
 
-Full detail: [changelog/0.2.14/](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.14).
+Full detail: [changelog/0.2.15/](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.15).

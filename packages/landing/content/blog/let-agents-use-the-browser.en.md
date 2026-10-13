@@ -13,10 +13,10 @@ The desktop app also has a built-in browser with its own sign-ins. Set up either
 
 ## Before you start
 
-- PenguinHarness 0.2.14 or later, with a model set up on the **Models** page.
+- PenguinHarness 0.2.15 or later, with a model set up on the **Models** page.
 - For your own Chrome, Chrome 116 or later.
 - For the built-in browser, the desktop app on macOS, Windows or Linux. The Web App served by `penguin web`, Docker or a remote server does not have it.
-- The `browser-automation` plugin on the agent. PenguinHarness installs it on `default_agent` when it creates that agent. For any other agent, or a `default_agent` created before 0.2.14, install it from the **Plugins** page.
+- The `browser-automation` plugin on the agent. PenguinHarness installs it on `default_agent` when it creates that agent. For any other agent, or a `default_agent` created before 0.2.15, install it from the **Plugins** page.
 
 ## Option A: your own Chrome, through the extension
 

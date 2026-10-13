@@ -7,7 +7,7 @@
 
 [中文版](2026-10-12-pre-release-doc-fixes.zh.md)
 
-Four statements that no longer matched the product were corrected ahead of 0.2.14.
+Four statements that no longer matched the product were corrected ahead of 0.2.15.
 
 ## Details
 

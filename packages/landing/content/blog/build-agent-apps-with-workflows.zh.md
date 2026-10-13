@@ -13,7 +13,7 @@ excerpt: "在 PenguinHarness 里，每个 Agent 都能有自己的工作台：�
 
 ## 准备工作
 
-- PenguinHarness 0.2.14，桌面端或 Web App 都可以。
+- PenguinHarness 0.2.15，桌面端或 Web App 都可以。
 - 在**模型库**页面配置好一个模型。
 - 作为起点的 Agent 要有 `agent-initialization`、`penguin-plugin` 和 `web-design` 三个 Skill。新建 Project 的默认 Agent 三个都有。
 

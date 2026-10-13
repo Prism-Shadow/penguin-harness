@@ -610,54 +610,15 @@ jobs:
       # repo keeps the dev version). All published packages must bump in lockstep -- pnpm publish rewrites every
       # workspace:* dep to the dependency's current version, so the versions must match.
       # BUILD_DATE is stamped alongside VERSION with this run's UTC date (the repo keeps null for dev builds).
+      # The npm job's stamping and its test suites live in scripts/release-npm.sh, which CI's npm
+      # packaging job also runs on every pull request -- so the stamped tree this job tests is the
+      # one CI already tested. (The release job's stamp step above stays inline: test-installer.sh
+      # replays that block.)
       - name: Stamp release version
         env:
-          # Same shell-variable indirection as the release job's stamp step (no GitHub
-          # expressions in the body; see scripts/test-installer.sh).
           EVENT_NAME: ${{ github.event_name }}
-        run: |
-          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
-          V="${TAG#v}"
-          # Same repo-version guard as the release job: both jobs start from a tag push in
-          # parallel, so the check must fail here too or npm would publish from a tag whose
-          # repo version was never bumped. Manual dispatch only warns (legacy-tag retries).
-          if [ -f package.json ]; then
-            PKG_V="$(node -p 'require("./package.json").version')"
-            if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + every workspace package.json (packages/*, plugins/*) and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
-              if [ "${EVENT_NAME:-}" = "push" ]; then
-                echo "error: $MSG" >&2
-                exit 1
-              fi
-              echo "warning: $MSG (continuing: manual dispatch)" >&2
-            fi
-          fi
-          grep -q 'export const VERSION = "' packages/core/src/index.ts
-          sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
-          D="$(date -u +%Y-%m-%d)"
-          # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
-          grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
-          sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
-          # The commit is what separates two builds of the same version, which BUILD_DATE cannot:
-          # a release and a same-day rebuild share a date. GITHUB_SHA is the checked-out tag's sha
-          # and needs no git, which matters because the checkout is shallow and carries no tags.
-          # Absence is tolerated rather than guarded, on both arms: tags predating this constant
-          # must stay rebuildable, and a replay outside Actions has no GITHUB_SHA to stamp.
-          if ! grep -q 'export const BUILD_COMMIT: string | null = ' packages/core/src/index.ts; then
-            echo "Legacy tag without a BUILD_COMMIT constant; leaving the commit unstamped."
-          elif [ -z "${GITHUB_SHA:-}" ]; then
-            echo "GITHUB_SHA is unset; leaving the commit unstamped."
-          else
-            sed -i "s/export const BUILD_COMMIT: string | null = [^;]*/export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"/" packages/core/src/index.ts
-            grep -Fq "export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"" packages/core/src/index.ts
-          fi
-          for dir in plugins/*/; do
-            (cd "$dir" && npm version --no-git-tag-version --allow-same-version "$V")
-          done
-          (cd packages/amsp && npm version --no-git-tag-version --allow-same-version "$V")
-          (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
-          (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
-          (cd packages/cli && npm version --no-git-tag-version --allow-same-version "$V")
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: bash scripts/release-npm.sh stamp "$TAG"
 
       # `pnpm -r build` rather than a list of the packages that get published: it builds the whole
       # workspace in dependency order, so a package added later cannot fall out of a list nobody
@@ -668,10 +629,7 @@ jobs:
       - name: Build and test
         run: |
           pnpm -r build
-          pnpm --filter @prismshadow/amsp test
-          pnpm --filter @prismshadow/penguin-core test
-          pnpm --filter @prismshadow/penguin-server test
-          pnpm --filter @prismshadow/penguin-cli test
+          bash scripts/release-npm.sh test
 
       # Copy LICENSE into the package dirs (the files allowlist includes it, so artifacts ship the license)
       # and the built web assets into the server package (web-dist/, in its files allowlist: an npm install

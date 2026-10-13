@@ -5,13 +5,19 @@ commit rather than written down at the time — so when you deviate, record it h
 
 ## The one rule that costs a version number
 
-**A pushed tag is never moved.** Two numbers have been burned for two different reasons, and both
-are worth knowing because they fail at opposite ends of the run:
+**A pushed tag is never moved.** Three numbers have been burned, for three different reasons, and
+each is worth knowing because they fail at different points of the run:
 
 - **0.2.10** got as far as publishing npm and Docker, then failed the signed macOS build. The tag
   existed, the packages were public, the Release page was not. Shipped again as 0.2.11.
 - **0.2.12** failed in the *first* job, `Publish npm packages`, at its build step — so nothing
   reached npm, Docker or a Release page at all. Shipped again as 0.2.13.
+
+- **0.2.14** failed in `Publish npm packages` at its *test* step. The job stamps the tag's version
+  into every package it publishes, the sandbox backends included (they sit on their own line at
+  0.2.3 in the repo), but not into the server's embedded index of those backends
+  (`packages/server/src/plugin/builtin-index.json`), and `plugin-registry.test.ts` compares the two.
+  CI never stamped, so it was green. Nothing was published; shipped again as 0.2.15.
 
 A `release/**` branch proves the signed matrix before the tag exists, which is what 0.2.10 bought.
 0.2.12 bought the rest: **CI has to walk the publishing path too**, because the release workflow
@@ -35,6 +41,11 @@ Two bugs, and the second is the one to remember:
 
 The lesson under both: **a green CI that builds differently from the release proves nothing about
 the release.** When the two diverge, the divergence is the defect.
+
+Since 0.2.15 the npm job's stamping and its test suites live in `scripts/release-npm.sh`, and CI's
+`npm packaging` job runs that same script on every pull request — stamp with the repo's version,
+build, run the suites — so the tree the release tests is one CI already tested. A file that copies a
+package's version is stamped there too; add any new one to the script, not to the workflow.
 
 ### A package npm has never seen cannot be published by the release
 

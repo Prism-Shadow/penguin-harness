@@ -74,8 +74,8 @@ jobs:
 
   # The npm publishing path, walked without publishing. CI used to prove only that the sources
   # typecheck and the tests pass, and the release workflow built a different, narrower set -- so a
-  # packaging break first appeared after the tag, where it costs a version number. This job builds
-  # the way the release does and packs what it would upload.
+  # packaging break first appeared after the tag, where it costs a version number. This job stamps,
+  # builds and tests the way the release does (scripts/release-npm.sh) and packs what it would upload.
   npm-packaging:
     name: npm packaging
     runs-on: ubuntu-latest
@@ -87,8 +87,16 @@ jobs:
       # tag, because the release's OIDC exchange cannot create a name npm has never seen.
       - name: A published package depends on nothing private, and names that need a first publish
         run: node scripts/check-publishable.mjs --registry
+      # The release's npm job stamps the tag's version into every package it publishes (and into the
+      # server's embedded plugin index) before it builds and tests. Stamp the same way here, with
+      # the repo's own version, so a test that only fails on the stamped tree fails on the pull
+      # request: v0.2.14 was lost to exactly that, after a green CI.
+      - name: Stamp the versions as the release's npm job does
+        run: EVENT_NAME=ci bash scripts/release-npm.sh stamp "v$(node -p 'require("./package.json").version')"
       - name: Build the whole workspace, as the release does
         run: pnpm -r build
+      - name: Run the release's npm-job suites on the stamped tree
+        run: bash scripts/release-npm.sh test
       # The release stages two things into the package directories before it publishes: the root
       # LICENSE, and the built web assets as the server's web-dist/. Neither exists in the repo, and
       # npm silently skips a `files` entry that is not on disk -- so packing without them proves the

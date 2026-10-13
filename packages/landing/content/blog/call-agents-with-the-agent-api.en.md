@@ -11,7 +11,7 @@ This tutorial exposes the default agent, asks it for the time from curl, then do
 
 ## Prerequisites
 
-- PenguinHarness 0.2.14 with a model configured on the **Models** page.
+- PenguinHarness 0.2.15 with a model configured on the **Models** page.
 - The owner role in the Project. Only the owner turns an agent's API on and manages its keys.
 - curl, or Node 24 for the client.
 

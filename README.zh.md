@@ -114,7 +114,7 @@ https://github.com/user-attachments/assets/138744cd-9ab8-42f3-bf6d-b0a25f404132
   </tr>
 </table>
 
-回复还可以自带 UI：选项、表单、步骤、Mermaid 图表和实时小组件（[A2UI](https://penguin.ooo/blog/penguinharness-0-2-14)）。
+回复还可以自带 UI：选项、表单、步骤、Mermaid 图表和实时小组件（[A2UI](https://penguin.ooo/blog/penguinharness-0-2-15)）。
 
 ## 评测结果
 

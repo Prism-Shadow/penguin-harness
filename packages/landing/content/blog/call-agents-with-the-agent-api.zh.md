@@ -11,7 +11,7 @@ Agent API 通过 HTTP 把你的 Agent 接入 PenguinHarness 之外的任何应�
 
 ## 前置条件
 
-- PenguinHarness 0.2.14，并在**模型库**页面配置好模型。
+- PenguinHarness 0.2.15，并在**模型库**页面配置好模型。
 - Project 的所有者角色。只有所有者能开启 Agent 的 API 并管理密钥。
 - curl，运行客户端则需要 Node 24。
 

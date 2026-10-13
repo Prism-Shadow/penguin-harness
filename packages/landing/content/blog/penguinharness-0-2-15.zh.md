@@ -1,11 +1,11 @@
 ---
-title: "PenguinHarness 0.2.14：最全面的自进化框架、浏览器自动化、A2UI、API 集成和机器管理"
+title: "PenguinHarness 0.2.15：最全面的自进化框架、浏览器自动化、A2UI、API 集成和机器管理"
 date: 2026-10-13
 category: news
 excerpt: "五种 RSI 算法以插件形式发布，可在七个内置 Benchmark 上运行。Agent 还有了浏览器、回复中的交互式 UI 和自己的热定制工作台，能运行在其他机器上，并能通过同一套 API 接入任意外部应用。"
 ---
 
-从 0.2.14 起，PenguinHarness 成为一个 Agent 自进化框架。五种自进化（RSI）算法以插件形式发布，每个新建 Project 都自带七个内置 Benchmark 供它们运行。Agent 还多了五项能力：浏览器、回复中的交互式 UI、自己的工作台、在其他机器上运行，以及接入任意外部应用的统一 API。
+从 0.2.15 起，PenguinHarness 成为一个 Agent 自进化框架。五种自进化（RSI）算法以插件形式发布，每个新建 Project 都自带七个内置 Benchmark 供它们运行。Agent 还多了五项能力：浏览器、回复中的交互式 UI、自己的工作台、在其他机器上运行，以及接入任意外部应用的统一 API。
 
 ![起始页：Agent、RSI 算法和 Benchmark 的数量，以及示例](/blog-assets/penguinharness-0-2-14-start-page-zh.png)
 
@@ -119,12 +119,12 @@ Agent 能打开网页并在里面操作，用桌面端的内置浏览器或你�
 - **网关分组和自定义模型行需要自己的密钥。**它们不再借用环境里的 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 或 `GEMINI_API_KEY`；请在**分组设置…**里设置。
 - **将 `AGENTHUB_DEBUG` 和 `AGENTHUB_CACHE_DIR` 重命名**为 `MMSP_DEBUG` 和 `MMSP_CACHE_DIR`。
 - **更新每个 Agent 的内核**：在**智能体**页面点**现在升级**，再按**插件市场**页面上的提示更新 `goal`、`agent-development` 和 `agent-company`。
-- **给现有 Agent 安装新插件。**`browser-automation`、`a2ui` 和各 RSI 工具包只预装在 0.2.14 新建 Project 的 General Agent 上；其他 Agent 请到**插件市场**页面安装。
+- **给现有 Agent 安装新插件。**`browser-automation`、`a2ui` 和各 RSI 工具包只预装在 0.2.15 新建 Project 的 General Agent 上；其他 Agent 请到**插件市场**页面安装。
 - **CLI 命令有变动：**`penguin ls`、`penguin logs` 和 `penguin input` 现在是 `penguin session ls`、`penguin session log` 和 `penguin session input`；`penguin config provider` 已移除，改用不带 `--model-id` 的 `penguin config model add --provider <group>`。
 - **程序发起的对话会被归档。**Agent API、定时任务或 `penguin run` 发起的会话（包括升级前的）不再出现在侧边栏，可以在**设置** › **已归档对话**里找到。
-- **`.project_config.toml` 会在首次读取时重写一次**，数据库打开时会运行 9 到 16 号迁移。0.2.14 之前的版本读不了重写后的文件，所以如果之后可能回滚，请先复制一份。
+- **`.project_config.toml` 会在首次读取时重写一次**，数据库打开时会运行 9 到 16 号迁移。0.2.15 之前的版本读不了重写后的文件，所以如果之后可能回滚，请先复制一份。
 
-完整列表（包括 HTTP API 和 SDK 变更）见 [`changelog/0.2.14/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.14)。
+完整列表（包括 HTTP API 和 SDK 变更）见 [`changelog/0.2.15/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.15)。
 
 ## 安装
 

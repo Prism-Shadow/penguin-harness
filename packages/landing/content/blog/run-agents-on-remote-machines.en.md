@@ -5,13 +5,13 @@ category: practice
 excerpt: "Add a machine your PenguinHarness server can reach over ssh, let the server install itself there, and start a conversation in a folder on that machine. The agent and its commands run on the machine; you keep working in the same window."
 ---
 
-Some work has to happen on another computer, usually the one that holds the data. PenguinHarness 0.2.14 can install itself on a machine your server reaches over ssh, keep a connection to it, and run conversations there. The window stays on your own server. Only the calls that concern the machine go through the connection.
+Some work has to happen on another computer, usually the one that holds the data. PenguinHarness 0.2.15 can install itself on a machine your server reaches over ssh, keep a connection to it, and run conversations there. The window stays on your own server. Only the calls that concern the machine go through the connection.
 
 This tutorial adds a Linux machine called `devbox`, then asks an agent to run a check in a folder on it.
 
 ## Prerequisites
 
-- PenguinHarness 0.2.14, signed in as an admin. The **Machines** page and everything on it are admin-only.
+- PenguinHarness 0.2.15, signed in as an admin. The **Machines** page and everything on it are admin-only.
 - A Linux or macOS machine that the server's OS account can sign in to over ssh, either with a key (`ssh <host>` works from a terminal on the server without a prompt) or with a password you save in PenguinHarness. Windows machines cannot be connected yet. Linux systems built on musl, such as Alpine, are not supported.
 - Only ssh has to be reachable. The machine downloads the release from GitHub or the OSS mirror. When it can reach neither, or has no `curl`, the server sends the release over the ssh connection.
 - A model on the **Models** page whose key is saved in the Project. A key the server reads from an environment variable is not copied to machines.

@@ -2,16 +2,16 @@
 title: "选一个算法，让 Agent 在 Benchmark 上自己进化"
 date: 2026-10-13
 category: practice
-excerpt: "从 PenguinHarness 0.2.14 的五个自进化算法里选一个，用内置的 GDPevo Benchmark 跑你的 Agent，到评估中心看结果，再决定保留还是回滚新版本。"
+excerpt: "从 PenguinHarness 0.2.15 的五个自进化算法里选一个，用内置的 GDPevo Benchmark 跑你的 Agent，到评估中心看结果，再决定保留还是回滚新版本。"
 ---
 
-PenguinHarness 0.2.14 把五个自进化算法做成了插件，也就是 RSI 工具包，并给每个新建 Project 配了七个内置 Benchmark 供它们运行。RSI 工具包改的是 Agent 的 Harness，也就是它的提示词和 Skill，模型保持不动，每一处改动都在 Benchmark 上度量效果。
+PenguinHarness 0.2.15 把五个自进化算法做成了插件，也就是 RSI 工具包，并给每个新建 Project 配了七个内置 Benchmark 供它们运行。RSI 工具包改的是 Agent 的 Harness，也就是它的提示词和 Skill，模型保持不动，每一处改动都在 Benchmark 上度量效果。
 
 本教程带你在 GDPevo Train 上对自己的 Agent 跑一轮优化，到评估中心看结果，再决定要不要保留新版本。
 
 ## 准备工作
 
-- PenguinHarness 0.2.14，以及用它创建的 Project。内置 Benchmark 是创建 Project 时写入的；如果是更早的 Project，打开**新建对话**，在**评测与优化智能体**下面选**导入 GDPevo 评测集**。
+- PenguinHarness 0.2.15，以及用它创建的 Project。内置 Benchmark 是创建 Project 时写入的；如果是更早的 Project，打开**新建对话**，在**评测与优化智能体**下面选**导入 GDPevo 评测集**。
 - 一个模型，API 密钥已经保存在**模型库**页面。
 - 在**智能体**页面有一个你自己的 Agent。截图里用的这个叫 Business Analyst（`biz_analyst`）。
 - PenguinHarness 所在的机器上装有 Docker（含 Compose v2）和 [uv](https://docs.astral.sh/uv/)，并且能访问 GitHub、Docker Hub、nodejs.org、npm registry 和你的模型服务商。内置 Benchmark 的每道题目都作为 [Harbor](https://github.com/harbor-framework/harbor) task 在 Docker 里运行。
@@ -28,7 +28,7 @@ PenguinHarness 0.2.14 把五个自进化算法做成了插件，也就是 RSI �
 
 ![插件市场页面上的 Agent 自进化分类，五个 RSI 工具包都在里面](/blog-assets/penguinharness-0-2-14-rsi-plugins-zh.png)
 
-工具包要装在运行它的 Agent 上，而不是要优化的那个 Agent 上。默认由 General Agent 跑，0.2.14 创建的 Project 里已经装齐了五个。旧 Project 里没装，或者想换别的 Agent 来跑，就在工具包的卡片上装到那个 Agent。本教程用的是默认工具包；其余四个在第 4 步里按同样的方式选。
+工具包要装在运行它的 Agent 上，而不是要优化的那个 Agent 上。默认由 General Agent 跑，0.2.15 创建的 Project 里已经装齐了五个。旧 Project 里没装，或者想换别的 Agent 来跑，就在工具包的卡片上装到那个 Agent。本教程用的是默认工具包；其余四个在第 4 步里按同样的方式选。
 
 ## 第 2 步：打开 GDPevo Train
 
@@ -84,6 +84,6 @@ PenguinHarness 0.2.14 把五个自进化算法做成了插件，也就是 RSI �
 - 在 GDPevo Train 上评估一个候选版本等于 30 个 Harbor trial，每道题运行一次，每个 trial 都消耗模型 Token。
 - trial 默认四个同时跑，可以另行指定上限（比如写在评估的**说明**里），但最多八个。
 - 跑 GDPevo 题目期间，Agent 只能访问模型服务商的 API 主机，因为 GDPevo 的答案是公开的。
-- 0.2.14 之前创建的 Agent 没有装 OPRO、APE、ACE 和 AWM 工具包，需要你手动安装；新建 Agent 则只有创建时勾选的那些插件。
+- 0.2.15 之前创建的 Agent 没有装 OPRO、APE、ACE 和 AWM 工具包，需要你手动安装；新建 Agent 则只有创建时勾选的那些插件。
 
 对话框里各字段的说明见[评估中心文档](https://penguin.ooo/docs/evaluation-center)。每个算法怎么运行，见 [RSI 工具包](https://penguin.ooo/docs/self-improvement#rsi-工具包)。

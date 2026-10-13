@@ -13,7 +13,7 @@ In this tutorial you start from the legal agent example on the start page: one m
 
 ## Prerequisites
 
-- PenguinHarness 0.2.14, in the desktop app or the Web App.
+- PenguinHarness 0.2.15, in the desktop app or the Web App.
 - A model configured on the **Models** page.
 - The `agent-initialization`, `penguin-plugin` and `web-design` Skills on the agent you start from. A new Project's default agent has all three.
 

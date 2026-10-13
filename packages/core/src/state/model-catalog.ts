@@ -3481,7 +3481,7 @@ export const MMSP_CLIENTS: Readonly<
   "google-official": { env: "GEMINI", path: "/v1beta/interactions", fastMode: "openai" },
   // compat: MMSP 0.5.2 keeps google-official's earlier name as an alias, and a Project written
   // before it may still pin it, never rewritten; this row goes with the MMSP upgrade that drops
-  // the alias (changelog/0.2.14/2026-10-10-backward-compatibility.md).
+  // the alias (changelog/0.2.15/2026-10-10-backward-compatibility.md).
   "gemini-official": { env: "GEMINI", path: "/v1beta/interactions", fastMode: "openai" },
   "zai-official": { env: "ZAI", path: "/chat/completions" },
   "moonshot-official": { env: "MOONSHOT", path: "/chat/completions" },

@@ -1,11 +1,11 @@
 ---
-title: "PenguinHarness 0.2.14: the most comprehensive self-evolution framework, browser automation, A2UI, API integration and machine management"
+title: "PenguinHarness 0.2.15: the most comprehensive self-evolution framework, browser automation, A2UI, API integration and machine management"
 date: 2026-10-13
 category: news
 excerpt: "Five RSI algorithms ship as plugins and run on seven built-in Benchmarks. Agents also get a browser, reply with interactive UI, build a hot-reloaded workbench of their own, run on other machines, and connect to any app through one API."
 ---
 
-With 0.2.14, PenguinHarness becomes a framework for agent self-evolution. Five self-evolution (RSI) algorithms ship as plugins, and every new Project comes with seven built-in Benchmarks to run them on. Agents also get five capabilities: a browser, interactive UI in replies, a workbench of their own, other machines to run on, and one API that connects them to any app.
+With 0.2.15, PenguinHarness becomes a framework for agent self-evolution. Five self-evolution (RSI) algorithms ship as plugins, and every new Project comes with seven built-in Benchmarks to run them on. Agents also get five capabilities: a browser, interactive UI in replies, a workbench of their own, other machines to run on, and one API that connects them to any app.
 
 ![The start page: the counts of agents, RSI algorithms and Benchmarks, and the examples](/blog-assets/penguinharness-0-2-14-start-page-en.png)
 
@@ -119,12 +119,12 @@ Tutorial: [Connect agents to any external app through one unified API](/blog/cal
 - **Gateway and custom model rows need their own key.** They no longer borrow `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` from the environment; set it under **Group settings…**.
 - **Rename `AGENTHUB_DEBUG` and `AGENTHUB_CACHE_DIR`** to `MMSP_DEBUG` and `MMSP_CACHE_DIR`.
 - **Update each agent's kernel** with **Update now** on the **Agents** page, and update `goal`, `agent-development` and `agent-company` from the notice on the **Plugins** page.
-- **Install the new plugins on existing agents.** `browser-automation`, `a2ui` and the RSI toolkits are preinstalled only on the General Agent of a Project created with 0.2.14; install them on other agents from the **Plugins** page.
+- **Install the new plugins on existing agents.** `browser-automation`, `a2ui` and the RSI toolkits are preinstalled only on the General Agent of a Project created with 0.2.15; install them on other agents from the **Plugins** page.
 - **CLI commands moved:** `penguin ls`, `penguin logs` and `penguin input` are now `penguin session ls`, `penguin session log` and `penguin session input`, and `penguin config provider` is gone: use `penguin config model add --provider <group>` without `--model-id`.
 - **Conversations opened by programs are archived.** Sessions that the Agent API, a scheduled task or `penguin run` opened, older ones included, leave the sidebar and are listed under **Settings** › **Archived chats**.
-- **`.project_config.toml` is rewritten once on first read**, and migrations 9 to 16 run when the database opens. Releases before 0.2.14 cannot read the rewritten file, so copy it first if you may roll back.
+- **`.project_config.toml` is rewritten once on first read**, and migrations 9 to 16 run when the database opens. Releases before 0.2.15 cannot read the rewritten file, so copy it first if you may roll back.
 
-The full list, including HTTP API and SDK changes, is in [`changelog/0.2.14/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.14).
+The full list, including HTTP API and SDK changes, is in [`changelog/0.2.15/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.15).
 
 ## Install
 
