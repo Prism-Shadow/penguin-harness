@@ -1,4 +1,4 @@
-# One event stream per machine, and a stream that goes silent is detected
+# One event stream per machine within the socket hub, and silent streams are detected
 
 - **Date:** 2026-09-26
 - **Type:** feature
@@ -11,7 +11,7 @@ count. A browser tab used to open a machine's `GET /api/events` as its own strea
 hub carried (tabs × machines) upstream streams and one stuck machine multiplied its re-issue
 storm by the number of tabs. The hub now subscribes to each machine's events **once**, over
 the API socket it already holds to that machine, keeps a bounded replay buffer of its own,
-and serves every reader out of it. A tab takes one stream that carries every connected
+and serves its aggregate and proxy readers out of it. The HTTP user-event relay remains independent and may hold a second upstream subscription, including for machines without an API socket. This guarantee applies within the socket hub, not across all transports. An aggregate tab takes one stream that carries every connected
 machine's events, each tagged with the machine it came from; a single machine's stream is
 served from the same one subscription, so its events and `last-event-id` semantics are
 unchanged from a reader's point of view.
