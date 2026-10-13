@@ -364,7 +364,7 @@
   }
 }
 
-/* ---------- Building blocks (LangChain comparison): React remounts both skylines on
+/* ---------- Building blocks (sections/compare.tsx): React remounts both builds on
    one shared cycle; each block then lands once at its positive delay and holds. */
 .anim-block {
   opacity: 0;

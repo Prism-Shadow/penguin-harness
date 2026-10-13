@@ -298,6 +298,21 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
         link: "配置参考",
       },
     ],
+  /** Building on an agent library against PenguinHarness (sections/compare.tsx). */
+  compare: {
+    title: "Agent 周边的部分，已经搭好了",
+    subtitle:
+      "Agent 开发库负责调用模型和工具的那个循环。在它之外，你还需要一个界面、每次运行的记录、给 Agent 打分的办法，以及供外部调用的 API。",
+    library: {
+      name: "Agent 开发库",
+      mode: "每一块都自己搭",
+      note: "每一块要么自己写，要么另接一个产品。",
+    },
+    penguin: {
+      name: "PenguinHarness",
+      mode: "已经搭好",
+      note: "Web App、Trace、带内置 Benchmark 的评估中心、自进化工具包、沙箱和 Agent API。",
+    },
   },
 
   scenarios: {
