@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#1116](https://github.com/Prism-Shadow/penguin-harness/pull/1116)
 
 [English](2026-10-14-tool-loop-detection.md)
 
