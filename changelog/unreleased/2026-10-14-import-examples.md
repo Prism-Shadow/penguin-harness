@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** refactor
 - **Scope:** `web`, `cli`, `server`, `docs`, `skills`
+- **PR:** [#1117](https://github.com/Prism-Shadow/penguin-harness/pull/1117)
 - **Breaking:** yes — removed the `penguin benchmark import` command and its server upload helper export.
 
 [中文版](2026-10-14-import-examples.zh.md)
