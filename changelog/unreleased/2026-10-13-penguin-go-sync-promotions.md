@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `server`, `docs`
+- **PR:** [#1087](https://github.com/Prism-Shadow/penguin-harness/pull/1087)
 
 [中文版](2026-10-13-penguin-go-sync-promotions.zh.md)
 
