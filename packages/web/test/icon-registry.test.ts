@@ -16,6 +16,11 @@
  * Two shapes are counted: a `const *_ICON` whose value is path data, and a literal `d="M…"` on an
  * element. A computed path (a chart's line, a sparkline, the topology view's edges) is not a
  * literal and is not read.
+ *
+ * - Given the app and shared UI sources, every root is scanned and registry glyphs have no
+ *   literal copies outside the named files that own their drawings.
+ * - Given path constants or JSX attributes, literal/template/wrapped paths are found even with
+ *   escaped identifiers or comments; registry reads, computed paths and ordinary text are fine.
  */
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -65,11 +70,15 @@ function stringText(node: ts.Expression): string | null {
 
 /** Every glyph path a source spells out, as "line: what". */
 function glyphHits(path: string, text: string): string[] {
+  // A declaration ending in _ICON or an attribute named d must contain one of these tokens.
+  // Keep Unicode escapes as candidates too: `ESCAPED_\u0049CON` is an identifier ending in
+  // _ICON after parsing. This only avoids parsing unrelated files; the AST remains the rule.
+  if (!/_ICON|\bd\b|\\u/.test(text)) return [];
   const source = ts.createSourceFile(
     path,
     text,
     ts.ScriptTarget.Latest,
-    true,
+    false,
     path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
   const at = (node: ts.Node) =>
@@ -151,6 +160,15 @@ describe("glyph paths outside the registry", () => {
         ].join("\n"),
       ),
     ).toEqual(["1: TRASH_ICON", "2: EYE_ICON", '3: d="M12 5v14M5 12h14"', '4: d="M9 5l7 7-7 7"']);
+    // Isolated sources prove the fast filter keeps both escaped names and attributes even
+    // when no ordinary _ICON token appears elsewhere in the file.
+    expect(glyphHits("escaped.ts", 'const ESCAPED_\\u0049CON = "M1 1h2";')).toEqual([
+      "1: ESCAPED_ICON",
+    ]);
+    expect(
+      glyphHits("attribute.tsx", 'export const Mark = () => <path d /* path */ = "M2 2h3" />;'),
+    ).toEqual(['1: d="M2 2h3"']);
+    expect(glyphHits("ordinary.ts", 'export const label = "Move to next page";')).toEqual([]);
     // A registry read, a computed path, a label that happens to start with M, and a non-glyph
     // constant are all fine.
     expect(

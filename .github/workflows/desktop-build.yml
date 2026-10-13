@@ -140,7 +140,7 @@ jobs:
         run: |
           V="${TAG#v}"
           D="$(date -u +%Y-%m-%d)"
-          V="$V" D="$D" node -e '
+          V="$V" D="$D" GITHUB_SHA="$(git rev-parse HEAD)" node -e '
             const fs = require("fs");
             const p = "packages/core/src/index.ts";
             let s = fs.readFileSync(p, "utf8");

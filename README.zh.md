@@ -177,7 +177,7 @@ docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyoug
 docker logs penguin       # 首次登录链接，在本机可原样打开
 ```
 
-镜像在 7364 端口提供服务，数据存放在 `/data` 卷，适用于 `linux/amd64` 和 `linux/arm64`；`latest` 跟随 `main`，每次发布也会打上对应版本号的标签。上面的示例只监听回环地址。如需面向网络的部署、Compose 和升级，参见 [Docker 快速上手](https://penguin.ooo/docs/quickstart-docker)。
+镜像在 7364 端口提供服务，数据存放在 `/data` 卷，适用于 `linux/amd64` 和 `linux/arm64`；`latest` 跟随 `main` 中影响镜像运行代码或构建输入的改动，每次发布也会打上对应版本号的标签。上面的示例只监听回环地址。如需面向网络的部署、Compose 和升级，参见 [Docker 快速上手](https://penguin.ooo/docs/quickstart-docker)。
 
 <details>
 <summary><b>离线安装（物理隔离的机器）</b></summary>

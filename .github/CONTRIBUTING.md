@@ -147,7 +147,28 @@ is in [Architecture → Division of responsibilities](https://penguin.ooo/docs/a
 
 ## Quality gates
 
-CI runs all of these on every PR — run them locally before pushing:
+PRs and pushes to `main` use pnpm's dependency graph to select changed packages and
+their downstream consumers. CI builds their dependencies, then runs typechecks and tests.
+Browser and site suites run on Linux; affected native runtime packages also run on macOS
+and Windows. Changes to shared build scripts, the lockfile or unclassified inputs select
+the whole workspace. The plan job lists the selection and its reason.
+
+Core, server and web tests collect branch and line coverage during their Linux run; each
+shard uploads LCOV and JSON summaries. There is no arbitrary coverage threshold. Add
+behavioral regression tests for changed branches, including failures and forbidden side effects.
+
+The browser smoke suite runs against the real server and a local mock LLM on app changes,
+including fork PRs. It checks authentication, approval before command execution, reload
+recovery and follow-up messages. Packaging checks retain stamped version/plugin-index,
+installer and bundled-CLI regressions. Unpacked Electron artifacts are uploaded only on
+manual CI runs.
+
+New releases run the complete three-platform CI workflow against the release ref before
+any publishing job starts. Existing immutable releases can still retry their publishers
+and mirrors. A manual CI run defaults to full validation. Keep the aggregate `ci` job
+required in branch protection: it rejects failed, missing and unexpectedly skipped jobs.
+
+Use the package's narrow checks while developing; these commands run the complete local suites:
 
 ```bash
 pnpm format:check   # prettier
@@ -166,6 +187,7 @@ End-to-end suites (optional locally, slower):
 ```bash
 npx playwright install chromium                      # once
 pnpm --filter @prismshadow/penguin-web test:e2e      # browser e2e against a mock LLM
+pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs  # CI smoke only
 pnpm test:e2e                                        # core live-model e2e, needs DEEPSEEK_API_KEY
 ```
 
@@ -189,10 +211,11 @@ pnpm test:e2e                                        # core live-model e2e, need
   file added later never reaches the Release page. Without it the workflow falls back to
   GitHub's auto-generated notes.
 - **The official image is built from source**, by `.github/workflows/docker.yml`, and
-  pushed to Docker Hub `hiyouga/penguinharness` for `linux/amd64` and `linux/arm64`. Every
-  push to `main` publishes that commit as `latest`, the only tag a push moves; the release
-  workflow's `docker` job builds the tag's own source and publishes the exact version
-  `X.Y.Z`, nothing else. A PR touching the `Dockerfile`,
+  pushed to Docker Hub `hiyouga/penguinharness` for `linux/amd64` and `linux/arm64`. A push
+  to `main` that changes the image's runtime or build inputs publishes that commit as
+  `latest`, the only tag a push moves. Docs, site and desktop-only source changes leave
+  the image unchanged. The release workflow's `docker` job builds the tag's own source
+  and publishes the exact version `X.Y.Z`. A PR touching the `Dockerfile`, `.dockerignore`,
   `docker/` or that workflow runs the same file as an amd64 smoke build. The push
   needs the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets of the `docker` GitHub Environment (whose URL is the Docker Hub repository) — the latter a
   Docker Hub access token with read/write scope on that repository — and the Docker Hub
