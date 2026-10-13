@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#1083](https://github.com/Prism-Shadow/penguin-harness/pull/1083)
 
 [中文版](2026-10-12-plugins-page-cold-index.zh.md)
 
