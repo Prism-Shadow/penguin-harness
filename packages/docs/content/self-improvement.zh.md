@@ -18,7 +18,7 @@ PenguinHarness 的自我进化是一个循环：为 Agent 构建 Benchmark，在
 | Evaluator | `agent-evaluation` | 通过 `run_subagent` 创建的叶子子 Agent | 让 Target Agent 在一道题目上运行一次，并为这次运行打分 |
 | Optimizer | `agent-optimization` | 另一个独立的顶层 Session | 按可证伪的假设修改 Target Agent，分数严格提升才保留新版本 |
 
-没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill。循环本身 `agent-optimization` 就是 `default-rsi-toolkit` 插件（Default RSI Toolkit），它经由 `agent-evaluation` 插件（Agent Evaluation）测量，后者包含 `benchmark-design` 与 `agent-evaluation`；`agent-initialization` 随 `agent-development` 提供。四者都是预装的。在 Web App 界面里，Target Agent 叫作**被测智能体**。
+没有为这些角色专门预留的内置 Agent：每个角色就是一个 Skill。循环本身 `agent-optimization` 就是 `default-rsi-toolkit` 插件（默认 RSI 工具包），它经由 `agent-evaluation` 插件（Agent Evaluation）测量，后者包含 `benchmark-design` 与 `agent-evaluation`；`agent-initialization` 随 `agent-development` 提供。四者都是预装的。在 Web App 界面里，Target Agent 叫作**被测智能体**。
 
 ### 角色之间的调用
 

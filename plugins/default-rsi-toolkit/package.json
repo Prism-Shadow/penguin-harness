@@ -23,9 +23,11 @@
     "access": "public"
   },
   "penguin": {
+    "title": "Default RSI Toolkit",
+    "title_zh": "默认 RSI 工具包",
     "description_zh": "默认 RSI 工具包：把「试跑 → 反思 → 提升」的循环做成一个 Skill——依据 Benchmark 的实测结果逐轮改进 Agent，每轮之前自动快照。测量经由 Agent Evaluation 插件的 agent-evaluation Skill 完成。",
-    "short_description": "Default RSI Toolkit: trial, reflect, improve.",
-    "short_description_zh": "默认 RSI 工具包：试跑、反思、提升。",
+    "short_description": "Trial, reflect, improve.",
+    "short_description_zh": "试跑、反思、提升。",
     "category": "rsi",
     "icon": "icon.svg",
     "quick_start": {

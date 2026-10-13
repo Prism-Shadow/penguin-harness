@@ -23,9 +23,11 @@
     "access": "public"
   },
   "penguin": {
+    "title": "AWM RSI Toolkit",
+    "title_zh": "AWM RSI 工具包",
     "description_zh": "AWM RSI 工具包：按论文《Agent Workflow Memory》（Wang 等，2024，https://arxiv.org/abs/2409.07429）——从成功轨迹归纳工作流并存入 Target 的记忆，在线（训练流）或离线（给定经验）两种模式，冻结后在 Benchmark 上独立测试。自成一体：自行创建 Target 的工作流记忆、自行评测每个单元、写入评估中心的记分板。",
-    "short_description": "AWM RSI Toolkit: induce workflows from trajectories.",
-    "short_description_zh": "AWM RSI 工具包：从轨迹归纳工作流。",
+    "short_description": "Induce workflows from trajectories.",
+    "short_description_zh": "从轨迹归纳工作流。",
     "category": "rsi",
     "icon": "icon.svg",
     "quick_start": {
