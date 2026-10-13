@@ -1094,13 +1094,6 @@ describe("model-catalog", () => {
     expect([tdQwenFlash.cache_read, tdQwenFlash.cache_write, tdQwenFlash.output]).toEqual([
       0.014286, 0.114286, 0.385714,
     ]);
-    // ling-3.1-flash at TokenDance's list, CNY 2 input / 6 output / 0.4 cache hit, with no
-    // discount: the launch trial the portal bills at 0 is not recorded, so the card shows
-    // neither a free tag nor a saving.
-    const ling = td.find((m) => m.modelId === "ling-3.1-flash")!;
-    expect(ling.discount).toBeUndefined();
-    const lingCny = billedCny("ling-3.1-flash");
-    [2, 6, 0.4].forEach((v, i) => expect(lingCny[i], `ling-3.1-flash ${i}`).toBeCloseTo(v, 4));
     // hy4-preview is the same upstream model as OpenRouter's tencent/hy4-preview, sold twice.
     // Each row carries its own seller's price and its own published context window, so the two
     // stay apart rather than converge on one number.

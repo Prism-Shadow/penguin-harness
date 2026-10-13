@@ -2062,17 +2062,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
-    // Text only, 1,000,000 window, at a CNY 2 input / 6 output / 0.4 cache hit list (the
-    // portal's `reference`, re-read 2026-10-13; it had been read as Ling-3.0-flash's 0.4 / 1.2 /
-    // 0.08). Listed 2026-09-30 with a free trial served at 256K, which the portal bills at 0
-    // until 2026-10-14 10:00. A free period is no `discount`, which is a fraction below 1, and
-    // the trial ends before a release carries this row, so the row records the list price and
-    // the full window the model is sold at afterwards.
+    // Text only, 1,000,000 window, at a CNY 0.4 input / 1.2 output / 0.08 cache hit list (the
+    // portal's `reference`, re-read 2026-10-14). Listed 2026-09-30 with a free trial served at
+    // 256K, which the portal bills at 0 until 2026-10-14 10:00. A free period is no `discount`,
+    // which is a fraction below 1. The row records the list price and the full window the
+    // model is sold at after the trial.
     modelId: "ling-3.1-flash",
     displayName: "Ling-3.1-flash",
     provider: "tokendance",
     contextWindow: 1000000,
-    pricing: cny(0.4, 2, 6),
+    pricing: cny(0.08, 0.4, 1.2),
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
