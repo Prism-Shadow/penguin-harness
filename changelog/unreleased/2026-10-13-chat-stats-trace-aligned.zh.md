@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1095](https://github.com/Prism-Shadow/penguin-harness/pull/1095)
 
 [English](2026-10-13-chat-stats-trace-aligned.md)
 
