@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** process
 - **Scope:** `landing`
+- **PR:** [#1094](https://github.com/Prism-Shadow/penguin-harness/pull/1094)
 
 [English](2026-10-13-landing-pillar-titles.md)
 
