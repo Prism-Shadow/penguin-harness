@@ -89,7 +89,7 @@ const run = client.run({
   input: "Now list its headings",
   onApproval: (request) => {
     const args = parseArguments(request.tool_call);
-    return request.tool_call.name === "exec_command" && args?.command === "ls" ? "allow" : "deny";
+    return request.tool_call.name === "exec_command" && args?.cmd === "ls" ? "allow" : "deny";
   },
 });
 for await (const event of run) {
@@ -147,7 +147,7 @@ A request refused before the stream gets an HTTP status and `{"error": {"code": 
 | 404 | `agent_not_found` | API access is off, the Agent ID is wrong, or the key belongs to another Agent | Check with `penguin agent api status`, then ask the owner |
 | 404 | `session_not_found` | The `session_id` is not one of this Agent's API conversations | Start a new conversation |
 | 409 | `task_in_progress`, `compacting` | The conversation is still busy | Wait for its `run.done`: one run per conversation at a time |
-| 429 | `too_many_runs` | The Agent already has 4 API runs going | Retry after `Retry-After` seconds |
+| 429 | `too_many_runs` | The Agent already has 4 conversations running, Web App ones included | Retry after `Retry-After` seconds |
 
 ## 6. Verify before you hand over
 

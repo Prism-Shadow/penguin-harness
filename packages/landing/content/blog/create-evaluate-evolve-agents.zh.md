@@ -24,7 +24,7 @@ Benchmark 是一组题目，每道题带一份评分标准。用 Benchmark 评�
 - 在**模型库**页面配置好模型。
 - 一个待测的 Agent：你在**智能体**页面创建的任意 Agent，或者每个 Project 自带的 **General Agent**（`default_agent`）。
 
-每一步里干活的 Agent 都需要 `agent-tuning` 插件里的 Skill：`benchmark-design`、`agent-evaluation` 和 `agent-optimization`。General Agent 已经预装了它们，下文的对话框默认也会选它。
+每一步里干活的 Agent 都需要三个 Skill：`agent-evaluation` 插件里的 `benchmark-design` 和 `agent-evaluation`，以及 `default-rsi-toolkit` 插件里的 `agent-optimization`。General Agent 已经预装了它们，下文的对话框默认也会选它。
 
 ## 循环如何分工
 
@@ -161,7 +161,7 @@ Agent 达到目标分数，或者轮数用完，循环就会停止。被否决�
 ## 常见问题
 
 - **Benchmark 卡片显示「创建失败」**。校准没有产出有效的试跑，或者最后一轮之后 Agent 仍然得到 85 分及以上，这个 Benchmark 既不能评估，也不能优化。先到创建 Benchmark 的那段对话里查看失败的试跑，再删掉它重新创建；如果是 Agent 分数太高，就要求出更难的题。
-- **「使用」对话框提示 Agent 缺少 Skill**。你选的执行评估或执行优化的智能体缺少 `agent-evaluation` 或 `agent-optimization`，多半跑不完。换回 **General Agent**，或者给这个 Agent 装上 `agent-tuning` 插件。
+- **「使用」对话框提示 Agent 缺少 Skill**。你选的执行评估或执行优化的智能体缺少 `agent-evaluation` 或 `agent-optimization`，多半跑不完。换回 **General Agent**，或者给这个 Agent 装上提供该 Skill 的插件：评估用 `agent-evaluation`，优化用 `default-rsi-toolkit`。
 - **「优化」标签页提示 Agent 没有基线分**。先在**评估**标签页评估它（第 6 步）。
 - **基线分和之后的评估不在同一条线上**。它们用的模型不同：基线分用的是创建 Benchmark 那段对话的模型，从**评估**标签页发起的评估用的是 Agent 配置的模型。见第 2 步。
 

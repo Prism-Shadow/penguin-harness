@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for workflows — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in its own `workflows/` folder inside PenguinHarness — building one, changing it, showing it as the whole app, restoring an earlier version, and removing a tab or a whole workflow when the user wants the custom UI gone.
-version: 2026.10.12.1
+version: 2026.10.12.2
 ---
 
 # Penguin plugins: workflows
@@ -134,4 +134,4 @@ A workflow page is a separate document, so it inherits nothing from the app's st
 
 ## Filling the app
 
-A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workflow>[/<tab key>]` (the workflow's first tab when no key is given): the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workflow>[/<tab key>]` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The way back is the command palette — Ctrl+P or Ctrl+Shift+P (⌘ on macOS), both, so a page may take one of them for itself but never both — whose *Exit full page* lands on that Agent's chat.
+A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workflow>[/<tab key>]` (the workflow's first tab when no key is given): the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workflow>[/<tab key>]` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The way back is the command palette, whose *Exit full page* lands on that Agent's chat. Its chord is Ctrl+Alt+P (⌥⌘P on macOS) unless the user rebound it under Settings › Keyboard shortcuts. A key pressed inside the page reaches the app only when the page has not handled it, so a page must never `preventDefault` that chord: on this route it is the only way out.

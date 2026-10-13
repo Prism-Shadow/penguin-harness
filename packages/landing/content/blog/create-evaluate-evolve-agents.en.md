@@ -24,7 +24,7 @@ By the end, you will have a published Benchmark, a chart that compares every ver
 - A model configured on the **Models** page.
 - An agent to test: any agent you created on the **Agents** page, or **General Agent** (`default_agent`), the agent every Project starts with.
 
-The agent that carries out each step needs the Skills from the `agent-tuning` plugin: `benchmark-design`, `agent-evaluation` and `agent-optimization`. General Agent has them preinstalled, and the dialogs below pick it by default.
+The agent that carries out each step needs three Skills: `benchmark-design` and `agent-evaluation` from the `agent-evaluation` plugin, and `agent-optimization` from the `default-rsi-toolkit` plugin. General Agent has them preinstalled, and the dialogs below pick it by default.
 
 ## How the loop fits together
 
@@ -161,7 +161,7 @@ Some ways to keep going:
 ## Troubleshooting
 
 - **A Benchmark card shows Creation failed.** Calibration produced no valid trial run, or the agent still scored 85 or more after the last round, so the Benchmark cannot be evaluated or optimized. Check the building conversation for failed trial runs, then delete the Benchmark and create it again, asking for harder cases if the agent scored too high.
-- **The Use dialog warns that an agent lacks a Skill.** The Evaluator or Optimizer agent you picked is missing `agent-evaluation` or `agent-optimization` and will most likely not finish. Switch back to **General Agent**, or install the `agent-tuning` plugin on that agent.
+- **The Use dialog warns that an agent lacks a Skill.** The Evaluator or Optimizer agent you picked is missing `agent-evaluation` or `agent-optimization` and will most likely not finish. Switch back to **General Agent**, or install the plugin that ships the Skill on that agent: `agent-evaluation` for evaluating, `default-rsi-toolkit` for optimizing.
 - **The Optimize tab says the agent has no baseline.** Evaluate the agent on the **Evaluate** tab first (Step 6).
 - **The baseline and later evaluations are on separate lines.** They ran on different models: the baseline on the model of the conversation that built the Benchmark, and evaluations from the **Evaluate** tab on the agent's configured model. See Step 2.
 

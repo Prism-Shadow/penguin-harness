@@ -136,7 +136,7 @@ type InputItem =
 
 - 新的 API 会话使用 Project 的默认模型、服务器的新对话沙箱和该 Agent 的 API 审批模式。标题由第一条输入生成，用量和费用计入 Project，与其他会话相同。
 - API 会话按规则归档，所以列在[设置 › 已归档对话](/settings#已归档对话)中，而不在侧边栏。取消归档后就可以阅读它、回答其审批，也可以在其中输入；此后它再运行也会留在侧边栏，并带 API 图标。程序可以延续已归档的会话，会话仍保持已归档。
-- 一个会话同一时间只做一件事：会话仍在工作时发起的运行以 `409` 拒绝。一个 Agent 同时最多有四个 API 运行，第五个以 `429` 拒绝，并带 `Retry-After: 2`。
+- 一个会话同一时间只做一件事：会话仍在工作时发起的运行以 `409` 拒绝。一个 Agent 同时最多有四个对话在运行，Web App 里发起的也算在内；四个都在运行时，在新对话或空闲对话上发起的运行以 `429` 拒绝，并带 `Retry-After: 2`。
 - 断开连接即中止运行。要停止运行、同时仍能收到它的结局，就 `POST /sessions/:sessionId/abort`：事件流保持打开，以 `status: "aborted"` 的 `run.done` 结束。
 
 ### 错误
@@ -155,7 +155,7 @@ type InputItem =
 | 409 | `task_in_progress`、`compacting` | 会话正忙 |
 | 413 | `payload_too_large` | 请求体超过服务器的大小上限 |
 | 415 | `unsupported_media_type` | 写请求没有带 `Content-Type: application/json` |
-| 429 | `too_many_runs` | 该 Agent 已有四个运行在进行；等 `Retry-After` 秒后重试 |
+| 429 | `too_many_runs` | 该 Agent 已有四个对话在运行；等 `Retry-After` 秒后重试 |
 | 503 | 以服务器返回为准 | 服务器正在关闭，或该 Agent、会话正在被删除 |
 
 事件流一旦开始，错误就不会以单独的帧出现：运行以 `run.done` 结束，由其 `status` 和 `error` 说明发生了什么。见[流中的错误](/amsp#流中的错误)。
@@ -208,7 +208,7 @@ const result = await client.ask({
   input: "Clean up the build output",
   onApproval: (request) => {
     const args = parseArguments(request.tool_call);
-    return request.tool_call.name === "exec_command" && args?.command === "ls" ? "allow" : "deny";
+    return request.tool_call.name === "exec_command" && args?.cmd === "ls" ? "allow" : "deny";
   },
 });
 ```

@@ -136,7 +136,7 @@ type InputItem =
 
 - A new API conversation uses the Project's default model, the server's new-chat sandbox and the agent's API approval mode. Its title is generated from the first input, and its usage and cost count toward the Project, as for any conversation.
 - API conversations are archived by rule, so they are listed under [Settings › Archived chats](/settings#archived-chats) rather than in the sidebar. Unarchive one to read it, answer its approvals and type into it; it then stays in the sidebar through later runs, marked with the API icon. A program can continue an archived conversation, and it stays archived.
-- A conversation runs one thing at a time: a run on a conversation that is still working is refused with `409`. An agent runs at most four API runs at once; the fifth is refused with `429` and `Retry-After: 2`.
+- A conversation runs one thing at a time: a run on a conversation that is still working is refused with `409`. An agent has at most four conversations running at once, those started in the Web App included; while four are running, a run on a new or idle conversation is refused with `429` and `Retry-After: 2`.
 - Disconnecting aborts the run. To stop a run and still receive how it ended, `POST /sessions/:sessionId/abort`: the stream stays open and ends with `run.done` and `status: "aborted"`.
 
 ### Errors
@@ -155,7 +155,7 @@ A request refused before the stream starts gets an HTTP status and one envelope,
 | 409 | `task_in_progress`, `compacting` | The conversation is busy |
 | 413 | `payload_too_large` | The body exceeds the server's request size cap |
 | 415 | `unsupported_media_type` | A write without `Content-Type: application/json` |
-| 429 | `too_many_runs` | The agent already has four runs going; retry after `Retry-After` seconds |
+| 429 | `too_many_runs` | The agent already has four conversations running; retry after `Retry-After` seconds |
 | 503 | as the server sends it | The server is shutting down, or the agent or conversation is being deleted |
 
 Once the stream has started, an error is never a separate frame: the run ends with `run.done`, whose `status` and `error` say what happened. See [Errors in the stream](/amsp#errors-in-the-stream).
@@ -208,7 +208,7 @@ const result = await client.ask({
   input: "Clean up the build output",
   onApproval: (request) => {
     const args = parseArguments(request.tool_call);
-    return request.tool_call.name === "exec_command" && args?.command === "ls" ? "allow" : "deny";
+    return request.tool_call.name === "exec_command" && args?.cmd === "ls" ? "allow" : "deny";
   },
 });
 ```
