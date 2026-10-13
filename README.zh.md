@@ -71,17 +71,19 @@ PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）
   <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-benchmark-detail-zh.png" alt="一个 Benchmark 的分数图：三个 Agent 随版本一路攀升" width="820" />
 </p>
 
-https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
+**演示：**以决策智能体为例，经过评测、一次工作方法的改进和同模型复测，分数从 84 提升到 100，每次运行的成本都看得到。
+
+https://github.com/user-attachments/assets/8ab00e36-9da6-4706-aede-5cf63c3080fc
 
 ## 一句话，一个应用
 
 ```text
-收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。
+新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。再在法务智能体上做一个 Workflow 标签页，当作它的工作台：我上传文件后，由它在后台分析，完成后生成一份分析报告供我下载。页面上只要上传、文件列表（每个文件的处理状态）和报告下载，不显示任何对话过程；颜色一律取自主题变量，明暗两种主题下都要好看。
 ```
 
-结果：一个文档专家应用，能检索资料、注明出处，构建只花了 $0.02 的 DeepSeek V4 Pro Token。
+结果：一个法务审阅应用。上传合同后，可以查看每个文件的处理状态，并下载列出风险条款、理由和修改建议的审阅报告。5 次样件审阅的模型花费是 $0.0423。
 
-https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
+https://github.com/user-attachments/assets/138744cd-9ab8-42f3-bf6d-b0a25f404132
 
 ## Agent 能做什么
 

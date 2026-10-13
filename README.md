@@ -71,17 +71,19 @@ Every new Project includes seven Benchmarks, run as Harbor tasks in Docker: Peng
   <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-benchmark-detail-en.png" alt="A Benchmark's score chart: three agents climbing across versions" width="820" />
 </p>
 
-https://github.com/user-attachments/assets/922d13a6-5ffc-4685-9a39-352f02f9afc0
+**Demo:** a decision agent is evaluated, revises its working method once, and is retested on the same model. Its score goes from 84 to 100, and the cost of every run is on screen.
+
+https://github.com/user-attachments/assets/7925b4b5-db78-4e00-b209-89deca394e34
 
 ## One sentence, one app
 
 ```text
-Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG app that answers Claude Code questions as a configuration expert, citing its sources.
+Build a legal review agent with a simple workspace where users upload contracts, track the review, and download a report with risky clauses, explanations, and suggested revisions.
 ```
 
-The result: a docs expert with retrieval and cited sources, built for $0.02 of DeepSeek V4 Pro tokens.
+The result: a legal review app. Users upload contracts, follow each file's review, and download a report of risky clauses with explanations and suggested revisions. Five sample reviews cost $0.0423 in model calls.
 
-https://github.com/user-attachments/assets/9b7033e8-f08a-4c3f-bd33-547896664e6e
+https://github.com/user-attachments/assets/28c0ef95-1dfa-47be-bad0-7326ccdf4e7c
 
 ## What agents can do
 
