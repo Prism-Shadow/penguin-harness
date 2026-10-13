@@ -64,6 +64,16 @@ export const PREF_KEYS = ["theme", "mode", "size", "latin", "cjk", "lang", "acce
 export type PrefKey = (typeof PREF_KEYS)[number];
 export type RememberedPrefs = Partial<Pick<GalleryState, PrefKey>>;
 
+/**
+ * The five the gallery stores under its own keys. The mode and the language are the site's: the
+ * landing page and the docs keep them under shared keys, and the site navbar sets them here too.
+ */
+export const GALLERY_PREF_KEYS = ["theme", "size", "latin", "cjk", "accent"] as const;
+
+/** The site's language preference: one of the two languages, or the device's. */
+export const SITE_LANG_PREFS = ["zh", "en", "system"] as const;
+export type SiteLangPref = (typeof SITE_LANG_PREFS)[number];
+
 function pick<T extends string>(
   allowed: readonly T[],
   ...candidates: (string | null | undefined)[]
@@ -93,6 +103,44 @@ export function parseGalleryState(search: string, remembered: RememberedPrefs = 
     lang: pick(LANGS, params.get("lang"), remembered.lang) ?? DEFAULT_STATE.lang,
     accent: pick(ACCENT_IDS, params.get("accent"), remembered.accent) ?? DEFAULT_STATE.accent,
     view: pick(VIEWS, params.get("view")) ?? DEFAULT_STATE.view,
+  };
+}
+
+/** A language preference as the site resolves it: `system` takes the device's, zh* is zh. */
+export function resolveSiteLang(pref: SiteLangPref, deviceLanguage: string | undefined): Lang {
+  if (pref !== "system") return pref;
+  return deviceLanguage?.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+/** What storage holds: the gallery's own keys (`penguin-gallery.<key>`) and the site's two. */
+export interface StoredPrefs {
+  gallery: Partial<Record<PrefKey, string>>;
+  siteTheme: ModePref | null;
+  siteLang: SiteLangPref | null;
+}
+
+/**
+ * The preferences a visit restores when its URL omits them. The mode and the language follow the
+ * site, defaulting as there to the system's. The gallery stored its own `mode` and `lang` before
+ * the three sites shared them; those are read only while the site has no value of its own, so a
+ * returning reader keeps the choice they made here. Whoever prepares the 0.3.0 release removes
+ * that fallback and its test scenario; a reader with only the old keys then opens once in the
+ * system's mode and language.
+ */
+export function rememberedPrefs(
+  stored: StoredPrefs,
+  deviceLanguage: string | undefined,
+): RememberedPrefs {
+  const { gallery, siteTheme, siteLang } = stored;
+  const own: Record<string, string> = {};
+  for (const key of GALLERY_PREF_KEYS) {
+    const value = gallery[key];
+    if (value) own[key] = value;
+  }
+  return {
+    ...(own as RememberedPrefs),
+    mode: siteTheme ?? pick(MODE_PREFS, gallery.mode) ?? "system",
+    lang: resolveSiteLang(siteLang ?? pick(LANGS, gallery.lang) ?? "system", deviceLanguage),
   };
 }
 

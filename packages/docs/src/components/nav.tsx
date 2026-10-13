@@ -1,15 +1,16 @@
 /**
  * Sticky top bar, landing-parity: logo + site name, then the SAME link row as the
  * landing page's nav (Home, Blog, Download, Docs, Gallery) with the same sliding hover
- * pill — so the two sites render an identical navbar. Home, Blog and Download are plain
+ * pill — so the sites render an identical navbar. Home, Blog and Download are plain
  * anchors into the landing SPA one level up and the gallery link one into its sibling
  * SPA; "Docs" routes to this site's own root and is always the active link. The right
  * cluster also matches the landing nav (language + theme toggles, GitHub) and ends with
  * the sidebar toggle on <lg screens — where the landing nav keeps its mobile-menu button.
  *
  * The markup and class strings are duplicated verbatim from the landing nav
- * (packages/landing/src/components/nav.tsx — the two sites share no package, as with
- * site-prefs.ts); keep the two files aligned so the navbars render identically.
+ * (packages/landing/src/components/nav.tsx), as the gallery's are
+ * (packages/ui-gallery/src/site/nav.tsx) — the sites share no package, as with site-prefs.ts;
+ * keep the three files aligned so the navbars render identically.
  */
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent, RefObject } from "react";

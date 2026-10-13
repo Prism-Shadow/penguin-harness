@@ -54,6 +54,7 @@ import { AppInfoDialog } from "../account/app-info-dialog";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
+import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
 
@@ -304,6 +305,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 }
 
 export function AppLayout() {
+  const { currentProject } = useProject();
   const { user, desktopMode, sessionVia } = useAuth();
   // The docks belong to the conversation they were arranged in, so switching Sessions
   // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
@@ -313,8 +315,14 @@ export function AppLayout() {
   // conversation's docks flash on the incoming one.
   const dockScope = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   useLayoutEffect(() => {
+    const projectId = currentProject?.projectId ?? null;
+    const provisional = dockScope === "new" || dockScope?.startsWith("draft-");
+    const scope = provisional
+      ? `${projectId ?? "~none"}:${dockScope}`
+      : (dockScope ?? (projectId === null ? null : `~project:${projectId}`));
+    dispatchBrowser({ type: "scope", scope, projectId });
     setDockScope(dockScope);
-  }, [dockScope]);
+  }, [dockScope, currentProject?.projectId]);
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();

@@ -16,6 +16,7 @@
  * chosen before sending, and everything except approval mode is locked once the Session is
  * created. The Session list and the new-chat entry point live in the global sidebar.
  */
+import { adoptBrowserSession } from "../builtin-browser/browser-actions";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
@@ -1337,6 +1338,7 @@ export function ChatPage() {
       await reloadSessions();
       // Same conversation under a new id: its docks follow, or they are stranded under
       // an id nothing routes to again.
+      await adoptBrowserSession(currentId, respondedId);
       adoptDockScope(respondedId);
       navigate(`/chat/${respondedId}`, { replace: true });
     },

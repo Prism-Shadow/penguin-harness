@@ -5,9 +5,6 @@
 import { browserState } from "./browser-store";
 import { guestForTab } from "./browser-state";
 
-/** The partition every guest runs in: the built-in browser's own profile and sign-ins. */
-export const BROWSER_PARTITION = "persist:penguin-browser";
-
 /** The part of Electron's `<webview>` element API the app uses. */
 export interface WebviewElement extends HTMLElement {
   getWebContentsId(): number;

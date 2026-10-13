@@ -565,7 +565,7 @@ export const en: Strings = {
     pairConnected: "Connected",
     importTitle: "Import from browser",
     importIntro:
-      "Copies sign-ins and history from a browser on this computer into the built-in browser. The browser you import from is left unchanged.",
+      "Copies sign-ins into this Project’s browser storage and history into the built-in browser. Other Projects’ sign-ins and the source browser stay unchanged.",
     importLoading: "Looking for browsers…",
     importNone: "No browser to import from was found on this computer.",
     importSourcesFailed: (reason: string): string => `Could not list the browsers: ${reason}`,
@@ -594,7 +594,8 @@ export const en: Strings = {
       `History: ${h.imported} of ${h.found} entries imported`,
     importFailed: (reason: string): string => `Import failed: ${reason}`,
     clearTitle: "Clear browsing data",
-    clearBody: "Choose what to remove from the built-in browser. This cannot be undone.",
+    clearBody:
+      "Cookies, cache and site storage are cleared for this Project; history is cleared across the built-in browser. This cannot be undone.",
     clearCookies: "Cookies and sign-ins",
     clearCache: "Cached images and files",
     clearStorage: "Site storage",

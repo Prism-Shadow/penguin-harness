@@ -38,9 +38,6 @@ export function siteRootOf(base: string): string | null {
   return /(?:^|\/)gallery\/$/.test(base) ? base.slice(0, -"gallery/".length) : null;
 }
 
-/** Where the brand link leads on the public site: back to the site, as the docs' logo does. */
-export const SITE_ROOT = siteRootOf(import.meta.env.BASE_URL);
-
 /** The route path with the base stripped: `/`, `/embed`, `/screens/chat`, `/fonts`. */
 export function routePath(): string {
   const path = window.location.pathname;

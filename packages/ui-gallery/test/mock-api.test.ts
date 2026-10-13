@@ -5,6 +5,8 @@
  * route answers with the `gallery_unmocked` code and nothing else does, so that code — and a
  * handler that throws anything but the app's `ApiError` — is what fails here. The URL helpers
  * (file content, downloads) are checked the same way through the fetch path.
+ * Transferring a draft's browser pages reports the unavailable browser, as opening a page
+ * does: the gallery hosts no desktop browser and must not report a successful transfer.
  */
 import { describe, expect, it } from "vitest";
 import * as api from "../../web/src/api/endpoints";
@@ -379,6 +381,10 @@ describe("the mocked API", () => {
       code: "demo_read_only",
     });
     await expect(api.startUpdateJob()).rejects.toMatchObject({ code: "demo_read_only" });
+    await expect(api.adoptBuiltinBrowserSession("draft", "saved")).rejects.toMatchObject({
+      status: 503,
+      code: "browser_unavailable",
+    });
   });
 
   it("names an unrouted request by the one code the coverage test looks for", async () => {

@@ -10,6 +10,7 @@ export function isBuiltinBrowserEvent(ev: ServerEvent): ev is BuiltinBrowserServ
   return (
     ev.type === "builtin_browser_tabs" ||
     ev.type === "builtin_browser_open" ||
+    ev.type === "builtin_browser_session" ||
     ev.type === "builtin_browser_close" ||
     ev.type === "builtin_browser_activity" ||
     ev.type === "builtin_browser_metrics" ||

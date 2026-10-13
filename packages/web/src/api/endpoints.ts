@@ -2656,10 +2656,22 @@ export const revokeBrowserExtension = (extensionId: string) =>
  * (over the user channel) to create the page, and answers once the page is claimed — so this
  * resolves after the tab exists.
  */
-export const openBuiltinBrowserTab = (body: { url?: string; activate?: boolean }) =>
+export const openBuiltinBrowserTab = (body: {
+  url?: string;
+  activate?: boolean;
+  sessionId?: string;
+  projectId?: string;
+}) =>
   apiFetch<{ tab: BuiltinBrowserTab }>(builtinBrowserPath("/tabs"), {
     method: "POST",
     body,
+    server: null,
+  });
+/** Transfers the built-in pages when a conversation receives a new id. */
+export const adoptBuiltinBrowserSession = (fromSessionId: string, sessionId: string) =>
+  apiFetch<void>(builtinBrowserPath("/tabs/session"), {
+    method: "POST",
+    body: { fromSessionId, sessionId },
     server: null,
   });
 /** Ties a page this window created to the open request it answers; 409 when another window was first. */
@@ -2723,9 +2735,12 @@ export const searchBuiltinBrowserHistory = (q: string, limit: number) =>
   });
 export const clearBuiltinBrowserHistory = () =>
   apiFetch<void>(builtinBrowserPath("/history"), { method: "DELETE", server: null });
-export const clearBuiltinBrowserData = (storages: BuiltinBrowserStorage[]) =>
+export const clearBuiltinBrowserData = (
+  storages: BuiltinBrowserStorage[],
+  scope: { sessionId?: string; projectId?: string } = {},
+) =>
   apiFetch<void>(builtinBrowserPath("/clear-data"), {
     method: "POST",
-    body: { storages },
+    body: { storages, ...scope },
     server: null,
   });

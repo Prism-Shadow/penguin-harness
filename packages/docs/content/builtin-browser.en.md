@@ -27,7 +27,9 @@ Where to go:
 
 Open the panel from the top right of the chat toolbar: select **Right sidebar** or **Bottom panel**, then choose **Browser**. If the dock already shows other panels, use its **Add panel** menu. See [Use side panels](/chat#use-side-panels).
 
-There is one set of browser tabs for the whole app. Every conversation's dock shows the same tabs, so a page an agent opened in one conversation is still there when you switch to another.
+The built-in browser keeps a separate set of tabs and an active page for each Session. The panel shows only the current Session's pages, and its automation cannot operate on another Session's tab IDs. Switching conversations hides their pages without reloading them or interrupting playback. Popups belong to the Session that opened them.
+
+Cookies, sign-ins and website storage are shared by Sessions in the same Project. Different Projects use separate browser profiles. After upgrading from the shared browser profile, sign in again or import cookies in each Project; the old global data is retained and is not copied into Project profiles. Browsing history remains shared across the built-in browser.
 
 The sections from [Browse](#browse) to [Clear browsing data](#clear-browsing-data) describe the built-in browser. When agents use your own Chrome, the panel shows [your Chrome's tabs](#in-the-browser-panel) instead.
 
@@ -80,7 +82,7 @@ Agents never type your passwords. When a page an agent needs asks for a sign-in,
 
 ## Import from your browser
 
-Import copies the cookies (which hold your sign-ins) and the history of one profile of a browser installed on this machine into the built-in browser.
+Import copies cookies (which hold your sign-ins) into the current Project’s browser profile and history into the built-in browser’s shared history. The source is one profile of a browser installed on this machine.
 
 1. In the toolbar's menu, select **Import from browser…**.
 2. Pick a profile. Profiles are grouped by browser and named as the browser names them.
@@ -107,7 +109,7 @@ From a shell, `penguin browser import --list` lists the profiles and `penguin br
 
 ## Clear browsing data
 
-Select **Clear browsing data…** in the toolbar's menu and choose what to remove: cookies and sign-ins, cached files, site storage, or the browsing history. This affects only the built-in browser.
+Select **Clear browsing data…** in the toolbar's menu and choose what to remove: cookies and sign-ins, cached files, site storage, or the browsing history. Cookies, cache and site storage are cleared only for the current Project; clearing history removes it from the built-in browser’s shared history. Other Projects’ sign-ins remain intact.
 
 ## Use your own Chrome
 
@@ -232,7 +234,7 @@ Every tab is a whole web page with memory of its own: a busy shopping or news si
 
 ## How it works
 
-- Each tab is a Chromium page hosted by the desktop app, in its own persistent profile. Pages see an ordinary Chrome browser.
+- Each tab is a Chromium page hosted by the desktop app. Pages in one Project share a persistent profile; different Projects have separate profiles. Pages see an ordinary Chrome browser.
 - The server drives pages through the Chrome DevTools Protocol, relayed by the desktop app. Reading, running scripts, clicking and typing all happen on the server's side of that link, so they improve with server updates.
 - Pages are read and changes are tracked by scripts adapted from [GenericAgent](https://github.com/lsdefine/genericagent) (MIT): its DOM simplification and its `web_scan` / `web_execute_js` design.
 - The history and the homepage are files in the data root, `builtin-browser/history.json` and `builtin-browser/settings.json`. Cookies and site storage live in the desktop app's own profile directory.
