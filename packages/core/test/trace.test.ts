@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
@@ -25,6 +25,13 @@ async function fileHandleProto(dir: string): Promise<{ write: (...args: unknown[
   const proto = Object.getPrototypeOf(probe) as { write: (...args: unknown[]) => unknown };
   await probe.close();
   return proto;
+}
+
+/** The assistant text of a message, for content comparison (its timestamp differs per call). */
+function textOf(msg: OmniMessage | undefined): string | undefined {
+  if (msg === undefined || msg.type !== "model_msg") return undefined;
+  const p = msg.payload as { type?: string; text?: string };
+  return p.type === "text" ? p.text : undefined;
 }
 
 function meta() {
@@ -164,6 +171,116 @@ describe("Writer", () => {
 
     // append-only verification: the old file's row count does not increase.
     expect((await readTrace(firstPath)).length).toBe(2);
+  });
+
+  // Size-based rotation: a session that never compacts would otherwise grow ONE unbounded shard
+  // (42MB observed in the wild), and every whole-shard reader pays for that on each open.
+  describe("size-based rotation", () => {
+    it("opens a new shard before the record that would cross the ceiling", async () => {
+      // A ceiling a few records wide, so the rotation point is reachable with small records.
+      const writer = new Writer({
+        tracesDir,
+        sessionId: SESSION_ID,
+        date: new Date(2026, 0, 9),
+        maxShardBytes: 4096,
+      });
+      await writer.write(meta());
+      const firstPath = writer.currentPath();
+
+      // Enough assistant records to blow past 4 KiB several times over.
+      for (let i = 0; i < 60; i++) await writer.write(assistantText(`turn ${i} ${"x".repeat(200)}`));
+
+      // The writer moved past the first shard...
+      expect(writer.currentPath()).not.toBe(firstPath);
+      // ...and every shard on disk respects the ceiling except one carrying a single record
+      // larger than it (the ceiling is soft). Read every shard back, oldest index first.
+      const dateDir = join(tracesDir, "2026-01-09");
+      const shards = (await readdir(dateDir)).filter((n) => n.endsWith(".jsonl")).sort();
+      expect(shards.length).toBeGreaterThan(1);
+      for (const name of shards) {
+        const records = await readTrace(join(dateDir, name));
+        const size = (await stat(join(dateDir, name))).size;
+        // A shard is either within the ceiling, or holds exactly the one record that did not fit.
+        expect(size <= 4096 || records.length === 1).toBe(true);
+      }
+
+      // Nothing is lost or reordered across the new boundaries: concatenated in index order,
+      // the shards hold exactly the messages written, in order (compared by content, since
+      // assistantText stamps each message with its own creation time).
+      const all: OmniMessage[] = [];
+      for (const name of shards) all.push(...(await readTrace(join(dateDir, name))));
+      expect(all).toHaveLength(61); // meta + 60 turns
+      // The session_meta opened the first shard (compared field-wise: meta() re-stamps).
+      expect(all[0]?.type).toBe("session_meta");
+      expect((all[0]?.payload as { session_id?: string }).session_id).toBe(SESSION_ID);
+      expect(all.slice(1).map((m) => textOf(m))).toEqual(
+        [...Array(60).keys()].map((i) => `turn ${i} ${"x".repeat(200)}`),
+      );
+    });
+
+    it("never splits a record across shards", async () => {
+      const writer = new Writer({
+        tracesDir,
+        sessionId: SESSION_ID,
+        date: new Date(2026, 0, 9),
+        maxShardBytes: 2048,
+      });
+      await writer.write(meta());
+      // One record far bigger than the ceiling: it must land WHOLE in its own shard rather
+      // than being cut at the boundary.
+      const huge = imageUrlMessage(`data:image/png;base64,${"B".repeat(64 * 1024)}`);
+      await writer.write(huge);
+      await writer.write(assistantText("after the giant"));
+
+      const dateDir = join(tracesDir, "2026-01-09");
+      const shards = (await readdir(dateDir)).filter((n) => n.endsWith(".jsonl")).sort();
+      const all: OmniMessage[] = [];
+      for (const name of shards) all.push(...(await readTrace(join(dateDir, name))));
+      // The giant record parses as ONE message (a split would throw or duplicate it).
+      expect(all.filter((m) => JSON.stringify(m) === JSON.stringify(huge)).length).toBe(1);
+      expect(textOf(all[all.length - 1]!)).toBe("after the giant");
+    });
+
+    it("does not rotate when no ceiling is configured (compaction-only, unchanged)", async () => {
+      const writer = new Writer({
+        tracesDir,
+        sessionId: SESSION_ID,
+        date: new Date(2026, 0, 9),
+        maxShardBytes: 0,
+      });
+      await writer.write(meta());
+      const firstPath = writer.currentPath();
+      for (let i = 0; i < 200; i++) await writer.write(assistantText(`turn ${i} ${"y".repeat(500)}`));
+      // Same file throughout: an explicit 0 turns the ceiling off.
+      expect(writer.currentPath()).toBe(firstPath);
+    });
+
+    it("resumes the ceiling from a pre-existing shard's real size", async () => {
+      const dateDir = join(tracesDir, "2026-01-09");
+      await mkdir(dateDir, { recursive: true });
+      const path = join(dateDir, `${SESSION_ID}_004.jsonl`);
+      // A resumed shard already well past a small ceiling: the very next record must rotate
+      // rather than append onto it (the ceiling is seeded from disk, not from zero).
+      await writeFile(
+        path,
+        `${JSON.stringify(assistantText(`pre-existing ${"z".repeat(2000)}`))}\n`,
+        "utf8",
+      );
+      expect((await stat(path)).size).toBeGreaterThan(1024);
+
+      const writer = new Writer({
+        tracesDir,
+        sessionId: SESSION_ID,
+        dateDir: "2026-01-09",
+        startIndex: 4,
+        maxShardBytes: 1024,
+      });
+      await writer.write(assistantText("one more"));
+      expect(writer.currentPath()).not.toBe(path);
+      expect(writer.currentPath().endsWith(`${SESSION_ID}_005.jsonl`)).toBe(true);
+      // The pre-existing shard is append-only: it kept exactly its one record.
+      expect((await readTrace(path)).length).toBe(1);
+    });
   });
 
   // #215 regression: appends come from multiple async producers in one process (the LLM stream
