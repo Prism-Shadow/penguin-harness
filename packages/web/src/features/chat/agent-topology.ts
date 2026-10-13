@@ -418,6 +418,8 @@ export function modelAtOrigin(model: StreamModel, origin: readonly string[]): St
 // call's description. Sized uniformly rather than per-node: variable heights would have to be
 // threaded through row placement and edge geometry below, for the sake of a few nodes that
 // carry no description (the root never does) and simply center their single line instead.
+// Every length here is a CSS pixel at the default 16px root: the view sets them in rem, so the
+// box keeps fitting its two lines at every text size.
 export const NODE_W = 200;
 export const NODE_H = 46;
 export const GAP_X = 32;
@@ -426,7 +428,7 @@ export const PAD = 6;
 
 export interface PlacedNode {
   node: TopologyNode;
-  /** Top-left corner of the node box (CSS pixels within the layout canvas). */
+  /** Top-left corner of the node box (layout units within the canvas: CSS pixels at a 16px root). */
   x: number;
   y: number;
 }
