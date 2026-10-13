@@ -3183,3 +3183,94 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     expect(followUpTexts).not.toContain("[user_steering]");
   });
 });
+
+describe("ContextEngine tool-call loop detection", () => {
+  /** A model that always issues the same two tool calls and never a final reply. */
+  class LoopingLLM implements LLMInterface {
+    calls = 0;
+    async *streamGenerate(
+      _params: GenerativeModelParameters,
+    ): AsyncGenerator<OmniMessage, LLMOutcome> {
+      this.calls += 1;
+      yield assistantText("looping...");
+      yield toolCall({
+        name: "exec_command",
+        arguments: JSON.stringify({ cmd: "echo NEWA111" }),
+        toolCallId: `call_a_${this.calls}`,
+        stopReason: "completed",
+      });
+      yield toolCall({
+        name: "exec_command",
+        arguments: JSON.stringify({ cmd: "echo NEWB222" }),
+        toolCallId: `call_b_${this.calls}`,
+        stopReason: "completed",
+      });
+      yield tokenUsage(emptyTokenCounts(), {
+        cache_read: 0,
+        cache_write: 0,
+        output: 5,
+        total: 12,
+      });
+      return { status: "completed" };
+    }
+  }
+
+  it("stops a run when the same tool calls repeat across consecutive turns", async () => {
+    const llm = new LoopingLLM();
+    const environment = new Environment({
+      workspaceDir: await mkdtemp(join(tmpdir(), "loop-test-")),
+      toolConfig: execCommandToolConfig(),
+    });
+    // maxTurns is unlimited on purpose: the loop must be caught by the detection, not by a
+    // turn cap that a Project may well have turned off.
+    const engine = new ContextEngine({ llm, environment, maxTurns: -1 });
+
+    const { cutoff } = await collectRunWithReturn(engine, [userText("go")], allowAll);
+
+    expect(cutoff).not.toBeNull();
+    expect(cutoff!.kind).toBe("tool_loop");
+    // Four consecutive identical turns fire it (window 3 + the one before the run).
+    expect(llm.calls).toBeLessThanOrEqual(5);
+  });
+
+  it("does not flag a loop while the tool calls differ from turn to turn", async () => {
+    class VaryingLLM implements LLMInterface {
+      calls = 0;
+      async *streamGenerate(
+        _params: GenerativeModelParameters,
+      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+        this.calls += 1;
+        if (this.calls >= 5) {
+          yield assistantText("done");
+          return { status: "completed" };
+        }
+        yield assistantText(`turn ${this.calls}`);
+        yield toolCall({
+          name: "exec_command",
+          arguments: JSON.stringify({ cmd: `echo turn_${this.calls}` }),
+          toolCallId: `call_${this.calls}`,
+          stopReason: "completed",
+        });
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 5,
+          total: 12,
+        });
+        return { status: "completed" };
+      }
+    }
+
+    const llm = new VaryingLLM();
+    const environment = new Environment({
+      workspaceDir: await mkdtemp(join(tmpdir(), "no-loop-test-")),
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxTurns: -1 });
+
+    const { cutoff } = await collectRunWithReturn(engine, [userText("go")], allowAll);
+
+    expect(cutoff).toBeNull();
+    expect(llm.calls).toBe(5);
+  });
+});
