@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1107](https://github.com/Prism-Shadow/penguin-harness/pull/1107)
 
 [English](2026-10-13-subagent-card-binding.md)
 
