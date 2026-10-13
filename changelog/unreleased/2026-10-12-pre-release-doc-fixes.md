@@ -3,6 +3,7 @@
 - **Date:** 2026-10-12
 - **Type:** process
 - **Scope:** `docs`, `skills`, `landing`
+- **PR:** [#1080](https://github.com/Prism-Shadow/penguin-harness/pull/1080)
 
 [中文版](2026-10-12-pre-release-doc-fixes.zh.md)
 
