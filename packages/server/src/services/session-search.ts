@@ -164,6 +164,8 @@ export class SessionSearchService implements SessionSearchMechanism {
     date: string;
     sizeBytes: number;
     indexedBytes: number;
+    /** Records already consumed: the line number this pass's first record takes. */
+    messageCount: number;
   }): Promise<void> {
     const path = traceFilePath(this.paths.root, {
       projectId: shard.projectId,
@@ -189,7 +191,10 @@ export class SessionSearchService implements SessionSearchMechanism {
       const lastNewline = chunk.lastIndexOf("\n");
       const usable = lastNewline < 0 ? "" : chunk.slice(0, lastNewline);
       const consumed = start + Buffer.byteLength(usable, "utf8") + (lastNewline < 0 ? 0 : 1);
-      const { docs } = this.docsFromLines(usable, shard, start === 0 ? 0 : shard.indexedBytes);
+      // Line numbers continue where the ledger left off — by RECORDS, not bytes: a byte
+      // offset as the base made a resumed shard's rows collide with the ones already written.
+      const fromLine = start === 0 ? 0 : shard.messageCount;
+      const { docs } = this.docsFromLines(usable, shard, fromLine);
       this.repo.replaceShardFrom(
         {
           projectId: shard.projectId,
@@ -198,6 +203,7 @@ export class SessionSearchService implements SessionSearchMechanism {
           fileIndex: shard.fileIndex,
           indexedBytes: consumed,
           sizeBytes: shard.sizeBytes,
+          messageCount: fromLine + docs.length,
         },
         docs,
         { fromStart: start === 0 },

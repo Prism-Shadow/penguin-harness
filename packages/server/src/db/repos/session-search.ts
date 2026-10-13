@@ -55,6 +55,12 @@ export interface SearchShardRow {
   fileIndex: number;
   indexedBytes: number;
   sizeBytes: number;
+  /**
+   * Records consumed so far — the LINE NUMBER the next record of this shard takes. Bytes
+   * cannot serve as that base: offsetting line numbers by a byte count made a resumed
+   * shard's rows collide with the ones already written (the line is part of the key).
+   */
+  messageCount: number;
 }
 
 /** A shard whose ledger row is missing or no longer matches the file on disk. */
@@ -67,6 +73,8 @@ export interface DirtyShardRow {
   sizeBytes: number;
   /** 0 when the shard was never indexed, else the byte offset to resume from. */
   indexedBytes: number;
+  /** Records consumed so far: the line number the next one takes (see SearchShardRow). */
+  messageCount: number;
 }
 
 /** The filters a search carries beyond its query text. */
@@ -154,12 +162,20 @@ export class SessionSearchRepo implements SessionSearchStore {
   listDirtyShards(projectId: string, limit: number): DirtyShardRow[] {
     const rows = this.prepared(
       `SELECT tf.project_id, tf.agent_id, tf.session_id, tf.file_index, tf.date, tf.size_bytes,
-              COALESCE(ss.indexed_bytes, 0) AS indexed_bytes
+              COALESCE(ss.indexed_bytes, 0) AS indexed_bytes,
+              COALESCE(ss.message_count, 0) AS message_count
          FROM trace_files tf
          LEFT JOIN session_search_shards ss
            ON ss.project_id = tf.project_id AND ss.agent_id = tf.agent_id
           AND ss.session_id = tf.session_id AND ss.file_index = tf.file_index
-        WHERE tf.project_id = ? AND (ss.session_id IS NULL OR ss.size_bytes <> tf.size_bytes)
+        WHERE tf.project_id = ?
+          AND (
+            ss.session_id IS NULL
+            OR ss.size_bytes <> tf.size_bytes
+            -- A pass reads at most one chunk: a shard it only got partway through is still
+            -- owed work, and a matching size only says the file has not grown since.
+            OR ss.indexed_bytes < tf.size_bytes
+          )
         ORDER BY tf.date ASC, tf.session_id ASC, tf.file_index ASC
         LIMIT ?`,
     ).all(projectId, limit) as Record<string, unknown>[];
@@ -171,6 +187,7 @@ export class SessionSearchRepo implements SessionSearchStore {
       date: r.date as string,
       sizeBytes: r.size_bytes as number,
       indexedBytes: r.indexed_bytes as number,
+      messageCount: r.message_count as number,
     }));
   }
 
@@ -182,7 +199,8 @@ export class SessionSearchRepo implements SessionSearchStore {
          LEFT JOIN session_search_shards ss
            ON ss.project_id = tf.project_id AND ss.agent_id = tf.agent_id
           AND ss.session_id = tf.session_id AND ss.file_index = tf.file_index
-        WHERE tf.project_id = ? AND (ss.session_id IS NULL OR ss.size_bytes <> tf.size_bytes)`,
+        WHERE tf.project_id = ?
+          AND (ss.session_id IS NULL OR ss.size_bytes <> tf.size_bytes OR ss.indexed_bytes < tf.size_bytes)`,
     ).get(projectId) as { n: number };
     return row.n;
   }
@@ -195,7 +213,8 @@ export class SessionSearchRepo implements SessionSearchStore {
     fileIndex: number,
   ): SearchShardRow | null {
     const r = this.prepared(
-      `SELECT project_id, agent_id, session_id, file_index, indexed_bytes, size_bytes
+      `SELECT project_id, agent_id, session_id, file_index, indexed_bytes, size_bytes,
+              message_count
          FROM session_search_shards
         WHERE project_id = ? AND agent_id = ? AND session_id = ? AND file_index = ?`,
     ).get(projectId, agentId, sessionId, fileIndex) as Record<string, unknown> | undefined;
@@ -207,6 +226,7 @@ export class SessionSearchRepo implements SessionSearchStore {
       fileIndex: r.file_index as number,
       indexedBytes: r.indexed_bytes as number,
       sizeBytes: r.size_bytes as number,
+      messageCount: r.message_count as number,
     };
   }
 
@@ -262,7 +282,7 @@ export class SessionSearchRepo implements SessionSearchStore {
         shard.fileIndex,
         shard.indexedBytes,
         shard.sizeBytes,
-        docs.length,
+        shard.messageCount,
       );
       this.db.exec("COMMIT");
     } catch (err) {
