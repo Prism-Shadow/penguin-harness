@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** fix
 - **Scope:** `web`, `docs`
+- **PR:** [#1090](https://github.com/Prism-Shadow/penguin-harness/pull/1090)
 
 [中文版](2026-10-13-sidebar-one-reveal-row.zh.md)
 
