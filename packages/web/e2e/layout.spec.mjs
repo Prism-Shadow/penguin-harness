@@ -5,6 +5,10 @@
  *   it used to blow out the card under English copy);
  * - the draft state doesn't show the context-usage ring (no session yet); it shows normally
  *   once inside a session;
+ * - the start page's version line (version, build date, update hint) sits under the slogan at
+ *   the name's left edge at every width, in both languages, and is one line wherever the counts
+ *   sit beside the brand (it used to ride beside the name at some widths, drop under it at
+ *   others, and break after "Last updated" or strand the hint on a line of its own);
  * - the models page at 390x844 must not overflow horizontally, and text must not overlap
  *   (the group header's provider name used to get pushed out of the button box and overlap
  *   the group-level actions), and its model dialog opts every field out of browser autofill
@@ -264,6 +268,75 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
     await newChat.evaluate((el) => getComputedStyle(el).backgroundColor),
     "new-chat button has no background fill",
   ).toBe("rgba(0, 0, 0, 0)");
+});
+
+test("layout: start page version line sits under the slogan at every width", async ({ page }) => {
+  await provisionAndLogin(page.request, "layoutversion", P);
+  const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
+  const projectId = projects.projects[0].projectId;
+  const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {
+    data: {
+      defaultModel: { provider: "custom", modelId: "claude-4-8" },
+      models: [{ provider: "custom", modelId: "claude-4-8", apiKey: "sk-mock", baseUrl: MOCK }],
+    },
+  });
+  expect(put.ok(), "put models").toBeTruthy();
+  // A release build's stamped date and a newer release waiting: the line at its longest.
+  await page.route(`${BASE}/api/version`, async (route) => {
+    const res = await route.fetch();
+    await route.fulfill({
+      response: res,
+      json: { ...(await res.json()), buildDate: "2026-10-13" },
+    });
+  });
+  await page.route(`${BASE}/api/version/update-check*`, (route) =>
+    route.fulfill({
+      json: {
+        currentVersion: "0.0.1",
+        buildDate: "2026-10-13",
+        latestVersion: "99.0.0",
+        updateAvailable: true,
+        releaseUrl: null,
+        publishedAt: null,
+        checkedAt: new Date().toISOString(),
+      },
+    }),
+  );
+
+  for (const lang of ["zh", "en"]) {
+    await page.goto(`${BASE}/chat/new`);
+    await page.evaluate((l) => localStorage.setItem("penguin.lang", l), lang);
+    for (const width of [360, 640, 900, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${BASE}/chat/new`);
+      const line = page.locator("p").filter({ hasText: /^v\d+\.\d+\.\d+ ·/ });
+      await line.getByRole("button", { name: /99\.0\.0/ }).waitFor();
+      const g = await line.evaluate((p) => {
+        const name = document.querySelector("h1").getBoundingClientRect();
+        const slogan = document.querySelector("h1").nextElementSibling.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        // Line boxes, not rects: the raised badge sits a few px above its line's other text.
+        const centers = [];
+        for (const r of range.getClientRects()) {
+          const c = (r.top + r.bottom) / 2;
+          if (r.width > 0.5 && !centers.some((x) => Math.abs(x - c) < 8)) centers.push(c);
+        }
+        const scroller = p.closest(".overflow-y-auto");
+        return {
+          under: range.getBoundingClientRect().top >= slogan.bottom - 1,
+          leftGap: Math.abs(range.getBoundingClientRect().left - name.left),
+          lines: centers.length,
+          overflow: scroller.scrollWidth - scroller.clientWidth,
+        };
+      });
+      expect(g.under, `${lang} @${width}: the version line is under the slogan`).toBe(true);
+      expect(g.leftGap, `${lang} @${width}: it starts at the name's left edge`).toBeLessThan(1);
+      expect(g.overflow, `${lang} @${width}: no sideways scroll`).toBeLessThanOrEqual(0);
+      // Beside the counts the line reaches under them, so it always has room for one line.
+      if (width >= 1280) expect(g.lines, `${lang} @${width}: one line`).toBe(1);
+    }
+  }
 });
 
 test("models: group header actions collapse to icons instead of disappearing", async ({ page }) => {

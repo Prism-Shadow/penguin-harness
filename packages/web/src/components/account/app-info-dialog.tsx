@@ -41,7 +41,6 @@ import {
   Spinner,
 } from "@prismshadow/penguin-ui";
 import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
-import { formatMonthDay } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { toneInk } from "../../lib/tone";
@@ -58,6 +57,7 @@ import { useVersionInfo } from "../../lib/use-version-info";
 import { useLocale } from "../../state/locale";
 import { CreditsList } from "./credits-list";
 import { ReleaseNotesList } from "./release-notes-list";
+import { VersionStamp } from "./version-stamp";
 
 const HOMEPAGE_URL = "https://penguin.ooo/";
 const REPOSITORY_URL = "https://github.com/Prism-Shadow/penguin-harness";
@@ -189,11 +189,7 @@ function Identity({
         <p className="text-lg font-semibold">{S.appName}</p>
         {currentVersion !== null && (
           <p className="text-sm text-fg-muted">
-            {`v${currentVersion}${
-              buildDate !== null
-                ? ` · ${S.update.lastUpdated(formatMonthDay(buildDate, locale))}`
-                : ""
-            }`}
+            <VersionStamp version={currentVersion} buildDate={buildDate} locale={locale} />
           </p>
         )}
       </div>
