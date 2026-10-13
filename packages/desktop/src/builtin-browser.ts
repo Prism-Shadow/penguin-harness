@@ -19,7 +19,7 @@
  * METRICS_INTERVAL_MS while guests exist, each tab's memory and CPU go out as a `metrics` event.
  * What is too much, and what to tell the user, is the server's call; so is which tabs may be
  * throttled while out of sight (the `throttle` command) — every guest runs unthrottled until it
- * says.
+ * says, and the shell keeps playing media unthrottled even when that tab is in the list.
  */
 import fs from "node:fs";
 import { BrowserWindow, Menu, app, clipboard, session } from "electron";
@@ -85,6 +85,10 @@ interface Guest {
   favicon?: string;
   /** The CDP events relayed to the server, as the last `cdp` command's `events` set them. */
   relayed: ReadonlySet<string>;
+  /** The server permits background throttling, provided no media is playing. */
+  throttleAllowed: boolean;
+  /** Electron reports starts/stops per player, including muted media and players in frames. */
+  playingMedia: number;
   /** Why the page's renderer last went away; reported while `wc.isCrashed()` says it still is. */
   crashReason?: string;
 }
@@ -234,8 +238,16 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
   function adopt(wc: WebContents): void {
     const id = wc.id;
     if (guests.has(id)) return;
-    const guest: Guest = { id, wc, relayed: new Set() };
+    const guest: Guest = { id, wc, relayed: new Set(), throttleAllowed: false, playingMedia: 0 };
     guests.set(id, guest);
+    wc.on("media-started-playing", () => {
+      guest.playingMedia += 1;
+      applyThrottling(guest);
+    });
+    wc.on("media-paused", () => {
+      guest.playingMedia = Math.max(0, guest.playingMedia - 1);
+      applyThrottling(guest);
+    });
     // The CDP events the server asked for, and only those: the debugger's session sees every
     // event of the domains enabled on it.
     wc.debugger.on("message", (_event, method: string, params: unknown) => {
@@ -295,6 +307,8 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
     // render-process-gone handler in main.ts logs it.
     wc.on("render-process-gone", (_event, details) => {
       guest.crashReason = details.reason;
+      guest.playingMedia = 0;
+      applyThrottling(guest);
       emit({ kind: "tab-crashed", tabId: id, reason: details.reason, exitCode: details.exitCode });
       push();
       // A command the dead renderer took is never answered. Detaching fails every one of them
@@ -362,40 +376,29 @@ export function createBuiltinBrowserShell(opts: BuiltinBrowserShellOptions): Bui
   }
 
   /**
-   * Lets the listed tabs' pages be throttled while out of sight, and runs every other one at full
-   * speed. A guest is only touched when its setting changes: Electron shows a hidden page again on
-   * every call, so repeating a page's setting would undo the throttling it already has.
+   * Records which pages may be throttled while out of sight. A playing page stays at full speed
+   * until its last player stops, including muted video (audibility alone cannot protect it).
    */
   function throttle(tabIds: readonly number[]) {
     const throttled = new Set(tabIds);
     for (const guest of guests.values()) {
-      const allowed = throttled.has(guest.id);
-      const { wc } = guest;
-      if (wc.isDestroyed() || wc.getBackgroundThrottling() === allowed) continue;
-      wc.setBackgroundThrottling(allowed);
-      if (allowed && !wc.isCrashed()) void applyThrottling(guest);
+      guest.throttleAllowed = throttled.has(guest.id);
+      applyThrottling(guest);
     }
     return {};
   }
 
   /**
-   * Makes a newly allowed throttling take hold now. Electron applies it only at the page's next
-   * change of visibility, and a page parked out of sight has none coming: measured, it went on at
-   * 60 frames and 63 timer ticks a second. Freezing the page for an instant and resuming it (the
-   * Page Lifecycle states, the `freeze` and `resume` events a backgrounded page may get anyway)
-   * has Chromium send it its visibility afresh: none and one after. A DevTools focus-emulation
-   * toggle did the same until the page had had an agent's action; the capture count and hiding
-   * the page's frame in the window never did.
+   * A guest is only touched when its setting changes: Electron shows a hidden page again on
+   * every call. Let Chromium apply throttling at its next visibility change. Forcing a
+   * frozen/active lifecycle round trip to apply it immediately pauses media and can tear down
+   * a stream, including a player still buffering before its first media-started-playing event.
    */
-  async function applyThrottling(guest: Guest): Promise<void> {
-    try {
-      await sendCdp(guest, "Page.setWebLifecycleState", { state: "frozen" });
-      await sendCdp(guest, "Page.setWebLifecycleState", { state: "active" });
-    } catch (err) {
-      opts.log(
-        `builtin browser: tab ${guest.id} is throttled from its next change of visibility: ${messageOf(err)}`,
-      );
-    }
+  function applyThrottling(guest: Guest): void {
+    const { wc } = guest;
+    const allowed = guest.throttleAllowed && guest.playingMedia === 0;
+    if (wc.isDestroyed() || wc.getBackgroundThrottling() === allowed) return;
+    wc.setBackgroundThrottling(allowed);
   }
 
   async function clearData(storages: readonly string[]) {

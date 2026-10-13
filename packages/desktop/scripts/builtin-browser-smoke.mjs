@@ -16,8 +16,19 @@
  * switched on and off, and the guest's renderer killed and the page reloaded — checks that a
  * window the page opens with `webviewTag=yes` cannot attach a guest, and prints
  * `BUILTIN-BROWSER-SMOKE {json}`, exiting non-zero when a check failed.
+ *
+ * Playback scenarios:
+ * - Given playing audio or live video, when its tab is parked and allowed to throttle (a tab,
+ *   menu or mode switch), playback advances without a pause, a freeze event or a document reload.
+ * - Given a parked playing tab, when it is shown and parked repeatedly, playback continues.
+ * - Given two players, when one pauses, the other keeps playing; the last pause restores
+ *   throttling, and starting playback in the background lifts it again.
+ * - Given playing media, when the renderer crashes, its playback protection is cleared.
+ * - Given an idle background tab, when the window hides, native timer throttling still applies
+ *   and releasing it restores the timer rate.
  */
 import { execFileSync } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -67,6 +78,9 @@ const { app, BrowserWindow, Menu, webContents } = await import("electron");
 const { createBuiltinBrowserShell } = await import(
   pathToFileURL(process.env.PENGUIN_BB_SMOKE_BUNDLE).href
 );
+const profile = path.join(path.dirname(process.env.PENGUIN_BB_SMOKE_BUNDLE), "profile");
+fs.mkdirSync(profile, { recursive: true });
+app.setPath("userData", profile);
 
 const checks = [];
 const check = (name, ok, detail) =>
@@ -84,9 +98,30 @@ function finish(error) {
 async function run() {
   await app.whenReady();
 
+  // Local PCM audio: no external service, codecs or audible sound required for playback.
+  const sampleRate = 8_000;
+  const pcm = Buffer.alloc(sampleRate * 2 * 60);
+  const wav = Buffer.alloc(44);
+  wav.write("RIFF");
+  wav.writeUInt32LE(36 + pcm.length, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate * 2, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(pcm.length, 40);
+  const audio = Buffer.concat([wav, pcm]);
   const server = http.createServer((req, res) => {
     res.setHeader("content-type", "text/html; charset=utf-8");
     const url = new URL(req.url, "http://x");
+    if (url.pathname === "/audio.wav") {
+      res.setHeader("content-type", "audio/wav");
+      return res.end(audio);
+    }
     if (url.pathname === "/app") return res.end(appPage);
     if (url.pathname === "/frame") return res.end(framePage);
     if (url.pathname === "/guest") return res.end(guestPage);
@@ -171,12 +206,12 @@ async function run() {
         reject(new Error(`${command.op} was not taken as a browser command`));
       }
     });
-  const evaluate = async (tabId, expression) => {
+  const evaluate = async (tabId, expression, userGesture = true) => {
     const reply = await send({
       op: "cdp",
       tabId,
       method: "Runtime.evaluate",
-      params: { expression, returnByValue: true, awaitPromise: true, userGesture: true },
+      params: { expression, returnByValue: true, awaitPromise: true, userGesture },
     });
     if (!reply.ok) throw new Error(reply.error);
     return reply.result.result.value;
@@ -374,33 +409,173 @@ async function run() {
     { throttleOn, onState, throttleOff, offState, calls },
   );
 
-  // Out of sight, as the Web App parks a tab: throttling takes hold at once (Electron alone would
-  // wait for the page's next change of visibility) and lets go at once.
+  // Out of sight, as the Web App parks a tab. Media must survive the same throttle commands
+  // that follow a tab, menu or mode switch, even when it is muted and never marked audible.
   await evaluate(tabId, "window.__ticks = 0; setInterval(() => { window.__ticks += 1; }, 10); 1");
   const park = (left) =>
     win.webContents.executeJavaScript(
       `(() => { const g = document.getElementById("good"); g.style.position = "fixed"; g.style.left = "${left}"; return true; })()`,
     );
+
+  // Measure an idle page before starting media: Chromium may spare recently playing pages.
   const ticksPerSecond = async () => {
-    const before = await evaluate(tabId, "window.__ticks");
+    // Reading the counter must not give Chromium a user gesture that lifts timer throttling.
+    const before = await evaluate(tabId, "window.__ticks", false);
     await sleep(2_000);
-    return ((await evaluate(tabId, "window.__ticks")) - before) / 2;
+    return ((await evaluate(tabId, "window.__ticks", false)) - before) / 2;
   };
   await park("-20000px");
   await sleep(500);
   const parkedFree = await ticksPerSecond();
   await send({ op: "throttle", tabIds: [tabId] });
+  // Native throttling takes effect on a real visibility change; never freeze a page to force it.
+  win.hide();
   await sleep(500);
   const parkedThrottled = await ticksPerSecond();
   await send({ op: "throttle", tabIds: [] });
   await sleep(500);
   const released = await ticksPerSecond();
+  win.show();
   await park("0px");
+  // Native scheduling chooses the cadence (about 15 Hz on macOS); only the forced freeze
+  // guaranteed the old 1 Hz rate. Check reduced work without imposing that lifecycle shortcut.
   check(
-    "a parked guest's throttling takes hold at once, and lets go",
-    parkedFree > 30 && parkedThrottled <= 3 && released > 30,
+    "a hidden idle guest is throttled on a visibility change, and releasing it restores timers",
+    parkedFree > 30 && parkedThrottled < parkedFree / 2 && released > 30,
     { parkedFree, parkedThrottled, released },
   );
+
+  const playback = () =>
+    evaluate(
+      tabId,
+      `new Promise((resolve) => {
+    const state = window.__playback;
+    const player = state.player;
+    const before = player.currentTime;
+    let timeout;
+    const done = () => {
+      clearTimeout(timeout);
+      player.removeEventListener("timeupdate", progressed);
+      resolve({ time: player.currentTime, advanced: player.currentTime - before,
+        paused: player.paused, pauses: state.pauses, freezes: state.freezes,
+        error: player.error?.message ?? null });
+    };
+    const progressed = () => { if (player.currentTime >= before + 0.5) done(); };
+    player.addEventListener("timeupdate", progressed);
+    timeout = setTimeout(done, 3000);
+  })`,
+      false,
+    );
+  for (const kind of ["audio", "video"]) {
+    const started = once(guestContents, "media-started-playing");
+    await evaluate(
+      tabId,
+      `(async () => {
+      const player = document.createElement(${JSON.stringify(kind)});
+      let draw;
+      if (${JSON.stringify(kind)} === "audio") {
+        player.src = "/audio.wav";
+      } else {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 32;
+        const context = canvas.getContext("2d");
+        draw = setInterval(() => {
+          context.fillStyle = "rgb(" + (Date.now() % 255) + " 0 0)";
+          context.fillRect(0, 0, 32, 32);
+        }, 50);
+        player.srcObject = canvas.captureStream(20);
+      }
+      player.muted = true;
+      document.body.appendChild(player);
+      const state = window.__playback = { player, draw, pauses: 0, freezes: 0 };
+      player.addEventListener("pause", () => state.pauses++);
+      state.onFreeze = () => state.freezes++;
+      document.addEventListener("freeze", state.onFreeze);
+      await player.play();
+      return true;
+    })()`,
+    );
+    await started;
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await park("-20000px");
+      await send({ op: "throttle", tabIds: [tabId] });
+      const hidden = await playback();
+      await send({ op: "throttle", tabIds: [] });
+      await park("0px");
+      const shown = await playback();
+      check(
+        `${kind} keeps playing through background/foreground switch ${cycle + 1}`,
+        [hidden, shown].every(
+          (s) =>
+            s.advanced >= 0.5 && !s.paused && s.pauses === 0 && s.freezes === 0 && s.error === null,
+        ) && shown.time > hidden.time,
+        { hidden, shown },
+      );
+    }
+    await park("-20000px");
+    await send({ op: "throttle", tabIds: [tabId] });
+    const secondStarted = once(guestContents, "media-started-playing");
+    await evaluate(
+      tabId,
+      `(async () => {
+      const other = new Audio("/audio.wav");
+      other.muted = true;
+      window.__playback.other = other;
+      await other.play();
+      return true;
+    })()`,
+    );
+    await secondStarted;
+    const secondPaused = once(guestContents, "media-paused");
+    await evaluate(tabId, "window.__playback.other.pause(); true");
+    await secondPaused;
+    const remaining = await playback();
+    check(
+      `pausing another player does not interrupt the remaining ${kind}`,
+      !guestContents.getBackgroundThrottling() &&
+        remaining.advanced >= 0.5 &&
+        !remaining.paused &&
+        remaining.pauses === 0 &&
+        remaining.freezes === 0,
+      remaining,
+    );
+    const lastPaused = once(guestContents, "media-paused");
+    await evaluate(tabId, "window.__playback.player.pause(); true");
+    await lastPaused;
+    check(
+      `pausing the last ${kind} restores background throttling`,
+      guestContents.getBackgroundThrottling(),
+    );
+    const resumed = once(guestContents, "media-started-playing");
+    await evaluate(tabId, "window.__playback.player.play().then(() => true)");
+    await resumed;
+    const background = await playback();
+    check(
+      `${kind} can resume while its tab stays in the background`,
+      !guestContents.getBackgroundThrottling() &&
+        background.advanced >= 0.5 &&
+        !background.paused &&
+        background.pauses === 1 &&
+        background.freezes === 0,
+      background,
+    );
+    const stopped = once(guestContents, "media-paused");
+    await evaluate(
+      tabId,
+      `(() => {
+      const state = window.__playback;
+      state.player.pause();
+      state.player.srcObject?.getTracks().forEach((track) => track.stop());
+      state.player.remove();
+      clearInterval(state.draw);
+      document.removeEventListener("freeze", state.onFreeze);
+      return true;
+    })()`,
+    );
+    await stopped;
+    await send({ op: "throttle", tabIds: [] });
+    await park("0px");
+  }
 
   const missing = await send({
     op: "cdp",
@@ -528,6 +703,8 @@ async function run() {
     ),
     events.filter((e) => e.kind === "open-request"),
   );
+  // The page menu scenario starts without the selection a previous mouse gesture can leave.
+  await evaluate(tabId, "getSelection().removeAllRanges(); true");
   await rightClick(400, 300);
   const pageMenu = (menus[1] ?? []).map((item) => item.label ?? item.type);
   check(
@@ -592,6 +769,18 @@ async function run() {
   // The guest's renderer killed, as the system does when it runs out of memory: the tab stays,
   // reported crashed with why; CDP is refused at once rather than left waiting; a reload brings
   // the page back.
+  const playingBeforeCrash = once(guest, "media-started-playing");
+  await evaluate(
+    tabId,
+    `(() => {
+    window.__crashPlayer = new Audio("/audio.wav");
+    window.__crashPlayer.muted = true;
+    return window.__crashPlayer.play().then(() => true);
+  })()`,
+  );
+  await playingBeforeCrash;
+  await send({ op: "throttle", tabIds: [tabId] });
+  const protectedBeforeCrash = !guest.getBackgroundThrottling();
   const crashedAt = events.length;
   process.kill(guest.getOSProcessId(), "SIGKILL");
   for (let i = 0; i < 50 && !events.slice(crashedAt).some((e) => e.kind === "tab-crashed"); i++)
@@ -609,6 +798,11 @@ async function run() {
     params: { expression: "1" },
   });
   const listed = (await send({ op: "tabs" })).result?.tabs?.find((t) => t.id === tabId);
+  check(
+    "a renderer crash clears media playback protection",
+    protectedBeforeCrash && guest.getBackgroundThrottling(),
+  );
+  await send({ op: "throttle", tabIds: [] });
   check(
     "a killed guest renderer is a crashed tab: reported, listed, and refused",
     crash?.tabId === tabId &&
