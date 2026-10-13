@@ -352,7 +352,7 @@ A catalog correction to a model the Project already has, such as a new price or 
 - As in a new Project, the default model is the catalog default and no proxy vision model is set.
 - The API keys of built-in groups and of preset models stay where they are. A built-in group with no group key gets one when every model in it that holds a key, deleted ones included, holds the same one and the group key would reach all of them; the models drop their copies. Other keys on deleted models go with them.
 - Penguin Go is reset like every other group, so the models the platform added beyond the presets and the platform's promotions go too. **Sync models** in the group's **Connected** menu brings them back; see [The Penguin Go group](#the-penguin-go-group).
-- The cost center reports usage recorded on a deleted model as uncosted, as it does after you delete a model yourself.
+- Usage recorded on a deleted model that is or once was the default model of new Projects, such as `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, stays priced: the catalog keeps its list price for that. The cost center reports usage on any other deleted model as uncosted, as it does after you delete a model yourself.
 
 Both actions run on the server, as `POST /api/projects/:id/models/sync-presets` with `mode` `add` or `restore` (owner only).
 

@@ -9,7 +9,8 @@
  * "add model" entry point. Also covers the chat dropdown's visibility rule (visibleChatModels):
  * models with a key only by default (a stored masked key or a masked env fallback, judged by
  * hasConfiguredKey), selected/default always visible, everything listed when nothing is
- * configured or on showAll.
+ * configured or on showAll. turnPricing prices a chat turn on the Project's row, and on the
+ * catalog's price for a former default model the table no longer has, nothing for any other.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -29,6 +30,7 @@ import {
   orderModelsLikeLibrary,
   peakWindows,
   promotedPricing,
+  turnPricing,
   visibleChatModels,
 } from "../src/features/models/model-grouping";
 import type { ModelCredentialRowLike, ModelRowLike } from "../src/features/models/model-grouping";
@@ -553,6 +555,31 @@ describe("discountedPrice", () => {
     expect(discountedPrice({ ...strings, cacheRead: 1, cacheWrite: 2, output: 3 })?.billed).toEqual(
       { cacheRead: 0.9, cacheWrite: 1.8, output: 2.7 },
     );
+  });
+});
+
+describe("turnPricing", () => {
+  const formerDefault = MODEL_CATALOG.find((m) => m.retired === true && m.wasDefault === true)!;
+  const ref = { provider: formerDefault.provider, modelId: formerDefault.modelId };
+  const own = { cacheRead: 1, cacheWrite: 2, output: 3 };
+
+  it("prices a turn on the Project's row, promotion off, even where the catalog has another price", () => {
+    expect(turnPricing([{ ...ref, pricing: own, discount: 0.5 }], ref)).toEqual({
+      cacheRead: 0.5,
+      cacheWrite: 1,
+      output: 1.5,
+    });
+  });
+
+  it("keeps the catalog price for a former default the table no longer has, and nothing for another model", () => {
+    const list = formerDefault.pricing!;
+    expect(turnPricing([], ref)).toEqual({
+      cacheRead: list.cache_read,
+      cacheWrite: list.cache_write,
+      output: list.output,
+    });
+    expect(turnPricing([], { provider: "custom", modelId: "mine" })).toBeUndefined();
+    expect(turnPricing(undefined, ref)).toBeUndefined();
   });
 });
 

@@ -1,6 +1,7 @@
 /**
  * Built-in model catalog unit tests: unique ids, valid provider references, positive
- * three-bucket pricing, lookups, and preset entry generation.
+ * three-bucket pricing, lookups, preset entry generation, and the price a model that was the
+ * default of new Projects keeps for its usage after a Project drops its row.
  */
 import { describe, expect, it, vi } from "vitest";
 import { AutoLLMClient } from "@prismshadow/mmsp";
@@ -26,6 +27,8 @@ import {
   presetModelEntries,
   presetPromotions,
   presetProviderTable,
+  defaultProjectConfig,
+  retainedCatalogPricing,
   providerClientType,
   providerConnectionShape,
   providerInfo,
@@ -2295,6 +2298,18 @@ describe("off-peak schedules", () => {
         5,
       );
     }
+  });
+
+  it("usage on the default model of new Projects keeps a price once a Project drops its row, and so does every former default; any other model's does not", () => {
+    const ref = defaultProjectConfig().default_model!;
+    expect(retainedCatalogPricing(ref.provider, ref.model_id)).toEqual(
+      catalogEntryFor(ref.provider, ref.model_id)!.pricing,
+    );
+    for (const m of MODEL_CATALOG.filter((e) => e.wasDefault === true)) {
+      expect(retainedCatalogPricing(m.provider, m.modelId), m.modelId).toBeDefined();
+    }
+    expect(retainedCatalogPricing("tokendance", "glm-5.3-flash")).toBeUndefined();
+    expect(retainedCatalogPricing("custom", "mine")).toBeUndefined();
   });
 
   it("the Qwen DeepSeek rows store the peak price and declare Qwen's own schedule", () => {

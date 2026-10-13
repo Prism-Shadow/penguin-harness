@@ -286,6 +286,16 @@ export interface ModelCatalogEntry {
    * id rejected makes that call.
    */
   retired?: true;
+  /**
+   * This row is, or once was, the default model of new Projects (defaultProjectConfig). Usage
+   * recorded on it stays priced after a Project stops storing the row — "Restore defaults"
+   * deletes every row that is not a preset, retired ones included, and a former default is
+   * often most of an older Project's history: retainedCatalogPricing gives the cost path this
+   * row's `pricing` for it. Moving the default sets this on the new row and leaves it on the
+   * old one, which also keeps the old row in the catalog (retired once it stops being a preset)
+   * for as long as anyone may have recorded usage on it.
+   */
+  wasDefault?: true;
 }
 
 /**
@@ -800,6 +810,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
+    wasDefault: true,
   },
   {
     // Retired 2026-09-16 (see ModelCatalogEntry.retired): the default model of new Projects
@@ -814,6 +825,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
     retired: true,
+    wasDefault: true,
   },
   {
     // Retired 2026-09-16 (see ModelCatalogEntry.retired): the default model of new Projects in
@@ -826,6 +838,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
     retired: true,
+    wasDefault: true,
   },
   {
     // DeepSeek's pricing page names the model behind this id DeepSeek-V4-Pro-0813 (read
@@ -842,6 +855,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.3, 9, 27),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
+    wasDefault: true,
   },
   // -- OpenRouter (gateway: OpenAI-compatible protocol, preset base URL). Prices re-read in
   // one pass on 2026-08-07 from the models API (/api/v1/models; the API is authoritative
@@ -4226,6 +4240,21 @@ export function presetPromotions(): Array<{ provider: string; modelId: string; d
       ? [{ provider: m.provider, modelId: m.modelId, discount: m.discount }]
       : [],
   );
+}
+
+/**
+ * The price usage on a model is costed at when the Project no longer stores the model's row:
+ * the catalog's list `pricing` of a row that is or was the default of new Projects
+ * (ModelCatalogEntry.wasDefault), and undefined for every other pair — a row the Project does
+ * store is priced from the file, never from here. No promotion applies: a Project's promotion
+ * goes with its row. An off-peak schedule still does, since this is the catalog's own peak price.
+ */
+export function retainedCatalogPricing(
+  provider: string,
+  modelId: string,
+): ModelPricing | undefined {
+  const entry = catalogEntryFor(provider, modelId);
+  return entry?.wasDefault === true ? entry.pricing : undefined;
 }
 
 /**

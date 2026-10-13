@@ -139,7 +139,7 @@ import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { modelLabel } from "./model-select";
 import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "./model-switch";
 import type { SwitchContextShape } from "./model-switch";
-import { hasConfiguredKey, promotedPricing, sameModelRef } from "../models/model-grouping";
+import { hasConfiguredKey, sameModelRef, turnPricing } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { useMemoryListing } from "./use-memory-listing";
 import { deletedChangeKeys } from "./memory-nav";
@@ -2009,11 +2009,9 @@ export function ChatPage() {
   // reference) current pricing; null if no pricing is configured. That pricing is the list
   // price, so a promotion the models response reports for the Model comes off it here, as it
   // does on the recorded cost. A Task is priced on the model it ran on when its row names one
-  // (a Session can switch models between Tasks), else on the Session's own.
-  const pricingOf = (ref: ModelRefDto | null) => {
-    const m = models?.models.find((x) => sameModelRef(x, ref));
-    return promotedPricing(m?.pricing, m?.discount);
-  };
+  // (a Session can switch models between Tasks), else on the Session's own. A former default
+  // model the table no longer has keeps the catalog price the server costs it at (turnPricing).
+  const pricingOf = (ref: ModelRefDto | null) => turnPricing(models?.models, ref);
   const modelPricing = pricingOf(activeModelRef);
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,

@@ -41,7 +41,8 @@
  *   their built-in group or preset row — a key a group's keyed rows share, deleted rows
  *   included, moves to the group; it deletes the user's own models and groups, retired rows and
  *   every override, Penguin Go's platform rows and promotions included, and writes nothing
- *   when nothing changes.
+ *   when nothing changes. Usage on a deleted model stays priced at the catalog's price when
+ *   the model was once the default of new Projects, and goes uncosted otherwise.
  * - renamedFrom (and a group change) migrates the credential, the config and the default and
  *   vision pointers; without it a rekey is delete-then-create; an invalid one is 400. A
  *   ModelScope settings save is serialized with a group credential write.
@@ -83,7 +84,9 @@ import type {
   PresetSyncResponse,
   ProjectCreateResponse,
   SessionCreateResponse,
+  UsageResponse,
 } from "../src/api/types.js";
+import { UsageRepo } from "../src/db/repos/usage.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
@@ -2621,6 +2624,73 @@ describe("preset sync: add new models / restore defaults", () => {
     for (const gone of ["sk-mine-0021", "lab-row-0022", "lab-group-0023"]) {
       expect(toml, gone).not.toContain(gone);
     }
+  });
+
+  it("usage on a model that was once the default keeps its cost after restoring defaults deletes its row, while a deleted model of the user's own goes uncosted", async () => {
+    const svc = t.deps.projectConfigService;
+    const formerDefault = MODEL_CATALOG.find((m) => m.retired === true && m.wasDefault === true)!;
+    const raw = await svc.readRaw(projectId);
+    await svc.writeRaw(projectId, {
+      ...raw,
+      models: [
+        ...(raw.models as Array<Record<string, unknown>>),
+        // As the release that made it the default stored it: at the catalog's list price.
+        {
+          provider: formerDefault.provider,
+          model_id: formerDefault.modelId,
+          pricing: { ...formerDefault.pricing },
+        },
+        {
+          provider: "custom",
+          model_id: "mine",
+          client_type: "openai-chat",
+          base_url: "https://mine.example/v1",
+          pricing: { unit: "usd_per_mtok", cache_read: 1, cache_write: 2, output: 3 },
+        },
+      ],
+    });
+    const usage = wire(UsageRepo, { db: t.deps.db });
+    for (const [provider, modelId] of [
+      [formerDefault.provider, formerDefault.modelId],
+      ["custom", "mine"],
+    ] as const) {
+      usage.insert({
+        ts: "2026-09-01T03:00:00.000Z",
+        date: "2026-09-01",
+        projectId,
+        agentId: "agent",
+        sessionId: "session",
+        originSessionId: null,
+        provider,
+        modelId,
+        cacheRead: 1_000_000,
+        cacheWrite: 1_000_000,
+        output: 1_000_000,
+        total: 3_000_000,
+      });
+    }
+    const costs = async () => {
+      const res = (await (
+        await api.get(
+          `/api/projects/${projectId}/usage?groupBy=model&from=2026-09-01&to=2026-09-01`,
+        )
+      ).json()) as UsageResponse;
+      return Object.fromEntries(
+        res.groups.map((g) => [
+          `${g.provider}/${g.key}`,
+          { cost: g.cost, uncosted: g.hasUncosted },
+        ]),
+      );
+    };
+    const former = `${formerDefault.provider}/${formerDefault.modelId}`;
+    const before = await costs();
+    expect(before[former]?.cost).toBeGreaterThan(0);
+    expect(before["custom/mine"]).toEqual({ cost: 6, uncosted: false });
+
+    expect((await sync("restore")).status).toBe(200);
+    const after = await costs();
+    expect(after[former]).toEqual(before[former]);
+    expect(after["custom/mine"]).toEqual({ cost: null, uncosted: true });
   });
 
   it("sync-presets is the owner's, and takes only its two modes", async () => {

@@ -57,6 +57,7 @@ import {
   presetModelEntries,
   presetPromotions,
   projectConfigFromTable,
+  retainedCatalogPricing,
   projectConfigPath,
   providerConnectionShape,
   renderProjectConfigToml,
@@ -1145,6 +1146,9 @@ export class ProjectConfigService implements ProjectConfigStore {
    * Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined
    * if none -> cost is NULL). The file holds the list price; a stored promotion takes its
    * fraction off both tiers, so a scheduled row on a promotion bills the two factors multiplied.
+   * A pair the file no longer stores is uncosted, except a model that is or was the default of
+   * new Projects: its usage keeps the catalog's price (retainedCatalogPricing), so deleting the
+   * row — by hand or by "Restore defaults" — does not unprice that history.
    */
   async getPricing(
     projectId: string,
@@ -1153,7 +1157,9 @@ export class ProjectConfigService implements ProjectConfigStore {
   ): Promise<TieredRates | undefined> {
     const raw = await this.readRaw(projectId);
     const entry = asArray(raw.models).find((m) => entryMatches(m, provider, modelId));
-    const rates = pricingDtoOf(entry?.pricing);
+    const rates = pricingDtoOf(
+      entry === undefined ? retainedCatalogPricing(provider, modelId) : entry.pricing,
+    );
     if (rates === undefined) return undefined;
     const tiered = tieredRates(provider, modelId, rates);
     const discount = this.promotions?.get(projectId, provider, modelId);
