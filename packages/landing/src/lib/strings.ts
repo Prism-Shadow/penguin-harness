@@ -242,6 +242,39 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     cost: "整个应用用 DeepSeek V4 Pro 生成，Token 只花了 0.2 元（$0.02）。",
   },
 
+  /**
+   * The radiating diagram and its cards (sections/pillars.tsx): each item's `concept` labels one
+   * branch of the diagram and the card under it. Concept names are product names, the same in
+   * both languages.
+   */
+  pillars: {
+    title: "PenguinHarness 由哪几部分组成",
+    subtitle: "Agent 变强时，改的是它的文件，模型保持不变。",
+    root: "PenguinHarness",
+    diagramLabel:
+      "PenguinHarness 分出 OmniMessage、Penguin SDK 和 Agent State 三支，各指向下方一张卡片",
+    items: [
+      {
+        concept: "OmniMessage",
+        title: "从引擎到屏幕，只有一种消息格式",
+        desc: "引擎流式输出 OmniMessage，Trace 逐条存下，Web App 直接渲染，中间没有第二种格式。模型经 MMSP 接入，Agent API 把每次运行以 AMSP 事件流返回。",
+        link: "OmniMessage 协议",
+      },
+      {
+        concept: "Penguin SDK",
+        title: "引擎就是一个 TypeScript 库",
+        desc: "PenguinHarness 里的每个 Task 都跑在 @prismshadow/penguin-core 上，同一个包也能从 npm 安装。借助 penguin-sdk Skill，Agent 能在它之上做出独立运行的应用，比如回答时标注来源的 RAG 应用。",
+        link: "SDK 快速上手",
+      },
+      {
+        concept: "Agent State",
+        title: "Agent 就是一个文件夹",
+        desc: "它的提示词、Skill 和设置都是 Agent State 里的文件。自进化改的就是这些文件，每个版本在改动前都会先存快照。",
+        link: "配置参考",
+      },
+    ],
+  },
+
   scenarios: {
     title: "从体检中心到工厂车间",
     subtitle: "两家企业用 PenguinHarness 自动开发 Agent，已用于生产环境。",
