@@ -8,10 +8,13 @@
  */
 import http from "node:http";
 import net from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { MachineSocketRelay } from "../src/machines/socket-relay.js";
+import { MachineEventHub } from "../src/machines/event-hub.js";
+import { MachineSockets } from "../src/machines/machine-sockets.js";
+import type { Sink } from "../src/machines/machine-sockets.js";
 
 /** A machine's socket endpoint the test scripts: `answer` decides what a call frame gets. */
 async function machine(answer: (ws: WebSocket, frame: { id: number }) => void) {
@@ -43,6 +46,77 @@ async function errorCode(res: Response): Promise<string> {
 
 const opensAll = (ws: WebSocket, frame: { id: number }) =>
   ws.send(JSON.stringify({ id: frame.id, status: 200, stream: true, headers: {} }));
+
+describe("the relay subscription cleanup", () => {
+  const target = { agent: new http.Agent(), port: 1, cookie: "", session: 1 };
+
+  function scripted(begin: (sink: Sink) => void) {
+    const sockets = new MachineSockets(() => undefined);
+    const events = new MachineEventHub(sockets, () => undefined);
+    const detach = vi.fn();
+    let sink: Sink | null = null;
+    vi.spyOn(events, "subscribe").mockImplementation((_machine, _target, _id, reader) => {
+      sink = reader;
+      begin(reader);
+      return detach;
+    });
+    const relay = new MachineSocketRelay(() => undefined, { sockets, events });
+    return { relay, detach, sink: () => sink! };
+  }
+
+  it.each([403, 404])("detaches once after a synchronous non-stream %s answer", async (status) => {
+    const body = { error: { code: "remote", message: "remote refusal" } };
+    const script = scripted((sink) => sink.onResponse(status, body));
+    const response = await script.relay.stream("m", target, {
+      path: "/api/events",
+      lastEventId: null,
+    });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual(body);
+    script.sink().onEnd();
+    script.sink().onResponse(500, null);
+    expect(script.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it("detaches once when begin ends synchronously before opening", async () => {
+    const script = scripted((sink) => sink.onEnd());
+    const response = await script.relay.stream("m", target, {
+      path: "/api/events",
+      lastEventId: null,
+    });
+    expect(response.status).toBe(502);
+    expect(await errorCode(response)).toBe("server_unreachable");
+    script.sink().onEnd();
+    expect(script.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["end", "cancel", "backpressure"])(
+    "detaches once after an open stream's %s",
+    async (mode) => {
+      const script = scripted((sink) => {
+        sink.onStart(200);
+        if (mode === "end") sink.onEnd();
+        if (mode === "backpressure") {
+          sink.onEvent({
+            id: 1,
+            event: "message",
+            eventId: "1",
+            data: "x".repeat(4 * 1024 * 1024),
+          });
+        }
+      });
+      const response = await script.relay.stream("m", target, {
+        path: "/api/events",
+        lastEventId: null,
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("text/event-stream");
+      await response.body!.cancel();
+      script.sink().onEnd();
+      expect(script.detach).toHaveBeenCalledTimes(1);
+    },
+  );
+});
 
 describe("the machine socket relay", () => {
   let stop: (() => Promise<void>) | null = null;

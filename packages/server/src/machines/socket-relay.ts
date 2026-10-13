@@ -136,12 +136,16 @@ export class MachineSocketRelay {
     return new Promise<Response>((resolve) => {
       let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
       let ended = false;
-      let stop: () => void = () => undefined;
+      let stop: (() => void) | null = null;
       const encoder = new TextEncoder();
-      const finish = (): void => {
-        if (ended) return;
+      const end = (): boolean => {
+        if (ended) return false;
         ended = true;
-        stop();
+        stop?.();
+        return true;
+      };
+      const finish = (): void => {
+        if (!end()) return;
         try {
           controller?.close();
         } catch {
@@ -195,8 +199,7 @@ export class MachineSocketRelay {
           if (ended) return;
           if (controller === null) {
             // Ended before it began: the socket dropped mid-handshake of the call.
-            ended = true;
-            stop();
+            end();
             resolve(
               unavailable(
                 502,
@@ -209,14 +212,14 @@ export class MachineSocketRelay {
           finish();
         },
         onResponse: (status, body) => {
-          if (ended) return;
-          ended = true;
-          stop();
+          if (!end()) return;
           // The endpoint answered without streaming (404, 403, …): pass its answer through.
           resolve(Response.json(body ?? null, { status }));
         },
       };
       stop = begin(sink);
+      // begin may end synchronously, before it hands back the subscription's detach.
+      if (ended) stop();
     });
   }
 }
