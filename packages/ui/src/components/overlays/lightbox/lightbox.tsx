@@ -32,7 +32,7 @@ export function Lightbox({ open, src, alt, onClose, closeLabel }: LightboxProps)
   return createPortal(
     <div
       // ui-scrim: the overlay is the dimmed layer, with the image inside it.
-      className="ui-scrim anim-fade fixed inset-0 z-50 flex items-center justify-center bg-[var(--ui-overlay-backdrop)] p-10"
+      className="ui-scrim anim-fade fixed inset-0 z-50 flex items-center justify-center bg-[var(--ui-overlay-backdrop)] p-10 pt-[calc(env(titlebar-area-height,0px)+2.5rem)]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

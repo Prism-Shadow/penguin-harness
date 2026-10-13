@@ -108,7 +108,7 @@ export function ToastStack({
       aria-label={strings.notifications}
       aria-live="polite"
       aria-relevant="additions text"
-      className="pointer-events-none fixed inset-x-0 top-3 z-[100] flex flex-col items-center gap-2 px-4"
+      className="pointer-events-none fixed inset-x-0 top-[calc(env(titlebar-area-height,0px)+0.75rem)] z-[100] flex flex-col items-center gap-2 px-4"
     >
       <span id={hint} hidden>
         {strings.dismiss}

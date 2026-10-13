@@ -34,7 +34,7 @@ describe("AppShell", () => {
 
   it("is the ui-shell window with its nav and main slots, and a dock slot only when docked", () => {
     const html = shell();
-    expect(html).toMatch(/^<div class="ui-shell flex h-full"><aside data-slot="nav"/);
+    expect(html).toMatch(/^<div class="ui-shell [^"]*"><aside data-slot="nav"/);
     expect(html).toContain(
       '<div data-slot="main" class="flex min-w-0 flex-1 flex-col"><span>Page</span></div>',
     );

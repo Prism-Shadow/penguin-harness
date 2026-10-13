@@ -53,6 +53,18 @@
   #root {
     height: 100%;
   }
+  /* The desktop window's drag handle (index.html): a transparent strip over the title-bar band,
+     zero tall in a browser. Every page keeps its own controls out of the band, so the strip has
+     nothing to give way to; it is first in the document and first in paint order all the same,
+     so a control laid over it later could still opt out with `no-drag`. */
+  .window-drag-strip {
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(titlebar-area-height, 0px);
+    z-index: -1;
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
   /* Every scroll container is its own containing block.
      The shell is height-constrained (the three rules above) and each page scrolls inside its
      own container, so the document must never scroll. What breaks that is an absolutely

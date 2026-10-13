@@ -58,7 +58,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { app, BrowserWindow, dialog, session, shell } from "electron";
+import { app, BrowserWindow, dialog, nativeTheme, session, shell } from "electron";
 import type { WindowOpenHandlerResponse } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
@@ -84,6 +84,7 @@ import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
+import { overlayColors, TITLE_BAR_FALLBACK_CSS, titleBarWindowOptions } from "./title-bar.js";
 import { resolveTrayLocale } from "./tray-menu.js";
 import { afterUnloadAnswer, unloadPrompt } from "./unload-prompt.js";
 import type { TrayLocale } from "./tray-menu.js";
@@ -186,6 +187,8 @@ function createWindow(url: string): void {
     height: 860,
     show: false,
     autoHideMenuBar: true,
+    // No system title bar: the Web App's top band takes its place (see title-bar.ts).
+    ...titleBarWindowOptions(process.platform, nativeTheme.shouldUseDarkColors),
     ...(iconPath !== null ? { icon: iconPath } : {}),
     webPreferences: {
       // The window is a plain browser: no Node, no preload — the minimal attack surface.
@@ -198,6 +201,7 @@ function createWindow(url: string): void {
     },
   });
   builtinBrowser.host(win);
+  followPageTitleBar(win);
   win.once("ready-to-show", () => win?.show());
   // Close-to-tray: the window goes away, the app and its embedded server stay, and the tray
   // icon is the way back. Every real exit — the tray's Quit, the app menu's, an OS logout —
@@ -264,6 +268,27 @@ function createWindow(url: string): void {
   target.webContents.on("responsive", () => logLine("[shell] the window responds again"));
   armSmokeProbe(win);
   void win.loadURL(url);
+}
+
+/**
+ * Keeps the window controls legible over the page's top band, and gives a page that lays out no
+ * band of its own one to drag the window by (both in title-bar.ts). The page names its colour in
+ * `<meta name="theme-color">`, which reaches this process without any channel into the page.
+ */
+function followPageTitleBar(target: BrowserWindow): void {
+  target.webContents.on("dom-ready", () => {
+    target.webContents
+      .insertCSS(TITLE_BAR_FALLBACK_CSS)
+      .catch((err: unknown) =>
+        logLine(`[shell] the title bar fallback was refused: ${String(err)}`),
+      );
+  });
+  // macOS draws its own traffic lights; the overlay's colours are Windows' and Linux's.
+  if (process.platform === "darwin") return;
+  target.webContents.on("did-change-theme-color", (_event, color) => {
+    if (target.isDestroyed()) return;
+    target.setTitleBarOverlay(overlayColors(color, nativeTheme.shouldUseDarkColors));
+  });
 }
 
 /**

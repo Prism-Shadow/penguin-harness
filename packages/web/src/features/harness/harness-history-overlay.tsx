@@ -232,7 +232,8 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* 12px off every edge: enough to read as a layer over the app, not a page of it. */}
+      {/* 12px off every edge (the top one below the title-bar band): enough to read as a layer
+          over the app, not a page of it. */}
       <section
         ref={panelRef}
         role="dialog"
@@ -240,7 +241,7 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
         aria-label={t.title}
         tabIndex={-1}
         onKeyDown={onPanelKeyDown}
-        className="anim-pop absolute inset-3 flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900"
+        className="anim-pop absolute inset-x-3 bottom-3 top-[calc(env(titlebar-area-height,0px)+0.75rem)] flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900"
       >
         <header className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-3 dark:border-gray-800">
           <div>

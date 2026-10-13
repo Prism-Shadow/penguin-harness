@@ -43,7 +43,7 @@ export function Drawer({
         onMouseDown={onClose}
       />
       <div
-        className={`absolute inset-y-0 flex w-[80vw] flex-col bg-surface shadow-xl ${widthClass ?? "max-w-xs"} ${
+        className={`absolute inset-y-0 flex w-[80vw] flex-col bg-surface pt-[env(titlebar-area-height,0px)] shadow-xl ${widthClass ?? "max-w-xs"} ${
           side === "left"
             ? "anim-drawer-left left-0 border-r border-line"
             : "anim-drawer-right right-0 border-l border-line"

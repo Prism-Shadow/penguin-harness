@@ -279,7 +279,7 @@ export function Sheet({
       />
       <div
         ref={panelRef}
-        className={`absolute inset-x-0 bottom-0 flex h-[92dvh] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface shadow-[var(--ui-shadow-drawer)] ${
+        className={`absolute inset-x-0 bottom-0 flex h-[calc(92dvh-env(titlebar-area-height,0px))] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface shadow-[var(--ui-shadow-drawer)] ${
           reduced ? "anim-fade" : ""
         }`}
         style={{ transform: "translate3d(0, 100%, 0)" }}
