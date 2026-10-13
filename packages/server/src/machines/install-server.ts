@@ -357,10 +357,17 @@ function baseReleaseVersion(argv1: string | undefined): string | null {
 
   // Packaged desktop app: <resources>/app/dist/server.js — the app forks the server as one
   // bundled file (packages/desktop/tsup.config.ts), and asar is off, so these are real files.
+  // <resources> is `resources/` beside the executable on Windows and Linux and
+  // `Contents/Resources/` inside a macOS bundle, so its name is compared without case: an
+  // exact match read every Mac's app as standing on no release, and refused every install.
   // The app's own manifest names the release it was published under, app and tarballs
   // shipping from one tag. A source run sits at packages/desktop rather than under
-  // resources/, and is deliberately unmatched: it stands on no release a remote could fetch.
-  if (path.basename(parent) === "app" && path.basename(path.dirname(parent)) === "resources") {
+  // resources/, and is deliberately unmatched: it stands on no release a remote could fetch,
+  // and builds its image from the checkout instead (checkout-image.ts).
+  if (
+    path.basename(parent) === "app" &&
+    path.basename(path.dirname(parent)).toLowerCase() === "resources"
+  ) {
     return versionOfManifest(path.join(parent, "package.json"));
   }
   return null;

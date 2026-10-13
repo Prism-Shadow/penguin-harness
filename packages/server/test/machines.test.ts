@@ -572,22 +572,31 @@ describe("resolvePushPlan", () => {
     }
   });
 
-  it("packaged desktop app: its own manifest names the release it shipped under", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
-    try {
-      const appDir = path.join(work, "resources", "app");
-      fs.mkdirSync(path.join(appDir, "dist"), { recursive: true });
-      fs.writeFileSync(
-        path.join(appDir, "package.json"),
-        JSON.stringify({ name: "@prismshadow/penguin-desktop", version: "0.2.4" }),
-      );
+  // Where electron-builder puts the app directory (asar off): beside the executable on Windows
+  // and Linux, inside the bundle on macOS, whose resources directory is capitalized.
+  it.each([
+    { os: "Windows and Linux", appPath: ["resources", "app"] },
+    { os: "macOS", appPath: ["PenguinHarness.app", "Contents", "Resources", "app"] },
+  ])(
+    "packaged desktop app on $os: its own manifest names the release it shipped under",
+    ({ appPath }) => {
+      const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
+      try {
+        const appDir = path.join(work, ...appPath);
+        fs.mkdirSync(path.join(appDir, "dist"), { recursive: true });
+        // The packed manifest: electron-builder's extraMetadata renames it, the version stays.
+        fs.writeFileSync(
+          path.join(appDir, "package.json"),
+          JSON.stringify({ name: "penguin-harness-desktop", version: "0.2.4" }),
+        );
 
-      const plan = resolvePushPlan(null, path.join(appDir, "dist", "server.js"));
-      expect(plan).toMatchObject({ baseVersion: "0.2.4" });
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
-  });
+        const plan = resolvePushPlan(null, path.join(appDir, "dist", "server.js"));
+        expect(plan).toMatchObject({ baseVersion: "0.2.4" });
+      } finally {
+        fs.rmSync(work, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("a desktop SOURCE run stands on no release: packages/desktop is not under resources/", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
