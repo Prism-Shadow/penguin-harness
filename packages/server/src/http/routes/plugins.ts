@@ -27,8 +27,9 @@
  *
  * The registry merges two sources: the index embedded in this package (the sandbox backends
  * the workspace ships) and the one published by the index repository. The published document
- * is cached, and a failure to reach it is reported alongside the entries rather than emptying
- * the page — see plugin/registry.ts for both rules.
+ * is cached, a failure to reach it is reported alongside the entries rather than emptying the
+ * page, and a listing waits for it only briefly before answering without it — see
+ * plugin/registry.ts for the three rules.
  */
 import { Hono } from "hono";
 import { existsSync } from "node:fs";
@@ -76,6 +77,7 @@ import {
   mergeIndexes,
   withoutIcon,
   NIGHTLY_INDEX_URL,
+  SOURCE_WAIT_MS,
 } from "../../plugin/registry.js";
 import type { CachedRegistry, IndexSnapshot, PluginRegistry } from "../../plugin/registry.js";
 import { PACKAGE_NAME, pluginBases, resolvePluginPackage } from "../../plugin/loader.js";
@@ -357,15 +359,21 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
   const bases = options.bases ?? (() => []);
   const prefix = options.prefix ?? (() => null);
 
-  /** Every entry this deployment lists: the indexes' and the prefix's own server modules. */
+  /**
+   * Every entry this deployment lists: the indexes' and the prefix's own server modules. A source
+   * still being read is not waited for past SOURCE_WAIT_MS — the shipped entries list without it,
+   * and its own join on a later read, once the cache has them.
+   */
   const listing = async () => {
-    const { entries, failures } = await mergeIndexes(registries);
+    const { entries, failures, pending } = await mergeIndexes(registries, {
+      waitMs: SOURCE_WAIT_MS,
+    });
     const own = await prefixEntries(prefix(), new Set(entries.map((e) => e.name)));
-    return { entries: [...entries, ...own], failures };
+    return { entries: [...entries, ...own], failures, pending };
   };
 
   app.get("/", async (c) => {
-    const { entries, failures } = await listing();
+    const { entries, failures, pending } = await listing();
     // A package on this machine describes itself: its own package.json `penguin` block and icon
     // win over what an index row says, so an installed package's card shows its icon and both
     // languages even where its index row carries neither.
@@ -373,7 +381,7 @@ export function pluginRegistryRoutes(options: PluginRoutesOptions = {}): Hono<Ap
     const plugins = await Promise.all(
       entries.map(async (entry) => ({ ...entry, ...(await localPluginDisplay(entry.name, here)) })),
     );
-    const body: PluginIndexResponse = { plugins, failures };
+    const body: PluginIndexResponse = { plugins, failures, pending };
     return c.json(body);
   });
   app.get("/readme", async (c) => {

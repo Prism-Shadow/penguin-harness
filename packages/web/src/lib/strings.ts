@@ -3077,6 +3077,11 @@ export const zh = {
       count === 1
         ? "有 1 个插件来源无法访问，下面的列表可能不完整。"
         : `有 ${count} 个插件来源无法访问，下面的列表可能不完整。`,
+    /** Shown while the server is still reading a source: the list holds what has answered so far. */
+    sourcePending: (count: number): string =>
+      count === 1
+        ? "有 1 个插件来源仍在加载，加载完成后其中的插件会出现在这里。"
+        : `有 ${count} 个插件来源仍在加载，加载完成后其中的插件会出现在这里。`,
     copySpecifier: "复制包名",
   },
 

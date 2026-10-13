@@ -277,12 +277,23 @@ export type Clock = () => number;
 export const INDEX_CACHE_TTL_MS = 30 * 60_000;
 
 /**
+ * How long a failed fetch stands before the next read tries again. Inside this window a read with
+ * nothing cached is answered with the failure at once: on a host that cannot reach the index at
+ * all, every page load would otherwise start the same doomed fetch and report the source as still
+ * loading instead of down.
+ */
+export const INDEX_RETRY_MS = 60_000;
+
+/**
  * Wrap a registry so its index is fetched at most once per TTL, and keep serving the last good
  * document when a refresh fails.
  *
  * Serving stale is the point rather than a fallback: the alternative to a slightly old index is
- * no index at all, and the page's job is to show what exists. A failure with nothing cached
- * still propagates — the caller decides whether one dead source should cost the whole listing.
+ * no index at all, and the page's job is to show what exists. So a read past the TTL is answered
+ * with the document in hand while the refresh runs behind it, and the next read gets the new one.
+ * A failure with nothing cached still propagates — the caller decides whether one dead source
+ * should cost the whole listing — and is remembered for INDEX_RETRY_MS, so a source that is down
+ * costs one fetch per window rather than one per read.
  *
  * Concurrent callers share one in-flight fetch, so a page opened in four tabs at once is one
  * request rather than four.
@@ -302,10 +313,12 @@ export function cachedRegistry(
   inner: PluginRegistry,
   {
     ttlMs = INDEX_CACHE_TTL_MS,
+    retryMs = INDEX_RETRY_MS,
     now = Date.now,
     seed = null,
   }: {
     ttlMs?: number;
+    retryMs?: number;
     now?: Clock;
     /**
      * The last good document a previous App fetched. It is served while the TTL has not
@@ -316,30 +329,71 @@ export function cachedRegistry(
   } = {},
 ): CachedRegistry {
   let good: IndexSnapshot | null = seed;
+  let failed: { at: number; error: unknown } | null = null;
   let inFlight: Promise<PluginIndexEntry[]> | null = null;
+  const refresh = (): Promise<PluginIndexEntry[]> =>
+    (inFlight ??= inner
+      .index()
+      .then(
+        (entries) => {
+          good = { at: now(), entries };
+          failed = null;
+          return entries;
+        },
+        (err: unknown) => {
+          failed = { at: now(), error: err };
+          throw err;
+        },
+      )
+      .finally(() => {
+        inFlight = null;
+      }));
   return {
     source: inner.source,
     snapshot: () => good,
     index: async () => {
       if (good !== null && now() - good.at < ttlMs) return good.entries;
-      inFlight ??= inner
-        .index()
-        .then((entries) => {
-          good = { at: now(), entries };
-          return entries;
-        })
-        .finally(() => {
-          inFlight = null;
-        });
-      try {
-        return await inFlight;
-      } catch (err) {
-        if (good !== null) return good.entries;
-        throw err;
+      const resting = failed !== null && now() - failed.at < retryMs;
+      if (good !== null) {
+        // Answered with the document in hand; a refresh that fails leaves it standing.
+        if (!resting) refresh().catch(() => undefined);
+        return good.entries;
       }
+      if (resting) throw failed!.error;
+      return refresh();
     },
     readme: (name) => inner.readme(name),
   };
+}
+
+/**
+ * How long a listing waits for a source that has not answered yet. Long enough for a reachable
+ * index to arrive in the same answer, so a page load renders once; short enough that one behind a
+ * network that drops the connection (a host that cannot reach GitHub) costs the page a moment
+ * rather than every retry the fetch is allowed. The fetch goes on behind the answer, and a later
+ * read gets its entries from the cache.
+ */
+export const SOURCE_WAIT_MS = 1_500;
+
+/** `work`'s value, or null once `ms` has passed first; `work` runs on either way. */
+async function within<T>(work: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** What merging the sources gave: their entries, and the sources that failed or are still being read. */
+export interface MergedIndex {
+  entries: PluginIndexEntry[];
+  failures: { source: string; error: string }[];
+  /** Sources that had not answered within `waitMs`: their entries are missing from this listing. */
+  pending: string[];
 }
 
 /**
@@ -349,7 +403,9 @@ export function cachedRegistry(
  * because that index is one publisher's single artifact, but a source that is unreachable,
  * misconfigured or serving garbage must not empty the page of everything else. The failure is
  * reported alongside the entries rather than swallowed, so the Web App can say which source is
- * down instead of quietly showing a shorter list.
+ * down instead of quietly showing a shorter list. With `waitMs`, a source that has not answered
+ * by then is reported as pending rather than waited for, for the same reason: a slow source must
+ * not hold back the ones that answered.
  *
  * On a name collision the FIRST source wins, and the builtin registry is listed first: what this
  * deployment actually ships is the truth about it, and a published index claiming the same
@@ -357,32 +413,40 @@ export function cachedRegistry(
  */
 export async function mergeIndexes(
   registries: readonly PluginRegistry[],
-): Promise<{ entries: PluginIndexEntry[]; failures: { source: string; error: string }[] }> {
+  { waitMs }: { waitMs?: number } = {},
+): Promise<MergedIndex> {
   const settled = await Promise.all(
     registries.map(async (r) => {
-      try {
-        return { source: r.source, entries: await r.index(), error: null };
-      } catch (err) {
-        return {
-          source: r.source,
-          entries: [] as PluginIndexEntry[],
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
+      const read = (async () => {
+        try {
+          return { entries: await r.index(), error: null };
+        } catch (err) {
+          return {
+            entries: [] as PluginIndexEntry[],
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+      })();
+      const answer = waitMs === undefined ? await read : await within(read, waitMs);
+      return { source: r.source, answer };
     }),
   );
   const seen = new Set<string>();
   const entries: PluginIndexEntry[] = [];
-  for (const result of settled) {
-    for (const entry of result.entries) {
+  const failures: MergedIndex["failures"] = [];
+  const pending: string[] = [];
+  for (const { source, answer } of settled) {
+    if (answer === null) {
+      pending.push(source);
+      continue;
+    }
+    if (answer.error !== null) failures.push({ source, error: answer.error });
+    for (const entry of answer.entries) {
       const key = `${entry.name}@${entry.version}`;
       if (seen.has(key)) continue;
       seen.add(key);
       entries.push(entry);
     }
   }
-  const failures = settled
-    .filter((r) => r.error !== null)
-    .map((r) => ({ source: r.source, error: r.error! }));
-  return { entries, failures };
+  return { entries, failures, pending };
 }

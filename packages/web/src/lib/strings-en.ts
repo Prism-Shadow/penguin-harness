@@ -2933,6 +2933,11 @@ export const en: Strings = {
       count === 1
         ? "One plugin source could not be reached, so this list may be incomplete."
         : `${count} plugin sources could not be reached, so this list may be incomplete.`,
+    /** Shown while the server is still reading a source: the list holds what has answered so far. */
+    sourcePending: (count: number): string =>
+      count === 1
+        ? "One plugin source is still loading. Its plugins will appear here when it answers."
+        : `${count} plugin sources are still loading. Their plugins will appear here when they answer.`,
     copySpecifier: "Copy specifier",
   },
 

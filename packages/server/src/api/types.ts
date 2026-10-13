@@ -4700,6 +4700,13 @@ export interface PluginIndexResponse {
    * it, so the page needs to be able to say so instead of silently showing less.
    */
   failures: { source: string; error: string }[];
+  /**
+   * Sources the server was still reading when it answered, by `source`. Present and empty when
+   * every source answered. The listing does not wait long for a published index, so one on a slow
+   * or unreachable network is named here and its entries are missing; a later read lists them
+   * once they have arrived, or names the source under `failures` once it has failed.
+   */
+  pending: string[];
 }
 
 /**

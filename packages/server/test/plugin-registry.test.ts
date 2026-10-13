@@ -20,6 +20,10 @@
  *   fetched and parked.
  * - A published index may be slow or down without emptying the page: the cache and the
  *   tolerant merge beside the builtin catalogue.
+ * - Nor without holding it: a document past its TTL is served at once while the refresh runs
+ *   behind it; a failed fetch with nothing cached is the answer, without another fetch, until the
+ *   retry window has passed; and the listing answers once its wait passes with the builtin
+ *   entries, naming a source still being read as pending, whose entries list on a later read.
  * - GET /api/plugins/registry and its readme route need a session; the readme route refuses a
  *   name the deployment does not list and needs the name.
  */
@@ -28,11 +32,13 @@ import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginIndexEntry, PluginIndexResponse } from "../src/api/types.js";
 import type { PluginBase } from "../src/plugin/loader.js";
 import {
+  INDEX_RETRY_MS,
   NIGHTLY_INDEX_URL,
+  SOURCE_WAIT_MS,
   builtinPluginRegistry,
   cachedRegistry,
   httpPluginRegistry,
@@ -42,7 +48,7 @@ import {
 import type { PluginRegistry } from "../src/plugin/registry.js";
 import { resolveServerConfig } from "../src/config.js";
 import { pluginRegistryRoutes } from "../src/http/routes/plugins.js";
-import { fakeFetch, jsonResponse } from "./fixtures/fetch.js";
+import { fakeFetch, fetchFailed, jsonResponse } from "./fixtures/fetch.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -407,15 +413,62 @@ describe("cachedRegistry", () => {
     const { registry, state } = stubRegistry("remote", [VALID_ENTRY]);
     state.fail = "network down";
     let clock = 0;
-    const cached = cachedRegistry(registry, { ttlMs: 10, now: () => clock });
+    const cached = cachedRegistry(registry, { ttlMs: 10, retryMs: 50, now: () => clock });
     await expect(cached.index()).rejects.toThrow(/network down/);
     // The failed attempt is not cached as a good one.
     state.fail = null;
+    clock += 50;
     expect(await cached.index()).toHaveLength(1);
     clock += 100;
     state.fail = "network down";
     // Stale beats empty: the page's job is to show what exists.
     expect(await cached.index()).toEqual([VALID_ENTRY]);
+    // And the refresh that just failed is not tried again inside the retry window.
+    expect(await cached.index()).toEqual([VALID_ENTRY]);
+    expect(state.calls).toBe(3);
+  });
+
+  it("answers a read past the TTL at once with the document in hand, and a later read with the refreshed one", async () => {
+    const fresh = { ...VALID_ENTRY, version: "2.0.0" };
+    let answer!: (entries: PluginIndexEntry[]) => void;
+    const refreshed = new Promise<PluginIndexEntry[]>((resolve) => {
+      answer = resolve;
+    });
+    let calls = 0;
+    const slow: PluginRegistry = {
+      source: "remote",
+      index: () => {
+        calls += 1;
+        return refreshed;
+      },
+      readme: () => Promise.resolve(null),
+    };
+    const cached = cachedRegistry(slow, {
+      ttlMs: 10,
+      now: () => 100,
+      seed: { at: 0, entries: [VALID_ENTRY] },
+    });
+    // The refresh has not answered, and the read does not wait for it.
+    expect(await cached.index()).toEqual([VALID_ENTRY]);
+    answer([fresh]);
+    await refreshed;
+    expect(await cached.index()).toEqual([fresh]);
+    expect(calls).toBe(1);
+  });
+
+  it("answers with a failure at once until the retry window has passed, and only then fetches again", async () => {
+    const { registry, state } = stubRegistry("remote", [VALID_ENTRY]);
+    state.fail = "network down";
+    let clock = 0;
+    const cached = cachedRegistry(registry, { retryMs: 60_000, now: () => clock });
+    await expect(cached.index()).rejects.toThrow(/network down/);
+    state.fail = null;
+    clock += 59_999;
+    await expect(cached.index()).rejects.toThrow(/network down/);
+    expect(state.calls).toBe(1);
+    clock += 1;
+    expect(await cached.index()).toEqual([VALID_ENTRY]);
+    expect(state.calls).toBe(2);
   });
 
   it("starts from a parked document and hands it back for parking", async () => {
@@ -522,12 +575,70 @@ describe("the route's own merge", () => {
     expect(body.plugins.find((entry) => entry.name === published.name)).toEqual(published);
   });
 
+  describe("with a published index on a slow or unreachable network", () => {
+    const url = "https://registry.example/index.json";
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+    /** One read of the listing, letting the route's wait for a source run out. */
+    const read = async (routes: ReturnType<typeof pluginRegistryRoutes>) => {
+      const res = routes.request("/");
+      await vi.advanceTimersByTimeAsync(SOURCE_WAIT_MS);
+      return (await (await res).json()) as PluginIndexResponse;
+    };
+
+    it("lists the builtin entries once the wait passes, names it pending, and lists its entries on a read after it answers", async () => {
+      let answer!: (res: Response) => void;
+      const remote = fakeFetch(
+        () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const routes = pluginRegistryRoutes({ indexUrl: url, fetchImpl: remote.fetch });
+      const first = await read(routes);
+      expect(first.plugins).toEqual(await builtinPluginRegistry().index());
+      expect(first.pending).toEqual([url]);
+      expect(first.failures).toEqual([]);
+
+      answer(jsonResponse([published]));
+      const second = await read(routes);
+      expect(second.plugins.at(-1)!.name).toBe(published.name);
+      expect(second.pending).toEqual([]);
+      expect(remote.calls).toHaveLength(1);
+    });
+
+    it("once its fetch has failed, reports it unreachable without fetching again until the retry window has passed", async () => {
+      const remote = fakeFetch(() => {
+        throw fetchFailed("ETIMEDOUT");
+      });
+      const routes = pluginRegistryRoutes({ indexUrl: url, fetchImpl: remote.fetch });
+      expect((await read(routes)).plugins).toEqual(await builtinPluginRegistry().index());
+      // The fetch spends its attempts behind the answer.
+      await vi.runAllTimersAsync();
+      const fetched = remote.calls.length;
+
+      const second = await read(routes);
+      expect(second.failures.map((f) => f.source)).toEqual([url]);
+      expect(second.pending).toEqual([]);
+      expect(remote.calls).toHaveLength(fetched);
+
+      await vi.advanceTimersByTimeAsync(INDEX_RETRY_MS);
+      await read(routes);
+      expect(remote.calls.length).toBeGreaterThan(fetched);
+    });
+  });
+
   it("with no published source configured, lists the builtin entries alone", async () => {
     const routes = pluginRegistryRoutes({ indexUrl: null });
     const res = await routes.request("/");
     const body = (await res.json()) as PluginIndexResponse;
     expect(body.plugins).toEqual(await builtinPluginRegistry().index());
     expect(body.failures).toEqual([]);
+    expect(body.pending).toEqual([]);
   });
 
   it("lets a package on this machine describe itself over its row, and leaves a row whose package is not here as it is", async () => {

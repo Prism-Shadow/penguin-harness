@@ -947,6 +947,7 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       },
     ],
     failures: [],
+    pending: [],
   };
   const readmes: Record<string, string> = {
     "@penguinharness/sandbox-bwrap":

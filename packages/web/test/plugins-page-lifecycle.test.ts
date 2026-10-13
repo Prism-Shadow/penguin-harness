@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 /** The real page's reads, confirmation and writes across Project visits; only external
  * contexts, API calls and presentation shells are replaced. No pure identity helper is
- * substituted for the page's request lifecycle. */
-import { createElement as h } from "react";
+ * substituted for the page's request lifecycle.
+ *
+ * The registry's sources:
+ * - Given the server answers while still reading a source, the page says so and lists what has
+ *   answered; it reads the registry again after a pause, not before, and once the source has
+ *   answered its plugins list, the note goes and the reads stop.
+ * - Given a re-read fails, the rows already listed stay, the note goes and the reads stop. */
+import { act, createElement as h } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InstalledPluginsResponse } from "@prismshadow/penguin-server/api";
 import { mount, click, run, unmountAll } from "./helpers/dom";
@@ -85,7 +91,7 @@ vi.mock("../src/api/endpoints", () => ({
   getPluginIndex: vi.fn(),
 }));
 import * as api from "../src/api/endpoints";
-import { PluginsPage } from "../src/features/plugins/plugins-page";
+import { INDEX_RECHECK_MS, PluginsPage } from "../src/features/plugins/plugins-page";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -123,7 +129,7 @@ beforeEach(() => {
   localStorage.clear();
   setActiveStrings(en);
   vi.mocked(api.getPluginLibrary).mockResolvedValue({ groups: [] });
-  vi.mocked(api.getPluginIndex).mockResolvedValue({ plugins: [], failures: [] });
+  vi.mocked(api.getPluginIndex).mockResolvedValue({ plugins: [], failures: [], pending: [] });
 });
 afterEach(unmountAll);
 
@@ -205,5 +211,63 @@ describe("the Plugins page's response lifecycle", () => {
     await mount(h(PluginsPage));
     expect(row("mixed")?.getAttribute("data-delete")).toBe("closed");
     expect(api.uninstallPlugin).not.toHaveBeenCalled();
+  });
+});
+
+describe("the registry's sources", () => {
+  const shipped = {
+    name: "@penguinharness/sandbox-bwrap",
+    version: "1.0.0",
+    description: "Shipped",
+    authors: [],
+    license: "MIT",
+  };
+  const published = { ...shipped, name: "@example/published", description: "Published" };
+  const source = "https://index.example/index.json";
+  const pendingNote = () => document.body.textContent?.includes(en.pluginRegistry.sourcePending(1));
+  const advance = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(api.getInstalledPlugins).mockResolvedValue({ ...snapshot("unused"), plugins: [] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("a source still loading is said, read again after a pause, and its plugins list once it answers", async () => {
+    vi.mocked(api.getPluginIndex)
+      .mockResolvedValueOnce({ plugins: [shipped], failures: [], pending: [source] })
+      .mockResolvedValueOnce({ plugins: [shipped, published], failures: [], pending: [] });
+    await mount(h(PluginsPage));
+    expect(row("sandbox-bwrap")).not.toBeNull();
+    expect(row("published")).toBeNull();
+    expect(pendingNote()).toBe(true);
+
+    await advance(INDEX_RECHECK_MS - 1);
+    expect(api.getPluginIndex).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(row("published")).not.toBeNull();
+    expect(pendingNote()).toBe(false);
+
+    await advance(INDEX_RECHECK_MS * 3);
+    expect(api.getPluginIndex).toHaveBeenCalledTimes(2);
+  });
+
+  it("a re-read that fails keeps the rows already listed, and stops reading", async () => {
+    vi.mocked(api.getPluginIndex)
+      .mockResolvedValueOnce({ plugins: [shipped], failures: [], pending: [source] })
+      .mockRejectedValueOnce(new Error("offline"));
+    await mount(h(PluginsPage));
+    await advance(INDEX_RECHECK_MS);
+    expect(api.getPluginIndex).toHaveBeenCalledTimes(2);
+    expect(row("sandbox-bwrap")).not.toBeNull();
+    expect(pendingNote()).toBe(false);
+
+    await advance(INDEX_RECHECK_MS * 3);
+    expect(api.getPluginIndex).toHaveBeenCalledTimes(2);
   });
 });
