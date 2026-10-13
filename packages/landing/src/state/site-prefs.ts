@@ -1,15 +1,15 @@
 /**
- * Preferences shared by the landing page and the docs site.
+ * Preferences shared by the landing page, the docs site and the gallery.
  *
- * The two are separate SPAs but ship to one origin (penguin.ooo and penguin.ooo/docs/),
- * so a single localStorage key is all it takes for a language or theme choice to survive
- * the hop between them. They previously wrote `penguin-landing.*` and `penguin-docs.*`,
- * which is why picking dark mode on the landing page and clicking through to the docs
- * dropped you back into light.
+ * The three are separate SPAs but ship to one origin (penguin.ooo, penguin.ooo/docs/ and
+ * penguin.ooo/gallery/), so a single localStorage key is all it takes for a language or theme
+ * choice to survive the hop between them. The landing page and the docs previously wrote
+ * `penguin-landing.*` and `penguin-docs.*`, which is why picking dark mode on the landing page
+ * and clicking through to the docs dropped you back into light.
  *
- * This module is duplicated verbatim in packages/docs (as theme.tsx and locale.tsx
- * already are — the two sites share no package). The KEYS below must stay identical on
- * both sides; if they drift, the sync silently stops working with nothing failing.
+ * This module is duplicated verbatim in packages/docs and packages/ui-gallery (the three sites
+ * share no package). The KEYS below must stay identical in every copy; if they drift, the sync
+ * silently stops working with nothing failing.
  */
 
 export const THEME_KEY = "penguin-site.theme";

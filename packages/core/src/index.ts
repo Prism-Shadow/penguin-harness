@@ -107,5 +107,15 @@ export const BUILD_COMMIT: string | null = null;
 export function buildInfo(): BuildInfo {
   return resolveBuildInfo({ version: VERSION, buildDate: BUILD_DATE, commit: BUILD_COMMIT });
 }
+/**
+ * How PenguinHarness names itself on the wire: `penguinharness/<VERSION>`, a product token in
+ * the standard `product/version` form, carrying the release-stamped version above. Every HTTP
+ * request the harness builds sends it as its User-Agent, and this is the one place the string
+ * is spelled. A function rather than a const because core's own callers import this barrel
+ * circularly: a call reads VERSION after every module has evaluated.
+ */
+export function userAgent(): string {
+  return `penguinharness/${VERSION}`;
+}
 // Version-string helpers (shared by the CLI's `penguin update` and the server's update check).
 export { compareVersions, normalizeVersion } from "./internal/version.js";

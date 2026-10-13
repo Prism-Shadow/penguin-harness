@@ -5,13 +5,13 @@
  * and a way to fill it; the counts are read here (use-start-dashboard.ts).
  *
  * - **Brand and counts.** The logo, the product's name (the page's one h1, which the e2e suite
- *   finds the page by) with the version after it, and the slogan under them; at the far end of
- *   the same line, one small panel of three counts — this Project's agents, the self-evolution
- *   toolkits of the library's `rsi` category, this Project's Benchmarks on this server — each
- *   opening the page that lists them. Each is read again whenever the page mounts, so a plugin
- *   installed or a Benchmark imported elsewhere shows on coming back; a count that has not
- *   arrived reads "—". Where the column is too narrow for both (a phone), the panel sits under
- *   the brand.
+ *   finds the page by) over the slogan, and the version line under them at every width; at the
+ *   far end of the same row, one small panel of three counts — this Project's agents, the
+ *   self-evolution toolkits of the library's `rsi` category, this Project's Benchmarks on this
+ *   server — each opening the page that lists them. Each is read again whenever the page mounts,
+ *   so a plugin installed or a Benchmark imported elsewhere shows on coming back; a count that
+ *   has not arrived reads "—". Where the column is too narrow for both (a phone), the panel sits
+ *   under the version line.
  * - **Examples and shortcuts.** The example folders and the user's own shortcuts, one folder
  *   open at a time (example-tasks.ts, shortcuts-folder.tsx): the folders down one column and the
  *   open folder's rows beside them, so switching folders moves nothing; stacked on a phone. Every
@@ -44,9 +44,9 @@ import {
   RuledSection,
   Text,
 } from "@prismshadow/penguin-ui";
+import { VersionStamp } from "../../components/account/version-stamp";
 import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
 import { S } from "../../lib/strings";
-import { formatMonthDay } from "../../lib/format";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { versionBadgeFor } from "../../lib/update-flow";
 import { openAppInfo, useUpdateFlow } from "../../lib/use-update-flow";
@@ -91,12 +91,17 @@ export function StartDashboard({
 
   return (
     <>
-      {/* Its own query container: the brand and the counts share a line wherever the column
-          holds both, the brand giving way (its slogan wraps) rather than the counts dropping. */}
+      {/* The logo spans the name, slogan and version line. The version starts at the name's
+          left edge and reaches under the counts at `@2xl`; below that, the counts take their
+          own third row. */}
       <div className="@container mb-10">
-        <div className="flex flex-col gap-4 @2xl:flex-row @2xl:items-center @2xl:justify-between @2xl:gap-6">
+        <div className="grid grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)] items-center gap-x-3 @2xl:grid-cols-[calc(var(--spacing)*24)_minmax(0,1fr)_auto]">
           <StartBrand />
-          <Card padding="none" className="shrink-0 self-start overflow-hidden @2xl:self-auto">
+          <VersionLine />
+          <Card
+            padding="none"
+            className="col-span-2 row-start-3 mt-4 justify-self-start overflow-hidden @2xl:col-span-1 @2xl:col-start-3 @2xl:row-start-1 @2xl:mt-0 @2xl:ml-3"
+          >
             {/* The hairlines between the counts are the list's own dividers. Three equal columns,
                 each as wide as the widest count needs, so the panel reads as one even strip. */}
             <ul className="grid grid-cols-3 divide-x divide-line-muted">
@@ -136,60 +141,79 @@ export function StartDashboard({
 // ---------------------------------------------------------------------------
 
 /**
- * The logo beside two lines: the name with the version after it, then the slogan. The logo is
- * the two lines' height, so the three read as one mark; a slogan that has to wrap to make room
- * for the counts breaks into even lines.
+ * The logo spans both brand rows, matching the name, slogan and version line together. Its
+ * square wrapper takes its height from the text; the image contributes no intrinsic size.
+ * Reserve its maximum width so wrapped text cannot enlarge the square into its own column.
  */
 function StartBrand() {
   return (
-    <div className={`flex min-w-0 items-center ${ICON_GAP.card}`}>
+    <>
       {/* Square asset on a white tile of its own; the hairline keeps the tile's edge on a light
           page, where white meets white. Its corner is the asset's own (the drawing clips at 24% of
           the side), not the theme's radius scale, which would make it a circle in Frost and a
           square in Console: the mark keeps one shape everywhere. */}
-      <PenguinLogo
-        src={PENGUIN_LOGO_URL}
-        className="h-14 w-14 shrink-0 rounded-[24%] ring-1 ring-line-muted"
-      />
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <Heading level={1} display>
-            {S.appName}
-          </Heading>
-          <VersionTag />
-        </div>
+      <div className="relative col-start-1 row-span-2 row-start-1 aspect-square max-h-24 justify-self-start self-stretch">
+        <PenguinLogo
+          src={PENGUIN_LOGO_URL}
+          className="absolute inset-0 h-full w-full rounded-[24%] ring-1 ring-line-muted"
+        />
+      </div>
+      <div className="col-start-2 row-start-1 min-w-0">
+        <Heading level={1} display>
+          <AppName />
+        </Heading>
         <Text className="mt-1 text-balance text-fg-muted">{S.chat.draftSubtitle}</Text>
       </div>
-    </div>
+    </>
   );
+}
+
+/**
+ * The product's name with a break opportunity between its words ("Penguin" / "Harness"): one
+ * word to a reader, but a display title too wide for a phone column at the largest text size
+ * breaks there instead of pushing the page sideways.
+ */
+function AppName() {
+  const words = S.appName.split(/(?=[A-Z])/);
+  return words.map((word, i) => (
+    <Fragment key={i}>
+      {i > 0 && <wbr />}
+      {word}
+    </Fragment>
+  ));
 }
 
 /**
  * Superscript "new version" hint after the version: plain small text raised via align-super, in
  * the version's own ink — deliberately not a pill, which read as a button. A button into the App
- * info dialog, the one the sidebar's App info row opens.
+ * info dialog, the one the sidebar's App info row opens. Its label never wraps; it is set off by
+ * an en space rather than a margin, so where it has to start the next line it starts at the
+ * line's left edge (a space at the end of a line hangs, a margin would indent it).
  */
 const versionBadgeClass =
-  "ml-1.5 inline-block align-super text-xs leading-4 text-fg-subtle hover:underline";
+  "inline-block whitespace-nowrap align-super text-xs leading-4 text-fg-subtle hover:underline";
 
 /**
- * `vX.Y.Z · Last updated Jul 26` after the name, on its baseline, with the update hint when
- * something waits. The date is the running build's release date (core's BUILD_DATE, no network);
- * a dev build has none and shows the version alone. The version is cached for the whole app, so
- * this is usually instant; until it is, nothing stands there — it sits beside the name, so its
- * arrival moves no line.
+ * The header grid's second row: `vX.Y.Z · Last updated Jul 26` under the slogan, at the name's
+ * left edge, with the update hint when something waits. Its phrases never break inside, and the
+ * row reaches under the counts, so beside them the whole line always fits; only a phone column
+ * too narrow for it wraps it — between the phrases, the hint moving down whole first. The
+ * version is cached for the whole app, so this is usually instant; until it is, the row holds an
+ * empty line of the same height, so its arrival moves nothing on the page.
  */
-function VersionTag() {
+function VersionLine() {
   const { locale } = useLocale();
   const { version } = useVersionInfo(true);
-  if (version === null) return null;
-  const date = version.buildDate;
   return (
-    <p className="text-xs tabular-nums text-fg-subtle">
-      {`v${version.version}${
-        date !== null ? ` · ${S.update.lastUpdated(formatMonthDay(date, locale))}` : ""
-      }`}
-      <VersionBadge />
+    <p className="col-start-2 row-start-2 mt-1.5 text-xs tabular-nums text-fg-subtle @2xl:col-end-4">
+      {version === null ? (
+        "\u00a0"
+      ) : (
+        <>
+          <VersionStamp version={version.version} buildDate={version.buildDate} locale={locale} />
+          <VersionBadge />
+        </>
+      )}
     </p>
   );
 }
@@ -217,16 +241,19 @@ function VersionBadge() {
           ? S.update.restartToUpdate(flow.version)
           : text;
   return (
-    <button
-      type="button"
-      onClick={openAppInfo}
-      data-tooltip={note}
-      data-tooltip-extra
-      aria-label={note}
-      className={versionBadgeClass}
-    >
-      {text}
-    </button>
+    <>
+      {"\u2002"}
+      <button
+        type="button"
+        onClick={openAppInfo}
+        data-tooltip={note}
+        data-tooltip-extra
+        aria-label={note}
+        className={versionBadgeClass}
+      >
+        {text}
+      </button>
+    </>
   );
 }
 

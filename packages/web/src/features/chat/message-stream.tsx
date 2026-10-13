@@ -74,11 +74,11 @@ export interface StreamRenderContext {
   /** "Give up" on the live reconnect countdown: the ordinary session abort (same call as the Stop button). */
   onGiveUp?: () => void;
   /**
-   * "Retry" on the line a failed run ended on (the fatal error banner, or a reconnect line that
-   * gave up): runs the Session once with no new input, so only the failed turn's held input is
-   * sent (POST /retry); rejects when the server refuses it. Offered only on the stream's last
-   * item while no Task runs — anything after the failure has already resent that input — and
-   * only on main-session items, since a subagent's failure belongs to the child session, which
+   * "Retry" on the line a run ended on (the fatal error banner, a reconnect line that gave up, or
+   * the stop marker): runs the Session once with no new input, so only the unfinished turn's
+   * held input is sent (POST /retry); rejects when the server refuses it. Offered only on the
+   * stream's last item while no Task runs — anything after it has already resent that input —
+   * and only on main-session items, since a subagent's run belongs to the child session, which
    * the route does not target. The button does not render if this isn't wired up.
    */
   onRetry?: () => Promise<void>;
@@ -151,9 +151,9 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
     [live],
   );
 
-  // The stream's last item, the one place a failed run's line may offer Retry. The failed
+  // The stream's last item, the one place the line a run ended on may offer Retry. The ended
   // Task's own stats row can settle after it; anything else that follows — a message, a new
-  // run's reply — has already sent the failed turn's input again.
+  // run's reply — has already sent the unfinished turn's input again.
   let tailAt = items.length - 1;
   while (tailAt >= 0 && items[tailAt]!.kind === "task_stats") tailAt--;
   const tail = items[tailAt];

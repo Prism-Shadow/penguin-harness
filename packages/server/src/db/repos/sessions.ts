@@ -175,8 +175,8 @@ export class SessionsRepo implements SessionIndex {
   private runInsert(verb: "INSERT" | "INSERT OR IGNORE", row: SessionRow): void {
     this.db
       .prepare(
-        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, sandbox)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?)`,
+        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, sandbox, thinking_level)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -193,6 +193,7 @@ export class SessionsRepo implements SessionIndex {
         row.createdAt,
         row.createdAt,
         row.sandbox ? JSON.stringify(row.sandbox) : null,
+        row.thinkingLevel ?? null,
       );
   }
 

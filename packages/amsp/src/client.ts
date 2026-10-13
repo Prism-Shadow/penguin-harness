@@ -47,8 +47,8 @@ export interface RunOptions {
 }
 
 /**
- * One run of the Agent, under way from the moment `run()` returns. Iterate it for the events as
- * they arrive — once; events are kept until they are read, so use `ask()` when only the result
+ * One run of the Agent, under way from the moment `stream()` returns. Iterate it for the events as
+ * they arrive — once; events are kept until they are read, so use `run()` when only the result
  * matters. `result()` resolves when the stream ends. Approvals are answered as they arrive,
  * whether or not anyone iterates. Leaving the loop early stops the iteration, not the run; call
  * `abort()` or abort the signal for that.
@@ -139,7 +139,7 @@ class AgentRun implements Run {
   readonly #result: Promise<RunResult>;
   /** Aborted by the caller's signal, or by an approval that could not be answered. */
   readonly #control = new AbortController();
-  /** Events not yet read by the iterator; null when nobody will read them (`ask()`, or after the loop left). */
+  /** Events not yet read by the iterator; null when nobody will read them (`run()`, or after the loop left). */
   #queue: AmspEvent[] | null;
   #iterated = false;
   #waiter: {
@@ -319,7 +319,7 @@ class AgentRun implements Run {
  *
  * ```ts
  * const client = new AgentClient({ baseUrl: "http://localhost:7364/api/amsp/v1", agent: "demo/coder", apiKey });
- * const { text, sessionId } = await client.ask({ input: "Summarize README.md" });
+ * const { text, sessionId } = await client.run({ input: "Summarize README.md" });
  * ```
  */
 export class AgentClient {
@@ -338,12 +338,12 @@ export class AgentClient {
   }
 
   /** Starts a run and streams it; see {@link Run}. */
-  run(opts: RunOptions): Run {
+  stream(opts: RunOptions): Run {
     return new AgentRun(this.#transport, this.#agentPath, opts, true);
   }
 
   /** Runs to the end and returns the result; nothing is kept for iteration. */
-  ask(opts: RunOptions): Promise<RunResult> {
+  run(opts: RunOptions): Promise<RunResult> {
     return new AgentRun(this.#transport, this.#agentPath, opts, false).result();
   }
 

@@ -82,12 +82,7 @@ import { watchGuestId } from "./guest-id";
 import { loadWarningText, newWarnings } from "./load";
 import { forgetOnScreenReport, reportOnScreenTab } from "./on-screen-report";
 import { hasVisibleSlot, slotsVersion, subscribeSlots, visibleSlot } from "./slot-registry";
-import {
-  BROWSER_PARTITION,
-  registerWebview,
-  webviewSupported,
-  type WebviewElement,
-} from "./webview-registry";
+import { registerWebview, webviewSupported, type WebviewElement } from "./webview-registry";
 
 /** The dock tab of the browser panel. */
 const BROWSER_TAB = "builtin-browser";
@@ -197,8 +192,7 @@ function placePages(ring: HTMLDivElement | null): void {
   for (const guest of state.guests) {
     const host = hosts.get(guest.key);
     if (host === undefined || host.frame === null || host.view === null) continue;
-    const shown =
-      showPage && onScreen !== null && guest.tabId !== null && guest.tabId === state.activeTabId;
+    const shown = showPage && onScreen !== null && guest.tabId !== null && guest.tabId === tab?.id;
     const placement = shown ? onScreen : parkedPlacement(host.parkSize);
     if ((shown && lifted) !== host.lifted) {
       host.lifted = shown && lifted;
@@ -280,7 +274,7 @@ const GuestPage = memo(function GuestPage({ guest }: { guest: BrowserGuest }) {
   return (
     <div ref={frameRef} data-testid="builtin-browser-page" data-guest={key} style={FRAME_STYLE}>
       {/* partition before src: the page's profile has to be set before its first load. */}
-      <webview ref={viewRef} partition={BROWSER_PARTITION} src={guest.src} style={VIEW_STYLE} />
+      <webview ref={viewRef} partition={guest.partition} src={guest.src} style={VIEW_STYLE} />
     </div>
   );
 });
@@ -418,12 +412,14 @@ function LayerHost() {
   // panel goes and comes back or a tab opens; a window that cannot open tabs would otherwise ask,
   // and say it failed, again and again.
   const panelOnScreen = slotShown && windowShown;
-  const newTabPageFailed = useRef(false);
+  const newTabPageFailed = useRef<string | null>(null);
   useEffect(() => {
-    if (!panelOnScreen || state.tabs.length > 0) newTabPageFailed.current = false;
-    if (newTabPageFailed.current || !wantsNewTabPage(browserState(), panelOnScreen)) return;
+    if (!panelOnScreen || activeTab(state) !== null) newTabPageFailed.current = null;
+    if (newTabPageFailed.current === state.scope || !wantsNewTabPage(browserState(), panelOnScreen))
+      return;
+    const scope = state.scope;
     void openBrowserTab().then((tab) => {
-      if (tab === null) newTabPageFailed.current = true;
+      if (tab === null) newTabPageFailed.current = scope;
     });
   }, [state, panelOnScreen]);
 
@@ -468,8 +464,8 @@ function LayerHost() {
   }, []);
 
   // The agent-at-work ring frames the page on screen while an agent acts in that tab.
-  const ringShown =
-    slotShown && state.activeTabId !== null && state.activity[state.activeTabId] !== undefined;
+  const selected = activeTab(state);
+  const ringShown = slotShown && selected !== null && state.activity[selected.id] !== undefined;
 
   return (
     <div ref={rootRef} data-testid="builtin-browser-layer">

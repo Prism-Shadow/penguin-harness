@@ -37,12 +37,38 @@ export interface SurfaceCopy {
 }
 
 export const zh = {
-  brand: {
-    title: "Penguin UI",
+  /**
+   * The site navbar's copy (site/nav.tsx), the landing page's own words: its dictionary's `nav`,
+   * `theme`, `lang` and `siteName`, under one key here.
+   */
+  sitebar: {
+    siteName: "PenguinHarness",
+    nav: {
+      home: "主页",
+      blog: "博客",
+      download: "下载",
+      docs: "文档",
+      gallery: "画廊",
+      github: "GitHub",
+      openMenu: "打开菜单",
+      closeMenu: "关闭菜单",
+    },
+    theme: {
+      label: "主题",
+      light: "浅色",
+      dark: "深色",
+      system: "跟随系统",
+    },
+    lang: {
+      label: "语言",
+      zh: "中文",
+      en: "English",
+      system: "跟随系统",
+    },
   },
-  /** The top bar's page links, the left nav, the "on this page" list and the phone drawer. */
+  /** The gallery bar's page links and settings button, the left nav and the "on this page" list. */
   site: {
-    home: "首页",
+    home: "概览",
     surfaces: "界面",
     foundations: "基础",
     fonts: "字体",
@@ -53,8 +79,6 @@ export const zh = {
     nav: "界面列表",
     onThisPage: "本页目录",
     settings: "显示设置",
-    menu: "打开菜单",
-    closeMenu: "关闭菜单",
     notFound: (id: string) => `没有名为「${id}」的页面。`,
     allSurfaces: "全部界面",
     feedbackTitle: "反馈",
@@ -199,13 +223,12 @@ export const zh = {
     fontsLead: "每个主题的默认字体、当前选择、字样与许可。",
   },
   /**
-   * The view controls' copy, in the top bar; the key keeps the name of the rail that held them,
-   * which the Foundations boards read (`S.rail.langNames`).
+   * The view controls' copy, in the gallery bar; the key keeps the name of the rail that held
+   * them, which the Foundations boards read (`S.rail.langNames`).
    */
   rail: {
     theme: "主题",
     themeNames: { github: "朴素", modern: "白领", geek: "极客" } as Record<ThemeId, string>,
-    mode: "明暗",
     accent: "强调色",
     accentTheme: "随主题",
     size: "字号",
@@ -215,11 +238,9 @@ export const zh = {
     fontCjk: "中文字体",
     fontTheme: "随主题",
     fontSystem: "系统",
-    language: "语言",
     viewport: "视口",
     viewports: { desktop: "桌面", phone: "手机" },
     langNames: { en: "EN", zh: "中文" },
-    modes: { light: "浅色", dark: "深色", system: "跟随系统" },
   },
   /** The current fonts, read from the framed app: the role labels before each family. */
   readout: {
@@ -407,7 +428,8 @@ export const zh = {
       "每个主题各角色的默认字体：英文（正文与界面）、中文与等宽。「系统字体」指交给平台决定。",
     system: "系统字体",
     current: "当前选择",
-    currentHint: "顶栏里选定的字体组合；「随主题」即上表中当前主题的一行。实际渲染的字体见下一行。",
+    currentHint:
+      "「显示设置」里选定的字体组合；「随主题」即上表中当前主题的一行。实际渲染的字体见下一行。",
     followsTheme: (theme: string) => `随主题（${theme}）`,
     specimensTitle: "字样",
     licencesTitle: "许可",

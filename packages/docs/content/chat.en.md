@@ -145,6 +145,8 @@ When a model request fails and the harness waits at least 2s before retrying, th
 
 A request the model provider rejects, for example because of an invalid API key, ends the run with an error line ("[Error]: llm request error: …"). Fix the problem, such as updating the key on the [Models](/models) page, and send again.
 
+While the error line, or the "[Aborted]" line left when you press **Stop**, is the last thing in the conversation, it offers **Retry**. Retry sends that turn again without a new message, and the model picks up from what it had already written.
+
 ## Change the thinking level
 
 The composer's thinking level picker offers low, medium, high, xhigh and max.
@@ -353,7 +355,7 @@ The button beside it follows the grouping: **New workspace**, **Create agent** o
 
 When grouped by Workspace, the directories the system creates for itself fold into one **Temporary workspaces** group: the Workspace a conversation gets when you choose none, and the Test Workspace an evaluation creates for each case and run. Both live directly under the agent's `workspaces/` directory, and every directory there joins this group. A Workspace whose conversations are all archived has no group, and the Workspace groups come in the order of their newest active conversation: an archived run does not move one up.
 
-A group shows ten conversations at a time. **Show N more chats** reveals ten more; rows already loaded come first, and more are fetched from the server only when they run out. Once more than ten show, **Show less** folds back to the first ten. When grouped by time, **Load more chats** fetches older conversations. With more than ten groups, the list shows ten groups per page, with a pager below it.
+A group shows ten conversations at a time. **Show N more chats** reveals ten more; rows already loaded come first, and more are fetched from the server only when they run out. Once more than ten show, **Show less** folds back to the first ten. When grouped by time, the three periods are one list: ten conversations show in all, the next ones fill in period by period, and a single **Show N more chats** row sits below the last; a folded period does not count toward the ten. With more than ten groups, the list shows ten groups per page, with a pager below it.
 
 ### Row actions
 

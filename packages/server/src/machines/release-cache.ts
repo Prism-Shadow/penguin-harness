@@ -14,6 +14,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { userAgent } from "@prismshadow/penguin-core";
 import { RELEASE_SOURCES } from "./diagnose.js";
 import type { CarryRelease } from "./install-server.js";
 
@@ -95,7 +96,11 @@ async function fetchPackage(
 
 /** A GET that answered 2xx within `timeoutMs`, or the reason it did not. */
 async function get(fetchImpl: typeof fetch, url: string, timeoutMs: number): Promise<Response> {
-  const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs), redirect: "follow" });
+  const res = await fetchImpl(url, {
+    headers: { "user-agent": userAgent() },
+    signal: AbortSignal.timeout(timeoutMs),
+    redirect: "follow",
+  });
   if (!res.ok) throw new Error(`${res.status} for ${url}`);
   return res;
 }

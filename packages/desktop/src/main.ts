@@ -58,7 +58,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { app, BrowserWindow, dialog, nativeTheme, session, shell } from "electron";
+import {
+  app,
+  autoUpdater as electronUpdater,
+  BrowserWindow,
+  dialog,
+  nativeTheme,
+  session,
+  shell,
+} from "electron";
 import type { WindowOpenHandlerResponse } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { mintApiToken } from "@prismshadow/penguin-server/auth-token";
@@ -108,6 +116,7 @@ import {
   isExternalScheme,
   isLocalSurfaceUrl,
   MAX_SERVER_RESTARTS,
+  onLeaving,
   RENDERER_HEALTHY_MS,
   rendererGoneLine,
   rendererReloadDelayMs,
@@ -204,8 +213,9 @@ function createWindow(url: string): void {
   followPageTitleBar(win);
   win.once("ready-to-show", () => win?.show());
   // Close-to-tray: the window goes away, the app and its embedded server stay, and the tray
-  // icon is the way back. Every real exit — the tray's Quit, the app menu's, an OS logout —
-  // passes through before-quit first, which is what `quitting` reports. Hiding unloads nothing,
+  // icon is the way back. Every real exit — the tray's Quit, the app menu's, an OS logout, an
+  // update's restart — is announced before the window is asked to close, which is what
+  // `quitting` reports (see onLeaving). Hiding unloads nothing,
   // so it asks nothing; a real close of a page with unsaved edits asks (below).
   win.on("close", (event) => {
     const hide = hidesOnClose({
@@ -762,13 +772,14 @@ if (!app.requestSingleInstanceLock()) {
   // Dock click: the window may be hidden in the tray rather than gone, so show before recreate.
   app.on("activate", () => showMainWindow());
 
-  // Quit path, in two steps. before-quit only marks the app as leaving, so the window's close
-  // is a real close rather than a hide into the tray; the window may still refuse (a page with
-  // unsaved edits asks first, and "keep editing" calls the quit off). will-quit comes only once
-  // every window has closed: the tray goes, the embedded server is stopped gracefully
-  // (shutdown endpoint → kill), and the quit is asked for again, which then passes through with
-  // nothing left to stop. Attach mode has no child to stop.
-  app.on("before-quit", () => {
+  // Quit path, in two steps. before-quit — or, for an update's restart, the updater's own
+  // announcement, which on macOS comes INSTEAD of it until every window is gone — only marks
+  // the app as leaving, so the window's close is a real close rather than a hide into the tray;
+  // the window may still refuse (a page with unsaved edits asks first, and "keep editing" calls
+  // the quit off). will-quit comes only once every window has closed: the tray goes, the
+  // embedded server is stopped gracefully (shutdown endpoint → kill), and the quit is asked for
+  // again, which then passes through with nothing left to stop. Attach mode has no child to stop.
+  onLeaving(app, electronUpdater, () => {
     quitting = true;
   });
   app.on("will-quit", (event) => {

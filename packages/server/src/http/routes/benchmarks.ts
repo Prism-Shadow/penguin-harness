@@ -221,7 +221,7 @@ export function benchmarksRoutes(deps: BenchmarksRouteDeps): Hono<AppEnv> {
   // Import a package from a zip. Unlike creating or deleting, this is open to every member: a
   // Benchmark belongs to the Project, and anyone in it may bring one in. With `overwrite` it
   // replaces a Benchmark of the same id whole, evaluation records included — the Web App says so
-  // before it sends one. `penguin benchmark import` posts here too, with the repository folder
+  // before it sends one. Clients may also post with the repository folder
   // an Agent fetched the package from as `origin`, so the same checks hold whoever imports.
   app.post("/archive", async (c) => {
     const projectId = requireValidId(c, "projectId");

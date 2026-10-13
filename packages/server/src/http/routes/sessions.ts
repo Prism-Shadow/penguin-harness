@@ -72,6 +72,7 @@ import {
   requireValidId,
 } from "../validate.js";
 import type { ServerConfig } from "../../config.js";
+import { normalizePenguinGoOrigin } from "../../config.js";
 import type { ChannelHub } from "../../runtime/channel.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
@@ -1627,11 +1628,11 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     return c.json({ skipped } satisfies RetryNowResponse);
   });
 
-  // Retry a failed run (the Retry button on a final error): starts a Task with empty input, so
-  // core resends the failed turn's input it holds as carry-over — no new user message. Who may
-  // start a Task may retry, and the driver is noted as POST /tasks notes it. 409 when busy
-  // (task_in_progress / compacting), and nothing_to_retry when nothing is held: a later
-  // message already resent that input.
+  // Retry a failed or stopped run (the Retry button on a final error or on the stop marker):
+  // starts a Task with empty input, so core resends the unfinished turn's input it holds as
+  // carry-over — no new user message. Who may start a Task may retry, and the driver is noted
+  // as POST /tasks notes it. 409 when busy (task_in_progress / compacting), and
+  // nothing_to_retry when nothing is held: a later message already resent that input.
   app.post("/:sessionId/retry", async (c) => {
     const row = resolveSession(c);
     const driver = c.var.sessionVia === "token" ? null : c.var.user.userId;
@@ -2016,7 +2017,10 @@ export class SessionApiRoutes {
       sessionsRepo,
     };
     this.modelOauthCallbackRoutes = modelOAuthCallbackRoutes(modelOAuthDeps);
-    this.modelsRoutes = modelsRoutes(modelDeps);
+    this.modelsRoutes = modelsRoutes({
+      ...modelDeps,
+      penguinGoOrigin: this.config.penguinGoOrigin ?? normalizePenguinGoOrigin(undefined),
+    });
     this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
     this.platformAuthRoutes = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });
     this.modelScopeAuthRoutes = modelScopeAuthRoutes({

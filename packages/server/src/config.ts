@@ -14,6 +14,7 @@ import path from "node:path";
 import { NIGHTLY_INDEX_URL } from "./plugin/registry.js";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
+import { PENGUIN_GO_BASE_URL } from "@prismshadow/penguin-core/model-catalog";
 import { resolveCliLaunch, type CliLaunch } from "./services/cli-shim.js";
 
 export interface ServerConfig {
@@ -44,7 +45,7 @@ export interface ServerConfig {
    * Trusted Penguin Go origin (PENGUIN_GO_ORIGIN); never supplied by a browser request.
    *
    * OPTIONAL like cliEntry: a runtime older than this field publishes none, and a pushed
-   * platform must still boot there — its consumer (PlatformAuthProvider) then uses the
+   * platform must still boot there — authorization and balance consumers then use the
    * default `normalizePenguinGoOrigin(undefined)` returns.
    */
   penguinGoOrigin?: string;
@@ -192,7 +193,7 @@ function normalizePreviewOrigin(raw: string | undefined): string | null {
 
 /** HTTPS in production; plain HTTP is accepted only for an explicit loopback integration. */
 export function normalizePenguinGoOrigin(raw: string | undefined): string {
-  const value = raw?.trim() || "https://token.penguin.ooo";
+  const value = raw?.trim() || new URL(PENGUIN_GO_BASE_URL).origin;
   let url: URL;
   try {
     url = new URL(value);

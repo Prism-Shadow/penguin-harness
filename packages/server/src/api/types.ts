@@ -1525,6 +1525,14 @@ export interface AgentApiSettings {
    * change here applies to API Sessions created afterwards.
    */
   approvalMode: ApprovalMode;
+  /** Null follows the Project's default model. Applied only to new API Sessions. */
+  model: ModelRefDto | null;
+  /** Null follows the Agent/Project thinking configuration. */
+  thinkingLevel: ThinkingLevelName | null;
+  /** Null creates a temporary Workspace for each new API Session. */
+  workspace: string | null;
+  /** Positive integer. Checked for each API run; defaults to four concurrent Agent sessions. */
+  maxConcurrentRuns: number;
   keys: AgentApiKeyInfo[];
 }
 
@@ -1542,6 +1550,10 @@ export interface AgentApiUpdateRequest {
   enabled?: boolean;
   open?: boolean;
   approvalMode?: ApprovalMode;
+  model?: ModelRefDto | null;
+  thinkingLevel?: ThinkingLevelName | null;
+  workspace?: string | null;
+  maxConcurrentRuns?: number;
 }
 
 /** POST …/api/keys body (owner only). */
@@ -4412,10 +4424,8 @@ export interface BenchmarkArchiveImportRequest {
    */
   overwrite?: boolean;
   /**
-   * The repository folder the package was fetched from, at one commit: what
-   * `penguin benchmark import --origin-url … --origin-ref … --origin-path …` sends for an Agent's
-   * import of a folder link. The copy's origin is then `git` with these fields and the time of the
-   * import, instead of `zip`.
+   * The repository folder the package was fetched from, pinned to one commit. The copy's origin
+   * is then `git` with these fields and the import time, instead of `zip`.
    */
   origin?: BenchmarkArchiveGitOrigin;
 }
@@ -6738,6 +6748,10 @@ export interface BrowserLinkCapabilities {
  */
 export interface BuiltinBrowserTab {
   id: number;
+  /** The built-in tab belongs to this conversation; absent for pages opened outside a conversation. */
+  sessionId?: string;
+  /** Electron storage partition, shared only within this tab's Project. */
+  partition?: string;
   url: string;
   title: string;
   loading: boolean;
@@ -6988,6 +7002,8 @@ export interface BuiltinBrowserImportSourcesResponse {
 
 /** POST /api/builtin-browser/import. */
 export interface BuiltinBrowserImportRequest {
+  sessionId?: string;
+  projectId?: string;
   sourceId: string;
   cookies?: boolean;
   history?: boolean;
@@ -7051,6 +7067,7 @@ export type BuiltinBrowserServerEvent =
   /** Create a guest for `url`, then POST /tabs/claim with `requestId` once it has a webContents id. */
   | {
       type: "builtin_browser_open";
+      partition?: string;
       requestId: string;
       url: string;
       activate: boolean;
@@ -7058,6 +7075,8 @@ export type BuiltinBrowserServerEvent =
       sessionId?: string;
     }
   | { type: "builtin_browser_close"; tabId: number }
+  /** A draft or healed conversation acquired its permanent id. */
+  | { type: "builtin_browser_session"; fromSessionId: string; sessionId: string }
   | {
       type: "builtin_browser_activity";
       tabId: number;
@@ -7114,9 +7133,9 @@ export type DesktopBrowserCommand =
       events?: string[];
     }
   /** Reply: `{ set: number; failed: number; errors: string[] }` (at most 10 errors). */
-  | { op: "set-cookies"; cookies: DesktopBrowserCookie[] }
+  | { op: "set-cookies"; cookies: DesktopBrowserCookie[]; partition?: string }
   /** Reply: `{}`. */
-  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[] }
+  | { op: "clear-data"; storages: ("cookies" | "cache" | "storage")[]; partition?: string }
   /**
    * Reply: `{}`. The tabs whose pages may be throttled while out of sight (Electron's background
    * throttling, applied at once); every other tab runs at full speed. It replaces the list

@@ -243,6 +243,17 @@ jobs:
           node scripts/build-plugins.mjs --out out/penguin/lib/plugins
           test -f out/penguin/lib/plugins/node_modules/@penguinharness/sandbox-bwrap/package.json
 
+      # lib/dist/install-image.gz: this release's harness in the hot push's format, packed by the
+      # push's own packer from the stamped sources. An installed server with nothing pushed to it
+      # installs it on machines (packages/server/src/machines/shipped-image.ts): every command it
+      # runs on a machine goes through the CLI it leaves in that machine's store. One copy serves
+      # every payload below — the bundles are JavaScript, and the machine's own release supplies
+      # its native modules first.
+      - name: Pack the install image
+        run: |
+          node scripts/deploy.mjs --out out/penguin/lib/dist/install-image.gz --skip-web-build
+          test -s out/penguin/lib/dist/install-image.gz
+
       # node-pty compiles its terminal binding when it is installed, for the machine installing
       # it — this runner, linux-x64 — and publishes prebuilds for darwin and win32 only. So the
       # lib/ every payload shares had no binding for linux-arm64, and every terminal on an arm64

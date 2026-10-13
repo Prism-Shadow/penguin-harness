@@ -5,6 +5,7 @@
  *   prints; a root with nothing pushed reports no harness, and a pushed one reports its store.
  * - The update check reports a newer release with its URL and date; an unreachable endpoint
  *   is still a 200, carrying `error: network` instead of a 5xx.
+ * - The lookup names PenguinHarness and its version as its User-Agent.
  * - A plain check is answered from the cache; `?force=1` (the manual check) bypasses it and
  *   the fresh outcome is what later plain checks see.
  * - A rate-limit answer reads as rate_limited, any other bad status or body as bad_response;
@@ -51,7 +52,10 @@ function releaseResponse(tag: string): Response {
   );
 }
 
-/** An update-check service over the fetch fake; `calls` counts the lookups that reached it. */
+/**
+ * An update-check service over the fetch fake; `calls` counts the lookups that reached it,
+ * `requests` holds them as they arrived.
+ */
 function updateCheck(
   script: FetchScript,
   env: Record<string, string> = {},
@@ -63,7 +67,7 @@ function updateCheck(
     env,
     clock: { now },
   });
-  return { service, calls: () => releases.calls.length };
+  return { service, calls: () => releases.calls.length, requests: releases.calls };
 }
 
 describe("GET /api/version", () => {
@@ -189,6 +193,14 @@ describe("GET /api/version/update-check", () => {
 });
 
 describe("UpdateCheckService", () => {
+  it("names PenguinHarness and its version as the lookup's User-Agent", async () => {
+    const check = updateCheck(() => releaseResponse("v99.0.0"));
+    await check.service.check();
+    expect(check.requests.map((r) => r.headers.get("user-agent"))).toEqual([
+      `penguinharness/${VERSION}`,
+    ]);
+  });
+
   it("reads 403/429 as rate_limited and any other bad status or body as bad_response", async () => {
     for (const [make, expected] of [
       [() => new Response("limited", { status: 403 }), "rate_limited"],

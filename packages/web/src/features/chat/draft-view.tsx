@@ -39,6 +39,8 @@
  * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
  * always survive.
  */
+import { browserState } from "../builtin-browser/browser-store";
+import { adoptBrowserSession } from "../builtin-browser/browser-actions";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -763,6 +765,7 @@ export function DraftView({
     async (input: TaskInputPart[], goal: { budget: number } | null = null): Promise<boolean> => {
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
+      const browserScope = browserState().scope;
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = { approvalMode };
@@ -776,7 +779,10 @@ export function DraftView({
         // Created ON the machine that owns the workspace: that server runs the agent in it.
         const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
+        // The first task can use the draft's pages as soon as it starts.
+        await adoptBrowserSession(browserScope, createdId);
         const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
+        await adoptBrowserSession(createdId, res.sessionId);
         // postTask answers with the CURRENT id: a Session with no Trace whose process
         // restarted in between self-heals into a new one. Everything recorded a moment ago
         // under the id we created is then about a Session that no longer answers to it, and
@@ -804,7 +810,10 @@ export function DraftView({
         // The Session was created but the first message failed to send (postTask failed): delete
         // this empty Session, otherwise every resend attempt would create another one, piling up
         // empty sessions with no messages in the sidebar (best-effort cleanup).
-        if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+        if (createdId) {
+          await adoptBrowserSession(createdId, browserScope);
+          void api.deleteSession(createdId).catch(() => undefined);
+        }
         toastError(apiErrorText(e, modelRef ? { modelId: modelRef.modelId } : {}));
         return false;
       } finally {

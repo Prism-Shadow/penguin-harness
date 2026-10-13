@@ -41,7 +41,6 @@ import {
   Spinner,
 } from "@prismshadow/penguin-ui";
 import { PENGUIN_LOGO_URL } from "../../lib/brand-logo";
-import { formatMonthDay } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { toneInk } from "../../lib/tone";
@@ -58,6 +57,7 @@ import { useVersionInfo } from "../../lib/use-version-info";
 import { useLocale } from "../../state/locale";
 import { CreditsList } from "./credits-list";
 import { ReleaseNotesList } from "./release-notes-list";
+import { VersionStamp } from "./version-stamp";
 
 const HOMEPAGE_URL = "https://penguin.ooo/";
 const REPOSITORY_URL = "https://github.com/Prism-Shadow/penguin-harness";
@@ -189,11 +189,7 @@ function Identity({
         <p className="text-lg font-semibold">{S.appName}</p>
         {currentVersion !== null && (
           <p className="text-sm text-fg-muted">
-            {`v${currentVersion}${
-              buildDate !== null
-                ? ` · ${S.update.lastUpdated(formatMonthDay(buildDate, locale))}`
-                : ""
-            }`}
+            <VersionStamp version={currentVersion} buildDate={buildDate} locale={locale} />
           </p>
         )}
       </div>
@@ -286,10 +282,12 @@ function Body({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNode
         <>
           <p className={`text-sm font-medium ${toneInk.success}`}>{S.update.ready(flow.version)}</p>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            {flow.restart === "manual"
-              ? S.update.readyBodyManual
-              : mode === "client"
-                ? S.update.readyBodyClient
+            {mode === "client"
+              ? flow.restart === "manual"
+                ? S.update.readyBodyManualClient
+                : S.update.readyBodyClient
+              : flow.restart === "manual"
+                ? S.update.readyBodyManual
                 : S.update.readyBodyRelease}
           </p>
         </>
@@ -393,8 +391,9 @@ function nextStep(mode: UpdateMode, flow: UpdateFlow): ReactNode {
         </Button>
       ) : null;
     case "ready":
-      // A manual restart is the user's, in a terminal; the body says how.
-      return flow.restart === "auto" ? (
+      // A server's manual restart is the user's, in a terminal; the body says how. The shell can
+      // always be asked again — a restart it did not make leaves the button for another try.
+      return flow.restart === "auto" || mode === "client" ? (
         <Button size="sm" variant="primary" onClick={() => void installUpdate()}>
           {S.update.restartNow}
         </Button>

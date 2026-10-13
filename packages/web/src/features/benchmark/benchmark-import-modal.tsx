@@ -26,15 +26,13 @@ import type { AgentSummary, BenchmarkSummary } from "@prismshadow/penguin-server
 import {
   Button,
   ConfirmModal,
-  CopiedStatus,
-  CopyCheckGlyph,
   HiddenFileInput,
+  InfoPopover,
   Modal,
   Textarea,
   buttonClass,
   discardUnsaved,
   toastSuccess,
-  useCopied,
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
@@ -44,7 +42,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
 import { agentDisplayName } from "../../state/project";
-import { pickDefaultAgent, useAiBridge } from "../ai-create";
+import { AiExamples, PromptFold, pickDefaultAgent, useAiBridge } from "../ai-create";
 import { benchmarkImportChat, buildBenchmarkImportPrompt } from "./benchmark-import-prompt";
 
 /** What one upload came to: written, refused for a taken id (the confirm's question), or refused with a reason to show. */
@@ -112,8 +110,6 @@ export function ImportBenchmarkModal({
   }, [uploadError]);
   // Non-null shows the overwrite confirm (the upload answered 409 benchmark_exists).
   const [overwriting, setOverwriting] = useState<PendingOverwrite | null>(null);
-  // Copy feedback lives at the button: its glyph flips to the check while copied.
-  const promptCopy = useCopied();
   // An upload in flight holds every way of closing until it answers.
   const requestClose = useGuardedClose(onClose, form.scope, { locked: uploading });
 
@@ -179,8 +175,12 @@ export function ImportBenchmarkModal({
       >
         <div className="space-y-4">
           <section>
-            <p className="text-sm font-medium">{S.benchmark.importChatTitle}</p>
-            <p className="mt-0.5 text-xs text-fg-muted">{S.benchmark.importChatWhy}</p>
+            <h3 className="flex items-center gap-1 text-sm font-medium">
+              {S.benchmark.importChatTitle}
+              <InfoPopover label={S.benchmark.importChatTitle}>
+                {S.benchmark.importChatWhy}
+              </InfoPopover>
+            </h3>
             <div className="mt-2.5 space-y-3">
               {/* A description may run to several lines, so the field is multi-line. */}
               <Textarea
@@ -192,24 +192,16 @@ export function ImportBenchmarkModal({
                 onChange={(e) => form.setDraft(e.target.value)}
                 placeholder={S.benchmark.importSourcePlaceholder}
               />
-              <Textarea
-                label={S.benchmark.importPromptLabel}
-                size="sm"
-                rows={5}
-                readOnly
-                value={chatPrompt}
-                className="text-fg-muted"
+              <AiExamples
+                examples={S.benchmark.importExamples.map((example) => ({
+                  ...example,
+                  prompt: `https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/${example.key}`,
+                }))}
+                value={source}
+                onChange={form.setDraft}
               />
+              <PromptFold text={chatPrompt} />
               <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  disabled={trimmedSource === ""}
-                  onClick={() => promptCopy.flash(chatPrompt)}
-                >
-                  <CopyCheckGlyph copied={promptCopy.copied} size={12} />
-                  {S.benchmark.importCopyPrompt}
-                </Button>
-                <CopiedStatus copied={promptCopy.copied} />
                 <Button size="sm" variant="primary" disabled={chat === null} onClick={openChat}>
                   {S.benchmark.importOpenChat}
                 </Button>
@@ -226,7 +218,12 @@ export function ImportBenchmarkModal({
           </section>
 
           <section className="border-t border-line pt-4">
-            <p className="text-sm font-medium">{S.benchmark.importUploadTitle}</p>
+            <h3 className="flex items-center gap-1 text-sm font-medium">
+              {S.benchmark.importUploadTitle}
+              <InfoPopover label={S.benchmark.importUploadTitle}>
+                {S.benchmark.importUploadInfo}
+              </InfoPopover>
+            </h3>
             <p className="mt-0.5 text-xs text-fg-muted">{S.benchmark.importUploadDesc}</p>
             <label
               className={`${UPLOAD_LABEL_CLASS} mt-2.5 ${uploading ? "pointer-events-none opacity-60" : ""}`}

@@ -40,7 +40,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 分组标题栏左侧是供应商 logo、分组名、模型数、随分组展开而转向的箭头，鼠标悬停或聚焦时其后还有收藏用的星标。右侧从左到右依次是：
 
-- 分组的余额：TokenDance 和 DeepSeek 分组有 key 之后显示；点击金额打开菜单，可以置顶或更新余额，见[账户余额](#账户余额)；
+- 分组的余额：TokenDance、Penguin Go 和 DeepSeek 分组有 key 之后显示；点击金额打开菜单，可以置顶或更新余额，见[账户余额](#账户余额)；
 - 连接状态：TokenDance、Penguin Go 和 ModelScope 未连接时为**未连接**，点击即开始连接；已连接时为一个**已连接**菜单，内含**同步模型**（仅 Penguin Go）、**重新连接**和**断开连接**，见[连接账户](#连接账户)；
 - **添加模型**（加号图标）：只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow**、**Atlas Cloud** 和你创建的分组，见[添加模型](#添加模型)；
 - 测速与**设置**（齿轮）：每个分组（包括 **Custom**）都以这两个按钮收尾，因而在每个分组都对齐在同一条右缘上，见[测速](#测速)。齿轮打开一个菜单：先是该分组的排序，然后是**分组设置…**，见[分组设置](#分组设置)。
@@ -261,7 +261,9 @@ ModelScope 有三处不同：
 
 ### 账户余额
 
-TokenDance 和 DeepSeek 可以查询 key 所属账户的余额。这两个分组有 key 之后，标题栏上会显示余额，币种跟随设置里的**币种**，与价格一样按固定汇率 7 换算。余额始终用**分组密钥**查询：单个模型上设置的 key 一概不算，组内模型的 key 各不相同也不影响余额。没有分组密钥时，DeepSeek 使用服务端的 `DEEPSEEK_API_KEY`，即它的模型本来就会使用的环境变量（见[设置 API key](#设置-api-key)），除非分组设置把它指向了别的 base URL；TokenDance 是网关，key 必须存到分组上。账户持有多种货币时显示合计：¥110 加 $5 显示为 `¥145`，或 `$20.71`。查询由服务端用已存的 key 发起，key 不会到达浏览器。
+TokenDance、Penguin Go 和 DeepSeek 可以查询 key 所属账户的余额。这些分组有 key 之后，标题栏上会显示余额，币种跟随设置里的**币种**，与价格一样按固定汇率 7 换算。余额始终用**分组密钥**查询：单个模型上设置的 key 一概不算，组内模型的 key 各不相同也不影响余额。没有分组密钥时，DeepSeek 使用服务端的 `DEEPSEEK_API_KEY`，即它的模型本来就会使用的环境变量（见[设置 API key](#设置-api-key)），除非分组设置把它指向了别的 base URL；Penguin Go 使用自己的 `PENGUIN_GO_API_KEY`；TokenDance 需要存到分组上的密钥。账户持有多种货币时显示合计：¥110 加 $5 显示为 `¥145`，或 `$20.71`。查询由服务端用密钥发起，key 不会到达浏览器。
+
+Penguin Go 在授权所用的 `PENGUIN_GO_ORIGIN` 上调用 `/api/me/by-key`，默认为 `https://go.penguin.ooo`。也可以显式配置次域名 `https://token.penguin.ooo`；请求不会自动切换域名。它的 CNY 账本余额由 PenguinHarness 换算为显示币种。分组标题栏在加载时查询一次；未置顶时不定时刷新。
 
 - 点击金额打开菜单，共三行：**置顶至左下角**（置顶后为**取消置顶**）；**更新余额**，重新查询余额，跳过服务端保留一分钟的缓存；以及「更新于：YYYY-MM-DD HH:mm」，即查询时间，按本地时间显示。
 - 查询不到余额时显示「—」，菜单最后一行为「更新失败：」加原因。
@@ -571,7 +573,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 - **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）、Gemini 3.1 Pro（200K 以上）和 Claude Haiku 5.5（100K 以上，每项费率为 5 倍）遵循同样的约定。
 - **DeepSeek 空闲时段。** 直连 DeepSeek 的条目记录官方高峰价格，并声明 DeepSeek 的空闲时段规则：工作日北京时间 9:00–12:00 和 14:00–18:00 以外的时段，三项价格全部减半。**模型库**页面在这些时段显示 `省 50%` 标签，成本中心也按这个费率计费。
   - 十条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813`，OpenRouter 的 `deepseek/deepseek-v4.1-flash`，Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`，以及 OpenCode Go 的 `deepseek-v4.1-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-v4-pro`。
-  - TokenDance 还在高峰时段对这三条再打 8 折，`deepseek-v4.1-flash` 在空闲时段也打。条目无法在时段规则之外再声明固定折扣，所以这些时段按牌价计费，比 TokenDance 实收高 25%。
+  - TokenDance 还在高峰时段对这三条再打 8 折，`deepseek-v4.1-flash` 在空闲时段也打。这一条把 8 折作为促销与时段规则并列声明，卡片在高峰时段显示 `省 20%`、空闲时段显示 `省 60%`，成本中心按 TokenDance 实收计费。`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813` 的 8 折只在高峰时段生效，与时段规则并列的促销表达不了，所以它们的高峰时段按牌价计费，比 TokenDance 实收高 25%。
   - Qwen 转售的 DeepSeek 模型按它自己的时段计费：北京时间每天 22:00 至次日 8:00 半价。两个 Qwen 分组的 `deepseek-v4.1-flash` 和 Token Plan 的 `deepseek-v4-pro-0813` 声明的是这一套，折扣标签的悬停说明写的也是该条目所遵循时段的窗口。
   - 存储的价格始终是高峰价格，所以磁盘上的数值与 Project 创建或同步的时间无关。
 - **固定折扣。** 目前有八个 TokenDance 模型在打折：

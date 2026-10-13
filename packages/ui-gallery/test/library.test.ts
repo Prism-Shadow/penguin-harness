@@ -1,7 +1,7 @@
 /**
  * The component library: every topic is registered once, sits in one of the two groups, has a
  * board and a title in both dictionaries, and reaches its frame through the same preference
- * params as the app frames; the sections' top-bar links open where the owner asked.
+ * params as the app frames; the sections' links in the gallery bar open where the owner asked.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -129,14 +129,14 @@ describe("the library frame", () => {
 
 describe("the sections", () => {
   it("open where the owner asked: 界面 on the chat surface, 基础 on the first topic, 字体 on the defaults", () => {
-    const topbar = read("../src/chrome/topbar.tsx");
-    expect(topbar).toMatch(
+    const bar = read("../src/chrome/gallery-bar.tsx");
+    expect(bar).toMatch(
       /page: "surfaces", label: S\.site\.surfaces, href: surfaceHref\(BASE, state, HOME_SURFACE\)/,
     );
-    expect(topbar).toMatch(
+    expect(bar).toMatch(
       /page: "foundations", label: S\.site\.foundations, href: topicHref\(BASE, state, FIRST_TOPIC\)/,
     );
-    expect(topbar).toMatch(
+    expect(bar).toMatch(
       /page: "fonts", label: S\.site\.fonts, href: fontsHref\(BASE, state, "defaults"\)/,
     );
     expect(HOME_SURFACE).toBe("chat");

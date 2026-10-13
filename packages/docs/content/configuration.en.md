@@ -17,7 +17,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | The server package's bundled `web-dist` (in a source checkout, `packages/web/dist`) |
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | Unset: the loopback counterpart is derived per request |
-| `PENGUIN_GO_ORIGIN` | Trusted origin the server-side Penguin Go key authorization calls | `https://token.penguin.ooo` |
+| `PENGUIN_GO_ORIGIN` | Trusted origin for Penguin Go key authorization and account balance queries | `https://go.penguin.ooo` |
 | `MODELSCOPE_BRIDGE_URL` | Address of the authorization bridge the server-side ModelScope key authorization calls | `https://go.penguin.ooo/modelscope` |
 | `PENGUIN_TRUST_PROXY` | `1` trusts the `x-forwarded-proto` header | Unset: the header is ignored |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | Unset: a random password is generated |

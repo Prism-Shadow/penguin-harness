@@ -7,7 +7,7 @@
  * The drawing is the UI package's (MessageRow / MessageBubble / MessageMeta for what the person
  * sent and the run's notice lines, AssistantText for a reply); what stays here is which item
  * becomes what, the text parsing that collapses harness blocks into banners, the reconnect
- * line's countdown and controls, and the Retry a failed run's last line offers.
+ * line's countdown and controls, and the Retry a failed or stopped run's last line offers.
  */
 import { useEffect, useState } from "react";
 import {
@@ -69,20 +69,21 @@ function SentMessageMeta({ atMs, copyText }: { atMs: number | undefined; copyTex
 const COUNTDOWN_MIN_MS = 2000;
 
 /**
- * The Retry a failed run's line offers (the fatal error banner, or a reconnect line that gave
- * up), or undefined for none: only on the main conversation (a subagent's failure belongs to the
- * child session, which the retry route does not target), only on the stream's last item (anything
- * after the failure has already resent the failed turn's input) and only while no Task runs.
+ * The Retry the line a run ended on offers (the fatal error banner, a reconnect line that gave
+ * up, or the stop marker), or undefined for none: only on the main conversation (a subagent's
+ * run belongs to the child session, which the retry route does not target), only on the stream's
+ * last item (anything after it has already resent the unfinished turn's input) and only while no
+ * Task runs.
  */
 function retryOffer(ctx: StreamRenderContext, last: boolean): StreamRenderContext["onRetry"] {
   return last && ctx.origin.length === 0 && !ctx.taskRunning ? ctx.onRetry : undefined;
 }
 
 /**
- * "Retry" on a failed run's line, on the same rung as the reconnect line's "retry now". A click
- * disables it, and it stays disabled: the Task starting, or anything landing after the line,
- * takes the button away (and with it this state). A refused retry enables it again — the page
- * has already said why.
+ * "Retry" on the line a run ended on, on the same rung as the reconnect line's "retry now". A
+ * click disables it, and it stays disabled: the Task starting, or anything landing after the
+ * line, takes the button away (and with it this state). A refused retry enables it again — the
+ * page has already said why.
  */
 function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
   const [acted, setActed] = useState(false);
@@ -96,7 +97,7 @@ function RetryRunButton({ onRetry }: { onRetry: () => Promise<void> }) {
         void onRetry().catch(() => setActed(false));
       }}
     >
-      {S.chat.retryFailedRun}
+      {S.chat.retryRun}
     </Button>
   );
 }
@@ -225,8 +226,8 @@ export function MessageItem({
   item: ChatItem;
   ctx: StreamRenderContext;
   /**
-   * Whether this is the stream's last item (only the failed Task's stats row may follow it): a
-   * failed run's line offers Retry only then.
+   * Whether this is the stream's last item (only the ended Task's stats row may follow it): the
+   * line a run ended on offers Retry only then.
    */
   last?: boolean;
 }) {
@@ -404,8 +405,19 @@ export function MessageItem({
           />
         </div>
       );
-    case "abort":
-      return <MessageBubble variant="notice">{S.chat.aborted(item)}</MessageBubble>;
+    case "abort": {
+      // A stopped run holds its unfinished turn just as a failed one does, so its marker offers
+      // the same Retry.
+      const retry = retryOffer(ctx, last);
+      return (
+        <MessageBubble
+          variant="notice"
+          actions={retry ? <RetryRunButton onRetry={retry} /> : undefined}
+        >
+          {S.chat.aborted(item)}
+        </MessageBubble>
+      );
+    }
     case "llm_error": {
       const retry = retryOffer(ctx, last);
       return (

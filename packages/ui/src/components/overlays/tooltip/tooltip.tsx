@@ -41,7 +41,8 @@
  *
  * Two geometries, chosen by the shape of the control strip rather than by taste: `right` for
  * a vertical rail, `bottom` for a horizontal toolbar, where a panel to the side would cover
- * the very buttons next to the one being asked about.
+ * the very buttons next to the one being asked about. A `bottom` panel with no room under its
+ * trigger — a toolbar at the foot of the window — turns over it instead (`belowTrigger`).
  *
  * Deliberately NOT `role="tooltip"` + `aria-describedby`: its callers label their triggers
  * with the same words it shows, and a description repeating the accessible name makes a
@@ -54,7 +55,7 @@
  * scroll and on a resize — the last three because the position is measured once and is stale
  * the moment the trigger moves.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 
@@ -339,10 +340,12 @@ export interface Viewport {
  * what keeps a panel on screen without anyone measuring a width that does not exist until
  * after it renders — and `room` is the other half of that: how far the panel may grow from
  * its edge before it would cross the margin on the opposite side, the width a long text has
- * to wrap at instead of running off screen.
+ * to wrap at instead of running off screen. Exactly one vertical edge is given too: `top`
+ * hangs the panel down from that point, `bottom` stands it up from there.
  */
 export interface PanelPosition {
-  top: number;
+  top?: number;
+  bottom?: number;
   left?: number;
   right?: number;
   room: number;
@@ -369,15 +372,26 @@ export function besideTrigger(rect: TriggerRect, viewport: Viewport): PanelPosit
  * Under the trigger, aligned to whichever of its vertical edges faces the roomier half of the
  * window, so the panel always grows inward. A toolbar button near the right edge of a docked
  * panel is the case this exists for: left-aligned there, the panel would run off screen.
+ *
+ * Over the trigger instead when the panel, `height` tall as rendered, would cross the window's
+ * bottom margin and there is more room above: a control at the foot of the window (the
+ * composer's toolbar, with its context ring) would otherwise hang its hint past the bottom
+ * edge. Above, the panel is pinned by its bottom edge, so it grows upward from the trigger
+ * however many lines its text wraps to. Without a height (not rendered yet) it hangs below.
  */
-export function belowTrigger(rect: TriggerRect, viewport: Viewport): PanelPosition {
-  const top = rect.bottom + PANEL_GAP;
+export function belowTrigger(rect: TriggerRect, viewport: Viewport, height = 0): PanelPosition {
+  const roomBelow = viewport.height - VIEWPORT_MARGIN - (rect.bottom + PANEL_GAP);
+  const roomAbove = rect.top - PANEL_GAP - VIEWPORT_MARGIN;
+  const vertical =
+    height > roomBelow && roomAbove > roomBelow
+      ? { bottom: viewport.height - rect.top + PANEL_GAP }
+      : { top: rect.bottom + PANEL_GAP };
   if (rect.left + rect.width / 2 > viewport.width / 2) {
     const right = Math.max(viewport.width - rect.right, VIEWPORT_MARGIN);
-    return { top, right, room: Math.max(viewport.width - right - VIEWPORT_MARGIN, 0) };
+    return { ...vertical, right, room: Math.max(viewport.width - right - VIEWPORT_MARGIN, 0) };
   }
   const left = Math.max(rect.left, VIEWPORT_MARGIN);
-  return { top, left, room: Math.max(viewport.width - left - VIEWPORT_MARGIN, 0) };
+  return { ...vertical, left, room: Math.max(viewport.width - left - VIEWPORT_MARGIN, 0) };
 }
 
 export function Tooltip({
@@ -409,30 +423,26 @@ export function Tooltip({
 }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Non-null only while the panel is up; the measured viewport point it hangs from. */
-  const [position, setPosition] = useState<PanelPosition | null>(null);
+  /** Non-null only while the panel is up; the trigger's box, measured as it opened. */
+  const [anchor, setAnchor] = useState<TriggerRect | null>(null);
 
   const hide = useCallback(() => {
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    setPosition(null);
+    setAnchor(null);
   }, []);
 
   const show = () => {
     if (suppressed === true || timerRef.current !== null) return;
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      const anchor = anchorRef.current;
+      const trigger = anchorRef.current;
       // Measured now, not when the trigger rendered: whether its label is cut off depends on
       // the width it has at this moment.
-      if (anchor === null || !hintAllowedFor(anchor, extra)) return;
-      const rect = anchor.getBoundingClientRect();
-      const viewport = { width: window.innerWidth, height: window.innerHeight };
-      setPosition(
-        placement === "bottom" ? belowTrigger(rect, viewport) : besideTrigger(rect, viewport),
-      );
+      if (trigger === null || !hintAllowedFor(trigger, extra)) return;
+      setAnchor(trigger.getBoundingClientRect());
     }, HOVER_OPEN_DELAY_MS);
   };
 
@@ -444,7 +454,7 @@ export function Tooltip({
   useEffect(() => hide, [hide]);
 
   useEffect(() => {
-    if (position === null) return;
+    if (anchor === null) return;
     // Escape is heard in capture so a focused trigger inside a dialog still dismisses its
     // tooltip, and is deliberately NOT stopped: this panel is not a dismissible layer, and
     // swallowing the key would keep the dialog behind it open on the same press.
@@ -462,7 +472,7 @@ export function Tooltip({
       window.removeEventListener("scroll", hide, true);
       window.removeEventListener("resize", hide);
     };
-  }, [position, hide]);
+  }, [anchor, hide]);
 
   return (
     <span
@@ -475,32 +485,55 @@ export function Tooltip({
       onBlur={hide}
     >
       {children}
-      {position !== null && (
-        <TooltipPanel label={label} position={position} content={content} placement={placement} />
+      {anchor !== null && (
+        <TooltipPanel label={label} anchor={anchor} content={content} placement={placement} />
       )}
     </span>
   );
 }
 
-/** The panel itself, portaled to the body; both ways in render exactly this. */
+/**
+ * The panel itself, portaled to the body; both ways in render exactly this. It places itself
+ * against the trigger's box: beside a rail entry, or under a toolbar control — and over it when
+ * there is no room below, which takes the panel's rendered height. That height is read in the
+ * layout phase, before the first paint, so a panel that belongs above is never seen below.
+ */
 function TooltipPanel({
   label,
-  position,
+  anchor,
   content,
   placement,
 }: {
   label: string;
-  position: PanelPosition;
+  /** The trigger's viewport box, measured when the panel opened. */
+  anchor: TriggerRect;
   content: TooltipContent;
   placement: TooltipPlacement;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  // Read at render: the panel closes on any resize, so the window it was placed in is current.
+  const viewport = { width: window.innerWidth, height: window.innerHeight };
+  const position =
+    placement === "right"
+      ? besideTrigger(anchor, viewport)
+      : belowTrigger(anchor, viewport, height);
+  // `offsetHeight`, not the bounding rect: it is the laid-out height whatever the opening
+  // animation does to the panel's transform on its first frame.
+  useLayoutEffect(() => {
+    if (placement === "bottom" && panelRef.current !== null) {
+      setHeight(panelRef.current.offsetHeight);
+    }
+  }, [anchor, label, content, placement]);
   return createPortal(
     <div
+      ref={panelRef}
       data-testid="tooltip"
       aria-hidden
       style={{
         position: "fixed",
         top: position.top,
+        bottom: position.bottom,
         left: position.left,
         right: position.right,
         maxWidth: `min(${contentMaxWidth[content]}, ${position.room}px)`,
@@ -547,7 +580,7 @@ export function tooltipRequest(el: Pick<Element, "getAttribute">): TooltipReques
  * for good.
  */
 export function TooltipLayer() {
-  const [open, setOpen] = useState<(TooltipRequest & { position: PanelPosition }) | null>(null);
+  const [open, setOpen] = useState<(TooltipRequest & { anchor: TriggerRect }) | null>(null);
 
   useEffect(() => {
     /** What the pointer or focus rests on: an element carrying a hint (no lines), or a line subject. */
@@ -596,16 +629,7 @@ export function TooltipLayer() {
         if (subject === null || !subject.at.isConnected) return;
         const found = requestFor(subject);
         if (found === null) return;
-        const { request } = found;
-        const rect = found.under.getBoundingClientRect();
-        const viewport = { width: window.innerWidth, height: window.innerHeight };
-        setOpen({
-          ...request,
-          position:
-            request.placement === "right"
-              ? besideTrigger(rect, viewport)
-              : belowTrigger(rect, viewport),
-        });
+        setOpen({ ...found.request, anchor: found.under.getBoundingClientRect() });
       }, HOVER_OPEN_DELAY_MS);
     };
     const onOver = (e: PointerEvent) => start(subject(e.target));
@@ -645,7 +669,7 @@ export function TooltipLayer() {
   return open === null ? null : (
     <TooltipPanel
       label={open.label}
-      position={open.position}
+      anchor={open.anchor}
       content={open.content}
       placement={open.placement}
     />

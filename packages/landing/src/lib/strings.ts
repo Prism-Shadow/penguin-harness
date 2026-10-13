@@ -285,19 +285,19 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
     items: [
       {
         concept: "OmniMessage",
-        title: "从引擎到屏幕，只有一种消息格式",
+        title: "Simplest Is the Best",
         desc: "引擎流式输出 OmniMessage，Trace 逐条存下，Web App 直接渲染，中间没有第二种格式。模型经 MMSP 接入，Agent API 把每次运行以 AMSP 事件流返回。",
         link: "OmniMessage 协议",
       },
       {
         concept: "Penguin SDK",
-        title: "引擎就是一个 TypeScript 库",
+        title: "Harness for Building Agents",
         desc: "PenguinHarness 里的每个 Task 都跑在 @prismshadow/penguin-core 上，同一个包也能从 npm 安装。借助 penguin-sdk Skill，Agent 能在它之上做出独立运行的应用，比如回答时标注来源的 RAG 应用。",
         link: "SDK 快速上手",
       },
       {
         concept: "Agent State",
-        title: "Agent 就是一个文件夹",
+        title: "Harness for Recursive Self-Improvement",
         desc: "它的提示词、Skill 和设置都是 Agent State 里的文件。自进化改的就是这些文件，每个版本在改动前都会先存快照。",
         link: "配置参考",
       },

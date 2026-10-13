@@ -573,9 +573,9 @@ export class Session {
    * stamped `sender: "harness"` — yielded, since the host has not seen it, written to the
    * Trace and sent with the Prompt in the Task's first request.
    *
-   * An empty `newMessages` is a retry of a failed run: the Task sends only what that run left
-   * held (see `hasPendingInput`) — no input record of its own reaches the Trace, and with no
-   * Prompt there is nothing to put to the user-prompt hooks.
+   * An empty `newMessages` is a Retry of a failed or interrupted run: the Task sends only what
+   * that run left held (see `hasPendingInput`) — no input record of its own reaches the Trace,
+   * and with no Prompt there is nothing to put to the user-prompt hooks.
    *
    * When the Task ends, the Session's stop hooks are consulted (see hooks/stop-hook.ts):
    * every answer is recorded as a `hook` event on the stream and in the Trace, and the first
@@ -1053,12 +1053,12 @@ export class Session {
   }
 
   /**
-   * Whether a run with no input of its own would send anything — what a host's retry of a
-   * failed run checks first, since `run([])` resends exactly what is held: the engine's
-   * carry-over and pending compaction summary (see ContextEngine.hasPendingInput), and the
-   * input an aborted bootstrap left with the Session. No engine yet: like `compactability`, a
+   * Whether a run with no input of its own would send anything — what a host's Retry of a
+   * failed or interrupted run checks first, since `run([])` resends exactly what is held: the
+   * engine's carry-over and pending compaction summary (see ContextEngine.hasPendingInput), and
+   * the input an aborted bootstrap left with the Session. No engine yet: like `compactability`, a
    * Session resumed after a restart answers from what its Trace replay recovered — the state
-   * the first run's engine starts from — or a failed turn would look already sent.
+   * the first run's engine starts from — or a held turn would look already sent.
    */
   hasPendingInput(): boolean {
     if (this.carryOverInput.length > 0) return true;

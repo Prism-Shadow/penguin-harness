@@ -1,7 +1,7 @@
 /**
  * The built-in tools table on the Tools tab (agent-settings-page.tsx), as pure functions.
  *
- * The table is a typed form whose rows always exist: each row's permission and two number cells
+ * Each row's permission and two number cells
  * are the draft, written together by the table's Save. A row's `call_description` switch is not
  * part of the draft — it writes at once, as "the stored table with this one row flipped" — so a
  * flip never sends, nor resets, what is being typed beside it. The table's Save in turn lays the

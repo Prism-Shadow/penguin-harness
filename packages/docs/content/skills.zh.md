@@ -187,12 +187,12 @@ zip 文件最大 14 MB，最多 200 个文件；解压后单个文件不超过 5
 
 要导出插件，打开它的详情，点击**导出**。下载的是插件包的 zip，文件名为 `<name>-v<version>.zip`，另一台服务端可以原样导入。能打开**插件市场**页面的人，都可以导出包在本服务端上的插件。
 
-要导入插件，点击页头的**导入插件**。只有管理员能看到这个按钮。弹窗的每个标签页是一种安装方式，打开时位于**让 Agent 安装**：
+要导入插件，点击页头的**导入插件**。只有管理员能看到这个按钮。弹窗的每个标签页是一种安装方式，打开时位于**Agent 安装**：
 
-- **让 Agent 安装**：来源是网页、仓库、仓库中的文件夹、Codex 或 Claude Code 插件，或一段描述时，把它填进来源一栏。弹窗会为 Project 的默认 Agent 生成一段 Prompt。Agent 审阅插件包后用 [`penguin plugin install`](/cli#penguin-plugin) 安装；来源还不是 PenguinHarness 插件包时，Agent 先按 `skill-porting` 插件中的 `plugin-porting` Skill 把它转成插件包，再安装自己构建的文件夹。点击**复制 Prompt**，或点击**打开新对话**用它新建一份草稿；在你发送之前什么都不会发生。
-- **上传 zip 包**：选择一个插件包目录的 zip，例如导出得到的文件。`package.json` 位于 zip 根目录或唯一的顶层目录内，且不含 `node_modules`。服务端已装有这个包的其他版本时，弹窗会先询问是否替换。只上传你信任的来源。
-- **从 npm 安装**：输入 npm 包名，可带版本、范围或标签（如 `@scope/name` 或 `name@1.2.0`），然后点击**安装**。服务端用 npm 从 npm 仓库安装它。
-- **从链接安装**：输入指向 git 仓库或 tarball 的 https 链接（如 `https://github.com/acme/penguin-notes`），然后点击**安装**。服务端用 npm 获取并安装它，会访问你给出的任意 https 地址，包括内网地址。路径、`http:` 链接和带凭据的链接会在运行任何东西之前被拒绝。指向 GitHub 仓库中某个文件夹或文件的链接（`…/tree/…`、`…/blob/…`）同样会被拒绝，因为 npm 无法安装它：输入框下方提供**改为让 Agent 安装**，点击后带着这个链接切到「让 Agent 安装」。
+- **Agent 安装**：来源是网页、仓库、仓库中的文件夹、Codex 或 Claude Code 插件，或一段描述时，把它填进来源一栏。也可以先选一个示例。弹窗会为 Project 的默认 Agent 生成一段 Prompt。Agent 审阅插件包后用 [`penguin plugin install`](/cli#penguin-plugin) 安装；来源还不是 PenguinHarness 插件包时，Agent 先按 `skill-porting` 插件中的 `plugin-porting` Skill 把它转成插件包，再安装自己构建的文件夹。展开**完整提示词**可预览或复制，也可以点**打开新对话**新建一份草稿；在你发送之前什么都不会发生。
+- **zip**：选择一个插件包目录的 zip，例如导出得到的文件。`package.json` 位于 zip 根目录或唯一的顶层目录内，且不含 `node_modules`。服务端已装有这个包的其他版本时，弹窗会先询问是否替换。只上传你信任的来源。
+- **npm**：输入 npm 包名，可带版本、范围或标签（如 `@scope/name` 或 `name@1.2.0`），然后点击**安装**。服务端用 npm 从 npm 仓库安装它。
+- **链接**：输入指向 git 仓库或 tarball 的 https 链接（如 `https://github.com/acme/penguin-notes`），然后点击**安装**。服务端用 npm 获取并安装它，会访问你给出的任意 https 地址，包括内网地址。路径、`http:` 链接和带凭据的链接会在运行任何东西之前被拒绝。指向 GitHub 仓库中某个文件夹或文件的链接（`…/tree/…`、`…/blob/…`）同样会被拒绝，因为 npm 无法安装它：输入框下方提供**改为让 Agent 安装**，点击后带着这个链接切到「Agent 安装」。
 
 转换时保留 PenguinHarness 插件能承载的部分，其余的列出来。上游的 Skill 成为插件包的 Skill，frontmatter 精简为 `name`、`description` 和日期 `version`。显示名、短描述、分类、SVG 图标和第一条默认 Prompt 写进 `penguin` 块。MCP Server 同样带入：该 Skill 的 `port-mcp.mjs` 脚本把 Codex 的 `.mcp.json` 或 Claude Code 的 `mcpServers` 映射转成 [`penguin.mcp_servers`](#插件中的-mcp-server)。`<GMAIL_PUBLIC_CLIENT_ID>` 这类占位符和上游 Server 读取的环境变量都转成指向 Vault 的 `${KEY}` 引用，并逐个列为待设置的键；上游公开的 client secret 不带入，同样改为待设置的键；随插件分发的 stdio 命令改写为以 `${PLUGIN_ROOT}` 开头。只是转向某个 Skill 的命令、子 Agent、其他工具的钩子、托管应用和图片都不带入，插件包的 README 在「未带入」一节逐项列出。托管应用（`.app.json`）是 ChatGPT 的连接器 id，只在 ChatGPT 内部有效。
 

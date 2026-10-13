@@ -1,7 +1,7 @@
 /**
  * The toolbar popup: each server's status, how many tabs are handed over, what this tab is
  * (handed over, released, a page Chrome does not let extensions drive) with the matching
- * action, Pause, and the EN / 中文 switch, which it follows live.
+ * action, Pause, and the language and theme switches, which it follows live.
  */
 import { isRestrictedUrl } from "../src/policy.js";
 import { readPaused, readServers, readStatus, readTabSet, setPaused } from "../src/storage.js";
@@ -9,8 +9,8 @@ import { stringsFor, type Strings } from "../src/strings.js";
 import { drivenCount, lookup } from "../src/tab-set.js";
 import {
   element,
-  followLanguage,
-  renderLanguageSwitch,
+  followPreferences,
+  isPreferenceChange,
   setText,
   statusDot,
   statusText,
@@ -111,12 +111,11 @@ document.getElementById("settings")?.addEventListener("click", () => {
 document.getElementById("pause")?.addEventListener("click", () => {
   void readPaused().then((paused) => setPaused(!paused));
 });
-followLanguage((language, next) => {
+followPreferences((next) => {
   strings = next;
-  renderLanguageSwitch(language, strings);
   setText("settings", strings.popupSettings);
   void render();
 });
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (!(area === "local" && "uiLanguage" in changes)) void render();
+  if (!isPreferenceChange(changes, area)) void render();
 });

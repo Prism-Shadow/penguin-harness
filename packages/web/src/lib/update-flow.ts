@@ -60,7 +60,11 @@ export type UpdateFlow =
       percent: number | null;
       phase: UpdateJobPhase | null;
     }
-  /** Downloaded (client) or installed (release): a restart runs it. `manual` = nothing can restart this process; the user does it by hand. */
+  /**
+   * Downloaded (client) or installed (release): a restart runs it. `manual` = the restart is
+   * the user's: nothing can restart this server process, or the shell was asked to and the
+   * window is still here (the restart can be asked for again).
+   */
   | { kind: "ready"; version: string | null; restart: "auto" | "manual" }
   | { kind: "restarting"; version: string | null }
   /** `detail` is the backend's own text (the update command's output tail); `retry` names the step that failed. */
@@ -73,7 +77,11 @@ export interface FlowLocal {
   checking: boolean;
   /** The download request is on the wire — the backend has not yet reported the download. */
   downloadRequested: boolean;
-  /** The restart step: asked for (waiting for the process to come back / the window to close), or refused because nothing supervises the process. */
+  /**
+   * The restart step: asked for (waiting for the process to come back / the window to close),
+   * or the user's — refused because nothing supervises the process, or asked for and not done
+   * (the server never came back, the window never closed).
+   */
   restart: "none" | "requested" | "manual";
 }
 
@@ -191,7 +199,11 @@ export function clientFlow(status: DesktopUpdateStatus | null, local: FlowLocal)
         phase: null,
       };
     case "downloaded":
-      return { kind: "ready", version: status.version ?? null, restart: "auto" };
+      return {
+        kind: "ready",
+        version: status.version ?? null,
+        restart: local.restart === "manual" ? "manual" : "auto",
+      };
     case "error":
       return local.checking
         ? { kind: "checking" }

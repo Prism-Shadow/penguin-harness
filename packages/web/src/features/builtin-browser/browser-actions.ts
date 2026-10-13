@@ -9,8 +9,10 @@ import { ApiError } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { openPanel } from "../dock/dock-state";
-import { dispatchBrowser } from "./browser-store";
-import type { BrowserGuest } from "./browser-state";
+import { browserState, dispatchBrowser } from "./browser-store";
+import { NO_BROWSER_SCOPE, type BrowserGuest } from "./browser-state";
+
+const opening = new Map<Promise<unknown>, string>();
 
 /**
  * Reads availability and the registry. A refusal — an older server without the route, an
@@ -43,25 +45,66 @@ export async function refreshBrowserSettings(): Promise<void> {
  * the request is on its way the store counts it, so the panel does not open the new-tab page
  * beside it.
  */
-export async function openBrowserTab(url?: string): Promise<BuiltinBrowserTab | null> {
-  dispatchBrowser({ type: "opening", delta: 1 });
+export function openBrowserTab(url?: string): Promise<BuiltinBrowserTab | null> {
+  const scope = browserState().scope;
+  const request = openInScope(scope, browserState().projectId, url);
+  opening.set(request, scope);
+  void request.finally(() => opening.delete(request));
+  return request;
+}
+
+async function openInScope(
+  scope: string,
+  projectId: string | null,
+  url?: string,
+): Promise<BuiltinBrowserTab | null> {
+  dispatchBrowser({ type: "opening", delta: 1, scope });
   try {
-    const { tab } = await api.openBuiltinBrowserTab(
-      url === undefined ? { activate: true } : { url, activate: true },
-    );
+    const { tab } = await api.openBuiltinBrowserTab({
+      activate: true,
+      ...(projectId === null ? {} : { projectId }),
+      ...(url === undefined ? {} : { url }),
+      ...(scope === NO_BROWSER_SCOPE ? {} : { sessionId: scope }),
+    });
     return tab;
   } catch (err) {
     toastError(S.builtinBrowser.openFailed(apiErrorText(err)));
     return null;
   } finally {
-    dispatchBrowser({ type: "opening", delta: -1 });
+    dispatchBrowser({ type: "opening", delta: -1, scope });
+  }
+}
+
+/** A draft's pages follow its first send, after any outstanding opens have been claimed. */
+export async function adoptBrowserSession(fromSessionId: string, sessionId: string): Promise<void> {
+  if (fromSessionId === sessionId || fromSessionId === NO_BROWSER_SCOPE) return;
+  const state = browserState();
+  if (!state.supported) return;
+  const pending = [...opening]
+    .filter(([, scope]) => scope === fromSessionId)
+    .map(([request]) => request);
+  if (
+    pending.length === 0 &&
+    !state.guests.some((guest) => guest.scope === fromSessionId) &&
+    !state.tabs.some((tab) => tab.sessionId === fromSessionId)
+  )
+    return;
+  await Promise.all(pending);
+  try {
+    await api.adoptBuiltinBrowserSession(fromSessionId, sessionId);
+    dispatchBrowser({
+      type: "event",
+      event: { type: "builtin_browser_session", fromSessionId, sessionId },
+    });
+  } catch (err) {
+    toastError(apiErrorText(err));
   }
 }
 
 /**
  * A link from the conversation, opened in the agent browser: the Browser panel comes up in the
  * dock of the conversation on screen, and the link opens in a new tab — the same request as the
- * panel's own new tab, so the page joins the one set of tabs (in the user's Chrome, its tab
+ * panel's own new tab, so the page joins this conversation's tabs (in the user's Chrome, its tab
  * comes to the front there).
  */
 export function openLinkInBrowser(url: string): void {

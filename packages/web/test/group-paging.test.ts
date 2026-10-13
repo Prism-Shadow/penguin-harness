@@ -10,6 +10,26 @@
  * never promise conversations that are not there — and a list (a group's active rows, or
  * one of its folders) reveals one page per click whatever a fetch returned, folding back
  * to exactly that first page and never to nothing.
+ *
+ * A click on a list's one reveal row ("Show N more chats"):
+ * - Given the next page already in memory, it shows ten more and asks the server for nothing.
+ * - Given the loaded rows run out, it shows what is loaded and asks for the next page — and
+ *   never asks once every stream behind the list is exhausted.
+ * - Given a fetch that came back short, the next click asks for one page past the screen,
+ *   not two — and a click never lowers the cap, which a folded time bucket would feel.
+ *
+ * Time mode's list, whose buckets are stretches of one list rather than lists of their own:
+ * - Given rows in several buckets, the window fills the newest bucket first, stops inside one
+ *   bucket, does not draw the buckets past it, and the single count names every row it has
+ *   not reached, loaded or not.
+ * - Given a list revealed click by click to its end, every click adds ten rows across the
+ *   bucket boundaries, the server is asked only when the loaded rows run out, and the count
+ *   walks down to no reveal row at all.
+ * - Given a folded bucket, its rows spend none of the window (the next rows come into view
+ *   and the count leaves them out), and it still holds the rows it opens onto.
+ * - Given a window spent exactly at a bucket boundary, the next bucket is not drawn, so a
+ *   drawn folded bucket opened never comes up empty.
+ * - "Show less" stands only while more than the first page is on screen.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -21,6 +41,8 @@ import {
   groupPageSlice,
   hiddenRowCount,
   revealPlan,
+  revealStep,
+  sectionWindow,
 } from "../src/lib/session-grouping";
 
 const seq = (n: number) => Array.from({ length: n }, (_, i) => i);
@@ -181,5 +203,166 @@ describe("revealPlan", () => {
       hidden: 0,
       canCollapse: false,
     });
+  });
+});
+
+describe("revealStep", () => {
+  it("shows the next page from memory without asking the server", () => {
+    // A fetch fanned out over several Agents returned more than a page: the rows are there.
+    expect(revealStep({ cap: 10, shown: 10, loaded: 23, canFetch: true })).toEqual({
+      cap: 20,
+      fetch: false,
+    });
+  });
+
+  it("asks for the next server page when the loaded rows run out", () => {
+    expect(revealStep({ cap: 10, shown: 10, loaded: 14, canFetch: true })).toEqual({
+      cap: 20,
+      fetch: true,
+    });
+  });
+
+  it("never asks once every stream behind the list is exhausted", () => {
+    expect(revealStep({ cap: 10, shown: 10, loaded: 14, canFetch: false })).toEqual({
+      cap: 20,
+      fetch: false,
+    });
+  });
+
+  it("counts from the screen, so a click after a short fetch asks for one page, not two", () => {
+    // The previous click raised the cap to 20, but its fetch failed and only 14 show.
+    expect(revealStep({ cap: 20, shown: 14, loaded: 14, canFetch: true })).toEqual({
+      cap: 24,
+      fetch: true,
+    });
+  });
+
+  it("never shrinks the window, so a bucket folded over its rows opens onto as many", () => {
+    // Every loaded row sits in a folded time bucket: none on screen under a cap of 20. The
+    // click fetches more for the open buckets below and keeps the 20 the fold opens onto.
+    expect(revealStep({ cap: 20, shown: 0, loaded: 0, canFetch: true })).toEqual({
+      cap: 20,
+      fetch: true,
+    });
+  });
+});
+
+describe("sectionWindow (time mode's list)", () => {
+  /** Rows labelled by bucket and position, so a window's contents read off directly. */
+  const rows = (bucket: string, n: number) => seq(n).map((i) => `${bucket}${i}`);
+  const open = (r: string[]) => ({ rows: r, folded: false });
+  const folded = (r: string[]) => ({ rows: r, folded: true });
+
+  it("fills the newest bucket first, stops inside one, and counts every row it has not reached", () => {
+    // 43 conversations in the Project, 25 of them loaded so far.
+    const w = sectionWindow({
+      sections: [open(rows("d", 4)), open(rows("m", 9)), open(rows("e", 12))],
+      cap: SIDEBAR_PAGE_SIZE,
+      total: 43,
+      fullyLoaded: false,
+    });
+    expect(w.rows).toEqual([rows("d", 4), rows("m", 6), null]);
+    expect(w.shown).toBe(10);
+    expect(w.hidden).toBe(33);
+    expect(w.canCollapse).toBe(false);
+  });
+
+  it("reveals ten rows a click across the buckets, fetching only when the loaded ones run out", () => {
+    // The Project's 43 conversations in display order; each fetch fans out over every Agent
+    // and lands 25 more rows, the first page included.
+    const all = [...rows("d", 4), ...rows("m", 9), ...rows("e", 30)];
+    let loaded = 25;
+    let cap = SIDEBAR_PAGE_SIZE;
+    let fetches = 0;
+    const view = () => {
+      const d = all.slice(0, loaded);
+      return sectionWindow({
+        sections: [
+          open(d.filter((r) => r.startsWith("d"))),
+          open(d.filter((r) => r.startsWith("m"))),
+          open(d.filter((r) => r.startsWith("e"))),
+        ],
+        cap,
+        total: all.length,
+        fullyLoaded: loaded === all.length,
+      });
+    };
+    const seen: Array<[number, number]> = [[view().shown, view().hidden]];
+    while (view().hidden > 0) {
+      const w = view();
+      const step = revealStep({
+        cap,
+        shown: w.shown,
+        loaded: w.reachable,
+        canFetch: loaded < all.length,
+      });
+      cap = step.cap;
+      if (step.fetch) {
+        fetches += 1;
+        loaded = Math.min(loaded + 25, all.length);
+      }
+      seen.push([view().shown, view().hidden]);
+    }
+    expect(seen).toEqual([
+      [10, 33],
+      [20, 23],
+      [30, 13],
+      [40, 3],
+      [43, 0],
+    ]);
+    // Only the click that ran past the first 25 rows needed the server.
+    expect(fetches).toBe(1);
+    expect(view().rows.flat()).toEqual(all);
+    expect(view().canCollapse).toBe(true);
+  });
+
+  it("spends none of the window on a folded bucket and leaves its rows out of the count", () => {
+    const w = sectionWindow({
+      sections: [folded(rows("d", 14)), open(rows("m", 9)), open(rows("e", 12))],
+      cap: SIDEBAR_PAGE_SIZE,
+      total: 35,
+      fullyLoaded: true,
+    });
+    // The folded bucket keeps the rows it opens onto; the next ten rows come into view below.
+    expect(w.rows).toEqual([rows("d", 10), rows("m", 9), rows("e", 1)]);
+    expect(w.shown).toBe(10);
+    expect(w.hidden).toBe(35 - 10 - 14);
+    // The reveal goes on past the fold: the folded rows are not what is left to load.
+    expect(w.reachable).toBe(21);
+  });
+
+  it("does not draw the bucket after a window spent exactly at a boundary", () => {
+    // Were the folded bucket drawn here, opening it would leave it a header over no rows.
+    const w = sectionWindow({
+      sections: [open(rows("d", 10)), folded(rows("m", 9)), open(rows("e", 12))],
+      cap: SIDEBAR_PAGE_SIZE,
+      total: 31,
+      fullyLoaded: true,
+    });
+    expect(w.rows).toEqual([rows("d", 10), null, null]);
+    expect(w.hidden).toBe(21);
+  });
+
+  it("offers Show less only while more than the first page is on screen", () => {
+    const raised = { cap: 20, total: 30, fullyLoaded: true };
+    expect(
+      sectionWindow({ ...raised, sections: [open(rows("d", 15)), open(rows("m", 15))] })
+        .canCollapse,
+    ).toBe(true);
+    // The cap is raised, but folding the first bucket left fewer than a page to fold back.
+    expect(
+      sectionWindow({ ...raised, sections: [folded(rows("d", 22)), open(rows("m", 8))] })
+        .canCollapse,
+    ).toBe(false);
+  });
+
+  it("drops a stale total once every Agent is fetched out", () => {
+    const w = sectionWindow({
+      sections: [open(rows("d", 4))],
+      cap: SIDEBAR_PAGE_SIZE,
+      total: 9,
+      fullyLoaded: true,
+    });
+    expect(w.hidden).toBe(0);
   });
 });

@@ -1,19 +1,35 @@
 /**
- * The extension's copy in English and Chinese. The pages and the toolbar title are in English
- * until the user picks 中文 with the switch on the options page or in the popup; the browser's
- * own language plays no part (storage.ts keeps the choice). The two dictionaries are typed
- * against each other, so a key missing from one fails the typecheck.
+ * The extension's copy in English and Chinese. The pages and the toolbar title follow Chrome's
+ * own language (Chinese for any zh-* locale, English otherwise) until the user picks one with the
+ * switch on the options page or in the popup; storage.ts keeps the choice. The two dictionaries
+ * are typed against each other, so a key missing from one fails the typecheck.
  */
 
 export type UiLanguage = "en" | "zh";
 
+/** What the user picked: a language, or "system" to follow Chrome's. */
+export type LanguagePref = UiLanguage | "system";
+
 export const UI_LANGUAGES: readonly UiLanguage[] = ["en", "zh"];
 
 /** What the switch shows for each language, each in its own language. */
-export const LANGUAGE_NAMES: Record<UiLanguage, string> = { en: "EN", zh: "中文" };
+export const LANGUAGE_NAMES: Record<UiLanguage, string> = { en: "English", zh: "中文" };
 
 /** The `lang` attribute a page takes in each language. */
 export const LANGUAGE_TAGS: Record<UiLanguage, string> = { en: "en", zh: "zh-CN" };
+
+/**
+ * Chrome's UI language, the one it picks the manifest's `_locales` by, so the pages read in the
+ * same language as the extension's name and description.
+ */
+export function deviceLanguage(): UiLanguage {
+  const tag = chrome.i18n?.getUILanguage?.() ?? navigator.language;
+  return tag.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+export function resolveLanguage(pref: LanguagePref): UiLanguage {
+  return pref === "system" ? deviceLanguage() : pref;
+}
 
 const en = {
   appName: "PenguinHarness Browser",
@@ -22,6 +38,13 @@ const en = {
   titlePaused: "PenguinHarness Browser — paused",
   groupTitle: "Penguin",
   languageLabel: "Language",
+  languageSystem: "System",
+  themeLabel: "Theme",
+  themeLight: "Light",
+  themeDark: "Dark",
+  themeSystem: "System",
+  /** A switch's tooltip: what it sets, and to what. */
+  choice: (setting: string, value: string) => `${setting}: ${value}`,
 
   pairHeading: "PenguinHarness Browser",
   pairIntro:
@@ -96,6 +119,12 @@ const zh: Strings = {
   titlePaused: "PenguinHarness Browser — 已暂停",
   groupTitle: "Penguin",
   languageLabel: "界面语言",
+  languageSystem: "跟随系统",
+  themeLabel: "主题",
+  themeLight: "浅色",
+  themeDark: "深色",
+  themeSystem: "跟随系统",
+  choice: (setting, value) => `${setting}：${value}`,
 
   pairHeading: "PenguinHarness Browser",
   pairIntro:

@@ -3,6 +3,7 @@
  * site storage, history — in the app's compact confirmation card. Every kind starts checked
  * on each opening; the confirm stays disabled while none is.
  */
+import { browserState } from "./browser-store";
 import { useEffect, useState } from "react";
 import { Checkbox, ConfirmModal, toastError, toastSuccess } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -44,12 +45,17 @@ export function ClearDataDialog({ open, onClose }: { open: boolean; onClose: () 
     });
 
   const run = async () => {
+    const { scope, projectId } = browserState();
     const storages = KINDS.filter(
       (kind): kind is BuiltinBrowserStorage => kind !== "history" && chosen.has(kind),
     );
     setBusy(true);
     try {
-      if (storages.length > 0) await api.clearBuiltinBrowserData(storages);
+      if (storages.length > 0)
+        await api.clearBuiltinBrowserData(storages, {
+          sessionId: scope,
+          ...(projectId === null ? {} : { projectId }),
+        });
       if (chosen.has("history")) await api.clearBuiltinBrowserHistory();
       toastSuccess(S.builtinBrowser.clearDone);
       onClose();

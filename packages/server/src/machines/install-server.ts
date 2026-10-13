@@ -211,12 +211,17 @@ export interface RunningBuild {
   /** The pushed platform it names (its sha, shortened), or null when nothing is pushed there. */
   platform: string | null;
   /**
-   * The code answering is a release while a pushed build is committed on that machine's disk:
-   * the process is not running that build. A server started from the release's own entry on a
-   * root this server pushed to is this case — a release runtime cannot boot a newer pushed
-   * platform and falls back to the one it carries, while the report's `harness`, which is read
-   * from disk, still names the pushed build. A pushed build is never release-stamped (deploy.mjs
-   * and a checkout's image are source builds), so a release answering beside one is not it.
+   * The code answering is a release while a pushed build of something else is committed on
+   * that machine's disk: the process is not running that build. A server started from the
+   * release's own entry on a root this server pushed to is this case — a release runtime
+   * cannot boot a newer pushed platform and falls back to the one it carries, while the
+   * report's `harness`, which is read from disk, still names the pushed build.
+   *
+   * A source build (a deploy.mjs push, a checkout's image) is never release-stamped, so a
+   * release answering beside one is not it. The image a release build ships IS
+   * release-stamped, and records that release as its revision (deploy.mjs's pushSource): a
+   * release answering beside its own release's image runs that very release's code, whichever
+   * of the two copies it loaded, and is not foreign.
    */
   foreign: boolean;
 }
@@ -227,24 +232,28 @@ export interface RunningBuild {
  */
 export function runningBuild(report: unknown): RunningBuild | null {
   if (report === null || typeof report !== "object") return null;
-  const { version, channel, harness } = report as {
+  const { version, channel, describe, harness } = report as {
     version?: unknown;
     channel?: unknown;
+    describe?: unknown;
     harness?: unknown;
   };
   if (typeof version !== "string" || version === "") return null;
   if (harness === null || harness === undefined || typeof harness !== "object") {
     return { release: version, version, platform: null, foreign: false };
   }
-  const bundles = (harness as { bundles?: { platform?: unknown; cli?: unknown; web?: unknown } })
-    .bundles;
+  const { bundles, source } = harness as {
+    bundles?: { platform?: unknown; cli?: unknown; web?: unknown };
+    source?: { revision?: unknown } | null;
+  };
   const text = (value: unknown) => (typeof value === "string" ? value : undefined);
   const bundle = text(bundles?.platform);
+  const ownImage = text(describe) !== undefined && text(source?.revision) === describe;
   return {
     release: version,
     version: version + suffixOfHarness(bundle, text(bundles?.cli), text(bundles?.web)),
     platform: platformSha(bundle) ?? "",
-    foreign: channel === "release",
+    foreign: channel === "release" && !ownImage,
   };
 }
 
@@ -300,21 +309,41 @@ export function sameBuild(a: string | null, b: string | null): boolean {
 }
 
 /**
- * Resolves what this server would install elsewhere.
+ * What this server installs elsewhere when it has been hot-pushed: the release it stands on,
+ * with the pushed state of its data root over it. Null when nothing was pushed here, and for
+ * a server that stands on no installed release (installedRelease).
  *
- * The base release is read from the running install's own tree — the tarball layout
- * (`<root>/lib/dist/penguin.js` under a `lib/`) or the desktop app's staged payload — the
- * same way `penguin --version` would answer. A development checkout has neither, and
- * answers null here: it stands on no installed release, and builds its image on demand
- * instead (checkout-image.ts).
+ * A server nothing was pushed to installs the image its release shipped instead
+ * (shipped-image.ts), and a source checkout builds one (checkout-image.ts): never the bare
+ * release, because every command this side runs on a machine goes through the CLI in that
+ * machine's store (commands.ts's remotePenguin), and a bare release leaves the store empty.
  */
 export function resolvePushPlan(
   dataRoot: string | null,
   argv1: string | undefined = process.argv[1],
 ): PushPlan | null {
-  const baseVersion = baseReleaseVersion(argv1);
-  if (baseVersion === null) return null;
-  return planOver(baseVersion, dataRoot === null ? null : path.join(dataRoot, "hmr"));
+  const release = installedRelease(argv1);
+  if (release === null || dataRoot === null) return null;
+  const plan = planOver(release.version, path.join(dataRoot, "hmr"));
+  return plan.harness === null ? null : plan;
+}
+
+/** The install image a release build ships, in its program's `dist/` beside the entry. */
+export const SHIPPED_IMAGE = "install-image.gz";
+
+/**
+ * The install image the running release shipped — the body the hot push's packer writes
+ * (`scripts/deploy.mjs --out`), built from the release's own sources — and the release it
+ * stands on. Null for a server that stands on no installed release, and for a release
+ * packaged without one.
+ */
+export function shippedImage(
+  argv1: string | undefined = process.argv[1],
+): { baseVersion: string; body: string } | null {
+  const release = installedRelease(argv1);
+  if (release === null) return null;
+  const body = path.join(release.dir, "dist", SHIPPED_IMAGE);
+  return fs.existsSync(body) ? { baseVersion: release.version, body } : null;
 }
 
 /**
@@ -341,27 +370,38 @@ export function planOver(baseVersion: string, hmrDir: string | null): PushPlan {
 }
 
 /**
- * The base release version around the process entry, or null when this process stands on no
- * published release. Read from disk rather than from the running artifact's own build info,
- * because a hot-pushed server must still report the BASE it was installed from.
+ * The installed release around the process entry — its version, and the program directory
+ * that holds the entry's `dist/` — or null when this process stands on no published release.
+ * Read from disk rather than from the running artifact's own build info, because a
+ * hot-pushed server must still report the BASE it was installed from.
  */
-function baseReleaseVersion(argv1: string | undefined): string | null {
+export function installedRelease(
+  argv1: string | undefined = process.argv[1],
+): { version: string; dir: string } | null {
   if (!argv1 || path.basename(path.dirname(argv1)) !== "dist") return null;
   const parent = path.dirname(path.dirname(argv1));
+  const release = (version: string | null) => (version === null ? null : { version, dir: parent });
 
   // Tarball install: <root>/lib/dist/<entry>.js. lib/package.json is the CLI package's own
   // manifest, and keeps naming the base release while this process runs a pushed bundle.
   if (path.basename(parent) === "lib") {
-    return versionOfManifest(path.join(parent, "package.json"));
+    return release(versionOfManifest(path.join(parent, "package.json")));
   }
 
   // Packaged desktop app: <resources>/app/dist/server.js — the app forks the server as one
   // bundled file (packages/desktop/tsup.config.ts), and asar is off, so these are real files.
+  // <resources> is `resources/` beside the executable on Windows and Linux and
+  // `Contents/Resources/` inside a macOS bundle, so its name is compared without case: an
+  // exact match read every Mac's app as standing on no release, and refused every install.
   // The app's own manifest names the release it was published under, app and tarballs
   // shipping from one tag. A source run sits at packages/desktop rather than under
-  // resources/, and is deliberately unmatched: it stands on no release a remote could fetch.
-  if (path.basename(parent) === "app" && path.basename(path.dirname(parent)) === "resources") {
-    return versionOfManifest(path.join(parent, "package.json"));
+  // resources/, and is deliberately unmatched: it stands on no release a remote could fetch,
+  // and builds its image from the checkout instead (checkout-image.ts).
+  if (
+    path.basename(parent) === "app" &&
+    path.basename(path.dirname(parent)).toLowerCase() === "resources"
+  ) {
+    return release(versionOfManifest(path.join(parent, "package.json")));
   }
   return null;
 }
@@ -481,13 +521,19 @@ export async function installOnRemote(opts: {
   if (baseCurrent && sameBuild(identity.harness, plan.harness)) {
     return { kind: "already-installed", version: plan.version, identity };
   }
-  if (baseCurrent) {
+  if (baseCurrent && identity.harness !== null) {
     // Same release, different pushed state: a hot update, not an install. Handing it over
     // as files and restarting the process would swap the code under a server that may not
     // be able to claim it — a runtime older than the pushed platform warns, falls back to
     // its packaged default, and carries on serving, so the restart looks like a success
     // from here and the machine is recorded at a version it is not running. The update
     // channel asks the machine itself and comes back with its answer, refusals included.
+    //
+    // Not for a machine whose store is EMPTY. Nothing this side runs there can answer — every
+    // command goes through the CLI in that store (commands.ts's remotePenguin), so no update
+    // channel was ever started — and a release server installed without its harness ended
+    // exactly so. The store is replicated below instead, with no installer, and the install
+    // restarts the server onto it.
     return { kind: "state-only", identity };
   }
 

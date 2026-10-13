@@ -51,7 +51,11 @@ import { useAuth } from "../state/auth";
 const JOB_POLL_MS = 1_000;
 /** How often the page asks whether the restarted server is back. */
 const RESTART_POLL_MS = 1_000;
-/** A restart that has not come back by then is reported; the page stops waiting. */
+/**
+ * A restart that has not come back by then is reported; the page stops waiting. In the shell's
+ * window the same deadline catches the restart that never starts: the window is meant to go away
+ * with the app, so a page still here this long after asking means the shell did not quit.
+ */
 const RESTART_TIMEOUT_MS = 90_000;
 
 interface FlowState extends FlowLocal {
@@ -360,4 +364,18 @@ export function useUpdateFlowOwner(): void {
     }, RESTART_POLL_MS);
     return () => clearInterval(timer);
   }, [restarting]);
+
+  // The restart (client mode): the shell quits into the new build and this window goes with
+  // it, so nothing here ever sees the restart finish — only the one that never happens. Left
+  // alone, that one spins for as long as the window stays open; after the deadline the flow
+  // goes back to the restart step, which says so and can ask again.
+  const clientRestarting = mode === "client" && state.restart === "requested";
+  useEffect(() => {
+    if (!clientRestarting) return;
+    const timer = setTimeout(() => {
+      store.setState({ restart: "manual" });
+      toastError(S.update.restartTimedOutClient);
+    }, RESTART_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [clientRestarting]);
 }

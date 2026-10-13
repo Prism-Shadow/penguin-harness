@@ -19,6 +19,9 @@
  * - Save writes at once, with no question first, sends only what changed, and leaves the tab
  *   clean on the stored answer.
  * - A refused save keeps the edit, still unsaved.
+ * - An unset Agent thinking level shows the Project default without making the form dirty;
+ *   choosing a localized tier waits for Save and sends its wire value.
+ * - A persisted legacy off tier stays reachable before Save, and Reset restores it.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createElement as h } from "react";
@@ -83,12 +86,15 @@ describe("the Runtime form's rules", () => {
   });
 });
 
-async function openRuntime() {
-  const server = agentServer();
+async function openRuntime(config = agentConfig(), projectThinking?: "low" | "high") {
+  const server = agentServer(config, {
+    chatDefaults: projectThinking === undefined ? {} : { thinkingLevel: projectThinking },
+  });
   const router = await mountAgentApp(h(AgentSettingsPage), {
     at: `/agents/${AGENT_ID}?tab=runtime`,
   });
   await waitFor(() => document.querySelector("input[inputmode=numeric]") !== null);
+  await waitFor(() => button(en.chat.thinkingLevel).textContent !== "…");
   return { server, router };
 }
 
@@ -131,6 +137,38 @@ describe("the Runtime tab", () => {
     await waitFor(() => save().disabled);
     expect(maxTurns().value).toBe("80");
     expect(hasUnsaved()).toBe(false);
+  });
+
+  it("shows the Project tier and saves a localized choice only on Save", async () => {
+    const { server } = await openRuntime(agentConfig(), "low");
+    expect(button(en.chat.thinkingLevel).textContent).toContain("low");
+    expect(save().disabled).toBe(true);
+    expect(server.writes()).toEqual([]);
+    await click(button(en.chat.thinkingLevel));
+    await click(button("high"));
+    expect(server.writes()).toEqual([]);
+    await click(save());
+    expect(server.writes("/config").at(-1)?.body).toEqual({
+      config: { model: { thinkingLevel: "high" } },
+    });
+    expect(hasUnsaved()).toBe(false);
+  });
+
+  it("keeps the stored off tier reachable while a settings pick is unsaved", async () => {
+    const config = agentConfig();
+    config.config.model = { ...config.config.model, thinkingLevel: "none" };
+    const { server } = await openRuntime(config, "high");
+    expect(button(en.chat.thinkingLevel).textContent).toContain("none");
+    await click(button(en.chat.thinkingLevel));
+    await click(button("low"));
+    await click(button(en.chat.thinkingLevel));
+    await click(button("none"));
+    expect(hasUnsaved()).toBe(false);
+    await click(button(en.chat.thinkingLevel));
+    await click(button("medium"));
+    await click(reset());
+    expect(button(en.chat.thinkingLevel).textContent).toContain("none");
+    expect(server.writes()).toEqual([]);
   });
 
   it("keeps a refused edit, still unsaved", async () => {

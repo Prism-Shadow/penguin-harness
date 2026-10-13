@@ -6,12 +6,11 @@
  * 2. The body is read and validated: `input` (a string, or text / image_url items) becomes the
  *    run's input messages — texts first, then images, as the composer submits them.
  * 3. The Session: without `session_id` a new one is created — source `api`, client `api`, the
- *    Agent's API approval mode copied onto its row, the model and sandbox the server's new-chat
- *    defaults; with one, it must be an API Session of this Agent. An Agent already running
- *    AMSP_MAX_CONCURRENT_RUNS Sessions is refused 429 before a run would add one more.
+ *    Agent's API model, thinking, workspace and approval defaults, and the server's sandbox; with one, it must be an API Session of this Agent. An Agent already running
+ *    its configured concurrency limit of Sessions is refused 429 before a run would add one more.
  * 4. The handler subscribes to the Session's channel BEFORE the Task starts, so nothing of the
- *    run can be published unseen; a busy Session is refused (409) by `startTask` itself, with
- *    nothing streamed.
+ *    run can be published unseen; a busy Session is refused (409) before admission, with
+ *    `startTask` checking again before starting and nothing streamed on refusal.
  * 5. The stream: `run.started`, then every channel event through the translator, a
  *    `: keep-alive` comment after KEEPALIVE_MS of silence, and `run.done` — always the last
  *    event, a server failure included — followed by `data: [DONE]`.
@@ -25,10 +24,11 @@ import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { AmspEvent, RunStarted } from "@prismshadow/amsp";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import type { ApprovalMode } from "../api/types.js";
 import type { Channels, Log } from "../hmr/capabilities.js";
+import { assertWorkspaceAllowed } from "../services/workspace-guard.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest, readJson } from "../http/validate.js";
+import { DEFAULT_API_CONCURRENT_RUNS } from "../mechanisms/agent-api.js";
 import type { AgentApi } from "../mechanisms/agent-api.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
@@ -47,9 +47,6 @@ import { AmspTranslator } from "./translate.js";
 
 /** Silence after which a `: keep-alive` comment is written (MMSP's value). */
 export const KEEPALIVE_MS = 15_000;
-
-/** How many Sessions of one Agent may run at once through any door before the API refuses another. */
-export const AMSP_MAX_CONCURRENT_RUNS = 4;
 
 /** What the run handler reaches: the seams the messaging bridge and the web routes use. */
 export interface RunStreamDeps {
@@ -180,13 +177,70 @@ class Inbox<T> {
   }
 }
 
-const tooManyRuns = (): HttpError =>
+const tooManyRuns = (limit: number): HttpError =>
   new HttpError(
     429,
     "too_many_runs",
-    `This Agent already has ${AMSP_MAX_CONCURRENT_RUNS} conversations running; try again shortly.`,
+    `This Agent already has ${limit} conversations running or starting; try again shortly.`,
     2,
   );
+
+/**
+ * Admission includes starts awaiting workspace checks, Session creation or loading. The public
+ * and Try-it routes share their manager, so simultaneous requests cannot spend the same slot.
+ * Once a reserved Session is running, the manager counts it and the reservation adds nothing.
+ */
+interface PendingStart {
+  sessionId: string | undefined;
+}
+const pendingStarts = new WeakMap<RunStreamDeps["manager"], Map<string, Set<PendingStart>>>();
+
+function reserveStart(
+  deps: RunStreamDeps,
+  projectId: string,
+  agentId: string,
+  sessionId: string | undefined,
+  limit: number,
+) {
+  // Decide before awaiting startTask: a busy Session must not become idle during that await
+  // and start a new Task without ever acquiring capacity.
+  if (sessionId !== undefined) {
+    const status = deps.manager.statusOf(sessionId);
+    if (status === "running")
+      throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
+    if (status === "compacting")
+      throw new HttpError(
+        409,
+        "compacting",
+        "This Session is compacting its context; not accepting new input.",
+      );
+  }
+  const agent = `${projectId}/${agentId}`;
+  let agents = pendingStarts.get(deps.manager);
+  if (!agents) {
+    agents = new Map();
+    pendingStarts.set(deps.manager, agents);
+  }
+  const pending = agents.get(agent) ?? new Set<PendingStart>();
+  if (sessionId !== undefined && [...pending].some((p) => p.sessionId === sessionId)) {
+    throw new HttpError(409, "task_in_progress", "This Session already has a Task in progress.");
+  }
+  const starting = [...pending].filter(
+    (p) => p.sessionId === undefined || deps.manager.statusOf(p.sessionId) === "idle",
+  ).length;
+  if (deps.manager.activeCountForAgent(projectId, agentId) + starting >= limit)
+    throw tooManyRuns(limit);
+  const reservation: PendingStart = { sessionId };
+  pending.add(reservation);
+  agents.set(agent, pending);
+  return {
+    reservation,
+    release() {
+      pending.delete(reservation);
+      if (pending.size === 0) agents.delete(agent);
+    },
+  };
+}
 
 const KEEPALIVE = Symbol("keep-alive");
 
@@ -205,10 +259,9 @@ export async function runStream(c: Context<AmspEnv>, deps: RunStreamDeps): Promi
     body.input,
     toAttachmentLimits(deps.settings.getAttachmentLimitsMb()).totalBytes,
   );
-  const full = () =>
-    deps.manager.activeCountForAgent(projectId, agentId) >= AMSP_MAX_CONCURRENT_RUNS;
-
-  let sessionId: string;
+  const settings = deps.agentApi.get(projectId, agentId);
+  const limit = settings?.maxConcurrentRuns ?? DEFAULT_API_CONCURRENT_RUNS;
+  let sessionId: string | undefined;
   if (sessionField !== undefined) {
     const row = deps.sessions.findById(sessionField);
     if (
@@ -220,33 +273,39 @@ export async function runStream(c: Context<AmspEnv>, deps: RunStreamDeps): Promi
       throw sessionNotFound();
     }
     sessionId = row.sessionId;
-    // A Session that is itself running is refused 409 by startTask below; an idle one would add a
-    // run to the Agent.
-    if (deps.manager.statusOf(sessionId) === "idle" && full()) throw tooManyRuns();
-  } else {
-    if (full()) throw tooManyRuns();
-    const approvalMode: ApprovalMode =
-      deps.agentApi.get(projectId, agentId)?.approvalMode ?? "allow-all";
-    const created = await deps.sessionService.createSession({
-      projectId,
-      agentId,
-      source: "api",
-      client: "api",
-      approvalMode,
-    });
-    sessionId = created.sessionId;
   }
-  if (keyId !== null) deps.agentApi.touchKey(keyId, deps.now().toISOString());
-
+  const slot = reserveStart(deps, projectId, agentId, sessionId, limit);
   const inbox = new Inbox<ChannelEvent | typeof KEEPALIVE>();
   const translator = new AmspTranslator(input, { now: deps.now });
-  let unsubscribe = deps.channels.get(sessionId).subscribe((evt) => inbox.push(evt));
+  let unsubscribe = () => {};
   let actual: string;
   try {
+    if (sessionId === undefined) {
+      const workspace =
+        settings?.workspace == null
+          ? undefined
+          : await assertWorkspaceAllowed({ workspace: settings.workspace });
+      const created = await deps.sessionService.createSession({
+        projectId,
+        agentId,
+        source: "api",
+        client: "api",
+        approvalMode: settings?.approvalMode ?? "allow-all",
+        ...(settings?.model ?? {}),
+        ...(settings?.thinkingLevel != null ? { thinkingLevel: settings.thinkingLevel } : {}),
+        ...(workspace !== undefined ? { workspace } : {}),
+      });
+      sessionId = created.sessionId;
+      slot.reservation.sessionId = sessionId;
+    }
+    if (keyId !== null) deps.agentApi.touchKey(keyId, deps.now().toISOString());
+    unsubscribe = deps.channels.get(sessionId).subscribe((evt) => inbox.push(evt));
     ({ sessionId: actual } = await deps.manager.startTask(sessionId, input));
   } catch (err) {
     unsubscribe();
     throw err;
+  } finally {
+    slot.release();
   }
   // A Session whose Trace was gone heals into a new id at load: its channel is a fresh one that
   // received the input before this handler could subscribe. Follow it, unless the run already

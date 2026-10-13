@@ -147,8 +147,9 @@ export interface ModelProviderBalance {
    *   (1 CNY = 1,000,000);
    * - `deepseek`: `{ is_available, balance_infos: [{ currency, total_balance, … }] }`, one entry
    *   per currency the account holds.
+   * - `penguin-go`: `{ balance: { units, currency } }`, a CNY ledger integer in 10^-12 yuan.
    */
-  format: "tokendance" | "deepseek";
+  format: "tokendance" | "deepseek" | "penguin-go";
 }
 
 export interface ModelProviderInfo {
@@ -253,8 +254,10 @@ export interface ModelCatalogEntry {
    * changes twice a day. `presetModelEntries` writes the peak price and the rate is applied
    * when a price is read.
    * A number on disk that silently meant something different at 09:00 than at 08:00 would be
-   * unreadable, and re-syncing presets would rewrite prices by the clock. Mutually exclusive
-   * with `discount`; an entry declaring both is a catalog error.
+   * unreadable, and re-syncing presets would rewrite prices by the clock. A seller that also
+   * takes something off on top of the schedule, in both tiers, declares it in `discount`: it is
+   * seeded like any promotion, and the two multiply, as a Project's promotion and schedule do
+   * wherever a price is read.
    */
   offPeakDiscount?: OffPeakDiscount;
   /** Whether image input (vision modality) is supported. */
@@ -442,9 +445,13 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // on the group; the protocol is fixed (fixedClientType).
     envKey: "PENGUIN_GO_API_KEY",
     envBaseUrlKey: "PENGUIN_GO_BASE_URL",
-    apiKeyUrl: "https://token.penguin.ooo/",
-    modelsUrl: "https://token.penguin.ooo/",
+    apiKeyUrl: "https://go.penguin.ooo/",
+    modelsUrl: "https://go.penguin.ooo/",
     bridgeAuth: { flow: "penguin-go" },
+    balance: {
+      url: "https://go.penguin.ooo/api/me/by-key",
+      format: "penguin-go",
+    },
   },
   {
     // One key serves the whole group, but its models sit on three protocols (see the group's
@@ -732,10 +739,10 @@ export function offPeakScheduledRefs(): Array<{
 }
 
 /**
- * What the seller actually bills for an entry: its list `pricing` less any running `discount`,
- * on every bucket. Rounded to the six decimals cny() already stores at, so a promotional rate
- * reads as a price rather than as a float artifact. An entry with no discount (or no pricing at
- * all) is returned untouched.
+ * What the seller actually bills for an entry at `now`: its list `pricing` less any running
+ * `discount` and any live off-peak tier, the two multiplied, on every bucket. Rounded to the six
+ * decimals cny() already stores at, so a promotional rate reads as a price rather than as a
+ * float artifact. An entry with nothing off (or no pricing at all) is returned untouched.
  *
  * Nothing writes this rate into a Project: `presetModelEntries` writes the list price (a
  * scheduled row's peak price), a flat promotion is stored beside it as a fraction, and which
@@ -749,15 +756,15 @@ export function effectivePricing(
   const { pricing } = entry;
   if (pricing === undefined) return pricing;
   // A scheduled discount bills the list price during its peak windows and the reduced rate
-  // outside them; a flat one always bills the reduced rate.
-  const rate =
-    entry.offPeakDiscount !== undefined
-      ? offPeakAt(entry.offPeakDiscount, now)
-        ? entry.offPeakDiscount.rate
-        : 0
-      : entry.discount;
-  if (rate === undefined || rate === 0) return pricing;
-  const off = (v: number): number => Math.round(v * (1 - rate) * 1e6) / 1e6;
+  // outside them; a flat one always bills the reduced rate. A row with both takes the flat one
+  // off whichever tier is live.
+  const tier =
+    entry.offPeakDiscount !== undefined && offPeakAt(entry.offPeakDiscount, now)
+      ? entry.offPeakDiscount.rate
+      : 0;
+  const kept = (1 - tier) * (1 - (entry.discount ?? 0));
+  if (kept === 1) return pricing;
+  const off = (v: number): number => Math.round(v * kept * 1e6) / 1e6;
   return {
     unit: pricing.unit,
     cache_read: off(pricing.cache_read),
@@ -1836,23 +1843,26 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // promotion that lapses is then one field to delete, with the rate to return to still on the
   // row. effectivePricing() applies it; a new Project stores the list price and the fraction as
   // a promotion beside it, which the cost center applies, so it charges what the gateway
-  // charges. Eight rows are promoted as of 2026-10-10: ling-3.0-flash at 65% off, the three
-  // Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50%, glm-5.2 at 20%, and
-  // glm-5.3, glm-5.3-flash and qwen3.8-max at 10%. The gateway also sells the DeepSeek V4
-  // preview releases under the bare ids deepseek-v4-flash and deepseek-v4-pro ("… Preview");
-  // they are deliberately not presets (the user's call, 2026-10-10): the dated rows below are
-  // the releases that superseded them.
+  // charges. Eight rows carry a flat promotion as of 2026-10-10: ling-3.0-flash at 65% off, the
+  // three Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50%, glm-5.2 at 20%,
+  // and glm-5.3, glm-5.3-flash and qwen3.8-max at 10%; deepseek-v4.1-flash carries one on top
+  // of its schedule (below). The gateway also sells the DeepSeek V4 preview releases under the
+  // bare ids deepseek-v4-flash and deepseek-v4-pro ("… Preview"); they are deliberately not
+  // presets (the user's call, 2026-10-10): the dated rows below are the releases that
+  // superseded them.
   //
   // Three DeepSeek rows — deepseek-v4.1-flash, deepseek-v4-flash-0731 and deepseek-v4-pro-0813 —
   // are priced by time instead (`pricing.time_pricing`): a peak price on weekdays 09:00-12:00
   // and 14:00-18:00 Beijing time, DeepSeek's own windows, and half the peak list price at every
   // other hour. They store the peak list price and declare DEEPSEEK_OFF_PEAK, as the direct
   // DeepSeek rows do; so does the retired deepseek-v4-flash-vision-exp row, which is no longer a
-  // preset. On top of that schedule the gateway takes 20% off: in both tiers on
-  // deepseek-v4.1-flash, and in the peak tier alone on the 0731 and 0813 rows. A row cannot
-  // declare a flat discount beside a schedule, so that 20% is not recorded, and the cost center
-  // prices those hours 25% above what the gateway bills. The rest of the group carries neither,
-  // so list price and billed rate coincide.
+  // preset. On top of that schedule the gateway takes 20% off. On deepseek-v4.1-flash it does
+  // so in both tiers, and the row declares it in `discount` beside its schedule (re-read
+  // 2026-10-13). On the 0731 and 0813 rows it does so in the peak tier alone and bills
+  // off-peak at exactly half the list; a declared discount would come off the off-peak tier
+  // too, so theirs is not recorded, and the cost center prices their peak hours 25% above what
+  // the gateway bills. The rest of the group carries neither, so list price and billed rate
+  // coincide.
   //
   // A running promotion usually also shows in a model's `description`, which opens with a
   // bracketed 限时 ("limited-time") tag. The tag is neither exhaustive nor authoritative on the
@@ -1912,8 +1922,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // directly as `deepseek-flash`. 1M context and native multimodality. Its list follows the
     // vendor's own schedule: the peak tier CNY 0.04 / 2 / 8, the direct row's figures, and half
     // that outside Beijing weekday 09:00-12:00 and 14:00-18:00. The row stores the peak tier
-    // and declares DEEPSEEK_OFF_PEAK. The gateway also takes 20% off both tiers, billing
-    // 0.032 / 1.6 / 6.4 at peak, which the row cannot declare beside its schedule (see the
+    // and declares DEEPSEEK_OFF_PEAK. The gateway also takes 20% off both tiers, declared in
+    // `discount`: it bills 0.032 / 1.6 / 6.4 at peak and 0.016 / 0.8 / 3.2 off-peak (see the
     // block comment). Unlike the direct row this one needs no DeepSeek-specific pin — it is
     // reached through this group's generic openai-chat client, which forwards image_url parts.
     modelId: "deepseek-v4.1-flash",
@@ -1921,6 +1931,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(0.04, 2, 8),
+    discount: 0.2,
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
     clientType: "openai-chat",
@@ -2056,11 +2067,11 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
-    // Text only, 1,000,000 window, at the same CNY 0.4 input / 1.2 output / 0.08 cache hit list
-    // as Ling-3.0-flash. Listed 2026-09-30 with a two-week free trial served at 256K, so the
-    // portal bills it at 0 until about 2026-10-14. A free period is no `discount`, which is a
-    // fraction below 1, and the trial ends before a release carries this row, so the row
-    // records the list price and the full window the model is sold at afterwards.
+    // Text only, 1,000,000 window, at a CNY 0.4 input / 1.2 output / 0.08 cache hit list (the
+    // portal's `reference`, re-read 2026-10-14). Listed 2026-09-30 with a free trial served at
+    // 256K, which the portal bills at 0 until 2026-10-14 10:00. A free period is no `discount`,
+    // which is a fraction below 1. The row records the list price and the full window the
+    // model is sold at after the trial.
     modelId: "ling-3.1-flash",
     displayName: "Ling-3.1-flash",
     provider: "tokendance",

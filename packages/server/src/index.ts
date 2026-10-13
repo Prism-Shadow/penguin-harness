@@ -137,9 +137,9 @@ class PenguinServer {
   }
 
   /**
-   * Outbound proxy support, installed at the earliest point: replaces globalThis.fetch
-   * with undici's and sets the global dispatcher, starting from the defaults (app switch
-   * on, no explicit address). The persisted values can only be read once the database is
+   * Outbound proxy support, installed at the earliest point: sets the global dispatcher
+   * the runtime's fetch resolves per call, starting from the defaults (app switch on, no
+   * explicit address). The persisted values can only be read once the database is
    * open, so they arrive later through applyPersistedProxy() — nothing in between makes an
    * outbound request. See net/proxy.ts.
    */

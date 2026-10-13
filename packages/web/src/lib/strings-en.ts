@@ -565,7 +565,7 @@ export const en: Strings = {
     pairConnected: "Connected",
     importTitle: "Import from browser",
     importIntro:
-      "Copies sign-ins and history from a browser on this computer into the built-in browser. The browser you import from is left unchanged.",
+      "Copies sign-ins into this Project’s browser storage and history into the built-in browser. Other Projects’ sign-ins and the source browser stay unchanged.",
     importLoading: "Looking for browsers…",
     importNone: "No browser to import from was found on this computer.",
     importSourcesFailed: (reason: string): string => `Could not list the browsers: ${reason}`,
@@ -594,7 +594,8 @@ export const en: Strings = {
       `History: ${h.imported} of ${h.found} entries imported`,
     importFailed: (reason: string): string => `Import failed: ${reason}`,
     clearTitle: "Clear browsing data",
-    clearBody: "Choose what to remove from the built-in browser. This cannot be undone.",
+    clearBody:
+      "Cookies, cache and site storage are cleared for this Project; history is cleared across the built-in browser. This cannot be undone.",
     clearCookies: "Cookies and sign-ins",
     clearCache: "Cached images and files",
     clearStorage: "Site storage",
@@ -1114,6 +1115,9 @@ export const en: Strings = {
     /** Nothing supervises the server process (not started through penguin web / penguin server), so the restart is the user's. */
     readyBodyManual:
       "The new version is installed. This service is not supervised by penguin web or penguin server, so it cannot be restarted from here: re-run penguin web (or penguin server) in a terminal.",
+    /** The shell was asked to restart into the downloaded build and this window is still here. */
+    readyBodyManualClient:
+      "PenguinHarness did not restart to finish the update. Try again, or quit PenguinHarness and open it again.",
     restartNow: "Restart and update",
     restarting: "Restarting…",
     restartingBodyRelease: "This page reloads once the service is back.",
@@ -1140,6 +1144,7 @@ export const en: Strings = {
     requestFailed: (detail: string) => `Could not run the update action: ${detail}`,
     restartTimedOut:
       "The service has not come back — check penguin web's output in the terminal, then reload this page",
+    restartTimedOutClient: "PenguinHarness did not restart — open About to try again",
   },
 
   /**
@@ -1611,9 +1616,9 @@ export const en: Strings = {
     stateDir: "State path",
     copyStateDir: "Copy State path",
     agentsMd: "AGENTS.md",
-    systemPrompt: "system_prompt template",
+    systemPrompt: "System prompt",
     placeholdersTitle: "Available placeholders (click to insert)",
-    insertPlaceholder: "Insert at the system_prompt cursor",
+    insertPlaceholder: "Insert at the system prompt cursor",
     /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). Inner tokens ({{VAULT_KEYS}} etc.) live in each feature tab's promptPlaceholders instead. */
     placeholders: [
       ["{{AGENTS_MD}}", "Injects the AGENTS.md content"],
@@ -1647,38 +1652,21 @@ export const en: Strings = {
       ["{{MODEL_ID}}", "Upstream model id"],
       ["{{SESSION_ID}}", "Current Session id"],
     ] as ReadonlyArray<readonly [string, string]>,
-    maxTurns: "max_turns (max turns per Task, -1 = unlimited)",
-    maxTokens: "model.max_tokens",
-    thinkingLevel: "model.thinking_level",
-    thinkingLevelOptions: [
-      ["", "Send no override — keep whatever is currently configured."],
-      ["low", "Enables a lower tier of extended reasoning."],
-      [
-        "medium",
-        "Enables a medium tier of extended reasoning (the default tier for a newly created agent).",
-      ],
-      ["high", "Enables a higher tier of extended reasoning; slower responses."],
-      [
-        "xhigh",
-        "Enables an extended tier of reasoning beyond high; identical to high on some models.",
-      ],
-      [
-        "max",
-        "Enables the deepest tier of extended reasoning; slowest and identical to xhigh on some models.",
-      ],
-    ] as ReadonlyArray<readonly [string, string]>,
-    thinkingLevelNoneKept:
-      "Stored legacy tier: new selections no longer offer the off tier (many models cannot disable thinking).",
-    timeoutMs: "model.timeoutMs",
+    maxTurns: "Maximum turns per task",
+    maxTurnsHint: "-1 means unlimited",
+    maxTokens: "Maximum output tokens",
+    timeoutMs: "Model response timeout (ms)",
     timeoutMsHint: "Idle budget between upstream events, ms — not a cap on the whole request",
     compaction: "Context compaction",
-    maxContextLength: "max_context_length",
+    maxContextLength: "Context token threshold",
     maxContextLengthHint: "Context threshold that triggers compaction",
-    maxSessionTurns: "max_session_turns",
+    maxSessionTurns: "Session turn threshold",
     maxSessionTurnsHint: "Turn threshold that triggers compaction",
-    compactionMode: "mode (compaction strategy)",
+    compactionMode: "Compaction method",
+    compactionModeNames: { summarize: "Summarize", discard: "Discard context" } as Readonly<
+      Record<string, string>
+    >,
     compactionModeOptions: [
-      ["", "Send no override — keep whatever is currently configured."],
       [
         "summarize",
         "Summarizes the old context with the model, then continues from that summary in a fresh window (default).",
@@ -1688,22 +1676,26 @@ export const en: Strings = {
         "Drops the old context without summarizing; the next turn starts fresh in a new window.",
       ],
     ] as ReadonlyArray<readonly [string, string]>,
-    compactionPrompt: "prompt (summarization prompt)",
+    compactionPrompt: "Summary prompt",
     numberInvalid: "Must be a positive integer or -1",
     numberCannotClear: "A saved value can't be cleared: enter a number, or use Reset to restore it",
     toolFieldInvalid: (name: string, field: string) =>
       `${name}: ${field} must be a positive integer or -1`,
-    toolPermission: "permission",
+    deleteTool: "Delete tool",
+    deleteToolNamed: (name: string): string => `Delete tool ${name}`,
+    deleteToolBody: (name: string): string =>
+      `After deleting ${name}, this Agent can no longer use it. New conversations apply the change immediately; existing conversations apply it when their context is next rebuilt. Other unsaved settings are not submitted.`,
+    toolPermission: "Access permissions",
     permissionReadLabel: "Read-only",
     permissionReadDescription: "Only reads. Auto-approved when the approval mode is read-only.",
-    permissionReadWriteLabel: "Read & write",
+    permissionReadWriteLabel: "Read and write",
     permissionReadWriteDescription:
       "Can modify things. Needs manual confirmation when the approval mode is read-only.",
-    toolTimeout: "timeoutMs",
-    toolMaxOutput: "maxOutputLength",
-    toolCallDescription: "call_description",
+    toolTimeout: "Execution timeout (ms)",
+    toolMaxOutput: "Maximum output characters",
+    toolCallDescription: "Call description",
     callDescriptionHint:
-      "call_description: when on (the default), the tool's schema keeps the optional description argument — a model-written sentence about each call, shown to the user while it runs; when off, the argument is filtered out of the schema at assembly. Only tools whose parameters declare a description property can be toggled.",
+      "When enabled, the model writes a short description for each tool call, shown while it runs. Turning this off stops requesting that description. Available only for tools that accept a description.",
     mcpServers: "MCP Servers",
     mcpDesc:
       "Connect external MCP Servers: their tools join this agent's toolset as mcp__<name>__<tool>. Changes in this block save immediately.",
@@ -1711,28 +1703,28 @@ export const en: Strings = {
     mcpAdd: "Add MCP Server",
     mcpEditTitle: "Edit MCP Server",
     mcpRemove: "Remove",
-    mcpName: "name",
+    mcpName: "Name",
     mcpNameHint: "Tool-name prefix: mcp__<name>__<tool>; letters, digits, _ and - only",
-    mcpTransport: "transport",
+    mcpTransport: "Connection type",
     mcpTransportStdio: "Local process: spawns command and talks over stdin/stdout",
     mcpTransportHttp: "Streamable HTTP: the current spec's remote transport",
     mcpTransportSse: "Legacy HTTP+SSE: kept for servers that have not migrated",
-    mcpTarget: "command / url",
-    mcpCommand: "command",
-    mcpArgs: "args",
+    mcpTarget: "Command / URL",
+    mcpCommand: "Command",
+    mcpArgs: "Arguments",
     mcpArgsHint: "One argument per line",
-    mcpEnv: "env",
+    mcpEnv: "Environment variables",
     mcpEnvHint:
       "One KEY=value per line; a ${KEY} in a value is read from the agent's vault when the server connects, and nothing else from the vault reaches the process",
-    mcpCwd: "cwd",
+    mcpCwd: "Working directory",
     mcpCwdHint: "Leave empty to use the Session's Workspace",
-    mcpUrl: "url",
-    mcpHeaders: "headers",
+    mcpUrl: "Server URL",
+    mcpHeaders: "Request headers",
     mcpHeadersHint:
       "One Header-Name: value per line (auth headers such as Authorization); a ${KEY} in a value is read from the agent's vault when the server connects",
-    mcpPermission: "permission",
-    mcpPermissionAuto: "auto",
-    mcpPermissionAutoLabel: "Auto (readOnlyHint)",
+    mcpPermission: "Access permissions",
+    mcpPermissionAuto: "Automatic",
+    mcpPermissionAutoLabel: "Automatic",
     mcpPermissionAutoDescription:
       "Each tool gets the level its own readOnlyHint annotation implies: read-only when it declares one, read & write otherwise.",
     mcpPermissionReadDescription:
@@ -1741,7 +1733,7 @@ export const en: Strings = {
       "Treat every tool of this server as read & write, whatever it declares. Needs manual confirmation when the approval mode is read-only.",
     mcpPermissionHint:
       "Only the read-only approval mode reads this level; allow-all, deny-all and always-ask ignore it. It never restricts what the server itself can do — marking a server read-only that is not one only drops the confirmation read-only mode would have asked for.",
-    mcpConnectTimeout: "connectTimeoutMs",
+    mcpConnectTimeout: "Connection timeout (ms)",
     mcpBudgetsHint:
       "Leave empty for defaults: connectTimeoutMs is the connect + tool-discovery budget (default 10000); timeoutMs / maxOutputLength bound every tool of this Server.",
     mcpNameInvalid: "Letters, digits, _ and - only, starting with a letter or digit",
@@ -1833,7 +1825,19 @@ export const en: Strings = {
     apiOwnerOnly: "Only the Project owner can change these settings.",
     apiAdminOff:
       "An admin has turned the Agent API off for this server: every API request is refused, and the settings and keys here are kept.",
-    apiApprovalMode: "Approval mode for API conversations",
+    apiRunLimits: "Run settings",
+    apiConcurrency: "Maximum concurrent runs",
+    apiConcurrencyHint:
+      "The maximum number of running sessions for this Agent. New API runs receive HTTP 429 at the limit. Saving applies immediately without interrupting running sessions.",
+    apiConcurrencyInvalid: "Enter a whole number greater than 0.",
+    apiReadDocs: "Read the documentation",
+    apiCopyAgentPrompt: "Copy prompt for Agent",
+    apiAgentPrompt: (docsUrl: string, baseUrl: string, agentRef: string) =>
+      `Read the PenguinHarness Agent API guide at ${docsUrl}, then help me write code to call this Agent.\n\nBase URL: ${baseUrl}\nAgent ID: ${agentRef}\n\nUse the @prismshadow/amsp SDK: stream() for streamed events and await run() for the complete result. When a key is required, read PENGUIN_AGENT_KEY from the environment; do not hardcode it. Continue existing conversations with sessionId. Follow the guide for approval requests and HTTP 429, respecting Retry-After on 429 responses.`,
+    apiSessionSettings: "New session settings",
+    apiSessionSettingsHint:
+      "Applies to new API sessions. An unset model follows the Project default; an unset thinking level follows the Agent configuration; an unset workspace creates a temporary workspace.",
+    apiApprovalMode: "Approval mode",
     apiApprovalModeHint:
       "Applies to API conversations created from now on; when a mode asks, the request goes to the caller and can also be answered here.",
     apiConnection: "Connection",
@@ -2766,43 +2770,40 @@ export const en: Strings = {
       `${name} leaves the server and the plugin library; the copies of its skills and hooks installed on agents stay.`,
     deletedToast: (name: string) => `Deleted ${name} from the server`,
     /** The import dialog (admin): a tab for each way in — npm, a link, a zip, or an Agent in a chat. */
+    importDestination: "Server plugin library",
     importPlugin: "Import plugin",
     importServerWide: "A plugin is installed on the whole server and shared by every Project.",
     importTabs: {
-      npm: "From npm",
-      link: "From a link",
-      zip: "Upload a zip",
-      agent: "Ask an agent",
+      npm: "npm",
+      link: "Link",
+      zip: "Zip",
+      agent: "Agent",
     },
     /** The npm tab: a package name, which the server installs from the registry itself. */
     importNpmWhy:
       "An npm package name, which may carry a version, range or tag; the server installs it from the npm registry.",
     importNpmLabel: "npm package name",
     importNpmPlaceholder: "@scope/name or name@1.2.0",
-    importNpmInvalid:
-      "Not an npm package name; give a link under From a link, and let an agent install anything else.",
+    importNpmInvalid: "Enter an npm package name. Use Link for URLs or Agent for other sources.",
     /** The link tab: an https link npm fetches, from wherever the server's network reaches. */
     importLinkWhy:
       "An https link to a git repository or a tarball; the server fetches and installs it — from any https address you give, internal ones included.",
     importLinkLabel: "Link",
     importLinkPlaceholder: "https://github.com/… or github:owner/repo",
     importLinkInvalid:
-      "Not an https link; give a package name under From npm, and let an agent install anything else.",
+      "Enter a repository or tarball link. Use npm for package names or Agent for other sources.",
     /** A folder or a file inside a repository on the link tab, and the action that hands it to the agent tab. */
-    importLinkSubpath:
-      "A folder or a file inside a repository, which npm cannot install: let an agent port it.",
+    importLinkSubpath: "Use Agent for a folder or file inside a repository.",
     importLinkAskAgent: "Ask an agent",
     importCost:
-      "When the plugin carries server modules, installing reloads the server's plugins, which stops the agent runs in progress in every Project.",
+      "Plugins with server modules reload server plugins, stopping active agent runs in all Projects.",
     /** On the npm, link and zip tabs: what installing runs, said plainly. */
-    importScriptsRun: "The package's install scripts run on the server as the server's user.",
+    importScriptsRun: "Install scripts run on the server. Use a trusted source.",
     importAgentWhy:
-      "For a page, a repository, a folder in a repository, or a Codex or Claude Code plugin with its skills and MCP servers: the agent reviews it — porting it into a PenguinHarness package first when it is not one — then installs it with penguin plugin install.",
+      "The agent reviews the source, converts it if needed, and installs it with penguin plugin install. Codex and Claude Code plugins are supported.",
     importSourceLabel: "Plugin source",
-    importSourcePlaceholder:
-      "A link such as https://github.com/owner/repo/tree/main/plugins/name, a local path or a description",
+    importSourcePlaceholder: "Link, local path, or description",
     importSourceToken: "<plugin source>",
-    importPromptLabel: "Prompt for the agent",
     /** The prompt's first sentence, by what kind of source was pasted (plugin-import-prompt.ts). */
     importPromptLead: {
       link: (source: string) => `Install the PenguinHarness plugin at ${source} on this server.`,
@@ -2814,8 +2815,30 @@ export const en: Strings = {
     importPromptTail: (projectId: string) =>
       `A PenguinHarness plugin is an npm package: its package.json (name, version, description, and a \`penguin\` block the plugin card reads, where \`penguin.mcp_servers\` declares its MCP servers) beside \`skills/<name>/SKILL.md\` and/or \`hooks/\`. Whatever the source, before installing anything, read its package.json and every script it ships, and say what it does and what it would run; if anything looks unsafe, stop and tell me. If the source already is such a package — on npm, at an https link to a git repository or a tarball, or in a local folder — install it with \`penguin plugin install <npm name, https link or folder> --project-id ${projectId}\`. If it is anything else — a folder or a file inside a GitHub repository, a Codex (\`.codex-plugin\`) or Claude Code (\`.claude-plugin\`) plugin, a skills repository — read the \`plugin-porting\` skill and follow it: fetch the source at a pinned commit, build the package in a scratch folder, review it, then install that folder the same way. The plugin's MCP servers (a \`.mcp.json\` or an \`mcpServers\` map) are part of it: carry them as \`penguin.mcp_servers\`, never with a secret value in the package. Report the installed name and version, the skills and MCP servers it carries, the vault keys I must set for those servers, and what you left out.`,
     importUploadDesc:
-      "A zip of the plugin's package directory: package.json at its root or in its one top-level directory, no node_modules — such as another server's Export. Upload only what you trust.",
+      "package.json at the zip root or in one top-level folder; exclude node_modules.",
     importUploadAction: "Choose a zip file",
+    importExamples: [
+      {
+        key: "browser-automation",
+        label: "Browser automation",
+        description: "Browse pages and fill forms",
+      },
+      {
+        key: "data-analysis",
+        label: "Data analysis",
+        description: "Analyze data and create charts",
+      },
+      {
+        key: "humanizer",
+        label: "Humanizer",
+        description: "Remove AI writing patterns",
+      },
+      {
+        key: "use-bento-slides",
+        label: "Bento Slides",
+        description: "Create presentations",
+      },
+    ],
     importedToast: (name: string, version: string | null) =>
       version === null ? `Installed ${name}` : `Installed ${name} ${version}`,
     importUnchangedToast: (name: string, version: string | null) =>
@@ -3634,10 +3657,10 @@ Scenarios:
     reconnectRetryNow: "Retry now",
     /** "Give up" on the reconnect countdown (the ordinary session abort). */
     reconnectGiveUp: "Give up",
-    /** "Retry" on a failed run's last line (the error banner, or a reconnect line that gave up): sends the failed turn's input again, with no new message. */
-    retryFailedRun: "Retry",
-    /** Toast when Retry finds nothing held: the failed turn's input already went out with a later message. */
-    retryNothing: "Nothing to retry: the failed turn's input has already been sent.",
+    /** "Retry" on the line a run ended on (the error banner, a reconnect line that gave up, or the stop marker): sends the unfinished turn's input again, with no new message. */
+    retryRun: "Retry",
+    /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
+    retryNothing: "Nothing to retry: that turn's input has already been sent.",
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:
@@ -3675,12 +3698,11 @@ Scenarios:
     statTotalTokens: "Total Tokens",
     statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
-    statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}, tools ${toolMs}`,
     statApiTime: "Model API time",
     statToolTime: "Tool wall time",
-    costPartCacheRead: "Cached input",
-    costPartCacheWrite: "Uncached input",
-    costPartOutput: "Output",
+    usagePartCacheRead: "Cached input",
+    usagePartCacheWrite: "Uncached input",
+    usagePartOutput: "Output",
     statInput: "Input tokens",
     statCached: "cached",
     statOutput: "Output tokens",
@@ -3962,12 +3984,10 @@ Scenarios:
     pinnedSession: "Pinned",
     /** The hover ellipsis button that opens the row's full context menu. */
     moreActions: "More actions",
-    /** Sidebar group "reveal/load next page" row (display cap + server paging). */
+    /** The bare "More" of a row that counts nothing (the UI package's MoreRow default, the Trace panel's file pills). */
     loadMore: "More",
-    /** Per-group reveal row: n = conversations THIS group still hides (one click reveals/loads one page more). */
+    /** A list's one reveal row (a sidebar group, time mode's whole list, an archive group): n = conversations that list still hides; a click shows ten more, fetching when the loaded ones run out. */
     expandRestSessions: (n: number) => `Show ${n} more ${n === 1 ? "chat" : "chats"}`,
-    /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
-    loadMoreSessions: "Load more chats",
     sessionSource: {
       user: "User",
       api: "API",
@@ -5009,16 +5029,35 @@ Scenarios:
     },
     // Import and export: the Evaluation Center's import dialog and the Benchmark page's Export.
     importBenchmark: "Import benchmark",
-    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatTitle: "Import with an agent",
     importChatWhy:
-      "The agent follows the benchmark-design Skill's import procedure: it pins the link to a commit, fetches only that folder and reads every file before anything is written — more dependable than a raw upload.",
+      "The agent reads the source and copies its files into this Project. Send the draft in the new chat to start.",
     importSourceLabel: "Benchmark source",
-    importSourceHint:
-      "A folder link in a GitHub repository (such as …/tree/<commit>/packages/<id>), a local path, or a description",
-    importSourcePlaceholder:
-      "https://github.com/Prism-Shadow/penguin-harness-benchmark/tree/main/packages/…",
+    importSourceHint: "Repository folder link, local path, or description",
+    importSourcePlaceholder: "Paste a source or choose an example below",
+    importExamples: [
+      {
+        key: "penguinharness-benchmark-sec-a",
+        label: "Sec A · Data analysis",
+        description: "Data Analysis Bench subset",
+      },
+      {
+        key: "penguinharness-benchmark-sec-b",
+        label: "Sec B · Software engineering",
+        description: "DeepSWE v1.1 subset",
+      },
+      {
+        key: "penguinharness-benchmark-sec-c",
+        label: "Sec C · Automation",
+        description: "AutomationBench subset",
+      },
+      {
+        key: "penguinharness-benchmark-sec-e",
+        label: "Sec E · Terminal tasks",
+        description: "Terminal-Bench 4.0 CPU subset",
+      },
+    ],
     importSourceToken: "<source>",
-    importPromptLabel: "Prompt to send to the agent (preview)",
     importPromptLead: {
       repoFolderUrl: (s: string): string =>
         `Import the Benchmark package at this repository folder into this Project's Evaluation Center: ${s}.`,
@@ -5027,17 +5066,18 @@ Scenarios:
     },
     importPromptTail: (projectId: string): string =>
       [
-        'If the `benchmark-design` Skill is installed, follow its `reference/package.md`, section "Importing a package" — source resolution, the pinned commit, companion train/test packages, the post-import check and the optional smoke probe are all there; without that Skill, the rules below are enough:',
-        "The package is a folder with `benchmark_config.toml` (keys: id, title, description, version `YYYY.MM.DD.N`, status, runs, and an `[origin]` table) and one `CASE-*/` per case, holding `statement/README.md` and `rubric/README.md`.",
-        "Fetch only that folder, at a commit, into a temporary directory: resolve the link's branch or tag to its 40-hex commit (`git ls-remote`), download it (a codeload tarball or a sparse checkout), and read every file before importing anything — refuse if it is not a Benchmark package, if its `status` is not `published`, or if it holds anything but text materials. Do not copy large upstream materials; the statements link them.",
-        `Import it with \`penguin benchmark import <the folder> --project-id ${projectId} --origin-url <the link as given> --origin-ref <the 40-hex commit> --origin-path <the folder inside the repository>\` (without the \`--origin-*\` options for a source that is not a repository folder). The server checks it as it checks an uploaded zip and writes \`benchmarks/<id>/\` itself, with the git origin, the package's \`version\` and a \`scoreboard.yaml\` holding \`evaluations: []\`; never write under \`benchmarks/\` yourself.`,
-        "If the command says the Benchmark already exists, stop and ask me before overwriting — an overwrite (`--overwrite`) replaces the whole directory, its `scoreboard.yaml` and `.jobs/` included, and the server refuses it while an evaluation of that Benchmark is still running. Then report the id, title, version and case count the command printed; the Evaluation Center lists it from then on.",
+        "If the `benchmark-design` Skill is available, read the import instructions in `reference/package.md`. For a repository, use `git ls-remote` to pin the branch or tag to a 40-character commit and fetch the selected package. Extract a local zip into a temporary directory first.",
+        'Check `benchmark_config.toml` (`status = "published"`) and every `CASE-*/statement/README.md` and `CASE-*/rubric/README.md`. Read all files; refuse symlinks, executables and unrelated content.',
+        `Copy the manifest and \`CASE-*/\` folders directly into Project \`${projectId}\`'s \`<app_data_dir>/benchmarks/<id>/\`, preserving the package's id, version and cases. Do not copy its \`scoreboard.yaml\` or \`.jobs/\`. Create \`scoreboard.yaml\` containing \`evaluations: []\`.`,
+        'Update `[origin]`: for a repository, set `kind = "git"` and record `url`, `ref` (the commit), `path` and `imported_at`; for a local source, set `kind = "zip"` and the import time. Ask me before overwriting an existing directory. Never replace a Benchmark while it is being evaluated.',
+        "Verify the copied manifest and case count, then report the id, title, version, case count and path. Importing does not run an evaluation.",
       ].join("\n"),
-    importCopyPrompt: "Copy prompt",
     importOpenChat: "Open a new chat",
-    importUploadTitle: "Upload a Benchmark zip",
+    importUploadTitle: "Upload zip",
     importUploadDesc:
-      "A zip exported from the Evaluation Center, or one with benchmark_config.toml and the CASE-*/ folders at its root or in its only top-level folder. The cases come in, the evaluation records do not: they start empty. Import only sources you trust.",
+      "Include benchmark_config.toml and CASE-*/ at the root or in one top-level folder.",
+    importUploadInfo:
+      "Accepts zips exported from the Evaluation Center. Imports cases with an empty evaluation history.",
     importUploadAction: "Choose zip file",
     importUploading: "Uploading…",
     importDoneToast: "Benchmark imported",

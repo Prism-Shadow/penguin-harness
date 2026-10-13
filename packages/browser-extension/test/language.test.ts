@@ -1,11 +1,15 @@
 /**
  * The language of the extension's pages and of its listing.
  *
- * - Given a Chinese browser and no choice made, the options page and the popup open in English.
- * - Given the options page, when the user picks 中文, the choice is stored and the page turns
- *   Chinese at once, the outcome of a pairing included; a popup opened afterwards opens in Chinese.
- * - Given the popup open, a pick made in another page reaches it at once, and picking EN in the
- *   popup turns it back.
+ * - Given no language picked, the options page and the popup open in Chrome's language: Chinese
+ *   for any zh-* locale, English for any other; the switch reads System.
+ * - Given the options page in an English Chrome, when the user picks 中文, the choice is stored and
+ *   the page turns Chinese at once, the outcome of a pairing included; a popup opened afterwards
+ *   opens in Chinese.
+ * - Given a Chinese Chrome, when the user picks English, the pages stay English from then on: a
+ *   pick wins over Chrome's language.
+ * - Given the popup open, a pick made in another page reaches it at once, and picking System in
+ *   the popup returns it to Chrome's language.
  * - Given the manifest's localized name and description, every message it names exists in every
  *   locale the package ships, the default one included, within the Chrome Web Store's lengths.
  */
@@ -20,10 +24,14 @@ const HAN = /\p{Script=Han}/u;
 
 let fake: FakeChrome;
 
-function pick(page: FakePage, language: "en" | "zh"): void {
-  const button = page.find("language", "language", language);
-  if (button === undefined) throw new Error(`the page shows no ${language} switch`);
-  button.click();
+/** The user picks a language from the page's switch. */
+function pick(page: FakePage, language: "en" | "zh" | "system"): void {
+  if (page.find("language", "language", language) === undefined) {
+    throw new Error(`the page's switch offers no ${language}`);
+  }
+  const select = page.byId("language");
+  select.value = language;
+  select.dispatch("change");
 }
 
 beforeEach(() => {
@@ -36,16 +44,18 @@ afterEach(() => {
 
 describe("the pages' language", () => {
   it.each([
-    ["the options page", "pair"],
-    ["the popup", "popup"],
+    ["the options page", "pair", "zh-CN", "zh-CN"],
+    ["the popup", "popup", "zh-TW", "zh-CN"],
+    ["the options page", "pair", "en-US", "en"],
+    ["the popup", "popup", "fr-FR", "en"],
   ] as const)(
-    "%s opens in English in a Chinese browser when no language was picked",
-    async (_page, name) => {
-      const page = await openPage(name, { browserLanguage: "zh-CN" });
+    "%s opens in Chrome's language when none was picked (Chrome in %s)",
+    async (_page, name, browserLanguage, lang) => {
+      const page = await openPage(name, { browserLanguage });
 
-      expect(page.lang).toBe("en");
-      expect(page.text()).not.toMatch(HAN);
-      expect(page.find("language", "language", "en")?.getAttribute("aria-pressed")).toBe("true");
+      expect(page.lang).toBe(lang);
+      expect(HAN.test(page.text())).toBe(lang === "zh-CN");
+      expect(page.byId("language").value).toBe("system");
     },
   );
 
@@ -57,6 +67,7 @@ describe("the pages' language", () => {
     await settled();
     const englishError = options.byId("pair-message").textContent;
     expect(englishError).not.toBe("");
+    expect(englishError).not.toMatch(HAN);
 
     pick(options, "zh");
     await settled();
@@ -65,29 +76,44 @@ describe("the pages' language", () => {
     expect(options.lang).toBe("zh-CN");
     expect(options.byId("intro").textContent).toMatch(HAN);
     expect(options.byId("pair-message").textContent).toMatch(HAN);
-    expect(options.find("language", "language", "zh")?.getAttribute("aria-pressed")).toBe("true");
+    expect(options.byId("language").value).toBe("zh");
 
     const popup = await openPage("popup");
     expect(popup.lang).toBe("zh-CN");
     expect(popup.byId("count").textContent).toMatch(HAN);
   });
 
-  it("an open popup follows a pick made in another page, and its own EN turns it back", async () => {
-    const popup = await openPage("popup");
-    expect(popup.byId("settings").textContent).not.toMatch(HAN);
+  it("a pick of English in a Chinese Chrome keeps the pages English", async () => {
+    const options = await openPage("pair", { browserLanguage: "zh-CN" });
+    expect(options.lang).toBe("zh-CN");
+
+    pick(options, "en");
+    await settled();
+    expect(fake.local.data.uiLanguage).toBe("en");
+    expect(options.lang).toBe("en");
+    expect(options.text()).not.toMatch(HAN);
+
+    const popup = await openPage("popup", { browserLanguage: "zh-CN" });
+    expect(popup.lang).toBe("en");
+    expect(popup.text()).not.toMatch(HAN);
+  });
+
+  it("an open popup follows a pick made in another page, and its System returns it to Chrome's language", async () => {
+    const popup = await openPage("popup", { browserLanguage: "zh-CN" });
+    expect(popup.byId("settings").textContent).toMatch(HAN);
 
     // What the options page's switch writes.
-    await fake.local.set({ uiLanguage: "zh" });
+    await fake.local.set({ uiLanguage: "en" });
     await settled();
+    expect(popup.lang).toBe("en");
+    expect(popup.text()).not.toMatch(HAN);
+
+    pick(popup, "system");
+    await settled();
+    expect(fake.local.data.uiLanguage).toBe("system");
     expect(popup.lang).toBe("zh-CN");
     expect(popup.byId("settings").textContent).toMatch(HAN);
     expect(popup.byId("count").textContent).toMatch(HAN);
-
-    pick(popup, "en");
-    await settled();
-    expect(fake.local.data.uiLanguage).toBe("en");
-    expect(popup.lang).toBe("en");
-    expect(popup.text()).not.toMatch(HAN);
   });
 });
 
