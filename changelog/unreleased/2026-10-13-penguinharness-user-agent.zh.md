@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** feature
 - **Scope:** `core`, `server`, `cli`
+- **PR:** [#1100](https://github.com/Prism-Shadow/penguin-harness/pull/1100)
 
 [English](2026-10-13-penguinharness-user-agent.md)
 
