@@ -54,7 +54,7 @@ import type { SessionRow } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
-import { readTraceTailLines, readTraceWindowBefore } from "../internal/trace-tail.js";
+import { readTraceTailLines } from "../internal/trace-tail.js";
 import type { TraceTailRead } from "../internal/trace-tail.js";
 import {
   ratesAt,
@@ -367,12 +367,12 @@ export class TraceService implements Traces {
   ): Promise<{ messages: OmniMessage[]; firstOrdinal: number }> {
     this.observeShardRead?.(path);
     if (beforeOrdinal !== undefined) {
-      const read: TraceTailRead = await readTraceWindowBefore(
-        path,
-        beforeOrdinal,
-        beforeCount ?? beforeOrdinal,
-      );
-      return { messages: read.messages, firstOrdinal: read.skippedUnits };
+      // The line index turns "the N units before this cursor" into one ranged read.
+      // Without it a `before` page walks the shard from the head on every scroll, so
+      // paging through a 41MB shard re-reads its head once per page.
+      const from = Math.max(0, beforeOrdinal - (beforeCount ?? beforeOrdinal));
+      const read = await this.lineIndex.readRange(path, from, beforeOrdinal - from);
+      return { messages: read.events, firstOrdinal: read.total > 0 ? from : 0 };
     }
     if (tailFromEnd !== undefined) {
       const read: TraceTailRead = await readTraceTailLines(path, tailFromEnd);
