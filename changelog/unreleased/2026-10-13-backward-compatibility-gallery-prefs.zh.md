@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** process
 - **Scope:** `ui-gallery`
+- **PR:** [#1101](https://github.com/Prism-Shadow/penguin-harness/pull/1101)
 
 [English](2026-10-13-backward-compatibility-gallery-prefs.md)
 
