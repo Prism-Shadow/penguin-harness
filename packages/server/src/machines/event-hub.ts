@@ -159,6 +159,8 @@ interface Subscription {
   ring: EventRing;
   readers: Set<Reader>;
   socket: MachineSocket | null;
+  /** Releases this subscription's close listener when it stops using the socket. */
+  detachClose: (() => void) | null;
   callId: number;
   /** The current upstream call has been opened by the machine (its `stream` frame arrived). */
   opened: boolean;
@@ -354,6 +356,7 @@ export class MachineEventHub {
         ring: new EventRing(this.#replayCount, this.#replayBytes),
         readers: new Set(),
         socket: null,
+        detachClose: null,
         callId: -1,
         opened: false,
         openTimer: null,
@@ -419,7 +422,7 @@ export class MachineEventHub {
     const socket = got.socket;
     if (subscription.gone) return;
     subscription.socket = socket;
-    socket.onClose(() => {
+    subscription.detachClose = socket.onClose(() => {
       if (subscription.socket !== socket) return;
       subscription.socket = null;
       this.#ended(subscription);
@@ -651,6 +654,8 @@ export class MachineEventHub {
   }
 
   #clearTimers(subscription: Subscription): void {
+    subscription.detachClose?.();
+    subscription.detachClose = null;
     this.#clearOpenTimer(subscription);
     this.#clearSilenceTimer(subscription);
     if (subscription.reissueTimer !== null) clearTimeout(subscription.reissueTimer);
