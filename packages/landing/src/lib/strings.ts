@@ -185,7 +185,7 @@ export const zh = {
 
   /** The self-evolution loop and its three recorded numbers (sections/self-improve.tsx). */
   selfImprove: {
-    title: "自进化靠的是普通的 Agent 和 Skill",
+    title: "多智能体协同的自进化框架",
     subtitle:
       "默认由 General Agent 运行优化 Skill，每一轮只改被测 Agent 的一处；Evaluator 子 Agent 运行评估 Skill，在 Benchmark 的每个题目上给修改后的 Agent 打分。",
     nodeOptimizer: "Optimizer",
@@ -262,7 +262,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
   },
 
   cases: {
-    title: "一句话构建法务应用",
+    title: "一句话 + 0.2 元构建法务应用",
     subtitle:
       "用一句话描述需求，PenguinHarness 就能构建法务智能体应用：上传合同、识别风险并生成审阅报告。",
     prompt:
@@ -277,7 +277,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
    * both languages.
    */
   pillars: {
-    title: "PenguinHarness 由哪几部分组成",
+    title: "以文件为中心的极简 Agent 架构",
     subtitle: "Agent 变强时，改的是它的文件，模型保持不变。",
     root: "PenguinHarness",
     diagramLabel:
@@ -306,7 +306,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
 
   /** Building on an agent library against PenguinHarness (sections/compare.tsx). */
   compare: {
-    title: "Agent 周边的部分，已经搭好了",
+    title: "快速搭建企业级 Agent",
     subtitle:
       "Agent 开发库负责调用模型和工具的那个循环。在它之外，你还需要一个界面、每次运行的记录、给 Agent 打分的办法，以及供外部调用的 API。",
     library: {

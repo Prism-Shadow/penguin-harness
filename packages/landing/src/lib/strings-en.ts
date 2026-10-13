@@ -186,7 +186,7 @@ export const en: Strings = {
   },
 
   selfImprove: {
-    title: "Self-evolution runs on ordinary agents and Skills",
+    title: "A multi-agent self-evolution framework",
     subtitle:
       "By default the General Agent runs the optimization Skill. Each round it makes one change to the tested agent. Evaluator subagents running the evaluation Skill score the changed agent on every case of the Benchmark.",
     nodeOptimizer: "Optimizer",
@@ -271,7 +271,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   cases: {
-    title: "One request builds a legal agent app",
+    title: "One sentence and ¥0.2 build a legal agent app",
     subtitle:
       "Describe what you need in one request. PenguinHarness builds a legal agent app that takes contract uploads, identifies risks and produces review reports to download.",
     prompt:
@@ -282,7 +282,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   pillars: {
-    title: "What PenguinHarness is made of",
+    title: "A minimal, file-centric agent architecture",
     subtitle: "When an agent improves, its files change and the model does not.",
     root: "PenguinHarness",
     diagramLabel:
@@ -310,7 +310,7 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
   },
 
   compare: {
-    title: "The parts around the agent are already built",
+    title: "Build enterprise-grade agents fast",
     subtitle:
       "An agent library runs the loop that calls the model and its tools. Around that loop you still need an interface, a record of each run, a way to score the agent and an API to call it.",
     library: {
