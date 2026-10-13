@@ -182,7 +182,6 @@ export function ImportPluginTabs({
     dataBase64: string;
     question: ReplaceQuestion;
   } | null>(null);
-  // Copy feedback lives at the button: its glyph flips to the check while copied.
 
   const trimmedSource = source.trim();
   const prompt = buildPluginImportPrompt(trimmedSource || S.plugins.importSourceToken, projectId);
