@@ -149,6 +149,7 @@ const machine = (over: Partial<MachineInfo> = {}): MachineInfo => ({
   machineId: "NASmachineID0000",
   local: false,
   connection: { pid: 4242 },
+  socket: null,
   keepConnected: true,
   api: null,
   status: { state: "running", checkedAt: "2026-10-10T07:59:00.000Z", port: 7364 },
