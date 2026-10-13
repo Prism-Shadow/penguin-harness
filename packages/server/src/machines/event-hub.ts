@@ -93,15 +93,6 @@ class EventRing {
     private readonly maxBytes: number,
   ) {}
 
-  /** The newest id the ring holds — what a re-subscription resumes from. */
-  get newestId(): string | null {
-    for (let at = this.#entries.length - 1; at >= 0; at -= 1) {
-      const id = this.#entries[at]!.id;
-      if (id !== null) return id;
-    }
-    return null;
-  }
-
   push(entry: RingEntry): void {
     this.#entries.push(entry);
     this.#bytes += entry.data.length;
@@ -568,21 +559,15 @@ export class MachineEventHub {
     subscription.socket = null;
     subscription.callId = -1;
     subscription.opened = false;
-    if ([...subscription.readers].some((reader) => reader.hold !== undefined)) {
-      for (const reader of [...subscription.readers]) {
-        if (reader.hold !== undefined) continue;
-        subscription.readers.delete(reader);
-        if (reader.started) reader.sink.onEnd();
-        else reader.sink.onResponse(status, body);
-      }
-      this.#reissue(subscription);
-      return;
-    }
-    const readers = this.#takeReaders(subscription);
+    const held = [...subscription.readers].some((reader) => reader.hold !== undefined);
+    const readers = held ? [...subscription.readers] : this.#takeReaders(subscription);
     for (const reader of readers) {
+      if (reader.hold !== undefined) continue;
+      if (held) subscription.readers.delete(reader);
       if (reader.started) reader.sink.onEnd();
       else reader.sink.onResponse(status, body);
     }
+    if (held) this.#reissue(subscription);
   }
 
   /** Issues the subscription again while anyone is reading; drops it when nobody is. */
@@ -618,10 +603,7 @@ export class MachineEventHub {
     if (subscription.callId >= 0) subscription.socket?.cancel(subscription.callId);
     subscription.socket = null;
     subscription.callId = -1;
-    subscription.readers.clear();
-    if (this.#subscriptions.get(subscription.machineId) === subscription) {
-      this.#subscriptions.delete(subscription.machineId);
-    }
+    this.#takeReaders(subscription);
   }
 
   #takeReaders(subscription: Subscription): Reader[] {
