@@ -955,6 +955,69 @@ describe("isFatalProviderRejection (the fatal allowlist; everything it misses st
     expect(isFatalProviderRejection(undefined)).toBe(false);
   });
 
+  it("a 4xx the gateway raised for its OWN upstream breakage stays retryable", () => {
+    // The gateway in front of a provider wraps upstream breakage in whatever 4xx it
+    // likes; those must ride the retry ladder instead of ending the run.
+    const cases: Array<[string, number, string, boolean]> = [
+      [
+        "403 [server_error] not valid JSON",
+        403,
+        "Upstream request failed: [server_error] Upstream response was not valid JSON",
+        false,
+      ],
+      [
+        "400 api_error Model is unavailable",
+        400,
+        "Upstream request failed: Model is unavailable.",
+        false,
+      ],
+      ["400 status code (no body)", 400, "400 status code (no body)", false],
+      ["403 status code (no body)", 403, "403 status code (no body)", false],
+      [
+        "413 4.5 MiB body limit (a real rejection)",
+        413,
+        "Upstream request failed: [invalid_request_error] Request body exceeds the 4.5 MiB limit.",
+        true,
+      ],
+      [
+        "400 tool-call pairing (a real rejection)",
+        400,
+        "Upstream request failed: [invalid_request_error] No function call found for function call output with call_id 'call_x'",
+        true,
+      ],
+      [
+        "400 insufficient credits (a real rejection)",
+        400,
+        "You have insufficient credits to make this request.",
+        true,
+      ],
+    ];
+    for (const [name, status, message, want] of cases) {
+      expect(isFatalProviderRejection(Object.assign(new Error(message), { status })), name).toBe(
+        want,
+      );
+    }
+    // The signal also counts when it survives only as a structured code, or down the chain.
+    expect(isFatalProviderRejection(Object.assign(new Error("bad gateway"), { status: 502 }))).toBe(
+      false,
+    );
+    expect(
+      isFatalProviderRejection(
+        Object.assign(new Error("request failed"), { status: 403, code: "upstream_error" }),
+      ),
+    ).toBe(false);
+    expect(
+      isFatalProviderRejection(
+        new Error("request failed", {
+          cause: Object.assign(new Error("boom"), {
+            status: 400,
+            error: { code: "server_error" },
+          }),
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("the auth detector keeps its own contract: a definitive credential signal, wherever it rides", () => {
     // A 403 whose BODY carries a definitive auth code but whose MESSAGE mentions a
     // subscription (SDKs routinely put the body's message on err.message): the explicit

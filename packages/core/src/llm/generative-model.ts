@@ -614,6 +614,51 @@ export const FAST_MODE_UNSUPPORTED_GUIDANCE =
   "Fast mode is enabled for this model; turn it off in the model settings to use this model.";
 
 /**
+ * Provider codes that declare a failure on the provider's own side (as opposed to a
+ * rejection of the request) — `providerSignals` reads them off the error and its parsed
+ * body.
+ */
+const SERVER_SIDE_CODES = new Set([
+  "server_error",
+  "api_error",
+  "upstream_error",
+  "internal_error",
+  "service_unavailable",
+  "overloaded_error",
+  "no_available_workers",
+]);
+
+/** Message shapes that say the same thing when no code survives to us. */
+const SERVER_SIDE_TEXT: readonly RegExp[] = [
+  /\[(?:server_error|api_error|upstream_error)\]/i,
+  /upstream response was not valid json/i,
+  /model is unavailable/i,
+  /(?:upstream|provider|service) (?:is )?temporarily unavailable/i,
+];
+
+/**
+ * Whether one level of the error declares that the gateway or the upstream broke. The
+ * gateway in front of a provider answers upstream breakage with whatever 4xx it likes
+ * (Console Go: `403 Upstream request failed: [server_error] Upstream response was not
+ * valid JSON`), and taking that status at face value turns a one-second hiccup into a
+ * dead run.
+ */
+function declaresServerSideFailure(level: object): boolean {
+  if (providerSignals(level).some((code) => SERVER_SIDE_CODES.has(code.toLowerCase()))) {
+    return true;
+  }
+  const err = level as { message?: unknown; error?: unknown };
+  const texts = [err.message, err.error].filter((v): v is string => typeof v === "string");
+  return texts.some((text) => SERVER_SIDE_TEXT.some((pattern) => pattern.test(text)));
+}
+
+/** Whether one level is an SDK error whose provider body was empty (`400 status code (no body)`). */
+function hasEmptyProviderBody(level: object): boolean {
+  const message = (level as { message?: unknown }).message;
+  return typeof message === "string" && /^\d{3} status code \(no body\)$/.test(message.trim());
+}
+
+/**
  * Determines whether an error is a definitive provider rejection of the request itself —
  * the `fatal` detector for errored requests. Only an explicit HTTP client-error status
  * counts: 4xx minus 408 (request timeout) and 429 (rate limit), which are transient by
@@ -623,8 +668,20 @@ export const FAST_MODE_UNSUPPORTED_GUIDANCE =
  * refusing to retry a transient one destroys the turn. Authentication is checked
  * separately (`isAuthenticationError`) and first — a 401 is fatal through that path with
  * its more specific message handling.
+ *
+ * A 4xx is fatal only when the provider's own payload neither declares a server-side
+ * failure nor is empty — everything else rides the retry ladder, because a gateway wraps
+ * upstream breakage in a 4xx it chose.
  */
 export function isFatalProviderRejection(error: unknown): boolean {
+  if (
+    anyInCauseChain(
+      error,
+      (level) => declaresServerSideFailure(level) || hasEmptyProviderBody(level),
+    )
+  ) {
+    return false;
+  }
   return anyInCauseChain(error, (level) => {
     const err = level as { status?: unknown; statusCode?: unknown };
     const status = typeof err.status === "number" ? err.status : err.statusCode;
