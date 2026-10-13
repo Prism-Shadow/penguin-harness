@@ -1138,8 +1138,8 @@ export function ModelsPage() {
     try {
       const res = await api.syncPlatformModels(projectId);
       adopt(res);
-      // The platform's sync only adds the models it newly offers; the ones already here keep
-      // their prices, protocols and promotions.
+      // The platform's sync adds the models it newly offers; the ones already here keep their
+      // prices and protocols, and take the platform's promotion only at the platform's price.
       if (res.added === 0) toastInfo(S.models.platformUpToDate);
       else toastSuccess(S.models.platformSyncAdded(res.added));
     } catch (error) {

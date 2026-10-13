@@ -22,6 +22,8 @@ export interface PlatformCatalogModel {
   pricing: PlatformCatalogPricing;
   /** Fraction off `pricing` the platform is running (0.5 = half price); absent when none. */
   discount?: number;
+  /** What the platform bills under `discount` (`pricing` less the fraction); absent with it. */
+  billedPricing?: PlatformCatalogPricing;
   baseUrl: string;
   clientType: "mmsp";
 }
@@ -32,7 +34,8 @@ export interface PlatformModelCatalog {
 }
 
 /**
- * Catalog merge result. `updated` counts route migrations; existing metadata is preserved.
+ * Catalog merge result. `updated` counts the changes to rows the group already held: routes
+ * moved to MMSP and promotions restated. Their other metadata is preserved.
  */
 export interface PlatformModelApplyResult {
   added: number;

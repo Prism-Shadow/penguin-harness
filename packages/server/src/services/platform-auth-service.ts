@@ -217,7 +217,7 @@ function platformCatalog(value: unknown, requireEnvelope: boolean): PlatformMode
       supportsVision: model.supportsVision,
       // A Project stores the list price; the promotion travels apart, as the fraction.
       pricing: promotion?.listPricing ?? billed,
-      ...(promotion !== undefined ? { discount: promotion.discount } : {}),
+      ...(promotion !== undefined ? { discount: promotion.discount, billedPricing: billed } : {}),
       baseUrl,
       clientType: "mmsp" as const,
     };

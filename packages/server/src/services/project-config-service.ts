@@ -177,14 +177,13 @@ function platformPricingTable(pricing: PlatformCatalogPricing): RawTable {
   };
 }
 
+/** Whether a stored `pricing` table holds exactly the platform's three numbers. */
 function platformPricingMatches(value: unknown, pricing: PlatformCatalogPricing): boolean {
-  const stored = asTable(value);
-  return (
-    stored.unit === pricing.unit &&
-    stored.cache_read === pricing.cacheRead &&
-    stored.cache_write === pricing.cacheWrite &&
-    stored.output === pricing.output
-  );
+  return samePricing(pricingDtoOf(value), {
+    cacheRead: pricing.cacheRead,
+    cacheWrite: pricing.cacheWrite,
+    output: pricing.output,
+  });
 }
 
 /**
@@ -2175,16 +2174,17 @@ export class ProjectConfigService implements ProjectConfigStore {
    * `[providers.penguin-go]` table in the file (the built-in catalog is not consulted): a field
    * the table holds is followed, the row storing only where it differs from the platform's
    * group value (the relay URL every model shares); a field the table lacks is written on the
-   * row in full. A row the group
-   * already holds keeps its metadata and promotion. Go-managed routes switch to MMSP,
-   * including model overrides; user-redirected endpoints retain their configuration.
+   * row in full. A row the group already holds keeps its metadata, price included, but its
+   * promotion is the platform's and is restated on the price it is a fraction of (see below).
+   * Go-managed routes switch to MMSP, including model overrides; user-redirected endpoints
+   * retain their configuration.
    *
    * Authorization (`applyKeyToExisting`) also writes the delivered key once, as the group's
    * key (`[providers.penguin-go]`); new rows carry no key of their own and follow it.
    *
-   * Returns how many rows were added, `updated` (routes changed),
-   * and `applied`: on authorization, how many of the group's rows now use the group key;
-   * otherwise the rows added.
+   * Returns how many rows were added, `updated` (changes to what the group already held: routes
+   * moved to MMSP and promotions restated), and `applied`: on authorization, how many of the
+   * group's rows now use the group key; otherwise the rows added.
    */
   async mergePlatformModels(
     projectId: string,
@@ -2194,11 +2194,52 @@ export class ProjectConfigService implements ProjectConfigStore {
     applyKeyToExisting: boolean,
   ): Promise<PlatformModelApplyResult> {
     const raw = structuredClone(await this.readRaw(projectId));
-    const updated =
+    const migrated =
       provider === PENGUIN_GO_PROVIDER_ID && catalog.models.length > 0
         ? migratePenguinGoRoutes(raw, catalog.models[0]!.baseUrl)
         : 0;
-    const current = asArray(raw.models);
+    const offered = new Map(catalog.models.map((model) => [model.modelId, model] as const));
+    // A held row's promotion is the platform's to state: a preset is seeded at its list price
+    // with none, and only the platform knows what it takes off. A promotion is a fraction of one
+    // price, though, and a sync never reprices a held row, so it is restated only where the row
+    // is at the platform's price. At the list price, the row takes the platform's promotion, or
+    // loses its own when the platform runs none. At the price the platform bills under a
+    // promotion (the discounted number stored as if it were the list), the row goes back to the
+    // list price with the promotion beside it, which bills the same and shows the saving. At
+    // any other price, the user's own or a list price the platform has since changed, nothing
+    // is touched.
+    const restated = new Map<string, number | undefined>();
+    const relisted = new Set<string>();
+    if (this.promotions !== undefined) {
+      const stored = new Map(
+        this.promotions
+          .list(projectId)
+          .filter((p) => p.provider === provider)
+          .map((p) => [p.modelId, p.discount] as const),
+      );
+      for (const row of asArray(raw.models)) {
+        if (row.provider !== provider || typeof row.model_id !== "string") continue;
+        const model = offered.get(row.model_id);
+        if (model === undefined) continue;
+        if (platformPricingMatches(row.pricing, model.pricing)) {
+          if (stored.get(model.modelId) !== model.discount) {
+            restated.set(model.modelId, model.discount);
+          }
+        } else if (
+          model.billedPricing !== undefined &&
+          platformPricingMatches(row.pricing, model.billedPricing)
+        ) {
+          relisted.add(model.modelId);
+          restated.set(model.modelId, model.discount);
+        }
+      }
+    }
+    const updated = migrated + restated.size;
+    const current = asArray(raw.models).map((row) =>
+      row.provider === provider && relisted.has(String(row.model_id))
+        ? { ...row, pricing: platformPricingTable(offered.get(String(row.model_id))!.pricing) }
+        : row,
+    );
     const known = new Set(
       current.flatMap((model) =>
         model.provider === provider && typeof model.model_id === "string" ? [model.model_id] : [],
@@ -2244,7 +2285,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
 
     const nextModels = [...current, ...added];
-    if (added.length > 0 || updated > 0 || applyKeyToExisting) {
+    if (added.length > 0 || migrated > 0 || relisted.size > 0 || applyKeyToExisting) {
       const providers = applyKeyToExisting
         ? patchProviderTable(asTable(raw.providers), provider, { apiKey }).table
         : raw.providers;
@@ -2255,18 +2296,23 @@ export class ProjectConfigService implements ProjectConfigStore {
       });
     }
     // After the file write, so a promotion never lands for a row the file failed to take; the
-    // group's existing promotions are kept as they are.
+    // group's other promotions are kept as they are.
     const addedIds = new Set(added.map((row) => row.model_id));
     const promoted = catalog.models.flatMap((model) =>
       model.discount !== undefined && addedIds.has(model.modelId)
         ? [{ provider, modelId: model.modelId, discount: model.discount }]
         : [],
     );
-    if (this.promotions !== undefined && promoted.length > 0) {
+    if (this.promotions !== undefined && (promoted.length > 0 || restated.size > 0)) {
       const kept = this.promotions
         .list(projectId)
-        .filter((p) => p.provider === provider && !addedIds.has(p.modelId));
-      this.promotions.replaceProvider(projectId, provider, [...kept, ...promoted]);
+        .filter(
+          (p) => p.provider === provider && !addedIds.has(p.modelId) && !restated.has(p.modelId),
+        );
+      const restatedRows = [...restated].flatMap(([modelId, discount]) =>
+        discount !== undefined ? [{ provider, modelId, discount }] : [],
+      );
+      this.promotions.replaceProvider(projectId, provider, [...kept, ...restatedRows, ...promoted]);
     }
     const applied = applyKeyToExisting
       ? rowsFollowingGroupKey({ providers: raw.providers, models: nextModels }, provider)

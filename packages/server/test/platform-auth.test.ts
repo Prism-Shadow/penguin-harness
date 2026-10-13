@@ -9,11 +9,16 @@
  *   delivered key once, as the group's key every model of the group uses, and adds the
  *   delivered models the group lacks with their list price, routing and promotion (a member is
  *   refused, and a sync before any key asks for reauthorization); a model the group already
- *   holds keeps its own price and promotion; nothing of the account or the key itself is ever
- *   answered back. In a group where no model uses the key yet (every one keyed on its own, and
+ *   holds keeps its own price, and a promotion of a price it does not store does not land on it;
+ *   nothing of the account or the key itself is ever answered back. In a group where no model uses the key yet (every one keyed on its own, and
  *   nothing new delivered), the key still lands and the flow completes with a count of 0.
- * - A later sync adds a newly listed model the same way, and never rewrites a model the group
- *   holds: a repricing or a new promotion of one changes nothing, and nothing is written.
+ * - A later sync adds a newly listed model the same way, and never reprices a model the group
+ *   holds: the platform repricing one changes nothing, and nothing is written.
+ * - A held model's promotion is the platform's, on the price the platform states: a model at the
+ *   platform's list price takes its promotion at authorization and loses it when a later sync
+ *   says the promotion ended (the file untouched, and a second sync changing nothing); a model
+ *   stored at the price the platform bills goes back to the list price with the promotion beside
+ *   it; a model at a price of the user's own gets none.
  * - An added model stores its protocol and endpoint per field against the group's table as
  *   the file holds it (never the catalog's): a field the table holds is followed — a group
  *   pointed at a proxy takes the new model along, with its key — and one the table lacks is
@@ -358,8 +363,8 @@ describe("Penguin Go key authorization routes", () => {
     expect(deepseekFuture).not.toHaveProperty("credential");
     expect(deepseekFuture).not.toHaveProperty("maxTokens");
     expect(deepseekFuture).not.toHaveProperty("discount");
-    // A model the preset already held is not rewritten: its price and promotion stay what
-    // the Project had, whatever the platform lists.
+    // A model the preset already held keeps its price, and the platform's promotion is of
+    // another price (neither its list nor its billed price is the one stored), so none lands.
     const heldGemini = penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash");
     expect(heldGemini?.pricing).toEqual({
       cacheRead: gemini.pricing!.cache_read,
@@ -403,12 +408,13 @@ describe("Penguin Go key authorization routes", () => {
     ).toEqual(own.map(() => "model"));
   });
 
-  it("a later sync adds what the platform newly lists, with its price, routing and promotion, and never rewrites a model the group holds", async () => {
+  it("a later sync adds what the platform newly lists, with its price, routing and promotion, and never reprices a model the group holds", async () => {
     expect((await authorize()).status).toBe("completed");
     const authorized = await models();
 
-    // The platform reprices a model the group holds and deepens a promotion: nothing changes
-    // here, and nothing is written.
+    // The platform reprices a model the group holds, with a promotion on the new price: the
+    // model keeps the price it stored, the promotion is of a price it does not store, and
+    // nothing is written.
     currentCatalogModels = currentCatalogModels.map((model) =>
       (model as { modelId?: unknown }).modelId === "deepseek-future"
         ? {
@@ -476,6 +482,75 @@ describe("Penguin Go key authorization routes", () => {
     expect(future).not.toHaveProperty("listPricing");
     // The model the group already held is still as it was.
     expect(promotionOf("deepseek-future")).toBeUndefined();
+  });
+
+  it("a held model at the platform's price takes the platform's promotion and loses it when the platform ends it; one at the user's own price gets none", async () => {
+    type Buckets = { cacheRead: number; cacheWrite: number; output: number };
+    const catalogPrice = (modelId: string): Buckets => {
+      const p = catalogEntryFor("penguin-go", modelId)!.pricing!;
+      return { cacheRead: p.cache_read, cacheWrite: p.cache_write, output: p.output };
+    };
+    const times = (b: Buckets, k: number): Buckets => ({
+      cacheRead: b.cacheRead * k,
+      cacheWrite: b.cacheWrite * k,
+      output: b.output * k,
+    });
+    /** A platform model listed at `list`, billed at `list` less `discount` when one runs. */
+    const offer = (modelId: string, list: Buckets, discount?: number) => ({
+      modelId,
+      displayName: modelId,
+      contextWindow: 1_048_576,
+      supportsVision: true,
+      pricing: {
+        unit: "usd_per_mtok",
+        ...(discount === undefined ? list : times(list, 1 - discount)),
+      },
+      ...(discount !== undefined
+        ? { listPricing: { unit: "usd_per_mtok", ...list }, discount }
+        : {}),
+    });
+    const atList = catalogPrice("gemini-3.8-flash");
+    // Stored as the price the platform bills under a half-price promotion.
+    const atBilled = catalogPrice("gemini-3.5-flash");
+    const own: Buckets = { cacheRead: 1, cacheWrite: 2, output: 3 };
+    const held = (await models()).models.filter((model) => model.provider === "penguin-go");
+    const retyped = await owner.put(`/api/projects/${projectId}/models`, {
+      models: held.map((model) => ({
+        provider: model.provider,
+        modelId: model.modelId,
+        pricing: model.modelId === "gemini-3.6-flash" ? own : model.pricing,
+      })),
+    });
+    expect(retyped.status).toBe(200);
+    deliveredModels = [
+      offer("gemini-3.8-flash", atList, 0.2),
+      offer("gemini-3.5-flash", times(atBilled, 2), 0.5),
+      offer("gemini-3.6-flash", catalogPrice("gemini-3.6-flash"), 0.2),
+    ];
+    currentCatalogModels = [...deliveredModels];
+
+    expect((await authorize()).status).toBe("completed");
+    const authorized = await models();
+    const row = (body: ModelsResponse, modelId: string) =>
+      body.models.find((model) => model.provider === "penguin-go" && model.modelId === modelId)!;
+    expect(row(authorized, "gemini-3.8-flash")).toMatchObject({ pricing: atList, discount: 0.2 });
+    // Back at the list price with the promotion beside it: it bills what it billed before.
+    expect(row(authorized, "gemini-3.5-flash")).toMatchObject({
+      pricing: times(atBilled, 2),
+      discount: 0.5,
+    });
+    expect(row(authorized, "gemini-3.6-flash").pricing).toEqual(own);
+    expect(row(authorized, "gemini-3.6-flash")).not.toHaveProperty("discount");
+    expect(promotionOf("gemini-3.6-flash")).toBeUndefined();
+
+    // The platform ends one promotion: the next sync takes it off, and writes no file.
+    currentCatalogModels = [offer("gemini-3.8-flash", atList), ...deliveredModels.slice(1)];
+    const ended = await sync();
+    expect(ended).toMatchObject({ added: 0, updated: 1 });
+    expect(ended.updatedAt).toBe(authorized.updatedAt);
+    expect(row(ended, "gemini-3.8-flash")).not.toHaveProperty("discount");
+    expect(row(ended, "gemini-3.5-flash")).toMatchObject({ discount: 0.5 });
+    expect(await sync()).toMatchObject({ added: 0, updated: 0 });
   });
 
   it("a platform model is stored against the group's table field by field: a group pointed at a proxy takes a new model along with its key, and a field the table lacks is written on the model", async () => {
