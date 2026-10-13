@@ -3,6 +3,7 @@
 - **Date:** 2026-10-13
 - **Type:** feature
 - **Scope:** `browser-extension`, `docs`
+- **PR:** [#1091](https://github.com/Prism-Shadow/penguin-harness/pull/1091)
 
 [中文版](2026-10-13-extension-site-style.zh.md)
 
