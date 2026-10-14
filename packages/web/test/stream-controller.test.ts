@@ -424,6 +424,72 @@ describe("resync rebuild", () => {
     expect(card.decisionSource).toBe("manual");
   });
 
+  // A load abandoned mid-flight used to leave `loading` true forever: the consumer renders
+  // a skeleton purely off that flag, so an epoch bump during the fetch (or during the
+  // replay) produced a spinner that never ended, with no error and no retry entry point.
+  // `loading` is now settled in the load's own `finally`, which is what these pin down.
+  it("hands loading to the rebuild when a resync supersedes the initial load mid-fetch", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    // A resync arrives while the first round's history is still in flight: rebuild bumps
+    // the epoch, so the in-flight round is voided and a second load starts.
+    h.controller.handleServer({ type: "resync_required" });
+    h.resolveLoad([at(userText("question"), "2026-07-05T00:00:00.000Z")]);
+    await p;
+    // The voided round must NOT clear the flag: the rebuild's own fetch is still outstanding
+    // and owns it. Clearing here would drop the spinner while that history is still arriving.
+    expect(h.loadings).toEqual([]);
+    // ...and once the rebuild's history lands, IT is what settles loading.
+    h.resolveLoad([at(userText("question"), "2026-07-05T00:00:00.000Z")]);
+    await flush();
+    expect(h.loadings.at(-1)).toBe(false);
+  });
+
+  it("never lets abandoned rounds clear loading while the newest round is still fetching", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.controller.handleServer({ type: "resync_required" }); // round 2 starts
+    // ...and a resync lands again before round 2's history arrives: round 2 is voided too.
+    h.controller.handleServer({ type: "resync_required" }); // round 3 starts
+    // Round 1's fetch lands (voided) and round 2's (voided). Round 3 is still outstanding.
+    h.resolveLoad([at(userText("question"), "2026-07-05T00:00:00.000Z")]);
+    await p;
+    h.resolveLoad([at(userText("question"), "2026-07-05T00:00:00.000Z")]);
+    await flush();
+    // Two voided rounds went by without clearing the flag: it still belongs to round 3.
+    expect(h.loadings).toEqual([]);
+    // Round 3 lands -> the spinner finally ends, exactly once.
+    h.resolveLoad([at(userText("question"), "2026-07-05T00:00:00.000Z")]);
+    await flush();
+    expect(h.loadings).toEqual([false]);
+  });
+
+  it("settles loading when a resync lands during the replay loop, not just the fetch", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    // A buffered event makes the replay loop run; the resync is delivered DURING it, which
+    // takes the epoch-mismatch branch inside the loop (a different early return from the
+    // fetch-time one).
+    h.controller.handleOmni(at(assistantText("buffered"), "2026-07-05T00:00:01.000Z"));
+    h.controller.handleServer({ type: "resync_required" });
+    h.resolveLoad([
+      at(userText("question"), "2026-07-05T00:00:00.000Z"),
+      at(assistantText("answer"), "2026-07-05T00:00:03.000Z"),
+    ]);
+    await p;
+    await flush();
+    expect(h.loadings.at(-1)).not.toBe(true);
+  });
+
+  it("a load that runs to completion reports loading=false exactly once", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    h.resolveLoad(HISTORY_TASK);
+    await p;
+    // The clean exit is the one place loading is cleared for a round that finished.
+    expect(h.loadings).toEqual([false]);
+  });
+
   it("resync during replay: the current round is voided and the remaining buffer moves to the new round, with no reordering or duplication (#21/#26)", async () => {
     const h = createHarness();
     const p = h.controller.load();

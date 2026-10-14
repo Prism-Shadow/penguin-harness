@@ -52,6 +52,15 @@ function subscribe(url: string, handlers: StreamHandlers): StreamConnection {
   let source: EventSource | undefined;
   /** The newest event id seen on any of this subscription's connections. */
   let lastEventId = "";
+  /**
+   * Set once the server refuses our id (`resync_required`). Until a NEW connection has been
+   * opened, no id may be recorded: the refusal is a statement about the whole old channel, so
+   * every id still in flight from it is equally unusable. A plain `lastEventId = ""` is not
+   * enough on its own — a real EventSource keeps reporting the last id it saw on EVERY later
+   * frame (including pings), so the next `heard()` would write that same dead id straight back
+   * and the reconnect would offer it again.
+   */
+  let idVoided = false;
   let lastHeard = 0;
   /** The stream has pinged, so silence means a dead connection. */
   let armed = false;
@@ -59,7 +68,8 @@ function subscribe(url: string, handlers: StreamHandlers): StreamConnection {
 
   const heard = (e: MessageEvent<string>) => {
     lastHeard = Date.now();
-    if (e.lastEventId) lastEventId = e.lastEventId;
+    // `idVoided` wins over whatever the frame carries — see its declaration.
+    if (e.lastEventId && !idVoided) lastEventId = e.lastEventId;
   };
   const onMessage = (e: MessageEvent<string>) => {
     heard(e);
@@ -73,7 +83,23 @@ function subscribe(url: string, handlers: StreamHandlers): StreamConnection {
   const onServerEvent = (e: MessageEvent<string>) => {
     heard(e);
     try {
-      handlers.onServerEvent(JSON.parse(e.data) as ServerEvent, e.lastEventId || null);
+      const ev = JSON.parse(e.data) as ServerEvent;
+      // `resync_required` means the server could NOT resume from the id we offered: its
+      // channel buffer either lost those events or belongs to a different channel epoch
+      // (the server restarted, or it recycled the Session). That verdict is about EVERY id
+      // from the previous connection, not just this one — so keeping `lastEventId` would
+      // make the next reconnect offer the same unusable id and be refused again, forever,
+      // each refusal costing a full rebuild. Drop it here so the reconnect arrives as a
+      // fresh subscription and is granted by definition.
+      //
+      // Ordering matters: `heard()` above already recorded this event's own id, so the drop
+      // has to come after it and cannot be undone by it. Any event arriving AFTER this one
+      // belongs to the new channel and re-arms `lastEventId` normally.
+      if (ev.type === "resync_required") {
+        idVoided = true;
+        lastEventId = "";
+      }
+      handlers.onServerEvent(ev, e.lastEventId || null);
     } catch {
       // Same as above.
     }
@@ -92,9 +118,13 @@ function subscribe(url: string, handlers: StreamHandlers): StreamConnection {
   const connect = () => {
     source?.close();
     lastHeard = Date.now();
+    const resumeFrom = idVoided ? "" : lastEventId;
     source = new EventSource(
-      lastEventId ? `${url}?lastEventId=${encodeURIComponent(lastEventId)}` : url,
+      resumeFrom ? `${url}?lastEventId=${encodeURIComponent(resumeFrom)}` : url,
     );
+    // Past the URL: whatever this connection carries belongs to the channel the server just
+    // granted, so recording its ids again is what makes the NEXT reconnect resumable.
+    idVoided = false;
     source.onmessage = onMessage;
     source.addEventListener("server_event", onServerEvent);
     source.addEventListener("ping", onPing);

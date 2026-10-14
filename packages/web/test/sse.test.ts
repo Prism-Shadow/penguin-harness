@@ -11,7 +11,7 @@
  * - Once the caller closed it, or the browser gave up on it (reported as a closed error),
  *   nothing reopens it.
  */
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { openSessionStream } from "../src/api/sse";
 import { FakeEventSource, stubEventSource, stubVisibility } from "./helpers/event-source";
 
@@ -99,4 +99,53 @@ it.each([
   sub.setVisibility("visible");
   expect(live(sub.sources)).toEqual([]);
   expect(sub.errors).toEqual(errors);
+});
+
+// A `resync_required` is the server telling us it could not resume from the id we offered —
+// its channel buffer lost those events, or it belongs to a different channel epoch (the
+// server restarted, or recycled the Session). Keeping that id would make the NEXT reconnect
+// offer the same unusable id and be refused again, each refusal costing a full rebuild, so
+// the connection could never get past it. Dropping it makes the reconnect a fresh
+// subscription, which the server grants by definition.
+describe("after a resync_required", () => {
+  it("reopens WITHOUT the id the server just refused", () => {
+    const { sources } = subscribe();
+    greet(sources[0]!, "e-1");
+    sources[0]!.emit("message", "{}", "e-2");
+    // The server refuses that id.
+    sources[0]!.emit("server_event", JSON.stringify({ type: "resync_required" }), "e-3");
+    sources[0]!.emit("ping");
+    vi.advanceTimersByTime(50_000);
+    // No ?lastEventId= — a bare URL, i.e. a fresh subscription.
+    expect(sources[1]!.url).toBe("/api/sessions/s1/stream");
+  });
+
+  it("records no id until a new connection exists, then resumes normally from there", () => {
+    const { sources } = subscribe();
+    greet(sources[0]!, "e-1");
+    sources[0]!.emit("server_event", JSON.stringify({ type: "resync_required" }), "e-2");
+    // Events still arriving on the SAME (old) connection carry ids too — the browser keeps
+    // reporting the last id it saw, and a real EventSource has no way to tell those apart
+    // from the new channel's. So they are not recorded: the refusal stands until a reconnect.
+    sources[0]!.emit("message", "{}", "e-9");
+    sources[0]!.emit("ping");
+    vi.advanceTimersByTime(50_000);
+    expect(sources[1]!.url).toBe("/api/sessions/s1/stream");
+    // The reconnect was granted, so from HERE ids are recorded again...
+    greet(sources[1]!, "n-1");
+    sources[1]!.emit("message", "{}", "n-2");
+    sources[1]!.emit("ping");
+    vi.advanceTimersByTime(50_000);
+    // ...and the NEXT reconnect resumes from the new channel, not from the voided one.
+    expect(sources[2]!.url).toBe("/api/sessions/s1/stream?lastEventId=n-2");
+  });
+
+  it("a resync with no prior id still leaves the reconnect bare", () => {
+    const { sources } = subscribe();
+    greet(sources[0]!, "e-1");
+    sources[0]!.emit("server_event", JSON.stringify({ type: "resync_required" }), "e-2");
+    sources[0]!.emit("ping");
+    vi.advanceTimersByTime(50_000);
+    expect(sources[1]!.url).toBe("/api/sessions/s1/stream");
+  });
 });
