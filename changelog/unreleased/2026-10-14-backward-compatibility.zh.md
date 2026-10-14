@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** refactor
 - **Scope:** `server`
+- **PR:** [#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
 - **Breaking:** yes — Workflow 目录与公开接口统一改名为 Workbench
 
 [English](2026-10-14-backward-compatibility.md)

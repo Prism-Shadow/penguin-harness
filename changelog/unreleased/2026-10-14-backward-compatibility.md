@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** refactor
 - **Scope:** `server`
+- **PR:** [#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
 - **Breaking:** yes — Workflow directories and public contracts become Workbench
 
 [简体中文](2026-10-14-backward-compatibility.zh.md)

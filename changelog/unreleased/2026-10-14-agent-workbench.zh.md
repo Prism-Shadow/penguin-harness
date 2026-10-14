@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `plugins`, `docs`
+- **PR:** [#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
 - **Breaking:** yes — Workflow 接口统一改名为 Workbench
 
 [English](2026-10-14-agent-workbench.md)

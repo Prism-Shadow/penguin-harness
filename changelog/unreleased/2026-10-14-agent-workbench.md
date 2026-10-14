@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `plugins`, `docs`
+- **PR:** [#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
 - **Breaking:** yes — Workflow contracts are renamed to Workbench
 
 [简体中文](2026-10-14-agent-workbench.zh.md)
