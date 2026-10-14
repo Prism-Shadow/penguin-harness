@@ -7,6 +7,7 @@ import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const prefix = "@prismshadow/penguin-";
+const isCatalogReadme = (file) => /^(?:plugins\/)?README(?:\.zh)?\.md$/.test(file);
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 const command = (names, task) =>
   `pnpm ${names.map((name) => `--filter ${quote(name)}`).join(" ")} ${task}`;
@@ -47,9 +48,9 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     if (owner) add(owner.name);
     else if (/^(changelog\/|\.agents\/|\.github\/[^/]+\.md$|CHANGELOG(?:\.zh)?\.md$)/.test(file)) {
       continue;
-    } else if (/^(README(?:\.zh)?\.md|plugins\/README(?:\.zh)?\.md)$/.test(file)) {
-      // core's plugin-catalog tests read the root README tables.
-      add(`${prefix}core`);
+    } else if (isCatalogReadme(file)) {
+      // The catalog check reads these tables, but they do not change core's exports.
+      continue;
     } else {
       // Shared scripts/config/lockfile, deleted packages, and unknown paths fail open
       // to full validation rather than silently omitting their consumers.
@@ -172,7 +173,9 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     typecheck: types.length > 0,
     typecheck_build: build(types),
     typecheck_command: types.length ? command(types, "typecheck") : "",
-    plugins: full || files.some((file) => file.startsWith("plugins/")),
+    // A selected core suite already includes the README check.
+    readme: !has("core") && files.some(isCatalogReadme),
+    plugins: full || files.some((file) => file.startsWith("plugins/") && !isCatalogReadme(file)),
     packaging:
       full ||
       files.some(
@@ -211,7 +214,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
-      `## CI scope\n\n${plan.reason}\n\n${plan.packages.length ? plan.packages.map((name) => `- \`${name}\``).join("\n") : "No package tasks are needed."}\n`,
+      `## CI scope\n\n${plan.reason}\n\n${plan.packages.length ? plan.packages.map((name) => `- \`${name}\``).join("\n") : "No package tasks are needed."}\n${plan.readme ? "\nREADME plugin catalog check runs separately.\n" : ""}`,
     );
   }
 }

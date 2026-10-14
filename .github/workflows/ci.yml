@@ -47,6 +47,7 @@ jobs:
       typecheck: ${{ steps.plan.outputs.typecheck }}
       typecheck_build: ${{ steps.plan.outputs.typecheck_build }}
       typecheck_command: ${{ steps.plan.outputs.typecheck_command }}
+      readme: ${{ steps.plan.outputs.readme }}
       plugins: ${{ steps.plan.outputs.plugins }}
       packaging: ${{ steps.plan.outputs.packaging }}
       installer: ${{ steps.plan.outputs.installer }}
@@ -111,6 +112,20 @@ jobs:
           # workflow-expression and schema check, and shellcheck's info-level findings in
           # workflows this change does not touch are a separate conversation.
           ./actionlint -shellcheck=
+
+  # README tables are test inputs, not changes to core or its downstream packages.
+  readme:
+    needs: plan
+    if: needs.plan.outputs.readme == 'true'
+    name: README catalog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
+      - uses: ./.github/actions/setup
+      - name: README plugin tables match the shipped library
+        run: pnpm --filter @prismshadow/penguin-core exec vitest run test/readme-catalog.test.ts
 
   # A plugin's installable part changed without its dated version moving — a skill's SKILL.md
   # `version`, or the hook package's `penguin.hooks.version` in package.json: installed copies
@@ -499,6 +514,7 @@ jobs:
       [
         plan,
         style,
+        readme,
         browser-smoke,
         plugin-versions,
         npm-packaging,
