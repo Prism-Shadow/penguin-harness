@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** fix
 - **Scope:** `model-catalog`, `docs`
+- **PR:** [#1122](https://github.com/Prism-Shadow/penguin-harness/pull/1122)
 
 [中文版](2026-10-14-atria-dawn-model-id.zh.md)
 
