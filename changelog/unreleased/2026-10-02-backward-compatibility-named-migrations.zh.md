@@ -3,7 +3,7 @@
 - **Date:** 2026-10-02
 - **Type:** process
 - **Scope:** `server`
-- **PR:** [#187](https://github.com/Myriad-Dreamin/penguin-harness/pull/187)
+- **PR:** [#1134](https://github.com/Prism-Shadow/penguin-harness/pull/1134)
 
 [English](2026-10-02-backward-compatibility-named-migrations.md)
 
