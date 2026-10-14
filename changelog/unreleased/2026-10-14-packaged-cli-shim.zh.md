@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** fix
 - **Scope:** `server`, `ci`
+- **PR:** [#1124](https://github.com/Prism-Shadow/penguin-harness/pull/1124)
 - **Issue:** [#1119](https://github.com/Prism-Shadow/penguin-harness/issues/1119)
 
 [English](2026-10-14-packaged-cli-shim.md)
