@@ -27,7 +27,7 @@
  * `PENGUIN_CLI_ENTRY` (what `penguin server|web` and the desktop shell pass for themselves),
  * else, for a server running from a checkout, that checkout's CLI — from source while the
  * server itself runs from source, so `pnpm dev` never offers a CLI older than the code it
- * serves.
+ * serves. An installed server can find the CLI package that contains it without that variable.
  *
  * Rewritten at every boot, so a moved checkout is picked up by the next start; while a
  * server is running, a dist that moved out from under it has already broken the server
@@ -51,7 +51,7 @@ export function cliShimDir(root: string): string {
  * Where an offered CLI comes from:
  * - `env`: `PENGUIN_CLI_ENTRY`, set by `penguin server|web` and the desktop shell to their own;
  * - `source`: the checkout's `packages/cli/src/penguin.ts`, run through its TypeScript loader;
- * - `build`: the checkout's `packages/cli/dist/penguin.js`.
+ * - `build`: the checkout's `packages/cli/dist/penguin.js` or an installed CLI's `dist/penguin.js`.
  */
 export type CliOrigin = "env" | "source" | "build";
 
@@ -75,17 +75,39 @@ const BUILT_ENTRY = ["packages", "cli", "dist", "penguin.js"] as const;
 
 /**
  * The workspace root of the checkout `fromDir` lies in — the directory holding
- * `pnpm-workspace.yaml` — or null outside one.
+ * `pnpm-workspace.yaml` and `packages/cli/package.json` — or null outside one.
  *
  * Walks up rather than counting `..` segments, because the depth differs between a `tsx` run
  * (`packages/server/src/…`), a built one (`packages/server/dist/…`), the desktop shell's
  * single-file bundle, and a copy pnpm injected into another package's `node_modules`. Outside
- * a checkout (an npm install, a packaged app) the walk reaches the filesystem root.
+ * a checkout, pnpm deploy can still leave a workspace file. That boundary must stop the walk
+ * without identifying the installation (or a checkout containing its output) as a source tree.
  */
 export function workspaceRoot(fromDir: string): string | null {
   let dir = path.resolve(fromDir);
   for (;;) {
-    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
+    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
+      return fs.existsSync(path.join(dir, "packages", "cli", "package.json")) ? dir : null;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** The built CLI package containing this server dependency, in a release or npm install. */
+function installedCliEntry(fromDir: string): string | null {
+  let dir = path.resolve(fromDir);
+  for (;;) {
+    const entry = path.join(dir, "dist", "penguin.js");
+    if (fs.existsSync(entry)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+        if (pkg.name === "@prismshadow/penguin-cli") return entry;
+      } catch {
+        // An absent or malformed manifest cannot identify our CLI.
+      }
+    }
     const parent = path.dirname(dir);
     if (parent === dir) return null;
     dir = parent;
@@ -124,7 +146,7 @@ export interface ResolveCliLaunchOptions {
  * Which CLI this server offers as `penguin`, in this order:
  *
  * 1. `PENGUIN_CLI_ENTRY`, when set: whoever started the server named its own CLI.
- * 2. Outside a checkout, nothing: an installation that was not told its CLI has none to offer.
+ * 2. Outside a checkout, the installed CLI package containing this server, if present.
  * 3. In a checkout, that checkout's CLI. A server running from TypeScript source (`pnpm dev`
  *    runs it under `tsx watch`) offers the CLI's source through the checkout's loader: it is
  *    the CLI as the checkout is NOW, as the server is, where a build would be whatever was
@@ -142,7 +164,14 @@ export function resolveCliLaunch(opts: ResolveCliLaunchOptions): CliLaunch {
     return { entry: explicit, execArgs: [], checkout, origin: "env", unavailable: null };
   }
   if (checkout === null) {
-    return { entry: null, execArgs: [], checkout: null, origin: null, unavailable: null };
+    const entry = installedCliEntry(opts.moduleDir);
+    return {
+      entry,
+      execArgs: [],
+      checkout: null,
+      origin: entry === null ? null : "build",
+      unavailable: null,
+    };
   }
 
   const sourceEntry = path.join(checkout, ...SOURCE_ENTRY);

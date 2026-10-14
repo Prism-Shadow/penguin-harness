@@ -261,4 +261,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${PORT}/api/install" || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/penguin-entrypoint"]
-CMD ["penguin", "server"]
+# Start the installed CLI even when PATH puts a previous data-root shim first.
+CMD ["/usr/local/bin/penguin", "server"]

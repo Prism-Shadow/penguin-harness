@@ -10,6 +10,10 @@
  * - A server offers PENGUIN_CLI_ENTRY when set; else, from a checkout, the checkout's CLI —
  *   its source while the server itself runs from source, its build otherwise, each falling back
  *   to the other; Electron has the build only. A checkout with neither gets a stub that says why.
+ * - Given a packaged CLI with or without pnpm's workspace file, when its server starts without
+ *   PENGUIN_CLI_ENTRY, it offers the installed CLI and replaces an old stub with a working shim.
+ * - Given a workspace file without the checkout's CLI package, when the server starts, it must
+ *   not report a broken development setup or use an unrelated package's dist/penguin.js.
  * - Through the shim, the real CLI's data root is `--root` > an explicit PENGUIN_HOME > the
  *   shim's root; without the shim, `~/.penguin/data` as before.
  */
@@ -36,6 +40,33 @@ async function tempRoot(): Promise<string> {
   const root = await makeTempRoot();
   roots.push(root);
   return root;
+}
+
+/** The CLI package containing its server dependency, as pnpm deploy lays it out. */
+async function installation(workspace: boolean, nested: boolean = false) {
+  const root = await tempRoot();
+  const lib = path.join(root, "lib");
+  const moduleDir = path.join(
+    lib,
+    "node_modules",
+    ...(nested ? [".pnpm", "server", "node_modules"] : []),
+    "@prismshadow",
+    "penguin-server",
+    "dist",
+  );
+  fs.mkdirSync(moduleDir, { recursive: true });
+  fs.mkdirSync(path.join(lib, "dist"));
+  fs.writeFileSync(
+    path.join(lib, "package.json"),
+    JSON.stringify({ name: "@prismshadow/penguin-cli", type: "module" }),
+  );
+  if (workspace) fs.writeFileSync(path.join(lib, "pnpm-workspace.yaml"), "packages: []\n");
+  const entry = path.join(lib, "dist", "penguin.js");
+  fs.writeFileSync(
+    entry,
+    "process.stdout.write(JSON.stringify({ home: process.env.PENGUIN_HOME, args: process.argv.slice(2) }));\n",
+  );
+  return { root, lib, moduleDir, entry };
 }
 
 afterEach(async () => {
@@ -223,6 +254,7 @@ describe("resolveCliLaunch: which CLI a server offers", () => {
       fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
       fs.writeFileSync(path.join(repo, rel), "\n");
     };
+    write("packages/cli/package.json");
     if (has.source) write("packages/cli/src/penguin.ts");
     if (has.build) write("packages/cli/dist/penguin.js");
     return repo;
@@ -265,6 +297,56 @@ describe("resolveCliLaunch: which CLI a server offers", () => {
       }),
     ).toEqual({ entry: null, execArgs: [], checkout: null, origin: null, unavailable: null });
   });
+
+  it.each([
+    { workspace: true, nested: false },
+    { workspace: true, nested: true },
+    { workspace: false, nested: false },
+    { workspace: false, nested: true },
+  ])("offers the installed CLI with layout %j", async ({ workspace, nested }) => {
+    const { entry, moduleDir } = await installation(workspace, nested);
+    const launch = resolveCliLaunch({
+      explicit: undefined,
+      moduleDir,
+      source: false,
+      electron: false,
+    });
+    expect(launch).toEqual({
+      entry,
+      execArgs: [],
+      checkout: null,
+      origin: "build",
+      unavailable: null,
+    });
+    expect(
+      resolveCliLaunch({
+        explicit: " /custom/penguin.js ",
+        moduleDir,
+        source: false,
+        electron: false,
+      }),
+    ).toMatchObject({ entry: "/custom/penguin.js", checkout: null, origin: "env" });
+  });
+
+  it.each(["unrelated", "invalid", "missing manifest", "missing CLI"])(
+    "does not offer a CLI or a development stub for an installation with %s",
+    async (problem) => {
+      const { lib, entry, moduleDir } = await installation(true);
+      const manifest = path.join(lib, "package.json");
+      if (problem === "unrelated") fs.writeFileSync(manifest, '{"name":"another-package"}');
+      if (problem === "invalid") fs.writeFileSync(manifest, "{");
+      if (problem === "missing manifest") fs.unlinkSync(manifest);
+      if (problem === "missing CLI") fs.unlinkSync(entry);
+      expect(
+        resolveCliLaunch({
+          explicit: undefined,
+          moduleDir,
+          source: false,
+          electron: false,
+        }),
+      ).toEqual({ entry: null, execArgs: [], checkout: null, origin: null, unavailable: null });
+    },
+  );
 
   it("a server running from source offers the CLI source through the checkout's loader", async () => {
     const repo = await checkout({ source: true, build: true });
@@ -357,6 +439,21 @@ describe("resolveCliLaunch: which CLI a server offers", () => {
       expect(workspaceRoot(from), rel).toBe(repo);
     }
   });
+
+  it("does not mistake a deployment inside a checkout for that checkout", async () => {
+    const repo = await checkout({ source: true, build: true });
+    const deployed = path.join(repo, "out", "lib");
+    fs.mkdirSync(deployed, { recursive: true });
+    fs.writeFileSync(path.join(deployed, "pnpm-workspace.yaml"), "packages: []\n");
+    expect(
+      resolveCliLaunch({
+        explicit: undefined,
+        moduleDir: deployed,
+        source: false,
+        electron: false,
+      }),
+    ).toEqual({ entry: null, execArgs: [], checkout: null, origin: null, unavailable: null });
+  });
 });
 
 /** This checkout's own CLI, the way a dev server running from source offers it. */
@@ -383,6 +480,28 @@ describe.skipIf(!POSIX)("a penguin started through the shim", () => {
     });
     return { status: res.status, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
   }
+
+  it("a packaged server replaces an old stub with its own working CLI shim", async () => {
+    const { root, moduleDir } = await installation(true);
+    ensureCliShim(root, null, { unavailable: "packages/cli/dist/penguin.js is not built" });
+    const launch = resolveCliLaunch({
+      explicit: undefined,
+      moduleDir,
+      source: false,
+      electron: false,
+    });
+    expect(
+      ensureCliShim(root, launch.entry, {
+        execArgs: launch.execArgs,
+        unavailable: launch.unavailable,
+        electron: false,
+      }).kind,
+    ).toBe("written");
+    const result = run(path.join(cliShimDir(root), "penguin"), ["browser", "a b"], {}, root);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toEqual({ home: root, args: ["browser", "a b"] });
+  });
 
   it("targets the server's data root unless the caller set PENGUIN_HOME; empty is unset", async () => {
     const root = await tempRoot();
