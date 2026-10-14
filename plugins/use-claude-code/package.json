@@ -34,6 +34,8 @@
       "skills": [
         "remote-claude-code"
       ]
-    }
+    },
+    "title": "Remote Claude Code",
+    "title_zh": "远程操控 Claude Code"
   }
 }

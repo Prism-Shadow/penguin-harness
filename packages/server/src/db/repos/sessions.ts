@@ -48,7 +48,7 @@ export interface SessionRow {
    * the CLI, or adopted from a Trace a legacy CLI-direct run left behind), "org" (opened by
    * the organization runtime — a desk or a ticket session — or spawned as a sub-session of
    * one, which inherits the stamp at registration), "api" (created by an Agent API run — the
-   * only rows the API may continue); NULL = legacy row from before the column existed,
+   * only rows the API may continue), "workbench" (created by the Workbench host); NULL = legacy row from before the column existed,
    * treated as web. Free text in SQLite, so a new value needs no migration.
    * Provenance that outlives its organization: development mode's list is the one reader
    * that filters on it (through the list's `excludeOrg`), and it hides "org" rows whether or
@@ -57,7 +57,7 @@ export interface SessionRow {
    * (runtime/session-sources.ts); `client` is a separate, DB-only axis that meta never
    * records.
    */
-  client?: "web" | "cli" | "org" | "api" | null;
+  client?: "web" | "cli" | "org" | "api" | "workbench" | null;
   /** Cache: a Trace record exists (set at task start / adoption / subagent registration; backfilled by list hydration). */
   hasTrace?: boolean;
   /**
@@ -112,7 +112,7 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     title: (r.title as string | null) ?? null,
     archivedAt: (r.archived_at as string | null) ?? null,
     keptAt: (r.kept_at as string | null) ?? null,
-    client: (r.client as "web" | "cli" | "org" | "api" | null) ?? null,
+    client: (r.client as "web" | "cli" | "org" | "api" | "workbench" | null) ?? null,
     hasTrace: (r.has_trace as number) === 1,
     // The open-time backfill leaves no NULLs; the coalesce only hardens against a row
     // somehow inserted as NULL (degrades to createdAt instead of surfacing undefined).

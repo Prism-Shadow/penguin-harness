@@ -63,6 +63,8 @@
     "short_description_zh": "Linux、macOS 与 Windows：只限制文件写入。",
     "category": "sandbox",
     "icon": "icon.svg",
-    "preinstall": false
+    "preinstall": false,
+    "title": "DSH Sandbox",
+    "title_zh": "DSH 沙箱"
   }
 }

@@ -43,15 +43,7 @@ describe("scheduler", () => {
   let nowMs: number;
   let busy: Set<string>;
   let started: Array<{ sessionId: string; text: string }>;
-  let created: Array<{
-    projectId: string;
-    agentId: string;
-    workspace?: string;
-    provider?: string;
-    modelId?: string;
-    approvalMode?: "allow-all";
-    source?: "schedule";
-  }>;
+  let created: Array<Parameters<ScheduleSessionCreator["createSession"]>[0]>;
   let events: Array<{ userId: string; event: ScheduleServerEvent }>;
   let errors: ErrorRecordArgs[];
   let scheduler: Scheduler;

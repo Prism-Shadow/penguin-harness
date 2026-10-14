@@ -223,30 +223,36 @@ describe("short example prompts", () => {
     {
       id: "investmentCopilot",
       zhMarkers: [
-        "Penguin SDK",
-        "perplexity.ai/finance",
-        "对话式",
-        "启动后",
-        "实时抓取",
-        "首页",
-        "走势较好的股票",
+        "Plugin",
+        "智能体",
+        "Agent Workbench",
+        "5 分钟",
         "市场因素",
-        "查股工具",
         "公司名",
         "不要编",
+        "新建对话",
       ],
       enMarkers: [
-        "Penguin SDK",
-        "perplexity.ai/finance",
-        "conversational",
-        "from startup",
-        "live market",
-        "home page",
-        "trending strongest",
+        "Plugins",
+        "agent",
+        "Agent Workbench",
+        "5 minutes",
         "market factors",
-        "stock-lookup tool",
         "company name",
         "not listed",
+        "new conversation",
+      ],
+    },
+    {
+      id: "legalDesk",
+      zhMarkers: ["Plugin", "法务智能体", "Agent Workbench", "后台审阅", "报告下载", "新建对话"],
+      enMarkers: [
+        "Plugins",
+        "legal agent",
+        "Agent Workbench",
+        "background review",
+        "report downloads",
+        "new conversation",
       ],
     },
     { id: "dailyPlan", zhMarkers: ["计划"], enMarkers: ["plan"] },
@@ -265,7 +271,7 @@ describe("short example prompts", () => {
 
   // What is left after the cut: what to build, and the constraints without which the result
   // would be the wrong thing (a rhythm game is a game synced to music; the investment Copilot
-  // is a Penguin SDK app that refreshes from startup, surfaces trending stocks on its home page,
+  // is an Agent Workbench that refreshes quotes, surfaces trending stocks,
   // and gives the assistant a name-resolving stock-lookup tool).
   it.each(shortExamples)("$id keeps its core in both locales", ({ id, zhMarkers, enMarkers }) => {
     for (const marker of zhMarkers) {

@@ -15,13 +15,14 @@ import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/a
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
+import { WORKBENCH_UPDATED_EVENT, type WorkbenchUpdatedDetail } from "../lib/workbench-tabs";
 
 const PROJECT_KEY = "penguin.lastProjectId";
 const agentKey = (projectId: string) => `penguin.lastAgentId.${projectId}`;
 
 /**
  * Remembers a Project and Agent the way the store does, for a surface that sits outside the
- * ProjectProvider (the full-page workflow route) and wants the shell to open on them next.
+ * ProjectProvider (the full-page workbench route) and wants the shell to open on them next.
  */
 export function rememberSelection(projectId: string, agentId: string): void {
   localStorage.setItem(PROJECT_KEY, projectId);
@@ -169,6 +170,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     store.setState({ agents: [] });
     void store.getState().reloadAgents();
   }, [store, currentProjectId]);
+
+  useEffect(() => {
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<WorkbenchUpdatedDetail>).detail;
+      if (detail.projectId === store.getState().currentProjectId)
+        void store.getState().reloadAgents();
+    };
+    window.addEventListener(WORKBENCH_UPDATED_EVENT, changed);
+    return () => window.removeEventListener(WORKBENCH_UPDATED_EVENT, changed);
+  }, [store]);
 
   const value = useMemo<ProjectContextValue>(() => {
     const currentProject =

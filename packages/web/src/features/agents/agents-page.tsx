@@ -72,8 +72,8 @@ import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog } from "./create-agent-dialog";
 import type { PluginPickItem } from "./create-agent-dialog";
 
-/** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
-const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
+/** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
+const BUILTIN_AGENT_IDS = new Set(["default_agent", "penguin_support"]);
 
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {
@@ -344,7 +344,8 @@ export function AgentsPage() {
    */
   const openSettingsTab = (
     agentId: string,
-    tab: "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "memory",
+    tab:
+      "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "workbenches" | "memory",
   ) => {
     setCurrentAgentId(agentId);
     navigate(`/agents/${agentId}?tab=${tab}`);
@@ -542,6 +543,17 @@ export function AgentsPage() {
             >
               <GlyphIcon d={ICONS.fishHook} size={ICON_SIZE.inlineGlyph} />
               {a.hookCount}
+            </button>
+            <button
+              type="button"
+              className={STAT_LINK_CLASS}
+              disabled={elsewhere}
+              data-tooltip={S.workbenches.count(a.workbenchCount ?? 0)}
+              aria-label={S.workbenches.count(a.workbenchCount ?? 0)}
+              onClick={() => openSettingsTab(a.agentId, "workbenches")}
+            >
+              <GlyphIcon d={ICONS.anvil} size={ICON_SIZE.inlineGlyph} />
+              {a.workbenchCount ?? 0}
             </button>
             <button
               type="button"

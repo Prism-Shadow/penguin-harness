@@ -1,6 +1,8 @@
 [
   {
     "name": "@penguinharness/sandbox-bwrap",
+    "title": "Linux Sandbox",
+    "titleZh": "Linux 沙箱",
     "version": "0.2.3",
     "description": "Bubblewrap sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
     "descriptionZh": "PenguinHarness 的 Bubblewrap 沙箱后端：在 Linux 上限制文件写入，并提供网络隔离与路径屏蔽。",
@@ -15,6 +17,8 @@
   },
   {
     "name": "@penguinharness/sandbox-seatbelt",
+    "title": "macOS Sandbox",
+    "titleZh": "macOS 沙箱",
     "version": "0.2.3",
     "description": "macOS Seatbelt sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
     "descriptionZh": "PenguinHarness 的 macOS Seatbelt 沙箱后端：限制文件写入，并提供网络隔离与路径屏蔽。",
@@ -29,6 +33,8 @@
   },
   {
     "name": "@penguinharness/sandbox-wsl",
+    "title": "Windows Sandbox",
+    "titleZh": "Windows 沙箱",
     "version": "0.2.3",
     "description": "WSL sandbox backend for PenguinHarness on Windows: commands run in a dedicated WSL2 distro under bubblewrap, with Windows interop switched off.",
     "descriptionZh": "PenguinHarness 在 Windows 上的 WSL 沙箱后端：命令在专用的 WSL2 发行版中经 bubblewrap 运行，并关闭 Windows 互操作。",
@@ -43,6 +49,8 @@
   },
   {
     "name": "@penguinharness/sandbox-dsh",
+    "title": "DSH Sandbox",
+    "titleZh": "DSH 沙箱",
     "version": "0.2.3",
     "description": "DeepSeek Harness sandbox adaptor for PenguinHarness: the DSH local backend chain behind the harness's own sandbox interface.",
     "descriptionZh": "PenguinHarness 的 DeepSeek Harness 沙箱适配器：把 DSH 的本地后端链接入本框架自己的沙箱接口。",

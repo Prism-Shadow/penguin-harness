@@ -211,6 +211,7 @@ export const DUOTONE: Readonly<Partial<Record<GlyphKey, string>>> = {
   panelLeft: "M4 5h6v14H4z",
   panelLeftText: "M5 4h4v16H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
   /** The chrome bar above the rule, which is what makes the frame a window. */
+  anvil: "M3 7h5V4h13v5l-4 3H8c-3 0-5-2-5-5Z",
   appWindow: "M3 9V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3z",
   /** All four tiles, as drawn (and so for `dashboard`). */
   tiles: ICONS.tiles,
@@ -324,6 +325,7 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   puzzle: "green",
   fishHook: "green",
   wrench: "green",
+  anvil: "green",
   shieldAlert: "green",
   shieldHalf: "green",
   shieldCheck: "green",

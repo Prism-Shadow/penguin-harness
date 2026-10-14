@@ -78,6 +78,7 @@ import {
 } from "../src/state/index.js";
 import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces/index.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
+import { catalogModelEntries } from "../src/state/model-catalog.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
 let tmpRoot: string;
@@ -1790,7 +1791,7 @@ describe("plugins (shared and per-machine tables)", () => {
  *   unanimity, and a key every keyed row shares when the group could lend it back to each of
  *   them; nothing is read from the catalog, and every model keeps running on what it ran on (a
  *   keyless model the group key reaches now has it). Old OpenCode Go and Penguin Go files land
- *   on the shape a new Project has.
+ *   on the current group/row shape, retaining models retired from new Project presets.
  * - What does not move: a tie for the most common base URL; any base URL in a group with a
  *   bare row; a shared key the group could not lend back to every row holding it.
  * - The move is one-time and quiet: a second load writes nothing, a file with nothing to move
@@ -2061,7 +2062,7 @@ describe("providers (group-level connections)", () => {
     expect(await fs.readFile(file(), "utf8")).toBe(text);
   });
 
-  it("old OpenCode Go and Penguin Go files land on a new Project's shape: the common endpoint and the key on the group, each row's own protocol and other base on the row", async () => {
+  it("old OpenCode Go and Penguin Go files move shared connections onto the group and retain each row's overrides, including retired models", async () => {
     // As an older release wrote them: every row a copy of its catalog entry, one key across
     // each group. OpenCode Go's rows sit on two bases (four on the Chat Completions one, two
     // on the Messages one) and three protocols; Penguin Go's share one MMSP connection.
@@ -2103,16 +2104,20 @@ describe("providers (group-level connections)", () => {
         created_at: "2026-09-20T00:00:00.000Z",
       },
     });
-    // Each row keeps exactly what a new Project's row stores, and no key.
-    const preset = presetModelEntries();
+    // Retired models remain in saved Projects. Their connection shape still follows the
+    // catalog even though a new Project no longer seeds them (for example GPT-5.6 Luna).
+    const catalog = catalogModelEntries();
     for (const [provider, ids] of [
       ["opencode-go", go],
       ["penguin-go", relay],
     ] as const) {
       for (const id of ids) {
         const own = stored(provider, id);
-        const seeded = preset.find((e) => e.provider === provider && e.model_id === id)!;
-        expect([own.client_type, own.base_url], id).toEqual([seeded.client_type, seeded.base_url]);
+        const expected = catalog.find((e) => e.provider === provider && e.model_id === id)!;
+        expect([own.client_type, own.base_url], id).toEqual([
+          expected.client_type,
+          expected.base_url,
+        ]);
         expect(own.api_key, id).toBeUndefined();
       }
     }

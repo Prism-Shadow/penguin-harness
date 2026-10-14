@@ -42,6 +42,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    // Each worker boots app trees and runs real TypeScript compilers. Keep their CPU and
+    // filesystem contention bounded on CI and when pnpm runs other packages alongside us.
+    maxWorkers: 2,
+    minWorkers: 1,
     isolate: false,
     restoreMocks: true,
     testTimeout: process.platform === "win32" ? 30_000 : 5_000,
@@ -51,6 +55,8 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**"],
+      // CI uploads these even after a failure; preserve the diagnostics for that run.
+      reportOnFailure: true,
     },
   },
 });

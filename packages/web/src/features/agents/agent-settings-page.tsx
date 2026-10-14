@@ -1,12 +1,12 @@
 /**
- * Agent settings page: ten tabs —
+ * Agent settings page: eleven tabs —
  * Overview (name/description form + two ruled sections in the skills import modal's
  * family: Agent State — State version, snapshot export-import and the copyable State
  * path — and Kernel — the defaults generation with its update / restore-defaults
  * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
- * Hooks (hooks-tab.tsx), Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule
+ * Hooks (hooks-tab.tsx), Workbenches (workbenches-tab.tsx), Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule
  * (schedules-tab.tsx), API (api-tab.tsx: the Agent's public API, kept by this server).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
@@ -78,6 +78,7 @@ import {
 } from "./tools-form";
 import type { ToolNumberField, ToolRowDraft } from "./tools-form";
 import { SkillsTab } from "./skills-tab";
+import { WorkbenchesTab } from "./workbenches-tab";
 import { HooksTab } from "./hooks-tab";
 import { MemoryTab } from "./memory-tab";
 import { kernelTabLabel } from "./kernel-labels";
@@ -96,6 +97,7 @@ type TabKey =
   | "tools"
   | "skills"
   | "hooks"
+  | "workbenches"
   | "memory"
   | "vault"
   | "schedules"
@@ -123,6 +125,7 @@ export function AgentSettingsPage() {
     { key: "tools", label: S.agent.tabTools },
     { key: "skills", label: S.agent.tabSkills },
     { key: "hooks", label: S.agent.tabHooks },
+    { key: "workbenches", label: S.agent.tabWorkbenches },
     { key: "memory", label: S.agent.tabMemory },
     { key: "vault", label: S.agent.tabVault },
     { key: "schedules", label: S.agent.tabSchedules },
@@ -310,6 +313,9 @@ export function AgentSettingsPage() {
         )}
         {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}
         {tab === "hooks" && <HooksTab agentId={agentId} onConfigChanged={refreshConfig} />}
+        {tab === "workbenches" && (
+          <WorkbenchesTab key={`${projectId}:${agentId}`} agentId={agentId} />
+        )}
         {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
         {tab === "schedules" && <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />}
         {tab === "api" && (

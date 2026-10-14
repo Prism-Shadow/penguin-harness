@@ -1,0 +1,37 @@
+{
+  "name": "@penguinharness/penguin-support",
+  "version": "0.2.15",
+  "description": "PenguinHarness product support with a question list, conversation dialogs and answers grounded in documentation and source code.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/penguin-support"
+  },
+  "files": [
+    "icon.svg",
+    "skills",
+    "workbenches",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "penguin": {
+    "title": "PenguinHarness Q&A Assistant",
+    "title_zh": "PenguinHarness 问答助手",
+    "description_zh": "PenguinHarness 产品客服：问题列表、对话弹窗，以及依据文档和源码的解答。",
+    "category": "office-productivity",
+    "preinstall": false,
+    "icon": "icon.svg",
+    "short_description": "Product questions, sourced answers and a support workbench.",
+    "short_description_zh": "产品问答、来源引用与客服工作台。",
+    "quick_start": {
+      "prompt": "How do I create an agent and choose its model in PenguinHarness? Cite the official docs.",
+      "prompt_zh": "如何在 PenguinHarness 中新建智能体并选择模型？请引用官方文档。",
+      "skills": [
+        "penguin-support"
+      ]
+    }
+  }
+}

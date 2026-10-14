@@ -43,8 +43,8 @@
 
 @layer base {
   :root {
-    /* The body font stack under a name of the app's own, which the workflow frame reads off the
-       document (lib/workflow-theme.ts). An alias of the theme's token, so the two cannot drift. */
+    /* The body font stack under a name of the app's own, which the workbench frame reads off the
+       document (lib/workbench-theme.ts). An alias of the theme's token, so the two cannot drift. */
     --font-app-sans: var(--ui-font-sans);
   }
   html,

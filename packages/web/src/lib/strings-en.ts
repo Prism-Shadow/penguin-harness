@@ -971,8 +971,17 @@ export const en: Strings = {
     hideModelsWithoutKey: "Hide models without a key",
     hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
   },
-  workflows: {
-    tabsLabel: "Chat and workflows",
+  workbenches: {
+    title: "Workbenches",
+    count: (n: number) => `${n} ${n === 1 ? "workbench" : "workbenches"}`,
+    empty: "This Agent has no workbenches yet.",
+    agentTabDesc:
+      "Manage this Agent’s workbenches: open an app, reload it, review its versions or remove it.",
+    open: "Open workbench",
+    noMatches: "No matching agents.",
+    searchAgents: "Search agents",
+
+    tabsLabel: "Chat and workbenches",
     chatTab: "Chat",
     brokenMark: "The current files failed to load",
     reload: "Reload",
@@ -988,7 +997,7 @@ export const en: Strings = {
     restoreTitle: "Restore version",
     /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
     restoreConfirm: (revision: string) =>
-      `Restore version ${revision}? The workflow's files are replaced by that version and reloaded at once; its data (state.json) stays. Edits that never loaded successfully are lost.`,
+      `Restore version ${revision}? The workbench's files are replaced by that version and reloaded at once; its data (state.json) stays. Edits that never loaded successfully are lost.`,
     remove: "Remove",
     fillApp: "Fill the app",
     /** `palette` is the formatted palette.toggle chord, null while unbound. */
@@ -996,13 +1005,15 @@ export const en: Strings = {
       palette === null
         ? "Show this page as the whole app; the command palette is the way to leave"
         : `Show this page as the whole app; ${palette} opens the command palette to leave`,
-    exitFullPage: "Exit full page (back to chat)",
+    exitFullPage: "Exit full page (back to workbench)",
+    exitFullPageButton: "Exit full screen",
+    retryHistory: "Retry",
     exitHint: (palette: string | null): string =>
       palette === null
-        ? "Open the command palette to get back to the chat."
-        : `Press ${palette} for the command palette to get back to the chat.`,
-    noSuchPage: "This workflow does not exist or has no page.",
-    removeConfirm: "Delete this workflow and all its recorded versions?",
+        ? "Open the command palette to get back to the workbench."
+        : `Press ${palette} for the command palette to get back to the workbench.`,
+    noSuchPage: "This workbench does not exist or has no page.",
+    removeConfirm: "Delete this workbench and all its recorded versions?",
     removeYes: "Remove",
     removing: "Removing…",
     removeNo: "Keep",
@@ -1638,6 +1649,7 @@ export const en: Strings = {
     tabRuntime: "Runtime",
     tabTools: "Tools",
     tabSkills: "Skills",
+    tabWorkbenches: "Workbenches",
     tabHooks: "Hooks",
     tabVault: "Vault",
     tabSchedules: "Schedules",
@@ -2733,7 +2745,13 @@ export const en: Strings = {
       none: "No grouping",
     },
     /** What a plugin carries: the section titles of the grouping by content. */
-    kindLabel: { skills: "Skills", hooks: "Hooks", mcp: "MCP servers", modules: "Server modules" },
+    kindLabel: {
+      workbenches: "Workbenches",
+      skills: "Skills",
+      hooks: "Hooks",
+      mcp: "MCP servers",
+      modules: "Server modules",
+    },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent Sandbox",
     otherCategory: "Other",
@@ -2775,6 +2793,8 @@ export const en: Strings = {
     detailDescription: "About",
     detailFiles: "Files",
     detailSkills: "Skills",
+    detailWorkbenches: "Workbenches",
+    uninstallWorkbenchRecords: "Its workbenches and saved records will also be deleted.",
     detailHooks: "Hooks",
     detailMcpServers: "MCP servers",
     /** The detail dialog's links to the package's homepage and repository: their names and hover hints. */
@@ -3354,35 +3374,30 @@ When done, open index.html in a browser and self-test once.`,
       },
       ragDocsExpert: {
         label: "A RAG docs expert from one sentence",
-        desc: "Collect the Claude Code docs and build a RAG Q&A app that cites its sources",
+        desc: "Create a docs expert with its own workbench to search, ask questions and inspect sources",
         prompt:
-          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG " +
-          "app that answers Claude Code questions as a configuration expert, citing its sources.",
+          "Use PenguinHarness Plugins to create a Claude Code docs expert agent with its own Agent Workbench tab: " +
+          "collect https://github.com/ericbuess/claude-code-docs and provide RAG answers citing its sources. " +
+          "When ready, tell me how to open the agent, start a new conversation and use its workbench.",
       },
       investmentCopilot: {
-        label: "Conversational investment analyst",
-        desc: "A conversational market Copilot on the Penguin SDK: the home page lists what is trending, with the market factors behind every call",
+        label: "An investment analyst from one sentence",
+        desc: "Create an investment agent with its own workbench for quotes, company lookup and market questions",
         prompt:
-          "Build a conversational stock-market Copilot on the Penguin SDK, along the lines of " +
-          "perplexity.ai/finance: from startup it pulls live market data every 5 minutes, and the " +
-          "home page lists the stocks trending strongest lately alongside how the sectors compare. " +
-          "Every call has to name the market factors behind it — policy, sector news, fund flows, " +
-          "earnings, macro data — rather than technical indicators. Analysis of public data, not " +
-          "investment advice. Its stock-lookup tool has to handle questions like \"look up Zhipu's " +
-          'stock for me": resolve a company name to its ticker itself, and when there is no match ' +
-          "or the company is not listed, say so rather than inventing a quote.",
+          "Use PenguinHarness Plugins to create an investment analyst agent with its own Agent Workbench tab: " +
+          "refresh quotes every 5 minutes, list stocks trending strongest and compare sectors, explaining market factors " +
+          "such as policy, industry news and earnings with sources and timestamps. Support company name lookup and " +
+          "follow-up questions; say when a company is not listed or cannot be found. Analysis, not investment advice. " +
+          "When ready, tell me how to open the agent, start a new conversation and use its workbench.",
       },
       legalDesk: {
         label: "A legal agent app from one sentence",
-        desc: "A new legal agent behind a workflow tab with only an upload, a file list and report downloads — no conversation in sight",
+        desc: "Create a legal agent with its own workbench for contract uploads, review status and report downloads",
         prompt:
-          "Create a legal agent that reviews contracts, agreements and other legal documents: it " +
-          "finds risky clauses, explains why, and suggests revisions. Then give the legal agent " +
-          "a workflow tab as its desk: when I upload a file, the agent analyzes it in the " +
-          "background and produces an analysis report for me to download. The page has only an " +
-          "upload, a file list (each file's processing status) and the report downloads, with no " +
-          "conversation shown. Take every colour from the theme variables so it looks right in " +
-          "light and dark.",
+          "Use PenguinHarness Plugins to create a legal agent with its own Agent Workbench tab: " +
+          "upload contracts or agreements for background review, identifying risky clauses, reasons and suggested revisions. " +
+          "The workbench shows only uploads, file processing status and report downloads, and follows light and dark themes. " +
+          "When ready, tell me how to open the agent, start a new conversation and use its workbench.",
       },
       agentBenchmarkBuild: {
         label: "Build a decision agent and its benchmark",
@@ -4018,6 +4033,7 @@ Scenarios:
       api: "API",
       schedule: "Scheduled",
       cli: "CLI",
+      workbench: "Workbench",
     },
     archivedStub: {
       note: "This chat is archived. Unarchive it to read it; it returns to the sidebar.",

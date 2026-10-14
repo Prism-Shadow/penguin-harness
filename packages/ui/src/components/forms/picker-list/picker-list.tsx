@@ -23,20 +23,10 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { MenuLabel } from "../../overlays/menu/menu";
 import { ChoiceCheck, menuRowClass, menuRowTone } from "../../overlays/menu-panel/menu-panel";
 import { SearchInput } from "../search-input/search-input";
+import { Modal } from "../../overlays/modal/modal";
+import { CloseButton } from "../../actions/close-button/close-button";
 
-export function PickerList<T>({
-  items,
-  itemKey,
-  isCurrent,
-  query,
-  onQueryChange,
-  searchPlaceholder,
-  emptyText,
-  onPick,
-  renderRow,
-  groupLabel,
-  footer,
-}: {
+export interface PickerListProps<T> {
   items: readonly T[];
   /** Stable React key AND identity for the highlighted row. */
   itemKey: (item: T) => string;
@@ -55,11 +45,51 @@ export function PickerList<T>({
   groupLabel?: (item: T) => string | null;
   /** Pinned below the scroll area (mirroring the search box above it). */
   footer?: ReactNode;
+  /** Dialog rows have more room and a viewport-bounded list; menus keep their compact cap. */
+  layout?: "menu" | "dialog";
+  /** Optional controls beside the search, such as a dialog close button. */
+  searchActions?: ReactNode;
+}
+
+/** A compact searchable choice dialog, sharing row and keyboard behavior with menu pickers. */
+export function PickerDialog<T>({
+  open,
+  onClose,
+  title,
+  ...picker
+}: Omit<PickerListProps<T>, "layout" | "searchActions"> & {
+  open: boolean;
+  onClose: () => void;
+  title: string;
 }) {
+  return (
+    <Modal open={open} onClose={onClose} title={title} headerless bare widthClass="sm:max-w-md">
+      <PickerList {...picker} layout="dialog" searchActions={<CloseButton onClose={onClose} />} />
+    </Modal>
+  );
+}
+
+export function PickerList<T>({
+  items,
+  itemKey,
+  isCurrent,
+  query,
+  onQueryChange,
+  searchPlaceholder,
+  emptyText,
+  onPick,
+  renderRow,
+  groupLabel,
+  footer,
+  layout = "menu",
+  searchActions,
+}: PickerListProps<T>) {
   // -1 = nothing highlighted yet (see the note above); reset whenever the query changes.
   const [active, setActive] = useState(-1);
   const activeKey = active >= 0 && active < items.length ? itemKey(items[active]!) : null;
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    // A focused row or header action keeps the button's own Enter/Space behavior.
+    if (e.target instanceof HTMLElement && e.target.closest("button")) return;
     if (items.length === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -80,8 +110,11 @@ export function PickerList<T>({
   return (
     <div className="contents" onKeyDown={onKeyDown}>
       {/* Quick search (autofocused: it also owns the keyboard while the panel is up) */}
-      <div className="border-b border-line-muted px-2 pb-1.5 pt-0.5">
+      <div
+        className={`flex items-center gap-2 border-b border-line-muted ${layout === "dialog" ? "px-3 py-2.5" : "px-2 pb-1.5 pt-0.5"}`}
+      >
         <SearchInput
+          className="min-w-0 flex-1"
           variant="menu"
           autoFocus
           value={query}
@@ -92,8 +125,15 @@ export function PickerList<T>({
           placeholder={searchPlaceholder}
           aria-label={searchPlaceholder}
         />
+        {searchActions}
       </div>
-      <div className="max-h-56 overflow-y-auto">
+      <div
+        className={
+          layout === "dialog"
+            ? "max-h-[min(22rem,60dvh)] overflow-y-auto p-1.5"
+            : "max-h-56 overflow-y-auto"
+        }
+      >
         {items.length === 0 && <p className="px-3 py-1.5 text-xs text-fg-subtle">{emptyText}</p>}
         {items.map((item, i) => {
           const key = itemKey(item);
@@ -109,7 +149,8 @@ export function PickerList<T>({
                   key === activeKey ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined
                 }
                 onClick={() => onPick(item)}
-                className={`flex items-center gap-2 ${menuRowClass} text-xs ${menuRowTone(current)}${
+                aria-pressed={current}
+                className={`flex items-center gap-2 ${layout === "dialog" ? "w-full rounded-md px-2 py-2 text-left text-sm transition-colors" : `${menuRowClass} text-xs`} ${menuRowTone(current)}${
                   key === activeKey ? " bg-line-muted" : ""
                 }`}
               >

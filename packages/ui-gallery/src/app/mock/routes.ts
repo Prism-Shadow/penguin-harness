@@ -129,7 +129,7 @@ import type {
   VaultResponse,
   VersionHistoryResponse,
   VersionResponse,
-  WorkflowInfo,
+  WorkbenchInfo,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
@@ -731,6 +731,7 @@ router
       kernelOutdated: false,
       vaultKeyCount: 0,
       scheduleCount: 0,
+      workbenchCount: 0,
       skillCount: 0,
       hookCount: 0,
       pluginUpdates: [],
@@ -2133,6 +2134,12 @@ router
     }
     return { files };
   })
+  .get("/api/projects/:projectId/agents/:agentId/plugins", (ctx): AgentPluginsInstallResponse => ({
+    skills: installedOf(ctx).skills,
+    hooks: installedOf(ctx).hooks,
+    mcpServers: mcpServerItems(ctx),
+    workbenches: [],
+  }))
   .post("/api/projects/:projectId/agents/:agentId/plugins", (ctx): unknown => {
     const installed = installedOf(ctx);
     const agent = agentOf(ctx);
@@ -2579,24 +2586,27 @@ router
   .get("/api/projects/:projectId/organizations/:orgId/sessions", companyOff);
 
 // ---------------------------------------------------------------------------------------------
-// Workflows and the Project's plugin list
+// Workbenches and the Project's plugin list
 // ---------------------------------------------------------------------------------------------
 
 router
-  .get("/api/projects/:projectId/agents/:agentId/workflows", (): { workflows: WorkflowInfo[] } => ({
-    workflows: [],
-  }))
-  .post("/api/projects/:projectId/agents/:agentId/workflows/:workflowId/reload", () =>
-    notFound("Workflow"),
+  .get(
+    "/api/projects/:projectId/agents/:agentId/workbenches",
+    (): { workbenches: WorkbenchInfo[] } => ({
+      workbenches: [],
+    }),
   )
-  .get("/api/projects/:projectId/agents/:agentId/workflows/:workflowId/history", () => ({
+  .post("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/reload", () =>
+    notFound("Workbench"),
+  )
+  .get("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/history", () => ({
     versions: [],
   }))
-  .post("/api/projects/:projectId/agents/:agentId/workflows/:workflowId/rollback", () =>
-    notFound("Workflow"),
+  .post("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId/rollback", () =>
+    notFound("Workbench"),
   )
-  .delete("/api/projects/:projectId/agents/:agentId/workflows/:workflowId", () =>
-    notFound("Workflow"),
+  .delete("/api/projects/:projectId/agents/:agentId/workbenches/:workbenchId", () =>
+    notFound("Workbench"),
   )
   .get(
     "/api/projects/:projectId/plugins/installed",

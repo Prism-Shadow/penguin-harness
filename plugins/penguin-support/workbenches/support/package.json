@@ -1,0 +1,37 @@
+{
+  "name": "penguin-support-workbench",
+  "version": "1.0.0",
+  "type": "module",
+  "penguin": {
+    "version": "2026.10.14.3",
+    "modules": [
+      {
+        "name": "Workbench",
+        "requires": {
+          "host": {
+            "iface": "@prismshadow/penguin-server#WorkbenchHost",
+            "from": "Host"
+          }
+        },
+        "provides": {
+          "main": "@prismshadow/penguin-server#WorkbenchMain"
+        },
+        "contributes": {
+          "WebModule.sessionTabs": [
+            {
+              "id": "support.main",
+              "key": "support",
+              "title": "Support",
+              "titleZh": "客服工作台",
+              "renderer": {
+                "iframe": {
+                  "src": "ui/index.html"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

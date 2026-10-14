@@ -18,7 +18,7 @@ const NO_EXTRA: readonly PaletteAction[] = [];
 
 /**
  * `extra` is what the mount point adds ahead of the standing actions — the full-page
- * workflow route registers its way out here, which is why it exists at all on that route.
+ * workbench route registers its way out here, which is why it exists at all on that route.
  */
 export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteAction[] }) {
   const [open, setOpen] = useState(false);

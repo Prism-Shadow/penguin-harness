@@ -124,7 +124,7 @@ export interface PlatformApi extends Park {
    * "current App" pointer in the registry would be a duplicate channel.
    */
   business(): ModuleTree | null;
-  /** Process-exit graceful drain (manager ≤5s wrap-up, workflow park); no-op without business. */
+  /** Process-exit graceful drain (manager ≤5s wrap-up, workbench park); no-op without business. */
   shutdown(): Promise<void>;
   /**
    * The asynchronous tail of this App's dispose — set by the dispose effect, awaited by
@@ -340,7 +340,7 @@ async function createInner(
   // DECIDE ONLY. Disposing a group kills live ptys and child processes, and nothing
   // brings them back — so the decision is computed here and ACTED ON at the bottom,
   // once this App is fully built. Everything between can still throw (a module's
-  // create, a workflow factory), and a boot that fails there is recovered by re-booting
+  // create, a workbench factory), and a boot that fails there is recovered by re-booting
   // the previous bundle; that recovery is only honest if the resources it re-adopts are
   // still alive.
   const doomedGroups = Object.entries(inherited ?? {})
@@ -542,7 +542,7 @@ async function createInner(
   // and the progress log is simply lost, which re-running recovers); and SSE subscriber
   // closures (they serve the old generation's stream until the client reloads on
   // web_updated — the channel hub itself is runtime-owned).
-  // A module with state of its own (sandbox settings, workflow refs, ssh tunnels, an
+  // A module with state of its own (sandbox settings, workbench refs, ssh tunnels, an
   // in-flight job) belongs in the right list here — the list is the contract, not a
   // description of today's modules.
   // The tree's dispose runs every module's effects in reverse creation order. It leaves

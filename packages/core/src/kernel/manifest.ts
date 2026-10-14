@@ -9,7 +9,7 @@
  *     "provides": { "agents": "Agents" },
  *     "contributes": { "http.routes": [{ "id": "agents.routes", "prefix": "/api/…", "auth": "user" }] },
  *     "context": { "version": 1, "schema": "{ collapsed?: string[] }" },
- *     "children": ["vault", { "keyed": "workflows" }]
+ *     "children": ["vault", { "keyed": "workbenches" }]
  *   }
  *
  * - `provides`: alias → an interface class this module declares, keyed

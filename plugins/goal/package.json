@@ -48,6 +48,8 @@
           "timeout": 60
         }
       ]
-    }
+    },
+    "title": "Goal Mode",
+    "title_zh": "目标模式"
   }
 }

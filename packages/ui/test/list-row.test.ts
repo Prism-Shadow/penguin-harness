@@ -1,23 +1,32 @@
 /**
  * ListRow: a ruled row whose mark and text become one button when the row opens what it names,
- * with its own actions outside that button.
+ * with its own actions outside that button. SettingsList groups the installed items as a named list.
  */
 import { createElement } from "react";
 import { describe, expect, it } from "vitest";
-import { ListRow } from "../src/components/data/list-row/list-row";
-import { classTokens, renderStatic } from "../src/testing";
+import { ListRow, SettingsList } from "../src/components/data/list-row/list-row";
+import { renderStatic } from "../src/testing";
 
 const trailing = createElement("button", { type: "button", "aria-label": "Export" }, "E");
 
 describe("ListRow", () => {
-  it("is a ruled row that lightens under the pointer, on tokens", () => {
+  it("groups named items, with metadata and independent actions", () => {
     const html = renderStatic(
-      createElement(ListRow, { title: "pdf", description: "Reads PDFs.", meta: "2 KB", trailing }),
+      createElement(SettingsList, {
+        label: "Installed skills",
+        children: createElement(ListRow, {
+          as: "li",
+          title: "pdf",
+          description: "Reads PDFs.",
+          meta: "2 KB",
+          trailing,
+        }),
+      }),
     );
-    expect(html).toMatch(/^<div class="flex items-center gap-3 border-b border-line-muted /);
-    expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["last:border-b-0", "hover:bg-surface-muted", "text-fg-muted"]),
-    );
+    expect(html).toContain('<ul aria-label="Installed skills"><li');
+    expect(html).toContain("pdf");
+    expect(html).toContain("Reads PDFs.");
+    expect(html).toContain("2 KB");
     // Not a button when it opens nothing: the only button is the action.
     expect(html.match(/<button/g)).toHaveLength(1);
   });
@@ -35,7 +44,7 @@ describe("ListRow", () => {
     // React 19's server renderer prepends a preload hint for an eager image; not our markup.
     expect(html.replace(/^<link rel="preload"[^>]*\/>/, "")).toMatch(/^<li /);
     expect(html).toMatch(
-      /<button type="button" class="[^"]*"><span[^>]*><img[^>]*\/><\/span>(?:(?!<\/button>).)*case-01(?:(?!<\/button>).)*<\/button><div[^>]*><button type="button" aria-label="Export">/,
+      /<button type="button" class="[^"]*"><span[^>]*><img[^>]*\/><\/span>(?:(?!<\/button>).)*case-01(?:(?!<\/button>).)*<\/button><div[^>]*><div[^>]*><button type="button" aria-label="Export">/,
     );
   });
 });

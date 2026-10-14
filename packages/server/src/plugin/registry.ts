@@ -59,6 +59,8 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
     return null;
   }
   for (const key of [
+    "title",
+    "titleZh",
     "repository",
     "homepage",
     "descriptionZh",
@@ -141,7 +143,7 @@ export function builtinPluginRegistry(
 /** The display fields an index entry may carry, which a package can also carry itself. */
 export type PluginDisplay = Pick<
   PluginIndexEntry,
-  "descriptionZh" | "shortDescription" | "shortDescriptionZh" | "icon"
+  "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh" | "icon"
 >;
 
 /**
@@ -166,6 +168,8 @@ export async function localPluginDisplay(
     return {};
   }
   const display: PluginDisplay = {};
+  if (penguin.title !== undefined) display.title = penguin.title;
+  if (penguin.titleZh !== undefined) display.titleZh = penguin.titleZh;
   if (penguin.descriptionZh !== undefined) display.descriptionZh = penguin.descriptionZh;
   if (penguin.shortDescription !== undefined) display.shortDescription = penguin.shortDescription;
   if (penguin.shortDescriptionZh !== undefined) {
@@ -261,7 +265,7 @@ export function httpPluginRegistry(
  * for a document that changes four times a day; the asset is a plain file download with no such
  * budget, and the CDN in front of it is the same one that serves the installers.
  *
- * The tag is fixed and never re-pointed. What a six-hourly workflow in the index repository
+ * The tag is fixed and never re-pointed. What a six-hourly workbench in the index repository
  * replaces is the ASSET on that release, so this URL is stable for the life of the tag and
  * nothing here has to discover which release is newest — "latest nightly" is a name, resolved
  * by the publisher rather than by a search.

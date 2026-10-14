@@ -160,6 +160,7 @@ export interface SessionMetaPayload {
  *   composer, `penguin chat`, and forks.
  * - `api`: an external program opened it through the Agent API.
  * - `schedule`: a scheduled task opened it for one of its runs.
+ * - `workbench`: an Agent Workbench opened it for a question or job; archived by default.
  * - `subagent`: a `run_subagent` child, whichever Session spawned it (a company Session's too).
  * - `cli`: `penguin run` created it, the Test Sessions an evaluation launches included.
  * - `company`: company mode's organization runtime opened it, as an employee's desk or for a
@@ -168,7 +169,8 @@ export interface SessionMetaPayload {
  * Which program created the server's index row is a separate fact (the row's `client`); the two
  * can differ, as `penguin chat` (a `cli` client writing a `user` Session) shows.
  */
-export type SessionSource = "user" | "api" | "schedule" | "subagent" | "cli" | "company";
+export type SessionSource =
+  "user" | "api" | "schedule" | "subagent" | "cli" | "company" | "workbench";
 
 // ---------------------------------------------------------------------------
 // model_msg — complete messages

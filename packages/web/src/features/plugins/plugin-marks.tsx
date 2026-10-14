@@ -141,11 +141,11 @@ export function rowInstalledOnServer(row: PluginRow): boolean {
 }
 
 /**
- * What a row is called: the library plugin's display name in the UI language (package.json's
- * `penguin.title` / `title_zh`), else its name — which a module-only row always shows.
+ * What a row is called: the package's display name in the UI language, from the library or
+ * the module's registry entry, falling back to its name.
  */
 export function rowTitle(row: PluginRow, locale: "zh" | "en"): string {
-  const plugin = row.library;
+  const plugin = row.library ?? row.module?.entry;
   return plugin === undefined
     ? row.name
     : localizedText(locale, plugin.title || row.name, plugin.titleZh);

@@ -57,6 +57,8 @@
     "short_description_zh": "Windows：在受限的 WSL2 发行版中运行命令。",
     "category": "sandbox",
     "icon": "icon.svg",
-    "preinstall": false
+    "preinstall": false,
+    "title": "Windows Sandbox",
+    "title_zh": "Windows 沙箱"
   }
 }

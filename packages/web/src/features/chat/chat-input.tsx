@@ -1208,8 +1208,7 @@ export function ChatInput({
   /**
    * Fill from a surface that composed a prompt, without sending (see ComposerControl): the
    * prompt REPLACES the text body — any draft is cleared first — and the pinned installed
-   * skills join the selection, so pressing Send builds exactly the `[use_skills]` message the
-   * caller used to submit on its own. Why text replaces while skills merge is buildExampleFill.
+   * skills replace the selection, so switching examples cannot retain another task's skills.
    */
   const applyFill = useCallback(
     (prompt: string, pinnedSkills: readonly string[]) => {
@@ -1217,15 +1216,15 @@ export function ChatInput({
         prompt,
         exampleSkills: pinnedSkills,
         installedSkills: skills.map((s) => s.name),
-        selectedSkills,
       });
       setText(fill.text);
       onTextChange?.(fill.text);
       lastFillRef.current = fill.text;
       setCaret(0);
-      // The merge only ever appends, so an unchanged length means an unchanged selection —
-      // and calling back for nothing would rewrite the cached draft on every repeat click.
-      if (fill.skills.length !== selectedSkills.length) {
+      if (
+        fill.skills.length !== selectedSkills.length ||
+        fill.skills.some((name, i) => name !== selectedSkills[i])
+      ) {
         setSelectedSkills(fill.skills);
         onSkillsChange?.(fill.skills);
       }

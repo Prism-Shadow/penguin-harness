@@ -1,7 +1,7 @@
 /**
  * Which TypeScript compiler the server takes (plugin/typescript.ts): the one a push carried
  * before the one an installation holds, and never one whose default library files are missing
- * — a desktop package built without them resolved `typescript` and then failed every workflow
+ * — a desktop package built without them resolved `typescript` and then failed every workbench
  * for want of `lib.es2022.full.d.ts`.
  */
 import fs from "node:fs";

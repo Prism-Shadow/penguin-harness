@@ -6,7 +6,7 @@
  * Scenarios:
  * - Given no source, when a Session is created, its meta records `user`.
  * - Given a source, when a Session is created, its meta records it unchanged.
- * - Given a Trace head with a source (a scheduled run's, a company Session's), when the Session
+ * - Given a Trace head with a source (a scheduled run's, a company Session's, a workbench question's), when the Session
  *   resumes, the meta its next context records carries the same source.
  * - Given a Trace head written before the source was required (none), the retired
  *   `benchmark`, or junk a third party wrote, when the Session resumes, the source reads as
@@ -97,7 +97,7 @@ describe("creating a Session", () => {
 });
 
 describe("resuming a Session", () => {
-  it.each(["schedule", "company"] satisfies SessionSource[])(
+  it.each(["schedule", "company", "workbench"] satisfies SessionSource[])(
     "carries a recorded %s source into the meta its next context records",
     async (source) => {
       await writeTrace(source);

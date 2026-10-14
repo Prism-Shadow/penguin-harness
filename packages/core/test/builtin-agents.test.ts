@@ -1,9 +1,10 @@
 /**
- * Built-in agent provisioning and skill library install policy: the sole built-in agent
+ * Built-in agent provisioning and skill library install policy: the general agent
  * default_agent comes pre-installed with the library's preinstalled skill set (skills marked
  * `preinstall: false` stay manual-install), an ordinary newly created agent starts with zero
  * skills, and the default AGENTS.md is an empty file; provisionProjectAgents is idempotent and
- * never overwrites existing config.
+ * never overwrites existing config. The default Project gets a support Agent with its workbench;
+ * other Projects do not, and reprovisioning preserves user edits to the support files.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -16,6 +17,7 @@ import {
   BUILTIN_AGENT_IDS,
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
+  SUPPORT_AGENT_ID,
   listInstalledSkills,
   loadAgentState,
   provisionProjectAgents,
@@ -83,10 +85,10 @@ describe("Skill installation policy", () => {
 });
 
 describe("provisionProjectAgents", () => {
-  it("the only built-in Agent default_agent: installs the library's preinstalled Skills, AGENTS.md is empty", async () => {
+  it("default_agent installs the library's preinstalled Skills, AGENTS.md is empty", async () => {
     const ids = await provisionProjectAgents();
-    expect(ids).toEqual([DEFAULT_AGENT_ID]);
-    expect(BUILTIN_AGENT_IDS).toEqual([DEFAULT_AGENT_ID]);
+    expect(ids).toEqual([DEFAULT_AGENT_ID, SUPPORT_AGENT_ID]);
+    expect(BUILTIN_AGENT_IDS).toContain(SUPPORT_AGENT_ID);
 
     // name/description are written into system_config; AGENTS.md is an empty file.
     const state = await loadAgentState({ init: {}, agentId: DEFAULT_AGENT_ID });
@@ -104,7 +106,7 @@ describe("provisionProjectAgents", () => {
   it("provision is idempotent: running it again does not change the result", async () => {
     await provisionProjectAgents();
     const ids = await provisionProjectAgents();
-    expect(ids).toEqual([DEFAULT_AGENT_ID]);
+    expect(ids).toEqual([DEFAULT_AGENT_ID, SUPPORT_AGENT_ID]);
     const md = await fs.readFile(
       agentsMdPath(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
       "utf8",
@@ -126,6 +128,29 @@ describe("provisionProjectAgents", () => {
       "utf8",
     );
     expect(after).toBe(custom);
+  });
+});
+
+describe("support Agent provisioning", () => {
+  it("seeds the default Project's editable workbench once and preserves user edits", async () => {
+    await provisionProjectAgents();
+    const base = path.join(tmpRoot, DEFAULT_PROJECT_ID, "agents", SUPPORT_AGENT_ID);
+    const file = path.join(base, "workbenches/support/ui/index.html");
+    expect((await fs.readFile(file, "utf8")).length).toBeGreaterThan(0);
+    const config = await loadAgentState({ agentId: SUPPORT_AGENT_ID });
+    expect(config.agentsMd).toContain("penguin-support");
+    expect(await fs.readFile(skillMdPath(SUPPORT_AGENT_ID, "penguin-support"), "utf8")).toContain(
+      "https://penguin.ooo/docs/",
+    );
+    await fs.writeFile(file, "My support page");
+    await provisionProjectAgents();
+    expect(await fs.readFile(file, "utf8")).toBe("My support page");
+  });
+  it("does not add a product support Agent to other Projects", async () => {
+    await provisionProjectAgents({ root: tmpRoot, projectId: "team" });
+    await expect(
+      fs.stat(path.join(tmpRoot, "team/agents", SUPPORT_AGENT_ID)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

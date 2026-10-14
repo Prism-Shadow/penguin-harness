@@ -13,12 +13,13 @@ import { ICONS } from "@prismshadow/penguin-ui";
 import { S } from "./strings";
 
 /** The sources a program opens a Session for: a person's, a subagent and a company Session are none of them. */
-export type ProgramSource = Extract<SessionSource, "api" | "schedule" | "cli">;
+export type ProgramSource = Extract<SessionSource, "api" | "schedule" | "cli" | "workbench">;
 
 const SOURCE_GLYPHS: Record<ProgramSource, string> = {
   api: ICONS.plug,
   schedule: ICONS.calendar,
   cli: ICONS.terminalPrompt,
+  workbench: ICONS.anvil,
 };
 
 /** A row's source mark, as `SessionRow` takes it. */
@@ -40,5 +41,5 @@ export function backgroundSourceMark(s: SessionInfo): SourceMark | null {
 }
 
 function isProgramSource(source: SessionSource | undefined): source is ProgramSource {
-  return source === "api" || source === "schedule" || source === "cli";
+  return source === "api" || source === "schedule" || source === "cli" || source === "workbench";
 }

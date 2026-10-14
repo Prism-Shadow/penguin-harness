@@ -1093,8 +1093,16 @@ export const zh = {
      */
     hint: (mod: string): string => `←→ 切换分组与列表 · ${mod}1–9 跳到分组`,
   },
-  workflows: {
-    tabsLabel: "聊天与工作流",
+  workbenches: {
+    title: "工作台",
+    count: (n: number) => `${n} 个工作台`,
+    empty: "这个 Agent 还没有工作台。",
+    agentTabDesc: "管理这个 Agent 的工作台，可打开应用、重新加载、查看历史版本或移除。",
+    open: "打开工作台",
+    noMatches: "没有匹配的智能体。",
+    searchAgents: "搜索智能体",
+
+    tabsLabel: "聊天与工作台",
     chatTab: "聊天",
     brokenMark: "当前文件加载失败",
     reload: "重新加载",
@@ -1110,7 +1118,7 @@ export const zh = {
     restoreTitle: "恢复版本",
     /** History keeps a copy per successful load, so only edits that never loaded are lost; the state file is data and stays. */
     restoreConfirm: (revision: string) =>
-      `恢复到版本 ${revision}？工作流的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
+      `恢复到版本 ${revision}？工作台的文件会换成该版本并立即重新加载，数据（state.json）保持不变；从未成功加载过的改动会丢失。`,
     remove: "移除",
     fillApp: "占满应用",
     /** `palette` is the formatted palette.toggle chord, null while unbound. */
@@ -1118,11 +1126,13 @@ export const zh = {
       palette === null
         ? "让这个页面占满整个应用；打开命令面板可退出"
         : `让这个页面占满整个应用；${palette} 打开命令面板可退出`,
-    exitFullPage: "退出全页模式（回到聊天）",
+    exitFullPage: "退出全页模式（回到工作台）",
+    exitFullPageButton: "退出全屏",
+    retryHistory: "重试",
     exitHint: (palette: string | null): string =>
-      palette === null ? "打开命令面板可回到聊天。" : `按 ${palette} 打开命令面板可回到聊天。`,
-    noSuchPage: "这个 workflow 不存在或没有页面。",
-    removeConfirm: "删除这个工作流及其全部已记录版本？",
+      palette === null ? "打开命令面板可回到工作台。" : `按 ${palette} 打开命令面板可回到工作台。`,
+    noSuchPage: "这个工作台不存在或没有页面。",
+    removeConfirm: "删除这个工作台及其全部已记录版本？",
     removeYes: "确认移除",
     removing: "移除中…",
     removeNo: "取消",
@@ -1753,6 +1763,7 @@ export const zh = {
     tabRuntime: "运行参数",
     tabTools: "工具",
     tabSkills: "技能",
+    tabWorkbenches: "工作台",
     tabHooks: "钩子",
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
@@ -2885,7 +2896,13 @@ export const zh = {
       none: "不分组",
     },
     /** What a plugin carries: the section titles of the grouping by content. */
-    kindLabel: { skills: "技能", hooks: "钩子", mcp: "MCP 服务器", modules: "服务端模块" },
+    kindLabel: {
+      workbenches: "Workbenches",
+      skills: "技能",
+      hooks: "钩子",
+      mcp: "MCP 服务器",
+      modules: "服务端模块",
+    },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent 运行沙箱",
     otherCategory: "其他",
@@ -2926,6 +2943,8 @@ export const zh = {
     detailDescription: "说明",
     detailFiles: "文件",
     detailSkills: "技能",
+    detailWorkbenches: "Workbenches",
+    uninstallWorkbenchRecords: "其工作台及保存的记录也会被删除。",
     detailHooks: "钩子",
     /** The detail dialog's section of the MCP servers a plugin installs into an Agent's tools. */
     detailMcpServers: "MCP 服务器",
@@ -3534,29 +3553,28 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
       },
       ragDocsExpert: {
         label: "一句话生成 RAG 文档专家",
-        desc: "收集 Claude Code 文档，生成一个带来源引用的 RAG 问答应用",
+        desc: "新建文档专家智能体，在专属工作台检索文档、提问并查看来源引用",
         prompt:
-          "收集 https://github.com/ericbuess/claude-code-docs 的文档，" +
-          "做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
+          "用 PenguinHarness 的 Plugin 能力新建 Claude Code 文档专家智能体，并给它做一个 Agent Workbench 标签页：" +
+          "收集 https://github.com/ericbuess/claude-code-docs 文档，提供带来源引用的 RAG 问答；" +
+          "完成后告诉我如何进入该智能体、新建对话并打开工作台使用。",
       },
       investmentCopilot: {
-        label: "对话式投资分析助理",
-        desc: "用 Penguin SDK 做对话式看盘 Copilot：首页列出近期走势较好的股票，每个判断都说清市场因素",
+        label: "一句话生成投资分析助理",
+        desc: "新建投资分析智能体，在专属工作台看行情、查公司并追问市场因素",
         prompt:
-          "用 Penguin SDK 做一个对话式的股市 Copilot，形态参考 perplexity.ai/finance：启动后每 5 分钟实时抓取大盘行情，" +
-          "首页直接列出近期走势较好的股票和板块强弱，每个判断都要说清背后的市场因素——政策、行业消息、" +
-          "资金流向、财报或宏观数据，而不是技术指标，" +
-          "只做分析不是投资建议。它的查股工具要能答「帮我查一下智谱的股票」这类问题：" +
-          "按公司名（中文也行）自己对应到股票代码，查不到或没上市就直说，不要编。",
+          "用 PenguinHarness 的 Plugin 能力新建投资分析智能体，并给它做一个 Agent Workbench 标签页：" +
+          "每 5 分钟更新行情，列出近期走势较好的股票和板块，解释政策、行业、财报等市场因素并标注来源与时间；" +
+          "支持按公司名查股和追问，查不到或未上市就直说，不要编，只做分析不是投资建议。" +
+          "完成后告诉我如何进入该智能体、新建对话并打开工作台使用。",
       },
       legalDesk: {
         label: "一句话构建法务智能体应用",
-        desc: "新建一个法务 Agent，配一个 Workflow 标签页：只有上传、文件列表和报告下载，看不到对话过程",
+        desc: "新建法务智能体，在专属工作台上传合同、查看处理状态并下载审阅报告",
         prompt:
-          "新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。" +
-          "再在法务智能体上做一个 Workflow 标签页，当作它的工作台：我上传文件后，由它在后台分析，" +
-          "完成后生成一份分析报告供我下载。页面上只要上传、文件列表（每个文件的处理状态）和报告下载，" +
-          "不显示任何对话过程；颜色一律取自主题变量，明暗两种主题下都要好看。",
+          "用 PenguinHarness 的 Plugin 能力新建法务智能体，并给它做一个 Agent Workbench 标签页：" +
+          "上传合同或协议后由它在后台审阅，列出风险条款、理由和修改建议；工作台只显示上传、文件处理状态与报告下载，" +
+          "适配明暗主题。完成后告诉我如何进入该智能体、新建对话并打开工作台使用。",
       },
       agentBenchmarkBuild: {
         label: "构建通用决策智能体和评测基准",
@@ -4208,6 +4226,7 @@ Benchmark：
       api: "API",
       schedule: "定时任务",
       cli: "CLI",
+      workbench: "工作台",
     },
     /** An archived conversation opened by its URL: what the stub in place of the transcript says. */
     archivedStub: {

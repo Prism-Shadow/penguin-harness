@@ -334,8 +334,8 @@ export class SessionService {
   /**
    * The approval mode a Session created without one starts with. An organization's Session
    * keeps `allow-all`: its runtime names the mode it wants, and nobody is there to answer an
-   * ask a preset might bring. The other unattended creators — a scheduled run, a workflow —
-   * pass `allow-all` themselves (scheduler.ts, workflows/service.ts).
+   * ask a preset might bring. The other unattended creators — a scheduled run, a workbench —
+   * pass `allow-all` themselves (scheduler.ts, workbenches/service.ts).
    */
   private startApproval(requested: ApprovalMode | undefined, client?: string): ApprovalMode {
     if (requested !== undefined) return requested;
@@ -754,7 +754,7 @@ export class SessionService {
      * are the only callers that pass them, so no request can claim either provenance for
      * itself ("api" is what lets the Agent API continue a Session).
      */
-    client?: "web" | "cli" | "org" | "api";
+    client?: "web" | "cli" | "org" | "api" | "workbench";
   }): Promise<SessionInfo> {
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(

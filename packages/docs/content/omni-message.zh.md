@@ -43,7 +43,7 @@ interface SessionMetaPayload {
   system_prompt: string;                  // fully assembled, placeholders substituted
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
-  source: "user" | "api" | "schedule" | "subagent" | "cli" | "company"; // what kind of conversation this is
+  source: "user" | "api" | "schedule" | "subagent" | "cli" | "company" | "workbench"; // what kind of conversation this is
 }
 ```
 
@@ -56,6 +56,7 @@ Workspace 在整个 Session 生命周期内不变，模型与系统提示词则�
 - `schedule`：定时任务的一次运行；
 - `subagent`：`run_subagent` 派生的子会话；
 - `cli`：`penguin run` 创建的会话；
+- `workbench`：Workbench 宿主为应用创建的会话；
 - `company`：[公司模式](/company-mode)开出的工位会话与工单会话。
 
 旧版本写下的 Trace 可能没有 `source`，读作 `user`；若服务器的索引行表明它由公司模式开出，则读作 `company`。也可能是已停用的 `benchmark`，读作 `cli`。文件本身从不改写。

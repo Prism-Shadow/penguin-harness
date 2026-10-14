@@ -34,9 +34,11 @@ import {
   loadLibraryPlugins,
   parseSkillFrontmatter,
   pluginContentVersion,
+  listInstalledWorkbenches,
 } from "@prismshadow/penguin-core";
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
+import { isWorkbenchId, workbenchesDir } from "../workbenches/store.js";
 import { isTopicFileName } from "./memory-service.js";
 import type { PluginUpdateRef } from "../api/types.js";
 import { resolveLibraryPlugins } from "./plugin-library.js";
@@ -85,6 +87,8 @@ export interface AgentListItem {
   vaultKeyCount: number;
   /** Number of scheduled tasks (count of .toml files under schedule/, including invalid ones). */
   scheduleCount: number;
+  /** Workbench folders with a manifest, including ones with a load error. */
+  workbenchCount: number;
   /** Number of installed Skills (count of skills/<name>/ directories that contain a SKILL.md). */
   skillCount: number;
   /** Number of installed hook packages (hooks/<name>/ directories with a hooks.json). */
@@ -160,6 +164,7 @@ export class AgentService implements AgentLifecycle {
           ...(updatedAt !== undefined ? { updatedAt } : {}),
           vaultKeyCount,
           scheduleCount,
+          workbenchCount: await this.workbenchCount(projectId, row.agentId),
           skillCount: installed.skillCount,
           hookCount: installed.hookCount,
           pluginUpdates: installed.updates,
@@ -167,6 +172,24 @@ export class AgentService implements AgentLifecycle {
         };
       }),
     );
+  }
+
+  /** Count installed folders without compiling or walking their UI/runtime assets. */
+  private async workbenchCount(projectId: string, agentId: string): Promise<number> {
+    const base = workbenchesDir(this.root, projectId, agentId);
+    const entries = await fs.readdir(base, { withFileTypes: true }).catch(() => []);
+    const present = await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory() && isWorkbenchId(entry.name))
+        .map(async (entry) => {
+          try {
+            return (await fs.stat(path.join(base, entry.name, "package.json"))).isFile();
+          } catch {
+            return false;
+          }
+        }),
+    );
+    return present.filter(Boolean).length;
   }
 
   /**
@@ -274,6 +297,12 @@ export class AgentService implements AgentLifecycle {
         updates.set(plugin.name, pluginContentVersion(plugin));
       }
     }
+    for (const installed of await listInstalledWorkbenches(this.root, projectId, agentId)) {
+      const plugin = byPlugin.get(installed.plugin);
+      const workbench = plugin?.workbenches?.find((w) => w.name === installed.name);
+      if (plugin && workbench && comparePluginVersions(workbench.version, installed.version) > 0)
+        updates.set(plugin.name, pluginContentVersion(plugin));
+    }
     return {
       skillCount: skills.filter((s) => s !== null).length,
       hookCount: hooks.length,
@@ -323,6 +352,13 @@ export class AgentService implements AgentLifecycle {
       if (installedHook) {
         parts.push({ installed: installedHook.version, library: plugin.hooks.manifest.version });
       }
+    }
+    for (const installed of await listInstalledWorkbenches(this.root, projectId, agentId)) {
+      const workbench =
+        installed.plugin === pluginName
+          ? plugin.workbenches?.find((w) => w.name === installed.name)
+          : undefined;
+      if (workbench) parts.push({ installed: installed.version, library: workbench.version });
     }
     const behind = parts.filter((p) => comparePluginVersions(p.library, p.installed) > 0);
     let answer: { installed: string; library: string } | null = null;
@@ -404,7 +440,7 @@ export class AgentService implements AgentLifecycle {
       throw new HttpError(
         409,
         "cannot_delete_builtin_agent",
-        "Built-in Agents (default_agent) are provisioned with the Project and cannot be deleted from the web.",
+        "Built-in Agents are provisioned with the Project and cannot be deleted from the web.",
       );
     }
     await fs.rm(agentDir(this.root, projectId, agentId), { recursive: true, force: true });
@@ -536,6 +572,7 @@ export class AgentService implements AgentLifecycle {
       // are real reads because a package may carry any of them.
       vaultKeyCount: 0,
       scheduleCount: await this.scheduleCount(projectId, agentId),
+      workbenchCount: await this.workbenchCount(projectId, agentId),
       skillCount: installed.skillCount,
       hookCount: installed.hookCount,
       pluginUpdates: installed.updates,

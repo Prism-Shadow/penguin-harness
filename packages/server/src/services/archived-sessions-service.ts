@@ -84,7 +84,9 @@ function groupOf(workspace: string): string {
  * program's source otherwise.
  */
 function archivedSourceOf(source: SessionSource | undefined): ArchivedSessionSource {
-  return source === "api" || source === "schedule" || source === "cli" ? source : "user";
+  return source === "api" || source === "schedule" || source === "cli" || source === "workbench"
+    ? source
+    : "user";
 }
 
 /**

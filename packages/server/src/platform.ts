@@ -157,9 +157,9 @@ import {
   SessionIndex,
   SessionOrigins,
 } from "./mechanisms/sessions.js";
-import { Workflows } from "./mechanisms/workflows.js";
-import { WorkflowService } from "./workflows/service.js";
-import { WorkflowRoutes } from "./workflows/routes.js";
+import { Workbenches } from "./mechanisms/workbenches.js";
+import { WorkbenchService } from "./workbenches/service.js";
+import { WorkbenchRoutes } from "./workbenches/routes.js";
 import {
   ErrorLog,
   Errors,
@@ -466,10 +466,10 @@ export class CompanyModule {}
 export class ApiModule {}
 
 @Module({
-  children: [WorkflowService, WorkflowRoutes],
-  exports: [Workflows],
+  children: [WorkbenchService, WorkbenchRoutes],
+  exports: [Workbenches],
 })
-export class WorkflowsModule {}
+export class WorkbenchesModule {}
 
 /** The root: provides nothing and requires nothing; it exists so the groups have a scope to see each other in. */
 @Module({
@@ -492,7 +492,7 @@ export class WorkflowsModule {}
     TerminalModule,
     MachinesModule,
     TerminalRelay,
-    WorkflowsModule,
+    WorkbenchesModule,
     BuiltinBrowserModule,
     AgentApiModule,
     Startup,

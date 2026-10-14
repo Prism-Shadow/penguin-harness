@@ -60,6 +60,8 @@
     "short_description_zh": "Linux：限制文件写入、断开网络、屏蔽路径。",
     "category": "sandbox",
     "icon": "icon.svg",
-    "preinstall": false
+    "preinstall": false,
+    "title": "Linux Sandbox",
+    "title_zh": "Linux 沙箱"
   }
 }

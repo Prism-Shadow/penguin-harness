@@ -43,7 +43,7 @@ interface SessionMetaPayload {
   system_prompt: string;                  // fully assembled, placeholders substituted
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
-  source: "user" | "api" | "schedule" | "subagent" | "cli" | "company"; // what kind of conversation this is
+  source: "user" | "api" | "schedule" | "subagent" | "cli" | "company" | "workbench"; // what kind of conversation this is
 }
 ```
 
@@ -56,6 +56,7 @@ The Workspace is fixed for the Session's lifetime. The model and the system prom
 - `schedule`: a scheduled task's run;
 - `subagent`: a `run_subagent` child;
 - `cli`: one `penguin run` created;
+- `workbench`: a Session the Workbench host created for an application;
 - `company`: a desk or ticket Session that [company mode](/company-mode) opened.
 
 A Trace written by an older release may have no `source`, which reads as `user`, or as `company` when the server's index row says company mode opened the Session. It may also carry the retired `benchmark`, which reads as `cli`. The file itself is never rewritten.

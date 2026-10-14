@@ -140,6 +140,10 @@ export function pluginFiles(plugin: LibraryPlugin): Record<string, string> {
   for (const [rel, text] of Object.entries(plugin.hooks?.files ?? {})) {
     files[`hooks/${rel}`] = text;
   }
+  for (const workbench of plugin.workbenches ?? []) {
+    for (const [rel, text] of Object.entries(workbench.files))
+      files[`workbenches/${workbench.name}/${rel}`] = text;
+  }
   return files;
 }
 
@@ -168,6 +172,9 @@ export function toPluginItem(plugin: LibraryPlugin): PluginItem {
     ...(plugin.homepage !== undefined ? { homepage: plugin.homepage } : {}),
     ...(plugin.repository !== undefined ? { repository: plugin.repository } : {}),
     skills: plugin.skills.map(({ icon: _icon, ...skill }) => toSkillItem(skill)),
+    ...(plugin.workbenches
+      ? { workbenches: plugin.workbenches.map(({ name, version }) => ({ name, version })) }
+      : {}),
     hooks: plugin.hooks ? hookEvents(plugin.hooks.manifest) : [],
     ...(plugin.hooks !== undefined ? { hookVersion: plugin.hooks.manifest.version } : {}),
     ...(plugin.icon !== undefined ? { icon: plugin.icon } : {}),

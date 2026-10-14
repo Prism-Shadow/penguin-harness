@@ -4,8 +4,7 @@
  * dashboard (start-dashboard.tsx: the brand and its counts above the card, the examples and
  * shortcuts below it); this module keeps the draft itself. Before sending,
  * this is where Agent / Workspace / approval mode / Model are all
- * chosen in one place — two small dropdown pills sit right below the card (pill
- * buttons, styled after ChatGPT's project picker): Agent selection and Workspace
+ * chosen in one place — two small buttons sit right below the card: the Agent dialog and Workspace
  * directory selection (the menu browses server-side directories, and the current
  * path can be edited directly); the model picker lives in the input card's bottom
  * toolbar, left of the send button (with a vendor logo). The Session is only
@@ -41,7 +40,7 @@
  */
 import { browserState } from "../builtin-browser/browser-store";
 import { adoptBrowserSession } from "../builtin-browser/browser-actions";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
@@ -56,14 +55,8 @@ import type {
   SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
-import {
-  AgentAvatar,
-  Chevron,
-  Dropdown,
-  MenuItem,
-  MenuLabel,
-  toastError,
-} from "@prismshadow/penguin-ui";
+import { toastError } from "@prismshadow/penguin-ui";
+import { AgentSelect } from "../agents/agent-select";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { UNCONFINED, draftSandboxAfter } from "../../lib/permission-level";
@@ -75,9 +68,8 @@ import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
 import type { MachineLink } from "../../lib/machine-link";
 import { useMachines } from "../../state/machines";
 import { useAuth } from "../../state/auth";
-import { agentDisplayName, useProject } from "../../state/project";
+import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { employeesLast, isEmployee } from "../agents/agent-employment";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import { APPROVAL_MODES } from "./approval-mode";
@@ -100,7 +92,7 @@ import {
 import { newChatAgentId } from "./new-chat";
 import { onPluginConfigSaved } from "../../lib/plugin-config-event";
 import { effectiveThinkingLevel } from "./thinking-level";
-import { WorkspaceSelect, pillClass } from "./workspace-select";
+import { WorkspaceSelect } from "./workspace-select";
 import { FilesPanelToggle } from "./dock-toggles";
 import { sameModelRef } from "../models/model-grouping";
 
@@ -139,6 +131,7 @@ export function DraftView({
   draftId,
   composerRef: pageComposerRef,
   onWorkspaceChange,
+  onAgentChange,
 }: {
   projectId: string;
   /** Project model config (already fetched by ChatPage): candidate list and default model. */
@@ -152,6 +145,8 @@ export function DraftView({
   composerRef?: RefObject<ComposerControl | null>;
   /** The Workspace picked here ("" = a temporary one) and its machine, for the Files panel. */
   onWorkspaceChange?: (path: string, machineId: string | null) => void;
+  /** The resolved draft owner, including the machine whose Agent list was used. */
+  onAgentChange?: (agentId: string | null, machineId: string | null) => void;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -857,6 +852,11 @@ export function DraftView({
   const readComposerText = useCallback(() => textRef.current, []);
 
   const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
+  const resolvedAgentId = selectedAgent?.agentId ?? null;
+  useEffect(() => {
+    onAgentChange?.(resolvedAgentId, workspaceMachine);
+    if (resolvedAgentId && workspaceMachine === null) setCurrentAgentId(resolvedAgentId);
+  }, [resolvedAgentId, workspaceMachine, onAgentChange, setCurrentAgentId]);
 
   // Capability info for the currently selected model (vision/context window) switches instantly with the selection (matched by paired reference).
   const modelInfo = models?.models.find((m) => sameModelRef(m, modelRef));
@@ -898,7 +898,7 @@ export function DraftView({
         onTextChange={onTextChange}
       />
 
-      {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
+      {/* Agent and Workspace selection below the composer. */}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <AgentSelect
           agents={agents}
@@ -949,88 +949,5 @@ export function DraftView({
       {/* Lower symmetric space — empty, so it matches the upper one exactly */}
       <div className="flex-1" />
     </div>
-  );
-}
-
-/** Agent selection (pill dropdown): avatar + name, menu opens downward with an internal scroll cap. */
-function AgentSelect({
-  agents,
-  selected,
-  onSelect,
-  empty,
-}: {
-  agents: AgentSummary[];
-  selected: AgentSummary | null;
-  onSelect: (agent: AgentSummary) => void;
-  /** The empty row's text — why there is nothing to pick yet. */
-  empty: string;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      menuClass="left-0 top-full mt-1 w-72 max-w-[calc(100vw-2rem)] origin-top-left"
-      button={
-        <button
-          type="button"
-          data-tooltip={S.chat.chooseAgent}
-          aria-label={S.chat.chooseAgent}
-          onClick={() => setOpen(!open)}
-          className={pillClass}
-        >
-          {selected ? (
-            <AgentAvatar
-              id={selected.agentId}
-              name={agentDisplayName(selected)}
-              size={16}
-              className="shrink-0 rounded"
-            />
-          ) : null}
-          <span className="min-w-0 truncate">
-            {selected ? agentDisplayName(selected) : S.common.loading}
-          </span>
-          <Chevron open={open} size={12} className="shrink-0 text-gray-400" />
-        </button>
-      }
-    >
-      <div className="max-h-56 overflow-y-auto">
-        {agents.length === 0 && <p className="px-3 py-1.5 text-xs text-gray-400">{empty}</p>}
-        {/* The organizations' employees come last, under a label of their own: they are Agents
-            like any other, but their work happens in company mode (agent-employment.ts). */}
-        {employeesLast(agents).map((a, i, ordered) => {
-          const active = a.agentId === selected?.agentId;
-          const firstEmployee = isEmployee(a) && (i === 0 || !isEmployee(ordered[i - 1]!));
-          return (
-            <Fragment key={a.agentId}>
-              {firstEmployee && <MenuLabel>{S.agent.employeesSection}</MenuLabel>}
-              <MenuItem
-                density="sm"
-                aria-pressed={active}
-                checked={active}
-                onSelect={() => {
-                  onSelect(a);
-                  setOpen(false);
-                }}
-                glyph={
-                  <AgentAvatar
-                    id={a.agentId}
-                    name={agentDisplayName(a)}
-                    size={20}
-                    className="shrink-0 rounded"
-                  />
-                }
-                label={agentDisplayName(a)}
-                description={
-                  a.description ? (
-                    <span className="block truncate">{a.description}</span>
-                  ) : undefined
-                }
-              />
-            </Fragment>
-          );
-        })}
-      </div>
-    </Dropdown>
   );
 }

@@ -3,6 +3,7 @@
  *
  * - An admin installs a plugin of Skills from a zip: it joins the library as installed on the
  *   server, and no Project's list names it (nothing loads a package of Skills).
+ * - A workbench-only package imported from a zip joins the library with its dated workbench.
  * - A package of server modules from a zip is listed for this machine alone: another machine
  *   handed its name would fetch whatever the registry has under it; its row reads its own
  *   package.json.
@@ -195,6 +196,24 @@ describe("plugin import and export", () => {
     );
   const projectConfig = () =>
     fs.readFile(path.join(t.root, "default_project", ".project_config.toml"), "utf8");
+
+  it("imports a workbench-only package into the library", async () => {
+    const admin = await boot();
+    const result = await importZip(admin, {
+      "package.json": JSON.stringify({ name: "@acme/desk", version: "1.0.0" }),
+      "workbenches/desk/package.json": JSON.stringify({
+        name: "desk",
+        version: "1.0.0",
+        penguin: { version: "2026.10.14.1", modules: [{ name: "Workbench" }] },
+      }),
+      "workbenches/desk/index.ts": "export default { modules: {} };",
+    });
+    expect(result.status).toBe(201);
+    expect((await library(admin)).find((p) => p.name === "desk")).toMatchObject({
+      skills: [],
+      workbenches: [{ name: "desk", version: "2026.10.14.1" }],
+    });
+  });
 
   it("installs a plugin of Skills from an admin's zip into the library, listed in no Project", async () => {
     const admin = await boot();

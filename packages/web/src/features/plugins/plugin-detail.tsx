@@ -13,7 +13,7 @@
  * - **MCP servers**, for a plugin that carries any (plugin-mcp.tsx): one row per server — its
  *   name, transport and target, and marks for the vault keys it needs, the sign-in it needs and,
  *   for a stdio server, the command it runs on this server.
- * - **Files**, for a plugin of Skills and/or a hook package: the shared read-only file browser
+ * - **Files**, for a plugin of Skills, hooks or workbenches: the shared read-only file browser
  *   over everything an install writes — one directory per skill and one for the hook package,
  *   any number open at once, a preview on the right (the first SKILL.md opens on arrival). The
  *   files arrive in one request (GET /api/plugins/:plugin/files), so nothing is fetched per
@@ -64,7 +64,7 @@ import {
   type PluginDetails,
 } from "./plugin-marks";
 
-/** One collapsible group of the tree: a skill's directory, or the hook package's scripts. */
+/** One collapsible group of installable files. */
 interface FileGroup {
   id: string;
   label: string;
@@ -86,8 +86,8 @@ function filePreview(path: string, text: string): FileBrowserPreview {
 
 /**
  * The tree's groups, from the response's keys: `skills/<name>/…` files under their skill (in
- * the plugin's skill order), `hooks/…` scripts in one group at the end. SKILL.md leads its
- * group; every other file follows in path order.
+ * the plugin's skill order), then hooks and workbenches. SKILL.md leads a Skill group;
+ * a workbench's package.json leads its source files.
  */
 export function groupPluginFiles(
   paths: readonly string[],
@@ -95,6 +95,7 @@ export function groupPluginFiles(
   hooksLabel: string,
 ): FileGroup[] {
   const bySkill = new Map<string, string[]>();
+  const byWorkbench = new Map<string, string[]>();
   const hooks: string[] = [];
   for (const path of [...paths].sort()) {
     const skill = /^skills\/([^/]+)\//.exec(path)?.[1];
@@ -104,6 +105,13 @@ export function groupPluginFiles(
       bySkill.set(skill, list);
     } else if (path.startsWith("hooks/")) {
       hooks.push(path);
+    } else {
+      const workbench = /^workbenches\/([^/]+)\//.exec(path)?.[1];
+      if (workbench !== undefined) {
+        const list = byWorkbench.get(workbench) ?? [];
+        list.push(path);
+        byWorkbench.set(workbench, list);
+      }
     }
   }
   const leadWithSkillMd = (skill: string, list: string[]): string[] => {
@@ -118,6 +126,15 @@ export function groupPluginFiles(
       groups.push({ id: `skills/${skill}`, label: skill, paths: leadWithSkillMd(skill, list) });
   }
   if (hooks.length > 0) groups.push({ id: "hooks", label: hooksLabel, paths: hooks });
+  for (const [name, paths] of byWorkbench) {
+    const id = `workbenches/${name}`;
+    const manifest = `${id}/package.json`;
+    groups.push({
+      id,
+      label: id,
+      paths: paths.includes(manifest) ? [manifest, ...paths.filter((p) => p !== manifest)] : paths,
+    });
+  }
   return groups;
 }
 
@@ -207,7 +224,11 @@ export function moduleOnThisServer(part: ModulePart): boolean {
 
 /** Whether a row installs files into an Agent: Skills, or a hook package. */
 export function rowHasFiles(row: PluginRow): boolean {
-  return (row.library?.skills.length ?? 0) > 0 || (row.library?.hooks.length ?? 0) > 0;
+  return (
+    (row.library?.skills.length ?? 0) > 0 ||
+    (row.library?.hooks.length ?? 0) > 0 ||
+    (row.library?.workbenches?.length ?? 0) > 0
+  );
 }
 
 /** What the header says beside the icon, besides what the dialog's title already names. */
@@ -331,6 +352,15 @@ export function PluginDetailSections({
         )}
       </RuledSection>
 
+      {(row.library?.workbenches?.length ?? 0) > 0 && (
+        <RuledSection title={S.plugins.detailWorkbenches} level={3} className="mt-5">
+          <ul className="text-sm">
+            {row.library!.workbenches!.map((w) => (
+              <li key={w.name}>{w.name}</li>
+            ))}
+          </ul>
+        </RuledSection>
+      )}
       {row.library !== undefined && row.library.mcpServers.length > 0 && (
         <PluginMcpSection servers={row.library.mcpServers} />
       )}

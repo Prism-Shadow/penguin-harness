@@ -599,6 +599,7 @@ export function PluginCard(props: PluginCardProps) {
               uninstallAgent ? agentDisplayName(uninstallAgent) : pendingUninstall,
               plugin.mcpServers.length > 0,
             )}
+            {(plugin.workbenches?.length ?? 0) > 0 && ` ${S.plugins.uninstallWorkbenchRecords}`}
           </p>
         </ConfirmModal>
       )}

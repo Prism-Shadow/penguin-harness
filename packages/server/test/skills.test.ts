@@ -14,6 +14,8 @@
  *   frontmatter), refuses zip-slip, invalid names, malformed bodies and anything past the
  *   uncompressed caps (read off the central directory), answers 409 skill_exists unless told
  *   to overwrite, and exports byte-identically.
+ * - Too many archive entries are refused without installing any files.
+ * - Oversized declared entries or totals are refused before inflation, without installing files.
  * - The Agent list's pluginUpdates names a Skill once the library moves past it (the legacy
  *   version spelling reading as the same version), never one the library does not carry, and
  *   never a directory with no readable SKILL.md.
@@ -562,25 +564,22 @@ describe("skills api", () => {
     }
   });
 
-  it("archive: uncompressed limits — file count, per-file size, total size", async () => {
+  it("archive: too many files are refused without installing any files", async () => {
     await createPlainAgent("zip_limit_agent");
     const url = `${base("zip_limit_agent")}/archive`;
     // > 200 files.
     const many: Record<string, Uint8Array> = { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD) };
     for (let i = 0; i < 201; i++) many[`zip-skill/f${i}.txt`] = strToU8("x");
-    expect((await owner.post(url, { dataBase64: zipB64(many) })).status).toBe(400);
-    // Per-file > 5MB uncompressed (zeros compress tiny, so the wire stays small).
-    const big: Record<string, Uint8Array> = {
-      "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD),
-      "zip-skill/big.bin": new Uint8Array(5 * 1024 * 1024 + 1),
-    };
-    expect((await owner.post(url, { dataBase64: zipB64(big) })).status).toBe(400);
-    // Total > 20MB uncompressed across files that each stay under the per-file cap.
-    const total: Record<string, Uint8Array> = { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD) };
-    for (let i = 0; i < 5; i++) {
-      total[`zip-skill/part${i}.bin`] = new Uint8Array(4200 * 1024);
-    }
-    expect((await owner.post(url, { dataBase64: zipB64(total) })).status).toBe(400);
+    const refused = await owner.post(url, { dataBase64: zipB64(many) });
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({
+      error: { message: expect.stringContaining("200-file limit") },
+    });
+    const list = (await (await owner.get(base("zip_limit_agent"))).json()) as AgentSkillsResponse;
+    expect(list.skills).toEqual([]);
+    await expect(
+      fs.stat(path.join(skillsDir(t.root, projectId, "zip_limit_agent"), "zip-skill")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("archive: the uncompressed caps come off the central directory, not off what inflated", async () => {
@@ -588,12 +587,17 @@ describe("skills api", () => {
     const url = `${base("zip_declared_agent")}/archive`;
     // Both archives are a few hundred bytes on the wire and inflate to one byte per entry, so
     // caps measured on what came back would pass them — while the reader has already allocated
-    // every declared byte to inflate into.
+    // every declared byte to inflate into. These exercise the same size-limit branches as
+    // compressing multi-megabyte fixtures, without spending the test's deadline making a ZIP.
     const perFile = zipB64Declaring(
       { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD), "zip-skill/big.bin": strToU8("x") },
-      { "zip-skill/big.bin": 6 * 1024 * 1024 },
+      { "zip-skill/big.bin": 5 * 1024 * 1024 + 1 },
     );
-    expect((await owner.post(url, { dataBase64: perFile })).status).toBe(400);
+    const oversizedFile = await owner.post(url, { dataBase64: perFile });
+    expect(oversizedFile.status).toBe(400);
+    expect(await oversizedFile.json()).toMatchObject({
+      error: { message: expect.stringContaining("5MB uncompressed limit") },
+    });
     // Six entries, each declaring less than the 5MB per-file cap and together more than 20MB.
     const parts: Record<string, Uint8Array> = { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD) };
     const declared: Record<string, number> = {};
@@ -601,13 +605,20 @@ describe("skills api", () => {
       parts[`zip-skill/part${i}.bin`] = strToU8("x");
       declared[`zip-skill/part${i}.bin`] = 4 * 1024 * 1024;
     }
-    expect((await owner.post(url, { dataBase64: zipB64Declaring(parts, declared) })).status).toBe(
-      400,
-    );
+    const oversizedTotal = await owner.post(url, {
+      dataBase64: zipB64Declaring(parts, declared),
+    });
+    expect(oversizedTotal.status).toBe(400);
+    expect(await oversizedTotal.json()).toMatchObject({
+      error: { message: expect.stringContaining("20MB uncompressed limit") },
+    });
     const list = (await (
       await owner.get(base("zip_declared_agent"))
     ).json()) as AgentSkillsResponse;
     expect(list.skills).toEqual([]);
+    await expect(
+      fs.stat(path.join(skillsDir(t.root, projectId, "zip_declared_agent"), "zip-skill")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("archive: already installed is 409 skill_exists; overwrite replaces the directory (stale files removed)", async () => {

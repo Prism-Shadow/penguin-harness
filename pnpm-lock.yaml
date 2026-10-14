@@ -132,6 +132,9 @@ importers:
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support':
+        specifier: workspace:*
+        version: link:../../plugins/penguin-support
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -238,6 +241,9 @@ importers:
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support':
+        specifier: workspace:*
+        version: link:../../plugins/penguin-support
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -341,6 +347,9 @@ importers:
       '@penguinharness/opro-rsi-toolkit':
         specifier: workspace:*
         version: link:../../plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support':
+        specifier: workspace:*
+        version: link:../../plugins/penguin-support
       '@penguinharness/skill-porting':
         specifier: workspace:*
         version: link:../../plugins/skill-porting
@@ -820,6 +829,8 @@ importers:
   plugins/model-development: {}
 
   plugins/opro-rsi-toolkit: {}
+
+  plugins/penguin-support: {}
 
   plugins/sandbox-bwrap:
     devDependencies:
@@ -1882,6 +1893,9 @@ packages:
 
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit':
     resolution: {directory: plugins/opro-rsi-toolkit, type: directory}
+
+  '@penguinharness/penguin-support@file:plugins/penguin-support':
+    resolution: {directory: plugins/penguin-support, type: directory}
 
   '@penguinharness/skill-porting@file:plugins/skill-porting':
     resolution: {directory: plugins/skill-porting, type: directory}
@@ -6459,6 +6473,8 @@ snapshots:
 
   '@penguinharness/opro-rsi-toolkit@file:plugins/opro-rsi-toolkit': {}
 
+  '@penguinharness/penguin-support@file:plugins/penguin-support': {}
+
   '@penguinharness/skill-porting@file:plugins/skill-porting': {}
 
   '@penguinharness/software-development@file:plugins/software-development': {}
@@ -6526,6 +6542,7 @@ snapshots:
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support': file:plugins/penguin-support
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -6566,6 +6583,7 @@ snapshots:
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support': file:plugins/penguin-support
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
@@ -6601,6 +6619,7 @@ snapshots:
       '@penguinharness/humanizer': file:plugins/humanizer
       '@penguinharness/model-development': file:plugins/model-development
       '@penguinharness/opro-rsi-toolkit': file:plugins/opro-rsi-toolkit
+      '@penguinharness/penguin-support': file:plugins/penguin-support
       '@penguinharness/skill-porting': file:plugins/skill-porting
       '@penguinharness/software-development': file:plugins/software-development
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides

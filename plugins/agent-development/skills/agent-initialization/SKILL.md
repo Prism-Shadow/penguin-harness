@@ -1,7 +1,7 @@
 ---
 name: agent-initialization
-description: Initialize or extend an Agent from a user requirement - write AGENTS.md, set identity metadata, and create, install or import Skills and hook packages (scripts the harness runs on every prompt, before tool calls, or after a task). For an agent that a program will use, the penguin-sdk skill first settles how the program reaches it.
-version: 2026.10.12.1
+description: Initialize or extend an Agent from a user requirement - write AGENTS.md, set identity metadata, and create, install or import Skills and hook packages (scripts the harness runs on every prompt, before tool calls, or after a task). For an Agent with an in-app workbench, pair with penguin-plugin; for a standalone external program, use penguin-sdk.
+version: 2026.10.14.1
 ---
 
 # Agent Initialization
@@ -12,11 +12,11 @@ This skill initializes an agent's settings from a user requirement — plain fil
 
 If the user's message only invokes this skill (e.g. "use agent-initialization skill") without a concrete requirement, ask the user what agent they want and what it should do. But when the requirement is already concrete — even a single sentence like "an expert that answers questions about X" — do **not** ask follow-up questions: derive the role and rules from that sentence, apply the defaults below, and list your assumptions in the final reply.
 
-One question comes first even then: when the agent is for a program to use, how the program reaches it is settled before you create anything (see *An agent for a program*).
+An Agent Workbench inside PenguinHarness already has its runtime: create the new Agent and follow `penguin-plugin` for its tab. No SDK/API question is needed. Only an external program without a chosen architecture needs the question below.
 
 ## An agent for a program
 
-A program — an app, a service, a bot, a script — reaches a Penguin agent either embedded with the SDK or through the Penguin server's Agent API, and the two put the agent in different places. That choice is the penguin-sdk skill's, in this same plugin: whenever the requested agent is for a program, follow its *Ask which way first* before you create anything. An agent that people talk to, in the Web App, the CLI or a Remote-control bot, is not for a program and needs no question. Then:
+An external program — an app, a service, a bot, a script outside PenguinHarness — reaches a Penguin agent either embedded with the SDK or through the Penguin server's Agent API, and the two put the agent in different places. That choice is the penguin-sdk skill's, in this same plugin: whenever the requested agent is for a program, follow its *Ask which way first* before you create anything. An agent that people talk to, in the Web App, the CLI or a Remote-control bot, is not for a program and needs no question. Then:
 
 - **SDK:** no Agent is created in this Project. Build the program with the penguin-sdk skill, and apply this skill to the program's embedded agent (see *The embedded agent of an SDK app*).
 - **API:** create or configure the Agent here with the rest of this skill. Its API access and keys are the owner's to turn on, never yours; the penguin-sdk skill's *The API path* and its `reference/agent-api.md` have the rules and the steps to hand the user.
@@ -79,8 +79,9 @@ Do not register Skills in AGENTS.md; the frontmatter is injected automatically.
 
 Common library bundles, so you don't under-equip the target:
 
-- **App builder** (builds apps or web frontends): `penguin-sdk`, `web-design`, `unified-llm-api`.
-- **Knowledge expert** (answers questions over a document set): usually a RAG app built with the penguin-sdk skill rather than a harness agent alone (see *An agent for a program*).
+- **Workbench builder**: `agent-initialization`, `penguin-plugin`, `web-design`. The domain Agent it creates needs domain capabilities, not the builder bundle.
+- **Standalone app builder**: `penguin-sdk`, `web-design`, `unified-llm-api`.
+- **Knowledge expert**: document retrieval and citation instructions. For an in-app knowledge workspace, use `penguin-plugin`; use `penguin-sdk` only for a standalone external app.
 - **Evaluation loop**: `benchmark-design` and `agent-evaluation` (the `agent-evaluation` plugin), `agent-optimization` (the `default-rsi-toolkit` plugin).
 
 When creating a Test Agent, install only the capabilities it needs to solve ordinary tasks.
@@ -154,16 +155,16 @@ In the target's `agent_state/system_config.yaml`, set the top-level `name:` and 
 
 ## Creating a brand-new agent
 
-Prefer configuring an agent the user already created. If the user requires a new Agent, confirm that `TARGET` does not exist. If it already exists, stop and tell the user; never silently overwrite, reinitialize, or reuse an existing Agent under the same id.
+Prefer configuring an agent the user already created. If the user requires a new Agent, confirm that `TARGET` does not exist. If your chosen id already exists, choose an unused suffixed id for the requested new Agent; never overwrite, reinitialize, or silently reuse it. If the user required that exact id, explain the conflict.
 
-After confirming that the target is absent, pick a short id using letters, digits, `_`, or `-`, copy the default Agent's `system_config.yaml` as the base, and create the layout described above:
+After confirming that the target is absent, pick a short id using letters, digits or `_` (not hyphens), copy the default Agent's `system_config.yaml` as the base, and create the layout described above:
 
 ```bash
 mkdir -p "$TARGET/agent_state/skills" "$TARGET/agent_state/hooks" "$TARGET/agent_state/memory" "$TARGET/agent_state/tools" "$TARGET/scratchpad"
 cp "$APP_DATA_DIR/agents/default_agent/agent_state/system_config.yaml" "$TARGET/agent_state/"
 ```
 
-Then set the top-level `name`, `description`, and `version: 1`, set `model.thinking_level` to the resolved value, write `agent_state/AGENTS.md` (it lives under `agent_state/`, not at the agent directory root), and install only the Skills and hook packages required by the user's requirement. Do not persist the resolved provider/model pair in the Agent State.
+Then set the top-level `name`, `description`, and `version: 1`, set `model.thinking_level` to the resolved value, write `agent_state/AGENTS.md` (it lives under `agent_state/`, not at the agent directory root), and install only the Skills and hook packages required by the user's requirement. Do not persist the resolved provider/model pair in the Agent State. For a new Agent with a workbench, run the `penguin-plugin` check helper after writing its files: it first refreshes the Project's Agent index, so `host.createSession()` can find a file-created Agent before anybody opens the Agents page.
 
 ## Validate and report
 

@@ -55,6 +55,8 @@
     "short_description_zh": "macOS：限制文件写入、断开网络、屏蔽路径。",
     "category": "sandbox",
     "icon": "icon.svg",
-    "preinstall": false
+    "preinstall": false,
+    "title": "macOS Sandbox",
+    "title_zh": "macOS 沙箱"
   }
 }

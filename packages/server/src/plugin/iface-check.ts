@@ -4,8 +4,8 @@
  * A comparison needs two declarations. Looking both sides up in the platform's own table
  * compares a declaration with itself and can never fail, so here each side brings its own:
  * the CONSUMER's is the table the package carries — a plugin's generated `ifaces.json`; for
- * a workflow, the slice of the harness's table it was written against, kept in its folder
- * (../workflows/harness-types.ts) — and the PLATFORM's is this generation's. Nothing in
+ * a workbench, the slice of the harness's table it was written against, kept in its folder
+ * (../workbenches/harness-types.ts) — and the PLATFORM's is this generation's. Nothing in
  * this module judges assignability itself: each table is rendered as a self-contained
  * `.d.ts`, the questions become assignments in a third file, and the TypeScript compiler
  * answers them —
@@ -86,8 +86,8 @@ class Renderer {
   constructor(private readonly table: IfaceTable) {}
 
   /**
-   * The identifier a table key is declared under: its export name (`…#WorkflowHost` →
-   * `WorkflowHost`), numbered on a clash — so the text reads as a declaration file an author
+   * The identifier a table key is declared under: its export name (`…#WorkbenchHost` →
+   * `WorkbenchHost`), numbered on a clash — so the text reads as a declaration file an author
    * can write against, and a diagnostic names the type the way its source does.
    */
   ident(key: string): string {

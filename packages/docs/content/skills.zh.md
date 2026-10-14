@@ -253,7 +253,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `agent-company` | [公司模式](/company-mode)的完整工具包，包含七个 Skill：`company-setup`（与用户一起创建组织：一次问一个问题、给出摘要供确认，然后执行 `penguin org create`；从不招聘，也不提交工单）、`company-employee`（每个工位 Session 和工单 Session 都要遵循的协议：触发块、工单看板、阻塞、重负载或不可逆的工作先向董事会请示、频道礼仪、预算）、`company-ceo`（把使命拆解为工单、招聘、划分 Workspace、审查、向董事会汇报）、`company-hr`（日历排班、招聘与离职、评估）、`company-finance`（预算、每日审计、告警与暂停）、`company-research`（科研组织的作者与审稿人：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环、只保留能提升指标的改动，每个结论都交给一个设法推翻它的审稿人）和 `company-mirror`（数字分身公司：每位真实同事对应一个分身，绑定到这位同事的机器人，只传话、不开工单）。不预装：组织在创建 CEO、招聘员工时会安装它；需要能创建组织的 Agent 则从插件库安装 |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
-| AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含六个 Skill：`agent-initialization`（根据需求搭建 Agent：它的 `AGENTS.md`、Skill 与钩子）、`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`penguin-plugin`（搭建 Agent 在对话旁自己维护的 Workflow）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
+| AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含六个 Skill：`agent-initialization`（根据需求搭建 Agent：它的 `AGENTS.md`、Skill 与钩子）、`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用，或经 Agent API 把程序接入 Agent；动手前先问用哪种方式）、`penguin-plugin`（搭建 Agent 在对话旁自己维护的 Workbench）、`unified-llm-api`（通过 `@prismshadow/mmsp` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
 | | `agent-evaluation` | Agent Evaluation，包含两个 Skill：`benchmark-design`（设计和校准能力 Benchmark，或导入已发布的 Benchmark 包）和 `agent-evaluation`（隔离执行单个题目并打分）。Default RSI Toolkit 经由它测量 |
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent；也可以用其中的 `plugin-porting` Skill 把整个 Codex 或 Claude Code 插件转成 PenguinHarness 插件包，安装到服务端 |
@@ -447,3 +447,11 @@ Skill 分两步加载：先加载索引，正文按需读取。
 - 插件的每个 Skill、钩子包和每个 MCP Server 都在某个 Agent 上时，插件才算装在这个 Agent 上。还在等待 Vault 键或登录的 Server 不影响这一点。
 - 运行中的 Session 沿用当前模型上下文开启时读到的钩子包；下一个上下文（压缩之后或恢复时）会重新读取。经 Web App 或 API 安装、导入或卸载钩子包，或者**启用钩子**开关变动之后，服务端会在 Agent 缓存的运行时下次空闲时重建它们，因此已经打开的对话从下一轮起生效。
 - 除 Web App 外，插件也可以通过 SDK 安装。
+
+## Workbench 插件
+
+插件可以在 Skill 之外携带 `workbenches/<id>/package.json`、`index.ts` 和界面源文件。工作台清单声明 `penguin.modules` 和日期版本 `penguin.version`（`YYYY.MM.DD.N`），npm 包的 `files` 列表需包含 `workbenches`。不要携带 `state.json`、点文件或 `node_modules`。
+
+安装插件时，工作台复制到 Agent 的 `workbenches/<id>/`。更新替换插件携带的源文件，保留记录状态与历史版本；如果名称已被其他插件或手工创建的工作台使用，则拒绝安装。卸载会删除工作台及其记录。
+
+内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。也可以把该插件安装到其他 Agent。

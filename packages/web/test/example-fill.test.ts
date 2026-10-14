@@ -5,8 +5,9 @@
  *
  * - The text body becomes the plain prompt, verbatim, replacing whatever was there — never a
  *   `[use_skills]` block, which the send path builds and a user cannot sensibly edit.
- * - The example's skills join the selection when the Agent has them installed, without
- *   duplicates; an example that pins nothing leaves the selection as it was.
+ * - Given a selected example, switching to another replaces its skills, including an equally
+ *   sized selection; absent skills are filtered and repeated names selected only once.
+ * - Given an example with skills, selecting an example with none clears the selection.
  */
 import { describe, expect, it } from "vitest";
 import { buildExampleFill } from "../src/features/chat/example-fill";
@@ -19,7 +20,6 @@ const fill = (over: Partial<Parameters<typeof buildExampleFill>[0]> = {}) =>
     prompt: PROMPT,
     exampleSkills: [],
     installedSkills: [],
-    selectedSkills: [],
     ...over,
   });
 
@@ -56,17 +56,17 @@ describe("buildExampleFill — what lands in the skills dropdown", () => {
     expect(f.skills).toEqual(["web-design"]);
   });
 
-  it("joins the existing selection instead of replacing it, without duplicating", () => {
-    const f = fill({
-      exampleSkills: ["penguin-sdk", "web-design"],
-      installedSkills: ["penguin-sdk", "web-design", "memory"],
-      selectedSkills: ["memory", "web-design"],
-    });
-    expect(f.skills).toEqual(["memory", "web-design", "penguin-sdk"]);
+  it("switching examples replaces equally sized selections without duplicates", () => {
+    const installedSkills = ["penguin-plugin", "web-design", "memory"];
+    const first = fill({ exampleSkills: ["memory"], installedSkills });
+    const next = fill({ exampleSkills: ["penguin-plugin", "penguin-plugin"], installedSkills });
+    expect(first.skills).toEqual(["memory"]);
+    expect(next.skills).toEqual(["penguin-plugin"]);
+    expect(buildSkillsMessage(next.skills, next.text)).not.toContain("memory");
   });
 
-  it("leaves the selection untouched for an example that pins nothing", () => {
-    const selectedSkills = ["memory"];
-    expect(fill({ selectedSkills, installedSkills: selectedSkills }).skills).toEqual(["memory"]);
+  it("selecting an example that pins nothing clears the skills", () => {
+    fill({ exampleSkills: ["web-design"], installedSkills: ["web-design"] });
+    expect(fill({ installedSkills: ["web-design"] }).skills).toEqual([]);
   });
 });

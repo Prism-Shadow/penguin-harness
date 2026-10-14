@@ -5,7 +5,7 @@
  *   a non-array or one malformed entry fails the document, naming the source or the position
  *   (unlike a plugin list's per-entry tolerance).
  * - The builtin catalogue lists the sandbox backends that live in plugins/, each named,
- *   versioned, described and licensed as the package names itself, described in both languages
+ *   versioned, titled, described and licensed as the package names itself, described in both languages
  *   and drawn with the icon of its own package.json `penguin` block and icon.svg (which it
  *   publishes), and serves each one's own shipped README.md; a listed package not on this
  *   machine, a name it does not list and a remote registry have no readme.
@@ -85,6 +85,8 @@ describe("parsePluginIndex", () => {
       { ...VALID_ENTRY, updatedAt: "yesterday" },
       { ...VALID_ENTRY, icon: { svg: "<svg/>" } },
       { ...VALID_ENTRY, descriptionZh: 1 },
+      { ...VALID_ENTRY, title: 1 },
+      { ...VALID_ENTRY, titleZh: [] },
     ]) {
       expect(() => parsePluginIndex([VALID_ENTRY, bad], "test")).toThrow(
         /malformed entry at index 1/,
@@ -106,6 +108,8 @@ describe("httpPluginRegistry", () => {
   it("drops a remote entry's icon, an SVG the page would inline, and keeps the rest of the row", async () => {
     const described: PluginIndexEntry = {
       ...VALID_ENTRY,
+      title: "Demo",
+      titleZh: "示例",
       descriptionZh: "一个示例插件。",
       shortDescription: "Demo.",
     };
@@ -172,6 +176,8 @@ interface PackageManifest {
   files?: string[];
   /** The product's own fields: what the package says of itself for its card. */
   penguin?: {
+    title?: string;
+    title_zh?: string;
     description_zh?: string;
     short_description?: string;
     short_description_zh?: string;
@@ -290,6 +296,8 @@ describe("the builtin catalogue and the packages it lists", () => {
     for (const entry of await builtinPluginRegistry().index()) {
       const { dir, manifest } = packages.get(entry.name)!;
       expect(entry, entry.name).toMatchObject({
+        title: manifest.penguin?.title,
+        titleZh: manifest.penguin?.title_zh,
         description: manifest.description,
         descriptionZh: manifest.penguin?.description_zh,
         shortDescription: manifest.penguin?.short_description,
@@ -522,7 +530,7 @@ describe("mergeIndexes", () => {
 
 describe("the published index source", () => {
   it("is a release asset on a fixed tag; PENGUIN_PLUGIN_INDEX unset reads it, off reads none, a URL replaces it", () => {
-    // The tag is never re-pointed — a six-hourly workflow replaces the ASSET — so "latest
+    // The tag is never re-pointed — a six-hourly workbench replaces the ASSET — so "latest
     // nightly" is resolved by name and costs no unauthenticated API budget.
     expect(NIGHTLY_INDEX_URL).toBe(
       "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json",
@@ -648,6 +656,8 @@ describe("the route's own merge", () => {
     const installedHere: PluginIndexEntry = {
       ...VALID_ENTRY,
       name: "@example/penguin-plugin-here",
+      title: "Old title",
+      titleZh: "旧名称",
     };
     const bare: PluginIndexEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-bare" };
     const elsewhere: PluginIndexEntry = { ...VALID_ENTRY, name: "@example/penguin-plugin-away" };
@@ -663,6 +673,8 @@ describe("the route's own merge", () => {
           version: "1.0.0",
           description: "A demo plugin.",
           penguin: {
+            title: "Local demo",
+            title_zh: "本地示例",
             description_zh: "一个示例插件。",
             short_description: "Demo.",
             short_description_zh: "示例。",
@@ -684,6 +696,8 @@ describe("the route's own merge", () => {
       expect(body.plugins).toEqual([
         {
           ...installedHere,
+          title: "Local demo",
+          titleZh: "本地示例",
           descriptionZh: "一个示例插件。",
           shortDescription: "Demo.",
           shortDescriptionZh: "示例。",

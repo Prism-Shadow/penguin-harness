@@ -50,7 +50,7 @@ import { FinancePage } from "./features/company/finance-page";
 import { ChannelView } from "./features/company/channel-view";
 import { HandbookPage } from "./features/company/handbook-page";
 import { MachinesPage } from "./features/machines/machines-page";
-import { WorkflowAppPage } from "./features/workflows/workflow-app-page";
+import { WorkbenchAppPage } from "./features/workbenches/workbench-app-page";
 import { PAGES } from "./lib/pages";
 import type { PageEntry } from "./lib/pages";
 
@@ -143,21 +143,22 @@ function appRoutes() {
           </RequireAuthBare>
         }
       />
-      {/* One workflow's page as the whole app: outside the shell, like the terminal; the
+      {/* One workbench's page as the whole app: outside the shell, like the terminal; the
           command palette it mounts is the way back. */}
-      {["/app/:projectId/:agentId/:workflowId", "/app/:projectId/:agentId/:workflowId/:tabKey"].map(
-        (appPath) => (
-          <Route
-            key={appPath}
-            path={appPath}
-            element={
-              <RequireAuthBare>
-                <WorkflowAppPage />
-              </RequireAuthBare>
-            }
-          />
-        ),
-      )}
+      {[
+        "/app/:projectId/:agentId/:workbenchId",
+        "/app/:projectId/:agentId/:workbenchId/:tabKey",
+      ].map((appPath) => (
+        <Route
+          key={appPath}
+          path={appPath}
+          element={
+            <RequireAuthBare>
+              <WorkbenchAppPage />
+            </RequireAuthBare>
+          }
+        />
+      ))}
       <Route element={<RequireAuth />}>
         <Route index element={<Navigate to="/chat" replace />} />
         {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused

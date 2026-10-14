@@ -254,7 +254,7 @@ describe("session source", () => {
 
   it("refuses a source the server writes itself, creating nothing", async () => {
     await configureModels();
-    for (const source of ["api", "schedule", "subagent", "company", "user"]) {
+    for (const source of ["api", "schedule", "subagent", "company", "workbench", "user"]) {
       expect((await api.post(base(), { source })).status, source).toBe(400);
     }
     expect((await list("")).sessions).toEqual([]);

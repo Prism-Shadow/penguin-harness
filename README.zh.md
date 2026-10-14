@@ -78,7 +78,7 @@ https://github.com/user-attachments/assets/8ab00e36-9da6-4706-aede-5cf63c3080fc
 ## 一句话，一个应用
 
 ```text
-新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。再在法务智能体上做一个 Workflow 标签页，当作它的工作台：我上传文件后，由它在后台分析，完成后生成一份分析报告供我下载。页面上只要上传、文件列表（每个文件的处理状态）和报告下载，不显示任何对话过程；颜色一律取自主题变量，明暗两种主题下都要好看。
+新建一个法务智能体，负责审阅合同、协议等法律文件：找出风险条款、说明理由并给出修改建议。再在法务智能体上做一个 Agent Workbench 标签页，当作它的工作台：我上传文件后，由它在后台分析，完成后生成一份分析报告供我下载。页面上只要上传、文件列表（每个文件的处理状态）和报告下载，不显示任何对话过程；颜色一律取自主题变量，明暗两种主题下都要好看。
 ```
 
 结果：一个法务审阅应用。上传合同后，可以查看每个文件的处理状态，并下载列出风险条款、理由和修改建议的审阅报告。5 次样件审阅的模型花费是 $0.0423。
@@ -134,7 +134,7 @@ Agent 还能编写并优化自己的 Skill（[文档](https://penguin.ooo/docs/s
 | 分类 | 插件                                                                       |
 | -------------------- | ----------------------------------------------------------------------------- |
 | Agent 自进化 | `default-rsi-toolkit`, `opro-rsi-toolkit`, `ape-rsi-toolkit`, `ace-rsi-toolkit`, `awm-rsi-toolkit` |
-| 办公效率 | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `agent-company` |
+| 办公效率 | `a2ui`, `data-analysis`, `use-firecrawl`, `browser-automation`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning`, `agent-company`, `penguin-support` |
 | 软件开发 | `software-development`, `use-claude-code` |
 | AI 应用开发 | `agent-development`, `agent-evaluation`, `model-development`, `skill-porting` |
 

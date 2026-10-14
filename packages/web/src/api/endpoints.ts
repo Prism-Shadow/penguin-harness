@@ -228,8 +228,8 @@ import type {
   PluginArchiveImportRequest,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
-  WorkflowInfo,
-  WorkflowVersion,
+  WorkbenchInfo,
+  WorkbenchVersion,
   VersionRollbackResponse,
   VersionResponse,
   WeChatBindingPutRequest,
@@ -1740,6 +1740,11 @@ export const getLibraryPluginReadme = (plugin: string) =>
  * plugin is overwritten with the library content (i.e. updated). 201 returns the Agent's
  * refreshed installed lists.
  */
+export const getAgentPlugins = (projectId: string, agentId: string) =>
+  apiFetch<AgentPluginsInstallResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
+  );
+
 export const installAgentPlugins = (projectId: string, agentId: string, names: string[]) =>
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
@@ -2479,58 +2484,62 @@ export const openPrivacySettings = (pane: DesktopPrivacyPane) =>
     server: null,
   });
 
-// ---- Workflows (an Agent's own extension packages, served as tabs beside the chat) ----
-const workflowsBase = (projectId: string, agentId: string) =>
-  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workflows`;
+// ---- Workbenches (an Agent's own extension packages, served as tabs beside the chat) ----
+const workbenchesBase = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workbenches`;
 /**
- * `machineId` on each of these: an Agent's workflows live where its state directory does, so
- * the workflows of an Agent that only a machine has are asked of THAT machine's server.
+ * `machineId` on each of these: an Agent's workbenches live where its state directory does, so
+ * the workbenches of an Agent that only a machine has are asked of THAT machine's server.
  */
-export const getWorkflows = (projectId: string, agentId: string, machineId: string | null = null) =>
-  apiFetch<{ workflows: WorkflowInfo[] }>(workflowsBase(projectId, agentId), {
+export const getWorkbenches = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
+  apiFetch<{ workbenches: WorkbenchInfo[] }>(workbenchesBase(projectId, agentId), {
     server: machineId,
   });
 /** Re-import the folder now (the server also does this whenever a file changes). */
-export const reloadWorkflow = (
+export const reloadWorkbench = (
   projectId: string,
   agentId: string,
-  workflowId: string,
+  workbenchId: string,
   machineId: string | null = null,
 ) =>
-  apiFetch<{ workflow: WorkflowInfo }>(
-    `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/reload`,
+  apiFetch<{ workbench: WorkbenchInfo }>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/reload`,
     { method: "POST", body: {}, server: machineId },
   );
-export const getWorkflowHistory = (
+export const getWorkbenchHistory = (
   projectId: string,
   agentId: string,
-  workflowId: string,
+  workbenchId: string,
   machineId: string | null = null,
 ) =>
-  apiFetch<{ versions: WorkflowVersion[] }>(
-    `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/history`,
+  apiFetch<{ versions: WorkbenchVersion[] }>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/history`,
     { server: machineId },
   );
 /** Restore a recorded version's files (state.json is kept) and reload. */
-export const rollbackWorkflow = (
+export const rollbackWorkbench = (
   projectId: string,
   agentId: string,
-  workflowId: string,
+  workbenchId: string,
   revision: string,
   machineId: string | null = null,
 ) =>
-  apiFetch<{ workflow: WorkflowInfo }>(
-    `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/rollback`,
+  apiFetch<{ workbench: WorkbenchInfo }>(
+    `${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}/rollback`,
     { method: "POST", body: { revision }, server: machineId },
   );
-/** Delete the folder and the versions recorded for it; nothing of the workflow is kept. */
-export const removeWorkflow = (
+/** Delete the folder and the versions recorded for it; nothing of the workbench is kept. */
+export const removeWorkbench = (
   projectId: string,
   agentId: string,
-  workflowId: string,
+  workbenchId: string,
   machineId: string | null = null,
 ) =>
-  apiFetch<void>(`${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}`, {
+  apiFetch<void>(`${workbenchesBase(projectId, agentId)}/${encodeURIComponent(workbenchId)}`, {
     method: "DELETE",
     server: machineId,
   });

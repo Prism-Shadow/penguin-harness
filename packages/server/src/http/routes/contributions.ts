@@ -39,7 +39,7 @@ export interface WebShellSlots {
   /** A tab on the Agent settings page. */
   agentTabs: { key: string; order: number; renderer: RendererRef };
   /**
-   * A tab beside a Session's chat. A workflow contributes here too, from its own tree, where
+   * A tab beside a Session's chat. A workbench contributes here too, from its own tree, where
    * the host publishes this slot under this module's name and scopes the tab to its Agent.
    */
   sessionTabs: {

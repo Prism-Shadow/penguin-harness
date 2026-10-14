@@ -1,12 +1,12 @@
 ---
 name: penguin-sdk
-description: Use whenever the user wants to build an agent application — their own program with an agent in it, such as an AI app, an agentic app, a RAG app or a bot — or to connect a program to a Penguin agent. A program reaches an agent in one of two ways, and the skill asks the user which before building — embedded with the Penguin Harness SDK (`@prismshadow/penguin-core`, no server), or over the Penguin server's Agent API (AMSP, with the `@prismshadow/amsp` client or curl). This is writing application code, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and the Agent API client. Workflows — the tabs and pages beside the chat that an Agent keeps for itself inside PenguinHarness — are the penguin-plugin skill's.
-version: 2026.10.14.1
+description: Use to build a standalone external program with an agent in it, or connect an external program to a Penguin agent. For an app inside PenguinHarness with its own Agent and workbench tab, use agent-initialization and penguin-plugin directly; no SDK/API question applies. A program reaches an agent in one of two ways, and the skill asks the user which before building — embedded with the Penguin Harness SDK (`@prismshadow/penguin-core`, no server), or over the Penguin server's Agent API (AMSP, with the `@prismshadow/amsp` client or curl). This is writing application code, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and the Agent API client. Workbenches — the tabs and pages beside the chat that an Agent keeps for itself inside PenguinHarness — are the penguin-plugin skill's.
+version: 2026.10.14.2
 ---
 
 # Penguin Harness SDK and Agent API
 
-This skill builds programs that use a Penguin agent. A program reaches one in either of two ways, embedded with the SDK or through the Penguin server's Agent API, and the user picks which. Workflows — pages and server code an Agent keeps inside PenguinHarness — are a third thing, and the penguin-plugin skill's.
+This skill builds programs that use a Penguin agent. A program reaches one in either of two ways, embedded with the SDK or through the Penguin server's Agent API, and the user picks which. Workbenches — pages and server code an Agent keeps inside PenguinHarness — are a third thing, and the penguin-plugin skill's.
 
 To have an agent perform a task for you, use the `run_subagent` tool: both ways are for programs, not for handing off your own work.
 
@@ -35,7 +35,7 @@ Do not ask when the way is already chosen:
 - in the user's message: "use the SDK", "standalone", "without the Penguin server" or "embed the agent" chooses the SDK; "call it over the API", "through the Agent API", "with AMSP", "with `@prismshadow/amsp`" or "with curl" chooses the API;
 - earlier in this conversation, for the same program.
 
-Naming this skill does not choose a way. Workflows (the penguin-plugin skill) take neither way and need no question; neither does connecting a Feishu, Telegram, QQ or WeChat bot to a conversation, which is the Web App's Remote control.
+Naming this skill does not choose a way. Workbenches (the penguin-plugin skill) take neither way and need no question; neither does connecting a Feishu, Telegram, QQ or WeChat bot to a conversation, which is the Web App's Remote control.
 
 Ask with one sentence and this choice block, in the user's language, as the end of your reply. Mark one option `"recommended": true` only when the request leans that way: an Agent the user already has in PenguinHarness leans to the API, an app to ship to others leans to the SDK.
 

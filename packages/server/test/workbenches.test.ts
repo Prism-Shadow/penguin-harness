@@ -1,0 +1,823 @@
+/**
+ * Workbenches: an Agent's own plugin package booted as a module tree.
+ *
+ * A loaded workbench:
+ * - Its TypeScript is checked and transpiled into a dot-directory beside a status file the
+ *   Agent can read, its types written once from this harness; the tree boots, serves its UI
+ *   under ui/ (no default document, nothing outside it) and dispatches to its handler, and its
+ *   state persists on disk across a reload.
+ * - Its own state write is not an edit: the revision holds and nothing is left staged.
+ * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
+ *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
+ *   are archived with workbench provenance, including before their first run after a restart.
+ * - Agent counts include installed workbenches and follow removal without a compiler load.
+ * - A handler takes any body (a form only from the app's own pages) and sends back any
+ *   content type, a stream as it is produced and a redirect relative to its mount, never the
+ *   app's cookies; JSON stays the default.
+ * - It is scoped to the Project's users.
+ * - An Agent's first workbench, made with nothing but file tools, is noticed without a list.
+ * - A workbench written in JavaScript is refused with the rename it needs.
+ *
+ * An edited workbench:
+ * - A file that disappears mid-read is a change, not a failed request.
+ * - Concurrent first reads share the same loaded instance rather than replacing it for each reader.
+ * - An edited folder is re-imported, every version recorded and any restorable.
+ * - An unknown required interface leaves the previous instance serving and names the problem.
+ * - A source type error reports the file, line and reason, without duplicate diagnostics.
+ * - A JSON response body may be null.
+ * - Untyped handler parameters are refused and the previous instance keeps serving.
+ * - A host method removed since authoring is refused and the previous instance keeps serving.
+ * - An incompatible provided handler is refused and the previous instance keeps serving.
+ * - Adding a host method since authoring does not break a workbench.
+ * - An unreadable type table is refused; removing it installs fresh types and recovers.
+ * - Several contributed tabs are exposed in order.
+ * - A tab outside ui/, a closed contribution slot and a malformed tab are each refused.
+ * - Pages with no tab get a hint in the API and status file; adding a tab clears it.
+ * - Removing a workbench removes its folder and recorded versions.
+ * - A legacy Workflow package loads through the new route after one-time conversion, with its state intact.
+ *
+ * Every load runs the TypeScript compiler, so the loaded-once group shares one app and one
+ * compile; each editing scenario gets an Agent of its own within the editing group's one app.
+ * Keep independent edits in separate cases: six or seven compiler runs under one deadline
+ * raced the coverage runner even though each individual operation completed normally.
+ */
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { agentDir } from "@prismshadow/penguin-core";
+import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
+import type {
+  WorkbenchInfo,
+  WorkbenchVersion,
+  SessionResponse,
+  SessionsResponse,
+  ArchivedSessionsResponse,
+  AgentsResponse,
+} from "../src/api/types.js";
+import { apiClient, createTestApp, provisionUser } from "./helpers.js";
+import type { TestApp } from "./helpers.js";
+
+const PROJECT = "owner-wf";
+const AGENT = "default_agent";
+const BASE = `/api/projects/${PROJECT}/agents/${AGENT}/workbenches`;
+const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
+const MAIN_KEY = "@prismshadow/penguin-server#WorkbenchMain";
+
+const TAB = {
+  id: "demo.board",
+  key: "board",
+  title: "Board",
+  titleZh: "看板",
+  renderer: { iframe: { src: "ui/index.html" } },
+};
+
+const MANIFEST = {
+  name: "Workbench",
+  requires: { host: { iface: HOST_KEY, from: "Host" } },
+  provides: { main: MAIN_KEY },
+  contributes: { "WebModule.sessionTabs": [TAB] },
+  children: [],
+};
+
+function packageJson(modules: unknown[] = [MANIFEST], extra: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    name: "Demo",
+    version: "1.0.0",
+    type: "module",
+    penguin: { modules },
+    ...extra,
+  });
+}
+
+function indexSource(greeting: string): string {
+  // These handlers only use ES2022 APIs. Loading the DOM declarations on every fixture
+  // compilation adds work without exercising another part of the workbench contract.
+  return `/// <reference no-default-lib="true" />
+/// <reference lib="es2022" />
+import type { WorkbenchPackage } from "@prismshadow/penguin-server/plugin";
+
+export default {
+  modules: {
+    Workbench: {
+      create({ use }) {
+        const host = use.host;
+        let releaseEvents: (() => void) | undefined;
+        return {
+          api: {
+            main: {
+              async handle(req) {
+                if (req.path === "/open") {
+                  // The SDK's verbs, scoped to this Project: another of its Agents, never a stranger's Session.
+                  const agent = req.query["agent"];
+                  // No argument at all is this Agent: the rendered types keep the parameter optional.
+                  const opened = await (agent ? host.createSession({ agentId: agent }) : host.createSession()).catch((e: Error) => e.message);
+                  const ran = await host.run(req.query["session"] ?? "", [{ text: "hi" }]).catch((e: Error) => e.message);
+                  return { body: { opened, ran, agents: host.listAgents().map((a) => a.agentId) } };
+                }
+                if (req.path === "/page") {
+                  const headers: Record<string, string> = { "content-type": "text/html; charset=utf-8", "set-cookie": "x=1" };
+                  return { headers, body: "<h1>proxied</h1>" };
+                }
+                if (req.path === "/upload") {
+                  // Whatever was sent comes back as sent, with what the handler saw of the request.
+                  const headers: Record<string, string> = {
+                    "content-type": req.headers["content-type"] ?? "application/octet-stream",
+                    "x-saw-cookie": String("cookie" in req.headers),
+                    "x-json-body": JSON.stringify(req.body),
+                  };
+                  return { status: 201, headers, bytes: req.bytes ?? new Uint8Array() };
+                }
+                if (req.path === "/events") {
+                  const headers: Record<string, string> = { "content-type": "text/event-stream" };
+                  const released = new Promise<void>((resolve) => { releaseEvents = resolve; });
+                  async function* events() {
+                    yield "data: one\\n\\n";
+                    await released;
+                    yield Uint8Array.from("data: two\\n\\n", (char) => char.charCodeAt(0));
+                  }
+                  return { headers, stream: events() };
+                }
+                if (req.path === "/release-events" && req.method === "POST") {
+                  releaseEvents?.();
+                  return { body: null };
+                }
+                if (req.path === "/moved") {
+                  const headers: Record<string, string> = { location: "page" };
+                  return { status: 302, headers };
+                }
+                if (req.path === "/count" && req.method === "POST") {
+                  const n = (((host.getState() ?? {}) as { count?: number }).count ?? 0) + 1;
+                  await host.setState({ count: n });
+                  return { body: { count: n } };
+                }
+                return { status: 200, body: { greeting: ${JSON.stringify(greeting)}, path: req.path, q: req.query } };
+              },
+            },
+          },
+        };
+      },
+    },
+  },
+} satisfies WorkbenchPackage;
+`;
+}
+
+/** Rewrites the table the harness wrote into the folder: the workbench was written against an OLDER one. */
+async function writtenAgainst(dir: string, edit: (table: IfaceTable) => void): Promise<void> {
+  const file = path.join(dir, ".harness", "ifaces.json");
+  const table = JSON.parse(await fs.readFile(file, "utf8")) as IfaceTable;
+  edit(table);
+  await fs.writeFile(file, JSON.stringify(table));
+}
+
+/** Writes the demo workbench into `dir`: its manifest, its handler and its one page. */
+async function writeDemo(dir: string): Promise<void> {
+  await fs.mkdir(path.join(dir, "ui"), { recursive: true });
+  await fs.writeFile(path.join(dir, "package.json"), packageJson());
+  await fs.writeFile(path.join(dir, "index.ts"), indexSource("hello"));
+  await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v1</h1>");
+}
+
+/** An app with the owner's Project and the demo workbench written into its default Agent. */
+async function workbenchApp() {
+  const t = await createTestApp();
+  const a = await provisionUser(t.app, "owner");
+  const owner = apiClient(t.app, a.cookie);
+  const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
+  expect(created.status, await created.text()).toBe(201);
+  const dir = path.join(agentDir(t.root, PROJECT, AGENT), "workbenches", "demo");
+  await writeDemo(dir);
+  return { t, owner, ownerCookie: a.cookie, dir };
+}
+
+async function listOf(owner: ReturnType<typeof apiClient>, base = BASE): Promise<WorkbenchInfo[]> {
+  const res = await owner.get(base);
+  expect(res.status).toBe(200);
+  return ((await res.json()) as { workbenches: WorkbenchInfo[] }).workbenches;
+}
+
+// Most of these run the TypeScript compiler, several times each: on a CI runner a single test
+// can pass 5s, the default POSIX limit, without anything being wrong.
+describe("a loaded workbench", { timeout: 30_000 }, () => {
+  let t: TestApp;
+  let owner: ReturnType<typeof apiClient>;
+  let ownerCookie: string;
+  let dir: string;
+  /** The demo as its one load left it. */
+  let wf: WorkbenchInfo;
+
+  // The shared fixture performs the first real compiler load: use the integration budget.
+  beforeAll(async () => {
+    ({ t, owner, ownerCookie, dir } = await workbenchApp());
+    [wf] = (await listOf(owner)) as [WorkbenchInfo];
+  }, 30_000);
+  afterAll(async () => {
+    await t.cleanup();
+  });
+
+  const list = () => listOf(owner);
+  /** The count after one more POST: the handler's state as it now stands. */
+  const count = async (): Promise<number> =>
+    ((await (await owner.post(`${BASE}/demo/api/count`, {})).json()) as { count: number }).count;
+
+  it("checks and transpiles the TypeScript, boots the tree, serves its UI and dispatches to its handler", async () => {
+    expect(wf).toMatchObject({ id: "demo", name: "Demo", version: "1.0.0", error: null });
+    expect(wf!.uiRev).toMatch(/^[0-9a-f]{12}$/);
+    // The tab is the contribution, its page path turned into the URL it is served from.
+    expect(wf!.tabs).toEqual([
+      { ...TAB, renderer: { iframe: { src: `${BASE}/demo/ui/index.html` } } },
+    ]);
+    // The emitted code lives in a dot-directory: no part of the revision or the versions.
+    // Beside it, what the load came to — the Agent's only view of it is its own files.
+    expect((await fs.readdir(path.join(dir, ".build"))).sort()).toEqual(
+      [wf!.revision, "status.json"].sort(),
+    );
+    expect(JSON.parse(await fs.readFile(path.join(dir, ".build", "status.json"), "utf8"))).toEqual({
+      ok: true,
+      revision: wf!.revision,
+      checkedAt: wf!.loadedAt,
+      error: null,
+      tabs: ["board"],
+      hints: [],
+    });
+    // Its types came from this harness, not from a package: written once, then left alone.
+    expect((await fs.readdir(path.join(dir, ".harness"))).sort()).toEqual([
+      "README.md",
+      "harness.json",
+      "ifaces.json",
+      "plugin.d.ts",
+    ]);
+    const types = await fs.readFile(path.join(dir, ".harness", "plugin.d.ts"), "utf8");
+    expect(types).toContain("export interface WorkbenchHost {");
+    expect(types).toContain("export interface WorkbenchPackage {");
+    await expect(fs.stat(path.join(dir, "node_modules"))).rejects.toThrow();
+
+    const ui = await owner.get(`${BASE}/demo/ui/index.html`);
+    expect(ui.status).toBe(200);
+    // No default document: a tab names its page.
+    expect((await owner.get(`${BASE}/demo/ui/`)).status).toBe(404);
+    expect(ui.headers.get("content-type")).toContain("text/html");
+    expect(await ui.text()).toBe("<h1>demo v1</h1>");
+    expect((await owner.get(`${BASE}/demo/ui/../package.json`)).status).toBe(404);
+    expect((await owner.get(`${BASE}/demo/ui/nope.js`)).status).toBe(404);
+
+    const res = await owner.get(`${BASE}/demo/api/greet?x=1`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ greeting: "hello", path: "/greet", q: { x: "1" } });
+
+    // Host state persists on disk across a reload.
+    const before = await count();
+    expect((await owner.post(`${BASE}/demo/reload`)).status).toBe(200);
+    expect(await count()).toBe(before + 1);
+    expect(JSON.parse(await fs.readFile(path.join(dir, "state.json"), "utf8"))).toEqual({
+      count: before + 1,
+    });
+  });
+
+  it("does not treat its own state write as an edit: the revision holds and nothing is staged", async () => {
+    const [before] = await list();
+    // Writing state used to leave a `state.json.tmp` behind, which the watcher read as an
+    // edit (recompiling the workbench and tearing down the tree that had just written it) and
+    // the revision hash read as content.
+    await count();
+    const [after] = await list();
+    expect(after!.revision).toBe(before!.revision);
+    expect(after!.loadedAt).toBe(before!.loadedAt);
+    const left = (await fs.readdir(dir)).filter((n) => n.includes("tmp"));
+    expect(left).toEqual([]);
+  });
+
+  it("opens and runs Sessions the SDK's way, inside its own Project only", async () => {
+    // Creating a Session builds its model client without making a request. A fixture-owned
+    // credential makes this case independent of the developer's provider keys and presets.
+    const configured = await owner.put(`/api/projects/${PROJECT}/models`, {
+      defaultModel: { provider: "custom", modelId: "workbench-test" },
+      models: [
+        {
+          provider: "custom",
+          modelId: "workbench-test",
+          clientType: "openai",
+          baseUrl: "https://workbench.invalid/v1",
+          apiKey: "sk-workbench-test",
+          contextWindow: 128000,
+        },
+      ],
+    });
+    expect(configured.status).toBe(200);
+    const res = await owner.get(`${BASE}/demo/api/open?agent=nobody&session=not-a-session`);
+    expect(await res.json()).toEqual({
+      opened: "createSession: this Project has no Agent 'nobody'",
+      ran: "run: this Project has no Session 'not-a-session'",
+      agents: [AGENT],
+    });
+    const own = (await (await owner.get(`${BASE}/demo/api/open`)).json()) as {
+      opened: { sessionId: string };
+    };
+    // Assert the Session the workbench caller receives, including its unattended approval
+    // mode, rather than the arguments of an internal service or a missing ambient key.
+    expect(own).toMatchObject({
+      opened: {
+        sessionId: expect.any(String),
+        projectId: PROJECT,
+        agentId: AGENT,
+        provider: "custom",
+        modelId: "workbench-test",
+        approvalMode: "allow-all",
+        source: "workbench",
+        archived: true,
+      },
+    });
+    const { sessionId } = own.opened;
+    t.deps.sessionSources.delete(sessionId); // The source registry of a fresh process.
+    const archived = (await (
+      await owner.get(
+        `/api/me/archived-sessions?source=workbench&projectId=${PROJECT}&workspace=temp&limit=100`,
+      )
+    ).json()) as ArchivedSessionsResponse;
+    expect(archived.sessions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ sessionId, source: "workbench" })]),
+    );
+    const active = (await (
+      await owner.get(`/api/projects/${PROJECT}/agents/${AGENT}/sessions?category=active`)
+    ).json()) as SessionsResponse;
+    expect(active.sessions.map((s: { sessionId: string }) => s.sessionId)).not.toContain(sessionId);
+    expect((await owner.patch(`/api/sessions/${sessionId}`, { archived: false })).status).toBe(200);
+    const kept = (await (await owner.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse;
+    expect(kept.session).toMatchObject({ source: "workbench", archived: false });
+  });
+
+  it("hands a handler any body and sends back any content type; JSON stays the default", async () => {
+    // An upload: not JSON, so the handler gets the bytes as sent — and never the app's cookie.
+    const sent = new Uint8Array([0, 1, 2, 250, 251, 255]);
+    const upload = await t.app.request(`${BASE}/demo/api/upload`, {
+      method: "POST",
+      headers: { cookie: ownerCookie, "content-type": "application/x-demo" },
+      body: sent,
+    });
+    expect(upload.status).toBe(201);
+    expect(upload.headers.get("content-type")).toBe("application/x-demo");
+    expect(upload.headers.get("x-saw-cookie")).toBe("false");
+    expect(upload.headers.get("x-json-body")).toBe("null");
+    expect(new Uint8Array(await upload.arrayBuffer())).toEqual(sent);
+    // A form is what another site can make a browser send with the cookie attached, so on this
+    // mount the browser's own account of the request's origin is the defense: a form from one
+    // of the app's pages passes, the same form from anywhere else does not.
+    const form = (site: string) =>
+      t.app.request(`${BASE}/demo/api/upload`, {
+        method: "POST",
+        headers: {
+          cookie: ownerCookie,
+          "content-type": "application/x-www-form-urlencoded",
+          "sec-fetch-site": site,
+        },
+        body: "a=1",
+      });
+    expect((await form("same-origin")).status).toBe(201);
+    const forged = await form("cross-site");
+    expect(forged.status).toBe(403);
+    expect(((await forged.json()) as { error: { code: string } }).error.code).toBe(
+      "cross_origin_write",
+    );
+    // Everywhere else a form is still refused outright.
+    const elsewhere = await t.app.request(`${BASE}/demo/reload`, {
+      method: "POST",
+      headers: {
+        cookie: ownerCookie,
+        "content-type": "text/plain",
+        "sec-fetch-site": "same-origin",
+      },
+      body: "x",
+    });
+    expect(elsewhere.status).toBe(415);
+    // A page: the handler names the content type, the string goes out as written, and a
+    // workbench does not get to set the app's cookies.
+    const page = await owner.get(`${BASE}/demo/api/page`);
+    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(page.headers.get("set-cookie")).toBeNull();
+    expect(await page.text()).toBe("<h1>proxied</h1>");
+    // A stream: the first chunk is in the client's hands while the handler is still producing
+    // the second — nothing is held back until the end.
+    const events = await owner.get(`${BASE}/demo/api/events`);
+    expect(events.headers.get("content-type")).toBe("text/event-stream");
+    const reader = events.body!.getReader();
+    try {
+      const first = await reader.read();
+      expect(new TextDecoder().decode(first.value)).toBe("data: one\n\n");
+    } finally {
+      // The producer cannot finish until the consumer has received the first chunk.
+      // This proves streaming without a wall-clock race on a busy runner.
+      expect((await owner.post(`${BASE}/demo/api/release-events`, {})).status).toBe(200);
+    }
+    const second = await reader.read();
+    expect(new TextDecoder().decode(second.value)).toBe("data: two\n\n");
+    expect((await reader.read()).done).toBe(true);
+    // A redirect, relative to the api mount.
+    const moved = await owner.get(`${BASE}/demo/api/moved`);
+    expect(moved.status).toBe(302);
+    expect(moved.headers.get("location")).toBe("page");
+    // And what every existing workbench does is unchanged: JSON in, JSON out.
+    const json = await owner.post(`${BASE}/demo/api/count`, {});
+    expect(json.headers.get("content-type")).toContain("application/json");
+    expect(await json.json()).toEqual({ count: expect.any(Number) });
+  });
+
+  it("is scoped to the Project's users", async () => {
+    const other = apiClient(t.app, (await provisionUser(t.app, "other")).cookie);
+    expect((await other.get(BASE)).status).toBe(404);
+    expect((await other.get(`${BASE}/demo/ui/index.html`)).status).toBe(404);
+    expect((await other.delete(`${BASE}/demo`)).status).toBe(404);
+    expect((await owner.get(`${BASE}/demo/ui/index.html`)).status).toBe(200);
+    expect((await owner.get(`${BASE}/nope/ui/index.html`)).status).toBe(404);
+    expect((await owner.get(`${BASE}/nope/api/`)).status).toBe(404);
+  });
+
+  it("notices an Agent's FIRST workbench, made with nothing but its file tools", async () => {
+    // Each retry owns its app: beforeAll's shared Project retains a created Agent after
+    // a failed assertion, otherwise a retry fails with agent_exists before checking discovery.
+    const fresh = await createTestApp();
+    try {
+      const owner = apiClient(fresh.app, (await provisionUser(fresh.app, "owner")).cookie);
+      const project = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
+      expect(project.status, await project.text()).toBe(201);
+      // No workbenches/ folder when its list is first read.
+      const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "builder" });
+      expect(made.status, await made.text()).toBe(201);
+      const base = `/api/projects/${PROJECT}/agents/builder/workbenches`;
+      expect(
+        ((await (await owner.get(base)).json()) as { workbenches: unknown[] }).workbenches,
+      ).toEqual([]);
+
+      const first = path.join(agentDir(fresh.root, PROJECT, "builder"), "workbenches", "first");
+      await fs.mkdir(path.join(first, "ui"), { recursive: true });
+      await fs.writeFile(path.join(first, "package.json"), packageJson());
+      await fs.writeFile(path.join(first, "index.ts"), indexSource("first"));
+      await fs.writeFile(path.join(first, "ui", "index.html"), "<h1>first</h1>");
+
+      // Nobody lists again: the server has to see the folder appear and load it on its own.
+      const statusFile = path.join(first, ".build", "status.json");
+      let status: { ok?: boolean } = {};
+      // Discovery also runs the real compiler. Give it the suite's disk/compile budget,
+      // not an iteration count whose ten seconds raced the macOS runner.
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline && status.ok === undefined) {
+        await new Promise((r) => setTimeout(r, 100));
+        status = await fs.readFile(statusFile, "utf8").then(
+          (text) => JSON.parse(text) as { ok: boolean },
+          () => ({}),
+        );
+      }
+      expect(status).toMatchObject({ ok: true, error: null, tabs: ["board"] });
+    } finally {
+      await fresh.cleanup();
+    }
+  });
+
+  it("loads an existing Workflow through the new route without losing state", async () => {
+    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "legacy" });
+    expect(made.status).toBe(201);
+    const legacy = path.join(agentDir(t.root, PROJECT, "legacy"), "workflows/demo");
+    await writeDemo(legacy);
+    for (const file of ["package.json", "index.ts"]) {
+      const target = path.join(legacy, file);
+      await fs.writeFile(
+        target,
+        (await fs.readFile(target, "utf8")).replaceAll("Workbench", "Workflow"),
+      );
+    }
+    await fs.writeFile(path.join(legacy, "state.json"), JSON.stringify({ count: 40 }));
+    const route = `/api/projects/${PROJECT}/agents/legacy/workbenches`;
+    const [converted] = await listOf(owner, route);
+    expect(converted).toMatchObject({ id: "demo", error: null });
+    expect(await (await owner.post(`${route}/demo/api/count`, {})).json()).toEqual({ count: 41 });
+    await expect(fs.stat(legacy)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("refuses a workbench written in JavaScript, naming the rename it needs", async () => {
+    // An Agent of its own, so the demo's list stays the demo alone.
+    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "scripter" });
+    expect(made.status, await made.text()).toBe(201);
+    const scripted = path.join(agentDir(t.root, PROJECT, "scripter"), "workbenches", "demo");
+    await writeDemo(scripted);
+    await fs.rename(path.join(scripted, "index.ts"), path.join(scripted, "index.mjs"));
+    const [refused] = await listOf(owner, `/api/projects/${PROJECT}/agents/scripter/workbenches`);
+    expect(refused!.error).toContain(
+      "a workbench is written in TypeScript: rename index.mjs to index.ts",
+    );
+  });
+});
+
+describe("editing a workbench", { timeout: 30_000 }, () => {
+  let t: TestApp;
+  let owner: ReturnType<typeof apiClient>;
+  /** The case's own Agent's workbenches, and the demo folder in it the case edits. */
+  let base: string;
+  let dir: string;
+  let editors = 0;
+  let agentId: string;
+
+  beforeAll(async () => {
+    t = await createTestApp();
+    owner = apiClient(t.app, (await provisionUser(t.app, "owner")).cookie);
+    const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
+    expect(created.status, await created.text()).toBe(201);
+  });
+  afterAll(async () => {
+    await t.cleanup();
+  });
+  // A plain Agent per case, so each has a demo of its own to break. The Agents stay until the
+  // app goes: a loaded workbench's folder is watched, and a watched folder can refuse removal
+  // on Windows.
+  beforeEach(async () => {
+    editors += 1;
+    agentId = `editor_${editors}`;
+    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId });
+    expect(made.status, await made.text()).toBe(201);
+    base = `/api/projects/${PROJECT}/agents/${agentId}/workbenches`;
+    dir = path.join(agentDir(t.root, PROJECT, agentId), "workbenches", "demo");
+    await writeDemo(dir);
+  });
+
+  const list = () => listOf(owner, base);
+
+  it("keeps one loaded instance for concurrent first reads", async () => {
+    const results = await Promise.all(Array.from({ length: 4 }, () => list()));
+    expect(results.every(([w]) => w?.error === null)).toBe(true);
+    expect(new Set(results.map(([w]) => w!.loadedAt)).size).toBe(1);
+    expect((await list())[0]?.loadedAt).toBe(results[0]![0]!.loadedAt);
+  });
+
+  async function reload(): Promise<WorkbenchInfo> {
+    const res = await owner.post(`${base}/demo/reload`);
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { workbench: WorkbenchInfo }).workbench;
+  }
+
+  async function reloadError(): Promise<string> {
+    const workbench = await reload();
+    // Whatever went wrong, the instance that loaded keeps answering, with its tabs.
+    expect(workbench.tabs).toHaveLength(1);
+    expect(await (await owner.get(`${base}/demo/api/`)).json()).toMatchObject({
+      greeting: "hello",
+    });
+    return workbench.error ?? "";
+  }
+
+  it("a folder file that disappears mid-read is a change, not a failed request", async () => {
+    // `walk` lists the files, then each is read: one that goes away in between (an editor's
+    // scratch file, the Agent deleting one) used to reject the read and answer 500 although
+    // the loaded instance was fine.
+    await fs.writeFile(path.join(dir, "notes.md"), "gone in a moment");
+    const [listed] = await list();
+    expect(listed!.error).toBe(null);
+    await fs.rm(path.join(dir, "notes.md"));
+    const res = await owner.get(`${base}/demo/api/greet`);
+    expect(res.status, await res.text()).toBe(200);
+  });
+
+  it("re-imports an edited folder, records every version and rolls back to any of them", async () => {
+    const [v1] = await list();
+    await fs.writeFile(path.join(dir, "index.ts"), indexSource("bonjour"));
+    await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v2</h1>");
+    const reload = await owner.post(`${base}/demo/reload`);
+    const v2 = ((await reload.json()) as { workbench: WorkbenchInfo }).workbench;
+    expect(v2.revision).not.toBe(v1!.revision);
+    expect(v2.uiRev).not.toBe(v1!.uiRev);
+    expect(
+      (await (await owner.get(`${base}/demo/api/`)).json()) as { greeting: string },
+    ).toMatchObject({
+      greeting: "bonjour",
+    });
+
+    const history = (await (await owner.get(`${base}/demo/history`)).json()) as {
+      versions: WorkbenchVersion[];
+    };
+    expect(history.versions.map((v) => v.revision)).toEqual([v2.revision, v1!.revision]);
+    expect(history.versions[1]!.files).toContain("ui/index.html");
+
+    const back = await owner.post(`${base}/demo/rollback`, { revision: v1!.revision });
+    expect(back.status).toBe(200);
+    expect(((await back.json()) as { workbench: WorkbenchInfo }).workbench.revision).toBe(
+      v1!.revision,
+    );
+    expect(await (await owner.get(`${base}/demo/ui/index.html`)).text()).toBe("<h1>demo v1</h1>");
+    // Only the serving revision keeps its emitted code.
+    expect((await fs.readdir(path.join(dir, ".build"))).sort()).toEqual(
+      [v1!.revision, "status.json"].sort(),
+    );
+    expect(
+      (await (await owner.get(`${base}/demo/api/`)).json()) as { greeting: string },
+    ).toMatchObject({
+      greeting: "hello",
+    });
+    // The rolled-back revision is now the newest entry, once.
+    const after = (await (await owner.get(`${base}/demo/history`)).json()) as {
+      versions: WorkbenchVersion[];
+    };
+    expect(after.versions.map((v) => v.revision)).toEqual([v1!.revision, v2.revision]);
+    expect((await owner.post(`${base}/demo/rollback`, { revision: "000000000000" })).status).toBe(
+      404,
+    );
+  });
+
+  it("keeps the previous instance serving when an edit does not load, and names the problem", async () => {
+    await list();
+    await fs.writeFile(
+      path.join(dir, "package.json"),
+      packageJson([
+        {
+          ...MANIFEST,
+          requires: { host: { iface: "@prismshadow/penguin-server#Workbenches", from: "Host" } },
+        },
+      ]),
+    );
+    const res = await owner.post(`${base}/demo/reload`);
+    const broken = ((await res.json()) as { workbench: WorkbenchInfo }).workbench;
+    // Named before anything runs: the host gave this workbench no types for that interface.
+    expect(broken.error).toContain(
+      "requires.host '@prismshadow/penguin-server#Workbenches': not among the types this workbench was written against",
+    );
+    expect(await (await owner.get(`${base}/demo/api/`)).json()).toMatchObject({
+      greeting: "hello",
+    });
+    expect(await (await owner.get(`${base}/demo/history`)).json()).toMatchObject({
+      versions: [{ name: "Demo" }],
+    });
+  });
+
+  it("refuses source that does not type-check, with the compiler's file, line and reason", async () => {
+    await list();
+    await fs.writeFile(
+      path.join(dir, "index.ts"),
+      indexSource("hello")
+        .replace("await host.setState({ count: n });", "await host.setStat({ count: n });")
+        .replace("return { body: { count: n } };", 'return "text";'),
+    );
+    const error = await reloadError();
+    expect(error).toMatch(
+      /index\.ts:\d+:\d+ TS2551 Property 'setStat' does not exist on type 'WorkbenchHost'/,
+    );
+    expect(error).toContain("TS2322");
+    // The same words reach the Agent through its files.
+    expect(
+      JSON.parse(await fs.readFile(path.join(dir, ".build", "status.json"), "utf8")),
+    ).toMatchObject({ ok: false, error });
+    // Said once, by the author's own file; the server's copy of the same question is left out.
+    expect(error).not.toContain("default export");
+    expect(error.match(/TS2322/g)).toHaveLength(1);
+  });
+
+  it("accepts a null JSON response body", async () => {
+    // A JSON body may be null: an optional `unknown` member stays `unknown` in the table.
+    await fs.writeFile(
+      path.join(dir, "index.ts"),
+      indexSource("hello").replace("return { body: { count: n } };", "return { body: null };"),
+    );
+    const [loaded] = await list();
+    expect(loaded!.error).toBeNull();
+    const response = await owner.post(`${base}/demo/api/count`, {});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toBeNull();
+  });
+
+  it("refuses untyped handler parameters and keeps the previous instance serving", async () => {
+    await list();
+    // Untyped is refused too: `strict` leaves no implicit any to slip through.
+    await fs.writeFile(
+      path.join(dir, "index.ts"),
+      indexSource("hello").replace(" satisfies WorkbenchPackage", ""),
+    );
+    expect(await reloadError()).toContain("TS7031");
+  });
+
+  it("refuses a required host method removed since authoring and keeps serving", async () => {
+    await list();
+    // requires: it was written when the host had a method this platform lacks.
+    await writtenAgainst(dir, (t) => {
+      t.ifaces[HOST_KEY]!.methods["removedSince"] = { params: [], returns: { void: true } };
+    });
+    const error = await reloadError();
+    expect(error).toContain(`Workbench: requires.host '${HOST_KEY}'`);
+    expect(error).toContain("removedSince");
+  });
+
+  it("refuses an incompatible provided handler and keeps the previous instance serving", async () => {
+    await list();
+    // provides: the handler it was written against answers with something else.
+    await writtenAgainst(dir, (t) => {
+      t.ifaces[MAIN_KEY]!.methods["handle"]!.returns = { promise: { data: "string" } };
+    });
+    const error = await reloadError();
+    expect(error).toContain(`Workbench: provides.main '${MAIN_KEY}'`);
+    expect(error).toContain("TS2322");
+  });
+
+  it("accepts a platform with a host method added since authoring", async () => {
+    await list();
+    // An addition on the platform's side breaks nothing.
+    await writtenAgainst(dir, (t) => {
+      delete t.ifaces[HOST_KEY]!.methods["log"];
+    });
+    expect((await reload()).error).toBeNull();
+  });
+
+  it("refuses an unreadable type table and recovers after installing fresh types", async () => {
+    await list();
+    // A table that cannot be read is a problem, never a pass against the platform's own;
+    // deleting the directory is how a workbench takes this harness's types afresh.
+    await fs.writeFile(path.join(dir, ".harness", "ifaces.json"), "{");
+    expect(await reloadError()).toContain(".harness/ifaces.json cannot be read");
+    await fs.rm(path.join(dir, ".harness"), { recursive: true });
+    expect((await reload()).error).toBeNull();
+  });
+
+  const writeContributions = (contributes: Record<string, unknown[]>) =>
+    fs.writeFile(path.join(dir, "package.json"), packageJson([{ ...MANIFEST, contributes }]));
+
+  it("exposes several contributed tabs in order", async () => {
+    const stats = {
+      ...TAB,
+      id: "demo.stats",
+      key: "stats",
+      title: "Stats",
+      renderer: { iframe: { src: "ui/stats.html" } },
+    };
+    await writeContributions({ "WebModule.sessionTabs": [TAB, stats] });
+    const [two] = await list();
+    expect(two!.error).toBeNull();
+    expect(two!.tabs.map((tab) => tab.key)).toEqual(["board", "stats"]);
+  });
+
+  it("refuses a tab pointing outside ui/ and keeps the previous instance serving", async () => {
+    await list();
+    await writeContributions({
+      "WebModule.sessionTabs": [{ ...TAB, renderer: { iframe: { src: "index.ts" } } }],
+    });
+    expect(await reloadError()).toContain("renderer.iframe.src must be a file under ui/");
+  });
+
+  it("refuses a closed contribution slot and keeps the previous instance serving", async () => {
+    await list();
+    await writeContributions({
+      "WebModule.pages": [
+        {
+          id: "demo.page",
+          key: "p",
+          path: "/p",
+          nav: "main",
+          admin: false,
+          renderer: { builtin: "x" },
+        },
+      ],
+    });
+    expect(await reloadError()).toContain("WebModule.pages");
+  });
+
+  it("refuses a malformed tab and keeps the previous instance serving", async () => {
+    await list();
+    await writeContributions({ "WebModule.sessionTabs": [{ ...TAB, title: 7 }] });
+    expect(await reloadError()).toContain("module tree rejected");
+  });
+
+  it("hints at pages with no tab and clears the hint when a tab is added", async () => {
+    // A workbench with no contribution is server-side only — and since this one has pages, the
+    // load says that nothing shows them, with the entry to add, in the API and in the status
+    // file alike (the Agent that wrote it may have only the file).
+    await writeContributions({});
+    const [bare] = (await list()) as [WorkbenchInfo];
+    expect(bare).toMatchObject({ error: null, tabs: [] });
+    expect(bare.hints).toHaveLength(1);
+    expect(bare.hints[0]).toContain('"WebModule.sessionTabs"');
+    expect(bare.hints[0]).toContain("ui/index.html");
+    const status = JSON.parse(await fs.readFile(path.join(dir, ".build", "status.json"), "utf8"));
+    expect(status).toMatchObject({ ok: true, tabs: [], hints: bare.hints });
+    // The harness describes its own contract beside the types it wrote.
+    expect(await fs.readFile(path.join(dir, ".harness", "README.md"), "utf8")).toContain(
+      "A page shows only if a tab is contributed for it",
+    );
+    // With the tab back there is nothing to hint at.
+    await writeContributions({ "WebModule.sessionTabs": [TAB] });
+    expect(((await reload()) as { hints: string[] }).hints).toEqual([]);
+  });
+
+  it("removes the folder and its recorded versions on request", async () => {
+    const count = async () => {
+      const response = (await (
+        await owner.get(`/api/projects/${PROJECT}/agents`)
+      ).json()) as AgentsResponse;
+      return response.agents.find((a: { agentId: string }) => a.agentId === agentId)
+        ?.workbenchCount;
+    };
+    expect(await count()).toBe(1);
+    await list();
+    expect((await owner.delete(`${base}/demo`)).status).toBe(204);
+    expect(await count()).toBe(0);
+    expect(await list()).toEqual([]);
+    await expect(fs.stat(dir)).rejects.toThrow();
+    expect((await owner.get(`${base}/demo/api/`)).status).toBe(404);
+    expect((await owner.delete(`${base}/demo`)).status).toBe(404);
+    const history = (await (await owner.get(`${base}/demo/history`)).json()) as {
+      versions: WorkbenchVersion[];
+    };
+    expect(history.versions).toEqual([]);
+  });
+});

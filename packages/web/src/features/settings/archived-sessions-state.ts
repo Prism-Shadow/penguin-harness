@@ -204,7 +204,10 @@ export function touchesArchive(ev: ServerEvent): boolean {
   // What a program opens is archived from the start: it may be one of this page's rows now.
   return (
     ev.type === "session_created" &&
-    (ev.source === "api" || ev.source === "schedule" || ev.source === "cli")
+    (ev.source === "api" ||
+      ev.source === "schedule" ||
+      ev.source === "cli" ||
+      ev.source === "workbench")
   );
 }
 
