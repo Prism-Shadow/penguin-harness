@@ -1,6 +1,6 @@
 /**
  * The built-in browser's pages, hosted once for the whole app. AppLayout mounts this; the
- * detached /terminal window and the full-window workflow route do not, and only the desktop
+ * detached /terminal window and the full-window workbench route do not, and only the desktop
  * app's main window has a `<webview>` element at all — everywhere else this renders nothing.
  *
  * Why here and not in the dock: a `<webview>` reloads its page whenever it is moved in the

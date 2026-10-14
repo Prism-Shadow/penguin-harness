@@ -72,8 +72,8 @@ import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog } from "./create-agent-dialog";
 import type { PluginPickItem } from "./create-agent-dialog";
 
-/** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
-const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
+/** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
+const BUILTIN_AGENT_IDS = new Set(["default_agent", "penguin_support"]);
 
 /** Card button icons (24x24 line path, rendered via GlyphIcon). */
 const CARD_ICONS = {

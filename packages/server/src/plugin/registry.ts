@@ -261,7 +261,7 @@ export function httpPluginRegistry(
  * for a document that changes four times a day; the asset is a plain file download with no such
  * budget, and the CDN in front of it is the same one that serves the installers.
  *
- * The tag is fixed and never re-pointed. What a six-hourly workflow in the index repository
+ * The tag is fixed and never re-pointed. What a six-hourly workbench in the index repository
  * replaces is the ASSET on that release, so this URL is stable for the life of the tag and
  * nothing here has to discover which release is newest — "latest nightly" is a name, resolved
  * by the publisher rather than by a search.

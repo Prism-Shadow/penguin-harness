@@ -89,7 +89,7 @@ describe("built-in Agent provisioning", () => {
     ).toBe(libraryPlugin("goal")!.icon);
 
     // The default AGENTS.md is empty: it carries no preset guidance (delegation and task
-    // conventions live in the default template's Suggested workflows section).
+    // conventions live in the default template's Suggested workbenches section).
     const defaultMd = await fs.readFile(
       path.join(t.root, projectId, "agents", "default_agent", "agent_state", "AGENTS.md"),
       "utf8",

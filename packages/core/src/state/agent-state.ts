@@ -77,6 +77,7 @@ import {
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
 import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
 import {
+  agentDir,
   agentsMdPath,
   agentStateDir,
   DEFAULT_AGENT_ID,
@@ -252,6 +253,14 @@ export async function loadAgentState(opts?: {
   await Promise.all([
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
     ...plugins.map((plugin) => installPluginFiles(root, projectId, agentId, plugin)),
+    ...Object.entries(preset?.files ?? {}).map(async ([relative, content]) => {
+      const base = agentDir(root, projectId, agentId);
+      const target = path.resolve(base, relative);
+      if (!target.startsWith(`${base}${path.sep}`))
+        throw new Error(`Preset file escapes Agent: ${relative}`);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await atomicWriteFile(target, content);
+    }),
   ]);
   // system_config.yaml is written last: its existence is the "initialization complete" marker
   // (the load/init decision point). If this fails partway (disk full / crash), the next run
@@ -262,7 +271,7 @@ export async function loadAgentState(opts?: {
 }
 
 /**
- * Initializes a Project's built-in Agent (the only built-in Agent: default_agent).
+ * Initializes a Project's built-in Agents and their workbenches.
  *
  * Calls the init-enabled `loadAgentState` for each one: an Agent whose directory already
  * exists (including a default_agent created earlier by the CLI) is only loaded, never
@@ -274,7 +283,9 @@ export async function provisionProjectAgents(opts?: {
   projectId?: string;
 }): Promise<string[]> {
   const agentIds: string[] = [];
-  for (const { agentId, preset } of builtinProjectAgentPresets()) {
+  for (const { agentId, preset } of builtinProjectAgentPresets(
+    opts?.projectId ?? DEFAULT_PROJECT_ID,
+  )) {
     await loadAgentState({
       ...(opts?.root !== undefined ? { root: opts.root } : {}),
       ...(opts?.projectId !== undefined ? { projectId: opts.projectId } : {}),

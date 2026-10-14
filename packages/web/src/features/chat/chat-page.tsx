@@ -57,7 +57,7 @@ import { switchDeskModel } from "../company/desk-model";
 import { useCompany } from "../../state/company";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
-import { useWorkflowTabs, WorkflowFrame, WorkflowTabStrip } from "../workflows/workflow-tabs";
+import { useWorkbenchTabs, WorkbenchFrame, WorkbenchTabStrip } from "../workbenches/workbench-tabs";
 import { apiErrorText } from "../../lib/api-error";
 import type { PermissionPick } from "../../lib/permission-level";
 import { configuredCompactionLimit } from "../../lib/context";
@@ -482,10 +482,10 @@ export function ChatPage() {
    */
   const pageAgentId = selected?.agentId ?? agentId;
   // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
-  // workflows live on: a Session on a machine runs a copy of the Agent there, and the workflows
+  // workbenches live on: a Session on a machine runs a copy of the Agent there, and the workbenches
   // it built are in that copy. The current Agent is always one of this server's, so going by
-  // it listed the wrong Agent's workflows (or none) for every Session on a machine.
-  const workflowTabs = useWorkflowTabs(
+  // it listed the wrong Agent's workbenches (or none) for every Session on a machine.
+  const workbenchTabs = useWorkbenchTabs(
     projectId,
     pageAgentId,
     selected === null ? null : machineForSession(selected.sessionId),
@@ -2205,28 +2205,28 @@ export function ChatPage() {
     // gray-950 in Primer, exactly what it painted before; paper in Console, the sheet in Frost —
     // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
     <div data-dock-host className="relative flex h-full flex-col bg-canvas">
-      {/* Workflow tabs: the Agent's own pages beside the chat. A workflow tab covers the
+      {/* Workbench tabs: the Agent's own pages beside the chat. A workbench tab covers the
           chat (which stays mounted, so its state survives a look at the page) below the
-          strip; the strip is absent when the Agent has no workflow with a UI. */}
-      <WorkflowTabStrip
-        tabs={workflowTabs.tabs}
-        notices={workflowTabs.notices}
-        active={workflowTabs.active}
-        onSelect={workflowTabs.setActive}
+          strip; the strip is absent when the Agent has no workbench with a UI. */}
+      <WorkbenchTabStrip
+        tabs={workbenchTabs.tabs}
+        notices={workbenchTabs.notices}
+        active={workbenchTabs.active}
+        onSelect={workbenchTabs.setActive}
       />
-      {workflowTabs.activeTab !== null && projectId !== null && pageAgentId !== null && (
+      {workbenchTabs.activeTab !== null && projectId !== null && pageAgentId !== null && (
         <div className="absolute inset-x-0 bottom-0 top-9 z-10">
-          <WorkflowFrame
-            // Per tab: the frame keeps this workflow's history fold, its error and its
+          <WorkbenchFrame
+            // Per tab: the frame keeps this workbench's history fold, its error and its
             // armed Remove, and none of that belongs to the next tab.
-            key={workflowTabs.activeTab.tabId}
+            key={workbenchTabs.activeTab.tabId}
             projectId={projectId}
             agentId={pageAgentId}
-            tab={workflowTabs.activeTab}
-            onChanged={() => void workflowTabs.refresh()}
+            tab={workbenchTabs.activeTab}
+            onChanged={() => void workbenchTabs.refresh()}
             onRemoved={() => {
-              workflowTabs.setActive(null);
-              void workflowTabs.refresh();
+              workbenchTabs.setActive(null);
+              void workbenchTabs.refresh();
             }}
           />
         </div>

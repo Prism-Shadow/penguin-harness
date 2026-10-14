@@ -522,7 +522,7 @@ describe("mergeIndexes", () => {
 
 describe("the published index source", () => {
   it("is a release asset on a fixed tag; PENGUIN_PLUGIN_INDEX unset reads it, off reads none, a URL replaces it", () => {
-    // The tag is never re-pointed — a six-hourly workflow replaces the ASSET — so "latest
+    // The tag is never re-pointed — a six-hourly workbench replaces the ASSET — so "latest
     // nightly" is resolved by name and costs no unauthenticated API budget.
     expect(NIGHTLY_INDEX_URL).toBe(
       "https://github.com/Prism-Shadow/penguin-extensions/releases/download/nightly/index.json",

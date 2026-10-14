@@ -76,7 +76,7 @@ import {
   publishBuiltinBrowserEvent,
   publishBuiltinBrowserResync,
 } from "../features/builtin-browser/browser-events";
-import { WORKFLOW_UPDATED_EVENT } from "../lib/workflow-tabs";
+import { WORKBENCH_UPDATED_EVENT } from "../lib/workbench-tabs";
 import { publishUserEvent } from "../lib/omni/user-events";
 import { mergeCounts, mostRecentFirst } from "../lib/session-merge";
 import {
@@ -1528,11 +1528,11 @@ export function applyUserEvent(
     }
     return;
   }
-  // A workflow of some Agent was (re)loaded: the chat page's tab strip owns that list and
+  // A workbench of some Agent was (re)loaded: the chat page's tab strip owns that list and
   // listens on window (it is mounted per page, this provider per app).
-  if (ev.type === "workflow_updated" || ev.type === "workflow_removed") {
+  if (ev.type === "workbench_updated" || ev.type === "workbench_removed") {
     window.dispatchEvent(
-      new CustomEvent(WORKFLOW_UPDATED_EVENT, {
+      new CustomEvent(WORKBENCH_UPDATED_EVENT, {
         detail: { projectId: ev.projectId, agentId: ev.agentId },
       }),
     );

@@ -1,5 +1,5 @@
 /**
- * The interface comparison plugins and workflows share: a package's OWN table against this
+ * The interface comparison plugins and workbenches share: a package's OWN table against this
  * platform's, decided by the TypeScript compiler, both for what it requires and for what
  * it provides.
  */
@@ -12,7 +12,7 @@ import { checkIfaces, ifaceQuestions, renderDts } from "../src/plugin/iface-chec
 
 const platform = platformTable as unknown as IfaceTable;
 const LOG = "@prismshadow/penguin-server#Log";
-const MAIN = "@prismshadow/penguin-server#WorkflowMain";
+const MAIN = "@prismshadow/penguin-server#WorkbenchMain";
 
 const manifest = parseManifest({
   name: "Demo",
@@ -66,7 +66,7 @@ describe("interface check", () => {
       delete t.ifaces[LOG];
     });
     // It is reported as uncompared; whether that fails the load is the caller's rule (a
-    // workflow's does, a plugin's — whose table the generator does not fill yet — does not).
+    // workbench's does, a plugin's — whose table the generator does not fill yet — does not).
     expect(checkIfaces(ts, platform, own, ifaceQuestions([manifest]))).toEqual({
       problems: [],
       uncompared: [`Demo: requires.log '${LOG}'`],

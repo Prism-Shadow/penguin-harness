@@ -1,25 +1,25 @@
 /**
- * WorkflowService: boots every workflow folder of an Agent as a module tree of its own.
+ * WorkbenchService: boots every workbench folder of an Agent as a module tree of its own.
  *
- * A workflow is a plugin package: hand-written manifests in `package.json#penguin.modules`
+ * A workbench is a plugin package: hand-written manifests in `package.json#penguin.modules`
  * and an `index.ts` whose default export pairs them with code. Its root module must be
- * named `Workflow` and provide `WorkflowMain`; the server publishes `WorkflowHost` to the
- * tree as module `Host`, and the slots it opens to workflows under the platform's own
- * module names (today `WebModule.sessionTabs`), so a workflow contributes a tab the way a
+ * named `Workbench` and provide `WorkbenchMain`; the server publishes `WorkbenchHost` to the
+ * tree as module `Host`, and the slots it opens to workbenches under the platform's own
+ * module names (today `WebModule.sessionTabs`), so a workbench contributes a tab the way a
  * plugin does and the host scopes it to the Agent.
  *
  * Three checks run before any create(), and a failure of any keeps the previous instance
  * serving with the problem named: the source is type-checked under `strict` against the
- * types the harness wrote into the folder when the workflow was new (./harness-types.ts,
+ * types the harness wrote into the folder when the workbench was new (./harness-types.ts,
  * ./compile.ts); those are compared with this platform's, both ways, by the compiler
  * (../plugin/iface-check.ts); and the tree is checked like any other — wiring, slots,
  * contribution shapes.
  *
  * Loading is by content: the folder's revision (store.ts) names the directory the source
- * is emitted into, so an edited workflow is a new import URL rather than a hit in the ESM
+ * is emitted into, so an edited workbench is a new import URL rather than a hit in the ESM
  * cache, and every successful load records the folder as a version the Agent (or the
- * user) can roll back to. A watcher on the `workflows/` folder reloads on change, debounced, and the users of
- * the Project hear `workflow_updated` on their event stream.
+ * user) can roll back to. A watcher on the `workbenches/` folder reloads on change, debounced, and the users of
+ * the Project hear `workbench_updated` on their event stream.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -33,24 +33,27 @@ import type {
   ModuleDef,
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
-import { userText } from "@prismshadow/penguin-core";
+import { agentDir, userText } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import type { ServerEvent } from "../api/types.js";
 import type { Channels, Clock, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
+import type { Traces } from "../mechanisms/traces.js";
+import { workbenchResult } from "./result.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
-  WorkflowInfo,
-  WorkflowInput,
-  WorkflowRequest,
-  WorkflowResponse,
-  WorkflowTab,
-  WorkflowVersion,
-  Workflows,
-} from "../mechanisms/workflows.js";
+  WorkbenchInfo,
+  WorkbenchInput,
+  WorkbenchRequest,
+  WorkbenchResponse,
+  WorkbenchTab,
+  WorkbenchVersion,
+  Workbenches,
+} from "../mechanisms/workbenches.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
-import { compileWorkflow, pruneBuilds, writeLoadStatus } from "./compile.js";
+import { migrateWorkbenches } from "./migrate.js";
+import { compileWorkbench, pruneBuilds, writeLoadStatus } from "./compile.js";
 import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
 import { loadTypeScript } from "../plugin/typescript.js";
@@ -58,7 +61,7 @@ import {
   historyDir,
   isSafeRelPath,
   isTempName,
-  isWorkflowId,
+  isWorkbenchId,
   listFolders,
   listVersions,
   readFolder,
@@ -67,17 +70,17 @@ import {
   restoreVersion,
   STATE_FILE,
   UI_DIR,
-  workflowsDir,
+  workbenchesDir,
   writeState,
-  type WorkflowFolder,
+  type WorkbenchFolder,
 } from "./store.js";
 
 const PKG = "@prismshadow/penguin-server";
 export const HOST_MODULE = "Host";
-export const ROOT_MODULE = "Workflow";
-export const HOST_IFACE = `${PKG}#WorkflowHost`;
-export const MAIN_IFACE = `${PKG}#WorkflowMain`;
-/** The platform module whose slots the host opens to workflows, and the slots it opens. */
+export const ROOT_MODULE = "Workbench";
+export const HOST_IFACE = `${PKG}#WorkbenchHost`;
+export const MAIN_IFACE = `${PKG}#WorkbenchMain`;
+/** The platform module whose slots the host opens to workbenches, and the slots it opens. */
 export const WEB_MODULE = "WebModule";
 export const WEB_IFACE = `${PKG}#WebShell`;
 export const TABS_SLOT = "sessionTabs";
@@ -86,16 +89,16 @@ const OPEN_WEB_SLOTS = [TABS_SLOT] as const;
 const WATCH_SETTLE_MS = 300;
 
 interface Loaded {
-  folder: WorkflowFolder;
+  folder: WorkbenchFolder;
   tree: ModuleTree | null;
-  main: { handle(request: WorkflowRequest): Promise<WorkflowResponse> } | null;
-  tabs: WorkflowTab[];
+  main: { handle(request: WorkbenchRequest): Promise<WorkbenchResponse> } | null;
+  tabs: WorkbenchTab[];
   loadedAt: string;
   error: string | null;
 }
 
-function key(projectId: string, agentId: string, workflowId: string): string {
-  return `${projectId}/${agentId}/${workflowId}`;
+function key(projectId: string, agentId: string, workbenchId: string): string {
+  return `${projectId}/${agentId}/${workbenchId}`;
 }
 
 function messageOf(err: unknown): string {
@@ -103,7 +106,7 @@ function messageOf(err: unknown): string {
 }
 
 /** Reads `package.json`: the manifests, and that the package is an ES module. */
-async function readManifests(folder: WorkflowFolder): Promise<Manifest[]> {
+async function readManifests(folder: WorkbenchFolder): Promise<Manifest[]> {
   const raw = JSON.parse(
     await fs.promises.readFile(path.join(folder.dir, "package.json"), "utf8"),
   ) as {
@@ -111,11 +114,11 @@ async function readManifests(folder: WorkflowFolder): Promise<Manifest[]> {
     penguin?: { modules?: unknown };
   };
   if (raw.type !== "module") {
-    throw new Error('package.json must set "type": "module" (a workflow is an ES module)');
+    throw new Error('package.json must set "type": "module" (a workbench is an ES module)');
   }
   const list = raw.penguin?.modules;
   if (!Array.isArray(list) || list.length === 0) {
-    throw new Error("package.json#penguin.modules must list at least the `Workflow` module");
+    throw new Error("package.json#penguin.modules must list at least the `Workbench` module");
   }
   return list.map((doc, i) => {
     try {
@@ -127,14 +130,14 @@ async function readManifests(folder: WorkflowFolder): Promise<Manifest[]> {
 }
 
 /**
- * A workflow that loads and shows nothing is the quietest way to get this wrong: the pages are
+ * A workbench that loads and shows nothing is the quietest way to get this wrong: the pages are
  * written, the load is green, and no tab appears, because a page is only a file until the
  * manifest contributes a tab for it. The author is usually an Agent with nothing but these
  * files and the load status, so the status says it, with the entry to add.
  */
 export function loadHints(
   uiRev: string | null,
-  tabs: readonly WorkflowTab[],
+  tabs: readonly WorkbenchTab[],
   error: string | null,
 ): string[] {
   if (error !== null || uiRev === null || tabs.length > 0) return [];
@@ -145,7 +148,7 @@ export function loadHints(
   };
   return [
     `${UI_DIR}/ has pages but the manifest contributes no tab, so nothing shows beside the chat. ` +
-      `In package.json, under penguin.modules[0] (the module named Workflow), set ` +
+      `In package.json, under penguin.modules[0] (the module named Workbench), set ` +
       `"contributes": ${JSON.stringify({ [`${WEB_MODULE}.${TABS_SLOT}`]: [entry] })} — ` +
       `one entry per tab, src a file under ${UI_DIR}/.`,
   ];
@@ -156,15 +159,15 @@ export function loadHints(
  * the folder, under `ui/`) turned into the URL it is served from. The slot's shape was
  * checked with the tree; where a page may live is this host's rule.
  */
-function contributedTabs(manifests: readonly Manifest[], uiBase: string): WorkflowTab[] {
-  const tabs: WorkflowTab[] = [];
+function contributedTabs(manifests: readonly Manifest[], uiBase: string): WorkbenchTab[] {
+  const tabs: WorkbenchTab[] = [];
   const keys = new Set<string>();
   for (const m of manifests) {
     for (const entry of m.contributes[`${WEB_MODULE}.${TABS_SLOT}`] ?? []) {
-      const tab = entry as unknown as WorkflowTab;
+      const tab = entry as unknown as WorkbenchTab;
       if (keys.has(tab.key)) {
         throw new Error(
-          `contribution '${tab.id}': another tab of this workflow already has the key '${tab.key}'`,
+          `contribution '${tab.id}': another tab of this workbench already has the key '${tab.key}'`,
         );
       }
       keys.add(tab.key);
@@ -230,7 +233,7 @@ async function loadDefs(manifests: readonly Manifest[], entry: string): Promise<
 }
 
 @Component()
-export class WorkflowService implements Workflows {
+export class WorkbenchService implements Workbenches {
   @Use() private readonly paths!: Paths;
   @Use() private readonly clock!: Clock;
   @Use() private readonly log!: Log;
@@ -240,20 +243,36 @@ export class WorkflowService implements Workflows {
   @Use() private readonly hmr!: Hmr;
   @Use() private readonly agents!: AgentIndex;
   @Use() private readonly sessionIndex!: SessionIndex;
+  @Use() private readonly traces!: Traces;
   @Use() private readonly runner!: ScheduleTaskRunner;
   @Use() private readonly sessions!: ScheduleSessionCreator;
 
   private readonly loaded = new Map<string, Loaded>();
   private readonly watchers = new Map<string, fs.FSWatcher>();
   private readonly pending = new Map<string, NodeJS.Timeout>();
-  /** The load in flight per workflow: a load takes a compiler run, so two can overlap. */
+  /** The load in flight per workbench: a load takes a compiler run, so two can overlap. */
   private readonly loading = new Map<string, Promise<Loaded>>();
   /** The revision the newest queued load will load, while one is queued (see reloadIfChanged). */
   private readonly loadingRevision = new Map<string, string>();
-  /** Workflows whose folder is being deleted: the watcher schedules no reload for them. */
+  /** Workbenches whose folder is being deleted: the watcher schedules no reload for them. */
   private readonly removing = new Set<string>();
   private resources: ClassCtx["resources"] | null = null;
   private disposed = false;
+  private readonly migrations = new Map<string, Promise<void>>();
+
+  private migrate(projectId: string, agentId: string): Promise<void> {
+    const key = `${projectId}/${agentId}`;
+    const existing = this.migrations.get(key);
+    if (existing) return existing;
+    const pending = migrateWorkbenches(agentDir(this.paths.root, projectId, agentId)).catch(
+      (error) => {
+        this.migrations.delete(key);
+        throw error;
+      },
+    );
+    this.migrations.set(key, pending);
+    return pending;
+  }
 
   setup(ctx: ClassCtx) {
     this.resources = ctx.resources;
@@ -266,10 +285,11 @@ export class WorkflowService implements Workflows {
     });
   }
 
-  async list(projectId: string, agentId: string): Promise<WorkflowInfo[]> {
+  async list(projectId: string, agentId: string): Promise<WorkbenchInfo[]> {
+    await this.migrate(projectId, agentId);
     this.watch(projectId, agentId);
-    const folders = await listFolders(workflowsDir(this.paths.root, projectId, agentId));
-    const out: WorkflowInfo[] = [];
+    const folders = await listFolders(workbenchesDir(this.paths.root, projectId, agentId));
+    const out: WorkbenchInfo[] = [];
     for (const folder of folders) {
       const current = this.loaded.get(key(projectId, agentId, folder.id));
       const fresh =
@@ -288,15 +308,15 @@ export class WorkflowService implements Workflows {
     return out;
   }
 
-  async reload(projectId: string, agentId: string, workflowId: string): Promise<WorkflowInfo> {
-    const folder = await this.folder(projectId, agentId, workflowId);
-    return this.info(workflowId, await this.load(projectId, agentId, folder));
+  async reload(projectId: string, agentId: string, workbenchId: string): Promise<WorkbenchInfo> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    return this.info(workbenchId, await this.load(projectId, agentId, folder));
   }
 
   /**
    * The watcher's reload: only when the content differs from what is loaded, or from what the
    * load in flight is loading. An event is a hint, not an edit — Windows reports a `change` on
-   * a directory when a file in it is read or written (the workflow's own state, `.build/`, and
+   * a directory when a file in it is read or written (the workbench's own state, `.build/`, and
    * a load's own reads of the folder), and reloading on those tore the tree down under the
    * request that had just written its state, or loaded the same folder twice over. The
    * revision is the content hash, so an edit always differs.
@@ -304,10 +324,10 @@ export class WorkflowService implements Workflows {
   private async reloadIfChanged(
     projectId: string,
     agentId: string,
-    workflowId: string,
+    workbenchId: string,
   ): Promise<void> {
-    const folder = await this.folder(projectId, agentId, workflowId);
-    const k = key(projectId, agentId, workflowId);
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    const k = key(projectId, agentId, workbenchId);
     const current = this.loading.has(k)
       ? this.loadingRevision.get(k)
       : this.loaded.get(k)?.folder.revision;
@@ -318,12 +338,12 @@ export class WorkflowService implements Workflows {
   async dispatch(
     projectId: string,
     agentId: string,
-    workflowId: string,
-    request: WorkflowRequest,
-  ): Promise<WorkflowResponse> {
-    const loaded = await this.current(projectId, agentId, workflowId);
+    workbenchId: string,
+    request: WorkbenchRequest,
+  ): Promise<WorkbenchResponse> {
+    const loaded = await this.current(projectId, agentId, workbenchId);
     if (loaded.main === null) {
-      return { status: 503, body: { error: loaded.error ?? "workflow is not loaded" } };
+      return { status: 503, body: { error: loaded.error ?? "workbench is not loaded" } };
     }
     return loaded.main.handle(request);
   }
@@ -331,16 +351,17 @@ export class WorkflowService implements Workflows {
   async uiFile(
     projectId: string,
     agentId: string,
-    workflowId: string,
+    workbenchId: string,
     rel: string,
   ): Promise<string | null> {
-    if (!isWorkflowId(workflowId)) return null;
+    if (!isWorkbenchId(workbenchId)) return null;
+    await this.migrate(projectId, agentId);
     // No default document: which page a tab shows is what its contribution says.
     const file = rel;
     if (!isSafeRelPath(file)) return null;
     const abs = path.join(
-      workflowsDir(this.paths.root, projectId, agentId),
-      workflowId,
+      workbenchesDir(this.paths.root, projectId, agentId),
+      workbenchId,
       UI_DIR,
       file,
     );
@@ -351,31 +372,36 @@ export class WorkflowService implements Workflows {
     }
   }
 
-  history(projectId: string, agentId: string, workflowId: string): Promise<WorkflowVersion[]> {
-    if (!isWorkflowId(workflowId)) return Promise.resolve([]);
-    return listVersions(historyDir(this.paths.root, projectId, agentId), workflowId);
+  async history(
+    projectId: string,
+    agentId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchVersion[]> {
+    if (!isWorkbenchId(workbenchId)) return Promise.resolve([]);
+    await this.migrate(projectId, agentId);
+    return listVersions(historyDir(this.paths.root, projectId, agentId), workbenchId);
   }
 
   async rollback(
     projectId: string,
     agentId: string,
-    workflowId: string,
+    workbenchId: string,
     revision: string,
-  ): Promise<WorkflowInfo> {
-    const folder = await this.folder(projectId, agentId, workflowId);
-    if (!/^[0-9a-f]{12}$/.test(revision)) throw new WorkflowNotFound("no such version");
+  ): Promise<WorkbenchInfo> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    if (!/^[0-9a-f]{12}$/.test(revision)) throw new WorkbenchNotFound("no such version");
     const restored = await restoreVersion(
       historyDir(this.paths.root, projectId, agentId),
       folder,
       revision,
     );
-    if (!restored) throw new WorkflowNotFound("no such version");
-    return this.reload(projectId, agentId, workflowId);
+    if (!restored) throw new WorkbenchNotFound("no such version");
+    return this.reload(projectId, agentId, workbenchId);
   }
 
-  async remove(projectId: string, agentId: string, workflowId: string): Promise<void> {
-    const folder = await this.folder(projectId, agentId, workflowId);
-    const k = key(projectId, agentId, workflowId);
+  async remove(projectId: string, agentId: string, workbenchId: string): Promise<void> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    const k = key(projectId, agentId, workbenchId);
     // Nothing may write into the folder while it is deleted: a load writes `.build/`, and a
     // file recreated there mid-delete fails the rm on Windows (ENOTEMPTY). Pending reloads are
     // dropped, none is scheduled until the folder is gone, and one already running finishes.
@@ -394,11 +420,11 @@ export class WorkflowService implements Workflows {
     } finally {
       this.removing.delete(k);
     }
-    await fs.promises.rm(path.join(historyDir(this.paths.root, projectId, agentId), workflowId), {
+    await fs.promises.rm(path.join(historyDir(this.paths.root, projectId, agentId), workbenchId), {
       recursive: true,
       force: true,
     });
-    this.forget(projectId, agentId, workflowId);
+    this.forget(projectId, agentId, workbenchId);
   }
 
   // ---- internals ------------------------------------------------------------------
@@ -406,24 +432,25 @@ export class WorkflowService implements Workflows {
   private async folder(
     projectId: string,
     agentId: string,
-    workflowId: string,
-  ): Promise<WorkflowFolder> {
-    if (!isWorkflowId(workflowId)) throw new WorkflowNotFound("no such workflow");
-    const dir = path.join(workflowsDir(this.paths.root, projectId, agentId), workflowId);
-    const folder = await readFolder(dir, workflowId);
-    if (!folder) throw new WorkflowNotFound("no such workflow");
+    workbenchId: string,
+  ): Promise<WorkbenchFolder> {
+    if (!isWorkbenchId(workbenchId)) throw new WorkbenchNotFound("no such workbench");
+    await this.migrate(projectId, agentId);
+    const dir = path.join(workbenchesDir(this.paths.root, projectId, agentId), workbenchId);
+    const folder = await readFolder(dir, workbenchId);
+    if (!folder) throw new WorkbenchNotFound("no such workbench");
     return folder;
   }
 
-  private async current(projectId: string, agentId: string, workflowId: string): Promise<Loaded> {
-    const folder = await this.folder(projectId, agentId, workflowId);
-    const k = key(projectId, agentId, workflowId);
+  private async current(projectId: string, agentId: string, workbenchId: string): Promise<Loaded> {
+    const folder = await this.folder(projectId, agentId, workbenchId);
+    const k = key(projectId, agentId, workbenchId);
     const existing = this.loaded.get(k);
     if (existing && existing.folder.revision === folder.revision) return existing;
     return this.load(projectId, agentId, folder);
   }
 
-  private info(id: string, l: Loaded): WorkflowInfo {
+  private info(id: string, l: Loaded): WorkbenchInfo {
     return {
       id,
       name: l.folder.pkg.name,
@@ -438,11 +465,11 @@ export class WorkflowService implements Workflows {
   }
 
   /**
-   * One load at a time per workflow. The watcher and a request can both ask while the
+   * One load at a time per workbench. The watcher and a request can both ask while the
    * compiler is still running for the last edit; the later one waits and then loads what
    * is on disk by then, so versions are recorded in order and never concurrently.
    */
-  private load(projectId: string, agentId: string, folder: WorkflowFolder): Promise<Loaded> {
+  private load(projectId: string, agentId: string, folder: WorkbenchFolder): Promise<Loaded> {
     const k = key(projectId, agentId, folder.id);
     const after = this.loading.get(k) ?? Promise.resolve();
     const run = after
@@ -469,7 +496,7 @@ export class WorkflowService implements Workflows {
   private async loadNow(
     projectId: string,
     agentId: string,
-    folder: WorkflowFolder,
+    folder: WorkbenchFolder,
   ): Promise<Loaded> {
     const k = key(projectId, agentId, folder.id);
     const previous = this.loaded.get(k);
@@ -481,7 +508,7 @@ export class WorkflowService implements Workflows {
       const manifests = await readManifests(folder);
       const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
       const ts = await loadTypeScript(this.hmr.assetsDir());
-      // A new workflow takes its types from THIS harness; one that has them keeps them, and
+      // A new workbench takes its types from THIS harness; one that has them keeps them, and
       // they are its side of the comparison below.
       installHarnessTypes(
         folder.dir,
@@ -489,7 +516,7 @@ export class WorkflowService implements Workflows {
         [HOST_IFACE, MAIN_IFACE],
         this.clock.now(),
       );
-      const entry = compileWorkflow(ts, folder.dir, folder.revision);
+      const entry = compileWorkbench(ts, folder.dir, folder.revision);
       const written = readHarnessTable(folder.dir);
       if (typeof written === "string") throw new Error(written);
       const fit = checkIfaces(
@@ -498,15 +525,17 @@ export class WorkflowService implements Workflows {
         written,
         ifaceQuestions(manifests),
       );
-      // An interface the workflow names but holds no types for cannot be compared, and for a
-      // workflow that is a problem, not a pass.
+      // An interface the workbench names but holds no types for cannot be compared, and for a
+      // workbench that is a problem, not a pass.
       const misfits = [
-        ...fit.uncompared.map((q) => `${q}: not among the types this workflow was written against`),
+        ...fit.uncompared.map(
+          (q) => `${q}: not among the types this workbench was written against`,
+        ),
         ...fit.problems,
       ];
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       const root = await loadDefs(manifests, entry);
-      const host = this.host(projectId, agentId, folder);
+      const host = await this.host(projectId, agentId, folder);
       const tree = await bootModules(root, {
         ifaces: table as unknown as IfaceTable,
         resources: this.resources!,
@@ -535,12 +564,12 @@ export class WorkflowService implements Workflows {
         );
       } catch (err) {
         this.log.line(
-          `[workflows] ${k}@${folder.revision}: version not recorded: ${messageOf(err)}`,
+          `[workbenches] ${k}@${folder.revision}: version not recorded: ${messageOf(err)}`,
         );
       }
     } catch (err) {
       const error = messageOf(err);
-      this.log.line(`[workflows] ${k}@${folder.revision}: ${error}`);
+      this.log.line(`[workbenches] ${k}@${folder.revision}: ${error}`);
       // A tree booted before the throw serves nobody: nothing holds it, so it is let go here
       // rather than left behind. The previous instance keeps answering — it was never
       // disposed, because that only happens once the new one is in place.
@@ -570,12 +599,9 @@ export class WorkflowService implements Workflows {
     return next;
   }
 
-  private host(projectId: string, agentId: string, folder: WorkflowFolder) {
+  private async host(projectId: string, agentId: string, folder: WorkbenchFolder) {
     const service = this;
-    let state: unknown = null;
-    let stateRead: Promise<void> | null = null;
-    const ensureState = () => (stateRead ??= readState(folder.dir).then((s) => void (state = s)));
-    void ensureState();
+    let state: unknown = await readState(folder.dir);
     return {
       listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
       async createSession(opts?: { agentId?: string }) {
@@ -590,13 +616,13 @@ export class WorkflowService implements Workflows {
           approvalMode: "allow-all",
         });
       },
-      async run(sessionId: string, input: WorkflowInput[]) {
+      async run(sessionId: string, input: WorkbenchInput[]) {
         service.ownSession(projectId, sessionId, "run");
         const texts = (Array.isArray(input) ? input : []).map((item) => item?.text);
         if (texts.length === 0 || texts.some((t) => typeof t !== "string" || t === "")) {
           throw new Error('run: input is a non-empty list of { text: "…" } items');
         }
-        // Whatever the workflow stamped, the Agent hears the server, never a person.
+        // Whatever the workbench stamped, the Agent hears the server, never a person.
         return service.runner.startTask(
           sessionId,
           texts.map((text) => userText(text, "server")),
@@ -607,36 +633,44 @@ export class WorkflowService implements Workflows {
         service.ownSession(projectId, sessionId, "sessionStatus");
         return service.runner.statusOf(sessionId);
       },
+      async sessionResult(sessionId: string) {
+        service.ownSession(projectId, sessionId, "sessionResult");
+        const status = service.runner.statusOf(sessionId);
+        if (status !== "idle") return workbenchResult(status, []);
+        const row = service.sessionIndex.findById(sessionId)!;
+        const messages = await service.traces.readMessages(projectId, row.agentId, sessionId);
+        // A new task can begin while reading the trace; never label its prior answer complete.
+        return workbenchResult(service.runner.statusOf(sessionId), messages);
+      },
       getState: () => state,
       async setState(next: unknown) {
-        await ensureState();
+        await writeState(folder.dir, next ?? null);
         state = next ?? null;
-        await writeState(folder.dir, state);
       },
-      log: (message: string) => service.log.line(`[workflow ${folder.id}] ${message}`),
+      log: (message: string) => service.log.line(`[workbench ${folder.id}] ${message}`),
     };
   }
 
-  /** A workflow reaches the Sessions of its own Project and no others. */
+  /** A workbench reaches the Sessions of its own Project and no others. */
   private ownSession(projectId: string, sessionId: string, call: string): void {
     if (this.sessionIndex.findById(sessionId)?.projectId !== projectId) {
       throw new Error(`${call}: this Project has no Session '${sessionId}'`);
     }
   }
 
-  /** Drops a workflow's instance and tells the Project's users it is gone. */
-  private forget(projectId: string, agentId: string, workflowId: string): void {
-    const k = key(projectId, agentId, workflowId);
+  /** Drops a workbench's instance and tells the Project's users it is gone. */
+  private forget(projectId: string, agentId: string, workbenchId: string): void {
+    const k = key(projectId, agentId, workbenchId);
     const t = this.pending.get(k);
     if (t) clearTimeout(t);
     this.pending.delete(k);
     this.loaded.get(k)?.tree?.dispose();
     this.loaded.delete(k);
-    this.publish(projectId, { type: "workflow_removed", projectId, agentId, workflowId });
+    this.publish(projectId, { type: "workbench_removed", projectId, agentId, workbenchId });
   }
 
-  private notify(projectId: string, agentId: string, workflow: WorkflowInfo): void {
-    this.publish(projectId, { type: "workflow_updated", projectId, agentId, workflow });
+  private notify(projectId: string, agentId: string, workbench: WorkbenchInfo): void {
+    this.publish(projectId, { type: "workbench_updated", projectId, agentId, workbench });
   }
 
   /** Users of the Project (owner + members) hear about the change. */
@@ -652,9 +686,9 @@ export class WorkflowService implements Workflows {
   private watch(projectId: string, agentId: string): void {
     const k = `${projectId}/${agentId}`;
     if (this.watchers.has(k) || this.disposed) return;
-    const declared = workflowsDir(this.paths.root, projectId, agentId);
+    const declared = workbenchesDir(this.paths.root, projectId, agentId);
     if (!fs.existsSync(declared)) {
-      this.awaitFirstWorkflow(projectId, agentId, declared);
+      this.awaitFirstWorkbench(projectId, agentId, declared);
       return;
     }
     // Watch the REAL path: libuv compares each event's filename against the string it was
@@ -672,10 +706,10 @@ export class WorkflowService implements Workflows {
       watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
         const segments = typeof filename === "string" ? filename.split(/[\\/]/) : [];
         const id = segments[0];
-        // The workflow's own document is not code, and neither is the staging file a write
+        // The workbench's own document is not code, and neither is the staging file a write
         // of it goes through: `state.json` used to be the only name skipped, so every
-        // `setState` recompiled the workflow and tore down the tree that had just written it.
-        if (id === undefined || !isWorkflowId(id)) return;
+        // `setState` recompiled the workbench and tore down the tree that had just written it.
+        if (id === undefined || !isWorkbenchId(id)) return;
         if (filename?.endsWith(STATE_FILE) || (filename !== null && isTempName(filename))) return;
         // The server's own emit (`.build/`), and any other dot-directory, is not an edit.
         if (segments[1]?.startsWith(".")) return;
@@ -692,12 +726,12 @@ export class WorkflowService implements Workflows {
   }
 
   /**
-   * An Agent with no `workflows/` folder yet: watch its own directory for that folder to
-   * appear. The Agent makes its first workflow with its file tools and nothing else — without
-   * this, nothing noticed until somebody listed the workflows again, and the Agent sat
+   * An Agent with no `workbenches/` folder yet: watch its own directory for that folder to
+   * appear. The Agent makes its first workbench with its file tools and nothing else — without
+   * this, nothing noticed until somebody listed the workbenches again, and the Agent sat
    * waiting for a load that was never going to happen.
    */
-  private awaitFirstWorkflow(projectId: string, agentId: string, declared: string): void {
+  private awaitFirstWorkbench(projectId: string, agentId: string, declared: string): void {
     const k = `${projectId}/${agentId}`;
     const parent = path.dirname(declared);
     let watcher: fs.FSWatcher;
@@ -708,7 +742,7 @@ export class WorkflowService implements Workflows {
         this.watchers.delete(k);
         // The folder exists now: watch it properly, and load whatever is already inside.
         void this.list(projectId, agentId).catch((err) =>
-          this.log.line(`[workflows] ${k}: ${messageOf(err)}`),
+          this.log.line(`[workbenches] ${k}: ${messageOf(err)}`),
         );
       });
     } catch {
@@ -721,8 +755,8 @@ export class WorkflowService implements Workflows {
     this.watchers.set(k, watcher);
   }
 
-  private schedule(projectId: string, agentId: string, workflowId: string): void {
-    const k = key(projectId, agentId, workflowId);
+  private schedule(projectId: string, agentId: string, workbenchId: string): void {
+    const k = key(projectId, agentId, workbenchId);
     if (this.removing.has(k)) return;
     const t = this.pending.get(k);
     if (t) clearTimeout(t);
@@ -730,29 +764,29 @@ export class WorkflowService implements Workflows {
       k,
       setTimeout(() => {
         this.pending.delete(k);
-        void this.reloadIfChanged(projectId, agentId, workflowId).catch((err) => {
-          if (err instanceof WorkflowNotFound) {
-            this.forget(projectId, agentId, workflowId);
+        void this.reloadIfChanged(projectId, agentId, workbenchId).catch((err) => {
+          if (err instanceof WorkbenchNotFound) {
+            this.forget(projectId, agentId, workbenchId);
             return;
           }
-          this.log.line(`[workflows] ${k}: ${messageOf(err)}`);
+          this.log.line(`[workbenches] ${k}: ${messageOf(err)}`);
         });
       }, WATCH_SETTLE_MS),
     );
   }
 }
 
-export class WorkflowNotFound extends Error {}
+export class WorkbenchNotFound extends Error {}
 
-/** Where a workflow's `ui/` is served from (./routes.ts). */
-function uiBase(projectId: string, agentId: string, workflowId: string): string {
-  const [p, a, w] = [projectId, agentId, workflowId].map(encodeURIComponent);
-  return `/api/projects/${p}/agents/${a}/workflows/${w}/${UI_DIR}`;
+/** Where a workbench's `ui/` is served from (./routes.ts). */
+function uiBase(projectId: string, agentId: string, workbenchId: string): string {
+  const [p, a, w] = [projectId, agentId, workbenchId].map(encodeURIComponent);
+  return `/api/projects/${p}/agents/${a}/workbenches/${w}/${UI_DIR}`;
 }
 
 /**
- * The slots the host opens to a workflow tree, published under the platform module's own
- * name: the slot declarations come from the platform's table (so a workflow's contribution
+ * The slots the host opens to a workbench tree, published under the platform module's own
+ * name: the slot declarations come from the platform's table (so a workbench's contribution
  * has the shape a plugin's has), and only the opened ones are there — contributing to any
  * other is `no-such-slot`. No members: there is nothing to require from it.
  */
@@ -765,10 +799,10 @@ function webSlotsDecl(): IfaceDecl {
     if (!slot) throw new Error(`${WEB_IFACE} declares no slot '${name}' (regenerate ifaces.json)`);
     slots[name] = slot;
   }
-  return { name: "WorkflowWebSlots", methods: {}, slots };
+  return { name: "WorkbenchWebSlots", methods: {}, slots };
 }
 
-/** The published `WorkflowHost` declaration, straight from the platform's interface table. */
+/** The published `WorkbenchHost` declaration, straight from the platform's interface table. */
 function hostDecl(): IfaceDecl {
   const decl = (table as unknown as { ifaces: Record<string, IfaceDecl> }).ifaces[HOST_IFACE];
   if (!decl) throw new Error(`${HOST_IFACE} is not in ifaces.json (regenerate it)`);

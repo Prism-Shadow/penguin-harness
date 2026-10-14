@@ -1,7 +1,7 @@
 /**
- * Workflows: an Agent's own plugin package booted as a module tree.
+ * Workbenches: an Agent's own plugin package booted as a module tree.
  *
- * A loaded workflow:
+ * A loaded workbench:
  * - Its TypeScript is checked and transpiled into a dot-directory beside a status file the
  *   Agent can read, its types written once from this harness; the tree boots, serves its UI
  *   under ui/ (no default document, nothing outside it) and dispatches to its handler, and its
@@ -13,19 +13,20 @@
  *   content type, a stream as it is produced and a redirect relative to its mount, never the
  *   app's cookies; JSON stays the default.
  * - It is scoped to the Project's users.
- * - An Agent's first workflow, made with nothing but file tools, is noticed without a list.
- * - A workflow written in JavaScript is refused with the rename it needs.
+ * - An Agent's first workbench, made with nothing but file tools, is noticed without a list.
+ * - A workbench written in JavaScript is refused with the rename it needs.
  *
- * An edited workflow:
+ * An edited workbench:
  * - A file that disappears mid-read is a change, not a failed request.
  * - An edited folder is re-imported, every version recorded and any restorable.
  * - An edit that does not load leaves the previous instance serving and names the problem:
  *   source that does not type-check (with the compiler's file, line and reason, untyped code
  *   included), a type table that no longer fits this platform either way (an addition on the
  *   platform's side breaks nothing; an unreadable table is a problem, never a pass).
- * - Tabs come from contributions: several per workflow, pages under ui/, open slots only; a
- *   workflow with pages and no tab gets a hint.
- * - Removing a workflow removes its folder and recorded versions.
+ * - Tabs come from contributions: several per workbench, pages under ui/, open slots only; a
+ *   workbench with pages and no tab gets a hint.
+ * - Removing a workbench removes its folder and recorded versions.
+ * - A legacy Workflow package loads through the new route after one-time conversion, with its state intact.
  *
  * Every load runs the TypeScript compiler, so the loaded-once group shares one app and one
  * compile; each editing case needs a folder of its own to break, which it gets in an Agent of
@@ -36,15 +37,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
-import type { WorkflowInfo, WorkflowVersion } from "../src/api/types.js";
+import type { WorkbenchInfo, WorkbenchVersion } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const PROJECT = "owner-wf";
 const AGENT = "default_agent";
-const BASE = `/api/projects/${PROJECT}/agents/${AGENT}/workflows`;
-const HOST_KEY = "@prismshadow/penguin-server#WorkflowHost";
-const MAIN_KEY = "@prismshadow/penguin-server#WorkflowMain";
+const BASE = `/api/projects/${PROJECT}/agents/${AGENT}/workbenches`;
+const HOST_KEY = "@prismshadow/penguin-server#WorkbenchHost";
+const MAIN_KEY = "@prismshadow/penguin-server#WorkbenchMain";
 
 const TAB = {
   id: "demo.board",
@@ -55,7 +56,7 @@ const TAB = {
 };
 
 const MANIFEST = {
-  name: "Workflow",
+  name: "Workbench",
   requires: { host: { iface: HOST_KEY, from: "Host" } },
   provides: { main: MAIN_KEY },
   contributes: { "WebModule.sessionTabs": [TAB] },
@@ -73,11 +74,11 @@ function packageJson(modules: unknown[] = [MANIFEST], extra: Record<string, unkn
 }
 
 function indexSource(greeting: string): string {
-  return `import type { WorkflowPackage } from "@prismshadow/penguin-server/plugin";
+  return `import type { WorkbenchPackage } from "@prismshadow/penguin-server/plugin";
 
 export default {
   modules: {
-    Workflow: {
+    Workbench: {
       create({ use }) {
         const host = use.host;
         return {
@@ -131,11 +132,11 @@ export default {
       },
     },
   },
-} satisfies WorkflowPackage;
+} satisfies WorkbenchPackage;
 `;
 }
 
-/** Rewrites the table the harness wrote into the folder: the workflow was written against an OLDER one. */
+/** Rewrites the table the harness wrote into the folder: the workbench was written against an OLDER one. */
 async function writtenAgainst(dir: string, edit: (table: IfaceTable) => void): Promise<void> {
   const file = path.join(dir, ".harness", "ifaces.json");
   const table = JSON.parse(await fs.readFile(file, "utf8")) as IfaceTable;
@@ -143,7 +144,7 @@ async function writtenAgainst(dir: string, edit: (table: IfaceTable) => void): P
   await fs.writeFile(file, JSON.stringify(table));
 }
 
-/** Writes the demo workflow into `dir`: its manifest, its handler and its one page. */
+/** Writes the demo workbench into `dir`: its manifest, its handler and its one page. */
 async function writeDemo(dir: string): Promise<void> {
   await fs.mkdir(path.join(dir, "ui"), { recursive: true });
   await fs.writeFile(path.join(dir, "package.json"), packageJson());
@@ -151,37 +152,37 @@ async function writeDemo(dir: string): Promise<void> {
   await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v1</h1>");
 }
 
-/** An app with the owner's Project and the demo workflow written into its default Agent. */
-async function workflowApp() {
+/** An app with the owner's Project and the demo workbench written into its default Agent. */
+async function workbenchApp() {
   const t = await createTestApp();
   const a = await provisionUser(t.app, "owner");
   const owner = apiClient(t.app, a.cookie);
   const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
   expect(created.status, await created.text()).toBe(201);
-  const dir = path.join(agentDir(t.root, PROJECT, AGENT), "workflows", "demo");
+  const dir = path.join(agentDir(t.root, PROJECT, AGENT), "workbenches", "demo");
   await writeDemo(dir);
   return { t, owner, ownerCookie: a.cookie, dir };
 }
 
-async function listOf(owner: ReturnType<typeof apiClient>, base = BASE): Promise<WorkflowInfo[]> {
+async function listOf(owner: ReturnType<typeof apiClient>, base = BASE): Promise<WorkbenchInfo[]> {
   const res = await owner.get(base);
   expect(res.status).toBe(200);
-  return ((await res.json()) as { workflows: WorkflowInfo[] }).workflows;
+  return ((await res.json()) as { workbenches: WorkbenchInfo[] }).workbenches;
 }
 
 // Most of these run the TypeScript compiler, several times each: on a CI runner a single test
 // can pass 5s, the default POSIX limit, without anything being wrong.
-describe("a loaded workflow", { timeout: 30_000 }, () => {
+describe("a loaded workbench", { timeout: 30_000 }, () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
   let ownerCookie: string;
   let dir: string;
   /** The demo as its one load left it. */
-  let wf: WorkflowInfo;
+  let wf: WorkbenchInfo;
 
   beforeAll(async () => {
-    ({ t, owner, ownerCookie, dir } = await workflowApp());
-    [wf] = (await listOf(owner)) as [WorkflowInfo];
+    ({ t, owner, ownerCookie, dir } = await workbenchApp());
+    [wf] = (await listOf(owner)) as [WorkbenchInfo];
   });
   afterAll(async () => {
     await t.cleanup();
@@ -220,8 +221,8 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
       "plugin.d.ts",
     ]);
     const types = await fs.readFile(path.join(dir, ".harness", "plugin.d.ts"), "utf8");
-    expect(types).toContain("export interface WorkflowHost {");
-    expect(types).toContain("export interface WorkflowPackage {");
+    expect(types).toContain("export interface WorkbenchHost {");
+    expect(types).toContain("export interface WorkbenchPackage {");
     await expect(fs.stat(path.join(dir, "node_modules"))).rejects.toThrow();
 
     const ui = await owner.get(`${BASE}/demo/ui/index.html`);
@@ -249,7 +250,7 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
   it("does not treat its own state write as an edit: the revision holds and nothing is staged", async () => {
     const [before] = await list();
     // Writing state used to leave a `state.json.tmp` behind, which the watcher read as an
-    // edit (recompiling the workflow and tearing down the tree that had just written it) and
+    // edit (recompiling the workbench and tearing down the tree that had just written it) and
     // the revision hash read as content.
     await count();
     const [after] = await list();
@@ -263,14 +264,14 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
     // Creating a Session builds its model client without making a request. A fixture-owned
     // credential makes this case independent of the developer's provider keys and presets.
     const configured = await owner.put(`/api/projects/${PROJECT}/models`, {
-      defaultModel: { provider: "custom", modelId: "workflow-test" },
+      defaultModel: { provider: "custom", modelId: "workbench-test" },
       models: [
         {
           provider: "custom",
-          modelId: "workflow-test",
+          modelId: "workbench-test",
           clientType: "openai",
-          baseUrl: "https://workflow.invalid/v1",
-          apiKey: "sk-workflow-test",
+          baseUrl: "https://workbench.invalid/v1",
+          apiKey: "sk-workbench-test",
           contextWindow: 128000,
         },
       ],
@@ -283,7 +284,7 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
       agents: [AGENT],
     });
     const own = await (await owner.get(`${BASE}/demo/api/open`)).json();
-    // Assert the Session the workflow caller receives, including its unattended approval
+    // Assert the Session the workbench caller receives, including its unattended approval
     // mode, rather than the arguments of an internal service or a missing ambient key.
     expect(own).toMatchObject({
       opened: {
@@ -291,7 +292,7 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
         projectId: PROJECT,
         agentId: AGENT,
         provider: "custom",
-        modelId: "workflow-test",
+        modelId: "workbench-test",
         approvalMode: "allow-all",
       },
     });
@@ -341,7 +342,7 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
     });
     expect(elsewhere.status).toBe(415);
     // A page: the handler names the content type, the string goes out as written, and a
-    // workflow does not get to set the app's cookies.
+    // workbench does not get to set the app's cookies.
     const page = await owner.get(`${BASE}/demo/api/page`);
     expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(page.headers.get("set-cookie")).toBeNull();
@@ -362,7 +363,7 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
     const moved = await owner.get(`${BASE}/demo/api/moved`);
     expect(moved.status).toBe(302);
     expect(moved.headers.get("location")).toBe("page");
-    // And what every existing workflow does is unchanged: JSON in, JSON out.
+    // And what every existing workbench does is unchanged: JSON in, JSON out.
     const json = await owner.post(`${BASE}/demo/api/count`, {});
     expect(json.headers.get("content-type")).toContain("application/json");
     expect(await json.json()).toEqual({ count: expect.any(Number) });
@@ -378,7 +379,7 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
     expect((await owner.get(`${BASE}/nope/api/`)).status).toBe(404);
   });
 
-  it("notices an Agent's FIRST workflow, made with nothing but its file tools", async () => {
+  it("notices an Agent's FIRST workbench, made with nothing but its file tools", async () => {
     // Each retry owns its app: beforeAll's shared Project retains a created Agent after
     // a failed assertion, otherwise a retry fails with agent_exists before checking discovery.
     const fresh = await createTestApp();
@@ -386,15 +387,15 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
       const owner = apiClient(fresh.app, (await provisionUser(fresh.app, "owner")).cookie);
       const project = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
       expect(project.status, await project.text()).toBe(201);
-      // No workflows/ folder when its list is first read.
+      // No workbenches/ folder when its list is first read.
       const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "builder" });
       expect(made.status, await made.text()).toBe(201);
-      const base = `/api/projects/${PROJECT}/agents/builder/workflows`;
+      const base = `/api/projects/${PROJECT}/agents/builder/workbenches`;
       expect(
-        ((await (await owner.get(base)).json()) as { workflows: unknown[] }).workflows,
+        ((await (await owner.get(base)).json()) as { workbenches: unknown[] }).workbenches,
       ).toEqual([]);
 
-      const first = path.join(agentDir(fresh.root, PROJECT, "builder"), "workflows", "first");
+      const first = path.join(agentDir(fresh.root, PROJECT, "builder"), "workbenches", "first");
       await fs.mkdir(path.join(first, "ui"), { recursive: true });
       await fs.writeFile(path.join(first, "package.json"), packageJson());
       await fs.writeFile(path.join(first, "index.ts"), indexSource("first"));
@@ -419,24 +420,44 @@ describe("a loaded workflow", { timeout: 30_000 }, () => {
     }
   });
 
-  it("refuses a workflow written in JavaScript, naming the rename it needs", async () => {
+  it("loads an existing Workflow through the new route without losing state", async () => {
+    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "legacy" });
+    expect(made.status).toBe(201);
+    const legacy = path.join(agentDir(t.root, PROJECT, "legacy"), "workflows/demo");
+    await writeDemo(legacy);
+    for (const file of ["package.json", "index.ts"]) {
+      const target = path.join(legacy, file);
+      await fs.writeFile(
+        target,
+        (await fs.readFile(target, "utf8")).replaceAll("Workbench", "Workflow"),
+      );
+    }
+    await fs.writeFile(path.join(legacy, "state.json"), JSON.stringify({ count: 40 }));
+    const route = `/api/projects/${PROJECT}/agents/legacy/workbenches`;
+    const [converted] = await listOf(owner, route);
+    expect(converted).toMatchObject({ id: "demo", error: null });
+    expect(await (await owner.post(`${route}/demo/api/count`, {})).json()).toEqual({ count: 41 });
+    await expect(fs.stat(legacy)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("refuses a workbench written in JavaScript, naming the rename it needs", async () => {
     // An Agent of its own, so the demo's list stays the demo alone.
     const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "scripter" });
     expect(made.status, await made.text()).toBe(201);
-    const scripted = path.join(agentDir(t.root, PROJECT, "scripter"), "workflows", "demo");
+    const scripted = path.join(agentDir(t.root, PROJECT, "scripter"), "workbenches", "demo");
     await writeDemo(scripted);
     await fs.rename(path.join(scripted, "index.ts"), path.join(scripted, "index.mjs"));
-    const [refused] = await listOf(owner, `/api/projects/${PROJECT}/agents/scripter/workflows`);
+    const [refused] = await listOf(owner, `/api/projects/${PROJECT}/agents/scripter/workbenches`);
     expect(refused!.error).toContain(
-      "a workflow is written in TypeScript: rename index.mjs to index.ts",
+      "a workbench is written in TypeScript: rename index.mjs to index.ts",
     );
   });
 });
 
-describe("editing a workflow", { timeout: 30_000 }, () => {
+describe("editing a workbench", { timeout: 30_000 }, () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
-  /** The case's own Agent's workflows, and the demo folder in it the case edits. */
+  /** The case's own Agent's workbenches, and the demo folder in it the case edits. */
   let base: string;
   let dir: string;
   let editors = 0;
@@ -451,34 +472,34 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     await t.cleanup();
   });
   // A plain Agent per case, so each has a demo of its own to break. The Agents stay until the
-  // app goes: a loaded workflow's folder is watched, and a watched folder can refuse removal
+  // app goes: a loaded workbench's folder is watched, and a watched folder can refuse removal
   // on Windows.
   beforeEach(async () => {
     editors += 1;
     const agentId = `editor_${editors}`;
     const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId });
     expect(made.status, await made.text()).toBe(201);
-    base = `/api/projects/${PROJECT}/agents/${agentId}/workflows`;
-    dir = path.join(agentDir(t.root, PROJECT, agentId), "workflows", "demo");
+    base = `/api/projects/${PROJECT}/agents/${agentId}/workbenches`;
+    dir = path.join(agentDir(t.root, PROJECT, agentId), "workbenches", "demo");
     await writeDemo(dir);
   });
 
   const list = () => listOf(owner, base);
 
-  async function reload(): Promise<WorkflowInfo> {
+  async function reload(): Promise<WorkbenchInfo> {
     const res = await owner.post(`${base}/demo/reload`);
     expect(res.status).toBe(200);
-    return ((await res.json()) as { workflow: WorkflowInfo }).workflow;
+    return ((await res.json()) as { workbench: WorkbenchInfo }).workbench;
   }
 
   async function reloadError(): Promise<string> {
-    const workflow = await reload();
+    const workbench = await reload();
     // Whatever went wrong, the instance that loaded keeps answering, with its tabs.
-    expect(workflow.tabs).toHaveLength(1);
+    expect(workbench.tabs).toHaveLength(1);
     expect(await (await owner.get(`${base}/demo/api/`)).json()).toMatchObject({
       greeting: "hello",
     });
-    return workflow.error ?? "";
+    return workbench.error ?? "";
   }
 
   it("a folder file that disappears mid-read is a change, not a failed request", async () => {
@@ -498,7 +519,7 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     await fs.writeFile(path.join(dir, "index.ts"), indexSource("bonjour"));
     await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v2</h1>");
     const reload = await owner.post(`${base}/demo/reload`);
-    const v2 = ((await reload.json()) as { workflow: WorkflowInfo }).workflow;
+    const v2 = ((await reload.json()) as { workbench: WorkbenchInfo }).workbench;
     expect(v2.revision).not.toBe(v1!.revision);
     expect(v2.uiRev).not.toBe(v1!.uiRev);
     expect(
@@ -508,14 +529,14 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     });
 
     const history = (await (await owner.get(`${base}/demo/history`)).json()) as {
-      versions: WorkflowVersion[];
+      versions: WorkbenchVersion[];
     };
     expect(history.versions.map((v) => v.revision)).toEqual([v2.revision, v1!.revision]);
     expect(history.versions[1]!.files).toContain("ui/index.html");
 
     const back = await owner.post(`${base}/demo/rollback`, { revision: v1!.revision });
     expect(back.status).toBe(200);
-    expect(((await back.json()) as { workflow: WorkflowInfo }).workflow.revision).toBe(
+    expect(((await back.json()) as { workbench: WorkbenchInfo }).workbench.revision).toBe(
       v1!.revision,
     );
     expect(await (await owner.get(`${base}/demo/ui/index.html`)).text()).toBe("<h1>demo v1</h1>");
@@ -530,7 +551,7 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     });
     // The rolled-back revision is now the newest entry, once.
     const after = (await (await owner.get(`${base}/demo/history`)).json()) as {
-      versions: WorkflowVersion[];
+      versions: WorkbenchVersion[];
     };
     expect(after.versions.map((v) => v.revision)).toEqual([v1!.revision, v2.revision]);
     expect((await owner.post(`${base}/demo/rollback`, { revision: "000000000000" })).status).toBe(
@@ -545,15 +566,15 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
       packageJson([
         {
           ...MANIFEST,
-          requires: { host: { iface: "@prismshadow/penguin-server#Workflows", from: "Host" } },
+          requires: { host: { iface: "@prismshadow/penguin-server#Workbenches", from: "Host" } },
         },
       ]),
     );
     const res = await owner.post(`${base}/demo/reload`);
-    const broken = ((await res.json()) as { workflow: WorkflowInfo }).workflow;
-    // Named before anything runs: the host gave this workflow no types for that interface.
+    const broken = ((await res.json()) as { workbench: WorkbenchInfo }).workbench;
+    // Named before anything runs: the host gave this workbench no types for that interface.
     expect(broken.error).toContain(
-      "requires.host '@prismshadow/penguin-server#Workflows': not among the types this workflow was written against",
+      "requires.host '@prismshadow/penguin-server#Workbenches': not among the types this workbench was written against",
     );
     expect(await (await owner.get(`${base}/demo/api/`)).json()).toMatchObject({
       greeting: "hello",
@@ -573,7 +594,7 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     );
     const error = await reloadError();
     expect(error).toMatch(
-      /index\.ts:\d+:\d+ TS2551 Property 'setStat' does not exist on type 'WorkflowHost'/,
+      /index\.ts:\d+:\d+ TS2551 Property 'setStat' does not exist on type 'WorkbenchHost'/,
     );
     expect(error).toContain("TS2322");
     // The same words reach the Agent through its files.
@@ -594,19 +615,19 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     // Untyped is refused too: `strict` leaves no implicit any to slip through.
     await fs.writeFile(
       path.join(dir, "index.ts"),
-      indexSource("hello").replace(" satisfies WorkflowPackage", ""),
+      indexSource("hello").replace(" satisfies WorkbenchPackage", ""),
     );
     expect(await reloadError()).toContain("TS7031");
   });
 
-  it("compares the types the workflow was written against with this platform's, both ways", async () => {
+  it("compares the types the workbench was written against with this platform's, both ways", async () => {
     await list();
     // requires: it was written when the host had a method this platform lacks.
     await writtenAgainst(dir, (t) => {
       t.ifaces[HOST_KEY]!.methods["removedSince"] = { params: [], returns: { void: true } };
     });
     let error = await reloadError();
-    expect(error).toContain(`Workflow: requires.host '${HOST_KEY}'`);
+    expect(error).toContain(`Workbench: requires.host '${HOST_KEY}'`);
     expect(error).toContain("removedSince");
 
     // provides: the handler it was written against answers with something else.
@@ -615,7 +636,7 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
       t.ifaces[MAIN_KEY]!.methods["handle"]!.returns = { promise: { data: "string" } };
     });
     error = await reloadError();
-    expect(error).toContain(`Workflow: provides.main '${MAIN_KEY}'`);
+    expect(error).toContain(`Workbench: provides.main '${MAIN_KEY}'`);
     expect(error).toContain("TS2322");
 
     // An addition on the platform's side breaks nothing.
@@ -627,14 +648,14 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     expect((await reload()).error).toBeNull();
 
     // A table that cannot be read is a problem, never a pass against the platform's own;
-    // deleting the directory is how a workflow takes this harness's types afresh.
+    // deleting the directory is how a workbench takes this harness's types afresh.
     await fs.writeFile(path.join(dir, ".harness", "ifaces.json"), "{");
     expect(await reloadError()).toContain(".harness/ifaces.json cannot be read");
     await fs.rm(path.join(dir, ".harness"), { recursive: true });
     expect((await reload()).error).toBeNull();
   });
 
-  it("takes tabs from contributions: several per workflow, pages under ui/, open slots only", async () => {
+  it("takes tabs from contributions: several per workbench, pages under ui/, open slots only", async () => {
     await list();
     const stats = {
       ...TAB,
@@ -670,7 +691,7 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     expect((await reload()).error).toContain("WebModule.pages");
     await write({ "WebModule.sessionTabs": [{ ...TAB, title: 7 }] });
     expect((await reload()).error).toContain("module tree rejected");
-    // A workflow with no contribution is server-side only — and since this one has pages, the
+    // A workbench with no contribution is server-side only — and since this one has pages, the
     // load says that nothing shows them, with the entry to add, in the API and in the status
     // file alike (the Agent that wrote it may have only the file).
     await write({});
@@ -698,7 +719,7 @@ describe("editing a workflow", { timeout: 30_000 }, () => {
     expect((await owner.get(`${base}/demo/api/`)).status).toBe(404);
     expect((await owner.delete(`${base}/demo`)).status).toBe(404);
     const history = (await (await owner.get(`${base}/demo/history`)).json()) as {
-      versions: WorkflowVersion[];
+      versions: WorkbenchVersion[];
     };
     expect(history.versions).toEqual([]);
   });

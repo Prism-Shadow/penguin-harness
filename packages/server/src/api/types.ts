@@ -27,7 +27,7 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
-import type { WorkflowInfo } from "../mechanisms/workflows.js";
+import type { WorkbenchInfo } from "../mechanisms/workbenches.js";
 
 // ---------------------------------------------------------------------------
 // General
@@ -3352,10 +3352,10 @@ export type ScheduleServerEvent =
       name: string;
       sessionId: string;
     }
-  /** A workflow of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
-  | { type: "workflow_updated"; projectId: string; agentId: string; workflow: WorkflowInfo }
-  /** A workflow's folder is gone — removed from the Web App or deleted on disk. */
-  | { type: "workflow_removed"; projectId: string; agentId: string; workflowId: string };
+  /** A workbench of the Agent was (re)loaded — its folder changed, a reload was requested, or a version was restored. */
+  | { type: "workbench_updated"; projectId: string; agentId: string; workbench: WorkbenchInfo }
+  /** A workbench's folder is gone — removed from the Web App or deleted on disk. */
+  | { type: "workbench_removed"; projectId: string; agentId: string; workbenchId: string };
 
 // ---------------------------------------------------------------------------
 // Trace browsing and performance analysis
@@ -4772,11 +4772,11 @@ export type VersionResponse = VersionReport;
 
 export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
 export type {
-  WorkflowInfo,
-  WorkflowVersion,
-  WorkflowRequest,
-  WorkflowResponse,
-} from "../mechanisms/workflows.js";
+  WorkbenchInfo,
+  WorkbenchVersion,
+  WorkbenchRequest,
+  WorkbenchResponse,
+} from "../mechanisms/workbenches.js";
 
 /** GET /api/version/history: the harness versions this data root has committed, newest first. */
 export type VersionHistoryResponse = HarnessHistory;

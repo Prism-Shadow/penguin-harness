@@ -147,13 +147,13 @@ const ALLOWED_WRITE_CONTENT_TYPES = [
 ];
 
 /**
- * A workflow's own handler (`…/workflows/:id/api/*`) takes any body — an upload, a form of a
+ * A workbench's own handler (`…/workbenches/:id/api/*`) takes any body — an upload, a form of a
  * program it relays — so there the content type cannot be the defense. What stands in for it
  * is the browser's own account of where the request came from, which a page cannot forge:
  * `Sec-Fetch-Site`, and `Origin` against `Host` for a browser that sends no fetch metadata.
  * A request with neither is not a browser's, and carries no ambient cookie to ride on.
  */
-const WORKFLOW_API = /^\/api\/projects\/[^/]+\/agents\/[^/]+\/workflows\/[^/]+\/api(\/|$)/;
+const WORKBENCH_API = /^\/api\/projects\/[^/]+\/agents\/[^/]+\/workbenches\/[^/]+\/api(\/|$)/;
 
 function fromThisOrigin(header: (name: string) => string | undefined): boolean {
   const site = header("sec-fetch-site");
@@ -171,16 +171,16 @@ const crossOrigin = () =>
   new HttpError(
     403,
     "cross_origin_write",
-    "A request to a workflow's handler must come from this app's own pages.",
+    "A request to a workbench's handler must come from this app's own pages.",
   );
 
 export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
-  // A workflow's handler answers every method, so its GET is whatever the workflow made it
+  // A workbench's handler answers every method, so its GET is whatever the workbench made it
   // — not the read every other route's GET is. A `SameSite=Lax` cookie rides along on a
   // cross-site top-level navigation, so `window.open` on another site would otherwise run
   // that handler as the signed-in user; the browser's own account of where the request came
   // from is what settles it, on every method rather than only on writes.
-  if (!WRITE_METHODS.has(c.req.method) && WORKFLOW_API.test(c.req.path)) {
+  if (!WRITE_METHODS.has(c.req.method) && WORKBENCH_API.test(c.req.path)) {
     if (!fromThisOrigin((name) => c.req.header(name))) throw crossOrigin();
   }
   if (WRITE_METHODS.has(c.req.method)) {
@@ -189,7 +189,7 @@ export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
       contentType !== undefined &&
       contentType !== "" &&
       !ALLOWED_WRITE_CONTENT_TYPES.some((t) => contentType.startsWith(t));
-    if (forgeable && WORKFLOW_API.test(c.req.path)) {
+    if (forgeable && WORKBENCH_API.test(c.req.path)) {
       if (!fromThisOrigin((name) => c.req.header(name))) throw crossOrigin();
     } else if (forgeable) {
       throw new HttpError(

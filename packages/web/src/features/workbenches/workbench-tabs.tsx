@@ -1,52 +1,56 @@
 /**
- * Workflow tabs beside Chat, and the page a workflow tab shows.
+ * Workbench tabs beside Chat, and the page a workbench tab shows.
  *
- * The strip lists the Agent's workflows that ship a UI (lib/workflow-tabs.ts); the frame
- * is that UI in an iframe served from the workflow's own `ui/` folder, plus a thin bar
- * with the workflow's version, its load error when the current files do not boot, a
+ * The strip lists the Agent's workbenches that ship a UI (lib/workbench-tabs.ts); the frame
+ * is that UI in an iframe served from the workbench's own `ui/` folder, plus a thin bar
+ * with the workbench's version, its load error when the current files do not boot, a
  * reload, and a history fold with one restore button per recorded version. The list
- * refetches when the server announces `workflow_updated` for this Agent, so an Agent
- * editing its own workflow sees the tab update (the iframe keys on `uiRev`).
+ * refetches when the server announces `workbench_updated` for this Agent, so an Agent
+ * editing its own workbench sees the tab update (the iframe keys on `uiRev`).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import type { WorkflowInfo, WorkflowVersion } from "@prismshadow/penguin-server/api";
+import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import { Button, ConfirmModal, NoticeStrip } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { formatDateTime } from "../../lib/format";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { forwardFrameKeys, readDocumentTheme, themeWorkflowFrame } from "../../lib/workflow-theme";
+import {
+  forwardFrameKeys,
+  readDocumentTheme,
+  themeWorkbenchFrame,
+} from "../../lib/workbench-theme";
 import {
   FILL_APP_MESSAGE,
   settleActiveTab,
-  WORKFLOW_UPDATED_EVENT,
-  workflowAppPath,
-  workflowNoticesOf,
-  workflowTabsOf,
-  workflowUiUrl,
-  type WorkflowNotice,
-  type WorkflowTab,
-  type WorkflowUpdatedDetail,
-} from "../../lib/workflow-tabs";
+  WORKBENCH_UPDATED_EVENT,
+  workbenchAppPath,
+  workbenchNoticesOf,
+  workbenchTabsOf,
+  workbenchUiUrl,
+  type WorkbenchNotice,
+  type WorkbenchTab,
+  type WorkbenchUpdatedDetail,
+} from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { localizedText } from "../chat/skill-use";
 
-/** The Agent's workflow tabs, kept fresh by the server's `workflow_updated` events. */
-export function useWorkflowTabs(
+/** The Agent's workbench tabs, kept fresh by the server's `workbench_updated` events. */
+export function useWorkbenchTabs(
   projectId: string | null,
   agentId: string | null,
   machineId: string | null = null,
 ) {
-  const [tabs, setTabs] = useState<WorkflowTab[]>([]);
-  const [notices, setNotices] = useState<WorkflowNotice[]>([]);
+  const [tabs, setTabs] = useState<WorkbenchTab[]>([]);
+  const [notices, setNotices] = useState<WorkbenchNotice[]>([]);
   const [active, setActiveRaw] = useState<string | null>(null);
 
   // Which Agent the newest request was for. A slow answer for the Agent just left must not
   // land on the one now open: the strip would show its tabs beside another Agent's chat, and
-  // a Remove from there would address the wrong Agent's workflow.
+  // a Remove from there would address the wrong Agent's workbench.
   const asked = useRef(0);
   const refresh = useCallback(async () => {
     const mine = ++asked.current;
@@ -56,10 +60,10 @@ export function useWorkflowTabs(
       return;
     }
     try {
-      const res = await api.getWorkflows(projectId, agentId, machineId);
+      const res = await api.getWorkbenches(projectId, agentId, machineId);
       if (asked.current !== mine) return;
-      setTabs(workflowTabsOf(res.workflows, machineId));
-      setNotices(workflowNoticesOf(res.workflows));
+      setTabs(workbenchTabsOf(res.workbenches, machineId));
+      setNotices(workbenchNoticesOf(res.workbenches));
     } catch {
       // The strip is a convenience over the chat: a failed list leaves it as it was.
     }
@@ -72,16 +76,16 @@ export function useWorkflowTabs(
 
   useEffect(() => {
     const onUpdated = (e: Event) => {
-      const d = (e as CustomEvent<WorkflowUpdatedDetail>).detail;
+      const d = (e as CustomEvent<WorkbenchUpdatedDetail>).detail;
       if (d.projectId === projectId && d.agentId === agentId) void refresh();
     };
-    window.addEventListener(WORKFLOW_UPDATED_EVENT, onUpdated);
-    return () => window.removeEventListener(WORKFLOW_UPDATED_EVENT, onUpdated);
+    window.addEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
+    return () => window.removeEventListener(WORKBENCH_UPDATED_EVENT, onUpdated);
   }, [projectId, agentId, refresh]);
 
   const settled = settleActiveTab(active, tabs);
   // A tab that is gone is forgotten, not merely filtered: kept, the raw id would pull the
-  // frame back over the chat the moment a workflow of the same id reappears — which is what
+  // frame back over the chat the moment a workbench of the same id reappears — which is what
   // an Agent rewriting its folder (delete, then write) looks like from here.
   useEffect(() => {
     if (active !== null && settled === null) setActiveRaw(null);
@@ -99,15 +103,15 @@ const TAB_ACTIVE = "border-accent font-medium text-gray-900 dark:text-gray-100";
 const TAB_IDLE =
   "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200";
 
-export function WorkflowTabStrip({
+export function WorkbenchTabStrip({
   tabs,
   notices = [],
   active,
   onSelect,
 }: {
-  tabs: readonly WorkflowTab[];
-  /** Workflows with nothing to show but something to say; see workflowNoticesOf. */
-  notices?: readonly WorkflowNotice[];
+  tabs: readonly WorkbenchTab[];
+  /** Workbenches with nothing to show but something to say; see workbenchNoticesOf. */
+  notices?: readonly WorkbenchNotice[];
   active: string | null;
   onSelect: (tabId: string | null) => void;
 }) {
@@ -117,7 +121,7 @@ export function WorkflowTabStrip({
     <>
       {notices.map((n) => (
         <NoticeStrip
-          key={n.workflowId}
+          key={n.workbenchId}
           tone={n.error === null ? "neutral" : "attention"}
           role="status"
           className="shrink-0 truncate px-3 py-1 text-xs"
@@ -125,13 +129,13 @@ export function WorkflowTabStrip({
           data-tooltip-content="text"
           data-tooltip-extra={n.error === null && n.hints.length > 1}
         >
-          <span className="font-mono">{n.workflowId}</span>: {n.error ?? n.hints[0]}
+          <span className="font-mono">{n.workbenchId}</span>: {n.error ?? n.hints[0]}
         </NoticeStrip>
       ))}
       {tabs.length > 0 && (
         <div
           role="tablist"
-          aria-label={S.workflows.tabsLabel}
+          aria-label={S.workbenches.tabsLabel}
           className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-b border-gray-200 px-2 dark:border-gray-800"
         >
           <button
@@ -141,7 +145,7 @@ export function WorkflowTabStrip({
             className={`${TAB_BASE} ${active === null ? TAB_ACTIVE : TAB_IDLE}`}
             onClick={() => onSelect(null)}
           >
-            {S.workflows.chatTab}
+            {S.workbenches.chatTab}
           </button>
           {tabs.map((t) => (
             <button
@@ -156,7 +160,7 @@ export function WorkflowTabStrip({
             >
               {localizedText(locale, t.title, t.titleZh)}
               {t.error !== null && (
-                <span className={`ml-1.5 ${toneInk.danger}`} aria-label={S.workflows.brokenMark}>
+                <span className={`ml-1.5 ${toneInk.danger}`} aria-label={S.workbenches.brokenMark}>
                   !
                 </span>
               )}
@@ -168,7 +172,7 @@ export function WorkflowTabStrip({
   );
 }
 
-export function WorkflowFrame({
+export function WorkbenchFrame({
   projectId,
   agentId,
   tab,
@@ -178,12 +182,12 @@ export function WorkflowFrame({
 }: {
   projectId: string;
   agentId: string;
-  tab: WorkflowTab;
+  tab: WorkbenchTab;
   /** The page alone, no bar: the full-page route (its palette carries the actions). */
   bare?: boolean;
-  /** The workflow was reloaded or restored; the caller refetches the list. */
-  onChanged: (workflow: WorkflowInfo) => void;
-  /** The workflow and its versions are gone; the caller drops the tab (the list refetch confirms). */
+  /** The workbench was reloaded or restored; the caller refetches the list. */
+  onChanged: (workbench: WorkbenchInfo) => void;
+  /** The workbench and its versions are gone; the caller drops the tab (the list refetch confirms). */
   onRemoved: () => void;
 }) {
   const { dark, themeId, accent, textSize, fontLatin, fontCjk } = useTheme();
@@ -191,22 +195,23 @@ export function WorkflowFrame({
   const [busy, setBusy] = useState<"reload" | "rollback" | "remove" | null>(null);
   // Removal is armed by a first click and sent by the second; the arm drops when the tab changes.
   const [removeArmed, setRemoveArmed] = useState(false);
-  useEffect(() => setRemoveArmed(false), [tab.workflowId]);
+  useEffect(() => setRemoveArmed(false), [tab.workbenchId]);
   const [failure, setFailure] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [versions, setVersions] = useState<WorkflowVersion[] | null>(null);
-  /** A revision whose restore awaits confirmation: it replaces the workflow's files. */
+  const [versions, setVersions] = useState<WorkbenchVersion[] | null>(null);
+  /** A revision whose restore awaits confirmation: it replaces the workbench's files. */
   const [restoring, setRestoring] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     try {
       setVersions(
-        (await api.getWorkflowHistory(projectId, agentId, tab.workflowId, tab.machineId)).versions,
+        (await api.getWorkbenchHistory(projectId, agentId, tab.workbenchId, tab.machineId))
+          .versions,
       );
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
     }
-  }, [projectId, agentId, tab.workflowId]);
+  }, [projectId, agentId, tab.workbenchId]);
 
   useEffect(() => {
     if (historyOpen) void loadHistory();
@@ -217,7 +222,7 @@ export function WorkflowFrame({
     setFailure(null);
     try {
       onChanged(
-        (await api.reloadWorkflow(projectId, agentId, tab.workflowId, tab.machineId)).workflow,
+        (await api.reloadWorkbench(projectId, agentId, tab.workbenchId, tab.machineId)).workbench,
       );
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
@@ -231,8 +236,8 @@ export function WorkflowFrame({
     setFailure(null);
     try {
       onChanged(
-        (await api.rollbackWorkflow(projectId, agentId, tab.workflowId, revision, tab.machineId))
-          .workflow,
+        (await api.rollbackWorkbench(projectId, agentId, tab.workbenchId, revision, tab.machineId))
+          .workbench,
       );
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
@@ -242,11 +247,11 @@ export function WorkflowFrame({
   };
 
   // The page is a separate document: the app's dark class, theme, accent, fonts and root font
-  // size stop at the frame, so they are copied in (lib/workflow-theme.ts) on load and on every appearance
+  // size stop at the frame, so they are copied in (lib/workbench-theme.ts) on load and on every appearance
   // change. Past the commit, because the provider that stamps them on the app's own document
   // is an ancestor and its effect runs after this one's.
   const applyTheme = useCallback(() => {
-    themeWorkflowFrame(frameRef.current, readDocumentTheme(document));
+    themeWorkbenchFrame(frameRef.current, readDocumentTheme(document));
   }, []);
   useEffect(() => {
     const id = requestAnimationFrame(applyTheme);
@@ -279,7 +284,7 @@ export function WorkflowFrame({
     setBusy("remove");
     setFailure(null);
     try {
-      await api.removeWorkflow(projectId, agentId, tab.workflowId, tab.machineId);
+      await api.removeWorkbench(projectId, agentId, tab.workbenchId, tab.machineId);
       onRemoved();
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
@@ -294,8 +299,8 @@ export function WorkflowFrame({
   const paletteShortcut = useShortcutLabel("palette.toggle");
   const fillApp = useCallback(
     () =>
-      void navigate(workflowAppPath(projectId, agentId, tab.workflowId, tab.key, tab.machineId)),
-    [navigate, projectId, agentId, tab.workflowId, tab.key],
+      void navigate(workbenchAppPath(projectId, agentId, tab.workbenchId, tab.key, tab.machineId)),
+    [navigate, projectId, agentId, tab.workbenchId, tab.key],
   );
   useEffect(() => {
     if (bare) return;
@@ -307,7 +312,7 @@ export function WorkflowFrame({
     return () => window.removeEventListener("message", onMessage);
   }, [bare, fillApp]);
 
-  const historyId = `workflow-history-${tab.workflowId}`;
+  const historyId = `workbench-history-${tab.workbenchId}`;
   return (
     <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-950">
       <div
@@ -321,11 +326,11 @@ export function WorkflowFrame({
         <Button
           variant="secondary"
           size="sm"
-          title={S.workflows.fillAppHint(paletteShortcut)}
+          title={S.workbenches.fillAppHint(paletteShortcut)}
           data-tooltip-extra
           onClick={fillApp}
         >
-          {S.workflows.fillApp}
+          {S.workbenches.fillApp}
         </Button>
         <Button
           variant="secondary"
@@ -333,7 +338,7 @@ export function WorkflowFrame({
           disabled={busy !== null}
           onClick={() => void reload()}
         >
-          {busy === "reload" ? S.workflows.reloading : S.workflows.reload}
+          {busy === "reload" ? S.workbenches.reloading : S.workbenches.reload}
         </Button>
         <Button
           variant="secondary"
@@ -342,18 +347,18 @@ export function WorkflowFrame({
           aria-controls={historyId}
           onClick={() => setHistoryOpen((v) => !v)}
         >
-          {S.workflows.history}
+          {S.workbenches.history}
         </Button>
         {removeArmed ? (
           <>
-            <span className={toneInk.danger}>{S.workflows.removeConfirm}</span>
+            <span className={toneInk.danger}>{S.workbenches.removeConfirm}</span>
             <Button
               variant="danger"
               size="sm"
               disabled={busy !== null}
               onClick={() => void remove()}
             >
-              {busy === "remove" ? S.workflows.removing : S.workflows.removeYes}
+              {busy === "remove" ? S.workbenches.removing : S.workbenches.removeYes}
             </Button>
             <Button
               variant="secondary"
@@ -361,7 +366,7 @@ export function WorkflowFrame({
               disabled={busy !== null}
               onClick={() => setRemoveArmed(false)}
             >
-              {S.workflows.removeNo}
+              {S.workbenches.removeNo}
             </Button>
           </>
         ) : (
@@ -371,13 +376,13 @@ export function WorkflowFrame({
             disabled={busy !== null}
             onClick={() => setRemoveArmed(true)}
           >
-            {S.workflows.remove}
+            {S.workbenches.remove}
           </Button>
         )}
       </div>
       {tab.error !== null && !bare && (
         <NoticeStrip banner tone="danger" className="shrink-0 px-3 py-1.5 text-xs">
-          {S.workflows.loadError}: {tab.error}
+          {S.workbenches.loadError}: {tab.error}
         </NoticeStrip>
       )}
       {failure !== null && (
@@ -391,9 +396,9 @@ export function WorkflowFrame({
         className="max-h-64 shrink-0 overflow-y-auto border-b border-gray-200 dark:border-gray-800"
       >
         {versions === null ? (
-          <p className="px-3 py-2 text-xs text-gray-500">{S.workflows.loadingHistory}</p>
+          <p className="px-3 py-2 text-xs text-gray-500">{S.workbenches.loadingHistory}</p>
         ) : versions.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-gray-500">{S.workflows.noHistory}</p>
+          <p className="px-3 py-2 text-xs text-gray-500">{S.workbenches.noHistory}</p>
         ) : (
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {versions.map((v) => {
@@ -403,10 +408,10 @@ export function WorkflowFrame({
                   <span className="font-mono">{v.revision}</span>
                   <span className="text-gray-500">{formatDateTime(v.savedAt)}</span>
                   {v.version !== null && <span className="text-gray-500">v{v.version}</span>}
-                  <span className="text-gray-400">{S.workflows.fileCount(v.files.length)}</span>
+                  <span className="text-gray-400">{S.workbenches.fileCount(v.files.length)}</span>
                   <span className="flex-1" />
                   {current ? (
-                    <span className={toneInk.success}>{S.workflows.current}</span>
+                    <span className={toneInk.success}>{S.workbenches.current}</span>
                   ) : (
                     <Button
                       variant="secondary"
@@ -414,7 +419,7 @@ export function WorkflowFrame({
                       disabled={busy !== null}
                       onClick={() => setRestoring(v.revision)}
                     >
-                      {S.workflows.restore}
+                      {S.workbenches.restore}
                     </Button>
                   )}
                 </li>
@@ -428,7 +433,7 @@ export function WorkflowFrame({
         ref={frameRef}
         onLoad={onFrameLoad}
         title={tab.title}
-        src={workflowUiUrl(tab)}
+        src={workbenchUiUrl(tab)}
         className={`min-h-0 flex-1 border-0 transition-opacity duration-150 motion-reduce:transition-none ${
           shownKey === frameKey ? "opacity-100" : "opacity-0"
         }`}
@@ -436,17 +441,17 @@ export function WorkflowFrame({
       />
       <ConfirmModal
         open={restoring !== null}
-        title={S.workflows.restoreTitle}
+        title={S.workbenches.restoreTitle}
         onClose={() => setRestoring(null)}
         onConfirm={() => {
           if (restoring !== null) void rollback(restoring);
           setRestoring(null);
         }}
-        confirmLabel={S.workflows.restore}
+        confirmLabel={S.workbenches.restore}
         cancelLabel={S.common.cancel}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          {restoring !== null ? S.workflows.restoreConfirm(restoring) : ""}
+          {restoring !== null ? S.workbenches.restoreConfirm(restoring) : ""}
         </p>
       </ConfirmModal>
     </div>

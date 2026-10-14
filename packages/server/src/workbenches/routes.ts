@@ -1,17 +1,17 @@
 /**
- * Agent-scoped workflow routes, mounted at /api/projects/:projectId/agents/:agentId/workflows:
+ * Agent-scoped workbench routes, mounted at /api/projects/:projectId/agents/:agentId/workbenches:
  *
- *   GET    /                       the Agent's workflows (loads any that changed on disk)
+ *   GET    /                       the Agent's workbenches (loads any that changed on disk)
  *   POST   /:id/reload             re-import the folder now (the watcher does this on change too)
  *   GET    /:id/history            recorded versions, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
  *   DELETE /:id                    remove the folder and its recorded versions
- *   GET    /:id/ui/*               a file of the workflow's `ui/` (the pages its tabs name)
- *   *      /:id/api/*              handed to the workflow's WorkflowMain.handle: JSON by default, any
+ *   GET    /:id/ui/*               a file of the workbench's `ui/` (the pages its tabs name)
+ *   *      /:id/api/*              handed to the workbench's WorkbenchMain.handle: JSON by default, any
  *                                  content type when the handler names one (see respond)
  *
  * Every route requires access to the Project; the UI and api routes are what the
- * workflow's own page (an iframe in the Web App, same-origin cookie auth) talks to.
+ * workbench's own page (an iframe in the Web App, same-origin cookie auth) talks to.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -21,8 +21,12 @@ import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
 import { requireValidId } from "../http/validate.js";
 import type { Access } from "../mechanisms/projects.js";
-import type { WorkflowRequest, WorkflowResponse, Workflows } from "../mechanisms/workflows.js";
-import { WorkflowNotFound } from "./service.js";
+import type {
+  WorkbenchRequest,
+  WorkbenchResponse,
+  Workbenches,
+} from "../mechanisms/workbenches.js";
+import { WorkbenchNotFound } from "./service.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -44,11 +48,11 @@ const MIME: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
-/** The largest request body a workflow's handler is handed. */
+/** The largest request body a workbench's handler is handed. */
 const MAX_BODY_BYTES = 50 * 1024 * 1024;
-/** Never shown to a workflow: they are the app's credentials, not the workflow's. */
+/** Never shown to a workbench: they are the app's credentials, not the workbench's. */
 const WITHHELD_REQUEST_HEADERS = new Set(["cookie", "authorization", "proxy-authorization"]);
-/** Never taken from a workflow: the app's cookies, and what the transport decides for itself. */
+/** Never taken from a workbench: the app's cookies, and what the transport decides for itself. */
 const DROPPED_RESPONSE_HEADERS = new Set([
   "set-cookie",
   "connection",
@@ -61,7 +65,7 @@ const tooLarge = () =>
   new HttpError(
     413,
     "payload_too_large",
-    `A workflow request body is at most ${MAX_BODY_BYTES} bytes`,
+    `A workbench request body is at most ${MAX_BODY_BYTES} bytes`,
   );
 
 const isJson = (contentType: string | undefined): boolean =>
@@ -86,7 +90,7 @@ function forwardedHeaders(headers: Headers): Record<string, string> {
 /**
  * JSON unless the handler says otherwise: a `content-type` header (or `bytes`) makes the
  * response the handler's own — a page it proxies from a program it runs, an image, a
- * download, a redirect — and `stream` sends it as it is produced. The same origin already serves the workflow's `ui/` files as
+ * download, a redirect — and `stream` sends it as it is produced. The same origin already serves the workbench's `ui/` files as
  * written, so a handler that answers HTML is no wider than a file that is HTML.
  */
 /**
@@ -121,7 +125,7 @@ async function readCapped(body: ReadableStream<Uint8Array> | null): Promise<Uint
   return out;
 }
 
-function respond(response: WorkflowResponse): Response {
+function respond(response: WorkbenchResponse): Response {
   const status = response.status ?? 200;
   const headers = new Headers();
   for (const [name, value] of Object.entries(response.headers ?? {})) {
@@ -193,12 +197,12 @@ function streamOf(chunks: AsyncIterable<Uint8Array | string>): ReadableStream<Ui
   });
 }
 
-export interface WorkflowRouteDeps {
+export interface WorkbenchRouteDeps {
   access: Access;
-  workflows: Workflows;
+  workbenches: Workbenches;
 }
 
-export function workflowRoutes(deps: WorkflowRouteDeps): Hono<AppEnv> {
+export function workbenchRoutes(deps: WorkbenchRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   const scope = (c: {
@@ -211,27 +215,27 @@ export function workflowRoutes(deps: WorkflowRouteDeps): Hono<AppEnv> {
     return { projectId, agentId };
   };
   const notFound = (err: unknown): never => {
-    if (err instanceof WorkflowNotFound) throw new HttpError(404, "not_found", err.message);
+    if (err instanceof WorkbenchNotFound) throw new HttpError(404, "not_found", err.message);
     throw err;
   };
 
   app.get("/", async (c) => {
     const { projectId, agentId } = scope(c);
-    return c.json({ workflows: await deps.workflows.list(projectId, agentId) });
+    return c.json({ workbenches: await deps.workbenches.list(projectId, agentId) });
   });
 
   app.post("/:id/reload", async (c) => {
     const { projectId, agentId } = scope(c);
-    const workflow = await deps.workflows
+    const workbench = await deps.workbenches
       .reload(projectId, agentId, c.req.param("id"))
       .catch(notFound);
-    return c.json({ workflow });
+    return c.json({ workbench });
   });
 
   app.get("/:id/history", async (c) => {
     const { projectId, agentId } = scope(c);
     return c.json({
-      versions: await deps.workflows.history(projectId, agentId, c.req.param("id")),
+      versions: await deps.workbenches.history(projectId, agentId, c.req.param("id")),
     });
   });
 
@@ -240,24 +244,25 @@ export function workflowRoutes(deps: WorkflowRouteDeps): Hono<AppEnv> {
     const body = (await c.req.json().catch(() => ({}))) as { revision?: unknown };
     if (typeof body.revision !== "string")
       throw new HttpError(400, "bad_request", "revision is required");
-    const workflow = await deps.workflows
+    const workbench = await deps.workbenches
       .rollback(projectId, agentId, c.req.param("id"), body.revision)
       .catch(notFound);
-    return c.json({ workflow });
+    return c.json({ workbench });
   });
 
   app.delete("/:id", async (c) => {
     const { projectId, agentId } = scope(c);
-    await deps.workflows.remove(projectId, agentId, c.req.param("id")).catch(notFound);
+    await deps.workbenches.remove(projectId, agentId, c.req.param("id")).catch(notFound);
     return c.body(null, 204);
   });
 
   app.get("/:id/ui/*", async (c) => {
     const { projectId, agentId } = scope(c);
     const id = c.req.param("id");
-    const rel = c.req.path.split(`/workflows/${id}/ui/`)[1] ?? "";
-    const file = await deps.workflows.uiFile(projectId, agentId, id, decodeURIComponent(rel));
-    if (file === null) throw new HttpError(404, "not_found", "No such file in the workflow's ui/.");
+    const rel = c.req.path.split(`/workbenches/${id}/ui/`)[1] ?? "";
+    const file = await deps.workbenches.uiFile(projectId, agentId, id, decodeURIComponent(rel));
+    if (file === null)
+      throw new HttpError(404, "not_found", "No such file in the workbench's ui/.");
     const body = await fs.readFile(file);
     return c.body(body, 200, {
       "content-type": MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream",
@@ -268,8 +273,8 @@ export function workflowRoutes(deps: WorkflowRouteDeps): Hono<AppEnv> {
   app.all("/:id/api/*", async (c) => {
     const { projectId, agentId } = scope(c);
     const id = c.req.param("id");
-    const sub = c.req.path.split(`/workflows/${id}/api`)[1] ?? "/";
-    const request: WorkflowRequest = {
+    const sub = c.req.path.split(`/workbenches/${id}/api`)[1] ?? "/";
+    const request: WorkbenchRequest = {
       method: c.req.method,
       path: sub === "" ? "/" : sub,
       query: c.req.query(),
@@ -285,7 +290,9 @@ export function workflowRoutes(deps: WorkflowRouteDeps): Hono<AppEnv> {
       if (isJson(c.req.header("content-type"))) request.body = parseJson(bytes);
       else if (bytes.byteLength > 0) request.bytes = bytes;
     }
-    const response = await deps.workflows.dispatch(projectId, agentId, id, request).catch(notFound);
+    const response = await deps.workbenches
+      .dispatch(projectId, agentId, id, request)
+      .catch(notFound);
     return respond(response);
   });
 
@@ -296,19 +303,19 @@ export function workflowRoutes(deps: WorkflowRouteDeps): Hono<AppEnv> {
   contributes: {
     "HttpModule.routes": [
       {
-        id: "WorkflowsModule.routes",
-        prefix: "/api/projects/:projectId/agents/:agentId/workflows",
+        id: "WorkbenchesModule.routes",
+        prefix: "/api/projects/:projectId/agents/:agentId/workbenches",
         auth: "user",
         order: 20,
       },
     ],
   },
 })
-export class WorkflowRoutes {
+export class WorkbenchRoutes {
   @Use() private readonly access!: Access;
-  @Use() private readonly workflows!: Workflows;
-  @Bind("WorkflowsModule.routes") routes!: Hono<AppEnv>;
+  @Use() private readonly workbenches!: Workbenches;
+  @Bind("WorkbenchesModule.routes") routes!: Hono<AppEnv>;
   setup() {
-    this.routes = workflowRoutes({ access: this.access, workflows: this.workflows });
+    this.routes = workbenchRoutes({ access: this.access, workbenches: this.workbenches });
   }
 }

@@ -21,7 +21,7 @@ const agentKey = (projectId: string) => `penguin.lastAgentId.${projectId}`;
 
 /**
  * Remembers a Project and Agent the way the store does, for a surface that sits outside the
- * ProjectProvider (the full-page workflow route) and wants the shell to open on them next.
+ * ProjectProvider (the full-page workbench route) and wants the shell to open on them next.
  */
 export function rememberSelection(projectId: string, agentId: string): void {
   localStorage.setItem(PROJECT_KEY, projectId);

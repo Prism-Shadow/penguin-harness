@@ -3,7 +3,7 @@
  *
  *   penguin server [--port <port>] [--host <host>]
  *   penguin server reset-admin-password        (subcommand, see reset-password.ts)
- *   penguin web [--port <port>] [--host <host>] [--no-open] [--app <project>/<agent>/<workflow>[/<tab>]]
+ *   penguin web [--port <port>] [--host <host>] [--no-open] [--app <project>/<agent>/<workbench>[/<tab>]]
  *
  * Both are entry points into the same service process: after setting PORT / HOST, it
  * dynamically imports `@prismshadow/penguin-server` (whose entry point handles dotenv
@@ -87,17 +87,17 @@ export function browserUrl(host: string, port: number): string {
 }
 
 /**
- * `--app <project>/<agent>/<workflow>[/<tab>]` → the path of that workflow page as the whole
+ * `--app <project>/<agent>/<workbench>[/<tab>]` → the path of that workbench page as the whole
  * app (the Web App's /app route: no sidebar, no chat; the command palette is the way out).
- * A workflow contributes its tabs, so a fourth segment names one by its key; without it the
- * workflow's first tab opens. Three or four non-empty segments; anything else is a usage
+ * A workbench contributes its tabs, so a fourth segment names one by its key; without it the
+ * workbench's first tab opens. Three or four non-empty segments; anything else is a usage
  * error. Exported for unit tests.
  */
 export function appPagePath(spec: string): string {
   const parts = spec.split("/");
   if ((parts.length !== 3 && parts.length !== 4) || parts.some((p) => p === "")) {
     throw new Error(
-      `Invalid --app "${spec}". Expected <project>/<agent>/<workflow>[/<tab>], e.g. default_project/default_agent/todo.`,
+      `Invalid --app "${spec}". Expected <project>/<agent>/<workbench>[/<tab>], e.g. default_project/default_agent/todo.`,
     );
   }
   return `app/${parts.map(encodeURIComponent).join("/")}`;

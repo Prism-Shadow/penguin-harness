@@ -1,0 +1,22 @@
+# Agent Workbench 与预置产品客服
+
+- **Date:** 2026-10-14
+- **Type:** feature
+- **Scope:** `core`, `server`, `web`, `plugins`, `docs`
+- **Breaking:** yes — Workflow 接口统一改名为 Workbench
+
+[English](2026-10-14-agent-workbench.md)
+
+首页的三个 AI 应用示例统一创建智能体及其独立的 Agent Workbench 标签页。用户进入智能体，新建对话后选择工作台即可使用应用。
+
+## 应用创建
+
+切换示例会替换已选 Skill，即使两个示例的 Skill 数量相同也会更新。Plugin Skill 明确了新智能体工作台的加载入口、后台任务轮询和通过服务器附件直链下载报告的方式。`WorkbenchHost.sessionResult` 返回最新任务的最终答案或失败原因，不暴露工具与思考消息。页面布局设置 display 样式后，隐藏的提示条仍保持隐藏。
+
+## 产品客服
+
+默认 Project 初始化时会创建 PenguinHarness 客服智能体，附带问题分类、搜索、追问、来源链接和解决状态的工作台。回答依据官方文档与代码仓库。工作台重载保留工单状态；智能体文件可编辑，重复初始化不会覆盖已有文件。
+
+## 兼容性
+
+目录、接口及版本历史的一次性迁移见[向后兼容](2026-10-14-backward-compatibility.zh.md)。

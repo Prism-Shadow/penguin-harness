@@ -1,11 +1,11 @@
 /**
- * Base stylesheet for a workflow's own page (features/workflows/workflow-tabs.tsx injects it
+ * Base stylesheet for a workbench's own page (features/workbenches/workbench-tabs.tsx injects it
  * into the frame, and a page may link it itself for standalone viewing).
  *
- * A workflow page is a separate document: Tailwind never sees it, and the app's `html.dark`
+ * A workbench page is a separate document: Tailwind never sees it, and the app's `html.dark`
  * class and accent variables stop at the frame boundary. So the app copies its RESOLVED
  * tokens — the gray scale, the accent pair, the font stack, the root font size — onto this
- * document's root (lib/workflow-theme.ts), and everything here is expressed in those
+ * document's root (lib/workbench-theme.ts), and everything here is expressed in those
  * variables. The literal fallbacks are only for a page opened outside the app; the palette
  * has exactly one source of truth, styles.css.
  *
@@ -16,16 +16,16 @@
 
 :root {
   color-scheme: light;
-  --wf-bg: #ffffff;
-  --wf-surface: var(--color-gray-50, #f9fafb);
-  --wf-fg: var(--color-gray-900, #111827);
-  --wf-muted: var(--color-gray-500, #6b7280);
-  --wf-border: var(--color-gray-200, #e5e7eb);
-  --wf-hover: var(--color-gray-100, #f3f4f6);
-  --wf-accent: var(--ui-accent, #111827);
-  --wf-accent-fg: var(--ui-accent-fg, #ffffff);
-  --wf-radius: 6px;
-  --wf-font: var(
+  --wb-bg: #ffffff;
+  --wb-surface: var(--color-gray-50, #f9fafb);
+  --wb-fg: var(--color-gray-900, #111827);
+  --wb-muted: var(--color-gray-500, #6b7280);
+  --wb-border: var(--color-gray-200, #e5e7eb);
+  --wb-hover: var(--color-gray-100, #f3f4f6);
+  --wb-accent: var(--ui-accent, #111827);
+  --wb-accent-fg: var(--ui-accent-fg, #ffffff);
+  --wb-radius: 6px;
+  --wb-font: var(
     --font-app-sans,
     ui-sans-serif,
     system-ui,
@@ -36,7 +36,7 @@
     "Microsoft YaHei",
     sans-serif
   );
-  --wf-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --wb-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 /* The app stamps `dark` or `light` on the root; `prefers-color-scheme` only decides for a
@@ -44,31 +44,31 @@
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     color-scheme: dark;
-    --wf-bg: var(--color-gray-950, #121212);
-    --wf-surface: var(--color-gray-900, #1a1a1a);
-    --wf-fg: var(--color-gray-100, #f5f5f5);
-    --wf-muted: var(--color-gray-400, #a1a1a1);
-    --wf-border: var(--color-gray-700, #333333);
-    --wf-hover: var(--color-gray-800, #262626);
+    --wb-bg: var(--color-gray-950, #121212);
+    --wb-surface: var(--color-gray-900, #1a1a1a);
+    --wb-fg: var(--color-gray-100, #f5f5f5);
+    --wb-muted: var(--color-gray-400, #a1a1a1);
+    --wb-border: var(--color-gray-700, #333333);
+    --wb-hover: var(--color-gray-800, #262626);
   }
 }
 
 :root.dark {
   color-scheme: dark;
-  --wf-bg: var(--color-gray-950, #121212);
-  --wf-surface: var(--color-gray-900, #1a1a1a);
-  --wf-fg: var(--color-gray-100, #f5f5f5);
-  --wf-muted: var(--color-gray-400, #a1a1a1);
-  --wf-border: var(--color-gray-700, #333333);
-  --wf-hover: var(--color-gray-800, #262626);
+  --wb-bg: var(--color-gray-950, #121212);
+  --wb-surface: var(--color-gray-900, #1a1a1a);
+  --wb-fg: var(--color-gray-100, #f5f5f5);
+  --wb-muted: var(--color-gray-400, #a1a1a1);
+  --wb-border: var(--color-gray-700, #333333);
+  --wb-hover: var(--color-gray-800, #262626);
 }
 
 body {
   margin: 0;
   padding: 16px;
-  background: var(--wf-bg);
-  color: var(--wf-fg);
-  font-family: var(--wf-font);
+  background: var(--wb-bg);
+  color: var(--wb-fg);
+  font-family: var(--wb-font);
   font-size: 0.875rem;
   line-height: 1.6;
 }
@@ -100,13 +100,13 @@ p {
 }
 
 small,
-.wf-muted {
-  color: var(--wf-muted);
+.wb-muted {
+  color: var(--wb-muted);
   font-size: 0.8125rem;
 }
 
 a {
-  color: var(--wf-accent);
+  color: var(--wb-accent);
   text-decoration: none;
 }
 a:hover {
@@ -115,7 +115,7 @@ a:hover {
 
 hr {
   border: 0;
-  border-top: 1px solid var(--wf-border);
+  border-top: 1px solid var(--wb-border);
   margin: 16px 0;
 }
 
@@ -128,40 +128,40 @@ li {
   margin: 4px 0;
 }
 /* A list used as a row list rather than prose: the page opts in. */
-ul.wf-rows {
+ul.wb-rows {
   list-style: none;
   padding: 0;
-  border: 1px solid var(--wf-border);
-  border-radius: var(--wf-radius);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
 }
-ul.wf-rows > li {
+ul.wb-rows > li {
   margin: 0;
   padding: 8px 12px;
   display: flex;
   align-items: center;
   gap: 8px;
-  border-top: 1px solid var(--wf-border);
+  border-top: 1px solid var(--wb-border);
 }
-ul.wf-rows > li:first-child {
+ul.wb-rows > li:first-child {
   border-top: 0;
 }
 
 code,
 kbd,
 samp {
-  font-family: var(--wf-mono);
+  font-family: var(--wb-mono);
   font-size: 0.8125rem;
 }
 code {
-  background: var(--wf-surface);
-  border: 1px solid var(--wf-border);
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-border);
   border-radius: 4px;
   padding: 1px 4px;
 }
 pre {
-  background: var(--wf-surface);
-  border: 1px solid var(--wf-border);
-  border-radius: var(--wf-radius);
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
   padding: 10px 12px;
   overflow-x: auto;
 }
@@ -178,12 +178,12 @@ table {
 }
 th,
 td {
-  border-bottom: 1px solid var(--wf-border);
+  border-bottom: 1px solid var(--wb-border);
   padding: 6px 10px;
   text-align: left;
 }
 th {
-  color: var(--wf-muted);
+  color: var(--wb-muted);
   font-weight: 500;
   font-size: 0.8125rem;
 }
@@ -193,21 +193,21 @@ select,
 textarea {
   font: inherit;
   color: inherit;
-  background: var(--wf-bg);
-  border: 1px solid var(--wf-border);
-  border-radius: var(--wf-radius);
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
   padding: 5px 8px;
 }
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 button:focus-visible {
-  outline: 2px solid var(--wf-accent);
+  outline: 2px solid var(--wb-accent);
   outline-offset: 1px;
 }
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: var(--wf-accent);
+  accent-color: var(--wb-accent);
   padding: 0;
 }
 
@@ -215,38 +215,38 @@ button {
   font: inherit;
   font-weight: 500;
   color: inherit;
-  background: var(--wf-bg);
-  border: 1px solid var(--wf-border);
-  border-radius: var(--wf-radius);
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
   padding: 5px 10px;
   cursor: pointer;
   transition: background-color 150ms;
 }
 button:hover:not(:disabled) {
-  background: var(--wf-hover);
+  background: var(--wb-hover);
 }
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
-button.wf-primary {
-  background: var(--wf-accent);
-  border-color: var(--wf-accent);
-  color: var(--wf-accent-fg);
+button.wb-primary {
+  background: var(--wb-accent);
+  border-color: var(--wb-accent);
+  color: var(--wb-accent-fg);
 }
-button.wf-primary:hover:not(:disabled) {
-  background: var(--wf-accent);
+button.wb-primary:hover:not(:disabled) {
+  background: var(--wb-accent);
   opacity: 0.9;
 }
 
-.wf-card {
-  background: var(--wf-surface);
-  border: 1px solid var(--wf-border);
-  border-radius: var(--wf-radius);
+.wb-card {
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-border);
+  border-radius: var(--wb-radius);
   padding: 12px;
 }
 
-.wf-row {
+.wb-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -258,4 +258,9 @@ button.wf-primary:hover:not(:disabled) {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* App layouts must not override the native hidden state of an alert or empty view. */
+[hidden]:not([hidden="until-found"]) {
+  display: none !important;
 }

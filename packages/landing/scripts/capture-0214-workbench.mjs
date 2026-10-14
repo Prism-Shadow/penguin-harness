@@ -1,19 +1,19 @@
 /**
- * Capture the 0.2.14 workflow screenshots: an agent's own page beside its chat, built from
+ * Capture the 0.2.14 workbench screenshots: an agent's own page beside its chat, built from
  * one sentence, edited by asking, versioned.
  *
  * Everything on screen is the real thing: the built server on a scratch data root, a scripted
- * mock LLM (OpenAI chat-completions SSE) whose tool calls really run, and the workflow the
+ * mock LLM (OpenAI chat-completions SSE) whose tool calls really run, and the workbench the
  * server really hot-loads from the files those tool calls write.
  *
  * - BUILD: on the start page the "A legal agent app from one sentence" example fills the
  *   composer; Send. The default agent creates `legal_agent` on disk (exec_command), writes its
- *   AGENTS.md and the workflow `workflows/legal-desk/` (package.json, index.ts, ui/index.html),
+ *   AGENTS.md and the workbench `workbenches/legal-desk/` (package.json, index.ts, ui/index.html),
  *   then reads `.build/status.json`. The desk's state (five uploaded contracts, four reviewed)
- *   is seeded as the workflow's `state.json` fixture before its first load.
+ *   is seeded as the workbench's `state.json` fixture before its first load.
  * - EDIT: on the legal agent's own chat page the "Contract desk" tab sits beside Chat. The
  *   user asks for a risk column; the agent reads the page, makes two real edit_file calls, and
- *   reads the load status. The watcher reloads the workflow and the open tab refreshes.
+ *   reads the load status. The watcher reloads the workbench and the open tab refreshes.
  * - HISTORY: the tab's History fold lists both recorded versions, with Restore on the older.
  *
  * Files (into $SHOT_OUT, PNG, deviceScaleFactor 2), each once per UI language:
@@ -25,7 +25,7 @@
  * Env: SHOT_SCRATCH (data roots go under it), SHOT_OUT, SHOT_LANGS (default "en,zh"),
  * SHOT_SRV_PORT / SHOT_MOCK_PORT (default 19120 / 19121).
  * Prereqs: a built tree (`pnpm -r build`) and Playwright's chromium.
- * Run from the tree: `node packages/landing/scripts/capture-0214-workflow.mjs`.
+ * Run from the tree: `node packages/landing/scripts/capture-0214-workbench.mjs`.
  */
 import http from "node:http";
 import { spawn } from "node:child_process";
@@ -36,7 +36,7 @@ import { chromium } from "@playwright/test";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../../..");
-const SCRATCH = process.env.SHOT_SCRATCH ?? path.join(ROOT, ".shots-0214-workflow");
+const SCRATCH = process.env.SHOT_SCRATCH ?? path.join(ROOT, ".shots-0214-workbench");
 const OUT_DIR = process.env.SHOT_OUT ?? path.join(SCRATCH, "out");
 const LANGS = (process.env.SHOT_LANGS ?? "en,zh").split(",");
 const SRV_PORT = Number(process.env.SHOT_SRV_PORT ?? 19120);
@@ -52,7 +52,7 @@ const LEGAL = "legal_agent";
 const WF = "legal-desk";
 
 // ---------------------------------------------------------------------------
-// What the agents write: the legal desk workflow, in each UI language.
+// What the agents write: the legal desk workbench, in each UI language.
 // ---------------------------------------------------------------------------
 
 const PAGE_TEXT = {
@@ -111,11 +111,11 @@ const PACKAGE_JSON = `${JSON.stringify(
     penguin: {
       modules: [
         {
-          name: "Workflow",
+          name: "Workbench",
           requires: {
-            host: { iface: "@prismshadow/penguin-server#WorkflowHost", from: "Host" },
+            host: { iface: "@prismshadow/penguin-server#WorkbenchHost", from: "Host" },
           },
-          provides: { main: "@prismshadow/penguin-server#WorkflowMain" },
+          provides: { main: "@prismshadow/penguin-server#WorkbenchMain" },
           contributes: {
             "WebModule.sessionTabs": [
               {
@@ -135,7 +135,7 @@ const PACKAGE_JSON = `${JSON.stringify(
   2,
 )}\n`;
 
-const INDEX_TS = `import type { WorkflowPackage } from "@prismshadow/penguin-server/plugin";
+const INDEX_TS = `import type { WorkbenchPackage } from "@prismshadow/penguin-server/plugin";
 
 type Risk = "high" | "medium" | "low";
 
@@ -173,7 +173,7 @@ function reviewRequest(file: DeskFile, text: string): string {
 
 export default {
   modules: {
-    Workflow: {
+    Workbench: {
       create({ use }) {
         const host = use.host;
         const desk = (): Desk => {
@@ -247,16 +247,16 @@ export default {
       },
     },
   },
-} satisfies WorkflowPackage;
+} satisfies WorkbenchPackage;
 `;
 
 // The page is written in plain JS with string concatenation (no template literals), so this
 // file can hold it in template literals of its own without escaping.
 const STYLE_ANCHOR = "  .summary { margin-top: 12px; }\n";
 const STYLE_RISK = `  .risk { display: inline-flex; align-items: center; gap: 2px; }
-  .risk i { width: 4px; height: 12px; border-radius: 1px; background: var(--wf-border); }
+  .risk i { width: 4px; height: 12px; border-radius: 1px; background: var(--wb-border); }
   .risk b { margin-left: 6px; font-weight: 500; }
-  .risk-low i:nth-child(1), .risk-medium i:nth-child(-n+2), .risk-high i { background: var(--wf-fg); }
+  .risk-low i:nth-child(1), .risk-medium i:nth-child(-n+2), .risk-high i { background: var(--wb-fg); }
   .risk-high b { font-weight: 700; }
 `;
 
@@ -264,7 +264,7 @@ const RENDER_V1 = `function render(files) {
   var table = document.getElementById("files");
   var summary = document.getElementById("summary");
   if (files.length === 0) {
-    table.innerHTML = "<tbody><tr><td class=\\"wf-muted\\">" + T.empty + "</td></tr></tbody>";
+    table.innerHTML = "<tbody><tr><td class=\\"wb-muted\\">" + T.empty + "</td></tr></tbody>";
     summary.textContent = "";
     return;
   }
@@ -287,7 +287,7 @@ function renderV2(lang) {
 var LEVELS = ${JSON.stringify(t.levels)};
 
 function risk(f) {
-  if (!f.risk) return "<span class=\\"wf-muted\\">—</span>";
+  if (!f.risk) return "<span class=\\"wb-muted\\">—</span>";
   return "<span class=\\"risk risk-" + f.risk + "\\"><i></i><i></i><i></i><b>" + LEVELS[f.risk] + "</b></span>";
 }
 
@@ -295,7 +295,7 @@ function render(files) {
   var table = document.getElementById("files");
   var summary = document.getElementById("summary");
   if (files.length === 0) {
-    table.innerHTML = "<tbody><tr><td class=\\"wf-muted\\">" + T.empty + "</td></tr></tbody>";
+    table.innerHTML = "<tbody><tr><td class=\\"wb-muted\\">" + T.empty + "</td></tr></tbody>";
     summary.textContent = "";
     return;
   }
@@ -341,32 +341,32 @@ function pageHtml(lang) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${t.title}</title>
-<link rel="stylesheet" href="/workflow-ui.css">
+<link rel="stylesheet" href="/workbench-ui.css">
 <style>
   body { max-width: 980px; margin: 0 auto; padding: 28px 24px; }
-  .intro { color: var(--wf-muted); margin-bottom: 20px; max-width: 640px; }
+  .intro { color: var(--wb-muted); margin-bottom: 20px; max-width: 640px; }
   .drop { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-style: dashed; margin-bottom: 24px; }
-  .drop.over { border-color: var(--wf-accent); }
+  .drop.over { border-color: var(--wb-accent); }
   .drop p { margin: 0; }
   td.name { font-weight: 500; }
   td a { text-decoration: underline; text-underline-offset: 3px; }
   .num { text-align: right; }
   .status { display: inline-flex; align-items: center; gap: 6px; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wf-muted); }
-  .dot.done { background: var(--wf-accent); }
-  .dot.analyzing { background: transparent; border: 1.5px solid var(--wf-muted); width: 5px; height: 5px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wb-muted); }
+  .dot.done { background: var(--wb-accent); }
+  .dot.analyzing { background: transparent; border: 1.5px solid var(--wb-muted); width: 5px; height: 5px; }
 ${STYLE_ANCHOR}</style>
 </head>
 <body>
 <h1>${t.title}</h1>
 <p class="intro">${t.intro}</p>
-<div class="wf-card drop" id="drop">
-  <button class="wf-primary" type="button" id="pick">${t.upload}</button>
-  <p>${t.dropHint} <span class="wf-muted">· ${t.types}</span></p>
+<div class="wb-card drop" id="drop">
+  <button class="wb-primary" type="button" id="pick">${t.upload}</button>
+  <p>${t.dropHint} <span class="wb-muted">· ${t.types}</span></p>
   <input type="file" id="file" multiple hidden accept=".pdf,.docx,.doc,.txt,.md">
 </div>
 <table id="files"></table>
-<p class="summary wf-muted" id="summary"></p>
+<p class="summary wb-muted" id="summary"></p>
 <script>
 var T = ${JSON.stringify(T)};
 var LOCALE = ${JSON.stringify(t.locale)};
@@ -387,7 +387,7 @@ function status(f) {
   return "<span class=\\"status\\"><span class=\\"dot " + f.status + "\\"></span>" + T[f.status] + "</span>";
 }
 function report(f) {
-  if (!f.hasReport) return "<span class=\\"wf-muted\\">—</span>";
+  if (!f.hasReport) return "<span class=\\"wb-muted\\">—</span>";
   return "<a href=\\"../api/report?id=" + encodeURIComponent(f.id) + "\\" download>" + T.download + "</a>";
 }
 
@@ -502,11 +502,11 @@ const SCENES = {
     build: [
       {
         thinking:
-          "Two parts. First the legal agent itself: a new agent folder with its own AGENTS.md. Then its desk, as a workflow in the legal agent's own workflows/ folder, so the tab sits beside that agent's chat rather than mine.",
-        text: "I'll create the legal agent first, then build its desk as a workflow in that agent's folder.",
+          "Two parts. First the legal agent itself: a new agent folder with its own AGENTS.md. Then its desk, as a workbench in the legal agent's own workbenches/ folder, so the tab sits beside that agent's chat rather than mine.",
+        text: "I'll create the legal agent first, then build its desk as a workbench in that agent's folder.",
       },
       { text: "Now its role and review rules." },
-      { text: "Next, the desk: a workflow with one tab, an upload route and a report download." },
+      { text: "Next, the desk: a workbench with one tab, an upload route and a report download." },
       {},
       {},
       { text: "Checking that the server loaded it." },
@@ -542,8 +542,8 @@ Open Legal Reviewer in the sidebar to use the desk.`,
     build: [
       {
         thinking:
-          "分两步。先建法务智能体本身：一个新的 Agent 目录和它的 AGENTS.md。再把工作台做成法务智能体自己 workflows/ 目录下的 workflow，这样标签页出现在它的聊天旁边，而不是我的。",
-        text: "我先创建法务智能体，再在它的目录里把工作台做成一个 workflow。",
+          "分两步。先建法务智能体本身：一个新的 Agent 目录和它的 AGENTS.md。再把工作台做成法务智能体自己 workbenches/ 目录下的 workbench，这样标签页出现在它的聊天旁边，而不是我的。",
+        text: "我先创建法务智能体，再在它的目录里把工作台做成一个 workbench。",
       },
       { text: "接着写它的角色和审阅规则。" },
       { text: "然后是工作台：一个标签页、一个上传接口和报告下载。" },
@@ -580,7 +580,7 @@ const CTX = {};
 
 const appDataDir = (lang) => path.join(HOME, CTX[lang].projectId);
 const legalDir = (lang) => path.join(appDataDir(lang), "agents", LEGAL);
-const wfDir = (lang) => path.join(legalDir(lang), "workflows", WF);
+const wfDir = (lang) => path.join(legalDir(lang), "workbenches", WF);
 
 /** The tool call of one build step (index = tool results so far). */
 function buildCall(lang, step) {
@@ -661,10 +661,10 @@ function editCall(lang, step) {
   }
 }
 
-/** Lists the legal agent's workflows: starts the server's watcher and loads what changed. */
-async function listWorkflows(lang) {
+/** Lists the legal agent's workbenches: starts the server's watcher and loads what changed. */
+async function listWorkbenches(lang) {
   const { cookie, projectId } = CTX[lang];
-  return (await api(cookie, "GET", `/api/projects/${projectId}/agents/${LEGAL}/workflows`)).json;
+  return (await api(cookie, "GET", `/api/projects/${projectId}/agents/${LEGAL}/workbenches`)).json;
 }
 
 function currentRevision(lang) {
@@ -705,7 +705,7 @@ async function decideTurn(messages) {
     if (editAt >= 0) {
       const step = messages.slice(editAt + 1).filter((m) => m.role === "tool").length;
       // The reload is the watcher's: make sure it has run before the agent reads the status.
-      if (step === 3) await listWorkflows(lang);
+      if (step === 3) await listWorkbenches(lang);
       const call = editCall(lang, step);
       if (call) return { kind: "turn", ...s.edit[step], call };
       return { kind: "turn", text: s.editDone(currentRevision(lang)) };
@@ -713,14 +713,14 @@ async function decideTurn(messages) {
     if (buildAt >= 0) {
       const step = messages.slice(buildAt + 1).filter((m) => m.role === "tool").length;
       if (step === 5) {
-        // The desk's data (uploads made after the build, in the story) is the workflow's own
+        // The desk's data (uploads made after the build, in the story) is the workbench's own
         // state.json: seeded before the first load, which is when the host first reads it.
         writeFileSync(
           path.join(wfDir(lang), "state.json"),
           JSON.stringify(deskState(lang), null, 2),
         );
         // The user opening the legal agent's page is what starts the server watching it.
-        await listWorkflows(lang);
+        await listWorkbenches(lang);
       }
       const call = buildCall(lang, step);
       if (call) return { kind: "turn", ...s.build[step], call };
@@ -1074,7 +1074,7 @@ try {
     await shot(main(), `workflow-build-${lang}`);
     await page.setViewportSize({ width: 1440, height: 900 });
     if (!existsSync(path.join(wfDir(lang), ".build", "status.json"))) {
-      throw new Error("the workflow never loaded");
+      throw new Error("the workbench never loaded");
     }
     console.log(
       `[wf] status: ${readFileSync(path.join(wfDir(lang), ".build", "status.json"), "utf8")}`,
@@ -1163,7 +1163,7 @@ try {
     });
 
     console.log(
-      `[wf] versions: ${JSON.stringify((await listWorkflows(lang)).workflows?.[0]?.revision)}`,
+      `[wf] versions: ${JSON.stringify((await listWorkbenches(lang)).workbenches?.[0]?.revision)}`,
     );
     await context.close();
   }

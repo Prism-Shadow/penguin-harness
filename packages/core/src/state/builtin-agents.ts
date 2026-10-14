@@ -2,10 +2,10 @@
  * Preset content for builtin Agents; the plugin library lives in @prismshadow/penguin-plugins
  * (the library files are read live when building the preset).
  *
- * - Every Project comes with a single builtin Agent: `default_agent` (the General Agent, the
+ * - Every Project comes with `default_agent` (the General Agent, the
  *   default conversational Agent), which has the library's preinstalled plugin set installed at
  *   initialization (plugins marked `preinstall: false` are excluded and stay manual-install).
- *   Dedicated capabilities (creating an Agent, optimizing an Agent, etc.)
+ *   The default Project also includes penguin_support and its support workbench. Other capabilities (creating an Agent, optimizing an Agent, etc.)
  *   are carried by Skills rather than dedicated builtin Agents.
  * - The preset carries no AGENTS.md: the default AGENTS.md is empty, with delegation and task
  *   conventions living in the default template's Suggested Workflows section.
@@ -13,10 +13,12 @@
  *   placeholder; it's not registered in AGENTS.md.
  */
 import { loadPreinstalledPlugins, type LibraryPlugin } from "../plugins/index.js";
-import { DEFAULT_AGENT_ID } from "./paths.js";
+import { SUPPORT_AGENT_ID, SUPPORT_AGENTS_MD, SUPPORT_WORKBENCH_FILES } from "./support/index.js";
+export { SUPPORT_AGENT_ID } from "./support/index.js";
+import { DEFAULT_AGENT_ID, DEFAULT_PROJECT_ID } from "./paths.js";
 
 /** The set of Project builtin Agent ids (supplied along with the Project, cannot be deleted from Web). */
-export const BUILTIN_AGENT_IDS: readonly string[] = [DEFAULT_AGENT_ID];
+export const BUILTIN_AGENT_IDS: readonly string[] = [DEFAULT_AGENT_ID, SUPPORT_AGENT_ID];
 
 /** Agent initialization preset (only takes effect at initialization; ignored when loading an existing Agent). */
 export interface AgentPreset {
@@ -28,15 +30,19 @@ export interface AgentPreset {
   agentsMd?: string;
   /** Plugins installed at initialization (installs none by default): their skills and hook packages. */
   plugins?: LibraryPlugin[];
+  /** Files relative to the Agent directory, installed only during initialization. */
+  files?: Record<string, string>;
 }
 
 /**
  * The preset list for a Project's builtin Agents (each initialized in turn when the Project is
- * created; an existing Agent is never overwritten). The only builtin Agent is default_agent:
+ * created; an existing Agent is never overwritten). default_agent
  * installs the library's preinstalled plugins, with no preset AGENTS.md.
  */
-export function builtinProjectAgentPresets(): Array<{ agentId: string; preset: AgentPreset }> {
-  return [
+export function builtinProjectAgentPresets(
+  projectId = DEFAULT_PROJECT_ID,
+): Array<{ agentId: string; preset: AgentPreset }> {
+  const presets: Array<{ agentId: string; preset: AgentPreset }> = [
     {
       agentId: DEFAULT_AGENT_ID,
       preset: {
@@ -46,4 +52,16 @@ export function builtinProjectAgentPresets(): Array<{ agentId: string; preset: A
       },
     },
   ];
+  if (projectId === DEFAULT_PROJECT_ID)
+    presets.push({
+      agentId: SUPPORT_AGENT_ID,
+      preset: {
+        name: "PenguinHarness Support",
+        description:
+          "Product support with questions, follow-ups and answers grounded in the official docs and source code.",
+        agentsMd: SUPPORT_AGENTS_MD,
+        files: SUPPORT_WORKBENCH_FILES,
+      },
+    });
+  return presets;
 }

@@ -1,22 +1,22 @@
 /**
- * A workflow's source, checked and transpiled by the server.
+ * A workbench's source, checked and transpiled by the server.
  *
- * A workflow is TypeScript — `index.ts`, never JavaScript: what its handler returns and
+ * A workbench is TypeScript — `index.ts`, never JavaScript: what its handler returns and
  * which host members it calls are then questions the compiler answers before any of it
  * runs, not ones the first request answers. The server builds one program from the entry
  * (and whatever it imports), under options the HOST fixes — `strict`, NodeNext; a
- * `tsconfig.json` in the folder is not consulted, so a workflow cannot switch strictness
+ * `tsconfig.json` in the folder is not consulted, so a workbench cannot switch strictness
  * off for itself. `@prismshadow/penguin-server/plugin` resolves to the types the harness
- * wrote into the folder (./harness-types.ts), never to a package: what the workflow was
+ * wrote into the folder (./harness-types.ts), never to a package: what the workbench was
  * written against. Whether that still fits this platform is ../plugin/iface-check.ts.
  *
- * A second, virtual root file assigns the default export to `WorkflowPackage`, so the
- * shape is checked even when the author left `satisfies WorkflowPackage` out (in which
+ * A second, virtual root file assigns the default export to `WorkbenchPackage`, so the
+ * shape is checked even when the author left `satisfies WorkbenchPackage` out (in which
  * case `strict` has already refused the untyped parameters).
  *
  * Any diagnostic fails the load. A clean program is emitted into
- * `<workflow>/.build/<revision>/` — inside the folder, so the emitted code resolves the
- * workflow's own dependencies the way its source does; a dot-directory, so it is no part
+ * `<workbench>/.build/<revision>/` — inside the folder, so the emitted code resolves the
+ * workbench's own dependencies the way its source does; a dot-directory, so it is no part
  * of the revision, the recorded versions or what the watcher reacts to.
  */
 import fs from "node:fs";
@@ -26,28 +26,28 @@ import { harnessTypesFile } from "./harness-types.js";
 
 export const ENTRY = "index.ts";
 export const BUILD_DIR = ".build";
-/** The module a workflow imports its types from. */
+/** The module a workbench imports its types from. */
 export const TYPES_MODULE = "@prismshadow/penguin-server/plugin";
-const CHECK_FILE = "__workflow_check__.ts";
-const CHECK_SOURCE = `import type { WorkflowPackage } from ${JSON.stringify(TYPES_MODULE)};
+const CHECK_FILE = "__workbench_check__.ts";
+const CHECK_SOURCE = `import type { WorkbenchPackage } from ${JSON.stringify(TYPES_MODULE)};
 import pkg from "./index.js";
-const check: WorkflowPackage = pkg;
+const check: WorkbenchPackage = pkg;
 void check;
 `;
 /** Diagnostics reported per load; a broken import alone can produce hundreds. */
 const MAX_DIAGNOSTICS = 12;
 
-export class WorkflowCompileError extends Error {}
+export class WorkbenchCompileError extends Error {}
 
-/** Type-checks the workflow in `dir` and emits it; resolves to the emitted entry file. */
-export function compileWorkflow(ts: TypeScript, dir: string, revision: string): string {
+/** Type-checks the workbench in `dir` and emits it; resolves to the emitted entry file. */
+export function compileWorkbench(ts: TypeScript, dir: string, revision: string): string {
   const entry = path.join(dir, ENTRY);
   if (!fs.existsSync(entry)) {
     const js = ["index.mjs", "index.js"].find((f) => fs.existsSync(path.join(dir, f)));
-    throw new WorkflowCompileError(
+    throw new WorkbenchCompileError(
       js === undefined
         ? `no ${ENTRY} next to package.json`
-        : `a workflow is written in TypeScript: rename ${js} to ${ENTRY} and type its default export (\`satisfies WorkflowPackage\`)`,
+        : `a workbench is written in TypeScript: rename ${js} to ${ENTRY} and type its default export (\`satisfies WorkbenchPackage\`)`,
     );
   }
   const outDir = path.join(dir, BUILD_DIR, revision);
@@ -95,11 +95,11 @@ export function compileWorkflow(ts: TypeScript, dir: string, revision: string): 
 
   const program = ts.createProgram([entry, checkFile], options, host);
   const all = ts.getPreEmitDiagnostics(program);
-  // The virtual root asks what `satisfies WorkflowPackage` already asks; when the author's
+  // The virtual root asks what `satisfies WorkbenchPackage` already asks; when the author's
   // own files have something to say, its copy of the same complaint is left out.
   const authored = all.filter((d) => d.file === undefined || !same(d.file.fileName));
   const diagnostics = authored.length > 0 ? authored : all;
-  if (diagnostics.length > 0) throw new WorkflowCompileError(describe(ts, dir, diagnostics));
+  if (diagnostics.length > 0) throw new WorkbenchCompileError(describe(ts, dir, diagnostics));
 
   fs.rmSync(outDir, { recursive: true, force: true });
   for (const source of program.getSourceFiles()) {
@@ -107,7 +107,7 @@ export function compileWorkflow(ts: TypeScript, dir: string, revision: string): 
     if (program.isSourceFileFromExternalLibrary(source)) continue;
     const result = program.emit(source);
     if (result.emitSkipped) {
-      throw new WorkflowCompileError(describe(ts, dir, result.diagnostics));
+      throw new WorkbenchCompileError(describe(ts, dir, result.diagnostics));
     }
   }
   return path.join(outDir, "index.js");
@@ -118,7 +118,7 @@ export const STATUS_FILE = "status.json";
 
 /**
  * Writes `.build/status.json` after every load, good or bad. The Agent that wrote the
- * workflow has its files and nothing else — no session with the HTTP API — so this is how
+ * workbench has its files and nothing else — no session with the HTTP API — so this is how
  * it learns whether the edit it just made loaded, and what the compiler said if it did not:
  * edit, wait a moment, read this file.
  */
@@ -141,7 +141,7 @@ export function writeLoadStatus(
     );
     fs.renameSync(`${file}.tmp`, file);
   } catch {
-    // The folder may have just been removed; the status of a workflow that is gone is moot.
+    // The folder may have just been removed; the status of a workbench that is gone is moot.
   }
 }
 

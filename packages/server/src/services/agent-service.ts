@@ -404,7 +404,7 @@ export class AgentService implements AgentLifecycle {
       throw new HttpError(
         409,
         "cannot_delete_builtin_agent",
-        "Built-in Agents (default_agent) are provisioned with the Project and cannot be deleted from the web.",
+        "Built-in Agents are provisioned with the Project and cannot be deleted from the web.",
       );
     }
     await fs.rm(agentDir(this.root, projectId, agentId), { recursive: true, force: true });

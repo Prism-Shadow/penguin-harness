@@ -1,32 +1,32 @@
 /**
- * Where an Agent's workflows live and how their versions are kept.
+ * Where an Agent's workbenches live and how their versions are kept.
  *
- *   <agentDir>/workflows/<id>/package.json   `penguin.modules` manifests (a plugin package)
- *   <agentDir>/workflows/<id>/index.ts       default export `{ modules: { <Name>: { create } } }`
- *   <agentDir>/workflows/<id>/ui/            the pages its contributed tabs name
- *   <agentDir>/workflows/<id>/state.json     the workflow's own document (WorkflowHost.getState)
- *   <agentDir>/workflows/<id>/.harness/      the types it was written against (harness-types.ts)
- *   <agentDir>/workflows/<id>/.build/        its emitted code, per revision (compile.ts)
- *   <agentDir>/workflows-history/<id>/<revision>/   a full copy of the folder at each successful load
- *   <agentDir>/workflows-history/<id>/versions.json  the list, newest first
+ *   <agentDir>/workbenches/<id>/package.json   `penguin.modules` manifests (a plugin package)
+ *   <agentDir>/workbenches/<id>/index.ts       default export `{ modules: { <Name>: { create } } }`
+ *   <agentDir>/workbenches/<id>/ui/            the pages its contributed tabs name
+ *   <agentDir>/workbenches/<id>/state.json     the workbench's own document (WorkbenchHost.getState)
+ *   <agentDir>/workbenches/<id>/.harness/      the types it was written against (harness-types.ts)
+ *   <agentDir>/workbenches/<id>/.build/        its emitted code, per revision (compile.ts)
+ *   <agentDir>/workbenches-history/<id>/<revision>/   a full copy of the folder at each successful load
+ *   <agentDir>/workbenches-history/<id>/versions.json  the list, newest first
  *
  * The revision is the content hash of every file except `state.json` (the state is the
- * workflow's data, not its code, and survives a rollback untouched), `node_modules` and the
+ * workbench's data, not its code, and survives a rollback untouched), `node_modules` and the
  * dot-directories, which are the server's. Reading is tolerant:
- * a folder without a package.json is not a workflow, a broken versions.json is an empty list.
+ * a folder without a package.json is not a workbench, a broken versions.json is an empty list.
  */
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
-import type { WorkflowVersion } from "../mechanisms/workflows.js";
+import type { WorkbenchVersion } from "../mechanisms/workbenches.js";
 
 export const STATE_FILE = "state.json";
 export const UI_DIR = "ui";
-/** Versions kept per workflow; older copies are removed with their folders. */
+/** Versions kept per workbench; older copies are removed with their folders. */
 export const KEEP_VERSIONS = 20;
 
-export interface WorkflowFolder {
+export interface WorkbenchFolder {
   id: string;
   dir: string;
   /** Relative paths, sorted, excluding state.json. */
@@ -36,16 +36,16 @@ export interface WorkflowFolder {
   pkg: { name: string; version: string | null };
 }
 
-export function workflowsDir(root: string, projectId: string, agentId: string): string {
-  return path.join(agentDir(root, projectId, agentId), "workflows");
+export function workbenchesDir(root: string, projectId: string, agentId: string): string {
+  return path.join(agentDir(root, projectId, agentId), "workbenches");
 }
 
 export function historyDir(root: string, projectId: string, agentId: string): string {
-  return path.join(agentDir(root, projectId, agentId), "workflows-history");
+  return path.join(agentDir(root, projectId, agentId), "workbenches-history");
 }
 
-/** A workflow id is one path segment of the folder's own name; nothing else is accepted. */
-export function isWorkflowId(id: string): boolean {
+/** A workbench id is one path segment of the folder's own name; nothing else is accepted. */
+export function isWorkbenchId(id: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id) && id !== "." && id !== "..";
 }
 
@@ -90,8 +90,8 @@ async function hashFiles(dir: string, files: string[]): Promise<string> {
   return h.digest("hex").slice(0, 12);
 }
 
-/** Reads one workflow folder; null when it is not a workflow (no package.json). */
-export async function readFolder(dir: string, id: string): Promise<WorkflowFolder | null> {
+/** Reads one workbench folder; null when it is not a workbench (no package.json). */
+export async function readFolder(dir: string, id: string): Promise<WorkbenchFolder | null> {
   let raw: string;
   try {
     raw = await fs.readFile(path.join(dir, "package.json"), "utf8");
@@ -102,7 +102,7 @@ export async function readFolder(dir: string, id: string): Promise<WorkflowFolde
   try {
     pkg = JSON.parse(raw) as typeof pkg;
   } catch {
-    // A broken package.json is still a workflow folder: the loader reports the error.
+    // A broken package.json is still a workbench folder: the loader reports the error.
   }
   const files = (await walk(dir)).filter((f) => f !== STATE_FILE);
   const ui = files.filter((f) => f.startsWith(`${UI_DIR}/`));
@@ -119,16 +119,16 @@ export async function readFolder(dir: string, id: string): Promise<WorkflowFolde
   };
 }
 
-export async function listFolders(base: string): Promise<WorkflowFolder[]> {
+export async function listFolders(base: string): Promise<WorkbenchFolder[]> {
   let entries: import("node:fs").Dirent[];
   try {
     entries = await fs.readdir(base, { withFileTypes: true });
   } catch {
     return [];
   }
-  const out: WorkflowFolder[] = [];
+  const out: WorkbenchFolder[] = [];
   for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!e.isDirectory() || !isWorkflowId(e.name)) continue;
+    if (!e.isDirectory() || !isWorkbenchId(e.name)) continue;
     const folder = await readFolder(path.join(base, e.name), e.name);
     if (folder) out.push(folder);
   }
@@ -146,7 +146,7 @@ export async function readState(dir: string): Promise<unknown> {
 /**
  * The suffix every staged write of ours carries. It is what tells the watcher and the
  * revision hash that a file is the server's own scratch and not an edit: a fixed
- * `state.json.tmp` was neither — it reloaded the workflow on every `setState`, and entered
+ * `state.json.tmp` was neither — it reloaded the workbench on every `setState`, and entered
  * the hash it was supposed to be outside of. The random middle keeps two concurrent writes
  * from truncating each other's staging file and renaming a half-written document into place.
  */
@@ -166,16 +166,16 @@ export async function writeState(dir: string, state: unknown): Promise<void> {
   }
 }
 
-async function readVersions(dir: string): Promise<WorkflowVersion[]> {
+async function readVersions(dir: string): Promise<WorkbenchVersion[]> {
   try {
     const parsed = JSON.parse(await fs.readFile(path.join(dir, "versions.json"), "utf8"));
-    return Array.isArray(parsed) ? (parsed as WorkflowVersion[]) : [];
+    return Array.isArray(parsed) ? (parsed as WorkbenchVersion[]) : [];
   } catch {
     return [];
   }
 }
 
-async function writeVersions(dir: string, versions: WorkflowVersion[]): Promise<void> {
+async function writeVersions(dir: string, versions: WorkbenchVersion[]): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, "versions.json");
   const staged = tempPath(file);
@@ -189,9 +189,9 @@ async function writeVersions(dir: string, versions: WorkflowVersion[]): Promise<
  */
 export async function recordVersion(
   history: string,
-  folder: WorkflowFolder,
+  folder: WorkbenchFolder,
   now: Date,
-): Promise<WorkflowVersion[]> {
+): Promise<WorkbenchVersion[]> {
   const dir = path.join(history, folder.id);
   const versions = await readVersions(dir);
   if (versions[0]?.revision === folder.revision) return versions;
@@ -201,7 +201,7 @@ export async function recordVersion(
     await fs.mkdir(path.dirname(path.join(target, rel)), { recursive: true });
     await fs.copyFile(path.join(folder.dir, rel), path.join(target, rel));
   }
-  const entry: WorkflowVersion = {
+  const entry: WorkbenchVersion = {
     revision: folder.revision,
     savedAt: now.toISOString(),
     name: folder.pkg.name,
@@ -218,7 +218,7 @@ export async function recordVersion(
   return next;
 }
 
-export function listVersions(history: string, id: string): Promise<WorkflowVersion[]> {
+export function listVersions(history: string, id: string): Promise<WorkbenchVersion[]> {
   return readVersions(path.join(history, id));
 }
 
@@ -229,7 +229,7 @@ export function listVersions(history: string, id: string): Promise<WorkflowVersi
  */
 export async function restoreVersion(
   history: string,
-  folder: WorkflowFolder,
+  folder: WorkbenchFolder,
   revision: string,
 ): Promise<boolean> {
   const versions = await readVersions(path.join(history, folder.id));
