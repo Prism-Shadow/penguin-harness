@@ -296,9 +296,9 @@ See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for their licenses.
 
 [Apache-2.0](LICENSE) © 2026 Prism Shadow
 
-## Team
+## Maintenance team
 
-**Teams:** PrismShadow AI, Qinghe Dynamic
+**Organizations:** PrismShadow AI, Qinghe Dynamic
 
 **Maintainers:**
 
@@ -308,6 +308,7 @@ See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for their licenses.
 - Leijun Zhou (PrismShadow)
 - Zhihao Liu (PrismShadow)
 - Xiang Qu (PrismShadow)
+- Hengjin Dou (PrismShadow)
 - Ning Wang (Qinghe Dynamic)
 - Ming Lu (Qinghe Dynamic)
 

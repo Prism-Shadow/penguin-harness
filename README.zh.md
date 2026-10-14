@@ -296,11 +296,11 @@ pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，
 
 [Apache-2.0](LICENSE) © 2026 Prism Shadow
 
-## 团队
+## 维护团队
 
-**团队**：PrismShadow AI、清和乐章
+**组织**：PrismShadow AI、清和乐章
 
-**维护者**：
+**维护成员**：
 
 - Yaowei Zheng（LlamaFactory、PrismShadow）
 - Yangxi Xiang
@@ -308,6 +308,7 @@ pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，
 - Leijun Zhou（PrismShadow）
 - Zhihao Liu（PrismShadow）
 - Xiang Qu（PrismShadow）
+- Hengjin Dou（PrismShadow）
 - Ning Wang（清和乐章）
 - Ming Lu（清和乐章）
 
