@@ -140,19 +140,31 @@ Agent 还能编写并优化自己的 Skill（[文档](https://penguin.ooo/docs/s
 
 ## 支持的模型
 
+重点支持以下模型系列。各型号的具体版本和供应商见应用的**模型库**。
+
+### 闭源模型
+
 | 模型 | 服务商 |
 | --- | --- |
-| DeepSeek V4 | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen Token Plan, Qwen Pay-As-You-Go |
-| Kimi K3 | Moonshot AI, OpenRouter, Fireworks AI, TokenDance, Qwen Pay-As-You-Go |
-| GLM 5.3 | Z.AI, OpenRouter, TokenDance |
-| Hunyuan 3 | OpenRouter |
-| Qwen 3.8 Max | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance |
 | GPT 6.1 | OpenAI, OpenRouter |
-| Gemini 3.8 Flash | Google Gemini, OpenRouter |
-| Claude 5.5 | Anthropic, OpenRouter |
-| Inkling | OpenRouter, Fireworks AI |
+| Claude 5.5 | Anthropic, OpenRouter, OpenCode Go |
+| Gemini 4 | Google Gemini, OpenRouter, Penguin Go |
+| Grok 4.7 | OpenRouter, OpenCode Go |
+| Qwen3.8 Max | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance, OpenCode Go |
 
-表中只列各系列的最新一代。应用的**模型库**页面列出了全部内置预设，任何 OpenAI 协议端点也都能用：选一个预设，或把自定义端点指向 1000+ 个在线和本地模型中的任意一个。
+### 开源模型
+
+| 模型 | 服务商 |
+| --- | --- |
+| DeepSeek V4.1 | DeepSeek, OpenRouter, Fireworks AI, Atlas Cloud, TokenDance, Penguin Go, OpenCode Go, Qwen Token Plan, Qwen Pay-As-You-Go, ModelScope |
+| Kimi K3 | Moonshot AI, OpenRouter, Fireworks AI, TokenDance, OpenCode Go, Qwen Pay-As-You-Go |
+| GLM 5.3 | Z.AI, OpenRouter, TokenDance, OpenCode Go |
+| Hunyuan 4 | OpenRouter, TokenDance, OpenCode Go |
+| MiMo v2.6 | OpenRouter, TokenDance, OpenCode Go |
+
+Claude 5.5 的 OpenCode Go 预设为 Haiku；Fable 5.1、Opus 5.5 和 Sonnet 5.5 可通过 Anthropic、OpenRouter 使用。Hunyuan 4 使用 `hy4-preview`。
+
+此外支持自定义 OpenAI 协议端点，可接入 1000+ 个在线和本地模型。
 
 ## 安装
 

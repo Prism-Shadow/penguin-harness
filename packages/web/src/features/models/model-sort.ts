@@ -6,7 +6,7 @@
  * Each group has one sort, picked from its header's gear menu:
  *
  * - **Price, low to high** (the default) and **high to low** compare one blended figure per row,
- *   `(cache write × 3 + output) ÷ 4` per million Tokens: three parts input to one part output.
+ *   `cache read × 85% + cache write × 10% + output × 5%` per million Tokens.
  *   The buckets are the ones the card prints, the rate billed right now (billedPrice: the list
  *   price less a running promotion, and less a live off-peak tier), so a promotion or an off-peak
  *   hour moves a row exactly as far as it moves the figure on its card. The page re-sorts on the
@@ -45,7 +45,9 @@ export function blendedPrice(
   now: Date = new Date(),
 ): number | undefined {
   const billed = billedPrice(row, now);
-  return billed === undefined ? undefined : (billed.cacheWrite * 3 + billed.output) / 4;
+  return billed === undefined
+    ? undefined
+    : billed.cacheRead * 0.85 + billed.cacheWrite * 0.1 + billed.output * 0.05;
 }
 
 /** What a row is called on its card: its display name, or its model id when it has none. */

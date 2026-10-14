@@ -3,7 +3,8 @@
  * group's choice is kept.
  *
  * - Given no choice for a group, its models are listed by the blended price billed right now,
- *   cheapest first; the blend weighs three parts input (cache write) to one part output.
+ *   cheapest first; the blend weighs 85% cache hits, 10% cache misses and 5% output.
+ * - Given competing cache, input and output prices, both price orders use that token mix.
  * - Given "price, high to low", the dearest model comes first.
  * - Given "name", models are listed by the name their card shows (the model id when they have
  *   none), case ignored and digit runs read as numbers — GLM-5.2 before GLM-5.10 — in either UI
@@ -48,7 +49,7 @@ const row = (
 const NOW = new Date("2026-10-10T12:00:00Z");
 const ids = (rows: readonly Row[]): string[] => rows.map((r) => r.modelId);
 
-/** Blended, (3 × cache write + output) ÷ 4: 0.875, 3.5, 0.5 and 7 per million. */
+/** Different cache, input and output prices, in increasing blended-price order. */
 const cheap = row("cheap", ["0.1", "0.5", "2"]);
 const mid = row("mid", ["0.2", "2", "8"]);
 const tiny = row("tiny", ["0.01", "0.2", "1.4"]);
@@ -62,14 +63,22 @@ describe("sorting a group's models", () => {
     expect(ids(group!.rows)).toEqual(["tiny", "cheap", "mid", "dear"]);
   });
 
-  it("the price weighs three parts input to one part output", () => {
-    // Output alone, or an even mix, would put the second one first; the 3:1 blend does not.
-    const inputCheap = row("input-cheap", ["0.01", "0.1", "3"]); // (0.3 + 3) / 4 = 0.825
-    const evenlyPriced = row("evenly-priced", ["0.1", "1", "1"]); // (3 + 1) / 4 = 1
-    expect(blendedPrice(inputCheap, NOW)).toBeCloseTo(0.825, 9);
-    expect(ids(sortGroupRows([evenlyPriced, inputCheap], "price-asc", NOW, "en"))).toEqual([
+  it("price orders use 85% cache hits, 10% cache misses and 5% output", () => {
+    // Cheap uncached input loses to cheap cache reads on the requested workload.
+    const inputCheap = row("input-cheap", ["1", "0.1", "0.1"]);
+    const cacheCheap = row("cache-cheap", ["0.01", "2", "6"]);
+    const evenlyPriced = row("evenly-priced", ["0.6", "0.6", "0.6"]);
+    expect(blendedPrice(cacheCheap, NOW)).toBeCloseTo(0.5085, 9);
+    const rows = [inputCheap, evenlyPriced, cacheCheap];
+    expect(ids(sortGroupRows(rows, "price-asc", NOW, "en"))).toEqual([
+      "cache-cheap",
+      "evenly-priced",
+      "input-cheap",
+    ]);
+    expect(ids(sortGroupRows(rows, "price-desc", NOW, "en"))).toEqual([
       "input-cheap",
       "evenly-priced",
+      "cache-cheap",
     ]);
   });
 
@@ -131,7 +140,7 @@ describe("sorting a group's models", () => {
     const rows = [
       row("b-twin", ["0.1", "0.5", "2"]),
       row("unpriced-b", ["", "", ""]),
-      row("a-twin", ["0.3", "0.5", "2"]),
+      row("a-twin", ["0.1", "0.5", "2"]),
       row("unpriced-a", ["", "", ""]),
     ];
     for (const sort of ["price-asc", "price-desc"] as const) {
@@ -145,15 +154,15 @@ describe("sorting a group's models", () => {
   });
 
   it("a running promotion moves a model as far as it moves the price on its card", () => {
-    const list = row("promoted", ["0.2", "1", "4"]); // 1.75 at list price
-    const rival = row("rival", ["0.2", "1", "2"]); // 1.25
+    const list = row("promoted", ["0.2", "1", "4"]); // 0.47 at list price
+    const rival = row("rival", ["0.2", "1", "2"]); // 0.37
     expect(ids(sortGroupRows([list, rival], "price-asc", NOW, "en"))).toEqual([
       "rival",
       "promoted",
     ]);
-    // Half off: the card prints 0.5 / 2, blended 0.875.
+    // Half off: all three displayed rates, and the blended price, halve.
     const promoted = { ...list, discount: 0.5 };
-    expect(blendedPrice(promoted, NOW)).toBe(0.875);
+    expect(blendedPrice(promoted, NOW)).toBeCloseTo(0.235, 9);
     expect(ids(sortGroupRows([promoted, rival], "price-asc", NOW, "en"))).toEqual([
       "promoted",
       "rival",
