@@ -35,9 +35,9 @@
  * One surface at a time can be FULLSCREEN — the dock grown as far as its own edge goes: the right
  * dock over its row (the conversation beside it, with the toolbar above and the bottom dock below
  * still in view), the bottom dock or the narrow merged view up to the toolbar (over the row, and
- * the right dock in it). That is the one piece of state here that is transient — in memory, never
- * stored, cleared by a scope switch and by the breakpoint flipping — and it holds only while its
- * surface is on screen with tabs and no dock it COVERS is brought forward (checked after every
+ * the right dock in it). Fullscreen is remembered per arrangement in memory, never stored, so
+ * switching away and back restores it; a reload or the breakpoint flipping clears it. It holds
+ * while its surface is open with tabs and no dock it COVERS is brought forward (checked after every
  * mutation, in commit()): the right dock taking the stage under a fullscreen bottom dock drops
  * it, so what was asked for is seen rather than opening under the cover.
  *
@@ -218,11 +218,11 @@ let scope = NO_SCOPE;
 // are on every render path, and one live object per scope keeps switching cheap.
 let layout: ScopeLayout = scopes[scope] ?? emptyScope();
 /**
- * The surface grown to its fullscreen cover, by the position it renders at ("bottom" for the
- * narrow merged view), or null. In memory only: a reload, a scope switch and the breakpoint
- * flipping all start in the normal layout. The rules live in the fullscreen section below.
+ * Fullscreen follows the arrangement, including a draft handed to its new Session. Weak keys
+ * let evicted scopes go without a second retention list; the storage format stays unchanged.
+ * A reload or breakpoint flip starts every arrangement in the normal layout.
  */
-let fullscreen: DockPosition | null = null;
+let fullscreenByLayout = new WeakMap<ScopeLayout, DockPosition>();
 
 /** Whether a scope's arrangement is worth a storage entry at all. */
 function scopeIsEmpty(s: ScopeLayout): boolean {
@@ -353,9 +353,8 @@ function switchScope(target: string, mayHandOver: boolean): void {
   }
   scope = target;
   layout = scopes[scope] ?? emptyScope();
-  // Fullscreen belongs to the moment, not to the conversation: a new scope starts in the
-  // normal layout even when its own dock would have qualified, and coming back never restores it.
-  fullscreen = null;
+  // An inactive scope may have lost its last terminal while another Session was on screen.
+  reconcileFullscreen();
   notify();
 }
 
@@ -388,7 +387,7 @@ if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
     narrow = event.matches;
     // The surfaces are re-cut at the breakpoint (two docks ↔ one merged view), so the surface
     // that was fullscreen no longer exists as such; the user re-enters on the new one if wanted.
-    fullscreen = null;
+    fullscreenByLayout = new WeakMap();
     notify();
   });
 }
@@ -627,13 +626,14 @@ export function hideView(view: DockView): void {
 
 /** The surface grown to its fullscreen cover ("bottom" for the narrow merged view), or null. */
 export function fullscreenDock(): DockPosition | null {
-  return fullscreen;
+  return fullscreenByLayout.get(layout) ?? null;
 }
 
 /** Whether the merged view is on screen with something in its strip (rather than its picker). */
-function mergedViewHasTabs(): boolean {
+function mergedViewHasTabs(candidate: ScopeLayout): boolean {
   return (
-    (isDockVisible("bottom") && hasTabs("bottom")) || (isDockVisible("right") && hasTabs("right"))
+    (candidate.bottom.open && candidate.bottom.tabs.length > 0) ||
+    (candidate.right.open && candidate.right.tabs.length > 0)
   );
 }
 
@@ -642,9 +642,9 @@ function mergedViewHasTabs(): boolean {
  * never fullscreen). Wide, the surface is one dock; narrow, it is the merged view, which only
  * exists at the bottom.
  */
-function fullscreenEligible(position: DockPosition): boolean {
-  if (narrow) return position === "bottom" && mergedViewHasTabs();
-  return isDockVisible(position) && hasTabs(position);
+function fullscreenEligible(position: DockPosition, candidate: ScopeLayout = layout): boolean {
+  if (narrow) return position === "bottom" && mergedViewHasTabs(candidate);
+  return candidate[position].open && candidate[position].tabs.length > 0;
 }
 
 /**
@@ -656,10 +656,12 @@ function fullscreenEligible(position: DockPosition): boolean {
  * dock opening, being touched or receiving a tab leaves it alone; so does anything within the
  * merged view, which is every dock there is. Runs in commit(), after every mutation.
  */
-function reconcileFullscreen(): void {
+function reconcileFullscreen(candidate: ScopeLayout = layout): void {
+  const fullscreen = fullscreenByLayout.get(candidate) ?? null;
   if (fullscreen === null) return;
-  const coveredTakesStage = !narrow && fullscreen === "bottom" && layout.focus === "right";
-  if (!fullscreenEligible(fullscreen) || coveredTakesStage) fullscreen = null;
+  const coveredTakesStage = !narrow && fullscreen === "bottom" && candidate.focus === "right";
+  if (!fullscreenEligible(fullscreen, candidate) || coveredTakesStage)
+    fullscreenByLayout.delete(candidate);
 }
 
 /**
@@ -673,8 +675,9 @@ export function setDockFullscreen(position: DockPosition | null): void {
     layout.focus = position;
     persist();
   }
-  if (position === fullscreen) return;
-  fullscreen = position;
+  if (position === fullscreenDock()) return;
+  if (position === null) fullscreenByLayout.delete(layout);
+  else fullscreenByLayout.set(layout, position);
   notify();
 }
 
@@ -789,6 +792,7 @@ export function pruneTerminalTabs(liveIds: ReadonlySet<string>): void {
     if (s === layout) continue; // the live scope is pruned below
     if (pruneArea(s.right)) changed = true;
     if (pruneArea(s.bottom)) changed = true;
+    reconcileFullscreen(s);
   }
   if (pruneArea(layout.right)) changed = true;
   if (pruneArea(layout.bottom)) changed = true;

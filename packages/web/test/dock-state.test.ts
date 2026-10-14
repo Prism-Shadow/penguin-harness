@@ -33,8 +33,16 @@
  *   that dock is open with tabs and no dock it covers comes forward: the right dock's cover is its
  *   own row, so the bottom dock opening or activating leaves it, while the bottom dock's cover
  *   reaches the right dock, so the right dock opening or activating ends it. Hiding the surface or
- *   closing its last tab ends either; switching tabs within it does not. A scope switch ends it
- *   too, and it is never stored.
+ *   closing its last tab ends either; switching tabs within it does not.
+ * - Given Sessions with different fullscreen docks, switching away and back restores each one's
+ *   fullscreen without applying it to a new Session; explicitly exiting stays exited on return.
+ * - Given a fullscreen draft, its first send hands fullscreen to the new Session, but never
+ *   overwrites an existing Session's fullscreen. A new draft starts at normal size.
+ * - Given an inactive fullscreen terminal dock, pruning its last shell prevents fullscreen from
+ *   returning when that Session is revisited, even if another terminal returns there first.
+ * - Given fullscreen docks, reloading restores their tabs and sizes at normal size.
+ * - Given fullscreen docks in several Sessions, crossing the narrow breakpoint clears all of
+ *   them; fullscreen chosen in the merged view still survives switching Sessions.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryStorage } from "./helpers/storage";
@@ -521,7 +529,7 @@ describe("fullscreen", () => {
     expect(dock.fullscreenDock()).toBeNull();
   });
 
-  it("is cleared by a scope switch and not restored on return", () => {
+  it("restores each Session's fullscreen independently and remembers an explicit exit", () => {
     const a = `scope-fullscreen-a-${scopeSeq}`;
     const b = `scope-fullscreen-b-${scopeSeq}`;
     dock.setDockScope(b);
@@ -531,22 +539,94 @@ describe("fullscreen", () => {
     dock.setDockFullscreen("right");
     dock.setDockScope(b); // the same dock is open and touched last here too
     expect(dock.fullscreenDock()).toBeNull();
+    dock.openPanel("memory", "bottom");
+    dock.setDockFullscreen("bottom");
+    dock.setDockScope(a);
+    expect(dock.fullscreenDock()).toBe("right");
+    dock.setDockFullscreen(null);
+    dock.setDockScope(b);
+    expect(dock.fullscreenDock()).toBe("bottom");
     dock.setDockScope(a);
     expect(dock.fullscreenDock()).toBeNull();
   });
 
-  it("is never written to storage", () => {
+  it("hands a draft's fullscreen to its new Session without clobbering an existing layout", () => {
+    const draft = dock.currentDockScope();
+    const born = `fullscreen-born-${scopeSeq}`;
+    dock.openPanel("workspace", "right");
+    dock.setDockFullscreen("right");
+    dock.adoptDockScope(born);
+    expect(dock.fullscreenDock()).toBe("right");
+    dock.setDockScope(draft);
+    expect(dock.fullscreenDock()).toBeNull();
+
+    dock.openPanel("memory", "bottom");
+    dock.setDockFullscreen("bottom");
+    dock.adoptDockScope(born);
+    expect(dock.fullscreenDock()).toBe("right");
+  });
+
+  it.each([false, true])(
+    "does not restore fullscreen after an inactive dock's last terminal dies (another returns: %s)",
+    (restoreAnother) => {
+      const owner = dock.currentDockScope();
+      dock.addTerminalTab("fullscreen-terminal", "bottom");
+      dock.setDockFullscreen("bottom");
+      dock.setDockScope(`fullscreen-away-${scopeSeq}`);
+      dock.pruneTerminalTabs(new Set());
+      if (restoreAnother) dock.restoreTerminalTab(owner, "returned-terminal", "bottom");
+      dock.setDockScope(owner);
+      expect(dock.fullscreenDock()).toBeNull();
+      dock.openPanel("memory", "bottom");
+      expect(dock.fullscreenDock()).toBeNull();
+    },
+  );
+
+  it("reloads the dock's tabs and size without restoring fullscreen", async () => {
+    const owner = dock.currentDockScope();
     dock.openPanel("workspace", "right");
     dock.setDockFullscreen("right");
     dock.openPanel("memory", "right"); // a persisted change made while it still covers
     expect(dock.fullscreenDock()).toBe("right");
-    const stored = JSON.parse(localStorage.getItem("penguin.dock.layout")!) as {
-      scopes: Record<string, { right: object; bottom: object }>;
-    };
-    const entry = stored.scopes[dock.currentDockScope()]!;
-    expect(Object.keys(stored).sort()).toEqual(["bottomRatio", "scopes"]);
-    expect(Object.keys(entry).sort()).toEqual(["bottom", "focus", "right"]);
-    for (const area of [entry.right, entry.bottom])
-      expect(Object.keys(area).sort()).toEqual(["active", "open", "tabs"]);
+    dock.setBottomRatio(0.6);
+    vi.resetModules();
+    const reloaded = await import("../src/features/dock/dock-state");
+    reloaded.setDockScope(owner);
+    expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["workspace", "memory"]);
+    expect(reloaded.bottomRatio()).toBe(0.6);
+    expect(reloaded.fullscreenDock()).toBeNull();
+  });
+
+  it("clears all Sessions on a breakpoint change and remembers fullscreen in the merged view", async () => {
+    let change = (_event: { matches: boolean }) => {};
+    vi.stubGlobal("window", {
+      matchMedia: () => ({
+        matches: false,
+        addEventListener: (_type: string, listener: typeof change) => {
+          change = listener;
+        },
+      }),
+    });
+    vi.resetModules();
+    const responsive = await import("../src/features/dock/dock-state");
+    const a = `responsive-a-${scopeSeq}`;
+    const b = `responsive-b-${scopeSeq}`;
+    responsive.setDockScope(a);
+    responsive.openPanel("workspace", "right");
+    responsive.setDockFullscreen("right");
+    responsive.setDockScope(b);
+    responsive.openPanel("memory", "bottom");
+    responsive.setDockFullscreen("bottom");
+
+    change({ matches: true });
+    expect(responsive.fullscreenDock()).toBeNull();
+    responsive.setDockScope(a);
+    expect(responsive.fullscreenDock()).toBeNull();
+    responsive.setDockFullscreen("bottom");
+    responsive.setDockScope(b);
+    responsive.setDockScope(a);
+    expect(responsive.fullscreenDock()).toBe("bottom");
+    change({ matches: false });
+    expect(responsive.fullscreenDock()).toBeNull();
   });
 });
