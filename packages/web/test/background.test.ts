@@ -11,6 +11,7 @@
  * - Given a decoder failure, choosing a picture releases the temporary URL and keeps the existing background.
  * - Given a valid image, choosing it stores a locally encoded image and reveals the controls.
  */
+import { AppShell } from "@prismshadow/penguin-ui";
 import { createElement as h } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BackgroundControls } from "../src/features/settings/background-controls";
@@ -18,6 +19,8 @@ import {
   BACKGROUND_IMAGE_KEY,
   BACKGROUND_SETTINGS_KEY,
   BackgroundProvider,
+  backgroundStyle,
+  useBackground,
 } from "../src/state/background";
 import { S } from "../src/lib/strings";
 import { button, click, field, mount, pickFile, type, unmountAll, waitFor } from "./helpers/dom";
@@ -25,8 +28,16 @@ import { blockedStorage, stubLocalStorage } from "./helpers/storage";
 
 const picture = "data:image/png;base64,aW1hZ2U=";
 const nextPicture = "data:image/webp;base64,bmV3aW1hZ2U=";
-const root = document.documentElement;
-const render = () => mount(h(BackgroundProvider, null, h(BackgroundControls)));
+function Appearance() {
+  const { image, settings } = useBackground();
+  return h(AppShell, {
+    nav: "Navigation",
+    background: image === null ? undefined : backgroundStyle(image, settings),
+    children: h(BackgroundControls),
+  });
+}
+const wallpaper = () => document.querySelector<HTMLElement>(".ui-shell > [data-wallpaper-layer]");
+const render = () => mount(h(BackgroundProvider, null, h(Appearance)));
 
 function storedPicture(settings?: string) {
   const store = stubLocalStorage();
@@ -54,22 +65,20 @@ describe("background choices", () => {
     const page = await render();
     for (const mode of ["contain", "original", "tile", "cover"] as const) {
       await select(S.settings.background.mode, S.settings.background.modes[mode]);
-      expect(root.style.getPropertyValue("--app-background-repeat")).toBe(
-        mode === "tile" ? "repeat" : "no-repeat",
-      );
-      expect(root.style.getPropertyValue("--app-background-size")).toBe(
+      expect(wallpaper()?.style.backgroundRepeat).toBe(mode === "tile" ? "repeat" : "no-repeat");
+      expect(wallpaper()?.style.backgroundSize).toBe(
         ["tile", "original"].includes(mode) ? "auto" : mode,
       );
     }
     await select(S.settings.background.mode, S.settings.background.modes.tile);
     await select(S.settings.background.position, S.settings.background.positions["right bottom"]);
     await type(field(S.settings.background.transparency), "35");
-    expect(root.style.getPropertyValue("--app-background-opacity")).toBe("0.65");
+    expect(wallpaper()?.style.opacity).toBe("0.65");
     await page.unmount();
     await render();
-    expect(root.style.getPropertyValue("--app-background-image")).toContain(picture);
-    expect(root.style.getPropertyValue("--app-background-repeat")).toBe("repeat");
-    expect(root.style.getPropertyValue("--app-background-position")).toBe("right bottom");
+    expect(wallpaper()?.style.backgroundImage).toContain(picture);
+    expect(wallpaper()?.style.backgroundRepeat).toBe("repeat");
+    expect(wallpaper()?.style.backgroundPosition).toBe("right bottom");
     expect(field(S.settings.background.transparency).value).toBe("35");
   });
 
@@ -77,11 +86,11 @@ describe("background choices", () => {
     storedPicture();
     const page = await render();
     await click(button(S.settings.background.remove));
-    expect(root.hasAttribute("data-custom-background")).toBe(false);
+    expect(wallpaper()).toBeNull();
     expect(document.querySelector('input[type="range"]')).toBeNull();
     await page.unmount();
     await render();
-    expect(root.hasAttribute("data-custom-background")).toBe(false);
+    expect(wallpaper()).toBeNull();
     expect(button(S.settings.background.choose)).toBeDefined();
   });
 
@@ -97,7 +106,7 @@ describe("background choices", () => {
     await type(field(S.settings.background.transparency), "10");
     expect(field(S.settings.background.transparency).value).toBe("80");
     await click(button(S.settings.background.remove));
-    expect(root.style.getPropertyValue("--app-background-image")).toContain(picture);
+    expect(wallpaper()?.style.backgroundImage).toContain(picture);
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       S.settings.background.storageError,
     );
@@ -113,8 +122,7 @@ describe("background choices", () => {
     store.setItem(BACKGROUND_IMAGE_KEY, "https://example.com/tracker.png");
     const writes = vi.spyOn(store, "setItem");
     await render();
-    expect(root.hasAttribute("data-custom-background")).toBe(false);
-    expect(root.style.getPropertyValue("--app-background-image")).toBe("none");
+    expect(wallpaper()).toBeNull();
     expect(writes).not.toHaveBeenCalled();
   });
 
@@ -122,7 +130,7 @@ describe("background choices", () => {
     stubLocalStorage(blockedStorage());
     await render();
     expect(button(S.settings.background.choose)).toBeDefined();
-    expect(root.hasAttribute("data-custom-background")).toBe(false);
+    expect(wallpaper()).toBeNull();
   });
 
   it.each(["wrong-type", "too-large"])(
@@ -135,7 +143,7 @@ describe("background choices", () => {
       });
       if (kind === "too-large") Object.defineProperty(file, "size", { value: 21 * 1024 * 1024 });
       await pickFile(photoInput(), file);
-      expect(root.style.getPropertyValue("--app-background-image")).toContain(picture);
+      expect(wallpaper()?.style.backgroundImage).toContain(picture);
       expect(document.querySelector('[role="alert"]')?.textContent).toContain(
         S.settings.background.fileError,
       );
@@ -156,7 +164,7 @@ describe("background choices", () => {
     await pickFile(photoInput(), new File(["broken"], "photo.png", { type: "image/png" }));
     await waitFor(() => document.querySelector('[role="alert"]') !== null);
     expect(release).toHaveBeenCalledWith("blob:failed");
-    expect(root.style.getPropertyValue("--app-background-image")).toContain(picture);
+    expect(wallpaper()?.style.backgroundImage).toContain(picture);
   });
 
   it("encodes a chosen picture locally and reveals the controls", async () => {
@@ -176,7 +184,7 @@ describe("background choices", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(nextPicture);
     await render();
     await pickFile(photoInput(), new File(["picture"], "photo.png", { type: "image/png" }));
-    await waitFor(() => root.hasAttribute("data-custom-background"));
+    await waitFor(() => wallpaper() !== null);
     expect(store.getItem(BACKGROUND_IMAGE_KEY)).toBe(nextPicture);
     expect(document.querySelector('[role="img"]')).not.toBeNull();
     expect(field(S.settings.background.transparency).value).toBe("80");

@@ -26,8 +26,12 @@
  * rule never runs between the traffic lights, whatever width the navigation column is folded to.
  */
 import type { ReactNode } from "react";
+import { NavigationBackdrop, WallpaperContext, WallpaperLayer } from "./wallpaper";
+import type { WallpaperStyle } from "./wallpaper";
 
 export interface AppShellProps {
+  /** Optional wallpaper; omitting it preserves every theme's normal shell surfaces. */
+  background?: WallpaperStyle;
   /** The navigation column: the pinned sidebar, or the rail while the column is folded. */
   nav: ReactNode;
   /** Fold the navigation column to the rail's width. */
@@ -40,26 +44,40 @@ export interface AppShellProps {
   overlays?: ReactNode;
 }
 
-export function AppShell({ nav, navCollapsed = false, children, dock, overlays }: AppShellProps) {
+export function AppShell({
+  background,
+  nav,
+  navCollapsed = false,
+  children,
+  dock,
+  overlays,
+}: AppShellProps) {
   const width = navCollapsed ? "w-12" : "w-64 lg:w-72";
   return (
-    <div className="ui-shell flex h-full pt-[env(titlebar-area-height,0px)]">
-      <aside
-        data-slot="nav"
-        data-layout-motion
-        className={`hidden shrink-0 overflow-hidden border-r border-line bg-surface-muted md:block ${width}`}
+    <WallpaperContext.Provider value={background}>
+      <div
+        data-wallpaper={background === undefined ? undefined : ""}
+        className="ui-shell flex h-full pt-[env(titlebar-area-height,0px)]"
       >
-        <div className={`h-full ${width}`}>{nav}</div>
-      </aside>
-      <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
-        {children}
-      </div>
-      {dock !== undefined && (
-        <div data-slot="dock" className="flex shrink-0 flex-col border-l border-line">
-          {dock}
+        <WallpaperLayer />
+        <aside
+          data-slot="nav"
+          data-layout-motion
+          className={`hidden shrink-0 overflow-hidden border-r border-line bg-surface-muted md:block ${width}`}
+        >
+          <NavigationBackdrop />
+          <div className={`h-full ${width}`}>{nav}</div>
+        </aside>
+        <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
+          {children}
         </div>
-      )}
-      {overlays}
-    </div>
+        {dock !== undefined && (
+          <div data-slot="dock" className="flex shrink-0 flex-col border-l border-line">
+            {dock}
+          </div>
+        )}
+        {overlays}
+      </div>
+    </WallpaperContext.Provider>
   );
 }

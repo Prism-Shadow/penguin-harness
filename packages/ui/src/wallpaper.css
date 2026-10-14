@@ -1,0 +1,58 @@
+/* Opt-in shell wallpaper. Unlayered so a chosen image can replace each theme's opaque fills;
+   no selector applies to a plain shell, dialogs, editors or terminal renderers. */
+.ui-shell[data-wallpaper],
+.ui-shell[data-wallpaper] > [data-slot="main"],
+.ui-shell[data-wallpaper] > [data-slot="dock"],
+.ui-shell[data-wallpaper] [data-wallpaper-surface="canvas"] {
+  background-color: transparent;
+}
+.ui-shell[data-wallpaper] > [data-slot="nav"],
+.ui-shell[data-wallpaper] > [data-slot="main"] > header {
+  position: relative;
+  background-color: transparent;
+}
+.ui-shell[data-wallpaper] [data-wallpaper-layer] {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.ui-shell[data-wallpaper] .ui-glass[data-glass="navigation"] {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: color-mix(in srgb, var(--ui-surface-muted) 18%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.ui-shell[data-wallpaper] [data-slot="composer"],
+.ui-shell[data-wallpaper] [data-wallpaper-surface="cards"] .ui-frame {
+  background-color: color-mix(in srgb, var(--ui-surface) 24%, transparent);
+}
+.ui-shell[data-wallpaper]
+  [data-wallpaper-surface="cards"]
+  .ui-frame
+  > [data-slot="head"]:not(:hover) {
+  background-color: transparent;
+}
+/* The lifted dock owns an opaque canvas and a copy of the viewport-aligned image. Its cards
+   reveal that image, never the conversation underneath, throughout the resize animation. */
+.ui-shell[data-wallpaper] [data-fullscreen] > [data-dock-content] {
+  background-color: var(--ui-canvas);
+}
+.ui-shell[data-wallpaper] [data-dock-content] > [data-wallpaper-layer] {
+  position: absolute;
+  background-attachment: fixed;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ui-shell[data-wallpaper] .ui-glass[data-glass="navigation"] {
+    background-color: var(--ui-surface-muted);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .ui-shell[data-wallpaper] [data-slot="composer"],
+  .ui-shell[data-wallpaper] [data-wallpaper-surface="cards"] .ui-frame {
+    background-color: var(--ui-surface);
+  }
+}

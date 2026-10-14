@@ -48,7 +48,7 @@ export function BackgroundControls() {
   }
 
   return (
-    <div>
+    <>
       <PrefRow label={words.title} info={words.info}>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <input
@@ -78,80 +78,74 @@ export function BackgroundControls() {
           {error}
         </p>
       )}
-      <Fold open={image !== null}>
-        <div className="pb-3">
-          <div
-            role="img"
-            aria-label={words.preview}
-            className="relative h-24 overflow-hidden rounded-md border border-line-muted bg-canvas"
-          >
-            <div className="absolute inset-0" style={backgroundStyle(image, settings)} />
-          </div>
-          <PrefRow label={words.transparency}>
-            <div className="flex min-w-0 items-center gap-3">
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={settings.transparency}
-                aria-label={words.transparency}
-                aria-valuetext={`${settings.transparency}%`}
-                disabled={busy}
-                className="w-32 min-w-0 accent-accent"
-                onChange={(event) =>
-                  commit(() =>
-                    setSettings({ ...settings, transparency: Number(event.target.value) }),
-                  )
-                }
-              />
-              <span className="w-10 shrink-0 text-right text-xs tabular-nums text-fg-muted">
-                {settings.transparency}%
-              </span>
-            </div>
-          </PrefRow>
-          <PrefRow label={words.mode}>
-            <span className="w-36 min-w-0">
-              <Select
-                aria-label={words.mode}
-                value={settings.mode}
-                disabled={busy}
-                onChange={(event) => {
-                  const mode = BACKGROUND_MODES.find((value) => value === event.target.value);
-                  if (mode) commit(() => setSettings({ ...settings, mode }));
-                }}
-              >
-                {BACKGROUND_MODES.map((value) => (
-                  <option key={value} value={value}>
-                    {words.modes[value]}
-                  </option>
-                ))}
-              </Select>
-            </span>
-          </PrefRow>
-          <PrefRow label={words.position}>
-            <span className="w-36 min-w-0">
-              <Select
-                aria-label={words.position}
-                value={settings.position}
-                disabled={busy}
-                onChange={(event) => {
-                  const position = BACKGROUND_POSITIONS.find(
-                    (value) => value === event.target.value,
-                  );
-                  if (position) commit(() => setSettings({ ...settings, position }));
-                }}
-              >
-                {BACKGROUND_POSITIONS.map((value) => (
-                  <option key={value} value={value}>
-                    {words.positions[value]}
-                  </option>
-                ))}
-              </Select>
-            </span>
-          </PrefRow>
+      <Fold open={image !== null} className="background-settings-details">
+        <div
+          role="img"
+          aria-label={words.preview}
+          className="relative h-24 overflow-hidden border-b border-line-muted bg-canvas"
+        >
+          <div className="absolute inset-0" style={backgroundStyle(image, settings)} />
         </div>
+        <PrefRow label={words.transparency}>
+          <div className="flex min-w-0 items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={settings.transparency}
+              aria-label={words.transparency}
+              aria-valuetext={`${settings.transparency}%`}
+              disabled={busy}
+              className="w-32 min-w-0 accent-accent"
+              onChange={(event) =>
+                commit(() => setSettings({ ...settings, transparency: Number(event.target.value) }))
+              }
+            />
+            <span className="w-10 shrink-0 text-right text-xs tabular-nums text-fg-muted">
+              {settings.transparency}%
+            </span>
+          </div>
+        </PrefRow>
+        <PrefRow label={words.mode}>
+          <span className="w-36 min-w-0">
+            <Select
+              aria-label={words.mode}
+              value={settings.mode}
+              disabled={busy}
+              onChange={(event) => {
+                const mode = BACKGROUND_MODES.find((value) => value === event.target.value);
+                if (mode) commit(() => setSettings({ ...settings, mode }));
+              }}
+            >
+              {BACKGROUND_MODES.map((value) => (
+                <option key={value} value={value}>
+                  {words.modes[value]}
+                </option>
+              ))}
+            </Select>
+          </span>
+        </PrefRow>
+        <PrefRow label={words.position}>
+          <span className="w-36 min-w-0">
+            <Select
+              aria-label={words.position}
+              value={settings.position}
+              disabled={busy}
+              onChange={(event) => {
+                const position = BACKGROUND_POSITIONS.find((value) => value === event.target.value);
+                if (position) commit(() => setSettings({ ...settings, position }));
+              }}
+            >
+              {BACKGROUND_POSITIONS.map((value) => (
+                <option key={value} value={value}>
+                  {words.positions[value]}
+                </option>
+              ))}
+            </Select>
+          </span>
+        </PrefRow>
       </Fold>
-    </div>
+    </>
   );
 }

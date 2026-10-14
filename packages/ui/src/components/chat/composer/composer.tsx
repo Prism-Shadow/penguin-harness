@@ -55,7 +55,10 @@ export function ComposerCard({
 }) {
   const { ref, ...text } = textarea;
   return (
-    <div className="ui-glass @container rounded-lg border border-line-emphasis bg-surface px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-fg-muted focus-within:ring-2 focus-within:ring-fg-subtle/30">
+    <div
+      data-slot="composer"
+      className="ui-glass @container rounded-lg border border-line-emphasis bg-surface px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-fg-muted focus-within:ring-2 focus-within:ring-fg-subtle/30"
+    >
       {chips}
       {/* The body rung rather than the form controls' small one: this is a typing surface for
           prose the user composes and re-reads, and the toolbar under it is the small rung. */}

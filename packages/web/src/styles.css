@@ -1,8 +1,7 @@
 /**
  * Global styles: single-file Tailwind CSS 4 entry point.
- * Visual tone: GitHub-style simplicity — solid white background + 1px borders + a single brand blue accent,
- * no glassmorphism/gradients; the login page background is a circuit-trace animation (.login-trace, see
- * login-circuit.tsx). Dark theme is toggled via the html.dark class.
+ * Shared themes define the visual tone and optional shell wallpaper. The login page has its own
+ * circuit-trace animation (.login-trace, see login-circuit.tsx). Dark mode uses the html.dark class.
  *
  * Theming comes from the shared UI package (@prismshadow/penguin-ui): `theme.css` declares the
  * `dark` variant, the cascade layers, the token → utility bridge and the base rules that read
@@ -105,50 +104,10 @@
   }
 }
 
-/* Wallpaper sits below the shell without making its columns stacking contexts. Only the
-   page canvas gives way: editors, menus, dialogs and docks retain their readable surfaces. */
-:root[data-custom-background] .ui-shell,
-:root[data-custom-background] .ui-shell > [data-slot="main"],
-:root[data-custom-background] .ui-shell [data-dock-host] {
-  background-color: transparent;
-}
-:root[data-custom-background] .ui-shell > [data-slot="nav"],
-:root[data-custom-background] .ui-shell > [data-slot="main"] > header {
-  position: relative;
-  background-color: transparent;
-}
-/* Blur the wallpaper on a separate layer: filtering the navigation column itself would
-   trap its menus in a stacking context and change the containing block of fixed overlays. */
-:root[data-custom-background] .ui-shell > [data-slot="nav"]::before,
-:root[data-custom-background] .ui-shell > [data-slot="main"] > header::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-color: color-mix(in srgb, var(--ui-surface-muted) 65%, transparent);
-  -webkit-backdrop-filter: blur(16px); /* deslop-ignore 19: chosen wallpaper behind navigation. */
-  backdrop-filter: blur(16px); /* deslop-ignore 19: chosen wallpaper behind navigation. */
-}
-@media (prefers-reduced-transparency: reduce) {
-  :root[data-custom-background] .ui-shell > [data-slot="nav"]::before,
-  :root[data-custom-background] .ui-shell > [data-slot="main"] > header::before {
-    background-color: var(--ui-surface-muted);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-:root[data-custom-background] .ui-shell::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image: var(--app-background-image);
-  background-size: var(--app-background-size);
-  background-repeat: var(--app-background-repeat);
-  background-position: var(--app-background-position);
-  opacity: var(--app-background-opacity);
+/* The preview is an interior row of Appearance, so only the surrounding settings group's
+   outer ends have corners. A nested last row must not acquire its own bottom corners. */
+.background-settings-details .ui-field {
+  border-radius: 0;
 }
 
 /* ---------- Animations (160-280ms ease, slight entrance offset + subtle scale) ---------- */

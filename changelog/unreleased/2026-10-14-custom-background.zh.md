@@ -2,7 +2,7 @@
 
 Date: 2026-10-14
 Type: feature
-Scope: web
+Scope: web, ui
 PR: [#1126](https://github.com/Prism-Shadow/penguin-harness/pull/1126)
 
 [English](./2026-10-14-custom-background.md)
@@ -14,4 +14,6 @@ PR: [#1126](https://github.com/Prism-Shadow/penguin-harness/pull/1126)
 - 支持铺满、适应、平铺或按存储尺寸显示，并提供九个对齐位置。
 - 可在同一行更换或移除图片，移除后恢复主题原有背景。
 - 左侧菜单栏和手机顶部菜单栏呈现半透明毛玻璃效果；系统开启减少透明度时，保留不透明底色。
-- 支持最大 20 MB 的 PNG、JPEG 和 WebP 图片，在本地缩放、压缩，不会上传。弹窗、输入框和终端保留各自的底色。
+- 聊天输入区和停靠面板可透出背景，输入框和轨迹卡片保留轻微底色，面板放大后保持同一张背景。
+- 背景预览与上下设置行连续衔接，不再出现多余的内侧圆角。
+- 支持最大 20 MB 的 PNG、JPEG 和 WebP 图片，在本地缩放、压缩，不会上传。弹窗、编辑器和终端保留各自的底色。

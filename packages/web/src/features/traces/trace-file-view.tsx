@@ -52,6 +52,7 @@ import {
   Skeleton,
   StatChip,
   TokenDonut,
+  WallpaperSurface,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { CostPartsRows, ElapsedSplitRows, StatHint } from "../../components/ui/stat-hint";
@@ -556,7 +557,7 @@ export function TraceFileBody({
     (highlight?.ts !== undefined ? firstRowKeyAt(rounds, expanded, highlight.ts) : null);
 
   return (
-    <div ref={rootRef} className="space-y-4">
+    <WallpaperSurface ref={rootRef} variant="cards" className="space-y-4">
       {/* A re-read that failed: what follows is the last read that succeeded, so it may be a
           turn or two behind. */}
       {error !== null && <p className={`text-xs ${toneInk.danger}`}>{error}</p>}
@@ -800,7 +801,7 @@ export function TraceFileBody({
           </Card>
         );
       })}
-    </div>
+    </WallpaperSurface>
   );
 }
 

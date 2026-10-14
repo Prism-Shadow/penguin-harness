@@ -31,7 +31,7 @@
  *   therefore reads `decor` on the call site and holds its enclosing component to the list, so
  *   the renderer being a host loosens nothing;
  * - the markup the recipes select on: `.ui-live` names its signal in `data-live`, `.ui-display`
- *   sits on an h1, a `.ui-glass` that names its anatomy names `tile`, `.ui-frame`'s slots are `head`, `body`, `foot` or `pane`, `.ui-shell`'s are
+ *   sits on an h1, a `.ui-glass` that names its anatomy names `tile` or `navigation`, `.ui-frame`'s slots are `head`, `body`, `foot` or `pane`, `.ui-shell`'s are
  *   `nav`, `main` or `dock`, `.ui-field`'s are `label`, `control` or `hint`, a tree row's
  *   `data-depth` is a digit 0–8 and its `data-last` is `"true"`, a decorative icon's
  *   `data-role` is one of the four the recipes tint apart, `.ui-activity` names its kind
@@ -97,6 +97,8 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   // The composer's card and the slash list that opens over it (W6) float with the menus.
   "ui-glass": [
     "ComposerCard",
+    // A separate wallpaper backdrop keeps filtering off the navigation column.
+    "NavigationBackdrop",
     "SlashMenu",
     "Modal",
     "Dropdown",
@@ -192,8 +194,8 @@ const STREAM_STATES = new Set(["streaming", "done"]);
 const STREAM_SLOTS = new Set(["caret"]);
 const WIDGET_KINDS = new Set(["weather", "clock", "countdown", "metrics"]);
 const WIDGET_SLOTS = new Set(["head", "body", "foot"]);
-/** The glass anatomies a recipe dresses apart from a floating layer: a plugin or skill tile. */
-const GLASS_KINDS = new Set(["tile"]);
+/** Glass apart from a floating layer: a plugin tile or the navigation wallpaper backdrop. */
+const GLASS_KINDS = new Set(["tile", "navigation"]);
 /** A chart's parts, wherever a chart's children are written (a mark component draws into the frame's svg). */
 const CHART_PARTS = new Set(["grid", "axis", "series", "area", "bar", "point", "label"]);
 /** A glyph's one part (the duotone body under its line drawing), and its three sets. */
@@ -336,7 +338,7 @@ describe("style hooks", () => {
         }
         const glass = element.attributes.get("data-glass");
         if (names.has("ui-glass") && typeof glass === "string" && !GLASS_KINDS.has(glass)) {
-          problems.push(`${at} .ui-glass data-glass="${glass}" is not tile`);
+          problems.push(`${at} .ui-glass data-glass="${glass}" is not tile or navigation`);
         }
         if (names.has("ui-frame")) {
           for (const { slot } of childSlots(element)) {

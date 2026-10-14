@@ -1,5 +1,5 @@
 /** Local wallpaper preferences. Image bytes are stored separately so a slider writes only settings. */
-import { createContext, useContext, useLayoutEffect, useState } from "react";
+import { createContext, useContext, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 export const BACKGROUND_IMAGE_KEY = "penguin.background.image";
@@ -85,24 +85,6 @@ export function BackgroundProvider({ children }: { children: ReactNode }) {
   const [initial] = useState(readBackground);
   const [image, setImageState] = useState(initial.image);
   const [settings, setSettingsState] = useState(initial.settings);
-
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    const style = backgroundStyle(image, settings);
-    root.toggleAttribute("data-custom-background", image !== null);
-    const values = {
-      "--app-background-image": style.backgroundImage,
-      "--app-background-size": style.backgroundSize,
-      "--app-background-repeat": style.backgroundRepeat,
-      "--app-background-position": style.backgroundPosition,
-      "--app-background-opacity": style.opacity,
-    };
-    for (const [key, value] of Object.entries(values)) root.style.setProperty(key, String(value));
-    return () => {
-      root.removeAttribute("data-custom-background");
-      for (const key of Object.keys(values)) root.style.removeProperty(key);
-    };
-  }, [image, settings]);
 
   return (
     <BackgroundContext.Provider
