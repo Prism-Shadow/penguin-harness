@@ -13,7 +13,8 @@ export const zh = {
     label: "公告",
     prev: "上一条公告",
     next: "下一条公告",
-    flashModels: "DeepSeek V4.1 Flash 与 Gemini 3.8 Flash 现已在 PenguinHarness 上线",
+    geminiArgon: "Gemini 4 Argon 已上线，查看 0.2.16 更新日志",
+    tokenDanceChallenge: "TokenDance Agent 冲榜赛：15,000 元 Token 奖池，10 月 23 日截止",
     penguinGo: "Penguin Go 官方 Token 包上线，Gemini 全系列模型 5 折",
   },
 

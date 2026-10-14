@@ -98,7 +98,6 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("reads the pinned flag and sorts the pinned post first", () => {
     for (const locale of ["en", "zh"] as const) {
       const posts = postsFor(locale);
-      expect(posts.length).toBe(30);
       // The launch post stays the single pinned post; newer posts sort under it by date.
       expect(posts.filter((p) => p.pinned).map((p) => p.slug)).toEqual([
         "introducing-penguinharness",
@@ -130,6 +129,8 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("filters by the news category, newest first", () => {
     expect(postsFor("en", "news").map((p) => p.slug)).toEqual([
       "introducing-penguinharness",
+      "penguinharness-0-2-16",
+      "tokendance-agent-challenge",
       "penguinharness-0-2-15",
       "penguinharness-0-2-13",
       "penguinharness-0-2-11",

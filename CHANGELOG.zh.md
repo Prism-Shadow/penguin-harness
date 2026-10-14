@@ -4,6 +4,7 @@
 
 每个版本一行简述。逐版本的细节见 [`changelog/<version>/`](changelog/)。
 
+- **0.2.16** — 2026-10-14。Agent Workbench、内置 PenguinHarness 问答助手、Gemini 4 Argon 与 GPT-6 Luna、本地背景图片，以及按 Project 隔离的浏览器登录状态。([细则](changelog/0.2.16/))
 - **0.2.15** — 2026-10-13。PenguinHarness 成为 Agent 自进化框架：五个 RSI 算法（默认的「试跑、反思、提升」循环，以及 OPRO、APE、ACE 与 AWM）以插件形式提供。每个新建 Project 自带七个内置 Benchmark：PenguinHarness Benchmark Sec A 至 Sec E，以及 GDPevo Train 与 Test，均以 Harbor task 形式在 Docker 中运行。Agent 新增了：浏览器（桌面端的内置浏览器，或通过 PenguinHarness Browser 扩展接入你自己的 Chrome）、带可交互界面的回复（A2UI）、自己的热更新 Workflow 页面、通过 ssh 在远程机器上运行的对话，以及每个 Agent 的 HTTP API 和 `@prismshadow/amsp` 客户端。此外还有：三套主题，默认 Frost；统一的插件市场，支持导入与导出；每个安装都自带沙箱；热更新不再中断运行中的 Task；对话内切换模型；模型接入改用 MMSP 0.5.2。0.2.14 曾为同一批改动打过标签：它的发布流程在 npm 任务的测试步骤就失败了，npm、Docker Hub 与 Release 页面都没有产出——因此 0.2.14 只是一个 tag，本目录中没有它。([详情](changelog/0.2.15/))
 - **0.2.13** — 2026-09-15。公司模式把一个 Project 的 Agent 变成一家组织——CEO、汇报树、日程、五列工单板与频道，每一样都是磁盘上的文件，且默认关闭，需管理员开启。Benchmark 升为 Project 级、与 Agent 平级；Workspace 浏览器变成真正可用的文件管理器，有右键菜单且不再有体积上限；桌面端常驻系统托盘；Shell 命令可经插件后端受限运行；运行中的工具调用可转入后台；另有三个 AgentHub 修复，终结了那些会让 Task 中途停住的网关 4xx。0.2.12 曾为同一批改动打过标签：它的发布流程在第一个任务就失败，npm、Docker Hub 与 Release 页面都没有产出——因此 0.2.12 只是一个 tag，本目录中没有它。([详情](changelog/0.2.13/))
 - **0.2.11** — 2026-09-10。这是 0.2.10 的重新构建版：将 electron-builder 升级至 26.16.1，修复了在当前 GitHub 运行器镜像上构建签名 macOS 安装包的问题。0.2.10 已打 tag 并发布到 npm 与 Docker Hub，但未提供安装包和 Release 页面；详细条目见 [`changelog/0.2.10/`](changelog/0.2.10/)。

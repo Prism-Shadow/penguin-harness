@@ -9,6 +9,24 @@ import type { ReleaseNote } from "./release-notes";
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: "0.2.16",
+    date: "2026-10-14",
+    zh: [
+      "一句话创建 Agent 和专属工作台；工作台随插件安装，并在 Agent 设置中管理。",
+      "默认 Project 内置 PenguinHarness 问答助手，支持问题列表、追问和来源引用。",
+      "模型库新增 Gemini 4 Argon、GPT-6 Luna，并更新 OpenCode Go 预置模型。",
+      "外观设置支持本地背景图片，可调整透明度、显示方式和对齐位置。",
+      "浏览器标签页按对话隔离，登录状态按 Project 隔离；切换页面时媒体继续播放。",
+    ],
+    en: [
+      "Create an Agent and its workbench from one request. Install workbenches through plugins and manage them in Agent settings.",
+      "The default Project includes a PenguinHarness support Agent with question lists, follow-ups and source citations.",
+      "Gemini 4 Argon and GPT-6 Luna join the model catalog, alongside refreshed OpenCode Go presets.",
+      "Appearance settings support local background images with transparency, layout and alignment controls.",
+      "Browser tabs are isolated by conversation and sign-ins by Project. Media keeps playing when you switch pages.",
+    ],
+  },
+  {
     version: "0.2.15",
     date: "2026-10-13",
     zh: [

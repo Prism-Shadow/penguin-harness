@@ -185,7 +185,7 @@ Then run `penguin web`. It serves the Web App at `http://127.0.0.1:7364` and pri
 ### Docker
 
 ```bash
-docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
+docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:0.2.16
 docker logs penguin       # the first-login link, openable as it stands on this machine
 ```
 
