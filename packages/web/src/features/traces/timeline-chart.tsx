@@ -23,13 +23,21 @@
  *   unsupported — to avoid accidentally changing zoom while scrolling the page.
  */
 import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type {
   TraceModelSegment,
   TraceOtherSpan,
   TraceToolSpan,
 } from "@prismshadow/penguin-server/api";
-import { Badge, Dot, Legend, TimelineBar, namedHint } from "@prismshadow/penguin-ui";
+import {
+  Badge,
+  Dot,
+  Legend,
+  TimelineBar,
+  TimelineLane,
+  TimelineViewport,
+  namedHint,
+} from "@prismshadow/penguin-ui";
 import type { ChartPaint, LegendItem } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
@@ -76,18 +84,6 @@ const kindPaint = (kind: BarKind): ChartPaint =>
     ? { ink: "text-gray-400 dark:text-gray-500", swatch: OTHER_CLASS }
     : { series: KIND_SLOT[kind] };
 
-/**
- * Left-side label column: sticky-pinned to the far left during horizontal
- * scroll/zoom, so labels don't scroll away with the timeline.
- * Must be an opaque block the **same height** as a lane (h-4) — otherwise a
- * bar scrolled underneath the label would peek out above/below the text's
- * line height, looking like the bar is overlapping the label text. Width
- * lines up with the task label row's `pl-[5.5rem]`.
- */
-const LABEL_STICKY =
-  "sticky left-0 z-10 flex h-4 w-[5.5rem] shrink-0 items-center justify-end bg-white pr-2 dark:bg-gray-950";
-/** Label text (truncated when too long). */
-const LABEL_TEXT = "truncate font-mono text-xs";
 /** Zoom range (time-axis multiplier). */
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 24;
@@ -254,33 +250,6 @@ function buildGroups(
   return groups;
 }
 
-/** Track: the gray-background container for bars (no rounded corners; overflow-hidden keeps bars from overlapping adjacent text). */
-function Track({ children }: { children: ReactNode }) {
-  return (
-    <div
-      data-part="grid"
-      className="relative h-4 min-w-0 flex-1 overflow-hidden bg-gray-100 dark:bg-gray-800/60"
-    >
-      {children}
-    </div>
-  );
-}
-
-function Lane({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center">
-      <span
-        className={`${LABEL_STICKY} text-gray-400 dark:text-gray-500`}
-        data-tooltip={label}
-        data-tooltip-content="text"
-      >
-        <span className={LABEL_TEXT}>{label}</span>
-      </span>
-      <Track>{children}</Track>
-    </div>
-  );
-}
-
 /**
  * Time-tick row: the first tick left-aligns, the last right-aligns, the rest
  * center — otherwise `-translate-x-1/2` would overflow the first and last
@@ -291,22 +260,19 @@ function Lane({ label, children }: { label: string; children: ReactNode }) {
 function Ticks({ total }: { total: number }) {
   const fracs = [0, 0.25, 0.5, 0.75, 1];
   return (
-    <div className="flex items-center">
-      <span className={LABEL_STICKY} />
-      <div className="relative h-4 min-w-0 flex-1">
-        {fracs.map((f, i) => (
-          <span
-            key={i}
-            className={`absolute top-0 font-mono text-xs text-fg-subtle ${
-              i === 0 ? "" : i === fracs.length - 1 ? "-translate-x-full" : "-translate-x-1/2"
-            }`}
-            style={{ left: `${f * 100}%` }}
-          >
-            {humanizeDuration(f * total)}
-          </span>
-        ))}
-      </div>
-    </div>
+    <TimelineLane axis>
+      {fracs.map((f, i) => (
+        <span
+          key={i}
+          className={`absolute top-0 font-mono text-xs text-fg-subtle ${
+            i === 0 ? "" : i === fracs.length - 1 ? "-translate-x-full" : "-translate-x-1/2"
+          }`}
+          style={{ left: `${f * 100}%` }}
+        >
+          {humanizeDuration(f * total)}
+        </span>
+      ))}
+    </TimelineLane>
   );
 }
 
@@ -570,7 +536,7 @@ export function TimelineChart({
     // ui-chart: a theme may redraw the parts — the lane tracks (grid) and the bars.
     <div className="ui-chart space-y-3">
       {/* Timeline (horizontal scroll container; native scrollbar hidden in favor of the slider below). overflow-y-hidden avoids a spurious vertical scrollbar. */}
-      <div ref={scrollRef} className="no-scrollbar overflow-x-auto overflow-y-hidden">
+      <TimelineViewport ref={scrollRef} onScroll={updateView}>
         <div className="space-y-4" style={{ width: `${zoom * 100}%` }}>
           {groups.map((g) => {
             return (
@@ -585,7 +551,7 @@ export function TimelineChart({
                 )}
 
                 {/* Model lane: serial segments (thinking / model reply / tool-call generation) */}
-                <Lane label={S.traces.laneLLM}>
+                <TimelineLane label={S.traces.laneLLM}>
                   {g.segs.map((s, i) => {
                     const lk = segmentLegendKey(s.kind);
                     const legendMatch = legendKey === null || legendKey === lk;
@@ -606,103 +572,94 @@ export function TimelineChart({
                       />
                     );
                   })}
-                </Lane>
+                </TimelineLane>
 
                 {/* Tool rows: one per (name, lane) — non-overlapping same-name calls share the row, each rendered as approval wait → execution */}
                 {g.toolRows.map((row, rowIdx) => (
-                  <div key={`${rowIdx}-${row.name}`} className="flex items-center">
-                    <span
-                      className={`${LABEL_STICKY} text-gray-500 dark:text-gray-400`}
-                      data-tooltip={row.name}
-                      data-tooltip-content="text"
-                    >
-                      <span className={LABEL_TEXT}>{row.name}</span>
-                    </span>
-                    <Track>
-                      {row.spans.map((s) => {
-                        const execStart = s.approvalMs ?? s.callMs;
-                        const open = s.outputMs === null;
-                        const endMs = s.outputMs ?? g.t0 + g.total;
-                        const approvalTs = s.approvalTsRaw ?? s.callTs;
-                        const execTs = s.outputTsRaw ?? s.callTs;
-                        return (
-                          <Fragment key={s.toolCallId}>
-                            {/* Approval-wait segment (positioned exactly, flush against the execution segment) */}
-                            {s.approvalMs !== null && s.approvalMs > s.callMs && (
-                              <TimelineBar
-                                onMouseEnter={() => enter(`w-${s.toolCallId}`, approvalTs)}
-                                onMouseLeave={leave}
-                                onClick={() => onJump?.(approvalTs)}
-                                {...namedHint(
-                                  `${s.name} · ${S.traces.legendApprovalWait}${s.decision ? ` (${s.decision})` : ""} · ${humanizeDuration(s.approvalMs - s.callMs)}`,
-                                )}
-                                className={`cursor-pointer ${dimClass(
-                                  isActive(`w-${s.toolCallId}`),
+                  <TimelineLane key={`${rowIdx}-${row.name}`} label={row.name}>
+                    {row.spans.map((s) => {
+                      const execStart = s.approvalMs ?? s.callMs;
+                      const open = s.outputMs === null;
+                      const endMs = s.outputMs ?? g.t0 + g.total;
+                      const approvalTs = s.approvalTsRaw ?? s.callTs;
+                      const execTs = s.outputTsRaw ?? s.callTs;
+                      return (
+                        <Fragment key={s.toolCallId}>
+                          {/* Approval-wait segment (positioned exactly, flush against the execution segment) */}
+                          {s.approvalMs !== null && s.approvalMs > s.callMs && (
+                            <TimelineBar
+                              onMouseEnter={() => enter(`w-${s.toolCallId}`, approvalTs)}
+                              onMouseLeave={leave}
+                              onClick={() => onJump?.(approvalTs)}
+                              {...namedHint(
+                                `${s.name} · ${S.traces.legendApprovalWait}${s.decision ? ` (${s.decision})` : ""} · ${humanizeDuration(s.approvalMs - s.callMs)}`,
+                              )}
+                              className={`cursor-pointer ${dimClass(
+                                isActive(`w-${s.toolCallId}`),
+                                legendKey === null || legendKey === "approvalWait",
+                              )}`}
+                              paint={kindPaint("approvalWait")}
+                              place={placeExact(s.callMs, s.approvalMs, g.t0, g.total)}
+                            />
+                          )}
+                          {/* Approval still pending (with its live mark) / execution segment */}
+                          {s.approvalMs === null && open
+                            ? (() => {
+                                const dim = dimClass(
+                                  isActive(`p-${s.toolCallId}`),
                                   legendKey === null || legendKey === "approvalWait",
-                                )}`}
-                                paint={kindPaint("approvalWait")}
-                                place={placeExact(s.callMs, s.approvalMs, g.t0, g.total)}
-                              />
-                            )}
-                            {/* Approval still pending (with its live mark) / execution segment */}
-                            {s.approvalMs === null && open
-                              ? (() => {
-                                  const dim = dimClass(
-                                    isActive(`p-${s.toolCallId}`),
-                                    legendKey === null || legendKey === "approvalWait",
-                                  );
-                                  return (
-                                    <>
-                                      <TimelineBar
-                                        onMouseEnter={() => enter(`p-${s.toolCallId}`, s.callTs)}
-                                        onMouseLeave={leave}
-                                        onClick={() => onJump?.(s.callTs)}
-                                        {...namedHint(
-                                          `${s.name} · ${S.traces.legendApprovalWait} · ${S.traces.inProgress}`,
-                                        )}
-                                        className={`cursor-pointer ${dim}`}
-                                        paint={kindPaint("approvalWait")}
-                                        place={placeExact(s.callMs, endMs, g.t0, g.total)}
-                                      />
-                                      <LiveEnd tone="attention" dim={dim} />
-                                    </>
-                                  );
-                                })()
-                              : (() => {
-                                  // Fade-out and the "running" translucency share the same opacity property: fade-out takes priority to avoid the two overriding each other.
-                                  const dim = dimClass(
-                                    isActive(`e-${s.toolCallId}`),
-                                    legendKey === null || legendKey === "exec",
-                                  );
-                                  const running = open && !dim;
-                                  return (
-                                    <>
-                                      <TimelineBar
-                                        onMouseEnter={() => enter(`e-${s.toolCallId}`, execTs)}
-                                        onMouseLeave={leave}
-                                        onClick={() => onJump?.(execTs)}
-                                        {...namedHint(
-                                          `${s.name} · ${S.traces.legendToolExec} · ${
-                                            open
-                                              ? S.traces.inProgress
-                                              : humanizeDuration(endMs - execStart)
-                                          }${s.failed ? ` · ${s.status}` : ""}`,
-                                        )}
-                                        className={`cursor-pointer ${
-                                          s.failed ? "ring-1 ring-red-500" : ""
-                                        } ${running ? "opacity-70" : dim}`}
-                                        paint={kindPaint("exec")}
-                                        place={placeExact(execStart, endMs, g.t0, g.total)}
-                                      />
-                                      {open && <LiveEnd tone="success" dim={dim} />}
-                                    </>
-                                  );
-                                })()}
-                          </Fragment>
-                        );
-                      })}
-                    </Track>
-                  </div>
+                                );
+                                return (
+                                  <>
+                                    <TimelineBar
+                                      onMouseEnter={() => enter(`p-${s.toolCallId}`, s.callTs)}
+                                      onMouseLeave={leave}
+                                      onClick={() => onJump?.(s.callTs)}
+                                      {...namedHint(
+                                        `${s.name} · ${S.traces.legendApprovalWait} · ${S.traces.inProgress}`,
+                                      )}
+                                      className={`cursor-pointer ${dim}`}
+                                      paint={kindPaint("approvalWait")}
+                                      place={placeExact(s.callMs, endMs, g.t0, g.total)}
+                                    />
+                                    <LiveEnd tone="attention" dim={dim} />
+                                  </>
+                                );
+                              })()
+                            : (() => {
+                                // Fade-out and the "running" translucency share the same opacity property: fade-out takes priority to avoid the two overriding each other.
+                                const dim = dimClass(
+                                  isActive(`e-${s.toolCallId}`),
+                                  legendKey === null || legendKey === "exec",
+                                );
+                                const running = open && !dim;
+                                return (
+                                  <>
+                                    <TimelineBar
+                                      onMouseEnter={() => enter(`e-${s.toolCallId}`, execTs)}
+                                      onMouseLeave={leave}
+                                      onClick={() => onJump?.(execTs)}
+                                      {...namedHint(
+                                        `${s.name} · ${S.traces.legendToolExec} · ${
+                                          open
+                                            ? S.traces.inProgress
+                                            : humanizeDuration(endMs - execStart)
+                                        }${s.failed ? ` · ${s.status}` : ""}`,
+                                      )}
+                                      className={`cursor-pointer ${
+                                        s.failed ? "ring-1 ring-red-500" : ""
+                                      } ${running ? "opacity-70" : dim}`}
+                                      paint={kindPaint("exec")}
+                                      place={placeExact(execStart, endMs, g.t0, g.total)}
+                                    />
+                                    {open && <LiveEnd tone="success" dim={dim} />}
+                                  </>
+                                );
+                              })()}
+                        </Fragment>
+                      );
+                    })}
+                  </TimelineLane>
                 ))}
 
                 {/* Non-tool auxiliary phases (MCP connect): one lane each, own legend category */}
@@ -712,30 +669,19 @@ export function TimelineChart({
                     legendKey === null || legendKey === "other",
                   );
                   return (
-                    <div key={o.key} className="flex items-center">
-                      <span
-                        className={`${LABEL_STICKY} text-gray-500 dark:text-gray-400`}
-                        data-tooltip={o.name}
-                        data-tooltip-content="text"
-                      >
-                        <span className={LABEL_TEXT}>{o.name}</span>
-                      </span>
-                      <Track>
-                        <TimelineBar
-                          onMouseEnter={() => enter(`o-${o.key}`, o.ts)}
-                          onMouseLeave={leave}
-                          onClick={() => onJump?.(o.ts)}
-                          {...namedHint(
-                            `${o.name} · ${S.traces.legendOther} · ${humanizeDuration(o.endMs - o.startMs)}`,
-                          )}
-                          className={`cursor-pointer ${
-                            o.failed ? "ring-1 ring-red-500" : ""
-                          } ${dim}`}
-                          paint={kindPaint("other")}
-                          place={placeExact(o.startMs, o.endMs, g.t0, g.total)}
-                        />
-                      </Track>
-                    </div>
+                    <TimelineLane key={o.key} label={o.name}>
+                      <TimelineBar
+                        onMouseEnter={() => enter(`o-${o.key}`, o.ts)}
+                        onMouseLeave={leave}
+                        onClick={() => onJump?.(o.ts)}
+                        {...namedHint(
+                          `${o.name} · ${S.traces.legendOther} · ${humanizeDuration(o.endMs - o.startMs)}`,
+                        )}
+                        className={`cursor-pointer ${o.failed ? "ring-1 ring-red-500" : ""} ${dim}`}
+                        paint={kindPaint("other")}
+                        place={placeExact(o.startMs, o.endMs, g.t0, g.total)}
+                      />
+                    </TimelineLane>
                   );
                 })}
 
@@ -745,7 +691,7 @@ export function TimelineChart({
             );
           })}
         </div>
-      </div>
+      </TimelineViewport>
 
       {/* Legend: hovering highlights matching segments — same convention as the bars, non-matching items fade out, no background color */}
       <div className="border-t border-line-muted pt-2.5">

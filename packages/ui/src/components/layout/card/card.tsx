@@ -12,7 +12,8 @@
  * Frost softens the line — without a call site knowing. A flush card's header strip is the
  * frame's `head` slot, which a theme may rule or unfill; a padded card's title row sits inside
  * the padding, not across the frame, and is no slot. One card per region: a card never sits in
- * another card; a table inside one is a bare `Table` (`framed={false}`).
+ * another card; a table inside one is a bare `Table` (`framed={false}`). Its panel surface takes
+ * the shell's wallpaper tint automatically; a card inside a dialog keeps its normal fill.
  */
 import { createContext, useContext } from "react";
 import type { HTMLAttributes, ReactNode } from "react";
@@ -50,6 +51,7 @@ export function Card({
       <Tag
         {...rest}
         className={`ui-frame min-w-0 rounded-md border border-line bg-surface ${PADDING[padding]} ${className}`}
+        data-wallpaper-surface="panel"
       >
         {children}
       </Tag>

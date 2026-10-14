@@ -25,13 +25,13 @@ export function NavigationBackdrop() {
   );
 }
 
-/** A page canvas, or a region whose cards keep a light fill over the shell's wallpaper. */
+/** A page canvas or panel. Shared cards opt in themselves, including outside the chat dock. */
 export function WallpaperSurface({
   variant = "canvas",
   ...props
 }: HTMLAttributes<HTMLDivElement> & {
   ref?: Ref<HTMLDivElement>;
-  variant?: "canvas" | "cards";
+  variant?: "canvas" | "panel";
 }) {
   return <div {...props} data-wallpaper-surface={variant} />;
 }

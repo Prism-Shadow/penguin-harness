@@ -1,9 +1,12 @@
-/* Opt-in shell wallpaper. Unlayered so a chosen image can replace each theme's opaque fills;
-   no selector applies to a plain shell, dialogs, editors or terminal renderers. */
+/* Surface roles are shared across pages: canvas is clear, panels keep a light fill, and
+   activity rows sit directly on the image. Overlay content keeps its theme surfaces. */
+.ui-shell[data-wallpaper] {
+  --wallpaper-panel-fill: color-mix(in srgb, var(--ui-surface) 24%, transparent);
+}
 .ui-shell[data-wallpaper],
 .ui-shell[data-wallpaper] > [data-slot="main"],
 .ui-shell[data-wallpaper] > [data-slot="dock"],
-.ui-shell[data-wallpaper] [data-wallpaper-surface="canvas"] {
+.ui-shell[data-wallpaper] [data-wallpaper-surface="canvas"]:not([role="dialog"] *) {
   background-color: transparent;
 }
 .ui-shell[data-wallpaper] > [data-slot="nav"],
@@ -26,15 +29,37 @@
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
 }
+/* Cards declare their role in the UI package, so a new page inherits the same fill. */
 .ui-shell[data-wallpaper] [data-slot="composer"],
-.ui-shell[data-wallpaper] [data-wallpaper-surface="cards"] .ui-frame {
-  background-color: color-mix(in srgb, var(--ui-surface) 24%, transparent);
+.ui-shell[data-wallpaper] [data-wallpaper-surface="panel"]:not([role="dialog"] *) {
+  background-color: var(--wallpaper-panel-fill);
 }
 .ui-shell[data-wallpaper]
-  [data-wallpaper-surface="cards"]
-  .ui-frame
-  > [data-slot="head"]:not(:hover) {
+  [data-wallpaper-surface="panel"]:not([role="dialog"] *)
+  > [data-slot="head"]:not(:hover),
+.ui-shell[data-wallpaper]
+  [data-wallpaper-surface="panel"]:not([role="dialog"] *)
+  > table
+  > thead
+  > tr {
   background-color: transparent;
+}
+/* Activity rows need no painted strip. Let them scroll with their bodies: a clear sticky row
+   would otherwise superimpose its words on the text moving underneath. */
+@media not (prefers-reduced-transparency: reduce) {
+  .ui-shell[data-wallpaper] .ui-frame:has(> .ui-activity):not([role="dialog"] *),
+  .ui-shell[data-wallpaper] .ui-activity:not([role="dialog"] *) {
+    background-color: transparent;
+  }
+  .ui-shell[data-wallpaper] .ui-activity.sticky:not([role="dialog"] *) {
+    position: relative;
+    top: auto;
+  }
+  .ui-shell[data-wallpaper]
+    .ui-activity:not([data-state="error"], [role="dialog"] *):is(button, :has(button)):hover
+    :is([data-slot="label"], [data-slot="detail"]) {
+    color: var(--ui-fg);
+  }
 }
 /* The lifted dock owns an opaque canvas and a copy of the viewport-aligned image. Its cards
    reveal that image, never the conversation underneath, throughout the resize animation. */
@@ -52,7 +77,7 @@
     backdrop-filter: none;
   }
   .ui-shell[data-wallpaper] [data-slot="composer"],
-  .ui-shell[data-wallpaper] [data-wallpaper-surface="cards"] .ui-frame {
+  .ui-shell[data-wallpaper] [data-wallpaper-surface="panel"]:not([role="dialog"] *) {
     background-color: var(--ui-surface);
   }
 }

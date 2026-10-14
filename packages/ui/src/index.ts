@@ -176,6 +176,7 @@ export * from "./components/charts/chart-style";
 export * from "./components/charts/marks/geom";
 export * from "./components/charts/marks/marks";
 export * from "./components/charts/marks/timeline-bar";
+export * from "./components/charts/timeline-lane/timeline-lane";
 export * from "./components/charts/chart-frame/chart-geom";
 export * from "./components/charts/chart-frame/chart-frame";
 export * from "./components/charts/token-donut/token-donut";

@@ -15,7 +15,7 @@
  * folder's row, which is the order a phone shows it in — one column, the panel under the row,
  * as an accordion — and the order a screen reader walks.
  */
-import { Chevron, GlyphIcon, ICONS, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
+import { Chevron, GlyphIcon, ICONS, NAV_FILL, ICON_GAP, ICON_SIZE } from "@prismshadow/penguin-ui";
 
 /** The examples block: one column on a phone, the folder column and the panel column beside. */
 export const exampleGridClass =
@@ -51,7 +51,7 @@ export function ExampleFolderRow({
       aria-expanded={open}
       onClick={onOpen}
       className={`flex w-full items-center ${ICON_GAP.menu} rounded-md px-2 py-2 text-left text-sm transition-colors duration-150 @md:col-start-1 ${
-        open ? "bg-surface-muted text-fg" : "text-fg-muted hover:bg-surface-muted hover:text-fg"
+        open ? `${NAV_FILL.selected} text-fg` : `text-fg-muted ${NAV_FILL.hover} hover:text-fg`
       }`}
     >
       <span className="shrink-0 text-accent">
@@ -74,7 +74,7 @@ export function ExampleFolderRow({
  */
 export const exampleRowClass =
   "group rounded-md px-2 py-2 text-left text-sm text-fg transition-colors duration-150 " +
-  "hover:bg-surface-muted disabled:cursor-default disabled:opacity-60 " +
+  `${NAV_FILL.hover} disabled:cursor-default disabled:opacity-60 ` +
   "disabled:hover:bg-transparent";
 
 /**

@@ -75,6 +75,7 @@ export function Table({
             ? "ui-frame overflow-x-auto overflow-y-clip rounded-md border border-line bg-surface"
             : "overflow-x-auto"
         } ${className}`}
+        data-wallpaper-surface={framed ? "panel" : undefined}
       >
         <table
           {...rest}
