@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#1138](https://github.com/Prism-Shadow/penguin-harness/pull/1138)
 
 [English](2026-10-14-memory-updates-pagination.md)
 
