@@ -3322,7 +3322,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- Custom (the group that otherwise holds only user-defined models). A preset may live
   // here only as a complete row — its own base URL and a pinned generic protocol — because the
   // group implies neither; it is where a vendor with a single preview model and no console
-  // of its own goes rather than opening a group for it. Atria Dawn Preview: the Anthropic
+  // of its own goes rather than opening a group for it. Atria Dawn: the Anthropic
   // Messages API at api.atria-asi.ai (the client appends /v1/messages, so the base URL carries
   // no /v1; the endpoint also serves Chat Completions and Responses, but its Responses side
   // rejects the replayed assistant turn of a multi-turn conversation), a 256K window (262144 —
@@ -3330,8 +3330,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // image input), and no published price yet, so the row records $0 until the vendor prices
   // it. Read 2026-09-15 from api.atria-asi.ai/docs.
   {
-    modelId: "Atria-Dawn-Preview",
-    displayName: "Atria Dawn Preview",
+    modelId: "Atria-Dawn",
+    displayName: "Atria Dawn",
     provider: "custom",
     contextWindow: 262144,
     pricing: usd(0, 0, 0),

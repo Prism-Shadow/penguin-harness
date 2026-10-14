@@ -156,7 +156,7 @@ describe("penguin config model add without --model-id: the group's connection", 
     const set = await run(["add", "--provider", "custom", "--api-key", "custom-key-cccc"]);
     expect(set.code).toBe(0);
     expect(set.out).toContain("1 model sets its own value and is unaffected");
-    expect(await listLine("custom", "Atria-Dawn-Preview")).toContain("api_key=-");
+    expect(await listLine("custom", "Atria-Dawn")).toContain("api_key=-");
 
     // A model added without a base URL of its own goes where the group goes and takes the key.
     await run([
@@ -170,7 +170,7 @@ describe("penguin config model add without --model-id: the group's connection", 
     ]);
     await run(["add", "--provider", "custom", "--model-id", "qwen3.8-27b-local"]);
     expect(await listLine("custom", "qwen3.8-27b-local")).toContain("api_key=****cccc (provider)");
-    expect(await listLine("custom", "Atria-Dawn-Preview")).toContain("api_key=-");
+    expect(await listLine("custom", "Atria-Dawn")).toContain("api_key=-");
   });
 
   it("sets and clears each field on its own; a cleared field falls to the client default, never to the catalog", async () => {

@@ -344,7 +344,7 @@ describe("the mocked API", () => {
     expect(gateway.credential?.baseUrl).toBeUndefined();
     expect(gateway.effective.baseUrlSource).toBe("provider");
     // Atria stores its own endpoint in custom, which has no table.
-    const atria = models.models.find((m) => m.modelId === "Atria-Dawn-Preview")!;
+    const atria = models.models.find((m) => m.modelId === "Atria-Dawn")!;
     expect(atria.effective.baseUrlSource).toBe("model");
     // Every group takes a protocol, Penguin Go included.
     const go = await api.putProviderConnection(project, "penguin-go", {

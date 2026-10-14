@@ -102,7 +102,7 @@ const row = (own: { clientType?: string; baseUrl?: string; key?: boolean } = {})
 });
 
 /** Custom's catalog preset as a new Project stores it: its own endpoint and protocol on the row. */
-const ATRIA = catalogEntryFor("custom", "Atria-Dawn-Preview")!;
+const ATRIA = catalogEntryFor("custom", "Atria-Dawn")!;
 const atriaRow = row({ baseUrl: ATRIA.baseUrl, clientType: ATRIA.clientType });
 
 describe("saving the group settings sends what changed, and only that", () => {

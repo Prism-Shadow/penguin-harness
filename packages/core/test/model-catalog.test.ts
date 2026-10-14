@@ -421,13 +421,13 @@ describe("model-catalog", () => {
         m.provider === "vllm" ||
         m.modelId.endsWith(":free") ||
         m.modelId === "openrouter/free" ||
-        m.modelId === "Atria-Dawn-Preview" ||
+        m.modelId === "Atria-Dawn" ||
         m.modelId === "dots-3-note-preview"
       ) {
         // Self-hosted vLLM and the free-tier gateway rows share one treatment: a genuine $0
         // price (not "unknown"), so costs compute to 0 and the free badge shows. Nobody bills
         // per token for either — a vLLM deployment costs its operator hardware, which no
-        // catalog rate expresses. Atria Dawn Preview has no published price yet and is
+        // catalog rate expresses. Atria Dawn has no published price yet and is
         // recorded at $0 until the vendor prices it; TokenDance's dots-3-note-preview is the
         // one free row of its group.
         expect(m.pricing, m.modelId).toBeDefined();
@@ -449,25 +449,25 @@ describe("model-catalog", () => {
   it("custom: the group pins nothing, and its one preset carries its own endpoint and protocol", () => {
     // The custom group holds user-defined models, so the group itself implies no endpoint and
     // no protocol (see the MODEL_PROVIDERS test above). A preset filed there is complete on its
-    // own row: Atria Dawn Preview at api.atria-asi.ai, Anthropic Messages API (the client
+    // own row: Atria Dawn at api.atria-asi.ai, Anthropic Messages API (the client
     // appends /v1/messages, so the base carries no /v1), 256K window, text only.
     expect(providerClientType("custom")).toBeUndefined();
     expect(providerInfo("custom")!.gatewayBaseUrl).toBeUndefined();
     const custom = MODEL_CATALOG.filter((m) => m.provider === "custom");
     expect(
       custom.map((m) => [m.modelId, m.clientType, m.baseUrl, m.contextWindow, m.supportsVision]),
-    ).toEqual([["Atria-Dawn-Preview", "ant-messages", "https://api.atria-asi.ai", 262144, false]]);
+    ).toEqual([["Atria-Dawn", "ant-messages", "https://api.atria-asi.ai", 262144, false]]);
     // The custom group is last, and so is its row: the catalog is laid out group by group.
-    expect(MODEL_CATALOG.at(-1)!.modelId).toBe("Atria-Dawn-Preview");
-    expect(catalogEntryFor("custom", "Atria-Dawn-Preview")?.displayName).toBe("Atria Dawn Preview");
+    expect(MODEL_CATALOG.at(-1)!.modelId).toBe("Atria-Dawn");
+    expect(catalogEntryFor("custom", "Atria-Dawn")?.displayName).toBe("Atria Dawn");
     // Ids are case-sensitive at the vendor, so the lookup is too.
-    expect(catalogEntryFor("custom", "atria-dawn-preview")).toBeUndefined();
+    expect(catalogEntryFor("custom", "atria-dawn")).toBeUndefined();
     // custom has no group table in a new Project, so the preset row carries both itself and
     // reaches them from the file alone, whatever custom's table later says.
     const preset = presetModelEntries().find((e) => e.provider === "custom")!;
     expect(preset).toEqual({
       provider: "custom",
-      model_id: "Atria-Dawn-Preview",
+      model_id: "Atria-Dawn",
       context_window: 262144,
       client_type: "ant-messages",
       pricing: { unit: "usd_per_mtok", cache_read: 0, cache_write: 0, output: 0 },
@@ -485,7 +485,7 @@ describe("model-catalog", () => {
       clientType: "ant-messages",
       clientTypeSource: "model",
     });
-    expect(modelHomepageUrl("custom", "Atria-Dawn-Preview")).toBeUndefined();
+    expect(modelHomepageUrl("custom", "Atria-Dawn")).toBeUndefined();
   });
 
   it("vLLM (self-hosted): the group pins openai-chat-vllm-adapter, prices at zero and carries no endpoint", () => {

@@ -279,8 +279,8 @@ describe("models preset & catalog enrichment", () => {
       clientTypeSource: "provider",
     });
     // Custom's Atria carries its own host and protocol; no group of its table reaches it.
-    expect(pick(body, "custom", "Atria-Dawn-Preview").effective).toMatchObject({
-      baseUrl: catalogEntryFor("custom", "Atria-Dawn-Preview")!.baseUrl,
+    expect(pick(body, "custom", "Atria-Dawn").effective).toMatchObject({
+      baseUrl: catalogEntryFor("custom", "Atria-Dawn")!.baseUrl,
       baseUrlSource: "model",
       clientTypeSource: "model",
     });
@@ -1761,7 +1761,7 @@ describe("model-reference rekeying and the connectivity test", () => {
       for (const [provider, modelId] of [
         ["tokendance", "glm-5.3"],
         ["openrouter", "openai/gpt-5.5"],
-        ["custom", "Atria-Dawn-Preview"],
+        ["custom", "Atria-Dawn"],
       ] as const) {
         expect(catalogEntryFor(provider, modelId)).toBeDefined();
         for (const speed of [false, true]) {
@@ -1985,7 +1985,7 @@ describe("group connections ([providers.<id>])", () => {
 
   it("a group key reaches only the models on its endpoint: custom's local-server key never reaches Atria, nor does OpenRouter's reach a model re-pointed at another host", async () => {
     const preset = (await (await api.get(url())).json()) as ModelsResponse;
-    const atria = pick(preset, "custom", "Atria-Dawn-Preview");
+    const atria = pick(preset, "custom", "Atria-Dawn");
     expect(
       (
         await api.put(groupUrl("custom"), {
@@ -2029,7 +2029,7 @@ describe("group connections ([providers.<id>])", () => {
       apiKeyMasked: "sk-o…0003",
     });
     // Atria runs on its own host and protocol, and is lent no key: it needs its own.
-    expect(pick(body, "custom", "Atria-Dawn-Preview").effective).toEqual({
+    expect(pick(body, "custom", "Atria-Dawn").effective).toEqual({
       baseUrl: atria.credential?.baseUrl,
       baseUrlSource: "model",
       clientType: atria.clientType,
