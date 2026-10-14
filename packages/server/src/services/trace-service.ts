@@ -201,6 +201,8 @@ export interface MessagesPageResult {
    * one does not hold that record. Absent for an empty transcript.
    */
   contextModel?: { provider: string; modelId: string };
+  /** Agent State directory from the same context's metadata, for memory-change detection. */
+  agentState?: string;
 }
 
 export interface ForkTraceResult {
@@ -762,6 +764,7 @@ export class TraceService implements Traces {
               provider: startMeta.payload.provider,
               modelId: startMeta.payload.model_id,
             },
+            agentState: startMeta.payload.agent_state,
           }
         : {}),
     };

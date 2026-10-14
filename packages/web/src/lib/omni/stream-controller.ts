@@ -426,14 +426,15 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   /**
    * Seeds a model with what came before the window it is about to take: the stats accrued
    * ahead of it, so header chips and per-turn cumulative rows equal a full load (see
-   * seedPriorStats), and the model its first context runs on, whose `session_meta` a window
-   * that starts partway into that context does not hold.
+   * seedPriorStats), the model its first context runs on, and the Agent State directory for
+   * memory-change detection. Their `session_meta` may fall before the window.
    */
   const seedWindow = (target: StreamModel, page: MessagesPageInfo): void => {
     seedPriorStats(target.stats, page.prior);
     if (page.contextModel !== undefined) {
       target.contextModel = { sessionId: deps.sessionId, ...page.contextModel };
     }
+    if (page.agentState !== undefined) target.agentState = page.agentState;
   };
 
   const load = async (

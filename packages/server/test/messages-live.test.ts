@@ -9,6 +9,8 @@
  * - Windowed reads carry `live` on tail pages with the same content, never on `before` pages.
  * - A read without paging parameters is byte-identical to the transcript alone, and malformed
  *   paging parameters are refused.
+ * - Given memory metadata before the requested window, tail and older pages carry its directory
+ *   without inserting extra records; an empty transcript leaves the directory absent.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -18,6 +20,7 @@ import {
   partialThinking,
   partialToolCallOutput,
   requestBegin,
+  sessionMeta,
   toolCall,
   toolCallOutput,
   userText,
@@ -28,7 +31,7 @@ import type { MessagesResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
-import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
+import { apiClient, createTestApp, provisionUser, waitFor, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 /**
@@ -91,6 +94,44 @@ describe("messages live tail", () => {
     const body = await getMessages();
     expect(body.messages).toEqual([]);
     expect(body.live).toBeUndefined();
+    const tail = await getMessages("?tailLimit=1");
+    expect(tail.messages).toEqual([]);
+    expect(tail.page?.agentState).toBeUndefined();
+  });
+
+  it("tail and older pages preserve the recorded memory directory without adding metadata to their messages", async () => {
+    const agentState = "/recorded/agents/memory-agent/agent_state";
+    await writeTraceFile(t.root, row.projectId, row.agentId, "2026-10-14", SID, 1, [
+      sessionMeta({
+        session_id: SID,
+        provider: "custom",
+        model_id: "memory-model",
+        model_context_window: 1000,
+        system_prompt: "",
+        agent_state: agentState,
+        workspace: row.workspace,
+        source: "user",
+      }),
+      userText("first"),
+      assistantText("first answer"),
+      userText("second"),
+      assistantText("second answer"),
+      userText("third"),
+      assistantText("third answer"),
+    ]);
+
+    const tail = await getMessages("?tailLimit=1");
+    expect(tail.page?.agentState).toBe(agentState);
+    expect(tail.messages.some((message) => message.type === "session_meta")).toBe(false);
+    const older = await getMessages(`?before=${tail.page!.before!}&limit=1`);
+    expect(older.page?.agentState).toBe(agentState);
+    expect(older.messages.some((message) => message.type === "session_meta")).toBe(false);
+    const first = await getMessages(`?before=${older.page!.before!}&limit=1`);
+    expect(first.page?.before).toBeUndefined();
+    expect(first.page?.agentState).toBe(agentState);
+    expect([...first.messages, ...older.messages, ...tail.messages]).toEqual(
+      (await getMessages()).messages,
+    );
   });
 
   it("while running: `live` carries the cursor and one synthetic start per open fragment (origin preserved); it disappears once the run ends", async () => {

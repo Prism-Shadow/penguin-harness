@@ -2347,6 +2347,11 @@ export interface MessagesPageInfo {
    * window is told from a plain rotation. Absent when the Session has no Trace yet.
    */
   contextModel?: ModelRefDto;
+  /**
+   * Agent State directory recorded by the starting context's `session_meta`. Seeds memory
+   * change detection when that record falls before the window. Absent without a Trace.
+   */
+  agentState?: string;
 }
 
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
