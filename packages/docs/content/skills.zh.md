@@ -447,3 +447,11 @@ Skill 分两步加载：先加载索引，正文按需读取。
 - 插件的每个 Skill、钩子包和每个 MCP Server 都在某个 Agent 上时，插件才算装在这个 Agent 上。还在等待 Vault 键或登录的 Server 不影响这一点。
 - 运行中的 Session 沿用当前模型上下文开启时读到的钩子包；下一个上下文（压缩之后或恢复时）会重新读取。经 Web App 或 API 安装、导入或卸载钩子包，或者**启用钩子**开关变动之后，服务端会在 Agent 缓存的运行时下次空闲时重建它们，因此已经打开的对话从下一轮起生效。
 - 除 Web App 外，插件也可以通过 SDK 安装。
+
+## Workbench 插件
+
+插件可以在 Skill 之外携带 `workbenches/<id>/package.json`、`index.ts` 和界面源文件。工作台清单声明 `penguin.modules` 和日期版本 `penguin.version`（`YYYY.MM.DD.N`），npm 包的 `files` 列表需包含 `workbenches`。不要携带 `state.json`、点文件或 `node_modules`。
+
+安装插件时，工作台复制到 Agent 的 `workbenches/<id>/`。更新替换插件携带的源文件，保留记录状态与历史版本；如果名称已被其他插件或手工创建的工作台使用，则拒绝安装。卸载会删除工作台及其记录。
+
+内置 `penguin-support` 插件为默认 Project 的客服 Agent 安装 `penguin-support` Skill 和客服工作台：居中的问题列表、新建问题弹窗，以及支持追问的对话详情。也可以把该插件安装到其他 Agent。

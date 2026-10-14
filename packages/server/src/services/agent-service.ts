@@ -34,6 +34,7 @@ import {
   loadLibraryPlugins,
   parseSkillFrontmatter,
   pluginContentVersion,
+  listInstalledWorkbenches,
 } from "@prismshadow/penguin-core";
 import type { LibraryPlugin } from "@prismshadow/penguin-core";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
@@ -274,6 +275,12 @@ export class AgentService implements AgentLifecycle {
         updates.set(plugin.name, pluginContentVersion(plugin));
       }
     }
+    for (const installed of await listInstalledWorkbenches(this.root, projectId, agentId)) {
+      const plugin = byPlugin.get(installed.plugin);
+      const workbench = plugin?.workbenches?.find((w) => w.name === installed.name);
+      if (plugin && workbench && comparePluginVersions(workbench.version, installed.version) > 0)
+        updates.set(plugin.name, pluginContentVersion(plugin));
+    }
     return {
       skillCount: skills.filter((s) => s !== null).length,
       hookCount: hooks.length,
@@ -323,6 +330,13 @@ export class AgentService implements AgentLifecycle {
       if (installedHook) {
         parts.push({ installed: installedHook.version, library: plugin.hooks.manifest.version });
       }
+    }
+    for (const installed of await listInstalledWorkbenches(this.root, projectId, agentId)) {
+      const workbench =
+        installed.plugin === pluginName
+          ? plugin.workbenches?.find((w) => w.name === installed.name)
+          : undefined;
+      if (workbench) parts.push({ installed: installed.version, library: workbench.version });
     }
     const behind = parts.filter((p) => comparePluginVersions(p.library, p.installed) > 0);
     let answer: { installed: string; library: string } | null = null;

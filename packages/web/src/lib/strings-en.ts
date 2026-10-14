@@ -2733,7 +2733,13 @@ export const en: Strings = {
       none: "No grouping",
     },
     /** What a plugin carries: the section titles of the grouping by content. */
-    kindLabel: { skills: "Skills", hooks: "Hooks", mcp: "MCP servers", modules: "Server modules" },
+    kindLabel: {
+      workbenches: "Workbenches",
+      skills: "Skills",
+      hooks: "Hooks",
+      mcp: "MCP servers",
+      modules: "Server modules",
+    },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent Sandbox",
     otherCategory: "Other",
@@ -2775,6 +2781,8 @@ export const en: Strings = {
     detailDescription: "About",
     detailFiles: "Files",
     detailSkills: "Skills",
+    detailWorkbenches: "Workbenches",
+    uninstallWorkbenchRecords: "Its workbenches and saved records will also be deleted.",
     detailHooks: "Hooks",
     detailMcpServers: "MCP servers",
     /** The detail dialog's links to the package's homepage and repository: their names and hover hints. */

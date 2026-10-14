@@ -118,8 +118,10 @@ function installsOf(
   skills: readonly SkillMetadataItem[],
   hooks: readonly HookItem[],
   servers: readonly AgentMcpServerItem[],
+  workbenches: ReadonlyArray<{ name: string; plugin: string; version: string }> = [],
 ): AgentInstalls {
   return {
+    workbenches: new Map(workbenches.map((w) => [w.name, w])),
     skills: new Map(skills.map((s) => [s.name, s.version])),
     hooks: new Map(hooks.map((h) => [h.name, h.version])),
     mcp: new Map(servers.map((server) => [server.name, server])),
@@ -436,8 +438,8 @@ export function PluginsPage() {
 
   // Installed skills, hook packages and MCP servers for every Agent in the current Project
   // (fetched in parallel, same convention as the sessions context): a single Agent's failure is
-  // silently treated as "nothing installed" and doesn't break the whole page; a server list that
-  // will not read leaves the Agent's skills and hooks standing.
+  // treated as "nothing installed" and does not break the whole page. The server keeps the
+  // file-backed parts visible if its MCP configuration cannot be read.
   const agentIdsKey = agents.map((a) => a.agentId).join(",");
   useEffect(() => {
     // Clear the snapshot before fetching: agentId (e.g. default_agent) is
@@ -451,12 +453,11 @@ export function PluginsPage() {
     void Promise.all(
       ids.map(async (agentId) => {
         try {
-          const [skills, hooks, servers] = await Promise.all([
-            api.getAgentSkills(projectId, agentId),
-            api.getAgentHooks(projectId, agentId),
-            api.getAgentMcpServers(projectId, agentId).catch(() => ({ servers: [] })),
-          ]);
-          return [agentId, installsOf(skills.skills, hooks.hooks, servers.servers)] as const;
+          const res = await api.getAgentPlugins(projectId, agentId);
+          return [
+            agentId,
+            installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches),
+          ] as const;
         } catch {
           return [agentId, NO_INSTALLS] as const;
         }
@@ -509,6 +510,11 @@ export function PluginsPage() {
     const skills = new Map(installs.skills);
     const hooks = new Map(installs.hooks);
     const mcp = new Map(installs.mcp);
+    const workbenches = new Map(installs.workbenches);
+    for (const w of plugin.workbenches ?? []) {
+      if (on) workbenches.set(w.name, { plugin: plugin.name, version: w.version });
+      else if (workbenches.get(w.name)?.plugin === plugin.name) workbenches.delete(w.name);
+    }
     for (const skill of plugin.skills) {
       if (on) skills.set(skill.name, skill.version);
       else skills.delete(skill.name);
@@ -529,7 +535,7 @@ export function PluginsPage() {
         });
       } else if (mcp.get(server.name)?.plugin === plugin.name) mcp.delete(server.name);
     }
-    return { skills, hooks, mcp };
+    return { skills, hooks, mcp, workbenches };
   };
 
   /**
@@ -550,7 +556,10 @@ export function PluginsPage() {
     try {
       if (on) {
         const res = await api.installAgentPlugins(projectId, agentId, [plugin.name]);
-        setAgentInstalls(agentId, installsOf(res.skills, res.hooks, res.mcpServers));
+        setAgentInstalls(
+          agentId,
+          installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches),
+        );
         toastSuccess(
           `${S.plugins.installedToast(plugin.name, agentName)}${S.agent.takesEffectSuffix}`,
         );
@@ -563,6 +572,9 @@ export function PluginsPage() {
           throw e;
         };
         await Promise.all([
+          ...(plugin.workbenches ?? [])
+            .filter((w) => prev.workbenches?.get(w.name)?.plugin === plugin.name)
+            .map((w) => api.removeWorkbench(projectId, agentId, w.name).catch(gone)),
           ...plugin.skills.map((skill) =>
             api.removeAgentSkill(projectId, agentId, skill.name).catch(gone),
           ),
@@ -600,7 +612,10 @@ export function PluginsPage() {
     const results = await Promise.allSettled(
       agentIds.map(async (agentId) => {
         const res = await api.installAgentPlugins(projectId, agentId, [name]);
-        setAgentInstalls(agentId, installsOf(res.skills, res.hooks, res.mcpServers));
+        setAgentInstalls(
+          agentId,
+          installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches),
+        );
       }),
     );
     const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
@@ -635,7 +650,10 @@ export function PluginsPage() {
     const results = await Promise.allSettled(
       plan.perAgent.map(async ({ agentId, names }) => {
         const res = await api.installAgentPlugins(projectId, agentId, names);
-        setAgentInstalls(agentId, installsOf(res.skills, res.hooks, res.mcpServers));
+        setAgentInstalls(
+          agentId,
+          installsOf(res.skills, res.hooks, res.mcpServers, res.workbenches),
+        );
       }),
     );
     const outcome = bulkOutcome(labels, results);

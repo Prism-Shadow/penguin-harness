@@ -161,11 +161,12 @@ export async function parsePluginArchive(archive: Uint8Array): Promise<PluginArc
   }
 
   const has = (dir: string) => [...rel.keys()].some((file) => file.startsWith(`${dir}/`));
-  const library = has("skills") || has("hooks") || declaresMcpServers(manifest);
+  const library =
+    has("skills") || has("hooks") || has("workbenches") || declaresMcpServers(manifest);
   const modules = rel.has("ifaces.json");
   if (!library && !modules) {
     throw invalid(
-      "Not a PenguinHarness plugin: the package carries neither skills/ nor hooks/ nor MCP servers (`penguin.mcp_servers`) nor the ifaces.json of server modules.",
+      "Not a PenguinHarness plugin: the package carries neither skills/ nor hooks/ nor workbenches/ nor MCP servers (`penguin.mcp_servers`) nor the ifaces.json of server modules.",
     );
   }
   if (library) await checkWithLibrary(rel);

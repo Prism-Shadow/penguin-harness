@@ -7,10 +7,11 @@
  * directory whose `package.json` is its manifest (npm's own fields plus a `penguin` block — see
  * manifest.ts), an icon (`icon.svg` at the package root unless `penguin.icon` names another;
  * every built-in plugin ships one, and it is the icon of everything the plugin ships), and any
- * of three kinds of content: skills (`skills/<name>/SKILL.md`, installed into an Agent's
+ * of four kinds of content: skills (`skills/<name>/SKILL.md`, installed into an Agent's
  * `agent_state/skills/`), a hook package (`hooks/*.mjs`, installed into
  * `agent_state/hooks/<plugin>/` together with a generated `hooks.json`) and MCP servers
- * (`penguin.mcp_servers`, merged into the Agent's `tools.mcpServers`). The files are the
+ * (`penguin.mcp_servers`, merged into the Agent's `tools.mcpServers`), plus workbenches
+ * (`workbenches/<name>/`, copied into the Agent's workbenches folder). The files are the
  * runtime source of truth — read and parsed on every call, no caching (files are small, calls
  * are infrequent) — so editing a file takes effect immediately. The shipped plugins are
  * committed content reached through declared dependencies, so one that fails to load — or
@@ -112,6 +113,13 @@ export interface LibraryHooks {
   files: Record<string, string>;
 }
 
+/** A workbench package copied into an Agent; its dated version lives in package.json penguin.version. */
+export interface LibraryWorkbench {
+  name: string;
+  version: string;
+  files: Record<string, string>;
+}
+
 /** A plugin in the library: the manifest fields plus the content it ships. */
 export interface LibraryPlugin {
   /** Plugin name: its package name without the scope (`a2ui` for `@penguinharness/a2ui`). */
@@ -148,6 +156,7 @@ export interface LibraryPlugin {
   /** Raw SVG of the plugin's icon (see readPluginIcon) — every built-in plugin ships one. It is the icon of everything the plugin ships: stamped onto each skill and written beside an installed hook package. */
   icon?: string;
   skills: LibrarySkill[];
+  workbenches?: LibraryWorkbench[];
   hooks?: LibraryHooks;
   /** The MCP servers the plugin contributes (`penguin.mcp_servers`), each with its full list of setup keys; [] when none. */
   mcpServers: PluginMcpServer[];
@@ -207,10 +216,13 @@ export function comparePluginVersions(a: string, b: string): number {
  * "which update" and the update dialog's "new"); whether an installed copy is behind is decided
  * part by part. "" for a plugin with no parts.
  */
-export function pluginContentVersion(plugin: Pick<LibraryPlugin, "skills" | "hooks">): string {
+export function pluginContentVersion(
+  plugin: Pick<LibraryPlugin, "skills" | "hooks" | "workbenches">,
+): string {
   let newest = "";
   for (const version of [
     ...plugin.skills.map((s) => s.version),
+    ...(plugin.workbenches ?? []).map((w) => w.version),
     ...(plugin.hooks !== undefined ? [plugin.hooks.manifest.version] : []),
   ]) {
     if (comparePluginVersions(version, newest) > 0) newest = version;
@@ -508,8 +520,9 @@ export function useInstalledPluginPrefix(dir: string | null): void {
   installedPrefix = dir;
 }
 
-/** What a package carries that installs into an Agent: skills, a hook package, MCP servers. */
+/** What a package carries that installs into an Agent: Skills, hooks, MCP servers and workbenches. */
 export interface LibraryParts {
+  workbenches: boolean;
   skills: boolean;
   hooks: boolean;
   mcp: boolean;
@@ -544,6 +557,7 @@ export function libraryParts(dir: string): LibraryParts {
   return {
     skills: fs.existsSync(path.join(dir, "skills")),
     hooks: fs.existsSync(path.join(dir, "hooks")),
+    workbenches: fs.existsSync(path.join(dir, "workbenches")),
     mcp: declaresMcpServers(manifest),
   };
 }
@@ -556,7 +570,7 @@ export function libraryParts(dir: string): LibraryParts {
 export function isLibraryPackage(dir: string): boolean {
   if (!fs.existsSync(path.join(dir, "package.json"))) return false;
   const parts = libraryParts(dir);
-  return parts.skills || parts.hooks || parts.mcp;
+  return parts.skills || parts.hooks || parts.mcp || parts.workbenches;
 }
 
 /**
@@ -754,6 +768,37 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
     }
     skills.sort((a, b) => a.name.localeCompare(b.name));
   }
+  const workbenches: LibraryWorkbench[] = [];
+  const workbenchesDir = path.join(dir, "workbenches");
+  if (fs.existsSync(workbenchesDir)) {
+    for (const entry of fs.readdirSync(workbenchesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      try {
+        if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(entry.name))
+          throw new Error("invalid workbench name");
+        const files = readDirFiles(path.join(workbenchesDir, entry.name), [], skipped) ?? {};
+        if (
+          Object.keys(files).some(
+            (rel) =>
+              rel === "state.json" ||
+              rel.split("/").some((part) => part.startsWith(".") || part === "node_modules"),
+          )
+        )
+          throw new Error("ship source files only, without state.json, dot files or node_modules");
+        const pkg = JSON.parse(files["package.json"] ?? "{}");
+        const version = pkg.penguin?.version;
+        if (typeof version !== "string" || !PLUGIN_VERSION_PATTERN.test(version))
+          throw new Error("package.json penguin.version must be YYYY.MM.DD.N");
+        if (!Array.isArray(pkg.penguin?.modules) || pkg.penguin.modules.length === 0)
+          throw new Error("package.json must declare penguin.modules");
+        workbenches.push({ name: entry.name, version, files });
+      } catch (error) {
+        warnings.push(
+          `workbenches/${entry.name}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
   const { icon, warnings: iconWarnings } = readPluginIcon(dir, penguin.icon);
   warnings.push(...iconWarnings);
   const hooksDir = path.join(dir, "hooks");
@@ -826,6 +871,7 @@ function readPluginDir(name: string, root: LibraryRoot): LibraryPlugin {
       }),
     ),
     ...(hooks !== undefined ? { hooks } : {}),
+    ...(workbenches.length > 0 ? { workbenches } : {}),
     mcpServers,
     ...(quickStart !== undefined ? { quickStart } : {}),
   };

@@ -216,13 +216,14 @@ export function pluginCategories(
 }
 
 /** What a plugin carries: the payloads the grouping by content names. */
-export const PLUGIN_KINDS = ["skills", "hooks", "mcp", "modules"] as const;
+export const PLUGIN_KINDS = ["skills", "hooks", "mcp", "workbenches", "modules"] as const;
 export type PluginKind = (typeof PLUGIN_KINDS)[number];
 
 /** The one kind a row is grouped under: a server module first, then Skills, then hooks, then MCP servers. */
 export function primaryKind(row: PluginRow): PluginKind {
   if (row.module !== undefined) return "modules";
   const plugin = row.library;
+  if ((plugin?.workbenches?.length ?? 0) > 0) return "workbenches";
   if ((plugin?.skills.length ?? 0) > 0) return "skills";
   if ((plugin?.hooks.length ?? 0) > 0) return "hooks";
   return (plugin?.mcpServers.length ?? 0) > 0 ? "mcp" : "hooks";

@@ -3,6 +3,7 @@
  * git checkout, against the pull request's base commit. A plugin's version is its npm version;
  * the dated versions live on the parts an install writes — each skill, the hook package.
  *
+ * - A workbench source change fails until its package.json penguin.version changes.
  * - A skill whose files changed without a new version fails, naming the skill; raising its
  *   version passes.
  * - A changed hook script, or a changed hook command in package.json's `penguin.hooks`, fails
@@ -185,5 +186,20 @@ describe("the plugin version guard", () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("fresh/one");
     expect(lines[0]).not.toContain("README.md");
+  });
+  it("requires a new dated workbench version when source changes", async () => {
+    const file = "plugins/demo/workbenches/desk/package.json";
+    const manifest = (version: string) =>
+      JSON.stringify({ name: "desk", version: "1.0.0", penguin: { version } });
+    const base = await checkout({
+      ...PER_PART,
+      [file]: manifest("2026.10.14.1"),
+      "plugins/demo/workbenches/desk/index.ts": "original",
+    });
+    const unchanged = await guard(base, { "plugins/demo/workbenches/desk/index.ts": "changed" });
+    expect(unchanged.ok).toBe(false);
+    expect(unchanged.out).toContain("workbenches/desk changed");
+    const bumped = await guard(base, { [file]: manifest("2026.10.14.2") });
+    expect(bumped.ok).toBe(true);
   });
 });

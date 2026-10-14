@@ -23,3 +23,5 @@ export * from "./builtin-benchmarks.js";
 export { BUILTIN_BENCHMARKS } from "./builtin-benchmarks-data.js";
 export { placeBenchmark, provisionProjectBenchmarks } from "./project-benchmarks.js";
 export type { PlaceBenchmarkOptions } from "./project-benchmarks.js";
+
+export * from "./plugin-workbenches.js";

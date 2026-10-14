@@ -2,6 +2,8 @@
  * Given a fresh default Project, its support Agent contributes a working tab without setup.
  * Given persisted in-progress tickets, GET reconciles final answers once; failed/foreign jobs
  * never receive an older or another Project's answer. Reload preserves the ticket history.
+ * Given an ordinary Agent, plugin install exposes a tab; update preserves records and uninstall removes it.
+ * Given a conflicting workbench, plugin install returns 409 without installing its Skill.
  * Given answered tickets, resolve/reopen preserves messages; malformed follow-ups do not write.
  */
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
@@ -120,5 +122,45 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
       400,
     );
     expect(await tickets()).toHaveLength(3);
+  });
+  it("installs and updates the support plugin on an ordinary Agent, preserving its tickets", async () => {
+    const agent = "/api/projects/default_project/agents/plugin_support";
+    expect(
+      (await admin.post("/api/projects/default_project/agents", { agentId: "plugin_support" }))
+        .status,
+    ).toBe(201);
+    const install = await admin.post(`${agent}/plugins`, { names: ["penguin-support"] });
+    expect(install.status).toBe(201);
+    expect(await install.json()).toMatchObject({
+      workbenches: [{ name: "support", plugin: "penguin-support" }],
+      skills: [{ name: "penguin-support" }],
+    });
+    expect(await (await admin.get(`${agent}/plugins`)).json()).toMatchObject({
+      workbenches: [{ name: "support", plugin: "penguin-support" }],
+    });
+    const list = await admin.get(`${agent}/workbenches`);
+    expect(await list.json()).toMatchObject({
+      workbenches: [{ error: null, tabs: [{ key: "support" }] }],
+    });
+    const disk = path.join(t.root, "default_project/agents/plugin_support/workbenches/support");
+    const state = JSON.stringify({
+      tickets: [{ id: "saved", title: "Keep", status: "resolved", messages: [] }],
+    });
+    await fs.writeFile(path.join(disk, "state.json"), state);
+    await fs.writeFile(path.join(disk, "ui/app.js"), "local edit");
+    expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(201);
+    expect(await fs.readFile(path.join(disk, "state.json"), "utf8")).toBe(state);
+    expect(await fs.readFile(path.join(disk, "ui/app.js"), "utf8")).not.toBe("local edit");
+    expect((await admin.delete(`${agent}/workbenches/support`)).status).toBe(204);
+    expect(await (await admin.get(`${agent}/plugins`)).json()).toMatchObject({ workbenches: [] });
+  });
+  it("refuses a conflicting workbench without installing the support Skill", async () => {
+    const agent = "/api/projects/default_project/agents/conflict_support";
+    await admin.post("/api/projects/default_project/agents", { agentId: "conflict_support" });
+    const dir = path.join(t.root, "default_project/agents/conflict_support/workbenches/support");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "package.json"), "{}");
+    expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(409);
+    expect(await (await admin.get(`${agent}/skills`)).json()).toMatchObject({ skills: [] });
   });
 });

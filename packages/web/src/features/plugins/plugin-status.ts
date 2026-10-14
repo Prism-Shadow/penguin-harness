@@ -33,6 +33,7 @@ import type {
  */
 export interface AgentInstalls {
   skills: ReadonlyMap<string, string>;
+  workbenches?: ReadonlyMap<string, { plugin: string; version: string }>;
   hooks: ReadonlyMap<string, string>;
   mcp: ReadonlyMap<string, AgentMcpServerItem>;
 }
@@ -41,7 +42,10 @@ export interface AgentInstalls {
 export type InstalledMap = ReadonlyMap<string, AgentInstalls>;
 
 /** The fields of a plugin the install questions read (the page passes the whole item; tests can pass just these). */
-export type PluginParts = Pick<PluginItem, "name" | "skills" | "hooks" | "mcpServers">;
+export type PluginParts = Pick<
+  PluginItem,
+  "name" | "skills" | "hooks" | "mcpServers" | "workbenches"
+>;
 
 /** The six statuses, in the order a status grouping lists them: what wants a look first. */
 export const PLUGIN_STATUSES = [
@@ -78,18 +82,28 @@ function pluginServer(
 export function pluginPresent(plugin: PluginParts, installs: AgentInstalls | undefined): boolean {
   if (installs === undefined) return false;
   return (
+    (plugin.workbenches ?? []).some(
+      (w) => installs.workbenches?.get(w.name)?.plugin === plugin.name,
+    ) ||
     plugin.skills.some((skill) => installs.skills.has(skill.name)) ||
     (plugin.hooks.length > 0 && installs.hooks.has(plugin.name)) ||
     plugin.mcpServers.some((server) => pluginServer(plugin, installs, server.name) !== undefined)
   );
 }
 
-/** Whether an Agent carries every part of the plugin — each skill, the hook package when it ships one, each MCP server. A plugin that ships nothing is on no Agent. */
+/** Whether an Agent carries every Skill, hook package, MCP server and workbench in the plugin. A plugin that ships nothing is on no Agent. */
 export function pluginComplete(plugin: PluginParts, installs: AgentInstalls | undefined): boolean {
   if (installs === undefined) return false;
-  const parts = plugin.skills.length + (plugin.hooks.length > 0 ? 1 : 0) + plugin.mcpServers.length;
+  const parts =
+    (plugin.workbenches?.length ?? 0) +
+    plugin.skills.length +
+    (plugin.hooks.length > 0 ? 1 : 0) +
+    plugin.mcpServers.length;
   return (
     parts > 0 &&
+    (plugin.workbenches ?? []).every(
+      (w) => installs.workbenches?.get(w.name)?.plugin === plugin.name,
+    ) &&
     plugin.skills.every((skill) => installs.skills.has(skill.name)) &&
     (plugin.hooks.length === 0 || installs.hooks.has(plugin.name)) &&
     plugin.mcpServers.every((server) => pluginServer(plugin, installs, server.name) !== undefined)
@@ -218,6 +232,16 @@ export function changedParts(
       parts.push({ kind: "skill", name: skill.name, installed, library: skill.version });
     }
   }
+  for (const w of plugin.workbenches ?? []) {
+    const installed = installs.workbenches?.get(w.name);
+    if (installed?.plugin === plugin.name && installed.version !== w.version)
+      parts.push({
+        kind: "workbench",
+        name: w.name,
+        installed: installed.version,
+        library: w.version,
+      });
+  }
   const hooks = installs.hooks.get(plugin.name);
   if (plugin.hookVersion !== undefined && hooks !== undefined && hooks !== plugin.hookVersion) {
     parts.push({ kind: "hooks", name: plugin.name, installed: hooks, library: plugin.hookVersion });
@@ -230,9 +254,9 @@ export function changedParts(
   return parts;
 }
 
-/** One part an update rewrites: a skill by name, the plugin's hook package, or one of its MCP servers (no versions: replaced whole). */
+/** One part an update rewrites. MCP servers have no versions and are replaced whole. */
 export interface ChangedPart {
-  kind: "skill" | "hooks" | "mcp";
+  kind: "skill" | "hooks" | "mcp" | "workbench";
   name: string;
   installed: string;
   library: string;

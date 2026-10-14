@@ -37,6 +37,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   McpServerNameTakenError,
+  WorkbenchNameTakenError,
+  assertPluginWorkbenchesInstallable,
+  listInstalledWorkbenches,
   assertPluginMcpServersInstallable,
   installPlugin,
   listInstalledHooks,
@@ -112,6 +115,8 @@ async function refusingTakenNames<T>(install: () => Promise<T>): Promise<T> {
   try {
     return await install();
   } catch (err) {
+    if (err instanceof WorkbenchNameTakenError)
+      throw new HttpError(409, "workbench_name_taken", err.message);
     if (err instanceof McpServerNameTakenError) {
       throw new HttpError(409, "mcp_server_name_taken", err.message);
     }
@@ -176,6 +181,25 @@ export function pluginLibraryRoutes(): Hono<AppEnv> {
 /** /api/projects/:p/agents/:a/plugins: install is a Project-member operation. */
 export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+  app.get("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    await deps.agentConfigService.requireExists(projectId, agentId);
+    const root = deps.config.root;
+    const [skills, hooks, servers, workbenches] = await Promise.all([
+      listInstalledSkills(root, projectId, agentId),
+      listInstalledHooks(root, projectId, agentId),
+      listInstalledMcpServers(root, projectId, agentId).catch(() => []),
+      listInstalledWorkbenches(root, projectId, agentId),
+    ]);
+    return c.json({
+      skills: skills.map(toSkillItem),
+      hooks: hooks.map(toHookItem),
+      mcpServers: servers.map(toAgentMcpServerItem),
+      workbenches,
+    } satisfies AgentPluginsInstallResponse);
+  });
 
   app.post("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
@@ -191,6 +215,7 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     const root = deps.config.root;
     await refusingTakenNames(async () => {
       await assertPluginMcpServersInstallable(root, projectId, agentId, plugins);
+      await assertPluginWorkbenchesInstallable(root, projectId, agentId, plugins);
       for (const plugin of plugins) await installPlugin(root, projectId, agentId, plugin);
     });
     // Core reads hook packages when a model context opens: a conversation that is running
@@ -198,13 +223,15 @@ export function agentPluginsRoutes(deps: PluginsRouteDeps): Hono<AppEnv> {
     // re-reads them on its next idle access, so the plugin works from the next Task. MCP
     // servers, like the rest of system_config.yaml, join at the next model context.
     deps.manager.invalidateAgentRuntimes(projectId, agentId);
-    const [skills, hooks, servers] = await Promise.all([
+    const [skills, hooks, servers, workbenches] = await Promise.all([
       listInstalledSkills(root, projectId, agentId),
       listInstalledHooks(root, projectId, agentId),
       listInstalledMcpServers(root, projectId, agentId),
+      listInstalledWorkbenches(root, projectId, agentId),
     ]);
     return c.json(
       {
+        workbenches,
         skills: skills.map(toSkillItem),
         hooks: hooks.map(toHookItem),
         mcpServers: servers.map(toAgentMcpServerItem),

@@ -12,10 +12,10 @@
  * - Skill metadata is auto-injected into the system Prompt via the `{{SKILL_METADATA}}`
  *   placeholder; it's not registered in AGENTS.md.
  */
-import { loadPreinstalledPlugins, type LibraryPlugin } from "../plugins/index.js";
-import { SUPPORT_AGENT_ID, SUPPORT_AGENTS_MD, SUPPORT_WORKBENCH_FILES } from "./support/index.js";
-export { SUPPORT_AGENT_ID } from "./support/index.js";
+import { libraryPlugin, loadPreinstalledPlugins, type LibraryPlugin } from "../plugins/index.js";
 import { DEFAULT_AGENT_ID, DEFAULT_PROJECT_ID } from "./paths.js";
+
+export const SUPPORT_AGENT_ID = "penguin_support";
 
 /** The set of Project builtin Agent ids (supplied along with the Project, cannot be deleted from Web). */
 export const BUILTIN_AGENT_IDS: readonly string[] = [DEFAULT_AGENT_ID, SUPPORT_AGENT_ID];
@@ -28,10 +28,8 @@ export interface AgentPreset {
   description?: string;
   /** Overrides the default AGENTS.md content. */
   agentsMd?: string;
-  /** Plugins installed at initialization (installs none by default): their skills and hook packages. */
+  /** Plugins installed at initialization (installs none by default): their Skills, hooks, MCP servers and workbenches. */
   plugins?: LibraryPlugin[];
-  /** Files relative to the Agent directory, installed only during initialization. */
-  files?: Record<string, string>;
 }
 
 /**
@@ -52,16 +50,20 @@ export function builtinProjectAgentPresets(
       },
     },
   ];
-  if (projectId === DEFAULT_PROJECT_ID)
+  if (projectId === DEFAULT_PROJECT_ID) {
+    const support = libraryPlugin("penguin-support");
+    if (!support)
+      throw new Error("The built-in penguin-support plugin is missing from the library.");
     presets.push({
       agentId: SUPPORT_AGENT_ID,
       preset: {
         name: "PenguinHarness Support",
         description:
           "Product support with questions, follow-ups and answers grounded in the official docs and source code.",
-        agentsMd: SUPPORT_AGENTS_MD,
-        files: SUPPORT_WORKBENCH_FILES,
+        agentsMd: "Read and follow the penguin-support Skill for every support question.\n",
+        plugins: [support],
       },
     });
+  }
   return presets;
 }
