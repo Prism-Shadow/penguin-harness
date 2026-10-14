@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** fix
 - **Scope:** `sandbox-wsl`
+- **PR:** [#1125](https://github.com/Prism-Shadow/penguin-harness/pull/1125)
 
 [English](2026-10-14-wsl-settings-encoding.md)
 
