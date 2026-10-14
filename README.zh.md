@@ -263,7 +263,7 @@ pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，
 
 ## 贡献者
 
-感谢所有为 PenguinHarness 贡献过的人！
+感谢所有为 PenguinHarness 贡献过的伙伴。
 
 <p align="center">
   <a href="https://github.com/Prism-Shadow/penguin-harness/graphs/contributors"><img src="https://contrib.rocks/image?repo=Prism-Shadow/penguin-harness" alt="PenguinHarness 贡献者" /></a>
