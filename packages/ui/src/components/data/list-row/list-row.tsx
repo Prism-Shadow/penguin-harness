@@ -8,6 +8,16 @@
  * truncate to one line each; the caller puts the whole text in a tooltip where it matters.
  */
 import type { ReactNode } from "react";
+import { Card } from "../../layout/card/card";
+
+/** A settings collection: one shared frame, with semantic rows inside it. */
+export function SettingsList({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <Card padding="none">
+      <ul aria-label={label}>{children}</ul>
+    </Card>
+  );
+}
 
 export interface ListRowProps {
   /** A mark before the text: an avatar, a tile, a glyph. */
@@ -49,21 +59,27 @@ export function ListRow({
   );
   return (
     <Tag
-      className={`flex items-center gap-3 border-b border-line-muted px-3 py-2.5 transition-colors duration-150 last:border-b-0 hover:bg-surface-muted ${className}`}
+      className={`flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-muted px-3 py-2.5 transition-colors last:border-b-0 hover:bg-surface-muted ${className}`}
     >
       {onClick !== undefined ? (
         <button
           type="button"
           onClick={onClick}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          className="flex min-w-0 flex-1 basis-40 items-center gap-3 text-left"
         >
           {text}
         </button>
       ) : (
-        <div className="flex min-w-0 flex-1 items-center gap-3">{text}</div>
+        <div className="flex min-w-0 flex-1 basis-40 items-center gap-3">{text}</div>
       )}
-      {meta !== undefined && <span className="shrink-0 text-xs text-fg-subtle">{meta}</span>}
-      {trailing !== undefined && <div className="flex shrink-0 items-center gap-1">{trailing}</div>}
+      {(meta !== undefined || trailing !== undefined) && (
+        <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-3">
+          {meta !== undefined && <span className="text-xs text-fg-subtle">{meta}</span>}
+          {trailing !== undefined && (
+            <div className="flex flex-wrap items-center justify-end gap-1">{trailing}</div>
+          )}
+        </div>
+      )}
     </Tag>
   );
 }

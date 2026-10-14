@@ -1097,7 +1097,7 @@ export const zh = {
     title: "工作台",
     count: (n: number) => `${n} 个工作台`,
     empty: "这个 Agent 还没有工作台。",
-    browsePlugins: "浏览插件",
+    agentTabDesc: "管理这个 Agent 的工作台，可打开应用、重新加载、查看历史版本或移除。",
     open: "打开工作台",
     noMatches: "没有匹配的智能体。",
     searchAgents: "搜索智能体",

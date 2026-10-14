@@ -435,6 +435,8 @@ export const ICONS = {
   rectangle: "M4 5h16v14H4z",
   /** The same frame with a check inside it. */
   rectangleCheck: "M4 5h16v14H4zM8 12l3 3 5-6",
+  /** An anvil: the Agent Workbench. */
+  anvil: "M3 7h5V4h13v5l-4 3v3l3 4v1H6v-1l3-4v-3H8c-3 0-5-2-5-5Z M8 7h13 M9 15h8",
   /** A browser window: the rounded frame, its chrome bar and two dots on the bar. */
   appWindow:
     "M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6zM3 9h18M6 6.5h.01M9 6.5h.01",

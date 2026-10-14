@@ -1,10 +1,10 @@
 import { useState } from "react";
 import type { AgentSummary } from "@prismshadow/penguin-server/api";
-import { AgentAvatar, GlyphIcon, ICON_SIZE, ICONS, Input, Modal } from "@prismshadow/penguin-ui";
+import { AgentAvatar, GlyphIcon, ICON_SIZE, ICONS, PickerDialog } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { agentDisplayName } from "../../state/project";
 import { pillClass } from "../chat/workspace-select";
-import { employeesLast } from "./agent-employment";
+import { employeesLast, isEmployee } from "./agent-employment";
 
 /** A searchable Agent chooser; the dialog owns its background, scroll and focus. */
 export function AgentSelect({
@@ -51,64 +51,67 @@ export function AgentSelect({
           {selected ? agentDisplayName(selected) : S.common.loading}
         </span>
       </button>
-      <Modal
+      <PickerDialog
         open={open}
         onClose={() => setOpen(false)}
         title={S.chat.chooseAgent}
-        widthClass="sm:max-w-xl"
-      >
-        <Input
-          type="search"
-          autoFocus
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label={S.workbenches.searchAgents}
-          placeholder={S.workbenches.searchAgents}
-        />
-        <ul className="mt-3 space-y-1">
-          {visible.map((agent) => (
-            <li key={agent.agentId}>
-              <button
-                type="button"
-                aria-pressed={agent.agentId === selected?.agentId}
-                className="flex w-full items-start gap-3 rounded-md px-3 py-3 text-left hover:bg-surface-muted aria-pressed:bg-surface-muted"
-                onClick={() => {
-                  onSelect(agent);
-                  setOpen(false);
-                }}
-              >
-                <AgentAvatar
-                  id={agent.agentId}
-                  name={agentDisplayName(agent)}
-                  size={32}
-                  className="shrink-0 rounded"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{agentDisplayName(agent)}</span>
-                  {agent.description && (
-                    <span className="mt-1 block text-sm text-fg-muted">{agent.description}</span>
-                  )}
-                  <span className="mt-1 flex flex-wrap gap-x-3 text-xs text-fg-subtle">
-                    <span>{S.skills.skillCount(agent.skillCount)}</span>
-                    <span>{S.workbenches.count(agent.workbenchCount ?? 0)}</span>
-                    {agent.employments?.map((job) => (
-                      <span key={job.orgId}>{S.agent.employmentLine(job.orgName, job.title)}</span>
-                    ))}
-                  </span>
-                </span>
-                {agent.agentId === selected?.agentId && (
-                  <GlyphIcon d={ICONS.check} size={ICON_SIZE.rowLead} className="shrink-0" />
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-        {visible.length === 0 && (
-          <p className="py-6 text-center text-sm text-fg-muted">
-            {agents.length === 0 ? empty : S.workbenches.noMatches}
-          </p>
+        items={visible}
+        itemKey={(agent) => agent.agentId}
+        isCurrent={(agent) => agent.agentId === selected?.agentId}
+        query={query}
+        onQueryChange={setQuery}
+        searchPlaceholder={S.workbenches.searchAgents}
+        emptyText={agents.length === 0 ? empty : S.workbenches.noMatches}
+        groupLabel={(agent) => (isEmployee(agent) ? S.agent.employeesSection : null)}
+        onPick={(agent) => {
+          onSelect(agent);
+          setOpen(false);
+        }}
+        renderRow={(agent) => (
+          <>
+            <AgentAvatar
+              id={agent.agentId}
+              name={agentDisplayName(agent)}
+              size={20}
+              className="shrink-0 rounded"
+            />
+            <span
+              className="min-w-0 flex-1 truncate"
+              data-tooltip={[
+                agentDisplayName(agent),
+                agent.description,
+                ...(agent.employments ?? []).map((job) =>
+                  S.agent.employmentLine(job.orgName, job.title),
+                ),
+              ]
+                .filter(Boolean)
+                .join("\n")}
+              data-tooltip-content="text"
+              data-tooltip-extra={Boolean(agent.description || agent.employments?.length)}
+            >
+              {agentDisplayName(agent)}
+            </span>
+            <span
+              className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-fg-subtle"
+              aria-label={S.skills.skillCount(agent.skillCount)}
+              data-tooltip={S.skills.skillCount(agent.skillCount)}
+              data-tooltip-extra
+            >
+              <GlyphIcon d={ICONS.bookOpen} size={ICON_SIZE.inlineGlyph} />
+              <span aria-hidden>{agent.skillCount}</span>
+            </span>
+            <span
+              className="flex shrink-0 items-center gap-1 text-xs tabular-nums text-fg-subtle"
+              aria-label={S.workbenches.count(agent.workbenchCount ?? 0)}
+              data-tooltip={S.workbenches.count(agent.workbenchCount ?? 0)}
+              data-tooltip-extra
+            >
+              <GlyphIcon d={ICONS.anvil} size={ICON_SIZE.inlineGlyph} />
+              <span aria-hidden>{agent.workbenchCount ?? 0}</span>
+            </span>
+          </>
         )}
-      </Modal>
+      />
     </>
   );
 }

@@ -28,7 +28,6 @@ import type { ChangeEvent } from "react";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
-  Card,
   ConfirmModal,
   CopiedStatus,
   CopyCheckGlyph,
@@ -41,6 +40,9 @@ import {
   Input,
   Modal,
   SettingsEmpty,
+  SettingsList,
+  ListRow,
+  ICON_SIZE,
   SkeletonList,
   Textarea,
   buttonClass,
@@ -198,59 +200,51 @@ export function SkillsTab({
       ) : skills.length === 0 ? (
         <SettingsEmpty>{S.skills.agentTabEmpty}</SettingsEmpty>
       ) : (
-        <Card padding="none">
+        <SettingsList label={S.agent.tabSkills}>
           {skills.map((skill) => (
-            <div
+            <ListRow
               key={skill.name}
-              className="flex items-center gap-3 border-b border-gray-100 px-3 py-2.5 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
-            >
-              <SkillTile icon={skill.icon} name={skill.name} size={36} glyph={20} />
-              <div className="min-w-0 flex-1">
-                <span
-                  className="block truncate font-mono text-[length:var(--ui-text-code-size)] font-semibold"
-                  data-tooltip={skill.name}
-                  data-tooltip-content="code"
-                >
+              as="li"
+              leading={<SkillTile icon={skill.icon} name={skill.name} />}
+              title={
+                <span className="font-mono text-[length:var(--ui-text-code-size)] font-semibold">
                   {skill.name}
                 </span>
-                {/* Short description truncates to one line (full description goes into title for hover reading). */}
-                <p
-                  className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400"
+              }
+              description={
+                <span
                   data-tooltip={skill.description}
                   data-tooltip-content="text"
                   data-tooltip-extra={skill.description !== localizedShortText(locale, skill)}
                 >
                   {localizedShortText(locale, skill)}
-                </p>
-              </div>
-              {metaLine(skill) !== "" && (
-                <span className="hidden shrink-0 text-xs text-gray-400 sm:block dark:text-gray-500">
-                  {metaLine(skill)}
                 </span>
-              )}
-              {/* Icon-only row actions (same affordance as the agents page cards: neutral
-                  bordered icon for export, danger variant with red text/hover for delete);
-                  the tooltip + aria-label carry the wording. */}
-              <IconButton
-                label={`${S.skills.exportSkill} ${skill.name}`}
-                title={S.skills.exportSkill}
-                disabled={busy}
-                onClick={() => void exportSkill(skill.name)}
-              >
-                <DownloadIcon size={14} className="text-gray-600 dark:text-gray-300" />
-              </IconButton>
-              <IconButton
-                variant="danger"
-                label={`${S.skills.uninstall} ${skill.name}`}
-                title={S.skills.uninstall}
-                disabled={busy}
-                onClick={() => setRemoving(skill.name)}
-              >
-                <GlyphIcon d={ICONS.trash} size={14} />
-              </IconButton>
-            </div>
+              }
+              meta={metaLine(skill) || undefined}
+              trailing={
+                <>
+                  <IconButton
+                    label={`${S.skills.exportSkill} ${skill.name}`}
+                    title={S.skills.exportSkill}
+                    disabled={busy}
+                    onClick={() => void exportSkill(skill.name)}
+                  >
+                    <DownloadIcon size={ICON_SIZE.iconButton} />
+                  </IconButton>
+                  <IconButton
+                    variant="danger"
+                    label={`${S.skills.uninstall} ${skill.name}`}
+                    title={S.skills.uninstall}
+                    disabled={busy}
+                    onClick={() => setRemoving(skill.name)}
+                  >
+                    <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+                  </IconButton>
+                </>
+              }
+            />
           ))}
-        </Card>
+        </SettingsList>
       )}
 
       {promptSection}

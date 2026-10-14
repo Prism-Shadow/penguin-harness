@@ -552,7 +552,7 @@ export function AgentsPage() {
               aria-label={S.workbenches.count(a.workbenchCount ?? 0)}
               onClick={() => openSettingsTab(a.agentId, "workbenches")}
             >
-              <GlyphIcon d={ICONS.appWindow} size={ICON_SIZE.inlineGlyph} />
+              <GlyphIcon d={ICONS.anvil} size={ICON_SIZE.inlineGlyph} />
               {a.workbenchCount ?? 0}
             </button>
             <button

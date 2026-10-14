@@ -975,7 +975,8 @@ export const en: Strings = {
     title: "Workbenches",
     count: (n: number) => `${n} ${n === 1 ? "workbench" : "workbenches"}`,
     empty: "This Agent has no workbenches yet.",
-    browsePlugins: "Browse plugins",
+    agentTabDesc:
+      "Manage this Agent’s workbenches: open an app, reload it, review its versions or remove it.",
     open: "Open workbench",
     noMatches: "No matching agents.",
     searchAgents: "Search agents",

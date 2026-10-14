@@ -67,7 +67,7 @@ it("opens the selected workbench on its owning Agent", async () => {
       renderer: { iframe: { src: "/support" } },
     },
   ]);
-  await click(button(en.workbenches.open));
+  await click(button(`${en.workbenches.open} Support`));
   expect(whereIs(router)).toBe("/chat/new");
   expect(router.state.location.state).toMatchObject({
     agentId: AGENT_ID,
@@ -77,10 +77,10 @@ it("opens the selected workbench on its owning Agent", async () => {
 it("manages a handler-only workbench, retries failed reload and restores a recorded version", async () => {
   const { server } = await open();
   server.refuseNext(500, "reload_failed", "Cannot reload");
-  await click(button(en.workbenches.reload));
+  await click(button(`${en.workbenches.reload} Support`));
   expect(document.body.textContent).toContain("Support");
-  await click(button(en.workbenches.reload));
-  await click(button(en.workbenches.history));
+  await click(button(`${en.workbenches.reload} Support`));
+  await click(button(`${en.workbenches.history} Support`));
   expect(topDialog().textContent).toContain("previous");
   await click(buttonIn(topDialog(), en.workbenches.restore));
   await click(buttonIn(topDialog(), en.workbenches.restore));
@@ -90,10 +90,10 @@ it("manages a handler-only workbench, retries failed reload and restores a recor
 });
 it("cancels without deleting, then removes only after confirmation", async () => {
   const { server } = await open();
-  await click(button(en.workbenches.remove));
+  await click(button(`${en.workbenches.remove} Support`));
   await pressScrim();
   expect(server.writes().filter((request) => request.method === "DELETE")).toEqual([]);
-  await click(button(en.workbenches.remove));
+  await click(button(`${en.workbenches.remove} Support`));
   await click(buttonIn(topDialog(), en.workbenches.removeYes));
   expect(
     server

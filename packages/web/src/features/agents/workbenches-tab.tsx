@@ -4,6 +4,14 @@ import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-serve
 import {
   Button,
   ConfirmModal,
+  GlyphIcon,
+  HelpFold,
+  IconButton,
+  ICONS,
+  ICON_SIZE,
+  ListRow,
+  SettingsList,
+  SettingsEmpty,
   Modal,
   NoticeStrip,
   SkeletonList,
@@ -17,6 +25,7 @@ import { WORKBENCH_UPDATED_EVENT, workbenchTabsOf } from "../../lib/workbench-ta
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { localizedText } from "../chat/skill-use";
+import { SkillTile } from "../skills/skill-icon-view";
 
 /** Agent-owned workbenches, including broken and handler-only packages. */
 export function WorkbenchesTab({ agentId }: { agentId: string }) {
@@ -67,12 +76,7 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
   if (!projectId) return null;
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">{S.workbenches.title}</h2>
-        <Button variant="secondary" size="sm" onClick={() => void navigate("/plugins")}>
-          {S.workbenches.browsePlugins}
-        </Button>
-      </div>
+      <HelpFold label={S.agent.tabWorkbenches}>{S.workbenches.agentTabDesc}</HelpFold>
       {error && (
         <NoticeStrip tone="danger">
           {error}
@@ -84,87 +88,90 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
       {items === null && !error ? (
         <SkeletonList />
       ) : items?.length === 0 ? (
-        <p className="py-8 text-sm text-fg-muted">{S.workbenches.empty}</p>
+        <SettingsEmpty>{S.workbenches.empty}</SettingsEmpty>
       ) : (
-        <ul className="divide-y divide-line">
-          {items?.map((workbench) => {
-            const tabs = workbenchTabsOf([workbench]);
-            const first = tabs[0];
-            return (
-              <li
-                key={workbench.id}
-                className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate font-medium">
-                    {first ? localizedText(locale, first.title, first.titleZh) : workbench.name}
-                  </h3>
-                  <p className="mt-1 text-xs text-fg-muted">
-                    {workbench.id}
-                    {workbench.version ? ` · v${workbench.version}` : ""}
-                  </p>
-                  {workbench.error && (
-                    <p className="mt-2 text-sm text-fg-muted">{workbench.error}</p>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {first && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() =>
-                        void navigate("/chat/new", {
-                          state: {
-                            agentId,
-                            workspace: "",
-                            workbench: { projectId, agentId, tabId: first.tabId, machineId: null },
-                          },
-                        })
-                      }
-                    >
-                      {S.workbenches.open}
-                    </Button>
-                  )}
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(() => api.reloadWorkbench(projectId, agentId, workbench.id))
-                    }
-                  >
-                    {S.workbenches.reload}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(async () =>
-                        setHistory({
-                          workbench,
-                          versions: (
-                            await api.getWorkbenchHistory(projectId, agentId, workbench.id)
-                          ).versions,
-                        }),
-                      )
-                    }
-                  >
-                    {S.workbenches.history}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => setConfirm({ workbench })}
-                  >
-                    {S.workbenches.remove}
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        items && (
+          <SettingsList label={S.agent.tabWorkbenches}>
+            {items.map((workbench) => {
+              const first = workbenchTabsOf([workbench])[0];
+              const title = first
+                ? localizedText(locale, first.title, first.titleZh)
+                : workbench.name;
+              return (
+                <ListRow
+                  key={workbench.id}
+                  as="li"
+                  leading={<SkillTile name={workbench.id} fallback={ICONS.anvil} />}
+                  title={title}
+                  description={workbench.error ?? workbench.id}
+                  meta={workbench.version ? `v${workbench.version}` : undefined}
+                  trailing={
+                    <>
+                      {first && (
+                        <IconButton
+                          label={`${S.workbenches.open} ${title}`}
+                          title={S.workbenches.open}
+                          onClick={() =>
+                            void navigate("/chat/new", {
+                              state: {
+                                agentId,
+                                workspace: "",
+                                workbench: {
+                                  projectId,
+                                  agentId,
+                                  tabId: first.tabId,
+                                  machineId: null,
+                                },
+                              },
+                            })
+                          }
+                        >
+                          <GlyphIcon d={ICONS.externalLink} size={ICON_SIZE.iconButton} />
+                        </IconButton>
+                      )}
+                      <IconButton
+                        label={`${S.workbenches.reload} ${title}`}
+                        title={S.workbenches.reload}
+                        disabled={busy}
+                        onClick={() =>
+                          void act(() => api.reloadWorkbench(projectId, agentId, workbench.id))
+                        }
+                      >
+                        <GlyphIcon d={ICONS.refresh} size={ICON_SIZE.iconButton} />
+                      </IconButton>
+                      <IconButton
+                        label={`${S.workbenches.history} ${title}`}
+                        title={S.workbenches.history}
+                        disabled={busy}
+                        onClick={() =>
+                          void act(async () =>
+                            setHistory({
+                              workbench,
+                              versions: (
+                                await api.getWorkbenchHistory(projectId, agentId, workbench.id)
+                              ).versions,
+                            }),
+                          )
+                        }
+                      >
+                        <GlyphIcon d={ICONS.history} size={ICON_SIZE.iconButton} />
+                      </IconButton>
+                      <IconButton
+                        label={`${S.workbenches.remove} ${title}`}
+                        title={S.workbenches.remove}
+                        variant="danger"
+                        disabled={busy}
+                        onClick={() => setConfirm({ workbench })}
+                      >
+                        <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+                      </IconButton>
+                    </>
+                  }
+                />
+              );
+            })}
+          </SettingsList>
+        )
       )}
       <Modal
         open={history !== null}

@@ -19,7 +19,7 @@ const SOURCE_GLYPHS: Record<ProgramSource, string> = {
   api: ICONS.plug,
   schedule: ICONS.calendar,
   cli: ICONS.terminalPrompt,
-  workbench: ICONS.appWindow,
+  workbench: ICONS.anvil,
 };
 
 /** A row's source mark, as `SessionRow` takes it. */
