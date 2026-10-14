@@ -509,7 +509,7 @@ export interface StreamModel {
   nested: boolean;
   /** Child-session identity from its session_meta (nested models only; null until it arrives). */
   meta: NestedSessionMeta | null;
-  /** Absolute `agent_state` path from session_meta (null until it arrives); the Memory root `<agent_state>/memory/` for the Task summary's memory-change rows. */
+  /** Absolute `agent_state` path from session_meta or the history page (null until known); the Memory root `<agent_state>/memory/` for the Task summary's memory-change rows. */
   agentState: string | null;
   /**
    * The model the running context was opened on, and the Session its `session_meta` names (null
@@ -805,8 +805,8 @@ export function pushMessage(
   }
   // session_meta: never rendered as an item itself, but read at BOTH levels. Both keep the
   // agent_state path — the main session's Task summary classifies file-tool writes against
-  // `<agent_state>/memory/` for its memory-change rows, so a model built from a window that
-  // never carries a session_meta derives none. A NESTED child session additionally has no DTO
+  // `<agent_state>/memory/` for its memory-change rows. History pages seed it when the meta
+  // falls before their window. A NESTED child session additionally has no DTO
   // loaded here, so it captures the identity the subagents panel needs (which agent runs this
   // child, on which model); the main session takes the rest of its identity/config from the
   // Session DTO. A rewritten session_meta (file rotation) overwrites with the same values. On

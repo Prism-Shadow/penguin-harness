@@ -68,7 +68,7 @@
  * the family its spelling begins with and never looks at base_url (see routedClientType), so
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
  * reach DeepSeek's official client aimed at a gateway, and `openai/gpt-5.6-sol` would throw
- * outright (no known family begins with "openai/"). Four protocols are pinned:
+ * outright (no known family begins with "openai/"). Gateway protocols are pinned:
  * - `openai-responses` for every OpenRouter row: OpenRouter serves the Responses API for
  *   every upstream at the same base URL the rows already carry, and the group pins the same
  *   protocol so a user-added entry inherits it;
@@ -79,8 +79,9 @@
  *   but maps the thinking level onto the served model's own chat template
  *   (VLLM_CLIENT_TYPE);
  * - `ant-messages` for the OpenCode Go rows its endpoint table serves on the Anthropic
- *   Messages API. That group pins row by row, since its models sit on three protocols: the
- *   rest of it is `openai-chat` and `openai-responses` — see its block comment.
+ *   Messages API;
+ * - `google-genai` for OpenCode Go's Gemini row. The group pins row by row across four
+ *   protocols; its other rows use `openai-chat` and `openai-responses` — see its block comment.
  * ModelScope's rows all pin `openai-responses`: ModelScope serves every preset through its
  * OpenAI Responses endpoint, and the explicit pin keeps a Qwen or DeepSeek id from auto-routing
  * to a vendor client with a different request shape.
@@ -272,7 +273,7 @@ export interface ModelCatalogEntry {
    */
   baseUrl?: string;
   /**
-   * The seller no longer offers this row, but Projects created while it did still carry it: a
+   * No longer a preset (superseded or withdrawn), but saved Projects still carry it: a
    * row a Project has is never deleted by "Add new models", and several of these were the
    * default model of new Projects. A retired row is not a preset — `presetModelEntries` and
    * `presetPromotions` skip it, so a new Project never gets it or a promotion for it, a sync
@@ -354,6 +355,8 @@ export function isPenguinGoEndpoint(value: unknown): value is string {
 const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
 /** OpenCode Go's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
 const OPENCODE_GO_MESSAGES_BASE_URL = "https://opencode.ai/zen/go";
+/** Go's generateContent base: the Google SDK appends /v1beta/models/<id>:streamGenerateContent. */
+const OPENCODE_GO_GOOGLE_BASE_URL = "https://opencode.ai/inference/go/google";
 
 /** Provider id for the preconfigured Penguin Go relay group. */
 export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
@@ -465,9 +468,9 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     },
   },
   {
-    // One key serves the whole group, but its models sit on three protocols (see the group's
+    // One key serves the whole group, but its models sit on four protocols (see the group's
     // block comment in MODEL_CATALOG), so no group-level pin: a new Project writes each row's
-    // protocol on the row, and the Messages base on the seven rows that use it. The env pair
+    // protocol on the row, and the Messages or Google base on the rows that use it. The env pair
     // records what its Chat Completions majority's client reads. Like every gateway's, a
     // keyless row is refused that fallback (modelEnvFallback): the key goes on the group or
     // the row.
@@ -475,8 +478,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     label: "OpenCode Go",
     envKey: "OPENAI_API_KEY",
     envBaseUrlKey: "OPENAI_BASE_URL",
-    apiKeyUrl: "https://opencode.ai/auth",
-    modelsUrl: "https://opencode.ai/docs/go/",
+    apiKeyUrl: "https://opencode.ai/v2/docs/console/api/inference/#authentication",
+    modelsUrl: "https://opencode.ai/v2/docs/console/go/",
     gatewayBaseUrl: OPENCODE_GO_BASE_URL,
   },
   {
@@ -1218,6 +1221,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openrouter",
     contextWindow: 1050000,
     pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // https://developers.openai.com/api/docs/models/gpt-6-luna (2026-10-14).
+    // Base tier: above 272K input, input/cache rates double and output is 1.5x.
+    modelId: "openai/gpt-6-luna",
+    displayName: "GPT-6 Luna",
+    provider: "openrouter",
+    contextWindow: 1050000,
+    pricing: usd(0.01, 0.125, 0.5),
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
@@ -2344,53 +2359,38 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
-  // -- OpenCode Go (subscription gateway). The lineup, model ids, endpoints and per-token rates
-  // are from opencode.ai/docs/go (read 2026-09-18), which lists these 27 models. Context
-  // windows and input modalities are from the opencode-go provider on models.dev, the model
-  // registry OpenCode maintains (hy3 records its input cap instead; see its row). The gateway's
-  // /models listing also answers ten older ids the docs page does not list and models.dev
-  // marks deprecated (minimax-m2.5, kimi-k2.5, glm-5, deepseek-flash, qwen3.5-plus,
-  // mimo-v2-pro, mimo-v2-omni, hy3-preview, grok-4.5, omen-alpha); they are left out. So is
-  // union-alpha, a limited-time free model the page listed on 2026-09-17 and dropped by
-  // 2026-09-18.
-  //
-  // Protocol: the docs page's endpoint table puts each model on one path, and each row pins
-  // the generic client for it: `openai-chat` for /chat/completions and `openai-responses` for
-  // /responses, both on OPENCODE_GO_BASE_URL, and `ant-messages` for /v1/messages on
-  // OPENCODE_GO_MESSAGES_BASE_URL. The paths are not interchangeable: /chat/completions refuses
-  // grok-4.6 and fails for gpt-5.6-luna. The pins are load-bearing too: unpinned, gpt-5.6-luna,
-  // glm-*, kimi-*, deepseek-* and minimax-* would reach their official clients, and the other
-  // ids would not route at all. The gateway refuses a request that does
-  // not name its conversation (400 "Request is missing x-opencode-session"), which
-  // attributionHeaders does for this host on every request: a Session's requests carry its id,
-  // and a request outside any Session — a connectivity test, a vision probe — a fresh one.
-  //
-  // Vision: from models.dev, and checked live on 2026-09-17 and 2026-09-18 by sending an image
-  // of a number. Every vision row that could be reached read it back, and the text-only rows
-  // refused the image or answered without seeing it. The rows below that could not be reached
-  // keep models.dev's flag.
-  //
-  // Pricing: Go is a monthly subscription whose usage limits are dollar amounts. Each model has
-  // a monthly allowance, capped at 20% per 5 hours and 50% per week. A request draws the
-  // per-token rates the docs page publishes, and those are what the rows store. So the cost
-  // center shows allowance spent, not an invoice, as with the Qwen Token Plan rows, which store
-  // per-token list prices rather than the plan's fee. Where the page lists no cached-write rate,
-  // cache_write carries the input rate. Four rows are tiered and store their base tier: GPT-5.6
-  // Luna above 272K input tokens, Grok 4.6 above 200K, Qwen 3.7 Plus and Qwen 3.6 Plus above
-  // 256K. The four DeepSeek rows publish a peak and an off-peak rate on DeepSeek's own windows
-  // (peak 01:00-04:00 and 06:00-10:00 UTC on weekdays, i.e. DEEPSEEK_OFF_PEAK), off-peak
-  // exactly half, so they store the peak rate and declare that schedule. DeepSeek V4.1 Flash's
-  // running "4x" offer (ends 2026-09-20) raises its monthly allowance, not its rates, so no
-  // row carries a `discount`.
-  //
-  // Account opt-in and region: five models answer 403 until the key's OpenCode workspace opts
-  // in. The two Muse Spark Contributor models require consent to Meta training on prompts and
-  // completions. deepseek-v4.1-flash, deepseek-v4-flash and deepseek-v4-pro require consent to
-  // China-hosted serving. Some upstreams also refuse a caller's region: from a mainland China
-  // address, gpt-5.6-luna answers 403 unsupported_country_region_territory and both Muse Spark
-  // rows 403 "not available in your country", while gpt-5.6-luna passed every check from
-  // outside it. The rows that could not be reached follow the docs page and the protocol the
-  // other rows on their path proved. --
+  // -- OpenCode Go. Latest generation of each model tier from opencode.ai/v2/docs/console/go/
+  // (2026-10-14); context and vision from OpenCode's models.dev registry. The Code, Pro,
+  // Flash, Max and Plus tiers are independent: a newer Flash does not replace a Pro.
+  // Generic clients pin the documented wire protocol. The /zen/go aliases remain live;
+  // keeping them avoids changing existing group endpoints. Requests name their conversation
+  // through attributionHeaders' x-opencode-session header.
+  // Prices measure subscription allowance consumed, not the monthly fee. Cache writes use
+  // the input price when no write premium is published. GPT Luna (>272K), Haiku (>100K),
+  // Grok (>200K) and Qwen Plus (>256K) store the base tier. DeepSeek stores its peak rates
+  // and DEEPSEEK_OFF_PEAK schedule. Allowance multipliers are not price discounts.
+  // Superseded rows remain retired for saved Projects and historical off-peak pricing;
+  // removal follows ModelCatalogEntry.retired and the backward-compatibility changelog.
+  {
+    modelId: "cat-jam-free",
+    displayName: "Cat Jam Free",
+    provider: "opencode-go",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "claude-haiku-5-5",
+    displayName: "Claude Haiku 5.5",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0.01, 0.125, 0.5),
+    supportsVision: true,
+    clientType: "ant-messages",
+    baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
   {
     modelId: "deepseek-v4.1-flash",
     displayName: "DeepSeek V4.1 Flash",
@@ -2410,6 +2410,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.006, 0.3, 1.2),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
+    retired: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2421,6 +2422,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.006, 0.3, 1.2),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
+    retired: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2434,6 +2436,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-4-argon-contributor",
+    displayName: "Gemini 4 Argon Contributor",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0.2, 4, 20),
+    supportsVision: true,
+    clientType: "google-genai",
+    baseUrl: OPENCODE_GO_GOOGLE_BASE_URL,
   },
   {
     modelId: "glm-5.3",
@@ -2462,6 +2474,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.26, 1.4, 4.4),
     supportsVision: false,
+    retired: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2472,7 +2485,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 202752,
     pricing: usd(0.26, 1.4, 4.4),
     supportsVision: false,
+    retired: true,
     clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "gpt-6-luna",
+    displayName: "GPT-6 Luna",
+    provider: "opencode-go",
+    contextWindow: 1050000,
+    pricing: usd(0.01, 0.125, 0.5),
+    supportsVision: true,
+    clientType: "openai-responses",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
   {
@@ -2481,6 +2505,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "opencode-go",
     contextWindow: 1050000,
     pricing: usd(0.02, 0.25, 1.2),
+    supportsVision: true,
+    retired: true,
+    clientType: "openai-responses",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "grok-4.7",
+    displayName: "Grok 4.7",
+    provider: "opencode-go",
+    contextWindow: 500000,
+    pricing: usd(0.5, 2, 6),
     supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENCODE_GO_BASE_URL,
@@ -2492,6 +2527,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 500000,
     pricing: usd(0.5, 2, 6),
     supportsVision: true,
+    retired: true,
     clientType: "openai-responses",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2515,6 +2551,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 192000,
     pricing: usd(0.035, 0.14, 0.58),
     supportsVision: false,
+    retired: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2545,6 +2582,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.16, 0.95, 4),
     supportsVision: true,
+    retired: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "longcat-2.5-preview-free",
+    displayName: "LongCat 2.5 Preview Free",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2555,6 +2603,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.006, 0.3, 1.2),
     supportsVision: false,
+    retired: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "mimo-v2.6-flash",
+    displayName: "MiMo-V2.6-Flash",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0.0028, 0.14, 0.28),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "mimo-v2.6-pro",
+    displayName: "MiMo-V2.6-Pro",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0.003625, 0.435, 0.87),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2565,6 +2634,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.0028, 0.14, 0.28),
     supportsVision: true,
+    retired: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2575,6 +2645,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.003625, 0.435, 0.87),
     supportsVision: false,
+    retired: true,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2595,6 +2666,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 204800,
     pricing: usd(0.06, 0.375, 1.2),
     supportsVision: false,
+    retired: true,
     clientType: "ant-messages",
     baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
   },
@@ -2615,6 +2687,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.002, 0.1, 0.2),
     supportsVision: true,
+    retired: true,
     clientType: "openai-responses",
     baseUrl: OPENCODE_GO_BASE_URL,
   },
@@ -2645,6 +2718,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.5, 3.125, 7.5),
     supportsVision: false,
+    retired: true,
     clientType: "ant-messages",
     baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
   },
@@ -2665,8 +2739,30 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.05, 0.625, 3),
     supportsVision: true,
+    retired: true,
     clientType: "ant-messages",
     baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
+  {
+    // The context spans 1M tokens, but models.dev caps input at 524,288; compaction uses input.
+    modelId: "space-bunny",
+    displayName: "Space Bunny",
+    provider: "opencode-go",
+    contextWindow: 524288,
+    pricing: usd(0.03, 0.15, 0.6),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "step-5-preview-free",
+    displayName: "Step 5 Preview Free",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
   },
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
   // table, and for the rows added 2026-09-16 per their model pages' input modalities).
@@ -3098,6 +3194,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "openai",
     contextWindow: 1050000,
     pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+  },
+  {
+    // https://developers.openai.com/api/docs/models/gpt-6-luna (2026-10-14).
+    // Base tier: above 272K input, input/cache rates double and output is 1.5x.
+    modelId: "gpt-6-luna",
+    displayName: "GPT-6 Luna",
+    provider: "openai",
+    contextWindow: 1050000,
+    pricing: usd(0.01, 0.125, 0.5),
     supportsVision: true,
   },
   {

@@ -9,13 +9,13 @@ Google 发布 Gemini 3.6 Flash 和 3.5 Flash-Lite 的第二天，PenguinHarness 
 
 ## Gemini 3.6 Flash 为什么对 PenguinHarness 重要
 
-Google 在 2026 年 7 月 21 日发布了 [Gemini 3.6 Flash、3.5 Flash-Lite 与 3.5 Flash Cyber](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/)。对 PenguinHarness 来说，这次发布里最重要的是一个数字：**MLE-Bench 63.9%，而 3.5 Flash 是 49.7%**。
+Google 在 2026 年 7 月 21 日发布了 [Gemini 3.6 Flash、3.5 Flash-Lite 与 3.5 Flash Cyber](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-6-flash-3-5-flash-lite-3-5-flash-cyber/)。对 PenguinHarness 来说，这次发布里最重要的是一个数字：**MLE-Bench 63.9%**，**而 3.5 Flash 是 49.7%**。
 
 MLE-Bench 衡量的是机器学习的工程能力：Agent 亲手构建、训练、调优一套 ML 系统，而不是回答关于它的问题。Google 自己的说法是，这体现了「ML Research 上的显著提升，见 MLE Bench（63.9% vs. 49.7%）」。这是 14.2 个百分点的提升，在下面那张图的三项百分制基准里幅度最大，也明显高于同一张图给出的上一代 Pro 级模型 3.1 Pro 的 42.6%。
 
 PenguinHarness 存在的意义，就是让 Agent 构建 Agent，更快、更好、更便宜。这个产品跑的每一个循环，本质上都是一次小型的机器学习工程：把模型部署起来，交给 Agent 一个任务，用私有 Rubric 打分，读失败原因，调优，重新部署，再测一次。一个恰好在这件事上明显更强、又落在 Flash 价格档的模型，就是迄今最适合这套 Harness 日常工作的模型。
 
-下文的每个数字都有同一个前提：它们都是 **Google 自己的数据，按 Google 自己的评测方法得出**，我们没有独立复现过其中任何一项。
+下文的每个数字都有同一个前提：它们都是 **Google 自己的数据**，**按 Google 自己的评测方法得出**，我们没有独立复现过其中任何一项。
 
 ## 其余的成绩单
 
@@ -42,7 +42,7 @@ Google 对这次发布的定位，恰好就是这类 Harness 每天在做的事�
 
 按 Google 的说法，在 Artificial Analysis Index 上，3.6 Flash 比 3.5 Flash **少消耗 17% 的输出 Token**，在 Datacurve 的 DeepSWE 等部分基准上观察到「最高 65%」。它还「完成多步工作流所需的推理步数与工具调用更少」。
 
-这种效率提升「同时还配上了低于 3.5 Flash 的价格」：**输入 $1.50 / 百万 Token，输出 $7.50 / 百万 Token**。用 Google 的话说，这套组合「降低了每个 Agent 任务的总体成本，让 Agent 的构建与运行更划算」。自我进化循环每一轮都要重跑一整套 Benchmark，更少的 Token、更少的步数和更低的单价会叠加起作用。
+这种效率提升「同时还配上了低于 3.5 Flash 的价格」：**输入 $1.50 / 百万 Token**，**输出 $7.50 / 百万 Token**。用 Google 的话说，这套组合「降低了每个 Agent 任务的总体成本，让 Agent 的构建与运行更划算」。自我进化循环每一轮都要重跑一整套 Benchmark，更少的 Token、更少的步数和更低的单价会叠加起作用。
 
 ## PenguinHarness 现已支持的模型
 
@@ -71,7 +71,7 @@ penguin config model list
 
 ### 3.5 Flash-Lite：负责扇出
 
-第二个新模型的目标是吞吐，而不是深度。按 Artificial Analysis 的测量，Gemini 3.5 Flash-Lite 是 3.5 系列中最快的模型，达到 **350 输出 Token/秒**。定价为**输入 $0.30 / 百万 Token，输出 $2.50 / 百万 Token**。
+第二个新模型的目标是吞吐，而不是深度。按 Artificial Analysis 的测量，Gemini 3.5 Flash-Lite 是 3.5 系列中最快的模型，达到 **350 输出 Token/秒**。定价为**输入 $0.30 / 百万 Token**，**输出 $2.50 / 百万 Token**。
 
 Google 把它定位在 Agent 检索、文档处理这类高吞吐场景。它的思考等级可以配置，同一个模型既能调低，便宜地跑批量任务，也能调高，承担多步的子 Agent 负载。计算机操作在这里同样是内置工具。
 
@@ -99,9 +99,9 @@ SiliconFlow 的三行刻意不带价格：没有任何来源公布它们的费�
 
 如果你把 Agent 跑在本地或严格的端点上，有三处修复与你直接相关：
 
-- **空工具列表不再发出。** 严格的 OpenAI 兼容服务会直接拒绝 `tools: []`，vLLM 会返回 `400 … tools must not be an empty array`。Harness 所有不带工具的请求此前都会撞上它：连通性探测、会话标题生成和视觉描述。现在列表为空时，整个字段直接省略。
-- **最大输出长度改为按模型设置。** 本地部署的 32k 上下文模型会直接拒绝请求，因为 Agent 级默认值要求 32,000 个输出 Token。**模型仓库**页面和 `penguin config model add --max-tokens` 现在支持按模型设置上限，优先级高于 Agent 默认值。带外请求取两者中较小的一个。
-- **默认系统提示词加了护栏。** Agent 为了腾出被占用的端口而杀掉监听进程时，有时杀掉的是 Harness 自己的服务。提示词现在要求：绝不杀死不是自己启动的进程，端口被占就另选一个空闲端口。遇到 401、403 或无效 key 错误时，Agent 只重试一次，随后停下，请你在对话之外更新 key，因为密钥不该出现在聊天记录里。已有 Agent 保留当前的提示词，新建的 Agent 才带上这些规则。
+- **空工具列表不再发出**。 严格的 OpenAI 兼容服务会直接拒绝 `tools: []`，vLLM 会返回 `400 … tools must not be an empty array`。Harness 所有不带工具的请求此前都会撞上它：连通性探测、会话标题生成和视觉描述。现在列表为空时，整个字段直接省略。
+- **最大输出长度改为按模型设置**。 本地部署的 32k 上下文模型会直接拒绝请求，因为 Agent 级默认值要求 32,000 个输出 Token。**模型仓库**页面和 `penguin config model add --max-tokens` 现在支持按模型设置上限，优先级高于 Agent 默认值。带外请求取两者中较小的一个。
+- **默认系统提示词加了护栏**。 Agent 为了腾出被占用的端口而杀掉监听进程时，有时杀掉的是 Harness 自己的服务。提示词现在要求：绝不杀死不是自己启动的进程，端口被占就另选一个空闲端口。遇到 401、403 或无效 key 错误时，Agent 只重试一次，随后停下，请你在对话之外更新 key，因为密钥不该出现在聊天记录里。已有 Agent 保留当前的提示词，新建的 Agent 才带上这些规则。
 
 还有两项运行时设置换了形态：
 

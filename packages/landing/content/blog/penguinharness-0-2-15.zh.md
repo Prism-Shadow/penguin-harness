@@ -40,7 +40,7 @@ Agent 能打开网页并在里面操作，用桌面端的内置浏览器或你�
 
 - Agent 在 shell 里用 `penguin browser` 驱动：`open`、`scan`、`click`、`type`、`exec`。预装的 `browser-automation` 插件会教它们这套循环。
 - 省 Token：Agent 用 `scan` 把页面读成文本，再用一小段 `exec` 脚本操作，只有布局要紧时才截图。这套设计来自 [GenericAgent](https://github.com/lsdefine/genericagent)，感谢它的作者。
-- 内置浏览器有自己独立的登录状态。**从浏览器导入…**可以复制 Chrome、Edge、Firefox 等浏览器的 cookie 和历史记录。
+- 内置浏览器有自己独立的登录状态。**从浏览器导入**…可以复制 Chrome、Edge、Firefox 等浏览器的 cookie 和历史记录。
 - 想用自己的 Chrome，从 Chrome Web Store 安装 PenguinHarness Browser，再到**设置** › **浏览器**里配对。Agent 只会操作 Penguin 标签组里的标签页。
 
 ![Agent 在浏览器面板里阅读 PenguinHarness 博客，并列出最新文章](/blog-assets/penguinharness-0-2-14-browser-zh.png)
@@ -98,30 +98,30 @@ Agent 能打开网页并在里面操作，用桌面端的内置浏览器或你�
 
 ![同一段对话在 Frost、Console 和 Primer 下的样子，自上而下](/blog-assets/penguinharness-0-2-14-themes-zh.png)
 
-- **三种主题。**Frost 是新的默认主题；Console 和 Primer 在**设置** › **外观** › **主题**里，各有自己的字体、图标和流式输出效果。
-- **统一的插件市场。**每个插件都是一张卡片，按分类分组。**导入插件**接受 npm 包名、链接或 zip，**导出**会把插件打包成 zip。
+- **三种主题**。Frost 是新的默认主题；Console 和 Primer 在**设置** › **外观** › **主题**里，各有自己的字体、图标和流式输出效果。
+- **统一的插件市场**。每个插件都是一张卡片，按分类分组。**导入插件**接受 npm 包名、链接或 zip，**导出**会把插件打包成 zip。
 - **每次安装都自带沙箱**：Linux 上是 bubblewrap 加 Landlock 兜底，macOS 上是 Seatbelt，Windows 上是 WSL。沙箱默认关闭，管理员在**Agent 运行沙箱**卡片上启用后才会生效。
-- **查找栏。**Mod+F 可搜索当前对话、会话列表或文件浏览面板。
+- **查找栏**。Mod+F 可搜索当前对话、会话列表或文件浏览面板。
 - **快捷键**跟随平台，可在**设置** › **快捷键**里重新绑定，还带有命令面板（Mod+Alt+P）。
-- **在对话中切换模型。**上下文会先在旧模型上压缩，同一个会话接着在新模型上继续。
-- **已归档对话移入设置。**侧边栏只列出活跃对话。
-- **模型目录：**预置 Claude Fable 5.1、Claude 5.5 和 GPT-6.1 Sol，另有 Penguin Go、OpenCode Go、ModelScope 和 Atlas Cloud 分组。模型访问现在运行在 MMSP 0.5.2 上。
-- **热更新不再打断 Task。**Harness 热更新，以及安装或移除插件，都不再中止正在运行的 Task，也不再拒绝待审批的请求。只有更新改变了 Agent State 接口时，被打断的 Task 才会从 Trace 重新开始。
-- **失败请求恢复得更好。**重试时会告诉模型上次失败的原因，失败的运行带**重试**按钮，服务商拒绝的图片也不再打断对话的其余部分。
+- **在对话中切换模型**。上下文会先在旧模型上压缩，同一个会话接着在新模型上继续。
+- **已归档对话移入设置**。侧边栏只列出活跃对话。
+- **模型目录**：预置 Claude Fable 5.1、Claude 5.5 和 GPT-6.1 Sol，另有 Penguin Go、OpenCode Go、ModelScope 和 Atlas Cloud 分组。模型访问现在运行在 MMSP 0.5.2 上。
+- **热更新不再打断 Task**。Harness 热更新，以及安装或移除插件，都不再中止正在运行的 Task，也不再拒绝待审批的请求。只有更新改变了 Agent State 接口时，被打断的 Task 才会从 Trace 重新开始。
+- **失败请求恢复得更好**。重试时会告诉模型上次失败的原因，失败的运行带**重试**按钮，服务商拒绝的图片也不再打断对话的其余部分。
 
 ## 升级须知
 
-- **应用打开时就是 Frost。**想找回 0.2.13 的外观，在**设置** › **外观** › **主题**里选 Primer，并在**字号**里选 L（默认值已从 18px 降到 16px）。
-- **`agent-tuning` 已移除。**拆成了 `default-rsi-toolkit`、`agent-evaluation` 和 `agent-development`。现有 Agent 保留自己的 Skill；先从**插件市场**安装 OPRO、APE、ACE 或 AWM 工具包，再把它选为方法。
-- **插件的清单就是它的 `package.json`。**`plugin.json` 不再读取：把 PenguinHarness 自己的字段移进 `penguin` 块，npm 的字段仍留在顶层。
-- **应用不再读取数据根目录的 `plugins.json`。**请改为在**设置** › **插件**的**Agent 运行沙箱**卡片上打开沙箱。
-- **在模型库页面点击「同步新增模型」**（原「同步预置」），把新预置加入现有 Project。
-- **网关分组和自定义模型行需要自己的密钥。**它们不再借用环境里的 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 或 `GEMINI_API_KEY`；请在**分组设置…**里设置。
+- **应用打开时就是 Frost**。想找回 0.2.13 的外观，在**设置** › **外观** › **主题**里选 Primer，并在**字号**里选 L（默认值已从 18px 降到 16px）。
+- **`agent-tuning` 已移除**。拆成了 `default-rsi-toolkit`、`agent-evaluation` 和 `agent-development`。现有 Agent 保留自己的 Skill；先从**插件市场**安装 OPRO、APE、ACE 或 AWM 工具包，再把它选为方法。
+- **插件的清单就是它的 `package.json`**。`plugin.json` 不再读取：把 PenguinHarness 自己的字段移进 `penguin` 块，npm 的字段仍留在顶层。
+- **应用不再读取数据根目录的 `plugins.json`**。请改为在**设置** › **插件**的**Agent 运行沙箱**卡片上打开沙箱。
+- **在模型库页面点击**「**同步新增模型**」（原「同步预置」），把新预置加入现有 Project。
+- **网关分组和自定义模型行需要自己的密钥**。它们不再借用环境里的 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 或 `GEMINI_API_KEY`；请在**分组设置**…里设置。
 - **将 `AGENTHUB_DEBUG` 和 `AGENTHUB_CACHE_DIR` 重命名**为 `MMSP_DEBUG` 和 `MMSP_CACHE_DIR`。
 - **更新每个 Agent 的内核**：在**智能体**页面点**现在升级**，再按**插件市场**页面上的提示更新 `goal`、`agent-development` 和 `agent-company`。
-- **给现有 Agent 安装新插件。**`browser-automation`、`a2ui` 和各 RSI 工具包只预装在 0.2.15 新建 Project 的 General Agent 上；其他 Agent 请到**插件市场**页面安装。
-- **CLI 命令有变动：**`penguin ls`、`penguin logs` 和 `penguin input` 现在是 `penguin session ls`、`penguin session log` 和 `penguin session input`；`penguin config provider` 已移除，改用不带 `--model-id` 的 `penguin config model add --provider <group>`。
-- **程序发起的对话会被归档。**Agent API、定时任务或 `penguin run` 发起的会话（包括升级前的）不再出现在侧边栏，可以在**设置** › **已归档对话**里找到。
+- **给现有 Agent 安装新插件**。`browser-automation`、`a2ui` 和各 RSI 工具包只预装在 0.2.15 新建 Project 的 General Agent 上；其他 Agent 请到**插件市场**页面安装。
+- **CLI 命令有变动**：`penguin ls`、`penguin logs` 和 `penguin input` 现在是 `penguin session ls`、`penguin session log` 和 `penguin session input`；`penguin config provider` 已移除，改用不带 `--model-id` 的 `penguin config model add --provider <group>`。
+- **程序发起的对话会被归档**。Agent API、定时任务或 `penguin run` 发起的会话（包括升级前的）不再出现在侧边栏，可以在**设置** › **已归档对话**里找到。
 - **`.project_config.toml` 会在首次读取时重写一次**，数据库打开时会运行 9 到 16 号迁移。0.2.15 之前的版本读不了重写后的文件，所以如果之后可能回滚，请先复制一份。
 
 完整列表（包括 HTTP API 和 SDK 变更）见 [`changelog/0.2.15/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.15)。

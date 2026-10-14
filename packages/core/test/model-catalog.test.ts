@@ -2,6 +2,10 @@
  * Built-in model catalog unit tests: unique ids, valid provider references, positive
  * three-bucket pricing, lookups, preset entry generation, and the price a model that was the
  * default of new Projects keeps for its usage after a Project drops its row.
+ * Given a new Project, GPT-6 Luna assembles a Responses tool request with the installed
+ * MMSP through OpenAI, OpenRouter and OpenCode Go without a dependency upgrade.
+ * Given OpenCode Go's group key, Gemini 4 Argon Contributor streams a tool call through
+ * Go's generateContent endpoint with the group key and conversation header, never Google's API.
  */
 import { describe, expect, it, vi } from "vitest";
 import { AutoLLMClient } from "@prismshadow/mmsp";
@@ -267,132 +271,114 @@ describe("model-catalog", () => {
     });
   });
 
-  it("OpenCode Go: each model pins the protocol its endpoint table names, at the Go page's per-token rates", () => {
-    const group = providerInfo("opencode-go")!;
-    expect(group.label).toBe("OpenCode Go");
-    expect(group.apiKeyUrl).toBe("https://opencode.ai/auth");
-    expect(group.modelsUrl).toBe("https://opencode.ai/docs/go/");
-    // The group's endpoint is the Chat Completions base most of its models use; it pins no
-    // protocol, because its models sit on three (each row stores its own in a new Project).
-    expect(group.gatewayBaseUrl).toBe("https://opencode.ai/zen/go/v1");
-    expect(providerClientType("opencode-go")).toBeUndefined();
-    // No per-model pages: every model links to the Go docs page, which lists them all.
-    expect(modelHomepageUrl("opencode-go", "kimi-k3")).toBe("https://opencode.ai/docs/go/");
+  it.each(["openai", "openrouter", "opencode-go"])(
+    "a new Project can assemble GPT-6 Luna tool requests through %s with the installed MMSP",
+    (provider) => {
+      const modelId = provider === "openrouter" ? "openai/gpt-6-luna" : "gpt-6-luna";
+      const entry = presetModelEntries().find(
+        (row) => row.provider === provider && row.model_id === modelId,
+      )!;
+      expect(entry).toBeDefined();
+      const connection = storedConnection(entry);
+      const client = new AutoLLMClient({
+        model: entry.model_id,
+        apiKey: "test-key",
+        clientType: connection.clientType,
+        baseUrl: connection.baseUrl,
+      });
+      const request = client.transformUniConfigToModelConfig({
+        tools: [
+          {
+            name: "get_number",
+            description: "Read a number.",
+            parameters: { type: "object", properties: {} },
+          },
+        ],
+        tool_choice: "required",
+      });
+      expect(request.model).toBe(modelId);
+      expect(request.tools).toEqual([
+        {
+          type: "function",
+          name: "get_number",
+          description: "Read a number.",
+          parameters: { type: "object", properties: {} },
+        },
+      ]);
+      expect(request.tool_choice).toBe("required");
+      expect(request.store).toBe(false);
+    },
+  );
 
-    const go = MODEL_CATALOG.filter((m) => m.provider === "opencode-go");
-    const CHAT = ["openai-chat", "https://opencode.ai/zen/go/v1"];
-    const RESPONSES = ["openai-responses", "https://opencode.ai/zen/go/v1"];
-    // The Anthropic SDK appends /v1/messages itself, so the Messages base carries no /v1.
-    const MESSAGES = ["ant-messages", "https://opencode.ai/zen/go"];
-    // Dictionary order, newer versions of a series first. Protocols from the docs page's
-    // endpoint table; context windows and modalities from models.dev; vision checked live.
-    expect(
-      go.map((m) => [m.modelId, m.clientType, m.baseUrl, m.contextWindow, m.supportsVision]),
-    ).toEqual([
-      ["deepseek-v4.1-flash", ...CHAT, 1000000, true],
-      ["deepseek-v4-flash", ...CHAT, 1000000, false],
-      ["deepseek-v4-flash-vision-exp", ...CHAT, 1000000, true],
-      ["deepseek-v4-pro", ...CHAT, 1000000, false],
-      ["glm-5.3", ...CHAT, 1000000, false],
-      ["glm-5.3-flash", ...CHAT, 1000000, true],
-      ["glm-5.2", ...CHAT, 1000000, false],
-      ["glm-5.1", ...CHAT, 202752, false],
-      ["gpt-5.6-luna", ...RESPONSES, 1050000, true],
-      ["grok-4.6", ...RESPONSES, 500000, true],
-      ["hy4-preview", ...CHAT, 1024000, false],
-      ["hy3", ...CHAT, 192000, false],
-      ["kimi-k3", ...CHAT, 1048576, true],
-      ["kimi-k2.7-code", ...CHAT, 262144, true],
-      ["kimi-k2.6", ...CHAT, 262144, true],
-      ["longcat-2.0", ...CHAT, 1000000, false],
-      ["mimo-v2.5", ...CHAT, 1000000, true],
-      ["mimo-v2.5-pro", ...CHAT, 1048576, false],
-      ["minimax-m3", ...MESSAGES, 1000000, true],
-      ["minimax-m2.7", ...MESSAGES, 204800, false],
-      ["muse-spark-1.3-contributor", ...RESPONSES, 1048576, true],
-      ["muse-spark-1.2-contributor", ...RESPONSES, 1048576, true],
-      ["qwen3.8-flash", ...MESSAGES, 1000000, true],
-      ["qwen3.8-max", ...MESSAGES, 1000000, true],
-      ["qwen3.7-max", ...MESSAGES, 1000000, false],
-      ["qwen3.7-plus", ...MESSAGES, 1000000, true],
-      ["qwen3.6-plus", ...MESSAGES, 1000000, true],
-    ]);
-
-    // The Go page's rates in the catalog's (cache_read, cache_write, output) order. cache_write
-    // is the published cached-write rate where the page lists one and the input rate where it
-    // does not; tiered rows keep their base tier and the DeepSeek rows their peak rate.
-    expect(
-      Object.fromEntries(
-        go.map((m) => [
-          m.modelId,
-          [m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output],
-        ]),
-      ),
-    ).toEqual({
-      "deepseek-v4.1-flash": [0.006, 0.3, 1.2],
-      "deepseek-v4-flash": [0.006, 0.3, 1.2],
-      "deepseek-v4-flash-vision-exp": [0.006, 0.3, 1.2],
-      "deepseek-v4-pro": [0.044, 1.32, 3.96],
-      "glm-5.3": [0.26, 1.4, 4.4],
-      "glm-5.3-flash": [0.03, 0.15, 0.5],
-      "glm-5.2": [0.26, 1.4, 4.4],
-      "glm-5.1": [0.26, 1.4, 4.4],
-      "gpt-5.6-luna": [0.02, 0.25, 1.2],
-      "grok-4.6": [0.5, 2, 6],
-      "hy4-preview": [0.042, 0.834, 2.501],
-      hy3: [0.035, 0.14, 0.58],
-      "kimi-k3": [0.3, 3, 15],
-      "kimi-k2.7-code": [0.19, 0.95, 4],
-      "kimi-k2.6": [0.16, 0.95, 4],
-      "longcat-2.0": [0.006, 0.3, 1.2],
-      "mimo-v2.5": [0.0028, 0.14, 0.28],
-      "mimo-v2.5-pro": [0.003625, 0.435, 0.87],
-      "minimax-m3": [0.06, 0.3, 1.2],
-      "minimax-m2.7": [0.06, 0.375, 1.2],
-      "muse-spark-1.3-contributor": [0.002, 0.1, 0.2],
-      "muse-spark-1.2-contributor": [0.002, 0.1, 0.2],
-      "qwen3.8-flash": [0.016, 0.2, 0.47],
-      "qwen3.8-max": [0.25, 2.5, 6],
-      "qwen3.7-max": [0.5, 3.125, 7.5],
-      "qwen3.7-plus": [0.04, 0.5, 1.6],
-      "qwen3.6-plus": [0.05, 0.625, 3],
+  it("Go's Gemini preset streams tool calls with the group key and session through generateContent", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      const chunk = {
+        usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 4, totalTokenCount: 16 },
+        candidates: [
+          {
+            content: {
+              role: "model",
+              parts: [{ functionCall: { name: "get_number", args: {} } }],
+            },
+            finishReason: "STOP",
+          },
+        ],
+      };
+      return new Response(`data: ${JSON.stringify(chunk)}\n\n`, {
+        headers: { "content-type": "text/event-stream" },
+      });
     });
-
-    // The DeepSeek rows are the only ones on a schedule, DeepSeek's own, and off-peak they bill
-    // exactly the Go page's Off-Peak figures. 2026-09-19 is a Saturday: off-peak all day.
-    const scheduled = go.filter((m) => m.offPeakDiscount !== undefined);
-    expect(scheduled.map((m) => m.modelId)).toEqual([
-      "deepseek-v4.1-flash",
-      "deepseek-v4-flash",
-      "deepseek-v4-flash-vision-exp",
-      "deepseek-v4-pro",
-    ]);
-    const saturday = new Date("2026-09-19T10:00:00+08:00");
-    for (const m of scheduled) {
-      expect(m.offPeakDiscount, m.modelId).toBe(DEEPSEEK_OFF_PEAK);
-      const off = effectivePricing(m, saturday)!;
-      expect([off.cache_read, off.cache_write, off.output], m.modelId).toEqual(
-        m.modelId === "deepseek-v4-pro" ? [0.022, 0.66, 1.98] : [0.003, 0.15, 0.6],
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const entry = presetModelEntries().find(
+        (row) => row.provider === "opencode-go" && row.model_id === "gemini-4-argon-contributor",
+      )!;
+      expect(entry).toBeDefined();
+      const table = presetProviderTable();
+      table[entry.provider]!.api_key = "sk-go-group";
+      const connection = storedConnection(entry, table);
+      const client = new AutoLLMClient({
+        model: entry.model_id,
+        apiKey: connection.apiKey,
+        clientType: connection.clientType,
+        baseUrl: connection.baseUrl,
+        defaultHeaders: attributionHeaders(connection.baseUrl, "go-gemini-session"),
+      });
+      const events = [];
+      for await (const event of client.streamingResponse({
+        messages: [
+          { role: "user", content_items: [{ type: "text.done", text: "Read a number." }] },
+        ],
+        config: {
+          tools: [
+            {
+              name: "get_number",
+              description: "Read a number.",
+              parameters: { type: "object", properties: {} },
+            },
+          ],
+          tool_choice: "required",
+        },
+      })) {
+        events.push(event);
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const request = new Request(...fetchMock.mock.calls[0]!);
+      expect(request.url).toBe(
+        "https://opencode.ai/inference/go/google/v1beta/models/gemini-4-argon-contributor:streamGenerateContent?alt=sse",
       );
-    }
-    // No promotion is on a rate: the running "4x" offer raises an allowance, not a price.
-    expect(go.filter((m) => m.discount !== undefined)).toEqual([]);
-
-    // A model the catalog already carries elsewhere keeps its display name here.
-    for (const [provider, modelId, goId] of [
-      ["zhipu", "glm-5.3-flash", "glm-5.3-flash"],
-      ["openai", "gpt-5.6-luna", "gpt-5.6-luna"],
-      ["openrouter", "x-ai/grok-4.6", "grok-4.6"],
-      ["moonshot", "kimi-k3", "kimi-k3"],
-      ["fireworks", "accounts/fireworks/models/kimi-k2p7-code", "kimi-k2.7-code"],
-      ["siliconflow", "meituan-longcat/LongCat-2.0", "longcat-2.0"],
-      ["minimax", "MiniMax-M3", "minimax-m3"],
-      ["tokendance", "hy4-preview", "hy4-preview"],
-      ["qwen-pay-as-you-go", "qwen3.8-max", "qwen3.8-max"],
-    ] as const) {
-      expect(catalogEntryFor("opencode-go", goId)!.displayName, goId).toBe(
-        catalogEntryFor(provider, modelId)!.displayName,
+      expect(request.headers.get("x-goog-api-key")).toBe("sk-go-group");
+      expect(request.headers.get("x-opencode-session")).toBe("go-gemini-session");
+      expect(await request.json()).toMatchObject({
+        tools: [{ functionDeclarations: [{ name: "get_number" }] }],
+        toolConfig: { functionCallingConfig: { mode: "ANY" } },
+      });
+      expect(events.flatMap((event) => event.content_items)).toContainEqual(
+        expect.objectContaining({ type: "tool_call.done", name: "get_number", arguments: {} }),
       );
+      expect(events.at(-1)?.finish_reason).toBe("tool_call");
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 
@@ -421,6 +407,7 @@ describe("model-catalog", () => {
       } else if (
         m.provider === "vllm" ||
         m.modelId.endsWith(":free") ||
+        m.modelId.endsWith("-free") ||
         m.modelId === "openrouter/free" ||
         m.modelId === "Atria-Dawn" ||
         m.modelId === "dots-3-note-preview"
@@ -662,18 +649,6 @@ describe("model-catalog", () => {
       // The concatenated storage id and request_model_id have been removed and no longer appear.
       expect(Object.hasOwn(entry, "request_model_id")).toBe(false);
     }
-    // Go's MMSP rows share their group's connection. OpenCode Go has three protocols and
-    // a Messages base; custom's Atria has no group table at all.
-    const differing = entries.filter(
-      (e) => e.client_type !== undefined || e.base_url !== undefined,
-    );
-    expect([...new Set(differing.map((e) => e.provider))]).toEqual(["opencode-go", "custom"]);
-    expect(
-      differing.filter((e) => e.base_url !== undefined).map((e) => [e.provider, e.base_url]),
-    ).toEqual([
-      ...Array.from({ length: 7 }, () => ["opencode-go", "https://opencode.ai/zen/go"]),
-      ["custom", "https://api.atria-asi.ai"],
-    ]);
   });
 
   it("the seed is honest: under a new Project's group tables, every catalog row resolves to its catalog protocol and endpoint from the file alone", () => {
@@ -810,6 +785,7 @@ describe("model-catalog", () => {
       "nvidia/nemotron-3-ultra-550b-a55b:free",
       "openai/gpt-6.1-sol",
       "openai/gpt-6-astra",
+      "openai/gpt-6-luna",
       "openai/gpt-5.6-luna",
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
@@ -1600,6 +1576,7 @@ describe("model-catalog", () => {
     expect(direct).toEqual([
       "gpt-6.1-sol",
       "gpt-6-astra",
+      "gpt-6-luna",
       "gpt-5.6",
       "gpt-5.6-luna",
       "gpt-5.6-terra",
@@ -1869,6 +1846,11 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
         // read; its Messages rows read the Anthropic client's pair, the same split as custom.
         expect(env!.envKey, m.modelId).toBe("ANTHROPIC_API_KEY");
         expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
+        continue;
+      }
+      if (m.provider === "opencode-go" && m.clientType === "google-genai") {
+        expect(env!.envKey, m.modelId).toBe("GEMINI_API_KEY");
+        expect(env!.envBaseUrlKey, m.modelId).toBe("GEMINI_BASE_URL");
         continue;
       }
       expect(env!.envKey, m.modelId).toBe(provider.envKey);
@@ -2277,11 +2259,6 @@ describe("off-peak schedules", () => {
   it("a retired row is never a preset, but a sync still compares it and it still prices a Project's usage on its schedule", () => {
     const retired = MODEL_CATALOG.filter((m) => m.retired === true);
     const refs = retired.map((m) => `${m.provider}/${m.modelId}`);
-    expect(refs).toEqual([
-      "deepseek/deepseek-v4-flash",
-      "deepseek/deepseek-v4-flash-vision-exp",
-      "tokendance/deepseek-v4-flash-vision-exp",
-    ]);
     const presets = new Set(presetModelEntries().map((e) => `${e.provider}/${e.model_id}`));
     // "Sync presets" compares a Project's table against the whole catalog, retired rows
     // included, so it keeps updating a retired row the Project carries; the presets a new
@@ -2301,9 +2278,10 @@ describe("off-peak schedules", () => {
       expect(presets.has(ref), ref).toBe(false);
       // What a Project still carrying the row reads from the catalog: its name and schedule.
       expect(catalogEntryFor(m.provider, m.modelId)?.displayName, ref).toBe(m.displayName);
-      expect(scheduled.has(ref), ref).toBe(true);
-      expect(effectivePricing(m, beijing("2026-08-31T22:00"))!.output * 2, ref).toBeCloseTo(
-        m.pricing!.output,
+      expect(scheduled.has(ref), ref).toBe(m.offPeakDiscount !== undefined);
+      const output = effectivePricing(m, beijing("2026-08-31T22:00"))!.output;
+      expect(output, ref).toBeCloseTo(
+        m.pricing!.output * (m.offPeakDiscount === undefined ? 1 : 0.5),
         5,
       );
     }

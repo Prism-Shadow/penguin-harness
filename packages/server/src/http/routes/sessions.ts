@@ -1215,6 +1215,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
           contextTokens: result.prior.contextTokens,
         },
         ...(result.contextModel !== undefined ? { contextModel: result.contextModel } : {}),
+        ...(result.agentState !== undefined ? { agentState: result.agentState } : {}),
       };
       // Images by reference, after the held inputs were merged: the dedup compares raw
       // envelopes, and a held input carries its image inline exactly as its Trace copy does.

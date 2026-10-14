@@ -10,6 +10,12 @@
  * asks for 20 more; a page the server cut short at its byte budget still offers the history
  * before it; a user image the page carries by reference and the stream's inline copy of it
  * draw one picture.
+ *
+ * Memory updates when session_meta falls before the window:
+ * - Given a completed tail, loading it shows one update per topic, excluding the index.
+ * - Given a running tail, edits received live show the same updates when the Task finishes.
+ * - Given an older page, loading it adds that page's updates without mixing them into the tail.
+ * - Given a reconnect, rebuilding the tail preserves its updates without duplicating them.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -23,6 +29,7 @@ import {
   sessionMeta,
   tokenUsage,
   toolCall,
+  toolCallOutput,
   userText,
   withOrigin,
 } from "@prismshadow/penguin-core/omnimessage";
@@ -40,6 +47,7 @@ import type { MessagesPageQuery, StreamController } from "../src/lib/omni/stream
 import { approvalKey, findToolCard } from "../src/lib/omni/stream-model";
 import type {
   AssistantTextItem,
+  ChatItem,
   TaskStatsItem,
   ToolCallItem,
   UserImageItem,
@@ -785,6 +793,91 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     await again;
     expect(h.controller.older.error).toBeNull();
     expect(h.controller.prefixItems.length).toBeGreaterThan(0);
+  });
+});
+
+describe("memory updates in paginated history", () => {
+  const agentState = "/recorded/agents/memory-agent/agent_state";
+  const page = pageInfo({ before: "1:8", earlierTurns: 1, agentState });
+  const changes = (items: readonly ChatItem[]) =>
+    items.flatMap((item) => (item.kind === "task_stats" ? (item.memoryChanges ?? []) : []));
+
+  function memoryTurn(file: string, day = "05"): OmniMessage[] {
+    const stamp = (message: OmniMessage, second: number) =>
+      at(message, `2026-07-${day}T00:00:${String(second).padStart(2, "0")}.000Z`);
+    return [
+      stamp(userText("remember this"), 0),
+      ...[file, file, "MEMORY.md"].flatMap((name, i) => [
+        stamp(
+          toolCall({
+            name: "edit_file",
+            arguments: JSON.stringify({ file_path: `${agentState}/memory/user/${name}` }),
+            toolCallId: `${file}-${i}`,
+          }),
+          1 + i * 2,
+        ),
+        stamp(toolCallOutput({ output: "updated", toolCallId: `${file}-${i}` }), 2 + i * 2),
+      ]),
+      stamp(assistantText("remembered"), 7),
+    ];
+  }
+
+  it.each(["idle", "running"] as const)(
+    "a %s tail without session_meta shows one update for repeated topic edits",
+    async (state) => {
+      const h = createHarness();
+      const pending = h.controller.load();
+      h.controller.handleServer({ type: "task_state", state });
+      const messages = memoryTurn("local-dev-instance.md");
+      h.resolveLoad(state === "idle" ? messages : messages.slice(0, 1), undefined, null, page);
+      await pending;
+      if (state === "running") {
+        for (const message of messages.slice(1)) h.controller.handleOmni(message);
+        h.controller.handleServer({ type: "task_state", state: "idle" });
+      }
+      expect(changes(h.controller.model.items)).toMatchObject([
+        { scope: "user", file: "local-dev-instance.md", op: "edit" },
+      ]);
+    },
+  );
+
+  it("an older page restores its own memory updates without mixing them into the tail", async () => {
+    const h = createHarness();
+    const pending = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    h.resolveLoad(memoryTurn("recent.md"), undefined, null, page);
+    await pending;
+
+    const older = h.controller.loadOlder();
+    h.resolveLoad(
+      memoryTurn("older.md", "04"),
+      undefined,
+      null,
+      pageInfo({ before: "1:2", agentState }),
+    );
+    await older;
+    expect(changes(h.controller.prefixItems)).toMatchObject([
+      { scope: "user", file: "older.md", op: "edit" },
+    ]);
+    expect(changes(h.controller.model.items)).toMatchObject([
+      { scope: "user", file: "recent.md", op: "edit" },
+    ]);
+  });
+
+  it("reconnecting preserves the tail's memory updates without duplicating them", async () => {
+    const h = createHarness();
+    const pending = h.controller.load();
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    const messages = memoryTurn("local-dev-instance.md");
+    h.resolveLoad(messages, undefined, null, page);
+    await pending;
+
+    h.controller.handleServer({ type: "resync_required" });
+    h.resolveLoad(messages, undefined, null, page);
+    await flush();
+    expect(changes(h.controller.model.items)).toMatchObject([
+      { scope: "user", file: "local-dev-instance.md", op: "edit" },
+    ]);
   });
 });
 

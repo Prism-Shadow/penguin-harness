@@ -21,7 +21,7 @@ In the sidebar, select **Models**. Models are listed in groups, one per provider
 - **Open and close groups.** Select a group's header to open or close it. On your first visit only the TokenDance group is open. The browser remembers which groups you opened, per Project.
 - **Reorder groups.** Drag a group's header to move it. The order is saved in this browser, per Project, and the model picker in the chat uses the same order. Dragging is not available on touch screens or while searching.
 - **Search.** Type in **Search models: id / name / provider** to show only the matching models. While you search, every matching group is open.
-- **Order within a group.** A group lists its models by price, low to high. The price compared is the one billed right now, after a running promotion or off-peak rate, with input weighed three times as much as output: (cache write × 3 + output) ÷ 4. Free models come first, models without a price come last, and equal prices are ordered by name. To change it, select the gear at the end of the group's header and choose **Price (low to high)**, **Price (high to low)** or **Name (A→Z)**; the current choice is checked. Each group keeps its own order, saved in this browser. Search results follow it; the order of the groups and the model picker in the chat do not change.
+- **Order within a group.** A group lists its models by price, low to high. The price compared is the one billed right now, after a running promotion or off-peak rate, weighted as 85% cache hits, 10% cache misses (cache writes) and 5% output. Free models come first, models without a price come last, and equal prices are ordered by name. To change it, select the gear at the end of the group's header and choose **Price (low to high)**, **Price (high to low)** or **Name (A→Z)**; the current choice is checked. Each group keeps its own order, saved in this browser. Search results follow it; the order of the groups and the model picker in the chat do not change.
 
 Each model card shows the model's display name, tags, context window, prices, key status, and the Tokens the model has used so far.
 
@@ -483,7 +483,7 @@ The table below lists the built-in groups and the environment variables their mo
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | The recommended group. OpenAI-compatible gateway, preset base URL `https://tokendance.space/gateway/v1`; model ids are bare, with no vendor prefix (e.g. `glm-5.3`, `kimi-k3`); pricing is the gateway's own CNY rates, several of them currently discounted |
 | penguin-go | `PENGUIN_GO_API_KEY` | Preset MMSP relay group, base URL `https://go.penguin.ooo/api/v1`; its header connects for you, or set the key in its group settings. See [The Penguin Go group](#the-penguin-go-group) |
-| opencode-go | `OPENAI_API_KEY` | OpenCode Go subscription gateway. Each model pins its own protocol: Chat Completions or Responses at `https://opencode.ai/zen/go/v1`, Anthropic Messages at `https://opencode.ai/zen/go` (that client's variable is `ANTHROPIC_API_KEY`). See [The OpenCode Go group](#the-opencode-go-group) |
+| opencode-go | `OPENAI_API_KEY` | OpenCode Go subscription gateway. Each model pins its own protocol: Chat Completions or Responses at `https://opencode.ai/zen/go/v1`, Anthropic Messages at `https://opencode.ai/zen/go`, and Gemini generateContent at `https://opencode.ai/inference/go/google`. See [The OpenCode Go group](#the-opencode-go-group) |
 | deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
 | openrouter | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI (OpenAI-compatible), preset base URL `https://api.fireworks.ai/inference/v1`; API model ids look like `accounts/fireworks/models/<slug>` |
@@ -507,7 +507,7 @@ The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / atl
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).
 - ModelScope is an aggregate gateway like Penguin Go, but all three of its presets use MMSP's generic Responses client (`client_type = "openai-responses"`).
 - Those gateway clients read the same `OPENAI_*` variables, so the credential rules are identical either way.
-- The OpenCode Go group is the exception: its models use three protocols, so each one pins its own; see [The OpenCode Go group](#the-opencode-go-group).
+- The OpenCode Go group is the exception: its models use four protocols, so each one pins its own; see [The OpenCode Go group](#the-opencode-go-group).
 
 MiniMax's official client reads `MINIMAX_API_KEY`. The built-in MiniMax preset carries no `base_url`, so it uses `MINIMAX_BASE_URL` when set and `https://api.minimax.io/v1` otherwise; like every other `*_BASE_URL`, the variable is read only for entries without their own `base_url`.
 
@@ -529,11 +529,13 @@ The platform quotes peak rates in USD per million Tokens. The group's DeepSeek r
 
 ### The OpenCode Go group
 
-`opencode-go` holds the 27 models OpenCode lists for its Go subscription. One key serves all of them: set it once in the group's settings.
+`opencode-go` presets the latest generation of each supported model tier in OpenCode Go, including GPT-6 Luna, Claude Haiku 5.5, Gemini 4 Argon Contributor, Grok 4.7, MiMo-V2.6 Flash/Pro, LongCat 2.5 Preview Free, Step 5 Preview Free, Cat Jam Free and Space Bunny. DeepSeek V4 Pro and V4.1 Flash remain separate tiers, as do GLM-5.3 and GLM-5.3 Flash, Kimi K3 and K2.7 Code, and Qwen Max, Flash and Plus. One key serves all of them: create it using [OpenCode’s authentication guide](https://opencode.ai/v2/docs/console/api/inference/#authentication), then set it once in the group's settings.
 
-- **Protocols.** OpenCode serves each model on one of three endpoints. A new Project stores `https://opencode.ai/zen/go/v1` as the group's base URL, which Chat Completions (`openai-chat`) and Responses (`openai-responses`) models use, and each model stores its own `client_type`. Anthropic Messages (`ant-messages`) models also store `https://opencode.ai/zen/go`, because the client adds `/v1/messages` itself; it is the same host, so the group key reaches them. Like every gateway's rows, none of them falls back to `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`: the key goes on the group.
-- **Prices.** Go is a monthly subscription whose usage limits are dollar amounts per model: a monthly allowance, of which at most 20% can be used in five hours and 50% in a week. The rows record the per-token rates a request draws from that allowance, so for this group the cost center shows how much of it you used, not a bill. `gpt-5.6-luna`, `grok-4.6`, `qwen3.7-plus` and `qwen3.6-plus` record their base tier, which covers up to 272K, 200K, 256K and 256K input tokens respectively. The four DeepSeek models follow DeepSeek's off-peak schedule; see [Prices and promotions](#prices-and-promotions).
-- **Opt-in and regions.** Five models answer with an error until the key's OpenCode workspace opts in to them. `muse-spark-1.3-contributor` and `muse-spark-1.2-contributor` need consent to Meta training on prompts and completions. `deepseek-v4.1-flash`, `deepseek-v4-flash` and `deepseek-v4-pro` need consent to being served from China. Some models also refuse requests from certain regions: from mainland China, `gpt-5.6-luna` and both Muse Spark models answer with an error.
+- **Protocols.** OpenCode serves each model through one of four protocols. A new Project stores `https://opencode.ai/zen/go/v1` as the group's base URL, which Chat Completions (`openai-chat`) and Responses (`openai-responses`) models use, and each model stores its own `client_type`. Anthropic Messages (`ant-messages`) models also store `https://opencode.ai/zen/go`, because the client adds `/v1/messages` itself; Gemini 4 Argon Contributor uses `google-genai` at `https://opencode.ai/inference/go/google`, to which the SDK adds `/v1beta/models/<id>:streamGenerateContent`. All of these endpoints share the same host, so the group key reaches them. Like every gateway's rows, none of them falls back to vendor environment keys: the key goes on the group.
+- **Prices.** Go is a monthly subscription whose usage limits are dollar amounts per model: a monthly allowance, of which at most 20% can be used in five hours and 50% in a week. The rows record the per-token rates a request draws from that allowance, so for this group the cost center shows how much of it you used, not a bill. `gpt-6-luna`, `claude-haiku-5-5`, `grok-4.7` and `qwen3.7-plus` record their base tier, which covers up to 272K, 100K, 200K and 256K input tokens respectively. The DeepSeek models follow DeepSeek's off-peak schedule; see [Prices and promotions](#prices-and-promotions).
+- **Opt-in and regions.** Contributor models require consent to training on prompts and completions. DeepSeek may require consent to China-hosted serving. Account permissions and regional availability are controlled by OpenCode.
+- **Existing Projects.** **Add new models** adds the new presets without deleting saved older models or changing the default. **Restore defaults** replaces the list with the current presets.
+- **Claude tiers.** Go offers Haiku 5.5. Fable 5.1, Opus 5.5 and Sonnet 5.5 are presets in the Anthropic and OpenRouter groups.
 - **Session header.** Requests to the group name their conversation in `x-opencode-session`; see [App attribution](#app-attribution).
 
 ### The ModelScope group
@@ -553,7 +555,7 @@ The preset catalog includes, among others:
 - `gemini-4-argon` / `gemini-3.8-flash`
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
-- `gpt-6.1-sol` / `gpt-6-astra` / `gpt-5.6` / `gpt-5.5`
+- `gpt-6.1-sol` / `gpt-6-astra` / `gpt-6-luna` / `gpt-5.6` / `gpt-5.5`
 - `glm-5.3` / `glm-5.3-flash`
 - `kimi-k3`
 - `qwen3.8-max` / `qwen3.8-flash`

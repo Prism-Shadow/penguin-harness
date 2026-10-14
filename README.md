@@ -140,19 +140,31 @@ Agents can also write and optimize their own Skills ([docs](https://penguin.ooo/
 
 ## Supported models
 
-| Model            | Providers                                                                                        |
-| ---------------- | ------------------------------------------------------------------------------------------------ |
-| DeepSeek V4      | DeepSeek, OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen Token Plan, Qwen Pay-As-You-Go |
-| Kimi K3          | Moonshot AI, OpenRouter, Fireworks AI, TokenDance, Qwen Pay-As-You-Go                            |
-| GLM 5.3          | Z.AI, OpenRouter, TokenDance                                                                     |
-| Hunyuan 3        | OpenRouter                                                                                       |
-| Qwen 3.8 Max     | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance                                      |
-| GPT 6.1          | OpenAI, OpenRouter                                                                               |
-| Gemini 3.8 Flash | Google Gemini, OpenRouter                                                                        |
-| Claude 5.5       | Anthropic, OpenRouter                                                                            |
-| Inkling          | OpenRouter, Fireworks AI                                                                         |
+These are the model families we focus on supporting. The app's **Models** page lists each variant and its providers.
 
-Each family's latest generation only — the app's **Models** page lists every built-in preset, and any OpenAI-protocol endpoint works too: pick a preset, or point a custom endpoint at any of the 1000+ online and local models.
+### Closed-source models
+
+| Model | Providers |
+| --- | --- |
+| GPT 6.1 | OpenAI, OpenRouter |
+| Claude 5.5 | Anthropic, OpenRouter, OpenCode Go |
+| Gemini 4 | Google Gemini, OpenRouter, Penguin Go, OpenCode Go |
+| Grok 4.7 | OpenRouter, OpenCode Go |
+| Qwen3.8 Max | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance, OpenCode Go |
+
+### Open-source models
+
+| Model | Providers |
+| --- | --- |
+| DeepSeek V4.1 | DeepSeek, OpenRouter, Fireworks AI, Atlas Cloud, TokenDance, Penguin Go, OpenCode Go, Qwen Token Plan, Qwen Pay-As-You-Go, ModelScope |
+| Kimi K3 | Moonshot AI, OpenRouter, Fireworks AI, TokenDance, OpenCode Go, Qwen Pay-As-You-Go |
+| GLM 5.3 | Z.AI, OpenRouter, TokenDance, OpenCode Go |
+| Hunyuan 4 | OpenRouter, TokenDance, OpenCode Go |
+| MiMo v2.6 | OpenRouter, TokenDance, OpenCode Go |
+
+OpenCode Go offers Claude Haiku 5.5; Fable 5.1, Opus 5.5 and Sonnet 5.5 are available through Anthropic and OpenRouter. Hunyuan 4 uses `hy4-preview`.
+
+Custom OpenAI-protocol endpoints also work, covering 1000+ online and local models.
 
 ## Install
 
@@ -296,4 +308,20 @@ See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for their licenses.
 
 [Apache-2.0](LICENSE) © 2026 Prism Shadow
 
-Built with ❤️ by [Yaowei Zheng](https://github.com/hiyouga) (author of [LlamaFactory](https://github.com/hiyouga/LlamaFactory)), the [PrismShadow AI Team](https://github.com/Prism-Shadow), and [Fable 5](https://www.anthropic.com/news/claude-fable-5-mythos-5).
+## Maintenance team
+
+**Organizations:** PrismShadow AI, Qinghe Dynamic
+
+**Maintainers:**
+
+- Yaowei Zheng (LlamaFactory, PrismShadow)
+- Yangxi Xiang
+- Junhao Hu
+- Leijun Zhou (PrismShadow)
+- Zhihao Liu (PrismShadow)
+- Xiang Qu (PrismShadow)
+- Hengjin Dou (PrismShadow)
+- Ning Wang (Qinghe Dynamic)
+- Ming Lu (Qinghe Dynamic)
+
+Built with ❤️

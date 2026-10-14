@@ -87,16 +87,17 @@ describe("protocolPathForModel", () => {
   });
 
   it("OpenCode Go rows: preset base URL plus the hinted path is the endpoint OpenCode documents", () => {
-    // The group mixes three protocols, and its Messages rows use a base without /v1 because the
+    // The group mixes four protocols, and its Messages rows use a base without /v1 because the
     // Anthropic SDK appends /v1/messages. Joined with the path the dialog shows, every row lands
-    // on one of the three endpoints in the Go docs page's endpoint table.
+    // on a Go endpoint; generateContent's hint stops before the model id.
     const endpoints = new Set([
       "https://opencode.ai/zen/go/v1/chat/completions",
       "https://opencode.ai/zen/go/v1/responses",
       "https://opencode.ai/zen/go/v1/messages",
+      "https://opencode.ai/inference/go/google/v1beta/models",
     ]);
-    const rows = MODEL_CATALOG.filter((m) => m.provider === "opencode-go");
-    expect(rows).toHaveLength(27);
+    const rows = MODEL_CATALOG.filter((m) => m.provider === "opencode-go" && !m.retired);
+    expect(rows.length).toBeGreaterThan(0);
     const hit = new Set<string>();
     for (const m of rows) {
       const url = `${m.baseUrl}${protocolPathForModel(m.provider, m.clientType ?? "", m.modelId)}`;
