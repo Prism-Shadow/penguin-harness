@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** fix
 - **Scope:** `ui`, `core`
+- **PR:** [#1130](https://github.com/Prism-Shadow/penguin-harness/pull/1130)
 
 [English](2026-10-14-svg-preview-prompt.md)
 
