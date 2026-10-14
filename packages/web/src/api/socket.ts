@@ -29,7 +29,6 @@
  * fall back to EventSource (the caller supplies the fallback) and calls fall back to fetch.
  */
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
-import { apiSocketPath } from "@prismshadow/penguin-server/api";
 import type { ServerEvent } from "@prismshadow/penguin-server/api";
 import type { StreamConnection, StreamHandlers } from "./sse";
 
@@ -618,9 +617,12 @@ export class ApiSocket {
           stream.handlers.onServerEvent(data as ServerEvent, eventId);
         } else if (name === "message") {
           stream.handlers.onOmniMessage(data as OmniMessage, eventId);
-        } else if (name === "heartbeat") {
+        } else if (name === "heartbeat" || name === "ping") {
           // Liveness only, and it has already been banked above: the beat is never an
-          // application event, so it reaches no handler.
+          // application event, so it reaches no handler. `ping` is the session and user
+          // streams' own beat; the EventSource fallback listens for it by the same name
+          // (api/sse.ts) and it reaches no handler there either — over the socket it is a
+          // frame whose `{}` payload must not be read as an OmniMessage.
         } else if (stream.handlers.onEvent !== undefined) {
           stream.handlers.onEvent(name, data, eventId);
         } else {
@@ -741,6 +743,16 @@ async function whoAmI(): Promise<string | null> {
   const body = (await res.json()) as { user?: { userId?: string } };
   return body.user?.userId ?? null;
 }
+
+/**
+ * The socket's address: the signed-in user's reserved terminal-stream id, the same path the
+ * server spells with its own `apiSocketPath` (server/src/api/types.ts). Spelled here rather
+ * than imported because the site build compiles this package without the server's dist: the
+ * `./api` subpath resolves into that dist, so a value import leaves the gallery build with
+ * nothing to resolve (main keeps that subpath type-only, and type imports are dropped).
+ */
+const apiSocketPath = (userId: string): string =>
+  `/api/terminals/${encodeURIComponent(`api-socket@${userId}`)}/stream`;
 
 /** The page's socket: to this origin, same cookie the page holds, on the signed-in user's reserved id. */
 // Off a page (no `location` — the Web App's logic under test in Node) there is no origin to

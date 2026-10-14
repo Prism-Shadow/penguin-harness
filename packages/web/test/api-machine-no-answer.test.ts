@@ -40,6 +40,7 @@ vi.mock("../src/api/socket", async (importActual) => {
     ...actual,
     apiSocket: {
       ready: async () => true,
+      isOpen: () => true,
       isUnavailable: () => false,
       identityIs: () => undefined,
       identityChanged: () => undefined,

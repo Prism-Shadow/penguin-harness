@@ -226,10 +226,12 @@ export async function apiFetchWithMeta<T>(
   // and `/api/me` are the runtime's (the socket answers them 421), and `/api/me` is also
   // where the cookie's own session facts come from — the socket knows only the user.
   const wantsSocket = target !== null || !httpOnly(path);
-  // ready() waits for a handshake in progress, so the page's first calls ride the socket
-  // instead of racing it; false means HTTP for this call. A socket that is not coming at all
-  // is not waited on: the call goes out over HTTP at once, as it did before the socket.
-  const overSocket = wantsSocket && !apiSocket.isUnavailable() && (await apiSocket.ready());
+  // Only a socket that is ALREADY open carries a call. Deciding synchronously keeps the
+  // request on the tick it was made — a caller that stubs fetch reads it there — and a socket
+  // still coming is not waited on: the call goes out over HTTP at once, as it did before the
+  // socket. The page's streams open the socket (api/socket.ts ready()); once it is open the
+  // calls after ride it, and a page's first calls race it over HTTP rather than waiting.
+  const overSocket = wantsSocket && !apiSocket.isUnavailable() && apiSocket.isOpen();
   let answer = overSocket ? await callOverSocket(method, url, options.body, target) : null;
   if (answer === null || answer.status === 415 || answer.status === 421)
     answer = await callOverHttp(method, url, options.body);
@@ -388,8 +390,8 @@ async function callOverHttp(method: string, url: string, body: unknown): Promise
 export async function apiRequest(url: string, init: { method?: string } = {}): Promise<Response> {
   const path = url.split("?")[0] ?? url;
   const local = !url.startsWith("/server/");
-  const overSocket =
-    !(local && httpOnly(path)) && !apiSocket.isUnavailable() && (await apiSocket.ready());
+  // The same synchronous open-socket rule as apiFetchWithMeta (see there).
+  const overSocket = !(local && httpOnly(path)) && !apiSocket.isUnavailable() && apiSocket.isOpen();
   if (overSocket) {
     try {
       const res = await apiSocket.call(init.method ?? "GET", url);
