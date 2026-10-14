@@ -248,7 +248,7 @@ export class WorkbenchService implements Workbenches {
   @Use() private readonly sessions!: ScheduleSessionCreator;
 
   private readonly loaded = new Map<string, Loaded>();
-  private readonly watchers = new Map<string, fs.FSWatcher>();
+  private readonly watchers = new Map<string, { close(): void }>();
   private readonly pending = new Map<string, NodeJS.Timeout>();
   /** The load in flight per workbench: a load takes a compiler run, so two can overlap. */
   private readonly loading = new Map<string, Promise<Loaded>>();
@@ -726,32 +726,30 @@ export class WorkbenchService implements Workbenches {
   }
 
   /**
-   * An Agent with no `workbenches/` folder yet: watch its own directory for that folder to
-   * appear. The Agent makes its first workbench with its file tools and nothing else — without
+   * An Agent with no `workbenches/` folder yet: poll that path until it appears. Native
+   * directory notifications can miss its creation (observed under macOS filesystem load),
+   * leaving no watcher on the new folder and no later event to recover from. Once it exists,
+   * the normal recursive watcher takes over. The Agent uses its file tools only — without
    * this, nothing noticed until somebody listed the workbenches again, and the Agent sat
    * waiting for a load that was never going to happen.
    */
   private awaitFirstWorkbench(projectId: string, agentId: string, declared: string): void {
     const k = `${projectId}/${agentId}`;
-    const parent = path.dirname(declared);
-    let watcher: fs.FSWatcher;
+    const appeared = (current: fs.Stats) => {
+      if (!current.isDirectory()) return;
+      watcher.close();
+      this.watchers.delete(k);
+      // Watch before scanning: edits made during the first load must still be noticed.
+      void this.list(projectId, agentId).catch((err) =>
+        this.log.line(`[workbenches] ${k}: ${messageOf(err)}`),
+      );
+    };
+    const watcher = { close: () => fs.unwatchFile(declared, appeared) };
     try {
-      watcher = fs.watch(fs.realpathSync.native(parent), (_event, filename) => {
-        if (filename !== path.basename(declared) || !fs.existsSync(declared)) return;
-        watcher.close();
-        this.watchers.delete(k);
-        // The folder exists now: watch it properly, and load whatever is already inside.
-        void this.list(projectId, agentId).catch((err) =>
-          this.log.line(`[workbenches] ${k}: ${messageOf(err)}`),
-        );
-      });
+      fs.watchFile(declared, { persistent: false, interval: 500 }, appeared);
     } catch {
       return;
     }
-    watcher.on("error", () => {
-      watcher.close();
-      this.watchers.delete(k);
-    });
     this.watchers.set(k, watcher);
   }
 
