@@ -19,18 +19,24 @@
  * An edited workbench:
  * - A file that disappears mid-read is a change, not a failed request.
  * - An edited folder is re-imported, every version recorded and any restorable.
- * - An edit that does not load leaves the previous instance serving and names the problem:
- *   source that does not type-check (with the compiler's file, line and reason, untyped code
- *   included), a type table that no longer fits this platform either way (an addition on the
- *   platform's side breaks nothing; an unreadable table is a problem, never a pass).
- * - Tabs come from contributions: several per workbench, pages under ui/, open slots only; a
- *   workbench with pages and no tab gets a hint.
+ * - An unknown required interface leaves the previous instance serving and names the problem.
+ * - A source type error reports the file, line and reason, without duplicate diagnostics.
+ * - A JSON response body may be null.
+ * - Untyped handler parameters are refused and the previous instance keeps serving.
+ * - A host method removed since authoring is refused and the previous instance keeps serving.
+ * - An incompatible provided handler is refused and the previous instance keeps serving.
+ * - Adding a host method since authoring does not break a workbench.
+ * - An unreadable type table is refused; removing it installs fresh types and recovers.
+ * - Several contributed tabs are exposed in order.
+ * - A tab outside ui/, a closed contribution slot and a malformed tab are each refused.
+ * - Pages with no tab get a hint in the API and status file; adding a tab clears it.
  * - Removing a workbench removes its folder and recorded versions.
  * - A legacy Workflow package loads through the new route after one-time conversion, with its state intact.
  *
  * Every load runs the TypeScript compiler, so the loaded-once group shares one app and one
- * compile; each editing case needs a folder of its own to break, which it gets in an Agent of
- * its own within the editing group's one app.
+ * compile; each editing scenario gets an Agent of its own within the editing group's one app.
+ * Keep independent edits in separate cases: six or seven compiler runs under one deadline
+ * raced the coverage runner even though each individual operation completed normally.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
@@ -74,13 +80,18 @@ function packageJson(modules: unknown[] = [MANIFEST], extra: Record<string, unkn
 }
 
 function indexSource(greeting: string): string {
-  return `import type { WorkbenchPackage } from "@prismshadow/penguin-server/plugin";
+  // These handlers only use ES2022 APIs. Loading the DOM declarations on every fixture
+  // compilation adds work without exercising another part of the workbench contract.
+  return `/// <reference no-default-lib="true" />
+/// <reference lib="es2022" />
+import type { WorkbenchPackage } from "@prismshadow/penguin-server/plugin";
 
 export default {
   modules: {
     Workbench: {
       create({ use }) {
         const host = use.host;
+        let releaseEvents: (() => void) | undefined;
         return {
           api: {
             main: {
@@ -108,12 +119,17 @@ export default {
                 }
                 if (req.path === "/events") {
                   const headers: Record<string, string> = { "content-type": "text/event-stream" };
+                  const released = new Promise<void>((resolve) => { releaseEvents = resolve; });
                   async function* events() {
                     yield "data: one\\n\\n";
-                    await new Promise((r) => setTimeout(r, 400));
-                    yield new TextEncoder().encode("data: two\\n\\n");
+                    await released;
+                    yield Uint8Array.from("data: two\\n\\n", (char) => char.charCodeAt(0));
                   }
                   return { headers, stream: events() };
+                }
+                if (req.path === "/release-events" && req.method === "POST") {
+                  releaseEvents?.();
+                  return { body: null };
                 }
                 if (req.path === "/moved") {
                   const headers: Record<string, string> = { location: "page" };
@@ -180,10 +196,11 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
   /** The demo as its one load left it. */
   let wf: WorkbenchInfo;
 
+  // The shared fixture performs the first real compiler load: use the integration budget.
   beforeAll(async () => {
     ({ t, owner, ownerCookie, dir } = await workbenchApp());
     [wf] = (await listOf(owner)) as [WorkbenchInfo];
-  });
+  }, 30_000);
   afterAll(async () => {
     await t.cleanup();
   });
@@ -352,10 +369,14 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
     const events = await owner.get(`${BASE}/demo/api/events`);
     expect(events.headers.get("content-type")).toBe("text/event-stream");
     const reader = events.body!.getReader();
-    const startedAt = Date.now();
-    const first = await reader.read();
-    expect(new TextDecoder().decode(first.value)).toBe("data: one\n\n");
-    expect(Date.now() - startedAt).toBeLessThan(300);
+    try {
+      const first = await reader.read();
+      expect(new TextDecoder().decode(first.value)).toBe("data: one\n\n");
+    } finally {
+      // The producer cannot finish until the consumer has received the first chunk.
+      // This proves streaming without a wall-clock race on a busy runner.
+      expect((await owner.post(`${BASE}/demo/api/release-events`, {})).status).toBe(200);
+    }
     const second = await reader.read();
     expect(new TextDecoder().decode(second.value)).toBe("data: two\n\n");
     expect((await reader.read()).done).toBe(true);
@@ -604,14 +625,23 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     // Said once, by the author's own file; the server's copy of the same question is left out.
     expect(error).not.toContain("default export");
     expect(error.match(/TS2322/g)).toHaveLength(1);
+  });
 
+  it("accepts a null JSON response body", async () => {
     // A JSON body may be null: an optional `unknown` member stays `unknown` in the table.
     await fs.writeFile(
       path.join(dir, "index.ts"),
       indexSource("hello").replace("return { body: { count: n } };", "return { body: null };"),
     );
-    expect((await reload()).error).toBeNull();
+    const [loaded] = await list();
+    expect(loaded!.error).toBeNull();
+    const response = await owner.post(`${base}/demo/api/count`, {});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toBeNull();
+  });
 
+  it("refuses untyped handler parameters and keeps the previous instance serving", async () => {
+    await list();
     // Untyped is refused too: `strict` leaves no implicit any to slip through.
     await fs.writeFile(
       path.join(dir, "index.ts"),
@@ -620,33 +650,39 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect(await reloadError()).toContain("TS7031");
   });
 
-  it("compares the types the workbench was written against with this platform's, both ways", async () => {
+  it("refuses a required host method removed since authoring and keeps serving", async () => {
     await list();
     // requires: it was written when the host had a method this platform lacks.
     await writtenAgainst(dir, (t) => {
       t.ifaces[HOST_KEY]!.methods["removedSince"] = { params: [], returns: { void: true } };
     });
-    let error = await reloadError();
+    const error = await reloadError();
     expect(error).toContain(`Workbench: requires.host '${HOST_KEY}'`);
     expect(error).toContain("removedSince");
+  });
 
+  it("refuses an incompatible provided handler and keeps the previous instance serving", async () => {
+    await list();
     // provides: the handler it was written against answers with something else.
     await writtenAgainst(dir, (t) => {
-      delete t.ifaces[HOST_KEY]!.methods["removedSince"];
       t.ifaces[MAIN_KEY]!.methods["handle"]!.returns = { promise: { data: "string" } };
     });
-    error = await reloadError();
+    const error = await reloadError();
     expect(error).toContain(`Workbench: provides.main '${MAIN_KEY}'`);
     expect(error).toContain("TS2322");
+  });
 
+  it("accepts a platform with a host method added since authoring", async () => {
+    await list();
     // An addition on the platform's side breaks nothing.
-    await fs.rm(path.join(dir, ".harness"), { recursive: true });
-    expect((await reload()).error).toBeNull();
     await writtenAgainst(dir, (t) => {
       delete t.ifaces[HOST_KEY]!.methods["log"];
     });
     expect((await reload()).error).toBeNull();
+  });
 
+  it("refuses an unreadable type table and recovers after installing fresh types", async () => {
+    await list();
     // A table that cannot be read is a problem, never a pass against the platform's own;
     // deleting the directory is how a workbench takes this harness's types afresh.
     await fs.writeFile(path.join(dir, ".harness", "ifaces.json"), "{");
@@ -655,8 +691,10 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
     expect((await reload()).error).toBeNull();
   });
 
-  it("takes tabs from contributions: several per workbench, pages under ui/, open slots only", async () => {
-    await list();
+  const writeContributions = (contributes: Record<string, unknown[]>) =>
+    fs.writeFile(path.join(dir, "package.json"), packageJson([{ ...MANIFEST, contributes }]));
+
+  it("exposes several contributed tabs in order", async () => {
     const stats = {
       ...TAB,
       id: "demo.stats",
@@ -664,19 +702,23 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
       title: "Stats",
       renderer: { iframe: { src: "ui/stats.html" } },
     };
-    const write = (contributes: Record<string, unknown[]>) =>
-      fs.writeFile(path.join(dir, "package.json"), packageJson([{ ...MANIFEST, contributes }]));
+    await writeContributions({ "WebModule.sessionTabs": [TAB, stats] });
+    const [two] = await list();
+    expect(two!.error).toBeNull();
+    expect(two!.tabs.map((tab) => tab.key)).toEqual(["board", "stats"]);
+  });
 
-    await write({ "WebModule.sessionTabs": [TAB, stats] });
-    const two = await reload();
-    expect(two.error).toBeNull();
-    expect(two.tabs.map((tab) => tab.key)).toEqual(["board", "stats"]);
-
-    await write({
+  it("refuses a tab pointing outside ui/ and keeps the previous instance serving", async () => {
+    await list();
+    await writeContributions({
       "WebModule.sessionTabs": [{ ...TAB, renderer: { iframe: { src: "index.ts" } } }],
     });
-    expect((await reload()).error).toContain("renderer.iframe.src must be a file under ui/");
-    await write({
+    expect(await reloadError()).toContain("renderer.iframe.src must be a file under ui/");
+  });
+
+  it("refuses a closed contribution slot and keeps the previous instance serving", async () => {
+    await list();
+    await writeContributions({
       "WebModule.pages": [
         {
           id: "demo.page",
@@ -688,14 +730,21 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
         },
       ],
     });
-    expect((await reload()).error).toContain("WebModule.pages");
-    await write({ "WebModule.sessionTabs": [{ ...TAB, title: 7 }] });
-    expect((await reload()).error).toContain("module tree rejected");
+    expect(await reloadError()).toContain("WebModule.pages");
+  });
+
+  it("refuses a malformed tab and keeps the previous instance serving", async () => {
+    await list();
+    await writeContributions({ "WebModule.sessionTabs": [{ ...TAB, title: 7 }] });
+    expect(await reloadError()).toContain("module tree rejected");
+  });
+
+  it("hints at pages with no tab and clears the hint when a tab is added", async () => {
     // A workbench with no contribution is server-side only — and since this one has pages, the
     // load says that nothing shows them, with the entry to add, in the API and in the status
     // file alike (the Agent that wrote it may have only the file).
-    await write({});
-    const bare = (await reload()) as { error: string | null; tabs: unknown[]; hints: string[] };
+    await writeContributions({});
+    const [bare] = (await list()) as [WorkbenchInfo];
     expect(bare).toMatchObject({ error: null, tabs: [] });
     expect(bare.hints).toHaveLength(1);
     expect(bare.hints[0]).toContain('"WebModule.sessionTabs"');
@@ -707,7 +756,7 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
       "A page shows only if a tab is contributed for it",
     );
     // With the tab back there is nothing to hint at.
-    await write({ "WebModule.sessionTabs": [TAB] });
+    await writeContributions({ "WebModule.sessionTabs": [TAB] });
     expect(((await reload()) as { hints: string[] }).hints).toEqual([]);
   });
 
