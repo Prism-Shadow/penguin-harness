@@ -1,13 +1,13 @@
 /**
  * The models page's two catalog actions, both run by the server against the saved table
  * (`POST …/models/sync-presets`): "Add new models" (`add`) puts in the presets the table lacks
- * and touches nothing else; "Restore defaults" (`restore`) puts every built-in model back to the
- * catalog, keeping keys and the user's own models, behind a danger confirmation.
+ * and touches nothing else; "Restore defaults" (`restore`) resets the model configuration to a
+ * new Project's, keeping only the API keys, behind a danger confirmation.
  *
  * Both run only from their confirmation, each bound to its mode here through runPresetSync, so
  * which control sends which mode lives in one place: "Add new models" (the header button and the
  * Models notice) opens a confirmation listing what would be added; "Restore defaults" opens a
- * danger one saying what it resets and keeps. The controls hold no state of their own: the page
+ * danger one saying what it keeps and deletes. The controls hold no state of their own: the page
  * owns the busy flags and the table, and hands them in as a {@link PresetSyncHost}.
  */
 import type { ModelsResponse, PresetSyncMode } from "@prismshadow/penguin-server/api";
@@ -32,7 +32,7 @@ export interface PresetSyncHost {
 }
 
 /**
- * Runs one catalog action and reports it in a toast: the restored and added counts, the added
+ * Runs one catalog action and reports it in a toast: that defaults are restored, the added
  * count, or "nothing new". Resolves once the request settles, success or not, so a confirmation
  * can hold its busy state until then.
  */
@@ -41,7 +41,7 @@ export async function runPresetSync(host: PresetSyncHost, mode: PresetSyncMode):
   try {
     const res = await api.syncPresets(host.projectId, { mode });
     host.adopt(res);
-    if (mode === "restore") toastSuccess(S.models.restoredDefaults(res.added, res.restored));
+    if (mode === "restore") toastSuccess(S.models.restoredDefaults);
     else if (res.added > 0) toastSuccess(S.models.presetsAdded(res.added));
     else toastInfo(S.models.presetsNone);
   } catch (e) {
@@ -135,9 +135,9 @@ export function AddNewModelsConfirm({
 }
 
 /**
- * The "Restore defaults" confirmation. It rewrites every built-in model, so the body says, item
- * by item, what goes back to the catalog and what is kept, and that it is final; confirming runs
- * the restore and closes once the request settles.
+ * The "Restore defaults" confirmation. It deletes whatever the built-in defaults do not have, so
+ * the body says what is kept, what is deleted, and that it is final; confirming runs the restore
+ * and closes once the request settles.
  */
 export function RestoreDefaultsConfirm({
   host,
@@ -174,16 +174,9 @@ export function RestoreDefaultsConfirm({
 }
 
 /**
- * The body of the "Restore defaults" confirmation: what goes back to the catalog, what is kept,
- * and that it is final — in that order, one paragraph each, so the reader can check the one
- * thing they care about (their keys, their own models) without parsing a sentence.
+ * The body of the "Restore defaults" confirmation: API keys are kept, everything else goes back
+ * to the built-in defaults, the user's own models and groups are deleted, and it is final.
  */
 export function RestoreDefaultsBody() {
-  return (
-    <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
-      <p>{S.models.restoreDefaultsResets}</p>
-      <p>{S.models.restoreDefaultsKeeps}</p>
-      <p>{S.models.restoreDefaultsFinal}</p>
-    </div>
-  );
+  return <p className="text-sm text-gray-700 dark:text-gray-300">{S.models.restoreDefaultsBody}</p>;
 }

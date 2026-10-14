@@ -245,7 +245,7 @@ PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，
 - `passwordSaved`：本服务器用自己保存的密码登录这台机器时为 `true`（见上文）。
 - `member`：机器在本 Project 的列表中时为 `true`，机器管理页为它显示一张卡片。`POST …/add` 只把它加入列表而不安装；`POST …/use` 在被要求时就把它加入列表，因此首次安装失败的机器连同它的任务留在列表中，直到被删除。
 - `checkoutImage`：仅当本服务器从源码检出运行（`pnpm dev`、`pnpm desktop`）时出现。这样的服务器在每次安装或启用机器时，用与热推送相同的打包器（`scripts/deploy.mjs --out`）从检出构建安装镜像，存放在 `<root>/machines/checkout-image/` 下，从不写进自己的 `hmr/`。字段为 `{state}`：`unbuilt`、`building`、`built`，或 `failed` 并在 `detail` 中带上构建输出的最后几行。构建失败时，该任务停在 `build the install image` 这一步。
-- `imageVersion`：安装会在机器上留下的版本，即基础发布版本，带有推送构建时再加上 `+hmr.<平台 bundle 哈希>`。tarball 或打包安装报告自己的发布版本与推送状态；源码检出报告检出的发布版本加上最近一次构建的镜像，第一次构建之前为 `null`。除此之外，`null` 表示本服务器既没有安装镜像也不会构建，此时每次安装都会失败，返回 `409` `no_install_image`。
+- `imageVersion`：安装会在机器上留下的版本，即基础发布版本，再加上随它一起安装的构建的 `+hmr.<平台 bundle 哈希>`。tarball 或打包安装报告自己的发布版本加上推送状态；从未被推送过时，加上发布版自带的安装镜像（`dist/install-image.gz`，解开在 `<root>/machines/release-image/` 下），升级后镜像解开之前的片刻为 `null`。源码检出报告检出的发布版本加上最近一次构建的镜像，第一次构建之前为 `null`。除此之外，`null` 表示本服务器既没有安装镜像也不会构建，此时每次安装都会失败，返回 `409` `no_install_image`。
 - `installed`：本服务器最近一次在那台机器上执行的安装，格式为 `{version, at}`；从未安装过则为 `null`。它保存在数据根目录下，因此重启、热推送和其他机器上的安装都不会使它丢失。它记录的是实际执行过的操作，并不核对远端状态，所以手动清空过的机器仍会显示为已安装，直到下一次安装把它纠正过来。安装失败不会留下任何记录。
 - `machineId`：机器自身的 id，由运行在那台机器上的服务器生成（记录在它的 `machine` 表中），共 16 个 base64url 字符。重命名、修改别名和重新安装都不会改变它，持久化引用应指向它。在那台机器上启动过服务器之前，它为 `null`，因为还没有任何东西生成过它。本服务器在与 `status` 同一次往返中获知它，并把它与安装记录存放在一起。同一主机的两个别名报告相同的 `machineId`。
 - `local`：标记本服务器所在的机器。由于应答请求的正是它，这条记录始终在列表中，始终显示为已安装且正在运行；它也永远不会成为安装目标：对它调用 `POST …/install` 返回 `409` `self_install`。
@@ -525,6 +525,10 @@ interface AgentApiResponse {
     enabled: boolean;      // the API tab's switch; off = every /api/amsp/v1 request for the agent is 404 agent_not_found
     open: boolean;         // keyless access: a request without Authorization is accepted
     approvalMode: "allow-all" | "deny-all" | "read-only" | "always-ask";
+    model: { provider: string; modelId: string } | null;
+    thinkingLevel: "none" | "low" | "medium" | "high" | "xhigh" | "max" | null;
+    workspace: string | null;
+    maxConcurrentRuns: number; // positive integer, default 4
     keys: AgentApiKeyInfo[];
   };
   serverEnabled: boolean;  // the admin's agentApiEnabled, readable by every member
@@ -541,7 +545,9 @@ interface AgentApiKeyInfo {
 ```
 
 - 从未配置过的 Agent 读作：关闭、需要密钥、`allow-all`、没有密钥。
-- `PUT …/api` 接受 `{enabled?, open?, approvalMode?}`，返回完整的 `AgentApiResponse`。省略的字段保持原值；所有字段校验通过后才会写入任何一项。每个 API Session 在创建时复制 `approvalMode`，所以修改只影响之后新建的 API Session。
+- `PUT …/api` 接受 `{enabled?, open?, approvalMode?, model?, thinkingLevel?, workspace?, maxConcurrentRuns?}`，返回完整的 `AgentApiResponse`。省略的字段保持原值；所有字段校验通过后才会写入任何一项。每个 API Session 在创建时复制 `approvalMode`，所以修改只影响之后新建的 API Session。
+- `model`、`thinkingLevel` 和 `workspace` 只作用于之后新建的 API Session。`model: null` 使用 Project 默认模型，`thinkingLevel: null` 使用 Agent／Project 配置，`workspace: null` 创建临时工作区。模型必须是已配置的 `(provider, modelId)` 对，工作区必须是已有目录。
+- `maxConcurrentRuns` 为正的安全整数，默认 4。保存后作用于后续 API 运行请求（含试一试），不停止已有运行。正在运行的 Agent 会话和正在启动的 API 请求都计入上限；达到上限时返回 `429` `too_many_runs` 及 `Retry-After: 2`。
 - `POST …/api/keys` 接受 `{name}`，返回 201 `{key, secret}`。`secret` 形如 `penguin_` 加 43 个字符，只出现在这一次响应里：服务器只保存它的 SHA-256，列表中以 `prefix` 区分密钥。
 - `DELETE …/api/keys/:keyId` 返回 204，该密钥从下一个请求起即被拒绝。密钥不存在时返回 `404` `key_not_found`。
 - `GET /agents` 给每个 Agent 标上 `apiEnabled`，即同一个开关，智能体页面据此显示 API 图标。删除 Agent 会一并删除它的 API 设置和密钥；删除 Project 会删除其下所有 Agent 的这些数据。
@@ -612,7 +618,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 - `GET /benchmarks` 只列出含有 `benchmark_config.toml` 的目录；评估过程中删除 Benchmark 留下的目录没有这个文件，因此不会出现在列表里。每个条目都带 `status`（Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`），清单里有的话还带日期版本 `version` 与来源 `origin`（`{kind, url?, ref?, path?, importedAt?}`，`kind` 取 `builtin`、`manual`、`agent`、`git`、`zip` 之一）；早先版本写下的清单两者都没有。清单不可用的 Benchmark 以目录名列出，按 `failed` 处理，带 `manifestError`（`{code, message}`，`code` 为 `benchmark_manifest_invalid` 或 `benchmark_id_mismatch`），不带 `version` 与 `origin`。文件系统层面读不了清单时，请求失败。
 - `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark_config.toml`（含 `id`、`status = "published"`、当天的第一个版本与来源 `manual`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
-- `POST /benchmarks/archive` 接受不超过 14MB 的 zip，`benchmark_config.toml` 与各个 `CASE-*` 目录放在 zip 根目录，或放在唯一一个以清单 `id` 命名的顶层目录里；清单放在根目录时没有目录替它命名，必须写明 `id`。顶层另有别的东西（包括 `scoreboard.yaml` 与 `.jobs/`）、顶层有以 `.` 开头的条目、含符号链接、条目名含控制字符或与另一条目只差大小写、某道题缺少 `statement/README.md` 或 `rubric/README.md`、清单会被列表判为不可用，或超出服务端写入时的上限（标题 1 到 200 个字符、描述不超过 2,000 个字符、每题运行次数不超过 1,000）时，返回 400（`benchmark_archive_invalid`、`benchmark_case_invalid` 或清单自己的错误码）；`status` 不是 `published` 时返回 400 `benchmark_not_published`。超过 14MB、1000 个文件、单个文件 5MB 或合计 20MB 时返回 413 `benchmark_too_large`。服务器原样写入各题，清单写明 `id`、来源改写为 `{kind: "zip", imported_at}`、版本保持包里的值（包里没有就不带版本），并写入一份 `evaluations: []` 的 `scoreboard.yaml`。请求若用 `origin: {kind: "git", url, ref, path}` 指明包所取自的仓库文件夹（http(s) 链接、它解析到的 40 位提交号与文件夹路径，[`penguin benchmark import`](/cli#penguin-benchmark) 就这样发送），来源改记为带这些字段与 `imported_at` 的 `git`；其他形式的 `origin` 返回 400。id 已被占用时返回 409 `benchmark_exists`（`details.benchmarkId` 给出该 id），除非 `overwrite` 为 true——覆盖会替换整个目录，连同记分板与 `.jobs/`。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，评估仍在往那里写，覆盖改为返回 409 `benchmark_busy`。
+- `POST /benchmarks/archive` 接受不超过 14MB 的 zip，`benchmark_config.toml` 与各个 `CASE-*` 目录放在 zip 根目录，或放在唯一一个以清单 `id` 命名的顶层目录里；清单放在根目录时没有目录替它命名，必须写明 `id`。顶层另有别的东西（包括 `scoreboard.yaml` 与 `.jobs/`）、顶层有以 `.` 开头的条目、含符号链接、条目名含控制字符或与另一条目只差大小写、某道题缺少 `statement/README.md` 或 `rubric/README.md`、清单会被列表判为不可用，或超出服务端写入时的上限（标题 1 到 200 个字符、描述不超过 2,000 个字符、每题运行次数不超过 1,000）时，返回 400（`benchmark_archive_invalid`、`benchmark_case_invalid` 或清单自己的错误码）；`status` 不是 `published` 时返回 400 `benchmark_not_published`。超过 14MB、1000 个文件、单个文件 5MB 或合计 20MB 时返回 413 `benchmark_too_large`。服务器原样写入各题，清单写明 `id`、来源改写为 `{kind: "zip", imported_at}`、版本保持包里的值（包里没有就不带版本），并写入一份 `evaluations: []` 的 `scoreboard.yaml`。请求若用 `origin: {kind: "git", url, ref, path}` 指明包所取自的仓库文件夹（http(s) 链接、它解析到的 40 位提交号与文件夹路径），来源改记为带这些字段与 `imported_at` 的 `git`；其他形式的 `origin` 返回 400。id 已被占用时返回 409 `benchmark_exists`（`details.benchmarkId` 给出该 id），除非 `overwrite` 为 true——覆盖会替换整个目录，连同记分板与 `.jobs/`。`.jobs/` 里有还没有 `result.json` 的 trial，或有为 trial 打包的被测 Agent State（`*.agent-state.tar.gz`）时，评估仍在往那里写，覆盖改为返回 409 `benchmark_busy`。
 - `GET /benchmarks/:benchmarkId/archive` 的文件名为 `<id>-v<version>.zip`（没有版本的 Benchmark 为 `<id>.zip`），内容是磁盘上原样的 `<id>/benchmark_config.toml` 与全部 `CASE-*` 子树，不含记分板、`.jobs/`、其他以 `.` 开头的条目与符号链接；这个 zip 可以原样经 `POST /benchmarks/archive` 导回。每个条目都带同一个固定时间，未改动的 Benchmark 再次导出得到的字节完全相同。`draft` 或 `failed` 的 Benchmark 返回 409 `benchmark_not_published`；清单不可用或超出导入所守上限的返回 409 与清单自己的错误码；不存在的返回 404，超出导入大小上限的返回 413 `benchmark_too_large`。
 - 这些读取文件内容的路由采用与 Workspace 文件相同的内联加固；参见 [Workspace 文件响应](#workspace-文件响应)。
 
@@ -875,7 +881,7 @@ interface MessagesResponse {
 - `POST /subagents/:childSessionId/message` 无论子 Agent 处于什么状态，都把文本作为用户输入投递给它。子 Agent 正在运行、消息作为插话排队时，`outcome` 为 `steered`；空闲的子 Agent 启动一次后续运行时为 `started`；已释放的子 Agent 重新拉起并开始下一轮时为 `resumed`。子 Agent 以自己上下文的思考等级运行，可以用子 Session 上的 `PATCH` 固定它。空 `text` 返回 400；404 `subagent_gone` 表示子 Agent 的记录不存在或无法复活；409 `subagent_busy` 表示子 Agent 目前无法接收消息。
 - `POST /subagents/:childSessionId/abort` 只停止子 Agent 当前的运行；子 Session 仍可用于插话和后续 Task。成功停止一次运行时返回 202；子 Agent 已空闲或未知时返回 204。
 - `POST /retry-now` 对应重连倒计时上的**立即重试**按钮。它跳过当前的退避等待，立即发起下一次重试，不改动尝试计数。`skipped: false` 表示当时没有等待在进行，这不是错误。
-- `POST /retry` 对应运行出错后的**重试**按钮。运行以 `fatal` 结束或放弃重连后，失败那一轮的输入会留给下一次运行；服务器重启后恢复的 Session 会从自己的 Trace 重建它。这个路由以空输入启动一个 Task，只把那份输入重新发出：不发布或记录新的用户消息，也不运行 `user_prompt` 钩子。响应 202 `{sessionId, queued: false}`；Session 忙碌时返回 409 `task_in_progress` / `compacting`，没有留存的输入时返回 409 `nothing_to_retry`，例如后来的消息已经把它补发出去。
+- `POST /retry` 对应运行出错或被用户中断后的**重试**按钮。运行以 `fatal` 结束、放弃重连或被中断后，没跑完的那一轮输入会连同模型已产出的内容一起留给下一次运行；服务器重启后恢复的 Session 会从自己的 Trace 重建它。这个路由以空输入启动一个 Task，只把那份输入重新发出：不发布或记录新的用户消息，也不运行 `user_prompt` 钩子。响应 202 `{sessionId, queued: false}`；Session 忙碌时返回 409 `task_in_progress` / `compacting`，没有留存的输入时返回 409 `nothing_to_retry`，例如后来的消息已经把它补发出去。
 - `POST /compact` 在没有可压缩内容时返回 409，原因写在错误码里：`compaction_not_configured`（Agent 没有配置压缩）、`nothing_to_compact`（上下文还没有完整的对话轮次）或 `already_compacted`（上次压缩之后没有新内容）。服务器重启后恢复的 Session 会从自己的 Trace 推导出这些状态，所以已有对话无需先跑一个 Task 也能压缩。
 - `POST /switch-model` 接收 `{provider, modelId}`，必须是完整的一对（只给一半返回 400）。它先用当前模型压缩上下文（总是 summarize 模式），再在目标模型上开启下一个上下文。返回 202 并像 `/compact` 一样流式进行，Session 状态为 `compacting`：上下文有完成的轮可总结时，流上先是一对普通的 manual `compaction_begin` / `compaction_end`（否则没有：刚压缩过，或首个请求没有完成），随后是新上下文的开档记录和它的 `session_meta`，其 `provider` / `model_id` 就是 Session 此后所用的模型；从这条记录起 `GET /` 返回新的模型组合。压缩以非 `completed` 结束即没有切换：不会跟随 `session_meta`，Session 保持原模型。从未运行过的 Session 没有可压缩的上下文，切换在请求内完成，返回 200 与更新后的 `{session}`，不产生任何事件。拒绝返回 409，原因写在错误码里：`task_in_progress` / `compacting`（忙）、`same_model`、`model_not_configured`（目标不在 Project 的模型表中）、`model_unavailable`（目标无法构造，例如缺少凭据）和 `compaction_not_configured`。切换的压缩请求计入原模型的用量，之后的 Task 计入新模型。
 

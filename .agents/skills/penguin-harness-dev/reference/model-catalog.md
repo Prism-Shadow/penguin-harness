@@ -63,7 +63,11 @@ each ending `--set-default`, which writes `default_model`. Leave them on the old
 documented first run silently undoes the change on every fresh install. The `models` and
 `configuration` samples carry it in two places that must move together, the `default_model` line
 and the `[[models]]` row it names (a default naming no entry is rejected on load), and
-`plugins/agent-development/skills/penguin-sdk/SKILL.md` states it in prose.
+`plugins/agent-development/skills/penguin-sdk/SKILL.md` states it in prose. Mark the new
+default's catalog row `wasDefault: true` and leave the marker on the old one: "Restore defaults"
+deletes every row that is not a preset, and the marker is what keeps usage on a former default
+priced afterwards (`retainedCatalogPricing`). The old row therefore stays in the catalog, retired
+once it stops being a preset.
 
 Existing Projects never migrate automatically: presets are copied into `.project_config.toml` at
 creation and nothing rewrites them. Users pick changes up through the models page's explicit "sync

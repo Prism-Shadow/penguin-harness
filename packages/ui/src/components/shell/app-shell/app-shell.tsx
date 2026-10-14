@@ -17,6 +17,13 @@
  *
  * Nothing in the window is fixed or transformed: chrome that makes a stacking context would trap
  * the overlays the columns open.
+ *
+ * In the desktop app the window's own controls sit in a band across its top, as tall as the
+ * Window Controls Overlay's `titlebar-area-height` (a browser defines none, and the band is
+ * zero). The window reserves the band above its columns, so what shows there is the window's own
+ * fill — the theme's field, or the page canvas where the theme paints none — and the band reads as
+ * the app's top edge rather than a bar of the system's. Every column starts below it: a column
+ * rule never runs between the traffic lights, whatever width the navigation column is folded to.
  */
 import type { ReactNode } from "react";
 
@@ -36,7 +43,7 @@ export interface AppShellProps {
 export function AppShell({ nav, navCollapsed = false, children, dock, overlays }: AppShellProps) {
   const width = navCollapsed ? "w-12" : "w-64 lg:w-72";
   return (
-    <div className="ui-shell flex h-full">
+    <div className="ui-shell flex h-full pt-[env(titlebar-area-height,0px)]">
       <aside
         data-slot="nav"
         data-layout-motion

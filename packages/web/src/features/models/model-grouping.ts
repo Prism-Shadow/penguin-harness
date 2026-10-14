@@ -20,6 +20,7 @@ import {
   MODEL_PROVIDERS,
   catalogEntryFor,
   offPeakAt,
+  retainedCatalogPricing,
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo, OffPeakDiscount } from "@prismshadow/penguin-core/model-catalog";
 
@@ -297,6 +298,24 @@ export function promotedPricing(
     cacheWrite: pricing.cacheWrite * (1 - promotion),
     output: pricing.output * (1 - promotion),
   };
+}
+
+/**
+ * What a turn on `ref` is estimated to cost per million Tokens: the Project's row, its promotion
+ * taken off (promotedPricing), or, when the Project no longer has the row, the catalog price the
+ * server still costs a former default model's usage at (retainedCatalogPricing), so a reply on
+ * a model "Restore defaults" deleted keeps its figure. Undefined while the table has not loaded,
+ * and for any other model it lacks.
+ */
+export function turnPricing(
+  rows: ReadonlyArray<ModelRefValue & { pricing?: BucketPrices; discount?: number }> | undefined,
+  ref: ModelRefValue | null | undefined,
+): BucketPrices | undefined {
+  if (rows === undefined || !ref) return undefined;
+  const row = rows.find((m) => sameModelRef(m, ref));
+  if (row !== undefined) return promotedPricing(row.pricing, row.discount);
+  const kept = retainedCatalogPricing(ref.provider, ref.modelId);
+  return kept && { cacheRead: kept.cache_read, cacheWrite: kept.cache_write, output: kept.output };
 }
 
 /**

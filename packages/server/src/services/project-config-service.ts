@@ -45,7 +45,6 @@ import {
   MODELSCOPE_PROVIDER_ID,
   PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
-  catalogModelEntries,
   catalogGroupConnection,
   defaultProjectConfig,
   effectiveConnection,
@@ -57,8 +56,8 @@ import {
   parseProviderTable,
   presetModelEntries,
   presetPromotions,
-  presetProviderTable,
   projectConfigFromTable,
+  retainedCatalogPricing,
   projectConfigPath,
   providerConnectionShape,
   renderProjectConfigToml,
@@ -71,7 +70,6 @@ import {
   VENDOR_ENDPOINTS,
   fixedClientType,
   fixedClientTypeRefuses,
-  isAddableGroup,
   providerInfo,
   sameClientType,
   sameEndpoint,
@@ -573,8 +571,10 @@ function latestTimestamp(values: readonly unknown[]): string | undefined {
  * group's, would reach every one of them (groupKeyReaches, against the group's restored base
  * URL). The group takes it with the latest of the rows' `created_at`, and the rows hold it no
  * more; every row runs on the key it ran on. Rows with differing keys, or one the group key
- * would not reach, keep theirs. A key is never deleted. Returns new tables and rows; the
- * inputs are not changed.
+ * would not reach, keep theirs. A key is never deleted here: the caller passes the rows it is
+ * about to drop as well, so a key one of them shares with its group's other rows reaches the
+ * group before the row goes. Returns new tables and rows, in the order given; the inputs are
+ * not changed.
  */
 function relocateSharedKeys(
   providers: RawTable,
@@ -614,18 +614,17 @@ function relocateSharedKeys(
   return { providers: tables, models: rows };
 }
 
-/** The fields a catalog row's facts and connection live in — what "Restore defaults" resets. */
-const RESTORED_ROW_FIELDS = new Set([
-  "context_window",
-  "pricing",
-  "vision",
-  "display_name",
-  "max_tokens",
-  "fast_mode",
-  "base_url",
-  "client_type",
-  "request_model_id",
-]);
+/**
+ * A key as a row or a group table stores it — `api_key` and its `created_at` — or undefined
+ * when it holds none (a blank key is none).
+ */
+function storedKey(table: RawTable): RawTable | undefined {
+  if (!optStr(table.api_key)?.trim()) return undefined;
+  return {
+    api_key: table.api_key,
+    ...(table.created_at !== undefined ? { created_at: table.created_at } : {}),
+  };
+}
 
 /**
  * Connectivity probe prompt: asks for one word, so the whole exchange fits in a
@@ -1171,6 +1170,9 @@ export class ProjectConfigService implements ProjectConfigStore {
    * Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined
    * if none -> cost is NULL). The file holds the list price; a stored promotion takes its
    * fraction off both tiers, so a scheduled row on a promotion bills the two factors multiplied.
+   * A pair the file no longer stores is uncosted, except a model that is or was the default of
+   * new Projects: its usage keeps the catalog's price (retainedCatalogPricing), so deleting the
+   * row — by hand or by "Restore defaults" — does not unprice that history.
    */
   async getPricing(
     projectId: string,
@@ -1179,7 +1181,9 @@ export class ProjectConfigService implements ProjectConfigStore {
   ): Promise<TieredRates | undefined> {
     const raw = await this.readRaw(projectId);
     const entry = asArray(raw.models).find((m) => entryMatches(m, provider, modelId));
-    const rates = pricingDtoOf(entry?.pricing);
+    const rates = pricingDtoOf(
+      entry === undefined ? retainedCatalogPricing(provider, modelId) : entry.pricing,
+    );
     if (rates === undefined) return undefined;
     const tiered = tieredRates(provider, modelId, rates);
     const discount = this.promotions?.get(projectId, provider, modelId);
@@ -2165,12 +2169,18 @@ export class ProjectConfigService implements ProjectConfigStore {
    * more condition, because the balance request is the server's own rather than the routed
    * client's: the variable's official endpoint must be the balance endpoint's host, so a vendor
    * key never reaches another vendor. A DeepSeek group on DeepSeek's endpoint qualifies; a
-   * gateway's rows (TokenDance) get no fallback at all. Never returned to the browser.
+   * gateway's rows (TokenDance) get no fallback at all. Penguin Go alone has its own
+   * provider-scoped variable, queried at the trusted authorization origin. Never returned
+   * to the browser.
    */
   async getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined> {
     const raw = await this.readRaw(projectId);
     const group = providerTableOf(raw)[provider];
     if (group?.api_key !== undefined) return group.api_key;
+    // Penguin Go owns a provider-scoped key; no vendor variable may stand in for it.
+    if (provider === PENGUIN_GO_PROVIDER_ID) {
+      return process.env.PENGUIN_GO_API_KEY?.trim() || undefined;
+    }
     const balanceUrl = providerInfo(provider)?.balance?.url;
     if (balanceUrl === undefined) return undefined;
     const origin = (url: string): string | undefined => {
@@ -2317,28 +2327,29 @@ export class ProjectConfigService implements ProjectConfigStore {
    *   (presetAdditions), and their promotions are stored. A group the file has neither rows
    *   nor a table for gets the catalog's table. Nothing else moves: no existing row, group
    *   table, promotion, key or reference.
-   * - `restore`: every built-in row (a catalog pair, retired included) goes back to the shape
-   *   a new Project stores — context window, price and vision from the catalog; display name,
-   *   output cap and fast mode dropped; a protocol and endpoint only where its catalog row
-   *   differs from its group's — while its own key stays. Deleted presets are appended. Every
-   *   built-in group but custom gets the catalog's endpoint and protocol back in its
-   *   `[providers.<id>]` table (created when missing; a value the catalog does not set is
-   *   removed) and keeps its key — except that a self-hosted one (vLLM: no catalog endpoint,
-   *   models added by hand) keeps its base URL, the user's own server; custom and user-defined
-   *   groups keep their tables, since the rows the user added there depend on them. Rows the
-   *   user added are kept verbatim, but for
-   *   a key relocated as below. Promotions become the catalog's, except that Penguin Go's (the
-   *   platform's) and those on the user's own rows are kept. The default model is kept while
-   *   it names a row, else it becomes the catalog's default; the vision model is kept while it
-   *   names a row that takes images, else it is removed.
+   * - `restore`: the model configuration becomes a new Project's (defaultProjectConfig) and
+   *   keeps only the API keys. The rows are the non-retired presets in catalog order, the
+   *   built-in groups' tables the catalog's, the default model the catalog's, and there is no
+   *   vision model. Everything else goes: every row that is not a preset (the user's own,
+   *   and those an older catalog added, retired rows included), every user-defined group,
+   *   every override on a preset row, and every group setting the catalog does not write
+   *   (custom's and vLLM's base URLs included). Promotions become the catalog's.
    *
-   *   Keys are relocated, never deleted: a built-in group (custom excepted) with no group key
-   *   whose keyed rows all hold the same key, one the group key would reach on every one of
-   *   them (core's groupKeyReaches), gets that key as its group key, with the latest of the
-   *   rows' `created_at`, and the rows hold it no more. Rows with differing keys keep them.
+   *   Penguin Go gets no exception. Its rows beyond the presets and its promotions came from
+   *   the platform, which prices against its own list: keeping a promotion on a row whose price
+   *   went back to the catalog's would bill a discount the platform never set on that price. So
+   *   the group is reset like the others, and the platform's next sync (connect, or "Sync
+   *   models") brings its models and promotions back under the key that is kept.
    *
-   * Returns the models view with `added` (rows appended) and `restored` (existing built-in
-   * rows `restore` actually changed; 0 for `add`). Nothing is written when nothing changes.
+   *   Keys stay where they were: a group's on its group, if the group is built-in; a row's on
+   *   the same row, if that row is a preset. Then relocateSharedKeys runs over every row the
+   *   file held, the deleted ones included, so a key a deleted row of a built-in group shares
+   *   with the group's other keyed rows (or holds alone) moves to the group rather than going
+   *   with the row. Keys on a user-defined group, on the user's models in custom or in a
+   *   user-defined group, and differing keys on deleted rows go with them.
+   *
+   * Returns the models view with `added` (presets the file lacked) and `restored` (preset
+   * rows the file held that changed; 0 for `add`). Nothing is written when nothing changes.
    */
   async syncPresets(projectId: string, mode: PresetSyncMode): Promise<PresetSyncResponse> {
     return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, () =>
@@ -2371,107 +2382,51 @@ export class ProjectConfigService implements ProjectConfigStore {
   private async restorePresets(projectId: string): Promise<PresetSyncResponse> {
     const raw = await this.readRaw(projectId);
     const current = asArray(raw.models);
-    // Every catalog row as a stored entry, retired ones included (a Project still carrying a
-    // retired row has it put back like any other built-in row; it is never added, though), in
-    // the shape a new Project stores: a protocol or endpoint only where the row's differs from
-    // its group's catalog table — the table every built-in group gets back below.
-    const catalogRows = new Map(
-      catalogModelEntries().map((m) => [refKey(m.provider, m.model_id), m] as const),
-    );
-    const isCatalogRow = (row: RawTable): boolean =>
-      catalogRows.has(refKey(String(row.provider), String(row.model_id)));
-    const reset = current.map((row): RawTable => {
-      const catalogRow = catalogRows.get(refKey(String(row.provider), String(row.model_id)));
-      if (catalogRow === undefined) return row;
-      const rest = Object.fromEntries(
-        Object.entries(row).filter(
-          ([key]) => key !== "provider" && key !== "model_id" && !RESTORED_ROW_FIELDS.has(key),
-        ),
-      );
-      return { ...catalogRow, ...rest };
-    });
-    const stored = new Set(reset.map((m) => refKey(String(m.provider), String(m.model_id))));
-    const added = presetModelEntries().filter((m) => !stored.has(refKey(m.provider, m.model_id)));
+    const fresh = defaultProjectConfig();
+    const keyOf = (row: RawTable) => refKey(String(row.provider), String(row.model_id));
+    const presetRefs = new Set(fresh.models.map((m) => refKey(m.provider, m.model_id)));
 
-    // Built-in groups go back to the catalog's endpoint and protocol and keep their key (and
-    // anything else they hold); custom and user-defined groups have nothing in the catalog to
-    // go back to, and the rows the user added to them reach their endpoint through these
-    // tables. A self-hosted built-in group (vLLM: the catalog gives it no endpoint, and it takes
-    // models added by hand) keeps its base URL too — that is the user's own server, and the
-    // client's default endpoint is no default for it; only its protocol is the catalog's.
-    const catalogTables = presetProviderTable();
-    const tables: RawTable = {};
+    // A built-in group is on the page whatever it holds, so its key stays on it; a
+    // user-defined group exists by its rows, and goes with them.
+    const tables: RawTable = { ...fresh.providers };
     for (const [id, value] of Object.entries(asTable(raw.providers))) {
-      if (providerInfo(id) === undefined || id === "custom") {
-        tables[id] = value;
-        continue;
-      }
-      const { base_url: baseUrl, client_type: _clientType, ...member } = asTable(value);
-      const selfHosted = catalogGroupConnection(id)?.base_url === undefined && isAddableGroup(id);
-      const restoredTable = {
-        ...(selfHosted && baseUrl !== undefined ? { base_url: baseUrl } : {}),
-        ...catalogTables[id],
-        ...member,
-      };
-      if (Object.keys(restoredTable).length > 0) tables[id] = restoredTable;
+      if (providerInfo(id) === undefined) continue;
+      const key = storedKey(asTable(value));
+      if (key !== undefined) tables[id] = { ...asTable(tables[id]), ...key };
     }
-    for (const [id, connection] of Object.entries(catalogTables)) {
-      if (!Object.hasOwn(tables, id)) tables[id] = { ...connection };
-    }
-    const { providers, models: nextModels } = relocateSharedKeys(tables, [
-      ...reset,
-      ...added.map((m): RawTable => ({ ...m })),
-    ]);
+    const ownKeys = new Map(current.map((row) => [keyOf(row), storedKey(row)] as const));
+    const kept = fresh.models.map((m): RawTable => ({
+      ...m,
+      ...ownKeys.get(refKey(m.provider, m.model_id)),
+    }));
+    const deleted = current.filter((row) => !presetRefs.has(keyOf(row)));
+    const relocated = relocateSharedKeys(tables, [...kept, ...deleted]);
+    const providers = relocated.providers;
+    const nextModels = relocated.models.slice(0, kept.length);
+
+    const stored = new Map(current.map((row) => [keyOf(row), row] as const));
+    let added = 0;
     let restored = 0;
-    current.forEach((row, i) => {
-      if (isCatalogRow(row) && !sameValue(row, nextModels[i])) restored += 1;
-    });
+    for (const row of nextModels) {
+      const before = stored.get(keyOf(row));
+      if (before === undefined) added += 1;
+      else if (!sameValue(before, row)) restored += 1;
+    }
 
-    const refs = new Set(nextModels.map((m) => refKey(String(m.provider), String(m.model_id))));
-    const named = (ref: ModelRef | undefined): ref is ModelRef =>
-      ref !== undefined && refs.has(refKey(ref.provider, ref.model_id));
-    const prevDefault = optRef(raw.default_model);
-    const defaultModel = named(prevDefault) ? prevDefault : defaultProjectConfig().default_model;
-    const prevVision = optRef(raw.vision_model);
-    const visionTarget = named(prevVision)
-      ? nextModels.find((m) => entryMatches(m, prevVision.provider, prevVision.model_id))
-      : undefined;
-    const visionModel =
-      visionTarget?.vision !== false && named(prevVision) ? prevVision : undefined;
-
+    const defaultModel = fresh.default_model;
     const next: RawTable = { ...raw, providers, models: nextModels };
     if (defaultModel !== undefined) next.default_model = defaultModel;
     else delete next.default_model;
-    if (visionModel !== undefined) next.vision_model = visionModel;
-    else delete next.vision_model;
+    delete next.vision_model;
     const changed =
       !sameValue(current, nextModels) ||
       !sameValue(asTable(raw.providers), providers) ||
       !sameValue(optRef(raw.default_model), defaultModel) ||
-      !sameValue(prevVision, visionModel);
+      raw.vision_model !== undefined;
     if (changed) await this.writeRaw(projectId, next);
 
-    if (this.promotions !== undefined) {
-      // The catalog's promotions, except where the stored one is not the catalog's to reset:
-      // Penguin Go's come from the platform, and the user's own rows have no catalog entry.
-      const keep = this.promotions
-        .list(projectId)
-        .filter(
-          (p) =>
-            refs.has(refKey(p.provider, p.modelId)) &&
-            (p.provider === PENGUIN_GO_PROVIDER_ID ||
-              !catalogRows.has(refKey(p.provider, p.modelId))),
-        );
-      const kept = new Set(keep.map((p) => refKey(p.provider, p.modelId)));
-      this.promotions.replaceAll(projectId, [
-        ...keep,
-        ...presetPromotions().filter(
-          (p) =>
-            refs.has(refKey(p.provider, p.modelId)) && !kept.has(refKey(p.provider, p.modelId)),
-        ),
-      ]);
-    }
-    return { ...(await this.getModels(projectId)), added: added.length, restored };
+    this.promotions?.replaceAll(projectId, presetPromotions());
+    return { ...(await this.getModels(projectId)), added, restored };
   }
 }
 

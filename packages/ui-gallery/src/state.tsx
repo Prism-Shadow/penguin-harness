@@ -9,7 +9,11 @@
  * chrome, sized in px, does not — sets `lang` so CJK text shapes as Chinese, and marks the phone
  * view. The framed app gets the same preferences through its own URL (src/app/frame.ts), so the
  * page's root and every frame carry one theme. The gallery chrome never reads those attributes'
- * theme — only `.dark`, to pick its own light or dark palette.
+ * theme — only `.dark`, to pick its own light or dark palette; nor does the site navbar above it.
+ *
+ * The mode and the language are the site's as well as the view's: a visit without them in its URL
+ * opens in the ones the landing page and the docs use, and the site navbar's toggles change both
+ * the view and the site's choice (site/prefs.ts).
  */
 import {
   createContext,
@@ -26,30 +30,44 @@ import { asAccentChoice, resolveAccent } from "./lib/accents";
 import { replaceSearch, usePrefersDark, useSearch } from "./lib/location";
 import { probeAccents, probeTokens } from "./lib/token-probe";
 import type { AccentMatrix, TokenMatrix } from "./lib/token-probe";
-import { formatGalleryQuery, parseGalleryState, PREF_KEYS, resolveMode } from "./lib/url-state";
-import type { GalleryState, RememberedPrefs } from "./lib/url-state";
+import {
+  formatGalleryQuery,
+  GALLERY_PREF_KEYS,
+  MODE_PREFS,
+  parseGalleryState,
+  PREF_KEYS,
+  rememberedPrefs,
+  resolveMode,
+  SITE_LANG_PREFS,
+} from "./lib/url-state";
+import type { GalleryState, PrefKey, RememberedPrefs } from "./lib/url-state";
+import { LANG_KEY, readPref, THEME_KEY } from "./site/site-prefs";
 import { zh } from "./strings";
 import type { GalleryStrings } from "./strings";
 import { en } from "./strings-en";
 
 const storageKey = (key: string) => `penguin-gallery.${key}`;
 
+/** The gallery's own stored preferences, the site's shared mode and language, resolved. */
 function readRemembered(): RememberedPrefs {
-  const prefs: Record<string, string> = {};
+  const gallery: Partial<Record<PrefKey, string>> = {};
   try {
     for (const key of PREF_KEYS) {
       const value = window.localStorage.getItem(storageKey(key));
-      if (value) prefs[key] = value;
+      if (value) gallery[key] = value;
     }
   } catch {
     // Storage can be unavailable (a sandboxed frame); the URL alone still works.
   }
-  return prefs as RememberedPrefs;
+  const siteTheme = readPref(THEME_KEY, MODE_PREFS);
+  const siteLang = readPref(LANG_KEY, SITE_LANG_PREFS);
+  return rememberedPrefs({ gallery, siteTheme, siteLang }, navigator.language);
 }
 
+/** The gallery's own preferences only: the site's two are written by the navbar's toggles. */
 function remember(state: GalleryState): void {
   try {
-    for (const key of PREF_KEYS) window.localStorage.setItem(storageKey(key), state[key]);
+    for (const key of GALLERY_PREF_KEYS) window.localStorage.setItem(storageKey(key), state[key]);
   } catch {
     // Convenience only.
   }

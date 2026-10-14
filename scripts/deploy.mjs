@@ -84,12 +84,31 @@ const log = (msg) => console.log(`[deploy] ${msg}`);
  * from an uncommitted tree is normal here and the record has to admit it, since the sha
  * alone would name code that never existed. Null when this is not a checkout of this
  * repository, in which case the push carries no `source` rather than a fabricated one.
+ *
+ * A release build is the exception: the release workflow stamps core before building (its
+ * tree is dirty by construction), and the bundles compiled from it report that release —
+ * `v<version>`, channel `release`. That is what its image records, so a machine reporting a
+ * release beside this image reads as running it rather than as a release that fell back from
+ * a pushed build (packages/server/src/machines/install-server.ts's runningBuild).
  */
-function pushSource() {
-  const facts = checkoutFacts();
+async function pushSource() {
   const repo = originUrl();
+  const built = await compiledIdentity();
+  if (built.channel === "release") {
+    return { repo: repo ?? path.basename(ROOT), revision: built.describe };
+  }
+  const facts = checkoutFacts();
   if (facts?.described == null || repo === null) return null;
   return { repo, revision: facts.described };
+}
+
+/**
+ * The identity the bundles compiled here report: core's buildInfo(), from the core build they
+ * inline (the alias in push-bundle.mjs resolves the same package).
+ */
+async function compiledIdentity() {
+  const core = await import("@prismshadow/penguin-core");
+  return core.buildInfo();
 }
 
 function usage(problem) {
@@ -408,7 +427,7 @@ async function main() {
 
   const files = await readWebManifest();
   const assets = await readNativeAssets();
-  const source = pushSource();
+  const source = await pushSource();
 
   const platform = await fsp.readFile(PLATFORM_BUNDLE);
   const cli = await fsp.readFile(CLI_BUNDLE);

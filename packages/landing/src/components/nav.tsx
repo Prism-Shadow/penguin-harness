@@ -5,8 +5,9 @@
  * background. A disclosure menu covers small screens.
  *
  * The markup and class strings are duplicated verbatim in the docs nav
- * (packages/docs/src/components/nav.tsx — the two sites share no package, as with
- * site-prefs.ts); keep the two files aligned so the navbars render identically.
+ * (packages/docs/src/components/nav.tsx) and the gallery's (packages/ui-gallery/src/site/nav.tsx)
+ * — the sites share no package, as with site-prefs.ts; keep the three files aligned so the
+ * navbars render identically.
  */
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";

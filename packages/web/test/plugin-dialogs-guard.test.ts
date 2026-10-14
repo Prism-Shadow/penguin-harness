@@ -13,6 +13,8 @@
  *   refused, the typed name is still there and Esc asks again.
  * - Opening the chat with a typed source moves to the conversation without asking, and leaves
  *   nothing unsaved.
+ * - An example fills the source without installing; opening the chat sends that source with
+ *   the plugin install instructions.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createElement as h, useState } from "react";
@@ -20,6 +22,8 @@ import type { PluginItem } from "@prismshadow/penguin-server/api";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { draftKey, loadDraft } from "../src/features/chat/draft-cache";
+import { ADMIN_ME } from "./helpers/admin-settings";
 import { McpSetUpModal } from "../src/features/plugins/plugin-mcp";
 import { ImportPluginModal } from "../src/features/plugins/plugin-import-modal";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, whereIs } from "./helpers/agent-app";
@@ -141,6 +145,24 @@ async function openImport() {
 const npmField = () => field(en.plugins.importNpmLabel);
 
 describe("the plugin import dialog", () => {
+  it("fills an example without installing, then hands its source to a chat draft", async () => {
+    const { server, router } = await openImport();
+    const example = document.querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!;
+    await click(example);
+    const source = field(en.plugins.importSourceLabel).value;
+    expect(source).toMatch(
+      /^https:\/\/github.com\/Prism-Shadow\/penguin-harness\/tree\/main\/plugins\//,
+    );
+    expect(server.writes("/plugins/installed")).toEqual([]);
+    expect(whereIs(router)).toBe("/chat/import");
+    await click(button(en.skills.importOpenChat));
+    await waitFor(() => whereIs(router) === "/chat/new");
+    expect(loadDraft(draftKey(ADMIN_ME.user.userId, PROJECT_ID)).text).toContain(source);
+    expect(loadDraft(draftKey(ADMIN_ME.user.userId, PROJECT_ID)).text).toContain(
+      "penguin plugin install",
+    );
+  });
+
   beforeAll(() => setActiveStrings(en));
   afterAll(() => setActiveStrings(zh));
   afterEach(async () => {

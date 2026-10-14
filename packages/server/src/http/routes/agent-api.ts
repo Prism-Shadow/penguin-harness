@@ -16,32 +16,40 @@
  * for `penguin agent api status` and `keys ls`.
  */
 import { Hono } from "hono";
+import { THINKING_LEVEL_NAMES, resolveModelRef } from "@prismshadow/penguin-core";
+import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import type { Context } from "hono";
 import type {
   AgentApiKeyCreateResponse,
   AgentApiKeyInfo,
   AgentApiResponse,
+  ModelRefDto,
 } from "../../api/types.js";
 import { requireHuman } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { mintAgentApiKey } from "../../amsp/keys.js";
 import { HttpError } from "../errors.js";
 import {
+  badRequest,
+  optionalString,
   optionalBoolean,
+  optionalNumber,
   optionalEnum,
   readJson,
   requireString,
   requireValidId,
 } from "../validate.js";
 import { APPROVAL_MODES } from "./sessions.js";
+import { DEFAULT_API_CONCURRENT_RUNS } from "../../mechanisms/agent-api.js";
 import type { AgentApi, AgentApiKeyRow } from "../../mechanisms/agent-api.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
-import type { Access } from "../../mechanisms/projects.js";
+import type { ProjectConfigStore, Access } from "../../mechanisms/projects.js";
 import type { Settings } from "../../mechanisms/settings.js";
 
 /** What this route group reaches — bound by its module (services/agent-routes.ts). */
 export interface AgentApiRouteDeps {
   agentApi: AgentApi;
+  projectConfig: Pick<ProjectConfigStore, "loadConfig">;
   agentConfigService: Pick<AgentConfig, "requireExists">;
   access: Pick<Access, "requireProjectAccess" | "requireProjectOwner">;
   settings: Pick<Settings, "getAgentApiEnabled">;
@@ -71,6 +79,10 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
         enabled: row?.enabled ?? false,
         open: row?.open ?? false,
         approvalMode: row?.approvalMode ?? "allow-all",
+        model: row?.model ?? null,
+        thinkingLevel: row?.thinkingLevel ?? null,
+        workspace: row?.workspace ?? null,
+        maxConcurrentRuns: row?.maxConcurrentRuns ?? DEFAULT_API_CONCURRENT_RUNS,
         keys: deps.agentApi.listKeys(projectId, agentId).map(keyInfo),
       },
       // The tab says when the admin has the whole API off: only an admin can read that setting.
@@ -104,6 +116,40 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
     const enabled = optionalBoolean(body, "enabled");
     const open = optionalBoolean(body, "open");
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
+    const maxConcurrentRuns = optionalNumber(body, "maxConcurrentRuns", { integer: true });
+    if (
+      maxConcurrentRuns !== undefined &&
+      (!Number.isSafeInteger(maxConcurrentRuns) || maxConcurrentRuns < 1)
+    ) {
+      throw badRequest("maxConcurrentRuns must be a positive safe integer.");
+    }
+    let model: ModelRefDto | null | undefined;
+    if (body.model === null) model = null;
+    else if (body.model !== undefined) {
+      if (typeof body.model !== "object" || Array.isArray(body.model)) {
+        throw badRequest("model must be a model reference or null.");
+      }
+      const ref = body.model as Record<string, unknown>;
+      model = {
+        provider: requireString(ref, "provider", { minLen: 1, maxLen: 64 }),
+        modelId: requireString(ref, "modelId", { minLen: 1, maxLen: 200 }),
+      };
+      const config = await deps.projectConfig.loadConfig(projectId);
+      try {
+        resolveModelRef(config, model.modelId, model.provider);
+      } catch (e) {
+        throw badRequest(e instanceof Error ? e.message : String(e));
+      }
+    }
+    const thinkingLevel =
+      body.thinkingLevel === null
+        ? null
+        : optionalEnum(body, "thinkingLevel", THINKING_LEVEL_NAMES);
+    let workspace =
+      body.workspace === null
+        ? null
+        : optionalString(body, "workspace", { minLen: 1, maxLen: 4096 });
+    if (workspace != null) workspace = await assertWorkspaceAllowed({ workspace });
     deps.agentApi.set(
       projectId,
       agentId,
@@ -111,6 +157,10 @@ export function agentApiRoutes(deps: AgentApiRouteDeps): Hono<AppEnv> {
         ...(enabled !== undefined ? { enabled } : {}),
         ...(open !== undefined ? { open } : {}),
         ...(approvalMode !== undefined ? { approvalMode } : {}),
+        ...(model !== undefined ? { model } : {}),
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+        ...(workspace !== undefined ? { workspace } : {}),
+        ...(maxConcurrentRuns !== undefined ? { maxConcurrentRuns } : {}),
       },
       deps.now().toISOString(),
     );

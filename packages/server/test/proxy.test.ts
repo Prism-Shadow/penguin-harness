@@ -10,20 +10,25 @@
  *   local port, never reaches the proxy, and a request to a public host does.
  * - The NO_PROXY a command is given when the explicit address is injected carries the local
  *   ranges as CIDR entries, beside the environment's own and the loopback names.
- *
- * No global install — installGlobalProxyDispatcher (fetch replacement) runs only in the
- * production entry.
+ * - Given the proxy installed for the process with an explicit address, a GET and a JSON
+ *   POST handed to the global fetch as a Request built with the runtime's own Request class
+ *   (how the Gemini SDK sends every call) go out through that proxy, method, path and body
+ *   intact.
+ * - Given the proxy installed, a settings change sends the next request through the new
+ *   address, without a restart.
  */
 import http from "node:http";
 import net from "node:net";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { Agent, fetch as undiciFetch } from "undici";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { Agent, fetch as undiciFetch, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import {
   LocalFirstDispatcher,
   agentNoProxy,
+  applyProxySettings,
   buildProxyDispatcher,
   envProxyAgentOptions,
+  installGlobalProxyDispatcher,
   isLocalDestination,
   mergedNoProxy,
   normalizeProxyUrl,
@@ -437,5 +442,93 @@ describe("agentNoProxy", () => {
 
   it("leaves the dispatcher's own NO_PROXY as it was: undici does not read CIDR entries", () => {
     expect(envProxyAgentOptions(null, {}).noProxy).toBe("localhost,127.0.0.1,::1");
+  });
+});
+
+describe("the global fetch with the proxy installed", () => {
+  // One fake proxy for the block: it answers CONNECT, notes the target and the user named in
+  // the address that sent it, and hands the tunnel to an origin that echoes what it received.
+  const connects: Array<{ target: string; user: string }> = [];
+  const origin = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json", connection: "close" });
+      res.end(
+        JSON.stringify({
+          method: req.method,
+          path: req.url,
+          body: Buffer.concat(chunks).toString("utf8"),
+        }),
+      );
+    });
+  });
+  const proxy = http.createServer((_req, res) => res.end());
+  proxy.on("connect", (req, socket, head) => {
+    const auth = String(req.headers["proxy-authorization"] ?? "").replace(/^Basic /, "");
+    connects.push({
+      target: req.url ?? "",
+      user: Buffer.from(auth, "base64").toString("utf8").split(":")[0] ?? "",
+    });
+    socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+    if (head.length > 0) socket.unshift(head);
+    origin.emit("connection", socket);
+  });
+  let proxyPort = 0;
+  const address = (user: string) => `http://${user}:secret@127.0.0.1:${proxyPort}`;
+  const runtimeFetch = globalThis.fetch;
+  const previousDispatcher = getGlobalDispatcher();
+
+  beforeAll(async () => {
+    proxyPort = await new Promise<number>((resolve) => {
+      proxy.listen(0, "127.0.0.1", () => resolve((proxy.address() as AddressInfo).port));
+    });
+    installGlobalProxyDispatcher();
+  });
+
+  afterAll(async () => {
+    // Back to what the files after this one in the worker expect: the module's default
+    // settings, the dispatcher that was there before, and the runtime's fetch.
+    applyProxySettings({ proxyForApp: true, proxyUrl: null });
+    const installed = getGlobalDispatcher();
+    setGlobalDispatcher(previousDispatcher);
+    globalThis.fetch = runtimeFetch;
+    await installed.close();
+    proxy.close();
+  });
+
+  it.each([
+    ["GET", undefined],
+    ["POST", JSON.stringify({ input: "ping" })],
+  ] as const)(
+    "a %s Request built with the runtime's Request class goes out through the proxy",
+    async (method, body) => {
+      applyProxySettings({ proxyForApp: true, proxyUrl: address("first") });
+      const before = connects.length;
+      const request = new Request("http://models.example.com/v1beta/interactions?alt=sse", {
+        method,
+        ...(body !== undefined ? { body, headers: { "content-type": "application/json" } } : {}),
+      });
+
+      const res = await globalThis.fetch(request);
+
+      expect(await res.json()).toEqual({
+        method,
+        path: "/v1beta/interactions?alt=sse",
+        body: body ?? "",
+      });
+      expect(connects.slice(before)).toEqual([{ target: "models.example.com:80", user: "first" }]);
+    },
+  );
+
+  it("a settings change sends the next request through the new address, without a restart", async () => {
+    applyProxySettings({ proxyForApp: true, proxyUrl: address("first") });
+    const before = connects.length;
+    await (await globalThis.fetch("http://models.example.com/one")).text();
+
+    applyProxySettings({ proxyForApp: true, proxyUrl: address("second") });
+    await (await globalThis.fetch("http://models.example.com/two")).text();
+
+    expect(connects.slice(before).map((c) => c.user)).toEqual(["first", "second"]);
   });
 });

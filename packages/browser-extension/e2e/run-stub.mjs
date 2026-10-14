@@ -5,9 +5,10 @@
 // real chain (CLI, server, extension, Chrome) is run.mjs.
 //
 // Covers: pairing through the options page (token in the subprotocol, never in a URL); the
-// pages in English under a Chinese Chrome until the user picks 中文, which turns the options page
-// and the toolbar title Chinese at once, and the manifest's messages from _locales; the
-// hello handshake and pings; open-tab into the "Penguin" group; a scan-like Runtime.evaluate;
+// pages and the toolbar title in Chrome's language (Chinese here) until the user picks another,
+// which turns both over at once, and the manifest's messages from _locales; the pages following
+// the device's dark setting until the user picks a theme; the switches' focus ring, drawn for the
+// keyboard and never left by a click; the hello handshake and pings; open-tab into the "Penguin" group; a scan-like Runtime.evaluate;
 // a trusted click and typing through Input.*; a relayed CDP event; a page the tab opens joining
 // the group; refusals (a cookie method, a tab the server does not drive); close-tab; and a
 // revoke closing the socket for good.
@@ -50,8 +51,8 @@ async function eventually(fn, timeoutMs = 10_000) {
 const fixture = await startFixtureSite();
 const stub = await startStubServer({ pingMs: 2_000 });
 const userDataDir = mkdtempSync(path.join(tmpdir(), "penguin-ext-e2e-"));
-// A Chinese Chrome: the extension's pages must still open in English. Chrome on Linux takes its
-// language from LANGUAGE as well as --lang.
+// A Chinese Chrome: the extension's pages open in Chinese, as its listing does. Chrome on Linux
+// takes its language from LANGUAGE as well as --lang.
 const context = await chromium.launchPersistentContext(userDataDir, {
   headless: false,
   viewport: null,
@@ -131,8 +132,8 @@ try {
     intro: document.getElementById("intro")?.textContent ?? "",
   }));
   check(
-    "under a Chinese Chrome the options page opens in English",
-    opening.browser.startsWith("zh") && opening.page === "en" && !HAN.test(opening.intro),
+    "under a Chinese Chrome the options page opens in Chinese",
+    opening.browser.startsWith("zh") && opening.page === "zh-CN" && HAN.test(opening.intro),
     JSON.stringify({ browser: opening.browser, page: opening.page }),
   );
   const listing = await worker.evaluate(() => ({
@@ -145,25 +146,72 @@ try {
     listing.description,
   );
   const toolbarTitle = () => worker.evaluate(() => chrome.action.getTitle({}));
-  await options.click('#language button[data-language="zh"]');
-  const chinese = await eventually(async () => {
-    const intro = (await options.textContent("#intro")) ?? "";
+  const chineseTitle = await eventually(async () => {
     const title = await toolbarTitle();
-    return HAN.test(intro) && HAN.test(title) && { title };
+    return HAN.test(title) && { title };
   });
-  check(
-    "picking 中文 turns the options page and the toolbar title Chinese at once",
-    chinese !== undefined &&
-      (await worker.evaluate(() => chrome.storage.local.get("uiLanguage"))).uiLanguage === "zh",
-    chinese?.title,
-  );
-  await options.click('#language button[data-language="en"]');
+  check("so does the toolbar title", chineseTitle !== undefined, chineseTitle?.title);
+  await options.selectOption("#language", "en");
   const english = await eventually(async () => {
     const intro = (await options.textContent("#intro")) ?? "";
     const title = await toolbarTitle();
     return !HAN.test(intro) && !HAN.test(title) && title.includes("connected to") && { title };
   });
-  check("picking EN turns both back", english !== undefined, english?.title);
+  check(
+    "picking English turns the options page and the toolbar title English at once",
+    english !== undefined &&
+      (await worker.evaluate(() => chrome.storage.local.get("uiLanguage"))).uiLanguage === "en",
+    english?.title,
+  );
+  await options.selectOption("#language", "system");
+  const chineseAgain = await eventually(async () => {
+    const intro = (await options.textContent("#intro")) ?? "";
+    return HAN.test(intro) && HAN.test(await toolbarTitle());
+  });
+  check("picking System returns both to Chrome's language", chineseAgain === true);
+
+  // --- the pages' theme ------------------------------------------------------------------------
+  const DARK = "rgb(20, 20, 20)";
+  const LIGHT = "rgb(255, 255, 255)";
+  const background = () => options.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  const becomes = (colour) => eventually(async () => (await background()) === colour);
+  await options.emulateMedia({ colorScheme: "dark" });
+  check("with no theme picked the options page turns dark with the device", await becomes(DARK));
+  await options.click("#theme");
+  check(
+    "picking Light holds it light on a dark device",
+    (await becomes(LIGHT)) === true &&
+      (await worker.evaluate(() => chrome.storage.local.get("uiTheme"))).uiTheme === "light",
+  );
+  await options.click("#theme");
+  await options.emulateMedia({ colorScheme: "light" });
+  check("picking Dark holds it dark on a light device", await becomes(DARK));
+  await options.click("#theme");
+  check("picking System follows the device again", await becomes(LIGHT));
+
+  // --- focus rings: a click leaves none, the keyboard draws one ---------------------------------
+  const ring = (selector) =>
+    options.evaluate((s) => getComputedStyle(document.querySelector(s)).outlineStyle, selector);
+  await options.click("#language");
+  await options.keyboard.press("Escape");
+  const clicked = { language: await ring(".pref") };
+  // Three steps go round to System again.
+  for (let i = 0; i < 3; i++) await options.click("#theme");
+  clicked.theme = await ring("#theme");
+  check(
+    "a click on the language or theme switch leaves no focus ring",
+    clicked.language === "none" && clicked.theme === "none",
+    JSON.stringify(clicked),
+  );
+  await options.keyboard.press("Shift+Tab");
+  const keyed = { language: await ring(".pref") };
+  await options.keyboard.press("Tab");
+  keyed.theme = await ring("#theme");
+  check(
+    "focus by keyboard draws the ring on both",
+    keyed.language === "solid" && keyed.theme === "solid",
+    JSON.stringify(keyed),
+  );
 
   const pairRequest = stub.state.pairRequests[0];
   check(

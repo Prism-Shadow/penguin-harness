@@ -7,8 +7,8 @@
  *
  * - it is runtime MECHANISM the platform must not re-implement (authentication, the SSE
  *   channel hub, the proxy dispatcher — a pushed bundle carries its own copy of every
- *   module, so a bundle-side `applyProxySettings` would configure the bundle's undici
- *   instance while `globalThis.fetch` still routes through the runtime's);
+ *   module, so a bundle-side `applyProxySettings` would only update the bundle's copy of
+ *   net/proxy.js, which never installed the process dispatcher);
  * - or it is a live object that must be ONE per process (the SQLite handle — web.db is
  *   single-writer; the ServerConfig object — the listen callback writes the real port
  *   back into it and every reader must observe that write).
@@ -383,7 +383,7 @@ export abstract class Channels {
 /** Compile-time proof the hub satisfies the contract. */
 export type _ChannelsCheck = ChannelHub extends Channels ? true : never;
 
-/** The global fetch dispatcher's settings — runtime-owned, since a bundle's own undici is not the one `globalThis.fetch` routes through. */
+/** The global fetch dispatcher's settings — runtime-owned, since only the runtime's copy of net/proxy.js installed that dispatcher. */
 @Interface()
 export abstract class Proxy {
   abstract apply(settings: ProxySettings): void;

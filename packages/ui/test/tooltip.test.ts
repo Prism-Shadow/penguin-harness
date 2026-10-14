@@ -8,6 +8,13 @@
  * text — a background process's command, shown whole — wraps at that room instead of running off
  * a phone's screen; a short label never reaches it.
  *
+ * Vertically, a panel hangs under a toolbar control, with three cases once its height is known:
+ * - Given a control at the foot of the window (the composer's context ring) and a panel taller
+ *   than the room left below it, then the panel stands over the control, pinned by its bottom
+ *   edge, instead of running past the window's bottom.
+ * - Given a panel that fits below, then it stays below, however low the control sits.
+ * - Given a panel too tall for either side, then it takes the roomier one.
+ *
  * The rule: a hint shows for an element with no visible text of its own, or one whose visible
  * text is cut off — never for a label the reader can already read in full. An SVG's text and
  * anything `aria-hidden` are not read as words; a hint marked as carrying what the screen does
@@ -88,6 +95,28 @@ describe("belowTrigger", () => {
   it("keeps the anchored edge inside the viewport margin", () => {
     expect(belowTrigger(box(900, 0, 100, 20), VIEWPORT).right).toBe(8);
     expect(belowTrigger(box(-20, 0, 100, 20), VIEWPORT).left).toBe(8);
+  });
+
+  it("stands a panel with no room below over a control at the foot of the window", () => {
+    // The composer's context ring, 21px above the bottom edge, and its one-line hint.
+    expect(belowTrigger(box(40, 747, 32, 32), VIEWPORT, 26)).toEqual({
+      bottom: 61,
+      left: 40,
+      room: 952,
+    });
+  });
+
+  it("keeps a panel that fits below there, however low its control sits", () => {
+    expect(belowTrigger(box(40, 700, 32, 32), VIEWPORT, 26)).toEqual({
+      top: 740,
+      left: 40,
+      room: 952,
+    });
+  });
+
+  it("puts a panel too tall for either side on the roomier one", () => {
+    expect(belowTrigger(box(40, 200, 32, 32), VIEWPORT, 700)).toMatchObject({ top: 240 });
+    expect(belowTrigger(box(40, 560, 32, 32), VIEWPORT, 700)).toMatchObject({ bottom: 248 });
   });
 });
 

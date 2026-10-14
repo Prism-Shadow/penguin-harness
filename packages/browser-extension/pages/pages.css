@@ -1,69 +1,128 @@
+/*
+ * The extension's two pages in the product site's look (penguin.ooo, packages/landing): its
+ * neutral greys, its brand blue as the one accent, near-black primary buttons, 8px radii, and a
+ * ruled header with the logo. The palettes are the site's own values (Tailwind's grays for light,
+ * the site's neutral ramp for dark).
+ *
+ * Light is the default. Dark applies when the user picked it (data-theme="dark" on <html>), or
+ * when the device is dark and the user did not pick light; the media query keeps that live.
+ */
+
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: #ffffff;
-  --fg: #1f2328;
-  --muted: #656d76;
-  --rule: #d8dee4;
-  --field: #ffffff;
-  --accent: #1d4ed8;
-  --accent-fg: #ffffff;
+  --fg: oklch(21% 0.034 264.665);
+  --muted: oklch(44.6% 0.03 256.802);
+  --subtle: oklch(55.1% 0.027 264.364);
+  --rule: oklch(92.8% 0.006 264.531);
+  --line: oklch(92.8% 0.006 264.531);
+  --hover: oklch(98.5% 0.002 247.839);
+  --surface: #ffffff;
+  --primary: oklch(21% 0.034 264.665);
+  --primary-hover: oklch(37.3% 0.034 259.733);
+  --primary-fg: #ffffff;
+  --link: #0b57d0;
+  --link-hover: #1a73e8;
+  --link-line: #8ab4f8;
+  --focus: rgb(107 114 128 / 0.4);
   --ok: #1a7f37;
   --wait: #9a6700;
-  --off: #8c959f;
+  --off: oklch(70.7% 0.022 261.325);
   --danger: #cf222e;
-  font:
-    14px/1.5 system-ui,
-    -apple-system,
-    "Segoe UI",
-    "PingFang SC",
-    "Microsoft YaHei",
-    sans-serif;
 }
 
+/* The dark palette, twice: once for a device that is dark, once for a picked dark theme. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --fg: #e6edf3;
-    --muted: #8d96a0;
-    --rule: #30363d;
-    --field: #010409;
-    --accent: #4493f8;
-    --accent-fg: #0d1117;
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #141414;
+    --fg: #f0f0f0;
+    --muted: #ababab;
+    --subtle: #8f8f8f;
+    --rule: #2a2a2a;
+    --line: #383838;
+    --hover: #2a2a2a;
+    --surface: #1c1c1c;
+    --primary: #f0f0f0;
+    --primary-hover: #ffffff;
+    --primary-fg: #1c1c1c;
+    --link: #8ab4f8;
+    --link-hover: #aecbfa;
+    --link-line: #0b57d0;
     --ok: #3fb950;
     --wait: #d29922;
-    --off: #6e7681;
+    --off: #575757;
     --danger: #f85149;
   }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #141414;
+  --fg: #f0f0f0;
+  --muted: #ababab;
+  --subtle: #8f8f8f;
+  --rule: #2a2a2a;
+  --line: #383838;
+  --hover: #2a2a2a;
+  --surface: #1c1c1c;
+  --primary: #f0f0f0;
+  --primary-hover: #ffffff;
+  --primary-fg: #1c1c1c;
+  --link: #8ab4f8;
+  --link-hover: #aecbfa;
+  --link-line: #0b57d0;
+  --ok: #3fb950;
+  --wait: #d29922;
+  --off: #575757;
+  --danger: #f85149;
 }
 
 * {
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
+  font:
+    14px/1.5 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1,
-h2 {
+h2,
+p {
   margin: 0;
+}
+
+h2 {
+  font-size: 15px;
   font-weight: 600;
 }
 
-h1 {
-  font-size: 20px;
-}
-
-h2 {
-  font-size: 13px;
-  color: var(--muted);
-  text-transform: none;
-}
-
 a {
-  color: var(--accent);
+  color: var(--link);
+  /* Links read as links, as on the site. deslop-ignore-next-line 09 */
+  text-decoration: underline;
+  text-decoration-color: var(--link-line);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  color: var(--link-hover);
 }
 
 .muted {
@@ -71,28 +130,49 @@ a {
 }
 
 .small {
-  font-size: 12px;
+  font-size: 13px;
 }
+
+.plain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* controls */
 
 button {
   font: inherit;
-  cursor: pointer;
-  border-radius: 6px;
-  padding: 5px 12px;
-  border: 1px solid var(--rule);
-  background: transparent;
+  font-weight: 600;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
   color: var(--fg);
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--hover);
 }
 
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-fg);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+
+button.primary:hover {
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
 }
 
 button.flat {
   border-color: transparent;
-  padding: 2px 6px;
+  background: transparent;
+  padding: 0 6px;
+  font-weight: 400;
   color: var(--muted);
 }
 
@@ -105,14 +185,131 @@ button:disabled {
   cursor: default;
 }
 
+/* Keyboard focus only: a click leaves no ring (view.ts marks the select's keyboard focus). */
+button:focus-visible,
+a:focus-visible,
+.pref:has(select[data-focus="keyboard"]) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
 input {
   font: inherit;
   width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--field);
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
   color: var(--fg);
+}
+
+input::placeholder {
+  color: var(--subtle);
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--link);
+}
+
+.icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* the header: logo, name, and the language and theme switches, as the site's top bar */
+
+.bar {
+  border-bottom: 1px solid var(--rule);
+}
+
+.popup .bar,
+.bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bar .logo {
+  flex: none;
+}
+
+.bar .brand {
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+}
+
+.prefs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* Icon-only switches are flat: the glyph deepens on hover, nothing fills. */
+.icon-button,
+.pref {
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  padding: 0;
+}
+
+.icon-button:hover,
+.pref:hover {
+  background: transparent;
+  color: var(--fg);
+}
+
+.icon-button .icon {
+  display: none;
+}
+
+.icon-button[data-mode="light"] [data-icon="light"],
+.icon-button[data-mode="dark"] [data-icon="dark"],
+.icon-button[data-mode="system"] [data-icon="system"] {
+  display: block;
+}
+
+/* The language switch is a native select laid invisibly over its globe and label. */
+.pref {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  font-size: 14px;
+}
+
+.pref .chevron {
+  width: 14px;
+  height: 14px;
+}
+
+.pref select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 .dot {
@@ -141,7 +338,7 @@ input {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 0;
+  padding: 10px 0;
 }
 
 .row .grow {
@@ -157,105 +354,130 @@ input {
   color: var(--danger);
 }
 
-/* the EN / 中文 switch, on both pages: the chosen language reads in full colour */
-
-.language {
-  display: inline-flex;
-  align-items: center;
-  font-size: 12px;
-}
-
-.language button {
-  border-color: transparent;
-  padding: 2px 4px;
-  color: var(--muted);
-}
-
-.language button:hover {
-  color: var(--fg);
-}
-
-.language button[aria-pressed="true"] {
-  color: var(--fg);
-  font-weight: 600;
-  cursor: default;
-}
-
-.language .divider {
-  color: var(--rule);
-}
-
 /* the options page */
+
+.options .bar-inner {
+  max-width: 640px;
+  height: 56px;
+  margin: 0 auto;
+  padding: 0 18px 0 24px;
+}
+
+.options .brand {
+  font-size: 15px;
+}
 
 .page {
   max-width: 640px;
   margin: 0 auto;
-  padding: 32px 24px 48px;
+  padding: 28px 24px 56px;
 }
 
-.page header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.page header .language {
-  margin-left: auto;
+.page .intro {
+  color: var(--muted);
+  line-height: 1.65;
 }
 
 .page section {
-  margin-top: 28px;
+  margin-top: 32px;
+  padding-top: 20px;
   border-top: 1px solid var(--rule);
-  padding-top: 12px;
 }
 
-.page ul {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0;
+.page section > .plain,
+.page section > p {
+  margin-top: 6px;
 }
 
 .page form label {
   display: block;
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
 .page form label span {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .page .actions {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 18px;
+}
+
+.page .actions button {
+  height: 36px;
+  padding: 0 16px;
 }
 
 .page ol {
-  margin: 8px 0;
+  margin: 10px 0 12px;
   padding-left: 20px;
+}
+
+.page li + li {
+  margin-top: 4px;
 }
 
 /* the toolbar popup */
 
-.plain {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .popup {
   width: 320px;
-  padding: 12px 14px;
+}
+
+.popup .bar {
+  height: 44px;
+  padding: 0 4px 0 12px;
+}
+
+.popup .brand {
+  font-size: 14px;
+}
+
+.popup .icon-button {
+  width: 32px;
+}
+
+.popup .icon-button,
+.popup .pref {
+  height: 32px;
+}
+
+/* The popup is too narrow for the language's name: the globe and the tooltip carry it. */
+.popup .pref-label {
+  display: none;
+}
+
+.popup .pref {
+  gap: 2px;
+  padding: 0 6px;
+}
+
+.popup .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.popup .pref .chevron {
+  width: 12px;
+  height: 12px;
+}
+
+.popup main {
+  padding: 4px 14px 12px;
+}
+
+.popup #count {
+  margin-top: 2px;
 }
 
 .popup .tab {
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--rule);
 }
 
@@ -263,20 +485,21 @@ input {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
+}
+
+.popup .buttons:empty {
+  display: none;
+}
+
+.popup #paused-note {
+  margin-top: 10px;
 }
 
 .popup footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 12px;
-  padding-top: 8px;
+  padding: 10px 14px;
   border-top: 1px solid var(--rule);
-}
-
-.popup footer .end {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }

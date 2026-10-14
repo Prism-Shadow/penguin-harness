@@ -109,7 +109,22 @@ userData 目录随其名称一并搬家，Chromium 配置文件也跟着走，�
 
 ## 质量门禁
 
-以下每一项 CI 都会在每个 PR 上运行——推送前请先在本地跑一遍：
+PR 和 `main` 推送通过 pnpm 的依赖图选择变更包及其下游，先构建所需依赖，再执行类型检查和测试。
+浏览器与站点测试在 Linux 运行，受影响的原生运行时包还会在 macOS 和 Windows 运行。
+公共构建脚本、lockfile 或无法归类的输入变更会触发全量检查。plan 任务会列出选择结果及原因。
+
+core、server 和 web 在已有的 Linux 测试运行中统计分支与行覆盖率，各分片上传 LCOV 和 JSON 摘要。
+没有设置任意的覆盖率门槛；修改分支时应添加行为回归测试，包括失败路径和禁止发生的副作用。
+
+应用变更会运行真实 server 与本地 mock LLM 驱动的浏览器 smoke，fork PR 也能运行。
+场景覆盖登录、批准前禁止执行命令、刷新恢复和后续消息。打包检查保留了版本注入、插件索引、
+安装器和内置 CLI 的历史回归兜底；未压缩的 Electron 运行包仅在手动 CI 中上传。
+
+新版本发布前，完整的三平台 CI 会检查实际发布 ref，全部通过后才允许发布。
+已存在的不可变版本仍可重试发布器和镜像同步。手动 CI 默认全量检查。
+分支保护应将聚合任务 `ci` 设为必需项；它会拒绝失败、缺失或意外跳过的任务。
+
+开发时优先运行相关包的检查；以下命令运行完整本地测试集：
 
 ```bash
 pnpm format:check   # prettier
@@ -127,6 +142,7 @@ Agent 读到的是同一个目录。
 ```bash
 npx playwright install chromium                      # 一次即可
 pnpm --filter @prismshadow/penguin-web test:e2e      # 针对 mock LLM 的浏览器 e2e
+pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs  # 仅 CI smoke
 pnpm test:e2e                                        # core 的真实模型 e2e，需要 DEEPSEEK_API_KEY
 ```
 
@@ -145,6 +161,11 @@ pnpm test:e2e                                        # core 的真实模型 e2e�
 - **每次发布随附自己的公告**：`changelog/<version>/RELEASE.md` 会被原样发布为 GitHub Release 正文。
   在发布准备期间撰写，并**在打 tag 之前提交**——发布工作流是从 tag 的 checkout 里读它的，事后添加的
   文件永远到不了 Release 页面。缺少它时，工作流退回到 GitHub 自动生成的说明。
+- **官方镜像从源码构建**：`.github/workflows/docker.yml` 将 `linux/amd64` 与 `linux/arm64`
+  镜像推送到 Docker Hub 的 `hiyouga/penguinharness`。`main` 上影响镜像运行代码或构建输入的推送
+  会更新 `latest`；仅修改文档、站点或桌面端源码时不更新。发布工作流从 tag 自身的源码构建
+  `X.Y.Z` 版本镜像。修改 `Dockerfile`、`.dockerignore`、`docker/` 或该工作流的 PR 会运行
+  amd64 镜像冒烟测试。
 - **发布准备要提升仓库版本号**：那个把 `changelog/unreleased/` 改名的 `release: X.Y.Z` PR，同时也要把
   根目录、每个 `packages/*/package.json` 与每个 `plugins/*/package.json` 的 `version`、以及 core 的
   `VERSION` 常量（`packages/core/src/index.ts`）提升到发布版本。发布工作流会拒绝版本号与仓库不一致的 tag 推送，

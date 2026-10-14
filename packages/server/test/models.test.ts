@@ -33,13 +33,18 @@
  *   the row's key, else the group's, on the group's endpoint; a group key reaches only the rows
  *   on its endpoint's origin (never Atria, never a row re-pointed at another host); a
  *   user-defined group's table goes with its last row.
- * - "Add new models" adds only the missing, non-retired presets with their promotions, each
- *   stored against its group's table field by field (a field the table holds is followed, one it
- *   lacks is written on the row, a group with neither rows nor table gets the catalog's), and
- *   moves nothing else; "Restore defaults" puts built-in rows and built-in group tables back to
- *   the catalog's shape, keeping keys (a key every keyed row of a group shares moves to the
- *   group), the user's own rows and groups, a self-hosted group's server (vLLM's base URL),
- *   Penguin Go's promotions, and the references that still name a valid row.
+ * - "Add new models" adds only the missing, non-retired presets with their promotions — a
+ *   scheduled row's included, billed on top of its off-peak tier — each stored against its
+ *   group's table field by field (a field the table holds is followed, one it lacks is written on
+ *   the row, a group with neither rows nor table gets the catalog's), and moves nothing else: a
+ *   row already there without a promotion stays without one.
+ * - "Restore defaults" leaves what a new Project has (its rows, group
+ *   settings, promotions and default model; no vision model) and keeps only the API keys, on
+ *   their built-in group or preset row — a key a group's keyed rows share, deleted rows
+ *   included, moves to the group; it deletes the user's own models and groups, retired rows and
+ *   every override, Penguin Go's platform rows and promotions included, and writes nothing
+ *   when nothing changes. Usage on a deleted model stays priced at the catalog's price when
+ *   the model was once the default of new Projects, and goes uncosted otherwise.
  * - renamedFrom (and a group change) migrates the credential, the config and the default and
  *   vision pointers; without it a rekey is delete-then-create; an invalid one is 400. A
  *   ModelScope settings save is serialized with a group credential write.
@@ -51,6 +56,8 @@
  *   draft models, converges to ok:false with no credential, tests the draft (clearApiKey) rather
  *   than the stored key, and refuses a keyless gateway row or a Penguin Go probe without reaching
  *   for vendor environment keys or the network (a relay row with no endpoint anywhere included).
+ *   Its request names PenguinHarness and its version as the whole User-Agent, whichever SDK
+ *   the protocol runs on.
  * - A PUT invalidates the Project's cached Session runtimes (reads do not), tells the Project's
  *   open Session channels only, and GET/PUT report the file's updatedAt.
  *
@@ -72,6 +79,7 @@ import {
   providerInfo,
   renderProjectConfigToml,
   userText,
+  VERSION,
 } from "@prismshadow/penguin-core";
 import type {
   ErrorBody,
@@ -81,7 +89,9 @@ import type {
   PresetSyncResponse,
   ProjectCreateResponse,
   SessionCreateResponse,
+  UsageResponse,
 } from "../src/api/types.js";
+import { UsageRepo } from "../src/db/repos/usage.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ChannelEvent } from "../src/runtime/channel.js";
 import { jsonResponse, stubFetch } from "./fixtures/fetch.js";
@@ -1679,6 +1689,49 @@ describe("model-reference rekeying and the connectivity test", () => {
     }
   });
 
+  describe("the User-Agent of the connectivity test's request", () => {
+    // One local endpoint for the block: it notes the User-Agent of every request and refuses
+    // the key, which ends the probe whatever the protocol.
+    const agents: Array<string | undefined> = [];
+    const server = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        agents.push(req.headers["user-agent"]);
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: { message: "test-reject", type: "invalid_request" } }));
+      });
+    });
+    let port = 0;
+    beforeAll(async () => {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      port = (server.address() as AddressInfo).port;
+    });
+    afterAll(async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    });
+
+    // A protocol for each SDK MMSP wraps (OpenAI, Anthropic, Gemini), and MMSP's own client.
+    it.each([
+      ["openai-chat", "/v1"],
+      ["ant-messages", ""],
+      ["google-genai", ""],
+      ["mmsp", ""],
+    ])("over %s names PenguinHarness and its version, and nothing else", async (clientType, at) => {
+      agents.length = 0;
+      const res = await api.post(testUrl(), {
+        provider: "custom",
+        modelId: "ua-probe-model",
+        clientType,
+        apiKey: "sk-test-local",
+        baseUrl: `http://127.0.0.1:${port}${at}`,
+      });
+      expect(res.status).toBe(200);
+      expect(agents.length).toBeGreaterThan(0);
+      expect(new Set(agents)).toEqual(new Set([`penguinharness/${VERSION}`]));
+    });
+  });
+
   it("connectivity test: both a saved model and a **not-yet-saved** custom model can be tested (the LLM layer throws nothing, every outcome converges)", async () => {
     // Both endpoints refuse the key they are handed.
     const network = stubFetch(() =>
@@ -2340,6 +2393,45 @@ describe("preset sync: add new models / restore defaults", () => {
     expect((await stat(cfgFile())).mtimeMs).toBe(mtimeMs);
   });
 
+  it("adding new models brings a scheduled preset back with its seller's promotion on top of the off-peak tier, and leaves a row already there without one as it was", async () => {
+    const preset = (await (await api.get(url())).json()) as ModelsResponse;
+    const scheduled = catalogEntryFor("tokendance", "deepseek-v4.1-flash")!;
+    // The scheduled row was dropped; glm-5.3 has no promotion on record, as in a Project an
+    // older release wrote.
+    const put = await api.put(url(), {
+      models: asEntries(preset).filter((m) => !isPair("tokendance", "deepseek-v4.1-flash")(m)),
+    });
+    expect(put.status).toBe(200);
+    t.deps.db
+      .prepare("DELETE FROM model_promotions WHERE project_id = ? AND model_id = ?")
+      .run(projectId, "glm-5.3");
+
+    const body = (await (await sync("add")).json()) as PresetSyncResponse;
+    expect(body.added).toBe(1);
+    const added = pick(body, "tokendance", "deepseek-v4.1-flash");
+    // Stored at its peak list price, with the seller's promotion beside it.
+    expect(added.pricing).toEqual({
+      cacheRead: scheduled.pricing!.cache_read,
+      cacheWrite: scheduled.pricing!.cache_write,
+      output: scheduled.pricing!.output,
+    });
+    expect(added.discount).toBe(scheduled.discount);
+    expect(added.discount).toBeGreaterThan(0);
+    // The cost center bills the promotion at peak, and on top of the half-price tier off it.
+    const off = (v: number, fraction: number): number => Math.round(v * (1 - fraction) * 1e6) / 1e6;
+    const rates = (await t.deps.projectConfigService.getPricing(
+      projectId,
+      "tokendance",
+      "deepseek-v4.1-flash",
+    ))!;
+    expect(rates.peak.output).toBe(off(scheduled.pricing!.output, added.discount!));
+    expect(rates.offPeak.output).toBe(
+      off(off(scheduled.pricing!.output, scheduled.offPeakDiscount!.rate), added.discount!),
+    );
+    // The row already there is not given the promotion it lacks.
+    expect(pick(body, "tokendance", "glm-5.3")).not.toHaveProperty("discount");
+  });
+
   it("an added model is stored against its group's table field by field: a field the table holds is followed, one it lacks is written out, and a group the file never had gets the catalog's table", async () => {
     const preset = (await (await api.get(url())).json()) as ModelsResponse;
     const without =
@@ -2422,11 +2514,21 @@ describe("preset sync: add new models / restore defaults", () => {
     }
   });
 
-  it("restoring defaults puts built-in rows and groups back to the catalog, and keeps keys, the user's own models and groups, and Penguin Go's promotions", async () => {
+  it("restoring defaults leaves a new Project's model configuration with only the API keys kept: overrides, the user's own models and groups, retired rows, Penguin Go's platform models and promotions, and stale references go", async () => {
+    const svc = t.deps.projectConfigService;
+    const retired = MODEL_CATALOG.find((m) => m.retired === true)!;
+    // Rows no PUT may add: a retired preset an older release wrote, and a model the Penguin Go
+    // platform delivered.
+    const seeded = await svc.readRaw(projectId);
+    await svc.writeRaw(projectId, {
+      ...seeded,
+      models: [
+        ...(seeded.models as Array<Record<string, unknown>>),
+        { provider: retired.provider, model_id: retired.modelId },
+        { provider: "penguin-go", model_id: "go-only-model", display_name: "Go Only" },
+      ],
+    });
     const preset = (await (await api.get(url())).json()) as ModelsResponse;
-    const pro = catalogEntryFor("deepseek", "deepseek-v4-pro")!;
-    const promoted = catalogEntryFor("tokendance", "glm-5.3-flash")!;
-    expect(pro.supportsVision).toBe(false);
     const edited = asEntries(preset)
       .filter((m) => !isPair("moonshot", "kimi-k2.6")(m))
       .map((m) => {
@@ -2447,16 +2549,15 @@ describe("preset sync: add new models / restore defaults", () => {
           };
         }
         if (isPair("tokendance", "glm-5.3-flash")(m)) return { ...m, discount: 0.33 };
-        if (isPair("penguin-go", "gemini-3.8-flash")(m)) {
-          // Its protocol dropped: it would run on whatever the id's family routes to.
-          const { clientType: _clientType, ...rest } = m;
-          return { ...rest, discount: 0.42 };
-        }
+        if (isPair("penguin-go", "gemini-3.8-flash")(m)) return { ...m, discount: 0.42 };
+        if (isPair("penguin-go", "go-only-model")(m)) return { ...m, discount: 0.25 };
+        if (isPair(retired.provider, retired.modelId)(m)) return { ...m, discount: 0.5 };
         // Its own endpoint dropped: it would run on the group's Chat Completions path.
         if (isPair("opencode-go", "qwen3.8-max")(m)) return { ...m, baseUrl: null };
         return m;
       });
     const put = await api.put(url(), {
+      defaultModel: { provider: "custom", modelId: "my-own" },
       visionModel: { provider: "deepseek", modelId: "deepseek-v4-pro" },
       models: [
         ...edited,
@@ -2466,143 +2567,102 @@ describe("preset sync: add new models / restore defaults", () => {
           clientType: "openai-chat",
           baseUrl: "https://mine.example/v1",
           apiKey: "sk-mine-key-0009",
-          pricing: { cacheRead: 0.1, cacheWrite: 0.2, output: 0.3 },
           discount: 0.3,
         },
+        { provider: "vllm", modelId: "qwen3-local" },
         { provider: "my-lab", modelId: "lab-one" },
       ],
       providers: {
-        "my-lab": { baseUrl: "https://lab.example/v1", clientType: "openai-chat" },
-        custom: { baseUrl: "https://custom-proxy.example/v1" },
+        "my-lab": {
+          baseUrl: "https://lab.example/v1",
+          clientType: "openai-chat",
+          apiKey: "lab-key-0016",
+        },
+        custom: { baseUrl: "https://custom-proxy.example/v1", apiKey: "custom-key-0017" },
+        vllm: { baseUrl: "http://gpu-box.lan:8000/v1", apiKey: "vllm-group-key-0015" },
+        deepseek: { apiKey: "sk-ds-group-0020" },
         tokendance: { baseUrl: "https://td-proxy.example/v1", apiKey: "td-group-key-0010" },
         openrouter: { clientType: "openai-chat" },
-        // A value the catalog does not set, and a table the catalog does.
         moonshot: { baseUrl: "https://proxy.example/moonshot/v1" },
-        vllm: { clientType: null },
       },
     });
     expect(put.status).toBe(200);
-    // A default that names no row any more (a hand edit, say).
-    const svc = t.deps.projectConfigService;
-    await svc.writeRaw(projectId, {
-      ...(await svc.readRaw(projectId)),
-      default_model: { provider: "custom", model_id: "gone" },
-    });
 
     const res = await sync("restore");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PresetSyncResponse;
-    // Two rows reset (Go's shared MMSP route already matched), one deleted preset back.
+    // The deleted preset is back, and the two presets that carried edits are reset.
     expect(body).toMatchObject({ added: 1, restored: 2 });
-    expect(body.models.some(isPair("moonshot", "kimi-k2.6"))).toBe(true);
-    // The protocol and endpoint a preset stores at init are back on it.
-    expect(pick(body, "penguin-go", "gemini-3.8-flash").effective.clientType).toBe("mmsp");
-    expect(pick(body, "opencode-go", "qwen3.8-max").credential?.baseUrl).toBe(
-      catalogEntryFor("opencode-go", "qwen3.8-max")!.baseUrl,
-    );
 
-    const row = pick(body, "deepseek", "deepseek-v4-pro");
-    expect(row).toMatchObject({
-      displayName: pro.displayName,
-      contextWindow: pro.contextWindow,
-      pricing: {
-        cacheRead: pro.pricing!.cache_read,
-        cacheWrite: pro.pricing!.cache_write,
-        output: pro.pricing!.output,
-      },
-      vision: false,
-    });
-    expect(row.maxTokens).toBeUndefined();
-    expect(row.fastMode).toBeUndefined();
-    expect(row.clientType).toBeUndefined();
-    // Back on DeepSeek's own endpoint, the key it held is the one key of its group, and
-    // reaches it as the group's: moved to the group, never deleted.
-    expect(row.credential).toBeUndefined();
+    // Beside a Project created now, keys aside, it is the same: the same rows in the same
+    // order with the same facts, connections and promotions, and the same group settings.
+    // Penguin Go's platform model and promotions are gone too: the platform's next sync puts
+    // them back, on prices it set them for.
+    const fresh = (await (
+      await api.post("/api/projects", { projectId: `gina-fresh_${projects}`, name: "Fresh" })
+    ).json()) as ProjectCreateResponse;
+    const freshBody = (await (
+      await api.get(`/api/projects/${fresh.project.projectId}/models`)
+    ).json()) as ModelsResponse;
+    const rowsWithoutKeys = (b: ModelsResponse) =>
+      b.models
+        // Where a row's key comes from, and the environment variable it may fall back to,
+        // follow from the keys.
+        .map(
+          ({ credential, effective: _effective, envKey: _env, envKeyMasked: _envKey, ...m }) => ({
+            ...m,
+            ...(credential?.baseUrl !== undefined ? { baseUrl: credential.baseUrl } : {}),
+          }),
+        );
+    const groupsWithoutKeys = (b: ModelsResponse) =>
+      Object.fromEntries(
+        Object.entries(b.providers).flatMap(
+          ([id, { apiKeyMasked: _key, createdAt: _at, ...connection }]) =>
+            Object.keys(connection).length > 0 ? [[id, connection]] : [],
+        ),
+      );
+    expect(rowsWithoutKeys(body)).toEqual(rowsWithoutKeys(freshBody));
+    expect(groupsWithoutKeys(body)).toEqual(groupsWithoutKeys(freshBody));
+    expect(body.defaultModel).toEqual(freshBody.defaultModel);
+    expect(body.visionModel).toBeUndefined();
+
+    // Every key a built-in group or a preset held is where it was; a group's settings
+    // otherwise are the catalog's, custom's and vLLM's base URLs included.
     expect(body.providers.deepseek).toEqual({
+      apiKeyMasked: "sk-d…0020",
+      createdAt: expect.any(String) as string,
+    });
+    expect(pick(body, "deepseek", "deepseek-v4-pro").credential).toEqual({
       apiKeyMasked: "sk-d…0008",
       createdAt: expect.any(String) as string,
     });
-    expect(row.effective).toMatchObject({ apiKeySource: "provider", apiKeyMasked: "sk-d…0008" });
-    // It no longer takes images, so it is no longer the vision model; the orphaned default
-    // is the catalog's again.
-    expect(body.visionModel).toBeUndefined();
-    expect(body.defaultModel).toEqual({ provider: "deepseek", modelId: "deepseek-flash" });
-
-    // The user's own model and group are exactly as they were.
-    expect(pick(body, "custom", "my-own")).toMatchObject({
-      clientType: "openai-chat",
-      credential: { apiKeyMasked: "sk-m…0009", baseUrl: "https://mine.example/v1" },
-      discount: 0.3,
-    });
-    expect(body.providers["my-lab"]).toEqual({
-      baseUrl: "https://lab.example/v1",
-      clientType: "openai-chat",
-    });
-    // So is custom's: the models added there reach their endpoint through it.
-    expect(body.providers.custom).toEqual({ baseUrl: "https://custom-proxy.example/v1" });
-    // Built-in groups get the catalog's endpoint and protocol back, and keep their key; a
-    // value the catalog does not set goes, and a table the file lost is written again.
-    const catalogTable = (id: string) => {
-      const c = catalogGroupConnection(id)!;
-      return {
-        ...(c.base_url !== undefined ? { baseUrl: c.base_url } : {}),
-        ...(c.client_type !== undefined ? { clientType: c.client_type } : {}),
-      };
-    };
-    expect(body.providers.tokendance).toEqual({
-      ...catalogTable("tokendance"),
-      apiKeyMasked: "td-g…0010",
+    expect(body.providers.tokendance).toMatchObject({ apiKeyMasked: "td-g…0010" });
+    expect(body.providers.custom).toEqual({
+      apiKeyMasked: "cust…0017",
       createdAt: expect.any(String) as string,
     });
-    expect(body.providers.openrouter).toEqual(catalogTable("openrouter"));
-    expect(body.providers.vllm).toEqual(catalogTable("vllm"));
-    expect(body.providers.moonshot).toBeUndefined();
-    // Promotions are the catalog's, except the platform's own (Penguin Go).
-    expect(pick(body, "tokendance", "glm-5.3-flash").discount).toBe(promoted.discount);
-    expect(pick(body, "penguin-go", "gemini-3.8-flash").discount).toBe(0.42);
-  });
-
-  it("restoring defaults keeps a self-hosted group on the user's server: vLLM's base URL and key stay and only its protocol is the catalog's, while a vendor group's proxy goes", async () => {
-    const put = await api.put(url(), {
-      models: [
-        ...asEntries((await (await api.get(url())).json()) as ModelsResponse),
-        { provider: "vllm", modelId: "qwen3-local" },
-      ],
-      providers: {
-        vllm: {
-          baseUrl: "http://gpu-box.lan:8000/v1",
-          clientType: "openai-chat",
-          apiKey: "vllm-group-key-0015",
-        },
-        deepseek: { baseUrl: "https://proxy.example/deepseek" },
-      },
-    });
-    expect(put.status).toBe(200);
-
-    const body = (await (await sync("restore")).json()) as PresetSyncResponse;
     expect(body.providers.vllm).toEqual({
-      baseUrl: "http://gpu-box.lan:8000/v1",
       clientType: catalogGroupConnection("vllm")!.client_type,
       apiKeyMasked: "vllm…0015",
       createdAt: expect.any(String) as string,
     });
-    // The model the user added there still runs on that server, with the group's key.
-    expect(pick(body, "vllm", "qwen3-local").effective).toMatchObject({
-      baseUrl: "http://gpu-box.lan:8000/v1",
-      baseUrlSource: "provider",
-      apiKeySource: "provider",
-      apiKeyMasked: "vllm…0015",
-    });
-    // A vendor's default is its official endpoint: the proxy is removed with its table.
-    expect(body.providers.deepseek).toBeUndefined();
-    expect(pick(body, "deepseek", "deepseek-flash").effective.baseUrlSource).toBe("none");
+    // The user's own group is gone with its key, and so is the key of their own model.
+    expect(body.providers["my-lab"]).toBeUndefined();
+    const toml = await readFile(cfgFile(), "utf8");
+    expect(toml).not.toContain("lab-key-0016");
+    expect(toml).not.toContain("sk-mine-key-0009");
+
+    // A second restore finds nothing to change and writes nothing.
+    const { mtimeMs } = await stat(cfgFile());
+    expect(await (await sync("restore")).json()).toMatchObject({ added: 0, restored: 0 });
+    expect((await stat(cfgFile())).mtimeMs).toBe(mtimeMs);
   });
 
-  it("restoring defaults moves a key every keyed model of a group shares into the group once the group key would reach them all, and leaves differing keys on their models", async () => {
+  it("restoring defaults moves a key a deleted model shares with its group's keyed models, or holds alone, to the group, and leaves differing keys on their models", async () => {
     const svc = t.deps.projectConfigService;
     const raw = await svc.readRaw(projectId);
     const keyed: Record<string, { api_key: string; created_at: string; base_url?: string }> = {
-      // One OpenRouter key on two models, one of them re-pointed at another host: the group
+      // One OpenRouter key on two presets, one of them re-pointed at another host: the group
       // key would not reach that one until restore puts it back on the gateway.
       "openrouter\0anthropic/claude-opus-4.8": {
         api_key: "sk-or-shared-0012",
@@ -2613,7 +2673,7 @@ describe("preset sync: add new models / restore defaults", () => {
         created_at: "2026-09-02T00:00:00.000Z",
         base_url: "https://proxy.example/v1",
       },
-      // Two Fireworks models on two accounts.
+      // Two Fireworks presets on two accounts.
       "fireworks\0accounts/fireworks/models/glm-5p3": {
         api_key: "fw-one-key-0013",
         created_at: "2026-09-03T00:00:00.000Z",
@@ -2623,18 +2683,51 @@ describe("preset sync: add new models / restore defaults", () => {
         created_at: "2026-09-04T00:00:00.000Z",
       },
     };
+    const retired = MODEL_CATALOG.find((m) => m.retired === true && m.provider === "deepseek")!;
     await svc.writeRaw(projectId, {
       ...raw,
-      models: (raw.models as Array<Record<string, unknown>>).map((m) => ({
-        ...m,
-        ...keyed[`${String(m.provider)}\0${String(m.model_id)}`],
-      })),
+      providers: {
+        ...(raw.providers as Record<string, unknown>),
+        "my-lab": { base_url: "https://lab.example/v1", api_key: "lab-group-0023" },
+      },
+      models: [
+        ...(raw.models as Array<Record<string, unknown>>).map((m) => ({
+          ...m,
+          ...keyed[`${String(m.provider)}\0${String(m.model_id)}`],
+        })),
+        // A model the user added to OpenRouter, on the same key and written last.
+        {
+          provider: "openrouter",
+          model_id: "acme/own-model",
+          api_key: "sk-or-shared-0012",
+          created_at: "2026-09-05T00:00:00.000Z",
+        },
+        // A retired row an older release wrote, holding DeepSeek's only key.
+        { provider: "deepseek", model_id: retired.modelId, api_key: "sk-ds-old-0019" },
+        // Models of the user's own in custom and in a group of their own, each keyed.
+        {
+          provider: "custom",
+          model_id: "mine",
+          client_type: "openai-chat",
+          base_url: "https://mine.example/v1",
+          api_key: "sk-mine-0021",
+        },
+        { provider: "my-lab", model_id: "lab-one", api_key: "lab-row-0022" },
+      ],
     });
 
     const body = (await (await sync("restore")).json()) as PresetSyncResponse;
+    for (const [provider, modelId] of [
+      ["openrouter", "acme/own-model"],
+      ["deepseek", retired.modelId],
+      ["custom", "mine"],
+      ["my-lab", "lab-one"],
+    ] as const) {
+      expect(body.models.some(isPair(provider, modelId)), modelId).toBe(false);
+    }
     expect(body.providers.openrouter).toMatchObject({
       apiKeyMasked: "sk-o…0012",
-      createdAt: "2026-09-02T00:00:00.000Z",
+      createdAt: "2026-09-05T00:00:00.000Z",
     });
     for (const modelId of ["anthropic/claude-opus-4.8", "openai/gpt-5.5", "xiaomi/mimo-v2.5"]) {
       const row = pick(body, "openrouter", modelId);
@@ -2644,6 +2737,12 @@ describe("preset sync: add new models / restore defaults", () => {
         apiKeyMasked: "sk-o…0012",
       });
     }
+    // The key the retired row held now serves its successor, as the group's.
+    expect(body.providers.deepseek?.apiKeyMasked).toBe("sk-d…0019");
+    expect(pick(body, "deepseek", "deepseek-flash").effective).toMatchObject({
+      apiKeySource: "provider",
+      apiKeyMasked: "sk-d…0019",
+    });
     expect(body.providers.fireworks?.apiKeyMasked).toBeUndefined();
     expect(pick(body, "fireworks", "accounts/fireworks/models/glm-5p3").credential).toMatchObject({
       apiKeyMasked: "fw-o…0013",
@@ -2651,11 +2750,83 @@ describe("preset sync: add new models / restore defaults", () => {
     expect(
       pick(body, "fireworks", "accounts/fireworks/models/qwen3p8-max").credential,
     ).toMatchObject({ apiKeyMasked: "fw-t…0014" });
-    // Every key is still in the file, the shared one once.
+    // Every key is still in the file, a shared one once, but the keys of the user's own
+    // models in custom and of their own group, which went with them.
     const toml = await readFile(cfgFile(), "utf8");
     expect(toml.match(/sk-or-shared-0012/g)).toHaveLength(1);
+    expect(toml.match(/sk-ds-old-0019/g)).toHaveLength(1);
     expect(toml).toContain("fw-one-key-0013");
     expect(toml).toContain("fw-two-key-0014");
+    for (const gone of ["sk-mine-0021", "lab-row-0022", "lab-group-0023"]) {
+      expect(toml, gone).not.toContain(gone);
+    }
+  });
+
+  it("usage on a model that was once the default keeps its cost after restoring defaults deletes its row, while a deleted model of the user's own goes uncosted", async () => {
+    const svc = t.deps.projectConfigService;
+    const formerDefault = MODEL_CATALOG.find((m) => m.retired === true && m.wasDefault === true)!;
+    const raw = await svc.readRaw(projectId);
+    await svc.writeRaw(projectId, {
+      ...raw,
+      models: [
+        ...(raw.models as Array<Record<string, unknown>>),
+        // As the release that made it the default stored it: at the catalog's list price.
+        {
+          provider: formerDefault.provider,
+          model_id: formerDefault.modelId,
+          pricing: { ...formerDefault.pricing },
+        },
+        {
+          provider: "custom",
+          model_id: "mine",
+          client_type: "openai-chat",
+          base_url: "https://mine.example/v1",
+          pricing: { unit: "usd_per_mtok", cache_read: 1, cache_write: 2, output: 3 },
+        },
+      ],
+    });
+    const usage = wire(UsageRepo, { db: t.deps.db });
+    for (const [provider, modelId] of [
+      [formerDefault.provider, formerDefault.modelId],
+      ["custom", "mine"],
+    ] as const) {
+      usage.insert({
+        ts: "2026-09-01T03:00:00.000Z",
+        date: "2026-09-01",
+        projectId,
+        agentId: "agent",
+        sessionId: "session",
+        originSessionId: null,
+        provider,
+        modelId,
+        cacheRead: 1_000_000,
+        cacheWrite: 1_000_000,
+        output: 1_000_000,
+        total: 3_000_000,
+      });
+    }
+    const costs = async () => {
+      const res = (await (
+        await api.get(
+          `/api/projects/${projectId}/usage?groupBy=model&from=2026-09-01&to=2026-09-01`,
+        )
+      ).json()) as UsageResponse;
+      return Object.fromEntries(
+        res.groups.map((g) => [
+          `${g.provider}/${g.key}`,
+          { cost: g.cost, uncosted: g.hasUncosted },
+        ]),
+      );
+    };
+    const former = `${formerDefault.provider}/${formerDefault.modelId}`;
+    const before = await costs();
+    expect(before[former]?.cost).toBeGreaterThan(0);
+    expect(before["custom/mine"]).toEqual({ cost: 6, uncosted: false });
+
+    expect((await sync("restore")).status).toBe(200);
+    const after = await costs();
+    expect(after[former]).toEqual(before[former]);
+    expect(after["custom/mine"]).toEqual({ cost: null, uncosted: true });
   });
 
   it("sync-presets is the owner's, and takes only its two modes", async () => {

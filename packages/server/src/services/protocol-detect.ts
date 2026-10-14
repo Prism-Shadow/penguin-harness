@@ -56,7 +56,7 @@
  * works with no credential at all (a protocol-shaped 401 identifies the route), and sending
  * the user's vendor key to a URL they typed is exactly what the rule forbids.
  */
-import { endpointEnvApiKey } from "@prismshadow/penguin-core";
+import { endpointEnvApiKey, userAgent } from "@prismshadow/penguin-core";
 import type {
   ModelProtocolDetectResponse,
   ModelProtocolProbeDto,
@@ -306,7 +306,7 @@ async function runProbe(
   try {
     const res = await fetchImpl(url, {
       method: "POST",
-      headers: spec.headers(apiKey),
+      headers: { ...spec.headers(apiKey), "user-agent": userAgent() },
       body: "{}",
       signal: AbortSignal.timeout(timeoutMs),
       // Redirects stay followed (fetch's default). It is tempting to pin `redirect: "manual"`

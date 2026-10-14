@@ -10,10 +10,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "start": "node scripts/preflight.mjs && electron .",
-    "pack": "node scripts/preflight.mjs && electron-builder",
-    "pack:linux": "node scripts/preflight.mjs && electron-builder --linux",
-    "pack:mac": "node scripts/preflight.mjs && electron-builder --mac",
-    "pack:win": "node scripts/preflight.mjs && electron-builder --win"
+    "image": "node ../../scripts/deploy.mjs --out dist/install-image.gz --skip-web-build",
+    "pack": "node scripts/preflight.mjs && pnpm run image && electron-builder",
+    "pack:linux": "node scripts/preflight.mjs && pnpm run image && electron-builder --linux",
+    "pack:mac": "node scripts/preflight.mjs && pnpm run image && electron-builder --mac",
+    "pack:win": "node scripts/preflight.mjs && pnpm run image && electron-builder --win"
   },
   "dependencies": {
     "@penguinharness/a2ui": "workspace:*",

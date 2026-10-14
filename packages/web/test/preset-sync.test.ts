@@ -10,7 +10,7 @@
  *   out with mode "restore", the table is adopted, and the dialog closes once the request settles.
  * - Given the server refuses, nothing is adopted, and the busy flag and the badge re-probe still
  *   run.
- * - The confirmation names, in both languages, that keys are kept and that it is final.
+ * - The confirmation names, in both languages, the API keys it keeps.
  */
 import { createElement } from "react";
 import type { ReactElement } from "react";
@@ -163,13 +163,10 @@ describe("the catalog actions send the server's sync in their own mode", () => {
 });
 
 describe("the Restore defaults confirmation", () => {
-  it("says, in both languages, that keys are kept and that it cannot be undone", () => {
+  it("names, in both languages, the API keys it keeps", () => {
     for (const dict of [zh, en]) {
       setActiveStrings(dict);
-      const text = renderedText(createElement(RestoreDefaultsBody));
-      expect(text).toContain("API key");
-      expect(text).toContain(dict.models.restoreDefaultsKeeps);
-      expect(text).toContain(dict.models.restoreDefaultsFinal);
+      expect(renderedText(createElement(RestoreDefaultsBody))).toContain("API key");
     }
   });
 });

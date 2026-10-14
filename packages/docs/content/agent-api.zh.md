@@ -25,9 +25,10 @@ Agent API 让 PenguinHarness 之外的程序（脚本、服务、浏览器里的
 
 1. 打开该 Agent 的设置（见 [Agent 设置](/agents#agent-设置)），选择 **API** 标签页，地址为 `/agents/<agentId>?tab=api`。
 2. 打开**开启 API 访问**。
-3. 选择 **API 会话的审批模式**，见[审批模式](#审批模式)。
-4. 在**密钥**下选择**新建密钥**，起个名字，然后复制密钥。密钥只显示这一次。
-5. 在**连接**下复制 **Base URL** 和 **Agent ID**。**示例**里有一条 curl 命令和一段 TypeScript 代码，两者都已填好，密钥处写作 `$PENGUIN_AGENT_KEY`。
+3. 在**新会话设置**中选择模型、思考等级和工作区。选择后立即保存，只影响之后新建的 API 会话。留空分别使用 Project 默认模型、Agent／Project 的思考等级配置和临时工作区。在下方选择 **API 会话的审批模式**，见[审批模式](#审批模式)。
+4. 在**运行设置**中填写正整数的**最大并发数**，然后点击**保存**。默认值为 4。
+5. 在**密钥**下选择**新建密钥**，起个名字，然后复制密钥。密钥只显示这一次。
+6. 在**连接**下复制 **Base URL** 和 **Agent ID**。**示例**里有一条 curl 命令和一段 TypeScript 代码，两者都已填好，密钥处写作 `$PENGUIN_AGENT_KEY`。
 
 在**智能体**页面上，已开启 API 的 Agent 名称后带有 API 图标，悬停提示为**已开启 API 访问**。
 
@@ -53,6 +54,8 @@ API 会话有自己的审批模式，与新建对话时预选的审批模式互�
 - 缺省为 `allow-all`，是因为沙箱已经限定了 Agent 能做的事，而程序通常没有人可问。如果程序会回答审批，就选 `read-only` 或 `always-ask`，见[审批](#审批)。
 
 API 会话的沙箱取自服务器的新对话默认值，与其他新对话相同。Project 为新对话预选的审批模式不适用于 API 会话。
+
+示例上方的两个按钮分别打开本文档和复制给编程 Agent 的提示词。提示词包含当前 Base URL 和 Agent ID，并说明从 `PENGUIN_AGENT_KEY` 读取密钥。
 
 ### 密钥
 
@@ -134,9 +137,9 @@ type InputItem =
 
 ### 会话
 
-- 新的 API 会话使用 Project 的默认模型、服务器的新对话沙箱和该 Agent 的 API 审批模式。标题由第一条输入生成，用量和费用计入 Project，与其他会话相同。
+- 新的 API 会话使用 Agent API 标签页中选择的模型、思考等级、工作区和审批模式，以及服务器的新对话沙箱。标题由第一条输入生成，用量和费用计入 Project，与其他会话相同。
 - API 会话按规则归档，所以列在[设置 › 已归档对话](/settings#已归档对话)中，而不在侧边栏。取消归档后就可以阅读它、回答其审批，也可以在其中输入；此后它再运行也会留在侧边栏，并带 API 图标。程序可以延续已归档的会话，会话仍保持已归档。
-- 一个会话同一时间只做一件事：会话仍在工作时发起的运行以 `409` 拒绝。一个 Agent 同时最多有四个对话在运行，Web App 里发起的也算在内；四个都在运行时，在新对话或空闲对话上发起的运行以 `429` 拒绝，并带 `Retry-After: 2`。
+- 一个会话同一时间只做一件事：会话仍在工作时发起的运行以 `409` 拒绝。所有者可在 API 标签页的**运行设置**中设置**最大并发数**（正整数，默认 4）。正在运行的对话（包括 Web App 中发起的）和正在启动的 API 对话都计入上限。达到上限时，在新对话或空闲对话上发起的 API 运行返回 `429` 和 `Retry-After: 2`，不会额外创建对话。保存后的上限用于后续请求，不中断正在运行的对话。
 - 断开连接即中止运行。要停止运行、同时仍能收到它的结局，就 `POST /sessions/:sessionId/abort`：事件流保持打开，以 `status: "aborted"` 的 `run.done` 结束。
 
 ### 错误
@@ -155,7 +158,7 @@ type InputItem =
 | 409 | `task_in_progress`、`compacting` | 会话正忙 |
 | 413 | `payload_too_large` | 请求体超过服务器的大小上限 |
 | 415 | `unsupported_media_type` | 写请求没有带 `Content-Type: application/json` |
-| 429 | `too_many_runs` | 该 Agent 已有四个对话在运行；等 `Retry-After` 秒后重试 |
+| 429 | `too_many_runs` | 该 Agent 已达到设置的并发上限；等 `Retry-After` 秒后重试 |
 | 503 | 以服务器返回为准 | 服务器正在关闭，或该 Agent、会话正在被删除 |
 
 事件流一旦开始，错误就不会以单独的帧出现：运行以 `run.done` 结束，由其 `status` 和 `error` 说明发生了什么。见[流中的错误](/amsp#流中的错误)。
@@ -177,13 +180,13 @@ const client = new AgentClient({
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
 
-const run = client.run({ input: "Summarize README.md" });
+const run = client.stream({ input: "Summarize README.md" });
 for await (const event of run) {
   if (event.type === "text.delta") process.stdout.write(event.text);
 }
 const first = await run.result();
 
-const second = await client.ask({
+const second = await client.run({
   sessionId: first.sessionId,
   input: "Now list its headings",
   onApproval: () => "allow",
@@ -191,9 +194,9 @@ const second = await client.ask({
 console.log(second.text, second.usage.total);
 ```
 
-- `client.run()` 立即开始运行并返回它。迭代它即可按到达顺序取得事件，只能迭代一次；事件在被读取之前一直保留。`run.started` 一到，`run.session` 就以 Session id 兑现。
+- `client.stream()` 立即开始运行并返回它。迭代它即可按到达顺序取得事件，只能迭代一次；事件在被读取之前一直保留。`run.started` 一到，`run.session` 就以 Session id 兑现。
 - 事件流结束时 `run.result()` 兑现，内容为 `status`、`error`、`sessionId`、`text`、`items`、`usage`、`sessionUsage` 和 `requests`。`text` 是主会话中助手的回答，以空行连接；子 Agent 的文本、用户消息和压缩摘要都不计入。`items` 按顺序包含除 `.delta` 分片以外的全部事件。
-- `client.ask()` 运行到结束并返回同样的结果，不为迭代保留任何事件。
+- `client.run()` 运行到结束并返回同样的结果，不为迭代保留任何事件。
 - 提前退出循环只停止迭代，不停止运行：审批照常回答，`result()` 照常兑现。要停止运行，见[中止](#中止)。
 - 客户端不认识的事件类型会原样传出，所以对 `event.type` 分支时要留一个缺省分支。
 
@@ -204,7 +207,7 @@ console.log(second.text, second.usage.total);
 ```ts
 import { AgentClient, parseArguments } from "@prismshadow/amsp";
 
-const result = await client.ask({
+const result = await client.run({
   input: "Clean up the build output",
   onApproval: (request) => {
     const args = parseArguments(request.tool_call);
@@ -219,7 +222,7 @@ const result = await client.ask({
 
 ### 中止
 
-- 中止传给 `run()` 或 `ask()` 的 `signal` 会断开连接：服务器中止运行，运行以该 signal 的 reason（缺省为 `AbortError`）拒绝。尚未读取的事件被丢弃。
+- 中止传给 `stream()` 或 `run()` 的 `signal` 会断开连接：服务器中止运行，运行以该 signal 的 reason（缺省为 `AbortError`）拒绝。尚未读取的事件被丢弃。
 - `run.abort()` 请服务器中止运行，并保持连接：事件流以 `status: "aborted"` 的 `run.done` 结束，`result()` 以它兑现。
 - `client.abort(sessionId)` 按 id 对某个会话做同样的事，并返回是否中断了运行。
 
@@ -245,7 +248,7 @@ const client = new AgentClient({
 });
 
 const answer = document.querySelector("#answer")!;
-for await (const event of client.run({ input: "What changed today?" })) {
+for await (const event of client.stream({ input: "What changed today?" })) {
   if (event.type === "text.delta") answer.textContent += event.text;
 }
 ```
@@ -264,8 +267,8 @@ class AgentClient {
     fetch?: typeof fetch;         // the global fetch by default
     headers?: Record<string, string>;
   });
-  run(opts: RunOptions): Run;
-  ask(opts: RunOptions): Promise<RunResult>;
+  stream(opts: RunOptions): Run;
+  run(opts: RunOptions): Promise<RunResult>;
   agent(): Promise<AgentInfo>;
   session(sessionId: string): Promise<SessionInfo>;
   abort(sessionId: string): Promise<boolean>;

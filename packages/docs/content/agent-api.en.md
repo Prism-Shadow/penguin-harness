@@ -25,9 +25,10 @@ Where to go:
 
 1. Open the agent's settings (see [Agent settings](/agents#agent-settings)) and select the **API** tab, at `/agents/<agentId>?tab=api`.
 2. Turn on **Enable API access**.
-3. Choose the **Approval mode for API conversations**. See [Approval mode](#approval-mode).
-4. Under **Keys**, select **New key**, name it and copy the key. It is shown once.
-5. Copy the **Base URL** and the **Agent ID** under **Connection**. **Examples** holds a curl command and a TypeScript snippet with both filled in and `$PENGUIN_AGENT_KEY` in place of the key.
+3. Under **New session settings**, choose the model, thinking level and workspace. Each choice saves immediately and applies to new API conversations. Leave them unset to use the Project default model, the Agent/Project thinking configuration and a temporary workspace. Choose the **Approval mode for API conversations** below; see [Approval mode](#approval-mode).
+4. Under **Run settings**, enter a positive **Maximum concurrent runs** and select **Save**. The default is 4.
+5. Under **Keys**, select **New key**, name it and copy the key. It is shown once.
+6. Copy the **Base URL** and the **Agent ID** under **Connection**. **Examples** holds a curl command and a TypeScript snippet with both filled in and `$PENGUIN_AGENT_KEY` in place of the key.
 
 On the **Agents** page, an agent whose API is on carries an API icon after its name, with the tooltip **API access on**.
 
@@ -53,6 +54,8 @@ API conversations have their own approval mode, separate from the one the compos
 - `allow-all` is the default because the sandbox already bounds what the agent can do, and a program usually has no one to ask. Choose `read-only` or `always-ask` when the program answers approvals; see [Approvals](#approvals).
 
 An API conversation's sandbox comes from the server's new-chat defaults, as for any new conversation. The Project's preselected approval mode for new conversations does not apply to it.
+
+The two buttons above the examples open this usage guide and copy a prompt for a coding Agent. The prompt includes the current Base URL and Agent ID, with the key read from `PENGUIN_AGENT_KEY`.
 
 ### Keys
 
@@ -134,9 +137,9 @@ type InputItem =
 
 ### Conversations
 
-- A new API conversation uses the Project's default model, the server's new-chat sandbox and the agent's API approval mode. Its title is generated from the first input, and its usage and cost count toward the Project, as for any conversation.
+- A new API conversation uses the model, thinking level, workspace and approval mode chosen on the agent's API tab, plus the server's new-chat sandbox. Its title is generated from the first input, and its usage and cost count toward the Project, as for any conversation.
 - API conversations are archived by rule, so they are listed under [Settings › Archived chats](/settings#archived-chats) rather than in the sidebar. Unarchive one to read it, answer its approvals and type into it; it then stays in the sidebar through later runs, marked with the API icon. A program can continue an archived conversation, and it stays archived.
-- A conversation runs one thing at a time: a run on a conversation that is still working is refused with `409`. An agent has at most four conversations running at once, those started in the Web App included; while four are running, a run on a new or idle conversation is refused with `429` and `Retry-After: 2`.
+- A conversation runs one thing at a time: a run on a conversation that is still working is refused with `409`. The owner sets **Maximum concurrent runs** under **Run settings** on the API tab (default: 4, a positive integer). Running conversations, including those started in the Web App, and API conversations still starting count toward it. At the limit, a new API run or a run on an idle conversation is refused with `429` and `Retry-After: 2` before another conversation is created. Saving a new limit takes effect for subsequent requests and does not interrupt running conversations.
 - Disconnecting aborts the run. To stop a run and still receive how it ended, `POST /sessions/:sessionId/abort`: the stream stays open and ends with `run.done` and `status: "aborted"`.
 
 ### Errors
@@ -155,7 +158,7 @@ A request refused before the stream starts gets an HTTP status and one envelope,
 | 409 | `task_in_progress`, `compacting` | The conversation is busy |
 | 413 | `payload_too_large` | The body exceeds the server's request size cap |
 | 415 | `unsupported_media_type` | A write without `Content-Type: application/json` |
-| 429 | `too_many_runs` | The agent already has four conversations running; retry after `Retry-After` seconds |
+| 429 | `too_many_runs` | The agent has reached its configured concurrency limit; retry after `Retry-After` seconds |
 | 503 | as the server sends it | The server is shutting down, or the agent or conversation is being deleted |
 
 Once the stream has started, an error is never a separate frame: the run ends with `run.done`, whose `status` and `error` say what happened. See [Errors in the stream](/amsp#errors-in-the-stream).
@@ -177,13 +180,13 @@ const client = new AgentClient({
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
 
-const run = client.run({ input: "Summarize README.md" });
+const run = client.stream({ input: "Summarize README.md" });
 for await (const event of run) {
   if (event.type === "text.delta") process.stdout.write(event.text);
 }
 const first = await run.result();
 
-const second = await client.ask({
+const second = await client.run({
   sessionId: first.sessionId,
   input: "Now list its headings",
   onApproval: () => "allow",
@@ -191,9 +194,9 @@ const second = await client.ask({
 console.log(second.text, second.usage.total);
 ```
 
-- `client.run()` starts the run at once and returns it. Iterate it for the events as they arrive — once; events are kept until read. `run.session` resolves with the Session id as soon as `run.started` arrives.
+- `client.stream()` starts the run at once and returns it. Iterate it for the events as they arrive — once; events are kept until read. `run.session` resolves with the Session id as soon as `run.started` arrives.
 - `run.result()` resolves when the stream ends, with `status`, `error`, `sessionId`, `text`, `items`, `usage`, `sessionUsage` and `requests`. `text` is the main conversation's assistant answers joined with a blank line; a subagent's texts, user messages and compaction summaries stay out of it. `items` holds every event except the `.delta` fragments, in order.
-- `client.ask()` runs to the end and returns the same result, keeping nothing for iteration.
+- `client.run()` runs to the end and returns the same result, keeping nothing for iteration.
 - Leaving the loop early stops the iteration, not the run: approvals are still answered and `result()` still resolves. To stop the run, see [Aborting](#aborting).
 - An event type the client does not know is passed through, so switch on `event.type` with a default branch.
 
@@ -204,7 +207,7 @@ When the approval mode makes a call wait, the run delivers `approval.requested` 
 ```ts
 import { AgentClient, parseArguments } from "@prismshadow/amsp";
 
-const result = await client.ask({
+const result = await client.run({
   input: "Clean up the build output",
   onApproval: (request) => {
     const args = parseArguments(request.tool_call);
@@ -219,7 +222,7 @@ const result = await client.ask({
 
 ### Aborting
 
-- Abort the `signal` passed to `run()` or `ask()` to drop the connection: the server aborts the run, and the run rejects with the signal's reason, an `AbortError` by default. Events not yet read are dropped.
+- Abort the `signal` passed to `stream()` or `run()` to drop the connection: the server aborts the run, and the run rejects with the signal's reason, an `AbortError` by default. Events not yet read are dropped.
 - `run.abort()` asks the server to abort and keeps the connection: the stream ends with `run.done` and `status: "aborted"`, and `result()` resolves with it.
 - `client.abort(sessionId)` does the same for a conversation by id, and returns whether a run was interrupted.
 
@@ -245,7 +248,7 @@ const client = new AgentClient({
 });
 
 const answer = document.querySelector("#answer")!;
-for await (const event of client.run({ input: "What changed today?" })) {
+for await (const event of client.stream({ input: "What changed today?" })) {
   if (event.type === "text.delta") answer.textContent += event.text;
 }
 ```
@@ -264,8 +267,8 @@ class AgentClient {
     fetch?: typeof fetch;         // the global fetch by default
     headers?: Record<string, string>;
   });
-  run(opts: RunOptions): Run;
-  ask(opts: RunOptions): Promise<RunResult>;
+  stream(opts: RunOptions): Run;
+  run(opts: RunOptions): Promise<RunResult>;
   agent(): Promise<AgentInfo>;
   session(sessionId: string): Promise<SessionInfo>;
   abort(sessionId: string): Promise<boolean>;

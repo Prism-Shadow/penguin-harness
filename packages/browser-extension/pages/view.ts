@@ -1,20 +1,25 @@
 /**
- * What the options page and the popup both show: a server's connection, and the EN / 中文 switch.
+ * What the options page and the popup both show: a server's connection, and the language and
+ * theme switches in the header.
  */
 import {
-  parseUiLanguage,
-  readUiLanguage,
-  setUiLanguage,
+  parseLanguagePref,
+  parseThemePref,
+  readPagePrefs,
+  setLanguagePref,
+  setThemePref,
   type ConnectionStatus,
   type ServerStatus,
+  type ThemePref,
 } from "../src/storage.js";
 import {
   LANGUAGE_NAMES,
   LANGUAGE_TAGS,
   UI_LANGUAGES,
+  resolveLanguage,
   stringsFor,
+  type LanguagePref,
   type Strings,
-  type UiLanguage,
 } from "../src/strings.js";
 
 export function statusText(status: ConnectionStatus | undefined, strings: Strings): string {
@@ -83,46 +88,118 @@ export function setText(id: string, text: string): void {
 }
 
 /**
- * Calls `render` with the language the user picked, now and again whenever it changes: a pick in
- * one page re-renders every open page of the extension.
+ * Applies the user's language and theme, and calls `render` with the copy, now and again whenever
+ * the language changes: a pick in one page reaches every open page of the extension. With no pick
+ * the language is Chrome's, and the theme follows the device's light or dark setting live (the
+ * stylesheet's media query does that; `data-theme` is set only for a picked theme).
  */
-export function followLanguage(render: (language: UiLanguage, strings: Strings) => void): void {
-  const apply = (language: UiLanguage) => {
-    document.documentElement.lang = LANGUAGE_TAGS[language];
-    render(language, stringsFor(language));
+export function followPreferences(render: (strings: Strings) => void): void {
+  let language: LanguagePref = "system";
+  let theme: ThemePref = "system";
+  const show = (languageChanged: boolean) => {
+    const resolved = resolveLanguage(language);
+    const strings = stringsFor(resolved);
+    const root = document.documentElement;
+    root.lang = LANGUAGE_TAGS[resolved];
+    if (theme === "system") delete root.dataset.theme;
+    else root.dataset.theme = theme;
+    renderLanguageSwitch(language, strings);
+    renderThemeSwitch(theme, strings);
+    if (languageChanged) render(strings);
   };
-  void readUiLanguage().then(apply);
+
+  const select = document.getElementById("language") as HTMLSelectElement | null;
+  if (select !== null) {
+    select.addEventListener("change", () => void setLanguagePref(parseLanguagePref(select.value)));
+    markKeyboardFocus(select);
+  }
+  document
+    .getElementById("theme")
+    ?.addEventListener("click", () => void setThemePref(NEXT_THEME[theme]));
+
+  void readPagePrefs().then((prefs) => {
+    ({ language, theme } = prefs);
+    show(true);
+  });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && "uiLanguage" in changes) {
-      apply(parseUiLanguage(changes.uiLanguage?.newValue));
-    }
+    if (area !== "local") return;
+    const languageChanged = "uiLanguage" in changes;
+    const themeChanged = "uiTheme" in changes;
+    if (languageChanged) language = parseLanguagePref(changes.uiLanguage?.newValue);
+    if (themeChanged) theme = parseThemePref(changes.uiTheme?.newValue);
+    if (languageChanged || themeChanged) show(languageChanged);
   });
 }
 
-/** Fills `#language` with the EN / 中文 switch; a pick is stored, and followLanguage does the rest. */
-export function renderLanguageSwitch(current: UiLanguage, strings: Strings): void {
-  const group = document.getElementById("language");
-  if (group === null) return;
-  group.setAttribute("role", "group");
-  group.setAttribute("aria-label", strings.languageLabel);
-  const buttons = UI_LANGUAGES.map((language) => {
-    const button = element("button", { text: LANGUAGE_NAMES[language] });
-    button.type = "button";
-    button.lang = LANGUAGE_TAGS[language];
-    button.dataset.language = language;
-    button.setAttribute("aria-pressed", String(language === current));
-    button.addEventListener("click", () => {
-      if (language !== current) void setUiLanguage(language);
-    });
-    return button;
-  });
-  group.replaceChildren(
-    ...buttons.flatMap((button, i) => (i === 0 ? [button] : [divider(), button])),
+/** True for a storage change that only the preference switches care about. */
+export function isPreferenceChange(changes: Record<string, unknown>, area: string): boolean {
+  return (
+    area === "local" &&
+    Object.keys(changes).every((key) => key === "uiLanguage" || key === "uiTheme")
   );
 }
 
-function divider(): HTMLElement {
-  const node = element("span", { className: "divider", text: "/" });
-  node.setAttribute("aria-hidden", "true");
-  return node;
+/**
+ * Chrome counts a mouse click on a <select> as :focus-visible, so its focus ring would stay after
+ * every pick made with the mouse. The language switch marks keyboard focus itself, the way
+ * :focus-visible treats a button: a ring for focus that arrives or carries on by key, none after a
+ * click.
+ */
+function markKeyboardFocus(select: HTMLSelectElement): void {
+  let pointer = false;
+  const mark = (keyboard: boolean) => {
+    if (keyboard) select.dataset.focus = "keyboard";
+    else delete select.dataset.focus;
+  };
+  select.addEventListener("pointerdown", () => {
+    pointer = true;
+    mark(false);
+  });
+  select.addEventListener("focus", () => mark(!pointer));
+  select.addEventListener("keydown", () => mark(true));
+  select.addEventListener("blur", () => {
+    pointer = false;
+    mark(false);
+  });
+}
+
+/** The theme switch steps through the three the way the product site's does. */
+const NEXT_THEME: Record<ThemePref, ThemePref> = { light: "dark", dark: "system", system: "light" };
+
+/**
+ * Fills the `#language` select (each language named in its own language, then "System") and the
+ * label beside its globe; a pick is stored, and followPreferences does the rest.
+ */
+function renderLanguageSwitch(current: LanguagePref, strings: Strings): void {
+  const select = document.getElementById("language") as HTMLSelectElement | null;
+  if (select === null) return;
+  const name = (pref: LanguagePref) =>
+    pref === "system" ? strings.languageSystem : LANGUAGE_NAMES[pref];
+  const options = [...UI_LANGUAGES, "system" as const].map((pref) => {
+    const option = element("option", { text: name(pref) });
+    option.value = pref;
+    option.dataset.language = pref;
+    if (pref !== "system") option.lang = LANGUAGE_TAGS[pref];
+    return option;
+  });
+  select.replaceChildren(...options);
+  select.value = current;
+  select.setAttribute("aria-label", strings.languageLabel);
+  select.title = strings.choice(strings.languageLabel, name(current));
+  setText("language-current", name(current));
+}
+
+/** Labels the `#theme` button with the theme it is on; its icon follows `data-mode` in CSS. */
+function renderThemeSwitch(current: ThemePref, strings: Strings): void {
+  const button = document.getElementById("theme");
+  if (button === null) return;
+  const names: Record<ThemePref, string> = {
+    light: strings.themeLight,
+    dark: strings.themeDark,
+    system: strings.themeSystem,
+  };
+  const label = strings.choice(strings.themeLabel, names[current]);
+  button.dataset.mode = current;
+  button.title = label;
+  button.setAttribute("aria-label", label);
 }

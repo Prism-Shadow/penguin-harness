@@ -19,6 +19,7 @@
  *   explicitly pinned — see TerminalThemeMode. It drives no class or variable here; the
  *   terminal reads `terminalDark` and paints itself, because Tailwind's dark: variant is
  *   anchored on html.dark and cannot express a light subtree inside a dark app.
+ * - Theme colour: the meta tag follows the canvas the mode and theme paint (lib/theme-color.ts).
  * All preferences persist to localStorage. Reading them back, with validation and the legacy
  * text-size migration, lives in theme-prefs.ts.
  * The pre-paint script in index.html (the package's BOOT_SCRIPT) applies mode, theme, accent,
@@ -32,6 +33,7 @@ import type { ThemeId } from "@prismshadow/penguin-ui";
 import { applyThemeAttributes, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
 import type { AccentChoice } from "@prismshadow/penguin-ui/boot";
 import { readThemePrefs } from "./theme-prefs";
+import { syncThemeColor } from "../lib/theme-color";
 import type { FontCjk, FontLatin, TextSize } from "./theme-prefs";
 
 export type { FontCjk, FontLatin, TextSize, ThemeId };
@@ -157,6 +159,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // neutral leaves the theme's own accent (follows light/dark) and sets no data-accent.
     applyThemeAttributes(document.documentElement, { accent });
   }, [accent]);
+
+  // After the attribute effects above, so the canvas read is the one now painted.
+  useEffect(() => {
+    syncThemeColor(document);
+  }, [dark, themeId]);
 
   // system mode: track system preference changes.
   useEffect(() => {

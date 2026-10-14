@@ -74,5 +74,5 @@ runs:
           args="$args --filter $f"
         done
         unset IFS
-        echo "pnpm$args build"
-        pnpm --config.verify-deps-before-run=false $args build
+        echo "pnpm$args --if-present build"
+        pnpm --config.verify-deps-before-run=false $args --if-present build

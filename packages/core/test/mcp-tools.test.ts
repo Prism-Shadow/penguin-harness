@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/server";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { z } from "zod";
+import { VERSION } from "../src/index.js";
 import { Environment } from "../src/environment/index.js";
 import { rmEventually } from "./rm-eventually.js";
 import { McpToolProvider, renderCallToolResult } from "../src/environment/mcp/provider.js";
@@ -1022,7 +1023,7 @@ describe("MCP over Streamable HTTP", () => {
     await new Promise((resolve) => httpServer.close(resolve));
   });
 
-  it("discovers and calls tools over http, sending the configured headers — vault references filled in — on every request", async () => {
+  it("discovers and calls tools over http, sending the configured headers — vault references filled in — and PenguinHarness's User-Agent on every request", async () => {
     const tmp = await mkdtemp(path.join(tmpdir(), "penguin-mcp-http-"));
     const env = new Environment({
       workspaceDir: tmp,
@@ -1045,6 +1046,7 @@ describe("MCP over Streamable HTTP", () => {
       expect(final.output).toBe("5");
       expect(seenHeaders.length).toBeGreaterThan(0);
       expect(seenHeaders.every((h) => h["x-penguin-test"] === "yes")).toBe(true);
+      expect(seenHeaders.every((h) => h["user-agent"] === `penguinharness/${VERSION}`)).toBe(true);
     } finally {
       env.dispose();
       await rmEventually(tmp);

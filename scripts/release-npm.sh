@@ -3,10 +3,11 @@
 #
 #   bash scripts/release-npm.sh stamp <tag>   stamp the tag's version where the npm job stamps it
 #   bash scripts/release-npm.sh test          the suites the npm job runs on the stamped, built tree
+#   bash scripts/release-npm.sh test-smoke    known stamp regressions for pull-request packaging checks
 #
-# release.yml's publish-npm job calls both on the tag's checkout. CI's npm packaging job calls them
-# on every pull request with the repo's own version, then builds and tests in between, so a test
-# that only fails once the versions are stamped fails at review time instead of after the tag.
+# release.yml's publish-npm job stamps, builds and runs the full suites on the tag's checkout.
+# CI's npm packaging job stamps with the repo's own version, builds, then runs the focused suites
+# below so known failures on a stamped tree are caught at review time instead of after the tag.
 # v0.2.14 was lost that way: the job stamped the sandbox backends but not the server's embedded
 # index of them, and plugin-registry.test.ts failed on the stamped tree while CI was green.
 #
@@ -71,8 +72,19 @@ case "$cmd" in
     pnpm --filter @prismshadow/penguin-server test
     pnpm --filter @prismshadow/penguin-cli test
     ;;
+  test-smoke)
+    # These cover the release/source build identity, the embedded plugin index matching the
+    # stamped package versions, and the HTTP/CLI version reports. Other behaviour is already
+    # checked by the affected-package jobs; the release still runs every suite above.
+    pnpm --filter @prismshadow/penguin-core exec vitest run test/build-info.test.ts
+    # `exec vitest` does not run the server's script, which normally generates this table.
+    pnpm --filter @prismshadow/penguin-server gen:ifaces
+    pnpm --filter @prismshadow/penguin-server exec vitest run \
+      test/plugin-registry.test.ts test/version.test.ts test/deploy-same-build.test.ts
+    pnpm --filter @prismshadow/penguin-cli exec vitest run test/version.test.ts
+    ;;
   *)
-    sed -n '2,6p' "$0" >&2
+    sed -n '2,7p' "$0" >&2
     exit 2
     ;;
 esac

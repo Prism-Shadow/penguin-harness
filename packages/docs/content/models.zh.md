@@ -40,7 +40,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 分组标题栏左侧是供应商 logo、分组名、模型数、随分组展开而转向的箭头，鼠标悬停或聚焦时其后还有收藏用的星标。右侧从左到右依次是：
 
-- 分组的余额：TokenDance 和 DeepSeek 分组有 key 之后显示；点击金额打开菜单，可以置顶或更新余额，见[账户余额](#账户余额)；
+- 分组的余额：TokenDance、Penguin Go 和 DeepSeek 分组有 key 之后显示；点击金额打开菜单，可以置顶或更新余额，见[账户余额](#账户余额)；
 - 连接状态：TokenDance、Penguin Go 和 ModelScope 未连接时为**未连接**，点击即开始连接；已连接时为一个**已连接**菜单，内含**同步模型**（仅 Penguin Go）、**重新连接**和**断开连接**，见[连接账户](#连接账户)；
 - **添加模型**（加号图标）：只在 **Custom**、**vLLM**、**OpenRouter**、**TokenDance**、**SiliconFlow**、**Atlas Cloud** 和你创建的分组，见[添加模型](#添加模型)；
 - 测速与**设置**（齿轮）：每个分组（包括 **Custom**）都以这两个按钮收尾，因而在每个分组都对齐在同一条右缘上，见[测速](#测速)。齿轮打开一个菜单：先是该分组的排序，然后是**分组设置…**，见[分组设置](#分组设置)。
@@ -261,7 +261,9 @@ ModelScope 有三处不同：
 
 ### 账户余额
 
-TokenDance 和 DeepSeek 可以查询 key 所属账户的余额。这两个分组有 key 之后，标题栏上会显示余额，币种跟随设置里的**币种**，与价格一样按固定汇率 7 换算。余额始终用**分组密钥**查询：单个模型上设置的 key 一概不算，组内模型的 key 各不相同也不影响余额。没有分组密钥时，DeepSeek 使用服务端的 `DEEPSEEK_API_KEY`，即它的模型本来就会使用的环境变量（见[设置 API key](#设置-api-key)），除非分组设置把它指向了别的 base URL；TokenDance 是网关，key 必须存到分组上。账户持有多种货币时显示合计：¥110 加 $5 显示为 `¥145`，或 `$20.71`。查询由服务端用已存的 key 发起，key 不会到达浏览器。
+TokenDance、Penguin Go 和 DeepSeek 可以查询 key 所属账户的余额。这些分组有 key 之后，标题栏上会显示余额，币种跟随设置里的**币种**，与价格一样按固定汇率 7 换算。余额始终用**分组密钥**查询：单个模型上设置的 key 一概不算，组内模型的 key 各不相同也不影响余额。没有分组密钥时，DeepSeek 使用服务端的 `DEEPSEEK_API_KEY`，即它的模型本来就会使用的环境变量（见[设置 API key](#设置-api-key)），除非分组设置把它指向了别的 base URL；Penguin Go 使用自己的 `PENGUIN_GO_API_KEY`；TokenDance 需要存到分组上的密钥。账户持有多种货币时显示合计：¥110 加 $5 显示为 `¥145`，或 `$20.71`。查询由服务端用密钥发起，key 不会到达浏览器。
+
+Penguin Go 在授权所用的 `PENGUIN_GO_ORIGIN` 上调用 `/api/me/by-key`，默认为 `https://go.penguin.ooo`。也可以显式配置次域名 `https://token.penguin.ooo`；请求不会自动切换域名。它的 CNY 账本余额由 PenguinHarness 换算为显示币种。分组标题栏在加载时查询一次；未置顶时不定时刷新。
 
 - 点击金额打开菜单，共三行：**置顶至左下角**（置顶后为**取消置顶**）；**更新余额**，重新查询余额，跳过服务端保留一分钟的缓存；以及「更新于：YYYY-MM-DD HH:mm」，即查询时间，按本地时间显示。
 - 查询不到余额时显示「—」，菜单最后一行为「更新失败：」加原因。
@@ -342,16 +344,18 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 因此目录对已有模型的修正（如新的价格或上下文窗口）只能经**恢复默认**或手动编辑该模型生效。
 
-**恢复默认**在**同步新增模型**旁边，owner 始终可见；确认（「恢复默认模型设置」）后把内置模型恢复为目录的出厂设置。此操作不可撤销。
+**恢复默认**在**同步新增模型**旁边，owner 始终可见。它把模型配置恢复成新建 Project 时的样子，只保留 API key。执行前会先确认，且不可撤销。
 
-- 内置模型（包括已退役的）的上下文窗口、价格和视觉标志回到目录值，显示名、**最大输出长度**和快速模式清除。
-- 内置模型上和 **Custom** 以外的内置分组设置里的 base URL 与协议回到目录值，形态与新建 Project 时相同：目录没有值的设置项移除，缺少分组设置的内置分组补建。**Custom** 的分组设置服务于你在其中添加的模型，保留不动；**vLLM** 的 base URL 是你自己的服务器，同样保留，只有分组协议回到目录值。
-- 你删掉的内置模型补回，追加在表尾。
-- 促销折扣按目录重置；Penguin Go 分组的折扣归平台所有，保留不动，你自己添加的模型的折扣同样保留。
-- 保留的内容：全部 API key（分组的与模型的）；你自己添加的模型与分组及其设置；默认模型与视觉代理模型——默认模型不再指向任何模型时改为目录默认，视觉代理模型不再支持图片时清除。
-- 内置分组没有分组密钥、组内带 key 的模型都用同一把 key，且这把 key 放到分组上仍能借给它们全部时，它移到分组上，模型上的副本随之删除。key 只换位置，不会删除。
+- 模型恢复为目录的预置模型，按目录顺序排列，上下文窗口、价格、视觉标志、协议与端点都回到目录值。你设置的显示名、**最大输出长度**和快速模式清除，删掉的预置模型补回。
+- 不属于预置的模型一律删除：你在任何分组里添加的模型，以及旧版本添加、后来被目录撤下的模型，退役条目也在内。你新建的分组连同其设置和 key 一并删除。
+- 内置分组的设置回到目录的 base URL 与协议，**Custom** 和 **vLLM** 的 base URL 也一样。
+- 促销折扣回到目录值。
+- 与新建 Project 一样，默认模型改为目录默认，不设视觉代理模型。
+- 内置分组和预置模型上的 API key 原样保留。内置分组没有分组密钥、组内带 key 的模型（包括要删除的）都用同一把 key，且这把 key 放到分组上仍能借给它们全部时，它移到分组上，模型上的副本随之删除。被删除模型上的其他 key 随模型一起删除。
+- Penguin Go 分组同样恢复，平台在预置之外添加的模型和平台的促销也会删除。用分组**已连接**菜单里的**同步模型**即可取回，见 [Penguin Go 分组](#penguin-go-分组)。
+- 被删除的模型如果现在或曾经是新建 Project 的默认模型（如 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`），它此前的用量照旧计价，目录为此保留了它的牌价。其他被删除模型的用量，成本中心报为未计价，与你手动删除模型后相同。
 
-结果提示「已恢复默认：补回 {added}、重置 {restored}」。两个操作都在服务端执行，即 `POST /api/projects/:id/models/sync-presets`，`mode` 为 `add` 或 `restore`（仅 owner 可用）。
+两个操作都在服务端执行，即 `POST /api/projects/:id/models/sync-presets`，`mode` 为 `add` 或 `restore`（仅 owner 可用）。
 
 ## 思考等级
 
@@ -517,7 +521,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 - 平台提供而 Project 没有的模型会被添加进来，连同协议、显示名、上下文窗口、视觉能力、牌价和促销折扣。分组设置里有 base URL 时，端点只在与平台的中转地址不同时写在条目上，因此指向代理的分组会把新模型一并带过去；分组设置里没有 base URL 时，条目带上平台的完整地址。它们不带 key，使用分组密钥。纯向量（embedding）模型不收录。
 - 已有模型保留 ID、显示名、价格、折扣、上下文、视觉设置、key 和当前选择；仅更新 Go 管理的路由，不删除模型。详细目录仍使用 `/api/client/models`，因为 `/api/v1/models` 只有基础模型列表。
-- 和其他分组一样，`.project_config.toml` 里存的是牌价，促销存在服务端的数据库里。**恢复默认**保留这个分组的促销，它们归平台所有。这条记录丢失后，用量按牌价计价。
+- 和其他分组一样，`.project_config.toml` 里存的是牌价，促销存在服务端的数据库里。**恢复默认**像对其他分组一样恢复这个分组，并清除它的促销；**同步模型**会取回平台的模型与促销。这条记录丢失后，用量按牌价计价。
 
 平台报的是高峰档费率，单位是每百万 Token 多少美元。分组里的 DeepSeek 条目跟随 DeepSeek 当前的模型阵容，只有 `deepseek-flash` 和 `deepseek-v4-pro`，并声明与直连 DeepSeek 分组相同的空闲时段，因此在北京时间工作日 9:00–12:00、14:00–18:00 之外，卡片和成本记录都按半价计算。
 
@@ -559,7 +563,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 列表并未穷尽所有模型。
 
 - **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
-- **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，**恢复默认**会把它的价格重置为目录值。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
+- **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，直到**恢复默认**把它连同其他非预置模型一起删除。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
 - **OpenAI 出现两次。** OpenAI 全系模型出现了两遍：一次直连（用你自己的 OpenAI key，官方牌价），一次在 OpenRouter 上以 `openai/<id>` 形式（网关费率，随其当前促销活动浮动）。
 - **GLM-5.3 Flash 出现七次。** 分别是直连的 `glm-5.3-flash`、TokenDance 与 OpenCode Go 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash`、SiliconFlow 的 `zai-org/GLM-5.3-Flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：MMSP 的 Z.AI 客户端（`zai-official`）只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
 - **OpenRouter 免费档。** 目录收录了 `:free` 变体 `nvidia/nemotron-3-ultra-550b-a55b:free`，以及 `openrouter/free` 这个统一的免费模型路由（Free Models Router）。它们不花钱，但 OpenRouter 免费档的限流和数据政策仍然适用。
@@ -571,7 +575,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 - **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）、Gemini 3.1 Pro（200K 以上）和 Claude Haiku 5.5（100K 以上，每项费率为 5 倍）遵循同样的约定。
 - **DeepSeek 空闲时段。** 直连 DeepSeek 的条目记录官方高峰价格，并声明 DeepSeek 的空闲时段规则：工作日北京时间 9:00–12:00 和 14:00–18:00 以外的时段，三项价格全部减半。**模型库**页面在这些时段显示 `省 50%` 标签，成本中心也按这个费率计费。
   - 十条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813`，OpenRouter 的 `deepseek/deepseek-v4.1-flash`，Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`，以及 OpenCode Go 的 `deepseek-v4.1-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-v4-pro`。
-  - TokenDance 还在高峰时段对这三条再打 8 折，`deepseek-v4.1-flash` 在空闲时段也打。条目无法在时段规则之外再声明固定折扣，所以这些时段按牌价计费，比 TokenDance 实收高 25%。
+  - TokenDance 还在高峰时段对这三条再打 8 折，`deepseek-v4.1-flash` 在空闲时段也打。这一条把 8 折作为促销与时段规则并列声明，卡片在高峰时段显示 `省 20%`、空闲时段显示 `省 60%`，成本中心按 TokenDance 实收计费。`deepseek-v4-flash-0731` 和 `deepseek-v4-pro-0813` 的 8 折只在高峰时段生效，与时段规则并列的促销表达不了，所以它们的高峰时段按牌价计费，比 TokenDance 实收高 25%。
   - Qwen 转售的 DeepSeek 模型按它自己的时段计费：北京时间每天 22:00 至次日 8:00 半价。两个 Qwen 分组的 `deepseek-v4.1-flash` 和 Token Plan 的 `deepseek-v4-pro-0813` 声明的是这一套，折扣标签的悬停说明写的也是该条目所遵循时段的窗口。
   - 存储的价格始终是高峰价格，所以磁盘上的数值与 Project 创建或同步的时间无关。
 - **固定折扣。** 目前有八个 TokenDance 模型在打折：

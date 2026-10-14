@@ -83,10 +83,12 @@ export class FakeElement {
 export interface FakePage {
   /** The `lang` the page set on its document. */
   readonly lang: string;
+  /** The theme the page forced on its document (`data-theme`), or undefined to follow the device. */
+  readonly theme: string | undefined;
   byId(id: string): FakeElement;
   /**
    * All the page's copy, hidden elements included: every text, placeholder, tooltip and label.
-   * The EN / 中文 switch counts by its label only, since it names each language in that language.
+   * The language switch counts by its label only, since it names each language in that language.
    */
   text(): string;
   /** The first element below `id` whose `data-<key>` is `value`. */
@@ -112,7 +114,7 @@ export async function openPage(
     node.id = id!;
     byId.set(id!, node);
   }
-  const root = { lang: "" };
+  const root = { lang: "", dataset: {} as Record<string, string> };
   vi.stubGlobal("document", {
     documentElement: root,
     getElementById: (id: string) => byId.get(id) ?? null,
@@ -132,6 +134,9 @@ export async function openPage(
   return {
     get lang() {
       return root.lang;
+    },
+    get theme() {
+      return root.dataset.theme;
     },
     byId(id) {
       const node = byId.get(id);

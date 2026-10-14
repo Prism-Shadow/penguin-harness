@@ -98,10 +98,10 @@ export function LoginPage() {
     // relative + overflow-hidden: the circuit-trace background fills this page and clips lines that go out
     // of bounds; the form area uses relative positioning to sit above the background (otherwise the
     // absolutely positioned SVG would render in front of the static content).
-    <div className="relative flex min-h-full items-center justify-center overflow-hidden p-4">
+    <div className="relative flex min-h-full items-center justify-center overflow-hidden p-4 pt-[calc(env(titlebar-area-height,0px)+1rem)]">
       <LoginCircuit />
       {/* Language / theme settings: compact segmented control in the top-right corner (stacks vertically on narrow screens to avoid competing with the form for width). */}
-      <div className="absolute right-4 top-4 flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+      <div className="absolute right-4 top-[calc(env(titlebar-area-height,0px)+1rem)] flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-2">
         <div aria-label={S.settings.language}>
           <Segmented options={langOptions} value={lang} onChange={setLang} />
         </div>

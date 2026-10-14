@@ -7,18 +7,15 @@
  * Project file (synchronized across machines in company mode, while exposure is one server's).
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { ApprovalMode } from "../api/types.js";
+import type { AgentApiSettings, AgentApiUpdateRequest } from "../api/types.js";
+
+/** The default for API admission, preserved for Agents configured before this setting existed. */
+export const DEFAULT_API_CONCURRENT_RUNS = 4;
 
 /** One Agent's API settings row. */
-export interface AgentApiRow {
+export interface AgentApiRow extends Omit<AgentApiSettings, "keys"> {
   projectId: string;
   agentId: string;
-  /** The API tab's switch: off = every /api/amsp request for the Agent is 404 `agent_not_found`. */
-  enabled: boolean;
-  /** Keyless access: a request without `Authorization` is accepted; off = 401 `unauthorized`. */
-  open: boolean;
-  /** The approval mode an API Session is created with (copied onto its row, never read per decision). */
-  approvalMode: ApprovalMode;
   updatedAt: string;
 }
 
@@ -38,11 +35,7 @@ export interface AgentApiKeyRow {
 }
 
 /** The fields a settings write may change; omitted ones keep their stored value. */
-export interface AgentApiPatch {
-  enabled?: boolean;
-  open?: boolean;
-  approvalMode?: ApprovalMode;
-}
+export type AgentApiPatch = AgentApiUpdateRequest;
 
 /** AgentApi: the mechanism AgentApiRepo implements. */
 @Interface()

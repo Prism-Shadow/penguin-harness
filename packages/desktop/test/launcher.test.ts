@@ -20,32 +20,6 @@ import {
   windowsLauncherScript,
 } from "../src/launcher.js";
 
-describe("posixLauncherScript", () => {
-  const script = posixLauncherScript();
-
-  it("is a /bin/sh script that resolves symlinks before locating the runtime", () => {
-    expect(script.startsWith("#!/bin/sh\n")).toBe(true);
-    expect(script).toContain('while [ -h "$SOURCE" ]');
-    expect(script).toContain("readlink");
-  });
-
-  it("targets the bundled CLI entry and both platform runtime locations", () => {
-    expect(script).toContain(`CLI_ENTRY="$APP_DIR/${CLI_ENTRY_RELPATH}"`);
-    // macOS: resources/app -> ../../MacOS/<executable>; Linux: -> ../../<executableName>.
-    expect(script).toContain(`"$APP_DIR/../../MacOS/${MAC_EXECUTABLE}"`);
-    expect(script).toContain(`"$APP_DIR/../../${LINUX_EXECUTABLE}"`);
-  });
-
-  it("execs as Node and forwards all arguments", () => {
-    expect(script).toContain("export ELECTRON_RUN_AS_NODE=1");
-    expect(script).toContain('exec "$CANDIDATE" "$CLI_ENTRY" "$@"');
-  });
-
-  it("fails with a message when no runtime is found", () => {
-    expect(script).toContain("exit 1");
-  });
-});
-
 describe("windowsLauncherScript", () => {
   const script = windowsLauncherScript();
 

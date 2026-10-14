@@ -177,7 +177,7 @@ docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyoug
 docker logs penguin       # the first-login link, openable as it stands on this machine
 ```
 
-The image serves on port 7364 with its data on the `/data` volume, for `linux/amd64` and `linux/arm64`; `latest` follows `main`, and each release is also tagged with its version. The example listens on loopback only. For a network-facing deployment, Compose and upgrades, see the [Docker quickstart](https://penguin.ooo/docs/quickstart-docker).
+The image serves on port 7364 with its data on the `/data` volume, for `linux/amd64` and `linux/arm64`; `latest` follows changes to the image's runtime or build inputs on `main`, and each release is also tagged with its version. The example listens on loopback only. For a network-facing deployment, Compose and upgrades, see the [Docker quickstart](https://penguin.ooo/docs/quickstart-docker).
 
 <details>
 <summary><b>Offline install (air-gapped machines)</b></summary>

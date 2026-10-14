@@ -31,6 +31,7 @@
  * style of telegram-api.ts.
  */
 import { createDecipheriv, randomBytes } from "node:crypto";
+import { userAgent } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
 import type { Opaque } from "@prismshadow/penguin-core/kernel";
 
@@ -150,7 +151,7 @@ export function createQQScanTransport(base = QQ_SCAN_BASE): QQScanTransport {
     try {
       res = await fetch(`${base}${path}`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "user-agent": userAgent() },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
       });

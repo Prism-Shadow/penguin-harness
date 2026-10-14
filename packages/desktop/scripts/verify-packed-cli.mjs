@@ -14,13 +14,23 @@
  * Every app directory found is checked for the launchers and the bundled entry. The
  * launcher is then actually run: a cross-architecture bundle that cannot execute on this
  * host is reported and skipped, but at least one has to run and report a version.
+ *
+ * It is also checked for what the Machines page installs on another computer from it: the
+ * server bundle at the path the server recognizes as a packaged app, the release installers
+ * and the install image (the harness a machine runs, in the hot push's format) beside it,
+ * and the app's own package.json naming this build's version — the release a machine
+ * downloads. None of them is imported by anything, so an app without them builds, starts
+ * and runs its CLI, and only an install on a machine fails.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const { FAR_SIDE_SCRIPTS } = await import(
+  pathToFileURL(path.resolve(pkgDir, "..", "..", "scripts", "far-side-scripts.mjs")).href
+);
 const outDir = path.join(pkgDir, "out");
 const ownPkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
 const version = ownPkg.version;
@@ -112,6 +122,9 @@ for (const app of dirs) {
     "bin/penguin",
     "bin/penguin.cmd",
     "dist/penguin.js",
+    "dist/server.js",
+    ...FAR_SIDE_SCRIPTS.map(({ name }) => `dist/${name}`),
+    "dist/install-image.gz",
     "web-dist/index.html",
     ...pluginFiles,
     ...compilerFiles,
@@ -128,6 +141,18 @@ for (const app of dirs) {
       if ((fs.statSync(file).mode & 0o111) === 0)
         problems.push(`${app}: ${rel} is not executable.`);
     }
+  }
+
+  let packedVersion = null;
+  try {
+    packedVersion = JSON.parse(fs.readFileSync(path.join(app, "package.json"), "utf8")).version;
+  } catch {
+    // Reported below with the rest.
+  }
+  if (packedVersion !== version) {
+    problems.push(
+      `${app}: package.json names version ${JSON.stringify(packedVersion)}, want ${version} — the release a machine install downloads.`,
+    );
   }
 
   const launcher =

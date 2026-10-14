@@ -36,6 +36,7 @@ import type { Opaque } from "@prismshadow/penguin-core/kernel";
  * task is deleted, so nothing can resolve it twice.
  */
 import { randomBytes } from "node:crypto";
+import { userAgent } from "@prismshadow/penguin-core";
 import { WECHAT_API_BASE, WECHAT_BOT_TYPE, wechatFetchErrorText } from "./wechat-api.js";
 
 /** Overall deadline for `get_bot_qrcode`, which answers immediately. */
@@ -145,6 +146,7 @@ export function createWeChatScanTransport(base = WECHAT_API_BASE): WeChatScanTra
   const headers = (): Record<string, string> => ({
     "iLink-App-Id": "bot",
     "iLink-App-ClientVersion": String((1 << 16) | 0),
+    "user-agent": userAgent(),
   });
 
   return {

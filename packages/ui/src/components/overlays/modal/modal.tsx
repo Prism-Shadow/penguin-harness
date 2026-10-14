@@ -66,7 +66,7 @@ export function Modal({
     <div
       // ui-scrim: the dimmed layer between the page and the dialog; a theme may blur the page
       // through it. The overlay is the scrim itself, with the dialog inside it.
-      className="ui-scrim anim-fade fixed inset-0 z-50 flex items-end justify-center bg-[var(--ui-overlay-backdrop)] p-0 sm:items-center sm:p-4"
+      className="ui-scrim anim-fade fixed inset-0 z-50 flex items-end justify-center bg-[var(--ui-overlay-backdrop)] p-0 pt-[env(titlebar-area-height,0px)] sm:items-center sm:p-4 sm:pt-[calc(env(titlebar-area-height,0px)+1rem)]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -82,7 +82,7 @@ export function Modal({
         onKeyDown={onPanelKeyDown}
         className={`ui-glass anim-pop w-full ${widthClass ?? "sm:max-w-md"} ${
           fullScreenOnPhone
-            ? "flex h-[100dvh] flex-col pt-[env(safe-area-inset-top)] sm:pt-0"
+            ? "flex h-[calc(100dvh-env(titlebar-area-height,0px))] flex-col pt-[env(safe-area-inset-top)] sm:pt-0"
             : "rounded-t-lg"
         } border border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-xl sm:rounded-lg sm:pb-0`}
       >

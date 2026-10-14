@@ -576,12 +576,11 @@ describe("telegram adapter against the fetch boundary", () => {
   });
 
   it("really posts multipart, driving the transport's OWN fetch at a real socket", async () => {
-    // The one assertion no stub can make. The startup entry replaces `globalThis.fetch`
-    // with undici's (net/proxy.ts), and undici's fetch brand-checks a FormData body against
-    // its OWN class — so a global `new FormData()` fell through to `String(body)` and the
-    // Bot API received the 17 bytes `[object FormData]` as text/plain: "there is no
-    // document in the request". Every upload failed in production and none did in CI, where
-    // `globalThis.fetch` is still the runtime's own and the pairing happens to match.
+    // The one assertion no stub can make. undici's fetch brand-checks a FormData body
+    // against its OWN class, so a FormData from the runtime's copy of undici falls through
+    // to `String(body)` and the Bot API receives the 17 bytes `[object FormData]` as
+    // text/plain: "there is no document in the request". A stub accepts any FormData, so
+    // only a real socket shows the transport's fetch and FormData still match.
     //
     // So this test replaces neither: it takes the transport exactly as production builds
     // it, points undici's global dispatcher at a local server, and reads what arrived.

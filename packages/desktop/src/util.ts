@@ -255,3 +255,24 @@ export function hidesOnClose(state: {
 }): boolean {
   return !state.quitting && state.trayShown && state.closeToTray;
 }
+
+/**
+ * Calls `listener` on each announcement that the app is on its way out, whichever comes
+ * first — what `quitting` above has to know before any window is asked to close.
+ *
+ * `before-quit` is the ordinary exit: the tray's Quit, the app menu's, an OS logout. An
+ * update's restart is the other, and on macOS it does not send `before-quit` first: Electron's
+ * updater (Squirrel.Mac, under electron-updater's quitAndInstall) closes every window and only
+ * quits once the last one is gone. A close that hides into the tray instead keeps that from ever
+ * happening — the restart is never made, and the page waits on it forever. Its own event,
+ * `before-quit-for-update` on Electron's `autoUpdater`, comes before the windows close, on
+ * Windows and Linux too (electron-updater raises it there ahead of its own quit).
+ */
+export function onLeaving(
+  app: { on(event: "before-quit", listener: () => void): unknown },
+  updater: { on(event: "before-quit-for-update", listener: () => void): unknown },
+  listener: () => void,
+): void {
+  app.on("before-quit", listener);
+  updater.on("before-quit-for-update", listener);
+}

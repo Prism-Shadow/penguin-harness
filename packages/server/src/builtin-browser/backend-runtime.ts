@@ -132,6 +132,7 @@ export interface BackendRuntimeDeps {
   log(line: string): void;
   /** The homepage a new tab with no address opens; null for none (blank). */
   homepage(): Promise<string | null>;
+  partition?(sessionId?: string, projectId?: string): string;
   /** The address check the routes' URLs go through (service.ts's browserUrl). */
   url: UrlCheck;
   /** Built-in only: the history the browser's tab events feed. */
@@ -219,9 +220,12 @@ export class BrowserBackendRuntime {
   // --- tabs ----------------------------------------------------------------------
 
   /** GET /tabs. */
-  async listTabs(): Promise<BuiltinBrowserTabsResponse> {
+  async listTabs(sessionId?: string): Promise<BuiltinBrowserTabsResponse> {
     await this.ready();
-    return { tabs: this.tabs.list(), activeTabId: this.tabs.activeTabId };
+    return {
+      tabs: this.tabs.list(this.scope(sessionId)),
+      activeTabId: this.tabs.activeFor(this.scope(sessionId)),
+    };
   }
 
   /**
@@ -231,6 +235,7 @@ export class BrowserBackendRuntime {
   async openTab(opts: {
     url?: unknown;
     sessionId?: string;
+    projectId?: string;
     activate?: boolean;
   }): Promise<BuiltinBrowserTab> {
     await this.ready();
@@ -245,7 +250,7 @@ export class BrowserBackendRuntime {
     const activate = opts.activate !== false;
     const tabId = this.link.capabilities.createsTabs
       ? await this.createTab(url, activate)
-      : await this.requestTab(url, activate, opts.sessionId);
+      : await this.requestTab(url, activate, opts.sessionId, opts.projectId);
     // The agent's (or the panel's) new tab: its grace runs from now, as after an action.
     this.actedAt.set(tabId, this.now());
     this.syncThrottle();
@@ -277,18 +282,18 @@ export class BrowserBackendRuntime {
         "No tab is waiting for this request any more; remove the tab.",
       );
     }
-    if (this.tabs.openRequest(requestId)?.activate === true && this.tabs.activate(tabId)) {
-      this.schedulePublish();
-    }
+    if (this.tabs.openRequest(requestId)?.activate === true) this.tabs.activate(tabId);
+    // Ownership changes even when the claimed page was already globally active.
+    this.schedulePublish();
   }
 
   /**
    * POST /tabs/:tab/activate: the user focused a tab, or the agent switched to one. On chrome
    * the tab is also shown in the user's Chrome, since that is where they look at it.
    */
-  async activate(tab: string): Promise<BuiltinBrowserTab> {
+  async activate(tab: string, sessionId?: string): Promise<BuiltinBrowserTab> {
     await this.ready();
-    const tabId = this.resolve(tab);
+    const tabId = this.resolve(tab, sessionId);
     if (this.tabs.activate(tabId)) this.schedulePublish();
     if (this.link.capabilities.createsTabs) {
       await this.command({ op: "activate-tab", tabId }, tabId);
@@ -306,9 +311,9 @@ export class BrowserBackendRuntime {
   }
 
   /** DELETE /tabs/:tab: closed by the extension (chrome), or by the window holding it (built-in). */
-  async close(tab: string): Promise<void> {
+  async close(tab: string, sessionId?: string): Promise<void> {
     await this.ready();
-    const tabId = this.resolve(tab);
+    const tabId = this.resolve(tab, sessionId);
     if (this.link.capabilities.createsTabs) {
       await this.command({ op: "close-tab", tabId }, tabId, this.timing.closeWaitMs);
       // The extension reports it closed as well; the registry need not wait for that.
@@ -328,7 +333,7 @@ export class BrowserBackendRuntime {
   async navigate(tab: string, rawUrl: unknown, sessionId?: string): Promise<BuiltinBrowserTab> {
     const url = this.deps.url(rawUrl, false);
     await this.ready();
-    if (tab === "active" && this.tabs.activeTabId === null) {
+    if (tab === "active" && this.tabs.activeFor(this.scope(sessionId)) === null) {
       return this.openTab({
         url,
         activate: true,
@@ -350,8 +355,8 @@ export class BrowserBackendRuntime {
       const { content, truncated } = await actions.scan(tabId, opts);
       return {
         tab: this.tabOrThrow(tabId),
-        tabs: this.tabs.list(),
-        activeTabId: this.tabs.activeTabId,
+        tabs: this.tabs.list(this.scope(sessionId)),
+        activeTabId: this.tabs.activeFor(this.scope(sessionId)),
         content,
         ...(truncated ? { truncated } : {}),
       };
@@ -453,7 +458,7 @@ export class BrowserBackendRuntime {
           `${method} is not available on your own Chrome: its cookies, stores and other tabs stay in Chrome. Open, switch and close tabs with penguin browser open, switch and close.`,
         );
       }
-    } else if (method.startsWith("Target.")) {
+    } else if (["Target.", "Browser.", "Storage."].some((domain) => method.startsWith(domain))) {
       throw new HttpError(
         403,
         "cdp_refused",
@@ -500,8 +505,10 @@ export class BrowserBackendRuntime {
     url: string,
     activate: boolean,
     sessionId: string | undefined,
+    projectId?: string,
   ): Promise<number> {
     const request = this.requestOpen({
+      partition: this.deps.partition?.(sessionId, projectId),
       url,
       activate,
       ...(sessionId !== undefined ? { sessionId } : {}),
@@ -512,17 +519,28 @@ export class BrowserBackendRuntime {
     return tabId;
   }
 
-  /** `active` or a tab id, to an open tab. */
-  private resolve(tab: string): number {
+  /** Chrome keeps its own shared tab group; desktop automation is scoped to its Session. */
+  private scope(sessionId?: string): string | undefined {
+    return this.backend === "builtin" ? sessionId : undefined;
+  }
+
+  adoptSession(fromSessionId: string, sessionId: string): void {
+    this.tabs.adoptSession(fromSessionId, sessionId);
+    this.deps.publish({ type: "builtin_browser_session", fromSessionId, sessionId });
+    this.schedulePublish();
+  }
+
+  private resolve(tab: string, sessionId?: string): number {
+    const scope = this.scope(sessionId);
     if (tab === "active") {
-      const id = this.tabs.activeTabId;
+      const id = this.tabs.activeFor(scope);
       if (id === null) {
         throw new HttpError(404, "no_tab", `No tab is open in ${browserLabel(this.backend)}.`);
       }
       return id;
     }
     const id = /^\d{1,15}$/.test(tab) ? Number(tab) : Number.NaN;
-    if (!this.tabs.has(id)) {
+    if (!this.tabs.has(id) || (scope !== undefined && this.tabs.get(id)?.sessionId !== scope)) {
       if (this.released.has(id)) throw tabReleasedError(id);
       throw new HttpError(
         404,
@@ -565,7 +583,7 @@ export class BrowserBackendRuntime {
     run: (tabId: number, actions: BrowserActions) => Promise<T>,
   ): Promise<T> {
     await this.ready();
-    const tabId = this.resolve(tab);
+    const tabId = this.resolve(tab, sessionId);
     const crashed = this.tabs.get(tabId)?.crashed;
     if (crashed !== undefined) throw tabCrashedError(tabId, crashed);
     if (this.tabs.activate(tabId)) this.schedulePublish();
@@ -615,14 +633,18 @@ export class BrowserBackendRuntime {
     activate: boolean;
     openerTabId?: number;
     sessionId?: string;
+    partition?: string | undefined;
   }): OpenRequest {
     const request = this.tabs.createOpen({
       url: opts.url,
+      partition: opts.partition ?? "persist:penguin-browser",
       activate: opts.activate,
+      ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
       ...(opts.openerTabId !== undefined ? { openerTabId: opts.openerTabId } : {}),
     });
     this.deps.publish({
       type: "builtin_browser_open",
+      partition: opts.partition ?? "persist:penguin-browser",
       requestId: request.requestId,
       url: opts.url,
       activate: opts.activate,
@@ -634,8 +656,8 @@ export class BrowserBackendRuntime {
 
   /**
    * A popup, or "Open link in new tab" (built-in: the extension adopts a driven tab's popups
-   * itself and announces them as tabs). The session of an action running in the opener is the
-   * one that caused it. A page gets at most POPUP_LIMIT tabs in any POPUP_WINDOW_MS, and none
+   * itself and announces them as tabs). Ownership and storage come from the opener even when
+   * no agent action is running. A page gets at most POPUP_LIMIT tabs in any POPUP_WINDOW_MS, and none
    * while the browser holds MAX_TABS: one looping on window.open would otherwise open tabs
    * without end. What goes over is dropped, with a log line.
    */
@@ -655,9 +677,10 @@ export class BrowserBackendRuntime {
       return;
     }
     this.popups.set(event.openerTabId, [...recent, now]);
-    const sessionId = this.inflight.get(event.openerTabId)?.sessionId;
+    const sessionId = this.tabs.get(event.openerTabId)?.sessionId;
     this.requestOpen({
       url: event.url,
+      partition: this.tabs.get(event.openerTabId)?.partition,
       activate: event.background !== true,
       openerTabId: event.openerTabId,
       ...(sessionId !== undefined ? { sessionId } : {}),

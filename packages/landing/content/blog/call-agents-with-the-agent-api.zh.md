@@ -105,7 +105,7 @@ const client = new AgentClient({
   apiKey: process.env.PENGUIN_AGENT_KEY,
 });
 
-const run = client.run({ input: "What time is it now?" });
+const run = client.stream({ input: "What time is it now?" });
 for await (const event of run) {
   if (event.type === "tool_call.done") console.log(`[tool] ${event.name} ${event.arguments}`);
   if (event.type === "text.delta") process.stdout.write(event.text);
@@ -113,7 +113,7 @@ for await (const event of run) {
 const first = await run.result();
 console.log(`\n[${first.status}] ${first.requests} requests, ${first.usage.total} tokens`);
 
-const second = await client.ask({ sessionId: first.sessionId, input: "And in UTC?" });
+const second = await client.run({ sessionId: first.sessionId, input: "And in UTC?" });
 console.log(second.text);
 ```
 
@@ -126,7 +126,7 @@ It's 01:47 on October 13, 2026, by the server's clock (CST).
 That is 17:47 UTC on Monday, October 12.
 ```
 
-`client.run()` 返回这次运行，可以在事件到达时逐个迭代。`run.result()` 在运行结束后返回结果。`client.ask()` 会等到运行结束，只返回结果。传入 `sessionId` 就能继续对话，和 curl 里的 `session_id` 作用一样。
+`client.stream()` 返回这次运行，可以在事件到达时逐个迭代。`run.result()` 在运行结束后返回结果。`client.run()` 会等到运行结束，只返回结果。传入 `sessionId` 就能继续对话，和 curl 里的 `session_id` 作用一样。
 
 ## 这些会话去了哪里
 

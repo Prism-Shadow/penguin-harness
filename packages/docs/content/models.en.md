@@ -40,7 +40,7 @@ Select a card to open **Model settings**. It links to the provider's model list 
 
 A group's header shows the provider's logo, the group's name, its model count and an arrow that turns when the group opens, then, on hover or focus, the star that makes it a favorite. On the right it holds, from left to right:
 
-- the group's balance, for TokenDance and DeepSeek once the group has a key; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
+- the group's balance, for TokenDance, Penguin Go and DeepSeek once the group has a key; select the amount for a menu that pins or refreshes it; see [Account balances](#account-balances);
 - the connection, for TokenDance, Penguin Go and ModelScope: **Not connected**, which you select to connect, or **Connected**, a menu with **Sync models** (Penguin Go only), **Reconnect** and **Disconnect**; see [Connect an account](#connect-an-account);
 - **Add model**, a plus icon, on **Custom**, **vLLM**, **OpenRouter**, **TokenDance**, **SiliconFlow**, **Atlas Cloud** and groups you created; see [Add a model](#add-a-model);
 - the speed test and **Settings** (a gear), which end every group, **Custom** included, so the two stand at the same right edge on every group; see [Measure speed](#measure-speed). The gear opens a menu: the group's sort, then **Group settings…**; see [Group settings](#group-settings).
@@ -262,7 +262,9 @@ Keep in mind:
 
 ### Account balances
 
-TokenDance and DeepSeek report the balance of the account a key belongs to. Once one of these groups has a key, its header shows the balance in the currency chosen under **Currency** in the settings, converted at the same fixed rate of 7 as prices. The balance is always read with the **group key**: keys set on single models never count, so models holding different keys do not change it. Without a group key, DeepSeek uses the server's `DEEPSEEK_API_KEY`, which its models already fall back to (see [Set API keys](#set-api-keys)), unless the group's settings point it at another base URL; TokenDance is a gateway, so its key must be stored on the group. An account holding several currencies shows their sum: ¥110 and $5 read `¥145`, or `$20.71`. The server asks the provider with the stored key, so the key never reaches the browser.
+TokenDance, Penguin Go and DeepSeek report the balance of the account a key belongs to. Once one of these groups has a key, its header shows the balance in the currency chosen under **Currency** in the settings, converted at the same fixed rate of 7 as prices. The balance is always read with the **group key**: keys set on single models never count, so models holding different keys do not change it. Without a group key, DeepSeek uses the server's `DEEPSEEK_API_KEY`, which its models already fall back to (see [Set API keys](#set-api-keys)), unless the group's settings point it at another base URL; Penguin Go uses its own `PENGUIN_GO_API_KEY`; TokenDance requires a stored group key. An account holding several currencies shows their sum: ¥110 and $5 read `¥145`, or `$20.71`. The server asks the provider with the key, so the key never reaches the browser.
+
+Penguin Go reads `/api/me/by-key` at the same `PENGUIN_GO_ORIGIN` used for authorization, defaulting to `https://go.penguin.ooo`. The secondary domain `https://token.penguin.ooo` can be configured explicitly; requests do not switch domains automatically. Its CNY ledger balance is converted to the display currency in PenguinHarness. The group header queries once when it loads; it has no periodic refresh until the balance is pinned.
 
 - Select the amount to open its menu of three lines: **Pin to bottom-left** (**Unpin** once pinned), **Refresh balance**, which reads the balance again, skipping the minute for which the server keeps an answer, and "Updated: YYYY-MM-DD HH:mm", when it was read, in your local time.
 - A balance that cannot be read shows "—", and the menu's last line reads "Update failed:" with the reason.
@@ -343,16 +345,18 @@ Adding:
 
 A catalog correction to a model the Project already has, such as a new price or context window, therefore reaches it only through **Restore defaults** or by editing the model.
 
-**Restore defaults**, beside **Add new models** and always available to the owner, puts the built-in models back to the catalog after a confirmation ("Restore default model settings"). It cannot be undone.
+**Restore defaults**, beside **Add new models** and always available to the owner, gives the Project the model configuration a new Project gets and keeps only the API keys. It asks for confirmation first and cannot be undone.
 
-- Built-in models, retired ones included, get the catalog's context window, prices and vision flag back, and lose their display name, **Max output tokens** and fast mode.
-- Base URLs and protocols on built-in models and in the settings of built-in groups other than **Custom** return to the catalog's, in a new Project's shape: settings the catalog has no value for are removed, and a built-in group missing its settings gets them back. **Custom**'s settings serve the models you added there and are kept, and so is **vLLM**'s base URL: it is your own server, so only the group's protocol returns to the catalog's.
-- Built-in models you deleted come back, at the end of the table.
-- Promotions are reset to the catalog's; the Penguin Go group's belong to the platform and are kept, and so are those of the models you added yourself.
-- Kept: every API key, the group's and the models' own; the models and groups you added yourself, with their settings; the default and proxy vision models, unless the default no longer names a model, which then becomes the catalog default, or the proxy vision model no longer accepts images, which is then cleared.
-- A built-in group with no group key gets one when every model in it that holds a key holds the same one, and the group key would reach all of those models; they drop their copies. Keys change place, never disappear.
+- The models become the catalog's presets in catalog order, with the catalog's context window, prices, vision flag, protocol and endpoint. Display names, **Max output tokens** and fast mode you set are cleared, and presets you deleted come back.
+- Every model that is not a preset is deleted: the models you added, in any group, and those an earlier version added that the catalog has since dropped, retired rows included. Groups you created are deleted with their settings and key.
+- Built-in groups' settings return to the catalog's base URL and protocol, **Custom**'s and **vLLM**'s base URLs included.
+- Promotions return to the catalog's.
+- As in a new Project, the default model is the catalog default and no proxy vision model is set.
+- The API keys of built-in groups and of preset models stay where they are. A built-in group with no group key gets one when every model in it that holds a key, deleted ones included, holds the same one and the group key would reach all of them; the models drop their copies. Other keys on deleted models go with them.
+- Penguin Go is reset like every other group, so the models the platform added beyond the presets and the platform's promotions go too. **Sync models** in the group's **Connected** menu brings them back; see [The Penguin Go group](#the-penguin-go-group).
+- Usage recorded on a deleted model that is or once was the default model of new Projects, such as `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, stays priced: the catalog keeps its list price for that. The cost center reports usage on any other deleted model as uncosted, as it does after you delete a model yourself.
 
-The result says "Defaults restored: {added} added back, {restored} reset". Both actions run on the server, as `POST /api/projects/:id/models/sync-presets` with `mode` `add` or `restore` (owner only).
+Both actions run on the server, as `POST /api/projects/:id/models/sync-presets` with `mode` `add` or `restore` (owner only).
 
 ## Thinking levels
 
@@ -518,7 +522,7 @@ The group's key comes from its header; see [Connect an account](#connect-an-acco
 
 - Models the platform offers and the Project does not have are added, with their protocol, display name, context window, vision flag, list price and promotion. While the group's settings hold a base URL, an added model stores an endpoint only where it differs from the platform's relay URL, so a group you pointed at a proxy takes it along; with no base URL there, the model stores the platform's in full. They carry no key and use the group key. Pure embedding models are left out.
 - Existing models retain their ids, display names, prices, promotions, context and vision settings, keys and current selections. Only Go-managed routing changes; nothing is deleted. The detailed catalog remains `/api/client/models`, because `/api/v1/models` contains only the basic model list.
-- As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database. **Restore defaults** keeps this group's promotions, which belong to the platform. If that record is lost, usage is priced at the list price.
+- As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database. **Restore defaults** resets this group like any other and clears its promotions; **Sync models** brings the platform's models and promotions back. If that record is lost, usage is priced at the list price.
 
 The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their cards and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.
 
@@ -560,7 +564,7 @@ The preset catalog includes, among others:
 The list is not exhaustive.
 
 - **DeepSeek images.** `deepseek-flash` is V4.1 Flash and reads images; `deepseek-v4-pro` is the V4 Pro 0813 release and is text-only. To send an image, use `deepseek-flash`.
-- **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, and **Restore defaults** resets its price to the catalog's. A retired row is never added to a Project that does not have it, and a new Project never gets one.
+- **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, until **Restore defaults** deletes it with every other model that is not a preset. A retired row is never added to a Project that does not have it, and a new Project never gets one.
 - **OpenAI twice.** The whole OpenAI line-up is listed twice: directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions).
 - **GLM-5.3 Flash seven times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance and OpenCode Go, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash`, SiliconFlow's `zai-org/GLM-5.3-Flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: MMSP's Z.AI client (`zai-official`) forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
 - **OpenRouter free tier.** The catalog carries the `:free` model variant `nvidia/nemotron-3-ultra-550b-a55b:free` and the `openrouter/free` unified Free Models Router. They cost nothing, but OpenRouter's free-tier rate limits and data policy apply.
@@ -572,7 +576,7 @@ The list is not exhaustive.
 - **Base tier only.** Where a vendor's prices step up with input size, the catalog records the base tier. MiniMax M3 records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; above that, every rate doubles, and the priority tier is 1.5x, so long-context and priority usage is underestimated. OpenAI (above 272K), Gemini 3.1 Pro (above 200K) and Claude Haiku 5.5 (above 100K, where every rate is 5x) follow the same convention.
 - **DeepSeek off-peak.** The direct DeepSeek rows record the official peak prices and declare DeepSeek's off-peak schedule: outside Beijing time 9:00–12:00 and 14:00–18:00 on weekdays, every bucket is halved. The **Models** page shows a `50% off` tag during those hours, and the cost center bills at that rate.
   - Ten resold rows follow the same schedule because their sellers pass DeepSeek's windows through: TokenDance's `deepseek-v4.1-flash`, `deepseek-v4-flash-0731` and `deepseek-v4-pro-0813`, OpenRouter's `deepseek/deepseek-v4.1-flash`, Penguin Go's `deepseek-flash` and `deepseek-v4-pro`, and OpenCode Go's `deepseek-v4.1-flash`, `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp` and `deepseek-v4-pro`.
-  - TokenDance also takes 20% off those three at peak, and off-peak too on `deepseek-v4.1-flash`. A row cannot carry a flat promotion beside a schedule, so those hours are priced at the list rate, 25% above what TokenDance bills.
+  - TokenDance also takes 20% off those three at peak, and off-peak too on `deepseek-v4.1-flash`. That row declares the 20% as a promotion beside its schedule, so its card shows `20% off` at peak and `60% off` off-peak, and the cost center bills what TokenDance bills. On `deepseek-v4-flash-0731` and `deepseek-v4-pro-0813` the 20% applies at peak only, which a promotion beside the schedule cannot express, so their peak hours are priced at the list rate, 25% above what TokenDance bills.
   - Qwen bills the DeepSeek models it resells on a schedule of its own, half price from 22:00 to 8:00 Beijing time every day. `deepseek-v4.1-flash` in both Qwen groups, and the Token Plan's `deepseek-v4-pro-0813`, declare that one instead, and the tag's tooltip names the windows of whichever schedule the row follows.
   - The stored price is always the peak price, so what is on disk does not depend on the hour a Project was created or synced.
 - **Flat promotions.** Eight TokenDance models are discounted today:

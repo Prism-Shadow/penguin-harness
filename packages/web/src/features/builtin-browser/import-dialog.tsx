@@ -3,6 +3,7 @@
  * cookies and sign-ins, history — and optionally which sites' cookies; then the counts and
  * any warnings the import came back with. The browser imported from is only read.
  */
+import { browserState } from "./browser-store";
 import { useEffect, useState } from "react";
 import type {
   BuiltinBrowserImportResult,
@@ -62,11 +63,18 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
   const request = importRequest(source, { cookies, history, domains });
 
   const run = async () => {
+    const { scope, projectId } = browserState();
     if (request === null) return;
     setRunning(true);
     setError(null);
     try {
-      setResult(await api.importIntoBuiltinBrowser(request));
+      setResult(
+        await api.importIntoBuiltinBrowser({
+          ...request,
+          sessionId: scope,
+          ...(projectId === null ? {} : { projectId }),
+        }),
+      );
     } catch (err) {
       setError(S.builtinBrowser.importFailed(apiErrorText(err)));
     } finally {

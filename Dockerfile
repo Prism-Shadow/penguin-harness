@@ -12,7 +12,7 @@
 # the shipped CLI with: install the workspace, build the packages the server needs,
 # `pnpm deploy` a production dependency tree into lib/, and put the built web assets beside
 # it in web/. Nothing is installed from npm, so an image can carry an unreleased commit —
-# which is what lets every push to main publish one.
+# so main pushes that change the runtime or its build inputs can publish one.
 #
 # Three stages, split by WHERE each one has to run:
 # - `build` is pinned to the BUILD platform. TypeScript and Vite emit the same bytes on any

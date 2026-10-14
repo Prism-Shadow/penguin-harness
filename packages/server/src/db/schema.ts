@@ -187,7 +187,12 @@ CREATE TABLE IF NOT EXISTS agent_api (          -- per-Agent public API settings
   agent_id      TEXT NOT NULL,
   enabled       INTEGER NOT NULL DEFAULT 0,     -- the API tab's switch; off = every /api/amsp request for it is 404 agent_not_found
   open          INTEGER NOT NULL DEFAULT 0,     -- keyless access: a request without Authorization is accepted; off = 401 unauthorized
-  approval_mode TEXT NOT NULL DEFAULT 'allow-all', -- the approval mode an API Session is CREATED with (allow-all|deny-all|read-only|always-ask); copied onto sessions.approval_mode, never read per decision
+  approval_mode TEXT NOT NULL DEFAULT 'allow-all', -- copied onto each new API Session
+  provider      TEXT,                         -- NULL pair follows the Project default model
+  model_id      TEXT,
+  thinking_level TEXT,                        -- NULL follows Agent/Project configuration
+  workspace     TEXT,                         -- NULL creates a temporary Workspace
+  max_concurrent_runs INTEGER NOT NULL DEFAULT 4,
   updated_at    TEXT NOT NULL,
   PRIMARY KEY (project_id, agent_id)
 );

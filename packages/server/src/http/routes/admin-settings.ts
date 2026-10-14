@@ -164,8 +164,8 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     // Mirror the app switch + address into the process: rebuilds the global fetch
     // dispatcher (live change, no restart; a no-op when nothing effectively changed).
     // Through the claimed capability, not a direct import: this route runs inside the
-    // platform bundle, whose own copy of net/proxy.js drives a dispatcher that
-    // globalThis.fetch never routes through (see AppDeps.proxyControl).
+    // platform bundle, whose own copy of net/proxy.js never installed the process
+    // dispatcher and would only record the settings (see AppDeps.proxyControl).
     deps.proxyControl({
       proxyForApp: deps.serverSettingsRepo.getProxyForApp(),
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
@@ -197,9 +197,9 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     if (target === null) {
       throw new HttpError(404, "probe_target_not_found", "No probe target with that provider id.");
     }
-    // Plain global fetch on purpose — that is the undici fetch the startup entry installed,
-    // and it resolves the proxy dispatcher per call. No credential is attached anywhere
-    // below, including from the process environment (see services/proxy-probe.ts).
+    // Plain global fetch on purpose — the runtime's fetch resolves, per call, the proxy
+    // dispatcher the startup entry installed. No credential is attached anywhere below,
+    // including from the process environment (see services/proxy-probe.ts).
     const probe = await probeProxyReachabilityOf(target);
     return c.json({ probe } satisfies ProxyProbeResponse);
   });

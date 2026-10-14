@@ -68,6 +68,7 @@ export function OptionMenu<T extends string>({
   error,
   required,
   fullWidth,
+  disabled,
   size = "sm",
   "aria-label": ariaLabel,
 }: {
@@ -87,6 +88,7 @@ export function OptionMenu<T extends string>({
   required?: boolean;
   /** Stretch the trigger button to fill the container width, as a replacement for native Select in dense form areas. */
   fullWidth?: boolean;
+  disabled?: boolean;
   /** Same size tier as Input/Select (sizeClass), for pixel-perfect alignment when mixed together. */
   size?: ControlSize;
   "aria-label"?: string;
@@ -107,6 +109,7 @@ export function OptionMenu<T extends string>({
       <button
         ref={triggerRef}
         type="button"
+        disabled={disabled}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -115,7 +118,7 @@ export function OptionMenu<T extends string>({
         aria-describedby={error ? errorId : undefined}
         onClick={() => setOpen((v) => !v)}
         className={
-          `flex items-center gap-2 ${controlBase} ${sizeClass[size]} ${error ? errorClass : ""}` +
+          `flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60 ${controlBase} ${sizeClass[size]} ${error ? errorClass : ""}` +
           (fullWidth ? " w-full justify-between" : "")
         }
       >
@@ -125,6 +128,7 @@ export function OptionMenu<T extends string>({
         <ChevronDown className="text-fg-subtle" />
       </button>
       {open &&
+        !disabled &&
         position &&
         createPortal(
           <div

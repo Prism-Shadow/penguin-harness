@@ -168,6 +168,22 @@ grep -Fq "export const BUILD_COMMIT: string | null = \"$STAMP_SHA\";" \
   "$STAMP_NEW_DIR/packages/core/src/index.ts" \
   || fail_test "release workflow did not stamp core's BUILD_COMMIT"
 
+# Given a manual run dispatched from a different branch, the checked-out tag's
+# commit must be stamped even when GitHub supplies the dispatch branch's SHA.
+(
+  cd "$STAMP_NEW_DIR"
+  git init -q
+  git add .
+  git -c user.name='Installer test' -c user.email='installer@example.invalid' \
+    -c core.hooksPath=/dev/null commit -qm fixture --no-gpg-sign
+  git rev-parse HEAD > "$WORK_DIR/checkout-sha"
+  TEST_RELEASE_TAG=v9.8.7 GITHUB_SHA="$STAMP_SHA" sh -e "$STAMP_SCRIPT"
+)
+CHECKOUT_SHA="$(cat "$WORK_DIR/checkout-sha")"
+grep -Fq "export const BUILD_COMMIT: string | null = \"$CHECKOUT_SHA\";" \
+  "$STAMP_NEW_DIR/packages/core/src/index.ts" \
+  || fail_test "manual release stamped the dispatch branch instead of the checked-out tag"
+
 # Without GITHUB_SHA (a replay outside Actions) the commit stays null and the rest still stamps.
 STAMP_NOSHA_DIR="$WORK_DIR/stamp-no-sha"
 make_stamp_case "$STAMP_NOSHA_DIR"

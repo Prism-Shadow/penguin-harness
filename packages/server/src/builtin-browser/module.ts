@@ -28,7 +28,7 @@ import type { Channels, Clock, Db, Desktop, Log, Paths } from "../hmr/capabiliti
 import { userChannelKey } from "../http/routes/events.js";
 import { ensureInstallId } from "../install-id.js";
 import type { Users } from "../mechanisms/identity.js";
-import type { SessionDrivers } from "../mechanisms/sessions.js";
+import type { SessionDrivers, SessionIndex } from "../mechanisms/sessions.js";
 import type { Settings, UiPrefsStore } from "../mechanisms/settings.js";
 import { shellPortOf } from "../services/desktop-update-port.js";
 import type { BrowserExtensionAdmission } from "./extension-hub.js";
@@ -117,6 +117,7 @@ export class BuiltinBrowserRoutes {
   @Use() private readonly settings!: Settings;
   @Use() private readonly prefs!: UiPrefsStore;
   @Use() private readonly drivers!: SessionDrivers;
+  @Use() private readonly sessions!: SessionIndex;
   @Provide() gate!: BrowserExtensionGate;
   @Bind("BuiltinBrowserRoutes.routes") routes!: Hono<AppEnv>;
   @Bind("BuiltinBrowserRoutes.pair") pairRoutes!: Hono<AppEnv>;
@@ -144,6 +145,7 @@ export class BuiltinBrowserRoutes {
     const browser = new BuiltinBrowser({
       port,
       root: this.paths.root,
+      projectOf: (sessionId) => this.sessions.findById(sessionId)?.projectId ?? null,
       publish: (event) => {
         try {
           for (const user of users.list()) if (user.isAdmin) publishTo(user.userId, event);

@@ -91,12 +91,12 @@ export function WorkflowAppPage() {
   );
 
   return (
-    <div className="relative h-full w-full bg-white dark:bg-gray-950">
+    <div className="relative h-full w-full bg-white pt-[env(titlebar-area-height,0px)] dark:bg-gray-950">
       {/* A list request that fails after the page is up says so over it, rather than leaving
           a frame that quietly stopped following the workflow. */}
       {tab && failure !== null && (
         <div
-          className="absolute inset-x-0 top-0 z-10 bg-amber-50 px-3 py-1 text-center text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          className="absolute inset-x-0 top-[env(titlebar-area-height,0px)] z-10 bg-amber-50 px-3 py-1 text-center text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
           role="status"
         >
           {failure}

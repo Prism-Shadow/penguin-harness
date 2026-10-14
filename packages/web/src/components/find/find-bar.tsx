@@ -490,7 +490,7 @@ export function FindBar() {
       data-presence="enter"
       data-side="top"
       onKeyDown={onPanelKeyDown}
-      className="fixed right-3 top-3 z-40 flex max-h-[70vh] w-[27rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
+      className="fixed right-3 top-[calc(env(titlebar-area-height,0px)+0.75rem)] z-40 flex max-h-[70vh] w-[27rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
     >
       <div className="flex shrink-0 items-center gap-1 px-2 py-1.5">
         <input

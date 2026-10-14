@@ -6,9 +6,9 @@
  * take" — the outbound path the admin proxy settings configure. That path is the server's
  * own: the browser reaches the internet by a different route entirely and could not be
  * asked (a cross-origin request to a provider host is refused before it is sent), so the
- * probe belongs here. It travels the configured path for free: the startup entry replaces
- * globalThis.fetch with undici's, which resolves the process-global dispatcher per call,
- * and that dispatcher is what the proxy settings drive (see net/proxy.ts).
+ * probe belongs here. It travels the configured path for free: the runtime's fetch
+ * resolves the process-global dispatcher per call, and that dispatcher is what the proxy
+ * settings drive (see net/proxy.ts).
  *
  * Reachable is judged by the fact that an answer arrived AT ALL, and any HTTP status counts
  * — 401 and 403 included. A refused credential still proves the name resolved, TCP
@@ -32,6 +32,7 @@
  * arrives; probing them together behind a single response would hold every row blank until
  * the slowest one landed, which for a black-holed host is the whole timeout.
  */
+import { userAgent } from "@prismshadow/penguin-core";
 import type { ProxyProbeDto, ProxyProbeOutcome, ProxyProbeTargetDto } from "../api/types.js";
 
 /**
@@ -145,7 +146,7 @@ async function probeTarget(
       // No Authorization, no x-api-key, no environment fallback: this probe is
       // unauthenticated by design and must stay that way even though the process has
       // OPENAI_API_KEY and its siblings to hand (see the module header).
-      headers: { accept: "application/json" },
+      headers: { accept: "application/json", "user-agent": userAgent() },
       signal: AbortSignal.timeout(timeoutMs),
     });
     // fetch settles when the response HEAD arrives, so this is the wall time of everything

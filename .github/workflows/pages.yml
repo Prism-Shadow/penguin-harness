@@ -9,8 +9,8 @@
 #   BASE_PATH is "/" — assets resolve from the domain root, not a /<repo>/ subpath.
 # - The gallery frames the real Web App, compiled from packages/web and packages/ui, so a
 #   push touching either redeploys as well and the public gallery tracks the app. A pull
-#   request touching only those two is not built here: ci.yml's full build already
-#   compiles the gallery from them on every pull request.
+#   request touching only those two is not built here: ci.yml selects their affected
+#   consumers and compiles the gallery from them.
 # First-time setup: repository Settings -> Pages -> Source = "GitHub Actions".
 name: Deploy Site
 
@@ -42,10 +42,10 @@ permissions:
   pages: write
   id-token: write
 
-# One deploy at a time; let an in-flight production deploy finish rather than cancelling it.
+# Let production deployments finish; replace obsolete PR preview builds on each push.
 concurrency:
   group: pages-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:

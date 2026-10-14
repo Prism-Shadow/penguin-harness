@@ -110,7 +110,7 @@ hiyouga/penguinharness
 
 It has two kinds of tag:
 
-- `latest` follows `main`: every push rebuilds it.
+- `latest` follows changes to the image's runtime or build inputs on `main`. Docs, site and desktop-only source changes do not rebuild it.
 - `X.Y.Z` is a release, built from that tag's own source.
 
 There is no `main-<sha>`, `X.Y` or `stable` tag, so nothing moves under a second name. Every tag is a multi-platform manifest covering `linux/amd64` and `linux/arm64`, so the same reference works on an x86 VPS and an arm64 one alike. The examples on this page use `latest`. Pin a version for a deployment that should move only when a release ships.

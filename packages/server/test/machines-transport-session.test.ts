@@ -9,8 +9,9 @@
  *   once, and different machines run side by side.
  * - A session that dies says why — what ssh's diagnostic means and what to do, then its own
  *   words — and is not kept.
- * - A command that outlasts its timeout answers with the timeout, and the next one gets a
- *   live session; on a held session the corpse is dropped but the hold kept.
+ * - On an open session, a command that outlasts its timeout answers with the timeout, and
+ *   the next one gets a new live session; on a held session the corpse is dropped but the
+ *   hold kept.
  * - A held session that dies comes back on its own after the shortest reconnect wait; a
  *   closed one stays closed; closing lets go, and the next ask opens a new session.
  * - A session a command opened is up but is not a connection until it is held.
@@ -171,6 +172,11 @@ exit 1
 
   it("answers a command that outlasts its timeout with the timeout, and hands the next one a live session", async () => {
     const conn = connectionTo({ alias: "nas", user: "deploy" });
+    // Establish the session before timing the command. A cold shell can take longer than
+    // 150 ms to reach the stub's log; killing it sooner tests startup, not a running command.
+    const opened = await conn.open();
+    expect(opened.ok).toBe(true);
+    expect(spawns()).toHaveLength(1);
     // The timeout is this command's own answer. Dropping the session also answers whatever is
     // pending — with the connection's last words — so the two race for the one resolution a
     // promise has, and the precise diagnosis has to win.
@@ -181,6 +187,7 @@ exit 1
     // belongs to a child nobody holds any more, and must not take the replacement — or the
     // command riding it — down with it.
     expect(await conn.exec("echo after")).toMatchObject({ code: 0, stdout: "after\n" });
+    expect(conn.session()?.pid).not.toBe(opened.ok ? opened.session.pid : undefined);
     expect(spawns()).toHaveLength(2);
   });
 

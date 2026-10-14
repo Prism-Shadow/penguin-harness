@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-titlebar-area>
   <head>
     <meta charset="UTF-8" />
     <!-- interactive-widget: the soft keyboard shrinks the LAYOUT viewport, so the shell's
@@ -23,6 +23,11 @@
     <script>(function(){try{var d=document.documentElement,s=localStorage,m=s.getItem("penguin.theme");if(m==="dark"||(m!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))d.classList.add("dark");var t=s.getItem("penguin.themeId");if(["modern","geek","github"].indexOf(t)<0)t="modern";if(t!=="github")d.dataset.theme=t;var a=s.getItem("penguin.accent");if(["forest","ocean","clay","plum","honey","slate","orange","phosphor","cyan","magenta","gold","cobalt","blue","green","violet","rose","amber"].indexOf(a)>=0)d.dataset.accent=a;var l=s.getItem("penguin.fontLatin");if(["system","mona-sans","ibm-plex-sans","misans"].indexOf(l)>=0)d.dataset.fontLatin=l;var c=s.getItem("penguin.fontCjk");if(["system","noto-sans-sc","misans"].indexOf(c)>=0)d.dataset.fontCjk=c;var z=s.getItem("penguin.textSize"),g=null,o=-1;if(["xs","s","m","l","xl"].indexOf(z)<0){g=s.getItem("penguin.fontScale");o=["sm","md","lg"].indexOf(g);z=o<0?"m":["m","l","xl"][o]}d.style.fontSize={"xs":"14px","s":"15px","m":"16px","l":"18px","xl":"20px"}[z];if(g!==null){try{if(o>=0)s.setItem("penguin.textSize",z);s.removeItem("penguin.fontScale")}catch(e){}}}catch(e){}})()</script>
   </head>
   <body>
+    <!-- The window's drag handle in the desktop app: a transparent strip over the band the
+         window's controls sit in (env(titlebar-area-height), zero in a browser), which the app
+         keeps clear of its own controls. data-titlebar-area on <html> tells the shell that this
+         page lays the band out itself. -->
+    <div class="window-drag-strip" aria-hidden="true"></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

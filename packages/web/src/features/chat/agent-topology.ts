@@ -7,11 +7,11 @@
  * Task that REFERENCES A SUBAGENT (task boundaries from the "starts a new Task" predicate
  * the reducer uses — user_text / user_image; user_steering never starts one — so a plain
  * user message never wipes the panel), or, for a chip clicked on an older turn, the
- * HISTORICAL Task slice containing that chip's child (extractTopologyForChild). It collects
- * spawned children from bound run_subagent tool cards and standalone SubagentItems, then
+ * HISTORICAL Task slice containing that chip's child (extractTopologyForChild). The default
+ * view also keeps children the runtime reports running, even when an earlier Task spawned
+ * them. It collects children from bound run_subagent tool cards and standalone SubagentItems, then
  * recurses into each child model's own items for deeper spawns. Nodes are deduped by session id
- * (an input_subagent repoll can reference the same child twice); a new Task therefore starts
- * from a graph of just the root again. Each child node also carries its elapsed-time sources
+ * (an input_subagent repoll can reference the same child twice). Each child node carries its elapsed-time sources
  * (from the nested model's activity stamps — wall clock of the whole spawn, never a sum of its
  * items).
  *
@@ -201,6 +201,15 @@ export function extractTopology(
     // root never reads as running.
     { running: end === items.length && taskRunning },
     liveStates,
+    items.filter((item) => {
+      const sessionId =
+        item.kind === "tool_call"
+          ? item.subagentSessionId
+          : item.kind === "subagent"
+            ? item.sessionId
+            : undefined;
+      return sessionId !== undefined && liveStates?.get(sessionId) === true;
+    }),
   );
 }
 
@@ -295,6 +304,7 @@ function extractFromSlice(
   rootSessionId: string,
   root: { running: boolean },
   liveStates?: ReadonlyMap<string, boolean>,
+  runningChildren: readonly ChatItem[] = [],
 ): TopologyNode[] {
   const nodes: TopologyNode[] = [
     {
@@ -377,6 +387,10 @@ function extractFromSlice(
   };
 
   walk(slice, rootSessionId, []);
+  // A background child can outlive the Task that launched it. Keep its original card
+  // and nested conversation reachable while another Task owns the default graph. The
+  // historical extractor passes no extras, so an explicit chip selection stays scoped.
+  walk(runningChildren, rootSessionId, []);
   return nodes;
 }
 
@@ -418,6 +432,8 @@ export function modelAtOrigin(model: StreamModel, origin: readonly string[]): St
 // call's description. Sized uniformly rather than per-node: variable heights would have to be
 // threaded through row placement and edge geometry below, for the sake of a few nodes that
 // carry no description (the root never does) and simply center their single line instead.
+// Every length here is a CSS pixel at the default 16px root: the view sets them in rem, so the
+// box keeps fitting its two lines at every text size.
 export const NODE_W = 200;
 export const NODE_H = 46;
 export const GAP_X = 32;
@@ -426,7 +442,7 @@ export const PAD = 6;
 
 export interface PlacedNode {
   node: TopologyNode;
-  /** Top-left corner of the node box (CSS pixels within the layout canvas). */
+  /** Top-left corner of the node box (layout units within the canvas: CSS pixels at a 16px root). */
   x: number;
   y: number;
 }

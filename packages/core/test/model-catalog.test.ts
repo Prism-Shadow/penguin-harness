@@ -1,6 +1,7 @@
 /**
  * Built-in model catalog unit tests: unique ids, valid provider references, positive
- * three-bucket pricing, lookups, and preset entry generation.
+ * three-bucket pricing, lookups, preset entry generation, and the price a model that was the
+ * default of new Projects keeps for its usage after a Project drops its row.
  */
 import { describe, expect, it, vi } from "vitest";
 import { AutoLLMClient } from "@prismshadow/mmsp";
@@ -26,6 +27,8 @@ import {
   presetModelEntries,
   presetPromotions,
   presetProviderTable,
+  defaultProjectConfig,
+  retainedCatalogPricing,
   providerClientType,
   providerConnectionShape,
   providerInfo,
@@ -184,7 +187,7 @@ describe("model-catalog", () => {
     }
   });
 
-  it("exactly TokenDance and DeepSeek publish a balance endpoint, on the host their keys already go to", () => {
+  it("TokenDance, Penguin Go and DeepSeek publish account balance endpoints", () => {
     // The descriptor is what puts a balance in a group's header, so the Web App never names a
     // group; each one names the reader for its vendor's response shape.
     const withBalance = MODEL_PROVIDERS.filter((p) => p.balance !== undefined).map((p) => [
@@ -193,6 +196,7 @@ describe("model-catalog", () => {
     ]);
     expect(withBalance).toEqual([
       ["tokendance", "tokendance"],
+      ["penguin-go", "penguin-go"],
       ["deepseek", "deepseek"],
     ]);
     // The server sends the group's stored key to this URL, so it is the vendor's own https
@@ -201,6 +205,7 @@ describe("model-catalog", () => {
       "https://tokendance.space/portal/api/v1/user/balance",
     );
     expect(providerInfo("deepseek")!.balance!.url).toBe("https://api.deepseek.com/user/balance");
+    expect(providerInfo("penguin-go")!.balance!.url).toBe("https://go.penguin.ooo/api/me/by-key");
   });
 
   it("prebuilds Penguin Go with fixed relay routes and list prices, leaving promotions to the platform", () => {
@@ -671,8 +676,8 @@ describe("model-catalog", () => {
   });
 
   it("the seed is honest: under a new Project's group tables, every catalog row resolves to its catalog protocol and endpoint from the file alone", () => {
-    // presetModelEntries and catalogModelEntries (what "Restore defaults" writes, retired rows
-    // included) beside presetProviderTable are the only place the catalog's connection values
+    // presetModelEntries and catalogModelEntries (retired rows included) beside
+    // presetProviderTable are the only place the catalog's connection values
     // enter a Project; after that nothing reads the catalog. So the file must say exactly
     // what the catalog says — a row resolving to anything else would run on another endpoint
     // or protocol than its catalog entry names.
@@ -1011,24 +1016,27 @@ describe("model-catalog", () => {
       expect(output, `${modelId} output`).toBeCloseTo(cnyBilled[1], 4);
       expect(cacheHit, `${modelId} cache hit`).toBeCloseTo(cnyBilled[2], 4);
     }
-    // Exactly those ten carry a flat discount; every other row bills its list price
-    // unchanged. Some of those others declare DeepSeek's peak/off-peak schedule instead, so
-    // the rows are compared at a PEAK instant — 2026-09-10 is a Thursday, and 10:00 Beijing is
-    // inside the morning window — because effectivePricing halves them off-peak by design.
+    // Those carry a flat discount, and so does deepseek-v4.1-flash on top of its schedule
+    // (below); every other row bills its list price unchanged. Some of those others declare
+    // DeepSeek's peak/off-peak schedule, so the rows are compared at a PEAK instant —
+    // 2026-09-10 is a Thursday, and 10:00 Beijing is inside the morning window — because
+    // effectivePricing halves them off-peak by design.
     expect(
       td
         .filter((m) => m.discount !== undefined)
         .map((m) => m.modelId)
         .sort(),
-    ).toEqual(discounted.map(([id]) => id).sort());
+    ).toEqual([...discounted.map(([id]) => id), "deepseek-v4.1-flash"].sort());
     const peakInstant = new Date("2026-09-10T10:00:00+08:00");
     for (const m of td.filter((x) => x.discount === undefined)) {
       expect(effectivePricing(m, peakInstant), m.modelId).toEqual(m.pricing);
     }
-    // The rows the portal prices by time (one of them retired) follow DeepSeek's own windows
-    // instead of a flat promotion: the peak list price in the windows, half of it at every other
-    // hour — which, for the 0731 and 0813 rows, is exactly what the gateway bills off-peak.
-    // Input, output, cache hit at peak, in CNY.
+    // The rows the portal prices by time (one of them retired) follow DeepSeek's own windows:
+    // the peak list price in the windows, half of it at every other hour — which, for the 0731
+    // and 0813 rows, is exactly what the gateway bills off-peak. deepseek-v4.1-flash also
+    // declares the gateway's 20% off both tiers, so it bills 1.6 / 6.4 / 0.032 at peak and
+    // 0.8 / 3.2 / 0.016 off-peak, the portal's figures (re-read 2026-10-13). Input, output,
+    // cache hit at peak list, in CNY.
     const tdScheduled = td.filter((m) => m.offPeakDiscount !== undefined).map((m) => m.modelId);
     expect(tdScheduled).toEqual([
       "deepseek-v4-flash-0731",
@@ -1044,15 +1052,17 @@ describe("model-catalog", () => {
     };
     // 2026-09-12 is a Saturday: off-peak all day.
     const offPeakInstant = new Date("2026-09-12T10:00:00+08:00");
+    const promotion: Record<string, number> = { "deepseek-v4.1-flash": 0.2 };
     for (const id of tdScheduled) {
       const row = td.find((m) => m.modelId === id)!;
       expect(row.offPeakDiscount, id).toBe(DEEPSEEK_OFF_PEAK);
-      expect(row.discount, id).toBeUndefined();
+      expect(row.discount, id).toBe(promotion[id]);
+      const kept = 1 - (promotion[id] ?? 0);
       const peak = billedCny(id, peakInstant);
       const off = billedCny(id, offPeakInstant);
       for (let i = 0; i < 3; i++) {
-        expect(peak[i], `${id} peak`).toBeCloseTo(peakList[id]![i]!, 4);
-        expect(off[i], `${id} off-peak`).toBeCloseTo(peakList[id]![i]! / 2, 4);
+        expect(peak[i], `${id} peak`).toBeCloseTo(peakList[id]![i]! * kept, 4);
+        expect(off[i], `${id} off-peak`).toBeCloseTo((peakList[id]![i]! / 2) * kept, 4);
       }
     }
     // The one free row of the group: CNY 0 on every bucket, no discount decoration, a 512K
@@ -2226,8 +2236,8 @@ describe("off-peak schedules", () => {
   it("the DeepSeek rows store the peak price and declare the schedule", () => {
     // Every direct row, plus the resold rows whose sellers pass DeepSeek's own windows through:
     // two on Penguin Go, four on OpenCode Go, four on TokenDance and one on OpenRouter. The
-    // retired rows keep the schedule too. A gateway row on the schedule carries no flat
-    // `discount` — the two are mutually exclusive, pinned by the last case here.
+    // retired rows keep the schedule too. A seller's promotion on top of the schedule
+    // (TokenDance's on V4.1 Flash) comes off both tiers alike.
     const rows = MODEL_CATALOG.filter((m) => m.offPeakDiscount === S);
     expect(rows.map((m) => `${m.provider}/${m.modelId}`)).toEqual([
       "deepseek/deepseek-flash",
@@ -2247,10 +2257,10 @@ describe("off-peak schedules", () => {
       "opencode-go/deepseek-v4-pro",
     ]);
     for (const m of rows) {
-      // Peak is exactly double the off-peak tier DeepSeek publishes. Compared at 1e-5: both
+      // Peak bills exactly double the off-peak tier DeepSeek publishes. Compared at 1e-5: both
       // sides round to six decimals independently, so the last digit can differ by one.
       expect(effectivePricing(m, beijing("2026-08-31T22:00"))!.output * 2).toBeCloseTo(
-        m.pricing!.output,
+        effectivePricing(m, beijing("2026-08-31T10:00"))!.output,
         5,
       );
     }
@@ -2295,6 +2305,18 @@ describe("off-peak schedules", () => {
         5,
       );
     }
+  });
+
+  it("usage on the default model of new Projects keeps a price once a Project drops its row, and so does every former default; any other model's does not", () => {
+    const ref = defaultProjectConfig().default_model!;
+    expect(retainedCatalogPricing(ref.provider, ref.model_id)).toEqual(
+      catalogEntryFor(ref.provider, ref.model_id)!.pricing,
+    );
+    for (const m of MODEL_CATALOG.filter((e) => e.wasDefault === true)) {
+      expect(retainedCatalogPricing(m.provider, m.modelId), m.modelId).toBeDefined();
+    }
+    expect(retainedCatalogPricing("tokendance", "glm-5.3-flash")).toBeUndefined();
+    expect(retainedCatalogPricing("custom", "mine")).toBeUndefined();
   });
 
   it("the Qwen DeepSeek rows store the peak price and declare Qwen's own schedule", () => {
@@ -2395,17 +2417,6 @@ describe("off-peak schedules", () => {
       0.15, 4.5, 13.5,
     ]);
   });
-  it("no entry declares both a flat discount and a schedule", () => {
-    // effectivePricing silently prefers the schedule, while the cost center would apply the
-    // seeded promotion on top of it, so a row declaring both would be shown at one rate and
-    // billed at another with nothing failing. The rule is stated in the field's doc; this is
-    // what makes it true.
-    const both = MODEL_CATALOG.filter(
-      (m) => m.discount !== undefined && m.offPeakDiscount !== undefined,
-    ).map((m) => `${m.provider}/${m.modelId}`);
-    expect(both).toEqual([]);
-  });
-
   it("every schedule is written in Beijing time, the one zone the badge's tooltip names", () => {
     // Both dictionaries say Beijing time outright rather than spelling out an offset, so a
     // schedule written in any other zone fails here instead of reaching the tooltip mislabelled.

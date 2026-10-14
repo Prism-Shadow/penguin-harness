@@ -12,5 +12,7 @@ export default defineConfig({
     headless: true,
     locale: "zh-CN",
     permissions: ["clipboard-read", "clipboard-write"],
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
 });

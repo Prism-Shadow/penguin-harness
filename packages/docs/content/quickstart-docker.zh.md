@@ -110,7 +110,7 @@ hiyouga/penguinharness
 
 tag 分为两类：
 
-- `latest` 跟随 `main` 分支，每次推送都会重新构建。
+- `latest` 跟随 `main` 分支中影响镜像运行代码或构建输入的改动；仅修改文档、站点或桌面端源码时不重新构建。
 - `X.Y.Z` 是正式发布版，用这个 tag 自身的源码构建。
 
 没有 `main-<sha>`、`X.Y` 或 `stable` 这类 tag，因此不存在换个名字跟着变动的别名。每个 tag 都是覆盖 `linux/amd64` 与 `linux/arm64` 的多平台 manifest，同一个引用在 x86 VPS 和 arm64 VPS 上都能用。本页示例使用 `latest`；如果希望部署只在发布新版本时才更新，就固定到具体版本号。

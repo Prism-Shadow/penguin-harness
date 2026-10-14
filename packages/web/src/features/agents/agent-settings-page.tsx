@@ -35,6 +35,8 @@ import {
   ConfirmModal,
   CopyButton,
   GlyphIcon,
+  FieldLabel,
+  ICON_SIZE,
   HiddenFileInput,
   ICONS,
   InfoPopover,
@@ -84,7 +86,8 @@ import { SchedulesTab } from "./schedules-tab";
 import { ApiTab } from "./api-tab";
 import { McpServersSection } from "./mcp-servers-section";
 import { SNAPSHOT_ACCEPT, SNAPSHOT_BUTTON_CLASS, fileToBase64 } from "./snapshot-file";
-import { thinkingLevelOptionsFor } from "../chat/thinking-level";
+import { effectiveThinkingLevel } from "../chat/thinking-level";
+import { ThinkingLevelSelect } from "../chat/thinking-level-select";
 
 type TabKey =
   | "overview"
@@ -97,27 +100,6 @@ type TabKey =
   | "vault"
   | "schedules"
   | "api";
-
-/**
- * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
- * The "" (not-overridden / inherit) row is filtered out per review — the menus offer only
- * concrete values in dictionary order, the user picks explicitly. An unset stored value
- * simply matches no row, so the OptionMenu trigger falls back to its placeholder
- * ("(default)", the same convention as the tools-table permission menu); nothing is
- * ever written silently, and the reset link next to each menu rewinds a local pick back to "".
- */
-export function optionRows(
-  entries: ReadonlyArray<readonly [string, string]>,
-): ReadonlyArray<OptionMenuChoice<string>> {
-  return entries
-    .filter(([value]) => value !== "")
-    .map(([value, description]) => ({
-      value,
-      triggerLabel: value,
-      label: value,
-      description,
-    }));
-}
 
 /**
  * Narrow an untrusted `?tab=` query value to a known tab key (exported for unit tests):
@@ -317,7 +299,7 @@ export function AgentSettingsPage() {
         )}
         {tab === "prompt" && <PromptTab data={data} onSave={save} />}
         {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={refreshConfig} />}
-        {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
+        {tab === "runtime" && <RuntimeTab data={data} onSave={save} projectId={projectId} />}
         {tab === "tools" && (
           <div className="space-y-6">
             <ToolsTab data={data} onSave={save} />
@@ -862,7 +844,23 @@ function PromptTab({ data, onSave }: FormTabProps) {
   );
 }
 
-function RuntimeTab({ data, onSave }: FormTabProps) {
+function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: string }) {
+  const [projectThinking, setProjectThinking] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setProjectThinking(null);
+    void api.getChatDefaults(projectId).then(
+      (res) => {
+        if (!cancelled) setProjectThinking(effectiveThinkingLevel("", res.thinkingLevel));
+      },
+      (error: unknown) => {
+        if (!cancelled) toastError(apiErrorText(error));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
   const cfg = data.config;
   // The five numbers, the two menus and the prompt are one form: the menus sit inside it, so
   // they save with it (a menu that stood alone in its row would write at once instead).
@@ -891,19 +889,13 @@ function RuntimeTab({ data, onSave }: FormTabProps) {
     );
   };
 
-  // S is reassigned on language switch (live binding), so read it during render rather than hoisting to a module-level constant.
-  // Thinking level composes both review rounds: the "" inherit row is filtered (the user picks
-  // explicitly; unset shows the (default) placeholder and Reset rewinds to it), "none"
-  // is no longer offered (many models cannot disable thinking) but stays a valid stored value —
-  // when the **persisted** config carries it, a display-only legacy row is appended, so a
-  // misclick onto another tier keeps it reachable until the change is actually saved
-  // (see thinking-level.ts).
-  const thinkingLevelOptions = thinkingLevelOptionsFor(
-    S.agent.thinkingLevelOptions,
-    S.agent.thinkingLevelNoneKept,
-    cfg.model?.thinkingLevel,
-  );
-  const compactionModeOptions = optionRows(S.agent.compactionModeOptions);
+  const thinkingLevel = form.draft.thinkingLevel || projectThinking;
+  const compactionModeOptions = S.agent.compactionModeOptions.map(([value, description]) => ({
+    value,
+    triggerLabel: S.agent.compactionModeNames[value] ?? value,
+    label: S.agent.compactionModeNames[value] ?? value,
+    description,
+  }));
 
   return (
     <div className="space-y-4">
@@ -912,6 +904,7 @@ function RuntimeTab({ data, onSave }: FormTabProps) {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <Input
               label={S.agent.maxTurns}
+              hint={S.agent.maxTurnsHint}
               size="sm"
               value={form.draft.maxTurns}
               error={errorOf("maxTurns")}
@@ -928,15 +921,18 @@ function RuntimeTab({ data, onSave }: FormTabProps) {
               inputMode="numeric"
               className="font-mono"
             />
-            <OptionMenu
-              label={S.agent.thinkingLevel}
-              fullWidth
-              size="sm"
-              placeholder={S.agent.defaultValue}
-              value={form.draft.thinkingLevel}
-              onChange={(thinkingLevel) => form.patch({ thinkingLevel })}
-              options={thinkingLevelOptions}
-            />
+            <div className="min-w-0">
+              <FieldLabel>{S.chat.thinkingLevel}</FieldLabel>
+              <ThinkingLevelSelect
+                variant="form"
+                value={thinkingLevel}
+                onChange={(thinkingLevel) => form.patch({ thinkingLevel })}
+                disabled={saving}
+                {...(cfg.model?.thinkingLevel !== undefined
+                  ? { storedLevel: cfg.model.thinkingLevel }
+                  : {})}
+              />
+            </div>
             <Input
               label={S.agent.timeoutMs}
               info={S.agent.timeoutMsHint}
@@ -983,7 +979,7 @@ function RuntimeTab({ data, onSave }: FormTabProps) {
               fullWidth
               size="sm"
               placeholder={S.agent.defaultValue}
-              value={form.draft.mode}
+              value={form.draft.mode || "summarize"}
               onChange={(mode) => form.patch({ mode })}
               options={compactionModeOptions}
             />
@@ -1021,13 +1017,13 @@ function ToolsTab({ data, onSave }: FormTabProps) {
   const permissionOptions: ReadonlyArray<OptionMenuChoice<ToolPermission>> = [
     {
       value: "r",
-      triggerLabel: "r",
+      triggerLabel: S.agent.permissionReadLabel,
       label: S.agent.permissionReadLabel,
       description: S.agent.permissionReadDescription,
     },
     {
       value: "rw",
-      triggerLabel: "rw",
+      triggerLabel: S.agent.permissionReadWriteLabel,
       label: S.agent.permissionReadWriteLabel,
       description: S.agent.permissionReadWriteDescription,
     },
@@ -1038,11 +1034,13 @@ function ToolsTab({ data, onSave }: FormTabProps) {
   const form = useFormDraft(toolsDraftOf(stored), { normalize: normalizeTools });
   const errors = toolsErrors(form.draft, form.baseline);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
   /** A call_description write in flight: the row it flips and the value it shows meanwhile. */
   const [flip, setFlip] = useState<{ name: string; on: boolean } | null>(null);
   // One write at a time: a flip and a table Save both PUT the whole table, so one landing
   // after the other must not carry the other's stale copy.
-  const writing = saving || flip !== null;
+  const writing = saving || flip !== null || removing;
 
   const setRow = (name: string, patch: Partial<ToolRowDraft>) =>
     form.setDraft((rows) => rows.map((r) => (r.name === name ? { ...r, ...patch } : r)));
@@ -1072,9 +1070,31 @@ function ToolsTab({ data, onSave }: FormTabProps) {
     );
   };
 
+  const removeTool = async () => {
+    if (deleting === null || writing) return;
+    const name = deleting;
+    const remainingDraft = form.draft.filter((row) => row.name !== name);
+    setRemoving(true);
+    try {
+      const result = await onSave({
+        config: { toolsBuiltin: stored.filter((tool) => tool.name !== name) },
+      });
+      if (result !== null) {
+        form.adopt(toolsDraftOf(result.config.toolsBuiltin));
+        form.setDraft(remainingDraft);
+        setDeleting(null);
+      }
+    } finally {
+      setRemoving(false);
+    }
+  };
+
   const cellError = (row: ToolRowDraft, field: ToolNumberField): string | undefined =>
     errors?.has(`${row.name}/${field}`) === true
-      ? S.agent.toolFieldInvalid(row.name, field)
+      ? S.agent.toolFieldInvalid(
+          row.name,
+          field === "timeoutMs" ? S.agent.toolTimeout : S.agent.toolMaxOutput,
+        )
       : undefined;
 
   return (
@@ -1093,6 +1113,9 @@ function ToolsTab({ data, onSave }: FormTabProps) {
               </InfoPopover>
             </span>
           </TableHeaderCell>
+          <TableHeaderCell>
+            <span className="sr-only">{S.common.actions}</span>
+          </TableHeaderCell>
         </TableHead>
         <TableBody>
           {form.draft.map((row) => {
@@ -1102,18 +1125,19 @@ function ToolsTab({ data, onSave }: FormTabProps) {
                 <TableCell className="align-top font-mono text-xs">{row.name}</TableCell>
                 <TableCell className="align-top">
                   <OptionMenu
-                    mono
                     size="sm"
-                    aria-label={S.agent.toolPermission}
+                    aria-label={`${row.name} ${S.agent.toolPermission}`}
                     placeholder={S.agent.defaultValue}
                     options={permissionOptions}
-                    value={row.permission}
+                    disabled={writing}
+                    value={row.permission ?? "rw"}
                     onChange={(permission) => setRow(row.name, { permission })}
                   />
                 </TableCell>
                 <TableCell className="align-top">
                   <Input
                     size="sm"
+                    disabled={writing}
                     aria-label={`${row.name} ${S.agent.toolTimeout}`}
                     value={row.timeoutMs}
                     error={cellError(row, "timeoutMs")}
@@ -1125,6 +1149,7 @@ function ToolsTab({ data, onSave }: FormTabProps) {
                 <TableCell className="align-top">
                   <Input
                     size="sm"
+                    disabled={writing}
                     aria-label={`${row.name} ${S.agent.toolMaxOutput}`}
                     value={row.maxOutputLength}
                     error={cellError(row, "maxOutputLength")}
@@ -1147,12 +1172,39 @@ function ToolsTab({ data, onSave }: FormTabProps) {
                     <span className="text-xs text-gray-300 dark:text-gray-600">—</span>
                   )}
                 </TableCell>
+                <TableCell className="align-top">
+                  <button
+                    type="button"
+                    aria-label={S.agent.deleteToolNamed(row.name)}
+                    data-tooltip={S.agent.deleteToolNamed(row.name)}
+                    disabled={writing}
+                    onClick={() => setDeleting(row.name)}
+                    className="inline-flex size-7 items-center justify-center text-fg-subtle hover:text-tone-danger-fg disabled:opacity-50"
+                  >
+                    <GlyphIcon d={ICONS.trash} size={ICON_SIZE.rowLead} />
+                  </button>
+                </TableCell>
               </TableRow>
             );
           })}
         </TableBody>
       </Table>
 
+      <ConfirmModal
+        open={deleting !== null}
+        title={S.agent.deleteTool}
+        onClose={() => {
+          if (!removing) setDeleting(null);
+        }}
+        onConfirm={() => void removeTool()}
+        confirmLabel={S.common.delete}
+        cancelLabel={S.common.cancel}
+        busy={removing}
+      >
+        <p className="text-sm text-fg-muted">
+          {deleting !== null ? S.agent.deleteToolBody(deleting) : ""}
+        </p>
+      </ConfirmModal>
       <SaveRow
         dirty={form.dirty}
         valid={errors === null}

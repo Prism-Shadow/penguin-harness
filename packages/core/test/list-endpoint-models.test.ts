@@ -2,10 +2,13 @@
  * listEndpointModels: the thin MMSP wrapper — routes by the given client type,
  * resolves the credential itself (the environment lends a key only to the vendor's own
  * endpoint and refuses the listing otherwise, before any client exists), forwards the base
- * URL only when present, and returns the listing verbatim (order preserved, no dedup:
- * presentation policy belongs to callers).
+ * URL only when present, names PenguinHarness and its version in the User-Agent, and returns
+ * the listing verbatim (order preserved, no dedup: presentation policy belongs to callers).
  */
 import { describe, expect, it, vi } from "vitest";
+import { VERSION } from "../src/index.js";
+
+const defaultHeaders = { "User-Agent": `penguinharness/${VERSION}` };
 
 const captured = vi.hoisted(() => ({
   options: [] as Record<string, unknown>[],
@@ -44,6 +47,7 @@ describe("listEndpointModels", () => {
         clientType: "openai-chat",
         apiKey: "sk-list-1",
         baseUrl: "https://gw.example/v1",
+        defaultHeaders,
       },
     ]);
   });
@@ -55,7 +59,7 @@ describe("listEndpointModels", () => {
       env: { ANTHROPIC_API_KEY: " sk-env-1 " },
     });
     expect(captured.options).toEqual([
-      { model: "ant-messages", clientType: "ant-messages", apiKey: "sk-env-1" },
+      { model: "ant-messages", clientType: "ant-messages", apiKey: "sk-env-1", defaultHeaders },
     ]);
   });
 

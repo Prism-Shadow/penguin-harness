@@ -31,6 +31,7 @@
  * this product makes is a PASSIVE REPLY carrying the `msg_id` of an inbound message, and
  * that is a budget — see qq-connector.ts, which owns the accounting.
  */
+import { userAgent } from "@prismshadow/penguin-core";
 import { WebSocket } from "undici";
 import { MessagingChannelError, httpStatusRecovers } from "./connector.js";
 
@@ -414,7 +415,7 @@ function tokenCacheOf(creds: QQCredentials): TokenCache {
     try {
       res = await fetch(`${QQ_API_BASE}/app/getAppAccessToken`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "user-agent": userAgent() },
         body: JSON.stringify({ appId: creds.appId, clientSecret: creds.appSecret }),
         signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
       });
@@ -470,7 +471,11 @@ function createProductionClient(creds: QQCredentials): ProductionClient {
     try {
       res = await fetch(`${QQ_API_BASE}${path}`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `QQBot ${token}` },
+        headers: {
+          "content-type": "application/json",
+          authorization: `QQBot ${token}`,
+          "user-agent": userAgent(),
+        },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
       });
@@ -650,7 +655,7 @@ class GatewaySession {
     let res: Response;
     try {
       res = await fetch(`${QQ_API_BASE}/gateway`, {
-        headers: { authorization: `QQBot ${token}` },
+        headers: { authorization: `QQBot ${token}`, "user-agent": userAgent() },
         signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
       });
     } catch (err) {

@@ -1,19 +1,26 @@
 /**
- * The site frame every page renders inside: the top bar, then the body — an optional left column
- * with the section's navigation list, the content column, and an optional right column ("on this
- * page") — and the tooltip layer the chrome's `data-tooltip` hints render through.
+ * The site frame every page renders inside: the site navbar (site/nav.tsx), the landing page's
+ * and the docs' own; the gallery's bar under it, with the gallery's pages and its view controls;
+ * then the body — an optional left column with the section's navigation list, the content column,
+ * and an optional right column ("on this page") — and the tooltip layer the chrome's
+ * `data-tooltip` hints render through.
  *
- * At phone width the columns collapse: the left and right columns disappear, the content column
- * fills, and the menu button in the bar opens a drawer under it holding the page links, every
- * view control with its label and the section's list, closed again by a link, the button or
- * Escape.
+ * At phone width the columns collapse: the left and right columns disappear and the content column
+ * fills. The navbar's menu button then opens a drawer under it, as the docs open their sidebar: the
+ * site's links where the navbar has no room for them, and the section's list, closed again by a
+ * link, the button or Escape. The gallery's bar stays: its pages scroll sideways, its controls sit
+ * in the popover.
+ *
+ * The navbar and its links in the drawer sit outside the `.g-chrome` subtree: they are the landing
+ * page's Tailwind markup, and the chrome's base rules would outrank its utilities.
  */
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useGallery } from "../state";
+import { SiteMenu, SiteNav } from "../site/nav";
+import { useSitePrefsSync } from "../site/prefs";
+import { GalleryBar } from "./gallery-bar";
+import type { SitePage } from "./gallery-bar";
 import { ChromeTooltips } from "./tooltip";
-import { PageLinks, TopBar, ViewControls } from "./topbar";
-import type { SitePage } from "./topbar";
 
 export function Site({
   page,
@@ -31,9 +38,9 @@ export function Site({
   wide?: boolean;
   children: ReactNode;
 }) {
-  const { S } = useGallery();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
+  useSitePrefsSync();
 
   useEffect(() => {
     if (!open) return;
@@ -45,30 +52,31 @@ export function Site({
   }, [open]);
 
   return (
-    <div
-      className="g-site g-chrome"
-      data-nav={nav ? true : undefined}
-      data-toc={toc ? true : undefined}
-    >
-      <TopBar page={page} open={open} onToggle={() => setOpen((current) => !current)} />
+    <div className="g-site" data-nav={nav ? true : undefined} data-toc={toc ? true : undefined}>
+      <div className="g-sitebar">
+        <SiteNav
+          menuOpen={open}
+          onToggleMenu={() => setOpen((current) => !current)}
+          menuWidth={nav ? "list" : "links"}
+        />
+      </div>
       {open && (
         <div className="g-drawer">
-          <nav className="g-drawer-links" aria-label={S.site.pages}>
-            <PageLinks current={page} onNavigate={close} />
-          </nav>
-          <div className="g-drawer-controls">
-            <span className="g-nav-eyebrow">{S.site.settings}</span>
-            <ViewControls all />
+          <div className="g-sitebar">
+            <SiteMenu onNavigate={close} />
           </div>
-          {nav?.(close)}
+          {nav && <div className="g-chrome g-drawer-list">{nav(close)}</div>}
         </div>
       )}
-      <div className="g-body" data-wide={wide || undefined}>
-        {nav && <aside className="g-sidenav">{nav()}</aside>}
-        <main className="g-main">{children}</main>
-        {toc && <aside className="g-toc">{toc}</aside>}
+      <div className="g-chrome g-flow">
+        <GalleryBar page={page} />
+        <div className="g-body" data-wide={wide || undefined}>
+          {nav && <aside className="g-sidenav">{nav()}</aside>}
+          <main className="g-main">{children}</main>
+          {toc && <aside className="g-toc">{toc}</aside>}
+        </div>
+        <ChromeTooltips />
       </div>
-      <ChromeTooltips />
     </div>
   );
 }
