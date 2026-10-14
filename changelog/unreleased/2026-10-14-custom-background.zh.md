@@ -3,6 +3,7 @@
 Date: 2026-10-14
 Type: feature
 Scope: web
+PR: [#1126](https://github.com/Prism-Shadow/penguin-harness/pull/1126)
 
 [English](./2026-10-14-custom-background.md)
 
