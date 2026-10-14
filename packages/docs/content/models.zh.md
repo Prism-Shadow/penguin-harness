@@ -482,7 +482,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | 推荐分组。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为裸名称，不带供应商前缀（如 `glm-5.3`、`kimi-k3`）；价格采用网关自己的人民币费率，目前有几项在打折 |
 | penguin-go | `PENGUIN_GO_API_KEY` | 预置的 MMSP 中转分组，base URL `https://go.penguin.ooo/api/v1`；分组标题栏可以为你连接取得 key，也可以在分组设置里填写。见 [Penguin Go 分组](#penguin-go-分组) |
-| opencode-go | `OPENAI_API_KEY` | OpenCode Go 订阅网关。每个模型各自固定协议：Chat Completions 或 Responses 走 `https://opencode.ai/zen/go/v1`，Anthropic Messages 走 `https://opencode.ai/zen/go`（该客户端的变量是 `ANTHROPIC_API_KEY`）。见 [OpenCode Go 分组](#opencode-go-分组) |
+| opencode-go | `OPENAI_API_KEY` | OpenCode Go 订阅网关。每个模型各自固定协议：Chat Completions 或 Responses 走 `https://opencode.ai/zen/go/v1`，Anthropic Messages 走 `https://opencode.ai/zen/go`，Gemini generateContent 走 `https://opencode.ai/inference/go/google`。见 [OpenCode Go 分组](#opencode-go-分组) |
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在的分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI（OpenAI 兼容），预置 base URL `https://api.fireworks.ai/inference/v1`；API 模型 id 形如 `accounts/fireworks/models/<slug>` |
@@ -506,7 +506,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / 
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
 - ModelScope 像 Penguin Go 一样是聚合网关，但三条预置都使用 MMSP 通用 Responses 客户端（`client_type = "openai-responses"`）。
 - 这些网关客户端读取相同的 `OPENAI_*` 变量，所以无论哪种方式，凭据规则完全一致。
-- OpenCode Go 分组是例外：它的模型用到三种协议，因此每个模型各自固定协议，见 [OpenCode Go 分组](#opencode-go-分组)。
+- OpenCode Go 分组是例外：它的模型用到四种协议，因此每个模型各自固定协议，见 [OpenCode Go 分组](#opencode-go-分组)。
 
 MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型不带 `base_url`，因此设置了 `MINIMAX_BASE_URL` 时用它，否则用 `https://api.minimax.io/v1`；和其他 `*_BASE_URL` 一样，只有条目没有自己的 `base_url` 时才会读取这个变量。
 
@@ -528,9 +528,9 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 ### OpenCode Go 分组
 
-`opencode-go` 按型号预置 OpenCode Go 支持的最新一代，包括 GPT-6 Luna、Claude Haiku 5.5、Grok 4.7、MiMo-V2.6 Flash/Pro 和 LongCat 2.5 Preview Free。DeepSeek V4 Pro 与 V4.1 Flash 分别保留，GLM-5.3 与 GLM-5.3 Flash、Kimi K3 与 K2.7 Code、Qwen 的 Max、Flash、Plus 也各自保留最新型号。它们共用一把 key：在分组设置里填写一次即可。
+`opencode-go` 按型号预置 OpenCode Go 支持的最新一代，包括 GPT-6 Luna、Claude Haiku 5.5、Gemini 4 Argon Contributor、Grok 4.7、MiMo-V2.6 Flash/Pro、LongCat 2.5 Preview Free、Step 5 Preview Free、Cat Jam Free 和 Space Bunny。DeepSeek V4 Pro 与 V4.1 Flash 分别保留，GLM-5.3 与 GLM-5.3 Flash、Kimi K3 与 K2.7 Code、Qwen 的 Max、Flash、Plus 也各自保留最新型号。它们共用一把 key：按 [OpenCode 认证说明](https://opencode.ai/v2/docs/console/api/inference/#authentication)创建后，在分组设置里填写一次即可。
 
-- **协议。** OpenCode 把每个模型放在三个端点之一上。新建 Project 时，分组 base URL 写为 `https://opencode.ai/zen/go/v1`，供 Chat Completions（`openai-chat`）和 Responses（`openai-responses`）模型使用，每个模型各自存着 `client_type`；Anthropic Messages（`ant-messages`）模型另在条目上存 `https://opencode.ai/zen/go`，因为客户端会自行加上 `/v1/messages`。二者同一主机，分组密钥同样借给它们。与所有网关的条目一样，它们都不会回退到 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`：key 要设在分组上。
+- **协议。** OpenCode 为每个模型指定四种协议之一。新建 Project 时，分组 base URL 写为 `https://opencode.ai/zen/go/v1`，供 Chat Completions（`openai-chat`）和 Responses（`openai-responses`）模型使用，每个模型各自存着 `client_type`；Anthropic Messages（`ant-messages`）模型另在条目上存 `https://opencode.ai/zen/go`，因为客户端会自行加上 `/v1/messages`。Gemini 4 Argon Contributor 使用 `google-genai`，base URL 为 `https://opencode.ai/inference/go/google`，SDK 会加上 `/v1beta/models/<id>:streamGenerateContent`。这些端点都在同一主机上，因此共用分组密钥。与所有网关的条目一样，它们都不会回退到厂商的环境变量密钥：key 要设在分组上。
 - **价格。** Go 按月订阅，用量上限是按模型计的美元额度：每月一份额度，每 5 小时最多用掉其中 20%，每周最多 50%。条目记录的是每次请求从额度中扣除的每 Token 价格，因此对这个分组而言，成本中心显示的是你用掉了多少额度，而不是一张账单。`gpt-6-luna`、`claude-haiku-5-5`、`grok-4.7` 和 `qwen3.7-plus` 记录基础档，分别覆盖 272K、100K、200K 和 256K 输入 Token 以内。DeepSeek 模型遵循 DeepSeek 的空闲时段，见[价格与促销](#价格与促销)。
 - **开通与地区。** Contributor 模型需要同意使用提示词和回复训练模型；DeepSeek 可能需要同意由中国境内托管的服务提供。账户权限和地区可用性由 OpenCode 决定。
 - **已有 Project。** 点击**同步新增模型**会添加新预设，保留已保存的旧模型和默认模型；**恢复默认**会将列表恢复为当前预设。

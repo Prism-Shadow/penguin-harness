@@ -148,7 +148,7 @@ Agent 还能编写并优化自己的 Skill（[文档](https://penguin.ooo/docs/s
 | --- | --- |
 | GPT 6.1 | OpenAI, OpenRouter |
 | Claude 5.5 | Anthropic, OpenRouter, OpenCode Go |
-| Gemini 4 | Google Gemini, OpenRouter, Penguin Go |
+| Gemini 4 | Google Gemini, OpenRouter, Penguin Go, OpenCode Go |
 | Grok 4.7 | OpenRouter, OpenCode Go |
 | Qwen3.8 Max | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance, OpenCode Go |
 

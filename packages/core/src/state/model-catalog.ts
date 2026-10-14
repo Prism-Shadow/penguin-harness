@@ -68,7 +68,7 @@
  * the family its spelling begins with and never looks at base_url (see routedClientType), so
  * an unpinned gateway id would be placed by its own spelling — `deepseek-ai/DeepSeek-V4` would
  * reach DeepSeek's official client aimed at a gateway, and `openai/gpt-5.6-sol` would throw
- * outright (no known family begins with "openai/"). Four protocols are pinned:
+ * outright (no known family begins with "openai/"). Gateway protocols are pinned:
  * - `openai-responses` for every OpenRouter row: OpenRouter serves the Responses API for
  *   every upstream at the same base URL the rows already carry, and the group pins the same
  *   protocol so a user-added entry inherits it;
@@ -79,8 +79,9 @@
  *   but maps the thinking level onto the served model's own chat template
  *   (VLLM_CLIENT_TYPE);
  * - `ant-messages` for the OpenCode Go rows its endpoint table serves on the Anthropic
- *   Messages API. That group pins row by row, since its models sit on three protocols: the
- *   rest of it is `openai-chat` and `openai-responses` — see its block comment.
+ *   Messages API;
+ * - `google-genai` for OpenCode Go's Gemini row. The group pins row by row across four
+ *   protocols; its other rows use `openai-chat` and `openai-responses` — see its block comment.
  * ModelScope's rows all pin `openai-responses`: ModelScope serves every preset through its
  * OpenAI Responses endpoint, and the explicit pin keeps a Qwen or DeepSeek id from auto-routing
  * to a vendor client with a different request shape.
@@ -354,6 +355,8 @@ export function isPenguinGoEndpoint(value: unknown): value is string {
 const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
 /** OpenCode Go's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
 const OPENCODE_GO_MESSAGES_BASE_URL = "https://opencode.ai/zen/go";
+/** Go's generateContent base: the Google SDK appends /v1beta/models/<id>:streamGenerateContent. */
+const OPENCODE_GO_GOOGLE_BASE_URL = "https://opencode.ai/inference/go/google";
 
 /** Provider id for the preconfigured Penguin Go relay group. */
 export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
@@ -465,9 +468,9 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     },
   },
   {
-    // One key serves the whole group, but its models sit on three protocols (see the group's
+    // One key serves the whole group, but its models sit on four protocols (see the group's
     // block comment in MODEL_CATALOG), so no group-level pin: a new Project writes each row's
-    // protocol on the row, and the Messages base on the seven rows that use it. The env pair
+    // protocol on the row, and the Messages or Google base on the rows that use it. The env pair
     // records what its Chat Completions majority's client reads. Like every gateway's, a
     // keyless row is refused that fallback (modelEnvFallback): the key goes on the group or
     // the row.
@@ -475,8 +478,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     label: "OpenCode Go",
     envKey: "OPENAI_API_KEY",
     envBaseUrlKey: "OPENAI_BASE_URL",
-    apiKeyUrl: "https://opencode.ai/auth",
-    modelsUrl: "https://opencode.ai/docs/go/",
+    apiKeyUrl: "https://opencode.ai/v2/docs/console/api/inference/#authentication",
+    modelsUrl: "https://opencode.ai/v2/docs/console/go/",
     gatewayBaseUrl: OPENCODE_GO_BASE_URL,
   },
   {
@@ -2356,7 +2359,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "mmsp",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
-  // -- OpenCode Go. Latest generation of each model tier from opencode.ai/docs/go/
+  // -- OpenCode Go. Latest generation of each model tier from opencode.ai/v2/docs/console/go/
   // (2026-10-14); context and vision from OpenCode's models.dev registry. The Code, Pro,
   // Flash, Max and Plus tiers are independent: a newer Flash does not replace a Pro.
   // Generic clients pin the documented wire protocol. The /zen/go aliases remain live;
@@ -2368,6 +2371,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // and DEEPSEEK_OFF_PEAK schedule. Allowance multipliers are not price discounts.
   // Superseded rows remain retired for saved Projects and historical off-peak pricing;
   // removal follows ModelCatalogEntry.retired and the backward-compatibility changelog.
+  {
+    modelId: "cat-jam-free",
+    displayName: "Cat Jam Free",
+    provider: "opencode-go",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
   {
     modelId: "claude-haiku-5-5",
     displayName: "Claude Haiku 5.5",
@@ -2423,6 +2436,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-4-argon-contributor",
+    displayName: "Gemini 4 Argon Contributor",
+    provider: "opencode-go",
+    contextWindow: 1048576,
+    pricing: usd(0.2, 4, 20),
+    supportsVision: true,
+    clientType: "google-genai",
+    baseUrl: OPENCODE_GO_GOOGLE_BASE_URL,
   },
   {
     modelId: "glm-5.3",
@@ -2719,6 +2742,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     retired: true,
     clientType: "ant-messages",
     baseUrl: OPENCODE_GO_MESSAGES_BASE_URL,
+  },
+  {
+    // The context spans 1M tokens, but models.dev caps input at 524,288; compaction uses input.
+    modelId: "space-bunny",
+    displayName: "Space Bunny",
+    provider: "opencode-go",
+    contextWindow: 524288,
+    pricing: usd(0.03, 0.15, 0.6),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
+  },
+  {
+    modelId: "step-5-preview-free",
+    displayName: "Step 5 Preview Free",
+    provider: "opencode-go",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: OPENCODE_GO_BASE_URL,
   },
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
   // table, and for the rows added 2026-09-16 per their model pages' input modalities).

@@ -11,7 +11,8 @@ Added GPT-6 Luna to OpenAI, OpenRouter and OpenCode Go without changing the MMSP
 
 ## Models and documentation
 
-- Added Go presets for Claude Haiku 5.5, Grok 4.7, MiMo-V2.6 Flash/Pro and LongCat 2.5 Preview Free. Each model tier keeps its latest generation, including DeepSeek V4 Pro alongside V4.1 Flash and Qwen Max, Flash and Plus.
+- Added Go presets for Claude Haiku 5.5, Gemini 4 Argon Contributor, Grok 4.7, MiMo-V2.6 Flash/Pro, LongCat 2.5 Preview Free, Step 5 Preview Free, Cat Jam Free and Space Bunny. Each model tier keeps its latest generation, including DeepSeek V4 Pro alongside V4.1 Flash and Qwen Max, Flash and Plus.
+- Go’s **Get API key** link now opens [OpenCode’s authentication guide](https://opencode.ai/v2/docs/console/api/inference/#authentication). Gemini uses Go’s generateContent endpoint with the existing MMSP dependency.
 - Grouped the README's priority model families into closed-source and open-source tables in both languages. Fable 5.1, Opus 5.5 and Sonnet 5.5 remain available through Anthropic and OpenRouter.
 - Recorded GPT-6 Luna's base prices per million tokens: $0.01 cache read, $0.125 cache write and $0.50 output. MMSP 0.5.3 can call the model; its `none` thinking setting currently sends `low`.
 

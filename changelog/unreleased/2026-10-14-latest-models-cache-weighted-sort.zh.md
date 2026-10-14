@@ -11,7 +11,8 @@
 
 ## 模型与文档
 
-- Go 新增 Claude Haiku 5.5、Grok 4.7、MiMo-V2.6 Flash/Pro 和 LongCat 2.5 Preview Free 预设。各型号分别保留最新一代，包括 DeepSeek V4 Pro 与 V4.1 Flash，以及 Qwen 的 Max、Flash、Plus。
+- Go 新增 Claude Haiku 5.5、Gemini 4 Argon Contributor、Grok 4.7、MiMo-V2.6 Flash/Pro、LongCat 2.5 Preview Free、Step 5 Preview Free、Cat Jam Free 和 Space Bunny 预设。各型号分别保留最新一代，包括 DeepSeek V4 Pro 与 V4.1 Flash，以及 Qwen 的 Max、Flash、Plus。
+- Go 的**获取 API Key**链接改为 [OpenCode 认证说明](https://opencode.ai/v2/docs/console/api/inference/#authentication)。Gemini 通过 Go 的 generateContent 端点调用，沿用现有 MMSP 依赖。
 - 中英文 README 将重点支持的模型系列分为闭源、开源两组。Fable 5.1、Opus 5.5 和 Sonnet 5.5 继续通过 Anthropic、OpenRouter 提供。
 - GPT-6 Luna 记录每百万 Token 的基础价格：缓存命中 $0.01、缓存写入 $0.125、输出 $0.50。MMSP 0.5.3 已能调用该模型；其 `none` 思考设置目前会发送为 `low`。
 

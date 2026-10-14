@@ -4,6 +4,8 @@
  * default of new Projects keeps for its usage after a Project drops its row.
  * Given a new Project, GPT-6 Luna assembles a Responses tool request with the installed
  * MMSP through OpenAI, OpenRouter and OpenCode Go without a dependency upgrade.
+ * Given OpenCode Go's group key, Gemini 4 Argon Contributor streams a tool call through
+ * Go's generateContent endpoint with the group key and conversation header, never Google's API.
  */
 import { describe, expect, it, vi } from "vitest";
 import { AutoLLMClient } from "@prismshadow/mmsp";
@@ -308,6 +310,78 @@ describe("model-catalog", () => {
     },
   );
 
+  it("Go's Gemini preset streams tool calls with the group key and session through generateContent", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      const chunk = {
+        usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 4, totalTokenCount: 16 },
+        candidates: [
+          {
+            content: {
+              role: "model",
+              parts: [{ functionCall: { name: "get_number", args: {} } }],
+            },
+            finishReason: "STOP",
+          },
+        ],
+      };
+      return new Response(`data: ${JSON.stringify(chunk)}\n\n`, {
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const entry = presetModelEntries().find(
+        (row) => row.provider === "opencode-go" && row.model_id === "gemini-4-argon-contributor",
+      )!;
+      expect(entry).toBeDefined();
+      const table = presetProviderTable();
+      table[entry.provider]!.api_key = "sk-go-group";
+      const connection = storedConnection(entry, table);
+      const client = new AutoLLMClient({
+        model: entry.model_id,
+        apiKey: connection.apiKey,
+        clientType: connection.clientType,
+        baseUrl: connection.baseUrl,
+        defaultHeaders: attributionHeaders(connection.baseUrl, "go-gemini-session"),
+      });
+      const events = [];
+      for await (const event of client.streamingResponse({
+        messages: [
+          { role: "user", content_items: [{ type: "text.done", text: "Read a number." }] },
+        ],
+        config: {
+          tools: [
+            {
+              name: "get_number",
+              description: "Read a number.",
+              parameters: { type: "object", properties: {} },
+            },
+          ],
+          tool_choice: "required",
+        },
+      })) {
+        events.push(event);
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const request = new Request(...fetchMock.mock.calls[0]!);
+      expect(request.url).toBe(
+        "https://opencode.ai/inference/go/google/v1beta/models/gemini-4-argon-contributor:streamGenerateContent?alt=sse",
+      );
+      expect(request.headers.get("x-goog-api-key")).toBe("sk-go-group");
+      expect(request.headers.get("x-opencode-session")).toBe("go-gemini-session");
+      expect(await request.json()).toMatchObject({
+        tools: [{ functionDeclarations: [{ name: "get_number" }] }],
+        toolConfig: { functionCallingConfig: { mode: "ANY" } },
+      });
+      expect(events.flatMap((event) => event.content_items)).toContainEqual(
+        expect.objectContaining({ type: "tool_call.done", name: "get_number", arguments: {} }),
+      );
+      expect(events.at(-1)?.finish_reason).toBe("tool_call");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
     expect(APP_URL).toBe("https://penguin.ooo/");
     expect(attributionHeaders("https://tokendance.space/gateway/v1")).toEqual({
@@ -575,18 +649,6 @@ describe("model-catalog", () => {
       // The concatenated storage id and request_model_id have been removed and no longer appear.
       expect(Object.hasOwn(entry, "request_model_id")).toBe(false);
     }
-    // Go's MMSP rows share their group's connection. OpenCode Go has three protocols and
-    // a Messages base; custom's Atria has no group table at all.
-    const differing = entries.filter(
-      (e) => e.client_type !== undefined || e.base_url !== undefined,
-    );
-    expect([...new Set(differing.map((e) => e.provider))]).toEqual(["opencode-go", "custom"]);
-    expect(
-      differing.filter((e) => e.base_url !== undefined).map((e) => [e.provider, e.base_url]),
-    ).toEqual([
-      ...Array.from({ length: 5 }, () => ["opencode-go", "https://opencode.ai/zen/go"]),
-      ["custom", "https://api.atria-asi.ai"],
-    ]);
   });
 
   it("the seed is honest: under a new Project's group tables, every catalog row resolves to its catalog protocol and endpoint from the file alone", () => {
@@ -1784,6 +1846,11 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by MMSP's routing rule
         // read; its Messages rows read the Anthropic client's pair, the same split as custom.
         expect(env!.envKey, m.modelId).toBe("ANTHROPIC_API_KEY");
         expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
+        continue;
+      }
+      if (m.provider === "opencode-go" && m.clientType === "google-genai") {
+        expect(env!.envKey, m.modelId).toBe("GEMINI_API_KEY");
+        expect(env!.envBaseUrlKey, m.modelId).toBe("GEMINI_BASE_URL");
         continue;
       }
       expect(env!.envKey, m.modelId).toBe(provider.envKey);

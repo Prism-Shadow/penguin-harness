@@ -148,7 +148,7 @@ These are the model families we focus on supporting. The app's **Models** page l
 | --- | --- |
 | GPT 6.1 | OpenAI, OpenRouter |
 | Claude 5.5 | Anthropic, OpenRouter, OpenCode Go |
-| Gemini 4 | Google Gemini, OpenRouter, Penguin Go |
+| Gemini 4 | Google Gemini, OpenRouter, Penguin Go, OpenCode Go |
 | Grok 4.7 | OpenRouter, OpenCode Go |
 | Qwen3.8 Max | Qwen Token Plan, Qwen Pay-As-You-Go, OpenRouter, TokenDance, OpenCode Go |
 
