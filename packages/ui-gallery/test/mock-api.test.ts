@@ -7,6 +7,8 @@
  * (file content, downloads) are checked the same way through the fetch path.
  * Transferring a draft's browser pages reports the unavailable browser, as opening a page
  * does: the gallery hosts no desktop browser and must not report a successful transfer.
+ * The Agent plugin listing agrees with the installed Skills, hooks and MCP listings, and
+ * refuses an unknown Agent with 404.
  */
 import { describe, expect, it } from "vitest";
 import * as api from "../../web/src/api/endpoints";
@@ -81,6 +83,15 @@ describe("the mocked API", () => {
       IDS.agents.notes,
       IDS.agents.general,
     ]);
+    const projectId = store.f.project.projectId;
+    const agentId = IDS.agents.docs;
+    expect(await api.getAgentPlugins(projectId, agentId)).toEqual({
+      skills: (await api.getAgentSkills(projectId, agentId)).skills,
+      hooks: (await api.getAgentHooks(projectId, agentId)).hooks,
+      mcpServers: (await api.getAgentMcpServers(projectId, agentId)).servers,
+      workbenches: [],
+    });
+    await expect(api.getAgentPlugins(projectId, "nope")).rejects.toMatchObject({ status: 404 });
     await expect(api.getSession("nope")).rejects.toMatchObject({ status: 404, code: "not_found" });
   });
 

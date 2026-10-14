@@ -2133,6 +2133,12 @@ router
     }
     return { files };
   })
+  .get("/api/projects/:projectId/agents/:agentId/plugins", (ctx): AgentPluginsInstallResponse => ({
+    skills: installedOf(ctx).skills,
+    hooks: installedOf(ctx).hooks,
+    mcpServers: mcpServerItems(ctx),
+    workbenches: [],
+  }))
   .post("/api/projects/:projectId/agents/:agentId/plugins", (ctx): unknown => {
     const installed = installedOf(ctx);
     const agent = agentOf(ctx);

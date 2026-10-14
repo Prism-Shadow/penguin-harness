@@ -2,7 +2,7 @@
 
 - **Date:** 2026-10-14
 - **Type:** fix
-- **Scope:** `server`
+- **Scope:** `server`, `ui-gallery`
 - **PR:** [#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
 
 [English](2026-10-14-server-test-stability.md)
@@ -12,3 +12,5 @@
 Skill 压缩包测试使用小体积 ZIP 验证声明的大小限制，避免重复压缩数十 MiB 的测试数据。
 
 即使文件系统漏掉了目录创建通知，服务端也能发现 Agent 的第一个工作台。服务端会定期检查尚未创建的目录，目录出现后切换到常规文件监听。
+
+组件展示页的模拟 API 补齐了 Agent 插件列表接口。
