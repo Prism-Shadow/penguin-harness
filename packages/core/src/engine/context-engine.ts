@@ -114,6 +114,8 @@ export interface CompactionSettings {
   mode: CompactionMode;
   /** Prompt used for summarize compaction. */
   prompt: string;
+  /** Origin marker recorded on compaction_begin when the in-force threshold was derived from a smaller model window (`capped_by_window`); absent when the configured value stands. */
+  compactionOrigin?: string;
 }
 
 /**
@@ -2159,6 +2161,7 @@ export class ContextEngine {
       mode,
       context: this.lastRequestTotal,
       turns: this.sessionTurns,
+      compactionOrigin: this.compaction?.compactionOrigin,
     });
     yield msg;
     await this.write(msg);

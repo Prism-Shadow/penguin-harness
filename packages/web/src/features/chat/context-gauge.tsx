@@ -88,6 +88,7 @@ import {
   thresholdCappedByWindow,
   thresholdFraction,
   thresholdFromPointer,
+  modelWindowBelowCompactionLimit,
 } from "../../lib/context";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
@@ -264,6 +265,7 @@ export function ContextGauge({
             <ContextPanel
               sessionId={sessionId}
               now={now}
+              compactionLimit={compactionLimit}
               fallbackBasis={basis}
               windowTokens={windowTokens}
               unknown={unknown}
@@ -295,6 +297,7 @@ export function ContextGauge({
 function ContextPanel({
   sessionId,
   now,
+  compactionLimit,
   fallbackBasis,
   windowTokens,
   unknown,
@@ -307,6 +310,8 @@ function ContextPanel({
 }: {
   sessionId: string;
   now: number;
+  /** The Agent's configured compaction threshold (before any window-derived cap). */
+  compactionLimit?: number;
   /** The ring's own basis, shown until the server's reading of the threshold arrives. */
   fallbackBasis: number;
   /** The model's resolved context window: the bar's scale, and named beside the ratio when it is larger than the basis. */
@@ -401,6 +406,12 @@ function ContextPanel({
         </span>
         <span className="font-mono text-gray-500 dark:text-gray-400">
           {unmeasured ? "—" : humanizeTokens(now)} / {humanizeTokens(basis)}
+          {compactionLimit !== undefined &&
+            modelWindowBelowCompactionLimit(windowTokens, compactionLimit) && (
+              <span className="ml-1.5 text-amber-600 dark:text-amber-500">
+                （设置 {humanizeTokens(compactionLimit)}，实际生效 {humanizeTokens(basis)}）
+              </span>
+            )}
         </span>
       </div>
 

@@ -382,14 +382,14 @@ function resolveCompaction(
   config: CompactionConfig | undefined,
   contextWindow: number | undefined,
 ): CompactionSettings {
+  const configured = config?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH;
+  const effective = effectiveMaxContextLength(configured, contextWindow);
   return {
-    maxContextLength: effectiveMaxContextLength(
-      config?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
-      contextWindow,
-    ),
+    maxContextLength: effective,
     maxSessionTurns: config?.max_session_turns ?? -1,
     mode: config?.mode === "discard" ? "discard" : "summarize",
     prompt: config?.prompt ?? DEFAULT_COMPACTION_PROMPT,
+    ...(configured > 0 && effective < configured ? { compactionOrigin: "capped_by_window" } : {}),
   };
 }
 

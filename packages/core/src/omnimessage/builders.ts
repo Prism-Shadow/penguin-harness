@@ -316,6 +316,7 @@ export function compactionBegin(args: {
   mode: CompactionMode;
   context: number;
   turns: number;
+  compactionOrigin?: string;
 }): OmniMessage<CompactionBeginPayload> {
   return event({
     type: "compaction_begin",
@@ -323,6 +324,7 @@ export function compactionBegin(args: {
     mode: args.mode,
     context: args.context,
     turns: args.turns,
+    ...(args.compactionOrigin !== undefined ? { compaction_origin: args.compactionOrigin } : {}),
   });
 }
 

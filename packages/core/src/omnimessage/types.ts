@@ -464,6 +464,8 @@ export interface CompactionBeginPayload {
   context: number;
   /** Session cumulative turn count. */
   turns: number;
+  /** Origin marker for the compaction threshold actually in force, e.g. `capped_by_window` when the Agent's configured threshold exceeded the model's window and only the window-derived cap is being used. Absent otherwise. */
+  compaction_origin?: string;
 }
 
 /**
