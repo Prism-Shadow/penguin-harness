@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** feature
 - **Scope:** `core`, `web`
+- **PR:** [#1121](https://github.com/Prism-Shadow/penguin-harness/pull/1121)
 
 [中文版](2026-10-14-context-window-compaction-cap.zh.md)
 
