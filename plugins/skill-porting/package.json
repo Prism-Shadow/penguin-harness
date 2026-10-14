@@ -35,7 +35,7 @@
         "skill-porting"
       ]
     },
-    "title": "Skill and Plugin Porting",
-    "title_zh": "技能与插件移植"
+    "title": "External Plugin Porting",
+    "title_zh": "外部插件移植"
   }
 }

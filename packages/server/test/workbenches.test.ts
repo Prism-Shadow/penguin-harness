@@ -8,7 +8,9 @@
  *   state persists on disk across a reload.
  * - Its own state write is not an edit: the revision holds and nothing is left staged.
  * - With a configured model credential, it opens and runs Sessions the SDK's way, inside
- *   its own Project only, with allow-all: nobody is there to answer an ask.
+ *   its own Project only, with allow-all: nobody is there to answer an ask. Its Sessions
+ *   are archived with workbench provenance, including before their first run after a restart.
+ * - Agent counts include installed workbenches and follow removal without a compiler load.
  * - A handler takes any body (a form only from the app's own pages) and sends back any
  *   content type, a stream as it is produced and a redirect relative to its mount, never the
  *   app's cookies; JSON stays the default.
@@ -44,7 +46,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
-import type { WorkbenchInfo, WorkbenchVersion } from "../src/api/types.js";
+import type {
+  WorkbenchInfo,
+  WorkbenchVersion,
+  SessionResponse,
+  SessionsResponse,
+  ArchivedSessionsResponse,
+  AgentsResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -301,7 +310,9 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
       ran: "run: this Project has no Session 'not-a-session'",
       agents: [AGENT],
     });
-    const own = await (await owner.get(`${BASE}/demo/api/open`)).json();
+    const own = (await (await owner.get(`${BASE}/demo/api/open`)).json()) as {
+      opened: { sessionId: string };
+    };
     // Assert the Session the workbench caller receives, including its unattended approval
     // mode, rather than the arguments of an internal service or a missing ambient key.
     expect(own).toMatchObject({
@@ -312,8 +323,27 @@ describe("a loaded workbench", { timeout: 30_000 }, () => {
         provider: "custom",
         modelId: "workbench-test",
         approvalMode: "allow-all",
+        source: "workbench",
+        archived: true,
       },
     });
+    const { sessionId } = own.opened;
+    t.deps.sessionSources.delete(sessionId); // The source registry of a fresh process.
+    const archived = (await (
+      await owner.get(
+        `/api/me/archived-sessions?source=workbench&projectId=${PROJECT}&workspace=temp&limit=100`,
+      )
+    ).json()) as ArchivedSessionsResponse;
+    expect(archived.sessions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ sessionId, source: "workbench" })]),
+    );
+    const active = (await (
+      await owner.get(`/api/projects/${PROJECT}/agents/${AGENT}/sessions?category=active`)
+    ).json()) as SessionsResponse;
+    expect(active.sessions.map((s: { sessionId: string }) => s.sessionId)).not.toContain(sessionId);
+    expect((await owner.patch(`/api/sessions/${sessionId}`, { archived: false })).status).toBe(200);
+    const kept = (await (await owner.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse;
+    expect(kept.session).toMatchObject({ source: "workbench", archived: false });
   });
 
   it("hands a handler any body and sends back any content type; JSON stays the default", async () => {
@@ -483,6 +513,7 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
   let base: string;
   let dir: string;
   let editors = 0;
+  let agentId: string;
 
   beforeAll(async () => {
     t = await createTestApp();
@@ -498,7 +529,7 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
   // on Windows.
   beforeEach(async () => {
     editors += 1;
-    const agentId = `editor_${editors}`;
+    agentId = `editor_${editors}`;
     const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId });
     expect(made.status, await made.text()).toBe(201);
     base = `/api/projects/${PROJECT}/agents/${agentId}/workbenches`;
@@ -769,8 +800,17 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
   });
 
   it("removes the folder and its recorded versions on request", async () => {
+    const count = async () => {
+      const response = (await (
+        await owner.get(`/api/projects/${PROJECT}/agents`)
+      ).json()) as AgentsResponse;
+      return response.agents.find((a: { agentId: string }) => a.agentId === agentId)
+        ?.workbenchCount;
+    };
+    expect(await count()).toBe(1);
     await list();
     expect((await owner.delete(`${base}/demo`)).status).toBe(204);
+    expect(await count()).toBe(0);
     expect(await list()).toEqual([]);
     await expect(fs.stat(dir)).rejects.toThrow();
     expect((await owner.get(`${base}/demo/api/`)).status).toBe(404);

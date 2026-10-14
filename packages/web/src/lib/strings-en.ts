@@ -972,6 +972,14 @@ export const en: Strings = {
     hint: (mod: string): string => `←→ groups / models · ${mod}1–9 jump to a group`,
   },
   workbenches: {
+    title: "Workbenches",
+    count: (n: number) => `${n} ${n === 1 ? "workbench" : "workbenches"}`,
+    empty: "This Agent has no workbenches yet.",
+    browsePlugins: "Browse plugins",
+    open: "Open workbench",
+    noMatches: "No matching agents.",
+    searchAgents: "Search agents",
+
     tabsLabel: "Chat and workbenches",
     chatTab: "Chat",
     brokenMark: "The current files failed to load",
@@ -996,13 +1004,13 @@ export const en: Strings = {
       palette === null
         ? "Show this page as the whole app; the command palette is the way to leave"
         : `Show this page as the whole app; ${palette} opens the command palette to leave`,
-    exitFullPage: "Exit full page (back to chat)",
+    exitFullPage: "Exit full page (back to workbench)",
     exitFullPageButton: "Exit full screen",
     retryHistory: "Retry",
     exitHint: (palette: string | null): string =>
       palette === null
-        ? "Open the command palette to get back to the chat."
-        : `Press ${palette} for the command palette to get back to the chat.`,
+        ? "Open the command palette to get back to the workbench."
+        : `Press ${palette} for the command palette to get back to the workbench.`,
     noSuchPage: "This workbench does not exist or has no page.",
     removeConfirm: "Delete this workbench and all its recorded versions?",
     removeYes: "Remove",
@@ -1640,6 +1648,7 @@ export const en: Strings = {
     tabRuntime: "Runtime",
     tabTools: "Tools",
     tabSkills: "Skills",
+    tabWorkbenches: "Workbenches",
     tabHooks: "Hooks",
     tabVault: "Vault",
     tabSchedules: "Schedules",
@@ -4023,6 +4032,7 @@ Scenarios:
       api: "API",
       schedule: "Scheduled",
       cli: "CLI",
+      workbench: "Workbench",
     },
     archivedStub: {
       note: "This chat is archived. Unarchive it to read it; it returns to the sidebar.",

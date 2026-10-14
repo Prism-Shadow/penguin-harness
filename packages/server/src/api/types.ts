@@ -53,7 +53,7 @@ export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask"
 export type SessionStatus = "idle" | "running" | "compacting";
 
 /**
- * What kind of conversation a Session is (`user` / `api` / `schedule` / `subagent` / `cli`):
+ * What kind of conversation a Session is (`user` / `api` / `schedule` / `subagent` / `cli` / `company` / `workbench`):
  * core's type, the one definition, re-exported for the DTOs below.
  */
 export type { SessionSource };
@@ -1254,6 +1254,8 @@ export interface AgentSummary {
   vaultKeyCount: number;
   /** Schedule count (number of .toml files under agent_state/schedule/, including invalid ones). */
   scheduleCount: number;
+  /** Workbench folders with a manifest, including ones with a load error. */
+  workbenchCount: number;
   /** Installed Skill count (number of agent_state/skills/<name>/ directories with a SKILL.md). */
   skillCount: number;
   /** Installed hook-package count (number of agent_state/hooks/<name>/ directories with a hooks.json). */
@@ -1830,7 +1832,7 @@ export interface SessionInfo {
    * What kind of conversation this is, read from core session_meta — the single source of
    * truth (the DB stores no source). With the user's marks it decides where the Session is
    * listed (`archived`): a `user` Session is in the sidebar until archived; an `api`,
-   * `schedule` or `cli` Session is archived until the user keeps it, and in the sidebar marked
+   * `schedule`, `cli` or `workbench` Session is archived until the user keeps it, and in the sidebar marked
    * with its source once kept; a `subagent` or `company` Session is in no list — its parent's
    * Agent panel and company mode's own views open them. A Trace head that records no source
    * (written before it was required) reads as `company` for a row the organization runtime
@@ -1865,7 +1867,7 @@ export interface SessionInfo {
   hasTrace: boolean;
   /**
    * Whether the Session is archived — the listing rule's answer, never the bare mark: the user
-   * archived it, or a program opened it (source `api`, `schedule` or `cli`) and the user has
+   * archived it, or a program opened it (source `api`, `schedule`, `cli` or `workbench`) and the user has
    * not kept it. An archived Session is left out of the sidebar and listed on the archive page
    * (`/api/me/archived-sessions`). Always false for a `subagent` or `company` Session, which is
    * in no list.
@@ -1900,7 +1902,7 @@ export interface SessionInfo {
    * the organization and is not read while company mode is off — this is a durable stamp on
    * the row: development mode's list hides an "org" Session either way.
    */
-  client?: "web" | "cli" | "org" | "api";
+  client?: "web" | "cli" | "org" | "api" | "workbench";
   /**
    * Background work the Session's loaded runtime still owns: command sessions running past
    * their yield window (`exec_command` promotions and `run_in_background` launches) and
@@ -1923,7 +1925,7 @@ export interface SessionBackgroundTasks {
 
 /**
  * Session list category, the listing rule applied server-side: `archived` when the user
- * archived the Session, or when a program opened it (source `api`, `schedule` or `cli`) and the
+ * archived the Session, or when a program opened it (source `api`, `schedule`, `cli` or `workbench`) and the
  * user has not kept it — unarchiving keeps it; otherwise `active`. A `subagent` or `company`
  * Session belongs to neither, whatever its marks: the list leaves it out of every category and
  * every total (a parent's Agent panel and company mode's own views open them).
@@ -1991,7 +1993,7 @@ export interface SessionsResponse {
  * `user`, or a row whose Trace has not been read yet); the other three are what a program
  * opened. `subagent` and `company` Sessions are never archived, so never listed.
  */
-export type ArchivedSessionSource = "user" | "api" | "schedule" | "cli";
+export type ArchivedSessionSource = "user" | "api" | "schedule" | "cli" | "workbench";
 
 /** Query of GET /api/me/archived-sessions/groups, and the part every archive query shares. */
 export interface ArchivedSessionsQuery {
@@ -4676,6 +4678,9 @@ export interface SkillArchiveInstallRequest {
 export interface PluginIndexEntry {
   /** Package specifier — the string a Project's plugin list names. */
   name: string;
+  /** Localized display names; the UI falls back to the package name. */
+  title?: string;
+  titleZh?: string;
   /** Semantic version of this entry. */
   version: string;
   description: string;

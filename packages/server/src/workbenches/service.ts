@@ -618,6 +618,8 @@ export class WorkbenchService implements Workbenches {
           projectId,
           agentId: target,
           approvalMode: "allow-all",
+          source: "workbench",
+          client: "workbench",
         });
       },
       async run(sessionId: string, input: WorkbenchInput[]) {

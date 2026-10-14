@@ -31,7 +31,13 @@ export interface ArchivedSessionsRouteDeps {
 }
 
 /** The sources the archive page filters by. */
-const ARCHIVED_SOURCES: readonly ArchivedSessionSource[] = ["user", "api", "schedule", "cli"];
+const ARCHIVED_SOURCES: readonly ArchivedSessionSource[] = [
+  "user",
+  "api",
+  "schedule",
+  "cli",
+  "workbench",
+];
 
 /** Longest title query accepted. */
 const QUERY_MAX = 200;
@@ -48,7 +54,7 @@ const projectNotFound = () =>
 
 /**
  * The filter every archive query shares, read from an object (the query string or a batch's
- * `filter`): `q` (a title substring, at most 200 characters), `source` (one of the four) and
+ * `filter`): `q` (a title substring, at most 200 characters), `source` (one of the archive sources) and
  * `projectId` (a Project the user can open, checked by the service).
  */
 function parseQuery(raw: Record<string, unknown>): ArchivedSessionsQuery {

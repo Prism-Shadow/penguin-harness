@@ -61,7 +61,7 @@
     "category": "sandbox",
     "icon": "icon.svg",
     "preinstall": false,
-    "title": "Bubblewrap Sandbox",
-    "title_zh": "Bubblewrap 沙箱"
+    "title": "Linux Sandbox",
+    "title_zh": "Linux 沙箱"
   }
 }

@@ -18,8 +18,8 @@
     "access": "public"
   },
   "penguin": {
-    "title": "PenguinHarness Support",
-    "title_zh": "PenguinHarness 客服",
+    "title": "PenguinHarness Q&A Assistant",
+    "title_zh": "PenguinHarness 问答助手",
     "description_zh": "PenguinHarness 产品客服：问题列表、对话弹窗，以及依据文档和源码的解答。",
     "category": "office-productivity",
     "preinstall": false,

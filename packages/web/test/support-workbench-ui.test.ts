@@ -5,6 +5,7 @@
  * Given numbered citations, the answer shows clickable [1] markers with the source URL on the link.
  * A new question asks only for its text, follows the Session title and counts down while waiting.
  * An estimate that expires says research continues instead of inventing completion or restarting the timer.
+ * Backdrop clicks dismiss a dialog without losing drafts; clicks inside and selection drags do not.
  * An unavailable service keeps the draft and shows a readable error rather than a JSON parse exception.
  */
 import fs from "node:fs/promises";
@@ -136,4 +137,28 @@ it("keeps a draft when a proxy returns an empty 500", async () => {
   expect(document.querySelector("#dialog-error")!.textContent).toContain("HTTP 500");
   expect(document.querySelector("#dialog-error")!.textContent).not.toContain("JSON");
   expect(form.querySelector<HTMLButtonElement>("[type=submit]")!.disabled).toBe(false);
+});
+
+it("dismisses on a backdrop click, preserving the draft and ignoring selection drags", async () => {
+  stubFetch(() => json({ tickets: [] }));
+  await loadUi();
+  document.querySelector<HTMLButtonElement>("#new")!.click();
+  const dialog = document.querySelector("dialog")!;
+  dialog.getBoundingClientRect = () =>
+    ({ left: 100, top: 100, right: 500, bottom: 500 }) as DOMRect;
+  const input = document.querySelector<HTMLTextAreaElement>("#create textarea")!;
+  input.value = "Unfinished question";
+  const pointer = (type: string, x: number, y: number) =>
+    dialog.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }));
+  pointer("pointerdown", 120, 120);
+  pointer("click", 120, 120);
+  expect(dialog.open).toBe(true);
+  pointer("pointerdown", 120, 120);
+  pointer("click", 10, 10);
+  expect(dialog.open).toBe(true);
+  pointer("pointerdown", 10, 10);
+  pointer("click", 10, 10);
+  expect(dialog.open).toBe(false);
+  document.querySelector<HTMLButtonElement>("#new")!.click();
+  expect(input.value).toBe("Unfinished question");
 });

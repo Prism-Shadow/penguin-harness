@@ -64,7 +64,7 @@
     "category": "sandbox",
     "icon": "icon.svg",
     "preinstall": false,
-    "title": "Deep Sandbox",
-    "title_zh": "Deep Sandbox 沙箱"
+    "title": "DSH Sandbox",
+    "title_zh": "DSH 沙箱"
   }
 }

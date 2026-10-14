@@ -25,6 +25,7 @@ const agent = (agentId: string, name?: string): AgentSummary => ({
   vaultKeyCount: 0,
   scheduleCount: 0,
   pluginUpdates: [],
+  workbenchCount: 0,
   skillCount: 0,
   hookCount: 0,
   memoryCount: 0,

@@ -59,6 +59,8 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
     return null;
   }
   for (const key of [
+    "title",
+    "titleZh",
     "repository",
     "homepage",
     "descriptionZh",
@@ -141,7 +143,7 @@ export function builtinPluginRegistry(
 /** The display fields an index entry may carry, which a package can also carry itself. */
 export type PluginDisplay = Pick<
   PluginIndexEntry,
-  "descriptionZh" | "shortDescription" | "shortDescriptionZh" | "icon"
+  "title" | "titleZh" | "descriptionZh" | "shortDescription" | "shortDescriptionZh" | "icon"
 >;
 
 /**
@@ -166,6 +168,8 @@ export async function localPluginDisplay(
     return {};
   }
   const display: PluginDisplay = {};
+  if (penguin.title !== undefined) display.title = penguin.title;
+  if (penguin.titleZh !== undefined) display.titleZh = penguin.titleZh;
   if (penguin.descriptionZh !== undefined) display.descriptionZh = penguin.descriptionZh;
   if (penguin.shortDescription !== undefined) display.shortDescription = penguin.shortDescription;
   if (penguin.shortDescriptionZh !== undefined) {

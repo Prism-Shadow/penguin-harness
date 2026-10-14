@@ -9,7 +9,7 @@
  * editing its own workbench sees the tab update (the iframe keys on `uiRev`).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import type { WorkbenchInfo, WorkbenchVersion } from "@prismshadow/penguin-server/api";
 import { Button, ConfirmModal, NoticeStrip } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
@@ -43,10 +43,24 @@ export function useWorkbenchTabs(
   projectId: string | null,
   agentId: string | null,
   machineId: string | null = null,
+  selectionKey = "",
+  initialTab: string | null = null,
 ) {
-  const [tabs, setTabs] = useState<WorkbenchTab[]>([]);
-  const [notices, setNotices] = useState<WorkbenchNotice[]>([]);
-  const [active, setActiveRaw] = useState<string | null>(null);
+  const scope = JSON.stringify([projectId, agentId, machineId]);
+  const selectionScope = JSON.stringify([scope, selectionKey]);
+  const [loaded, setLoaded] = useState<{
+    scope: string;
+    tabs: WorkbenchTab[];
+    notices: WorkbenchNotice[];
+  } | null>(null);
+  const [selection, setSelection] = useState<{ scope: string; id: string | null } | null>(null);
+  const tabs = loaded?.scope === scope ? loaded.tabs : [];
+  const notices = loaded?.scope === scope ? loaded.notices : [];
+  const active = selection?.scope === selectionScope ? selection.id : initialTab;
+  const setActiveRaw = useCallback(
+    (id: string | null) => setSelection({ scope: selectionScope, id }),
+    [selectionScope],
+  );
 
   // Which Agent the newest request was for. A slow answer for the Agent just left must not
   // land on the one now open: the strip would show its tabs beside another Agent's chat, and
@@ -55,23 +69,27 @@ export function useWorkbenchTabs(
   const refresh = useCallback(async () => {
     const mine = ++asked.current;
     if (projectId === null || agentId === null) {
-      setTabs([]);
-      setNotices([]);
+      setLoaded({ scope, tabs: [], notices: [] });
       return;
     }
     try {
       const res = await api.getWorkbenches(projectId, agentId, machineId);
       if (asked.current !== mine) return;
-      setTabs(workbenchTabsOf(res.workbenches, machineId));
-      setNotices(workbenchNoticesOf(res.workbenches));
+      setLoaded({
+        scope,
+        tabs: workbenchTabsOf(res.workbenches, machineId),
+        notices: workbenchNoticesOf(res.workbenches),
+      });
     } catch {
       // The strip is a convenience over the chat: a failed list leaves it as it was.
     }
-  }, [projectId, agentId, machineId]);
+  }, [projectId, agentId, machineId, scope]);
 
   useEffect(() => {
-    setActiveRaw(null);
     void refresh();
+    return () => {
+      asked.current++;
+    };
   }, [refresh]);
 
   useEffect(() => {
@@ -88,8 +106,8 @@ export function useWorkbenchTabs(
   // frame back over the chat the moment a workbench of the same id reappears — which is what
   // an Agent rewriting its folder (delete, then write) looks like from here.
   useEffect(() => {
-    if (active !== null && settled === null) setActiveRaw(null);
-  }, [active, settled]);
+    if (loaded?.scope === scope && active !== null && settled === null) setActiveRaw(null);
+  }, [active, settled, loaded, scope, setActiveRaw]);
   const activeTab = settled === null ? null : (tabs.find((t) => t.tabId === settled) ?? null);
   return { tabs, notices, active: settled, activeTab, setActive: setActiveRaw, refresh };
 }
@@ -298,11 +316,23 @@ export function WorkbenchFrame({
   // Filling the app: the bar's button, or the page asking for it itself
   // (`parent.postMessage({ type: "penguin:fill-app" }, "*")`) — only from our own frame.
   const navigate = useNavigate();
+  const location = useLocation();
   const paletteShortcut = useShortcutLabel("palette.toggle");
   const fillApp = useCallback(
     () =>
-      void navigate(workbenchAppPath(projectId, agentId, tab.workbenchId, tab.key, tab.machineId)),
-    [navigate, projectId, agentId, tab.workbenchId, tab.key],
+      void navigate(workbenchAppPath(projectId, agentId, tab.workbenchId, tab.key, tab.machineId), {
+        state: { returnTo: location.pathname + location.search },
+      }),
+    [
+      navigate,
+      projectId,
+      agentId,
+      tab.workbenchId,
+      tab.key,
+      tab.machineId,
+      location.pathname,
+      location.search,
+    ],
   );
   useEffect(() => {
     if (bare) return;

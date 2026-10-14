@@ -69,7 +69,8 @@ export interface ScheduleSessionCreatorShape {
      * preset's approval mode would bring.
      */
     approvalMode?: "allow-all";
-    source?: "schedule";
+    source?: "schedule" | "workbench";
+    client?: "workbench";
   }): Promise<{ sessionId: string }>;
 }
 

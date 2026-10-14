@@ -1,7 +1,7 @@
 /**
  * Reading a Session's source (`session_meta.source`) back from a Trace or from a forwarded meta.
  *
- * Every meta written since the source became required carries one of the six values. A Trace
+ * Every meta written since the source became required carries one of the declared values. A Trace
  * kept from before may carry none (it was a person's conversation, or a desk or ticket Session
  * of company mode) or the retired `benchmark` (a Test Session `penguin run --source benchmark`
  * started, which `penguin run` now records as `cli`). Old Traces are never rewritten: each
@@ -24,6 +24,7 @@ const SESSION_SOURCES: ReadonlySet<unknown> = new Set<SessionSource>([
   "subagent",
   "cli",
   "company",
+  "workbench",
 ]);
 
 /** Narrows an untrusted `session_meta.source` to a SessionSource. */

@@ -24,7 +24,8 @@
  *   knows still says it ships with the build instead.
  * - A plugin whose package gives a display name shows it on the card and as the dialog's title
  *   (in the UI language), and the dialog names the package beneath it; without one, the name
- *   stands and no package line is added.
+ *   stands and no package line is added. A module-only plugin uses its registry titles on
+ *   its card, in the dialog and when searching, with the same language fallback.
  * - The dialog lists the package's author and license — a server module's from its index entry —
  *   and links only to what a browser can safely open, in a new tab: an https homepage and a
  *   `git+https://….git` repository link to their pages, a `javascript:` repository is no link,
@@ -76,6 +77,7 @@ import {
 } from "../src/features/plugins/plugin-detail";
 import {
   groupRows,
+  rowMatches,
   type PluginGroupBy,
   type PluginRow,
 } from "../src/features/plugins/plugin-groups";
@@ -484,6 +486,40 @@ describe("a plugin's display name", () => {
     // Without a display name the plugin's name stands, and no package line joins it.
     expect(rowTitle(libraryRow, "en")).toBe("data-analysis");
     expect(sections(libraryRow, { kind: "none" })).not.toContain(LIBRARY.package);
+  });
+});
+
+describe("a module-only plugin's display name", () => {
+  it("uses and searches the registry titles, falling back to English or the package name", () => {
+    const row: PluginRow = {
+      key: "module:@acme/runner",
+      name: "runner",
+      category: "sandbox",
+      module: {
+        specifier: "@acme/runner",
+        state: "none",
+        shipped: true,
+        entry: {
+          name: "@acme/runner",
+          version: "1",
+          description: "",
+          authors: [],
+          license: "MIT",
+          title: "Task runner",
+          titleZh: "任务执行器",
+        },
+      },
+    };
+    expect(text(card(row, false))).toContain("Task runner");
+    expect(rowTitle(row, "zh")).toBe("任务执行器");
+    expect(rowMatches(row, "TASK RUNNER")).toBe(true);
+    expect(rowMatches(row, "任务执行器")).toBe(true);
+    delete row.module!.entry!.titleZh;
+    expect(rowTitle(row, "zh")).toBe("Task runner");
+    delete row.module!.entry!.title;
+    expect(rowTitle(row, "en")).toBe("runner");
+    row.module!.entry = undefined;
+    expect(rowTitle(row, "zh")).toBe("runner");
   });
 });
 

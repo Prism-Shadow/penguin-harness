@@ -731,6 +731,7 @@ router
       kernelOutdated: false,
       vaultKeyCount: 0,
       scheduleCount: 0,
+      workbenchCount: 0,
       skillCount: 0,
       hookCount: 0,
       pluginUpdates: [],

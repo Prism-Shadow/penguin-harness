@@ -244,6 +244,8 @@ export function rowMatches(row: PluginRow, query: string): boolean {
     plugin?.shortDescription,
     plugin?.shortDescriptionZh,
     row.module?.specifier,
+    entry?.title,
+    entry?.titleZh,
     entry?.description,
     entry?.descriptionZh,
     entry?.shortDescription,

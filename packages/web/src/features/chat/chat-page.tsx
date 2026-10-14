@@ -481,7 +481,32 @@ export function ChatPage() {
    * is never in it, so going by the current Agent alone left that conversation on the
    * placeholder for good, with nothing to say why.
    */
-  const pageAgentId = selected?.agentId ?? agentId;
+  const draftOwnerKey = `${projectId}:${parkedDraftId ?? location.key}`;
+  const [draftOwner, setDraftOwner] = useState<{
+    key: string;
+    agentId: string | null;
+    machineId: string | null;
+  } | null>(null);
+  const onDraftAgent = useCallback(
+    (agentId: string | null, machineId: string | null) => {
+      setDraftOwner({ key: draftOwnerKey, agentId, machineId });
+    },
+    [draftOwnerKey],
+  );
+  const resolvedDraftOwner = draftOwner?.key === draftOwnerKey ? draftOwner : null;
+  const pageAgentId = draft
+    ? (resolvedDraftOwner?.agentId ?? null)
+    : (selected?.agentId ?? agentId);
+  const pageMachineId = draft
+    ? (resolvedDraftOwner?.machineId ?? null)
+    : selected === null
+      ? null
+      : machineForSession(selected.sessionId);
+  const returnWorkbench = (
+    location.state as {
+      workbench?: { projectId: string; agentId: string; tabId: string; machineId: string | null };
+    } | null
+  )?.workbench;
   // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
   // workbenches live on: a Session on a machine runs a copy of the Agent there, and the workbenches
   // it built are in that copy. The current Agent is always one of this server's, so going by
@@ -489,7 +514,13 @@ export function ChatPage() {
   const workbenchTabs = useWorkbenchTabs(
     projectId,
     pageAgentId,
-    selected === null ? null : machineForSession(selected.sessionId),
+    pageMachineId,
+    location.key,
+    returnWorkbench?.projectId === projectId &&
+      returnWorkbench.agentId === pageAgentId &&
+      returnWorkbench.machineId === pageMachineId
+      ? returnWorkbench.tabId
+      : null,
   );
   // New shells start in this conversation's Workspace — its files are what a terminal
   // opened here is for. While drafting, the Workspace is the one picked in the draft and
@@ -2070,7 +2101,7 @@ export function ChatPage() {
     prefillComposer,
   };
 
-  if (!projectId || !pageAgentId) {
+  if (!projectId || (!draft && !pageAgentId)) {
     return (
       <div className="p-6">
         <Skeleton className="h-6 w-64" />
@@ -2571,6 +2602,7 @@ export function ChatPage() {
                   {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
                   composerRef={composerRef}
                   onWorkspaceChange={onDraftWorkspace}
+                  onAgentChange={onDraftAgent}
                 />
               ) : (
                 // Keyed by Session: the whole block does a light fade-in when switching sessions.

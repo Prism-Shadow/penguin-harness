@@ -327,6 +327,23 @@ $("new").onclick = () => {
   $("create").elements.text.focus();
 };
 $("close").onclick = $("cancel").onclick = () => dialog.close();
+const outsideDialog = (event) => {
+  const box = dialog.getBoundingClientRect();
+  return (
+    event.clientX < box.left ||
+    event.clientX > box.right ||
+    event.clientY < box.top ||
+    event.clientY > box.bottom
+  );
+};
+let pressedBackdrop = false;
+dialog.addEventListener("pointerdown", (event) => {
+  pressedBackdrop = event.target === dialog && outsideDialog(event);
+});
+dialog.addEventListener("click", (event) => {
+  if (pressedBackdrop && event.target === dialog && outsideDialog(event)) dialog.close();
+  pressedBackdrop = false;
+});
 dialog.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   event.preventDefault();

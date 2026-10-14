@@ -344,7 +344,8 @@ export function AgentsPage() {
    */
   const openSettingsTab = (
     agentId: string,
-    tab: "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "memory",
+    tab:
+      "overview" | "tools" | "vault" | "schedules" | "skills" | "hooks" | "workbenches" | "memory",
   ) => {
     setCurrentAgentId(agentId);
     navigate(`/agents/${agentId}?tab=${tab}`);
@@ -542,6 +543,17 @@ export function AgentsPage() {
             >
               <GlyphIcon d={ICONS.fishHook} size={ICON_SIZE.inlineGlyph} />
               {a.hookCount}
+            </button>
+            <button
+              type="button"
+              className={STAT_LINK_CLASS}
+              disabled={elsewhere}
+              data-tooltip={S.workbenches.count(a.workbenchCount ?? 0)}
+              aria-label={S.workbenches.count(a.workbenchCount ?? 0)}
+              onClick={() => openSettingsTab(a.agentId, "workbenches")}
+            >
+              <GlyphIcon d={ICONS.appWindow} size={ICON_SIZE.inlineGlyph} />
+              {a.workbenchCount ?? 0}
             </button>
             <button
               type="button"

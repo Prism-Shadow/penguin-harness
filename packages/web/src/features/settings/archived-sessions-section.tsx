@@ -65,7 +65,7 @@ import type {
 const SEARCH_DEBOUNCE_MS = 250;
 
 /** The source filter's choices, in the order the menu lists them. */
-const SOURCES = ["user", "api", "schedule", "cli"] as const;
+const SOURCES = ["user", "api", "schedule", "cli", "workbench"] as const;
 
 /** A delete waiting for its confirm: what it removes, and how many. */
 interface PendingDelete {

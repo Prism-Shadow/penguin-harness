@@ -1094,6 +1094,14 @@ export const zh = {
     hint: (mod: string): string => `←→ 切换分组与列表 · ${mod}1–9 跳到分组`,
   },
   workbenches: {
+    title: "工作台",
+    count: (n: number) => `${n} 个工作台`,
+    empty: "这个 Agent 还没有工作台。",
+    browsePlugins: "浏览插件",
+    open: "打开工作台",
+    noMatches: "没有匹配的智能体。",
+    searchAgents: "搜索智能体",
+
     tabsLabel: "聊天与工作台",
     chatTab: "聊天",
     brokenMark: "当前文件加载失败",
@@ -1118,11 +1126,11 @@ export const zh = {
       palette === null
         ? "让这个页面占满整个应用；打开命令面板可退出"
         : `让这个页面占满整个应用；${palette} 打开命令面板可退出`,
-    exitFullPage: "退出全页模式（回到聊天）",
+    exitFullPage: "退出全页模式（回到工作台）",
     exitFullPageButton: "退出全屏",
     retryHistory: "重试",
     exitHint: (palette: string | null): string =>
-      palette === null ? "打开命令面板可回到聊天。" : `按 ${palette} 打开命令面板可回到聊天。`,
+      palette === null ? "打开命令面板可回到工作台。" : `按 ${palette} 打开命令面板可回到工作台。`,
     noSuchPage: "这个工作台不存在或没有页面。",
     removeConfirm: "删除这个工作台及其全部已记录版本？",
     removeYes: "确认移除",
@@ -1755,6 +1763,7 @@ export const zh = {
     tabRuntime: "运行参数",
     tabTools: "工具",
     tabSkills: "技能",
+    tabWorkbenches: "工作台",
     tabHooks: "钩子",
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
@@ -4217,6 +4226,7 @@ Benchmark：
       api: "API",
       schedule: "定时任务",
       cli: "CLI",
+      workbench: "工作台",
     },
     /** An archived conversation opened by its URL: what the stub in place of the transcript says. */
     archivedStub: {

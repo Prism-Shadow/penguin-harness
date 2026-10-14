@@ -1,7 +1,7 @@
 ---
 name: penguin-plugin
 description: Use for workbenches — the tabs and pages beside the chat, with server code behind them, that an Agent keeps in its own `workbenches/` folder inside PenguinHarness — building one, changing it, showing it as the whole app, restoring an earlier version, and removing a tab or a whole workbench when the user wants the custom UI gone.
-version: 2026.10.14.1
+version: 2026.10.14.2
 ---
 
 # Agent Workbench with Penguin Plugins
@@ -112,6 +112,42 @@ export default {
 } satisfies WorkbenchPackage;
 ```
 
+## Design the interaction before writing the UI
+
+Treat the workbench as an application people return to. Before coding, choose its main list,
+its item detail, and how a person creates and revisits an item. Use that structure even when the
+request only says “build a Q&A app”. Do not turn independent conversations into one ever-growing
+page of complete answers.
+
+- For questions, requests and jobs, start with a compact, centered list of titles, statuses and
+  update times. Open one item's conversation in a dialog or detail panel. Keep follow-up messages
+  within that item's Session. Add search or pagination when a growing list needs it; long replies
+  scroll inside the detail view instead of stretching the main page.
+- A new-question dialog asks for the question only. Derive its title from
+  `host.sessionTitle(sessionId)` once available, with a short question preview while waiting.
+  Do not ask people to type both a title and the same question. Keep drafts when they dismiss and
+  reopen the dialog. Persist the list and its Session IDs with `host.setState`.
+- Dialogs need an obvious close button, Escape, and dismissal by clicking the surrounding blank
+  backdrop. Only dismiss when the pointer starts and ends outside the dialog; dragging selected
+  text out of it must not close it. Trap focus while open and restore focus to the opener on close.
+  Native `<dialog>.showModal()` provides the keyboard and focus foundation, but implement and test
+  backdrop dismissal yourself.
+- Show submission and generation progress immediately, prevent duplicate submits, and keep a
+  retry path for failures. For a long task, show elapsed time and optionally a clearly approximate
+  remaining-time estimate; if the estimate runs out, say it is still processing instead of claiming
+  completion. Preserve the question on failure. Do not hide useful actions behind an indefinite
+  loading screen.
+- Keep the code small: separate UI, styles and handler logic, reuse the host's theme variables,
+  and prefer native controls before adding dependencies. Use real empty, loading and error states;
+  never leave blank alert boxes or display internal errors as a successful answer.
+
+Verify the interaction, not just compilation: create **two independent items**, follow up in one,
+close it by the backdrop and Escape, reopen each, and reload the page. Confirm the items remain
+separate, saved answers return, drafts survive dismissal, and a long answer does not push the list
+far down the page. Also check a narrow viewport, dark mode, keyboard focus and the way back from
+full-app mode. Use a real browser when available; report any interaction you could not run. A
+successful TypeScript load alone is not UI/UX validation.
+
 ## TypeScript, checked by the server
 
 There is no build step to run, no `tsconfig.json` to write and nothing to `npm install`: the server builds one program from `index.ts` (and the `.ts` files it imports, with `.js` in the import specifier as NodeNext asks) under options it fixes itself — `strict` among them — refuses the load on any diagnostic, reporting file, line and reason, and otherwise emits into `.build/<revision>/` and imports that. `satisfies WorkbenchPackage` is what types `use.host` and `req`; without it `strict` refuses the untyped parameters. A folder holding `index.js` or `index.mjs` instead is refused outright.
@@ -126,7 +162,7 @@ Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (uniq
 
 ## The host
 
-`WorkbenchHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workbench's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`; `run(sessionId, [{ text: "…" }])` — the SDK's `session.run`, its input items spelled out because a workbench has no package to import `userText` from — runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `await sessionResult(sessionId)` returns a snapshot of the latest task (see *Background jobs*); `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workbench`, with their own `requires` between them — the tree is checked as a whole.
+`WorkbenchHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workbench's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`. These Sessions carry source `workbench` and are automatically archived from the main chat sidebar; your list still reads and runs them through the host. `sessionTitle(sessionId)` returns the current generated title (or `null` before one exists); `run(sessionId, [{ text: "…" }])` — the SDK's `session.run`, its input items spelled out because a workbench has no package to import `userText` from — runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `await sessionResult(sessionId)` returns a snapshot of the latest task (see *Background jobs*); `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workbench`, with their own `requires` between them — the tree is checked as a whole.
 
 ## HTTP
 
@@ -153,4 +189,4 @@ Keep empty alerts hidden. A component rule such as `.notice { display: flex }` o
 
 ## Filling the app
 
-A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workbench>[/<tab key>]` (the workbench's first tab when no key is given): the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workbench>[/<tab key>]` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The way back is the command palette, whose *Exit full page* lands on that Agent's chat. Its chord is Ctrl+Alt+P (⌥⌘P on macOS) unless the user rebound it under Settings › Keyboard shortcuts. A key pressed inside the page reaches the app only when the page has not handled it, so a page must never `preventDefault` that chord: on this route it is the only way out.
+A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workbench>[/<tab key>]` (the workbench's first tab when no key is given): the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workbench>[/<tab key>]` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The floating *Exit full screen* button returns to the same Agent and workbench tab. The command palette also offers *Exit full page*. Its chord is Ctrl+Alt+P (⌥⌘P on macOS) unless the user rebound it under Settings › Keyboard shortcuts. A key pressed inside the page reaches the app only when the page has not handled it, so a page must not intercept that chord.

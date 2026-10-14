@@ -6,12 +6,12 @@
  * `penguin web --app …` opens and what a tab's "fill the app" action navigates to. There is
  * a floating exit control and the command palette (the `palette.toggle` chord, re-raised
  * from inside the page by forwardFrameKeys) both offer "Exit full page", which lands
- * on the chat of that same Agent. The route sits outside the app shell (no ProjectProvider), so the exit
+ * on the same Agent’s workbench tab. The route sits outside the app shell (no ProjectProvider), so the exit
  * remembers the Project and Agent the way the shell does — its localStorage keys — before
  * navigating.
  */
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { Button, type PaletteAction } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
@@ -36,6 +36,8 @@ export function WorkbenchAppPage() {
   // A workbench of an Agent that lives on a machine is asked of that machine (`?machine=<id>`).
   const machineId = useSearchParams()[0].get("machine");
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const [tab, setTab] = useState<WorkbenchTab | null | undefined>(undefined);
   const [failure, setFailure] = useState<string | null>(null);
   const paletteShortcut = useShortcutLabel("palette.toggle");
@@ -83,11 +85,26 @@ export function WorkbenchAppPage() {
         keywords: ["exit", "leave", "chat", "full page", "app"],
         run: () => {
           rememberSelection(projectId, agentId);
-          void navigate("/chat");
+          const destination =
+            typeof returnTo === "string" && /^\/chat(?:\/[^/?#]+)?(?:\?[^#]*)?$/.test(returnTo)
+              ? returnTo
+              : "/chat/new";
+          void navigate(destination, {
+            state: {
+              agentId,
+              ...(!returnTo ? { workspace: "", ...(machineId ? { machineId } : {}) } : {}),
+              workbench: {
+                projectId,
+                agentId,
+                tabId: tab?.tabId ?? `${workbenchId}/${tabKey ?? "main"}`,
+                machineId,
+              },
+            },
+          });
         },
       },
     ],
-    [projectId, agentId, navigate],
+    [projectId, agentId, navigate, returnTo, tab?.tabId, workbenchId, tabKey, machineId],
   );
 
   return (

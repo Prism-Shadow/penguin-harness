@@ -754,7 +754,7 @@ export class SessionService {
      * are the only callers that pass them, so no request can claim either provenance for
      * itself ("api" is what lets the Agent API continue a Session).
      */
-    client?: "web" | "cli" | "org" | "api";
+    client?: "web" | "cli" | "org" | "api" | "workbench";
   }): Promise<SessionInfo> {
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(

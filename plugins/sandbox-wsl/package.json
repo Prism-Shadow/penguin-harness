@@ -58,7 +58,7 @@
     "category": "sandbox",
     "icon": "icon.svg",
     "preinstall": false,
-    "title": "WSL Sandbox",
-    "title_zh": "WSL 沙箱"
+    "title": "Windows Sandbox",
+    "title_zh": "Windows 沙箱"
   }
 }

@@ -56,7 +56,7 @@
     "category": "sandbox",
     "icon": "icon.svg",
     "preinstall": false,
-    "title": "Seatbelt Sandbox",
-    "title_zh": "Seatbelt 沙箱"
+    "title": "macOS Sandbox",
+    "title_zh": "macOS 沙箱"
   }
 }

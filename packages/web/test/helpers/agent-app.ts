@@ -31,6 +31,8 @@ import type {
   McpServerTestResponse,
   ScheduleItem,
   SessionsBatchRequest,
+  WorkbenchInfo,
+  WorkbenchVersion,
   VaultEntryInfo,
   VaultUpdateRequest,
 } from "@prismshadow/penguin-server/api";
@@ -155,6 +157,8 @@ export function agentServer(
     models?: ModelsResponse;
     directory?: DirListResponse;
     chatDefaults?: ChatDefaultsDto;
+    workbenches?: WorkbenchInfo[];
+    workbenchVersions?: WorkbenchVersion[];
   } = {},
 ): AgentServer {
   let apiSettings: AgentApiSettings = {
@@ -168,6 +172,7 @@ export function agentServer(
     workspace: null,
   };
   let stored = initial;
+  let workbenches = [...(options.workbenches ?? [])];
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
   let schedules: ScheduleItem[] = [];
   let refusal: { status: number; code: string; message: string } | null = null;
@@ -198,6 +203,7 @@ export function agentServer(
     scheduleCount: schedules.length,
     skillCount: 0,
     hookCount: 0,
+    workbenchCount: workbenches.length,
   });
 
   const answer = (request: FetchRequest): Response => {
@@ -238,6 +244,20 @@ export function agentServer(
     if (method !== "GET") {
       const refusedWrite = refused();
       if (refusedWrite !== null) return refusedWrite;
+    }
+    if (path === `${AGENT_PATH}/workbenches`) return json({ workbenches });
+    if (path.startsWith(`${AGENT_PATH}/workbenches/`)) {
+      const [id, action] = path.slice(`${AGENT_PATH}/workbenches/`.length).split("/");
+      const workbench = workbenches.find((item) => item.id === id);
+      if (!workbench) return apiError(404, "workbench_not_found");
+      if (method === "DELETE") {
+        workbenches = workbenches.filter((item) => item.id !== id);
+        return new Response(null, { status: 204 });
+      }
+      if (action === "history") return json({ versions: options.workbenchVersions ?? [] });
+      if (action === "rollback")
+        workbench.revision = (request.body as { revision: string }).revision;
+      return json({ workbench });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "POST") {
       const body = request.body as { agentId: string; name?: string };
