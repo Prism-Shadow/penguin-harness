@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** process
 - **Scope:** `ci`
+- **PR:** [#1136](https://github.com/Prism-Shadow/penguin-harness/pull/1136)
 
 [English](2026-10-14-readme-ci-scope.md)
 
