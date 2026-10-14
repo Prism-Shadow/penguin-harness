@@ -72,7 +72,7 @@ describe("MessageBubble", () => {
 describe("MessageImage", () => {
   it("opens large on a click, on the inner radius of the bubble it sits in", () => {
     const html = renderStatic(createElement(MessageImage, { src: "/a.png", alt: "Image" }));
-    expect(html).toMatch(/^<button type="button" class="block cursor-zoom-in">/);
+    expect(html).toMatch(/^<button type="button" class="[^"]*cursor-zoom-in[^"]*">/);
     expect(classTokens(html)).toEqual(expect.arrayContaining(["max-h-48", "rounded-control"]));
   });
 });

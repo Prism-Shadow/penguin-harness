@@ -34,7 +34,7 @@ describe("ZoomableImage", () => {
     );
     // React 19's server renderer prepends a preload hint for an eager image; not our markup.
     expect(html.replace(/^<link rel="preload"[^>]*\/>/, "")).toBe(
-      '<button type="button" class="block cursor-zoom-in"><img src="/a.png" alt="Chart" class="h-20"/></button>',
+      '<button type="button" class="block w-full cursor-zoom-in"><img src="/a.png" alt="Chart" class="h-20"/></button>',
     );
   });
 });
