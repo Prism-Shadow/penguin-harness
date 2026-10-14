@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** fix
 - **Scope:** `landing`, `docs`
+- **PR:** [#1132](https://github.com/Prism-Shadow/penguin-harness/pull/1132)
 
 [中文版](2026-10-14-public-copy-formatting.zh.md)
 
