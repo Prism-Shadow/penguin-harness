@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** process
 - **Scope:** `web`, `ci`
+- **PR:** [#1129](https://github.com/Prism-Shadow/penguin-harness/pull/1129)
 
 [中文版](2026-10-14-source-scan-timeouts.zh.md)
 
