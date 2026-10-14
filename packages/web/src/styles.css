@@ -105,6 +105,52 @@
   }
 }
 
+/* Wallpaper sits below the shell without making its columns stacking contexts. Only the
+   page canvas gives way: editors, menus, dialogs and docks retain their readable surfaces. */
+:root[data-custom-background] .ui-shell,
+:root[data-custom-background] .ui-shell > [data-slot="main"],
+:root[data-custom-background] .ui-shell [data-dock-host] {
+  background-color: transparent;
+}
+:root[data-custom-background] .ui-shell > [data-slot="nav"],
+:root[data-custom-background] .ui-shell > [data-slot="main"] > header {
+  position: relative;
+  background-color: transparent;
+}
+/* Blur the wallpaper on a separate layer: filtering the navigation column itself would
+   trap its menus in a stacking context and change the containing block of fixed overlays. */
+:root[data-custom-background] .ui-shell > [data-slot="nav"]::before,
+:root[data-custom-background] .ui-shell > [data-slot="main"] > header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: color-mix(in srgb, var(--ui-surface-muted) 65%, transparent);
+  -webkit-backdrop-filter: blur(16px); /* deslop-ignore 19: chosen wallpaper behind navigation. */
+  backdrop-filter: blur(16px); /* deslop-ignore 19: chosen wallpaper behind navigation. */
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-custom-background] .ui-shell > [data-slot="nav"]::before,
+  :root[data-custom-background] .ui-shell > [data-slot="main"] > header::before {
+    background-color: var(--ui-surface-muted);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+:root[data-custom-background] .ui-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--app-background-image);
+  background-size: var(--app-background-size);
+  background-repeat: var(--app-background-repeat);
+  background-position: var(--app-background-position);
+  opacity: var(--app-background-opacity);
+}
+
 /* ---------- Animations (160-280ms ease, slight entrance offset + subtle scale) ---------- */
 
 @keyframes rise-in {

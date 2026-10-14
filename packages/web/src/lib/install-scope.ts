@@ -91,6 +91,18 @@ export const KEY_RULES: readonly KeyRule[] = [
   // ---------------------------------------------------------------- browser preferences
   {
     kind: "exact",
+    key: "penguin.background.image",
+    scope: "browser",
+    why: "Local wallpaper image; appearance only, with no reference to a server file.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.background.settings",
+    scope: "browser",
+    why: "Wallpaper transparency, display mode and alignment for this browser.",
+  },
+  {
+    kind: "exact",
     key: "penguin.theme",
     scope: "browser",
     why: "Colour-scheme choice for this browser; names nothing on the server.",

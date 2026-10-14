@@ -43,6 +43,7 @@ import type {
   ThemeMode,
 } from "../../state/theme";
 import { FONT_FOLLOWS_THEME, effectiveAccent } from "../../state/theme-prefs";
+import { BackgroundControls } from "./background-controls";
 
 /**
  * A font select's choices: the theme's own face first — it is the default, and the named faces
@@ -193,6 +194,7 @@ export function AppearanceSection() {
           onChange={setAccent}
         />
       </PrefRow>
+      <BackgroundControls />
       <PrefRow label={S.settings.fontSize} info={S.settings.fontSizeInfo}>
         <Segmented options={textSizeOptions} value={textSize} onChange={setTextSize} cols={5} />
       </PrefRow>

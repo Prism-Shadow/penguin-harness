@@ -170,6 +170,7 @@ const DIALOG_BODY_MODULES = new Set([
   "features/settings/archived-sessions-section.tsx",
   "features/settings/profile-section.tsx",
   "features/settings/appearance-section.tsx",
+  "features/settings/background-controls.tsx",
   "features/settings/browser-section.tsx",
   "features/settings/chrome-extension-section.tsx",
   "features/settings/general-section.tsx",
