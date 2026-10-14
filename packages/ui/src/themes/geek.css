@@ -156,7 +156,7 @@
     /* Charts: terminal hues in the roles (indigo, ochre, cobalt, crimson, phosphor, magenta,
        cyan, orange — the presets' own hues, deep enough for paper), the reference curve in the
        muted ink, the token-kind blues, and a plotter's geometry — thin solid bars with square
-       tops outlined 1px in the ink, 1px lines stepped between points, small square points, next
+       tops outlined 1px in the ink, 1px lines directly connecting points, small square points, next
        to no fill under a line. */
     --ui-chart-1: #5b3fd6;
     --ui-chart-2: #a87d00;
@@ -176,7 +176,7 @@
     --ui-chart-bar-radius: 0px;
     --ui-chart-line-width: 1px;
     --ui-chart-point-radius: 2px;
-    --ui-chart-curve: step;
+    --ui-chart-curve: linear;
     --ui-chart-area-opacity: 0.06;
     --ui-chart-bar-stroke: 1px;
     --ui-chart-bar-stroke-color: var(--ui-fg);

@@ -24,8 +24,8 @@ import { baseName } from "./workspace-finder-model";
  */
 export const pillClass =
   "flex max-w-64 items-center gap-1.5 rounded-[var(--ui-radius-pill)] border border-line-emphasis " +
-  "bg-surface py-1 pl-1.5 pr-2 text-xs text-fg-muted transition-colors duration-150 " +
-  "hover:bg-surface-muted hover:text-fg";
+  "bg-control py-1 pl-1.5 pr-2 text-xs text-fg-muted transition-colors duration-150 " +
+  "hover:bg-control-hover hover:text-fg";
 
 /**
  * Workspace selection: the trigger shows the selected directory's name (empty = a temporary

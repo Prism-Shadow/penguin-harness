@@ -73,7 +73,7 @@ describe("DockTabs", () => {
     const html = render();
     expect(html.match(/bg-tone-attention-emphasis/g)).toHaveLength(1);
     expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["bg-line-muted", "text-fg-muted", "text-fg-subtle"]),
+      expect.arrayContaining(["bg-control-selected", "text-fg-muted", "text-fg-subtle"]),
     );
   });
 });

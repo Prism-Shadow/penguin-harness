@@ -253,6 +253,7 @@ jobs:
       - name: Assemble penguin/ (lib + web + bin + plugins)
         run: |
           pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"
+          rm -f out/penguin/lib/pnpm-workspace.yaml
           cp -r packages/web/dist out/penguin/web
           install -D -m 755 scripts/launchers/penguin out/penguin/bin/penguin
           node scripts/build-plugins.mjs --out out/penguin/lib/plugins

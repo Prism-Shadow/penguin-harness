@@ -20,6 +20,7 @@
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  WallpaperSurface,
   Button,
   Dropdown,
   EmptyState,
@@ -149,7 +150,7 @@ export function ChromeSurface({ state, active }: { state: BrowserState; active: 
           onNew={() => void openBrowserTab()}
         />
       )}
-      <div className="flex shrink-0 items-center gap-1 border-b border-line bg-canvas px-2 py-1">
+      <WallpaperSurface className="flex shrink-0 items-center gap-1 border-b border-line bg-canvas px-2 py-1">
         {connected ? (
           // Keyed by tab: switching tabs drops a half-typed address instead of carrying it over.
           <AddressBar
@@ -190,7 +191,7 @@ export function ChromeSurface({ state, active }: { state: BrowserState; active: 
             )}
           </Menu>
         </Dropdown>
-      </div>
+      </WallpaperSurface>
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         {body}
         {ringShown && (

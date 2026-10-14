@@ -14,6 +14,7 @@
 import { useState } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import {
+  WallpaperSurface,
   CloseIcon,
   Dot,
   GlyphIcon,
@@ -87,7 +88,7 @@ export function BrowserTabStrip({
   onNew: () => void;
 }) {
   return (
-    <div className="flex shrink-0 items-end gap-1 bg-surface-muted px-1.5 pt-1.5">
+    <WallpaperSurface className="flex shrink-0 items-end gap-1 bg-surface-muted px-1.5 pt-1.5">
       <div
         role="tablist"
         aria-label={S.builtinBrowser.tabs}
@@ -115,6 +116,7 @@ export function BrowserTabStrip({
               data-testid="builtin-browser-tab"
               data-tab-id={tab.id}
               data-active={active}
+              data-wallpaper-surface={active ? "panel" : undefined}
               className={`flex h-7 w-48 min-w-20 items-center rounded-t-md pr-1 transition-colors duration-150 ${
                 active ? "bg-canvas text-fg" : "text-fg-muted hover:bg-line-muted hover:text-fg"
               }`}
@@ -169,6 +171,6 @@ export function BrowserTabStrip({
       >
         <PlusIcon size={ICON_SIZE.rowLead} />
       </button>
-    </div>
+    </WallpaperSurface>
   );
 }

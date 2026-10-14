@@ -11,8 +11,8 @@
  * The card carries the `ui-frame` hook, so a theme can redraw the box — Console squares it off,
  * Frost softens the line — without a call site knowing. A flush card's header strip is the
  * frame's `head` slot, which a theme may rule or unfill; a padded card's title row sits inside
- * the padding, not across the frame, and is no slot. One card per region: a card never sits in
- * another card; a table inside one is a bare `Table` (`framed={false}`).
+ * the padding, not across the frame, and is no slot. One painted card per region: an item inside a grouped card uses `framed={false}`; a table inside one is a bare `Table` (`framed={false}`). Its panel surface takes
+ * the shell's wallpaper tint automatically; a card inside a dialog keeps its normal fill.
  */
 import { createContext, useContext } from "react";
 import type { HTMLAttributes, ReactNode } from "react";
@@ -35,12 +35,18 @@ export interface CardProps extends HTMLAttributes<HTMLElement> {
   as?: "div" | "section" | "article" | "li";
   /** `sm` (the default) and `md` pad the content; `none` lets rows run edge to edge. */
   padding?: CardPadding;
+  /** False for an item inside a grouped card: its parent owns the surface and border. */
+  framed?: boolean;
+  /** The body opens a detail view; its border deepens on hover without a second fill. */
+  interactive?: boolean;
   children?: ReactNode;
 }
 
 export function Card({
   as: Tag = "div",
   padding = "sm",
+  interactive = false,
+  framed = true,
   className = "",
   children,
   ...rest
@@ -49,7 +55,8 @@ export function Card({
     <CardPaddingContext.Provider value={padding}>
       <Tag
         {...rest}
-        className={`ui-frame min-w-0 rounded-md border border-line bg-surface ${PADDING[padding]} ${className}`}
+        className={`${framed ? "ui-frame " : ""}min-w-0 rounded-md ${framed ? "border border-line bg-surface" : ""} ${PADDING[padding]} ${interactive ? `cursor-pointer transition-colors duration-150 ${framed ? "hover:!border-line-emphasis" : "hover:bg-control-hover"}` : ""} ${className}`}
+        data-wallpaper-surface={framed ? "panel" : undefined}
       >
         {children}
       </Tag>

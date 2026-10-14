@@ -13,6 +13,7 @@ import { useState } from "react";
 import type { ReactNode, Ref } from "react";
 import type { BuiltinBrowserTab } from "@prismshadow/penguin-server/api";
 import {
+  WallpaperSurface,
   CloseIcon,
   Dropdown,
   GlyphIcon,
@@ -118,7 +119,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-1 border-b border-line bg-canvas px-2 py-1">
+    <WallpaperSurface className="flex shrink-0 items-center gap-1 border-b border-line bg-canvas px-2 py-1">
       <ToolButton
         label={S.builtinBrowser.back}
         disabled={tab?.canGoBack !== true}
@@ -221,6 +222,6 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
           )}
         </Menu>
       </Dropdown>
-    </div>
+    </WallpaperSurface>
   );
 }

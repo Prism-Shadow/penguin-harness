@@ -4,8 +4,8 @@
  *   user config), or the rail while it is folded, beside the page;
  * - <md: the phone's top bar (the drawer button + the product's name) above the page, and the
  *   sidebar in a drawer.
- * The shell's chrome uses solid fills and makes no stacking context (a frosted glass or a
- * transform would trap the menus it opens); the package's components say how.
+ * The shell owns the wallpaper and navigation's separate glass layer, so the columns make no
+ * stacking context that could trap their menus.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useMatch, useNavigate } from "react-router";
@@ -32,6 +32,7 @@ import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navKeysFor } from "../../lib/nav-group-collapse";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
+import { backgroundStyle, useBackground } from "../../state/background";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -411,8 +412,14 @@ export function AppLayout() {
     };
   }, [collapsed, inCompany, newChat]);
 
+  const background = useBackground();
   return (
     <AppShell
+      background={
+        background.image === null
+          ? undefined
+          : backgroundStyle(background.image, background.settings)
+      }
       navCollapsed={collapsed}
       nav={
         collapsed ? (

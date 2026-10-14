@@ -70,6 +70,7 @@ import type {
 import {
   Badge,
   Button,
+  Card,
   Checkbox,
   Chevron,
   ChevronFlip,
@@ -97,6 +98,7 @@ import {
   Spinner,
   Switch,
   TodoNotice,
+  WallpaperSurface,
   buttonClass,
   setDragPreview,
   toastError,
@@ -1524,7 +1526,7 @@ export function ModelsPage() {
             }`}
           />
         )}
-        <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <WallpaperSurface className="overflow-hidden rounded-md border border-line bg-surface">
           {/* Group header: collapse button (logo + vendor name + count + chevron) +
               the group's actions on the right, in group-header.ts's order. Actions are
               separate elements because buttons can't nest. The row is a size
@@ -1541,7 +1543,7 @@ export function ModelsPage() {
               shows on. */}
           <div
             {...drag.header}
-            className={`group @container flex flex-wrap items-center gap-x-2 bg-gray-50 pr-1.5 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60${canDrag && !searching ? " cursor-grab" : ""}`}
+            className={`group @container flex flex-wrap items-center gap-x-2 bg-control-well pr-1.5 transition-colors duration-150 hover:bg-control-hover${canDrag && !searching ? " cursor-grab" : ""}`}
           >
             {/* The left cluster: the collapse button, sized to what it shows, the star right
                   after it, and the rest of the cluster, which folds the group on a click as the
@@ -1691,7 +1693,7 @@ export function ModelsPage() {
               </div>
             </div>
           </div>
-        </section>
+        </WallpaperSurface>
       </div>
     );
   };
@@ -2571,9 +2573,11 @@ export function ModelCard({
     // carries an action of its own, and buttons cannot nest (the group header solves the same
     // problem the same way). A click on the rest of the box opens the dialog too
     // (lib/card-open.ts). overflow-hidden lets the warning strip fill the rounded corners.
-    <div
+    <Card
+      padding="none"
+      interactive
       onClick={cardBodyClick(onOpen)}
-      className="flex w-full cursor-pointer flex-col overflow-hidden rounded-md border border-gray-200 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/40"
+      className="flex w-full flex-col"
     >
       <button
         type="button"
@@ -2649,7 +2653,7 @@ export function ModelCard({
           )}
         </NoticeStrip>
       )}
-    </div>
+    </Card>
   );
 }
 

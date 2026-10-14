@@ -30,6 +30,7 @@ import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/peng
 import {
   AgentAvatar,
   Button,
+  Card,
   ConfirmModal,
   GlyphIcon,
   ICONS,
@@ -41,6 +42,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { cardBodyClick } from "../../lib/card-open";
 import { apiErrorText } from "../../lib/api-error";
 import { downloadArchive } from "../agents/archive-download";
 import { useLocale } from "../../state/locale";
@@ -98,6 +100,8 @@ export function pluginArchiveUrl(row: PluginRow): string | null {
 }
 
 export interface PluginCardProps {
+  /** The surrounding group owns the card surface when false. */
+  framed?: boolean;
   row: PluginRow;
   status: PluginStatus;
   /** The Agents its Skills and hooks are on; null for a server module alone. */
@@ -375,7 +379,13 @@ export function PluginCard(props: PluginCardProps) {
     );
   }
   return (
-    <div className="@container flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+    <Card
+      padding="md"
+      framed={props.framed}
+      interactive
+      onClick={cardBodyClick(() => setDetailOpen(true))}
+      className="@container flex items-center gap-3"
+    >
       <button
         type="button"
         onClick={() => setDetailOpen(true)}
@@ -624,7 +634,7 @@ export function PluginCard(props: PluginCardProps) {
           onSaved={() => props.onMcpChanged(setUpAgent)}
         />
       )}
-    </div>
+    </Card>
   );
 }
 

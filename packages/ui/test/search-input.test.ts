@@ -65,7 +65,7 @@ describe("SearchInput", () => {
 
   it("takes the shape of its container", () => {
     const field = classTokens(search());
-    expect(field).toEqual(expect.arrayContaining(["border-line-emphasis", "bg-surface", "py-1"]));
+    expect(field).toEqual(expect.arrayContaining(["border-line-emphasis", "bg-control", "py-1"]));
     const panel = classTokens(search({ variant: "panel" }));
     expect(panel).toEqual(expect.arrayContaining(["border-line", "bg-transparent"]));
     expect(panel).not.toContain("border-line-emphasis");

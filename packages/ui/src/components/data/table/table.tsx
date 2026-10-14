@@ -75,6 +75,7 @@ export function Table({
             ? "ui-frame overflow-x-auto overflow-y-clip rounded-md border border-line bg-surface"
             : "overflow-x-auto"
         } ${className}`}
+        data-wallpaper-surface={framed ? "panel" : undefined}
       >
         <table
           {...rest}
@@ -147,7 +148,7 @@ export function TableRow({
   return (
     <tr
       {...rest}
-      className={`border-b border-line-muted transition-colors duration-150 last:border-b-0 hover:bg-surface-muted ${className}`}
+      className={`border-b border-line-muted transition-colors duration-150 last:border-b-0 hover:bg-control-hover ${className}`}
     >
       {children}
     </tr>

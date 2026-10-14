@@ -365,6 +365,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 - `max` 是最深的档位。各客户端会把它映射到供应商支持的最深推理档位，没有这个档位时静默回退，所以选它不会失败。在 Gemini 和 MiniMax M3 上，它的档位和 `xhigh` 相同。
 - 对 MiniMax M3，`none` 直接映射为 `reasoning.effort = "none"`。
+- 在 Google 官方客户端上，Gemini 4 Argon 的 `none` 映射为 `low`，`xhigh` 和 `max` 映射为 `high`。`low`、`medium` 和 `high` 保持原值；省略档位时保留 Google 默认的 `medium`。
 - DeepSeek V4 接受 `low`、`high` 和 `max`，`medium` 和 `xhigh` 会在它那边归并为 `high`。要 DeepSeek 最深的推理，请选 `max`。
 
 ### 在新对话中
@@ -548,7 +549,7 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3`
-- `gemini-3.8-flash`
+- `gemini-4-argon` / `gemini-3.8-flash`
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-5.6` / `gpt-5.5`
@@ -561,6 +562,8 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
 - `deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`、`Qwen/Qwen3.8-Flash-Next`（ModelScope 的 api-inference，没有价格的预置条目）
 
 列表并未穷尽所有模型。
+
+Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图像输入，输入与输出共享 1,048,576 Token 的上下文窗口。Google 和 Penguin Go 使用 `gemini-4-argon`，OpenRouter 使用 `google/gemini-4-argon`。MMSP 的同步流最多支持 65,536 个输出 Token，包含思考；Google 的更长后台生成不在此接口范围内。
 
 - **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
 - **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，直到**恢复默认**把它连同其他非预置模型一起删除。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
@@ -583,6 +586,8 @@ MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模
   - 三条 Doubao Seed 条目（`seed-2.1-pro`、`seed-2.1-turbo`、`seed-evolving`）打 5 折
   - `glm-5.2` 打 8 折
   - `glm-5.3`、`glm-5.3-flash` 和 `qwen3.8-max` 打 9 折
+
+  Gemini 4 Argon 在 Google 和 OpenRouter 上的首发 5 折持续至 2026-11-30：输入、输出和缓存命中的牌价分别为每百万 Token 4、20 和 0.20 美元，折后为 2、10 和 0.10 美元。Penguin Go 将 2、10 和 0.10 美元作为自己的牌价，额外促销由平台在连接或**同步模型**时下发。
 
   Gemini 3.8 Flash 和 3.6 Flash 也打 5 折，google 分组和 OpenRouter 上（`google/gemini-3.8-flash`、`google/gemini-3.6-flash`）都是如此，因为 Google 在 2026-12-31 之前对它们一律减半。Atlas Cloud 的 `qwen/qwen3.6-35b-a3b` 打 7.5 折。Project 预置的是**牌价**：折扣率由服务端另行保存，存在它自己的数据库里，而不写入 `.project_config.toml`，计算成本时再从牌价中扣除，因此成本中心按卖家实际收取的价格计费。模型卡片用标签标出当前实际计费的费率，模型弹窗则写明**此处为牌价，当前促销在此基础上省 N%；修改价格会取消促销**。
 - **你自己的价格。** 修改条目的价格会取消它的促销，卡片上的折扣标签也随之消失：此后这个数字由你自己定，不再代表卖家。

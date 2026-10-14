@@ -176,6 +176,7 @@ export * from "./components/charts/chart-style";
 export * from "./components/charts/marks/geom";
 export * from "./components/charts/marks/marks";
 export * from "./components/charts/marks/timeline-bar";
+export * from "./components/charts/timeline-lane/timeline-lane";
 export * from "./components/charts/chart-frame/chart-geom";
 export * from "./components/charts/chart-frame/chart-frame";
 export * from "./components/charts/token-donut/token-donut";
@@ -251,6 +252,8 @@ export * from "./components/shell/launcher/launcher";
 // pinned sidebar's frame with its nav fold, list header and controls, and the conversation row
 // with the hover actions it shares.
 export * from "./components/shell/app-shell/app-shell";
+export { WallpaperSurface } from "./components/shell/app-shell/wallpaper";
+export type { WallpaperStyle } from "./components/shell/app-shell/wallpaper";
 export * from "./components/shell/rail/rail";
 export * from "./components/shell/mobile-top-bar/mobile-top-bar";
 export * from "./components/shell/sidebar-frame/sidebar-frame";

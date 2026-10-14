@@ -336,7 +336,7 @@ describe("NavRow on the navigation column", () => {
     expect(rest).toContain(NAV_FILL.hover);
     expect(rest).not.toContain("hover:bg-surface-muted");
     // The default surface is untouched.
-    expect(navRowClass({ active: true })).toContain("bg-line-muted");
+    expect(navRowClass({ active: true })).toContain("bg-control-selected");
   });
 
   it("answers to the enclosing group's hover when asked, leaving a selected row's fill alone", () => {

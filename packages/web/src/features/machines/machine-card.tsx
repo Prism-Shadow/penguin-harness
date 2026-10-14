@@ -36,7 +36,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import type { ToneName } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { OPENS_DETAIL_CLASS, cardBodyClick } from "../../lib/card-open";
+import { cardBodyClick } from "../../lib/card-open";
 import { formatRelativeShort } from "../../lib/format";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
@@ -266,7 +266,8 @@ export function MachineCard({
     <Card
       padding="md"
       data-machine={machine.id}
-      className={`flex flex-wrap items-center gap-x-6 gap-y-2 ${OPENS_DETAIL_CLASS}`}
+      interactive
+      className="flex flex-wrap items-center gap-x-6 gap-y-2"
       onClick={cardBodyClick(onOpen)}
     >
       <div className="min-w-[14rem] flex-1">

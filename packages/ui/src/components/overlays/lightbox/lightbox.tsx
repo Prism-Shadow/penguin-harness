@@ -26,6 +26,7 @@ export interface LightboxProps {
 
 export function Lightbox({ open, src, alt, onClose, closeLabel }: LightboxProps) {
   const strings = useUiStrings();
+  const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   useEscLayer(open, onClose);
 
   if (!open) return null;
@@ -51,6 +52,13 @@ export function Lightbox({ open, src, alt, onClose, closeLabel }: LightboxProps)
         <img
           src={src}
           alt={alt}
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            setAspectRatio(image.naturalWidth / image.naturalHeight);
+          }}
+          // Resolve both viewport limits to a width before the frame shrink-wraps the image.
+          // SVGs with missing or percentage dimensions cannot size that frame on their own.
+          style={aspectRatio === null ? undefined : { width: `min(88vw, ${85 * aspectRatio}vh)` }}
           className="max-h-[85vh] max-w-[88vw] rounded-lg border border-line bg-surface"
         />
       </div>
@@ -79,7 +87,9 @@ export function ZoomableImage({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className="block cursor-zoom-in" onClick={() => setOpen(true)}>
+      {/* An SVG without intrinsic dimensions needs a definite width; an auto-sized button
+          and its max-width image otherwise shrink each other to zero. */}
+      <button type="button" className="block w-full cursor-zoom-in" onClick={() => setOpen(true)}>
         <img src={src} alt={alt} className={className} loading={lazy ? "lazy" : undefined} />
       </button>
       <Lightbox

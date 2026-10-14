@@ -61,7 +61,7 @@ export function Segmented<T extends string>({
   cols?: 2 | 3 | 4 | 5;
 }) {
   return (
-    <div className={`grid ${COLUMNS[cols]} gap-1 rounded-control bg-line-muted p-1`}>
+    <div className={`grid ${COLUMNS[cols]} gap-1 rounded-control bg-control-well p-1`}>
       {options.map((opt) => {
         const text =
           opt.shortLabel === undefined ? (
@@ -90,8 +90,8 @@ export function Segmented<T extends string>({
             aria-pressed={value === opt.value}
             className={`${SEGMENTED_CHIP_RADIUS} whitespace-nowrap px-1 py-1 text-xs transition-colors duration-150 ${
               value === opt.value
-                ? "bg-surface font-medium text-fg shadow-sm"
-                : "text-fg-muted hover:text-fg"
+                ? "bg-control-choice font-medium text-fg shadow-sm"
+                : "text-fg-muted hover:bg-control-hover hover:text-fg"
             }`}
           >
             {opt.badge ? (

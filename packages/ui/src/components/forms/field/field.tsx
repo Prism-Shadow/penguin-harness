@@ -17,7 +17,7 @@ import { InfoPopover } from "../../overlays/info-popover/info-popover";
  * at once.
  */
 export const controlBase =
-  "rounded-md border border-line-emphasis bg-surface text-fg " +
+  "rounded-md border border-line-emphasis bg-control text-fg " +
   "transition-[border-color,box-shadow] duration-200 " +
   "hover:border-fg-subtle focus:border-fg-muted focus:outline-none " +
   "focus:[box-shadow:var(--ui-focus-ring-input)]";

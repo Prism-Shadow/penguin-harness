@@ -213,6 +213,7 @@ describe("model-catalog", () => {
     // The DeepSeek rows follow DeepSeek's own lineup: V4.1 Flash and V4 Pro 0813. The two
     // retired V4 Flash ids are not resold.
     expect(penguinGoModels.map((model) => model.modelId)).toEqual([
+      "gemini-4-argon",
       "gemini-3.8-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash",
@@ -798,6 +799,7 @@ describe("model-catalog", () => {
       "deepseek/deepseek-v4-flash-vision-exp",
       "deepseek/deepseek-v4-pro-0813",
       "deepseek/deepseek-v4-pro",
+      "google/gemini-4-argon",
       "google/gemini-3.8-flash",
       "google/gemini-3.6-flash",
       "google/gemini-3.5-flash",
@@ -1303,6 +1305,7 @@ describe("model-catalog", () => {
     // Dictionary order by tier with newer versions of a tier first (same rule the OpenRouter
     // block follows for the identical Claude line-up).
     expect(MODEL_CATALOG.filter((m) => m.provider === "google").map((m) => m.modelId)).toEqual([
+      "gemini-4-argon",
       "gemini-3.8-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash",
@@ -1343,8 +1346,7 @@ describe("model-catalog", () => {
         0.075, 0.75, 3.75,
       ]);
     }
-    // No other Gemini row carries a launch discount: Google's pricing page marks one on the
-    // 3.6 / 3.8 Flash generations and on nothing else in this catalog, so these rows
+    // The older Gemini rows below carry no launch discount, so these rows
     // bill exactly the list price they store. The numbers are pinned because none of them is
     // the Flash list price above and each is a genuine other tier, not a hidden promotion —
     // re-read 2026-09-09: 3.5 Flash $1.50 / $9.00 / $0.15 cache hit, 3.5 Flash-Lite

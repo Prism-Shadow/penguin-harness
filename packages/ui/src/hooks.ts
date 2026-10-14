@@ -14,7 +14,7 @@
  *
  * | hook               | the job                                                  | anatomy the recipes rely on                           |
  * | ------------------ | -------------------------------------------------------- | ----------------------------------------------------- |
- * | `ui-glass`         | a transient layer over content: menus, popovers, the     | a dialog is `[role="dialog"]`, its head, padded body and foot direct children `data-slot="head" \| "body" \| "foot"` (a caller-owned body carries no slot); a menu's rows are `[role="menu"] > [role^="menuitem"]`, a listbox panel's `[role="option"]` children; a tile carries `data-glass="tile"` and its hue as its ink |
+ * | `ui-glass`         | a transient layer over content: menus, popovers, the     | a dialog is `[role="dialog"]`, its head, padded body and foot direct children `data-slot="head" \| "body" \| "foot"` (a caller-owned body carries no slot); a menu's rows are `[role="menu"] > [role^="menuitem"]`, a listbox panel's `[role="option"]` children; a tile carries `data-glass="tile"` and its hue as its ink; an optional wallpaper uses a separate `data-glass="navigation"` backdrop |
  * |                    | modal card, the floating composer and launcher, a sticky |                                                       |
  * |                    | page header — and a plugin or skill tile, the one glass  |                                                       |
  * |                    | that is not transient                                    |                                                       |
@@ -69,7 +69,9 @@
  * the tile's own hue with a hairline edge, a lit top and a deeper foot. Primer and Console have
  * no glass recipe, so a tile keeps its host's tinted square there. Frost's dialog is opaque, its
  * head and foot draw no rule, the title sits a section title's distance above the body, and a
- * menu's rows are inset bands concentric with the panel.
+ * menu's rows are inset bands concentric with the panel. An opted-in shell wallpaper uses
+ * `NavigationBackdrop` (`data-glass="navigation"`) in all themes: only this separate layer
+ * filters the image, preserving the navigation column's menu positioning.
  *
  * The three structure hooks (2026-09-19) are how the themes differ in organisation, not only in
  * colour and radius:

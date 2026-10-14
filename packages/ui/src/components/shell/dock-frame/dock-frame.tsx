@@ -51,6 +51,7 @@ import type {
   Ref,
   RefObject,
 } from "react";
+import { WallpaperLayer } from "../app-shell/wallpaper";
 import { RESIZE_HANDLE_PX } from "../../layout/resize-handle/resize-handle";
 
 export type DockEdge = "right" | "bottom";
@@ -535,10 +536,12 @@ export function DockFrame({
   const content = (
     <div
       ref={boxRef}
+      data-dock-content
       data-layout-motion={moving ? "" : undefined}
       style={boxStyle}
       className={boxClass}
     >
+      {lifted && <WallpaperLayer />}
       <div style={insideStyle} className={insideClass}>
         {header}
         {children}
@@ -553,6 +556,7 @@ export function DockFrame({
         data-testid="dock"
         data-position="bottom"
         data-open={open}
+        data-wallpaper-surface="canvas"
         data-layout-motion={animate ? "" : undefined}
         data-fullscreen={lifted ? phase : undefined}
         style={{ height: size }}
@@ -577,6 +581,7 @@ export function DockFrame({
         data-testid="dock"
         data-position="right"
         data-open={open}
+        data-wallpaper-surface="canvas"
         data-layout-motion={animate ? "" : undefined}
         data-fullscreen={lifted ? phase : undefined}
         style={{ width: size }}

@@ -103,6 +103,8 @@ openrouter、fireworks、siliconflow、atlascloud、tokendance、opencode-go、q
 
 ### 模型条目
 
+Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-argon"`，在 `openrouter` 分组使用 `model_id = "google/gemini-4-argon"`。预置条目分别使用 Google 官方 Interactions 客户端、MMSP HTTP 和 OpenRouter Responses。已有 Project 可在模型库页面点击**同步新增模型**补齐这些条目。
+
 | 键 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `provider` | 字符串 | — | 供应商分组；与 `model_id` 一起构成条目的唯一键 |

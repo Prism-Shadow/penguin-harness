@@ -1,8 +1,7 @@
 /**
  * Global styles: single-file Tailwind CSS 4 entry point.
- * Visual tone: GitHub-style simplicity — solid white background + 1px borders + a single brand blue accent,
- * no glassmorphism/gradients; the login page background is a circuit-trace animation (.login-trace, see
- * login-circuit.tsx). Dark theme is toggled via the html.dark class.
+ * Shared themes define the visual tone and optional shell wallpaper. The login page has its own
+ * circuit-trace animation (.login-trace, see login-circuit.tsx). Dark mode uses the html.dark class.
  *
  * Theming comes from the shared UI package (@prismshadow/penguin-ui): `theme.css` declares the
  * `dark` variant, the cascade layers, the token → utility bridge and the base rules that read
@@ -103,6 +102,12 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* The preview is an interior row of Appearance, so only the surrounding settings group's
+   outer ends have corners. A nested last row must not acquire its own bottom corners. */
+.background-settings-details .ui-field {
+  border-radius: 0;
 }
 
 /* ---------- Animations (160-280ms ease, slight entrance offset + subtle scale) ---------- */

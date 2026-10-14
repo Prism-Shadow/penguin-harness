@@ -122,6 +122,16 @@ jobs:
           echo "entrypoint ran the command as uid $uid"
           [ "$uid" = "1000" ]
 
+      # Given a data root with the broken shim from #1119, the packaged server must
+      # remove the stub so Agent commands can resolve the installed CLI on PATH.
+      - name: Seed an old CLI error stub
+        run: |
+          docker run --rm -v penguin-data:/data penguin-harness:pr sh -ec '
+            mkdir -p /data/bin
+            printf "#!/bin/sh\necho old-cli-error-stub >&2\nexit 1\n" > /data/bin/penguin
+            chmod +x /data/bin/penguin
+          '
+
       - name: Start the container
         run: |
           docker run -d --name penguin -p 127.0.0.1:7364:7364 \
@@ -141,6 +151,16 @@ jobs:
           echo "error: the server did not answer /api/install within 90s" >&2
           docker logs penguin >&2
           exit 1
+
+      - name: Agent commands reach the installed CLI
+        run: |
+          docker exec penguin test ! -e /opt/penguin/lib/pnpm-workspace.yaml
+          docker exec penguin test ! -e /data/bin/penguin
+          docker exec penguin sh -ec '
+            export PATH="/data/bin:$PATH"
+            penguin --version
+            penguin browser --help
+          '
 
       # The pinned seed password suppresses the first-login notice, so a successful login is
       # what proves the seed ran; /api/version then proves the session cookie is usable.

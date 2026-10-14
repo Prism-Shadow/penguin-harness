@@ -48,6 +48,7 @@ import {
   Modal,
   Skeleton,
   StatChip,
+  WallpaperSurface,
   toastError,
   toastInfo,
   toastSuccess,
@@ -2204,7 +2205,7 @@ export function ChatPage() {
     // bg-canvas: the chat column is the page, so it takes the theme's page colour — white and
     // gray-950 in Primer, exactly what it painted before; paper in Console, the sheet in Frost —
     // and the transcript's sticky rows, painted in the same token, sit on it without a seam.
-    <div data-dock-host className="relative flex h-full flex-col bg-canvas">
+    <WallpaperSurface data-dock-host className="relative flex h-full flex-col bg-canvas">
       {/* Workbench tabs: the Agent's own pages beside the chat. A workbench tab covers the
           chat (which stays mounted, so its state survives a look at the page) below the
           strip; the strip is absent when the Agent has no workbench with a UI. */}
@@ -2298,8 +2299,8 @@ export function ChatPage() {
                 aria-label={S.chat.infoPanel}
                 aria-expanded={infoOpen}
                 onClick={() => setInfoOpen(!infoOpen)}
-                className={`flex h-7 shrink-0 items-center rounded-md transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                  infoOpen ? "bg-gray-100 dark:bg-gray-800" : ""
+                className={`flex h-7 shrink-0 items-center rounded-md transition-colors duration-150 hover:bg-control-hover ${
+                  infoOpen ? "bg-control-selected" : ""
                 }`}
               >
                 {/* Wide: the chip row, a glyph and a total per chip, each named by its label.
@@ -2661,7 +2662,7 @@ export function ChatPage() {
                               while that dock is hidden, and opens its panels in one click. */}
                           <DockLauncher agentsPending={anySubagentPending} />
                         </div>
-                        <div className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
+                        <WallpaperSurface className="shrink-0 border-t border-gray-200 bg-canvas px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800">
                           <div className="mx-auto max-w-3xl">
                             {/* Goal banner docked above the composer: an in-flight goal's progress
                                 (restored on load while still active), or the terminal state reached
@@ -2670,7 +2671,7 @@ export function ChatPage() {
                             {stream.goal && <GoalStatusBanner goal={stream.goal} />}
                             {input}
                           </div>
-                        </div>
+                        </WallpaperSurface>
                       </>
                     )
                   ) : routeSessionOffline ? (
@@ -2857,6 +2858,6 @@ export function ChatPage() {
           </p>
         )}
       </ConfirmModal>
-    </div>
+    </WallpaperSurface>
   );
 }

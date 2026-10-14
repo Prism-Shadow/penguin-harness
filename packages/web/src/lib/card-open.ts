@@ -66,14 +66,6 @@ export function landsOnCardBody(event: CardClick): boolean {
 }
 
 /**
- * The look of a card that opens something: the pointer, and a hover on the border alone — a
- * filled hover takes the neutral badges on the card (a version, a tag) into its own fill in
- * themes where the two are one colour.
- */
-export const OPENS_DETAIL_CLASS =
-  "cursor-pointer transition-colors duration-150 hover:border-line-emphasis";
-
-/**
  * The card's click handler: a click on its body opens the detail — the page its title links to,
  * or the dialog its title button opens. The title stays the keyboard's way in.
  */

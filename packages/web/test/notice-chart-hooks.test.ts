@@ -7,6 +7,7 @@
  * - No file but NoticeStrip spells the `ui-notice` hook.
  * - A mark a call site draws inside a NoticeStrip sits in its icon slot, so a theme that draws
  *   its own tone mark can hide it (the check is exercised on known shapes too).
+ * - Marks outside a NoticeStrip, including files only mentioning its name in a comment, pass.
  */
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -42,6 +43,9 @@ const ICON_TAG = /^(?:GlyphIcon|Glyph|\w+Icon)$/;
  * so a mark outside it would show twice.
  */
 function unslottedMarks(file: { path: string; text: string; id: string }): string[] {
+  // Only a JSX element with this exact tag can own a notice mark. Keep the AST check for
+  // candidate files: a name in a comment or a string is not a notice.
+  if (!file.text.includes("NoticeStrip")) return [];
   const source = ts.createSourceFile(
     file.path,
     file.text,
@@ -114,6 +118,10 @@ describe("a notice's own mark", () => {
       check(
         'const A = () => <NoticeStrip tone="danger">x<Button><CloseIcon /></Button></NoticeStrip>;',
       ),
+    ).toEqual([]);
+    expect(check('const A = () => <span aria-hidden className="dot" />;')).toEqual([]);
+    expect(
+      check('/* NoticeStrip */ const A = () => <span aria-hidden className="dot" />;'),
     ).toEqual([]);
   });
 });

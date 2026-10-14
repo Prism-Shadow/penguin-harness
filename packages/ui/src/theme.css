@@ -24,6 +24,8 @@
  * in sync afterwards.
  */
 
+@import "./wallpaper.css";
+
 /* Dark mode is the `dark` class on <html>, not the media query: the user can pin either mode. */
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -74,6 +76,14 @@
   --color-fill-neutral: var(--ui-fill-neutral);
   --color-surface-inset: var(--ui-inset);
   --color-overlay: var(--ui-overlay);
+
+  /* Controls share their normal fills; a wallpaper shell supplies lighter alternatives.
+     Keep these separate from surfaces so editors and floating panels stay readable. */
+  --color-control: var(--wallpaper-control-fill, var(--ui-surface));
+  --color-control-hover: var(--wallpaper-hover-fill, var(--ui-surface-muted));
+  --color-control-selected: var(--wallpaper-selected-fill, var(--ui-line-muted));
+  --color-control-well: var(--wallpaper-well-fill, var(--ui-line-muted));
+  --color-control-choice: var(--wallpaper-choice-fill, var(--ui-surface));
 
   /* Text */
   --color-fg: var(--ui-fg);

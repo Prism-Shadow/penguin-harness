@@ -153,6 +153,7 @@ RUN set -eux; \
 # and it is the layout `npm rebuild` walks in the next stage.
 RUN set -eux; \
     pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"; \
+    rm -f out/penguin/lib/pnpm-workspace.yaml; \
     cp -r packages/web/dist out/penguin/web; \
     mkdir -p /opt/penguin; \
     mv out/penguin/lib /opt/penguin/lib; \

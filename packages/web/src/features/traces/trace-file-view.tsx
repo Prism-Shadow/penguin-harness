@@ -646,7 +646,7 @@ export function TraceFileBody({
           type="button"
           data-slot="earlier"
           onClick={onShowEarlier}
-          className="w-full rounded-md py-1 text-center text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800/60 dark:hover:text-gray-200"
+          className="w-full rounded-md py-1 text-center text-xs text-gray-500 transition-colors duration-150 hover:bg-control-hover hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
         >
           {S.traces.earlierRounds(earlier)}
         </button>
@@ -680,7 +680,7 @@ export function TraceFileBody({
               data-slot="head"
               onClick={() => onToggle(st.taskIndex)}
               aria-expanded={open}
-              className="flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-800/60"
+              className="flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-control-hover dark:bg-gray-900"
             >
               <Chevron open={open} size={13} className="text-gray-400" />
               <span className="shrink-0 text-sm font-semibold">

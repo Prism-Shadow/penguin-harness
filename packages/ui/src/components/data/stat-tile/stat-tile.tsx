@@ -42,7 +42,7 @@ export function StatTile({
 }) {
   const ink = tone !== undefined ? INK[tone] : "";
   return (
-    <div className="rounded-md border border-line bg-surface p-3">
+    <div data-wallpaper-surface="panel" className="rounded-md border border-line bg-surface p-3">
       <p className={`mb-1.5 flex items-center ${ICON_GAP.row} text-xs text-fg-muted`}>
         {icon !== undefined && <GlyphIcon d={icon} size={ICON_SIZE.inlineGlyph} className={ink} />}
         <span className="truncate">{label}</span>

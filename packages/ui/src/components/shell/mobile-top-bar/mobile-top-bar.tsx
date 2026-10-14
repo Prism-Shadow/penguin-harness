@@ -10,6 +10,7 @@
 import type { ReactNode } from "react";
 import { ICON_SIZE } from "../../../icon-scale";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
+import { NavigationBackdrop } from "../app-shell/wallpaper";
 import { ICONS } from "../../icons/icons";
 
 export interface MobileTopBarProps {
@@ -27,6 +28,7 @@ export interface MobileTopBarProps {
 export function MobileTopBar({ title, menuLabel, menuHint, menuBadge, onMenu }: MobileTopBarProps) {
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-canvas px-2 md:hidden">
+      <NavigationBackdrop />
       <button
         type="button"
         aria-label={menuLabel}

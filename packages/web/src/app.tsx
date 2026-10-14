@@ -1,5 +1,5 @@
 /**
- * App root component: ClipboardWriter -> CodeHighlighter -> Locale -> Theme -> Auth -> LocaleScope ->
+ * App root: ClipboardWriter -> CodeHighlighter -> Locale -> Theme -> Background -> Auth -> LocaleScope ->
  * Router provider composition, with the app-wide overlays (toasts, tooltips, the unsaved-changes
  * prompt) beside the router. The shared UI package's copy controls get the app's clipboard
  * writer, and every code surface of the package gets the app's worker-backed code highlighter
@@ -21,6 +21,7 @@ import {
 } from "@prismshadow/penguin-ui";
 import { LocaleProvider, LocaleScope } from "./state/locale";
 import { ThemeProvider } from "./state/theme";
+import { BackgroundProvider } from "./state/background";
 import { AuthProvider } from "./state/auth";
 import { AppRouter } from "./router";
 import { UnsavedPrompt } from "./lib/unsaved/unsaved-prompt";
@@ -50,19 +51,21 @@ export function App({ initialPath }: { initialPath?: string } = {}) {
       <CodeHighlighterProvider highlight={highlightCode}>
         <LocaleProvider>
           <ThemeProvider>
-            <AuthProvider>
-              <LocaleScope>
-                <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
-                {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
-                <Toaster />
-                {/* The one "discard unsaved changes?" prompt every leave asks through, and the
+            <BackgroundProvider>
+              <AuthProvider>
+                <LocaleScope>
+                  <AppRouter {...(initialPath === undefined ? {} : { initialPath })} />
+                  {/* Top toast overlay: portaled to body, z-index above modals, shared site-wide. */}
+                  <Toaster />
+                  {/* The one "discard unsaved changes?" prompt every leave asks through, and the
                     unload guard while a form is dirty. Inside LocaleScope, so it reads the
                     dictionary of the language on screen. */}
-                <UnsavedPrompt />
-                {/* The hover hints of every `data-tooltip` element: one listener set, one panel. */}
-                <TooltipLayer />
-              </LocaleScope>
-            </AuthProvider>
+                  <UnsavedPrompt />
+                  {/* The hover hints of every `data-tooltip` element: one listener set, one panel. */}
+                  <TooltipLayer />
+                </LocaleScope>
+              </AuthProvider>
+            </BackgroundProvider>
           </ThemeProvider>
         </LocaleProvider>
       </CodeHighlighterProvider>
