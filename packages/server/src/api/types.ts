@@ -4512,6 +4512,7 @@ export interface PluginItem {
   repository?: string;
   /** The plugin's skills (metadata only), each with its own dated `version`. */
   skills: SkillMetadataItem[];
+  workbenches?: Array<{ name: string; version: string }>;
   /** The hook points the plugin's hook package answers at (`[]` without one). */
   hooks: string[];
   /** The hook package's own dated version (`penguin.hooks.version`, `YYYY.MM.DD.N`); absent without a hook package. */
@@ -4594,6 +4595,7 @@ export interface PluginInstallRequest {
 }
 
 export interface AgentPluginsInstallResponse {
+  workbenches?: Array<{ name: string; plugin: string; version: string }>;
   skills: SkillMetadataItem[];
   hooks: HookItem[];
   /** The Agent's MCP servers after the install (a plugin's servers join its `tools.mcpServers`). A server name the Agent already has from someone else is 409 `mcp_server_name_taken`, nothing installed. */

@@ -1740,6 +1740,11 @@ export const getLibraryPluginReadme = (plugin: string) =>
  * plugin is overwritten with the library content (i.e. updated). 201 returns the Agent's
  * refreshed installed lists.
  */
+export const getAgentPlugins = (projectId: string, agentId: string) =>
+  apiFetch<AgentPluginsInstallResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
+  );
+
 export const installAgentPlugins = (projectId: string, agentId: string, names: string[]) =>
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,

@@ -138,7 +138,10 @@ describe("support Agent provisioning", () => {
     const file = path.join(base, "workbenches/support/ui/index.html");
     expect((await fs.readFile(file, "utf8")).length).toBeGreaterThan(0);
     const config = await loadAgentState({ agentId: SUPPORT_AGENT_ID });
-    expect(config.agentsMd).toContain("https://penguin.ooo/docs/");
+    expect(config.agentsMd).toContain("penguin-support");
+    expect(await fs.readFile(skillMdPath(SUPPORT_AGENT_ID, "penguin-support"), "utf8")).toContain(
+      "https://penguin.ooo/docs/",
+    );
     await fs.writeFile(file, "My support page");
     await provisionProjectAgents();
     expect(await fs.readFile(file, "utf8")).toBe("My support page");

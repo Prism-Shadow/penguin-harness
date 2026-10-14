@@ -18,6 +18,8 @@ Switching examples replaces the selected Skills, including when both examples se
 
 The default Project initializes a PenguinHarness support Agent with a workbench for questions, categories, search, follow-ups, source links and resolved tickets. Answers use the official documentation and repository. Ticket state survives workbench reloads; existing Agent files remain editable and are not overwritten by provisioning.
 
+The support agent installs the `penguin-support` plugin through the regular plugin installer. Its Skill and workbench source live in `plugins/penguin-support/`. The workbench uses a centered question list and dialogs for new questions and conversation details. Plugin workbenches participate in install, update and uninstall; updates preserve their saved state. Answers use inline numbered source links such as [1], without a separate link list. The support Skill reuses a reference checkout across tickets and searches both Workbench and the older Workflow name.
+
 ## Compatibility
 
 The one-time directory, interface and history migration is described in [Backward compatibility](2026-10-14-backward-compatibility.md).

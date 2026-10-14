@@ -207,7 +207,11 @@ export function moduleOnThisServer(part: ModulePart): boolean {
 
 /** Whether a row installs files into an Agent: Skills, or a hook package. */
 export function rowHasFiles(row: PluginRow): boolean {
-  return (row.library?.skills.length ?? 0) > 0 || (row.library?.hooks.length ?? 0) > 0;
+  return (
+    (row.library?.skills.length ?? 0) > 0 ||
+    (row.library?.hooks.length ?? 0) > 0 ||
+    (row.library?.workbenches?.length ?? 0) > 0
+  );
 }
 
 /** What the header says beside the icon, besides what the dialog's title already names. */
@@ -331,6 +335,15 @@ export function PluginDetailSections({
         )}
       </RuledSection>
 
+      {(row.library?.workbenches?.length ?? 0) > 0 && (
+        <RuledSection title={S.plugins.detailWorkbenches} level={3} className="mt-5">
+          <ul className="text-sm">
+            {row.library!.workbenches!.map((w) => (
+              <li key={w.name}>{w.name}</li>
+            ))}
+          </ul>
+        </RuledSection>
+      )}
       {row.library !== undefined && row.library.mcpServers.length > 0 && (
         <PluginMcpSection servers={row.library.mcpServers} />
       )}

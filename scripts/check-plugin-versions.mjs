@@ -3,12 +3,14 @@
  * Every part of a plugin whose installed content changed since the base commit must carry a new
  * dated version. A plugin's own version is its npm version (package.json, bumped by the release);
  * the dated versions — `YYYY.MM.DD.N` — sit on the parts an install writes into an Agent and the
- * Agent may then edit: each skill's `SKILL.md` frontmatter `version`, and the hook package's
- * `penguin.hooks.version` in `package.json`. That version is what tells an installed copy it is
+ * Agent may then edit: each Skill's `SKILL.md` frontmatter `version`, the hook package's
+ * `penguin.hooks.version`, and each workbench's `penguin.version` in its `package.json`.
+ * That version is what tells an installed copy it is
  * behind the library (the Agents page's update flag and the Plugins page read it), so a content
  * change shipped under the old version is invisible to every user until the next unrelated bump.
  *
  *   - a change under `plugins/<p>/skills/<s>/` needs that skill's `version` changed;
+ *   - a change under `plugins/<p>/workbenches/<w>/` needs its `penguin.version` changed;
  *   - a change under `plugins/<p>/hooks/`, or to the commands of package.json's
  *     `penguin.hooks`, needs `penguin.hooks.version` changed;
  *   - the rest of `package.json`, `README.md` and `icon.svg` reach no installed copy and need
@@ -170,6 +172,23 @@ for (const name of plugins) {
       : // The base may predate the move to package.json; drop once main carries no plugin.json.
         (json(atBase(`${dir}/plugin.json`))?.hooks ?? null);
   const after = head?.penguin?.hooks ?? null;
+
+  for (const workbench of new Set(
+    changed
+      .filter((file) => file.startsWith(`${dir}/workbenches/`))
+      .map((file) => file.split("/")[3]),
+  )) {
+    const file = `${dir}/workbenches/${workbench}/package.json`;
+    const now = json(atHead(file));
+    if (now === null) continue;
+    const version = now.penguin?.version;
+    const previous = json(atBase(file))?.penguin?.version;
+    if (typeof version !== "string" || !DATED.test(version))
+      problems.push(`${file}: penguin.version must be YYYY.MM.DD.N`);
+    else if (version === previous)
+      problems.push(`${dir}/workbenches/${workbench} changed but its version is still ${version}`);
+    else bumped.push(`${name}/${workbench}`);
+  }
 
   // Skills: every skill directory with a changed file.
   const skills = [

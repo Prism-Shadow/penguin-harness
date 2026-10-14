@@ -14,6 +14,7 @@
  * - The update dialog lists, per Agent, each part whose installed version differs from the
  *   library's — older, or raised by a local edit — and no part the Agent does not carry; an MCP
  *   server the Agent carries is listed as replaced (an entry carries no version).
+ * - Workbench-only plugins require the owning plugin receipt; updates list changed workbench versions.
  * - A plugin of MCP servers alone is installed on an Agent whose server list carries each of
  *   them under the plugin's name, waiting for setup or not; a server of the same name the user
  *   added, or another plugin installed, is not the plugin's.
@@ -229,4 +230,34 @@ describe("a plugin of MCP servers", () => {
     );
     expect(installNeedsConfirm(MAIL, installs({}))).toBe(false);
   });
+});
+
+it("counts workbench ownership and reports updates for workbench-only plugins", () => {
+  const plugin: PluginParts = {
+    name: "support",
+    skills: [],
+    hooks: [],
+    mcpServers: [],
+    workbenches: [{ name: "desk", version: "2026.10.14.2" }],
+  };
+  const own: AgentInstalls = {
+    ...installs({}),
+    workbenches: new Map([["desk", { plugin: "support", version: "2026.10.14.1" }]]),
+  };
+  const foreign: AgentInstalls = {
+    ...installs({}),
+    workbenches: new Map([["desk", { plugin: "another", version: "2026.10.14.1" }]]),
+  };
+  expect(libraryUsage(plugin, [agent("a")], new Map([["a", foreign]]))).toEqual({
+    usedBy: [],
+    behind: [],
+  });
+  expect(libraryUsage(plugin, [agent("a", "support")], new Map([["a", own]]))).toEqual({
+    usedBy: ["a"],
+    behind: ["a"],
+  });
+  expect(changedParts(plugin, own)).toEqual([
+    { kind: "workbench", name: "desk", installed: "2026.10.14.1", library: "2026.10.14.2" },
+  ]);
+  expect(changedParts(plugin, foreign)).toEqual([]);
 });

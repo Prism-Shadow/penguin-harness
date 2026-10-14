@@ -33,6 +33,10 @@ import {
   readsVaultReferences,
 } from "../environment/mcp/config.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
+import {
+  assertPluginWorkbenchesInstallable,
+  installPluginWorkbenches,
+} from "./plugin-workbenches.js";
 import { loadAgentVault } from "./agent-vault.js";
 import {
   AGENT_ID_PLACEHOLDER,
@@ -237,6 +241,7 @@ export async function loadAgentState(opts?: {
     preset === undefined && agentId === DEFAULT_AGENT_ID
       ? loadPreinstalledPlugins()
       : (preset?.plugins ?? []);
+  await assertPluginWorkbenchesInstallable(root, projectId, agentId, plugins);
   // A plugin's MCP servers join the config written below, not a file of their own (see
   // installPlugin for the rules they are merged by).
   if (plugins.some((plugin) => plugin.mcpServers.length > 0)) {
@@ -253,14 +258,6 @@ export async function loadAgentState(opts?: {
   await Promise.all([
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
     ...plugins.map((plugin) => installPluginFiles(root, projectId, agentId, plugin)),
-    ...Object.entries(preset?.files ?? {}).map(async ([relative, content]) => {
-      const base = agentDir(root, projectId, agentId);
-      const target = path.resolve(base, relative);
-      if (!target.startsWith(`${base}${path.sep}`))
-        throw new Error(`Preset file escapes Agent: ${relative}`);
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      await atomicWriteFile(target, content);
-    }),
   ]);
   // system_config.yaml is written last: its existence is the "initialization complete" marker
   // (the load/init decision point). If this fails partway (disk full / crash), the next run
@@ -674,6 +671,7 @@ export async function installPlugin(
   plugin: LibraryPlugin,
 ): Promise<void> {
   await assertPluginMcpServersInstallable(root, projectId, agentId, [plugin]);
+  await assertPluginWorkbenchesInstallable(root, projectId, agentId, [plugin]);
   await installPluginFiles(root, projectId, agentId, plugin);
   if (plugin.mcpServers.length > 0) {
     await writePluginMcpServers(root, projectId, agentId, plugin);
@@ -687,6 +685,7 @@ async function installPluginFiles(
   agentId: string,
   plugin: LibraryPlugin,
 ): Promise<void> {
+  await installPluginWorkbenches(root, projectId, agentId, plugin);
   for (const skill of plugin.skills) await installSkill(root, projectId, agentId, skill);
   if (plugin.hooks) {
     await installHook(

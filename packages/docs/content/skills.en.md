@@ -446,3 +446,11 @@ Installed Skills live under `agent_state/skills/<name>/`, and hook packages unde
 - A plugin counts as installed on an agent when each of its Skills, its hook package and each of its MCP servers are there. A server still waiting for vault keys or a sign-in does not change that.
 - A running Session keeps the hook packages its current model context opened with; the next context, after a compaction or on resume, reads them again. After a hook package is installed, imported or removed through the Web App or the API, or the **Enable hooks** switch changes, the server rebuilds the agent's cached runtimes the next time they are idle, so open conversations pick up the change from their next turn.
 - Besides the Web App, plugins can be installed through the SDK.
+
+## Workbench plugins
+
+A plugin can ship `workbenches/<id>/package.json`, `index.ts` and UI source files alongside its Skills. The workbench manifest declares `penguin.modules` and a dated `penguin.version` (`YYYY.MM.DD.N`). Include `workbenches` in the npm package's `files` list. Do not ship `state.json`, dot files or `node_modules`.
+
+Installing the plugin copies the workbench into the Agent's `workbenches/<id>/` directory. Updates replace shipped source files and retain ticket state and history. A name already used by another plugin or a manually created workbench is refused. Uninstalling removes the workbench and its records.
+
+The built-in `penguin-support` plugin provides the default Project's support Agent with the `penguin-support` Skill and a customer support workbench: a centered question list, a new-question dialog and conversation details with follow-ups. It can also be installed on other Agents.

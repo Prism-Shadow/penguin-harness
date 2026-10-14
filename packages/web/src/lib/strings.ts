@@ -2885,7 +2885,13 @@ export const zh = {
       none: "不分组",
     },
     /** What a plugin carries: the section titles of the grouping by content. */
-    kindLabel: { skills: "技能", hooks: "钩子", mcp: "MCP 服务器", modules: "服务端模块" },
+    kindLabel: {
+      workbenches: "Workbenches",
+      skills: "技能",
+      hooks: "钩子",
+      mcp: "MCP 服务器",
+      modules: "服务端模块",
+    },
     /** The category of the sandbox backends, and of a plugin whose category the page does not know. */
     sandboxCategory: "Agent 运行沙箱",
     otherCategory: "其他",
@@ -2926,6 +2932,8 @@ export const zh = {
     detailDescription: "说明",
     detailFiles: "文件",
     detailSkills: "技能",
+    detailWorkbenches: "Workbenches",
+    uninstallWorkbenchRecords: "其工作台及保存的记录也会被删除。",
     detailHooks: "钩子",
     /** The detail dialog's section of the MCP servers a plugin installs into an Agent's tools. */
     detailMcpServers: "MCP 服务器",
