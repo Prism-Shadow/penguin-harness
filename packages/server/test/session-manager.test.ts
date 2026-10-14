@@ -71,6 +71,7 @@ import type {
   LLMInterface,
   LLMOutcome,
   OmniMessage,
+  StopReason,
   TextPayload,
 } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../src/api/types.js";
@@ -1741,7 +1742,7 @@ describe("session-manager", () => {
       steer: () => false,
       skipReconnectWait: () => false,
       async *run(): AsyncGenerator<OmniMessage> {
-        runs.push(fake.modelId);
+        runs.push(fake.modelId!);
         yield requestBegin();
         if (runs.length === 1) {
           // The model is out of quota: the turn ends on it (see SessionConfig.failoverOnRateLimit)
@@ -1758,8 +1759,8 @@ describe("session-manager", () => {
         modelId: string;
       }): AsyncGenerator<OmniMessage, StopReason> {
         switched.push({ provider: opts.provider, modelId: opts.modelId });
-        fake.provider = opts.provider;
-        fake.modelId = opts.modelId;
+        (fake as { provider: string; modelId: string }).provider = opts.provider;
+        (fake as { provider: string; modelId: string }).modelId = opts.modelId;
         return "completed";
       },
     } as unknown as RuntimeSession;
