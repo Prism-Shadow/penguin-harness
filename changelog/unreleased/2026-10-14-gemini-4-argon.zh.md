@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** feature
 - **Scope:** `model-catalog`, `core`, `cli`, `docs`
+- **PR:** [#1127](https://github.com/Prism-Shadow/penguin-harness/pull/1127)
 
 [English](2026-10-14-gemini-4-argon.md)
 
