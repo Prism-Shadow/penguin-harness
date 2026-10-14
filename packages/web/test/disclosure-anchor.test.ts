@@ -12,10 +12,12 @@
  * This is a rule rather than a preference, so it is checked rather than remembered. The check
  * parses the real JSX with the TypeScript parser instead of matching text: whether a title sits
  * beside a "?" is a question about sibling nodes, and a regex cannot see siblings.
+ * Candidate selection must keep unanchored disclosures while ignoring names in comments or text.
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
+import type { SourceFile } from "./helpers/roots";
 
 /** Web and the shared UI package: the rule follows InfoPopover's call sites wherever they live. */
 const SCAN = scanSources();
@@ -94,9 +96,15 @@ function readingAnchored(node: ts.Node): boolean {
  * Every `<InfoPopover>` in the tree that has no title among its preceding siblings, and every
  * reading's "?" with nothing before it in its row.
  */
-function findOrphans(): string[] {
+function findOrphans(
+  files: readonly Pick<SourceFile, "id" | "path" | "text">[] = SCAN.files.filter((f) =>
+    f.name.endsWith(".tsx"),
+  ),
+): string[] {
   const orphans: string[] = [];
-  for (const file of SCAN.files.filter((f) => f.name.endsWith(".tsx"))) {
+  for (const file of files) {
+    // The AST compares these tag spellings verbatim; files mentioning neither cannot have a hit.
+    if (!file.text.includes("InfoPopover") && !file.text.includes(READING_HINT)) continue;
     const source = ts.createSourceFile(
       file.path,
       file.text,
@@ -145,31 +153,9 @@ describe("disclosure anchoring", () => {
   it("actually looks at siblings — the check itself is exercised on a known-orphan shape", () => {
     // Guards the guard: if `rendersTitle`/`slotIn` ever stopped seeing structure, the assertion
     // above would pass on broken code. These are the four shapes that matter.
-    const parse = (jsx: string) =>
-      ts.createSourceFile(
-        "t.tsx",
-        `const x = ${jsx};`,
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TSX,
-      );
-    const anchoredOf = (jsx: string): boolean => {
-      const source = parse(jsx);
-      let result = false;
-      const visit = (node: ts.Node): void => {
-        if (jsxTag(node) === "InfoPopover") {
-          const here = slotIn(node);
-          result =
-            here !== null &&
-            here.host.children
-              .slice(0, here.host.children.indexOf(here.slot as never))
-              .some(rendersTitle);
-        }
-        ts.forEachChild(node, visit);
-      };
-      visit(source);
-      return result;
-    };
+    const scan = (jsx: string): string[] =>
+      findOrphans([{ id: "t.tsx", path: "t.tsx", text: `const x = ${jsx};` }]);
+    const anchoredOf = (jsx: string): boolean => scan(jsx).length === 0;
     // A title beside it, plain and interpolated, and through a conditional wrapper.
     expect(anchoredOf("<h1>Vault<InfoPopover>d</InfoPopover></h1>")).toBe(true);
     expect(anchoredOf("<h1>{title}<InfoPopover>d</InfoPopover></h1>")).toBe(true);
@@ -184,21 +170,14 @@ describe("disclosure anchoring", () => {
       false,
     );
     // A reading's "?": after the value, in its element or from a slot of its own; never alone.
-    const readingOf = (jsx: string): boolean => {
-      let result = false;
-      const visit = (node: ts.Node): void => {
-        if (jsxTag(node) === READING_HINT) result = readingAnchored(node);
-        ts.forEachChild(node, visit);
-      };
-      visit(parse(jsx));
-      return result;
-    };
-    expect(readingOf("<div><span>{v}</span><span>{h && <StatHint>d</StatHint>}</span></div>")).toBe(
-      true,
-    );
-    expect(readingOf("<li>{v}{h && <StatHint>d</StatHint>}</li>")).toBe(true);
-    expect(readingOf('<div className="space-y-4"><span><StatHint>d</StatHint></span></div>')).toBe(
+    expect(
+      anchoredOf("<div><span>{v}</span><span>{h && <StatHint>d</StatHint>}</span></div>"),
+    ).toBe(true);
+    expect(anchoredOf("<li>{v}{h && <StatHint>d</StatHint>}</li>")).toBe(true);
+    expect(anchoredOf('<div className="space-y-4"><span><StatHint>d</StatHint></span></div>')).toBe(
       false,
     );
+    expect(scan("<div>Unrelated content</div>")).toEqual([]);
+    expect(scan("<div>InfoPopover {/* <StatHint /> */}</div>")).toEqual([]);
   });
 });

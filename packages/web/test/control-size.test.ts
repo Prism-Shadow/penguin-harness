@@ -7,6 +7,8 @@
  * - A Modal footer's Buttons, and the Buttons of a module that is only ever dialog content, sit
  *   on the fields' sm rung.
  * - The control family spells a font size in its two records and nowhere else.
+ * - Candidate files are still checked as JSX: unrelated classes and comment-only mentions pass,
+ *   while escaped font-size literals on a control are found.
  *
  * A control's font size comes from its `size` prop and nowhere else. A `text-*` in a caller's
  * `className` does not reliably override the component's own — both are single-class font-size
@@ -64,11 +66,12 @@ const FONT_SIZE_CLASS = /\btext-(?:xs|sm|base|lg|xl|\d?xl|\[[^\]]+])(?![\w-])/;
 
 const tsxFiles = (): SourceFile[] => SCAN.files.filter((file) => file.name.endsWith(".tsx"));
 
-const parsed = new Map<string, ts.SourceFile>();
+type JsxSource = Pick<SourceFile, "id" | "path" | "text">;
+const parsed = new WeakMap<JsxSource, ts.SourceFile>();
 
 /** A file's syntax tree, parsed once however many checks walk it. */
-const parse = (file: SourceFile): ts.SourceFile => {
-  let tree = parsed.get(file.id);
+const parse = (file: JsxSource): ts.SourceFile => {
+  let tree = parsed.get(file);
   if (tree === undefined) {
     tree = ts.createSourceFile(
       file.path,
@@ -77,7 +80,7 @@ const parse = (file: SourceFile): ts.SourceFile => {
       /* setParentNodes */ true,
       ts.ScriptKind.TSX,
     );
-    parsed.set(file.id, tree);
+    parsed.set(file, tree);
   }
   return tree;
 };
@@ -118,9 +121,10 @@ function literalChunks(node: ts.Node, out: string[] = []): string[] {
  * is on the same rule but out of this check's sight. A Button in a dialog *body* is covered by
  * `findLooseDialogBodyButtons` instead, for the modules that are only ever dialog content.
  */
-function findLooseFooterButtons(): string[] {
+function findLooseFooterButtons(files: readonly JsxSource[] = tsxFiles()): string[] {
   const loose: string[] = [];
-  for (const file of tsxFiles()) {
+  for (const file of files) {
+    if (!file.text.includes("footer") || !file.text.includes("Button")) continue;
     const source = parse(file);
     const visit = (node: ts.Node): void => {
       if (ts.isJsxAttribute(node) && node.name.getText() === "footer" && node.initializer) {
@@ -215,9 +219,15 @@ function findLooseDialogBodyButtons(): string[] {
 }
 
 /** Control call sites whose own `className` spells a font size, as "relative/path:line — class". */
-function findSpelledSizes(): string[] {
+function findSpelledSizes(files: readonly JsxSource[] = tsxFiles()): string[] {
   const strays: string[] = [];
-  for (const file of tsxFiles()) {
+  for (const file of files) {
+    // getText() compares these exact spellings below. Text only selects candidates; the AST
+    // still decides whether a class belongs to a control, including cooked string literals.
+    if (!file.text.includes("className") || ![...CONTROLS].some((tag) => file.text.includes(tag)))
+      continue;
+    // Escapes can cook into a font-size utility, so keep them even without a raw match.
+    if (!FONT_SIZE_CLASS.test(file.text) && !file.text.includes("\\")) continue;
     const source = parse(file);
     const visit = (node: ts.Node): void => {
       const tag = jsxTag(node);
@@ -262,41 +272,25 @@ describe("control font size", () => {
   it("actually reads the control's own attribute — the check is exercised on known shapes", () => {
     // Guards the guard: without this, the assertion above would pass just as happily on a
     // `literalChunks` that had stopped seeing template text.
-    const found = (jsx: string): string[] => {
-      const source = ts.createSourceFile(
-        "t.tsx",
-        `const x = ${jsx};`,
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TSX,
-      );
-      const hits: string[] = [];
-      const visit = (node: ts.Node): void => {
-        const tag = jsxTag(node);
-        if (tag !== null && CONTROLS.has(tag)) {
-          for (const attr of (node as ts.JsxSelfClosingElement).attributes.properties) {
-            if (!ts.isJsxAttribute(attr) || attr.name.getText() !== "className") continue;
-            if (attr.initializer === undefined) continue;
-            for (const chunk of literalChunks(attr.initializer)) {
-              const hit = FONT_SIZE_CLASS.exec(chunk);
-              if (hit !== null) hits.push(hit[0]);
-            }
-          }
-        }
-        ts.forEachChild(node, visit);
-      };
-      visit(source);
-      return hits;
-    };
+    const found = (jsx: string): string[] =>
+      findSpelledSizes([{ id: "t.tsx", path: "t.tsx", text: `const x = ${jsx};` }]);
     // A plain string, and inside a template around an interpolation.
-    expect(found('<Input className="w-full text-sm" />')).toEqual(["text-sm"]);
-    expect(found("<Textarea className={`w-full ${x} text-[13px]`} />")).toEqual(["text-[13px]"]);
+    expect(found('<Input className="w-full text-sm" />')).toEqual(["t.tsx:1 <Input> text-sm"]);
+    expect(found("<Textarea className={`w-full ${x} text-[13px]`} />")).toEqual([
+      "t.tsx:1 <Textarea> text-[13px]",
+    ]);
+    expect(found(String.raw`<Input className={"\u0074ext-sm"} />`)).toEqual([
+      "t.tsx:1 <Input> text-sm",
+    ]);
     // Colour, alignment and a same-prefixed utility are the caller's business, not a font size.
     expect(found('<Select className="text-left text-gray-500 text-red-600" />')).toEqual([]);
     // The sanctioned route: the rung arrives as an expression, never as typed text.
     expect(found("<OptionMenu className={sizeTextClass[size]} />")).toEqual([]);
     // The class is only a problem on the control itself.
     expect(found('<div className="text-sm"><Input /></div>')).toEqual([]);
+    expect(found('<div className="text-sm" />')).toEqual([]);
+    expect(found("<Input />")).toEqual([]);
+    expect(found('<div>{/* <Input className="text-sm" /> */}</div>')).toEqual([]);
   });
 
   it("puts a dialog's buttons on the same rung as its fields", () => {
@@ -309,6 +303,16 @@ describe("control font size", () => {
       'A Button in a Modal footer passes size="sm", so the dialog\'s buttons read at the same ' +
         "size as its fields (compare the UI package's ConfirmModal).",
     ).toEqual([]);
+  });
+
+  it("finds missing or wrong footer rungs without rejecting buttons outside the footer", () => {
+    const scan = (jsx: string) =>
+      findLooseFooterButtons([{ id: "t.tsx", path: "t.tsx", text: `const x = ${jsx};` }]);
+    expect(scan("<Modal footer={<Button>Save</Button>} />")).toEqual(["t.tsx:1 <none>"]);
+    expect(scan('<Modal footer={<Button size="md">Save</Button>} />')).toEqual(['t.tsx:1 "md"']);
+    expect(scan('<Modal footer={<Button size="sm">Save</Button>} />')).toEqual([]);
+    expect(scan("<Button>Save</Button>")).toEqual([]);
+    expect(scan("<div>{/* footer <Button /> */}<span>Save</span></div>")).toEqual([]);
   });
 
   it("keeps a dialog body's buttons on the fields' rung", () => {

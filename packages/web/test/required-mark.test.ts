@@ -7,6 +7,8 @@
  *
  * - The field module lives in one place, and no other file hand-rolls a red "*" (found however
  *   its className is written).
+ * - Escaped string and template literals still identify red marks when their source contains no
+ *   literal danger class; comment-only mentions and unrelated JSX do not produce a hit.
  * - Neither dictionary says "optional" in a label, and every prose exception still says it (so
  *   the allow-list cannot rot).
  *
@@ -71,6 +73,9 @@ const RED_INK = /\btext-(?:red-|tone-danger-)/;
  * "id:line".
  */
 function marksIn(id: string, text: string): string[] {
+  // Most files contain no danger ink. Escapes may cook into it inside a string or template,
+  // so any backslash keeps the file eligible for the same AST check as a literal class.
+  if (!RED_INK.test(text) && !text.includes("\\")) return [];
   const found: string[] = [];
   const source = ts.createSourceFile(id, text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
   const visit = (node: ts.Node): void => {
@@ -155,6 +160,16 @@ describe("required mark", () => {
     ];
     expect(marksIn(probe, shapes.join("\n"))).toHaveLength(shapes.length);
     expect(marksIn(probe, '<span className="text-gray-500">*</span>')).toEqual([]);
+    expect(marksIn(probe, '/* text-red-500 */ <span className="text-gray-500">*</span>')).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    String.raw`<span className={"\u0074ext-red-500"}>{"\u002a"}</span>`,
+    "<span className={`\\u0074ext-tone-danger-fg`}>*</span>",
+  ])("finds a required mark whose danger class is escaped: %s", (jsx) => {
+    expect(marksIn("t.tsx", `const x = ${jsx};`)).toEqual(["t.tsx:1"]);
   });
 
   for (const [locale, dict] of [
