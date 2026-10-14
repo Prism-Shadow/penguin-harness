@@ -366,6 +366,7 @@ The pickers offer `low` and above. Many models cannot turn thinking off, but a s
 
 - `max` is the deepest tier. Each client maps it to the deepest effort its vendor accepts and falls back silently where there is no such tier, so picking it never fails. On Gemini and MiniMax M3 it lands on the same effort as `xhigh`.
 - For MiniMax M3, `none` maps directly to `reasoning.effort = "none"`.
+- For Gemini 4 Argon on Google's official client, `none` maps to `low`, and `xhigh` and `max` map to `high`. `low`, `medium` and `high` keep their values; omitting the level preserves Google's default `medium`.
 - DeepSeek V4 accepts `low`, `high` and `max`, and folds `medium` and `xhigh` into `high` on its side. Pick `max` for DeepSeek's deepest effort.
 
 ### In a new chat
@@ -549,7 +550,7 @@ The preset catalog includes, among others:
 
 - `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3`
-- `gemini-3.8-flash`
+- `gemini-4-argon` / `gemini-3.8-flash`
 - `claude-opus-5-5` / `claude-sonnet-5-5` / `claude-haiku-5-5` / `claude-fable-5-1`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
 - `gpt-6.1-sol` / `gpt-6-astra` / `gpt-5.6` / `gpt-5.5`
@@ -562,6 +563,8 @@ The preset catalog includes, among others:
 - `deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`, `Qwen/Qwen3.8-Flash-Next` (ModelScope's api-inference; preset rows with no price)
 
 The list is not exhaustive.
+
+Gemini 4 Argon is preset in Google, Penguin Go and OpenRouter, with a shared input/output context window of 1,048,576 tokens and image input. Google and Penguin Go use `gemini-4-argon`; OpenRouter uses `google/gemini-4-argon`. MMSP's synchronous stream supports up to 65,536 output tokens, including thinking; Google's longer background generation is outside this interface.
 
 - **DeepSeek images.** `deepseek-flash` is V4.1 Flash and reads images; `deepseek-v4-pro` is the V4 Pro 0813 release and is text-only. To send an image, use `deepseek-flash`.
 - **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, until **Restore defaults** deletes it with every other model that is not a preset. A retired row is never added to a Project that does not have it, and a new Project never gets one.
@@ -584,6 +587,8 @@ The list is not exhaustive.
   - the three Doubao Seed rows (`seed-2.1-pro`, `seed-2.1-turbo`, `seed-evolving`) at 50%
   - `glm-5.2` at 20%
   - `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
+
+  Gemini 4 Argon is 50% off in Google and OpenRouter through 2026-11-30: list prices of $4 input, $20 output and $0.20 cached input become $2, $10 and $0.10 per million tokens. Penguin Go records $2, $10 and $0.10 as its own list prices, with any further promotion supplied by the platform on connection or **Sync models**.
 
   Gemini 3.8 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. Atlas Cloud's `qwen/qwen3.6-35b-a3b` is 25% off. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model card shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
 - **Your own prices.** Editing a row's price cancels its promotion and takes the discount tag off the card: the figure is then yours, not the seller's.

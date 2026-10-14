@@ -102,6 +102,8 @@ The openrouter, fireworks, siliconflow, atlascloud, tokendance, opencode-go, qwe
 
 ### Model entries
 
+Gemini 4 Argon uses `model_id = "gemini-4-argon"` in the `google` and `penguin-go` groups, and `model_id = "google/gemini-4-argon"` in `openrouter`. The presets use Google's official Interactions client, MMSP HTTP and OpenRouter Responses respectively. Existing Projects can add these entries with **Add new models** on the models page.
+
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `provider` | string | — | Provider group; with `model_id`, the entry's unique key |

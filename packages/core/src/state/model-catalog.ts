@@ -27,7 +27,8 @@
  * TokenDance group re-read from its public portal API, the OpenRouter Step 5 Preview, Grok 4.7
  * and MiMo-V2.6-Flash rows, SiliconFlow's GLM-5.3 Flash and Hy4 preview rows, and Gemini 3.7
  * Flash dropped from every group, Google rerouting the id to 3.8 Flash: 2026-10-10; and the
- * Atlas Cloud group, from its public catalog API and pricing page: 2026-10-11).
+ * Atlas Cloud group, from its public catalog API and pricing page: 2026-10-11; Gemini 4 Argon
+ * (Google, Penguin Go and OpenRouter): 2026-10-14).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -1072,6 +1073,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.022, 0.66, 1.98),
     supportsVision: false,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Standard tier from openrouter.ai/google/gemini-4-argon (2026-10-14): Google's
+    // $4 input / $20 output / $0.20 cache hit, 50% off through 2026-11-30. Argon supports
+    // implicit caching only, so cache_write records input rather than cache storage.
+    modelId: "google/gemini-4-argon",
+    displayName: "Gemini 4 Argon",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.2, 4, 20),
+    discount: 0.5,
+    supportsVision: true,
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
@@ -2234,7 +2249,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // DeepSeek's own lineup (re-read 2026-09-16): V4.1 Flash as `deepseek-flash` and V4 Pro 0813
   // as `deepseek-v4-pro`; the two retired V4 Flash ids, served from V4.1 Flash, are not resold.
   // Gemini 3.7 Flash is no longer preset (2026-10-10): Google retires the id and reroutes it to
-  // 3.8 Flash, the first row below.
+  // 3.8 Flash.
+  {
+    // Owner-confirmed relay list prices (2026-10-14), matching Google's introductory
+    // rates. Any further Penguin Go promotion comes from authorization or model sync.
+    modelId: "gemini-4-argon",
+    displayName: "Gemini 4 Argon",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    pricing: usd(0.1, 2, 10),
+    supportsVision: true,
+    clientType: "mmsp",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
   {
     modelId: "gemini-3.8-flash",
     displayName: "Gemini 3.8 Flash",
@@ -2862,6 +2889,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Google Gemini (official USD pricing). Gemini 3.7 Flash left the group on 2026-10-10:
   // Google retires the id and reroutes it to 3.8 Flash, at the same price. --
+  {
+    // ai.google.dev/gemini-api/docs/pricing#gemini-4-argon (2026-10-14): standard list
+    // prices with a 50% introductory discount through 2026-11-30. Only implicit caching
+    // is supported; cache_write is the ordinary input price.
+    modelId: "gemini-4-argon",
+    displayName: "Gemini 4 Argon",
+    provider: "google",
+    contextWindow: 1048576,
+    pricing: usd(0.2, 4, 20),
+    discount: 0.5,
+    supportsVision: true,
+  },
   {
     // Same list price and same launch discount as the gemini-3.6-flash row below: Google
     // halves all three rates through 2026-12-31. Like that row this one declares the
