@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** fix
 - **Scope:** `desktop`
+- **PR:** [#1123](https://github.com/Prism-Shadow/penguin-harness/pull/1123)
 - **Issue:** [#816](https://github.com/Prism-Shadow/penguin-harness/issues/816)
 
 [English](2026-10-14-windows-posix-launcher.md)
