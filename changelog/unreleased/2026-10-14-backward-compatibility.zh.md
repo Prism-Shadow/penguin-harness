@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** refactor
 - **Scope:** `model-catalog`
+- **PR:** [#1137](https://github.com/Prism-Shadow/penguin-harness/pull/1137)
 
 [English](2026-10-14-backward-compatibility.md)
 

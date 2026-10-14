@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** feature
 - **Scope:** `model-catalog`, `web`, `docs`
+- **PR:** [#1137](https://github.com/Prism-Shadow/penguin-harness/pull/1137)
 
 [English](2026-10-14-latest-models-cache-weighted-sort.md)
 
