@@ -10,6 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SandboxPolicy } from "@prismshadow/penguin-core/plugin";
 import {
+  decodeOutput,
   localDrives,
   pathKind,
   readHost,
@@ -211,10 +212,7 @@ export function elevationCommand(script: string, log: string): string {
 
 function readText(file: string): string {
   try {
-    return fs
-      .readFileSync(file, "utf8")
-      .replace(/^\uFEFF/, "")
-      .replace(/\0/g, "");
+    return decodeOutput(fs.readFileSync(file)).replace(/\0/g, "");
   } catch {
     return "";
   }

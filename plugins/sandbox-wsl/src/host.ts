@@ -2,13 +2,14 @@
  * The Windows side: running wsl.exe, what it says about this machine, and the file this backend
  * keeps about the distro it set up.
  *
- * wsl.exe speaks UTF-16 by default; `WSL_UTF8=1` makes it write UTF-8, which is what every call
- * here sets. Its notices (a localhost proxy it cannot mirror into NAT mode) arrive on stderr on
- * every call and are dropped before anything reads the output.
+ * Request UTF-8 from wsl.exe, but retain its bytes: the Windows inbox executable can still
+ * return UTF-16LE diagnostics. Its notices (a localhost proxy it cannot mirror into NAT mode)
+ * arrive on stderr on every call and are dropped before anything reads the output.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { isWslNotice } from "./profile.js";
 
 /** wsl.exe by its full path: a server started with a trimmed PATH still finds it. */
@@ -31,7 +32,16 @@ export interface WslResult {
   stderr: string;
 }
 
-/** Drops WSL's own notices, and the NULs a UTF-16 answer leaves when read as UTF-8. */
+/** Decode before cleaning: deleting NULs after UTF-8 decoding cannot recover Chinese text. */
+export function decodeOutput(bytes: Buffer): string {
+  // WSL's UTF-16LE output may omit the BOM. Its ASCII labels, spaces and line endings still
+  // have zero high bytes; UTF-8 text does not. Inspect the whole answer, not one pipe chunk.
+  const utf16 =
+    (bytes[0] === 0xff && bytes[1] === 0xfe) || bytes.some((byte, i) => i % 2 === 1 && byte === 0);
+  return bytes.toString(utf16 ? "utf16le" : "utf8").replace(/^\uFEFF/, "");
+}
+
+/** Drops WSL's own notices and stray NULs from already decoded text. */
 export function cleanOutput(text: string): string {
   return text
     .replace(/\0/g, "")
@@ -52,23 +62,24 @@ export function runWsl(
       env: { ...process.env, WSL_UTF8: "1" },
       stdio: ["pipe", "pipe", "pipe"],
     });
-    let stdout = "";
-    let stderr = "";
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    // Live lines come from the Linux provisioning script, which writes UTF-8. Keep its
+    // decoder across chunks so a split multi-byte character is not replaced with U+FFFD.
+    const progress = new StringDecoder("utf8");
     let partial = "";
     const timer =
       opts.timeoutMs !== undefined ? setTimeout(() => child.kill(), opts.timeoutMs) : undefined;
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout.push(chunk);
       if (opts.onLine === undefined) return;
-      partial += chunk;
+      partial += progress.write(chunk);
       const lines = partial.split(/\r?\n|\r/);
       partial = lines.pop() ?? "";
       for (const line of lines) if (line.trim() !== "") opts.onLine(line.replace(/\0/g, ""));
     });
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr.push(chunk);
     });
     child.on("error", (err) => {
       if (timer) clearTimeout(timer);
@@ -76,7 +87,11 @@ export function runWsl(
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
-      resolve({ code: code ?? -1, stdout: cleanOutput(stdout), stderr: cleanOutput(stderr) });
+      resolve({
+        code: code ?? -1,
+        stdout: cleanOutput(decodeOutput(Buffer.concat(stdout))),
+        stderr: cleanOutput(decodeOutput(Buffer.concat(stderr))),
+      });
     });
     child.stdin.end(opts.input ?? "");
   });
