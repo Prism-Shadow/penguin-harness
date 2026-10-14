@@ -3,6 +3,7 @@
 - **Date:** 2026-10-14
 - **Type:** feature
 - **Scope:** `server`
+- **PR:** [#1139](https://github.com/Prism-Shadow/penguin-harness/pull/1139)
 
 [English](2026-10-14-remote-session-exchange.md)
 
