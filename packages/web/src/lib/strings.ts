@@ -1121,7 +1121,7 @@ export const zh = {
     exitFullPage: "退出全页模式（回到聊天）",
     exitHint: (palette: string | null): string =>
       palette === null ? "打开命令面板可回到聊天。" : `按 ${palette} 打开命令面板可回到聊天。`,
-    noSuchPage: "这个工作台 不存在或没有页面。",
+    noSuchPage: "这个工作台不存在或没有页面。",
     removeConfirm: "删除这个工作台及其全部已记录版本？",
     removeYes: "确认移除",
     removing: "移除中…",
