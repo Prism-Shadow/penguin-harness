@@ -2,6 +2,9 @@
  * What a route group's `auth` flag means, wherever the group lands (http/app.ts), and what a
  * web contribution's data may not overwrite (http/routes/contributions.ts). Both modules are
  * wired by hand: the point is the assembly, not the tree around it.
+ *
+ * - Given a token-only group, missing or wrong Bearer credentials are refused.
+ * - Given nested protected groups, one valid Bearer authenticates the request once.
  */
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
@@ -22,7 +25,7 @@ const USER = { userId: "u1", isAdmin: false };
 interface Group {
   id: string;
   prefix: string;
-  auth: "user" | "none";
+  auth: "user" | "token" | "none";
   order: number;
   /** The one path this group serves; every path under its prefix when omitted. */
   only?: string;
@@ -50,7 +53,7 @@ function assemble(groups: Group[]): {
       sessionTtlMs: 1000,
       authenticateApiToken: (token: string) => {
         authentications += 1;
-        return token === TOKEN ? { user: USER, via: "api-token" } : null;
+        return token === TOKEN ? { user: USER, via: "token" } : null;
       },
       authenticateWithMeta: () => null,
     },
@@ -104,17 +107,30 @@ describe("a route group's auth flag", () => {
     expect((await app.fetch("/server/m1/api/me", TOKEN)).status).toBe(200);
   });
 
-  it("authenticates once per request however many protected prefixes the path passes", async () => {
-    const app = assemble([
-      // The outer group serves its root alone, so the nested path passes its gate and goes on.
-      { id: "projects", prefix: "/api/projects", auth: "user", order: 80, only: "/" },
-      { id: "members", prefix: "/api/projects/:projectId/members", auth: "user", order: 90 },
-    ]);
+  it("requires a valid local API token for a token-only group", async () => {
+    const app = assemble([{ id: "exchange", prefix: "/api/exchange", auth: "token", order: 55 }]);
 
-    const res = await app.fetch("/api/projects/p1/members", TOKEN);
-    expect(await res.json()).toEqual({ group: "members", user: "u1" });
-    expect(app.authentications()).toBe(1);
+    expect((await app.fetch("/api/exchange")).status).toBe(401);
+    expect((await app.fetch("/api/exchange/session", "wrong")).status).toBe(401);
+    const res = await app.fetch("/api/exchange/session", TOKEN);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ group: "exchange", user: "u1" });
   });
+
+  it.each(["user", "token"] as const)(
+    "authenticates once per request through nested %s groups",
+    async (auth) => {
+      const app = assemble([
+        // The outer group serves its root alone, so the nested path passes its gate and goes on.
+        { id: "projects", prefix: "/api/projects", auth, order: 80, only: "/" },
+        { id: "members", prefix: "/api/projects/:projectId/members", auth, order: 90 },
+      ]);
+
+      const res = await app.fetch("/api/projects/p1/members", TOKEN);
+      expect(await res.json()).toEqual({ group: "members", user: "u1" });
+      expect(app.authentications()).toBe(1);
+    },
+  );
 
   it("declines a path no group serves, instead of answering for it", async () => {
     const app = assemble([{ id: "members", prefix: "/api/members", auth: "user", order: 10 }]);

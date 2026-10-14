@@ -9,7 +9,7 @@ import type { Db } from "../../hmr/capabilities.js";
 import type { AuthSessions } from "../../mechanisms/identity.js";
 
 /** How a session was established, as stored. NULL on rows formed before the column existed. */
-export type SessionViaValue = "password" | "desktop" | "setup" | "cli";
+export type SessionViaValue = "password" | "desktop" | "setup" | "cli" | "remote";
 
 export interface AuthSessionRow {
   tokenHash: string;

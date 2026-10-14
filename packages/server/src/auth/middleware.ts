@@ -64,7 +64,11 @@ export function currentUser(c: { var: { user: UserRow } }): UserRow {
   return c.var.user;
 }
 
-export function authMiddleware(auth: Auth, trustProxy: boolean): MiddlewareHandler<AppEnv> {
+export function authMiddleware(
+  auth: Auth,
+  trustProxy: boolean,
+  options: { apiTokenOnly?: boolean } = {},
+): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     // Bearer first: an explicit credential on the request outranks ambient cookies, and
     // a wrong one is an error, never a silent fallback (see the module doc).
@@ -80,6 +84,17 @@ export function authMiddleware(auth: Auth, trustProxy: boolean): MiddlewareHandl
       return;
     }
     const token = getCookie(c, SESSION_COOKIE);
+    // Classify a refused cookie without renewing its session or setting a response cookie.
+    if (options.apiTokenOnly) {
+      if (token && auth.sessionIsLive(token)) {
+        throw new HttpError(
+          403,
+          "local_api_token_required",
+          "Only the local API token may issue a remote browser session.",
+        );
+      }
+      throw new HttpError(401, "unauthorized", "Not signed in or the sign-in has expired.");
+    }
     const authed = token ? auth.authenticateWithMeta(token) : null;
     if (!authed) {
       throw new HttpError(401, "unauthorized", "Not signed in or the sign-in has expired.");

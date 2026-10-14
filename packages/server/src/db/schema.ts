@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
   user_id    TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,                  -- 30-day sliding renewal, topped up in place when <29 days remain
-  via        TEXT                            -- 'password'|'desktop'|'setup'|'cli'; NULL = legacy (password)
+  via        TEXT                            -- 'password'|'desktop'|'setup'|'cli'|'remote'; NULL = legacy (password)
 );
 -- deleteExpired runs on every login and mint, deleteByUser on every admin reset; without
 -- these both scan the whole table.

@@ -21,6 +21,7 @@ import type { AuthState, Clock, Config } from "../hmr/capabilities.js";
 import type { Auth, AuthSessions, Users } from "../mechanisms/identity.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
+export const REMOTE_SESSION_TTL_MS = 60 * 60_000;
 
 /** Built-in admin user_id. */
 export const ADMIN_USER_ID = "admin";
@@ -255,6 +256,23 @@ export class AuthService implements Auth {
       throw new HttpError(500, "internal", "Built-in admin has not been seeded.");
     }
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "desktop") };
+  }
+
+  issueRemoteSession(): { token: string; expiresAt: string; maxAgeSeconds: number } {
+    const row = this.users.findById(ADMIN_USER_ID);
+    if (!row) {
+      throw new HttpError(500, "internal", "Built-in admin has not been seeded.");
+    }
+    const maxAgeSeconds = Math.floor(REMOTE_SESSION_TTL_MS / 1000);
+    return {
+      ...this.authSessions.issue({
+        userId: row.userId,
+        via: "remote",
+        now: this.clock.now(),
+        ttlMs: REMOTE_SESSION_TTL_MS,
+      }),
+      maxAgeSeconds,
+    };
   }
 
   /** Self password change (user settings): validates the old password first; the current session stays valid. */
