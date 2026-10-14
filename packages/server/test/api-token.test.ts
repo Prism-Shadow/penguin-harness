@@ -16,17 +16,22 @@
  *   renewing the existing cookie; a wrong Bearer does not fall back to that cookie.
  * - Given a Remote session used before its hour, access succeeds without renewal and fails
  *   at its issued expiry; logging out also makes its cookie unusable.
+ * - Given a Remote cookie, neither the assembled endpoint nor a route behind a user gate
+ *   accepts it for another exchange; a real Bearer still succeeds.
  * - The next boot's token overwrites the file atomically, owner-only, leaving no temp file.
  * - An absent or empty token file reads as no token.
  * - The comparison is constant-time and length-aware, and only a Bearer header shape parses.
  */
+import { Hono } from "hono";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { MeResponse, SessionCreateResponse } from "../src/api/types.js";
 import { apiTokenPath, readApiToken, storeApiToken, tokensEqual } from "../src/auth/api-token.js";
-import { bearerToken, SESSION_COOKIE } from "../src/auth/middleware.js";
+import { authMiddleware, bearerToken, SESSION_COOKIE } from "../src/auth/middleware.js";
 import { REMOTE_SESSION_TTL_MS } from "../src/auth/service.js";
+import { remoteRoutes } from "../src/http/routes/remote.js";
+import { handleError } from "../src/http/errors.js";
 import { sessionTokenHash } from "../src/db/repos/auth-sessions.js";
 import {
   apiClient,
@@ -36,6 +41,7 @@ import {
   desktopLoginCookie,
   loginAdmin,
   makeTempRoot,
+  remoteSessionCookie,
 } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -274,11 +280,36 @@ describe("local API token", () => {
       expect(me.status).toBe(200);
       const meBody = (await me.json()) as MeResponse;
       expect(meBody.user.userId).toBe("admin");
-      expect(meBody.sessionVia).toBe("password");
+      expect(meBody.sessionVia).toBe("token");
     } finally {
       await remote.cleanup();
     }
   });
+
+  it.each(["platform", "user-gate"] as const)(
+    "a Remote cookie cannot exchange another session through the %s mount",
+    async (mount) => {
+      const cookie = await remoteSessionCookie(t.app, token);
+      const app =
+        mount === "platform"
+          ? t.app
+          : new Hono()
+              .onError(handleError)
+              .use("*", authMiddleware(t.deps.authService, false))
+              .route("/api/remote", remoteRoutes({ authService: t.deps.authService }));
+      const refused = await apiClient(app, cookie).post("/api/remote/session", {});
+      expect(refused.status).toBe(403);
+      expect(await refused.json()).toMatchObject({ error: { code: "local_api_token_required" } });
+      expect(refused.headers.has("set-cookie")).toBe(false);
+      const accepted = await bearerFor(
+        app,
+        token,
+        { method: "POST", body: "{}", headers: { cookie } },
+        "/api/remote/session",
+      );
+      expect(accepted.status).toBe(200);
+    },
+  );
 
   it.each(["password", "setup", "desktop"] as const)(
     "rejects an aging %s cookie without renewing it, while ordinary API access still renews",

@@ -32,12 +32,12 @@ One principle runs through every scenario:
 
 Each authentication source has a `via` value recording how it was established:
 
-- `password`: a typed password; the public API also reports CLI- and Remote-minted sessions this way for compatibility
+- `password`: a typed password; the public API also reports CLI-minted sessions this way
 - `desktop`: the desktop app's own window
 - `setup`: the sign-in link on a fresh server
 - `cli`: the internal source stored for a session minted by `penguin auth token`
 - `remote`: a one-hour browser session issued to Penguin Remote from the local API token
-- `token`: a request that carries the local API token as a Bearer header; no session is stored
+- `token`: the local API token’s authority, presented as a Bearer header or an exchanged Remote cookie
 
 ## Claim a fresh server
 
@@ -117,9 +117,11 @@ When a CLI command runs against a server on this machine, it authenticates with 
 
 The local API token cannot change an agent's exposure: turning an agent's API on, keyless access, its approval mode, its keys and the server-wide Agent API switch take a person's sign-in, because every agent's commands carry that token. The server refuses the token on them with `403` `human_required`, and outside a Session the CLI then sends the request once more with your stored sign-in, if you have one; `penguin auth token`, below, gives the CLI that sign-in. This keeps an agent from exposing itself through the credential the harness hands it; it is not a boundary, since a process running as the data root's OS account can mint a session too. The sandbox is what bounds an agent.
 
-Penguin Remote may exchange that local ownership for a browser session by sending `POST /api/remote/session` with `Authorization: Bearer <local API token>`, `Content-Type: application/json`, and an empty JSON object. This is the only accepted credential: password, desktop, and setup cookies are refused even when they belong to the administrator. Refused cookie requests do not renew the session or set a Cookie.
+Penguin Remote may exchange that local ownership for a browser session by sending `POST /api/remote/session` with `Authorization: Bearer <local API token>`, `Content-Type: application/json`, and an empty JSON object. This is the only accepted credential: password, desktop, setup, and Remote cookies are refused even when they belong to the administrator. Refused cookie requests do not renew the session or set a Cookie.
 
 The response contains a new raw `penguin_session` token for the built-in administrator, with a fixed one-hour expiry and an internal `via: remote` marker. It is returned with `Cache-Control: no-store`; the Harness response does not set a Cookie. Penguin Remote's local proxy must set the Cookie on its public-domain response and must treat the returned token as a credential: do not log, cache, or expose it elsewhere. The endpoint does not enable CORS.
+
+The public API reports this session as `token`: exchanging a token preserves its restrictions on human-only writes and its Agent identity rules. To change an Agent’s exposure, browser backend, or browser pairing, sign out and sign in with a password. The Remote proxy must preserve that password login instead of replacing it with another exchanged session.
 
 A script that needs a session of its own mints one. A session is a row in the data root's `web.db`, so the CLI writes one:
 

@@ -72,9 +72,9 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ### Penguin Remote 会话兑换
 
-`POST /api/remote/session` 将当前本地 API token 所代表的权限兑换为一个以内置管理员身份创建的短期浏览器会话。接口只接受 `Authorization: Bearer <本地 API token>`：未提供或提供错误的 Bearer token 返回 `401`；已通过密码、桌面或首次登录 Cookie 认证的请求返回 `403`。请求必须使用 `Content-Type: application/json`，请求体为空对象（`{}`）。该接口不会新增任何 CORS 开放。
+`POST /api/remote/session` 将当前本地 API token 所代表的权限兑换为一个以内置管理员身份创建的短期浏览器会话。接口只接受 `Authorization: Bearer <本地 API token>`：未提供或提供错误的 Bearer token 返回 `401`；已通过密码、桌面、首次登录或 Remote Cookie 认证的请求返回 `403`。请求必须使用 `Content-Type: application/json`，请求体为空对象（`{}`）。该接口不会新增任何 CORS 开放。
 
-有效期固定为一小时，调用方不能自行指定。持久化的会话来源在内部标记为 `remote`，不会进入 30 天滑动续期路径。成功响应带有 `Cache-Control: no-store`，不包含 `Set-Cookie`，并返回：
+有效期固定为一小时，调用方不能自行指定。持久化的会话来源在内部标记为 `remote`，不会进入 30 天滑动续期路径。它保留本地 API token 的权限（`/api/me` 返回 `sessionVia: "token"`），因此 `human_required` 限制和 Agent 身份规则也适用于这个 Cookie。需要人工授权的写操作必须另行使用密码登录。Remote Cookie 不能再次兑换会话；兑换请求必须在 Bearer 头中携带真正的本地 API token。成功响应带有 `Cache-Control: no-store`，不包含 `Set-Cookie`，并返回：
 
 ```json
 {

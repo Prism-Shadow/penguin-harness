@@ -53,8 +53,10 @@ export function generateInitialAdminPassword(): string {
 
 /**
  * "desktop" and "setup" may set a password without the old one (theirs is random and was never
- * shown); desktop-only routes open to "desktop" alone. "token" is the local API token's Bearer
- * header — per request, never a stored row. Anything else reads as "password".
+ * shown); desktop-only routes open to "desktop" alone. "token" is the local API token's
+ * authority, whether presented as a Bearer header or exchanged for a Remote cookie.
+ * Exchanging the credential must not grant the person's privileges. Anything else reads as
+ * "password".
  */
 export type SessionVia = "password" | "desktop" | "setup" | "token";
 
@@ -368,7 +370,13 @@ export class AuthService implements Auth {
       renewed = true;
     }
     const via: SessionVia =
-      session.via === "desktop" ? "desktop" : session.via === "setup" ? "setup" : "password";
+      session.via === "remote"
+        ? "token"
+        : session.via === "desktop"
+          ? "desktop"
+          : session.via === "setup"
+            ? "setup"
+            : "password";
     return { user, via, renewed };
   }
 

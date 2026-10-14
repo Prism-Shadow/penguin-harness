@@ -7,10 +7,11 @@
 
 [中文版](2026-10-14-remote-session-exchange.zh.md)
 
-Penguin Remote can now exchange the machine-local Harness API token for a short-lived browser session token. The new protected endpoint returns the cookie name, raw session token, expiry timestamp and max age for a one-hour session, leaving the remote proxy to set the public-domain cookie itself.
+Penguin Remote gained an endpoint to exchange the machine-local Harness API token for a short-lived browser session token. The protected endpoint returned the cookie name, raw session token, expiry timestamp and max age for a one-hour session, leaving the remote proxy to set the public-domain cookie itself.
 
 ## Details
 
-- `POST /api/remote/session` only accepts requests authenticated by the existing local API token Bearer path. Password, desktop and first-login setup cookie sessions are refused.
-- Refused cookie requests neither renew the session nor set a cookie; ordinary API requests retain their existing sliding renewal.
-- The issued browser session is stored through the normal auth-session repository with an internal `remote` source marker, so later audit and revocation can distinguish it from ordinary password sessions.
+- `POST /api/remote/session` accepted requests authenticated by the existing local API token Bearer path. Password, desktop, first-login setup and Remote cookie sessions were refused.
+- Refused cookie requests neither renewed the session nor set a cookie; ordinary API requests retained their existing sliding renewal.
+- The issued browser session was stored through the normal auth-session repository with an internal `remote` source marker. Its public `sessionVia` stayed `token`, preserving the local API token’s human-only write restrictions and Agent identity rules. Sensitive writes required a separate password login.
+- Token-only routes required an actual Bearer header even after an outer route authenticated a Remote cookie; an exchanged session could not mint another session.

@@ -118,7 +118,8 @@ export function bearerToken(header: string | undefined): string | null {
 }
 
 /**
- * Refuses the local API token on a write that only a person may make: 403 `human_required`. A
+ * Refuses the local API token and its exchanged Remote cookies on a write that only a person
+ * may make: 403 `human_required`. AuthService preserves their common "token" authority. A
  * person's sign-in — a cookie session, from the Web App, `penguin auth login` or
  * `penguin auth token` — passes. Every tool subprocess of a server-driven Session holds that token
  * as `PENGUIN_API_TOKEN`, so these are the writes an Agent must not make from its own shell:
@@ -141,7 +142,7 @@ export function requireHuman(c: { var: { sessionVia: SessionVia } }): void {
     throw new HttpError(
       403,
       "human_required",
-      "Only the signed-in user can do this, in the app; an API token cannot.",
+      "Sign in with your password to do this; an API token or its Remote session cannot.",
     );
   }
 }

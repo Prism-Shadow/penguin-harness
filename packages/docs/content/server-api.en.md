@@ -72,9 +72,9 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ### Penguin Remote session exchange
 
-`POST /api/remote/session` converts access to the current local API token into a short browser session for the built-in administrator. It accepts only `Authorization: Bearer <local API token>`: a missing or incorrect Bearer token returns `401`, while an authenticated password, desktop, or setup Cookie returns `403`. The request must use `Content-Type: application/json`; the body is an empty object (`{}`). No CORS access is added.
+`POST /api/remote/session` converts access to the current local API token into a short browser session for the built-in administrator. It accepts only `Authorization: Bearer <local API token>`: a missing or incorrect Bearer token returns `401`, while an authenticated password, desktop, setup, or Remote Cookie returns `403`. The request must use `Content-Type: application/json`; the body is an empty object (`{}`). No CORS access is added.
 
-The lifetime is fixed at one hour and cannot be selected by the caller. The stored session has the internal source `remote` and is not extended by the 30-day sliding-renewal path. A successful response has `Cache-Control: no-store`, does not include `Set-Cookie`, and returns:
+The lifetime is fixed at one hour and cannot be selected by the caller. The stored session has the internal source `remote` and is not extended by the 30-day sliding-renewal path. It retains the local API token’s authority (`sessionVia: "token"` in `/api/me`), so `human_required` restrictions and Agent identity rules also apply to this Cookie. Human-only writes require a separate password login. A Remote Cookie cannot be used to exchange another session; that request needs the actual local API token in the Bearer header. A successful response has `Cache-Control: no-store`, does not include `Set-Cookie`, and returns:
 
 ```json
 {

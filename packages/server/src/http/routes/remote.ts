@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { SESSION_COOKIE } from "../../auth/middleware.js";
+import { bearerToken, SESSION_COOKIE } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Auth } from "../../mechanisms/identity.js";
@@ -17,7 +17,7 @@ export function remoteRoutes(deps: { authService: Auth }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.post("/session", async (c) => {
-    if (c.var.sessionVia !== "token") {
+    if (c.var.sessionVia !== "token" || bearerToken(c.req.header("authorization")) === null) {
       throw new HttpError(
         403,
         "local_api_token_required",

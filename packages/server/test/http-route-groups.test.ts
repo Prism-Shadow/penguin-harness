@@ -5,6 +5,8 @@
  *
  * - Given a token-only group, missing or wrong Bearer credentials are refused.
  * - Given nested protected groups, one valid Bearer authenticates the request once.
+ * - Given a Remote cookie already authenticated by an outer user group, a nested token-only
+ *   group still requires the actual Bearer credential.
  */
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
@@ -42,7 +44,7 @@ function group({ only, ...g }: Group): Contributed {
 }
 
 function assemble(groups: Group[]): {
-  fetch(path: string, token?: string): Promise<Response>;
+  fetch(path: string, token?: string, cookie?: string): Promise<Response>;
   authentications(): number;
 } {
   let authentications = 0;
@@ -55,7 +57,9 @@ function assemble(groups: Group[]): {
         authentications += 1;
         return token === TOKEN ? { user: USER, via: "token" } : null;
       },
-      authenticateWithMeta: () => null,
+      authenticateWithMeta: (token: string) =>
+        token === "remote-cookie" ? { user: USER, via: "token", renewed: false } : null,
+      sessionIsLive: (token: string) => token === "remote-cookie",
     },
     errors: { record: () => {} },
     settings: {
@@ -68,10 +72,13 @@ function assemble(groups: Group[]): {
   });
   http.setup({ contributions: { routes: groups.map(group) } } as unknown as ClassCtx);
   return {
-    fetch: (path, token) =>
+    fetch: (path, token, cookie) =>
       http.http.fetch(
         new Request(`http://localhost${path}`, {
-          headers: token === undefined ? {} : { authorization: `Bearer ${token}` },
+          headers: {
+            ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+            ...(cookie === undefined ? {} : { cookie: `penguin_session=${cookie}` }),
+          },
         }),
       ),
     authentications: () => authentications,
@@ -131,6 +138,21 @@ describe("a route group's auth flag", () => {
       expect(app.authentications()).toBe(1);
     },
   );
+
+  it("refuses a Remote cookie at a token-only group even after an outer user gate", async () => {
+    const app = assemble([
+      { id: "outer", prefix: "/api/remote", auth: "user", order: 50, only: "/" },
+      { id: "exchange", prefix: "/api/remote/session", auth: "token", order: 55 },
+    ]);
+
+    expect((await app.fetch("/api/remote", undefined, "remote-cookie")).status).toBe(200);
+    const refused = await app.fetch("/api/remote/session", undefined, "remote-cookie");
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ error: { code: "local_api_token_required" } });
+    expect(refused.headers.has("set-cookie")).toBe(false);
+    expect((await app.fetch("/api/remote/session", "wrong", "remote-cookie")).status).toBe(401);
+    expect((await app.fetch("/api/remote/session", TOKEN, "remote-cookie")).status).toBe(200);
+  });
 
   it("declines a path no group serves, instead of answering for it", async () => {
     const app = assemble([{ id: "members", prefix: "/api/members", auth: "user", order: 10 }]);

@@ -144,8 +144,9 @@ export interface MeResponse {
    * "desktop" is the shell's own window (one-shot token); "setup" was claimed through the
    * first-login link on a server whose admin password has never been set. Both may set a
    * password without the old one (it is random and was never shown); only "desktop" opens
-   * desktop-only routes. "token" marks a request authenticated by the local API token's
-   * Bearer header (the CLI and agent-driven calls) — no stored session at all.
+   * desktop-only routes. "token" marks the local API token's authority, carried by a Bearer
+   * header or an exchanged Remote cookie; neither can perform writes requiring a person's
+   * sign-in.
    */
   sessionVia: "password" | "desktop" | "setup" | "token";
   /**

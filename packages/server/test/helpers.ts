@@ -529,6 +529,14 @@ export function tokenClient(app: Hono<AppEnv>, token: string) {
   return clientWith(app, { authorization: `Bearer ${token}` });
 }
 
+/** A browser cookie exchanged from the same API token an Agent's commands receive. */
+export async function remoteSessionCookie(app: Hono<AppEnv>, token: string): Promise<string> {
+  const res = await tokenClient(app, token).post("/api/remote/session", {});
+  if (res.status !== 200) throw new Error(`Remote exchange failed with ${res.status}`);
+  const session = (await res.json()) as { cookieName: string; sessionToken: string };
+  return `${session.cookieName}=${session.sessionToken}`;
+}
+
 function clientWith(app: Hono<AppEnv>, credential: Record<string, string>) {
   const call = (method: string) => (apiPath: string, body?: unknown) =>
     app.request(apiPath, {
