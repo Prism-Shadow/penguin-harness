@@ -106,7 +106,7 @@ function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
         >
           <GlyphIcon d={ICONS.ellipsis} size={ICON_SIZE.rowLead} filled />
         </button>
@@ -272,7 +272,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
               return (
                 <li
                   key={item.name}
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60"
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-control-hover"
                 >
                   <StateGlyph item={item} />
                   <div className="min-w-0 flex-1">

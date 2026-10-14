@@ -36,13 +36,37 @@
 }
 .ui-shell[data-wallpaper]
   [data-wallpaper-surface="panel"]:not([role="dialog"] *)
-  > [data-slot="head"]:not(:hover),
+  > [data-slot="head"],
 .ui-shell[data-wallpaper]
   [data-wallpaper-surface="panel"]:not([role="dialog"] *)
   > table
   > thead
   > tr {
   background-color: transparent;
+}
+/* A floating panel reads against its own surface, including one mounted inside the shell.
+   Reset the inherited control fills there; the composer and navigation are wallpaper surfaces. */
+.ui-glass:not([data-slot="composer"], [data-glass="navigation"]),
+[role="dialog"] {
+  --wallpaper-control-fill: initial;
+  --wallpaper-hover-fill: initial;
+  --wallpaper-selected-fill: initial;
+  --wallpaper-well-fill: initial;
+  --wallpaper-choice-fill: initial;
+}
+@media not (prefers-reduced-transparency: reduce) {
+  .ui-shell[data-wallpaper] {
+    --wallpaper-control-fill: color-mix(in srgb, var(--ui-surface) 24%, transparent);
+    --wallpaper-hover-fill: color-mix(in srgb, var(--ui-fg) 5%, transparent);
+    --wallpaper-selected-fill: color-mix(in srgb, var(--ui-fg) 8%, transparent);
+    --wallpaper-well-fill: color-mix(in srgb, var(--ui-fg) 3%, transparent);
+    --wallpaper-choice-fill: color-mix(in srgb, var(--ui-surface) 40%, transparent);
+  }
+  .ui-shell[data-wallpaper]
+    [data-wallpaper-surface="panel"]:not([role="dialog"] *)
+    > [data-slot="head"]:is(button, :has(> button)):hover {
+    background-color: var(--wallpaper-hover-fill);
+  }
 }
 /* Activity rows need no painted strip. Let them scroll with their bodies: a clear sticky row
    would otherwise superimpose its words on the text moving underneath. */

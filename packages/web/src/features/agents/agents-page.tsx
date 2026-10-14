@@ -51,7 +51,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { OPENS_DETAIL_CLASS, cardBodyClick } from "../../lib/card-open";
+import { cardBodyClick } from "../../lib/card-open";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useUpdateBadges } from "../../lib/use-update-badges";
@@ -136,7 +136,8 @@ export function AgentCard({
   return (
     <Card
       padding="md"
-      className={`flex flex-wrap items-center gap-x-6 gap-y-2 ${onOpen === null ? "" : OPENS_DETAIL_CLASS}`}
+      interactive={onOpen !== null}
+      className="flex flex-wrap items-center gap-x-6 gap-y-2"
       {...(onOpen === null ? {} : { onClick: cardBodyClick(onOpen) })}
     >
       {children}

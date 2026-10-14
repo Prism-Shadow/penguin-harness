@@ -29,6 +29,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
 import {
+  Card,
+  CardHeader,
   Input,
   PageFrame,
   PageHeader,
@@ -99,8 +101,8 @@ function SummaryCard({
   currency: "USD" | "CNY";
 }) {
   return (
-    <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-      <p className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">{title}</p>
+    <Card>
+      <CardHeader title={title} />
       <div className="space-y-1">
         <SummaryRow label={S.usage.tokens} value={humanizeTokens(bucket.total)} />
         <SummaryRow label={S.usage.requests} value={String(bucket.requests)} muted />
@@ -111,7 +113,7 @@ function SummaryCard({
           sup={bucket.hasUncosted}
         />
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -126,13 +128,10 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{title}</p>
-        {extra}
-      </div>
+    <Card>
+      <CardHeader title={title} actions={extra} />
       {children}
-    </div>
+    </Card>
   );
 }
 

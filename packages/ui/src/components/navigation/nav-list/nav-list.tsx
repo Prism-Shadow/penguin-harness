@@ -109,9 +109,9 @@ const GLYPH_SIZE: Record<NavRowDensity, number> = {
  */
 const STATE: Record<NavSurface, { active: string; rest: string; groupRest: string }> = {
   default: {
-    active: "bg-line-muted text-fg",
-    rest: "text-fg-muted hover:bg-surface-muted hover:text-fg",
-    groupRest: "text-fg-muted group-hover:bg-surface-muted group-hover:text-fg",
+    active: "bg-control-selected text-fg",
+    rest: "text-fg-muted hover:bg-control-hover hover:text-fg",
+    groupRest: "text-fg-muted group-hover:bg-control-hover group-hover:text-fg",
   },
   muted: {
     active: `${NAV_FILL.selected} text-fg`,

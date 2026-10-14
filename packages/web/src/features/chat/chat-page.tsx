@@ -2299,8 +2299,8 @@ export function ChatPage() {
                 aria-label={S.chat.infoPanel}
                 aria-expanded={infoOpen}
                 onClick={() => setInfoOpen(!infoOpen)}
-                className={`flex h-7 shrink-0 items-center rounded-md transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                  infoOpen ? "bg-gray-100 dark:bg-gray-800" : ""
+                className={`flex h-7 shrink-0 items-center rounded-md transition-colors duration-150 hover:bg-control-hover ${
+                  infoOpen ? "bg-control-selected" : ""
                 }`}
               >
                 {/* Wide: the chip row, a glyph and a total per chip, each named by its label.

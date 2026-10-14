@@ -30,7 +30,7 @@ describe("Segmented", () => {
   it("presses the chosen option and only that one", () => {
     const html = render();
     expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
-    expect(html).toMatch(/aria-pressed="true" class="[^"]*bg-surface[^"]*">Dark</);
+    expect(html).toMatch(/aria-pressed="true" class="[^"]*bg-control-choice[^"]*">Dark</);
   });
 
   it("spells its column count as a whole class, for every count it takes", () => {
@@ -42,7 +42,7 @@ describe("Segmented", () => {
 
   it("sits in a control-shaped well on the rhythm's steps", () => {
     expect(classTokens(render())).toEqual(
-      expect.arrayContaining(["rounded-control", "bg-line-muted", "p-1", "gap-1"]),
+      expect.arrayContaining(["rounded-control", "bg-control-well", "p-1", "gap-1"]),
     );
   });
 

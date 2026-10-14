@@ -65,7 +65,7 @@ describe("Table", () => {
   it("rules and lightens its rows, and sets figures right and tabular", () => {
     const html = table({});
     expect(classTokens(html)).toEqual(
-      expect.arrayContaining(["border-line-muted", "last:border-b-0", "hover:bg-surface-muted"]),
+      expect.arrayContaining(["border-line-muted", "last:border-b-0", "hover:bg-control-hover"]),
     );
     expect(html).toMatch(/<td class="px-3 py-2 text-right tabular-nums *">\$0\.12<\/td>/);
   });

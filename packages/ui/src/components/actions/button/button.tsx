@@ -20,13 +20,13 @@ const VARIANT: Record<ButtonVariant, string> = {
   // naming a second colour, so an accent the user picked needs no hover twin.
   primary:
     "border border-accent bg-accent font-medium text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-50",
-  secondary: "border border-line-emphasis bg-surface font-medium text-fg hover:bg-surface-muted",
+  secondary: "border border-line-emphasis bg-control font-medium text-fg hover:bg-control-hover",
   // Red ink on the neutral box at rest; the red line and tint arrive on hover only, so a row of
   // actions does not shout before one is chosen.
   danger:
-    "border border-line-emphasis bg-surface font-medium text-tone-danger-fg hover:border-tone-danger-line hover:bg-tone-danger-bg",
+    "border border-line-emphasis bg-control font-medium text-tone-danger-fg hover:border-tone-danger-line hover:bg-tone-danger-bg",
   ghost:
-    "border border-transparent bg-transparent font-medium text-fg-muted hover:bg-surface-muted hover:text-fg",
+    "border border-transparent bg-transparent font-medium text-fg-muted hover:bg-control-hover hover:text-fg",
   // Text that acts: no box, the link colour, the underline on hover. It keeps the body weight,
   // because a link-button sits in a sentence or a row of plain text.
   link: "text-link underline-offset-2 hover:text-link-hover hover:underline disabled:no-underline",

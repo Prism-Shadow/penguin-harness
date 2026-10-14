@@ -129,7 +129,7 @@ describe("controlBase", () => {
     expect(controlBase.split(/\s+/)).toEqual(
       expect.arrayContaining([
         "border-line-emphasis",
-        "bg-surface",
+        "bg-control",
         "text-fg",
         "hover:border-fg-subtle",
         "focus:border-fg-muted",

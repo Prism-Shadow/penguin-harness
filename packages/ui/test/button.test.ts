@@ -25,7 +25,7 @@ describe("Button", () => {
     const tokens = (variant: ButtonVariant) =>
       classTokens(renderStatic(createElement(Button, { variant }, "Save")));
     expect(tokens("secondary")).toEqual(
-      expect.arrayContaining(["bg-surface", "text-fg", "border-line-emphasis", "rounded-control"]),
+      expect.arrayContaining(["bg-control", "text-fg", "border-line-emphasis", "rounded-control"]),
     );
     expect(tokens("danger")).toEqual(
       expect.arrayContaining([
@@ -113,7 +113,7 @@ describe("buttonClass", () => {
     const button = classTokens(
       renderStatic(createElement(Button, { variant: "secondary", size: "sm" }, "Upload")),
     );
-    for (const token of ["bg-surface", "border-line-emphasis", "px-2.5", "text-xs"]) {
+    for (const token of ["bg-control", "border-line-emphasis", "px-2.5", "text-xs"]) {
       expect(label).toContain(token);
       expect(button).toContain(token);
     }

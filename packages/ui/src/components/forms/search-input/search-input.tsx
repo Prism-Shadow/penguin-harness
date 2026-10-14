@@ -175,7 +175,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
           type="button"
           aria-label={clearName}
           onClick={clear}
-          className={`absolute top-1/2 -translate-y-1/2 ${geometry.clearAt} flex items-center justify-center rounded-sm p-1 text-fg-subtle transition-colors duration-150 hover:bg-surface-muted hover:text-fg`}
+          className={`absolute top-1/2 -translate-y-1/2 ${geometry.clearAt} flex items-center justify-center rounded-sm p-1 text-fg-subtle transition-colors duration-150 hover:text-fg`}
         >
           <CloseIcon size={MARK_SIZE[size]} />
         </button>

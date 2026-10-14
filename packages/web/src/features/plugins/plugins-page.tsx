@@ -735,6 +735,7 @@ export function PluginsPage() {
 
   const card = (row: PluginRow) => (
     <PluginCard
+      framed={groupBy === "none"}
       key={row.key}
       row={row}
       status={statusOf(row)}

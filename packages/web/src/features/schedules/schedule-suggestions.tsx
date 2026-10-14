@@ -83,7 +83,7 @@ export function ScheduleSuggestions({
             <button
               type="button"
               onClick={() => onPick(s.prompt)}
-              className={`flex w-full items-start ${ICON_GAP.menu} rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
+              className={`flex w-full items-start ${ICON_GAP.menu} rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-control-hover`}
             >
               <span className="mt-0.5 shrink-0 text-gray-400 dark:text-gray-500">
                 <GlyphIcon d={s.icon} size={ICON_SIZE.rowLead} />

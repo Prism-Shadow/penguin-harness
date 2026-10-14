@@ -282,7 +282,7 @@ function StatCount({
     <li className="min-w-0">
       <Link
         to={to}
-        className="flex min-w-0 flex-col px-3 py-1.5 transition-colors duration-150 hover:bg-surface-muted focus-visible:-outline-offset-2"
+        className="flex min-w-0 flex-col px-3 py-1.5 transition-colors duration-150 hover:bg-control-hover focus-visible:-outline-offset-2"
       >
         <span
           className={`flex items-center ${ICON_GAP.row} whitespace-nowrap text-xs text-fg-muted`}

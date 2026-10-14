@@ -56,8 +56,8 @@ export function PanelsToolbar({ toggles, className = "", ...rest }: PanelsToolba
             toggle.unavailable === true
               ? "cursor-not-allowed text-fg-subtle opacity-60"
               : toggle.active
-                ? "bg-line-muted text-fg"
-                : "text-fg-muted hover:bg-line-muted hover:text-fg"
+                ? "bg-control-selected text-fg"
+                : "text-fg-muted hover:bg-control-hover hover:text-fg"
           }`}
         >
           <GlyphIcon d={toggle.glyph} size={ICON_SIZE.iconButton} />
