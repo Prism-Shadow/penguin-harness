@@ -1,9 +1,9 @@
 # Manage workbenches from Agent settings
 
-Date: 2026-10-14
-Type: feat
-Scope: core, server, web, plugins
-PR: [#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
+- **Date:** 2026-10-14
+- **Type:** feature
+- **Scope:** `core`, `server`, `web`, `plugins`
+- **PR:** [#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
 
 [中文](./2026-10-14-workbench-management.zh.md)
 

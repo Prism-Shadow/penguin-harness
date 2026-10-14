@@ -1,9 +1,9 @@
 # Restore a Session's fullscreen panel when returning to it
 
-Date: 2026-10-14
-Type: fix
-Scope: web
-PR: [#1128](https://github.com/Prism-Shadow/penguin-harness/pull/1128)
+- **Date:** 2026-10-14
+- **Type:** fix
+- **Scope:** `web`
+- **PR:** [#1128](https://github.com/Prism-Shadow/penguin-harness/pull/1128)
 
 [中文版](./2026-10-14-session-dock-fullscreen.zh.md)
 

@@ -1,9 +1,9 @@
 # 自定义背景图片
 
-Date: 2026-10-14
-Type: feature
-Scope: web, ui
-PR: [#1126](https://github.com/Prism-Shadow/penguin-harness/pull/1126)
+- **Date:** 2026-10-14
+- **Type:** feature
+- **Scope:** `web`, `ui`
+- **PR:** [#1126](https://github.com/Prism-Shadow/penguin-harness/pull/1126)
 
 [English](./2026-10-14-custom-background.md)
 

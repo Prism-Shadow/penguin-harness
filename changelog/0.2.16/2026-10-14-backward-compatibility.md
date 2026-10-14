@@ -12,7 +12,7 @@
 
 Existing Agent workbenches are migrated once when accessed. `workflows/` and `workflows-history/` become `workbenches/` and `workbenches-history/`. The module name, interface names, API paths, event names and shared stylesheet use Workbench.
 
-### Compatibility
+## Compatibility
 
 Migration converts a staged copy before publishing it, preserves `state.json` verbatim and recalculates history revisions so code can still be restored. Originals remain under the Agent's `.workbench-migration/backup/`. An interrupted publication resumes on the next access. A conflicting destination or invalid history stops migration without replacing the original files.
 

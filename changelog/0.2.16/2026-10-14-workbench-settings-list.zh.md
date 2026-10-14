@@ -1,9 +1,9 @@
 # 统一 Agent 设置中的列表样式
 
-Date: 2026-10-14
-Type: fix
-Scope: ui, web
-PR: [#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
+- **Date:** 2026-10-14
+- **Type:** fix
+- **Scope:** `ui`, `web`
+- **PR:** [#1133](https://github.com/Prism-Shadow/penguin-harness/pull/1133)
 
 [English](./2026-10-14-workbench-settings-list.md)
 

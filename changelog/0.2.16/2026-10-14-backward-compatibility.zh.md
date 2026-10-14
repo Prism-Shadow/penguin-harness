@@ -12,7 +12,7 @@
 
 已有智能体的工作台在访问时执行一次性迁移。`workflows/` 和 `workflows-history/` 分别改为 `workbenches/` 和 `workbenches-history/`，模块名、接口名、API 路径、事件名及共享样式表统一使用 Workbench。
 
-### 兼容性
+## 兼容性
 
 迁移先转换暂存副本，完成后再发布，原样保留 `state.json`，重新计算历史版本号以便继续恢复代码。原文件保留在智能体的 `.workbench-migration/backup/` 下。发布中断后，下次访问继续迁移；目标目录冲突或历史无效时停止，不覆盖原文件。
 

@@ -1,9 +1,9 @@
 # 切回 Session 时恢复面板全屏
 
-Date: 2026-10-14
-Type: fix
-Scope: web
-PR: [#1128](https://github.com/Prism-Shadow/penguin-harness/pull/1128)
+- **Date:** 2026-10-14
+- **Type:** fix
+- **Scope:** `web`
+- **PR:** [#1128](https://github.com/Prism-Shadow/penguin-harness/pull/1128)
 
 [English](./2026-10-14-session-dock-fullscreen.md)
 
