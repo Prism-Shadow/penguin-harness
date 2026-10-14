@@ -122,8 +122,8 @@ jobs:
           echo "entrypoint ran the command as uid $uid"
           [ "$uid" = "1000" ]
 
-      # Given a data root with the broken shim from #1119, starting with /data/bin first
-      # on PATH must reach the installed server and replace the stub with its own CLI.
+      # Given a data root with the broken shim from #1119, the packaged server must
+      # remove the stub so Agent commands can resolve the installed CLI on PATH.
       - name: Seed an old CLI error stub
         run: |
           docker run --rm -v penguin-data:/data penguin-harness:pr sh -ec '
@@ -136,7 +136,6 @@ jobs:
         run: |
           docker run -d --name penguin -p 127.0.0.1:7364:7364 \
             -e PENGUIN_SEED_ADMIN_PASSWORD=ci-password-123 \
-            -e PATH=/data/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
             -v penguin-data:/data \
             penguin-harness:pr
 
@@ -153,12 +152,15 @@ jobs:
           docker logs penguin >&2
           exit 1
 
-      - name: Agent CLI uses the installed version
+      - name: Agent commands reach the installed CLI
         run: |
-          installed="$(docker exec penguin /usr/local/bin/penguin --version)"
-          shim="$(docker exec penguin /data/bin/penguin --version)"
-          [ "$shim" = "$installed" ]
-          docker exec penguin /data/bin/penguin browser --help
+          docker exec penguin test ! -e /opt/penguin/lib/pnpm-workspace.yaml
+          docker exec penguin test ! -e /data/bin/penguin
+          docker exec penguin sh -ec '
+            export PATH="/data/bin:$PATH"
+            penguin --version
+            penguin browser --help
+          '
 
       # The pinned seed password suppresses the first-login notice, so a successful login is
       # what proves the seed ran; /api/version then proves the session cookie is usable.

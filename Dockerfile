@@ -153,6 +153,7 @@ RUN set -eux; \
 # and it is the layout `npm rebuild` walks in the next stage.
 RUN set -eux; \
     pnpm --config.node-linker=hoisted --filter @prismshadow/penguin-cli --prod deploy "$PWD/out/penguin/lib"; \
+    rm -f out/penguin/lib/pnpm-workspace.yaml; \
     cp -r packages/web/dist out/penguin/web; \
     mkdir -p /opt/penguin; \
     mv out/penguin/lib /opt/penguin/lib; \
@@ -261,5 +262,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${PORT}/api/install" || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/penguin-entrypoint"]
-# Start the installed CLI even when PATH puts a previous data-root shim first.
-CMD ["/usr/local/bin/penguin", "server"]
+CMD ["penguin", "server"]

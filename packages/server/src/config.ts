@@ -105,8 +105,7 @@ export interface ServerConfig {
    * `PENGUIN_CLI_ENTRY` when set: `penguin server|web` exports its own entry there, and the
    * desktop shell passes the bundled one to the server it forks. Otherwise, on a server running
    * from a checkout, that checkout's CLI: its source while the server runs from source, else its
-   * build (resolveCliLaunch). An installed server can also find the CLI package containing it.
-   * Null = no CLI to offer; see cliLaunch for why.
+   * build (resolveCliLaunch). Null = no CLI to offer; see cliLaunch for why.
    *
    * Related to but wider than the self-update endpoint's use of the same variable
    * (http/routes/version.ts), which accepts only an INSTALLED entry it can re-run as
