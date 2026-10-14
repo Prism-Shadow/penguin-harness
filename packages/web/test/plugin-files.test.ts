@@ -3,11 +3,32 @@
  * skill in the plugin's own order with SKILL.md leading, hook scripts in one trailing group,
  * and a skill the listing did not name (a stale listing against a newer library) still gets a
  * group rather than vanishing; then the rows the shared file tree draws from those groups.
+ * A plugin shipping a workbench exposes its manifest, handler and nested UI files, including
+ * when the plugin contains no Skills or hooks.
  */
 import { describe, expect, it } from "vitest";
 import { groupPluginFiles, pluginTreeRows } from "../src/features/plugins/plugin-detail";
 
 describe("groupPluginFiles", () => {
+  it("exposes every workbench source file even without Skills or hooks", () => {
+    const paths = [
+      "workbenches/support/ui/app.js",
+      "workbenches/support/index.ts",
+      "workbenches/support/package.json",
+    ];
+    const groups = groupPluginFiles(paths, [], "Hooks");
+    const rows = pluginTreeRows(groups, new Set());
+    expect(
+      rows
+        .filter((r) => r.kind === "file")
+        .map((r) => r.path)
+        .sort(),
+    ).toEqual([...paths].sort());
+    expect(groups[0]?.paths[0]).toBe("workbenches/support/package.json");
+    expect(
+      pluginTreeRows(groups, new Set(["workbenches/support/ui"])).map((r) => r.path),
+    ).not.toContain("workbenches/support/ui/app.js");
+  });
   it("groups skills in plugin order, SKILL.md first, then the hook scripts", () => {
     const groups = groupPluginFiles(
       [

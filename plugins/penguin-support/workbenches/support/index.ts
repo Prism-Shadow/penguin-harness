@@ -4,7 +4,6 @@ type Message = { role: "user" | "assistant"; text: string; at: string };
 type Ticket = {
   id: string;
   title: string;
-  category: string;
   status: "running" | "answered" | "resolved" | "open" | "failed";
   sessionId: string;
   messages: Message[];
@@ -37,6 +36,8 @@ export default {
           await save(state);
           try {
             await host.run(ticket.sessionId, [{ text }]);
+            ticket.title = host.sessionTitle(ticket.sessionId) ?? ticket.title;
+            await save(state);
           } catch (e) {
             ticket.status = "failed";
             ticket.error = e instanceof Error ? e.message : String(e);
@@ -51,6 +52,17 @@ export default {
                   const state = read();
                   if (req.method === "GET" && req.path === "/tickets") {
                     let changed = false;
+                    for (const ticket of state.tickets) {
+                      // Session titles can arrive before the answer, or be edited afterwards.
+                      // A missing/removed Session must not hide an already saved question.
+                      try {
+                        const title = host.sessionTitle(ticket.sessionId);
+                        if (title && title !== ticket.title) {
+                          ticket.title = title;
+                          changed = true;
+                        }
+                      } catch {}
+                    }
                     for (const ticket of state.tickets.filter((t) => t.status === "running")) {
                       try {
                         const result = await host.sessionResult(ticket.sessionId);
@@ -83,19 +95,16 @@ export default {
                       body: { error: "Please keep the question under 20,000 characters." },
                     };
                   if (req.path === "/tickets") {
-                    const title =
-                      typeof body.title === "string" ? body.title.trim().slice(0, 160) : "";
-                    if (!title || !text)
+                    if (!text)
                       return {
                         status: 400,
-                        body: { error: "A subject and question are required." },
+                        body: { error: "A question is required." },
                       };
                     const { sessionId } = await host.createSession();
                     const now = new Date().toISOString();
                     const ticket: Ticket = {
                       id: crypto.randomUUID(),
-                      title,
-                      category: typeof body.category === "string" ? body.category : "general",
+                      title: host.sessionTitle(sessionId) ?? "",
                       status: "open",
                       sessionId,
                       messages: [{ role: "user", text, at: now }],

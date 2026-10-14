@@ -997,6 +997,8 @@ export const en: Strings = {
         ? "Show this page as the whole app; the command palette is the way to leave"
         : `Show this page as the whole app; ${palette} opens the command palette to leave`,
     exitFullPage: "Exit full page (back to chat)",
+    exitFullPageButton: "Exit full screen",
+    retryHistory: "Retry",
     exitHint: (palette: string | null): string =>
       palette === null
         ? "Open the command palette to get back to the chat."

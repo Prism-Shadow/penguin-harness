@@ -111,8 +111,8 @@ export function themeWorkbenchFrame(frame: HTMLIFrameElement | null, theme: Work
  * Sends the frame's own keyboard shortcuts on to the app.
  *
  * A page is a separate document, so a key pressed inside it never reaches the app's own
- * `window` — which is where the command palette listens. On the full-page route the palette
- * is the only way out, so it would stop working the moment the reader clicked into the page.
+ * `window` — which is where the command palette listens. Its shortcuts must still work
+ * after the reader clicks into the full-page workbench.
  * The frame is same-origin (that is what lets the theme be written into it), so the same
  * listener can be attached to its document and the event re-raised on the app's window.
  *

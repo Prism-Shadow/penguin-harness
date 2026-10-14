@@ -3,6 +3,9 @@
  * Given an answered ticket, submitting a follow-up sends its text before disabling the form,
  * ignores a duplicate submission, and clears the draft only after the server accepts it.
  * Given numbered citations, the answer shows clickable [1] markers with the source URL on the link.
+ * A new question asks only for its text, follows the Session title and counts down while waiting.
+ * An estimate that expires says research continues instead of inventing completion or restarting the timer.
+ * An unavailable service keeps the draft and shows a readable error rather than a JSON parse exception.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -43,10 +46,13 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 async function openTicket() {
+  await loadUi();
+  document.querySelector<HTMLButtonElement>("#list button")!.click();
+}
+async function loadUi() {
   const url = path.join(ui, "app.js");
   await import(/* @vite-ignore */ url);
   await vi.advanceTimersByTimeAsync(0);
-  document.querySelector<HTMLButtonElement>("#list button")!.click();
 }
 it("submits the full follow-up once and clears it only after success", async () => {
   let finish: (response: Response) => void = () => {};
@@ -81,4 +87,53 @@ it("renders a citation number as a link without exposing its URL as prose", asyn
   expect(link.textContent).toBe("[1]");
   expect(link.href).toBe("https://penguin.ooo/docs/chat");
   expect(answer.textContent).not.toContain("https://");
+});
+it("asks only for a question, follows its title and keeps an honest waiting estimate", async () => {
+  vi.setSystemTime(new Date(ticket.createdAt));
+  let current = { ...ticket, title: "Session-generated title", status: "running" };
+  const requests = stubFetch((req) =>
+    req.method === "POST" ? json(current) : json({ tickets: [current] }),
+  );
+  await loadUi();
+  document.querySelector<HTMLButtonElement>("#new")!.click();
+  const form = document.querySelector<HTMLFormElement>("#create")!;
+  expect([...new FormData(form).keys()]).toEqual(["text"]);
+  const input = form.querySelector("textarea")!;
+  expect(document.activeElement).toBe(input);
+  input.value = "Where is my workbench?";
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(requests.requests.find((r) => r.method === "POST")?.body).toEqual({
+    text: "Where is my workbench?",
+  });
+  expect(document.querySelector("#dialog-title")!.textContent).toBe(current.title);
+  expect(document.querySelector("#waiting")!.textContent).toContain("about 2 min");
+  await vi.advanceTimersByTimeAsync(61000);
+  expect(document.querySelector("#waiting")!.textContent).toContain("Waiting 1:01");
+  expect(document.querySelector("#waiting")!.textContent).toContain("about 1 min");
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(document.querySelector("#waiting")!.textContent).toContain("Taking longer");
+  expect(document.querySelector("#waiting")!.textContent).not.toContain("about");
+  current = { ...current, title: "Updated Session title", status: "answered" };
+  await vi.advanceTimersByTimeAsync(2500);
+  expect(document.querySelector("#dialog-title")!.textContent).toBe(current.title);
+  expect(document.querySelector<HTMLElement>("#waiting")!.hidden).toBe(true);
+});
+it("keeps a draft when a proxy returns an empty 500", async () => {
+  stubFetch((req) =>
+    req.method === "POST"
+      ? new Response("", { status: 500, headers: { "content-type": "text/plain" } })
+      : json({ tickets: [] }),
+  );
+  await loadUi();
+  document.querySelector<HTMLButtonElement>("#new")!.click();
+  const form = document.querySelector<HTMLFormElement>("#create")!;
+  const input = form.querySelector("textarea")!;
+  input.value = "Please keep this question";
+  form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(input.value).toBe("Please keep this question");
+  expect(document.querySelector("#dialog-error")!.textContent).toContain("HTTP 500");
+  expect(document.querySelector("#dialog-error")!.textContent).not.toContain("JSON");
+  expect(form.querySelector<HTMLButtonElement>("[type=submit]")!.disabled).toBe(false);
 });

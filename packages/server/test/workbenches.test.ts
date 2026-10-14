@@ -18,6 +18,7 @@
  *
  * An edited workbench:
  * - A file that disappears mid-read is a change, not a failed request.
+ * - Concurrent first reads share the same loaded instance rather than replacing it for each reader.
  * - An edited folder is re-imported, every version recorded and any restorable.
  * - An unknown required interface leaves the previous instance serving and names the problem.
  * - A source type error reports the file, line and reason, without duplicate diagnostics.
@@ -506,6 +507,13 @@ describe("editing a workbench", { timeout: 30_000 }, () => {
   });
 
   const list = () => listOf(owner, base);
+
+  it("keeps one loaded instance for concurrent first reads", async () => {
+    const results = await Promise.all(Array.from({ length: 4 }, () => list()));
+    expect(results.every(([w]) => w?.error === null)).toBe(true);
+    expect(new Set(results.map(([w]) => w!.loadedAt)).size).toBe(1);
+    expect((await list())[0]?.loadedAt).toBe(results[0]![0]!.loadedAt);
+  });
 
   async function reload(): Promise<WorkbenchInfo> {
     const res = await owner.post(`${base}/demo/reload`);

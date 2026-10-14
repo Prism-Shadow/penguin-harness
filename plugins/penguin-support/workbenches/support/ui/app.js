@@ -33,8 +33,13 @@ async function api(route, body) {
           body: JSON.stringify(body),
         },
   );
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || copy.error);
+  let data;
+  try {
+    data = JSON.parse(await response.text());
+  } catch {
+    throw new Error(copy.connectionError(response.status));
+  }
+  if (!response.ok) throw new Error(data.error?.message || data.error || copy.error);
   return data;
 }
 
@@ -90,8 +95,9 @@ function renderList() {
     const title = document.createElement("strong");
     const status = document.createElement("small");
     const time = document.createElement("time");
-    title.textContent = ticket.title;
+    title.textContent = ticket.title || copy.newTicket;
     status.textContent = copy[ticket.status] || ticket.status;
+    if (ticket.status === "running") status.dataset.waiting = ticket.id;
     time.dateTime = ticket.updatedAt;
     time.textContent = new Date(ticket.updatedAt).toLocaleDateString(language);
     button.dataset.ticket = ticket.id;
@@ -194,7 +200,7 @@ function renderTicket() {
   const signature = JSON.stringify([language, ticket]);
   if (signature !== detailSignature) {
     detailSignature = signature;
-    $("dialog-title").textContent = ticket.title;
+    $("dialog-title").textContent = ticket.title || copy.newTicket;
     $("status").textContent = ticket.status === "running" ? copy.working : copy[ticket.status];
     const messages = ticket.messages.map((message) => {
       const article = document.createElement("article");
@@ -222,11 +228,42 @@ function renderTicket() {
     .forEach((el) => (el.disabled = disabled));
 }
 
+// A rough two-minute budget, not a completion promise. Once exceeded, show elapsed time
+// and say the lookup is taking longer; never reset the countdown or claim an answer is ready.
+function waitingText(ticket) {
+  const start = Date.parse(ticket.updatedAt || ticket.createdAt);
+  const seconds = Number.isFinite(start) ? Math.max(0, Math.floor((Date.now() - start) / 1000)) : 0;
+  const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const remaining = Math.ceil((120 - seconds) / 60);
+  return {
+    estimate: remaining > 0 ? copy.estimate(remaining) : copy.takingLonger,
+    elapsed: copy.elapsed(elapsed),
+  };
+}
+
+function updateWaiting() {
+  $("list")
+    .querySelectorAll("[data-waiting]")
+    .forEach((element) => {
+      const ticket = tickets.find((item) => item.id === element.dataset.waiting);
+      if (!ticket) return;
+      const text = `${copy.running} · ${waitingText(ticket).estimate}`;
+      if (element.textContent !== text) element.textContent = text;
+    });
+  const ticket = tickets.find((item) => item.id === selected);
+  $("waiting").hidden = ticket?.status !== "running";
+  if (ticket?.status === "running") {
+    const timing = waitingText(ticket);
+    $("waiting").textContent = `${timing.elapsed} · ${timing.estimate}`;
+  }
+}
+
 function render() {
   renderList();
   $("new").disabled = busy;
   $("submit").disabled = busy;
   renderTicket();
+  updateWaiting();
 }
 
 function openDialog() {
@@ -242,6 +279,7 @@ function showTicket(id) {
   $("followup").elements.text.value = drafts.get(id) || "";
   openDialog();
   renderTicket();
+  updateWaiting();
   $("dialog-title").focus();
 }
 
@@ -286,7 +324,7 @@ $("new").onclick = () => {
   $("create").hidden = false;
   $("ticket").hidden = true;
   openDialog();
-  $("create").elements.title.focus();
+  $("create").elements.text.focus();
 };
 $("close").onclick = $("cancel").onclick = () => dialog.close();
 dialog.addEventListener("keydown", (event) => {
@@ -341,6 +379,9 @@ $("locale").onchange = () => {
 };
 translate();
 refresh();
+setInterval(() => {
+  if (!document.hidden) updateWaiting();
+}, 1000);
 let refreshing = false;
 setInterval(async () => {
   if (document.hidden || refreshing || busy) return;

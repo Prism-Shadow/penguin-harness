@@ -44,21 +44,6 @@
         <p id="dialog-error" role="alert" hidden></p>
         <form id="create" hidden>
           <label>
-            <span data-copy="subject"></span>
-            <input name="title" maxlength="160" required />
-          </label>
-          <label>
-            <span data-copy="category"></span>
-            <select name="category">
-              <option value="setup" data-copy="setup"></option>
-              <option value="models" data-copy="models"></option>
-              <option value="plugins" data-copy="plugins"></option>
-              <option value="workbench" data-copy="workbench"></option>
-              <option value="troubleshooting" data-copy="troubleshooting"></option>
-              <option value="general" data-copy="general"></option>
-            </select>
-          </label>
-          <label>
             <span data-copy="question"></span>
             <textarea name="text" maxlength="20000" rows="5" required></textarea>
           </label>
@@ -69,6 +54,7 @@
         </form>
         <section id="ticket" hidden>
           <p id="status" role="status" class="muted"></p>
+          <p id="waiting" class="muted" hidden></p>
           <div id="messages"></div>
           <div class="actions">
             <button id="resolve" type="button"></button>

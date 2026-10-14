@@ -199,19 +199,21 @@ export function WorkbenchFrame({
   const [failure, setFailure] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [versions, setVersions] = useState<WorkbenchVersion[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   /** A revision whose restore awaits confirmation: it replaces the workbench's files. */
   const [restoring, setRestoring] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
+    setHistoryError(null);
     try {
       setVersions(
         (await api.getWorkbenchHistory(projectId, agentId, tab.workbenchId, tab.machineId))
           .versions,
       );
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : String(err));
+      setHistoryError(err instanceof Error ? err.message : String(err));
     }
-  }, [projectId, agentId, tab.workbenchId]);
+  }, [projectId, agentId, tab.workbenchId, tab.machineId]);
 
   useEffect(() => {
     if (historyOpen) void loadHistory();
@@ -269,8 +271,8 @@ export function WorkbenchFrame({
   useEffect(() => () => detachKeys.current(), []);
   const onFrameLoad = useCallback(() => {
     applyTheme();
-    // The page's keys reach the app too, so the palette — the only way out of the full-page
-    // route — still answers once the reader has clicked into the page.
+    // The page's keys reach the app too, so the palette still answers after focus moves
+    // into the full-page workbench.
     detachKeys.current();
     detachKeys.current = forwardFrameKeys(frameRef.current);
     setShownKey(frameKey);
@@ -395,7 +397,16 @@ export function WorkbenchFrame({
         hidden={!historyOpen || bare}
         className="max-h-64 shrink-0 overflow-y-auto border-b border-gray-200 dark:border-gray-800"
       >
-        {versions === null ? (
+        {historyError !== null ? (
+          <div className="flex items-center gap-3 px-3 py-2 text-xs">
+            <span role="alert" className="min-w-0 flex-1">
+              {historyError}
+            </span>
+            <Button variant="secondary" size="sm" onClick={() => void loadHistory()}>
+              {S.workbenches.retryHistory}
+            </Button>
+          </div>
+        ) : versions === null ? (
           <p className="px-3 py-2 text-xs text-gray-500">{S.workbenches.loadingHistory}</p>
         ) : versions.length === 0 ? (
           <p className="px-3 py-2 text-xs text-gray-500">{S.workbenches.noHistory}</p>

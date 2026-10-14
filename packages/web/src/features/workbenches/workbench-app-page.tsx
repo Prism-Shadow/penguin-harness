@@ -4,15 +4,15 @@
  *
  * No sidebar, no chat, no tab strip — the page fills the window, which is what
  * `penguin web --app …` opens and what a tab's "fill the app" action navigates to. There is
- * deliberately no chrome to leave by: the command palette (the `palette.toggle` chord, re-raised
- * from inside the page by forwardFrameKeys) carries the way out, "Exit full page", which lands
+ * a floating exit control and the command palette (the `palette.toggle` chord, re-raised
+ * from inside the page by forwardFrameKeys) both offer "Exit full page", which lands
  * on the chat of that same Agent. The route sits outside the app shell (no ProjectProvider), so the exit
  * remembers the Project and Agent the way the shell does — its localStorage keys — before
  * navigating.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import type { PaletteAction } from "@prismshadow/penguin-ui";
+import { Button, type PaletteAction } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
@@ -121,6 +121,11 @@ export function WorkbenchAppPage() {
           <span>{S.workbenches.exitHint(paletteShortcut)}</span>
         </div>
       )}
+      <div className="fixed right-4 bottom-4 z-40">
+        <Button variant="secondary" size="sm" onClick={() => exit[0]!.run()}>
+          {S.workbenches.exitFullPageButton}
+        </Button>
+      </div>
       <AppPalette extra={exit} />
     </div>
   );

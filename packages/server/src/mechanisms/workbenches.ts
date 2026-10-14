@@ -100,6 +100,8 @@ export abstract class WorkbenchHost {
   ): Promise<{ sessionId: string; queued: boolean }>;
   /** `idle` / `running` / … of a Session of this Project. */
   abstract sessionStatus(sessionId: string): string;
+  /** The Session's generated or user-edited title; null until one is available. */
+  abstract sessionTitle(sessionId: string): string | null;
   /** A snapshot, not a wait: running until the latest task ends, then its final answer or failure. No tool or thinking messages. */
   abstract sessionResult(sessionId: string): Promise<WorkbenchResult>;
   /** The workbench's own document (`state.json`, kept by the server across reloads and rollbacks). */

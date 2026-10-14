@@ -471,6 +471,10 @@ export class WorkbenchService implements Workbenches {
    */
   private load(projectId: string, agentId: string, folder: WorkbenchFolder): Promise<Loaded> {
     const k = key(projectId, agentId, folder.id);
+    // The tab list, iframe and watcher can arrive together. They share one load of the same
+    // revision instead of recompiling it and disposing its newly created tree for each caller.
+    const inFlight = this.loading.get(k);
+    if (inFlight && this.loadingRevision.get(k) === folder.revision) return inFlight;
     const after = this.loading.get(k) ?? Promise.resolve();
     const run = after
       .catch(() => undefined)
@@ -632,6 +636,10 @@ export class WorkbenchService implements Workbenches {
       sessionStatus: (sessionId: string) => {
         service.ownSession(projectId, sessionId, "sessionStatus");
         return service.runner.statusOf(sessionId);
+      },
+      sessionTitle: (sessionId: string) => {
+        service.ownSession(projectId, sessionId, "sessionTitle");
+        return service.sessionIndex.findById(sessionId)!.title;
       },
       async sessionResult(sessionId: string) {
         service.ownSession(projectId, sessionId, "sessionResult");

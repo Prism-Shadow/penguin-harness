@@ -41,6 +41,8 @@
           "timeout": 60
         }
       ]
-    }
+    },
+    "title": "Continual Learning",
+    "title_zh": "持续学习"
   }
 }

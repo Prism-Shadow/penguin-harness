@@ -5,6 +5,8 @@
  * Given an ordinary Agent, plugin install exposes a tab; update preserves records and uninstall removes it.
  * Given a conflicting workbench, plugin install returns 409 without installing its Skill.
  * Given answered tickets, resolve/reopen preserves messages; malformed follow-ups do not write.
+ * Session titles arrive independently of answers; changing a Session title updates the saved question.
+ * Updating a plugin with an older authoring contract checks its replacement code against this host.
  */
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
@@ -21,6 +23,7 @@ const message = (role: string, text: string): OmniMessage =>
   }) as OmniMessage;
 interface Ticket {
   id: string;
+  title: string;
   status: string;
   messages: Array<{ role: string; text: string }>;
   error: string | null;
@@ -123,6 +126,19 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
     );
     expect(await tickets()).toHaveLength(3);
   });
+  it("follows Session title changes without losing messages or another Project's title", async () => {
+    const before = await tickets();
+    t.deps.sessionsRepo.updateTitle(ids[0]!, "Opening an Agent Workbench");
+    t.deps.sessionsRepo.updateTitle(ids[2]!, "Private title from another Project");
+    const changed = await tickets();
+    expect(changed[0]).toMatchObject({
+      title: "Opening an Agent Workbench",
+      messages: before[0]!.messages,
+    });
+    expect(changed[2]!.title).toBe(before[2]!.title);
+    t.deps.sessionsRepo.updateTitle(ids[0]!, "Renamed by the user");
+    expect((await tickets())[0]!.title).toBe("Renamed by the user");
+  });
   it("installs and updates the support plugin on an ordinary Agent, preserving its tickets", async () => {
     const agent = "/api/projects/default_project/agents/plugin_support";
     expect(
@@ -147,8 +163,17 @@ describe("built-in support workbench", { timeout: 30000 }, () => {
       tickets: [{ id: "saved", title: "Keep", status: "resolved", messages: [] }],
     });
     await fs.writeFile(path.join(disk, "state.json"), state);
+    // This installed revision predates the new host title accessor.
+    const authored = path.join(disk, ".harness/plugin.d.ts");
+    await fs.writeFile(
+      authored,
+      (await fs.readFile(authored, "utf8")).replace(/^.*sessionTitle\(.*\n/gm, ""),
+    );
     await fs.writeFile(path.join(disk, "ui/app.js"), "local edit");
     expect((await admin.post(`${agent}/plugins`, { names: ["penguin-support"] })).status).toBe(201);
+    expect(await (await admin.get(`${agent}/workbenches`)).json()).toMatchObject({
+      workbenches: [{ error: null }],
+    });
     expect(await fs.readFile(path.join(disk, "state.json"), "utf8")).toBe(state);
     expect(await fs.readFile(path.join(disk, "ui/app.js"), "utf8")).not.toBe("local edit");
     expect((await admin.delete(`${agent}/workbenches/support`)).status).toBe(204);
