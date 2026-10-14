@@ -145,16 +145,16 @@ describe("the ledger", () => {
   it("applies a migration another line's build skipped, when the root meets it", () => {
     const db = openFresh();
     try {
-      // A root whose builds never declared 2026-09-17-model-promotions, though they declared what follows it.
-      db.exec("DROP TABLE model_promotions");
+      // A root whose builds never declared 2026-10-04-browser-extensions, though they declared what follows it.
+      db.exec("DROP TABLE browser_extensions");
       record(
         db,
-        namesAfter(null).filter((n) => n !== "2026-09-17-model-promotions"),
+        namesAfter(null).filter((n) => n !== "2026-10-04-browser-extensions"),
       );
-      expect(migrate(db).applied).toEqual(["2026-09-17-model-promotions"]);
-      expect(hasTable(db, "model_promotions")).toBe(true);
+      expect(migrate(db).applied).toEqual(["2026-10-04-browser-extensions"]);
+      expect(hasTable(db, "browser_extensions")).toBe(true);
       // Recorded where it actually ran: last.
-      expect(appliedMigrations(db).at(-1)).toBe("2026-09-17-model-promotions");
+      expect(appliedMigrations(db).at(-1)).toBe("2026-10-04-browser-extensions");
     } finally {
       db.close();
     }
@@ -315,18 +315,18 @@ describe("rollbackTo", () => {
   it("follows the order migrations were APPLIED in, not the order they are declared in", () => {
     const db = openFresh();
     try {
-      db.exec("DROP TABLE model_promotions");
+      db.exec("DROP TABLE browser_extensions");
       record(
         db,
-        namesAfter(null).filter((n) => n !== "2026-09-17-model-promotions"),
+        namesAfter(null).filter((n) => n !== "2026-10-04-browser-extensions"),
       );
       migrate(db);
-      // 2026-09-17-model-promotions ran last, so it is the only one applied after the last other name.
+      // 2026-10-04-browser-extensions ran last, so it is the only one applied after the last other name.
       const lastOther = namesAfter(null)
-        .filter((n) => n !== "2026-09-17-model-promotions")
+        .filter((n) => n !== "2026-10-04-browser-extensions")
         .at(-1)!;
-      expect(rollbackTo(db, lastOther).reverted).toEqual(["2026-09-17-model-promotions"]);
-      expect(hasTable(db, "model_promotions")).toBe(false);
+      expect(rollbackTo(db, lastOther).reverted).toEqual(["2026-10-04-browser-extensions"]);
+      expect(hasTable(db, "browser_extensions")).toBe(false);
     } finally {
       db.close();
     }

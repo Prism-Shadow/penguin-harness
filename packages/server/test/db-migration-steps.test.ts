@@ -307,6 +307,7 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-10-12-sessions-kept-at",
         "2026-10-14-agent-api-session-settings",
         "2026-10-14-agent-api-concurrency",
+        "2026-09-23-model-tables-adoption",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
