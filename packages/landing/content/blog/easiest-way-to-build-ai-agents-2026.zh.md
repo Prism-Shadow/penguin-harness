@@ -99,7 +99,7 @@ penguin run -m "分析 data.csv 并总结季度销售情况"
 
 你把想要的东西描述出来，剩下的交给一个 Agent：它写好新 Agent 的 `AGENTS.md`，装上需要的 Skill，把一个能跑的成品交给你。我们用一句话生成过一个完整的 RAG 应用，文档摄取、检索、带出处的引用、Web 界面一应俱全，在 DeepSeek V4 Pro 上只花了 $0.02 的 Token。[可运行示例](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples/build-agent-with-agent)是一个 82 行的脚本：根据一句自然语言需求构建新 Agent，然后运行它。
 
-这件事能成立，是因为 **Agent 是可编辑的数据，不是写死的常量**：提示词、Skill 和配置都是磁盘上的普通文件。
+这件事能成立，是因为 **Agent 是可编辑的数据**，**不是写死的常量**：提示词、Skill 和配置都是磁盘上的普通文件。
 
 ### 调优循环也自动化了
 
@@ -115,8 +115,8 @@ penguin run -m "分析 data.csv 并总结季度销售情况"
 
 一份每一行都是同一个选项获胜的对比是广告，不是分析。有两种情况，你该选别的：
 
-- **团队写 Python。** PenguinHarness 的 SDK 是 TypeScript。CLI 和服务端与语言无关，但如果你的团队用 Python，还想通过继承框架里的类来扩展 Agent，上面的多数方案会更顺手。
-- **深度绑定某一家云。** 已经全面押注 Azure 的话，Microsoft Agent Framework 阻力最小；如果是 Vertex，那就是 ADK。
+- **团队写 Python**。 PenguinHarness 的 SDK 是 TypeScript。CLI 和服务端与语言无关，但如果你的团队用 Python，还想通过继承框架里的类来扩展 Agent，上面的多数方案会更顺手。
+- **深度绑定某一家云**。 已经全面押注 Azure 的话，Microsoft Agent Framework 阻力最小；如果是 Vertex，那就是 ADK。
 
 ## 结论
 

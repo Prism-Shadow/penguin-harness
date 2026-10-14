@@ -53,11 +53,11 @@ AI 基础设施比大多数软件更适合 Agent，而且纯属无心插柳。�
 
 比起「有这几个 Skill」，更值得说的是它们里面写了什么。它们写下的规则，人类操作者从来不需要别人叮嘱：
 
-1. **动手之前，先看清现场。** `ollama` Skill 让 Agent 先运行 `ollama --version` 和 `ollama ps`，然后把规矩挑明：如果 11434 端口上已经有服务，就复用这个实例，绝不杀掉已经在运行的 Ollama 进程。人知道不该动同事的服务，Agent 却得有人明确告诉它。
-2. **先确认真正的约束。** `vllm` Skill 在启动服务之前，先用 `nvidia-smi`（AMD 上是 `rocm-smi`）确认硬件，因为模型大小和上下文长度都受显存限制。教程里埋在中间的那句话，在这里成了第 0 步。
-3. **要验证，别想当然。** 两个服务类 Skill 都以一次真实检查收尾，比如 vLLM 的 `curl http://localhost:8000/v1/models`，检查通过才算完成任务。这正是对 Stripe 那个失败模式的直接回应：「成功」由一次观测来定义，而不是「没崩溃就算成功」。
-4. **把活干完。** 模型启动后不注册，PenguinHarness 就看不见它。所以这些 Skill 会用 `penguin config model add --client-type openai --base-url ...` 把这一步闭环，再用 `penguin config model list` 确认结果。启动一个服务不算完成任务，拿到一个能用的模型才算。
-5. **拿不准就问，别猜。** 三个 Skill 的开头都一样：如果请求只点了 Skill 的名字、没给具体目标，Agent 会先问清楚，一条命令都不跑。选哪个引擎也听用户的，而不是写死一个默认值：vLLM 用于高吞吐的 GPU 服务，Ollama 是省事的默认选项，也是两者中唯一能在 macOS 或纯 CPU 机器上运行的。
+1. **动手之前**，**先看清现场**。 `ollama` Skill 让 Agent 先运行 `ollama --version` 和 `ollama ps`，然后把规矩挑明：如果 11434 端口上已经有服务，就复用这个实例，绝不杀掉已经在运行的 Ollama 进程。人知道不该动同事的服务，Agent 却得有人明确告诉它。
+2. **先确认真正的约束**。 `vllm` Skill 在启动服务之前，先用 `nvidia-smi`（AMD 上是 `rocm-smi`）确认硬件，因为模型大小和上下文长度都受显存限制。教程里埋在中间的那句话，在这里成了第 0 步。
+3. **要验证**，**别想当然**。 两个服务类 Skill 都以一次真实检查收尾，比如 vLLM 的 `curl http://localhost:8000/v1/models`，检查通过才算完成任务。这正是对 Stripe 那个失败模式的直接回应：「成功」由一次观测来定义，而不是「没崩溃就算成功」。
+4. **把活干完**。 模型启动后不注册，PenguinHarness 就看不见它。所以这些 Skill 会用 `penguin config model add --client-type openai --base-url ...` 把这一步闭环，再用 `penguin config model list` 确认结果。启动一个服务不算完成任务，拿到一个能用的模型才算。
+5. **拿不准就问**，**别猜**。 三个 Skill 的开头都一样：如果请求只点了 Skill 的名字、没给具体目标，Agent 会先问清楚，一条命令都不跑。选哪个引擎也听用户的，而不是写死一个默认值：vLLM 用于高吞吐的 GPU 服务，Ollama 是省事的默认选项，也是两者中唯一能在 macOS 或纯 CPU 机器上运行的。
 
 ### 长任务是一等公民
 

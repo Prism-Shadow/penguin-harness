@@ -296,4 +296,19 @@ See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for their licenses.
 
 [Apache-2.0](LICENSE) © 2026 Prism Shadow
 
-Built with ❤️ by [Yaowei Zheng](https://github.com/hiyouga) (author of [LlamaFactory](https://github.com/hiyouga/LlamaFactory)), the [PrismShadow AI Team](https://github.com/Prism-Shadow), and [Fable 5](https://www.anthropic.com/news/claude-fable-5-mythos-5).
+## Team
+
+**Teams:** PrismShadow AI, Qinghe Dynamic
+
+**Maintainers:**
+
+- Yaowei Zheng (LlamaFactory, PrismShadow)
+- Yangxi Xiang
+- Junhao Hu
+- Leijun Zhou (PrismShadow)
+- Zhihao Liu (PrismShadow)
+- Xiang Qu (PrismShadow)
+- Ning Wang (Qinghe Dynamic)
+- Ming Lu (Qinghe Dynamic)
+
+Built with ❤️

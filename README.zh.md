@@ -49,9 +49,9 @@
 
 PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）框架。模型保持不变，进化的是 Harness：提示词、Skill、工具和钩子。它可以在你的电脑或服务器上运行，提供桌面端、Web App、CLI 和 SDK。
 
-- **一个框架，集齐所有 RSI 算法。** Default、OPRO、APE、ACE 和 AWM 都以插件形式提供，跑在同一套内置 Benchmark、记分板和快照上。
-- **一句话生成一个 Agent 应用。** 描述你的需求，Agent 就会把应用、页面和运行说明都写好。
-- **跑起来很便宜。** 工具集刻意保持精简，专为开源模型调优：在我们的数据分析测试集上，以 Claude Code 1/70 的成本取得最高准确率。
+- **一个框架**，**集齐所有 RSI 算法**。 Default、OPRO、APE、ACE 和 AWM 都以插件形式提供，跑在同一套内置 Benchmark、记分板和快照上。
+- **一句话生成一个 Agent 应用**。 描述你的需求，Agent 就会把应用、页面和运行说明都写好。
+- **跑起来很便宜**。 工具集刻意保持精简，专为开源模型调优：在我们的数据分析测试集上，以 Claude Code 1/70 的成本取得最高准确率。
 
 ## 自进化
 
@@ -71,7 +71,7 @@ PenguinHarness 是开源的 Agent 自进化（recursive self-improvement, RSI）
   <img src="https://raw.githubusercontent.com/Prism-Shadow/penguin-harness-community/main/blog-assets/penguinharness-0-2-14-benchmark-detail-zh.png" alt="一个 Benchmark 的分数图：三个 Agent 随版本一路攀升" width="820" />
 </p>
 
-**演示：**以决策智能体为例，经过评测、一次工作方法的改进和同模型复测，分数从 84 提升到 100，每次运行的成本都看得到。
+**演示**：以决策智能体为例，经过评测、一次工作方法的改进和同模型复测，分数从 84 提升到 100，每次运行的成本都看得到。
 
 https://github.com/user-attachments/assets/8ab00e36-9da6-4706-aede-5cf63c3080fc
 
@@ -184,7 +184,7 @@ docker logs penguin       # 首次登录链接，在本机可原样打开
 
 每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 为每个目标平台恰好附带一个包：Linux 和 macOS 提供 x64 / arm64 版本，Windows 提供 x64 版本，另有一个不含运行时的通用包。在线安装和离线安装用的是同一个文件。每个包都封入程序本体、对应的 SHA256 校验值和所在平台的安装器。在联网机器上下载这一个文件，拷贝到目标机器，解压一次，运行自带的安装器即可，无需网络，也无需单独携带校验文件（封入的 SHA256 始终会被校验）。
 
-**Linux（arm64 机器请使用 `penguin-linux-arm64.tar.gz`）：**
+**Linux**（**arm64 机器请使用 `penguin-linux-arm64.tar.gz`**）：
 
 ```bash
 mkdir penguin-install
@@ -192,7 +192,7 @@ tar -xzf penguin-linux-x64.tar.gz -C penguin-install
 ./penguin-install/install.sh
 ```
 
-**macOS（以 Apple silicon 为例；Intel 机器请使用 `penguin-darwin-x64.tar.gz`）：**
+**macOS**（**以 Apple silicon 为例**；**Intel 机器请使用 `penguin-darwin-x64.tar.gz`**）：
 
 ```bash
 mkdir penguin-install
@@ -200,7 +200,7 @@ tar -xzf penguin-darwin-arm64.tar.gz -C penguin-install
 ./penguin-install/install.sh
 ```
 
-**Windows（解压后双击 `install.cmd`，或在 PowerShell 中运行）：**
+**Windows**（**解压后双击 `install.cmd`**，**或在 PowerShell 中运行**）：
 
 ```powershell
 Expand-Archive penguin-win32-x64.zip -DestinationPath penguin-install
@@ -296,4 +296,19 @@ pnpm dev                     # 服务端 + Web 一起启动（带前缀日志，
 
 [Apache-2.0](LICENSE) © 2026 Prism Shadow
 
-由 [Yaowei Zheng](https://github.com/hiyouga)（[LlamaFactory](https://github.com/hiyouga/LlamaFactory) 作者）、[PrismShadow AI Team](https://github.com/Prism-Shadow) 和 [Fable 5](https://www.anthropic.com/news/claude-fable-5-mythos-5) 用 ❤️ 打造。
+## 团队
+
+**团队**：PrismShadow AI、清和乐章
+
+**维护者**：
+
+- Yaowei Zheng（LlamaFactory、PrismShadow）
+- Yangxi Xiang
+- Junhao Hu
+- Leijun Zhou（PrismShadow）
+- Zhihao Liu（PrismShadow）
+- Xiang Qu（PrismShadow）
+- Ning Wang（清和乐章）
+- Ming Lu（清和乐章）
+
+Built with ❤️

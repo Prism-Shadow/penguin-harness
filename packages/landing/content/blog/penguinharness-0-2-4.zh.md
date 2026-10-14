@@ -81,10 +81,10 @@ Token 图保留三段式柱状图，并新增一条缓存命中率虚线，画�
 
 这一版有五处改动需要你做判断，不是升级完就没事了。
 
-- **DeepSeek 改用 Responses 协议。** id 中含有 `deepseek-v4`、且没有设置 `client_type` 的条目，会按 id 路由到 DeepSeek 客户端，而这个客户端现在请求的是 `{base_url}/responses`。指向 `https://api.deepseek.com` 的条目不受影响，因为 DeepSeek 两种协议都支持。如果条目指向只支持 Chat Completions 的端点，比如自建服务、中转服务或第三方 DeepSeek 兼容网关，升级后就会开始报错。给它设置 `client_type = "openai-chat"` 即可，可以写在 `.project_config.toml` 里，也可以用模型页的协议选择器。
-- **模型目录的新条目不会自动出现。** 预置模型只在创建 Project 时复制进 `.project_config.toml`，之后不会再被改写。要用上新模型，请在模型页点击**同步预置**。它会补入缺少的条目，更新由模型目录管理的字段，并且不会改动你保存的默认模型。
-- **`GET /usage` 的返回结构变了。** `trend`、`byAgent` 和 `success` 已移除，改为 `series`、`byAgentSeries` 和 `byModelSeries`。原先 `success` 里按状态拆分的失败统计，没有替代项。
-- **已保存的终端侧栏布局不会保留。** 升级后侧栏会先以关闭状态启动一次。正在运行的 shell 仍然可以从任一侧栏的「+」菜单里找回。
-- **`agent-creation` Skill 更名为 `agent-initialization`。** 新名字说的是它实际做的事：初始化一个 Agent 的设置，而不是创建 Agent。已经安装的旧副本仍然可以用，但它不再对应技能库里的任何 Skill，所以不会再收到更新。请安装 `agent-initialization`，在该 Agent 的**技能**标签页里删除 `agent-creation`，并手动修改所有写死了旧名字的地方：旧名字不会报错，只会什么都匹配不到。
+- **DeepSeek 改用 Responses 协议**。 id 中含有 `deepseek-v4`、且没有设置 `client_type` 的条目，会按 id 路由到 DeepSeek 客户端，而这个客户端现在请求的是 `{base_url}/responses`。指向 `https://api.deepseek.com` 的条目不受影响，因为 DeepSeek 两种协议都支持。如果条目指向只支持 Chat Completions 的端点，比如自建服务、中转服务或第三方 DeepSeek 兼容网关，升级后就会开始报错。给它设置 `client_type = "openai-chat"` 即可，可以写在 `.project_config.toml` 里，也可以用模型页的协议选择器。
+- **模型目录的新条目不会自动出现**。 预置模型只在创建 Project 时复制进 `.project_config.toml`，之后不会再被改写。要用上新模型，请在模型页点击**同步预置**。它会补入缺少的条目，更新由模型目录管理的字段，并且不会改动你保存的默认模型。
+- **`GET /usage` 的返回结构变了**。 `trend`、`byAgent` 和 `success` 已移除，改为 `series`、`byAgentSeries` 和 `byModelSeries`。原先 `success` 里按状态拆分的失败统计，没有替代项。
+- **已保存的终端侧栏布局不会保留**。 升级后侧栏会先以关闭状态启动一次。正在运行的 shell 仍然可以从任一侧栏的「+」菜单里找回。
+- **`agent-creation` Skill 更名为 `agent-initialization`**。 新名字说的是它实际做的事：初始化一个 Agent 的设置，而不是创建 Agent。已经安装的旧副本仍然可以用，但它不再对应技能库里的任何 Skill，所以不会再收到更新。请安装 `agent-initialization`，在该 Agent 的**技能**标签页里删除 `agent-creation`，并手动修改所有写死了旧名字的地方：旧名字不会报错，只会什么都匹配不到。
 
 每一项改动的完整细节见 [`changelog/0.2.4/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.4)。
