@@ -52,6 +52,7 @@ export abstract class Auth {
   abstract adminPasswordIsInitial(): boolean;
   abstract login(userId: string, password: string): Promise<{ user: UserInfo; token: string }>;
   abstract loginDesktop(): { user: UserInfo; token: string };
+  abstract issueRemoteSession(): { token: string; expiresAt: string; maxAgeSeconds: number };
   abstract changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void>;
   abstract setInitialPassword(userId: string, newPassword: string): Promise<void>;
   abstract logout(token: string): void;

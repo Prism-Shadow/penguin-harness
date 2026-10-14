@@ -120,6 +120,7 @@ import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
 import { AuthRoutes } from "./http/routes/auth.js";
+import { RemoteRoutes } from "./http/routes/remote.js";
 import {
   DesktopPrivacySettingsRoutes,
   DesktopRoutes,
@@ -277,6 +278,7 @@ export class RuntimeModule {}
     AdminRoutes,
     MeRoutes,
     AuthRoutes,
+    RemoteRoutes,
   ],
   exports: [Users, AuthSessions, Auth, Admin, PasswordHasher, LiveStreams],
 })

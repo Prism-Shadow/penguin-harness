@@ -64,7 +64,11 @@ export function currentUser(c: { var: { user: UserRow } }): UserRow {
   return c.var.user;
 }
 
-export function authMiddleware(auth: Auth, trustProxy: boolean): MiddlewareHandler<AppEnv> {
+export function authMiddleware(
+  auth: Auth,
+  trustProxy: boolean,
+  options: { apiTokenOnly?: boolean } = {},
+): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     // Bearer first: an explicit credential on the request outranks ambient cookies, and
     // a wrong one is an error, never a silent fallback (see the module doc).
@@ -80,6 +84,17 @@ export function authMiddleware(auth: Auth, trustProxy: boolean): MiddlewareHandl
       return;
     }
     const token = getCookie(c, SESSION_COOKIE);
+    // Classify a refused cookie without renewing its session or setting a response cookie.
+    if (options.apiTokenOnly) {
+      if (token && auth.sessionIsLive(token)) {
+        throw new HttpError(
+          403,
+          "local_api_token_required",
+          "Only the local API token may issue a remote browser session.",
+        );
+      }
+      throw new HttpError(401, "unauthorized", "Not signed in or the sign-in has expired.");
+    }
     const authed = token ? auth.authenticateWithMeta(token) : null;
     if (!authed) {
       throw new HttpError(401, "unauthorized", "Not signed in or the sign-in has expired.");
@@ -103,7 +118,8 @@ export function bearerToken(header: string | undefined): string | null {
 }
 
 /**
- * Refuses the local API token on a write that only a person may make: 403 `human_required`. A
+ * Refuses the local API token and its exchanged Remote cookies on a write that only a person
+ * may make: 403 `human_required`. AuthService preserves their common "token" authority. A
  * person's sign-in — a cookie session, from the Web App, `penguin auth login` or
  * `penguin auth token` — passes. Every tool subprocess of a server-driven Session holds that token
  * as `PENGUIN_API_TOKEN`, so these are the writes an Agent must not make from its own shell:
@@ -126,7 +142,7 @@ export function requireHuman(c: { var: { sessionVia: SessionVia } }): void {
     throw new HttpError(
       403,
       "human_required",
-      "Only the signed-in user can do this, in the app; an API token cannot.",
+      "Sign in with your password to do this; an API token or its Remote session cannot.",
     );
   }
 }

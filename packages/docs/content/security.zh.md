@@ -23,18 +23,21 @@ PenguinHarness 用真实凭据在真实机器上运行 Agent，所以值得弄�
 | 用密码登录；密码以 scrypt 哈希存储，登录尝试有频率限制 | Web 登录页、`penguin auth login` |
 | 桌面应用静默登录自己的窗口 | 窗口打开时的一次性令牌 |
 | 凭本地所有权铸造会话，全程不需要密码 | `penguin auth token` |
+| 将本地所有权兑换为一小时的 Penguin Remote 浏览器会话 | `POST /api/remote/session` |
 | 通过 ssh 管理机器，网络上不传密码 | **机器管理**页面 |
-| 会话是服务端的一行记录：可逐个收回、重启后依然存在、使用期间自动续期（30 天） | 所有场景 |
+| 会话是服务端的一行记录：可逐个收回、重启后依然存在；普通登录会话在使用期间自动续期（30 天），短期会话保持签发时的到期时间 | 所有场景 |
 | 每个会话都记录自己的建立方式 | 会话的 `via` 值（见下文） |
 | 收回单个会话，或收回某个用户的全部会话 | **登出**、管理员重置用户密码 |
 | 就在这台机器上找回丢失的管理员密码 | `penguin server reset-admin-password` |
 
-每个会话的 `via` 值记录它的建立方式：
+每种认证来源都有一个 `via` 值记录它的建立方式：
 
-- `password`：手动输入的密码，或由 `penguin auth token` 铸造的会话
+- `password`：手动输入的密码；公开 API 也用这个值表示 CLI 铸造的会话
 - `desktop`：桌面应用自己的窗口
 - `setup`：新服务器上的登录链接
-- `token`：请求在 Bearer 头里携带本地 API token；不存储会话
+- `cli`：由 `penguin auth token` 铸造的会话在内部存储的来源
+- `remote`：由本地 API token 为 Penguin Remote 签发的一小时浏览器会话
+- `token`：本地 API token 所代表的权限，通过 Bearer 头或兑换后的 Remote Cookie 认证
 
 ## 认领新服务器
 
@@ -113,6 +116,12 @@ PenguinHarness 用真实凭据在真实机器上运行 Agent，所以值得弄�
 CLI 命令访问本机上的服务器时，用本地 API token 认证；服务器每次启动都会把它写入 `<root>/api-token`。参见 [CLI 参考](/cli#服务器连接)。
 
 本地 API token 不能改变 Agent 的对外暴露：开启 Agent 的 API、无密钥访问、审批模式、密钥，以及整台服务器的 Agent API 开关，都需要人的登录，因为每个 Agent 的命令都带着这个 token。服务器以 `403` `human_required` 拒绝携带 token 的这类请求，在 Session 之外，CLI 随即带着你保存的登录（如果有）把请求再发一次；下文的 `penguin auth token` 能为 CLI 提供这样的登录。这防止 Agent 借 harness 交给它的凭据自行对外开放，但不是边界：以数据根目录所属操作系统账号运行的进程同样能铸造会话。约束 Agent 的是沙盒。
+
+Penguin Remote 可以凭这种本地所有权，通过 `POST /api/remote/session` 兑换浏览器会话。请求必须携带 `Authorization: Bearer <本地 API token>`、`Content-Type: application/json` 和空 JSON 对象。它只接受这一种凭证：即使属于管理员，密码、桌面、首次登录和 Remote Cookie 也会被拒绝。被拒绝的 Cookie 请求不会续期会话，也不会设置 Cookie。
+
+响应会返回一个以内置管理员身份创建的全新原始 `penguin_session` token，有效期固定为一小时，内部标记为 `via: remote`。响应带有 `Cache-Control: no-store`，Harness 本身不设置 Cookie。Penguin Remote 的本地代理必须在公网域名的响应中设置 Cookie，并把返回的 token 当作凭据处理：不得记录、缓存或暴露到其他位置。该接口不会开放 CORS。
+
+公开 API 将这个会话标记为 `token`：兑换会话保留原 token 的人工操作限制和 Agent 身份规则。修改 Agent 的对外暴露、浏览器后端或浏览器配对时，需要退出登录后使用密码登录。Remote 代理应保留这次密码登录，不能用新兑换的会话覆盖它。
 
 脚本需要自己的会话时，就自己铸造一个。会话是数据根目录下 `web.db` 里的一行记录，所以 CLI 直接写入一行：
 

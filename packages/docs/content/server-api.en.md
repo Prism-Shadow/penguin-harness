@@ -41,8 +41,8 @@ packages/server/src
 
 The API accepts two credentials: a cookie session and the local API token.
 
-- Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 30 days with sliding renewal.
-- Passwords are stored as scrypt hashes. A session is a row in `auth_sessions`, keyed by the sha256 of a random cookie token; the raw token is never stored. A session survives a restart and renews in place, and logout deletes the row.
+- Cookie session: `penguin_session` (HttpOnly, SameSite=Lax). Ordinary login sessions are valid for 30 days with sliding renewal; short CLI- and Remote-minted sessions keep the expiry set when they were issued.
+- Passwords are stored as scrypt hashes. A session is a row in `auth_sessions`, keyed by the sha256 of a random cookie token; the raw token is never stored. A session survives a restart, eligible sessions renew in place, and logout deletes the row.
 - There is no open registration. At startup the server seeds the built-in admin `admin` with a random password, which it hashes and discards without anyone seeing it. Until a password is set, every start prints a first-login link that claims the account. For automation, `PENGUIN_SEED_ADMIN_PASSWORD` pins a known password instead. An admin creates all other accounts.
 - Same-origin only: no CORS middleware is enabled, except on the Agent API's `/api/amsp/v1`, which answers a preflight from any origin and sends `Access-Control-Allow-Origin: *` on a request that carries `Authorization`. That group takes neither credential above: a request presents the agent's API key, or none when the agent allows keyless access. See [Agent API](/agent-api).
 - Routes marked admin only answer other users with `403` `admin_required`.
@@ -69,6 +69,23 @@ Every protected route also accepts `Authorization: Bearer <token>` with the **lo
 curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
   http://127.0.0.1:7364/api/me
 ```
+
+### Penguin Remote session exchange
+
+`POST /api/remote/session` converts access to the current local API token into a short browser session for the built-in administrator. It accepts only `Authorization: Bearer <local API token>`: a missing or incorrect Bearer token returns `401`, while an authenticated password, desktop, setup, or Remote Cookie returns `403`. The request must use `Content-Type: application/json`; the body is an empty object (`{}`). No CORS access is added.
+
+The lifetime is fixed at one hour and cannot be selected by the caller. The stored session has the internal source `remote` and is not extended by the 30-day sliding-renewal path. It retains the local API token’s authority (`sessionVia: "token"` in `/api/me`), so `human_required` restrictions and Agent identity rules also apply to this Cookie. Human-only writes require a separate password login. A Remote Cookie cannot be used to exchange another session; that request needs the actual local API token in the Bearer header. A successful response has `Cache-Control: no-store`, does not include `Set-Cookie`, and returns:
+
+```json
+{
+  "cookieName": "penguin_session",
+  "sessionToken": "<new opaque session token>",
+  "expiresAt": "2026-10-14T01:00:00.000Z",
+  "maxAgeSeconds": 3600
+}
+```
+
+`sessionToken` is a raw administrator credential. Penguin Remote's local proxy is responsible for putting it in the named Cookie on a response from the public domain. Clients must not log or cache either the local API token or the returned session token.
 
 ## Auth and Account
 

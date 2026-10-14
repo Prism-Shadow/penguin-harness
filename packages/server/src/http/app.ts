@@ -5,7 +5,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { authMiddleware, jsonOnlyWrites } from "../auth/middleware.js";
+import { authMiddleware, bearerToken, jsonOnlyWrites } from "../auth/middleware.js";
 import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
@@ -24,12 +24,12 @@ export abstract class Http {
 
 export interface HttpSlots {
   /**
-   * A route group. `auth: "user"` mounts it behind the cookie gate, `"none"` in front of
-   * it; `order` is the mount position (a stable number, since Hono matches in order). The
-   * code half is the group's Hono app.
+   * A route group. `auth: "user"` accepts a cookie or the local API token; `"token"` accepts
+   * only the local API token, without renewing cookies; `"none"` is public. `order` is the
+   * mount position (a stable number, since Hono matches in order). The code half is the Hono app.
    */
   routes: Slot<
-    { prefix: string; auth: "user" | "none"; order: number },
+    { prefix: string; auth: "user" | "token" | "none"; order: number },
     Opaque<"Hono", Hono<AppEnv>>
   >;
 }
@@ -99,7 +99,7 @@ export class HttpModule {
       .map((c) => ({
         id: c.id,
         prefix: c.data.prefix as string,
-        auth: c.data.auth as "user" | "none",
+        auth: c.data.auth as "user" | "token" | "none",
         order: c.data.order as number,
         app: c.code as Hono<AppEnv>,
       }))
@@ -108,10 +108,19 @@ export class HttpModule {
     // run once per request: prefixes nest (/api/projects, /api/projects/:projectId/members),
     // so a request can pass several mounts, and the first is the one that authenticates.
     const authenticate = authMiddleware(this.auth, this.config.trustProxy);
+    const authenticateToken = authMiddleware(this.auth, this.config.trustProxy, {
+      apiTokenOnly: true,
+    });
     const gate: MiddlewareHandler<AppEnv> = (c, next) =>
       (c.var.user as AppEnv["Variables"]["user"] | undefined) === undefined
         ? authenticate(c, next)
         : next();
+    // A Remote cookie carries token authority too, but only an actual Bearer may exchange
+    // credentials. An earlier user gate must not let that cookie skip this transport check.
+    const tokenGate: MiddlewareHandler<AppEnv> = (c, next) =>
+      c.var.sessionVia === "token" && bearerToken(c.req.header("authorization")) !== null
+        ? next()
+        : authenticateToken(c, next);
     for (const r of routes) {
       // The gate sits on each group that asked for it, not once on `/api/*` ahead of the
       // first such group: a contributor picks its own prefix and order, and `auth` has to
@@ -119,6 +128,7 @@ export class HttpModule {
       // protected one stays public, and a protected group outside /api (the machine proxy
       // at /server/) is still protected. The gate is also what puts the user on the context.
       if (r.auth === "user") app.use(`${r.prefix.replace(/\/$/, "")}/*`, gate);
+      if (r.auth === "token") app.use(`${r.prefix.replace(/\/$/, "")}/*`, tokenGate);
       app.route(r.prefix, r.app);
     }
     this.http = { fetch: (request: Request) => Promise.resolve(app.fetch(request)) };

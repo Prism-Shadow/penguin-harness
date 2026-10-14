@@ -21,6 +21,7 @@ import type { AuthState, Clock, Config } from "../hmr/capabilities.js";
 import type { Auth, AuthSessions, Users } from "../mechanisms/identity.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
+export const REMOTE_SESSION_TTL_MS = 60 * 60_000;
 
 /** Built-in admin user_id. */
 export const ADMIN_USER_ID = "admin";
@@ -52,8 +53,10 @@ export function generateInitialAdminPassword(): string {
 
 /**
  * "desktop" and "setup" may set a password without the old one (theirs is random and was never
- * shown); desktop-only routes open to "desktop" alone. "token" is the local API token's Bearer
- * header — per request, never a stored row. Anything else reads as "password".
+ * shown); desktop-only routes open to "desktop" alone. "token" is the local API token's
+ * authority, whether presented as a Bearer header or exchanged for a Remote cookie.
+ * Exchanging the credential must not grant the person's privileges. Anything else reads as
+ * "password".
  */
 export type SessionVia = "password" | "desktop" | "setup" | "token";
 
@@ -257,6 +260,23 @@ export class AuthService implements Auth {
     return { user: toUserInfo(row), token: this.issueSession(row.userId, "desktop") };
   }
 
+  issueRemoteSession(): { token: string; expiresAt: string; maxAgeSeconds: number } {
+    const row = this.users.findById(ADMIN_USER_ID);
+    if (!row) {
+      throw new HttpError(500, "internal", "Built-in admin has not been seeded.");
+    }
+    const maxAgeSeconds = Math.floor(REMOTE_SESSION_TTL_MS / 1000);
+    return {
+      ...this.authSessions.issue({
+        userId: row.userId,
+        via: "remote",
+        now: this.clock.now(),
+        ttlMs: REMOTE_SESSION_TTL_MS,
+      }),
+      maxAgeSeconds,
+    };
+  }
+
   /** Self password change (user settings): validates the old password first; the current session stays valid. */
   async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<void> {
     const row = this.users.findById(userId);
@@ -350,7 +370,13 @@ export class AuthService implements Auth {
       renewed = true;
     }
     const via: SessionVia =
-      session.via === "desktop" ? "desktop" : session.via === "setup" ? "setup" : "password";
+      session.via === "remote"
+        ? "token"
+        : session.via === "desktop"
+          ? "desktop"
+          : session.via === "setup"
+            ? "setup"
+            : "password";
     return { user, via, renewed };
   }
 

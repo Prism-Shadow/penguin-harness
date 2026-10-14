@@ -23,18 +23,21 @@ One principle runs through every scenario:
 | Sign in with a password, stored as an scrypt hash, with attempts throttled | Web login page, `penguin auth login` |
 | The desktop app signs its own window in, silently | A one-shot token when the window opens |
 | Mint a session from local ownership, with no password involved | `penguin auth token` |
+| Exchange local ownership for a one-hour Penguin Remote browser session | `POST /api/remote/session` |
 | Manage machines over ssh with no password on the wire | The **Machines** page |
-| Sessions are server-side rows: revocable one by one, surviving a restart, renewed while in use (30 days) | Everywhere |
+| Sessions are server-side rows: revocable one by one and surviving a restart; ordinary login sessions renew while in use (30 days), while short sessions keep their issued expiry | Everywhere |
 | Every session records how it was established | Its `via` value (see below) |
 | Revoke one session, or every session a user holds | **Sign out**, admin password reset |
 | Recover a lost admin password from the machine itself | `penguin server reset-admin-password` |
 
-Each session's `via` value records how it was established:
+Each authentication source has a `via` value recording how it was established:
 
-- `password`: a typed password, or a session minted by `penguin auth token`
+- `password`: a typed password; the public API also reports CLI-minted sessions this way
 - `desktop`: the desktop app's own window
 - `setup`: the sign-in link on a fresh server
-- `token`: a request that carries the local API token as a Bearer header; no session is stored
+- `cli`: the internal source stored for a session minted by `penguin auth token`
+- `remote`: a one-hour browser session issued to Penguin Remote from the local API token
+- `token`: the local API token’s authority, presented as a Bearer header or an exchanged Remote cookie
 
 ## Claim a fresh server
 
@@ -113,6 +116,12 @@ Scripts and the CLI never need a password, because local ownership already outra
 When a CLI command runs against a server on this machine, it authenticates with the local API token, which the server writes to `<root>/api-token` at every start. See [CLI Reference](/cli#server-connection).
 
 The local API token cannot change an agent's exposure: turning an agent's API on, keyless access, its approval mode, its keys and the server-wide Agent API switch take a person's sign-in, because every agent's commands carry that token. The server refuses the token on them with `403` `human_required`, and outside a Session the CLI then sends the request once more with your stored sign-in, if you have one; `penguin auth token`, below, gives the CLI that sign-in. This keeps an agent from exposing itself through the credential the harness hands it; it is not a boundary, since a process running as the data root's OS account can mint a session too. The sandbox is what bounds an agent.
+
+Penguin Remote may exchange that local ownership for a browser session by sending `POST /api/remote/session` with `Authorization: Bearer <local API token>`, `Content-Type: application/json`, and an empty JSON object. This is the only accepted credential: password, desktop, setup, and Remote cookies are refused even when they belong to the administrator. Refused cookie requests do not renew the session or set a Cookie.
+
+The response contains a new raw `penguin_session` token for the built-in administrator, with a fixed one-hour expiry and an internal `via: remote` marker. It is returned with `Cache-Control: no-store`; the Harness response does not set a Cookie. Penguin Remote's local proxy must set the Cookie on its public-domain response and must treat the returned token as a credential: do not log, cache, or expose it elsewhere. The endpoint does not enable CORS.
+
+The public API reports this session as `token`: exchanging a token preserves its restrictions on human-only writes and its Agent identity rules. To change an Agent’s exposure, browser backend, or browser pairing, sign out and sign in with a password. The Remote proxy must preserve that password login instead of replacing it with another exchanged session.
 
 A script that needs a session of its own mints one. A session is a row in the data root's `web.db`, so the CLI writes one:
 

@@ -41,8 +41,8 @@ packages/server/src
 
 API 接受两种凭证：Cookie 会话和本地 API token。
 
-- Cookie 会话：`penguin_session`（HttpOnly，SameSite=Lax），有效期 30 天，滑动续期。
-- 密码以 scrypt 哈希存储。会话是 `auth_sessions` 表中的一行，以随机 Cookie token 的 sha256 为键；原始 token 从不存储。会话重启后依然有效，并在原地续期；登出则删除这一行。
+- Cookie 会话：`penguin_session`（HttpOnly，SameSite=Lax）。普通登录会话有效期为 30 天并滑动续期；由 CLI 和 Remote 铸造的短期会话保持签发时设置的到期时间。
+- 密码以 scrypt 哈希存储。会话是 `auth_sessions` 表中的一行，以随机 Cookie token 的 sha256 为键；原始 token 从不存储。会话重启后依然有效，符合条件的会话会在原地续期；登出则删除这一行。
 - 不开放注册。启动时，服务器会用一个随机密码初始化内置管理员 `admin`：密码哈希后保存，明文随即丢弃，没有任何人见过它。在设置密码之前，每次启动都会打印一条首次登录链接，用来认领账号。自动化场景可以改用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定一个已知密码。其余所有账号都由管理员创建。
 - 仅限同源：未启用任何 CORS 中间件。例外是 Agent API 的 `/api/amsp/v1`：它应答任何来源的预检，并在带 `Authorization` 的请求上返回 `Access-Control-Allow-Origin: *`。这组路由不接受上面两种凭证：请求出示的是该 Agent 的 API 密钥；Agent 允许无密钥访问时，也可以不出示。见 [Agent API](/agent-api)。
 - 标为「仅管理员」的路由，对其他用户一律返回 `403` `admin_required`。
@@ -69,6 +69,23 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
   http://127.0.0.1:7364/api/me
 ```
+
+### Penguin Remote 会话兑换
+
+`POST /api/remote/session` 将当前本地 API token 所代表的权限兑换为一个以内置管理员身份创建的短期浏览器会话。接口只接受 `Authorization: Bearer <本地 API token>`：未提供或提供错误的 Bearer token 返回 `401`；已通过密码、桌面、首次登录或 Remote Cookie 认证的请求返回 `403`。请求必须使用 `Content-Type: application/json`，请求体为空对象（`{}`）。该接口不会新增任何 CORS 开放。
+
+有效期固定为一小时，调用方不能自行指定。持久化的会话来源在内部标记为 `remote`，不会进入 30 天滑动续期路径。它保留本地 API token 的权限（`/api/me` 返回 `sessionVia: "token"`），因此 `human_required` 限制和 Agent 身份规则也适用于这个 Cookie。需要人工授权的写操作必须另行使用密码登录。Remote Cookie 不能再次兑换会话；兑换请求必须在 Bearer 头中携带真正的本地 API token。成功响应带有 `Cache-Control: no-store`，不包含 `Set-Cookie`，并返回：
+
+```json
+{
+  "cookieName": "penguin_session",
+  "sessionToken": "<新生成的不透明会话 token>",
+  "expiresAt": "2026-10-14T01:00:00.000Z",
+  "maxAgeSeconds": 3600
+}
+```
+
+`sessionToken` 是原始管理员凭据。Penguin Remote 的本地代理负责在公网域名的响应中把它写入上述名称的 Cookie。客户端不得记录或缓存本地 API token 以及返回的会话 token。
 
 ## 认证与账号
 
