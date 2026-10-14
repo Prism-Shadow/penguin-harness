@@ -59,6 +59,7 @@ import { modelPromotions } from "./steps/2026-09-17-model-promotions.js";
 import { modelProviderAuthTokens } from "./steps/2026-09-21-model-provider-auth-tokens.js";
 import { sessionsSandbox } from "./steps/2026-09-22-sessions-sandbox.js";
 import { machinesColumns } from "./steps/2026-09-23-machines-columns.js";
+import { modelTablesAdoption } from "./steps/2026-09-23-model-tables-adoption.js";
 import { browserExtensions } from "./steps/2026-10-04-browser-extensions.js";
 import { agentApi } from "./steps/2026-10-10-agent-api.js";
 import { messagingConversations } from "./steps/2026-10-12-messaging-conversations.js";
@@ -97,6 +98,7 @@ export const MIGRATIONS: readonly Migration[] = [
   agentApiSessionSettings,
   agentApiConcurrency,
   machinesAdoptedAt,
+  modelTablesAdoption,
 ];
 
 /**

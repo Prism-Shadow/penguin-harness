@@ -308,6 +308,7 @@ describe("2026-09-23-machines-columns → current: 2026-10-04-browser-extensions
         "2026-10-14-agent-api-session-settings",
         "2026-10-14-agent-api-concurrency",
         "2026-10-16-machines-adopted-at",
+        "2026-09-23-model-tables-adoption",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
@@ -370,6 +371,7 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
         "2026-10-14-agent-api-session-settings",
         "2026-10-14-agent-api-concurrency",
         "2026-10-16-machines-adopted-at",
+        "2026-09-23-model-tables-adoption",
       ]);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
         { session_id: "s1", kept_at: null },
@@ -396,7 +398,7 @@ describe("a sessions table from before the sidebar mark: 2026-10-12-sessions-kep
 });
 
 describe("an agent_api table from before the session settings: 2026-10-14-agent-api-session-settings", () => {
-  /** A root whose line declared everything through 2026-10-12-sessions-kept-at, but not the three steps that followed it. */
+  /** A root whose line declared everything through 2026-10-12-sessions-kept-at, but not the four steps that followed it. */
   function openPreSessionSettings(): DatabaseSync {
     const db = openFresh();
     for (const column of [
@@ -426,6 +428,7 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
         "2026-10-14-agent-api-session-settings",
         "2026-10-14-agent-api-concurrency",
         "2026-10-16-machines-adopted-at",
+        "2026-09-23-model-tables-adoption",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -461,7 +464,7 @@ describe("an agent_api table from before the session settings: 2026-10-14-agent-
 // Given a database that already has session settings, the concurrency upgrade preserves them
 // and its key, starts with the old limit, and retains a changed limit across repeated startup.
 describe("an agent_api table from before the concurrency limit: 2026-10-14-agent-api-concurrency", () => {
-  /** A root whose line declared 2026-10-14-agent-api-session-settings, but not the two steps that followed it. */
+  /** A root whose line declared 2026-10-14-agent-api-session-settings, but not the three steps that followed it. */
   function openPreConcurrency(): DatabaseSync {
     const db = openFresh();
     db.exec("ALTER TABLE agent_api DROP COLUMN max_concurrent_runs");
@@ -485,6 +488,7 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "2026-10-14-agent-api-concurrency",
         "2026-10-16-machines-adopted-at",
+        "2026-09-23-model-tables-adoption",
       ]);
       expect(db.prepare("SELECT * FROM agent_api").get()).toMatchObject({
         enabled: 1,
@@ -513,7 +517,7 @@ describe("an agent_api table from before the concurrency limit: 2026-10-14-agent
 // Given a database that already has the concurrency limit, the adoption-time upgrade leaves
 // machines adopted before it without a time, and keeps a written time on rollback.
 describe("a machines table from before the adoption times: 2026-10-16-machines-adopted-at", () => {
-  /** A root whose line declared 2026-10-14-agent-api-concurrency, but not the adoption time that followed it. */
+  /** A root whose line declared 2026-10-14-agent-api-concurrency, but not the two steps that followed it. */
   function openPreAdoption(): DatabaseSync {
     const db = openFresh();
     db.exec("ALTER TABLE machines DROP COLUMN adopted_at");
@@ -530,7 +534,10 @@ describe("a machines table from before the adoption times: 2026-10-16-machines-a
     const db = openPreAdoption();
     try {
       insertMachine(db);
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["2026-10-16-machines-adopted-at"]);
+      expect(migrate(db, { swapPath: true }).applied).toEqual([
+        "2026-10-16-machines-adopted-at",
+        "2026-09-23-model-tables-adoption",
+      ]);
       expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
         { address: "ssh:nas", adopted_at: null },
       ]);
