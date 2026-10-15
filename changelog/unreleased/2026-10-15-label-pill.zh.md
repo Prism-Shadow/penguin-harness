@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#1162](https://github.com/Prism-Shadow/penguin-harness/pull/1162)
 
 [English](2026-10-15-label-pill.md)
 
