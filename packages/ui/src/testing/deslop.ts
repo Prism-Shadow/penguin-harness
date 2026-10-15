@@ -1066,7 +1066,7 @@ function transitionItems(
         if (DURATION_TOKEN.test(part) || milliseconds(part) !== null) duration ??= part;
         else if (
           property === null &&
-          /^[a-z-]+$/.test(part) &&
+          /^(?:--[\w-]+|[a-z-]+)$/.test(part) &&
           !/^(?:ease|ease-in|ease-out|ease-in-out|linear|step-start|step-end|allow-discrete|normal)$/.test(
             part,
           )
@@ -1082,23 +1082,23 @@ const declarations = (analysis: FileAnalysis) =>
   analysis.cssRules.flatMap((rule) => rule.declarations.map((decl) => ({ rule, decl })));
 
 /**
- * The one discrete hold rule 1 lets through: a `.ui-stream` recipe's veil keeps its gradient
- * while its opacity fades out on `done`, by naming `background-image` in a shorthand item with
- * `allow-discrete` (user decision, 2026-09-30). A discrete transition interpolates nothing — the
- * image is swapped at one instant, and with a `step-end` timing that instant is the end of the
- * fade — so the finished reply settles instead of snapping, and nothing moves that the rule
- * guards. Anywhere else, or without `allow-discrete`, `background-image` is off the set as ever.
+ * The one custom property rule 1 lets a recipe transition: a `.ui-stream` veil's strength,
+ * `--_stream-veil`, registered as a number in theme.css. Easing it to nothing on `done` is how
+ * the veil leaves (user decision, 2026-09-30: the last lines settle into full ink instead of
+ * snapping; 2026-10-15: the veil is a mask, so it fades the text itself over any background). It
+ * moves no geometry, only how faint the newest words are. Anywhere else, or any other custom
+ * property, is off the set as ever.
  */
-const DISCRETE_HOLD = { property: "background-image", selector: /\.ui-stream\b/ } as const;
+const VEIL_TRANSITION = { property: "--_stream-veil", selector: /\.ui-stream\b/ } as const;
 
 /** Rule 1: `transition` / `transition-property` naming `all` (or nothing) or a property off the set. */
 const cssTransitionCheck: Check = (analysis, policy) =>
   declarations(analysis).flatMap(({ rule, decl }) => {
-    const hold = DISCRETE_HOLD.selector.test(fullSelector(rule));
+    const veil = VEIL_TRANSITION.selector.test(fullSelector(rule));
     const properties =
       decl.name === "transition"
         ? transitionItems(decl.value)
-            .filter((item) => !(hold && item.discrete && item.property === DISCRETE_HOLD.property))
+            .filter((item) => !(veil && item.property === VEIL_TRANSITION.property))
             .map((item) => item.property)
         : decl.name === "transition-property"
           ? decl.value
@@ -1204,16 +1204,17 @@ const cssHookMonoCheck: Check = (analysis) =>
  * the signal that a step is in progress (user decision, 2026-09-29) — never the resting states, so
  * a finished transcript carries no wash. `.ui-chart`, as a MASK only: a line's area fading towards
  * the baseline, the data's shape (the same day). And the STREAMING state of `.ui-stream`, the veil
- * a reply's newest lines surface through while it arrives (user decision, 2026-09-30) — like the
- * activity row's, never on the finished reply: the `done` state's rule may hold the image only
- * through its fade-out, by the discrete transition rule 1 allows, and never declares one.
+ * a reply's newest lines surface through while it arrives (user decision, 2026-09-30) — a mask
+ * since 2026-10-15 — with the moments it eases away (`data-settling`, which the host drops once
+ * the fade is over); like the activity row's, never on the finished reply: the `done` state's rule
+ * never declares one.
  * `.ui-shell` is not among them: the app window's field is one flat colour, so a wash on it is the
  * tell, as is a gradient on any other hook, as a background or as a mask. A gradient in app CSS
  * that is not a hook is review: the context bar's hatch, which carries meaning, and the sweep
  * across the TokenDance banner's brand name, the banner's one deliberate emphasis.
  */
 const GRADIENT_RECIPES =
-  /\.ui-activity\[data-state="running"\]|\.ui-chart\b|\.ui-stream\[data-state="streaming"\]/;
+  /\.ui-activity\[data-state="running"\]|\.ui-chart\b|\.ui-stream\[data-(?:state="streaming"|settling)\]/;
 
 const cssDecorationCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) => {

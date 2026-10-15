@@ -12,11 +12,13 @@ settled screen does.
 
 ## Streaming
 
-A reply, a thinking step or a tool's output that is still streaming sits directly on the image.
-Frost used to draw its veil over the newest lines in the page's colour, which pressed a band of
-that colour across the picture until the text finished. Over a background image no theme draws a
-layer on streaming text any more; the words keep their pace and arrive at full ink. Without an
-image, Frost's veil is unchanged.
+A reply, a thinking step or a tool's output that is still streaming no longer lays a band over
+the image. Frost's veil over the newest lines used to be a layer painted in the page's colour; it
+is now a mask that fades the newest words themselves, so whatever lies behind them, the image
+included, shows through and nothing is painted over it. The fade keeps its shape, strength and
+settle: the last line and a half fade to six tenths of their ink while the text arrives, and ease
+back to full ink over the reveal duration once it is whole, after which the reply carries no
+mask. Without an image the fade looks as before.
 
 ## Loading
 
