@@ -150,11 +150,14 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     }),
     shard("sites", sites),
   ].filter((s) => s.packages.length);
+  // Four: with three, the slowest Windows server shard (vitest splits by file path, not by
+  // time) was the last job of a PR run, at 4.8 min against about 4 for the next.
+  const windowsServerShards = 4;
   const windows = [
     shard("core", core),
-    ...[1, 2, 3].map((i) =>
+    ...Array.from({ length: windowsServerShards }, (_, n) => n + 1).map((i) =>
       shard(`server-${i}`, server, {
-        tests: command(server, `exec vitest run --shard=${i}/3`),
+        tests: command(server, `exec vitest run --shard=${i}/${windowsServerShards}`),
       }),
     ),
     shard("rest", nativeRest, { must_run: "sandbox-dsh" }),

@@ -320,7 +320,7 @@ jobs:
         run: node packages/desktop/scripts/terminal-smoke.mjs
 
   # Windows. The runner is the slowest and the most I/O-variable of the three, so the
-  # server suite — the longest here by a wide margin — is split across three vitest shards
+  # server suite — the longest here by a wide margin — is split across four vitest shards
   # on top of the per-package split. core runs alone rather than beside anything else:
   # its exec_command suites spawn real shells and read their output under timeouts, races
   # they lose when oversubscribed. Every selected package runs once across the
