@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** refactor
 - **Scope:** `ui`, `landing`, `docs`, `ui-gallery`, `skills`
+- **PR:** [#1161](https://github.com/Prism-Shadow/penguin-harness/pull/1161)
 
 [English](2026-10-15-site-ui-unify.md)
 
