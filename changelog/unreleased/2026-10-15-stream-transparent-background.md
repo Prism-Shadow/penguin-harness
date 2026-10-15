@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `ui`, `web`
+- **PR:** [#1148](https://github.com/Prism-Shadow/penguin-harness/pull/1148)
 
 [中文版](2026-10-15-stream-transparent-background.zh.md)
 
