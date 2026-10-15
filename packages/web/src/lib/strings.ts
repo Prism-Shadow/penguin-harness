@@ -1240,6 +1240,7 @@ export const zh = {
     rowRestarting: "正在重启…",
     // —— the App info dialog's update section ——
     title: "软件更新",
+    unresponsiveHint: "如果自动更新无响应，请手动重启或者从官网下载安装包重新安装。",
     checkingBody: "正在检查更新…",
     /** Nothing is known yet: no check has answered since the page loaded. */
     notChecked: "尚未检查更新",

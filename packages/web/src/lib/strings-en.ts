@@ -1122,6 +1122,8 @@ export const en: Strings = {
     rowRestarting: "Restarting…",
     // —— the App info dialog's update section ——
     title: "Software Update",
+    unresponsiveHint:
+      "If the automatic update stops responding, restart manually or download the installer from the official website and reinstall.",
     checkingBody: "Checking for updates…",
     /** Nothing is known yet: no check has answered since the page loaded. */
     notChecked: "Not checked yet",

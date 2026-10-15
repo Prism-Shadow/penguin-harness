@@ -146,6 +146,7 @@ export function AppInfoBody(props: AppInfoBodyProps) {
       {mode !== "none" && (
         <RuledSection level={3} title={S.update.title}>
           <UpdateStatus mode={mode} flow={flow} />
+          <p className="mt-3 text-xs text-fg-muted">{S.update.unresponsiveHint}</p>
         </RuledSection>
       )}
       <ReleaseNotesList
