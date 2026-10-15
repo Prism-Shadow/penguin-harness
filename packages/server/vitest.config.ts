@@ -37,15 +37,25 @@
  * a `vi.spyOn` whose inline `mockRestore()` is skipped by a failing assertion above it
  * would otherwise stay installed for every later file in the same worker.
  */
+import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
+
+/**
+ * A fixed pool: one core left to the main process, at most three workers. Each worker boots app
+ * trees and runs real TypeScript compilers, so more would only contend (and `pnpm test` runs
+ * other packages alongside); three is the four-vCPU Linux and Windows runners, two the
+ * three-core macOS one. `minWorkers` equals `maxWorkers` because with `isolate: false` a worker
+ * above the minimum is terminated while idle, and that termination can reject inside tinypool
+ * after every file has passed ("Terminating worker thread"), failing the run with no failing
+ * test: three workers over a minimum of one did so on every run on a four-core machine.
+ */
+const WORKERS = Math.min(3, Math.max(1, availableParallelism() - 1));
 
 export default defineConfig({
   test: {
     environment: "node",
-    // Each worker boots app trees and runs real TypeScript compilers. Keep their CPU and
-    // filesystem contention bounded on CI and when pnpm runs other packages alongside us.
-    maxWorkers: 2,
-    minWorkers: 1,
+    maxWorkers: WORKERS,
+    minWorkers: WORKERS,
     isolate: false,
     restoreMocks: true,
     testTimeout: process.platform === "win32" ? 30_000 : 5_000,

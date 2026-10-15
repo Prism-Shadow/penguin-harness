@@ -221,6 +221,10 @@ jobs:
     if: needs.plan.outputs.tests == 'true'
     name: test (${{ matrix.shard }})
     runs-on: ubuntu-latest
+    # The server's declarations are most of its build (~25 s of ~26 s) and no test reads a
+    # .d.ts; typecheck and npm packaging still build them (see packages/server/tsup.config.ts).
+    env:
+      PENGUIN_BUILD_JS_ONLY: "1"
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.linux) }}
@@ -295,6 +299,8 @@ jobs:
     if: needs.plan.outputs.macos_tests == 'true'
     name: test-macos (${{ matrix.shard }})
     runs-on: macos-latest
+    env:
+      PENGUIN_BUILD_JS_ONLY: "1"
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.macos) }}
@@ -340,6 +346,8 @@ jobs:
     if: needs.plan.outputs.windows_tests == 'true'
     name: test-windows (${{ matrix.shard }})
     runs-on: windows-latest
+    env:
+      PENGUIN_BUILD_JS_ONLY: "1"
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.windows) }}
@@ -351,14 +359,9 @@ jobs:
         with:
           build: ${{ matrix.build }}
 
-      # The server's own `test` script runs `gen:ifaces` first, because src/ifaces.json is
-      # generated and not committed and src/platform.ts imports it at load. The server
-      # shards here call `exec vitest` instead — the script cannot take `--shard` — so they
-      # skip that half and every file that reaches platform.ts fails to resolve it. The
-      # other platforms run the script and never notice.
-      - name: Generate the interface table
-        if: startsWith(matrix.shard, 'server')
-        run: pnpm --filter @prismshadow/penguin-server gen:ifaces
+      # The server shards call `exec vitest` (the `test` script cannot take `--shard`), which
+      # skips the script's `gen:ifaces`; src/ifaces.json, which src/platform.ts imports at load,
+      # comes from the server's build in the setup step, whose script generates it first.
 
       # One retry, and only here. Per-test flakes are already absorbed inside vitest
       # (`retry` in core's and the server's configs, Windows only); what this covers is the
@@ -450,6 +453,22 @@ jobs:
       # it; verify-packed-cli.mjs below checks the packed tree carries it.
       - name: Pack the install image
         run: pnpm --dir packages/desktop run image
+
+      # electron-builder fetches the Electron runtime and the tools it packs with from GitHub's
+      # release downloads on every run, and a 504 there has failed this job on its own. Kept per
+      # OS across runs; a cache from an older Electron is still a valid starting point.
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('packages/desktop/package.json') }}
+          restore-keys: electron-${{ runner.os }}-
 
       - name: Build unpacked runtime
         env:
