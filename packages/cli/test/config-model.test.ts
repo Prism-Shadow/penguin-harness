@@ -339,6 +339,36 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(await stored("deepseek", "deepseek-v4-pro")).toBeDefined();
   });
 
+  it("a padded --model-id is normalized once at the entry: the file stores the trimmed id, no padded near-duplicate row", async () => {
+    // The addability / routability gates judge the trimmed id (unaddableModel /
+    // unroutableVendorModel trim), while the existed check, the dedup and the stored
+    // model_id compare it verbatim — a padded spelling of a stored preset sailed
+    // through both gates as a "new" entry and landed beside it as an unroutable
+    // near-duplicate. (A fresh Project's file seeds the vendor presets, so the padded
+    // add must land on the stored row, not next to it.)
+    const add = await runModel([
+      "add",
+      "--model-id",
+      " deepseek-flash ",
+      "--provider",
+      "deepseek",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(add.code).toBe(0);
+
+    const parsed = parseToml(
+      await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
+    ) as { models: Array<Record<string, unknown>> };
+    // Exactly one spelling of the preset, stored trimmed.
+    expect(
+      parsed.models.filter(
+        (m) => m.provider === "deepseek" && String(m.model_id).trim() === "deepseek-flash",
+      ).length,
+    ).toBe(1);
+    expect(parsed.models.some((m) => String(m.model_id) !== String(m.model_id).trim())).toBe(false);
+  });
+
   it("an entry already stored in a vendor group still updates, however its id routes", async () => {
     // Grandfathering, the same rule the models PUT applies: a row written before this rule
     // existed keeps every other operation working, so no legacy entry is left unmaintainable.
