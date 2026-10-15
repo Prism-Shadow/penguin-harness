@@ -83,7 +83,6 @@ import type { RemoteLayout } from "../src/machines/layout.js";
 import type { PushPlan, RemoteInstallOutcome } from "../src/machines/install-server.js";
 import type { RemoteIdentity } from "../src/machines/detect.js";
 import type { CheckoutPacker } from "../src/machines/checkout-image.js";
-import type { EventRelay } from "../src/machines/event-relay.js";
 import { readPushedBuild } from "../src/hmr/pushed-build.js";
 import { readPushedCli } from "../src/hmr/manifest.js";
 import type { PushedBuild } from "../src/hmr/pushed-build.js";
@@ -146,25 +145,9 @@ const CHECKOUT_BUILD: PushedBuild = {
   },
 };
 
-/**
- * The event relay's stand-in: it remembers which machines it was asked to subscribe to, and
- * opens nothing. What the relay does on the wire is machines-event-relay.test.ts's.
- */
-export function quietRelay(): EventRelay & { subscribed: Set<string> } {
-  const subscribed = new Set<string>();
-  return {
-    subscribed,
-    start: (address) => void subscribed.add(address),
-    stop: (address) => void subscribed.delete(address),
-    stopAll: () => subscribed.clear(),
-    active: (address) => subscribed.has(address),
-  };
-}
-
 /** An effects set that names two hosts and installs successfully, with the parts a test cares about overridden. */
 function effects(over: Partial<MachinesEffects> = {}): Partial<MachinesEffects> {
   return {
-    relay: () => quietRelay(),
     // The transport's own registry is not this suite's: its ups and downs are told by hand.
     watchSessions: () => () => {},
     // What a connection check asks when the POSIX probe has no answer; never a real ssh here.
@@ -319,6 +302,9 @@ describe("machines API", () => {
           installed: null,
           local: false,
           connection: null,
+          // No stream has asked for a socket to this machine, so there is nothing to report;
+          // `machineId` is null here, which is also what decides that.
+          socket: null,
           api: null,
           // The release profile's root over there, in the shell a machine of unknown
           // platform is assumed to speak.
@@ -332,6 +318,7 @@ describe("machines API", () => {
           installed: null,
           local: false,
           connection: null,
+          socket: null,
           api: null,
           // The release profile's root over there, in the shell a machine of unknown
           // platform is assumed to speak.
@@ -341,6 +328,28 @@ describe("machines API", () => {
       ]);
       expect(body.imageVersion).toBe("9.9.9");
       expect(body.job).toBeNull();
+    });
+
+    it("says what the socket to each machine is doing, so a stuck stream is visible on the page", async () => {
+      await boot({
+        socketFact: (machineId) =>
+          machineId === "kUkIyqU-1GOfXgKD"
+            ? { state: "dialling", since: "2026-09-26T00:00:00.000Z" }
+            : null,
+      });
+      machinesRepo.patch("ssh:nas", {
+        version: "9.9.9",
+        installedAt: "2026-08-01T00:00:00.000Z",
+        machineId: "kUkIyqU-1GOfXgKD",
+      });
+      const body = (await (
+        await admin.get("/api/projects/default_project/machines")
+      ).json()) as MachinesResponse;
+      expect(body.machines[0]?.socket).toBeNull(); // the local entry is nobody's socket
+      expect(body.machines.find((machine) => machine.id === "ssh:nas")?.socket).toEqual({
+        state: "dialling",
+        since: "2026-09-26T00:00:00.000Z",
+      });
     });
 
     it("an empty or unreadable ssh config leaves this machine alone in the list, not an error", async () => {
@@ -2459,13 +2468,11 @@ describe("machines API", () => {
     };
     const nas = () => t.deps.machines.list(PROJECT).find((m) => m.id === "ssh:nas");
 
-    it("a connection that drops is brought back on its own, and its events taken up again", async () => {
-      const relay = quietRelay();
+    it("a connection that drops is brought back on its own", async () => {
       let holds = 0;
       let clock = new Date("2026-08-24T12:00:00.000Z");
       await boot({
         now: () => clock,
-        relay: () => relay,
         watchSessions: watch,
         hold: async (target) => {
           holds += 1;
@@ -2476,13 +2483,11 @@ describe("machines API", () => {
       kept();
       await t.deps.machines.autoConnect();
       expect(holds).toBe(1);
-      expect(relay.subscribed.has("ssh:nas")).toBe(true);
       expect(nas()?.keepConnected).toBe(true);
       expect(nas()?.reconnect).toBeUndefined();
 
       // The ssh session dies under it.
       connected.delete("ssh:nas");
-      relay.stop("ssh:nas");
       tell!("ssh:nas", false);
       expect(nas()?.reconnect).toMatchObject({
         since: "2026-08-24T12:00:00.000Z",
@@ -2499,7 +2504,6 @@ describe("machines API", () => {
       expect(holds).toBe(2);
       expect(nas()?.reconnect).toBeUndefined();
       expect(nas()?.connection).not.toBeNull();
-      expect(relay.subscribed.has("ssh:nas")).toBe(true);
     });
 
     it("three failures in a row run the connection check, and its answer is the explanation", async () => {
@@ -2541,12 +2545,10 @@ describe("machines API", () => {
     });
 
     it("a stopped machine stays stopped: no retries, and no reconnect after a restart", async () => {
-      const relay = quietRelay();
       let holds = 0;
       let stops = 0;
       let running = true;
       await boot({
-        relay: () => relay,
         watchSessions: watch,
         hold: async (target) => {
           holds += 1;
@@ -2576,7 +2578,6 @@ describe("machines API", () => {
       expect(machinesRepo.get("ssh:nas")?.sessionPid).toBeNull();
       connected.delete("ssh:nas");
       expect(nas()?.keepConnected).toBeUndefined();
-      expect(relay.subscribed.has("ssh:nas")).toBe(false);
       // Its events stopping is the stop's own doing; nothing brings it back, now or at a boot.
       tell?.("ssh:nas", false);
       expect(nas()?.reconnect).toBeUndefined();
@@ -2590,14 +2591,12 @@ describe("machines API", () => {
     });
 
     it("a stop while the boot is still bringing machines back leaves nothing behind it", async () => {
-      const relay = quietRelay();
       let release!: () => void;
       const answered = new Promise<void>((resolve) => {
         release = resolve;
       });
       let holds = 0;
       await boot({
-        relay: () => relay,
         watchSessions: watch,
         hold: async (target) => {
           holds += 1;
@@ -2620,9 +2619,6 @@ describe("machines API", () => {
         expect(vi.getTimerCount()).toBe(0);
         await t.deps.machines.autoConnect();
         expect(holds).toBe(1);
-        // The connection that landed after the stop carries no events here: the successor
-        // subscribes for itself, and two subscriptions would say every event twice.
-        expect(relay.subscribed.has("ssh:nas")).toBe(false);
       } finally {
         vi.useRealTimers();
       }
