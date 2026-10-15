@@ -6301,6 +6301,11 @@ export interface OrgHandbookFile {
 }
 
 export interface OrgHandbookFilesResponse {
+  /**
+   * The handbook directory's absolute path on this server: the Web App browses it with the Files
+   * panel's own directory-addressed routes, which take the same Project access these do.
+   */
+  dir: string;
   /** The index first, then the other documents by path. */
   files: OrgHandbookFile[];
 }

@@ -17,13 +17,16 @@
  * The body is the scroll box, and `bodyRef` / `bodyProps` reach it: the caller's context menu
  * hangs off it (the gestures, the keyboard chord, the anchor it returns focus to). It is focusable
  * only programmatically (`tabIndex={-1}`), so Escape has somewhere to hand focus back to. A
- * Markdown view is the reader's own scroll box instead, with the pill's actions in the reader's
- * tool strip above the text, beside its outline and find, so nothing floats over the document.
+ * Markdown view is the reader's own scroll box instead, and nothing floats over it: with the
+ * host's `reader` state, the host draws the reader's outline and find buttons, and the actions
+ * it would have put in the pill, in its own title row; without one, the reader draws a strip of
+ * its own above the text and the pill's actions join it.
  */
 import type { HTMLAttributes, Key, ReactNode, Ref } from "react";
 import type { Components } from "react-markdown";
 import { CodeSurface } from "../../content/code-block/code-block";
 import { MarkdownReader } from "../../content/markdown-reader/markdown-reader";
+import type { MarkdownReaderState } from "../../content/markdown-reader/markdown-reader";
 import { EmptyState } from "../../feedback/empty-state/empty-state";
 import { SkeletonList } from "../../feedback/skeleton/skeleton";
 import { ZoomableImage } from "../../overlays/lightbox/lightbox";
@@ -75,6 +78,11 @@ export interface PreviewPaneProps {
   bodyRef?: Ref<HTMLDivElement>;
   /** Handlers on the body — the caller's context-menu gestures. */
   bodyProps?: Omit<HTMLAttributes<HTMLDivElement>, "className" | "tabIndex" | "children">;
+  /**
+   * The Markdown reader's state, from the host's `useMarkdownReader`, when the host draws the
+   * reader's controls in its own title row.
+   */
+  reader?: MarkdownReaderState;
   /** Whether a keydown is the find shortcut, for the Markdown reader; the app passes the user's binding. */
   isFindKey?: (event: KeyboardEvent) => boolean;
   /** The find shortcut as the platform writes it, for the reader's find button. */
@@ -146,6 +154,7 @@ export function PreviewPane({
   menu,
   bodyRef,
   bodyProps,
+  reader,
   isFindKey,
   findShortcut,
   className = "",
@@ -166,9 +175,10 @@ export function PreviewPane({
       <>
         <MarkdownReader
           key={view.docKey}
+          reader={reader}
           text={view.text}
           components={view.components}
-          actions={given(actions) ? actions : undefined}
+          actions={reader === undefined && given(actions) ? actions : undefined}
           footer={<TruncatedNote note={view.truncatedNote} source={false} />}
           contentClassName="text-base leading-relaxed text-fg"
           bodyRef={bodyRef}

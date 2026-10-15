@@ -40,7 +40,6 @@ const MODULES = [
   "features/company/chart-card.tsx",
   "features/company/channel-view.tsx",
   "features/company/finance-page.tsx",
-  "features/company/handbook-explorer.tsx",
   "features/company/handbook-page.tsx",
   "features/company/org-chart-page.tsx",
   "features/company/org-layout.tsx",
@@ -65,13 +64,11 @@ const CONTROLS = new Set([
 
 /**
  * Declared exceptions: an `onClick` on a container that delegates for the interactive elements
- * *inside* it rather than being a target of its own — the handbook's rendered Markdown catches
- * clicks on the anchors it drew, so a relative link opens in the pane instead of a new tab. Keyed
- * by module and by the handler's own text, both of which survive the line moving.
+ * *inside* it rather than being a target of its own. Keyed by module and by the handler's own
+ * text, both of which survive the line moving. None at present: the handbook, which had one for
+ * its links, now reads through the Files panel, whose link adapters open them.
  */
-const DELEGATES = new Map<string, ReadonlySet<string>>([
-  ["features/company/handbook-page.tsx", new Set(["onBodyClick"])],
-]);
+const DELEGATES = new Map<string, ReadonlySet<string>>([]);
 
 function openingElement(node: ts.Node): ts.JsxOpeningLikeElement | null {
   if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) return node;

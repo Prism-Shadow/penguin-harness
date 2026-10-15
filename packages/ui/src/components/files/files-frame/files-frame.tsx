@@ -9,7 +9,10 @@
  * - `FilesToolbar` is the one header row: the way back to the tree while one column shows the
  *   preview, else the tree's show/hide toggle; the path of what is open, read out and not
  *   navigable (the tree beside it is what navigates), collapsing its leading segments into a
- *   "…" so the row never wraps; then whatever the open file offers. The toggle keeps a static
+ *   "…" so the row never wraps; then whatever the open file offers (the Markdown reader's
+ *   outline and find buttons among them). An open find bar takes the path's place; in one
+ *   column, where the row has no room to spare, it takes a second line under the row instead,
+ *   and the path stays. The toggle keeps a static
  *   accessible name with its state on `aria-pressed` alone: a name that swaps Show/Hide beside a
  *   pressed state says the state twice and disagrees with itself; the tooltip may still swap.
  * - `FilesPanes` lays the two out: wide, the tree and its divider slide in and out of the start
@@ -106,6 +109,8 @@ export interface FilesToolbarProps {
   crumbTitle?: string;
   /** After the path: what the open file offers. */
   children?: ReactNode;
+  /** An open find bar: drawn in the path's place, or under the row in one column. */
+  find?: ReactNode;
 }
 
 export function FilesToolbar({
@@ -118,37 +123,46 @@ export function FilesToolbar({
   crumbs,
   crumbTitle,
   children,
+  find,
 }: FilesToolbarProps) {
+  const findOpen = find !== undefined && find !== null && find !== false;
   return (
-    <div className="flex shrink-0 flex-nowrap items-center gap-1 border-b border-line px-2 py-1.5">
-      {layout.narrow && previewShown && (
-        <Tooltip label={labels.back} placement="bottom" className="shrink-0">
+    <div className="shrink-0 border-b border-line">
+      <div className="flex flex-nowrap items-center gap-1 px-2 py-1.5">
+        {layout.narrow && previewShown && (
+          <Tooltip label={labels.back} placement="bottom" className="shrink-0">
+            <button
+              type="button"
+              aria-label={labels.back}
+              onClick={onBack}
+              className={filesActionClass}
+            >
+              <GlyphIcon d={ICONS.chevronLeft} size={ICON_SIZE.iconButton} />
+            </button>
+          </Tooltip>
+        )}
+        {!layout.narrow && (
           <button
             type="button"
-            aria-label={labels.back}
-            onClick={onBack}
-            className={filesActionClass}
+            aria-pressed={treeVisible}
+            data-tooltip={treeVisible ? labels.hideTree : labels.showTree}
+            aria-label={labels.showTree}
+            onClick={() => onTreeVisibleChange(!treeVisible)}
+            className={filesToggleClass(treeVisible)}
           >
-            <GlyphIcon d={ICONS.chevronLeft} size={ICON_SIZE.iconButton} />
+            <GlyphIcon d={ICONS.panelLeft} size={ICON_SIZE.iconButton} />
           </button>
-        </Tooltip>
-      )}
-      {!layout.narrow && (
-        <button
-          type="button"
-          aria-pressed={treeVisible}
-          data-tooltip={treeVisible ? labels.hideTree : labels.showTree}
-          aria-label={labels.showTree}
-          onClick={() => onTreeVisibleChange(!treeVisible)}
-          className={filesToggleClass(treeVisible)}
-        >
-          <GlyphIcon d={ICONS.panelLeft} size={ICON_SIZE.iconButton} />
-        </button>
-      )}
-      {/* `flex-1` over a zero basis, so the strip measures the room the actions leave it and
+        )}
+        {/* `flex-1` over a zero basis, so the strip measures the room the actions leave it and
           never its own content. */}
-      <Breadcrumbs className="flex-1" items={crumbs} title={crumbTitle} />
-      {children}
+        {findOpen && !layout.narrow ? (
+          <div className="flex min-w-0 flex-1">{find}</div>
+        ) : (
+          <Breadcrumbs className="flex-1" items={crumbs} title={crumbTitle} />
+        )}
+        {children}
+      </div>
+      {findOpen && layout.narrow && <div className="flex px-2 pb-1.5">{find}</div>}
     </div>
   );
 }

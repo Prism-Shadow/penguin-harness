@@ -6074,36 +6074,8 @@ Benchmark：
     },
     /** The handbook page: the knowledge base directory, its index and its documents. */
     handbook: {
-      info: "组织的知识库：handbook/ 目录下的 Markdown 文档。索引（README.md）是每次触发都会让员工 Agent 先读的那一页，其余文档由索引列出、按需再读。",
-      /** The pinned first row: the index, and why it is pinned. */
-      indexLabel: "索引 · 每轮先读",
-      documents: "文档",
-      /** The tree's own controls: closing every folder, and what a folder row's count means. */
-      collapseAll: "全部折叠",
-      documentsInFolder: (n: number): string => `${n} 篇文档`,
-      noOtherDocuments: "还没有其他文档。新建一篇，并在索引里列出它。",
-      emptyDocument: "这篇文档还是空的。",
-      newDocument: "新建文档",
-      creating: "创建中…",
-      pathField: "路径",
-      pathPlaceholder: "decisions/2026-09-02-hire-plan.md",
-      pathHint:
-        "相对于 handbook/ 的路径，用 / 分层；每段以字母或数字开头，仅字母、数字、. _ -；省略扩展名时补 .md。",
-      pathInvalid: "路径无效：每段以字母或数字开头，仅字母、数字、. _ -，用 / 分层，最多八层。",
-      pathExists: "该文档已存在。",
-      documentCreated: "文档已创建",
-      deleteDocument: "删除文档",
-      deleteConfirm: (path: string): string =>
-        `删除 ${path}？文档会从 handbook/ 目录移除；索引里指向它的条目不会自动更新。`,
-      documentDeleted: "文档已删除",
+      /** The page could not read the handbook's listing (which names its directory). */
       loadFailed: "手册加载失败",
-      documentLoadFailed: "文档加载失败",
-      /** A row's tooltip: when the file was last written, and its size. */
-      updatedAt: (time: string, size: string): string => `更新于 ${time} · ${size}`,
-      /** The tree pane's box: it narrows the tree to the documents whose path holds the text. */
-      filterPlaceholder: "按路径筛选文档",
-      /** In place of the rows when the filter matches no document. */
-      noMatch: "没有匹配的文档",
     },
   },
   errors: {

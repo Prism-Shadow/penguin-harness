@@ -60,7 +60,6 @@ const FORM_MODULES: readonly string[] = [
   "features/company/channel-dialogs.tsx",
   "features/company/employee-dialogs.tsx",
   "features/company/finance-page.tsx",
-  "features/company/handbook-page.tsx",
   "features/company/org-dialogs.tsx",
   "features/company/ticket-dialog.tsx",
   "features/company/tickets-page.tsx",

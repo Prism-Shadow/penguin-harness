@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 /**
- * The Markdown reader (the UI package's `MarkdownReader`) as the app hosts it: on the user's
- * `find.open` binding (lib/reader-find.ts), in the app's words (lib/ui-strings.ts), in a live DOM.
+ * The Markdown reader (the UI package's `MarkdownReader`, `useMarkdownReader`, `ReaderTools` and
+ * `ReaderFindBar`) as the app hosts it: its outline and find buttons in the host's title row
+ * beside the file's name, on the user's `find.open` binding (lib/reader-find.ts), in the app's
+ * words (lib/ui-strings.ts), in a live DOM.
  *
  * jsdom lays nothing out, so the suite gives the page its geometry, the one boundary it fakes:
  * the reader is a given width, its scroll box 500px tall over 5000px of content (the page around
@@ -11,25 +13,34 @@
  * one; the browser's highlight registry is a map.
  *
  * - A document with two or more headings has an outline, in document order; with room it stands
- *   beside the text, and narrow it opens from the reader's tool strip. A document with fewer
- *   headings has none.
+ *   beside the text, and narrow it opens from the outline button in the host's title row. A
+ *   document with fewer headings has none.
  * - Choosing an outline row scrolls the reader's own box to just above its heading, marks that
  *   row current, and scrolls nothing around the reader.
  * - Scrolling the box marks the section whose heading the reading line has passed.
  * - The find key inside the reader opens the reader's find and is kept from the page and the
- *   browser; pressed outside the reader, it is left alone. The strip's find button opens it too.
- * - The open find bar stands in the tool strip above the text, never inside the scroll box, so it
- *   lies over no line however the text wraps or scrolls.
+ *   browser; pressed outside the reader, it is left alone. The find button in the title row opens
+ *   it too.
+ * - The open find bar takes the file name's place in the title row, above the text and never
+ *   inside its scroll box, so it lies over no line however the text wraps or scrolls; when it
+ *   closes, the name comes back.
  * - Typing counts the matches in the rendered text — case-insensitively, Chinese included — and
  *   never in the source: a link's address and Markdown's own marks match nothing.
  * - Enter and ↓ go to the next match, Shift+Enter and ↑ to the previous one, wrapping at both
  *   ends, each bringing the match into the reader's box.
  * - Escape closes the find and clears its paint, and goes no further: a dialog around the reader
  *   does not hear it.
+ * - A reader with no host title row draws the same controls in a strip of its own above the text.
  */
 import { act, createElement as h } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { MarkdownReader, UiStringsProvider } from "@prismshadow/penguin-ui";
+import {
+  MarkdownReader,
+  ReaderFindBar,
+  ReaderTools,
+  UiStringsProvider,
+  useMarkdownReader,
+} from "@prismshadow/penguin-ui";
 import { useReaderFind } from "../src/lib/reader-find";
 import { en } from "../src/lib/strings-en";
 import { uiStringsFor } from "../src/lib/ui-strings";
@@ -147,8 +158,16 @@ afterEach(async () => {
 });
 
 /** The reader as a page hosts it, inside a scrolling page, beside a control outside it. */
+/** The file name the host's title row shows while the find is closed. */
+const FILE_NAME = "handbook/release.md";
+
+/**
+ * The reader as a page hosts it, inside a scrolling page, beside a control outside it: a title
+ * row with the file's name (or the open find bar in its place) and the reader's buttons, over the
+ * text.
+ */
 function Page({ text }: { text: string }) {
-  const readerFind = useReaderFind();
+  const reader = useMarkdownReader(useReaderFind());
   return h(
     UiStringsProvider,
     { strings: uiStringsFor("en") },
@@ -156,16 +175,18 @@ function Page({ text }: { text: string }) {
       "div",
       { "data-page": "", style: { overflowY: "auto" } },
       h("button", { type: "button" }, "outside"),
-      h(MarkdownReader, {
-        text,
-        label: "Release process",
-        isFindKey: readerFind.isFindKey,
-        findShortcut: readerFind.findShortcut,
-        className: "h-96",
-      }),
+      h(
+        "div",
+        { "data-title-row": "" },
+        reader.findShown ? h(ReaderFindBar, { reader }) : h("span", null, FILE_NAME),
+        h(ReaderTools, { reader }),
+      ),
+      h(MarkdownReader, { reader, text, label: "Release process", className: "h-96" }),
     ),
   );
 }
+
+const titleRow = (): Element => document.querySelector("[data-title-row]")!;
 
 async function openReader(text = DOC): Promise<HTMLElement> {
   await mount(h(Page, { text }));
@@ -222,7 +243,7 @@ describe("the outline", () => {
     expect(document.querySelector(`button[aria-label="${en.find.outline}"]`)).toBeNull();
   });
 
-  it("opens from the reader's tool strip when the reader is narrow", async () => {
+  it("opens from the title row's outline button when the reader is narrow", async () => {
     readerWidth = 400;
     await openReader();
     expect(outlineRows()).toEqual([]);
@@ -277,15 +298,18 @@ describe("the find", () => {
     expect(document.querySelector('[role="search"]')).toBeNull();
   });
 
-  it("stands above the text, outside the box the text scrolls in", async () => {
+  it("takes the file name's place in the title row, outside the box the text scrolls in", async () => {
     const box = await openReader();
+    expect(titleRow().textContent).toContain(FILE_NAME);
     await findKey(box);
     const bar = document.querySelector('[role="search"]')!;
+    expect(titleRow().contains(bar)).toBe(true);
+    expect(titleRow().textContent).not.toContain(FILE_NAME);
     expect(box.contains(bar)).toBe(false);
     expect(bar.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("opens from the tool strip's find button", async () => {
+  it("opens from the find button in the title row", async () => {
     await openReader();
     await click(document.querySelector(`button[aria-label="${en.find.inDocument}"]`)!);
     expect(document.activeElement).toBe(searchBox());
@@ -342,8 +366,28 @@ describe("the find", () => {
       window.removeEventListener("keydown", listener);
     }
     expect(document.querySelector('[role="search"]')).toBeNull();
+    expect(titleRow().textContent).toContain(FILE_NAME);
     expect(registry.has("penguin-find")).toBe(false);
     expect(registry.has("penguin-find-current")).toBe(false);
     expect(dialogHeard).toEqual([]);
+  });
+});
+
+describe("a reader with no host title row", () => {
+  it("draws its outline and find buttons in a strip of its own, above the text", async () => {
+    readerWidth = 400;
+    await mount(
+      h(
+        UiStringsProvider,
+        { strings: uiStringsFor("en") },
+        h(MarkdownReader, { text: DOC, label: "Release process", className: "h-96" }),
+      ),
+    );
+    await settle();
+    expect(document.querySelector(`button[aria-label="${en.find.outline}"]`)).not.toBeNull();
+    await click(document.querySelector(`button[aria-label="${en.find.inDocument}"]`)!);
+    const bar = document.querySelector('[role="search"]')!;
+    expect(scrollBox().contains(bar)).toBe(false);
+    expect(document.activeElement).toBe(searchBox());
   });
 });

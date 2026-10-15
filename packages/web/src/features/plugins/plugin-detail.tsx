@@ -33,10 +33,18 @@ import {
   ICON_SIZE,
   MarkdownReader,
   Modal,
+  ReaderFindBar,
+  ReaderTools,
   RuledSection,
   Skeleton,
+  useMarkdownReader,
 } from "@prismshadow/penguin-ui";
-import type { FileBrowserPreview, FileTreeRow, TreeToggle } from "@prismshadow/penguin-ui";
+import type {
+  FileBrowserPreview,
+  FileTreeRow,
+  MarkdownReaderState,
+  TreeToggle,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { linkSegments } from "../../lib/link-segments";
 import { apiErrorText } from "../../lib/api-error";
@@ -260,6 +268,8 @@ export function PluginDetailSections({
   locale: "zh" | "en";
 }) {
   const version = rowVersion(row);
+  // The README's reader: its outline and find buttons sit in the section's title row.
+  const readmeReader = useMarkdownReader(useReaderFind());
   // Under a display name, the package it names: a server module's specifier line below says
   // the same, so it stands in for this one.
   const packageName =
@@ -333,14 +343,26 @@ export function PluginDetailSections({
         </div>
       </div>
 
-      <RuledSection title={S.plugins.detailDescription} level={3} className="mt-5">
+      <RuledSection
+        title={S.plugins.detailDescription}
+        level={3}
+        className="mt-5"
+        actions={
+          readme.kind === "text" ? (
+            <>
+              <ReaderFindBar reader={readmeReader} className="w-56 max-w-[50vw]" />
+              <ReaderTools reader={readmeReader} />
+            </>
+          ) : undefined
+        }
+      >
         <p
           className={`text-sm leading-relaxed ${rowHasDescription(row, locale) ? "" : "text-fg-muted"}`}
         >
           <LinkedText text={rowDescription(row, locale)} />
         </p>
         {readme.kind === "loading" && <Skeleton className="mt-4 h-24 w-full" />}
-        {readme.kind === "text" && <ReadmeReader text={readme.text} />}
+        {readme.kind === "text" && <ReadmeReader text={readme.text} reader={readmeReader} />}
         {readme.kind === "after-install" && (
           <p className="mt-2 text-xs text-fg-muted">{S.plugins.readmeAfterInstall}</p>
         )}
@@ -370,15 +392,14 @@ export function PluginDetailSections({
 
 /**
  * The README in the Markdown reader: its own scroll box, capped so the sections under it stay in
- * reach, with the outline and the find on the user's `find.open` binding.
+ * reach. Its outline and find (on the user's `find.open` binding) are drawn by the section's
+ * title row from the same `reader`.
  */
-function ReadmeReader({ text }: { text: string }) {
-  const readerFind = useReaderFind();
+function ReadmeReader({ text, reader }: { text: string; reader: MarkdownReaderState }) {
   return (
     <MarkdownReader
+      reader={reader}
       text={text}
-      isFindKey={readerFind.isFindKey}
-      findShortcut={readerFind.findShortcut}
       className="mt-4 max-h-[60vh] overflow-hidden rounded-md border border-line"
     />
   );

@@ -5882,35 +5882,8 @@ Scenarios:
     },
     /** The handbook page: the knowledge base directory, its index and its documents. */
     handbook: {
-      info: "The company's knowledge base: the Markdown documents under handbook/. The index (README.md) is the page every trigger makes the employee Agent read first; the other documents are listed from it and read on demand.",
-      /** The pinned first row: the index, and why it is pinned. */
-      indexLabel: "Index · read first every run",
-      documents: "Documents",
-      /** The tree's own controls: closing every folder, and what a folder row's count means. */
-      collapseAll: "Collapse all",
-      documentsInFolder: (n: number): string => `${n} document${n === 1 ? "" : "s"}`,
-      noOtherDocuments: "No other documents yet. Create one and list it in the index.",
-      emptyDocument: "This document is still empty.",
-      newDocument: "New document",
-      creating: "Creating…",
-      pathField: "Path",
-      pathPlaceholder: "decisions/2026-09-02-hire-plan.md",
-      pathHint:
-        "Relative to handbook/, folders separated by /; each segment starts with a letter or digit and uses only letters, digits, . _ -; .md is added when the extension is left out.",
-      pathInvalid:
-        "Invalid path: each segment starts with a letter or digit and uses only letters, digits, . _ -, folders separated by /, at most eight levels.",
-      pathExists: "That document already exists.",
-      documentCreated: "Document created",
-      deleteDocument: "Delete document",
-      deleteConfirm: (path: string): string =>
-        `Delete ${path}? The document is removed from handbook/; the index entry pointing at it is not updated automatically.`,
-      documentDeleted: "Document deleted",
+      /** The page could not read the handbook's listing (which names its directory). */
       loadFailed: "Could not load the handbook",
-      documentLoadFailed: "Could not load the document",
-      /** A row's tooltip: when the file was last written, and its size. */
-      updatedAt: (time: string, size: string): string => `Updated ${time} · ${size}`,
-      filterPlaceholder: "Filter documents by path",
-      noMatch: "No document matches",
     },
   },
   errors: {

@@ -6,8 +6,9 @@
  *
  * What this owns is the layout and the preview: the two panes, their scroll caps, the header
  * line naming what is open with its Download link, and how each kind of file is drawn —
- * Markdown in the Markdown reader (the shared pipeline, with an outline and a find), text
- * through the code block, an image and a PDF from their own URLs.
+ * Markdown in the Markdown reader (the shared pipeline, with an outline and a find — its outline
+ * and find buttons sit in the header line beside Download, and an open find bar takes the path's
+ * place there), text through the code block, an image and a PDF from their own URLs.
  *
  * What the host owns is where the files come from: how the rows are produced (the plugin
  * groups a listing it already holds, the case dialog lists one directory per level as it is
@@ -22,7 +23,12 @@ import type { CSSProperties, ReactNode } from "react";
 import type { Components } from "react-markdown";
 import { CodeBlock } from "../../content/code-block/code-block";
 import { languageForFileName } from "../../content/code-block/code-languages";
-import { MarkdownReader } from "../../content/markdown-reader/markdown-reader";
+import {
+  MarkdownReader,
+  ReaderFindBar,
+  ReaderTools,
+  useMarkdownReader,
+} from "../../content/markdown-reader/markdown-reader";
 import { bodyWithoutFrontmatter } from "../../content/prose/frontmatter";
 import { SkeletonList } from "../../feedback/skeleton/skeleton";
 import { FileTree } from "../file-tree/file-tree";
@@ -146,6 +152,8 @@ export function FileBrowser<Row extends FileTreeRow>({
   onToggleDir,
   onOpenFile,
 }: FileBrowserProps<Row>) {
+  const reader = useMarkdownReader({ isFindKey, findShortcut });
+
   // The sizes ride in as custom properties rather than as classes: a media query decides where
   // each one applies (the tree column exists only from `md` up), which an inline style cannot
   // say, and a class name composed at runtime is one Tailwind never sees to generate.
@@ -307,7 +315,10 @@ export function FileBrowser<Row extends FileTreeRow>({
 
       <section className="min-w-0">
         <div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
-          <div className="min-w-0 flex-1">
+          {/* An open find bar takes the path's place where the tree stands beside the preview;
+              stacked on a narrow screen, it takes a line of its own under the path and the
+              actions instead, which keep their row. */}
+          <div className={`min-w-0 flex-1 ${reader.findShown ? "md:hidden" : ""}`}>
             <p className="truncate font-mono text-xs text-fg-muted">{headerLine()}</p>
           </div>
           {preview !== null && preview.downloadUrl !== undefined && (
@@ -319,12 +330,18 @@ export function FileBrowser<Row extends FileTreeRow>({
               {downloadLabel}
             </a>
           )}
+          <ReaderTools reader={reader} />
+          <ReaderFindBar
+            reader={reader}
+            className="order-last basis-full md:order-first md:basis-auto md:flex-1"
+          />
         </div>
         {readable !== null ? (
           // A Markdown file is read in the reader, which is its own scroll box at the same
           // height; a new file starts it over, at the top with its find closed.
           <MarkdownReader
             key={readable.path}
+            reader={reader}
             text={
               stripFrontmatter
                 ? bodyWithoutFrontmatter(readable.content ?? "")
@@ -332,8 +349,6 @@ export function FileBrowser<Row extends FileTreeRow>({
             }
             components={markdownComponents}
             footer={truncatedNote(readable)}
-            isFindKey={isFindKey}
-            findShortcut={findShortcut}
             className="h-[var(--fb-preview-height)]"
           />
         ) : (

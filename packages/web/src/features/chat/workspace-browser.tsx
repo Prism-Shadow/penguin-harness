@@ -68,6 +68,8 @@ import {
   FilesPanes,
   FilesToolbar,
   PreviewPane,
+  ReaderFindBar,
+  ReaderTools,
   Spinner,
   Tooltip,
   TreePane,
@@ -85,6 +87,7 @@ import {
   toastSuccess,
   useCopied,
   useFilesLayout,
+  useMarkdownReader,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import type {
@@ -454,6 +457,7 @@ export function WorkspaceBrowser({
   active,
   reloadSignal,
   onAddReference,
+  protectedPaths,
 }: {
   /**
    * The Workspace on screen: a Session's (the chat page), or a directory named by its path (the
@@ -487,7 +491,12 @@ export function WorkspaceBrowser({
    * quoted range. All three are whole things rather than words in a sentence, so none of them
    * is spliced into the draft the user is writing.
    */
-  onAddReference: (reference: ComposerReference) => void;
+  onAddReference?: (reference: ComposerReference) => void;
+  /**
+   * Files the panel keeps in place: no rename, no move, no delete is offered on them (the
+   * organization handbook's index, which every trigger tells an employee to read).
+   */
+  protectedPaths?: ReadonlySet<string>;
 }) {
   // Whether the HTML preview lands on a separate origin. True routes both the in-app
   // rendered view and "open in new tab" through the preview origin; false downgrades
@@ -495,7 +504,9 @@ export function WorkspaceBrowser({
   // silently in the page) and the in-app rendered view to the srcDoc fallback.
   const { previewIsolated: serverPreviewIsolated, desktopMode, sessionVia } = useAuth();
   const saveShortcut = useShortcutLabel("editor.save");
-  const readerFind = useReaderFind();
+  // The Markdown preview's reader: its outline and find buttons sit in the panel's header row,
+  // and its find takes the find.open binding while it has the focus.
+  const reader = useMarkdownReader(useReaderFind());
   // The desktop app's own window is the one page whose machine IS the server's, so it is the
   // only one offered "show in folder" — see lib/account-menu.ts for why a browser signed into
   // the same server, even on this machine, must not be.
@@ -1621,7 +1632,7 @@ export function WorkspaceBrowser({
   };
 
   const addToChat = (target: FileMenuTarget): void => {
-    onAddReference({
+    onAddReference?.({
       kind: target.kind,
       path: target.path,
       text: pathReference(target.path, target.kind),
@@ -1745,7 +1756,7 @@ export function WorkspaceBrowser({
   };
 
   const addSelectionToChat = (p: Preview, selection: PreviewSelection): void => {
-    onAddReference({
+    onAddReference?.({
       path: p.path,
       text: selectionBlock({
         path: p.path,
@@ -1833,6 +1844,8 @@ export function WorkspaceBrowser({
   const crumbPath = crumbTarget === "" ? S.files.root : `${S.files.root}/${crumbTarget}`;
   const showTree = narrow ? selectedPath === null : treeVisible;
   const canEdit = preview !== null && editor === null && canEditPreview(preview);
+  /** A Markdown file in its rendered view: the reader, with nothing floating over it. */
+  const markdownRendered = preview !== null && preview.kind === "md" && richView === "rendered";
   /** The source view is on screen: a text file, or Markdown/HTML with the toggle on Source. */
   const sourceShown =
     preview !== null &&
@@ -1992,10 +2005,14 @@ export function WorkspaceBrowser({
                   closeTreeMenu();
                   copyPath(t);
                 }}
-                onAddToChat={(t) => {
-                  closeTreeMenu();
-                  addToChat(t);
-                }}
+                onAddToChat={
+                  onAddReference === undefined
+                    ? undefined
+                    : (t) => {
+                        closeTreeMenu();
+                        addToChat(t);
+                      }
+                }
                 onUploadInto={(dir) => {
                   closeTreeMenu();
                   uploadInto(dir);
@@ -2008,14 +2025,22 @@ export function WorkspaceBrowser({
                   closeTreeMenu();
                   beginCreate("dir", dir);
                 }}
-                onRename={(t) => {
-                  closeTreeMenu();
-                  beginFileAction(t.path, "rename", t.kind);
-                }}
-                onDelete={(t) => {
-                  closeTreeMenu();
-                  beginFileAction(t.path, "delete");
-                }}
+                onRename={
+                  protectedPaths?.has(treeMenuTarget.path) === true
+                    ? undefined
+                    : (t) => {
+                        closeTreeMenu();
+                        beginFileAction(t.path, "rename", t.kind);
+                      }
+                }
+                onDelete={
+                  protectedPaths?.has(treeMenuTarget.path) === true
+                    ? undefined
+                    : (t) => {
+                        closeTreeMenu();
+                        beginFileAction(t.path, "delete");
+                      }
+                }
                 onClose={closeTreeMenu}
               />
             )}
@@ -2083,6 +2108,20 @@ export function WorkspaceBrowser({
     </div>
   );
 
+  /** Edit: floated over source text, in the header row over a rendered Markdown file. */
+  const editButton = (
+    <Tooltip label={S.common.edit} placement="bottom" className="shrink-0">
+      <button
+        type="button"
+        aria-label={S.common.edit}
+        onClick={() => void startEdit()}
+        className={iconActionClass}
+      >
+        <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.iconButton} />
+      </button>
+    </Tooltip>
+  );
+
   /**
    * Copy and Edit, floated over the top-right of the file rather than parked in the title row
    * (PreviewPane draws the pill). Both act on the body underneath them — the text on screen —
@@ -2090,7 +2129,9 @@ export function WorkspaceBrowser({
    * external link and download.
    */
   const previewFloatingActions = preview !== null &&
-    (wrapToggle !== false || canEdit || (sourceShown && preview.content !== undefined)) && (
+    (wrapToggle !== false ||
+      (canEdit && !markdownRendered) ||
+      (sourceShown && preview.content !== undefined)) && (
       <>
         {/* Soft wrap is a property of the surface under the pill, and the editor lays its
             textarea over that same surface — so it rides here in both modes, which is also
@@ -2114,18 +2155,7 @@ export function WorkspaceBrowser({
             <CopiedStatus copied={copied} />
           </>
         )}
-        {canEdit && (
-          <Tooltip label={S.common.edit} placement="bottom" className="shrink-0">
-            <button
-              type="button"
-              aria-label={S.common.edit}
-              onClick={() => void startEdit()}
-              className={iconActionClass}
-            >
-              <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.iconButton} />
-            </button>
-          </Tooltip>
-        )}
+        {canEdit && !markdownRendered && editButton}
         {/* rel="noopener noreferrer" is load-bearing, not boilerplate: the preview must not
             keep a handle back to this window, which is the whole point of serving it from a
             separate origin.
@@ -2367,6 +2397,7 @@ export function WorkspaceBrowser({
     ) : (
       <>
         {richToggle}
+        {canEdit && markdownRendered && editButton}
         <Tooltip label={S.files.download} placement="bottom" className="shrink-0">
           <a
             href={files.fileUrl(preview.path, true)}
@@ -2389,6 +2420,9 @@ export function WorkspaceBrowser({
             </button>
           </Tooltip>
         )}
+        {/* The Markdown reader's outline and find, at the row's end; nothing while no Markdown
+            file is being read. */}
+        <ReaderTools reader={reader} />
       </>
     ));
 
@@ -2416,9 +2450,7 @@ export function WorkspaceBrowser({
     <PreviewPane
       view={previewView}
       actions={previewFloatingActions}
-      // The Markdown reader's find takes the find.open binding while it has the focus.
-      isFindKey={readerFind.isFindKey}
-      findShortcut={readerFind.findShortcut}
+      reader={reader}
       editor={
         editing !== null && (
           <WorkspaceFileEditor
@@ -2495,28 +2527,40 @@ export function WorkspaceBrowser({
                 previewMenu.close();
                 copyPath(t);
               }}
-              onAddToChat={(t) => {
-                previewMenu.close();
-                addToChat(t);
-              }}
+              onAddToChat={
+                onAddReference === undefined
+                  ? undefined
+                  : (t) => {
+                      previewMenu.close();
+                      addToChat(t);
+                    }
+              }
               // Never reached: a preview is always a file, so the upload row is never drawn here.
               onUploadInto={uploadInto}
               onAddSelection={
-                selection === null
+                selection === null || onAddReference === undefined
                   ? undefined
                   : () => {
                       previewMenu.close();
                       addSelectionToChat(shown, selection);
                     }
               }
-              onRename={(t) => {
-                previewMenu.close();
-                beginFileAction(t.path, "rename");
-              }}
-              onDelete={(t) => {
-                previewMenu.close();
-                beginFileAction(t.path, "delete");
-              }}
+              onRename={
+                protectedPaths?.has(shown.path) === true
+                  ? undefined
+                  : (t) => {
+                      previewMenu.close();
+                      beginFileAction(t.path, "rename");
+                    }
+              }
+              onDelete={
+                protectedPaths?.has(shown.path) === true
+                  ? undefined
+                  : (t) => {
+                      previewMenu.close();
+                      beginFileAction(t.path, "delete");
+                    }
+              }
               onClose={previewMenu.close}
             />
           </Dropdown>
@@ -2536,9 +2580,10 @@ export function WorkspaceBrowser({
       {/* The panel's one header row (the UI package's frame): the way back or the tree toggle,
           the path of whatever is open, read out and not navigable, and what that file offers.
           It never wraps — the path strip absorbs all of the pressure while the actions keep
-          their width. Everything that acts on the text rather than on the file is in the
-          floating pill over the body, and the panel's own actions (refresh, upload) sit in the
-          tree pane's header beside its search box. */}
+          their width; an open find bar takes the path's place. What acts on source text (wrap,
+          copy) floats in the pill over it; a rendered Markdown file has nothing floating over
+          it — its Edit and its reader's outline and find buttons are in this row. The panel's
+          own actions (refresh, upload) sit in the tree pane's header beside its search box. */}
       <FilesToolbar
         layout={layout}
         previewShown={!showTree}
@@ -2552,6 +2597,7 @@ export function WorkspaceBrowser({
         }}
         crumbs={crumbSegments.map((label) => ({ label }))}
         crumbTitle={crumbPath}
+        find={reader.findShown && <ReaderFindBar reader={reader} className="flex-1" />}
       >
         {fileRowActions}
       </FilesToolbar>
