@@ -74,7 +74,7 @@ import { formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { agentKey, useAgentMachine } from "../../lib/agent-machine";
+import { agentKey, useAgentLocation } from "../../lib/agent-location";
 import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
@@ -158,7 +158,7 @@ export function MemoryTab({
   const { currentProject, reloadAgents: reloadHere } = useProject();
   const projectId = currentProject?.projectId ?? null;
   /** The machine the Agent lives on, where its memory is; null for this server. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   /** This server's Agent list carries the counts a write here moves; a machine's is read where it is shown. */
   const reloadAgents = () => (machineId === null ? reloadHere() : Promise.resolve());
   // Import writes a whole group at once, so it follows the Agent State snapshot's owner gate;

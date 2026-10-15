@@ -20,7 +20,7 @@
  * .claude/skills. A plain new Agent otherwise starts with none. A picked plugin with a stdio MCP
  * server asks before the Agent is created, showing the command it runs on this server.
  *
- * A machine's Agents are that machine's own (lib/agent-machine.ts): after this server's Agents,
+ * A machine's Agents are that machine's own (lib/agent-location.ts): after this server's Agents,
  * each installed machine has a ruled section of its own cards, named `[SSH: alias]` after the
  * Agent's name the way a machine's Workspace group is, and every control on such a card acts on
  * that machine — its settings page there, a new chat in its temporary workspace, its delete. A
@@ -71,9 +71,9 @@ import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-import { agentSettingsPath } from "../../lib/agent-machine";
-import { useMachineAgents } from "../../lib/machine-agents";
-import type { MachineAgents } from "../../lib/machine-agents";
+import { agentSettingsPath } from "../../lib/agent-location";
+import { useMachineAgents } from "../../lib/machine-agent-lists";
+import type { MachineAgents } from "../../lib/machine-agent-lists";
 import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
 import type { PluginPickItem } from "./create-agent-dialog";
@@ -250,7 +250,7 @@ export function AgentsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const projectId = currentProject?.projectId;
-  /** Each installed machine's own Agents, listed after this server's (lib/machine-agents.ts). */
+  /** Each installed machine's own Agents, listed after this server's (lib/machine-agent-lists.ts). */
   const { lists: machineLists, reload: reloadMachine } = useMachineAgents(projectId ?? null);
 
   /**

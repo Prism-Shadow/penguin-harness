@@ -24,7 +24,7 @@ import { S } from "../../lib/strings";
 import { WORKBENCH_UPDATED_EVENT, workbenchTabsOf } from "../../lib/workbench-tabs";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { useAgentMachine } from "../../lib/agent-machine";
+import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../chat/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
 
@@ -33,7 +33,7 @@ export function WorkbenchesTab({ agentId }: { agentId: string }) {
   const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId;
   /** The machine the Agent lives on, where its workbenches are; null for this server. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const { locale } = useLocale();
   const navigate = useNavigate();
   const [items, setItems] = useState<WorkbenchInfo[] | null>(null);

@@ -1,7 +1,7 @@
 /**
  * The Agents of each machine, as the Agents page and the plugin market list them.
  *
- * A machine's Agents are that machine's own (lib/agent-machine.ts): each machine contributes its
+ * A machine's Agents are that machine's own (lib/agent-location.ts): each machine contributes its
  * own list, kept apart from this server's and from every other machine's, even where ids repeat.
  * The machines are the Project's installed ones, read from the one live account of the machines
  * (state/machines.tsx), so a list follows a machine the moment the Machines page sees it change.

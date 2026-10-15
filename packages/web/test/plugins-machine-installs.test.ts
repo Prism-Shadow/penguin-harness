@@ -2,7 +2,7 @@
 /**
  * The plugin market's "manage installs" on a machine's Agents (features/plugins/plugins-page.tsx
  * and plugin-card.tsx): a connected machine's own Agents are install targets of their own, and
- * everything done to one happens on that machine (lib/agent-machine.ts).
+ * everything done to one happens on that machine (lib/agent-location.ts).
  *
  * - Given this server's `helper` and a connected machine with a `helper` of its own, the dialog
  *   lists both — this server's first, the machine's named `[SSH: gpu-box]` after its name.

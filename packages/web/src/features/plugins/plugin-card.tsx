@@ -79,7 +79,7 @@ const INSTALL_ICON = ICONS.download;
 
 /**
  * An Agent a library plugin can be installed on: one of this server's, or a connected machine's
- * own. `key` is what the page's install map and a usage's lists name it by (lib/agent-machine.ts
+ * own. `key` is what the page's install map and a usage's lists name it by (lib/agent-location.ts
  * `agentKey`): the id for this server's, so two machines' `default_agent`s stay two rows.
  */
 export interface InstallTarget {

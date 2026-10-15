@@ -14,7 +14,7 @@
  * A rejection from the server lands under the id, and the dialog stays open as it was.
  *
  * Where a machine is connected, the first field is where the Agent is created: this server, or
- * that machine — where it then lives (lib/agent-machine.ts). On a machine the whole create runs
+ * that machine — where it then lives (lib/agent-location.ts). On a machine the whole create runs
  * there: the plugins on offer are that machine's library, the Skills directory is browsed on it,
  * the snapshot goes to it, and it decides whether the id is free. A new location drops the plugins
  * and the directory picked for the old one, which would name things the new one may not have.

@@ -57,8 +57,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { useAgentMachine } from "../../lib/agent-machine";
-import { useAgentsOn } from "../../lib/machine-agents";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { localizedText } from "../chat/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
 import { useAiBridge } from "../ai-create";
@@ -86,7 +86,7 @@ export function HooksTab({
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
   /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const agents = useAgentsOn(machineId);
   // The Agent-level hook switch: owner-only, like the Vault and Schedules switches.
   const { applyConfig, toggleCard } = usePromptInjection({
@@ -316,7 +316,7 @@ function HookImportDialog({
   onImported: () => void;
 }) {
   const { openAiChat } = useAiBridge();
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const form = useFormDraft<string>("", { normalize: (text) => text.trim() });
   const source = form.draft;
   const [uploading, setUploading] = useState(false);

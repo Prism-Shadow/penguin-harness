@@ -59,8 +59,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { useAgentMachine } from "../../lib/agent-machine";
-import { useAgentsOn } from "../../lib/machine-agents";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
 import { useAiBridge } from "../ai-create";
@@ -89,7 +89,7 @@ export function SkillsTab({
   const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const agents = useAgentsOn(machineId);
   // Prompt-injection controls (toggle / template alert / prompt editor): member-level like
   // every other mutation on this tab.
@@ -301,7 +301,7 @@ function SkillImportDialog({
   onImported: () => void;
 }) {
   const { openAiChat } = useAiBridge();
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const form = useFormDraft<string>("", { normalize: (text) => text.trim() });
   const source = form.draft;
   const [uploading, setUploading] = useState(false);

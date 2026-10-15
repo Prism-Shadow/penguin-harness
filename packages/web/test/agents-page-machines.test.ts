@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * A machine's Agents on the Agents page (features/agents/agents-page.tsx): that machine's own,
- * never folded into this server's (lib/agent-machine.ts, lib/machine-agents.ts).
+ * never folded into this server's (lib/agent-location.ts, lib/machine-agent-lists.ts).
  *
  * - Given this server's `helper` and a connected machine that has a `default_agent` and a
  *   `helper` of its own, the page lists this server's `helper` in its list and the machine's two

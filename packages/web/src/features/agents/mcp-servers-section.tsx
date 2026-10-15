@@ -52,7 +52,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { useAgentMachine } from "../../lib/agent-machine";
+import { useAgentLocation } from "../../lib/agent-location";
 import { localizedText } from "../chat/skill-use";
 import { McpServerMarks } from "../plugins/plugin-mcp";
 import { permissionOf, transportOf } from "./mcp-servers-form";
@@ -127,7 +127,7 @@ export function McpServersSection({
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
   /** The machine the Agent lives on (null: this server): its servers, probes and library. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
 
   const [servers, setServers] = useState<MCPServerConfig[]>(initial);
   /** What keeps each server from connecting, by name, as the server reads it. */

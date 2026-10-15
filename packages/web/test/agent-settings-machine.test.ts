@@ -2,7 +2,7 @@
 /**
  * A machine's Agent on the Agent settings page (features/agents/agent-settings-page.tsx at
  * `?machine=<id>`): every read and write goes to that machine, never to this server's Agent of
- * the same id (lib/agent-machine.ts).
+ * the same id (lib/agent-location.ts).
  *
  * - Given a connected machine's `helper`, walking every tab reads the Agent from that machine
  *   alone — nothing about `helper` is asked of this server — and the header names the machine.

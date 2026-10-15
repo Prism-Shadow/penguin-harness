@@ -90,7 +90,7 @@ import {
   rememberMachineAgents,
   rememberMachineSessions,
 } from "../lib/machine-cache";
-import { subscribeMachineAgentsChanged } from "../lib/machine-agents";
+import { subscribeMachineAgentsChanged } from "../lib/machine-agent-lists";
 import { setTerminalMachines } from "../lib/terminal-machines";
 import { machineIdOf } from "../lib/workspace-machines";
 import {

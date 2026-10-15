@@ -17,7 +17,7 @@ import {
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { useInstantSetting } from "../../lib/instant-setting";
-import { useAgentMachine } from "../../lib/agent-machine";
+import { useAgentLocation } from "../../lib/agent-location";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { ModelCatalogSelect } from "../chat/model-select";
@@ -44,7 +44,7 @@ export function ApiConcurrencySettings({
 }: ApiSettingsProps) {
   const form = useFormDraft({ limit: String(settings.maxConcurrentRuns) });
   /** The machine the Agent lives on, where its API settings are; null for this server. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   useSaving(busy, form.scope);
@@ -132,7 +132,7 @@ export function ApiSessionSettings({
   const [defaultThinking, setDefaultThinking] = useState<string | null>(null);
   const [models, setModels] = useState<ModelsResponse | null>(null);
   /** The machine the Agent lives on (null: this server): its models, defaults and Workspaces. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;

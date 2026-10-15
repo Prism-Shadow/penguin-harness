@@ -10,7 +10,9 @@
  *
  * The settings page is one page for both: a machine's Agent is addressed with `?machine=<id>`
  * beside the `?tab=` it already carries, and the page hands the machine to everything under it
- * through {@link AgentMachineContext}, so a tab reads it rather than having it threaded through.
+ * through {@link AgentLocationContext}, so a tab reads it rather than having it threaded through.
+ *
+ * Each machine's whole Agent list, for the pages that list Agents, is lib/machine-agent-lists.ts.
  */
 import { createContext, useContext } from "react";
 
@@ -43,9 +45,9 @@ export function agentKey(machineId: string | null, agentId: string): string {
 }
 
 /** The machine the Agent in view lives on; null for this server, and outside any Agent page. */
-export const AgentMachineContext = createContext<string | null>(null);
+export const AgentLocationContext = createContext<string | null>(null);
 
-/** The machine the Agent in view lives on (see {@link AgentMachineContext}). */
-export function useAgentMachine(): string | null {
-  return useContext(AgentMachineContext);
+/** The machine the Agent in view lives on (see {@link AgentLocationContext}). */
+export function useAgentLocation(): string | null {
+  return useContext(AgentLocationContext);
 }

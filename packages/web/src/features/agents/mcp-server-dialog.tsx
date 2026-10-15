@@ -40,7 +40,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
-import { useAgentMachine } from "../../lib/agent-machine";
+import { useAgentLocation } from "../../lib/agent-location";
 import {
   emptyMcpForm,
   entryToTest,
@@ -133,7 +133,7 @@ export function McpServerDialog({
   // connect + discovery, nothing saved); the result pops as a toast.
   const [testing, setTesting] = useState(false);
   /** The machine the Agent lives on: the probe runs there, where the server would. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   // The probe's "save first" answer (an unsaved entry that reads the vault), shown beside the
   // test button until the form changes.
   const [saveFirst, setSaveFirst] = useState(false);

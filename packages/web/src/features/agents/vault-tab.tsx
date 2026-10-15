@@ -29,8 +29,8 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { useAgentMachine } from "../../lib/agent-machine";
-import { useAgentsOn } from "../../lib/machine-agents";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
@@ -48,7 +48,7 @@ export function VaultTab({
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
   /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const agents = useAgentsOn(machineId);
   // Prompt-injection controls follow the tab's existing gate: owner-only edits.
   const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({

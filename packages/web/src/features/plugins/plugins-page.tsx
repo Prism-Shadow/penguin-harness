@@ -20,7 +20,7 @@
  *   servers as an entry it installed — which is why the page fetches the three lists per Agent.
  *   Uninstall takes it apart the same way: one DELETE per skill, one for the hook package and
  *   one per MCP server. The dialog lists this server's Agents, then each connected machine's own
- *   (lib/machine-agents.ts): a machine's Agent is installed on, read back from and updated on that
+ *   (lib/machine-agent-lists.ts): a machine's Agent is installed on, read back from and updated on that
  *   machine, from that machine's library, and counts towards the card's "used by" and status. The
  *   update notice and the nav badge it answers are this server's alone.
  * - A server module is installed on the whole server for every Project, by an admin only (a
@@ -70,8 +70,8 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { agentKey } from "../../lib/agent-machine";
-import { useMachineAgents } from "../../lib/machine-agents";
+import { agentKey } from "../../lib/agent-location";
+import { useMachineAgents } from "../../lib/machine-agent-lists";
 import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
@@ -444,7 +444,7 @@ export function PluginsPage() {
 
   /**
    * Every Agent a library plugin can be installed on: this server's, then each connected
-   * machine's own, keyed so that two servers' Agents of one id stay two (lib/agent-machine.ts).
+   * machine's own, keyed so that two servers' Agents of one id stay two (lib/agent-location.ts).
    * A machine out of reach offers none: nothing could be installed there.
    */
   const { lists: machineLists, reload: reloadMachineAgents } = useMachineAgents(projectId);

@@ -56,8 +56,8 @@ import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useProject } from "../../state/project";
-import { useAgentMachine } from "../../lib/agent-machine";
-import { useMachineInfo } from "../../lib/machine-agents";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useMachineInfo } from "../../lib/machine-agent-lists";
 import { APPROVAL_MODES } from "../chat/approval-mode";
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
@@ -543,7 +543,7 @@ export function ApiTab({
    * The machine the Agent lives on (null: this server). Its API is served by that machine's
    * server, on the port it listens on over there.
    */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const machine = useMachineInfo(machineId);
   const reloadAgents = useCallback(
     () => (machineId === null ? reloadHere() : Promise.resolve()),

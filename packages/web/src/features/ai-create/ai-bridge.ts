@@ -33,7 +33,7 @@ export interface AiChatRequest {
   /** Pins the new conversation's model (a paired reference); absent, the draft keeps its cached carry-over. */
   modelRef?: ModelRefDto;
   /**
-   * The machine `agentId` lives on (lib/agent-machine.ts): the conversation opens on that
+   * The machine `agentId` lives on (lib/agent-location.ts): the conversation opens on that
    * machine — in `workspace` there, or its temporary Workspace — since its Agent can only run
    * there. Absent or null for an agent of this server.
    */

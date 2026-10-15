@@ -16,5 +16,5 @@ The Agents page, the create dialog and the plugin market treated an Agent as one
 - The create dialog starts with **Location** (this server, or a connected machine) when a machine is connected. On a machine the plugins on offer are that machine's library, the Skills directory is browsed there, and the Agent is created there; the dialog lands on its settings on that machine.
 - The plugin market's **Manage installs** lists the connected machines' Agents after this server's, each with `[SSH: <alias>]`. Install, uninstall, update and Set up on such a row go to that machine and use its library; a card's "used by" count and status include them. The nav badge and the bulk update notice still count this server's Agents only.
 - A machine Agent created or deleted from these pages is read again by the session list too, so the sidebar stops listing a deleted Agent's Sessions.
-- The agent-scoped API wrappers take a trailing machine id (`lib/agent-machine.ts`, `lib/machine-agents.ts` hold the shared helpers), and `deleteAgent` now encodes its path.
+- The agent-scoped API wrappers take a trailing machine id (`lib/agent-location.ts`, `lib/machine-agent-lists.ts` hold the shared helpers), and `deleteAgent` now encodes its path.
 - The Agents docs and the plugin install docs describe machine Agents and the create location.

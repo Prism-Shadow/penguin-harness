@@ -37,7 +37,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatBytes } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { useAgentMachine } from "../../lib/agent-machine";
+import { useAgentLocation } from "../../lib/agent-location";
 import {
   answerApproval,
   initialTryState,
@@ -504,7 +504,7 @@ export function ApiTryPanel({
 }) {
   const [state, dispatch] = useReducer(reduceTry, S.agent.apiTryExample, initialTryState);
   /** The machine the Agent lives on: the run, its Session and its answers go there. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const connection = useRef<AbortController | null>(null);
   // Leaving mid-run closes the connection, and the server aborts the run.
   useEffect(() => () => connection.current?.abort(), []);

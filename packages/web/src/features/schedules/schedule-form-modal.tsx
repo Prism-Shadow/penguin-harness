@@ -46,7 +46,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { useAgentMachine } from "../../lib/agent-machine";
+import { useAgentLocation } from "../../lib/agent-location";
 import { ModelCatalogSelect } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
@@ -124,7 +124,7 @@ function SessionSelect({
   const [query, setQuery] = useState("");
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
   /** The machine the Agent lives on: its Sessions are there. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
 
   // Load lazily on first open, then keep the snapshot; a failed fetch degrades to an empty
   // list (the user can still see the currently-bound id on the trigger and cancel out).
@@ -280,7 +280,7 @@ function ScheduleFormDialog({
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   /** The machine the Agent lives on (null: this server): its models, Workspaces and tasks. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   // A submit rejection that isn't attributable to one field, under the form.
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

@@ -19,8 +19,8 @@
  * tools table's `call_description` included. A snapshot import asks before it replaces the
  * Agent State.
  *
- * A machine's Agent has the same page at `?machine=<id>` (lib/agent-machine.ts): every read and
- * write goes to that machine, which the page hands every tab through `AgentMachineContext`.
+ * A machine's Agent has the same page at `?machine=<id>` (lib/agent-location.ts): every read and
+ * write goes to that machine, which the page hands every tab through `AgentLocationContext`.
  * While the machine cannot be asked, the page says why instead of showing anything stale.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -71,7 +71,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useMachines } from "../../state/machines";
-import { AgentMachineContext, machineInSearch, useAgentMachine } from "../../lib/agent-machine";
+import { AgentLocationContext, machineInSearch, useAgentLocation } from "../../lib/agent-location";
 import { machineLink, remoteAgentsEmpty } from "../../lib/machine-link";
 import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
 import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
@@ -340,7 +340,7 @@ export function AgentSettingsPage() {
           if (next !== tab) switchTab(next);
         }}
       />
-      <AgentMachineContext.Provider value={machineId}>
+      <AgentLocationContext.Provider value={machineId}>
         <div className="py-4">
           {tab === "overview" && (
             <OverviewTab
@@ -380,7 +380,7 @@ export function AgentSettingsPage() {
             />
           )}
         </div>
-      </AgentMachineContext.Provider>
+      </AgentLocationContext.Provider>
     </PageFrame>
   );
 }
@@ -467,7 +467,7 @@ function OverviewTab({
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const form = useFormDraft(overviewDraftOf(data.config), { normalize: trimOverview });
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -909,7 +909,7 @@ function PromptTab({ data, onSave }: FormTabProps) {
 }
 
 function RuntimeTab({ data, onSave, projectId }: FormTabProps & { projectId: string }) {
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
   const [projectThinking, setProjectThinking] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;

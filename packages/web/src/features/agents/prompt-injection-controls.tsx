@@ -49,7 +49,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { useAgentMachine } from "../../lib/agent-machine";
+import { useAgentLocation } from "../../lib/agent-location";
 
 export type PromptInjectionFeature = "skills" | "vault" | "schedules" | "hooks";
 
@@ -129,7 +129,7 @@ export function usePromptInjection({
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
   /** The machine the Agent lives on, where its config is written; null for this server. */
-  const machineId = useAgentMachine();
+  const machineId = useAgentLocation();
 
   // null until the host tab's load delivers the config (the slots render nothing until then).
   const [state, setState] = useState<SectionConfigState | null>(null);
