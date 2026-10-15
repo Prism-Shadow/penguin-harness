@@ -114,7 +114,7 @@ export const en: Strings = {
       serving: "Running",
       queued: "Queued",
       working: "Working",
-      ready: "Connected",
+      ready: "Running",
       reconnecting: "Reconnecting",
       failed: "Failed",
       installedOnly: "Installed",

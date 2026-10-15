@@ -1,44 +1,39 @@
 /**
- * A machine's card on the Machines page, in the Agents list's shape: one band of "info | middle |
- * quick buttons".
+ * A machine's card on the Machines page: the data wiring around the shared package's
+ * `MachineCard` (`@prismshadow/penguin-ui`), which owns the band of "info | middle | quick
+ * buttons" and how each part looks. This module decides what each part says from the server's
+ * record and the machine's job:
  *
- * The info column says which machine this is and how it stands: the alias, with the state as one
- * mark whose word is its tooltip, and the build it carries; the server root; and how this server
- * reaches it, the port its server answers on, and when it was last checked. Its title line is the
- * card's main button and opens the Machine dialog; a click anywhere else on the body opens it too
- * (lib/card-open.ts), while the buttons on the card act on their own.
- *
- * Only a mark without words carries a hint — the state mark, the delete icon: the tooltip layer
- * opens none on text already on screen. What a stat means, and the machine's own id, the dialog
- * says.
- *
- * The middle holds the job's stepper while a job for the machine is queued or running; while
- * none is, and Use cannot start a conversation there, it says why in one muted line (a hint would
- * never open on the button, which shows its word). The quick buttons are the Agents card's: Use
- * starts a new conversation in the machine's temporary workspace, Settings opens the Machine
- * dialog, Delete takes the machine off this Project after a confirmation. Before them, while the
- * machine is connected on this server's build, an icon button syncs this Project's config to it
- * now; it stands first so that the buttons after it line up across cards whether or not it is
- * there. This server's own card keeps Use and Settings; its Delete is a placeholder that cannot
- * be pressed.
+ * - the status pill: the reading's state (machines-view.ts `readMachine`), its word, and the
+ *   reason behind it — a failure's own words, ssh's diagnostic, the line a job is on — on the
+ *   pill's hover; this server's own entry is simply running;
+ * - the stats: how this server reaches the machine, the build it carries, the port its server
+ *   answers on, and when it was last checked;
+ * - the middle: the job's stepper while a job for the machine is queued or running, else why Use
+ *   waits (a hint would never open on the button, which shows its word);
+ * - the buttons: Use starts a new conversation in the machine's temporary workspace, Settings
+ *   opens the Machine dialog, Delete takes the machine off this Project after a confirmation, and
+ *   Sync config hands a connected machine on this server's build this Project's config now. A
+ *   click anywhere else on the body opens the dialog too (lib/card-open.ts).
  */
 import type { MachineInfo, MachineJob } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
-  Button,
-  Card,
-  Dot,
-  GlyphIcon,
   ICONS,
-  ICON_GAP,
-  ICON_SIZE,
-  UpdatePill,
+  MachineCard as MachineCardView,
+  MachineStatusPill,
+  MachineStepper,
 } from "@prismshadow/penguin-ui";
-import type { ToneName } from "@prismshadow/penguin-ui";
+import type {
+  MachineCardFact,
+  MachineState,
+  MachineStatusPillProps,
+  MachineStepState,
+  MachineStepperProps,
+  ToneName,
+} from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
 import { formatRelativeShort } from "../../lib/format";
-import { toneDot, toneInk } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import {
   canSyncConfig,
@@ -71,44 +66,66 @@ export function reasonText(reading: MachineReading): string | null {
   }
 }
 
-/** What a machine's state mark shows: its words, its tone, and its shape. */
+/**
+ * A machine's status pill as the card and the dialog show it: the state, its word, and the reason
+ * behind it. `reading` is null for this server's own entry, which is simply running.
+ */
+export function machineStatus(reading: MachineReading | null): MachineStatusPillProps {
+  if (reading === null) return { state: "serving", label: S.machines.state.serving };
+  return {
+    state: reading.kind,
+    label: S.machines.state[reading.kind],
+    reason: reasonText(reading),
+  };
+}
+
+/** What a machine's state mark shows: its pill, and its words, tone and shape in one record. */
 export interface MachineMark {
-  /** The state's word, with the reason beside it when there is one — the tooltip and the name. */
+  state: MachineState;
+  /** The state's word alone, as the pill shows it. */
+  word: string;
+  /** What stands behind the word; null when the word says it all. */
+  reason: string | null;
+  /** The word with the reason beside it — the pill's whole accessible name. */
   label: string;
   tone: Tone;
-  /** A job is queued or running for it: the dot pulses. */
+  /** A job is queued or running for it. */
   moving: boolean;
   /**
    * The glyph of a machine that is not working — a cross for a failed job (danger), an alert for
-   * a machine out of reach (attention: waiting on its network, not failed) — so the two read
-   * apart by shape as well as ink; null for the dot every other state wears.
+   * a machine out of reach (attention: waiting on its network, not failed); null otherwise.
    */
   glyph: string | null;
 }
 
 /** A machine's mark; `reading` is null for this server's own entry, which is simply serving. */
 export function machineMark(reading: MachineReading | null): MachineMark {
-  if (reading === null) {
-    return { label: S.machines.state.serving, tone: "link", moving: false, glyph: null };
-  }
-  const word = S.machines.state[reading.kind];
-  const reason = reasonText(reading);
+  const status = machineStatus(reading);
+  const reason = status.reason ?? null;
   return {
+    state: status.state,
+    word: status.label,
+    reason,
     // A failure's reason already begins by saying it failed.
-    label: reason === null ? word : reading.kind === "failed" ? reason : `${word} · ${reason}`,
-    tone: readingTone(reading),
-    moving: reading.kind === "queued" || reading.kind === "working",
+    label:
+      reason === null
+        ? status.label
+        : reading?.kind === "failed"
+          ? reason
+          : `${status.label} · ${reason}`,
+    tone: reading === null ? "link" : readingTone(reading),
+    moving: reading !== null && (reading.kind === "queued" || reading.kind === "working"),
     glyph:
-      reading.kind === "failed" || reading.kind === "signInRefused"
+      reading?.kind === "failed" || reading?.kind === "signInRefused"
         ? ICONS.xCircle
-        : reading.kind === "unreachable"
+        : reading?.kind === "unreachable"
           ? ICONS.alertCircle
           : null,
   };
 }
 
 /**
- * The app's tones in the shared package's names, for its `Dot` and `Badge`: a busy dot takes the
+ * The app's tones in the shared package's names, for its `Dot` and `Badge`: a busy mark takes the
  * success fill.
  */
 export const DOT_TONE: Record<Tone, ToneName> = {
@@ -120,27 +137,9 @@ export const DOT_TONE: Record<Tone, ToneName> = {
   muted: "neutral",
 };
 
-/**
- * A machine's state as one mark beside its name: a dot in the state's tone — the shared `Dot`,
- * which owns the pulse of a moving machine — or a glyph for a failed or unreachable machine. The
- * words are the tooltip and the accessible name, never a line of coloured text.
- */
+/** A machine's state as one labelled pill: its word on screen, the reason on hover. */
 export function MachineStateMark({ mark }: { mark: MachineMark }) {
-  return (
-    <span
-      role="img"
-      aria-label={mark.label}
-      data-tooltip={mark.label}
-      data-tooltip-content="text"
-      className={`inline-flex size-4 shrink-0 items-center justify-center ${mark.glyph === null ? "" : toneInk[mark.tone]}`}
-    >
-      {mark.glyph === null ? (
-        <Dot tone={DOT_TONE[mark.tone]} pulse={mark.moving} />
-      ) : (
-        <GlyphIcon d={mark.glyph} size={ICON_SIZE.inlineGlyph} />
-      )}
-    </span>
-  );
+  return <MachineStatusPill state={mark.state} label={mark.word} reason={mark.reason} />;
 }
 
 /** A job is still to come or under way. */
@@ -148,10 +147,10 @@ export const jobMoving = (job: MachineJob | null): boolean =>
   job !== null && (job.queued || job.running);
 
 /**
- * The job's own steps as segments, with a caption under them: what a queued or running job is
- * doing, or where a finished one ended — the step that failed in the danger fill.
+ * The stepper for a job: its own steps as segments — done, under way, failed at, still to come —
+ * and a caption saying what the job is doing, or where a finished one ended.
  */
-export function Stepper({ job, className = "" }: { job: MachineJob; className?: string }) {
+export function jobProgress(job: MachineJob): MachineStepperProps {
   const step = job.phase === null ? -1 : job.steps.indexOf(job.phase);
   const phase = step >= 0 ? job.steps[step] : undefined;
   const result = job.result;
@@ -165,31 +164,18 @@ export function Stepper({ job, className = "" }: { job: MachineJob; className?: 
       : result !== null && !result.ok
         ? S.machines.failedAt(stepLabel(result.step))
         : S.machines.detail.lastJobDone;
-  const fill = (index: number): string => {
-    if (job.queued || index > step) return "bg-gray-200 dark:bg-gray-700";
-    if (index < step) return toneDot.busy;
-    if (failed) return toneDot.danger;
-    return job.running ? `${toneDot.busy} ui-live animate-pulse` : toneDot.success;
+  const stateOf = (index: number): MachineStepState => {
+    if (job.queued || index > step) return "pending";
+    if (index < step) return "done";
+    if (failed) return "failed";
+    return job.running ? "current" : "done";
   };
-  return (
-    <div className={className}>
-      <div className="flex gap-px" aria-hidden="true">
-        {job.steps.map((phase, index) => (
-          <span
-            key={phase}
-            // The segment being worked on pulses as a live signal, so a theme can re-time it.
-            data-live={job.running && index === step ? "dot" : undefined}
-            className={`h-[3px] flex-1 rounded-sm ${fill(index)}`}
-          />
-        ))}
-      </div>
-      <div
-        className={`mt-1 truncate text-xs ${job.running ? toneInk.busy : "text-gray-500 dark:text-gray-400"}`}
-      >
-        {caption}
-      </div>
-    </div>
-  );
+  return { steps: job.steps.map((_, index) => stateOf(index)), caption, running: job.running };
+}
+
+/** The job's stepper. */
+export function Stepper({ job, className = "" }: { job: MachineJob; className?: string }) {
+  return <MachineStepper {...jobProgress(job)} className={className} />;
 }
 
 export interface MachineCardProps {
@@ -210,34 +196,24 @@ export interface MachineCardProps {
   onDelete: () => void;
 }
 
-/** One stat on the card's third line: a glyph and a value. The dialog says what each one means. */
-function Stat({ glyph, children }: { glyph: string; children: string }) {
-  return (
-    <span className={`inline-flex shrink-0 items-center ${ICON_GAP.tight}`}>
-      <GlyphIcon d={glyph} size={ICON_SIZE.inlineGlyph} />
-      {children}
-    </span>
-  );
-}
-
-/**
- * Why Use waits, in the card's middle: a muted line with a mark that says the line is a reason —
- * decorative, so a theme may drop it and the words still say it all.
- */
-function UseWaits({ why }: { why: string }) {
-  return (
-    <p
-      data-use-waits=""
-      className="flex items-start gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-    >
-      <GlyphIcon
-        d={ICONS.info}
-        size={ICON_SIZE.inlineGlyph}
-        className="ui-icon-decor mt-0.5 shrink-0"
-      />
-      <span>{why}</span>
-    </p>
-  );
+/** The card's stats: how the machine is reached, its build, its server's port, the last check. */
+function cardFacts(machine: MachineInfo, locale: "zh" | "en"): MachineCardFact[] {
+  const card = S.machines.card;
+  const status = machine.status;
+  const port = status?.state === "running" ? (status.port ?? null) : null;
+  const facts: MachineCardFact[] = [
+    machine.local
+      ? { glyph: ICONS.house, value: card.local }
+      : { glyph: ICONS.terminalPrompt, value: card.ssh },
+  ];
+  if (machine.installed !== null) {
+    facts.push({ glyph: ICONS.hardDrive, value: `v${machine.installed.version}` });
+  }
+  if (port !== null) facts.push({ glyph: ICONS.network, value: String(port) });
+  if (status !== null) {
+    facts.push({ glyph: ICONS.clock, value: formatRelativeShort(status.checkedAt, locale) });
+  }
+  return facts;
 }
 
 export function MachineCard({
@@ -252,133 +228,37 @@ export function MachineCard({
   onDelete,
 }: MachineCardProps) {
   const reading = machine.local ? null : readMachine(machine, job, imageVersion);
-  const mark = machineMark(reading);
   const moving = !machine.local && jobMoving(job);
-  // Another build than this server's: the pill says so and opens the dialog, where the update is.
-  // Not while a job is already on its way.
-  const behind = !moving && outOfDate(machine, imageVersion);
-  const status = machine.status;
-  const port = status?.state === "running" ? (status.port ?? null) : null;
-  const usable = canUse(machine, job);
-  const waits = useWaitsBecause(machine, job, reading, locale, Date.now());
   const card = S.machines.card;
   return (
-    <Card
-      padding="md"
-      data-machine={machine.id}
-      interactive
-      className="flex flex-wrap items-center gap-x-6 gap-y-2"
-      onClick={cardBodyClick(onOpen)}
-    >
-      <div className="min-w-[14rem] flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          {/* Wraps rather than squeezes: on a phone the badges go under the name, which would
-              otherwise be truncated to its first letter beside a long version. The glyph stays
-              with the name. */}
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            onClick={onOpen}
-            className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-sm text-left"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <GlyphIcon
-                d={ICONS.server}
-                size={ICON_SIZE.navRow}
-                className="shrink-0 text-gray-500 dark:text-gray-400"
-              />
-              <span className="min-w-0 truncate text-base font-bold">{machine.alias}</span>
-            </span>
-            {machine.local && (
-              <Badge variant="outline" size="sm">
-                {S.machines.localTitle}
-              </Badge>
-            )}
-            <MachineStateMark mark={mark} />
-            {machine.installed !== null && <Badge>v{machine.installed.version}</Badge>}
-          </button>
-          {behind && <UpdatePill onClick={onOpen}>{card.updateNeeded}</UpdatePill>}
-        </div>
-        <p className="mt-1.5 min-h-4 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
-          {machine.root}
-        </p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-          {machine.local ? (
-            <Stat glyph={ICONS.house}>{card.local}</Stat>
-          ) : (
-            <Stat glyph={ICONS.terminalPrompt}>{card.ssh}</Stat>
-          )}
-          {port !== null && <Stat glyph={ICONS.network}>{String(port)}</Stat>}
-          {status !== null && (
-            <Stat glyph={ICONS.clock}>{formatRelativeShort(status.checkedAt, locale)}</Stat>
-          )}
-        </div>
-      </div>
-
-      {/* The middle: the job's stepper while one moves, else why Use waits — and on a narrow
-          screen nothing, taking no line, when there is neither. */}
-      <div className={moving || waits !== null ? "w-44 shrink-0" : "hidden w-44 shrink-0 md:block"}>
-        {moving && job !== null ? (
-          <Stepper job={job} />
-        ) : (
-          waits !== null && <UseWaits why={waits} />
-        )}
-      </div>
-
-      {/* The Agents card's quick buttons: the primary verb with its word, Settings with its gear
-          and word, Delete as a bare icon in the danger look. */}
-      <div className="flex shrink-0 items-center gap-2">
-        {canSyncConfig(machine, imageVersion) && (
-          <Button
-            size="icon"
-            data-action="sync-config"
-            title={card.syncConfig}
-            aria-label={card.syncConfig}
-            disabled={busy || moving}
-            onClick={onSyncConfig}
-          >
-            <GlyphIcon d={ICONS.upload} size={ICON_SIZE.iconButton} />
-          </Button>
-        )}
-        <Button
-          size="sm"
-          variant="primary"
-          data-action="use"
-          disabled={busy || !usable}
-          onClick={onUse}
-        >
-          <GlyphIcon d={ICONS.messagePlus} />
-          {card.use}
-        </Button>
-        <Button size="sm" data-action="settings" onClick={onOpen}>
-          <GlyphIcon d={ICONS.gear} />
-          {card.settings}
-        </Button>
-        {machine.local ? (
-          // This server cannot be taken off its own page: a placeholder in the delete button's box,
-          // so every card's buttons line up, saying why on the hint its bare icon can carry.
-          <span
-            role="img"
-            data-tooltip={card.localUndeletable}
-            aria-label={card.localUndeletable}
-            className="inline-flex cursor-not-allowed items-center justify-center rounded-md border border-transparent p-1.5 text-gray-300 dark:text-gray-600"
-          >
-            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
-          </span>
-        ) : (
-          <Button
-            size="icon"
-            variant="danger"
-            data-action="delete"
-            title={card.delete}
-            aria-label={card.delete}
-            disabled={busy || moving}
-            onClick={onDelete}
-          >
-            <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
-          </Button>
-        )}
-      </div>
-    </Card>
+    <MachineCardView
+      id={machine.id}
+      alias={machine.alias}
+      status={machineStatus(reading)}
+      local={
+        machine.local ? { tag: S.machines.localTitle, undeletable: card.localUndeletable } : null
+      }
+      // Another build than this server's: the pill says so and opens the dialog, where the update
+      // is. Not while a job is already on its way.
+      update={
+        !moving && outOfDate(machine, imageVersion)
+          ? { label: card.updateNeeded, onClick: onOpen }
+          : null
+      }
+      root={machine.root}
+      facts={cardFacts(machine, locale)}
+      progress={moving && job !== null ? jobProgress(job) : null}
+      waits={useWaitsBecause(machine, job, reading, locale, Date.now())}
+      onOpen={onOpen}
+      onBodyClick={cardBodyClick(onOpen)}
+      use={{ label: card.use, disabled: busy || !canUse(machine, job), onClick: onUse }}
+      settingsLabel={card.settings}
+      remove={{ label: card.delete, disabled: busy || moving, onClick: onDelete }}
+      sync={
+        canSyncConfig(machine, imageVersion)
+          ? { label: card.syncConfig, disabled: busy || moving, onClick: onSyncConfig }
+          : null
+      }
+    />
   );
 }

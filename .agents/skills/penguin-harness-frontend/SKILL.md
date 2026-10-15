@@ -38,6 +38,13 @@ Rules:
   squeezing compress mark do, and it is legible to a reader who cannot separate hues.
 - **Never make colour the only carrier.** Every status mark also names its state in an accessible
   name or in adjacent text.
+- **No coloured dot carries a status on its own** (owner, 2026-10-15: 「不要用意义不明的颜色点」,
+  after the Machines page's blue dot). A dot whose meaning lives only in its hue and a hover is a
+  mark the reader has to decode. A state is a **labelled pill** — `Badge` in the state's tone, its
+  word on screen, a glyph beside it, the reason on the badge's `tooltip` (`MachineStatusPill` is
+  the pattern) — or, where a row has no room for a word, an **icon** whose shape says the state and
+  whose tooltip and `aria-label` name it. A dot stays only as decoration beside words that already
+  say the state, or as a pulse on something live.
 - **Contrast is measured, not assumed.** The ratios in `tone.ts` are WCAG 2.x against the four
   surfaces marks actually sit on — white and gray-50 in light, and the values the default theme
   *overrides* for dark (`packages/ui/src/themes/github.css`: gray-950 is `#000000`, gray-900 is
