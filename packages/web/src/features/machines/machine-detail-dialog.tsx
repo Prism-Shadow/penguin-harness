@@ -52,16 +52,19 @@ import {
   KeyValueRow,
   LogView,
   Modal,
+  Notice,
   NoticeStrip,
   RuledSection,
   Spinner,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { dismissNotice, envOnlyNoticeId, useNoticeDismissed } from "../../lib/notice-dismissals";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { DOT_TONE, jobMoving } from "./machine-card";
 import {
   configSyncView,
+  envOnlyItems,
   jobView,
   machineChip,
   machineFacts,
@@ -114,6 +117,14 @@ export interface MachineDetailBodyProps {
   noImage: boolean;
   /** The clock the reconnecting streak and the last check are measured from. */
   now?: number;
+  /**
+   * Whether the person closed the "keys from the environment" notice over what it names now:
+   * shown when false (the default), hidden when true, and hidden while unknown (null), so a
+   * closed notice never flashes in.
+   */
+  envOnlyDismissed?: boolean | null;
+  /** Closes that notice; without it the notice has no close cross. */
+  onDismissEnvOnly?: () => void;
   onAct: (verb: MachineVerb) => void;
 }
 
@@ -428,9 +439,20 @@ export function MachineToolbar({
 
 /**
  * The last config sync: one quiet line — a check, or the danger cross on a failure, beside the
- * words — and, when the sync left anything behind, one attention notice saying what and why.
+ * words — and, when the sync left anything behind, attention notices saying what and why: the
+ * shared notice for the model keys only this server's environment holds, which the person may
+ * close (as the initial-password banner can be) and which comes back when another such key
+ * appears, and the models the machine would not take.
  */
-function ConfigSync({ view }: { view: ConfigSyncView }) {
+function ConfigSync({
+  view,
+  envOnlyDismissed = false,
+  onDismissEnvOnly,
+}: {
+  view: ConfigSyncView;
+  envOnlyDismissed?: boolean | null;
+  onDismissEnvOnly?: () => void;
+}) {
   const c = S.machines.detail.configSync;
   return (
     <>
@@ -445,23 +467,29 @@ function ConfigSync({ view }: { view: ConfigSyncView }) {
         />
         <span className="min-w-0 break-words whitespace-pre-line">{view.line}</span>
       </p>
-      {(view.envOnly || view.skipped.length > 0) && (
+      {view.envOnly && envOnlyDismissed === false && (
+        <Notice
+          tone="attention"
+          className="mt-3"
+          {...(onDismissEnvOnly !== undefined ? { dismiss: { onClick: onDismissEnvOnly } } : {})}
+        >
+          <span data-env-only="">{c.envOnly}</span>
+        </Notice>
+      )}
+      {view.skipped.length > 0 && (
         <NoticeStrip
           tone="attention"
           data-config-sync-notice=""
-          className="mt-3 space-y-2 rounded-md border px-3 py-2 text-sm"
+          className="mt-3 rounded-md border px-3 py-2 text-sm"
         >
-          {view.envOnly && <p data-env-only="">{c.envOnly}</p>}
-          {view.skipped.length > 0 && (
-            <div data-skipped="">
-              <p>{c.skippedTitle}</p>
-              <ul className="mt-1 list-disc space-y-1 pl-5 break-words">
-                {view.skipped.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <div data-skipped="">
+            <p>{c.skippedTitle}</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5 break-words">
+              {view.skipped.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
         </NoticeStrip>
       )}
     </>
@@ -478,6 +506,8 @@ export function MachineDetailBody({
   busy,
   noImage,
   now = Date.now(),
+  envOnlyDismissed = false,
+  onDismissEnvOnly,
   onAct,
 }: MachineDetailBodyProps) {
   const m = S.machines;
@@ -527,7 +557,13 @@ export function MachineDetailBody({
                 {toolbar.sentence}
               </p>
             )}
-            {configSync !== null && <ConfigSync view={configSync} />}
+            {configSync !== null && (
+              <ConfigSync
+                view={configSync}
+                envOnlyDismissed={envOnlyDismissed}
+                {...(onDismissEnvOnly !== undefined ? { onDismissEnvOnly } : {})}
+              />
+            )}
           </div>
         )}
       </div>
@@ -704,6 +740,11 @@ export function MachineDetailDialog({
 }) {
   const { alias, local } = body.machine;
   const [host, setHost] = useState<SshHostResponse | null>(null);
+  // The "keys from this server's environment" notice, closed per account and per machine over
+  // the keys it names (lib/notice-dismissals.ts).
+  const envOnly = envOnlyItems(body.machine);
+  const envOnlyId = envOnlyNoticeId(body.machine.id);
+  const envOnlyDismissed = useNoticeDismissed(envOnlyId, envOnly);
   useEffect(() => {
     setHost(null);
     if (local) return;
@@ -729,7 +770,13 @@ export function MachineDetailDialog({
   }, []);
   return (
     <Modal open title={alias} onClose={onClose} widthClass="sm:max-w-3xl">
-      <MachineDetailBody {...body} host={host} now={Date.now()} />
+      <MachineDetailBody
+        {...body}
+        host={host}
+        now={Date.now()}
+        envOnlyDismissed={envOnlyDismissed}
+        onDismissEnvOnly={() => dismissNotice(envOnlyId, envOnly)}
+      />
     </Modal>
   );
 }
