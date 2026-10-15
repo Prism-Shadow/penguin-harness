@@ -18,6 +18,7 @@ import {
   allTickets,
   boardColumns,
   canMove,
+  groupTickets,
   invalidTickets,
   isBlocked,
   isOverdue,
@@ -26,6 +27,7 @@ import {
   matchesTicketQuery,
   moveNeedsReason,
   sortTickets,
+  ticketAgeDays,
   ticketCreatedDate,
 } from "../src/features/company/ticket-board";
 
@@ -175,5 +177,70 @@ describe("card facts", () => {
       review: [ticket({ ticketId: "c", status: "review", invalid: "status mismatch" })],
     });
     expect(invalidTickets(res).map((t) => t.ticketId)).toEqual(["b", "c"]);
+  });
+
+  it("boardColumns keeps only the picked priorities when chips are set", () => {
+    const res = board({
+      proposed: [
+        ticket({ ticketId: "a", priority: "P0" }),
+        ticket({ ticketId: "b", priority: "P1" }),
+        ticket({ ticketId: "c", priority: "P2" }),
+      ],
+    });
+    expect(
+      boardColumns(res, { priorities: ["P0", "P2"] })[0]!.tickets.map((t) => t.ticketId),
+    ).toEqual(["a", "c"]);
+    expect(boardColumns(res)[0]!.tickets).toHaveLength(3);
+  });
+
+  it("groups cards by owner with display names, cards sorted inside", () => {
+    const groups = groupTickets(
+      [
+        ticket({ ticketId: "b", owner: "agent:dev", priority: "P1" }),
+        ticket({ ticketId: "a", owner: "agent:dev", priority: "P0" }),
+        ticket({ ticketId: "c", owner: "user:alice", priority: "P0" }),
+      ],
+      "owner",
+      { names: new Map([["dev", "Dev"]]) },
+    );
+    expect(groups.map((g) => [g.label, g.tickets.map((t) => t.ticketId)])).toEqual([
+      ["Dev", ["a", "b"]],
+      ["user:alice", ["c"]],
+    ]);
+  });
+
+  it("groups cards by priority P0-first and by parent with the orphan bucket last", () => {
+    expect(
+      groupTickets(
+        [
+          ticket({ ticketId: "a", priority: "P2" }),
+          ticket({ ticketId: "b", priority: "P0" }),
+        ],
+        "priority",
+      ).map((g) => g.key),
+    ).toEqual(["P0", "P2"]);
+    const groups = groupTickets(
+      [
+        ticket({ ticketId: "a", parent: "p2" }),
+        ticket({ ticketId: "b" }),
+        ticket({ ticketId: "c", parent: "p1" }),
+      ],
+      "parent",
+      { titles: new Map([["p1", "Epic one"]]) },
+    );
+    expect(groups.map((g) => [g.key, g.label])).toEqual([
+      ["p1", "Epic one"],
+      ["p2", "p2"],
+      ["", ""],
+    ]);
+    expect(groups[0]!.tickets.map((t) => t.ticketId)).toEqual(["c"]);
+  });
+
+  it("counts whole days since the id was minted, null for other shapes", () => {
+    expect(ticketAgeDays("2026-09-02-marketplace", "2026-09-05")).toBe(3);
+    expect(ticketAgeDays("2026-09-02-marketplace", "2026-09-02")).toBe(0);
+    expect(ticketAgeDays("2026-09-05-marketplace", "2026-09-02")).toBe(0);
+    expect(ticketAgeDays("marketplace", "2026-09-02")).toBeNull();
+    expect(ticketAgeDays("2026-09-02-marketplace", "soon")).toBeNull();
   });
 });

@@ -26,7 +26,7 @@
  * being read can be linked to and survives a reload. No other page writes it — the dialog is
  * shell state, not a route.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useSearchParams } from "react-router";
 import type {
@@ -38,6 +38,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  Chevron,
   Count,
   FieldLabel,
   GlyphIcon,
@@ -80,13 +81,16 @@ import {
   allTickets,
   boardColumns,
   canMove,
+  groupTickets,
   invalidTickets,
   isBlocked,
   isOverdue,
   isTicketSlug,
   isTicketStatus,
   moveNeedsReason,
+  ticketAgeDays,
 } from "./ticket-board";
+import type { TicketGroupBy } from "./ticket-board";
 import { MoveTicketConfirm } from "./ticket-dialog";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
@@ -94,6 +98,37 @@ import { dayKey } from "./calendar-geom";
 import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
+
+/** Group-by choices in toolbar order; mirrors TicketGroupBy. */
+const GROUP_BY_VALUES: readonly TicketGroupBy[] = ["none", "owner", "priority", "parent"];
+
+function readGroupBy(value: string | null): TicketGroupBy {
+  return value === "owner" || value === "priority" || value === "parent" ? value : "none";
+}
+
+/** localStorage key for collapsed columns and groups (org-scoped inside one shared object). */
+const COLLAPSE_KEY = "tickets.collapsed.v1";
+
+function readCollapsed(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_KEY);
+    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, boolean>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Where an approval moves a card, and where a rejection sends it back to. */
+function approveTarget(status: OrgTicketStatus): OrgTicketStatus {
+  return status === "review" ? "done" : "in_progress";
+}
+
+function rejectTarget(status: OrgTicketStatus): OrgTicketStatus {
+  return status === "review" ? "in_progress" : "rejected";
+}
 
 /**
  * The colour bar atop each column. Proposed is neutral, in-progress takes the accent (it is
@@ -123,6 +158,44 @@ export function TicketsPage() {
   const [error, setError] = useState<string | null>(null);
   const [blockedOnly, setBlockedOnly] = useState(params.get("blocked") === "1");
   const [query, setQuery] = useState("");
+  const [groupBy, setGroupBy] = useState<TicketGroupBy>(() => readGroupBy(params.get("group")));
+  const [priFilter, setPriFilter] = useState<readonly OrgTicketPriority[]>(() => {
+    const raw = params.get("pri");
+    if (raw === null || raw === "") return [];
+    return raw.split(",").filter((p): p is OrgTicketPriority =>
+      p === "P0" || p === "P1" || p === "P2",
+    );
+  });
+  const [queueOnly, setQueueOnly] = useState(params.get("queue") === "approve");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(readCollapsed);
+  const isCollapsed = (section: string): boolean =>
+    collapsed[`${orgId}:${section}`] === true;
+  const toggleCollapsed = (section: string) => {
+    const key = `${orgId}:${section}`;
+    setCollapsed((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
+      } catch {
+        // Private mode: the fold lasts the visit.
+      }
+      return next;
+    });
+  };
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [bulkTarget, setBulkTarget] = useState("");
+  const [bulkOwner, setBulkOwner] = useState("");
+  const [bulkNote, setBulkNote] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const toggleSelect = (ticketId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(ticketId)) next.delete(ticketId);
+      else next.add(ticketId);
+      return next;
+    });
+  };
   const [move, setMove] = useState<{ ticket: OrgTicketItem; to: OrgTicketStatus } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -217,7 +290,7 @@ export function TicketsPage() {
     );
   }, [urlTicket, dialogTicket, projectId, orgId, openTicketInShell, setParams, routedPath]);
 
-  const confirmMove = async (reason: string) => {
+  const confirmMove = async (reason: string, note?: string) => {
     if (move === null) return;
     setBusy(true);
     try {
@@ -225,6 +298,12 @@ export function TicketsPage() {
         status: move.to,
         ...(moveNeedsReason(move.to) ? { reason: reason.trim() } : {}),
       });
+      const trimmed = (note ?? "").trim();
+      if (trimmed !== "") {
+        await api.progressOrgTicket(projectId, orgId, move.ticket.ticketId, {
+          text: trimmed,
+        });
+      }
       toastSuccess(S.company.tickets.moved);
       setMove(null);
       // One signal for a ticket written here: this board, the open dialog and the
@@ -237,9 +316,51 @@ export function TicketsPage() {
     }
   };
 
+  /** Bulk bar: one target, owner and note applied to every selected card, in order. */
+  const applyBulk = async () => {
+    if (selected.size === 0 || bulkBusy) return;
+    if (bulkTarget === "" && bulkOwner === "" && bulkNote.trim() === "") return;
+    setBulkBusy(true);
+    let ok = 0;
+    let failed = 0;
+    for (const id of selected) {
+      try {
+        if (bulkNote.trim() !== "") {
+          await api.progressOrgTicket(projectId, orgId, id, { text: bulkNote.trim() });
+        }
+        if (bulkTarget !== "") {
+          const to = bulkTarget as OrgTicketStatus;
+          await api.moveOrgTicket(projectId, orgId, id, {
+            status: to,
+            ...(moveNeedsReason(to) ? { reason: bulkNote.trim() } : {}),
+          });
+        }
+        if (bulkOwner !== "") {
+          await api.updateOrgTicket(projectId, orgId, id, { owner: bulkOwner });
+        }
+        ok += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setBulkBusy(false);
+    setSelected(new Set());
+    setBulkTarget("");
+    setBulkOwner("");
+    setBulkNote("");
+    if (failed === 0) toastSuccess(S.company.tickets.bulkDone(ok));
+    else toastError(S.company.tickets.bulkPartial(ok, failed));
+    company.ticketsChanged();
+  };
+
   /** A card's face: the title with its priority first, then what decides its urgency, then where it hangs and who holds it. */
   const cardBody = (t: OrgTicketItem) => {
     const overdue = isOverdue(t.due, todayKey) && t.status !== "done" && t.status !== "rejected";
+    const age =
+      t.status === "proposed" || t.status === "review"
+        ? ticketAgeDays(t.ticketId, todayKey)
+        : null;
+    const showAge = age !== null && age >= 1;
     return (
       <>
         <span className="flex items-start gap-1.5">
@@ -260,8 +381,17 @@ export function TicketsPage() {
         </span>
         {/* The time-bound line, drawn only when there is something on it: the priority has
             moved up to the title and an empty row would leave a gap under it. */}
-        {(t.due !== undefined || isBlocked(t)) && (
+        {(t.due !== undefined || isBlocked(t) || showAge) && (
           <span className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+            {showAge && (
+              <span
+                className="inline-flex items-center gap-1 font-mono tabular-nums"
+                data-tooltip={S.company.tickets.ageHint}
+              >
+                <GlyphIcon d={ICONS.clockCompact} size={ICON_SIZE.inlineGlyph} />
+                {S.company.tickets.ageDays(age ?? 0)}
+              </span>
+            )}
             {t.due !== undefined && (
               <span
                 className={`inline-flex items-center gap-1 font-mono tabular-nums ${overdue ? toneInk.danger : ""}`}
@@ -317,25 +447,73 @@ export function TicketsPage() {
   /**
    * A card: one button over the whole face. Unselectable and without the platform's long-press
    * callout, so dragging it never selects its words and holding it on a touch screen never raises
-   * a menu; dimmed in place while its ghost is being carried.
+   * a menu; dimmed in place while its ghost is being carried. In select mode the whole face
+   * toggles a visual checkbox instead (dragging is off); in queue mode an approval row hangs
+   * under the button, outside it — a button holds no control of its own.
    */
-  const card = (t: OrgTicketItem) => (
-    <button
-      key={t.ticketId}
-      type="button"
-      data-ticket-card={t.ticketId}
-      data-tooltip={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
-      {...drag.cardProps(t)}
-      className={`${cardFrame(t)} cursor-pointer select-none transition-[border-color,opacity] duration-150 [-webkit-touch-callout:none] hover:border-gray-300 dark:hover:border-gray-600 ${
-        lifted?.ticket.ticketId === t.ticketId ? "opacity-40" : ""
-      }`}
-    >
-      {cardBody(t)}
-    </button>
-  );
+  const card = (t: OrgTicketItem) => {
+    const isSel = selected.has(t.ticketId);
+    const showActions =
+      queueOnly && !selectMode && (t.status === "proposed" || t.status === "review");
+    return (
+      <Fragment key={t.ticketId}>
+        <button
+          type="button"
+          data-ticket-card={t.ticketId}
+          data-tooltip={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
+          {...(selectMode ? { "aria-pressed": isSel } : drag.cardProps(t))}
+          onClick={selectMode ? () => toggleSelect(t.ticketId) : undefined}
+          className={`${cardFrame(t)} cursor-pointer select-none transition-[border-color,opacity] duration-150 [-webkit-touch-callout:none] hover:border-gray-300 dark:hover:border-gray-600 ${
+            lifted?.ticket.ticketId === t.ticketId ? "opacity-40" : ""
+          }${isSel ? " border-accent ring-1 ring-accent" : ""}`}
+        >
+          {selectMode ? (
+            <span className="flex items-start gap-2">
+              <span
+                aria-hidden
+                className={`mt-0.5 h-4 w-4 shrink-0 rounded border ${
+                  isSel ? "border-accent bg-accent" : "border-gray-300 dark:border-gray-600"
+                }`}
+              />
+              <span className="sr-only">
+                {isSel ? S.company.tickets.unselect : S.company.tickets.select}
+              </span>
+              <span className="min-w-0 flex-1">{cardBody(t)}</span>
+            </span>
+          ) : (
+            cardBody(t)
+          )}
+        </button>
+        {showActions && (
+          <span className="mt-1 flex gap-1.5">
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => setMove({ ticket: t, to: approveTarget(t.status) })}
+            >
+              {S.company.tickets.approve}
+            </Button>
+            <Button size="sm" onClick={() => setMove({ ticket: t, to: rejectTarget(t.status) })}>
+              {S.company.tickets.reject}
+            </Button>
+          </span>
+        )}
+      </Fragment>
+    );
+  };
 
-  const columns = board === null ? null : boardColumns(board, { blockedOnly, query, names });
-  const narrowed = blockedOnly || query.trim() !== "";
+  const columns =
+    board === null
+      ? null
+      : boardColumns(board, { blockedOnly, query, names, priorities: priFilter });
+  const visibleColumns =
+    columns === null
+      ? null
+      : queueOnly
+        ? columns.filter((c) => c.status === "proposed" || c.status === "review")
+        : columns;
+  const narrowed =
+    blockedOnly || query.trim() !== "" || priFilter.length > 0 || queueOnly;
   const invalids = board === null ? [] : invalidTickets(board);
 
   return (
@@ -363,6 +541,59 @@ export function TicketsPage() {
               }}
             />
           </label>
+          <Segmented<TicketGroupBy>
+            cols={4}
+            value={groupBy}
+            onChange={(v) => {
+              setGroupBy(v);
+              setQueryParams({ group: v === "none" ? null : v });
+            }}
+            options={GROUP_BY_VALUES.map((v) => ({
+              value: v,
+              label: S.company.tickets.groupByName[v] ?? v,
+            }))}
+          />
+          <span className="flex items-center gap-1" role="group" aria-label={S.company.tickets.priority}>
+            {PRIORITIES.map((p) => {
+              const on = priFilter.includes(p);
+              return (
+                <Button
+                  key={p}
+                  size="sm"
+                  variant={on ? "primary" : "secondary"}
+                  aria-pressed={on}
+                  onClick={() => {
+                    const next = on ? priFilter.filter((x) => x !== p) : [...priFilter, p];
+                    setPriFilter(next);
+                    setQueryParams({ pri: next.length === 0 ? null : next.join(",") });
+                  }}
+                >
+                  {p}
+                </Button>
+              );
+            })}
+          </span>
+          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            {S.company.tickets.queueOnly}
+            <Switch
+              checked={queueOnly}
+              onChange={(v) => {
+                setQueueOnly(v);
+                setQueryParams({ queue: v ? "approve" : null });
+              }}
+            />
+          </label>
+          <Button
+            size="sm"
+            variant={selectMode ? "primary" : "secondary"}
+            aria-pressed={selectMode}
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelected(new Set());
+            }}
+          >
+            {S.company.tickets.select}
+          </Button>
           <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
             {S.company.tickets.create}
           </Button>
@@ -400,10 +631,33 @@ export function TicketsPage() {
         )}
 
       <div ref={drag.boardRef} className="overflow-x-auto pb-2">
-        <div className="grid min-w-[50rem] grid-cols-5 gap-3">
-          {columns === null
+        <div
+          className={`grid gap-3 ${queueOnly ? "min-w-[36rem] grid-cols-2" : "min-w-[50rem] grid-cols-5"}`}
+        >
+          {visibleColumns === null
             ? TICKET_COLUMNS.map((status) => <ColumnSkeleton key={status} status={status} />)
-            : columns.map((col) => (
+            : visibleColumns.map((col) => {
+                const shut = isCollapsed(`col:${col.status}`);
+                const visibleIds = col.tickets.map((t) => t.ticketId);
+                const allSel =
+                  visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+                const toggleColumn = () => toggleCollapsed(`col:${col.status}`);
+                const toggleAll = () => {
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    if (allSel) {
+                      for (const id of visibleIds) next.delete(id);
+                    } else {
+                      for (const id of visibleIds) next.add(id);
+                    }
+                    return next;
+                  });
+                };
+                const groups =
+                  groupBy === "none"
+                    ? null
+                    : groupTickets(col.tickets, groupBy, { names, titles });
+                return (
                 <div
                   key={col.status}
                   role="group"
@@ -418,14 +672,57 @@ export function TicketsPage() {
                   }`}
                 >
                   <div className={`h-1 rounded-t-md ${COLUMN_BAR[col.status]}`} />
-                  <div className="flex items-center justify-between gap-2 px-2.5 py-2">
-                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                  <div className="flex items-center gap-2 px-2.5 py-2">
+                    <button
+                      type="button"
+                      onClick={toggleColumn}
+                      aria-expanded={!shut}
+                      aria-label={shut ? S.company.tickets.expand : S.company.tickets.collapse}
+                      className="rounded text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+                    >
+                      <Chevron open={!shut} size={ICON_SIZE.chevronDense} />
+                    </button>
+                    <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700 dark:text-gray-200">
                       {S.company.tickets.columns[col.status] ?? col.status}
                     </span>
+                    {selectMode && col.tickets.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={toggleAll}
+                        className="shrink-0 text-xs text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+                      >
+                        {allSel ? S.company.tickets.deselectAll : S.company.tickets.selectAll}
+                      </button>
+                    )}
                     <Count n={col.tickets.length} />
                   </div>
-                  <div className="flex flex-1 flex-col gap-2 px-2 pb-2">
-                    {col.tickets.map(card)}
+                  {!shut && (
+                    <div className="flex flex-1 flex-col gap-2 px-2 pb-2">
+                      {groups === null
+                        ? col.tickets.map(card)
+                        : groups.map((g) => {
+                            const gkey = `group:${col.status}:${g.key === "" ? "(none)" : g.key}`;
+                            const gshut = isCollapsed(gkey);
+                            return (
+                              <div key={g.key === "" ? "(none)" : g.key}>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCollapsed(gkey)}
+                                  aria-expanded={!gshut}
+                                  className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-xs text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                                >
+                                  <Chevron open={!gshut} size={ICON_SIZE.chevronDense} />
+                                  <span className="min-w-0 flex-1 truncate font-medium">
+                                    {g.label === ""
+                                      ? S.company.tickets.noGroup
+                                      : g.label}
+                                  </span>
+                                  <Count n={g.tickets.length} />
+                                </button>
+                                {!gshut && g.tickets.map(card)}
+                              </div>
+                            );
+                          })}
                     {col.tickets.length === 0 && (
                       <div
                         className={`flex min-h-20 flex-1 items-center justify-center rounded-md border border-dashed px-2 text-center text-xs ${
@@ -441,11 +738,68 @@ export function TicketsPage() {
                             : S.company.tickets.columnEmpty}
                       </div>
                     )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
         </div>
       </div>
+
+      {selected.size > 0 && (
+        <div className="sticky bottom-2 z-10 mt-2 flex flex-wrap items-center gap-2 rounded-md border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+            {S.company.tickets.selectedCount(selected.size)}
+          </span>
+          <Select
+            value={bulkTarget}
+            onChange={(e) => setBulkTarget(e.target.value)}
+            aria-label={S.company.tickets.bulkMoveTo}
+          >
+            <option value="">{S.company.tickets.bulkMoveTo}</option>
+            {TICKET_COLUMNS.map((s) => (
+              <option key={s} value={s}>
+                {S.company.tickets.columns[s] ?? s}
+              </option>
+            ))}
+          </Select>
+          <Select
+            value={bulkOwner}
+            onChange={(e) => setBulkOwner(e.target.value)}
+            aria-label={S.company.tickets.bulkAssignTo}
+          >
+            <option value="">{S.company.tickets.bulkAssignTo}</option>
+            {employees.map((e) => (
+              <option key={e.agentId} value={`agent:${e.agentId}`}>
+                {e.name}
+              </option>
+            ))}
+          </Select>
+          <Input
+            size="sm"
+            className="min-w-44 flex-1"
+            placeholder={S.company.tickets.bulkNote}
+            aria-label={S.company.tickets.bulkNote}
+            value={bulkNote}
+            onChange={(e) => setBulkNote(e.target.value)}
+          />
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={
+              bulkBusy ||
+              (bulkTarget === "" && bulkOwner === "" && bulkNote.trim() === "") ||
+              (bulkTarget === "rejected" && bulkNote.trim() === "")
+            }
+            onClick={() => void applyBulk()}
+          >
+            {S.company.tickets.bulkApply}
+          </Button>
+          <Button size="sm" disabled={bulkBusy} onClick={() => setSelected(new Set())}>
+            {S.company.tickets.bulkClear}
+          </Button>
+        </div>
+      )}
 
       {(invalids.length > 0 || (board !== null && board.invalidFiles.length > 0)) && (
         <Notice tone="danger" className="mt-2">
