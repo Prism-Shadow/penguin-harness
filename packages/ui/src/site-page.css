@@ -1,0 +1,129 @@
+/* The public sites' page base, for the landing page and the docs: the `dark` variant on the
+   html.dark class, the brand scale, the neutral dark gray ramp the sites share with the Web App's
+   Primer dark, the body and focus defaults, and the two entrance animations. A site imports it
+   right after `@import "tailwindcss"`; it declares Tailwind theme values, so it is for a site's
+   Tailwind entry only (the gallery, framing the app's own theme, does not take it). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Brand colour scale (Google blue family), identical to the Web App's. */
+@theme {
+  --color-brand-25: #f8fbff;
+  --color-brand-50: #e8f0fe;
+  --color-brand-100: #d2e3fc;
+  --color-brand-200: #aecbfa;
+  --color-brand-300: #8ab4f8;
+  --color-brand-400: #669df6;
+  --color-brand-500: #4285f4;
+  --color-brand-600: #1a73e8;
+  --color-brand-700: #0b57d0;
+  --color-brand-800: #0842a0;
+  --color-brand-900: #062e6f;
+  --color-brand-950: #041e49;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+    /* A calm neutral dark, shared with the Web App's Primer dark and the gallery: the canvas
+       lifted off black, surfaces a step lighter, and the whole gray ramp re-pointed to true
+       neutrals — Tailwind's own grays lean blue. Body text (100) sits at 16:1 on the canvas,
+       muted (400) at 7:1 and subtle (500) above 4.5:1 on the surfaces. site-content.css carries
+       the same ramp for the shared components. */
+    --color-gray-950: #141414;
+    --color-gray-900: #1c1c1c;
+    --color-gray-800: #2a2a2a;
+    --color-gray-700: #383838;
+    --color-gray-600: #575757;
+    --color-gray-500: #8f8f8f;
+    --color-gray-400: #ababab;
+    --color-gray-300: #d4d4d4;
+    --color-gray-200: #e3e3e3;
+    --color-gray-100: #f0f0f0;
+    --color-gray-50: #f7f7f7;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: #fff;
+    color: var(--color-gray-900);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "PingFang SC",
+      "Microsoft YaHei",
+      sans-serif;
+  }
+  body:where(.dark, .dark *) {
+    background-color: var(--color-gray-950);
+    color: var(--color-gray-100);
+  }
+  code,
+  pre,
+  kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  button:focus-visible,
+  a:focus-visible,
+  summary:focus-visible {
+    outline: 3px solid rgb(107 114 128 / 0.4);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: rgb(0 0 0 / 0.1);
+  }
+  .dark ::selection {
+    background: rgb(255 255 255 / 0.18);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(60 64 67 / 0.28) transparent;
+  }
+  .dark * {
+    scrollbar-color: rgb(232 234 237 / 0.2) transparent;
+  }
+}
+
+/* Entrances: a short ease and a slight offset. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.anim-rise {
+  animation: rise-in 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.anim-fade {
+  animation: fade-in 120ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

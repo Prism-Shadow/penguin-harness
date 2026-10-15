@@ -21,7 +21,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DOC_SLUGS } from "../../docs/src/lib/nav";
-import { parseFrontmatter } from "../src/lib/frontmatter";
+import { parseFrontmatter } from "@prismshadow/penguin-ui/site";
 
 const contentDir = join(__dirname, "..", "content", "blog");
 const LANGS = ["en", "zh"] as const;

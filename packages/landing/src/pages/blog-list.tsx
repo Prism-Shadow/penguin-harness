@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { useLocale } from "../state/locale";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
 import { formatPostDate, postsFor } from "../lib/blog";
 import type { BlogCategory } from "../lib/blog";
 import { CategoryBadge, PinnedBadge } from "../components/category-badge";
@@ -16,7 +16,7 @@ type Filter = "all" | BlogCategory;
 const FILTERS: Filter[] = ["all", "news", "practice", "perspectives", "changelog"];
 
 export function BlogListPage() {
-  const { locale } = useLocale();
+  const { locale } = useSiteLocale();
   const [filter, setFilter] = useState<Filter>("all");
   const posts = postsFor(locale, filter === "all" ? undefined : filter);
 

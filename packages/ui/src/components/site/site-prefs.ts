@@ -3,22 +3,21 @@
  *
  * The three are separate SPAs but ship to one origin (penguin.ooo, penguin.ooo/docs/ and
  * penguin.ooo/gallery/), so a single localStorage key is all it takes for a language or theme
- * choice to survive the hop between them. The landing page and the docs previously wrote
- * `penguin-landing.*` and `penguin-docs.*`, which is why picking dark mode on the landing page
- * and clicking through to the docs dropped you back into light.
+ * choice to survive the hop between them. The landing page and the docs once wrote
+ * `penguin-landing.*` and `penguin-docs.*`; those keys are still read as a fallback, so a visitor
+ * who chose before the sites shared a key keeps that choice.
  *
- * This module is duplicated verbatim in packages/landing and packages/docs (the three sites
- * share no package). The KEYS below must stay identical in every copy; if they drift, the sync
- * silently stops working with nothing failing.
+ * Each site's index.html spells the theme key and its fallbacks in the inline script that applies
+ * dark mode before first paint; keep those scripts in step with the keys here.
  */
 
-export const THEME_KEY = "penguin-site.theme";
-export const LANG_KEY = "penguin-site.lang";
+export const SITE_THEME_KEY = "penguin-site.theme";
+export const SITE_LANG_KEY = "penguin-site.lang";
 
-/** Pre-unification keys, still read once so an existing visitor keeps their choice. */
+/** Pre-unification keys, still read so an existing visitor keeps their choice. */
 const LEGACY_KEYS: Record<string, readonly string[]> = {
-  [THEME_KEY]: ["penguin-landing.theme", "penguin-docs.theme"],
-  [LANG_KEY]: ["penguin-landing.lang", "penguin-docs.lang"],
+  [SITE_THEME_KEY]: ["penguin-landing.theme", "penguin-docs.theme"],
+  [SITE_LANG_KEY]: ["penguin-landing.lang", "penguin-docs.lang"],
 };
 
 /**
@@ -26,7 +25,7 @@ const LEGACY_KEYS: Record<string, readonly string[]> = {
  * wrapped: localStorage throws outright in a cookie-blocked or partitioned context, and
  * a preference is never worth taking the page down for.
  */
-export function readPref<T extends string>(key: string, allowed: readonly T[]): T | null {
+export function readSitePref<T extends string>(key: string, allowed: readonly T[]): T | null {
   try {
     for (const k of [key, ...(LEGACY_KEYS[key] ?? [])]) {
       const stored = localStorage.getItem(k);
@@ -38,7 +37,7 @@ export function readPref<T extends string>(key: string, allowed: readonly T[]): 
   return null;
 }
 
-export function writePref(key: string, value: string): void {
+export function writeSitePref(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
   } catch {
@@ -49,10 +48,10 @@ export function writePref(key: string, value: string): void {
 /**
  * Live sync for the both-tabs-open case. The storage event fires in every *other* tab on
  * the origin, so switching theme on the landing page updates an already-open docs tab
- * without a reload. Navigating between the two sites is a full page load and is covered
+ * without a reload. Navigating between the sites is a full page load and is covered
  * by the read on mount instead.
  */
-export function subscribePref<T extends string>(
+export function subscribeSitePref<T extends string>(
   key: string,
   allowed: readonly T[],
   onChange: (value: T) => void,

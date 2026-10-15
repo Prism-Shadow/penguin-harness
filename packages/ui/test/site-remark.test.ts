@@ -3,10 +3,10 @@
  * transforms are pure tree rewrites, so nothing here needs a renderer.
  */
 import { describe, expect, it } from "vitest";
-import { remarkCallout } from "../src/lib/remark-callout";
-import type { CalloutNode } from "../src/lib/remark-callout";
-import { remarkTabs, tabLabelOf } from "../src/lib/remark-tabs";
-import type { TabNode } from "../src/lib/remark-tabs";
+import { remarkCallout } from "../src/components/site/remark-callout";
+import type { CalloutNode } from "../src/components/site/remark-callout";
+import { remarkTabs, tabLabelOf } from "../src/components/site/remark-tabs";
+import type { TabNode } from "../src/components/site/remark-tabs";
 
 function quote(firstLine: string, ...rest: CalloutNode[]): CalloutNode {
   return {

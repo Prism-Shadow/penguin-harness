@@ -41,7 +41,7 @@ import {
   SITE_LANG_PREFS,
 } from "./lib/url-state";
 import type { GalleryState, PrefKey, RememberedPrefs } from "./lib/url-state";
-import { LANG_KEY, readPref, THEME_KEY } from "./site/site-prefs";
+import { readSitePref, SITE_LANG_KEY, SITE_THEME_KEY } from "@prismshadow/penguin-ui/site";
 import { zh } from "./strings";
 import type { GalleryStrings } from "./strings";
 import { en } from "./strings-en";
@@ -59,8 +59,8 @@ function readRemembered(): RememberedPrefs {
   } catch {
     // Storage can be unavailable (a sandboxed frame); the URL alone still works.
   }
-  const siteTheme = readPref(THEME_KEY, MODE_PREFS);
-  const siteLang = readPref(LANG_KEY, SITE_LANG_PREFS);
+  const siteTheme = readSitePref(SITE_THEME_KEY, MODE_PREFS);
+  const siteLang = readSitePref(SITE_LANG_KEY, SITE_LANG_PREFS);
   return rememberedPrefs({ gallery, siteTheme, siteLang }, navigator.language);
 }
 
