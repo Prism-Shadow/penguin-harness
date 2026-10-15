@@ -662,6 +662,7 @@ note: No visible change on the page.
 - `browser_unavailable`：浏览器无法驱动。带原因时，错误信息与 `status` 的 `note:` 相同；不带原因时是服务器自己的说明，例如用户在 Chrome 里暂停了扩展。
 - `no_tab`（没有打开的标签页）、`no_such_tab`、`tab_crashed`（该标签页的页面已崩溃：关闭它，在新标签页中重新打开页面）、`too_many_tabs`（浏览器已有 20 个标签页）。
 - `tab_released`：用户在自己的 Chrome 里收回了这个标签页。不要重试，改为新开一个标签页。
+- `keyboard_focus_failed`：内置浏览器无法让该标签页在应用窗口里取得键盘焦点，因此一个字也没有输入。`type` 以失败结果报告并附上这条信息，原始 `cdp` 键盘命令则直接返回该错误码。可重试一次。
 - `cdp_refused`：原始命令超出了该后端允许的范围（见 [screenshot 和 cdp](#screenshot-和-cdp)）。
 - `not_supported`：对用户自己的 Chrome 调用了导入或历史记录；错误信息会提示改为请用户在 Chrome 的 Penguin 标签页中登录。
 - `script_error`、`timeout`、`invalid_url`、`source_not_found` 和 `import_failed`。
