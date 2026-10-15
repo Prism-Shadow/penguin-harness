@@ -62,8 +62,35 @@ export interface BoardColumn {
   tickets: OrgTicketItem[];
 }
 
-/** How cards group inside one column: flat, or collapsible sections by owner, priority or parent epic. */
-export type TicketGroupBy = "none" | "owner" | "priority" | "parent";
+/** How cards group inside one column: flat, or collapsible sections by owner, priority, parent epic, work module or tender project. */
+export type TicketGroupBy = "none" | "owner" | "priority" | "parent" | "module" | "project";
+
+/**
+ * The work module read off a bid-ops title (`响应文件：…` / `Demo：…` / `分析：…`);
+ * "" when the title follows no convention (R&D tickets, tests).
+ */
+export function ticketModule(title: string): string {
+  if (title.startsWith("响应文件：")) return "resp";
+  if (title.startsWith("Demo：")) return "demo";
+  if (title.startsWith("分析：")) return "req";
+  return "";
+}
+
+/**
+ * The tender project read off a bid-ops title: the project name between the module
+ * prefix and the kind suffix (`演示系统（包A）` / ` 需求分析`); "" when unparseable.
+ * Package suffixes fold away so one project's packages group together.
+ */
+export function ticketProject(title: string): string {
+  let rest: string | null = null;
+  if (title.startsWith("响应文件：")) rest = title.slice("响应文件：".length);
+  else if (title.startsWith("Demo："))
+    rest = title.slice("Demo：".length).replace(/\s*演示系统(\s*（[^）]*）)?\s*$/, "");
+  else if (title.startsWith("分析："))
+    rest = title.slice("分析：".length).replace(/\s*需求分析\s*$/, "");
+  if (rest === null) return "";
+  return rest.trim();
+}
 
 export interface TicketGroup {
   key: string;
@@ -80,7 +107,11 @@ export interface TicketGroup {
 export function groupTickets(
   tickets: readonly OrgTicketItem[],
   by: TicketGroupBy,
-  opts: { names?: ReadonlyMap<string, string>; titles?: ReadonlyMap<string, string> } = {},
+  opts: {
+    names?: ReadonlyMap<string, string>;
+    titles?: ReadonlyMap<string, string>;
+    moduleNames?: ReadonlyMap<string, string>;
+  } = {},
 ): TicketGroup[] {
   const sorted = sortTickets(tickets);
   if (by === "none") return [{ key: "all", label: "", tickets: sorted }];
@@ -89,6 +120,8 @@ export function groupTickets(
     let key: string;
     if (by === "owner") key = t.owner;
     else if (by === "priority") key = t.priority;
+    else if (by === "module") key = ticketModule(t.title);
+    else if (by === "project") key = ticketProject(t.title);
     else key = t.parent ?? "";
     const list = buckets.get(key);
     if (list !== undefined) list.push(t);
@@ -100,18 +133,19 @@ export function groupTickets(
       return opts.names?.get(id) ?? key;
     }
     if (by === "parent") return key === "" ? "" : (opts.titles?.get(key) ?? key);
+    if (by === "module") return key === "" ? "" : (opts.moduleNames?.get(key) ?? key);
+    if (by === "project") return key;
     return key;
   };
   const rankOf = (key: string): number => {
     if (by === "priority") return PRIORITY_RANK[key] ?? 9;
+    if (by === "module") return key === "req" ? 0 : key === "resp" ? 1 : key === "demo" ? 2 : 9;
     return 0;
   };
   return [...buckets.entries()]
     .sort(([ak], [bk]) => {
-      if (by === "parent") {
-        if (ak === "") return 1;
-        if (bk === "") return -1;
-      }
+      if (ak === "") return 1;
+      if (bk === "") return -1;
       return rankOf(ak) - rankOf(bk) || labelOf(ak).localeCompare(labelOf(bk));
     })
     .map(([key, list]) => ({ key, label: labelOf(key), tickets: list }));

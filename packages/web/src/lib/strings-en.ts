@@ -5695,6 +5695,13 @@ Scenarios:
         owner: "Owner",
         priority: "Priority",
         parent: "Parent",
+        module: "Module",
+        project: "Project",
+      } as Record<string, string>,
+      moduleName: {
+        req: "Analysis",
+        resp: "Response docs",
+        demo: "Demos",
       } as Record<string, string>,
       queueOnly: "Needs approval only",
       select: "Select",

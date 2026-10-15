@@ -100,10 +100,25 @@ import { TICKET_COLUMN_ATTR, useTicketBoardDrag } from "./ticket-drag";
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
 /** Group-by choices in toolbar order; mirrors TicketGroupBy. */
-const GROUP_BY_VALUES: readonly TicketGroupBy[] = ["none", "owner", "priority", "parent"];
+const GROUP_BY_VALUES: readonly TicketGroupBy[] = [
+  "none",
+  "owner",
+  "priority",
+  "parent",
+  "module",
+  "project",
+];
 
 function readGroupBy(value: string | null): TicketGroupBy {
-  return value === "owner" || value === "priority" || value === "parent" ? value : "none";
+  return (
+    value === "owner" ||
+    value === "priority" ||
+    value === "parent" ||
+    value === "module" ||
+    value === "project"
+      ? value
+      : "none"
+  );
 }
 
 /** localStorage key for collapsed columns and groups (org-scoped inside one shared object). */
@@ -542,7 +557,7 @@ export function TicketsPage() {
             />
           </label>
           <Segmented<TicketGroupBy>
-            cols={4}
+            cols={5}
             value={groupBy}
             onChange={(v) => {
               setGroupBy(v);
@@ -653,10 +668,15 @@ export function TicketsPage() {
                     return next;
                   });
                 };
+                const moduleNames = new Map<string, string>([
+                  ["req", S.company.tickets.moduleName.req ?? "req"],
+                  ["resp", S.company.tickets.moduleName.resp ?? "resp"],
+                  ["demo", S.company.tickets.moduleName.demo ?? "demo"],
+                ]);
                 const groups =
                   groupBy === "none"
                     ? null
-                    : groupTickets(col.tickets, groupBy, { names, titles });
+                    : groupTickets(col.tickets, groupBy, { names, titles, moduleNames });
                 return (
                 <div
                   key={col.status}

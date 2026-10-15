@@ -29,6 +29,8 @@ import {
   sortTickets,
   ticketAgeDays,
   ticketCreatedDate,
+  ticketModule,
+  ticketProject,
 } from "../src/features/company/ticket-board";
 
 function ticket(over: Partial<OrgTicketItem> & { ticketId: string }): OrgTicketItem {
@@ -242,5 +244,48 @@ describe("card facts", () => {
     expect(ticketAgeDays("2026-09-05-marketplace", "2026-09-02")).toBe(0);
     expect(ticketAgeDays("marketplace", "2026-09-02")).toBeNull();
     expect(ticketAgeDays("2026-09-02-marketplace", "soon")).toBeNull();
+  });
+
+  it("reads the work module and tender project off a bid title", () => {
+    expect(ticketModule("响应文件：枣庄卫健委")).toBe("resp");
+    expect(ticketModule("Demo：枣庄卫健委 演示系统")).toBe("demo");
+    expect(ticketModule("分析：枣庄卫健委 需求分析")).toBe("req");
+    expect(ticketModule("Build the benchmark")).toBe("");
+    expect(ticketProject("响应文件：枣庄卫健委")).toBe("枣庄卫健委");
+    expect(ticketProject("Demo：枣庄卫健委 演示系统")).toBe("枣庄卫健委");
+    expect(ticketProject("Demo：枣庄卫健委 演示系统（包A）")).toBe("枣庄卫健委");
+    expect(ticketProject("分析：枣庄卫健委 需求分析")).toBe("枣庄卫健委");
+    expect(ticketProject("Build the benchmark")).toBe("");
+  });
+
+  it("groups cards by module in pipeline order and by project alphabetically", () => {
+    const groups = groupTickets(
+      [
+        ticket({ ticketId: "a", title: "Demo：乙 演示系统" }),
+        ticket({ ticketId: "b", title: "响应文件：甲" }),
+        ticket({ ticketId: "c", title: "分析：甲 需求分析" }),
+        ticket({ ticketId: "d", title: "Random work" }),
+      ],
+      "module",
+      { moduleNames: new Map([["req", "需求"], ["resp", "响应"], ["demo", "演示"]]) },
+    );
+    expect(groups.map((g) => [g.key, g.label, g.tickets.map((t) => t.ticketId)])).toEqual([
+      ["req", "需求", ["c"]],
+      ["resp", "响应", ["b"]],
+      ["demo", "演示", ["a"]],
+      ["", "", ["d"]],
+    ]);
+    const byProject = groupTickets(
+      [
+        ticket({ ticketId: "a", title: "Demo：Beta 演示系统（包A）" }),
+        ticket({ ticketId: "b", title: "响应文件：Alpha" }),
+        ticket({ ticketId: "c", title: "Demo：Beta 演示系统（包B）" }),
+      ],
+      "project",
+    );
+    expect(byProject.map((g) => [g.key, g.tickets.map((t) => t.ticketId)])).toEqual([
+      ["Alpha", ["b"]],
+      ["Beta", ["a", "c"]],
+    ]);
   });
 });

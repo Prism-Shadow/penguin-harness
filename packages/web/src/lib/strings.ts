@@ -5869,6 +5869,13 @@ Benchmark：
         owner: "负责人",
         priority: "优先级",
         parent: "父工单",
+        module: "模块",
+        project: "项目",
+      } as Record<string, string>,
+      moduleName: {
+        req: "需求分析",
+        resp: "响应文件",
+        demo: "演示",
       } as Record<string, string>,
       queueOnly: "只看待审批",
       select: "选择",
