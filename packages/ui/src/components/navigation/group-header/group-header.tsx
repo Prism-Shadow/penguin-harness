@@ -272,7 +272,7 @@ export function GroupHeader({
           {label}
         </span>
         {qualifier !== undefined && (
-          <span className="shrink-0 font-mono text-xs text-fg-subtle">{qualifier}</span>
+          <span className="shrink-0 text-xs text-fg-subtle">{qualifier}</span>
         )}
         {count !== undefined && (
           <span className="shrink-0 text-xs tabular-nums text-fg-subtle">{count}</span>
