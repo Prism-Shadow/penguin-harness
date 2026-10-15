@@ -2,7 +2,8 @@
 
 - **Date:** 2026-10-15
 - **Type:** feature
-- **Scope:** `server`, `web`
+- **Scope:** `server`, `web`, `ui`
+- **PR:** [#1155](https://github.com/Prism-Shadow/penguin-harness/pull/1155)
 
 [中文版](2026-10-15-machine-sessions.zh.md)
 
