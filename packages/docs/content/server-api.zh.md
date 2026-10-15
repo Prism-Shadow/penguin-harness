@@ -10,7 +10,7 @@ PenguinHarness 服务器提供一组同源 HTTP API，内置 Web App 和其他�
 - 技术栈：Hono 和 `@hono/node-server`，要求 Node >= 24。
 - 存储：SQLite（内置的 `node:sqlite`，WAL 模式）只保存索引和聚合数据：用户、认证会话、Project 授权、Agent 与 Session 索引、用量、UI 偏好、错误记录和定时任务状态。所有 Agent、Trace 和 Workspace 数据都以文件形式存放在 `~/.penguin/data` 下，与 CLI 和 SDK 共享；参见[配置参考](/configuration)。
 - 绑定地址：默认 `127.0.0.1:7364`，可通过 `PORT` / `HOST` 环境变量调整。
-- 请求体：写操作只接受 JSON，检查 Content-Type 是防 CSRF 的手段之一。请求体大小上限并非固定值，而是由附件额度推导出来的。附件以 base64 `data:` URL 的形式随请求传输，体积会膨胀 4/3，所以上限按 `base64(attachmentTotalMb)` 计算，再为一张内嵌图片和 JSON 封装留出余量。按默认 120MB 的总量计，约为 190MB；管理员调低总量，上限也会随之下降。服务器边读请求体边统计字节数，因此不声明长度（chunked）的请求同样受此限制。
+- 请求体：写操作只接受 JSON，检查 Content-Type 是防 CSRF 的手段之一。请求体大小上限并非固定值，而是由附件额度推导出来的。附件以 base64 `data:` URL 的形式随请求传输，体积会膨胀 4/3，所以上限按 `base64(attachmentTotalMb)` 计算，再为一张内嵌图片和 JSON 封装留出余量。按默认 120MB 的总量计，约为 190MB；管理员调低总量，上限也会随之下降。服务器边读请求体边统计字节数，因此不声明长度（chunked）的请求同样受此限制。调用方也可以用 `Content-Encoding: gzip` 发送请求体：服务器会对其解压，上限仍由同一条推导上限约束——解压后超界回答 `413` `payload_too_large`，无法解压回答 `400` `bad_request`——而线上传输的上限按压缩后字节计。
 - 所有错误共用同一种结构：
 
 ```text
