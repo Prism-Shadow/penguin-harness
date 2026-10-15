@@ -73,6 +73,9 @@
  * `NavigationBackdrop` (`data-glass="navigation"`) in all themes: only this separate layer
  * filters the image, preserving the navigation column's menu positioning.
  *
+ * Public-site chrome uses the same floating-layer hook on `SiteHeader` and its menu.
+ * `site.css` keeps those surfaces fixed while the gallery changes the app theme below them.
+ *
  * The three structure hooks (2026-09-19) are how the themes differ in organisation, not only in
  * colour and radius:
  *

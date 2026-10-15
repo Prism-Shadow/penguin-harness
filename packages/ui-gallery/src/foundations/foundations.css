@@ -50,7 +50,6 @@
   line-height: var(--ui-text-small-lh);
   font-weight: var(--ui-weight-medium);
   white-space: nowrap;
-  cursor: pointer;
   transition: background-color var(--ui-dur-fast) var(--ui-ease-out);
 }
 .gf-replay:hover {

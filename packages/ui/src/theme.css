@@ -25,6 +25,7 @@
  */
 
 @import "./wallpaper.css";
+@import "./cursors.css";
 
 /* Dark mode is the `dark` class on <html>, not the media query: the user can pin either mode. */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -234,27 +235,6 @@
      `transition-*` utility replaces the list. `:where()` keeps the rule at zero specificity. */
   :where(button, a, [role="button"], [role="tab"]) {
     transition-property: color, background-color, border-color, opacity, box-shadow;
-  }
-  /* App controls keep the arrow across their labels, icons and padding. Content links retain
-     the browser's hand; text inputs retain their caret. Utilities can still name a specific
-     operation (a drag, resize, zoom, disabled control or inline link action). */
-  :where(
-    button,
-    label,
-    select,
-    summary,
-    input[type="checkbox"],
-    input[type="radio"],
-    [role="button"],
-    [role="tab"],
-    [role="switch"],
-    [role="option"],
-    [role="treeitem"],
-    [role="menuitem"],
-    [role="menuitemcheckbox"],
-    [role="menuitemradio"]
-  ) {
-    cursor: default;
   }
   /* Keyboard focus for buttons and links; text controls draw their own ring and do not stack this one. */
   button:focus-visible,

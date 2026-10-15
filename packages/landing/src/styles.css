@@ -4,6 +4,14 @@
  * brand blue accent, no glassmorphism. Dark theme is toggled via the html.dark class.
  */
 @import "tailwindcss";
+@import "@prismshadow/penguin-ui/site.css";
+
+@source "../../ui/src/components/site";
+@source "../../ui/src/components/overlays/dropdown";
+@source "../../ui/src/components/overlays/menu";
+@source "../../ui/src/components/overlays/menu-panel";
+@source "../../ui/src/components/layout/fold";
+@source "../../ui/src/components/icons/marks";
 
 /* Dark theme toggled via the html.dark class (Tailwind 4 custom variant). */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -72,10 +80,6 @@
   summary:focus-visible {
     outline: 3px solid rgb(107 114 128 / 0.4);
     outline-offset: 2px;
-  }
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
-    cursor: pointer;
   }
   ::selection {
     background: rgb(0 0 0 / 0.1);
@@ -480,7 +484,7 @@
   @apply pb-2.5;
 }
 .md-body summary {
-  @apply relative -mx-3.5 cursor-pointer rounded-lg py-2 pr-3.5 pl-8 font-medium transition-colors select-none hover:bg-gray-200/50 dark:hover:bg-gray-800/50;
+  @apply relative -mx-3.5 rounded-lg py-2 pr-3.5 pl-8 font-medium transition-colors select-none hover:bg-gray-200/50 dark:hover:bg-gray-800/50;
   list-style: none;
 }
 .md-body summary::-webkit-details-marker {
