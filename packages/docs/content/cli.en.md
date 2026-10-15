@@ -662,6 +662,7 @@ An error is one line on stderr, `error: <code>: <message>`, and the command exit
 - `browser_unavailable`: the browser cannot be driven. With a reason, the message is the one the `note:` of `status` gives. Without one, it is the server's, such as the user having paused the extension in Chrome.
 - `no_tab` (no tab is open), `no_such_tab`, `tab_crashed` (the tab's page crashed: close it and open the page in a new tab), `too_many_tabs` (the browser holds 20 tabs).
 - `tab_released`: the user took the tab back in their Chrome. Do not retry it; open a new tab.
+- `keyboard_focus_failed`: the built-in browser could not give the tab keyboard focus in the app window, so nothing was typed. `type` reports it as a failed result with this message; a raw `cdp` keyboard command answers with the code. Retry once.
 - `cdp_refused`: a raw command outside what the backend allows (see [screenshot and cdp](#screenshot-and-cdp)).
 - `not_supported`: import or history asked of the user's Chrome; the message says to have the user sign in in the Penguin tab in Chrome instead.
 - `script_error`, `timeout`, `invalid_url`, `source_not_found` and `import_failed`.
