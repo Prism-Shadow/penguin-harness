@@ -19,6 +19,7 @@ import type { DesktopService } from "../src/services/desktop-service.js";
 import type { AuthService } from "../src/auth/service.js";
 import type { AdminService } from "../src/services/admin-service.js";
 import type { ProjectService } from "../src/services/project-service.js";
+import { ShippedBuiltinBenchmarkSeeds } from "../src/services/project-service.js";
 import type { ProjectAccess } from "../src/services/project-access.js";
 import type { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ModelOAuthService } from "../src/services/model-oauth-service.js";
@@ -312,6 +313,12 @@ export interface TestAppOptions {
   browserShellPort?: BrowserShellPort;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
   passwordHashCost?: number;
+  /**
+   * Write the shipped built-in Benchmarks into every Project the app creates, as production
+   * does. Off by default: they are several hundred files and directories per Project — most
+   * of what a boot or a provisioned user writes — and only the scenarios about them read them.
+   */
+  builtinBenchmarks?: boolean;
   log?: (line: string) => void;
   now?: () => Date;
   /** The plugins this app boots with (their modules and replacements), as the runtime would have loaded them. */
@@ -335,6 +342,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   const out: Array<readonly [ModuleClass, object]> = [];
   if (o.log) out.push([ConsoleLog, { line: o.log }]);
   if (o.now) out.push([SystemClock, { now: o.now }]);
+  if (!o.builtinBenchmarks) out.push([ShippedBuiltinBenchmarkSeeds, { benchmarks: [] }]);
   if (o.passwordHashCost !== undefined) {
     const cost = o.passwordHashCost;
     out.push([ScryptHasher, { hash: (password: string) => hashPassword(password, cost) }]);
