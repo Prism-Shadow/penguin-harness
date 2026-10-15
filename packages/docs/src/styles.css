@@ -5,6 +5,14 @@
  * Dark theme is toggled via the html.dark class.
  */
 @import "tailwindcss";
+@import "@prismshadow/penguin-ui/site.css";
+
+@source "../../ui/src/components/site";
+@source "../../ui/src/components/overlays/dropdown";
+@source "../../ui/src/components/overlays/menu";
+@source "../../ui/src/components/overlays/menu-panel";
+@source "../../ui/src/components/layout/fold";
+@source "../../ui/src/components/icons/marks";
 
 /* Dark theme toggled via the html.dark class (Tailwind 4 custom variant). */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -62,10 +70,6 @@
   summary:focus-visible {
     outline: 3px solid rgb(107 114 128 / 0.4);
     outline-offset: 2px;
-  }
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
-    cursor: pointer;
   }
   ::selection {
     background: rgb(0 0 0 / 0.1);
@@ -229,7 +233,7 @@ html.dark .md-body .shiki span {
   @apply font-medium;
 }
 .md-body details.callout > summary {
-  @apply -mx-1 cursor-pointer list-none rounded px-1 select-none;
+  @apply -mx-1 list-none rounded px-1 select-none;
 }
 .md-body details.callout > summary::-webkit-details-marker {
   display: none;
@@ -267,7 +271,7 @@ html.dark .md-body .shiki span {
   @apply flex flex-wrap gap-1 border-b border-gray-200 bg-gray-50 px-1.5 pt-1.5 dark:border-gray-800 dark:bg-gray-900;
 }
 .md-body .md-tabs-strip button {
-  @apply cursor-pointer rounded-t-md px-2.5 py-1 text-[13px] text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100;
+  @apply rounded-t-md px-2.5 py-1 text-[13px] text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100;
   border-bottom: 2px solid transparent;
 }
 .md-body .md-tabs-strip button[aria-selected="true"] {

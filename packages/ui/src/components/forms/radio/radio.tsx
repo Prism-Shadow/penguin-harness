@@ -81,7 +81,7 @@ export function Radio({
   return (
     <label
       className={`inline-flex items-start gap-1.5 ${sizeTextClass[size]} ${
-        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+        disabled ? "cursor-not-allowed opacity-60" : ""
       } ${className}`}
     >
       {/* One line tall, whatever the rung: the disc centres on the label's first line. */}

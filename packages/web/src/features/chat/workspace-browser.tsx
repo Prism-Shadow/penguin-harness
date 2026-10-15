@@ -1943,7 +1943,7 @@ export function WorkspaceBrowser({
               spinner. */}
           <Tooltip label={uploadLabel} placement="bottom" className="shrink-0">
             <label
-              className={`${iconActionClass} cursor-pointer focus-within:ring-2 focus-within:ring-gray-400/30`}
+              className={`${iconActionClass} focus-within:ring-2 focus-within:ring-gray-400/30`}
             >
               <HiddenFileInput
                 multiple

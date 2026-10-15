@@ -192,7 +192,7 @@ export function TraceImportRow() {
             so it carries their sm metrics rather than Button's md ones. */}
         <label
           className={`inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[var(--ui-radius-control)] border border-line px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
-            busy ? "pointer-events-none opacity-60" : "cursor-pointer hover:bg-surface-muted"
+            busy ? "pointer-events-none opacity-60" : "hover:bg-surface-muted"
           }`}
         >
           <HiddenFileInput accept=".jsonl" disabled={busy} onChange={onPickFile} />

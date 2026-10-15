@@ -87,13 +87,6 @@
   .overflow-y-scroll {
     position: relative;
   }
-  /* Consistent pointer cursor for clickable buttons: Tailwind 4 preflight reverted button to the browser's
-     default arrow cursor (v3 used pointer); disabled state keeps the default. Explicit cursor-* utility
-     classes (e.g. cursor-zoom-in) take precedence. */
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
-    cursor: pointer;
-  }
   /* Hide the native scrollbar (replaced with custom controls, e.g. zoom/pan sliders in trace viewing). */
   .no-scrollbar {
     scrollbar-width: none;

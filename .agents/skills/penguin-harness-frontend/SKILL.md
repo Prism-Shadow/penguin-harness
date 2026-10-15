@@ -1,9 +1,14 @@
 ---
 name: penguin-harness-frontend
-description: Use when changing the PenguinHarness Web App (`packages/web`) or the shared UI package — adding or restyling any UI, picking a status colour, adding an icon, laying out a row or a form field, deciding when a control commits and how a form saves, writing user-facing copy, building a popup or a hover-revealed panel, or making anything open, fold, resize or maximize. Covers the semantic tone tokens, the icon size/stroke/gap scale, the settings commit model (switches commit, forms save, leaving asks), the semantic-versus-formatting rule and the hover "?", the two-dictionary i18n contract, the portal-panel pattern, motion (every disclosure folds through `Fold`, sizes move through the theme's layout motion), where a gradient may go (only where it has a job: data, a state, or one deliberate emphasis), and the recent owner decisions on favorites, maximized surfaces, the collapsed rail and example cards.
+description: >-
+  Use when changing PenguinHarness frontend code: the Web App (packages/web), landing
+  page (packages/landing), docs (packages/docs), component gallery (packages/ui-gallery),
+  or shared UI package (packages/ui). Always inspect, reuse and extend shared UI first.
+  Covers control behavior and cursors, theme tokens, icons, settings commits,
+  bilingual copy, popups, layout, motion, gradients, navigation and responsive forms.
 ---
 
-# Web App frontend conventions
+# Frontend conventions
 
 `packages/web` is React 19 + Vite + Tailwind CSS 4, with no `cn`/`clsx`, no `tailwind-merge`, and no
 variants library. Classes are composed with template literals, and a component's variants are a
@@ -12,6 +17,45 @@ that shape; do not introduce a styling dependency.
 
 This file records the decisions that already exist so they are not re-litigated per PR. Read
 `penguin-harness-dev` for the repo-wide contract (verification chain, changelog, two-repo layout).
+
+## Start in the shared UI package
+
+Before adding or changing a control on any frontend, inspect `packages/ui/src/index.ts`,
+`packages/ui/src/site.ts` and the relevant component under `packages/ui/src/components/`. Reuse its component, hook or class helper. When it
+lacks the behavior needed by the app, extend that shared component and update its callers. A
+reusable interaction or visual rule belongs in `packages/ui`; each host supplies domain data,
+routing, translated labels, preference persistence and actions. Do not copy a shared control into a feature or patch its defaults in
+`packages/web/src/styles.css`.
+
+Extract a common component or hook when the same interaction appears in multiple places. Keep the
+abstraction at the concrete behavior being shared; a one-off business rule stays with its feature.
+During review, check for duplicated markup, page-local overrides and call sites that bypass the
+shared component. Verify the shared change in the gallery and in a representative host surface.
+
+### Landing, docs and gallery chrome
+
+Use `@prismshadow/penguin-ui/site` for the shared `SiteHeader`, `SiteNavLinks`,
+`SiteLanguageMenu`, `SiteThemeToggle`, `SiteGitHubLink` and site icons. Import
+`@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors. This entry is
+independent of the app renderer and full theme; public sites do not need the app's bundled fonts
+or Markdown renderer just to render navigation. Their wrappers only adapt routes, labels and
+preferences. Do not restore copied navbar markup, language-menu event handlers or theme cycles.
+
+Public-site controls keep their fixed visual identity through the gallery's theme changes.
+Their shared recipes live in `packages/ui/src/site.css`; landing content, marketing sections and
+docs prose retain their own layout. Reuse app primitives underneath (the language picker uses
+`Dropdown` and `MenuRadioItem`, mobile disclosure uses `Fold`). Native title hints remain allowed
+on this public-site chrome, which does not mount the app's `TooltipLayer`. The app conventions
+below still apply to app-themed controls and previews.
+
+### Cursors belong to the control
+
+`packages/ui/src/cursors.css`, imported by both `theme.css` and `site.css`, owns the arrow cursor for buttons, tabs, menus, option and tree rows,
+labels and form selectors. `NavRow` and `RailItem` also keep the arrow when rendered through a
+router link. Public-site navigation uses the same arrow policy. Use hover ink or fill to signal these controls; do not add `cursor-pointer` merely
+because something is clickable. Content links and `Button variant="link"` keep the hand. Text
+entry, drag, resize, zoom and disabled controls keep their operation-specific cursors. Custom
+interactive cards and table rows use their shared UI component's cursor behavior.
 
 ## Status colour: pick a tone, never a palette class
 

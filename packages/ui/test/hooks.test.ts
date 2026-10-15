@@ -99,6 +99,8 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
     "ComposerCard",
     // A separate wallpaper backdrop keeps filtering off the navigation column.
     "NavigationBackdrop",
+    // The public-site header floats above scrolling content; site.css fixes its appearance.
+    "SiteHeader",
     "SlashMenu",
     "Modal",
     "Dropdown",

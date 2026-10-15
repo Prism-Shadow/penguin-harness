@@ -25,6 +25,7 @@
  */
 
 @import "./wallpaper.css";
+@import "./cursors.css";
 
 /* Dark mode is the `dark` class on <html>, not the media query: the user can pin either mode. */
 @custom-variant dark (&:where(.dark, .dark *));

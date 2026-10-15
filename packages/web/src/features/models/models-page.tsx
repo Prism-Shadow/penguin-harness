@@ -3779,7 +3779,7 @@ function ModelDialog({
                 trigger drop onto its own line inside a half-width cell. */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <label
-                className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+                className={`inline-flex items-center gap-2 ${canEdit ? "" : "cursor-not-allowed"}`}
               >
                 <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
                   {S.models.vision}
@@ -3821,7 +3821,7 @@ function ModelDialog({
         {showFastMode && (
           <div className={toggleCellClass}>
             <label
-              className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+              className={`inline-flex items-center gap-2 ${canEdit ? "" : "cursor-not-allowed"}`}
               data-tooltip={S.models.fastModeHint}
               data-tooltip-extra
             >

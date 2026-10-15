@@ -54,8 +54,8 @@ const POLICY: DeslopPolicy = {
   // Rule 1: the chevron rotates; the sheet, the launcher fan and the drawer move.
   transformMotion: ["chevron.tsx", "sheet.tsx", "launcher.tsx", "drawer.tsx"],
   // Rule 1: the `data-layout-motion` rule in the theme foundation transitions a width or a grid
-  // row on the theme's layout tokens; a component only sets the attribute.
-  layoutMotion: ["theme.css"],
+  // row on the theme's layout tokens; site.css owns the public header pill and mobile fold.
+  layoutMotion: ["theme.css", "site.css"],
   // Rule 3: keyframe-driven entrances longer than 200 ms. None in the package yet: the presence,
   // reveal and layout rules in theme.css read their own tokens (`--ui-dur-enter`, …), which the
   // rule does not judge — it holds STATE transitions (hover, press, selection) to 120–200 ms.

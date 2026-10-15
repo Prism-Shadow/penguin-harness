@@ -21,7 +21,16 @@
     "./boot": "./src/boot.ts",
     "./highlighter": "./src/components/content/code-block/highlighter-core.ts",
     "./fonts-credits": "./src/fonts/credits.ts",
-    "./testing": "./src/testing/index.ts"
+    "./testing": "./src/testing/index.ts",
+    "./site": "./src/site.ts",
+    "./site.css": {
+      "style": "./src/site.css",
+      "default": "./src/site.css"
+    },
+    "./cursors.css": {
+      "style": "./src/cursors.css",
+      "default": "./src/cursors.css"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

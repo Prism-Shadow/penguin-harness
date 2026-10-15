@@ -201,7 +201,7 @@ function EvaluationRow({
   currency: Currency;
 }) {
   return (
-    <TableRow onClick={onOpen} className="cursor-pointer">
+    <TableRow onClick={onOpen}>
       <TableCell>
         {/* The row is what a mouse clicks, and this is the same target for a keyboard: a table
             row cannot be a button, so the cell that names the record carries the real one. */}

@@ -200,6 +200,8 @@ export const ICONS = {
   zap: "M13 2 3 14h9l-1 8 10-12h-9l1-8z",
   /** A sun: a disc and eight rays. */
   sun: "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4l1.4-1.4",
+  /** A crescent moon: the dark appearance option. */
+  moon: "M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z",
   /** Half a sun rising over the horizon, its rays out. */
   sunrise: "M12 2v3M4.9 5.9l2.1 2.1M2 13h3M19 13h3M17 8l2.1-2.1M6 18a6 6 0 0 1 12 0M2 22h20",
 

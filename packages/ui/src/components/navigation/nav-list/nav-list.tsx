@@ -151,7 +151,7 @@ export function navRowClass({
         : STATE[surface].rest;
   // The arriving fill eases in slower than the departing one leaves (see the module comment).
   const pace = active && !disabled ? "duration-200" : "duration-150";
-  return `flex ${width} items-center whitespace-nowrap rounded-md text-left transition-colors ${pace} ${DENSITY[density]} ${state}`;
+  return `${disabled ? "" : "cursor-default "}flex ${width} items-center whitespace-nowrap rounded-md text-left transition-colors ${pace} ${DENSITY[density]} ${state}`;
 }
 
 /**

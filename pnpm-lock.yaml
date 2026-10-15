@@ -399,6 +399,9 @@ importers:
 
   packages/docs:
     dependencies:
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../ui
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -461,6 +464,9 @@ importers:
 
   packages/landing:
     dependencies:
+      '@prismshadow/penguin-ui':
+        specifier: workspace:*
+        version: link:../ui
       react:
         specifier: ^19.1.0
         version: 19.2.7
