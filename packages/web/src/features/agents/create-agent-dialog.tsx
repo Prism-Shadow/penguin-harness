@@ -38,6 +38,7 @@ import {
   ICONS,
   InfoPopover,
   Input,
+  MenuSelectBody,
   Modal,
   Textarea,
   discardUnsaved,
@@ -54,8 +55,6 @@ import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { StdioDisclosure } from "../plugins/plugin-mcp";
-import { MachinePicker } from "../machines/machine-picker";
-import type { MachineChoice } from "../machines/machine-picker";
 import { stdioServers } from "../plugins/plugin-status";
 import {
   SNAPSHOT_ACCEPT,
@@ -78,6 +77,12 @@ export function pluginPickItems(plugins: readonly PluginItem[]): PluginPickItem[
 
 /** The location picker's value for this server: a machine id is never empty. */
 const HERE = "";
+
+/** A connected machine the Agent can be created on: its id, and its SSH alias to show. */
+export interface LocationChoice {
+  value: string;
+  label: string;
+}
 
 /** The dialog's form: what Create sends, as typed and picked. */
 interface CreateAgentDraft {
@@ -142,7 +147,7 @@ export interface CreateAgentDialogProps {
   /** Why the library could not be read, in place of the field's hint. */
   libraryError: string | null;
   /** The connected machines an Agent can be created on; empty (the field hidden) when none is. */
-  machines?: readonly MachineChoice[];
+  machines?: readonly LocationChoice[];
   onClose: () => void;
   /** The Agent was created on `machineId` (null: this server): the page closes the dialog and goes to it. */
   onCreated: (agentId: string, machineId: string | null) => Promise<void>;
@@ -209,6 +214,7 @@ function CreateAgentForm({
   const [busy, setBusy] = useState(false);
   const requestClose = useGuardedClose(onClose, form.scope, { locked: busy });
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
   /** The Skills the picked directory carries (null while none is picked or it is being read). */
   const [dirSkills, setDirSkills] = useState<SkillMetadataItem[] | null>(null);
   const [dirSkillsError, setDirSkillsError] = useState<string | null>(null);
@@ -365,19 +371,31 @@ function CreateAgentForm({
                   {S.agent.createLocationInfo}
                 </InfoPopover>
               </div>
-              <MachinePicker
-                aria-label={S.agent.createLocation}
-                choices={[{ value: HERE, label: S.agent.createLocationHere }, ...machines]}
-                value={location ?? HERE}
-                onChange={(next) =>
-                  form.patch({
-                    location: next === HERE ? null : next,
-                    plugins: [],
-                    skillsDir: "",
-                    dirSkills: [],
-                  })
-                }
-              />
+              {/* The dialog's own dropdown, as wide as the Plugins field's, over a one-choice menu. */}
+              <FormPicker
+                size="sm"
+                open={locationOpen}
+                setOpen={setLocationOpen}
+                label={location === null ? S.agent.createLocationHere : (machineLabel ?? location)}
+                ariaLabel={S.agent.createLocation}
+                disabled={busy}
+                menuClass="w-[26rem]"
+              >
+                <MenuSelectBody
+                  options={[{ value: HERE, label: S.agent.createLocationHere }, ...machines]}
+                  value={location ?? HERE}
+                  onPick={(next) => {
+                    setLocationOpen(false);
+                    if (next === (location ?? HERE)) return;
+                    form.patch({
+                      location: next === HERE ? null : next,
+                      plugins: [],
+                      skillsDir: "",
+                      dirSkills: [],
+                    });
+                  }}
+                />
+              </FormPicker>
             </div>
           )}
           {/* The name comes first and the id is derived from it: an id is the harder half to

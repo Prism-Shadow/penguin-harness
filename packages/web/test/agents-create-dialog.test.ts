@@ -26,9 +26,8 @@ import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { CreateAgentDialog } from "../src/features/agents/create-agent-dialog";
-import type { PluginPickItem } from "../src/features/agents/create-agent-dialog";
+import type { LocationChoice, PluginPickItem } from "../src/features/agents/create-agent-dialog";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
-import type { MachineChoice } from "../src/features/machines/machine-picker";
 import {
   PROJECT_ID,
   agentServer,
@@ -92,7 +91,7 @@ function Harness({
   machines = [],
 }: {
   library?: PluginPickItem[];
-  machines?: MachineChoice[];
+  machines?: LocationChoice[];
 }) {
   const [open, setOpen] = useState(true);
   const navigate = useNavigate();
@@ -110,7 +109,7 @@ function Harness({
   });
 }
 
-async function openCreate(library: PluginPickItem[] = [], machines: MachineChoice[] = []) {
+async function openCreate(library: PluginPickItem[] = [], machines: LocationChoice[] = []) {
   const server = agentServer(undefined, { machines: [GPU_MACHINE] });
   const router = await mountAgentApp(h(Harness, { library, machines }), {
     route: "/create",
@@ -120,14 +119,15 @@ async function openCreate(library: PluginPickItem[] = [], machines: MachineChoic
   return { server, router };
 }
 
-const GPU_CHOICE: MachineChoice = { value: "gpu1", label: "gpu-box" };
+const GPU_CHOICE: LocationChoice = { value: "gpu1", label: "gpu-box" };
 
-/** Picks `label` in the dialog's location picker. */
+/** Picks `label` in the dialog's Location dropdown. */
 async function pickLocation(label: string) {
-  await click(buttonIn(topDialog(), `${en.agent.createLocation}: ${en.agent.createLocationHere}`));
-  const option = [
-    ...document.querySelectorAll('[role="option"] button, [role="option"] [role="menuitem"]'),
-  ].find((o) => o.textContent?.includes(label));
+  await click(buttonIn(topDialog(), en.agent.createLocation));
+  // The menu is portaled out of the dialog; its rows are the dropdown's options.
+  const option = [...document.querySelectorAll("button")].find(
+    (b) => !topDialog().contains(b) && b.textContent?.trim() === label,
+  );
   if (option === undefined) throw new Error(`no location ${label}`);
   await click(option);
 }
