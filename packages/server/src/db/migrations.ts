@@ -679,10 +679,10 @@ export const MIGRATIONS: readonly Migration[] = [
   {
     version: 19,
     name: "machines-adopted-at",
-    // When this server adopted a machine (first heard its id): the Sessions that machine held
+    // When this server adopted a machine (first recorded it): the Sessions that machine held
     // before then read as CLI tasks through this server (session-sources.ts sourceSeenBy). A
-    // machine adopted before this column has none, and the rule does not apply to it — nothing
-    // on either side is rewritten. Swap-safe: a pushed platform boots against the runtime's
+    // machine recorded before this column has none and never gets one, so the rule does not apply
+    // to it (user decision, 2026-10-15) — nothing on either side is rewritten. Swap-safe: a pushed platform boots against the runtime's
     // already-open database, so the column has to arrive by a migration.
     swapSafe: true,
     up(db) {

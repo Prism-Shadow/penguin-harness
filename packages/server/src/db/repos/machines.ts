@@ -28,10 +28,10 @@ export interface MachineRow {
   /** What the install found the machine to be; null until one has. The status probe speaks that dialect. */
   platform: "linux" | "darwin" | "win32" | null;
   /**
-   * When this server adopted the machine: the first time it heard the machine's id at this
-   * address, again when the address answers with another id. The Sessions that machine held
-   * before then read as CLI tasks through this server (runtime/session-sources.ts). Null for a
-   * machine adopted before the time was recorded, which the rule leaves alone.
+   * When this server adopted the machine: when it first recorded it at this address, again when
+   * the address answers with another machine's id. The Sessions that machine held before then
+   * read as CLI tasks through this server (runtime/session-sources.ts). Null for a machine
+   * recorded before the time was kept, which never gets one and which the rule leaves alone.
    */
   adoptedAt: string | null;
 }

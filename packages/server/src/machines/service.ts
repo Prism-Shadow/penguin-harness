@@ -553,7 +553,7 @@ export class MachinesService {
     const held = await this.#effects.hold(target);
     if (!held.ok) return held;
     if (this.repo.get(address)?.sessionPid !== held.session.pid) {
-      this.repo.patch(address, { sessionPid: held.session.pid });
+      this.#record(address, { sessionPid: held.session.pid });
     }
     return held;
   }
@@ -1105,28 +1105,41 @@ export class MachinesService {
    * `sessionPid` deliberately survives: it names the ssh child THIS server holds, which is
    * the one that just answered, and forgetting it would leave a process nothing can close.
    *
-   * Either way this is the moment this server adopts the machine at that address, and the time
-   * is kept: nothing could have been created there through this server before it knew whom to
-   * ask, so the Sessions that machine already held are its own (runtime/session-sources.ts
-   * sourceSeenBy reads them as CLI tasks for this server's requests, see `proxyTarget`).
+   * A different machine is also newly adopted: its adoption time is now (see `#record`). The
+   * first id a machine gives is not an adoption — the row already says when this server took
+   * the machine up, or that it took it up before adoption times were kept, and either stays.
    */
   #rememberMachineId(address: string, machineId: string | null): void {
     if (machineId === null) return;
     const known = this.repo.get(address)?.machineId ?? null;
     if (known === machineId) return;
-    const adoptedAt = this.#effects.now().toISOString();
     if (known === null) {
-      this.repo.patch(address, { machineId, adoptedAt });
+      this.#record(address, { machineId });
       return;
     }
-    this.repo.patch(address, {
+    this.#record(address, {
       machineId,
       version: null,
       installedAt: null,
       remotePort: null,
       platform: null,
-      adoptedAt,
+      adoptedAt: this.#effects.now().toISOString(),
     });
+  }
+
+  /**
+   * Writes what this server learned about a machine. The write that creates its row is the moment
+   * this server adopted the machine, and the time is kept with it: nothing could have been
+   * created there through this server before, so the Sessions that machine already held are its
+   * own (runtime/session-sources.ts sourceSeenBy reads them as CLI tasks for this server's
+   * requests, see `proxyTarget`). A row from before adoption times were kept has none, and no
+   * later write gives it one: the Sessions on such a machine stay as they were (user decision,
+   * 2026-10-15).
+   */
+  #record(address: string, patch: Parameters<MachinesRepo["patch"]>[1]): void {
+    const adoption =
+      this.repo.get(address) === null ? { adoptedAt: this.#effects.now().toISOString() } : {};
+    this.repo.patch(address, { ...adoption, ...patch });
   }
 
   /**
@@ -1447,7 +1460,7 @@ export class MachinesService {
     }
     // What the machine is, before anything below asks it again: the hand-over and the
     // restart both probe, and they should already speak its dialect.
-    this.repo.patch(address, { platform: outcome.identity.platform });
+    this.#record(address, { platform: outcome.identity.platform });
     // A server that carries no pushed state of its own — a packaged install, a release
     // from a tarball — has nothing to hand over: what is on that machine is what this
     // server would have sent. The hand-over is for the machine whose PROCESS may be
@@ -1506,7 +1519,7 @@ export class MachinesService {
     // The files landed whatever the restart did: the record says what is on its disk, and
     // membership says whose machine it is. A restart that failed is the job's outcome, not
     // a footnote in its log — the page shows it, with Restart as the next step.
-    this.repo.patch(address, { version, installedAt: this.#effects.now().toISOString() });
+    this.#record(address, { version, installedAt: this.#effects.now().toISOString() });
     // The Project that asked for the install is the Project that gets the machine.
     this.#setMember(projectId, address, true);
     if (!restarted.ok) {
@@ -1853,7 +1866,7 @@ export class MachinesService {
         ...this.#sshCause(target, connection.detail),
       };
     }
-    this.repo.patch(address, { remotePort });
+    this.#record(address, { remotePort });
     say(`Connected; its server is on port ${remotePort} over there.`);
     // An Agent started over there resolves its model, its command policy and its defaults
     // against THAT machine's config, so a machine without ours is connected and unusable.
@@ -1943,7 +1956,7 @@ export class MachinesService {
     const handOver = () => this.#handOverBuild(address, target, expected, tell);
     const outcome = await (this.#checkout?.holding(expected, handOver) ?? handOver());
     if (outcome.kind === "upgraded" && outcome.persisted) {
-      this.repo.patch(address, {
+      this.#record(address, {
         version: expected.version,
         installedAt: this.#effects.now().toISOString(),
       });
@@ -1996,7 +2009,7 @@ export class MachinesService {
   disconnect(address: string): void {
     // The record first: with the mark gone, nothing below reads as a machine to bring back.
     if (this.repo.get(address) !== null) {
-      this.repo.patch(address, { sessionPid: null });
+      this.#record(address, { sessionPid: null });
     }
     this.#settle(address);
     this.#relay.stop(address);
@@ -2537,7 +2550,7 @@ export class MachinesService {
     // and a machine that was merely installed on is not made a held one by being brought
     // forward at boot — only a connect asks for that.
     const port = probed.state.port;
-    this.repo.patch(address, { remotePort: port });
+    this.#record(address, { remotePort: port });
     const session = await this.#sessionOn(target);
     if (!("cookie" in session)) return { kind: "failed", step: "sign in", detail: session.detail };
     return this.#effects.upgrade({
@@ -2594,7 +2607,7 @@ export class MachinesService {
     // It is a different process now, and possibly one with an identity it did not have a
     // moment ago: a machine mints its id when a server that mints one starts there.
     await this.#refreshStatus(address, target);
-    this.repo.patch(address, { remotePort: port });
+    this.#record(address, { remotePort: port });
     const machineId = this.repo.get(address)?.machineId ?? null;
     if (machineId !== null && this.#liveSession(address) !== null && !this.#stopped) {
       this.#relay.start(address, machineId);
@@ -2777,7 +2790,7 @@ export class MachinesService {
     for (const line of said.split("\n")) if (line.trim() !== "") say(line.trim());
     // What this server knew about the program there is gone with it. The machine's own id lives
     // in its data directory: kept with the data, forgotten with it.
-    this.repo.patch(address, {
+    this.#record(address, {
       version: null,
       installedAt: null,
       remotePort: null,
@@ -2921,7 +2934,7 @@ export class MachinesService {
         // Recorded only when the machine also wrote it down: a swap it could not persist is
         // gone at its next restart, and a record of it would outlive the thing it records.
         if (outcome.kind === "upgraded" && outcome.persisted) {
-          this.repo.patch(address, {
+          this.#record(address, {
             version: plan.version,
             installedAt: this.#effects.now().toISOString(),
           });

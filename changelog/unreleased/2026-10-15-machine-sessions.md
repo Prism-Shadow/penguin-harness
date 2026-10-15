@@ -29,10 +29,10 @@ a machine already held when this server adopted it are filed away as CLI tasks.
   each machine group marked `[SSH: alias]`; unarchive and delete act on the machine, and a machine
   that could not be read is named above the list. Archive is offered again on machine rows in the
   sidebar.
-- This server records when it adopted a machine (`machines.adopted_at`, migration 19, written the
-  first time it hears the machine's id) and sends it as `X-Penguin-Adopted-At` on every proxied or
-  own call. The machine reads Sessions created before that time — a person's, or one whose source
+- This server records when it adopted a machine (`machines.adopted_at`, migration 19, written when
+  it first records the machine, and again when the alias answers with another machine's id) and
+  sends it as `X-Penguin-Adopted-At` on every proxied or own call. The machine reads Sessions created before that time — a person's, or one whose source
   is not resolved — as source `cli` for that request, so they appear archived with the CLI pill until
   unarchived. Nothing stored on either side is rewritten, and the machine's own pages and CLI see
-  what they saw before. Machines adopted before this change have no adoption time, and the rule does
-  not apply to them.
+  what they saw before. Machines recorded before this change keep no adoption time and nothing on
+  them is archived; no later connection or sync gives them one.
