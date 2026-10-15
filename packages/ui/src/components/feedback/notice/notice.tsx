@@ -11,12 +11,20 @@
  *   actions at its end (a page's to-do, a template missing its placeholder).
  * - `inline` — a compact box inside the content (a form's auth failure, a refresh that failed
  *   while the old data stays on screen, with its retry).
+ * - `banner` — a strip laid edge to edge across a column (the initial-password reminder): one
+ *   centred line, its action an underlined word right after the sentence, and the close cross at
+ *   the strip's far edge, out of the flow so the sentence stays centred (a labelled dismiss names
+ *   the cross; a title and a retry have no place in one line). A theme that draws notices as
+ *   cards insets it (`data-banner`).
  *
  * The parts are marked with the hook's slots: the leading mark in `icon` (a theme that draws its
  * own tone mark hides it, so the mark never shows twice), an optional `title`, the `body`, and the
  * `actions`. Three action slots, in reading order: `dismiss` (a clearing action with a label of
  * its own, or, with none, the close cross named by the interface's "Dismiss"), `retry`, then the
- * affirmative `action` last — where every dialog in the app puts its confirm.
+ * affirmative `action` last — where every dialog in the app puts its confirm. The close cross is
+ * flat and takes the notice's own ink (`CloseButton` `ink="inherit"`): it closes this notice, so
+ * it reads as part of it, never as a grey control laid on top. A dismissal that should outlive the
+ * page is the caller's to keep; the notice only asks.
  */
 import type { ReactNode } from "react";
 import { useUiStrings } from "../../../strings";
@@ -27,7 +35,7 @@ import { ICON_GAP } from "../../../icon-scale";
 import { NoticeStrip } from "./notice-strip";
 import type { NoticeStripTone } from "./notice-strip";
 
-export type NoticeVariant = "strip" | "callout" | "inline";
+export type NoticeVariant = "strip" | "callout" | "inline" | "banner";
 
 /** A button a notice offers. */
 export interface NoticeAction {
@@ -61,6 +69,9 @@ const VARIANT: Readonly<Record<NoticeVariant, string>> = {
     "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border px-4 py-3 text-xs",
   inline:
     "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs",
+  // Symmetric room for the cross at the far edge keeps the centred sentence clear of it.
+  banner:
+    "relative flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b px-8 py-1.5 text-xs",
 };
 
 export function Notice({
@@ -95,6 +106,49 @@ export function Notice({
   const strings = useUiStrings();
   const labelledDismiss = dismiss !== undefined && dismiss.label !== undefined;
   const hasActions = dismiss !== undefined || retry !== undefined || action !== undefined;
+  // A banner's dismissal is always the cross at its far edge, named by the label it was given.
+  const cross =
+    dismiss !== undefined && (!labelledDismiss || variant === "banner") ? (
+      <CloseButton
+        ink="inherit"
+        onClose={dismiss.onClick}
+        label={dismiss.ariaLabel ?? dismiss.label ?? strings.dismiss}
+        disabled={dismiss.disabled}
+      />
+    ) : null;
+  if (variant === "banner") {
+    return (
+      <NoticeStrip
+        tone={tone}
+        banner
+        {...(role !== undefined ? { role } : {})}
+        className={`${VARIANT.banner} ${className}`}
+      >
+        {glyph !== undefined && (
+          <span data-slot="icon" aria-hidden className="flex shrink-0">
+            {typeof glyph === "string" ? <GlyphIcon d={glyph} /> : glyph}
+          </span>
+        )}
+        <span data-slot="body">{children}</span>
+        {action !== undefined && (
+          <button
+            type="button"
+            disabled={action.disabled === true || action.busy === true}
+            {...(action.ariaLabel !== undefined ? { "aria-label": action.ariaLabel } : {})}
+            onClick={action.onClick}
+            className="shrink-0 whitespace-nowrap font-medium underline underline-offset-2 opacity-90 transition-opacity duration-150 hover:opacity-100"
+          >
+            {action.label}
+          </button>
+        )}
+        {cross !== null && (
+          <span data-slot="actions" className="absolute inset-y-0 right-1.5 flex items-center">
+            {cross}
+          </span>
+        )}
+      </NoticeStrip>
+    );
+  }
   return (
     <NoticeStrip
       tone={tone}
@@ -130,13 +184,7 @@ export function Notice({
           )}
           {retry !== undefined && <NoticeButton {...retry} />}
           {action !== undefined && <NoticeButton {...action} primary />}
-          {dismiss !== undefined && !labelledDismiss && (
-            <CloseButton
-              onClose={dismiss.onClick}
-              label={dismiss.ariaLabel ?? strings.dismiss}
-              disabled={dismiss.disabled}
-            />
-          )}
+          {cross}
         </div>
       )}
     </NoticeStrip>

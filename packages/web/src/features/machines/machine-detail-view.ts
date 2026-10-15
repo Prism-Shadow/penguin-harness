@@ -448,6 +448,17 @@ export function configSyncView(
   };
 }
 
+/**
+ * What the "keys from this server's environment" notice is about, one item per model value the
+ * sync could not carry (`projectId/provider/modelId:VARIABLE`): the set its dismissal is kept
+ * against, so a model that newly takes a value from the environment brings it back.
+ */
+export function envOnlyItems(machine: MachineInfo): string[] {
+  return (machine.configSync?.envOnly ?? []).map(
+    (one) => `${one.projectId}/${one.provider}/${one.modelId}:${one.variable}`,
+  );
+}
+
 /** The Reconnecting section: how long, which attempt, when the next, why the last one failed. */
 export interface ReconnectView {
   /** How long the streak has lasted, in words. */

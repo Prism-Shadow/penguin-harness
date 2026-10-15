@@ -694,12 +694,21 @@ export const en: GalleryStrings = {
       },
       action: "View",
       dismiss: "Dismiss",
-      variants: "Three variants",
+      variants: "Four variants",
       variantNames: {
         strip: "Strip: across a panel",
         callout: "Callout: a block of its own",
         inline: "Inline: inside the content",
+        banner: "Banner: across a column, one centred line, the cross at the far edge",
       },
+      bannerText: "This account still uses its initial password. Change it soon.",
+      bannerAction: "Change it now",
+      closable: "Closable notices",
+      reopen: "Show again",
+      closableHint:
+        "The cross is flat and takes the notice's own ink; remembering a close across pages is the caller's.",
+      closableText:
+        "Model keys from this server's environment cannot be synced to this machine. Configure the model keys there by hand first.",
       retry: "Retry",
       calloutTitle: "The template has no memory placeholder",
       calloutBody: "Insert the placeholder into the prompt template to inject memory.",
