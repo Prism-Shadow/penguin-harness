@@ -85,6 +85,15 @@
     color: var(--ui-fg);
   }
 }
+/* Text still streaming in sits on the image exactly as it will once settled. A layer a theme
+   draws on the stream host (Frost's veil over the newest lines) is painted in the page's colour,
+   and over an image that colour is a band laid across the picture; there is no one colour behind
+   the text to fade it into. The host draws no layer of its own here, as under reduced motion: the
+   words keep their pace and arrive at full ink. */
+.ui-shell[data-wallpaper] .ui-stream::before,
+.ui-shell[data-wallpaper] .ui-stream::after {
+  display: none;
+}
 /* The lifted dock owns an opaque canvas and a copy of the viewport-aligned image. Its cards
    reveal that image, never the conversation underneath, throughout the resize animation. */
 .ui-shell[data-wallpaper] [data-fullscreen] > [data-dock-content] {

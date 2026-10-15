@@ -190,7 +190,9 @@
  * on `done` the veil eases away over the reveal duration instead of snapping off. Console draws
  * the caret as a solid block cursor in the body ink, a mono cell wide, blinking in steps, and
  * runs a last paragraph in so the cursor follows its last character; nothing else moves. Under
- * reduced motion the caret holds still and Frost draws no veil.
+ * reduced motion the caret holds still and Frost draws no veil. Over a shell wallpaper no theme
+ * draws a layer on the host either (`wallpaper.css`): a veil in the page's colour would lay a
+ * band across the image while the text streams, so the words arrive at full ink on the picture.
  *
  * `ui-glyph` is how the themes draw icons in their own styles without a component knowing which
  * runs. Its hosts are the two icon renderers: `GlyphIcon` for a registry glyph (a path the
