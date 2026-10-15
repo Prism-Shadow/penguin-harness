@@ -15,6 +15,6 @@ The web dialog stopped waiting for a restart when the shell reported installatio
 
 ## Details
 
-The transition candidate selected EVSign's `-cert 2021` certificate. Build acceptance required valid NaisNet Technology Co., Ltd. signatures and timestamps for the application, elevation helper, NSIS uninstaller and final installer. Final acceptance checked update metadata, regenerated the blockmap for comparison and ran the legacy publisher verifier against the installer. The application identity, version and update sources were preserved.
+The transition candidate selected EVSign's `-cert 2023` certificate. Build acceptance required valid NaisNet Technology Co., Ltd. signatures and timestamps for the application, elevation helper, NSIS uninstaller and final installer. Final acceptance checked update metadata, regenerated the blockmap for comparison and ran the legacy publisher verifier against the installer. The application identity, version and update sources were preserved.
 
 Update origin trust relies primarily on the GitHub/OSS distribution channels and their account security after removing publisher matching. An ordinary hash does not independently authenticate the source. No signed-manifest system was introduced.

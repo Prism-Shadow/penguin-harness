@@ -1,6 +1,6 @@
 /**
  * Transition-only EVSign entry point; common failures and targets live in windows-signing.
- * - A timestamped NaisNet signature passes with the 2021 certificate selector.
+ * - A timestamped NaisNet signature passes with the 2023 certificate selector.
  * - A changed CN or organisation stops packaging even after CLI success.
  * - Native verification failure propagates without exposing its output.
  */
@@ -49,12 +49,12 @@ afterEach(async () => {
 });
 
 describe("transition build signing", () => {
-  it("selects the 2021 certificate and independently accepts the NaisNet uninstaller", async () => {
+  it("selects the 2023 certificate and independently accepts the NaisNet uninstaller", async () => {
     const { target, client, spawn, output } = await fixture();
     await evsign({ path: target, hash: "sha256" });
     expect(spawn).toHaveBeenCalledWith(
       client,
-      [target, "-key", "test-only-key", "-sha256", "-cert", "2021"],
+      [target, "-key", "test-only-key", "-sha256", "-cert", "2023"],
       { stdio: "ignore", windowsHide: true },
     );
     expect(output).toHaveBeenCalledOnce();
