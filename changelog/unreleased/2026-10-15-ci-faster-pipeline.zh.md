@@ -15,5 +15,5 @@
 - Windows 的服务端分片不再重复生成接口表：准备步骤里的服务端构建刚刚写过它。
 - 完整运行时，浏览器与站点包（`web`、`ui`、`ui-gallery`、`docs`、`landing`）在 macOS 与 Windows 上单独成为 `sites` 分片，不再放在 `rest` 里。
 - 运行时（runtime）任务把 electron-builder 下载的文件保存在 Actions 缓存中。
-- 服务端的 Vitest 进程池固定为核数减一、最多三个 worker，`minWorkers` 与 `maxWorkers` 相等。此前超出最小数量的 worker 会在空闲时被终止，可能在所有测试文件都通过之后以 “Terminating worker thread” 让整次运行失败。
+- 服务端的 Vitest 进程池保持两个 worker，并令 `minWorkers` 与 `maxWorkers` 相等。此前超出最小数量的 worker 会在空闲时被终止，可能在所有测试文件都通过之后以 “Terminating worker thread” 让整次运行失败。
 - `penguin-harness-dev` skill 新增一节，说明 CI 时间是成本：Windows runner 上的单测时限、夹具规模、共享准备、新增分片的代价，以及检查 PR 的任务耗时。
