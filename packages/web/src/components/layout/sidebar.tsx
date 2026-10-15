@@ -2448,10 +2448,12 @@ export function Sidebar({
                       onToggle={() => toggleGroup(group.key)}
                       // The folder opens and closes with the group.
                       glyph={collapsed ? ICONS.folder : ICONS.folderOpen}
-                      label={nameOnMachine(
-                        group.temp ? S.chat.tempWorkspaces : group.label,
-                        machineName,
-                      )}
+                      label={group.temp ? S.chat.tempWorkspaces : group.label}
+                      // The machine stays readable however narrow the column: two machines'
+                      // groups can share a name, and the machine is what tells them apart.
+                      {...(machineName !== null
+                        ? { qualifier: S.chat.machineTag(machineName) }
+                        : {})}
                       count={
                         searching
                           ? groupRows.length
