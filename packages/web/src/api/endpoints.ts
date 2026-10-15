@@ -1805,8 +1805,10 @@ export const listSchedules = (
   );
 
 /** Every agent's scheduled tasks in the Project, each stamped with its agent: what the session list's marks read. */
-export const listProjectSchedules = (projectId: string) =>
-  apiFetch<ProjectSchedulesResponse>(`/api/projects/${encodeURIComponent(projectId)}/schedules`);
+export const listProjectSchedules = (projectId: string, machineId: string | null = null) =>
+  apiFetch<ProjectSchedulesResponse>(`/api/projects/${encodeURIComponent(projectId)}/schedules`, {
+    server: machineId,
+  });
 
 export const createSchedule = (
   projectId: string,

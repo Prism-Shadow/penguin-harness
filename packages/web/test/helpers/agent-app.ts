@@ -158,6 +158,8 @@ export interface AgentServer {
   fetch: FakeFetch;
   /** The ids of a machine's own Agents now. */
   machineAgents(machineId: string): string[];
+  /** The scheduled tasks of the Agent on a machine now (a machine's tasks are its own files). */
+  machineSchedules(machineId: string): ScheduleItem[];
   /** The Skills installed on an Agent of this server (null) or of a machine. */
   skillsOn(machineId: string | null, agentId: string): string[];
   /** The Agent's config as the server holds it now. */
@@ -192,6 +194,8 @@ export function agentServer(
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
+    /** Scheduled tasks the Agent already has, on a machine when one is named (this server's otherwise). */
+    schedules?: Array<{ machineId?: string; item: ScheduleItem }>;
   } = {},
 ): AgentServer {
   /** Installed Skill names by `<machine or "">/<agent>`. */
@@ -211,7 +215,23 @@ export function agentServer(
   let stored = initial;
   let workbenches = [...(options.workbenches ?? [])];
   let vault: VaultEntryInfo[] = [{ key: "GITHUB_TOKEN", valueMasked: "gh****" }];
-  let schedules: ScheduleItem[] = [];
+  let schedules: ScheduleItem[] = (options.schedules ?? [])
+    .filter((s) => s.machineId === undefined)
+    .map((s) => s.item);
+  /** Each machine's tasks, by machine id: a request through a machine reads and writes these. */
+  const machineSchedules = new Map<string, ScheduleItem[]>();
+  for (const { machineId, item } of options.schedules ?? []) {
+    if (machineId !== undefined) {
+      machineSchedules.set(machineId, [...(machineSchedules.get(machineId) ?? []), item]);
+    }
+  }
+  /** The tasks on the server a request reached, and their replacement. */
+  const schedulesOn = (machine: string | null) =>
+    machine === null ? schedules : (machineSchedules.get(machine) ?? []);
+  const setSchedulesOn = (machine: string | null, next: ScheduleItem[]) => {
+    if (machine === null) schedules = next;
+    else machineSchedules.set(machine, next);
+  };
   let refusal: { status: number; code: string; message: string } | null = null;
   let held: Array<() => void> | null = null;
   let mcpTest: (entry: MCPServerConfig) => McpServerTestResponse = () => ({
@@ -441,14 +461,21 @@ export function agentServer(
       }
       return json({ entries: vault });
     }
+    if (path === `/api/projects/${PROJECT_ID}/schedules` && method === "GET") {
+      // The Project-wide listing: every task stamped with the Agent whose directory holds it.
+      return json({
+        schedules: schedulesOn(request.machine).map((s) => ({ ...s, agentId: AGENT_ID })),
+        invalidFiles: [],
+      });
+    }
     if (path === `${AGENT_PATH}/schedules`) {
       if (method === "POST") {
         const body = request.body as ScheduleItem;
         const item: ScheduleItem = { ...body, status: "active", queued: false };
-        schedules = [...schedules, item];
+        setSchedulesOn(request.machine, [...schedulesOn(request.machine), item]);
         return json(item);
       }
-      return json({ schedules, invalidFiles: [] });
+      return json({ schedules: schedulesOn(request.machine), invalidFiles: [] });
     }
     if (path.startsWith(`${AGENT_PATH}/schedules/`) && method === "PUT") {
       const name = decodeURIComponent(path.slice(`${AGENT_PATH}/schedules/`.length));
@@ -458,8 +485,19 @@ export function agentServer(
         status: "active",
         queued: false,
       };
-      schedules = schedules.map((s) => (s.name === name ? item : s));
+      setSchedulesOn(
+        request.machine,
+        schedulesOn(request.machine).map((s) => (s.name === name ? item : s)),
+      );
       return json(item);
+    }
+    if (path.startsWith(`${AGENT_PATH}/schedules/`) && method === "DELETE") {
+      const name = decodeURIComponent(path.slice(`${AGENT_PATH}/schedules/`.length));
+      setSchedulesOn(
+        request.machine,
+        schedulesOn(request.machine).filter((s) => s.name !== name),
+      );
+      return new Response(null, { status: 204 });
     }
     if (path === `${AGENT_PATH}/skills`) return json({ skills: [] });
     if (path === `${AGENT_PATH}/hooks`) return json({ hooks: [] });
@@ -497,6 +535,7 @@ export function agentServer(
     config: () => stored,
     vaultKeys: () => vault.map((v) => v.key),
     schedules: () => schedules,
+    machineSchedules: (machineId) => machineSchedules.get(machineId) ?? [],
     writes: (path) =>
       fetch.requests.filter(
         (r) =>

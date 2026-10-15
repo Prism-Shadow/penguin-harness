@@ -1546,7 +1546,8 @@ export function applyUserEvent(
   // one-off going done — so the conversation's schedule list is stale from here. The store
   // decides for itself whether the Project is the one on screen.
   if (ev.type === "schedule_fired" || ev.type === "schedule_queued") {
-    noteScheduleEvent(ev.projectId);
+    // A machine's event (relayed as `machine_event`) moves that machine's list.
+    noteScheduleEvent(ev.projectId, source);
   }
   // A scheduled task firing may also have created a new Session (new-session mode); reload the
   // list so it appears immediately. schedule_queued doesn't change the list (the target Session
