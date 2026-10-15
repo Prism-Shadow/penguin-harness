@@ -14,8 +14,13 @@ import path from "node:path";
 
 const VARIABLES = ["TMPDIR", "TEMP", "TMP"] as const;
 
-/** Caches tools keep in the temp directory (Node's compile cache, tsx's): not a test's leftovers. */
-const TOOL_CACHE = /^(node-compile-cache|tsx-\d+)$/;
+/**
+ * Not a test's leftovers: the caches tools keep there (Node's compile cache, tsx's), and the IPC
+ * files the .NET runtime leaves behind a PowerShell (pwsh) whose terminal a test closed, as it
+ * would for any user's terminal. They go with the directory all the same.
+ */
+const NOT_LEFTOVERS =
+  /^(node-compile-cache|tsx-\d+|CoreFxPipe_.+|clr-debug-pipe-.+|dotnet-diagnostic-.+)$/;
 
 export default function setup(): () => void {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "pst-"));
@@ -26,7 +31,7 @@ export default function setup(): () => void {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
-    const left = fs.readdirSync(runDir).filter((name) => !TOOL_CACHE.test(name));
+    const left = fs.readdirSync(runDir).filter((name) => !NOT_LEFTOVERS.test(name));
     if (left.length > 0) {
       const shown = left.slice(0, 20).join("\n  ");
       const more = left.length > 20 ? `\n  … and ${left.length - 20} more` : "";
