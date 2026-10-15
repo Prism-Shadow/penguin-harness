@@ -16,7 +16,13 @@ a machine already held when this server adopted it are filed away as CLI tasks.
   its "manage" link goes to that Agent's settings page on the machine (`?machine=`).
 - A new chat whose workspace is on a machine offers that machine's models, default model, and its
   Agent's thinking level and skills; picking a local workspace switches back. A conversation on a
-  machine switches and prices models by the machine's list.
+  machine switches and prices models by the machine's list, reads and writes the thinking level and
+  compaction threshold of the machine's Agent, and opens that Agent's settings page.
+- A machine's Workspace group in the sidebar keeps `[SSH: alias]` visible in a narrow column and
+  shortens the name instead (`GroupHeader` takes a `qualifier`).
+- The first config sync to a freshly installed machine waits for the machine to finish provisioning
+  `default_project` instead of failing with `project_exists`, so this server's models land there on
+  the first connect.
 - The archive page shows the source of every row in a pill, a person's conversation included.
   For an admin it also lists the archived chats of the connected machines that their Projects use,
   each machine group marked `[SSH: alias]`; unarchive and delete act on the machine, and a machine

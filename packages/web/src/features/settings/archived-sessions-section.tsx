@@ -354,7 +354,7 @@ function ArchiveGroup({
           <span className="px-1.5 text-fg-subtle">›</span>
           {workspace}
           {machine !== null && (
-            <span className="ml-1.5 font-mono text-xs font-normal text-fg-subtle">
+            <span className="ml-1.5 text-xs font-normal text-fg-subtle">
               {S.chat.machineTag(machine)}
             </span>
           )}
