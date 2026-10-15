@@ -3,6 +3,7 @@
 - **Date:** 2026-10-16
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1147](https://github.com/Prism-Shadow/penguin-harness/pull/1147)
 
 [English](2026-10-16-update-recovery-hint.md)
 
