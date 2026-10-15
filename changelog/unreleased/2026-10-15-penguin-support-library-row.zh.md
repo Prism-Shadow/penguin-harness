@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** process
 - **Scope:** `docs`
+- **PR:** [#1149](https://github.com/Prism-Shadow/penguin-harness/pull/1149)
 
 [English](2026-10-15-penguin-support-library-row.md)
 
