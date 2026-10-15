@@ -20,5 +20,8 @@ UI package's new label pill, `Pill`, which differs between labels only by tone.
   shape, on Agent cards too.
 - The model library's tags (default, vision, free, recommended), the model picker's tags, the
   archived conversations' source pill, an Agent's version, the Benchmark case browser's "hidden from
-  the Agent under test" and the company status in the company header render through `Pill`.
+  the Agent under test" and the company status in the company header render through `Pill`, as
+  do the small labels that already had its look: a goal's status, a channel's "@me", the
+  handbook's index mark, a Trace round's compaction mark and task number, the release notes'
+  "current", and an Agent form's "recommended".
 - The UI gallery shows the label pill in every tone and as a card's row of labels.
