@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#1152](https://github.com/Prism-Shadow/penguin-harness/pull/1152)
 
 [English](2026-10-15-machine-agents.md)
 
