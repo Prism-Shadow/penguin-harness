@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** feature
 - **Scope:** `ui`, `web`, `ui-gallery`
+- **PR:** [#1154](https://github.com/Prism-Shadow/penguin-harness/pull/1154)
 
 [中文版](2026-10-15-markdown-reader.zh.md)
 
