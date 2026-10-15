@@ -2,9 +2,9 @@
  * The Machine dialog: everything about one machine that its card leaves out, and every verb it
  * takes.
  *
- * - The header: a tile, the state as one chip — a glyph (a spinner while a job runs or the server
- *   brings the machine back) and one plain word, the reason behind it on the glyph's hover — the
- *   installed version, and one line saying how this server reaches the machine.
+ * - The header: a tile, the state as one label pill — one plain word in its tone, the reason behind
+ *   it on the pill's hover — the installed version and this server's tag in the same pill shape,
+ *   and one line saying how this server reaches the machine.
  * - The toolbar, right under it: every verb in one row of flat buttons, as a file manager lays out
  *   its commands, set apart by spacing alone — Update while the machine carries another build
  *   (Enable when nothing is installed), Stop or Start its server, Restart it, Sync config while it
@@ -39,7 +39,6 @@ import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
 import type { MachineInfo, MachineJob, SshHostResponse } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
   Button,
   Chevron,
   CopyButton,
@@ -54,6 +53,7 @@ import {
   MachineStatusPill,
   MachineToolbar as MachineToolbarView,
   Modal,
+  Pill,
   NoticeStrip,
   RuledSection,
   Spinner,
@@ -136,8 +136,8 @@ function MachineTile() {
 }
 
 /**
- * The state as the shared status pill, the one the machine's card wears: the glyph — a spinner for
- * a machine that is working or coming back — then the word, the reason on the pill's hover.
+ * The state as the shared status pill, the one the machine's card wears: the word in its tone, the
+ * reason on the pill's hover.
  */
 function StatusChip({ chip }: { chip: MachineChip }) {
   return <MachineStatusPill state={chip.state} label={chip.word} reason={chip.reason} />;
@@ -479,11 +479,9 @@ export function MachineDetailBody({
               <StatusChip chip={chip} />
               {/* The version on offer is Details' to say, beside the installed one. */}
               {machine.installed !== null && (
-                <Badge variant="soft" tone={behind ? "attention" : "neutral"}>
-                  v{machine.installed.version}
-                </Badge>
+                <Pill tone={behind ? "attention" : "neutral"}>v{machine.installed.version}</Pill>
               )}
-              {machine.local && <Badge variant="outline">{m.localTitle}</Badge>}
+              {machine.local && <Pill>{m.localTitle}</Pill>}
             </div>
             <p className="mt-1 text-sm text-fg-muted">
               {machine.local ? d.describeLocal : d.describeRemote(machine.alias)}

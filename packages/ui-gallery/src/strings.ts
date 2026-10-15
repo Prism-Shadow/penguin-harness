@@ -750,6 +750,15 @@ export const zh = {
       body: (tab: string) => `「${tab}」的内容。`,
     },
     badges: {
+      pills: "标签胶囊",
+      pillsHint:
+        "一种形状：高度、内边距、圆角、字号与描边都相同，只按语义换语气；只写词，不带图形。",
+      pillRow: {
+        thisServer: "本服务端",
+        running: "运行中",
+        update: "需要更新",
+        caption: "卡片标题行：标签、状态与更新胶囊同一形状",
+      },
       badges: "徽标",
       tones: {
         neutral: "默认",
@@ -1330,7 +1339,8 @@ export const zh = {
     },
     machines: {
       pills: "状态胶囊",
-      pillsHint: "每种状态都是一个词加一个图形，原因悬停胶囊显示；不用意义不明的彩色圆点。",
+      pillsHint:
+        "每种状态都是一个词，与本服务端标签同一形状，原因悬停胶囊显示；不带图形，也不用意义不明的彩色圆点。",
       states: {
         serving: "运行中",
         ready: "运行中",

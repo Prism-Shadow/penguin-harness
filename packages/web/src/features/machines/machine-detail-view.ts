@@ -13,7 +13,7 @@ import type {
   MachinePhase,
   SshHostResponse,
 } from "@prismshadow/penguin-server/api";
-import { ICONS, MACHINE_STATE_LOOK } from "@prismshadow/penguin-ui";
+import { ICONS } from "@prismshadow/penguin-ui";
 import type { MachineState } from "@prismshadow/penguin-ui";
 import {
   formatBytes,
@@ -36,15 +36,13 @@ import {
 } from "./machines-view";
 import type { MachineReading } from "./machines-view";
 
-/** The machine's state as one chip: a glyph (or a spinner) and one plain word. */
+/** The machine's state as one pill: one plain word in the state's tone. */
 export interface MachineChip {
   /** The state the shared status pill draws (`MachineStatusPill`). */
   state: MachineState;
   /** The state's one word (`S.machines.state[kind]`; `serving` for this server's own entry). */
   word: string;
   tone: Tone;
-  /** A registry path; null for a working machine, which wears a spinner instead. */
-  glyph: string | null;
   /** The reason behind the word, on hover; null when the word says it all. */
   reason: string | null;
 }
@@ -63,7 +61,6 @@ export function machineChip(
       state: "serving",
       word: S.machines.state.serving,
       tone: "link",
-      glyph: MACHINE_STATE_LOOK.serving.glyph,
       reason: null,
     };
   }
@@ -71,9 +68,6 @@ export function machineChip(
     state: reading.kind,
     word: S.machines.state[reading.kind],
     tone: readingTone(reading),
-    // The shape beside the word, as the shared pill draws it: two states that share a tone (a
-    // stopped machine and one out of reach are both amber) still read apart by it.
-    glyph: MACHINE_STATE_LOOK[reading.kind].glyph,
     reason:
       reading.kind === "behind"
         ? imageVersion === null

@@ -68,7 +68,7 @@ import type {
   ProviderConnectionUpdate,
 } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
+  Pill,
   Button,
   Card,
   Checkbox,
@@ -1587,7 +1587,7 @@ export function ModelsPage() {
                   // reader to look here, and is the tone nearest the gold this mark has
                   // always worn. It gives way on a narrow row before the name does.
                   <span className="hidden shrink-0 @lg:inline-flex">
-                    <Badge tone="attention">{S.models.recommendedGroup}</Badge>
+                    <Pill tone="attention">{S.models.recommendedGroup}</Pill>
                   </span>
                 )}
               </button>
@@ -2613,13 +2613,13 @@ export function ModelCard({
             theme — so a card with marks and a card without are exactly as tall. */}
         <span className="flex w-full flex-wrap items-center gap-1">
           {tags.map((tag) => (
-            <Badge key={tag.key} tone={tag.tone} size="sm" tooltip={tag.title}>
+            <Pill key={tag.key} tone={tag.tone} tooltip={tag.title}>
               {tag.label}
-            </Badge>
+            </Pill>
           ))}
           {tags.length === 0 && (
             <span aria-hidden className="invisible flex">
-              <Badge size="sm">&nbsp;</Badge>
+              <Pill>&nbsp;</Pill>
             </span>
           )}
         </span>
@@ -3923,20 +3923,10 @@ function ModelDialog({
               )}
               {(isDefault || form.vision || isVisionModel) && (
                 <span className="flex flex-wrap items-center gap-1 pt-0.5">
-                  {isDefault && (
-                    <Badge tone={TAG_TONE.status} size="sm">
-                      {S.models.default}
-                    </Badge>
-                  )}
-                  {form.vision && (
-                    <Badge tone={TAG_TONE.capability} size="sm">
-                      {S.models.visionBadge}
-                    </Badge>
-                  )}
+                  {isDefault && <Pill tone={TAG_TONE.status}>{S.models.default}</Pill>}
+                  {form.vision && <Pill tone={TAG_TONE.capability}>{S.models.visionBadge}</Pill>}
                   {isVisionModel && (
-                    <Badge tone={TAG_TONE.capability} size="sm">
-                      {S.models.visionModelBadge}
-                    </Badge>
+                    <Pill tone={TAG_TONE.capability}>{S.models.visionModelBadge}</Pill>
                   )}
                 </span>
               )}
