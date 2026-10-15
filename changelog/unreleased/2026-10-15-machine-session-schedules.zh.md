@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1160](https://github.com/Prism-Shadow/penguin-harness/pull/1160)
 
 [English](2026-10-15-machine-session-schedules.md)
 
