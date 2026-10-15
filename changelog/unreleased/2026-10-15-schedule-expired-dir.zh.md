@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `docs`, `skills`
+- **PR:** [#1159](https://github.com/Prism-Shadow/penguin-harness/pull/1159)
 
 [English](2026-10-15-schedule-expired-dir.md)
 
