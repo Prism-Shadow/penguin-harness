@@ -117,6 +117,8 @@ import { syncPluginsToMachine, type WantedPlugin } from "./plugins-sync.js";
 import type { LocalModels } from "./models-sync.js";
 import { localSettings, syncSettingsToMachine } from "./settings-sync.js";
 import { machineApi } from "./machine-api.js";
+import type { MachineApi } from "./machine-api.js";
+import { ADOPTED_AT_HEADER } from "../runtime/session-sources.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
 import type { MachineRow } from "../db/repos/machines.js";
 import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
@@ -124,6 +126,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { machinesRoutes } from "../http/routes/machines.js";
 import { machinesProxy } from "./proxy.js";
+import type { ProxyTarget } from "./proxy.js";
 import { MachineEventRelay } from "./event-relay.js";
 import type { EventRelay, EventRelayDeps, RelayDial } from "./event-relay.js";
 import { HttpError } from "../http/errors.js";
@@ -931,15 +934,53 @@ export class MachinesService {
   }
 
   /**
-   * What the proxy needs to forward a request to a machine addressed by its OWN id: a dial
-   * through the connection, the port its server is on over there, and a session there. Null
-   * when the machine is not connected.
+   * The machines a Project uses that this server installed on and knows by id, each with a
+   * client to its own API while it is connected (null otherwise) — for a page of this server
+   * that lists what those machines hold (the archive page). Every call carries this server's
+   * adoption time, as the proxy's do. Two aliases for one machine are one entry, spoken to
+   * through the alias holding a connection.
    */
-  async proxyTarget(
-    machineId: string,
-  ): Promise<{ agent: http.Agent; port: number; cookie: string } | null> {
+  async projectApis(
+    projectId: string,
+  ): Promise<Array<{ machineId: string; alias: string; api: MachineApi | null }>> {
+    const ids = new Set<string>();
+    for (const address of this.#members(projectId)) {
+      const row = this.repo.get(address);
+      if (row !== null && row.machineId !== null && row.version !== null) ids.add(row.machineId);
+    }
+    const out: Array<{ machineId: string; alias: string; api: MachineApi | null }> = [];
+    for (const machineId of ids) {
+      const row = this.#rowFor(machineId);
+      if (row === null) continue;
+      const dial = await this.#dial(row.address);
+      out.push({
+        machineId,
+        alias: row.address.slice("ssh:".length),
+        api:
+          dial === null
+            ? null
+            : machineApi(
+                dial.agent,
+                dial.port,
+                dial.cookie,
+                row.adoptedAt === null ? {} : { [ADOPTED_AT_HEADER]: row.adoptedAt },
+              ),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * What the proxy needs to forward a request to a machine addressed by its OWN id: a dial
+   * through the connection, the port its server is on over there, a session there, and when
+   * this server adopted it (sent along, so that machine reads the Sessions it held before then
+   * as CLI tasks). Null when the machine is not connected.
+   */
+  async proxyTarget(machineId: string): Promise<ProxyTarget | null> {
     const row = this.#rowFor(machineId);
-    return row === null ? null : this.#dial(row.address);
+    if (row === null) return null;
+    const dial = await this.#dial(row.address);
+    return dial === null ? null : { ...dial, adoptedAt: row.adoptedAt };
   }
 
   /**
@@ -1063,13 +1104,19 @@ export class MachinesService {
    *
    * `sessionPid` deliberately survives: it names the ssh child THIS server holds, which is
    * the one that just answered, and forgetting it would leave a process nothing can close.
+   *
+   * Either way this is the moment this server adopts the machine at that address, and the time
+   * is kept: nothing could have been created there through this server before it knew whom to
+   * ask, so the Sessions that machine already held are its own (runtime/session-sources.ts
+   * sourceSeenBy reads them as CLI tasks for this server's requests, see `proxyTarget`).
    */
   #rememberMachineId(address: string, machineId: string | null): void {
     if (machineId === null) return;
     const known = this.repo.get(address)?.machineId ?? null;
     if (known === machineId) return;
+    const adoptedAt = this.#effects.now().toISOString();
     if (known === null) {
-      this.repo.patch(address, { machineId });
+      this.repo.patch(address, { machineId, adoptedAt });
       return;
     }
     this.repo.patch(address, {
@@ -1078,6 +1125,7 @@ export class MachinesService {
       installedAt: null,
       remotePort: null,
       platform: null,
+      adoptedAt,
     });
   }
 
@@ -2934,6 +2982,7 @@ export abstract class Machines extends Interface<
     | "start"
     | "syncConfigEverywhere"
     | "proxyTarget"
+    | "projectApis"
     | "jobs"
     | "startUse"
     | "stopUsing"
