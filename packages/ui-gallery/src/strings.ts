@@ -1299,6 +1299,19 @@ export const zh = {
       exportSkill: (name: string) => `导出 ${name}`,
       clickable: "打开所指内容的行",
       cases: ["登录页的表单校验", "空仓库的首次提交", "超长文件名的截断"],
+      longRows: "超长文字",
+      longRowsHint:
+        "标题与说明各截成一行，悬停显示全文；日期与操作保持原宽，放不下时换到文字下方，从不被卡片裁掉。",
+      memoryTitle: "用户记忆",
+      memoryCount: (n: number) => `${n} 条`,
+      memoryDescriptions: [
+        "本机代理在 127.0.0.1:9090，但 ~/.bashrc 在非交互式 shell 里提前 return，exec_command 拿不到 http_proxy 等环境变量；需要在命令里显式 export 代理，或对本地地址加 --noproxy '*'，否则 curl 访问本地端口会返回 502。",
+        'PenguinHarness v0.2.15 服务器进程内调用任何 Gemini 模型都会失败："Failed to parse URL from [object Request]"。原因是打包后的 fetch 与 Request 实现不一致，升级到 0.2.16 后恢复正常。',
+        "引用专利号或文献前，先用工具核验。",
+      ],
+      viewMemory: (name: string) => `查看 ${name}`,
+      editMemory: (name: string) => `编辑 ${name}`,
+      deleteMemory: (name: string) => `删除 ${name}`,
       keyValue: "键值对",
       labels: {
         version: "版本",

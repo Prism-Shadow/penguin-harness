@@ -1349,6 +1349,19 @@ export const en: GalleryStrings = {
         "First commit in an empty repository",
         "Truncating a very long file name",
       ],
+      longRows: "Long text",
+      longRowsHint:
+        "Title and description truncate to one line each and show whole on hover; the date and the actions keep their width, wrap under the text when they no longer fit, and are never clipped by the card.",
+      memoryTitle: "User memory",
+      memoryCount: (n: number) => `${n} items`,
+      memoryDescriptions: [
+        "The local proxy listens on 127.0.0.1:9090, but ~/.bashrc returns early in a non-interactive shell, so exec_command never sees http_proxy and the rest of the proxy variables; export the proxy in the command itself or pass --noproxy '*' for local addresses, or curl answers 502 for a local port.",
+        'Inside the PenguinHarness v0.2.15 server process every Gemini model call fails with "Failed to parse URL from [object Request]": the bundled fetch and Request disagree. Upgrading to 0.2.16 fixes it.',
+        "Verify patent numbers and papers with a tool before citing them.",
+      ],
+      viewMemory: (name: string) => `View ${name}`,
+      editMemory: (name: string) => `Edit ${name}`,
+      deleteMemory: (name: string) => `Delete ${name}`,
       keyValue: "Label and value",
       labels: {
         version: "Version",

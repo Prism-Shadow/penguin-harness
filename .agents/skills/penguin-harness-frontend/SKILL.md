@@ -411,6 +411,11 @@ label instead. A width passed to `Input` or `Select` through `className` loses t
 `w-full` (the built sheet emits `.w-full` after `.w-44`), and a full-width field beside a button is
 what squeezes it: put the width on a box around the field.
 
+**A row's text gives way; its actions never do.** Items with actions are `ListRow` rows: text
+`min-w-0` + `truncate` (whole on hover, no attribute), actions keep their width and wrap under the
+text, never clipped. A box that sizes to its content (a grid's `auto` column, a fold body) holds
+its child with `min-w-0`, or one long line widens every row past the card (ui-gallery `test:e2e`).
+
 The trap is a `Segmented` with long labels in a `PrefRow`: the row's control column is
 `minmax(0, max-content)` and its slot is `justify-end`, so a control that no longer fits overflows
 leftward over the row's label instead of wrapping. Keep such labels short, or give the options a
