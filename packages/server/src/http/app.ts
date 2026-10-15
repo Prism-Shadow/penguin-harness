@@ -10,6 +10,7 @@ import { AMSP_PREFIX, amspAllowOrigin } from "../amsp/cors.js";
 import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
+import { gunzipRequestBody } from "./gzip-body.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
@@ -93,6 +94,12 @@ export class HttpModule {
       }
       return capped.mw(c, next);
     });
+    // Opt-in gzip'd request bodies (issue #521): the wire cap above counted the compressed
+    // bytes, this bounded inflate is what bounds the memory.
+    app.use(
+      "/api/*",
+      gunzipRequestBody(() => this.settings.getAttachmentLimitsMb()),
+    );
     app.use("/api/*", jsonOnlyWrites);
 
     const routes = [...(contributions.routes ?? [])]

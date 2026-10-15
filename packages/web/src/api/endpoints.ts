@@ -1168,6 +1168,10 @@ export const postTask = (sessionId: string, body: TaskCreateRequest) =>
   apiFetch<TaskCreateResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/tasks`, {
     method: "POST",
     body,
+    // A draft's file attachments ride the request as base64 `data:` URLs (issue #521): offer
+    // the whole body gzipped when gzip wins — logs, CSVs and JSON dumps, the ordinary
+    // attachments, shrink ten-to-one. The server inflates, bounded, before any route reads it.
+    gzip: true,
   });
 
 export const getGoal = (sessionId: string) =>
@@ -1232,11 +1236,12 @@ export const removeSessionProcess = (sessionId: string, processId: string) =>
     { method: "DELETE" },
   );
 
-/** Mid-run steering: queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message); 409 not_running when no Task is in progress. */
+/** Mid-run steering: queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message); 409 not_running when no Task is in progress. Its `files` field takes the identical `{fileName, dataUrl}` parts a task does, so the same gzip offer rides along (issue #521). */
 export const postSteer = (sessionId: string, body: SteerRequest) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/steer`, {
     method: "POST",
     body,
+    gzip: true,
   });
 
 /** Panel message to one subagent child (#272) — a user input on the child, whatever its state: steered mid-run, started on an idle child, resumed when the released session was revived (the child runs at its own Session's thinking level; pin it with patchSession). 404 subagent_gone when nothing can be revived, 409 subagent_busy when the child cannot take it right now. */

@@ -62,6 +62,14 @@ export interface ApiFetchOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** JSON request body (auto-serialized with Content-Type: application/json). */
   body?: unknown;
+  /**
+   * Offer the body to the server gzipped (`Content-Encoding: gzip`, lossless, and only when
+   * gzip actually makes it smaller). For the calls whose body can be real payload — the task
+   * and steer posts, whose `file` parts carry attachments as base64 `data:` URLs that nothing
+   * else shrinks (issue #521). The pass is asynchronous, so it sits only behind this flag:
+   * every other call issues its fetch exactly where it did before, synchronously.
+   */
+  gzip?: boolean;
   /** Query parameters (undefined values are skipped). */
   query?: Record<string, string | number | undefined>;
   /**
@@ -92,6 +100,41 @@ export interface ApiFetchMeta {
    * version it wrote there — the precondition the editor's next save of that file carries.
    */
   etag: string | null;
+}
+
+/**
+ * At this serialized size a compress pass starts being worth it: below it, the JSON framing
+ * and short texts that make up ordinary control calls ({}, approvals, aborts) compress by too
+ * little to notice, and an attachment-bearing body is already past it by definition — the
+ * base64 `data:` URLs are what this exists to shrink (issue #521).
+ */
+const GZIP_MIN_BYTES = 16 * 1024;
+
+/**
+ * Gzip a serialized JSON body when gzip makes it smaller (the server inflates it back, bounded —
+ * Content-Encoding: gzip on `/api/*`). Lossless, unlike the image path's re-encode: a file
+ * attachment cannot lose a byte, so this is transport coding only. A body gzip would only
+ * enlarge — an attachment of already-compressed bytes (.zip, .jpg, .mp4), or noise that survived
+ * base64's 4/3 inflation — is sent plain: paying a compress pass to add bytes is worth nothing.
+ * Bodies under {@link GZIP_MIN_BYTES} — and any runtime without the native CompressionStream —
+ * are returned untouched.
+ *
+ * Compression is inherently asynchronous (CompressionStream is), and the callers it serves are
+ * the composer's awaited sends, so it is strictly opt-in through `ApiFetchOptions.gzip`: every
+ * other call keeps `requestInit` and its fetch exactly where they were, synchronous.
+ */
+export async function gzipRequestBody(init: RequestInit): Promise<RequestInit> {
+  const body = init.body;
+  if (typeof body !== "string" || body.length < GZIP_MIN_BYTES) return init;
+  if (typeof CompressionStream !== "function") return init;
+  const stream = new Blob([body]).stream().pipeThrough(new CompressionStream("gzip"));
+  const gzipped = new Uint8Array(await new Response(stream).arrayBuffer());
+  if (gzipped.byteLength >= body.length) return init;
+  return {
+    ...init,
+    headers: { ...(init.headers as Record<string, string>), "Content-Encoding": "gzip" },
+    body: gzipped,
+  };
 }
 
 /** The request half every call shares: the method, the session cookie, a JSON body when there is one. */
@@ -200,7 +243,11 @@ export async function apiFetchWithMeta<T>(
 
   let response: Response;
   try {
-    response = await fetch(url, requestInit(options));
+    // Without the gzip opt-in the request goes out exactly where it always did — synchronously
+    // inside this call, which several callers reason from (a lookup issued by a store event is
+    // recorded before the next line runs). Only an opted-in send pays the compress pass's tick.
+    const init = requestInit(options);
+    response = await fetch(url, options.gzip ? await gzipRequestBody(init) : init);
   } catch {
     throw new ApiError(0, "network_error", S.errors.networkError);
   }

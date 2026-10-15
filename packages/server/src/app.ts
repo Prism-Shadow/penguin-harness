@@ -71,6 +71,7 @@ import { newAuthRuntimeState } from "./auth/runtime-state.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
+import { gunzipRequestBody } from "./http/gzip-body.js";
 import { attributedProjectId } from "./http/attribution.js";
 import { STREAM_IDLE_MS } from "./http/sse.js";
 import { installRoutes } from "./http/routes/install.js";
@@ -512,6 +513,13 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     }
     return capped.mw(c, next);
   });
+  // Opt-in gzip'd request bodies (issue #521): the wire cap above counted the compressed bytes,
+  // this bounded inflate is what bounds the memory. Sits between the two so a task/steer body
+  // the composer gzipped is plain JSON by the time any route reads it.
+  app.use(
+    "/api/*",
+    gunzipRequestBody(() => settings().getAttachmentLimitsMb()),
+  );
   app.use("/api/*", jsonOnlyWrites);
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel
