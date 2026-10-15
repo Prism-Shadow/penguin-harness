@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** process
 - **Scope:** `ci`, `server`, `skills`
+- **PR:** [#1158](https://github.com/Prism-Shadow/penguin-harness/pull/1158)
 
 [中文版](2026-10-15-ci-faster-pipeline.zh.md)
 
