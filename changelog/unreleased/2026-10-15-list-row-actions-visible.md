@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `ui`, `ui-gallery`, `skills`
+- **PR:** [#1157](https://github.com/Prism-Shadow/penguin-harness/pull/1157)
 
 [中文版](2026-10-15-list-row-actions-visible.zh.md)
 
