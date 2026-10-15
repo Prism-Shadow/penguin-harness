@@ -333,7 +333,7 @@ export interface Messages {
     rmDesc: string;
     /** --prompt: the text the firing sends. */
     prompt: string;
-    /** --start-at: first fire time, ISO 8601 — or the literal `now` for the current instant. */
+    /** --start-at: first fire time, ISO 8601 — or the literal `now` for the current instant (a one-shot needs a future time, so `now` only suits a periodic task). */
     startAt: string;
     /** --period: fixed interval (30m / 12h / 1d / 7d, minimum 5m); omitted = one-shot. */
     period: string;
@@ -1489,7 +1489,8 @@ const en: Messages = {
       "Update a scheduled task (read-modify-write: unspecified fields keep their stored values)",
     rmDesc: "Delete a scheduled task (no prompt; the server's owner authorization applies)",
     prompt: "The text each firing sends",
-    startAt: "First fire time (ISO 8601), or the literal `now` for the current instant",
+    startAt:
+      "First fire time (ISO 8601), or the literal `now` for the current instant; a one-shot task needs a future time, so `now` only works with --period",
     period: "Fixed interval, minimum 5m (e.g. 30m, 12h, 1d, 7d); omitted = one-shot",
     endAt: "Stop firing after this instant (ISO 8601)",
     sessionId: "Bind firings to one session (excludes --workspace / the model pair)",
@@ -2615,7 +2616,8 @@ const zh: Messages = {
     updateDesc: "更新定时任务（读改写：未指定的字段保留存储值）",
     rmDesc: "删除定时任务（不做确认；服务端的 owner 授权照旧生效）",
     prompt: "每次触发要发送的内容",
-    startAt: "首次触发时刻（ISO 8601），或字面量 `now` 表示当前时刻",
+    startAt:
+      "首次触发时刻（ISO 8601），或字面量 `now` 表示当前时刻；一次性任务须用未来时刻，`now` 只适用于带 --period 的任务",
     period: "固定间隔，下限 5m（如 30m、12h、1d、7d）；省略即一次性任务",
     endAt: "此时刻之后不再触发（ISO 8601）",
     sessionId: "绑定到某个会话触发（与 --workspace / 模型对互斥）",
