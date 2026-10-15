@@ -988,8 +988,8 @@ export const zh = {
         "## 部署检查\n\n发布前确认 **三件事**，再运行 `pnpm -r build`。详见[发布说明](https://penguin.ooo)。\n\n- 类型检查通过\n- 测试全部通过\n- 更新日志已写好\n\n> 数据根被占用时，换一个数据根，不要结束别人的进程。\n\n| 检查 | 命令 |\n| --- | --- |\n| 类型 | `pnpm typecheck` |\n| 测试 | `pnpm test` |\n\n```bash\npnpm -r build && pnpm test\n```\n\n缓存命中率为 \\(r = h / (h + m)\\)。",
       reader: "Markdown 阅读器",
       readerHint:
-        "插件 README、文件浏览器与手册共用的阅读器：两个及以上标题时附目录（够宽时在右侧，窄时收进工具钮），查找按钮或焦点在阅读器内时按 Mod+F 在渲染后的正文里查找。",
-      readerNarrow: "窄宽度：目录收进工具钮",
+        "插件 README、文件浏览器与手册共用的阅读器：两个及以上标题时附目录（够宽时在右侧，窄时收进工具条），查找按钮或焦点在阅读器内时按 Mod+F 在渲染后的正文里查找。",
+      readerNarrow: "窄宽度：目录收进工具条",
       readerSample: [
         "# 发布流程",
         "",

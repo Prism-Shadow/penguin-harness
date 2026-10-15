@@ -1018,8 +1018,8 @@ export const en: GalleryStrings = {
         "## Release checks\n\nConfirm **three things** before you release, then run `pnpm -r build`. See the [release notes](https://penguin.ooo).\n\n- Type checks pass\n- Every test passes\n- The changelog is written\n\n> When a data root is taken, use another one — never end someone else's process.\n\n| Check | Command |\n| --- | --- |\n| Types | `pnpm typecheck` |\n| Tests | `pnpm test` |\n\n```bash\npnpm -r build && pnpm test\n```\n\nThe cache hit rate is \\(r = h / (h + m)\\).",
       reader: "Markdown reader",
       readerHint:
-        "The reader the plugin README, the file browser and the handbook share: two or more headings add an outline (a rail when there is room, folded into the tool pill when not), and the find button, or Mod+F while the reader has the focus, searches the rendered text.",
-      readerNarrow: "Narrow: the outline folds into the tool pill",
+        "The reader the plugin README, the file browser and the handbook share: two or more headings add an outline (a rail when there is room, folded into the tool strip when not), and the find button, or Mod+F while the reader has the focus, searches the rendered text.",
+      readerNarrow: "Narrow: the outline folds into the tool strip",
       readerSample: [
         "# Release process",
         "",

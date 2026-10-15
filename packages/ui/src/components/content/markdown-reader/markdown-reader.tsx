@@ -9,19 +9,21 @@
  * (the docs site's tabs and callouts) passes its rendered `children` instead: the outline and the
  * find read the rendered DOM, never the source, so they work over either.
  *
- * The reader owns its scroll box. Over its top-right corner floats one pill of tools: the host's
- * own actions first (the Files panel's view toggle and Edit), then the outline button (only while
- * the outline is folded into it) and the find button.
+ * The reader owns its scroll box. Above it runs one strip of tools, never floating over the text:
+ * the host's own actions first (the Files panel's view toggle and Edit), then the outline button
+ * (only while the outline is folded into it) and the find button — or, while the find is open, the
+ * find bar in that button's place. Nothing lies over the scroll box, so no line of it is ever
+ * hidden, and a match the find brings into view is in plain sight.
  *
  * **Outline.** Headings h1–h4, read from the rendered text after every commit, so the outline is
  * the document's as it is on screen. With fewer than two there is none. When the reader is at
  * least `railMinWidth` wide the outline stands as a rail beside the text; narrower, it opens from
- * the pill as a popover. A row scrolls the reader's own box, and nothing around it, to bring its
+ * the strip as a popover. A row scrolls the reader's own box, and nothing around it, to bring its
  * heading to the top; the current section follows the scroll (outline.ts has the reading line). A
  * row just chosen stays current until the reader scrolls by hand: a heading near the end can never
  * reach the reading line, and position alone would highlight a neighbour of what was chosen.
  *
- * **Find.** The pill's find button opens it, and so does the find shortcut while the focus is
+ * **Find.** The strip's find button opens it, and so does the find shortcut while the focus is
  * anywhere inside the reader — the host passes its binding (`isFindKey`; Mod+F when it passes
  * none). The key is only taken inside the reader: elsewhere the page's own find, or the browser's,
  * keeps it, because this handler sits on the reader and nowhere else. The search runs over the
@@ -67,7 +69,7 @@ import {
 } from "./outline";
 import type { OutlineEntry } from "./outline";
 
-/** The reader's width (px) from which the outline stands beside the text rather than in the pill. */
+/** The reader's width (px) from which the outline stands beside the text rather than in the strip. */
 export const READER_RAIL_MIN_WIDTH = 720;
 
 /** Re-index this long after the rendered text last changed under an open search. */
@@ -86,7 +88,7 @@ function isDefaultFindKey(event: KeyboardEvent): boolean {
 /** An outline row's indent, by depth. */
 const INDENT: Record<number, string> = { 0: "", 1: "pl-3", 2: "pl-6", 3: "pl-9" };
 
-/** The pill's square controls: flat, the glyph deepening on hover. */
+/** The tool strip's square controls: flat, the glyph deepening on hover. */
 const TOOL_BUTTON =
   "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-control-hover hover:text-fg";
 
@@ -138,14 +140,11 @@ export interface MarkdownReaderProps {
   children?: ReactNode;
   /** The scroll box's accessible name: the document's name. */
   label?: string;
-  /** The host's controls in the pill, before the reader's own. */
+  /** The host's controls in the reader's tool strip, before its own. */
   actions?: ReactNode;
   /** Under the text, inside the scroll box: a note that the file was cut short. */
   footer?: ReactNode;
-  /**
-   * The scroll box: its padding. The default leaves the pill's band clear above the first line,
-   * so the pill covers text only once the reader scrolls it underneath.
-   */
+  /** The scroll box: its padding. */
   bodyClassName?: string;
   /** The reading box: its size and ink (`text-sm`, `leading-relaxed`, `text-fg`). */
   contentClassName?: string;
@@ -170,7 +169,7 @@ export function MarkdownReader({
   label,
   actions,
   footer,
-  bodyClassName = "px-3 pb-3 pt-11",
+  bodyClassName = "p-3",
   contentClassName = "text-sm leading-relaxed text-fg",
   bodyRef: hostBodyRef,
   bodyProps = {},
@@ -427,11 +426,82 @@ export function MarkdownReader({
   );
 
   return (
-    <div ref={rootRef} className={`flex min-h-0 min-w-0 ${className}`} onKeyDown={onRootKeyDown}>
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+    <div
+      ref={rootRef}
+      className={`flex min-h-0 min-w-0 flex-col ${className}`}
+      onKeyDown={onRootKeyDown}
+    >
+      {/* The tools' own strip, above the text and the rail rather than floating over them: an open
+          find bar can then never cover a line, whatever the reader's width or its first heading's
+          length, and a match the find scrolls to lands in a box nothing lies over. */}
+      <div className="flex shrink-0 items-center justify-end gap-1 border-b border-line-muted px-2 py-1">
+        {findOpen && (
+          <div
+            role="search"
+            data-find-skip
+            data-presence="enter"
+            className="flex min-w-0 flex-1 justify-end"
+          >
+            <FindField
+              className="w-80 min-w-0 max-w-full"
+              query={query}
+              onQueryChange={setQuery}
+              counter={counter}
+              canStep={hits.length > 0}
+              onStep={step}
+              onClose={closeFind}
+              inputRef={inputRef}
+              arrowKeys
+              labels={{
+                placeholder: t.findPlaceholder,
+                previous: t.previousMatch,
+                next: t.nextMatch,
+                close: t.closeFind,
+              }}
+              hints={{ close: `${t.closeFind} (Esc)` }}
+            />
+          </div>
+        )}
+        {actions}
+        {hasOutline && !rail && (
+          <Dropdown
+            open={outlineOpen}
+            setOpen={setOutlineOpen}
+            portal={{ direction: "down", align: "right" }}
+            className="shrink-0"
+            menuClass="w-64 max-h-[60vh] overflow-y-auto p-1"
+            button={
+              <button
+                type="button"
+                aria-label={t.outline}
+                data-tooltip={t.outline}
+                aria-expanded={outlineOpen}
+                onClick={() => setOutlineOpen(!outlineOpen)}
+                className={TOOL_BUTTON}
+              >
+                <GlyphIcon d={ICONS.textLines} size={ICON_SIZE.iconButton} />
+              </button>
+            }
+          >
+            <nav aria-label={t.outline}>{outlineRows(() => setOutlineOpen(false))}</nav>
+          </Dropdown>
+        )}
+        {!findOpen && (
+          <button
+            type="button"
+            aria-label={t.find}
+            data-tooltip={findShortcut === null ? t.find : `${t.find} (${findShortcut})`}
+            onClick={openFind}
+            className={TOOL_BUTTON}
+          >
+            <GlyphIcon d={ICONS.search} size={ICON_SIZE.iconButton} />
+          </button>
+        )}
+      </div>
+
+      <div className="flex min-h-0 min-w-0 flex-1">
         {/* The scroll box. Focusable, so the keyboard can scroll it and the find key has
-            somewhere to land; a positioned ancestor holds the pill, since an absolute box inside
-            a static scroller escapes to the initial containing block. */}
+            somewhere to land. */}
         <div
           {...restBodyProps}
           ref={setBody}
@@ -453,7 +523,7 @@ export function MarkdownReader({
             onKeyDown?.(e);
             if (SCROLL_KEYS.has(e.key)) unpin();
           }}
-          className={`min-h-0 flex-1 overflow-auto outline-none [scrollbar-gutter:stable] focus-visible:[outline:var(--ui-focus-ring)] focus-visible:[outline-offset:-2px] ${bodyClassName}`}
+          className={`min-h-0 min-w-0 flex-1 overflow-auto outline-none [scrollbar-gutter:stable] focus-visible:[outline:var(--ui-focus-ring)] focus-visible:[outline-offset:-2px] ${bodyClassName}`}
         >
           <div ref={contentRef} className={`md-body font-sans ${contentClassName}`}>
             {text !== undefined ? <Md text={text} components={components} /> : children}
@@ -461,79 +531,17 @@ export function MarkdownReader({
           {footer}
         </div>
 
-        <div className="pointer-events-none absolute inset-x-4 top-2 z-10 flex justify-end">
-          <div className="pointer-events-auto flex min-w-0 max-w-full items-center gap-1 rounded-md border border-line bg-surface p-1 shadow-sm">
-            {findOpen && (
-              <div role="search" data-find-skip data-presence="enter" className="min-w-0 shrink">
-                <FindField
-                  className="w-64 min-w-0 max-w-full"
-                  query={query}
-                  onQueryChange={setQuery}
-                  counter={counter}
-                  canStep={hits.length > 0}
-                  onStep={step}
-                  onClose={closeFind}
-                  inputRef={inputRef}
-                  arrowKeys
-                  labels={{
-                    placeholder: t.findPlaceholder,
-                    previous: t.previousMatch,
-                    next: t.nextMatch,
-                    close: t.closeFind,
-                  }}
-                  hints={{ close: `${t.closeFind} (Esc)` }}
-                />
-              </div>
-            )}
-            {actions}
-            {hasOutline && !rail && (
-              <Dropdown
-                open={outlineOpen}
-                setOpen={setOutlineOpen}
-                portal={{ direction: "down", align: "right" }}
-                className="shrink-0"
-                menuClass="w-64 max-h-[60vh] overflow-y-auto p-1"
-                button={
-                  <button
-                    type="button"
-                    aria-label={t.outline}
-                    data-tooltip={t.outline}
-                    aria-expanded={outlineOpen}
-                    onClick={() => setOutlineOpen(!outlineOpen)}
-                    className={TOOL_BUTTON}
-                  >
-                    <GlyphIcon d={ICONS.textLines} size={ICON_SIZE.iconButton} />
-                  </button>
-                }
-              >
-                <nav aria-label={t.outline}>{outlineRows(() => setOutlineOpen(false))}</nav>
-              </Dropdown>
-            )}
-            {!findOpen && (
-              <button
-                type="button"
-                aria-label={t.find}
-                data-tooltip={findShortcut === null ? t.find : `${t.find} (${findShortcut})`}
-                onClick={openFind}
-                className={TOOL_BUTTON}
-              >
-                <GlyphIcon d={ICONS.search} size={ICON_SIZE.iconButton} />
-              </button>
-            )}
-          </div>
-        </div>
+        {rail && (
+          <nav
+            ref={railRef}
+            aria-label={t.outline}
+            className="relative w-56 shrink-0 overflow-y-auto border-l border-line-muted px-2 py-3"
+          >
+            <p className="px-2 pb-1.5 text-xs font-medium text-fg-subtle">{t.outline}</p>
+            {outlineRows()}
+          </nav>
+        )}
       </div>
-
-      {rail && (
-        <nav
-          ref={railRef}
-          aria-label={t.outline}
-          className="relative w-56 shrink-0 overflow-y-auto border-l border-line-muted px-2 py-3"
-        >
-          <p className="px-2 pb-1.5 text-xs font-medium text-fg-subtle">{t.outline}</p>
-          {outlineRows()}
-        </nav>
-      )}
     </div>
   );
 }

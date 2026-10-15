@@ -11,13 +11,15 @@
  * one; the browser's highlight registry is a map.
  *
  * - A document with two or more headings has an outline, in document order; with room it stands
- *   beside the text, and narrow it opens from the reader's tool pill. A document with fewer
+ *   beside the text, and narrow it opens from the reader's tool strip. A document with fewer
  *   headings has none.
  * - Choosing an outline row scrolls the reader's own box to just above its heading, marks that
  *   row current, and scrolls nothing around the reader.
  * - Scrolling the box marks the section whose heading the reading line has passed.
  * - The find key inside the reader opens the reader's find and is kept from the page and the
- *   browser; pressed outside the reader, it is left alone. The pill's find button opens it too.
+ *   browser; pressed outside the reader, it is left alone. The strip's find button opens it too.
+ * - The open find bar stands in the tool strip above the text, never inside the scroll box, so it
+ *   lies over no line however the text wraps or scrolls.
  * - Typing counts the matches in the rendered text — case-insensitively, Chinese included — and
  *   never in the source: a link's address and Markdown's own marks match nothing.
  * - Enter and ↓ go to the next match, Shift+Enter and ↑ to the previous one, wrapping at both
@@ -220,7 +222,7 @@ describe("the outline", () => {
     expect(document.querySelector(`button[aria-label="${en.find.outline}"]`)).toBeNull();
   });
 
-  it("opens from the reader's pill when the reader is narrow", async () => {
+  it("opens from the reader's tool strip when the reader is narrow", async () => {
     readerWidth = 400;
     await openReader();
     expect(outlineRows()).toEqual([]);
@@ -275,7 +277,15 @@ describe("the find", () => {
     expect(document.querySelector('[role="search"]')).toBeNull();
   });
 
-  it("opens from the pill's find button", async () => {
+  it("stands above the text, outside the box the text scrolls in", async () => {
+    const box = await openReader();
+    await findKey(box);
+    const bar = document.querySelector('[role="search"]')!;
+    expect(box.contains(bar)).toBe(false);
+    expect(bar.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("opens from the tool strip's find button", async () => {
     await openReader();
     await click(document.querySelector(`button[aria-label="${en.find.inDocument}"]`)!);
     expect(document.activeElement).toBe(searchBox());

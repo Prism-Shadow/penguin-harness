@@ -13,7 +13,7 @@
  * with a way back. The tree's visibility and width last as long as the page.
  *
  * Right, the open document: Markdown in the Markdown reader (its outline and its find, Edit in
- * its tool pill), anything else as source. Edit swaps in the Files panel's in-place editor; Save
+ * its tool strip), anything else as source. Edit swaps in the Files panel's in-place editor; Save
  * writes the file and returns to reading. A relative link inside a document opens the document it
  * names in the same pane, so the index works as the handbook's own navigation. Every document but
  * the index can be deleted, behind the shared confirmation. The new-document dialog refuses a
@@ -466,7 +466,7 @@ export function HandbookPage() {
   const documentPane = (
     <PreviewPane
       view={view}
-      // Edit rides over the text it edits, in the reader's pill beside its outline and find.
+      // Edit sits with the text it edits, in the reader's tool strip beside its outline and find.
       actions={
         !editing &&
         doc !== null &&

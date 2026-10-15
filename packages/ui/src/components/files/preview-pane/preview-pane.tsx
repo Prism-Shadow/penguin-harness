@@ -18,7 +18,7 @@
  * hangs off it (the gestures, the keyboard chord, the anchor it returns focus to). It is focusable
  * only programmatically (`tabIndex={-1}`), so Escape has somewhere to hand focus back to. A
  * Markdown view is the reader's own scroll box instead, with the pill's actions in the reader's
- * pill beside its outline and find, so the two never stack over each other.
+ * tool strip above the text, beside its outline and find, so nothing floats over the document.
  */
 import type { HTMLAttributes, Key, ReactNode, Ref } from "react";
 import type { Components } from "react-markdown";

@@ -1,8 +1,8 @@
 /**
  * 内容: the type roles (every heading rung, the display title, the text roles, inline code),
  * Markdown as reading text in its two densities, the Markdown reader over a long document (wide,
- * with its outline as a rail, and narrow, with the outline in its tool pill — its find opens from
- * the pill or with Mod+F inside it), a code block and a bare code surface with its
+ * with its outline as a rail, and narrow, with the outline in its tool strip — its find opens from
+ * the strip or with Mod+F inside it), a code block and a bare code surface with its
  * gutter, the diff viewer unified, side by side and read from a patch, and a reply carrying A2UI
  * blocks — all from the package. Code is highlighted by the highlighter the frame provides, as in
  * the app.
