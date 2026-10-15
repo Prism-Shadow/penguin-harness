@@ -62,6 +62,74 @@ export interface BoardColumn {
   tickets: OrgTicketItem[];
 }
 
+/** How cards group inside one column: flat, or collapsible sections by owner, priority or parent epic. */
+export type TicketGroupBy = "none" | "owner" | "priority" | "parent";
+
+export interface TicketGroup {
+  key: string;
+  label: string;
+  tickets: OrgTicketItem[];
+}
+
+/**
+ * Cards grouped for one column: groups ordered (owner/parent alphabetically by label,
+ * priority by rank P0-first, the ungrouped bucket last), cards inside sorted by sortTickets.
+ * `by: "none"` yields the single flat group. Labels resolve through the chart names and the
+ * id → title map when given, falling back to the raw id.
+ */
+export function groupTickets(
+  tickets: readonly OrgTicketItem[],
+  by: TicketGroupBy,
+  opts: { names?: ReadonlyMap<string, string>; titles?: ReadonlyMap<string, string> } = {},
+): TicketGroup[] {
+  const sorted = sortTickets(tickets);
+  if (by === "none") return [{ key: "all", label: "", tickets: sorted }];
+  const buckets = new Map<string, OrgTicketItem[]>();
+  for (const t of sorted) {
+    let key: string;
+    if (by === "owner") key = t.owner;
+    else if (by === "priority") key = t.priority;
+    else key = t.parent ?? "";
+    const list = buckets.get(key);
+    if (list !== undefined) list.push(t);
+    else buckets.set(key, [t]);
+  }
+  const labelOf = (key: string): string => {
+    if (by === "owner") {
+      const id = key.startsWith("agent:") ? key.slice(6) : key;
+      return opts.names?.get(id) ?? key;
+    }
+    if (by === "parent") return key === "" ? "" : (opts.titles?.get(key) ?? key);
+    return key;
+  };
+  const rankOf = (key: string): number => {
+    if (by === "priority") return PRIORITY_RANK[key] ?? 9;
+    return 0;
+  };
+  return [...buckets.entries()]
+    .sort(([ak], [bk]) => {
+      if (by === "parent") {
+        if (ak === "") return 1;
+        if (bk === "") return -1;
+      }
+      return rankOf(ak) - rankOf(bk) || labelOf(ak).localeCompare(labelOf(bk));
+    })
+    .map(([key, list]) => ({ key, label: labelOf(key), tickets: list }));
+}
+
+/**
+ * Whole days since the ticket was minted, read off its id (`yyyy-mm-dd-<slug>`) against the
+ * local day `todayKey` (same form); null when either side is not a plain date. Powers the
+ * waiting-age badge on cards still asking someone for something.
+ */
+export function ticketAgeDays(ticketId: string, todayKey: string): number | null {
+  const born = ticketCreatedDate(ticketId);
+  if (born === null || !/^\d{4}-\d{2}-\d{2}$/.test(todayKey)) return null;
+  const ms = Date.parse(`${todayKey}T00:00:00Z`) - Date.parse(`${born}T00:00:00Z`);
+  if (Number.isNaN(ms)) return null;
+  return Math.max(0, Math.round(ms / 86400000));
+}
+
 /**
  * The search box's match: case-insensitive, against the title, the id, the owner principal
  * and the parent id, and — when the caller passes the chart's names — the owner's display
@@ -81,16 +149,26 @@ export function matchesTicketQuery(
   );
 }
 
-/** The board as rendered: every column, cards sorted, narrowed by the blocked-only switch and the search box. */
+/** The board as rendered: every column, cards sorted, narrowed by the blocked-only switch, the priority chips and the search box. */
 export function boardColumns(
   res: Pick<OrgTicketsResponse, "columns">,
-  opts: { blockedOnly?: boolean; query?: string; names?: ReadonlyMap<string, string> } = {},
+  opts: {
+    blockedOnly?: boolean;
+    query?: string;
+    names?: ReadonlyMap<string, string>;
+    /** Priorities to keep; undefined or empty keeps everything. */
+    priorities?: readonly string[];
+  } = {},
 ): BoardColumn[] {
   return TICKET_COLUMNS.map((status) => {
     const all = res.columns[status] ?? [];
     const kept = all.filter(
       (t) =>
-        (!opts.blockedOnly || isBlocked(t)) && matchesTicketQuery(t, opts.query ?? "", opts.names),
+        (!opts.blockedOnly || isBlocked(t)) &&
+        (opts.priorities === undefined ||
+          opts.priorities.length === 0 ||
+          opts.priorities.includes(t.priority)) &&
+        matchesTicketQuery(t, opts.query ?? "", opts.names),
     );
     return { status, tickets: sortTickets(kept) };
   });
