@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `ui`, `web`, `skills`
+- **PR:** [#1142](https://github.com/Prism-Shadow/penguin-harness/pull/1142)
 
 [English](2026-10-15-control-cursors.md)
 
