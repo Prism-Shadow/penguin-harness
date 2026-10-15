@@ -18,6 +18,7 @@ import type {
   TicketDoc,
 } from "./files.js";
 import {
+  isTicketId,
   parseCalendarEvent,
   parseChannelConfig,
   parseChannelMessageLine,
@@ -354,11 +355,12 @@ export class OrgStore {
   // ---- tickets ----
 
   /**
-   * Every `.md` file under a `<yyyy-mm>/<column>/` directory, its name minus the extension
-   * taken as the ticket id. Anything outside that shape — another month directory, a
-   * directory that is not one of the columns, a file that is not Markdown — is skipped.
-   * The id itself is NOT matched against `TICKET_ID_PATTERN` here: a file named by hand is
-   * still a ticket the board has to show, and what it is called is the caller's to judge.
+   * Every `.md` file under a `<yyyy-mm>/<column>/` directory whose name is a ticket id — the
+   * current shape or the one written before the slug rule tightened — its name minus the
+   * extension taken as the ticket id. Anything outside that shape — another month directory, a
+   * directory that is not one of the columns, a file that is not Markdown, a name that is
+   * neither id shape — is skipped: a file dropped in a column by hand is not a ticket the board
+   * has to show, and reading one only reports an error the pass would repeat.
    */
   async listTickets(dir: string): Promise<TicketFile[]> {
     const out: TicketFile[] = [];
@@ -381,6 +383,7 @@ export class OrgStore {
         for (const f of files) {
           if (!f.isFile() || !f.name.endsWith(".md")) continue;
           const ticketId = f.name.slice(0, -".md".length);
+          if (!isTicketId(ticketId)) continue;
           const p = path.join(colDir, f.name);
           const [raw, stat] = await Promise.all([fs.readFile(p, "utf8"), fs.stat(p)]);
           out.push({

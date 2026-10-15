@@ -544,6 +544,19 @@ export function serializeCalendarEvent(fields: {
 /** `<yyyy-mm-dd>-<slug>`; the slug is hyphen-joined lowercase English words, never a digit. */
 export const TICKET_ID_PATTERN = /^\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
 
+/**
+ * The id shape a ticket could carry before the slug rule tightened: the same date prefix with a
+ * slug that may hold digits. Read-only compatibility — the board still lists such a ticket so it
+ * can be repaired by hand, while every route and every write keeps refusing it, the same way
+ * `TICKET_ID_PATTERN` refuses a name that is neither shape.
+ */
+export const LEGACY_TICKET_ID_PATTERN = /^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]{0,63}$/;
+
+/** Whether a name — a file's basename without `.md` — names a ticket at all. */
+export function isTicketId(id: string): boolean {
+  return TICKET_ID_PATTERN.test(id) || LEGACY_TICKET_ID_PATTERN.test(id);
+}
+
 /** At most this many words in a derived slug, and at most this many characters in each. */
 const SLUG_MAX_WORDS = 6;
 const SLUG_MAX_WORD_LENGTH = 20;

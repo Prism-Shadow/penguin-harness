@@ -10,8 +10,10 @@
  * channel mentions reach desks and the chain stops at the limit; budgets warn, pause and
  * resume (a zero budget being over before anything is spent); a ticket session the runner
  * refuses leaves the ticket as it was; every desk and ticket session is opened as a company
- * Session (`source: "company"`) stamped with the `org` client; and every pass brings an
- * employee whose company plugins fell behind the library back up to it.
+ * Session (`source: "company"`) stamped with the `org` client; every pass brings an
+ * employee whose company plugins fell behind the library back up to it; and a file in a
+ * ticket column that is not named by a ticket id is listed nowhere and reported by nothing,
+ * while an id written before the slug rule tightened still shows on the board.
  */
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -2104,6 +2106,57 @@ describe("organization runtime", () => {
         userId: "alice",
       });
       expect((await service.ticket(P, ORG, t.ticketId)).blockedBy).toBe(blocker.ticketId);
+    });
+
+    it("a file in a column whose name is not a ticket id is listed nowhere and reported by nothing", async () => {
+      const stray = path.join(orgDir(), "tickets", "2026-09", "in_progress", "README.md");
+      await fs.mkdir(path.dirname(stray), { recursive: true });
+      await fs.writeFile(stray, "The conventions this column follows.\n", "utf8");
+      errors.length = 0;
+
+      // The pass carries on without reading it, so it has nothing to report about it.
+      await scheduler.tickOnce();
+      expect(errors.filter((e) => e.code === "org_ticket_invalid")).toEqual([]);
+      const board = await service.tickets(P, ORG);
+      expect(Object.values(board.columns).flatMap((c) => c.map((x) => x.ticketId))).toEqual([]);
+      expect(board.invalidFiles).toEqual([]);
+    });
+
+    it("a copy of a ticket under a name that is not an id stays off the board and out of the count", async () => {
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Launch the site" },
+        { userId: "alice" },
+      );
+      const copied = path.join(orgDir(), "tickets", "2026-09", "proposed", "notes.md");
+      await fs.copyFile(ticketPath(orgDir(), t.ticketId, "proposed"), copied);
+
+      // It parses, and it is still not a row: no column lists it and the overview counts one.
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.proposed.map((x) => x.ticketId)).toEqual([t.ticketId]);
+      expect(board.invalidFiles).toEqual([]);
+      expect((await service.detail(P, ORG, "alice")).board.proposed).toBe(1);
+    });
+
+    it("an id written before the slug rule tightened still shows on the board", async () => {
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Launch the site" },
+        { userId: "alice" },
+      );
+      const legacyId = "2026-09-01-t-fb79d3";
+      await fs.copyFile(
+        ticketPath(orgDir(), t.ticketId, "proposed"),
+        ticketPath(orgDir(), legacyId, "proposed"),
+      );
+
+      const board = await service.tickets(P, ORG);
+      expect(board.columns.proposed.map((x) => x.ticketId).sort()).toEqual(
+        [t.ticketId, legacyId].sort(),
+      );
+      expect(board.invalidFiles).toEqual([]);
     });
 
     it("reports a `# Ticket:` file as an invalid file: listed nowhere, refused on write, never rewritten", async () => {
