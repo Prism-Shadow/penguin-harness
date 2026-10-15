@@ -803,6 +803,9 @@ export const zh = {
       n === 1
         ? "确定删除这个对话？它的消息与 Trace 将被移除，且不可恢复。"
         : `确定删除这 ${n} 个对话？它们的消息与 Trace 将被移除，且不可恢复。`,
+    /** Above the list: machines whose archived chats could not be read this time, by alias. */
+    unreachable: (machines: string[]): string =>
+      `这些机器暂时连不上，其上的已归档对话未列出：${machines.join("、")}`,
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */

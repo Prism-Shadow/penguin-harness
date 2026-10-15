@@ -10,6 +10,7 @@
  */
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { machineForSession } from "../../lib/session-machines";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { dockPanelDefinition, panelLabel, registerDockPanel } from "../dock/panel-registry";
 import type { DockPanelBodyProps, DockPanelDefinition, PanelId } from "../dock/panel-registry";
@@ -133,8 +134,12 @@ function MemoryPanelBody({ active }: DockPanelBodyProps) {
       listingError={memoryListing.error}
       request={memoryRequest}
       active={active}
-      // Management (add / edit / delete) lives on the agent-settings memory tab.
-      onOpenSettings={() => openMemorySettings(selected.agentId)}
+      // Management (add / edit / delete) lives on the agent-settings memory tab, of the Agent
+      // on the machine this conversation is on.
+      machineId={machineForSession(selected.sessionId)}
+      onOpenSettings={() =>
+        openMemorySettings(selected.agentId, machineForSession(selected.sessionId))
+      }
     />
   );
 }

@@ -161,9 +161,7 @@ describe("a machine's Sessions, read by the server that adopted it", () => {
 
   describe("the machine's own answers", () => {
     const list = (path: string, adopted: boolean) =>
-      adopted
-        ? asAdopter("GET", path)
-        : apiClient(machine.app, machineCookie).get(path);
+      adopted ? asAdopter("GET", path) : apiClient(machine.app, machineCookie).get(path);
     const activeIds = async (adopted: boolean) =>
       (
         await json<SessionsResponse>(
@@ -185,10 +183,7 @@ describe("a machine's Sessions, read by the server that adopted it", () => {
       expect(await row(after, true)).toMatchObject({ source: "user", archived: false });
       expect(await row(apiBefore, true)).toMatchObject({ source: "api", archived: true });
       const counted = await json<SessionsResponse>(
-        list(
-          `/api/projects/${PROJECT}/agents/${AGENT}/sessions?category=active&counts=1`,
-          true,
-        ),
+        list(`/api/projects/${PROJECT}/agents/${AGENT}/sessions?category=active&counts=1`, true),
       );
       expect(counted.workspaceCounts?.[workspace]).toEqual({ active: 1, archived: 2 });
 

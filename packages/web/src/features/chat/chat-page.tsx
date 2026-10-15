@@ -134,6 +134,7 @@ import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, sameModelRef, turnPricing } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { useMemoryListing } from "./use-memory-listing";
+import { useMachineModels } from "../../lib/machine-models";
 import { deletedChangeKeys } from "./memory-nav";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
@@ -286,7 +287,8 @@ export function ChatPage() {
   const [credentialGuide, setCredentialGuide] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
-  const [models, setModels] = useState<ModelsResponse | null>(null);
+  /** This server's model configuration for the Project (the page's own while it acts here). */
+  const [localModels, setLocalModels] = useState<ModelsResponse | null>(null);
   // Background processes the conversation started (the details popover list), refreshed by
   // the polling effect below; procBusy marks the rows whose Stop / Remove requests are in
   // flight (every exited row at once while "clear exited" runs).
@@ -502,6 +504,13 @@ export function ChatPage() {
     : selected === null
       ? null
       : machineForSession(selected.sessionId);
+  /**
+   * The models this page offers and prices by: those of the server it acts on. A draft whose
+   * workspace is on a machine creates its Session over there, and a conversation on a machine
+   * runs there — either way the machine's own models are the ones it can take.
+   */
+  const machineModels = useMachineModels(projectId, pageMachineId);
+  const models = pageMachineId === null ? localModels : machineModels;
   const returnWorkbench = (
     location.state as {
       workbench?: { projectId: string; agentId: string; tabId: string; machineId: string | null };
@@ -637,10 +646,12 @@ export function ChatPage() {
   const sessionMemoryChanges = memoryChangesRef.current;
   // The Agent's memory listing, fetched once the Memory tab exists (its body is mounted
   // even behind another tab) or this conversation has changes to mark; shared by the
-  // Memory panel and the card's deleted-row marking.
+  // Memory panel and the card's deleted-row marking. Read from the machine the conversation
+  // is on: its Agent is that machine's, and so is its memory.
   const memoryListing = useMemoryListing(
     projectId,
     selected?.agentId ?? null,
+    selected === null ? null : machineForSession(selected.sessionId),
     panelDock("memory") !== null || sessionMemoryChanges.length > 0,
     sessionMemoryChanges,
   );
@@ -1242,7 +1253,7 @@ export function ChatPage() {
     [runProcessAction, exitedIds],
   );
 
-  // Model config (context window + credential guide): fetched once per Project.
+  // This server's model config (context window + credential guide): fetched once per Project.
   //
   // The credential guide **only ever nags once per lifetime** (first entry after registration):
   // gated by the server prefs' credentialGuideSeen — previously it checked "default model has no
@@ -1253,12 +1264,12 @@ export function ChatPage() {
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    setModels(null);
+    setLocalModels(null);
     void (async () => {
       try {
         const res = await api.getModels(projectId);
         if (cancelled) return;
-        setModels(res);
+        setLocalModels(res);
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
         const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
@@ -1288,11 +1299,11 @@ export function ChatPage() {
     const onEvent = (e: Event) => {
       const detail = chatDefaultsChangedDetail(e, projectId);
       if (!detail || detail.defaultModel === undefined) return;
-      setModels(null);
+      setLocalModels(null);
       api
         .getModels(projectId)
         .then((res) => {
-          if (!cancelled) setModels(res);
+          if (!cancelled) setLocalModels(res);
         })
         .catch(() => undefined);
     };
@@ -2065,9 +2076,15 @@ export function ChatPage() {
   const terminalSupported = terminalApiSupported();
 
   // The Memory panel's way to its management: add / edit / delete live on the Agent's
-  // settings page, on the memory tab.
+  // settings page, on the memory tab — the page of the Agent on the machine the conversation
+  // is on, which names that machine (`?machine=`).
   const openMemorySettings = useCallback(
-    (memoryAgentId: string) => navigate(`/agents/${memoryAgentId}?tab=memory`),
+    (memoryAgentId: string, machineId: string | null) => {
+      const params = new URLSearchParams();
+      if (machineId !== null) params.set("machine", machineId);
+      params.set("tab", "memory");
+      navigate(`/agents/${encodeURIComponent(memoryAgentId)}?${params.toString()}`);
+    },
     [navigate],
   );
   /**

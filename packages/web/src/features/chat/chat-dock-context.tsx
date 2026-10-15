@@ -58,7 +58,8 @@ export interface ChatDockState {
   /** Jump command: land the Memory tab on this memory's detail, or on the list (null target). */
   memoryRequest: { target: MemoryLocateTarget | null } | null;
   /** Opens this Agent's settings on the memory tab, where add / edit / delete live. */
-  openMemorySettings: (agentId: string) => void;
+  /** Opens an Agent's memory tab: on this server (`machineId` null) or on that machine. */
+  openMemorySettings: (agentId: string, machineId: string | null) => void;
   /** Writes a prompt into this conversation's composer and stops there: nothing is sent. */
   prefillComposer: (text: string) => void;
 }

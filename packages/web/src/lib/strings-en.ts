@@ -680,6 +680,8 @@ export const en: Strings = {
       n === 1
         ? "Delete this chat? Its messages and Trace will be removed permanently."
         : `Delete these ${n} chats? Their messages and Traces will be removed permanently.`,
+    unreachable: (machines: string[]): string =>
+      `These machines can't be reached right now, so their archived chats aren't listed: ${machines.join(", ")}`,
   },
 
   tracePanel: {

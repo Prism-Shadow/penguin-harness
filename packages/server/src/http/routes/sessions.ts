@@ -856,7 +856,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
-    const info = await deps.sessionService.toInfo(row, hasTrace, undefined, listingViewOfRequest(c));
+    const info = await deps.sessionService.toInfo(
+      row,
+      hasTrace,
+      undefined,
+      listingViewOfRequest(c),
+    );
     // Single-session GET only: the latest Trace file's absolute path (a directory walk per
     // call — too costly for list rows). The web's /model switch hands it to the new session's
     // [model_switch_from] block so the model can read the source history itself.

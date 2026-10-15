@@ -2062,8 +2062,7 @@ export interface ArchivedSessionsResponse {
  * matches — on this server, or with `machineId` on that machine (the filter then names its Project).
  */
 export type ArchivedSessionsBatch = (
-  | { sessionIds: string[] }
-  | { filter: ArchivedSessionsBatchFilter }
+  { sessionIds: string[] } | { filter: ArchivedSessionsBatchFilter }
 ) & { machineId?: string };
 
 /** A batch's filter: the archive query, one group's Workspace, and the snapshot it was counted at. */
