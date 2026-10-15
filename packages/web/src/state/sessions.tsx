@@ -90,6 +90,7 @@ import {
   rememberMachineAgents,
   rememberMachineSessions,
 } from "../lib/machine-cache";
+import { subscribeMachineAgentsChanged } from "../lib/machine-agents";
 import { setTerminalMachines } from "../lib/terminal-machines";
 import { machineIdOf } from "../lib/workspace-machines";
 import {
@@ -1619,6 +1620,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
    * the composer offers a remote draft, and better than dropping its rows.
    */
   const [machineAgentIdsJson, setMachineAgentIdsJson] = useState("{}");
+  /** Bumped when a page changed a machine's Agents (created, deleted one): its list is read again. */
+  const [machineAgentsTick, setMachineAgentsTick] = useState(0);
+  useEffect(() => subscribeMachineAgentsChanged(() => setMachineAgentsTick((n) => n + 1)), []);
   useEffect(() => {
     if (projectId === null) {
       setMachineAgentIdsJson("{}");
@@ -1647,7 +1651,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, machineIdsKey, offlineMachineIdsKey]);
+  }, [projectId, machineIdsKey, offlineMachineIdsKey, machineAgentsTick]);
 
   /**
    * The Project and its Agent set: what the list is OF. A change here invalidates every row
