@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `core`, `server`, `web`, `ci`
+- **PR:** [#1151](https://github.com/Prism-Shadow/penguin-harness/pull/1151)
 
 [中文版](2026-10-15-ci-flake-races.zh.md)
 
