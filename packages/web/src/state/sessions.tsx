@@ -68,7 +68,7 @@ import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { probeSession } from "../api/session-probe";
-import { openUserEvents } from "../api/sse";
+import { openMachineEvents, openUserEvents } from "../api/sse";
 import { isCompanyEvent, publishCompanyEvent, publishCompanyResync } from "./company";
 import { publishMachinesChanged, useMachines } from "./machines";
 import {
@@ -1498,13 +1498,6 @@ export function applyUserEvent(
   /** The machine the event came from; null for this server. */
   source: string | null = null,
 ): void {
-  // A connected machine's own event, carried here by this server (its machines/event-relay.ts):
-  // routed exactly as the machine's own stream used to be, as that machine's. Only this server
-  // relays; a machine's word does not carry a third machine's.
-  if (ev.type === "machine_event") {
-    if (source === null) applyUserEvent(store, ev.event, onWebUpdated, ev.machineId);
-    return;
-  }
   // The machines list changed — a job moved, a connection came or went: every surface reading
   // the machines reads them again (state/machines.tsx).
   if (ev.type === "machines_changed") {
@@ -1839,6 +1832,26 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     });
     return () => conn.close();
   }, [store]);
+
+  // The machines aggregate (GET /api/projects/:projectId/machines/events): one stream for every
+  // connected machine, each event routed as that machine's word — the routing the retired HTTP
+  // relay once fed into this server's own stream — and re-published wrapped, so every subscriber
+  // of this channel (the archive page) keeps seeing the shape it always did. The hub's own
+  // events (resync_required after a replay the buffer could not honour) are this server's: the
+  // list facts missed are this list's. Reconnects on Project switches; the stream is per Project.
+  useEffect(() => {
+    if (projectId === null) return;
+    const conn = openMachineEvents(projectId, {
+      onMachineEvent: (machineId, event) => {
+        applyUserEvent(store, event, () => window.location.reload(), machineId);
+        publishUserEvent({ type: "machine_event", machineId, event });
+      },
+      onHubEvent: (ev) => {
+        applyUserEvent(store, ev, () => window.location.reload());
+      },
+    });
+    return () => conn.close();
+  }, [store, projectId]);
 
   const { pageState, countsByAgent, machineIds } = state;
 

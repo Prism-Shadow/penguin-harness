@@ -3321,7 +3321,7 @@ export type ServerEvent =
   | MachineServerEvent;
 
 /**
- * The machines' two events on the user channel, published to admins only — the Machines page,
+ * The machines' events on the user channel, published to admins only — the Machines page,
  * and the `/server/<id>` proxy everything else about a machine goes through, are admin-only.
  */
 export type MachineServerEvent =
@@ -3334,11 +3334,13 @@ export type MachineServerEvent =
    */
   | { type: "machines_changed" }
   /**
-   * One of a connected machine's own user-channel events, relayed by this server from that
-   * machine's `GET /api/events` (machines/event-relay.ts). The page holds one event stream to
-   * this server whatever the number of machines: a stream per machine made five connected
-   * machines take the browser's whole HTTP/1.1 allowance of six connections to one origin, and
-   * every other request of the page then waited behind them for good.
+   * One of a connected machine's own user-channel events, tagged with the machine it came
+   * from. They ride the machines aggregate (event-hub.ts, `GET …/machines/events`) — ONE
+   * stream for every connected machine, whose per-machine frames have this same shape; the
+   * page that re-publishes them on its own channel wraps them this way too. One stream, not
+   * a stream per machine: five of those once took the browser's whole HTTP/1.1 allowance of
+   * six connections to one origin, and every other request of the page then waited behind
+   * them for good.
    */
   | { type: "machine_event"; machineId: string; event: ServerEvent };
 

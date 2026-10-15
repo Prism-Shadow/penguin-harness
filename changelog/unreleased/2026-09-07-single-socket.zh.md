@@ -7,7 +7,7 @@
 
 [English](2026-09-07-single-socket.md)
 
-Web App 标签页通过一条 WebSocket 承载 API 调用和长期订阅，不再让各自独立的 HTTP 流耗尽浏览器连接槽位。服务端在 socket hub 内为每台机器共享一条套接字和一次事件订阅，发现静默的调用与流，并在重试时避免重复堆积无应答请求。既有 HTTP 用户事件 relay 独立保留，包括没有 API socket 的机器，可能另持第二条上游订阅；单次订阅保证不跨这两种传输。设计见 PRFC-0011。
+Web App 标签页通过一条 WebSocket 承载 API 调用和长期订阅，不再让各自独立的 HTTP 流耗尽浏览器连接槽位。服务端在 socket hub 内为每台机器共享一条套接字和一次事件订阅，发现静默的调用与流，并在重试时避免重复堆积无应答请求。HTTP 用户事件 relay 退役：Web App 改读机器聚合流，一台机器唯一的一次订阅现在覆盖每个读取方；运行着不带 socket hub 的旧版本的机器在 Web App 上失去实时事件（行数据仍经 HTTP 拉取）。设计见 PRFC-0011。
 
 ## API 传输与兼容
 
@@ -22,7 +22,7 @@ Web App 标签页通过一条 WebSocket 承载 API 调用和长期订阅，不�
 
 - 机器代理与事件 hub 在每一代内共享一个套接字缓存，经各台机器的 SSH 会话以其 admin 身份拨号。套接字仅在该会话内复用；会话被替换时丢弃旧套接字，下一次请求重新拨号。
 - 转发的机器流从不回退到 HTTP。握手拒绝记住一分钟；拨号期限为 10 秒，8 秒内未打开的流会拆掉其套接字。失败以 `502`/`504` 和 `machine_socket_refused`、`machine_socket_unavailable` 或 `machine_stream_not_opened` 作答，而不是再占住一条 HTTP 转发。
-- socket hub 内的聚合与代理读取方共享每台机器的一次上游 `/api/events` 订阅和有界重放缓冲。代理读取方收到机器自己的事件与事件 id；独立的 HTTP 用户事件 relay 保留，不会被静默切换为仅经套接字交付。
+- socket hub 内的聚合与代理读取方共享每台机器的一次上游 `/api/events` 订阅和有界重放缓冲。代理读取方收到机器自己的事件与事件 id；Web App 像其他读取方一样读取聚合流，HTTP 用户事件 relay 退役而不是被静默保留。
 - `GET /api/projects/:projectId/machines/events` 对 admin 与项目成员开放，立即开流，每个标签页通过一条流承载它关注的全部机器。`machine_event` 帧标明来源机器；`server_event` 帧携带 `hello` 或 `resync_required`，无 id 的心跳说明聚合流自身的活性。重连从比响应寿命更长的缓冲重放，最多保留 10,000 条事件或 8 MB，并按关注的机器过滤。
 - 聚合流每次打 20 秒心跳时重新读取 Project 的机器，不重开标签页的流就接入新连接的机器。已接入的机器不会每拍重新查找；后续重拨由 hub 负责。聚合适配器位于 `machines/aggregate-stream.ts`。
 - 聚合 holder 在拨号失败或流未打开之后继续持有机器订阅。重试从 1 秒起倍增，最多 30 秒，每次尝试前重新读取连接，从而跟随被替换的 SSH 会话。拨号成功后从机器的最后一个事件 id 续上。相同套接字失败在一轮连续失败期间只记一次日志和错误记录，而不是每次拨号都记。
