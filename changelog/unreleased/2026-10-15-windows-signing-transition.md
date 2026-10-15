@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `desktop`, `web`, `ci`, `docs`
+- **PR:** [#1145](https://github.com/Prism-Shadow/penguin-harness/pull/1145)
 
 [中文版](2026-10-15-windows-signing-transition.zh.md)
 
