@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `desktop`, `web`, `ci`, `docs`
+- **PR:** [#1144](https://github.com/Prism-Shadow/penguin-harness/pull/1144)
 
 [中文版](2026-10-15-windows-update-signature.zh.md)
 
