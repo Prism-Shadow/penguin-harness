@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `desktop`, `server`, `skills`, `docs`
+- **PR:** [#1150](https://github.com/Prism-Shadow/penguin-harness/pull/1150)
 
 [中文版](2026-10-15-builtin-browser-keyboard-focus.zh.md)
 
