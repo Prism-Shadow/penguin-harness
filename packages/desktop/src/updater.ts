@@ -41,8 +41,10 @@ import {
 import type { FetchFn } from "./update-source.js";
 import { initialUpdateStatus, nextUpdateStatus } from "./updater-status.js";
 import type { UpdaterEvent } from "./updater-status.js";
+import { WindowsUpdater, WindowsUpdateVerificationError } from "./windows-updater.js";
 
-const { autoUpdater } = electronUpdater;
+const autoUpdater =
+  process.platform === "win32" ? new WindowsUpdater() : electronUpdater.autoUpdater;
 
 /** First check runs after this delay: booting the server and the window comes first. */
 const FIRST_CHECK_DELAY_MS = 20_000;
@@ -68,6 +70,7 @@ let downloadedVersion: string | null = null;
 let downloadInFlight = false;
 /** The running download was started from the native dialog: its outcomes get native dialogs too. */
 let nativeDownload = false;
+let nativeInstall = false;
 
 type FeedState =
   { phase: "pending" } | { phase: "unavailable" } | { phase: "ready"; fallbackUrl: string | null };
@@ -199,16 +202,24 @@ function reannounceStatus(): void {
  * user in a dialog: a menu-driven check, or a download started from the offer dialog.
  * Web-driven steps report through the status the modal reads.
  */
-function reportUpdaterError(err: Error, step: "check" | "download"): void {
-  emitStatus({ kind: "error", message: err.message });
-  const native = step === "check" ? manualCheckInFlight : nativeDownload;
+function reportUpdaterError(err: Error, step: "check" | "download" | "install"): void {
+  if (step === "install") downloadedVersion = null;
+  emitStatus({ kind: step === "install" ? "download-invalidated" : "error", message: err.message });
+  const native =
+    step === "check" ? manualCheckInFlight : step === "install" ? nativeInstall : nativeDownload;
+  nativeInstall = false;
   if (!native) return;
   manualCheckInFlight = false;
   nativeDownload = false;
   void dialog
     .showMessageBox({
       type: "error",
-      message: step === "check" ? "Could not check for updates." : "Could not download the update.",
+      message:
+        step === "check"
+          ? "Could not check for updates."
+          : step === "install"
+            ? "Could not verify the update."
+            : "Could not download the update.",
       detail: `${err.message}\n\nYou can always download the latest release manually.`,
       buttons: ["Open Releases", "OK"],
       defaultId: 1,
@@ -277,6 +288,7 @@ export function handleUpdaterCommand(action: DesktopUpdaterCommandMessage["actio
   // Same path as the dialog's "Restart now": quitAndInstall goes through the normal
   // quit sequence, so the shell's will-quit hook still stops the embedded server
   // gracefully before the files are replaced.
+  nativeInstall = false;
   autoUpdater.quitAndInstall();
 }
 
@@ -356,6 +368,10 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
   });
   autoUpdater.on("error", (err: Error) => {
     log(`error: ${err.message}`);
+    if (err instanceof WindowsUpdateVerificationError) {
+      reportUpdaterError(err, "install");
+      return;
+    }
     if (downloadInFlight) {
       return;
     }
@@ -599,5 +615,6 @@ async function promptRestart(version: string, parent: BrowserWindow | null): Pro
   if (result.response !== 0) return;
   // quitAndInstall triggers the normal quit path first, so the shell's will-quit hook
   // still stops the embedded server gracefully before the files are replaced.
+  nativeInstall = true;
   autoUpdater.quitAndInstall();
 }
