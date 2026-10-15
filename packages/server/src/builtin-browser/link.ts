@@ -52,8 +52,8 @@ export const CHROME_CAPABILITIES: BrowserLinkCapabilities = {
 
 /**
  * Why a request did not produce a result: the far side refused it (`message` is its own error
- * — a CDP error text, or `no_such_tab`, `tab_crashed`, `tab_released`), it did not answer in
- * time, or the link closed under it.
+ * — a CDP error text, or `no_such_tab`, `tab_crashed`, `tab_released`,
+ * `keyboard_focus_failed`), it did not answer in time, or the link closed under it.
  */
 export class BrowserLinkError extends Error {
   constructor(

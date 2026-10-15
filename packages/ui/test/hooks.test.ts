@@ -82,7 +82,7 @@ const APPENDIX_A = [
  * Glass is for the layers that float over the page (the composer card and its slash list, dialogs,
  * menus, popovers, tooltips, the floating launcher) and for a plugin or skill tile; the eyebrow and display rungs for the
  * sidebar's list label and the page titles; live marks for the spinner, a pulsing state dot, the
- * machines page's working marks and the caret of a reply still streaming in; frames for the
+ * step under way in a machine job's stepper and the caret of a reply still streaming in; frames for the
  * transcript's cards, the code block, the page's cards and a table that is its own box; the shell
  * for the app window; a decorative icon for the rows and headers whose label already says what the
  * icon says (a nav row's glyph in the sidebar or a rail, a group header's, a menu row's glyph, a
@@ -122,7 +122,7 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-eyebrow": ["GroupHeader", "PagedDialog", "Text"],
   // The page titles are `PageHeader`'s; the draft view's hero writes its own.
   "ui-display": ["Heading", "PageHeader", "EmptyState", "DraftView"],
-  "ui-live": ["Spinner", "Dot", "Stepper", "MachineCard", "ProgressBar", "StreamingCaret"],
+  "ui-live": ["Spinner", "Dot", "MachineStepper", "ProgressBar", "StreamingCaret"],
   // The transcript's cards (the tool call, the activity card — the work group and the harness's
   // events — the changes card at a Task's foot, and the one-line note) and the code block, and the
   // page-level boxes (W4): the card and a table that is its own box.

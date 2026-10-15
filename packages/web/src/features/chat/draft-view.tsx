@@ -134,7 +134,11 @@ export function DraftView({
   onAgentChange,
 }: {
   projectId: string;
-  /** Project model config (already fetched by ChatPage): candidate list and default model. */
+  /**
+   * The model config of the server the draft's workspace is on (ChatPage reads it: this server's,
+   * or the machine's): candidate list and default model. A Session created on a machine can only
+   * name a model that machine has.
+   */
   models: ModelsResponse | null;
   /** Parked draft conversation id (`/chat/draft-…` — see draft-sessions.ts); absent = the ordinary active draft (`/chat/new`). */
   draftId?: string;
@@ -478,14 +482,15 @@ export function DraftView({
   // created on first send reads systemConfig fresh, so it runs with the picked level, which
   // also becomes the Agent's new default — the project default is only a fallback and is
   // never written from here. Refetched whenever the draft's Agent changes; while loading
-  // (or after a failed fetch) the picker stays disabled (null).
+  // (or after a failed fetch) the picker stays disabled (null). The Agent is the one on the
+  // workspace's machine, so its settings are read and written over there.
   const [agentThinkingLevel, setAgentThinkingLevel] = useState<string | null>(null);
   useEffect(() => {
     setAgentThinkingLevel(null);
     if (!agentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, agentId)
+      .getAgentConfig(projectId, agentId, workspaceMachine)
       .then((res) => {
         if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
       })
@@ -493,7 +498,7 @@ export function DraftView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId]);
+  }, [projectId, agentId, workspaceMachine]);
   const thinkingLevel =
     agentThinkingLevel === null || chatDefaults === null
       ? null
@@ -508,15 +513,20 @@ export function DraftView({
       const rollback = thinkingRef.current;
       setAgentThinkingLevel(level); // Optimistic: the derived display follows immediately.
       api
-        .putAgentConfig(projectId, agentId, {
-          config: { model: { thinkingLevel: level as AgentModelConfigDto["thinkingLevel"] } },
-        })
+        .putAgentConfig(
+          projectId,
+          agentId,
+          {
+            config: { model: { thinkingLevel: level as AgentModelConfigDto["thinkingLevel"] } },
+          },
+          workspaceMachine,
+        )
         .catch((e: unknown) => {
           setAgentThinkingLevel(rollback);
           toastError(apiErrorText(e));
         });
     },
-    [projectId, agentId],
+    [projectId, agentId, workspaceMachine],
   );
 
   // Skills installed on the currently selected Agent (candidates for the input
@@ -535,7 +545,7 @@ export function DraftView({
     if (!agentId) return;
     let cancelled = false;
     api
-      .getAgentSkills(projectId, agentId)
+      .getAgentSkills(projectId, agentId, workspaceMachine)
       .then((res) => {
         if (!cancelled) setAgentSkills(res.skills);
       })
@@ -546,7 +556,7 @@ export function DraftView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId]);
+  }, [projectId, agentId, workspaceMachine]);
 
   // —— Auto-cache ——
   // Options (Agent / Workspace / approval mode / Model) are discrete clicks: written

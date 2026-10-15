@@ -1,7 +1,7 @@
 /**
  * 数据: the table framed on its own and bare inside a card at the small density, list rows plain
- * and opening what they name, label/value pairs at both rungs, and a running job's log — all from
- * the package.
+ * and opening what they name, rows whose text runs far past a narrow card, label/value pairs at
+ * both rungs, and a running job's log — all from the package.
  */
 import {
   AgentAvatar,
@@ -9,6 +9,7 @@ import {
   Button,
   Card,
   CardHeader,
+  CollapsibleSection,
   GlyphIcon,
   ICONS,
   ICON_SIZE,
@@ -35,6 +36,15 @@ const SCHEDULES = [
 ];
 const SPEND = ["$12.40", "$8.75", "$3.10"];
 const SKILLS = ["pdf", "web-design", "continual-learning"];
+/** Memory ids and dates; the second id runs long on purpose, as a title that must truncate. */
+const MEMORIES = [
+  { id: "local-proxy-noninteractive-shell-bypass", date: "2026-10-15" },
+  {
+    id: "penguinharness-0215-gemini-fetch-mismatch-inside-the-bundled-server-process-only",
+    date: "2026-10-13",
+  },
+  { id: "verify-patents-and-literature-before-citing", date: "2026-10-15" },
+];
 const ROOT = "~/.penguin/data";
 const MACHINE_ID = "m_7f3a9c21";
 const LOG = [
@@ -131,6 +141,36 @@ export function DataBoard() {
               />
             ))}
           </Card>
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.longRows} aside={t.longRowsHint}>
+        <div className="lib-stack">
+          <CollapsibleSection title={t.memoryTitle} meta={t.memoryCount(MEMORIES.length)}>
+            <ul>
+              {MEMORIES.map((memory, i) => (
+                <ListRow
+                  key={memory.id}
+                  as="li"
+                  title={<span className="font-mono">{memory.id}</span>}
+                  description={t.memoryDescriptions[i]}
+                  meta={<span className="tabular-nums">{memory.date}</span>}
+                  trailing={
+                    <>
+                      <IconButton label={t.viewMemory(memory.id)}>
+                        <GlyphIcon d={ICONS.eye} size={ICON_SIZE.iconButton} />
+                      </IconButton>
+                      <IconButton label={t.editMemory(memory.id)}>
+                        <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.iconButton} />
+                      </IconButton>
+                      <IconButton variant="danger" label={t.deleteMemory(memory.id)}>
+                        <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+                      </IconButton>
+                    </>
+                  }
+                />
+              ))}
+            </ul>
+          </CollapsibleSection>
         </div>
       </BoardGroup>
       <BoardGroup title={t.keyValue}>

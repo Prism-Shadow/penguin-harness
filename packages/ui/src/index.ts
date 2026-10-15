@@ -262,6 +262,16 @@ export * from "./components/shell/session-row/session-row";
 // The drag image every draggable row hands the browser: an opaque, themed copy of the row.
 export * from "./components/overlays/drag-preview/drag-preview";
 
+// Machines — the Machines page's presentation: the status pill and the state-to-look mapping, a
+// job's stepper, the machine card and the list it sits in, the Machine dialog's toolbar, and the
+// add dialog's shell (its body, host list and rows, and footer).
+export * from "./components/machines/machine-status/machine-status";
+export * from "./components/machines/machine-stepper/machine-stepper";
+export * from "./components/machines/machine-card/machine-card";
+export * from "./components/machines/machine-list/machine-list";
+export * from "./components/machines/machine-toolbar/machine-toolbar";
+export * from "./components/machines/add-machine/add-machine";
+
 // Reading and finding: the find-in-page machinery the app's find bar and the Markdown reader share
 // (the text matcher, the DOM index with its highlight paint and reveal, the control row), the
 // reader with its outline model, and the measured width a layout that follows its own room reads.

@@ -135,13 +135,14 @@ export const zh = {
       `把这 ${count} 台机器更新到本服务端的版本？每台都会重装程序、重启服务并重新连接，期间正在用它的人会短暂断开。`,
     /**
      * The one word for a machine's state, keyed by its reading; `serving` is this server's. The
-     * card's mark and the Machine dialog's status chip both say it.
+     * card's status pill and the Machine dialog's both say it. A connected machine reads as
+     * running, the word this server's own entry wears.
      */
     state: {
       serving: "运行中",
       queued: "排队中",
       working: "处理中",
-      ready: "已连接",
+      ready: "运行中",
       reconnecting: "重新连接中",
       failed: "失败",
       installedOnly: "已安装",
@@ -803,6 +804,9 @@ export const zh = {
       n === 1
         ? "确定删除这个对话？它的消息与 Trace 将被移除，且不可恢复。"
         : `确定删除这 ${n} 个对话？它们的消息与 Trace 将被移除，且不可恢复。`,
+    /** Above the list: machines whose archived chats could not be read this time, by alias. */
+    unreachable: (machines: string[]): string =>
+      `这些机器暂时连不上，其上的已归档对话未列出：${machines.join("、")}`,
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */

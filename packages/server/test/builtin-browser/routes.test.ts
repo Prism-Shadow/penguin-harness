@@ -836,6 +836,36 @@ describe("agent actions", () => {
     ]);
   });
 
+  it("stops typing when the shell cannot give the tab keyboard focus, and says so", async () => {
+    const h = mount();
+    h.shell.show(tab(2));
+    const typing: string[] = [];
+    h.shell.cdp = page((_t, method) => {
+      if (method === "Input.insertText" || method === "Input.dispatchKeyEvent") {
+        typing.push(method);
+        throw new Error("keyboard_focus_failed");
+      }
+      return evaluated(true);
+    });
+    const res = await h.call("POST", "/tabs/2/type", {
+      text: "headphones",
+      selector: "#search",
+      submit: true,
+    });
+    const result = await json<BuiltinBrowserExecResult>(res);
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("could not take keyboard focus");
+    // The refused text is not followed by an Enter.
+    expect(typing).toEqual(["Input.insertText"]);
+
+    const raw = await h.call("POST", "/tabs/2/cdp", {
+      method: "Input.dispatchKeyEvent",
+      params: { type: "keyDown", key: "Enter" },
+    });
+    expect(raw.status).toBe(409);
+    expect((await errorOf(raw)).error.code).toBe("keyboard_focus_failed");
+  });
+
   it("takes a screenshot, of the viewport or the whole page", async () => {
     const h = mount();
     h.shell.show(tab(2));

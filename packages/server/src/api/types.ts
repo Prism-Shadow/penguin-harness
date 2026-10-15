@@ -2005,7 +2005,7 @@ export interface ArchivedSessionsQuery {
   projectId?: string;
 }
 
-/** One group of the archive page: one Workspace of one Project. */
+/** One group of the archive page: one Workspace of one Project, on this server or on one machine. */
 export interface ArchivedSessionGroup {
   projectId: string;
   projectName: string;
@@ -2015,6 +2015,12 @@ export interface ArchivedSessionGroup {
   count: number;
   /** The newest `lastActiveAt` in the group — the order the groups come in, newest first. */
   latest: string;
+  /** The machine the group's Sessions live on (its own id); absent on this server's groups. */
+  machineId?: string;
+  /** That machine's ssh alias, for the group's header. */
+  machineAlias?: string;
+  /** That machine's own time when it counted the group: a batch on the whole group passes it as `until`. */
+  asOf?: string;
 }
 
 /** GET /api/me/archived-sessions/groups. */
@@ -2027,6 +2033,8 @@ export interface ArchivedSessionGroupsResponse {
    * filter's `until`, so it acts on the Sessions the count saw and on none that came after.
    */
   asOf: string;
+  /** Machines the user's Projects use whose archive could not be read (not connected, or no answer). */
+  unreachable?: Array<{ machineId: string; alias: string }>;
 }
 
 /** Query of GET /api/me/archived-sessions: one group's page, newest activity first. */
@@ -2038,6 +2046,8 @@ export interface ArchivedSessionsRowsQuery extends ArchivedSessionsQuery {
   limit: number;
   /** `<lastActiveAt>,<sessionId>` of the last row held, as the Session list's cursor. */
   before?: string;
+  /** The group's machine (`ArchivedSessionGroup.machineId`): the page is read from it. */
+  machineId?: string;
 }
 
 /** GET /api/me/archived-sessions. */
@@ -2047,9 +2057,13 @@ export interface ArchivedSessionsResponse {
   hasMore: boolean;
 }
 
-/** What an archive-page batch acts on: explicit ids (1–500), or every archived row a filter matches. */
-export type ArchivedSessionsBatch =
-  { sessionIds: string[] } | { filter: ArchivedSessionsBatchFilter };
+/**
+ * What an archive-page batch acts on: explicit ids (1–500), or every archived row a filter
+ * matches — on this server, or with `machineId` on that machine (the filter then names its Project).
+ */
+export type ArchivedSessionsBatch = (
+  { sessionIds: string[] } | { filter: ArchivedSessionsBatchFilter }
+) & { machineId?: string };
 
 /** A batch's filter: the archive query, one group's Workspace, and the snapshot it was counted at. */
 export interface ArchivedSessionsBatchFilter extends ArchivedSessionsQuery {

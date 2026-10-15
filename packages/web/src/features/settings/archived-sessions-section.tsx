@@ -11,8 +11,11 @@
  *   the group, loaded or not (Deselect all once all of it is chosen).
  * - A row: a box to choose it (shown while the row is hovered or the box has keyboard focus,
  *   always on touch, and on every row while anything is chosen), the title and the time, the
- *   source as a word in a pill (none on a person's conversation), a busy glyph while it runs,
- *   then a delete icon and Unarchive. Whatever is chosen, the one bar acts on it.
+ *   source as a word in a pill (on every row, a person's conversation included), a busy glyph
+ *   while it runs, then a delete icon and Unarchive. Whatever is chosen, the one bar acts on it.
+ * - An admin also sees the archived chats of the machines their Projects use: a machine's group
+ *   names the machine after its Workspace (`[SSH: alias]`, as the sidebar's groups do), and a
+ *   machine that could not be read is named in one muted line above the list.
  * - Every delete asks first, with the count — the only red on the page; unarchive does not ask.
  *
  * The page's state and every request live in archived-sessions-state.ts; this renders it.
@@ -40,6 +43,7 @@ import { formatDateTime } from "../../lib/format";
 import { subscribeUserEvents } from "../../lib/omni/user-events";
 import { revealPlan, workspaceLabel } from "../../lib/session-grouping";
 import { programSource } from "../../lib/session-source-mark";
+import { nameOnMachine } from "../../lib/workspace-machines";
 import { S } from "../../lib/strings";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Truncated } from "../../components/ui/truncated";
@@ -204,6 +208,12 @@ export function ArchivedSessionsSection() {
             </button>
           </div>
         )}
+
+        {state.unreachable.length > 0 && (
+          <p className="text-xs text-fg-muted">
+            {S.archivedSessions.unreachable(state.unreachable)}
+          </p>
+        )}
       </div>
 
       <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-1">
@@ -304,7 +314,15 @@ function ArchiveGroup({
 }) {
   const temp = group.workspace === "temp";
   const workspace = temp ? S.chat.tempWorkspaces : workspaceLabel(group.workspace);
+  /** The machine the group's Sessions live on, by its ssh alias; null on this server. */
+  const machine = group.machineAlias ?? null;
   const shown = shownRows(rows);
+  /** One row's own action, on the server the group is on. */
+  const rowTarget = (sessionId: string): ArchiveTarget => ({
+    kind: "ids",
+    ids: [sessionId],
+    ...(group.machineId !== undefined ? { machineId: group.machineId } : {}),
+  });
   // The sidebar's own reveal rule: what the row still hides counts what is held past the cap
   // and what the group's count says is not fetched yet.
   const plan = revealPlan({
@@ -324,12 +342,22 @@ function ArchiveGroup({
         <h3
           className="min-w-0 flex-1 truncate text-sm font-medium"
           // The heading names the directory by its basename; the path behind it is nowhere else
-          // on this page.
-          {...(temp ? {} : { "data-tooltip": group.workspace, "data-tooltip-extra": true })}
+          // on this page — and a path means a directory only on the machine it is on.
+          {...(temp
+            ? {}
+            : {
+                "data-tooltip": nameOnMachine(group.workspace, machine),
+                "data-tooltip-extra": true,
+              })}
         >
           {group.projectName}
           <span className="px-1.5 text-fg-subtle">›</span>
           {workspace}
+          {machine !== null && (
+            <span className="ml-1.5 text-xs font-normal text-fg-subtle">
+              {S.chat.machineTag(machine)}
+            </span>
+          )}
         </h3>
         <span className="shrink-0 text-xs text-fg-muted">
           {S.archivedSessions.count(group.count)}
@@ -355,9 +383,9 @@ function ArchiveGroup({
               choosing={choosing}
               busy={busy}
               onToggle={() => onToggle(s.sessionId)}
-              onUnarchive={() => onUnarchive({ kind: "ids", ids: [s.sessionId] })}
+              onUnarchive={() => onUnarchive(rowTarget(s.sessionId))}
               onDelete={() =>
-                onDelete({ kind: "ids", ids: [s.sessionId] }, s.title ?? S.chat.defaultSessionTitle)
+                onDelete(rowTarget(s.sessionId), s.title ?? S.chat.defaultSessionTitle)
               }
             />
           ))}
@@ -411,7 +439,8 @@ function ArchiveRow({
   onDelete: () => void;
 }) {
   const title = s.title ?? S.chat.defaultSessionTitle;
-  const source = programSource(s);
+  // Every row names where it came from: a program's source, or a person's conversation.
+  const source = programSource(s) ?? "user";
   return (
     <li className="group flex items-center gap-3 py-2.5">
       <Checkbox
@@ -423,11 +452,9 @@ function ArchiveRow({
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
           <Truncated text={title} className="min-w-0" />
-          {source !== null && (
-            <Badge tone="neutral" size="sm">
-              {S.chat.sessionSource[source]}
-            </Badge>
-          )}
+          <Badge tone="neutral" size="sm">
+            {S.chat.sessionSource[source]}
+          </Badge>
           {(s.status === "running" || s.status === "compacting") && (
             <span className="shrink-0" data-tooltip={S.archivedSessions.running}>
               <Spinner size="sm" tone="success" label={S.archivedSessions.running} />

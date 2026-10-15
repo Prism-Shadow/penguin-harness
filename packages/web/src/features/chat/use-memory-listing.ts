@@ -7,6 +7,10 @@
  * Fetches only when wanted (the panel is open, or this conversation has memory changes to
  * mark), and refetches when `changes` moves — the caller passes an identity-stable array
  * (see chat-page's stabilization), so streaming ticks never re-fire this.
+ *
+ * Read from the server the conversation's Agent lives on: a Session on a machine runs that
+ * machine's Agent, whose memory is over there (`machineId`; null for this server). An Agent of
+ * the same id here is another Agent, and its memory is not this conversation's.
  */
 import { useEffect, useState } from "react";
 import * as api from "../../api/endpoints";
@@ -17,9 +21,12 @@ import type { ScopeFiles } from "./memory-nav";
 export function useMemoryListing(
   projectId: string | null,
   agentId: string | null,
+  machineId: string | null,
   wanted: boolean,
   changes: readonly MemoryChangeRow[],
 ): { scopes: ScopeFiles[] | null; error: string | null } {
+  /** The Agent a listing is about: its id on the server that holds it. */
+  const agentKey = agentId === null ? null : `${machineId ?? ""}\0${agentId}`;
   const [state, setState] = useState<{
     forAgent: string | null;
     scopes: ScopeFiles[] | null;
@@ -31,25 +38,26 @@ export function useMemoryListing(
     let cancelled = false;
     void (async () => {
       try {
-        const overview = await api.getMemoryOverview(projectId, agentId);
+        const overview = await api.getMemoryOverview(projectId, agentId, machineId);
         const scopes = await Promise.all(
           overview.scopes.map(async (info) => ({
             info,
-            files: (await api.getMemoryFiles(projectId, agentId, info.scopeKey)).files,
+            files: (await api.getMemoryFiles(projectId, agentId, info.scopeKey, machineId)).files,
           })),
         );
-        if (!cancelled) setState({ forAgent: agentId, scopes, error: null });
+        if (!cancelled) setState({ forAgent: agentKey, scopes, error: null });
       } catch (err) {
-        if (!cancelled) setState({ forAgent: agentId, scopes: null, error: apiErrorText(err) });
+        if (!cancelled) setState({ forAgent: agentKey, scopes: null, error: apiErrorText(err) });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [wanted, projectId, agentId, changes]);
+  }, [wanted, projectId, agentId, machineId, agentKey, changes]);
 
-  // A listing loaded for another Agent is not this Agent's memory — report it as not loaded
-  // rather than briefly showing (and delete-marking against) the wrong tree.
-  if (state.forAgent !== agentId) return { scopes: null, error: null };
+  // A listing loaded for another Agent — or for this id on another server — is not this
+  // Agent's memory: report it as not loaded rather than briefly showing (and delete-marking
+  // against) the wrong tree.
+  if (state.forAgent !== agentKey) return { scopes: null, error: null };
   return { scopes: state.scopes, error: state.error };
 }

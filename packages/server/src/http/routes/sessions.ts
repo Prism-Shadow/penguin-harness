@@ -59,6 +59,7 @@ import { HttpError } from "../errors.js";
 import { sseEndpoint, streamRevocation } from "../sse.js";
 import {
   badRequest,
+  listingViewOfRequest,
   optionalEnum,
   optionalSessionListPagingQuery,
   optionalString,
@@ -676,6 +677,7 @@ export function sessionsBatchRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // Every entry is checked BEFORE the first query runs: one bad entry fails the whole
     // request rather than being discovered halfway through a batch.
     const wanted = raw.map(batchPage);
+    const view = listingViewOfRequest(c);
     // Sequential on purpose: these are the same in-memory index reads one-per-Agent already
     // performed, and running them concurrently would only re-introduce the interleaving this
     // endpoint exists to remove.
@@ -683,7 +685,10 @@ export function sessionsBatchRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     for (const { agentId, ...options } of wanted) {
       try {
         await deps.agentConfigService.requireExists(projectId, agentId);
-        const out = await deps.sessionService.listSessions(projectId, agentId, options);
+        const out = await deps.sessionService.listSessions(projectId, agentId, {
+          ...options,
+          view,
+        });
         results.push({ agentId, ok: true, ...out });
       } catch (err) {
         // An Agent this server does not host answers 404 — an ANSWER (see the sidebar's own
@@ -757,6 +762,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
         ...(rawExcludeOrg !== undefined ? { excludeOrg: true } : {}),
+        view: listingViewOfRequest(c),
       });
     return c.json({
       sessions,
@@ -850,7 +856,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   app.get("/:sessionId", async (c) => {
     const row = resolveSession(c);
     const hasTrace = await deps.sessionService.hasTrace(row);
-    const info = await deps.sessionService.toInfo(row, hasTrace);
+    const info = await deps.sessionService.toInfo(
+      row,
+      hasTrace,
+      undefined,
+      listingViewOfRequest(c),
+    );
     // Single-session GET only: the latest Trace file's absolute path (a directory walk per
     // call — too costly for list rows). The web's /model switch hands it to the new session's
     // [model_switch_from] block so the model can read the source history itself.
@@ -914,7 +925,10 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         : undefined;
     // Archiving is a choice about which list a Session is in; a subagent Session (its parent's
     // Agent panel opens it) and a company Session (company mode's views list it) are in none.
-    if (archived !== undefined && (await deps.sessionService.listingOf(row)) === null) {
+    if (
+      archived !== undefined &&
+      (await deps.sessionService.listingOf(row, listingViewOfRequest(c))) === null
+    ) {
       throw new HttpError(
         409,
         "session_not_listed",
@@ -979,7 +993,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     // Falls back to the snapshot if the Session was deleted meanwhile.
     const fresh = deps.sessionsRepo.findById(row.sessionId) ?? updated;
     return c.json({
-      session: await deps.sessionService.toInfo(fresh, hasTrace),
+      session: await deps.sessionService.toInfo(
+        fresh,
+        hasTrace,
+        undefined,
+        listingViewOfRequest(c),
+      ),
     } satisfies SessionResponse);
   });
 
@@ -1677,7 +1696,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     const hasTrace = await deps.sessionService.hasTrace(fresh);
     return c.json({
-      session: await deps.sessionService.toInfo(fresh, hasTrace),
+      session: await deps.sessionService.toInfo(
+        fresh,
+        hasTrace,
+        undefined,
+        listingViewOfRequest(c),
+      ),
     } satisfies SessionResponse);
   });
 
@@ -2072,15 +2096,17 @@ export class SessionApiRoutes {
     this.sessionsRoutes = sessionsRoutes(sessionsDeps);
     const deletion = sessionDeletionDeps(sessionsDeps);
     const projectEvents = this.projectEvents;
+    const machines = this.machines;
     this.archivedSessionsRoutes = archivedSessionsRoutes({
       service: new ArchivedSessionsService({
         listProjects: (userId) => access.listProjects(userId),
         canAccess: (userId, projectId) => access.canAccess(userId, projectId),
         sessions: sessionsRepo,
         sessionService: {
-          archivedRows: (projectId, agentId) => sessionService.archivedRows(projectId, agentId),
-          toInfo: (row, hasTrace) => sessionService.toInfo(row, hasTrace),
-          listingOf: (row) => sessionService.listingOf(row),
+          archivedRows: (projectId, agentId, view) =>
+            sessionService.archivedRows(projectId, agentId, view),
+          toInfo: (row, hasTrace, view) => sessionService.toInfo(row, hasTrace, undefined, view),
+          listingOf: (row, view) => sessionService.listingOf(row, view),
         },
         traceStore: this.traceStore,
         deleteSession: (row) =>
@@ -2094,6 +2120,12 @@ export class SessionApiRoutes {
         statusOf: (sessionId) => manager.statusOf(sessionId),
         notifyProjectUsers: (projectId, event) =>
           projectEvents.notifyProjectUsers(projectId, event),
+        machines: async (projectId) =>
+          (await machines.projectApis(projectId)).map(({ machineId, alias, api }) => ({
+            machineId,
+            alias,
+            request: api === null ? null : (method, path, body) => api.request(method, path, body),
+          })),
       }),
     });
   }

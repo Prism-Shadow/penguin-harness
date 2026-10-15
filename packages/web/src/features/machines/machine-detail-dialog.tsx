@@ -51,6 +51,8 @@ import {
   KeyValue,
   KeyValueRow,
   LogView,
+  MachineStatusPill,
+  MachineToolbar as MachineToolbarView,
   Modal,
   NoticeStrip,
   RuledSection,
@@ -59,7 +61,6 @@ import {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { DOT_TONE, jobMoving } from "./machine-card";
 import {
   configSyncView,
   jobView,
@@ -135,29 +136,11 @@ function MachineTile() {
 }
 
 /**
- * The state as one chip in its tone: the glyph — a spinner for a working machine — then the word.
- * The glyph is information, not decoration: it is the shape that tells apart two states sharing a
- * tone. The reason rides on the glyph, which shows no text of its own: the tooltip layer shows a
- * hint only where its words are not already on screen, so on the word it would never open.
+ * The state as the shared status pill, the one the machine's card wears: the glyph — a spinner for
+ * a machine that is working or coming back — then the word, the reason on the pill's hover.
  */
 function StatusChip({ chip }: { chip: MachineChip }) {
-  return (
-    <Badge variant="soft" tone={DOT_TONE[chip.tone]}>
-      <span
-        className="inline-flex"
-        {...(chip.reason === null
-          ? {}
-          : { "data-tooltip": chip.reason, "data-tooltip-content": "text" })}
-      >
-        {chip.glyph === null ? (
-          <Spinner size="xs" tone="success" label={chip.word} />
-        ) : (
-          <GlyphIcon d={chip.glyph} size={ICON_SIZE.inlineGlyph} className={toneInk[chip.tone]} />
-        )}
-      </span>
-      <span className="ml-1">{chip.word}</span>
-    </Badge>
-  );
+  return <MachineStatusPill state={chip.state} label={chip.word} reason={chip.reason} />;
 }
 
 /**
@@ -389,40 +372,29 @@ function CheckList({ lines, alias }: { lines: readonly CheckLine[]; alias: strin
 }
 
 /**
- * The toolbar: the verbs in one row of flat buttons, the primary one first in the primary look,
- * wrapping where the row does not fit; a request in flight greys every one. No rule above or below
- * it: the spacing around the row is what sets it apart. `data-verb` names each for whatever reads
- * the markup.
+ * The toolbar: the shared `MachineToolbar` — the verbs in one row of flat buttons, a request in
+ * flight greying every one — with each button asking the page for its verb, and `note`, the one
+ * sentence saying why the greyed verbs wait, under it.
  */
 export function MachineToolbar({
   items,
   busy,
+  note = null,
   onAct,
 }: {
   items: readonly ToolbarItem[];
   busy: boolean;
+  note?: string | null;
   onAct: (verb: MachineVerb) => void;
 }) {
   return (
-    <div
-      role="toolbar"
-      aria-label={S.machines.detail.toolbar.label}
-      className="flex flex-wrap items-center gap-1"
-    >
-      {items.map((item) => (
-        <Button
-          key={item.verb}
-          size="sm"
-          variant={item.primary ? "primary" : "ghost"}
-          data-verb={item.verb}
-          disabled={busy || item.held !== null}
-          onClick={() => onAct(VERB_OF[item.verb])}
-        >
-          <GlyphIcon d={item.glyph} size={ICON_SIZE.inlineGlyph} />
-          {item.label}
-        </Button>
-      ))}
-    </div>
+    <MachineToolbarView
+      items={items.map((item) => ({ ...item, held: item.held !== null }))}
+      label={S.machines.detail.toolbar.label}
+      busy={busy}
+      note={note}
+      onAct={(verb: ToolbarVerb) => onAct(VERB_OF[verb])}
+    />
   );
 }
 
@@ -520,13 +492,13 @@ export function MachineDetailBody({
         </div>
         {toolbar.items.length > 0 && (
           <div>
-            <MachineToolbar items={toolbar.items} busy={busy} onAct={onAct} />
             {/* Why the greyed verbs wait, once, in words — never on a hover the reader has to find. */}
-            {toolbar.sentence !== null && (
-              <p data-held="" className="mt-1.5 text-xs text-fg-muted">
-                {toolbar.sentence}
-              </p>
-            )}
+            <MachineToolbar
+              items={toolbar.items}
+              busy={busy}
+              note={toolbar.sentence}
+              onAct={onAct}
+            />
             {configSync !== null && <ConfigSync view={configSync} />}
           </div>
         )}

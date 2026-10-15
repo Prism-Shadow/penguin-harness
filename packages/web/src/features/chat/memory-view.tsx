@@ -55,6 +55,7 @@ function groupTitle(group: {
 
 export function ChatMemoryView({
   session,
+  machineId = null,
   changes,
   scopes,
   listingError,
@@ -63,6 +64,8 @@ export function ChatMemoryView({
   onOpenSettings,
 }: {
   session: SessionInfo;
+  /** The machine the Session is on (null for this server): its Agent's memory is read there. */
+  machineId?: string | null;
   /** This conversation's aggregated memory changes (identity-stable — chat-page only swaps the array when the content moved). */
   changes: MemoryChangeRow[];
   /** The server listing, loaded by chat-page's use-memory-listing; null = not loaded. */
@@ -105,6 +108,7 @@ export function ChatMemoryView({
         session.agentId,
         target.scope === "user" ? "user" : (target.scopeKey ?? ""),
         target.file,
+        machineId,
       )
       .then((res) => {
         if (!cancelled) setDetail({ key, content: res.content, failed: false });
@@ -118,7 +122,7 @@ export function ChatMemoryView({
     // detailKey stands in for mode.target's identity; changes refresh a just-rewritten file
     // (identity-stable, so streaming ticks never re-fire this).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, detailKey, session.projectId, session.agentId, changes]);
+  }, [active, detailKey, session.projectId, session.agentId, machineId, changes]);
 
   const groups = buildMemoryList(scopes, changes);
 

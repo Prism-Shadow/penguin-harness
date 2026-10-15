@@ -80,6 +80,20 @@ export function tabCrashedError(tabId: number, reason?: string): HttpError {
   );
 }
 
+/**
+ * 409 `keyboard_focus_failed`: the built-in browser could not give the tab the app window's
+ * keyboard focus, so the shell typed nothing. Typed without it, the text would have landed in
+ * the app's own UI (the composer, the address bar) instead of the page.
+ */
+export function keyboardFocusError(tabId: number): HttpError {
+  return new HttpError(
+    409,
+    "keyboard_focus_failed",
+    `Tab ${tabId} could not take keyboard focus in the app window, so nothing was typed. ` +
+      "Retry once; if it fails again, tell the user.",
+  );
+}
+
 /** What a failed link request means to the route that asked. */
 export function mapLinkError(
   err: unknown,
@@ -110,6 +124,7 @@ export function mapLinkError(
         );
       }
       if (err.message === "tab_crashed") return tabCrashedError(tabId);
+      if (err.message === "keyboard_focus_failed") return keyboardFocusError(tabId);
       if (err.message === "tab_released") return tabReleasedError(tabId);
       if (err.message === "cdp_refused") {
         return new HttpError(
