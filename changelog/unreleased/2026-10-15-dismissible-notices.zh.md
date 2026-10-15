@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** feat
 - **Scope:** `ui`, `web`, `server`, `ui-gallery`
+- **PR:** [#1156](https://github.com/Prism-Shadow/penguin-harness/pull/1156)
 
 [English](2026-10-15-dismissible-notices.md)
 
