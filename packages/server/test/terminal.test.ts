@@ -11,7 +11,7 @@ import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import xterm from "@xterm/headless";
-import { createTestApp, loginAdmin, apiClient } from "./helpers.js";
+import { createTestApp, loginAdmin, apiClient, makeTempRoot, removeTempRoot } from "./helpers.js";
 import { TerminalManager, MAX_TERMINALS_PER_USER } from "../src/terminal/manager.js";
 import { expandHomePath } from "../src/terminal/session.js";
 import { repairSpawnHelpers } from "../src/terminal/spawn-helper.js";
@@ -429,8 +429,18 @@ describe.skipIf(process.platform === "win32")("spawn-helper repair", () => {
   // node-pty's npm tarball ships its darwin prebuild's spawn-helper as 0644 (no exec
   // bit), and darwin's posix_spawnp then refuses it — the macOS "terminal opens blank"
   // bug.
+  const roots: string[] = [];
+  const tempRoot = async (): Promise<string> => {
+    const root = await makeTempRoot();
+    roots.push(root);
+    return root;
+  };
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map(removeTempRoot));
+  });
+
   async function helperTree(relative: string[], mode: number): Promise<string> {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-pty-"));
+    const root = await tempRoot();
     const file = path.join(root, ...relative);
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, "#!/bin/sh\n", { mode });
@@ -453,7 +463,7 @@ describe.skipIf(process.platform === "win32")("spawn-helper repair", () => {
   });
 
   it("is a no-op when node-pty shipped no helper (every non-darwin install)", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-pty-"));
+    const root = await tempRoot();
 
     expect(repairSpawnHelpers(root, "x64")).toEqual([]);
   });

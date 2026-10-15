@@ -42,6 +42,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    // Everything a run writes under the OS temp directory stays in one directory of its own,
+    // which teardown reports on and removes; every file sweeps the temp roots it was handed.
+    globalSetup: ["test/setup/run-temp-dir.ts"],
+    setupFiles: ["test/setup/temp-roots.ts"],
     // Each worker boots app trees and runs real TypeScript compilers. Keep their CPU and
     // filesystem contention bounded on CI and when pnpm runs other packages alongside us.
     maxWorkers: 2,
