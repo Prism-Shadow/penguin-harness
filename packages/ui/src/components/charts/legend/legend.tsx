@@ -122,7 +122,7 @@ export function Legend({
                 aria-pressed={pinned === item.key}
                 onClick={() => onSelect(item.key)}
                 {...hover}
-                className={`cursor-pointer text-left ${list ? "w-full" : ""} ${box}`}
+                className={`text-left ${list ? "w-full" : ""} ${box}`}
               >
                 {cells}
               </button>

@@ -119,7 +119,7 @@ function HostRowItem({
   return (
     <li data-host={machine.alias} data-picked={on ? "true" : "false"}>
       <label
-        className={`flex min-w-0 cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors duration-150 hover:bg-surface-muted ${
+        className={`flex min-w-0 items-center gap-3 px-3 py-2.5 transition-colors duration-150 hover:bg-surface-muted ${
           on ? "bg-surface-muted" : ""
         }`}
       >

@@ -267,7 +267,7 @@ export function ChartCard({
                 const r = e.currentTarget.getBoundingClientRect();
                 ctx.openAt({ top: r.top, bottom: r.bottom, left: r.left, right: r.right });
               }}
-              className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-gray-100 hover:text-gray-700 focus-visible:opacity-100 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${
+              className={`flex h-6 w-6 items-center justify-center rounded-md text-gray-400 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-gray-100 hover:text-gray-700 focus-visible:opacity-100 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${
                 ctx.open ? "opacity-100" : "opacity-70"
               }`}
             >
