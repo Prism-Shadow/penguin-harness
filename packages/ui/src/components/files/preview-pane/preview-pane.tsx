@@ -1,8 +1,8 @@
 /**
  * PreviewPane: the Files panel's right-hand column — what a chosen file looks like. An image
- * (click to zoom), a PDF in the browser's own viewer, Markdown as reading text, source as the
- * highlighted code surface, a note for a file it cannot draw; an empty state while nothing is
- * chosen, and a skeleton while the file is on its way.
+ * (click to zoom), a PDF in the browser's own viewer, Markdown in the Markdown reader (with its
+ * outline and its find), source as the highlighted code surface, a note for a file it cannot
+ * draw; an empty state while nothing is chosen, and a skeleton while the file is on its way.
  *
  * The caller decides what the file is and fetches it; this draws the `view` it is handed. An
  * embedded page (the panel's sandboxed HTML preview) arrives as an `embed` node, because the
@@ -16,12 +16,14 @@
  *
  * The body is the scroll box, and `bodyRef` / `bodyProps` reach it: the caller's context menu
  * hangs off it (the gestures, the keyboard chord, the anchor it returns focus to). It is focusable
- * only programmatically (`tabIndex={-1}`), so Escape has somewhere to hand focus back to.
+ * only programmatically (`tabIndex={-1}`), so Escape has somewhere to hand focus back to. A
+ * Markdown view is the reader's own scroll box instead, with the pill's actions in the reader's
+ * pill beside its outline and find, so the two never stack over each other.
  */
 import type { HTMLAttributes, Key, ReactNode, Ref } from "react";
 import type { Components } from "react-markdown";
 import { CodeSurface } from "../../content/code-block/code-block";
-import { Prose } from "../../content/prose/prose";
+import { MarkdownReader } from "../../content/markdown-reader/markdown-reader";
 import { EmptyState } from "../../feedback/empty-state/empty-state";
 import { SkeletonList } from "../../feedback/skeleton/skeleton";
 import { ZoomableImage } from "../../overlays/lightbox/lightbox";
@@ -41,10 +43,17 @@ export type PreviewView =
   /** An embedded page the caller frames itself, with its own sandbox. */
   | { kind: "embed"; node: ReactNode }
   /**
-   * Markdown as reading text. `components` swaps element adapters (images and links that know
-   * where the file lives); `truncatedNote` says the file was cut short.
+   * Markdown in the reader. `components` swaps element adapters (images and links that know
+   * where the file lives); `truncatedNote` says the file was cut short; a new `docKey` (the
+   * file's path) starts the reader over — at the top, with its find closed — for another file.
    */
-  | { kind: "markdown"; text: string; components?: Components; truncatedNote?: string }
+  | {
+      kind: "markdown";
+      text: string;
+      components?: Components;
+      truncatedNote?: string;
+      docKey?: Key;
+    }
   /** Source on the code surface — the same surface the editor lays its textarea over. */
   | {
       kind: "source";
@@ -66,6 +75,10 @@ export interface PreviewPaneProps {
   bodyRef?: Ref<HTMLDivElement>;
   /** Handlers on the body — the caller's context-menu gestures. */
   bodyProps?: Omit<HTMLAttributes<HTMLDivElement>, "className" | "tabIndex" | "children">;
+  /** Whether a keydown is the find shortcut, for the Markdown reader; the app passes the user's binding. */
+  isFindKey?: (event: KeyboardEvent) => boolean;
+  /** The find shortcut as the platform writes it, for the reader's find button. */
+  findShortcut?: string | null;
   className?: string;
 }
 
@@ -105,17 +118,6 @@ function viewBody(view: PreviewView): ReactNode {
       );
     case "embed":
       return view.node;
-    case "markdown":
-      return (
-        <>
-          <Prose
-            text={view.text}
-            className="text-base leading-relaxed text-fg"
-            components={view.components}
-          />
-          <TruncatedNote note={view.truncatedNote} source={false} />
-        </>
-      );
     case "source":
       return (
         <>
@@ -144,6 +146,8 @@ export function PreviewPane({
   menu,
   bodyRef,
   bodyProps,
+  isFindKey,
+  findShortcut,
   className = "",
 }: PreviewPaneProps) {
   const pill = given(actions) && (
@@ -157,6 +161,25 @@ export function PreviewPane({
     content = <EmptyState title={view.title} action={view.action} />;
   } else if (view.kind === "opening") {
     content = <SkeletonList rows={6} />;
+  } else if (view.kind === "markdown" && !given(editor)) {
+    content = (
+      <>
+        <MarkdownReader
+          key={view.docKey}
+          text={view.text}
+          components={view.components}
+          actions={given(actions) ? actions : undefined}
+          footer={<TruncatedNote note={view.truncatedNote} source={false} />}
+          contentClassName="text-base leading-relaxed text-fg"
+          bodyRef={bodyRef}
+          bodyProps={bodyProps}
+          isFindKey={isFindKey}
+          findShortcut={findShortcut}
+          className="flex-1"
+        />
+        {menu}
+      </>
+    );
   } else if (given(editor)) {
     content = (
       <div className="relative flex min-h-0 flex-1 flex-col">

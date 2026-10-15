@@ -3,7 +3,8 @@
  * The organization handbook's document editor (features/company/handbook-page.tsx) under the
  * settings commit model, against a fake of the handbook routes.
  *
- * - Save waits until the text differs from the document as stored, then writes it.
+ * - Save waits until the text differs from the document as stored, then writes it and goes back
+ *   to reading the document.
  * - Every in-page step that would throw unsaved text away asks first, through the app's one
  *   prompt: Cancel, and choosing another document. "Keep editing" keeps the text; "discard"
  *   takes the step. While the text is unsaved, the page counts as holding unsaved edits, which
@@ -12,70 +13,11 @@
  *   saying a taken one under the field as it is typed.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createElement as h } from "react";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { UnsavedPrompt } from "../src/lib/unsaved/unsaved-prompt";
-import { HandbookPage } from "../src/features/company/handbook-page";
-import { OrgContext } from "../src/features/company/org-layout";
-import { LocaleProvider } from "../src/state/locale";
-import { apiError, json, stubFetch } from "./helpers/fetch";
-import type { FakeFetch } from "./helpers/fetch";
-import {
-  button,
-  click,
-  dialogs,
-  field,
-  hasButton,
-  mount,
-  type,
-  unmountAll,
-  waitFor,
-} from "./helpers/dom";
-
-const UPDATED = "2026-09-02T10:00:00.000Z";
-const BASE = "/api/projects/p1/organizations/acme/handbook/files";
-
-/** The handbook's routes over two documents: GET lists and reads, PUT writes and echoes. */
-function handbookServer(): FakeFetch {
-  const docs = new Map([
-    ["README.md", "# Index"],
-    ["conventions.md", "# Conventions"],
-  ]);
-  return stubFetch((req) => {
-    if (req.path === BASE) {
-      return json({
-        files: [...docs.keys()].map((path) => ({ path, size: 8, updatedAt: UPDATED })),
-      });
-    }
-    const path = decodeURIComponent(req.path.slice(BASE.length + 1));
-    if (req.method === "PUT") {
-      docs.set(path, (req.body as { content: string }).content);
-      return json({ path, content: docs.get(path) });
-    }
-    const content = docs.get(path);
-    return content === undefined ? apiError(404, "not_found") : json({ path, content });
-  });
-}
-
-async function openHandbook() {
-  const network = handbookServer();
-  await mount(
-    h(
-      LocaleProvider,
-      null,
-      h(
-        OrgContext.Provider,
-        { value: { projectId: "p1", orgId: "acme", org: null } },
-        h(HandbookPage),
-        h(UnsavedPrompt),
-      ),
-    ),
-  );
-  await waitFor(() => hasButton(en.common.edit) && !button(en.common.edit).disabled);
-  return network;
-}
+import { button, click, dialogs, field, hasButton, type, unmountAll, waitFor } from "./helpers/dom";
+import { openHandbook } from "./helpers/handbook";
 
 const editor = () => field("README.md");
 const promptOpen = () => hasButton(en.common.discard);
@@ -101,6 +43,8 @@ describe("the handbook editor", () => {
     expect(network.requests.find((r) => r.method === "PUT")!.body).toEqual({
       content: "# Index\n\nRead this first.",
     });
+    await waitFor(() => hasButton(en.common.edit));
+    expect(document.body.textContent).toContain("Read this first.");
   });
 
   it("asks before Cancel throws the text away, and counts it unsaved meanwhile", async () => {

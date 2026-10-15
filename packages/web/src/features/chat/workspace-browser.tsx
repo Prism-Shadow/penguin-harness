@@ -44,7 +44,7 @@
  * between them (`SplitPane`), the path strip (`Breadcrumbs`), the drop feedback (`DropOverlay`)
  * and the file menu's rows (`WorkspaceFileMenuRows`).
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
   DragEvent as ReactDragEvent,
@@ -53,7 +53,6 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import {
-  Breadcrumbs,
   Button,
   CloseIcon,
   ConfirmModal,
@@ -66,14 +65,17 @@ import {
   ICONS,
   ICON_SIZE,
   Input,
+  FilesPanes,
+  FilesToolbar,
   PreviewPane,
-  SplitPane,
   Spinner,
   Tooltip,
   TreePane,
   WorkspaceFileEditor,
   WorkspaceFileMenuRows,
   WorkspaceNewMenuRows,
+  filesActionClass,
+  filesToggleClass,
   isContextMenuKey,
   isLongPressPointer,
   languageForFileName,
@@ -82,6 +84,7 @@ import {
   toastInfo,
   toastSuccess,
   useCopied,
+  useFilesLayout,
   useRowContextMenu,
 } from "@prismshadow/penguin-ui";
 import type {
@@ -100,6 +103,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { isDesktopShellWindow } from "../../lib/account-menu";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
+import { useReaderFind } from "../../lib/reader-find";
 import { isShortcut } from "../../lib/shortcuts/match";
 import { currentPlatform } from "../../lib/shortcuts/platform";
 import { keymap } from "../../lib/shortcuts/store";
@@ -111,22 +115,17 @@ import { MB_BYTES, splitBySize } from "../../lib/upload-limits";
 import {
   DEFAULT_TEXT_FILE_NAME,
   TEXT_PREVIEW_LIMIT,
-  TREE_MIN_WIDTH,
   WORKSPACE_UPLOAD_LIMIT_MB,
   ancestorDirs,
   baseName,
   canEditPreview,
-  clampTreeWidth,
-  defaultTreeWidth,
   dropTargetDir,
   expandTo,
   searchRows,
   flattenTree,
   isDirty,
-  isNarrowLayout,
   isWithin,
   looksLikeText,
-  maxTreeWidth,
   movedListings,
   movedPath,
   movedSet,
@@ -441,20 +440,13 @@ function pickDroppedFiles(data: DataTransfer): { files: File[]; dirs: string[] }
 }
 
 /**
- * The panel's actions, with their names taken off them: a square the size of the tree toggle, drawn in
- * the toolbar and in the preview header alike so the panel's two rows of marks line up. A
- * control with no visible text needs its name in two places to be readable at all — the
- * element's own `aria-label`, and the Tooltip it is wrapped in.
+ * The panel's actions: the files browser's square (the UI package's frame), the size of the tree
+ * toggle, drawn in the toolbar and over the preview alike so the panel's marks line up.
  */
-const iconActionBase =
-  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150";
-const iconActionIdle =
-  "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
-const iconActionClass = `${iconActionBase} ${iconActionIdle}`;
+const iconActionClass = filesActionClass;
 
-/** The same square, as a toggle: pressed is a filled resting state, not a hover that happens to stick. */
-const iconToggleClass = (on: boolean): string =>
-  `${iconActionBase} ${on ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100" : iconActionIdle}`;
+/** The same square, as a toggle. */
+const iconToggleClass = filesToggleClass;
 
 export function WorkspaceBrowser({
   scope,
@@ -503,6 +495,7 @@ export function WorkspaceBrowser({
   // silently in the page) and the in-app rendered view to the srcDoc fallback.
   const { previewIsolated: serverPreviewIsolated, desktopMode, sessionVia } = useAuth();
   const saveShortcut = useShortcutLabel("editor.save");
+  const readerFind = useReaderFind();
   // The desktop app's own window is the one page whose machine IS the server's, so it is the
   // only one offered "show in folder" — see lib/account-menu.ts for why a browser signed into
   // the same server, even on this machine, must not be.
@@ -601,7 +594,6 @@ export function WorkspaceBrowser({
    * one of the two — the glyph swap and the live region are the ones CopyButton uses.
    */
   const { copied, flash: flashCopy } = useCopied();
-  const [width, setWidth] = useState(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
   // ----------------------------------------------------------------------- context menus
   // One hook per surface, not per row: each carries a long-press timer, and the tree draws
@@ -698,22 +690,12 @@ export function WorkspaceBrowser({
   }
 
   // ------------------------------------------------------------------ measured layout
-  // The panel's own width decides the layout: a viewport breakpoint cannot know how much of
-  // the window the dock was given. Measured in a layout effect so the first paint is right.
-  useLayoutEffect(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    const measure = () => setWidth(Math.round(el.getBoundingClientRect().width));
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-  const narrow = isNarrowLayout(width);
-
-  // The tree pane's width: dragged if it ever was, otherwise the computed default, and
-  // either way within the bounds this panel width allows.
-  const treeWidth = clampTreeWidth(treeWidthPref ?? defaultTreeWidth(width), width);
+  // The panel's own width decides the layout (the UI package's frame): a viewport breakpoint
+  // cannot know how much of the window the dock was given. The tree pane's width is the dragged
+  // one if it ever was, otherwise the computed default, and either way within the bounds this
+  // panel width allows.
+  const layout = useFilesLayout(rootRef, treeWidthPref);
+  const narrow = layout.narrow;
 
   // --------------------------------------------------------------------------- loading
 
@@ -2250,6 +2232,8 @@ export function WorkspaceBrowser({
         kind: "markdown",
         text: p.content ?? "",
         truncatedNote,
+        // Another file starts the reader over: at the top, its find closed.
+        docKey: p.path,
         components: {
           // Relative images are resolved against the md file's directory into the file API
           // (otherwise resolving against the app's origin would always 404). `v` is the read
@@ -2432,6 +2416,9 @@ export function WorkspaceBrowser({
     <PreviewPane
       view={previewView}
       actions={previewFloatingActions}
+      // The Markdown reader's find takes the find.open binding while it has the focus.
+      isFindKey={readerFind.isFindKey}
+      findShortcut={readerFind.findShortcut}
       editor={
         editing !== null && (
           <WorkspaceFileEditor
@@ -2546,83 +2533,41 @@ export function WorkspaceBrowser({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {/* The panel's one header row: the way back or the tree toggle, the path of whatever is
-          open, and what that file offers. It never wraps — the path strip absorbs all of the
-          pressure, clipping and collapsing its leading segments, while the actions keep their
-          width. Everything that acts on the text rather than on the file is in the floating
-          pill over the body, and the panel's own actions (refresh, upload) sit in the tree
-          pane's header beside its search box. */}
-      <div className="flex shrink-0 flex-nowrap items-center gap-1 border-b border-gray-200 px-2 py-1.5 dark:border-gray-800">
-        {narrow && !showTree && (
-          <Tooltip label={S.files.backToList} placement="bottom" className="shrink-0">
-            <button
-              type="button"
-              aria-label={S.files.backToList}
-              onClick={backToTree}
-              className={iconActionClass}
-            >
-              <GlyphIcon d={ICONS.chevronLeft} size={ICON_SIZE.iconButton} />
-            </button>
-          </Tooltip>
-        )}
-        {!narrow && (
-          // Static accessible name, state on aria-pressed alone: a name that swaps Show/Hide
-          // beside it reads as "Hide file tree, pressed", saying the state twice and
-          // disagreeing with itself. The tooltip may still swap — it is presentation only.
-          <button
-            type="button"
-            aria-pressed={treeVisible}
-            data-tooltip={treeVisible ? S.files.hideTree : S.files.showTree}
-            aria-label={S.files.showTree}
-            onClick={() => setTree(!treeVisible)}
-            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors duration-150 ${
-              treeVisible
-                ? "text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
-                : "text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            }`}
-          >
-            <GlyphIcon d={ICONS.panelLeft} size={ICON_SIZE.iconButton} />
-          </button>
-        )}
-        {/* The path, read out and not navigable: the tree beside it is what navigates, and a
-            second way in would only be a second thing to keep in step with the editor's
-            unsaved-changes guard. `flex-1` over a zero basis, so the strip measures the room
-            the actions leave it and never its own content. */}
-        <Breadcrumbs
-          className="flex-1"
-          items={crumbSegments.map((label) => ({ label }))}
-          title={crumbPath}
-        />
+      {/* The panel's one header row (the UI package's frame): the way back or the tree toggle,
+          the path of whatever is open, read out and not navigable, and what that file offers.
+          It never wraps — the path strip absorbs all of the pressure while the actions keep
+          their width. Everything that acts on the text rather than on the file is in the
+          floating pill over the body, and the panel's own actions (refresh, upload) sit in the
+          tree pane's header beside its search box. */}
+      <FilesToolbar
+        layout={layout}
+        previewShown={!showTree}
+        onBack={backToTree}
+        treeVisible={treeVisible}
+        onTreeVisibleChange={setTree}
+        labels={{
+          back: S.files.backToList,
+          showTree: S.files.showTree,
+          hideTree: S.files.hideTree,
+        }}
+        crumbs={crumbSegments.map((label) => ({ label }))}
+        crumbTitle={crumbPath}
+      >
         {fileRowActions}
-      </div>
+      </FilesToolbar>
 
-      <div className="relative flex min-h-0 flex-1">
-        {narrow ? (
-          // Narrow: one column, tree or preview.
-          showTree ? (
-            tree
-          ) : (
-            previewPane
-          )
-        ) : (
-          // Wide: the tree and the handle beside it stay mounted and slide in and out of the
-          // panel's left edge, and the preview takes the room they leave.
-          <SplitPane
-            className="min-w-0 flex-1"
-            size={treeWidth}
-            min={TREE_MIN_WIDTH}
-            // Before the first measurement there is no ceiling yet (clampTreeWidth applies
-            // none), so the current width is the honest maximum for that frame.
-            max={Math.max(maxTreeWidth(width), treeWidth)}
-            label={S.files.treeWidth}
-            collapsed={!treeVisible}
-            onResize={(px) => setTreeWidthPref(clampTreeWidth(px, width))}
-            // Once per drag or key press, not per frame.
-            onResizeEnd={(px) => writeTreeWidth(clampTreeWidth(px, width))}
-            first={tree}
-            second={previewPane}
-          />
-        )}
+      {/* Wide, the tree and the handle beside it stay mounted and slide in and out of the panel's
+          left edge; narrow, one column holds the tree or the preview. */}
+      <FilesPanes
+        layout={layout}
+        treeAlone={showTree}
+        treeVisible={treeVisible}
+        tree={tree}
+        preview={previewPane}
+        dividerLabel={S.files.treeWidth}
+        onTreeWidthChange={setTreeWidthPref}
+        onTreeWidthCommit={writeTreeWidth}
+      >
         {/* Drop feedback: a dashed frame over the panel and a label naming the directory the
             files will land in. Pure feedback — it keeps the hit test on the rows underneath,
             which is how a folder row can be the target. */}
@@ -2633,7 +2578,7 @@ export function WorkspaceBrowser({
             title={S.files.dropToUpload(dirLabel(drag.targetDir))}
           />
         )}
-      </div>
+      </FilesPanes>
 
       {/* The menu's picker. Not the app's HiddenFileInput: that one stays Tab-focusable because
           a <label> wraps and names it, and this one has no label — it is opened by a menu row

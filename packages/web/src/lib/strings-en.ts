@@ -1267,6 +1267,9 @@ export const en: Strings = {
     moreRows: (count: number): string => `${count} more not shown`,
     /** Name of the aggregated result list (read out when it is announced). */
     resultsLabel: "Find results",
+    outline: "Outline",
+    inDocument: "Find in document",
+    documentPlaceholder: "Find in document…",
   },
 
   common: {
@@ -5906,9 +5909,8 @@ Scenarios:
       documentLoadFailed: "Could not load the document",
       /** A row's tooltip: when the file was last written, and its size. */
       updatedAt: (time: string, size: string): string => `Updated ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
-      editorHint: (shortcut: string | null): string =>
-        shortcut === null ? "Markdown" : `Markdown · ${shortcut} to save`,
+      filterPlaceholder: "Filter documents by path",
+      noMatch: "No document matches",
     },
   },
   errors: {

@@ -1380,6 +1380,11 @@ export const zh = {
     moreRows: (count: number): string => `另有 ${count} 条未显示`,
     /** Name of the aggregated result list (read out when it is announced). */
     resultsLabel: "查找结果",
+    /** The Markdown reader's outline: its rail's title and the button that opens it. */
+    outline: "目录",
+    /** The Markdown reader's find button, and its find box's placeholder. */
+    inDocument: "在文档中查找",
+    documentPlaceholder: "在文档中查找…",
   },
 
   common: {
@@ -6095,9 +6100,10 @@ Benchmark：
       documentLoadFailed: "文档加载失败",
       /** A row's tooltip: when the file was last written, and its size. */
       updatedAt: (time: string, size: string): string => `更新于 ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
-      editorHint: (shortcut: string | null): string =>
-        shortcut === null ? "Markdown" : `Markdown · ${shortcut} 保存`,
+      /** The tree pane's box: it narrows the tree to the documents whose path holds the text. */
+      filterPlaceholder: "按路径筛选文档",
+      /** In place of the rows when the filter matches no document. */
+      noMatch: "没有匹配的文档",
     },
   },
   errors: {

@@ -3,7 +3,7 @@
  * and an explorer tree of folders and documents, then flattened into the shared file tree's
  * rows (`lib/file-tree.ts`) for an expanded set — the index leading, a collapsed folder
  * contributing one row and no children — plus the folders above a document and how many
- * documents a subtree holds; the path rule the server enforces, mirrored so the new-document
+ * documents a subtree holds; the tree narrowed to the documents a filter matches; the path rule the server enforces, mirrored so the new-document
  * dialog refuses a bad path before the request; the body a new document starts with; and how a
  * relative link inside one document resolves to another document of the handbook.
  */
@@ -194,6 +194,38 @@ export function handbookTreeRows(tree: HandbookTree, expanded: ReadonlySet<strin
   };
   walk(tree.nodes, 0, tree.index === null ? 0 : 1);
   return rows;
+}
+
+/**
+ * The tree narrowed to the documents whose path holds `query`, case-insensitively, with the
+ * folders above them — a folder's own name matching keeps every document under it, since a path
+ * holds its folders. The index stays when its name matches. A blank query returns the tree.
+ */
+export function filterHandbookTree(tree: HandbookTree, query: string): HandbookTree {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return tree;
+  const keep = (nodes: readonly HandbookNode[]): HandbookNode[] =>
+    nodes.flatMap((node): HandbookNode[] => {
+      if (node.kind === "file") return node.path.toLowerCase().includes(needle) ? [node] : [];
+      const children = keep(node.children);
+      return children.length > 0 ? [{ ...node, children }] : [];
+    });
+  const index = tree.index !== null && HANDBOOK_INDEX.toLowerCase().includes(needle);
+  return { index: index ? tree.index : null, nodes: keep(tree.nodes) };
+}
+
+/** Every folder of a tree, by path: a filtered tree opens them all, so each match is in view. */
+export function folderPaths(nodes: readonly HandbookNode[]): Set<string> {
+  const out = new Set<string>();
+  const walk = (level: readonly HandbookNode[]): void => {
+    for (const node of level) {
+      if (node.kind !== "folder") continue;
+      out.add(node.path);
+      walk(node.children);
+    }
+  };
+  walk(nodes);
+  return out;
 }
 
 /** How many documents a set of nodes holds, however deep — what a folder row counts. */

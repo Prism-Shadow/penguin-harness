@@ -2,7 +2,8 @@
  * handbook-tree.ts unit tests: the listing shaped into the pinned index and a nested explorer
  * tree (folders before files at every level, each group ordered case-insensitively, the index
  * apart); the walking the tree view does — the folders above a document, the shared file-tree
- * rows an expanded set makes visible, how many documents a subtree holds; the path rule
+ * rows an expanded set makes visible, how many documents a subtree holds; the tree narrowed to
+ * the documents a filter matches, with the folders above them; the path rule
  * mirrored from the server; what the new-document dialog sends for what was typed; the body a
  * new document starts with; and how a relative link inside a document resolves to another.
  */
@@ -15,6 +16,8 @@ import {
   completeHandbookPath,
   countDocuments,
   fileName,
+  filterHandbookTree,
+  folderPaths,
   handbookTreeRows,
   isHandbookPath,
   isMarkdownPath,
@@ -193,6 +196,48 @@ describe("countDocuments", () => {
     const decisions = tree.nodes[0]!;
     expect(decisions.kind === "folder" ? countDocuments(decisions.children) : -1).toBe(3);
     expect(countDocuments([])).toBe(0);
+  });
+});
+
+describe("filterHandbookTree", () => {
+  const tree = buildHandbookTree(MIXED);
+
+  it("keeps the documents whose path holds the text, whatever its case, with their folders", () => {
+    const shown = filterHandbookTree(tree, "PLAN");
+    expect(shape(shown.nodes)).toEqual([
+      "dir decisions",
+      "dir decisions/2026",
+      "dir decisions/2026/09",
+      "doc decisions/2026/09/plan.md",
+      "doc decisions/2026-09-02-hire-plan.md",
+    ]);
+    expect(shown.index).toBeNull();
+  });
+
+  it("keeps every document under a folder whose own name matches", () => {
+    const shown = filterHandbookTree(tree, "decisions/");
+    expect(shape(shown.nodes).filter((line) => line.startsWith("doc"))).toEqual(
+      shape(tree.nodes).filter((line) => line.startsWith("doc decisions/")),
+    );
+  });
+
+  it("keeps the index when its own name matches, and nothing when no path does", () => {
+    expect(filterHandbookTree(tree, "readme").index).toEqual(tree.index);
+    const none = filterHandbookTree(tree, "no such words");
+    expect(none).toEqual({ index: null, nodes: [] });
+  });
+
+  it("hands back the whole tree for a blank filter", () => {
+    expect(filterHandbookTree(tree, "  ")).toBe(tree);
+  });
+
+  it("names every folder of a tree, so a filtered tree can open them all", () => {
+    const shown = filterHandbookTree(tree, "plan");
+    expect([...folderPaths(shown.nodes)]).toEqual([
+      "decisions",
+      "decisions/2026",
+      "decisions/2026/09",
+    ]);
   });
 });
 

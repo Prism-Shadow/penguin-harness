@@ -1,16 +1,24 @@
 /**
  * The organization handbook — `handbook/` in the organization directory, the company's
- * knowledge base — as two panes. Left, the app's shared file tree over the directory
- * (handbook-explorer.tsx, the same tree the Workspace panel and the plugin browser draw): the
- * index (`README.md`, the page every trigger makes the employee read first) leading the rows,
- * then folders and documents nested as they are on disk, with one button that collapses them
- * all. Right, the selected document rendered as Markdown (anything else preformatted),
- * edited in place through a monospace textarea with save and cancel, and — for every document
- * but the index — deleted behind the shared confirmation. The new-document dialog refuses a
+ * knowledge base — in the Workspace Files panel's frame (the UI package's `FilesToolbar` and
+ * `FilesPanes`), so a reader who knows one knows the other.
+ *
+ * Left, the tree pane: a box that filters the documents by path, the new-document and
+ * collapse-all actions, and the app's shared file tree over the directory (handbook-explorer.tsx)
+ * — the index (`README.md`, the page every trigger makes the employee read first) leading the
+ * rows, then folders and documents nested as they are on disk. Above both panes, the toolbar:
+ * the tree's toggle, the path of the open document, the index mark, when it was written, and
+ * what the document offers (delete, or while editing: cancel and save). Between them, the
+ * divider sets the tree's width; too narrow for both, one column shows the tree or the document,
+ * with a way back. The tree's visibility and width last as long as the page.
+ *
+ * Right, the open document: Markdown in the Markdown reader (its outline and its find, Edit in
+ * its tool pill), anything else as source. Edit swaps in the Files panel's in-place editor; Save
+ * writes the file and returns to reading. A relative link inside a document opens the document it
+ * names in the same pane, so the index works as the handbook's own navigation. Every document but
+ * the index can be deleted, behind the shared confirmation. The new-document dialog refuses a
  * path the server would, starts from the selected document's own folder so a document lands
- * beside its siblings, then creates the file with a one-line title and selects it. A relative
- * link inside a document opens the document it names in the same pane, so the index works as
- * the handbook's own navigation.
+ * beside its siblings, then creates the file with a one-line title and selects it.
  *
  * Loading discipline: the skeleton stands only until the first listing or its failure; a
  * failed refresh keeps the list on screen under one error line with its retry; a document
@@ -23,39 +31,49 @@
  * handbook's own scope), and a route change, an organization switch or a reload (the app's
  * router blocker and unload guard, which find the editor registered).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import type { OrgHandbookFile, OrgHandbookFileResponse } from "@prismshadow/penguin-server/api";
 import {
   Badge,
   Button,
+  CloseIcon,
   ConfirmModal,
   EmptyState,
+  FilesPanes,
+  FilesToolbar,
   GlyphIcon,
-  ICON_GAP,
+  ICONS,
   ICON_SIZE,
   Input,
-  Md,
   Modal,
-  RuledSection,
-  Skeleton,
-  Textarea,
+  PreviewPane,
+  SkeletonList,
+  Spinner,
+  Tooltip,
+  TreePane,
+  WorkspaceFileEditor,
+  filesActionClass,
   guardLeave,
+  languageForFileName,
   toastError,
   toastSuccess,
+  useFilesLayout,
   useFormDraft,
   useGuardedClose,
   useUnsavedChanges,
 } from "@prismshadow/penguin-ui";
-import type { TreeToggle } from "@prismshadow/penguin-ui";
+import type { PreviewView, TreeToggle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/format";
+import { useReaderFind } from "../../lib/reader-find";
 import { isShortcut } from "../../lib/shortcuts/match";
 import { currentPlatform } from "../../lib/shortcuts/platform";
 import { keymap } from "../../lib/shortcuts/store";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
+import { toneInk } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useLocale } from "../../state/locale";
 import { OrgEmptyLine, OrgPage, useOrg } from "./org-layout";
@@ -66,6 +84,8 @@ import {
   ancestorFolders,
   buildHandbookTree,
   completeHandbookPath,
+  filterHandbookTree,
+  folderPaths,
   handbookTreeRows,
   isHandbookPath,
   isMarkdownPath,
@@ -73,8 +93,9 @@ import {
   resolveHandbookLink,
 } from "./handbook-tree";
 
-/** The two panes: a fixed list column beside the document, stacked on a narrow screen. */
-const PANES_CLASS = "grid grid-cols-1 gap-x-10 gap-y-6 lg:grid-cols-[17rem_minmax(0,1fr)]";
+/** The browser's box: the height under the page header, never so short that a document is a sliver. */
+const BROWSER_CLASS =
+  "relative flex min-h-[24rem] flex-1 flex-col overflow-hidden rounded-md border border-line";
 
 /** The size a listing row would report for content just written, before the listing is re-read. */
 const byteLength = (text: string) => new TextEncoder().encode(text).length;
@@ -93,6 +114,14 @@ export function HandbookPage() {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>());
   /** The folder last opened or closed, so the tree animates that subtree and no other. */
   const [toggled, setToggled] = useState<TreeToggle | null>(null);
+  /** The tree pane's filter over document paths. */
+  const [query, setQuery] = useState("");
+  /** The tree beside the document on a wide page; it stays as long as the page does. */
+  const [treeVisible, setTreeVisible] = useState(true);
+  /** The width the divider was dragged to, or null while it never was. */
+  const [treeWidth, setTreeWidth] = useState<number | null>(null);
+  /** One column: the document is what it shows (after a document is chosen), else the tree. */
+  const [docShown, setDocShown] = useState(false);
   const [doc, setDoc] = useState<OrgHandbookFileResponse | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   /** Bumped to re-read the selected document (its retry) without changing the selection. */
@@ -103,6 +132,10 @@ export function HandbookPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const layout = useFilesLayout(rootRef, treeWidth);
+  const readerFind = useReaderFind();
+  const saveShortcut = useShortcutLabel("editor.save");
   const dirty = editing && doc !== null && draft !== doc.content;
   // While the editor holds unsaved text it is registered with the shared guard: "discard" closes
   // it, and an in-place step that would throw the text away asks first.
@@ -116,6 +149,8 @@ export function HandbookPage() {
     setSelected(HANDBOOK_INDEX);
     setExpanded(new Set<string>());
     setToggled(null);
+    setQuery("");
+    setDocShown(false);
     setEditing(false);
   }, [projectId, orgId]);
 
@@ -189,6 +224,18 @@ export function HandbookPage() {
     });
   };
 
+  /** Opens a document; in one column, the document then replaces the tree. */
+  const openDocument = (path: string) => {
+    if (path === selected) {
+      setDocShown(true);
+      return;
+    }
+    guardDiscard(() => {
+      setSelected(path);
+      setDocShown(true);
+    });
+  };
+
   /** A write's effect on the listing, ahead of the re-read that confirms it. */
   const upsertFile = (file: OrgHandbookFile) =>
     setFiles((prev) =>
@@ -231,6 +278,7 @@ export function HandbookPage() {
     });
     setCreateOpen(false);
     setSelected(res.path);
+    setDocShown(true);
     toastSuccess(S.company.handbook.documentCreated);
     void loadList();
   };
@@ -262,22 +310,23 @@ export function HandbookPage() {
     const target = resolveHandbookLink(doc.path, anchor.getAttribute("href") ?? "");
     if (target === null) return;
     e.preventDefault();
-    setSelected(target);
+    openDocument(target);
   };
-
-  const onEditorKey = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    if (isShortcut(e.nativeEvent, keymap(), "editor.save", currentPlatform())) {
-      // A held chord repeats: every repeat is kept from the browser (Save Page), one save runs.
-      e.preventDefault();
-      if (!e.repeat) void save();
-    }
-  };
-  const saveShortcut = useShortcutLabel("editor.save");
 
   const tree = useMemo(() => (files === null ? null : buildHandbookTree(files)), [files]);
+  const filtering = query.trim() !== "";
+  const shownTree = useMemo(
+    () => (tree === null ? null : filterHandbookTree(tree, query)),
+    [tree, query],
+  );
+  // A filter opens every folder it keeps, so each match is in view; clearing it gives the reader
+  // back the folders as they left them.
   const rows = useMemo(
-    () => (tree === null ? [] : handbookTreeRows(tree, expanded)),
-    [tree, expanded],
+    () =>
+      shownTree === null
+        ? []
+        : handbookTreeRows(shownTree, filtering ? folderPaths(shownTree.nodes) : expanded),
+    [shownTree, filtering, expanded],
   );
   const existing = useMemo(() => new Set((files ?? []).map((f) => f.path)), [files]);
   const selectedFile = files?.find((f) => f.path === selected) ?? null;
@@ -290,9 +339,9 @@ export function HandbookPage() {
   const title = S.nav.org.handbook;
   const info = S.company.handbook.info;
 
-  if (tree === null) {
+  if (tree === null || shownTree === null) {
     return (
-      <OrgPage title={title} info={info}>
+      <OrgPage title={title} info={info} fill>
         {listError !== null ? (
           <EmptyState
             title={S.company.handbook.loadFailed}
@@ -300,182 +349,268 @@ export function HandbookPage() {
             action={<Button onClick={() => void loadList()}>{S.common.retry}</Button>}
           />
         ) : (
-          <HandbookSkeleton />
+          <div className={BROWSER_CLASS} aria-busy="true">
+            <div className="h-10 shrink-0 border-b border-line" />
+            <SkeletonList rows={8} />
+          </div>
         )}
       </OrgPage>
     );
   }
 
-  return (
-    <OrgPage title={title} info={info}>
+  const treePane = (
+    <TreePane
+      search={{
+        value: query,
+        onChange: setQuery,
+        placeholder: S.company.handbook.filterPlaceholder,
+      }}
+      actions={
+        <>
+          <Tooltip label={S.company.handbook.collapseAll} placement="bottom" className="shrink-0">
+            <button
+              type="button"
+              aria-label={S.company.handbook.collapseAll}
+              disabled={expanded.size === 0 || filtering}
+              onClick={() => {
+                // Every folder at once is not one subtree shrinking: nothing to animate.
+                setToggled(null);
+                setExpanded(new Set<string>());
+              }}
+              className={`${filesActionClass} disabled:opacity-40`}
+            >
+              <GlyphIcon d={COLLAPSE_ALL_ICON} size={ICON_SIZE.iconButton} />
+            </button>
+          </Tooltip>
+          {/* A new document is selected once written, which closes the editor. */}
+          <Tooltip label={S.company.handbook.newDocument} placement="bottom" className="shrink-0">
+            <button
+              type="button"
+              aria-label={S.company.handbook.newDocument}
+              onClick={() =>
+                guardDiscard(() => {
+                  setEditing(false);
+                  setCreateOpen(true);
+                })
+              }
+              className={filesActionClass}
+            >
+              <GlyphIcon d={ICONS.plus} size={ICON_SIZE.iconButton} />
+            </button>
+          </Tooltip>
+        </>
+      }
+      note={
+        listError !== null
+          ? null
+          : filtering || tree.nodes.length > 0
+            ? null
+            : S.company.handbook.noOtherDocuments
+      }
+    >
       {listError !== null && (
         <ErrorLine
           message={S.company.handbook.loadFailed}
           detail={listError}
           onRetry={() => void loadList()}
-          className="mb-4"
+          className="m-2"
         />
       )}
-      <div className={PANES_CLASS}>
-        {/* The create button sits in the section's action slot rather than the page's: it
-            is the list's own action, and a button in both headers keeps their rules level. */}
-        <RuledSection
-          title={S.company.handbook.documents}
-          count={files?.length ?? 0}
-          actions={
-            <>
-              <button
-                type="button"
-                data-tooltip={S.company.handbook.collapseAll}
-                aria-label={S.company.handbook.collapseAll}
-                disabled={expanded.size === 0}
-                onClick={() => {
-                  // Every folder at once is not one subtree shrinking: nothing to animate.
-                  setToggled(null);
-                  setExpanded(new Set<string>());
-                }}
-                className="inline-flex items-center justify-center rounded p-1 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-              >
-                <GlyphIcon d={COLLAPSE_ALL_ICON} size={ICON_SIZE.groupHeaderAction} />
-              </button>
-              {/* A new document is selected once written, which closes the editor. */}
-              <Button
-                size="sm"
-                onClick={() =>
-                  guardDiscard(() => {
-                    setEditing(false);
-                    setCreateOpen(true);
-                  })
-                }
-              >
-                {S.company.handbook.newDocument}
-              </Button>
-            </>
-          }
-        >
-          <HandbookExplorer
-            rows={rows}
-            selected={selected}
-            locale={locale}
-            toggled={toggled}
-            onSelect={(path) => {
-              if (path !== selected) guardDiscard(() => setSelected(path));
-            }}
-            onToggle={toggleFolder}
-          />
-          {tree.nodes.length === 0 && (
-            <OrgEmptyLine>{S.company.handbook.noOtherDocuments}</OrgEmptyLine>
-          )}
-        </RuledSection>
+      <HandbookExplorer
+        rows={rows}
+        selected={selected}
+        locale={locale}
+        // A filter redraws the rows from another set; nothing in it is one folder toggling.
+        toggled={filtering ? null : toggled}
+        className="min-h-0 flex-1 overflow-auto"
+        onSelect={openDocument}
+        onToggle={toggleFolder}
+      >
+        {filtering && (
+          <p className="px-3 py-2 text-sm text-fg-subtle">{S.company.handbook.noMatch}</p>
+        )}
+      </HandbookExplorer>
+    </TreePane>
+  );
 
-        <section className="min-w-0" aria-label={selected}>
-          {/* The document's own header: its path (a file name, not a heading, so no
-              uppercase), the index mark, when it was written, and the pane's controls. */}
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-gray-200 pb-2 dark:border-gray-800">
-            <div className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
-              <span className="truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-200">
-                {selected}
-              </span>
-              {/* The one place the index's reason for being pinned is on screen — it says what
-                  the document open in this pane is, so it belongs to the document, not to a row
-                  in a list of them. The explorer row carries the same sentence in its tooltip
-                  and its accessible name. */}
-              {isIndex && (
-                <span className="shrink-0">
-                  <Badge size="sm">{S.company.handbook.indexLabel}</Badge>
-                </span>
-              )}
-              {selectedFile !== null && (
-                <span
-                  className="hidden shrink-0 text-xs text-gray-400 sm:inline dark:text-gray-500"
-                  data-tooltip={S.company.handbook.updatedAt(
-                    formatDateTime(selectedFile.updatedAt),
-                    formatBytes(selectedFile.size),
-                  )}
-                  data-tooltip-extra
-                >
-                  {formatRelativeShort(selectedFile.updatedAt, locale)}
-                </span>
-              )}
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              {editing ? (
-                <>
-                  <span className="hidden text-xs text-gray-400 sm:inline dark:text-gray-500">
-                    {S.company.handbook.editorHint(saveShortcut)}
-                  </span>
-                  <Button
-                    size="sm"
-                    disabled={saving}
-                    onClick={() => guardDiscard(() => setEditing(false))}
-                  >
-                    {S.common.cancel}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    disabled={saving || !dirty}
-                    onClick={() => void save()}
-                  >
-                    {saving ? S.common.saving : S.common.save}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button size="sm" disabled={doc === null} onClick={startEdit}>
-                    {S.common.edit}
-                  </Button>
-                  {!isIndex && (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      disabled={doc === null}
-                      onClick={() => setDeleteOpen(true)}
-                    >
-                      {S.common.delete}
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-          {docError !== null ? (
+  /** What the document pane draws. */
+  const view: PreviewView =
+    docError !== null
+      ? {
+          kind: "embed",
+          node: (
             <EmptyState
               title={S.company.handbook.documentLoadFailed}
               description={docError}
-              action={<Button onClick={() => setDocAttempt((n) => n + 1)}>{S.common.retry}</Button>}
+              action={
+                <Button size="sm" onClick={() => setDocAttempt((n) => n + 1)}>
+                  {S.common.retry}
+                </Button>
+              }
             />
-          ) : doc === null ? (
-            <DocumentSkeleton />
-          ) : editing ? (
-            <Textarea
-              mono
-              size="sm"
-              aria-label={selected}
-              value={draft}
-              rows={24}
-              spellCheck={false}
-              autoFocus
-              disabled={saving}
-              className="min-h-[50vh]"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={onEditorKey}
-            />
-          ) : doc.content.trim() === "" ? (
-            <OrgEmptyLine>{S.company.handbook.emptyDocument}</OrgEmptyLine>
-          ) : isMarkdownPath(doc.path) ? (
-            <div
-              className="md-body text-sm leading-relaxed text-gray-800 dark:text-gray-100"
-              onClick={onBodyClick}
+          ),
+        }
+      : doc === null
+        ? { kind: "opening" }
+        : doc.content.trim() === ""
+          ? { kind: "embed", node: <OrgEmptyLine>{S.company.handbook.emptyDocument}</OrgEmptyLine> }
+          : isMarkdownPath(doc.path)
+            ? { kind: "markdown", text: doc.content, docKey: doc.path }
+            : {
+                kind: "source",
+                code: doc.content,
+                language: languageForFileName(doc.path),
+                wrap: true,
+              };
+
+  const documentPane = (
+    <PreviewPane
+      view={view}
+      // Edit rides over the text it edits, in the reader's pill beside its outline and find.
+      actions={
+        !editing &&
+        doc !== null &&
+        docError === null && (
+          <Tooltip label={S.common.edit} placement="bottom" className="shrink-0">
+            <button
+              type="button"
+              aria-label={S.common.edit}
+              onClick={startEdit}
+              className={filesActionClass}
             >
-              <Md text={doc.content} />
-            </div>
-          ) : (
-            <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-3 font-mono text-xs leading-relaxed text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200">
-              {doc.content}
-            </pre>
+              <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.iconButton} />
+            </button>
+          </Tooltip>
+        )
+      }
+      editor={
+        editing &&
+        doc !== null && (
+          <WorkspaceFileEditor
+            path={doc.path}
+            value={draft}
+            label={selected}
+            wrap
+            // The text stays as it was sent while the save is in flight.
+            onChange={(next) => {
+              if (!saving) setDraft(next);
+            }}
+            onSave={() => void save()}
+            isSaveKey={(event) => isShortcut(event, keymap(), "editor.save", currentPlatform())}
+          />
+        )
+      }
+      bodyProps={{ onClick: onBodyClick }}
+      isFindKey={readerFind.isFindKey}
+      findShortcut={readerFind.findShortcut}
+    />
+  );
+
+  return (
+    <OrgPage title={title} info={info} fill>
+      <div ref={rootRef} className={BROWSER_CLASS}>
+        {/* The document's own row: the tree's toggle (or the way back to it), the path, the
+            index mark, when it was written, and what the document offers. */}
+        <FilesToolbar
+          layout={layout}
+          previewShown={docShown}
+          onBack={() => setDocShown(false)}
+          treeVisible={treeVisible}
+          onTreeVisibleChange={setTreeVisible}
+          labels={{
+            back: S.files.backToList,
+            showTree: S.files.showTree,
+            hideTree: S.files.hideTree,
+          }}
+          crumbs={[title, ...selected.split("/")].map((label) => ({ label }))}
+          crumbTitle={`${title}/${selected}`}
+        >
+          {/* The one place the index's reason for being pinned is on screen — it says what the
+              document open in this pane is, so it belongs to the document, not to a row in a
+              list of them. The explorer row carries the same sentence in its tooltip and its
+              accessible name. */}
+          {isIndex && (
+            <span className="shrink-0">
+              <Badge size="sm">{S.company.handbook.indexLabel}</Badge>
+            </span>
           )}
-        </section>
+          {selectedFile !== null && (
+            <span
+              className="hidden shrink-0 px-1 text-xs text-fg-subtle sm:inline"
+              data-tooltip={S.company.handbook.updatedAt(
+                formatDateTime(selectedFile.updatedAt),
+                formatBytes(selectedFile.size),
+              )}
+              data-tooltip-extra
+            >
+              {formatRelativeShort(selectedFile.updatedAt, locale)}
+            </span>
+          )}
+          {editing ? (
+            <>
+              {dirty && (
+                <span className={`shrink-0 text-xs ${toneInk.attention}`}>{S.files.unsaved}</span>
+              )}
+              <Tooltip label={S.common.cancel} placement="bottom" className="shrink-0">
+                <button
+                  type="button"
+                  aria-label={S.common.cancel}
+                  disabled={saving}
+                  onClick={() => guardDiscard(() => setEditing(false))}
+                  className={`${filesActionClass} disabled:opacity-40`}
+                >
+                  <CloseIcon size={ICON_SIZE.iconButton} />
+                </button>
+              </Tooltip>
+              <Tooltip
+                label={
+                  saving
+                    ? S.common.saving
+                    : `${S.common.save}${saveShortcut !== null ? ` (${saveShortcut})` : ""}`
+                }
+                placement="bottom"
+                className="shrink-0"
+              >
+                <button
+                  type="button"
+                  aria-label={S.common.save}
+                  disabled={saving || !dirty}
+                  onClick={() => void save()}
+                  className={`${filesActionClass} disabled:opacity-40`}
+                >
+                  {saving ? (
+                    <Spinner size="sm" label={S.common.saving} />
+                  ) : (
+                    <GlyphIcon d={ICONS.check} size={ICON_SIZE.iconButton} />
+                  )}
+                </button>
+              </Tooltip>
+            </>
+          ) : (
+            !isIndex && (
+              <Tooltip label={S.common.delete} placement="bottom" className="shrink-0">
+                <button
+                  type="button"
+                  aria-label={S.common.delete}
+                  disabled={doc === null}
+                  onClick={() => setDeleteOpen(true)}
+                  className={`${filesActionClass} disabled:opacity-40`}
+                >
+                  <GlyphIcon d={ICONS.trash} size={ICON_SIZE.iconButton} />
+                </button>
+              </Tooltip>
+            )
+          )}
+        </FilesToolbar>
+        <FilesPanes
+          layout={layout}
+          treeAlone={!docShown}
+          treeVisible={treeVisible}
+          tree={treePane}
+          preview={documentPane}
+          dividerLabel={S.files.treeWidth}
+          onTreeWidthChange={setTreeWidth}
+        />
       </div>
 
       <NewDocumentDialog
@@ -494,9 +629,7 @@ export function HandbookPage() {
         onClose={() => (deleting ? undefined : setDeleteOpen(false))}
         onConfirm={() => void remove()}
       >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {S.company.handbook.deleteConfirm(selected)}
-        </p>
+        <p className="text-sm text-fg-muted">{S.company.handbook.deleteConfirm(selected)}</p>
       </ConfirmModal>
     </OrgPage>
   );
@@ -607,32 +740,5 @@ function NewDocumentForm({
         {formError !== null && <ErrorLine message={formError} onRetry={() => void submit()} />}
       </div>
     </Modal>
-  );
-}
-
-/** The two panes as placeholder bands, until the first listing arrives. */
-function HandbookSkeleton() {
-  return (
-    <div className={PANES_CLASS} aria-busy="true">
-      <div className="space-y-2">
-        <Skeleton className="h-3 w-16" />
-        {[0, 1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} className="h-8" />
-        ))}
-      </div>
-      <DocumentSkeleton />
-    </div>
-  );
-}
-
-/** The document pane's placeholder: a title band over three lines. */
-function DocumentSkeleton() {
-  return (
-    <div className="space-y-3" aria-busy="true">
-      <Skeleton className="h-6 w-2/3" />
-      <Skeleton className="h-4" />
-      <Skeleton className="h-4 w-5/6" />
-      <Skeleton className="h-4 w-3/4" />
-    </div>
   );
 }

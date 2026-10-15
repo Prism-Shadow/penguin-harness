@@ -284,6 +284,7 @@ export function OrgPage({
   info,
   actions,
   wide = false,
+  fill = false,
   children,
 }: {
   title: string;
@@ -291,10 +292,20 @@ export function OrgPage({
   actions?: ReactNode;
   /** Board-shaped pages take the whole width; the rest read better in a column. */
   wide?: boolean;
+  /**
+   * The content takes the height under the header, and scrolls inside itself rather than with
+   * the page: a browser of files with its own panes (the handbook).
+   */
+  fill?: boolean;
   children: ReactNode;
 }) {
   return (
-    <PageFrame width={wide ? "full" : "xl"}>
+    <PageFrame
+      width={wide ? "full" : "xl"}
+      {...(fill
+        ? { className: "flex flex-col", contentClassName: "flex min-h-0 w-full flex-1 flex-col" }
+        : {})}
+    >
       <PageHeader title={title} info={info} actions={actions} />
       {children}
     </PageFrame>

@@ -1,6 +1,8 @@
 /**
  * 内容: the type roles (every heading rung, the display title, the text roles, inline code),
- * Markdown as reading text in its two densities, a code block and a bare code surface with its
+ * Markdown as reading text in its two densities, the Markdown reader over a long document (wide,
+ * with its outline as a rail, and narrow, with the outline in its tool pill — its find opens from
+ * the pill or with Mod+F inside it), a code block and a bare code surface with its
  * gutter, the diff viewer unified, side by side and read from a patch, and a reply carrying A2UI
  * blocks — all from the package. Code is highlighted by the highlighter the frame provides, as in
  * the app.
@@ -21,6 +23,7 @@ import {
   DiffViewer,
   Heading,
   InlineCode,
+  MarkdownReader,
   Prose,
   Text,
   toastInfo,
@@ -151,6 +154,21 @@ export function ContentBoard() {
           <Prose text={t.proseSample} className="text-base leading-relaxed text-fg" />
           <span className="lib-caption">{t.compact}</span>
           <Prose variant="compact" text={t.compactSample} className="text-sm text-fg" />
+        </div>
+      </BoardGroup>
+      <BoardGroup title={t.reader} aside={t.readerHint}>
+        <div className="lib-stack lib-stack-wide">
+          <MarkdownReader
+            text={t.readerSample}
+            label={t.reader}
+            className="h-[30rem] overflow-hidden rounded-md border border-line"
+          />
+          <span className="lib-caption">{t.readerNarrow}</span>
+          <MarkdownReader
+            text={t.readerSample}
+            label={t.readerNarrow}
+            className="h-[22rem] max-w-sm overflow-hidden rounded-md border border-line"
+          />
         </div>
       </BoardGroup>
       <BoardGroup title={t.code}>

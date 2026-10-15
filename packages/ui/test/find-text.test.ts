@@ -1,7 +1,8 @@
 /**
- * Find-in-page text matching (src/lib/find-text.ts): what counts as a match, where it is, how
- * the bar steps between matches, and the context line a result row shows. The DOM half (regions,
- * highlights, collapsed groups, the backfill) is covered end to end by e2e/find.spec.mjs.
+ * Find-in-page text matching (components/content/find/find-text.ts): what counts as a match,
+ * where it is, how a find bar steps between matches, and the context line a result row shows. The
+ * DOM half (regions, highlights, collapsed groups, the backfill) is covered end to end by the web
+ * app's e2e/find.spec.mjs and, for the Markdown reader, its markdown-reader suite.
  *
  * - An empty query finds nothing; a query finds every occurrence, case-insensitively unless
  *   asked, never overlapping, and as literal text rather than a pattern, newlines included.
@@ -14,8 +15,13 @@
  *   never repeats a character of the match.
  */
 import { describe, expect, it } from "vitest";
-import { findMatches, matchAll, matchSnippet, stepMatchIndex } from "../src/lib/find-text";
-import type { FindQuery } from "../src/lib/find-text";
+import {
+  findMatches,
+  matchAll,
+  matchSnippet,
+  stepMatchIndex,
+} from "../src/components/content/find/find-text";
+import type { FindQuery } from "../src/components/content/find/find-text";
 
 /** A case-insensitive query, the default the find bar opens with. */
 const q = (text: string, caseSensitive = false): FindQuery => ({ text, caseSensitive });

@@ -261,3 +261,18 @@ export * from "./components/shell/session-row/session-row";
 
 // The drag image every draggable row hands the browser: an opaque, themed copy of the row.
 export * from "./components/overlays/drag-preview/drag-preview";
+
+// Reading and finding: the find-in-page machinery the app's find bar and the Markdown reader share
+// (the text matcher, the DOM index with its highlight paint and reveal, the control row), the
+// reader with its outline model, and the measured width a layout that follows its own room reads.
+export * from "./components/content/find/find-text";
+export * from "./components/content/find/find-dom";
+export * from "./components/content/find/find-field";
+export * from "./components/content/markdown-reader/outline";
+export * from "./components/content/markdown-reader/markdown-reader";
+export * from "./components/layout/measure/use-measured-width";
+
+// The files browser's frame: its layout at the measured width, the toolbar row and the two panes,
+// which the Workspace Files panel and the organization handbook both lay out with.
+export * from "./components/files/files-frame/files-layout";
+export * from "./components/files/files-frame/files-frame";

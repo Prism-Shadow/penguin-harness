@@ -16,6 +16,7 @@
  * The rows themselves are `handbook-tree.ts`'s (`handbookTreeRows`); folders start collapsed and
  * the page expands the ones above the selected document.
  */
+import type { ReactNode } from "react";
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
 import { FileTree, ICONS } from "@prismshadow/penguin-ui";
 import type { TreeToggle } from "@prismshadow/penguin-ui";
@@ -38,6 +39,8 @@ export function HandbookExplorer({
   selected,
   locale,
   toggled,
+  className,
+  children,
   onSelect,
   onToggle,
 }: {
@@ -46,6 +49,10 @@ export function HandbookExplorer({
   locale: Locale;
   /** The folder last opened or closed, whose subtree animates. Null: nothing to animate. */
   toggled: TreeToggle | null;
+  /** The tree's own box: its scrolling, in the tree pane. */
+  className?: string;
+  /** Said in place of the rows when there are none: an empty handbook, or a filter matching nothing. */
+  children?: ReactNode;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
 }) {
@@ -65,7 +72,7 @@ export function HandbookExplorer({
       // Only the index overrides its name: every other row says on screen everything it means.
       rowLabel={(row) => (row.isIndex ? tooltip(row) : undefined)}
       rowTrailing={(row) => (
-        <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+        <span className="shrink-0 text-xs tabular-nums text-fg-subtle">
           {row.kind === "dir"
             ? row.docs
             : row.file === null
@@ -73,8 +80,11 @@ export function HandbookExplorer({
               : formatRelativeShort(row.file.updatedAt, locale)}
         </span>
       )}
+      className={className}
       onToggleDir={onToggle}
       onOpenFile={onSelect}
-    />
+    >
+      {children}
+    </FileTree>
   );
 }
