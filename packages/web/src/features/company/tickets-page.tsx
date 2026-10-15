@@ -110,14 +110,16 @@ const GROUP_BY_VALUES: readonly TicketGroupBy[] = [
 ];
 
 function readGroupBy(value: string | null): TicketGroupBy {
+  if (value === null) return "project";
   return (
     value === "owner" ||
     value === "priority" ||
     value === "parent" ||
     value === "module" ||
-    value === "project"
+    value === "project" ||
+    value === "none"
       ? value
-      : "none"
+      : "project"
   );
 }
 
@@ -561,7 +563,7 @@ export function TicketsPage() {
             value={groupBy}
             onChange={(v) => {
               setGroupBy(v);
-              setQueryParams({ group: v === "none" ? null : v });
+              setQueryParams({ group: v });
             }}
             options={GROUP_BY_VALUES.map((v) => ({
               value: v,
