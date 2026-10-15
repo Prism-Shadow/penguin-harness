@@ -1916,10 +1916,9 @@ export const zh = {
       `它由插件 ${plugin} 安装，可在插件页的「管理安装」中重新装回。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
-    /** A machine's section on the Agents page: its title, and its "?" (whose Agents these are). */
-    machineSection: (machine: string) => `${machine} 上的 Agent`,
-    machineSectionInfo:
-      "这些是那台机器自己的 Agent：设置、对话与删除都在那台机器上进行，和本服务端同 id 的 Agent 互不相干。",
+    /** The hint on a machine Agent's `[SSH: …]` tag: whose Agent this is, and where its actions go. */
+    onMachineHint: (machine: string) =>
+      `这个 Agent 在 ${machine} 上：设置、对话与删除都在那台机器上进行，和本服务端同 id 的 Agent 互不相干。`,
     /** The disabled Usage button on a machine's Agent: what the usage center counts. */
     usageThisServerOnly: "成本中心只统计本服务端的 Agent",
     /** Delete's confirmation for a machine's Agent: the machine it is deleted on. */

@@ -19,10 +19,11 @@
  *   ships one) in the Agent's installed hooks, and each of its MCP servers among the Agent's
  *   servers as an entry it installed — which is why the page fetches the three lists per Agent.
  *   Uninstall takes it apart the same way: one DELETE per skill, one for the hook package and
- *   one per MCP server. The dialog lists this server's Agents, then each connected machine's own
- *   (lib/machine-agent-lists.ts): a machine's Agent is installed on, read back from and updated on that
- *   machine, from that machine's library, and counts towards the card's "used by" and status. The
- *   update notice and the nav badge it answers are this server's alone.
+ *   one per MCP server. The dialog lists this server's Agents and each connected machine's own in
+ *   one list, in the Agents page's order (lib/machine-agent-lists.ts `mixAgents`): a machine's
+ *   Agent is installed on, read back from and updated on that machine, from that machine's
+ *   library, and counts towards the card's "used by" and status. The update notice and the nav
+ *   badge it answers are this server's alone.
  * - A server module is installed on the whole server for every Project, by an admin only (a
  *   member sees the card read-only). Installing or removing one re-assembles the App, which stops
  *   the agent runs in progress in every Project, so the confirm says what the install does and,
@@ -71,7 +72,7 @@ import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { agentKey } from "../../lib/agent-location";
-import { useMachineAgents } from "../../lib/machine-agent-lists";
+import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
 import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
@@ -443,23 +444,22 @@ export function PluginsPage() {
   };
 
   /**
-   * Every Agent a library plugin can be installed on: this server's, then each connected
-   * machine's own, keyed so that two servers' Agents of one id stay two (lib/agent-location.ts).
-   * A machine out of reach offers none: nothing could be installed there.
+   * Every Agent a library plugin can be installed on: this server's and each connected
+   * machine's own, in one list in the Agents page's order, keyed so that two servers' Agents of
+   * one id stay two (lib/agent-location.ts). A machine out of reach offers none: nothing could
+   * be installed there.
    */
   const { lists: machineLists, reload: reloadMachineAgents } = useMachineAgents(projectId);
-  const targets: InstallTarget[] = [
-    ...agents.map((agent) => ({ key: agent.agentId, agent, machine: null })),
-    ...machineLists
-      .filter((list) => list.live)
-      .flatMap((list) =>
-        list.agents.map((agent) => ({
-          key: agentKey(list.machine.machineId, agent.agentId),
-          agent,
-          machine: { machineId: list.machine.machineId, label: list.machine.label },
-        })),
-      ),
-  ];
+  const targets: InstallTarget[] = mixAgents(agents, machineLists, { liveOnly: true }).map(
+    ({ agent, on }) =>
+      on === null
+        ? { key: agent.agentId, agent, machine: null }
+        : {
+            key: agentKey(on.machine.machineId, agent.agentId),
+            agent,
+            machine: { machineId: on.machine.machineId, label: on.machine.label },
+          },
+  );
   const targetOf = (key: string) => targets.find((t) => t.key === key);
   /** The machine an install target lives on; null for this server. */
   const machineOfTarget = (key: string) => targetOf(key)?.machine?.machineId ?? null;

@@ -102,6 +102,44 @@ export interface MachineAgents {
   reason: string | null;
 }
 
+/** One Agent of a mixed list: where it lives (null: this server), and its summary. */
+export interface PlacedAgent {
+  agent: AgentSummary;
+  /** The machine's list it came from; null for this server's Agents. */
+  on: MachineAgents | null;
+}
+
+/**
+ * This server's Agents and every machine's in ONE list, the way the sidebar mixes machine
+ * Workspaces with this server's: no machine goes first, everything is ordered by the list's own
+ * key — here the Agents list's, oldest created first (the server's order) — and a machine's Agent
+ * simply falls where its creation puts it. Ties go by id, then this server's first, then by
+ * machine name, so the order is stable. An Agent whose creation time is unknown goes last.
+ * `liveOnly` leaves out the machines that cannot be acted on right now.
+ */
+export function mixAgents(
+  here: readonly AgentSummary[],
+  lists: readonly MachineAgents[],
+  { liveOnly = false }: { liveOnly?: boolean } = {},
+): PlacedAgent[] {
+  const placed: PlacedAgent[] = [
+    ...here.map((agent) => ({ agent, on: null })),
+    ...lists
+      .filter((list) => !liveOnly || list.live)
+      .flatMap((list) => list.agents.map((agent) => ({ agent, on: list }))),
+  ];
+  const created = (p: PlacedAgent) => p.agent.createdAt ?? "\uffff";
+  // Code-point order: an ISO time sorts by its digits, never by a locale's idea of punctuation.
+  const byCode = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+  return placed.sort(
+    (a, b) =>
+      byCode(created(a), created(b)) ||
+      a.agent.agentId.localeCompare(b.agent.agentId) ||
+      (a.on === null ? -1 : 0) - (b.on === null ? -1 : 0) ||
+      (a.on?.machine.label ?? "").localeCompare(b.on?.machine.label ?? ""),
+  );
+}
+
 /** A machine's answer: its Agents, or the failure in words. */
 type Answer = { agents: AgentSummary[] } | { error: string };
 

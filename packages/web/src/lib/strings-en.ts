@@ -1817,9 +1817,8 @@ export const en: Strings = {
     mcpRemoveFromPlugin: (plugin: string): string =>
       `It was installed by plugin ${plugin}; Manage installs on the Plugins page can put it back.`,
     defaultValue: "(default)",
-    machineSection: (machine: string) => `Agents on ${machine}`,
-    machineSectionInfo:
-      "These are that machine's own agents: their settings, chats and deletion all happen on that machine, apart from this server's agents of the same id.",
+    onMachineHint: (machine: string) =>
+      `This agent lives on ${machine}: its settings, chats and deletion all happen on that machine, apart from this server's agents of the same id.`,
     usageThisServerOnly: "The usage center counts this server's agents only",
     deleteConfirmOnMachine: (name: string, machine: string): string =>
       `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,

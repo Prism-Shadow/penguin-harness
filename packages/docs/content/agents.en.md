@@ -28,9 +28,9 @@ When a newer kernel is available for some agents, their cards show **Kernel upda
 
 ### Agents on machines
 
-An agent belongs to the server it lives on. When the Project uses machines, each connected machine's own agents follow this server's, in a section per machine (**Agents on gpu-box**), and each card carries the machine after the agent's name, as in `[SSH: gpu-box]`. A machine's agent is never merged with one of this server's, even when the ids match: every machine has its own `default_agent`.
+An agent belongs to the server it lives on. When the Project uses machines, each connected machine's own agents sit in the same list as this server's, in the list's order (oldest first), the way the sidebar lists machine workspaces beside local ones. Each machine card carries the machine after the agent's name, as in `[SSH: gpu-box]`. A machine's agent is never merged with one of this server's, even when the ids match: every machine has its own `default_agent`.
 
-Everything on such a card acts on that machine. **Settings** and the counts open the agent's settings there, and every change is saved there. **New chat** starts a conversation in that machine's temporary workspace, and delete removes the agent from that machine. **Cost Center** counts this server's agents only, so the card's costs button is off. While a machine is reconnecting or its server is stopped, its section says so above the agents it last listed, and their buttons are off. Only admins see machines.
+Everything on such a card acts on that machine. **Settings** and the counts open the agent's settings there, and every change is saved there. **New chat** starts a conversation in that machine's temporary workspace, and delete removes the agent from that machine. **Cost Center** counts this server's agents only, so the card's costs button is off. While a machine is reconnecting or its server is stopped, the agents it last listed stay in the list, greyed, with an unplugged icon after the machine's name: point at it for the reason. Their buttons are off. Only admins see machines.
 
 You can also reach an agent from the sidebar. When conversations are grouped by agent, each agent's group header has a **New chat** button and an **Agent settings** button, and the sidebar has a **Create agent** button that opens the **Create agent** dialog.
 

@@ -20,11 +20,13 @@
  * .claude/skills. A plain new Agent otherwise starts with none. A picked plugin with a stdio MCP
  * server asks before the Agent is created, showing the command it runs on this server.
  *
- * A machine's Agents are that machine's own (lib/agent-location.ts): after this server's Agents,
- * each installed machine has a ruled section of its own cards, named `[SSH: alias]` after the
- * Agent's name the way a machine's Workspace group is, and every control on such a card acts on
- * that machine — its settings page there, a new chat in its temporary workspace, its delete. A
- * machine out of reach shows what it was last seen holding, inert, under the reason.
+ * A machine's Agents are that machine's own (lib/agent-location.ts), and they sit in the same
+ * list as this server's, the way the sidebar mixes machine Workspaces with local ones: one order
+ * for all (lib/machine-agent-lists.ts `mixAgents`), each machine card named `[SSH: alias]` after
+ * the Agent's name as a machine's Workspace group is. Every control on such a card acts on that
+ * machine — its settings page there, a new chat in its temporary workspace, its delete. A machine
+ * out of reach keeps what it was last seen holding on the list, greyed, every control off, with
+ * the reason beside the tag and on each control.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -71,9 +73,10 @@ import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-import { agentSettingsPath } from "../../lib/agent-location";
-import { useMachineAgents } from "../../lib/machine-agent-lists";
-import type { MachineAgents } from "../../lib/machine-agent-lists";
+import { agentKey, agentSettingsPath } from "../../lib/agent-location";
+import { mixAgents, useMachineAgents } from "../../lib/machine-agent-lists";
+import type { PlacedAgent } from "../../lib/machine-agent-lists";
+import { toneInk } from "../../lib/tone";
 import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog, pluginPickItems } from "./create-agent-dialog";
 import type { PluginPickItem } from "./create-agent-dialog";
@@ -132,17 +135,20 @@ export function AgentApiMark({ enabled }: { enabled: boolean }) {
  */
 export function AgentCard({
   onOpen,
+  dimmed = false,
   children,
 }: {
   /** Enters the Agent's settings page; null for one that cannot be reached right now. */
   onOpen: (() => void) | null;
+  /** Greyed: a machine's Agent as last seen, while that machine cannot be asked. */
+  dimmed?: boolean;
   children: ReactNode;
 }) {
   return (
     <Card
       padding="md"
       interactive={onOpen !== null}
-      className="flex flex-wrap items-center gap-x-6 gap-y-2"
+      className={`flex flex-wrap items-center gap-x-6 gap-y-2 ${dimmed ? "opacity-60" : ""}`}
       {...(onOpen === null ? {} : { onClick: cardBodyClick(onOpen) })}
     >
       {children}
@@ -250,7 +256,7 @@ export function AgentsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const projectId = currentProject?.projectId;
-  /** Each installed machine's own Agents, listed after this server's (lib/machine-agent-lists.ts). */
+  /** Each installed machine's own Agents, mixed into this server's list (lib/machine-agent-lists.ts). */
   const { lists: machineLists, reload: reloadMachine } = useMachineAgents(projectId ?? null);
 
   /**
@@ -307,26 +313,17 @@ export function AgentsPage() {
         ...employmentsOf(a).flatMap((e) => [e.orgName, e.title]),
       ].some((field) => field.toLowerCase().includes(needle));
   }, [query]);
-  /** This server's Agents the search leaves. */
-  const shownAgents = useMemo(() => agents.filter(matches), [agents, matches]);
-  /**
-   * This server's list in two sections: the Agents the user works with directly, then the
-   * employees of the Project's organizations (agent-employment.ts). The search box filters both.
-   */
-  const sections = useMemo(() => splitByEmployment(shownAgents, (a) => a), [shownAgents]);
-  /**
-   * Each machine's section, as the search leaves it: hidden while a search matches none of it,
-   * and while it has neither a card nor a reason to show (still waiting for its first answer).
-   */
-  const machineSections = useMemo(
-    () =>
-      machineLists
-        .map((list) => ({ list, cards: list.agents.filter(matches) }))
-        .filter(({ list, cards }) =>
-          searching ? cards.length > 0 : cards.length > 0 || list.reason !== null,
-        ),
-    [machineLists, matches, searching],
+  /** Every Agent, this server's and each machine's, in one order; then what the search leaves. */
+  const shownAgents = useMemo(
+    () => mixAgents(agents, machineLists).filter((row) => matches(row.agent)),
+    [agents, machineLists, matches],
   );
+  /**
+   * The list in two sections: the Agents the user works with directly, then the employees of
+   * the Project's organizations (agent-employment.ts), a machine's among them. The search box
+   * filters both.
+   */
+  const sections = useMemo(() => splitByEmployment(shownAgents, (row) => row.agent), [shownAgents]);
 
   /**
    * Stat icon click: same navigation as the "Settings" button plus `?tab=` so the settings
@@ -416,11 +413,11 @@ export function AgentsPage() {
   };
 
   /**
-   * One Agent's card: the same band in every section. `on` is the machine's section for a
-   * machine's Agent — every control then acts on that machine, and while the machine cannot be
-   * reached the card is inert, its controls disabled with the reason — and null for this server's.
+   * One Agent's card: the same band for every Agent. `on` is the machine's list for a machine's
+   * Agent — every control then acts on that machine, and while the machine cannot be reached the
+   * card is greyed and inert, its controls disabled with the reason — and null for this server's.
    */
-  const renderCard = (a: AgentSummary, on: MachineAgents | null = null) => {
+  const renderCard = ({ agent: a, on }: PlacedAgent) => {
     const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
     const machineId = on?.machine.machineId ?? null;
     /** Whether the server holding the Agent can be asked right now (this one always can). */
@@ -434,8 +431,9 @@ export function AgentsPage() {
       employments.length === 0 ? null : S.agent.employedUndeletable(employments);
     return (
       <AgentCard
-        key={`${machineId ?? ""}/${a.agentId}`}
+        key={agentKey(machineId, a.agentId)}
         onOpen={reachable ? () => openSettings(a.agentId, machineId) : null}
+        dimmed={!reachable}
       >
         {/* Info column: once it can't fit within 14rem, everything after it
                     (sparkline/buttons) wraps as a whole. The avatar counts as the first line
@@ -462,10 +460,27 @@ export function AgentsPage() {
                     : () => {}
               }
             />
-            {/* The machine the Agent lives on, written as a machine's Workspace group writes it. */}
+            {/* The machine the Agent lives on, written as a machine's Workspace group writes it;
+                its hint says what that means. A machine out of reach adds the lifted plug, its
+                reason in the hint. */}
             {on !== null && (
-              <span className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500">
+              <span
+                className="shrink-0 font-mono text-xs normal-case text-gray-400 dark:text-gray-500"
+                data-tooltip={S.agent.onMachineHint(on.machine.label)}
+                data-tooltip-extra
+              >
                 {S.chat.machineTag(on.machine.label)}
+              </span>
+            )}
+            {offReason !== null && (
+              <span
+                role="img"
+                aria-label={offReason}
+                data-tooltip={offReason}
+                data-tooltip-extra
+                className={`shrink-0 ${toneInk.attention}`}
+              >
+                <GlyphIcon d={ICONS.plugLifted} size={ICON_SIZE.inlineGlyph} />
               </span>
             )}
             <AgentApiMark enabled={a.apiEnabled} />
@@ -715,7 +730,7 @@ export function AgentsPage() {
             </SkeletonCard>
           ))}
         </div>
-      ) : shownAgents.length === 0 && machineSections.length === 0 ? (
+      ) : shownAgents.length === 0 ? (
         <EmptyState title={query.trim() === "" ? S.common.none : S.agent.searchEmpty} />
       ) : (
         /* GitHub-repo-list-style single column: separate cards with row spacing; each row is
@@ -725,7 +740,7 @@ export function AgentsPage() {
            own, shown only when there is one to list. */
         <>
           <div className="space-y-3">
-            {sections.agents.map((a) => renderCard(a))}
+            {sections.agents.map(renderCard)}
             {/* Until the Project has an agent of its own, the list ends in the AI path's call to
               action: the built-in default is not one the user set up. Hidden while searching
               (the list itself is being filtered). */}
@@ -746,25 +761,9 @@ export function AgentsPage() {
               info={S.agent.employeesSectionInfo}
               className={sections.agents.length > 0 ? "mt-8" : ""}
             >
-              <div className="space-y-3">{sections.employees.map((a) => renderCard(a))}</div>
+              <div className="space-y-3">{sections.employees.map(renderCard)}</div>
             </RuledSection>
           )}
-          {/* Each machine's own Agents: a section per machine, after everything of this server's.
-              A machine out of reach says why under its title, above what it was last seen holding. */}
-          {machineSections.map(({ list, cards }) => (
-            <RuledSection
-              key={list.machine.machineId}
-              title={S.agent.machineSection(list.machine.label)}
-              count={cards.length}
-              info={S.agent.machineSectionInfo}
-              className="mt-8"
-            >
-              {list.reason !== null && (
-                <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">{list.reason}</p>
-              )}
-              <div className="space-y-3">{cards.map((a) => renderCard(a, list))}</div>
-            </RuledSection>
-          ))}
         </>
       )}
 
