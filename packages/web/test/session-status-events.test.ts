@@ -525,11 +525,7 @@ describe("a machine's events, delivered on the aggregate", () => {
 
   it("reload nothing here when the machine's own web is pushed", () => {
     const store = storeWith(session("a"));
-    let reloaded = 0;
-    applyUserEvent(store, { type: "web_updated", rev: "x" }, () => {
-      reloaded += 1;
-    }, "gpu-box");
-    expect(reloaded).toBe(0);
+    applyUserEvent(store, { type: "web_updated", rev: "x" }, neverReload, "gpu-box");
   });
 
   it("a change to the machines list tells every reader of it, once, and moves no row", () => {
