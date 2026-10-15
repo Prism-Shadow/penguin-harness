@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1141](https://github.com/Prism-Shadow/penguin-harness/pull/1141)
 - **Issue:** [#735](https://github.com/Prism-Shadow/penguin-harness/issues/735)
 
 [中文版](2026-10-15-ticket-listing-names.zh.md)
