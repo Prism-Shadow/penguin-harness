@@ -10,6 +10,7 @@
  */
 import { EmptyState, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
+import { machineForSession } from "../../lib/session-machines";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { dockPanelDefinition, panelLabel, registerDockPanel } from "../dock/panel-registry";
 import type { DockPanelBodyProps, DockPanelDefinition, PanelId } from "../dock/panel-registry";
@@ -165,6 +166,8 @@ function SchedulesPanelBody({ active }: DockPanelBodyProps) {
     <SchedulePanel
       key={selected.sessionId}
       session={selected}
+      // A conversation on a machine has its tasks there.
+      machineId={machineForSession(selected.sessionId)}
       active={active}
       onPrefillComposer={prefillComposer}
     />

@@ -14,6 +14,10 @@
  *   counted, so one surface unmounting does not silence the other), and never one nobody asked
  *   about.
  * - The session list marks the Sessions of every Agent out of one answer.
+ * - A machine's list of a Project is that machine's: asked of the machine, kept apart from this
+ *   server's list of the same Project, and re-read on that machine's own event only.
+ * - The session list marks a conversation on a machine from that machine's list, beside this
+ *   server's marks, and draws none while this server has not answered.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import type {
@@ -27,6 +31,7 @@ import {
   retainSchedules,
   scheduleError,
   scheduleItems,
+  scheduleItemsAcross,
 } from "../src/features/schedules/schedule-store";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import type { FakeFetch, FetchRequest } from "./helpers/fetch";
@@ -74,7 +79,17 @@ const asked = () => fetch.requests.map(projectOf);
 
 beforeEach(() => {
   answers.length = 0;
-  fetch = stubFetch((request) => answers.shift() ?? json(response(projectOf(request))));
+  fetch = stubFetch(
+    (request) =>
+      answers.shift() ??
+      json(
+        response(
+          request.machine === null
+            ? projectOf(request)
+            : `${projectOf(request)}@${request.machine}`,
+        ),
+      ),
+  );
 });
 
 describe("refreshSchedules", () => {
@@ -221,5 +236,51 @@ describe("the session list's marks", () => {
     // What the sidebar computes, from the list it actually reads: two Agents, two marked rows,
     // no current Agent anywhere in the question.
     expect([...pendingScheduleSessions(scheduleItems("p8") ?? [])]).toEqual(["s1", "s2"]);
+  });
+});
+
+describe("a machine's list", () => {
+  const MACHINE = "QS7J4YVgSovi-Z2c";
+
+  it("is asked of the machine and kept apart from this server's list of the same Project", async () => {
+    await refreshSchedules("p9", MACHINE);
+    expect(fetch.requests.map((r) => r.machine)).toEqual([MACHINE]);
+    expect(scheduleItems("p9", MACHINE)?.map((i) => i.name)).toEqual([`p9@${MACHINE}`]);
+    // This server's list of the Project was never asked for, and is not the machine's.
+    expect(scheduleItems("p9")).toBeNull();
+  });
+
+  it("is re-read on that machine's own event, and nothing else is", async () => {
+    const releaseHere = retainSchedules("p10");
+    const releaseThere = retainSchedules("p10", MACHINE);
+    noteScheduleEvent("p10", MACHINE);
+    expect(fetch.requests.map((r) => r.machine)).toEqual([MACHINE]);
+    releaseHere();
+    releaseThere();
+  });
+
+  it("marks a conversation on the machine beside this server's, once this server has answered", async () => {
+    const due = "2026-09-11T00:00:00.000Z";
+    answers.push(
+      json({
+        schedules: [task("standup", { sessionId: "s-there", nextFireAt: due })],
+        invalidFiles: [],
+      }),
+    );
+    await refreshSchedules("p11", MACHINE);
+    // The machine answered first: with no word from this server there is no list to mark from.
+    expect(scheduleItemsAcross("p11", [MACHINE])).toBeNull();
+
+    answers.push(
+      json({
+        schedules: [task("release", { sessionId: "s-here", nextFireAt: due })],
+        invalidFiles: [],
+      }),
+    );
+    await refreshSchedules("p11");
+    expect([...pendingScheduleSessions(scheduleItemsAcross("p11", [MACHINE]) ?? [])]).toEqual([
+      "s-here",
+      "s-there",
+    ]);
   });
 });

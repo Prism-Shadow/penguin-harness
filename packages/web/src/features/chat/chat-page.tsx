@@ -1020,8 +1020,11 @@ export function ChatPage() {
       // one-off — so the Project's schedule directories are re-read on this same edge, the way
       // the Files and Trace panels re-read theirs. One store refresh serves both surfaces: the
       // store notifies its subscribers, so the dock's schedules panel and the sidebar row's
-      // alarm clock come from the same list and cannot disagree.
-      if (projectId !== null) noteScheduleEvent(projectId);
+      // alarm clock come from the same list and cannot disagree. The list re-read is the one on
+      // the server this conversation runs on: a turn on a machine wrote its task files there.
+      if (projectId !== null) {
+        noteScheduleEvent(projectId, machineForSession(selectedSessionId));
+      }
     }
   }, [stream.taskState, selectedSessionId, projectId, reloadSessions, reloadAgents]);
 
