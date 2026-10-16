@@ -190,9 +190,9 @@ export interface ProjectChatDefaults {
  * `[providers.<id>]`: the connection a group's rows follow unless a row overrides a field
  * (effectiveConnection reads it through providerConnectionShape). Keyed by provider id,
  * built-in or user-defined. Every field optional; an absent or blank one is unset, and a row
- * with no value of its own then gets the client's default — never a catalog value. A new
- * Project writes the catalog's endpoint and protocol here for every built-in group that has
- * them (presetProviderTable); from then on the table is the user's.
+ * with no value of its own then gets the client's default — never a catalog value. The server
+ * seeds a new Project's tables from its catalog (endpoint, protocol, `official`); from then on
+ * the table is the user's.
  */
 export interface ProviderConnection {
   base_url?: string;
