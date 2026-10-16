@@ -35,7 +35,7 @@ import { writeClipboard } from "./lib/clipboard";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
 import { highlightCode } from "./lib/code-highlight";
 import { ErrorBoundary } from "./rescue/error-boundary";
-import { RescuePalette } from "./web-app";
+import { RescuePalette } from "./rescue/palette";
 import { RescuePanel } from "./rescue/rescue-panel";
 import { SafeModeMarker } from "./rescue/safe-mode-marker";
 
