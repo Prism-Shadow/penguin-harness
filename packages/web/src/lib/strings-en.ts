@@ -961,6 +961,22 @@ export const en: Strings = {
         : `${toggle} to toggle · ↑↓ to select · Enter to run`,
     harnessHistory: "Harness history",
   },
+  rescue: {
+    title: "Something broke the page",
+    desc: "A page threw an error while rendering, and the app cannot go on drawing it. Reload, or reload without what the server contributes (pages from plugins and the like); to roll the harness version back, open the harness history.",
+    reload: "Reload",
+    reloadSafe: "Reload without contributions",
+    safeNote:
+      "Safe mode is already on: every server contribution was skipped, so this error comes from the app itself.",
+    paletteHint: (palette: string | null): string =>
+      palette === null
+        ? "The command palette still works."
+        : `Press ${palette} to open the command palette.`,
+    marker: "Safe mode: server contributions are off",
+    leave: "Leave safe mode",
+    enterAction: "Enter safe mode (skip server contributions)",
+    leaveAction: "Leave safe mode (load server contributions)",
+  },
   modelPicker: {
     groups: "Model groups",
     hideModelsWithoutKey: "Hide models without a key",

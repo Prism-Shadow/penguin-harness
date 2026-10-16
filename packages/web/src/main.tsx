@@ -28,6 +28,8 @@ import { hasEscLayers } from "@prismshadow/penguin-ui";
 import { App } from "./app";
 import { bootInstallScope, watchInstallScope } from "./lib/install-scope";
 import { bootWeb } from "./web-root";
+import { bootFailedRoot } from "./rescue/rescue-panel";
+import { adoptSafeModeParam } from "./rescue/safe-mode";
 import type { AppRouterProps } from "./web-app/router";
 // The global shortcut dispatcher installs itself at module evaluation (a React effect would
 // leave a post-paint window where a chord is dead); the import is what evaluates it.
@@ -53,16 +55,22 @@ function mount(Root: ComponentType<AppRouterProps>): void {
   );
 }
 
+// `?safe` enters safe mode for this tab; it is taken out of the address before the router reads it.
+adoptSafeModeParam();
+
 // A second tab can recognise a replaced root while this one is open, leaving everything on
 // screen here pointing at a data root that is gone.
 watchInstallScope();
 
 // A rejected reconcile mounts too: bootInstallScope already swallows everything it can, and
 // the app must mount even if it somehow does not. A tree that fails to boot is a build defect
-// (the manifests are checked at typecheck), and there is no app to mount without it.
-void Promise.all([bootInstallScope().catch(() => "mount" as const), bootWeb()]).then(
-  ([action, Root]) => {
-    if (action === "reload") location.reload();
-    else mount(Root);
-  },
-);
+// (the manifests are checked at typecheck), but a hot-updated build can still carry one: the
+// app then mounts the rescue panel in the tree's place, with the command palette beside it, so
+// the harness can be rolled back.
+void Promise.all([
+  bootInstallScope().catch(() => "mount" as const),
+  bootWeb().catch((error: unknown) => bootFailedRoot(error)),
+]).then(([action, Root]) => {
+  if (action === "reload") location.reload();
+  else mount(Root);
+});

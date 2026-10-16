@@ -1071,6 +1071,22 @@ export const zh = {
       toggle === null ? "↑↓ 选择 · Enter 执行" : `${toggle} 切换 · ↑↓ 选择 · Enter 执行`,
     harnessHistory: "Harness 历史",
   },
+  /** The rescue surface (src/rescue/): the panel a render error leaves, and safe mode. */
+  rescue: {
+    title: "界面出错了",
+    desc: "页面渲染时抛出错误，应用无法继续显示。可以重新加载，或跳过服务端贡献（插件提供的页面等）后重新加载；需要回退 harness 版本时，打开 Harness 历史。",
+    reload: "重新加载",
+    reloadSafe: "不加载贡献重新加载",
+    /** In place of reloadSafe when safe mode is already on. */
+    safeNote: "已在安全模式：服务端贡献均已跳过，这个错误来自应用本身。",
+    /** `palette` is the formatted palette.toggle chord, null while unbound. */
+    paletteHint: (palette: string | null): string =>
+      palette === null ? "命令面板仍可使用。" : `按 ${palette} 仍可打开命令面板。`,
+    marker: "安全模式：未加载服务端贡献",
+    leave: "离开安全模式",
+    enterAction: "进入安全模式（不加载服务端贡献）",
+    leaveAction: "离开安全模式（重新加载服务端贡献）",
+  },
   modelPicker: {
     /** Accessible name of the dialog's provider-group rail. */
     groups: "模型分组",

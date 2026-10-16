@@ -149,7 +149,7 @@ As soon as a binding is set, the line under its row says what stands in its way:
 - In the desktop app, a combination its menu also carries: the binding overrides that menu item.
 - A combination the browser also uses, such as Ctrl+P or ⌘P for printing: in a browser tab, the binding takes over that browser function.
 
-Bindings are shared by your browsers and the desktop app, so the browser's notes show in the desktop app too. No default sits on a combination the browser keeps. Save keeps Ctrl+S / ⌘S and takes over the browser's Save Page while an editor has focus, so its row carries a note; on a Mac so do the two rows whose defaults Chrome also uses, ⌥⌘P and ⌥⌘N.
+Bindings are shared by your browsers and the desktop app, so the browser's notes show in the desktop app too. No default sits on a combination the browser keeps, with the one exception below. Save keeps Ctrl+S / ⌘S and takes over the browser's Save Page while an editor has focus, so its row carries a note. So does the command palette's Ctrl+Shift+P / ⇧⌘P, which is Firefox's new private window: Firefox acts on it before the page, so in Firefox give the palette another combination. On a Mac the new chat row carries one too, for Chrome's ⌥⌘N.
 
 ## Archived chats
 

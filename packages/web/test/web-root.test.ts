@@ -27,7 +27,7 @@ const OrgProposalsPage = () => null;
  *   company-mode proposals page is drawn by the proposals page, inside company mode and from
  *   the root alike.
  * - The shell receives company's provider and the update badges' owner for the signed-in
- *   session, the six layers in their mount order, and the user event handlers of company, the
+ *   session, the five layers in their mount order, and the user event handlers of company, the
  *   built-in browser and schedules in their dispatch order.
  * - The sidebar receives the Project switcher and the session list for development mode,
  *   company's mode with its switcher, channels, roadmaps and desks, the to-do dots and the
@@ -79,7 +79,6 @@ import { CompanyProvider, companyUserEvents } from "../src/features/company/comp
 import { ShortcutRuntime } from "../src/features/settings/shortcut-runtime";
 import { BuiltinBrowserLayer } from "../src/features/builtin-browser/browser-layer";
 import { builtinBrowserUserEvents } from "../src/features/builtin-browser/browser-events";
-import { AppPalette } from "../src/features/palette/app-palette";
 import { scheduleUserEvents } from "../src/features/schedules/schedule-store";
 import { SettingsLayer } from "../src/features/settings/settings-layer";
 import { DockScope } from "../src/features/dock/dock-scope";
@@ -313,13 +312,12 @@ describe("the booted shell slots", () => {
     expect(new Set(codes).size).toBe(2);
   });
 
-  it("mounts the six layers in their order, the dock's scope last", () => {
+  it("mounts the five layers in their order, the dock's scope last", () => {
     expect(codeByOrder(layers)).toEqual([
       TerminalDockRuntime,
       ShortcutRuntime,
       SettingsLayer,
       BuiltinBrowserLayer,
-      AppPalette,
       DockScope,
     ]);
   });

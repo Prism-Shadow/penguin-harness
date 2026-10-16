@@ -1,1 +1,1 @@
-export { AppPalette } from "./app-palette";
+export { RescuePalette } from "./app-palette";

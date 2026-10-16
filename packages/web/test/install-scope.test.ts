@@ -132,6 +132,8 @@ const UNCLASSIFIED_ON_PURPOSE: Record<string, string> = {
     "sessionStorage: scoped to one tab's history, so it cannot outlive a data root",
   "penguin.mcp_servers":
     "not a storage key: the plugin manifest field the import dialog's agent prompt names",
+  "penguin.safeMode":
+    "sessionStorage: safe mode lasts for one tab, so it cannot outlive a data root",
 };
 
 /**
