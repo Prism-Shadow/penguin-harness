@@ -839,7 +839,7 @@ describe("POST /api/projects/:p/models/detect", () => {
     }
   });
 
-  it("a Penguin Go probe never sends vendor environment keys to the relay endpoint", async () => {
+  it("a Penguin Go probe sends no environment key to the relay endpoint, the retired relay variable included", async () => {
     const seen: Array<{ path: string; auth?: string; xApiKey?: string }> = [];
     const server = antOnlyServer(seen);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -851,7 +851,8 @@ describe("POST /api/projects/:p/models/detect", () => {
     };
     process.env.ANTHROPIC_API_KEY = "vendor-anthropic-must-not-cross";
     process.env.OPENAI_API_KEY = "vendor-openai-must-not-cross";
-    delete process.env.PENGUIN_GO_API_KEY;
+    // Penguin Go takes keys from the config alone: the variable it once read is ignored.
+    process.env.PENGUIN_GO_API_KEY = "relay-env-must-not-cross";
     try {
       const response = await api.post(detectUrl(), {
         baseUrl: `http://127.0.0.1:${port}`,

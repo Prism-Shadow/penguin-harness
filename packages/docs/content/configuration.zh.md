@@ -70,20 +70,19 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 ### 供应商凭证变量
 
-模型条目没有 `api_key`、分组也没有能借给它的 `api_key` 时，**只在请求确实发往该供应商的官方端点时**回退到供应商的环境变量：条目解析不出任何 `base_url`（见[分组连接信息](#分组连接信息)），或解析出的 `base_url` 是厂商自己的端点。`*_BASE_URL` 的值只在解析不出 `base_url` 时才会使用；条目自己的或分组的 `base_url` 指向别处时，一律不由环境变量覆盖，即使 `OPENAI_BASE_URL` 指向同一台服务器也不例外。其余条目——网关分组预置的端点、带自己端点的 custom、vLLM 与自建分组——必须有自己的或分组的 `api_key`，否则 PenguinHarness 拒绝为它构建客户端；见[设置 API key](/models#设置-api-key)。
+模型条目没有 `api_key`、分组也没有能借给它的 `api_key` 时，**只有所在分组标为 `official = true`、且条目自己不带 `base_url`** 时才可用厂商的环境变量（见[分组连接信息](#分组连接信息)）。分组也没有 `base_url` 时，由厂商的客户端自行读取它那对变量，包括在 key 旁一并设置的 `*_BASE_URL`；分组带 `base_url`（厂商自己的端点之一）时，由 PenguinHarness 按生效的 `client_type` 读取对应变量并显式传入，变量未设置、或没有协议可据以命名变量时即拒绝。其余条目必须有自己的或分组的 `api_key`，否则 PenguinHarness 拒绝为它构建客户端：网关分组、Penguin Go、ModelScope、custom、vLLM 与自建分组，以及任何自带 `base_url` 的条目，即使那就是厂商自己的端点。见[设置 API key](/models#设置-api-key)。
 
-| 供应商 | API key | Base URL |
+| 分组 | API key | Base URL |
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai、openrouter、fireworks、siliconflow、atlascloud、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、modelscope、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
-| penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
+| openai | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、atlascloud、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量——按上面的规则，它们的条目并不会回退到这对变量：变量里存的是你的 OpenAI key，而网关不是 OpenAI。opencode-go 分组中走 Anthropic Messages 的模型同理，其客户端读取的是 `ANTHROPIC_*`。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，分组上存的是通用 Responses 客户端；它的条目同样不会回退到这对变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）的模型只在解析不出 `base_url` 时读取 `MMSP_API_KEY` 与 `MMSP_BASE_URL`（缺省为 `http://127.0.0.1:25752/v1`）；有 `base_url` 而没有 `api_key` 时不发送任何 key，开放的 MMSP 服务器正是这样接受请求。供应商分组和内置模型目录见[模型与供应商](/models)。
+新建 Project 只把这七个一方厂商分组标为 `official`。网关分组（openrouter、fireworks、siliconflow、atlascloud、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、modelscope）、vLLM 与 custom 使用 OpenAI 兼容协议，其客户端读取 `OPENAI_*`，里面存的是你的 OpenAI key，因此它们从不是 `official`；opencode-go 中走 Anthropic Messages 的模型与 `ANTHROPIC_*` 同理。Penguin Go 与 ModelScope 只从分组的连接信息取 key：在分组标题栏连接，或在分组设置里粘贴 key。`PENGUIN_GO_API_KEY` 与 `PENGUIN_GO_BASE_URL` 不再读取；只设置过这两个变量的用户，请在 Penguin Go 的分组标题栏重新连接，或粘贴 key。MiniMax 的官方 Responses 客户端使用 `MINIMAX_*`；内置的 MiniMax 预设不带 base URL，经这个客户端的缺省端点到达官方端点。走 `mmsp` 客户端（MMSP 服务器）的模型有 `base_url` 而没有 `api_key` 时不发送任何 key，开放的 MMSP 服务器正是这样接受请求。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 
@@ -116,7 +115,7 @@ Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-
 | `max_tokens` | 数字 | Agent 的 `model.max_tokens` | 单个模型的最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens` |
 | `fast_mode` | 布尔 | 关闭 | 单个模型的快速模式（供应商收取溢价的快速服务档位） |
 | `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`）。这里记的始终是牌价 |
-| `api_key` | 字符串 | 分组密钥（以能借给该条目为限）；没有时为供应商的环境变量，仅限厂商自己的端点 | 该模型自己的内联凭证 |
+| `api_key` | 字符串 | 分组密钥（以能借给该条目为限）；没有时为厂商的环境变量，仅限 official 分组里不自带 `base_url` 的条目 | 该模型自己的内联凭证 |
 | `base_url` | 字符串 | 分组的；两者都没有时为客户端的缺省端点 | 该模型自己的 base URL |
 | `created_at` | 字符串 | — | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
 
@@ -126,7 +125,7 @@ Gemini 4 Argon 在 `google` 和 `penguin-go` 分组使用 `model_id = "gemini-4-
 - `fast_mode`：只持久化 `true`。只有 MMSP 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
 - `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
 - `base_url`：新建 Project 时，各网关的端点存在其分组上；预置条目只在与分组不同时才存自己的（OpenCode Go 的 Anthropic Messages 条目、custom 里的 Atria Dawn）。使用模型时不会补上缺少的值：直连厂商的条目没有 base URL，请求发往厂商的缺省端点，或它的 `*_BASE_URL` 变量。
-- `api_key`：为空时使用分组密钥，除非条目自己的 `base_url` 与分组的不同 origin（见[分组连接信息](#分组连接信息)）。两者都没有时，只在条目的端点是厂商自己的地址时回退到供应商的环境变量（见[供应商凭证变量](#供应商凭证变量)）；网关、custom 与 vLLM 条目需要自己的或分组的 key。
+- `api_key`：为空时使用分组密钥，除非条目自己的 `base_url` 与分组的不同 origin（见[分组连接信息](#分组连接信息)）。两者都没有时，只有所在分组是 official 且条目不带自己的 `base_url` 时才使用厂商的环境变量（见[供应商凭证变量](#供应商凭证变量)）；其余条目需要自己的或分组的 key。
 
 ```toml
 default_model = { provider = "deepseek", model_id = "deepseek-flash" }
@@ -134,6 +133,7 @@ default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 [providers.deepseek]
 api_key = "sk-..."
 created_at = "2026-10-02T08:00:00.000Z"
+official = true
 
 [providers.openrouter]
 base_url = "https://proxy.example.com/openrouter/v1"
@@ -167,7 +167,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 
 ### 分组连接信息
 
-`[providers.<id>]` 存一个分组的连接信息，以 provider id 为键：内置分组或你创建的分组。新建 Project 的文件为目录给出端点或协议的每个内置分组写好这张表：网关的 base URL 与协议、Penguin Go 的中转 base URL、vLLM 的协议；一方厂商分组与 custom 没有。模型库页面的分组设置与连接分组时都会写入它，不带 `--model-id` 的 `penguin config model add --provider <分组>` 同样写入。自建分组的这张表随该分组最后一个模型一并删除。
+`[providers.<id>]` 存一个分组的连接信息，以 provider id 为键：内置分组或你创建的分组。新建 Project 的文件为目录给出端点或协议的每个内置分组写好这张表：网关的 base URL 与协议、Penguin Go 的中转 base URL、vLLM 的协议。七个一方厂商分组只写 `official = true`；custom 没有。模型库页面的分组设置与连接分组时都会写入它，不带 `--model-id` 的 `penguin config model add --provider <分组>` 同样写入。自建分组的这张表随该分组最后一个模型一并删除。
 
 | 键 | 类型 | 说明 |
 | --- | --- | --- |
@@ -175,6 +175,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 | `base_url` | 字符串 | 分组的 base URL |
 | `client_type` | 字符串 | 分组的 MMSP 客户端类型；模型自己的 `client_type` 优先于它 |
 | `created_at` | 字符串 | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
+| `official` | 布尔 | 分组端点就是厂商自己的端点：组内没有 key、也不自带 `base_url` 的模型可用厂商的环境变量。缺省即 `false` |
 
 模型的每个连接字段各自解析，取第一个非空值：
 
@@ -184,7 +185,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 | `client_type` | 模型条目 → 分组 → 无：按 `model_id` 路由 |
 | `api_key` | 模型条目 → 分组（以能借给该模型为限）→ 无：在[供应商凭证变量](#供应商凭证变量)允许时取环境变量 |
 
-这些值的唯一来源是这个文件。内置模型目录只是参考：新建 Project 时，以及模型库页面的**同步新增模型**与**恢复默认**会把目录写进文件，构建请求时从不读目录。key 属于签发它的端点：分组密钥只借给没有自己 `base_url` 的模型，或自己的 `base_url` 与分组 `base_url` 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 条目位于 `https://opencode.ai/zen/go`，与分组的 `https://opencode.ai/zen/go/v1` 同 origin，能借到；custom 里自带端点的 Atria Dawn 借不到。环境变量规则按模型解析出的 `base_url` 判定，所以分组 `base_url` 指向代理时，组内所有模型都不再回退到环境变量。
+这些值的唯一来源是这个文件。内置模型目录只是参考：新建 Project 时，以及模型库页面的**同步新增模型**与**恢复默认**会把目录写进文件，构建请求时从不读目录。key 属于签发它的端点：分组密钥只借给没有自己 `base_url` 的模型，或自己的 `base_url` 与分组 `base_url` 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 条目位于 `https://opencode.ai/zen/go`，与分组的 `https://opencode.ai/zen/go/v1` 同 origin，能借到；custom 里自带端点的 Atria Dawn 借不到。`official` 由服务端维护。新建 Project、**同步新增模型**与**恢复默认**为一方厂商分组写入它；经模型库页面、API 或 CLI 写入分组的 `base_url` 或 `client_type` 时重新计算：base URL 为空或为厂商自己的端点之一、且协议读取的正是厂商变量时为 `true`，这时有 base URL 而没有协议的分组还会写入厂商的官方客户端作为 `client_type`；否则为 `false`。其他分组不带这个标记。你手动改过的值照常生效。因此把一方厂商分组指向代理后，组内所有模型都不再使用环境变量。这个标记出现之前创建的 Project 会在服务端第一次读取其文件时补写一次，补在旧规则会借出 key 的那些分组上。
 
 ### 新对话默认值
 

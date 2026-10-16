@@ -53,12 +53,12 @@ import type {
 // server uses.
 import {
   catalogEntryFor,
-  effectiveConnection,
   PENGUIN_GO_PROVIDER_ID,
   presetModelEntries,
   presetPromotions,
   presetProviderTable,
 } from "../../../../core/dist/state/model-catalog.js";
+import { effectiveConnection } from "../../../../core/dist/state/model-connection.js";
 // The built-in Benchmarks as core writes them into a new Project: their cards and their cases.
 import {
   BENCHMARK_REPO,
@@ -114,7 +114,12 @@ export function effectiveOf(
       baseUrl: m.credential?.baseUrl,
       apiKey: m.credential?.apiKeyMasked,
     },
-    group && { baseUrl: group.baseUrl, clientType: group.clientType, apiKey: group.apiKeyMasked },
+    group && {
+      baseUrl: group.baseUrl,
+      clientType: group.clientType,
+      apiKey: group.apiKeyMasked,
+      official: group.official,
+    },
   );
   // The resolver was handed masks for keys, so the key it picked is already masked.
   const masked = e.apiKeySource === "none" ? m.envKeyMasked : e.apiKey;
@@ -455,11 +460,16 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       {
         ...(table.base_url !== undefined ? { baseUrl: table.base_url } : {}),
         ...(table.client_type !== undefined ? { clientType: table.client_type } : {}),
+        ...(table.official === true ? { official: true as const } : {}),
       },
     ]),
   );
-  providers.deepseek = { apiKeyMasked: "sk-3f…9a2c", createdAt: iso(ago(60)) };
-  providers.openai = { apiKeyMasked: "sk-pr…7Hd1", createdAt: iso(ago(12)) };
+  providers.deepseek = {
+    ...providers.deepseek,
+    apiKeyMasked: "sk-3f…9a2c",
+    createdAt: iso(ago(60)),
+  };
+  providers.openai = { ...providers.openai, apiKeyMasked: "sk-pr…7Hd1", createdAt: iso(ago(12)) };
   const envKeys: Record<string, Partial<ModelInfo>> = {
     deepseek: { envKey: "DEEPSEEK_API_KEY" },
     anthropic: { envKey: "ANTHROPIC_API_KEY", envKeyMasked: "sk-ant…Qm4x" },

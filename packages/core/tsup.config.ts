@@ -16,6 +16,9 @@ export default defineConfig({
     // without depending on whatever embeds it.
     "src/plugin/index.ts",
     "src/state/model-catalog.ts",
+    // A row's effective connection and credential rule: no Node dependency and no catalog
+    // data, so the Web App bundles the same answers the server and the CLI compute.
+    "src/state/model-connection.ts",
     // The built-in Benchmarks as data: no Node dependency, so the component gallery's demo
     // Project lists them as a new Project gets them.
     "src/state/builtin-benchmarks-data.ts",

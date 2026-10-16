@@ -20,12 +20,8 @@
  * config and so never travels; `envSourced` names each one, for the sync to say so.
  */
 import type { MachineApi } from "./machine-api.js";
-import {
-  effectiveConnection,
-  modelEnvFallback,
-  providerConnectionShape,
-  resolveModelEnv,
-} from "@prismshadow/penguin-core";
+import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
+import { modelEnvPreviewKey, resolveModelEnv } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
@@ -266,9 +262,9 @@ export interface EnvSourced {
  * the config is all it sends. Core's credential rule decides, on each row's effective
  * connection (the row's own values, then its group's):
  *
- * - a row that holds no key, of its own or its group's, authenticates with the variable
- *   modelEnvFallback allows it — when that variable is set here (a relay variable only with
- *   the base URL it belongs to, as resolveModelCredential requires);
+ * - a row that holds no key, of its own or its group's, authenticates with the variable core
+ *   lends it (an `official` group, no base URL of the row's own; modelEnvPreviewKey names it)
+ *   — when that variable is set here;
  * - a row with a key and no base URL goes where its routed client's `*_BASE_URL` points, when
  *   that is set here.
  *
@@ -295,18 +291,17 @@ export function envSourced(
       found.push({ provider: entry.provider, modelId: entry.model_id, variable });
     let keyed = effective.apiKey !== undefined;
     if (!keyed) {
-      const fallback = modelEnvFallback({
-        provider: entry.provider,
-        modelId: entry.model_id,
-        clientType: effective.clientType,
-        baseUrl: effective.baseUrl,
-      });
-      if (
-        fallback !== undefined &&
-        (fallback.readByClient || effective.baseUrl !== undefined) &&
-        set(fallback.envKey)
-      ) {
-        add(fallback.envKey);
+      const envKey = modelEnvPreviewKey(
+        {
+          provider: entry.provider,
+          modelId: entry.model_id,
+          clientType: entry.client_type,
+          baseUrl: entry.base_url,
+        },
+        providerConnectionShape(local.providers?.[entry.provider]),
+      );
+      if (envKey !== undefined && set(envKey)) {
+        add(envKey);
         keyed = true;
       }
     }

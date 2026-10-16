@@ -1,14 +1,14 @@
 /**
  * Group balances (GET /api/projects/:p/models/balance): the server asks the vendor endpoint
  * the catalog's `balance` descriptor names, with the group's key (`[providers.<id>]`, never a
- * model's own) — or, without one, the environment key a Session on the group's rows would use
- * on their effective endpoint when that is the vendor's own host — and answers with a small
- * reading or a typed failure — never the key, never the vendor's own text.
+ * model's own) — or, without one, the environment key core would lend the group's keyless rows
+ * (an `official` group only) when that variable's official host is the balance endpoint's — and
+ * answers with a small reading or a typed failure — never the key, never the vendor's own text.
  *
  * - A group key is asked with; a model's own key never is, so a group whose only key sits on
  *   one model answers no_key.
- * - Without a group key, DeepSeek borrows DEEPSEEK_API_KEY only while its rows run on DeepSeek's
- *   own endpoint: a group pointed at a proxy is lent nothing; a gateway never is.
+ * - Without a group key, DeepSeek borrows DEEPSEEK_API_KEY only while its group is official:
+ *   pointed at a proxy it is not, and is lent nothing; a gateway never is.
  *
  * The vendors are stood in for at the wire: `fetch` is stubbed globally, which is the call the
  * reader really makes (the server routes it through the proxy dispatcher in production), so

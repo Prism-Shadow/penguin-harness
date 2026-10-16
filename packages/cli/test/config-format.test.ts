@@ -86,10 +86,20 @@ describe("formatModelRows: the connection a model is used with", () => {
   const row = { provider: "deepseek", model_id: "deepseek-flash" };
   const env = { DEEPSEEK_API_KEY: "sk-env-deepseek-7777" };
 
-  it("a keyless model the environment covers shows that key, marked (env)", () => {
-    const [line] = formatModelRows({ models: [row] }, env);
+  it("a keyless model of an official group shows the environment's key, marked (env)", () => {
+    const [line] = formatModelRows(
+      { providers: { deepseek: { official: true } }, models: [row] },
+      env,
+    );
     expect(line).toContain("api_key=****7777 (env)");
     expect(line).not.toContain("sk-env-deepseek-7777");
+  });
+
+  it("a keyless model of a group not marked official shows no key, whatever the environment holds", () => {
+    for (const providers of [undefined, { deepseek: { official: false } }]) {
+      const [line] = formatModelRows({ ...(providers ? { providers } : {}), models: [row] }, env);
+      expect(line).toContain("api_key=-");
+    }
   });
 
   it("a group key wins over the environment, marked (provider); a model's own key wins over both", () => {

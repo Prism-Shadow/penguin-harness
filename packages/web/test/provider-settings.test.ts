@@ -84,6 +84,7 @@ function presetGroup(id: string): ProviderConnectionDto {
   return {
     ...(table.base_url !== undefined ? { baseUrl: table.base_url } : {}),
     ...(table.client_type !== undefined ? { clientType: table.client_type } : {}),
+    ...(table.official === true ? { official: true as const } : {}),
   };
 }
 
@@ -442,19 +443,35 @@ describe("a blank group key and the environment", () => {
   const detected = new Set(["DEEPSEEK_API_KEY"]);
   const blank = { baseUrl: "", clientType: null };
 
-  it("promises the vendor's variable on its own endpoint, where the server proved it is set", () => {
-    expect(groupEnvKey("deepseek", blank, detected)).toBe("DEEPSEEK_API_KEY");
+  it("promises the vendor's variable for an official group, and for a draft that keeps it on the vendor's own endpoint, where the server proved it is set", () => {
+    const deepseek = presetGroup("deepseek");
+    expect(groupEnvKey("deepseek", blank, detected, deepseek)).toBe("DEEPSEEK_API_KEY");
     expect(
-      groupEnvKey("deepseek", { ...blank, baseUrl: "https://api.deepseek.com/" }, detected),
+      groupEnvKey(
+        "deepseek",
+        { ...blank, baseUrl: "https://api.deepseek.com/" },
+        detected,
+        deepseek,
+      ),
     ).toBe("DEEPSEEK_API_KEY");
   });
 
-  it("promises nothing for a proxy, an unset variable or a gateway", () => {
+  it("promises nothing for a proxy, an unset variable, a group not marked official or a gateway", () => {
+    const deepseek = presetGroup("deepseek");
     expect(
-      groupEnvKey("deepseek", { ...blank, baseUrl: "https://proxy.example/v1" }, detected),
+      groupEnvKey(
+        "deepseek",
+        { ...blank, baseUrl: "https://proxy.example/v1" },
+        detected,
+        deepseek,
+      ),
     ).toBeUndefined();
-    expect(groupEnvKey("deepseek", blank, new Set())).toBeUndefined();
-    expect(groupEnvKey("openrouter", blank, new Set(["OPENAI_API_KEY"]))).toBeUndefined();
+    expect(groupEnvKey("deepseek", blank, new Set(), deepseek)).toBeUndefined();
+    // The file is the truth: a vendor group whose flag was cleared by hand lends nothing.
+    expect(groupEnvKey("deepseek", blank, detected, {})).toBeUndefined();
+    expect(
+      groupEnvKey("openrouter", blank, new Set(["OPENAI_API_KEY"]), presetGroup("openrouter")),
+    ).toBeUndefined();
   });
 });
 

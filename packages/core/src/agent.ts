@@ -242,10 +242,10 @@ export interface CreateSessionOptions {
   thinkingLevel?: ThinkingLevelName | null;
   /**
    * Explicit credentials; if unspecified, falls back to the credentials in the Project config,
-   * then — only when the entry's requests go to the vendor's own endpoint (no base URL, or a
-   * vendor endpoint) — to the vendor's environment variable, read by MMSP. A keyless entry
-   * pointed anywhere else (a gateway, a self-hosted server) is refused with a
-   * ModelCredentialError; see resolveModelCredential.
+   * then — only for a row of a group marked `official` that names no base URL of its own — to
+   * the vendor's environment variable. Any other keyless entry (a gateway, a self-hosted
+   * server, a row pointed at its own endpoint) is refused with a ModelCredentialError; see
+   * resolveEntryCredential.
    */
   apiKey?: string;
   baseUrl?: string;
@@ -397,11 +397,11 @@ function resolveCompaction(
  * The credential and protocol a Session's (or a describer's) client is built with for a model
  * entry: the explicit override, else the entry's own fields, else its group's
  * `[providers.<id>]` table — the file's values only, never the catalog's
- * (resolveEntryCredential) — and for the key, only where the rule allows it, nothing, so the
- * routed client reads its own environment variable.
- * A keyless entry whose effective endpoint is not the vendor's own throws its
- * ModelCredentialError here, which hosts file with the SDKs' missing-credential errors (the
- * server's `isMissingCredential`).
+ * (resolveEntryCredential) — and for the key, where the environment rule allows it, either
+ * nothing (the routed client reads its own variable) or the variable's value.
+ * A keyless entry the rule does not cover (a group that is not `official`, a row with its own
+ * base URL) throws its ModelCredentialError here, which hosts file with the SDKs'
+ * missing-credential errors (the server's `isMissingCredential`).
  */
 function entryCredential(
   entry: ModelEntry,
@@ -705,8 +705,8 @@ export class Agent {
     if (!modelEntry) throw new Error(modelNotConfigured(ref));
     // Credentials are inlined on the model entry (single config file); an explicit
     // argument takes priority. With neither, the entry may lean on the environment only
-    // where the rule in resolveModelCredential allows (the vendor's own endpoint): a keyless
-    // row pointed elsewhere is refused here, before any client exists. Called for that
+    // where the rule in resolveEntryCredential allows (an `official` group, no base URL of the
+    // row's own): any other keyless row is refused here, before any client exists. Called for that
     // refusal alone: each context's clients resolve the credential of the entry the context
     // runs on (see buildRuntime's `credentialsFor`).
     entryCredential(modelEntry, this.projectConfig, opts);

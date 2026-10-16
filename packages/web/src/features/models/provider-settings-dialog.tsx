@@ -52,7 +52,11 @@ import {
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
-import { fixedClientType, providerEnvFallbackKey } from "@prismshadow/penguin-core/model-catalog";
+import {
+  fixedClientType,
+  providerEnvFallbackKey,
+  withOfficialFlag,
+} from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
@@ -275,20 +279,38 @@ export async function saveGroupSettings(
 }
 
 /**
- * The environment variable a blank group key would be covered by, or undefined: core's
- * providerEnvFallbackKey on the group as drafted (a first-party vendor group left on the
- * vendor's own endpoint and client, or a provider-scoped variable on the group's endpoint —
- * never a gateway, custom, vLLM or user-defined group), and a variable the server reported a
- * value for. Knowing a variable's name is not knowing it is set, so `detected` is what decides.
+ * The environment variable a blank group key would be covered by, or undefined: the catalog's
+ * providerEnvFallbackKey on the group as it would be saved — an `official` group only (PRN-021),
+ * never a gateway, custom, vLLM, user-defined group, Penguin Go or ModelScope — and a variable
+ * the server reported a value for. Knowing a variable's name is not knowing it is set, so
+ * `detected` is what decides.
+ *
+ * `official` is the stored group's while the draft keeps its base URL and protocol; a draft that
+ * changes either is judged as the server will judge it on save (withOfficialFlag), so the hint
+ * follows what typing a proxy or the vendor's own endpoint will do.
  */
 export function groupEnvKey(
   providerId: string,
   draft: Pick<ProviderSettingsDraft, "baseUrl" | "clientType">,
   detected: ReadonlySet<string>,
+  stored: Pick<ProviderConnectionDto, "baseUrl" | "clientType" | "official"> | undefined,
 ): string | undefined {
+  const baseUrl = draft.baseUrl.trim() || undefined;
+  const clientType = draft.clientType ?? undefined;
+  const routed =
+    (baseUrl ?? "") !== (stored?.baseUrl ?? "") ||
+    (clientType ?? "") !== (stored?.clientType ?? "");
+  const draftTable: { base_url?: string; client_type?: string; official?: boolean } = {
+    ...(baseUrl !== undefined ? { base_url: baseUrl } : {}),
+    ...(clientType !== undefined ? { client_type: clientType } : {}),
+  };
+  const saved = routed
+    ? withOfficialFlag(providerId, draftTable)
+    : { ...draftTable, official: stored?.official === true };
   const envKey = providerEnvFallbackKey(providerId, {
-    baseUrl: draft.baseUrl,
-    clientType: draft.clientType ?? undefined,
+    baseUrl: saved.base_url,
+    clientType: saved.client_type,
+    official: saved.official,
   });
   return envKey !== undefined && detected.has(envKey) ? envKey : undefined;
 }
@@ -339,7 +361,7 @@ export function ProviderSettingsDialog({
 
   const id = provider.id;
   const customLike = isCustomLikeGroup(id);
-  const envKey = group?.apiKeyMasked ? undefined : groupEnvKey(id, draft, detectedEnvKeys);
+  const envKey = group?.apiKeyMasked ? undefined : groupEnvKey(id, draft, detectedEnvKeys, group);
   const keyPlaceholder = group?.apiKeyMasked
     ? S.models.apiKeyKeepHint
     : envKey !== undefined

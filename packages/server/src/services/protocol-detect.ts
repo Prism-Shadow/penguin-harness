@@ -115,10 +115,9 @@ export const PROTOCOL_PROBES: readonly ProbeSpec[] = [
  * Which env var backs a request depends on the protocol being spoken, and detection is
  * precisely the case where the protocol is not yet known — so the resolution happens once
  * per probe rather than once per detection: `ant-messages` reads `ANTHROPIC_API_KEY`,
- * `openai-responses` / `openai-chat` read `OPENAI_API_KEY`. Core's endpointEnvApiKey is the
- * same rule the saved model is held to (see modelEnvFallback), so this cannot drift from
- * what the entry will actually be allowed to read: the variable is lent only to the
- * vendor's own endpoint.
+ * `openai-responses` / `openai-chat` read `OPENAI_API_KEY`. The catalog's endpointEnvApiKey
+ * lends the variable only to the vendor's own endpoint (its VENDOR_ENDPOINTS), the same table
+ * that decides whether a group is `official`.
  *
  * Server-side only: the value is placed in a request header and never returned to the
  * browser, echoed in a result, or logged.

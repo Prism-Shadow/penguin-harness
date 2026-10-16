@@ -10,11 +10,11 @@
  * only source: a field neither the row nor its group sets is the client's default, and the
  * catalog is never consulted.
  */
-import { effectiveConnection, groupKeyReaches } from "@prismshadow/penguin-core/model-catalog";
+import { effectiveConnection, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
 import type {
   EffectiveConnection,
   ProviderConnectionShape,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-core/model-connection";
 import type {
   CredentialInfo,
   ProviderConnectionDto,
@@ -32,7 +32,12 @@ export function groupShape(
   group: ProviderConnectionDto | undefined,
 ): ProviderConnectionShape | undefined {
   if (group === undefined) return undefined;
-  return { baseUrl: group.baseUrl, clientType: group.clientType, apiKey: group.apiKeyMasked };
+  return {
+    baseUrl: group.baseUrl,
+    clientType: group.clientType,
+    apiKey: group.apiKeyMasked,
+    ...(group.official === true ? { official: true } : {}),
+  };
 }
 
 /**

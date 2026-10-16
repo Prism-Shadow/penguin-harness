@@ -379,7 +379,7 @@ describe("envSourced", () => {
     const found = envSourced(
       {
         models: [
-          // No key anywhere: the vendor's variable, set here.
+          // No key anywhere, in an official group: the vendor's variable, set here.
           { provider: "openai", model_id: "gpt-5" },
           // Its own key, and no OPENAI_BASE_URL here: nothing.
           { provider: "openai", model_id: "gpt-5-mini", api_key: "sk-own-0123456789" },
@@ -387,10 +387,17 @@ describe("envSourced", () => {
           { provider: "anthropic", model_id: "claude-opus-5" },
           // No key, and DEEPSEEK_API_KEY is not set here: it does not run here either.
           { provider: "deepseek", model_id: "deepseek-v4-flash" },
-          // A gateway's endpoint is never lent a vendor's key.
+          // A group that is not official lends nothing, endpoint or not.
           { provider: "custom", model_id: "gpt-5", base_url: "https://gw.example.com/v1" },
+          { provider: "myproxy", model_id: "gpt-5" },
+          // A row naming a base URL of its own in an official group: nothing either.
+          { provider: "openai", model_id: "gpt-5-own", base_url: "https://api.openai.com/v1" },
         ],
-        providers: { anthropic: { api_key: "sk-ant-group-0123456789" } },
+        providers: {
+          openai: { official: true },
+          anthropic: { api_key: "sk-ant-group-0123456789", official: true },
+          deepseek: { official: true },
+        },
       },
       {
         OPENAI_API_KEY: "sk-env-0123456789",

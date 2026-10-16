@@ -119,6 +119,8 @@ export abstract class ProjectLifecycle {
 @Interface()
 export abstract class ProjectConfigStore {
   abstract readRaw(projectId: string): Promise<RawTable>;
+  /** Reads every Project's config once, so the server's one-time migrations are on disk before any Session opens one. */
+  abstract migrateStoredConfigs(): Promise<void>;
   abstract loadConfig(projectId: string): Promise<ProjectConfig>;
   abstract writeRaw(projectId: string, data: RawTable): Promise<void>;
   abstract writeInitialConfig(projectId: string, name: string): Promise<void>;
@@ -190,8 +192,8 @@ export abstract class ProjectConfigStore {
   ): Promise<string | undefined>;
   /**
    * The key a group's account balance is read with: the group key (never a row's own), or
-   * else the environment key a Session on one of the group's rows would use on its effective
-   * endpoint, when that variable's official endpoint is the balance endpoint's own host.
+   * else the environment key core would lend one of the group's keyless rows (an `official`
+   * group only), when that variable's official endpoint is the balance endpoint's own host.
    * Server-side only.
    */
   abstract getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined>;

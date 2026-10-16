@@ -124,20 +124,19 @@ import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
   PENGUIN_GO_PROVIDER_ID,
-  canonicalClientType,
   catalogEntryFor,
   fastModeProtocol,
-  groupKeyReaches,
   isAddableGroup,
   modelHomepageUrl,
   providerInfo,
   unroutableVendorModel,
 } from "@prismshadow/penguin-core/model-catalog";
+import { canonicalClientType, groupKeyReaches } from "@prismshadow/penguin-core/model-connection";
 import type {
-  FastModeProtocol,
   ModelProviderBridgeAuth,
   ModelProviderInfo,
 } from "@prismshadow/penguin-core/model-catalog";
+import type { FastModeProtocol } from "@prismshadow/penguin-core/model-connection";
 import {
   allGroupKeys,
   discountedPrice,
@@ -710,9 +709,9 @@ export function detectedEnvKeys(rows: readonly RowState[]): Set<string> {
  *
  * The client type and base URL are the ones the entry will actually be USED with — its own,
  * else what it inherits from its group (`inherited`, none by default) — and for a custom-like
- * entry that resolves to none, the compatible client it will be saved on, for the same reason
- * envHintClientType exists: a custom-like group leaves the protocol empty until detection or a
- * manual pick fills it in, and fastModeProtocol would then
+ * entry that resolves to none, the compatible client it will be saved on: a custom-like group
+ * leaves the protocol empty until detection or a manual pick fills it in, and fastModeProtocol
+ * would then
  * fall back to routing by model id. Typing an id that routes to a client with no fast tier
  * (`kimi-k3`, `deepseek-v4-pro`) into a custom group would hide a switch that the persisted
  * `openai-chat` entry can in fact serve. An empty result keeps the id-based routing the preset

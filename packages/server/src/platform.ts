@@ -206,8 +206,16 @@ export class Startup {
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly machines!: Machines;
   @Use() private readonly errors!: Errors;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
 
   async setup() {
+    // Every Project's config through the server's read path once, before anything opens one:
+    // the server's one-time migrations (the `official` flag) are not core's, and a Session the
+    // schedulers resume reads its file with core's loader. A failure must not block the boot;
+    // each file is migrated again at its next read through the server.
+    await this.projectConfig.migrateStoredConfigs().catch((err: unknown) => {
+      this.errors.record({ source: "process", err, code: "config_migration_failed" });
+    });
     // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan.
     await this.scheduler.start();
     // Company mode's scheduler: same lifetime and the same startup rule (reconcile once,

@@ -27,6 +27,7 @@
  * caught by the stat. The cached table is shared between callers and must be treated
  * as immutable — every mutating method here copies before changing.
  */
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
@@ -53,6 +54,7 @@ import {
   metaMaxTokens,
   migrateProjectConfigTable,
   migratePenguinGoRoutes,
+  ModelCredentialError,
   parseProviderTable,
   presetModelEntries,
   presetPromotions,
@@ -61,21 +63,22 @@ import {
   projectConfigPath,
   providerConnectionShape,
   renderProjectConfigToml,
-  modelEnvFallback,
-  modelEnvPreviewKey,
   resolveEntryCredential,
   userText,
 } from "@prismshadow/penguin-core";
 import {
   VENDOR_ENDPOINTS,
+  endpointEnvApiKey,
+  endpointEnvKey,
   fixedClientType,
   fixedClientTypeRefuses,
+  modelEnvPreviewKey,
   providerInfo,
-  sameClientType,
-  sameEndpoint,
   unaddableModel,
   unroutableVendorModel,
+  withOfficialFlag,
 } from "@prismshadow/penguin-core/model-catalog";
+import { sameClientType, sameEndpoint } from "@prismshadow/penguin-core/model-connection";
 import type {
   PluginTables,
   CommandPolicyRule,
@@ -122,6 +125,7 @@ import type {
   PlatformModelCatalog,
 } from "./platform-auth-types.js";
 import { detectModelProtocol } from "./protocol-detect.js";
+import { markOfficialGroups } from "./project-config-migrations.js";
 import {
   VISION_PROBE_IMAGE,
   VISION_PROBE_MAX_TOKENS,
@@ -418,6 +422,7 @@ function providerDto(p: ProviderConnection): ProviderConnectionDto {
     ...(p.client_type !== undefined ? { clientType: p.client_type } : {}),
     ...(p.api_key !== undefined ? { apiKeyMasked: maskApiKey(p.api_key) } : {}),
     ...(p.created_at !== undefined ? { createdAt: p.created_at } : {}),
+    ...(p.official === true ? { official: true as const } : {}),
   };
 }
 
@@ -428,6 +433,10 @@ function providerDto(p: ProviderConnection): ProviderConnectionDto {
  * not touched: a model with its own value keeps it — a row's own protocol always wins over its
  * group's (OpenCode Go's rows each store theirs). Penguin Go's protocol is fixed, which the
  * callers check first (checkGroupProtocol).
+ *
+ * A change that writes the base URL or the protocol recomputes `official` from the catalog
+ * (withOfficialFlag): the group's endpoint is its vendor's own or it is not, whatever the
+ * flag said before. A key alone leaves the flag as the file has it.
  *
  * Returns the new table and whether the group key was written or cleared by hand.
  */
@@ -459,8 +468,12 @@ function patchProviderTable(
     member.created_at = new Date().toISOString();
     keyChanged = true;
   }
+  const routed =
+    patch.baseUrl !== undefined || patch.clientType !== undefined
+      ? withOfficialFlag(provider, member)
+      : member;
   const table: RawTable = { ...providers };
-  if (Object.keys(member).length > 0) table[provider] = member;
+  if (Object.keys(routed).length > 0) table[provider] = routed;
   else delete table[provider];
   return { table, keyChanged };
 }
@@ -517,7 +530,7 @@ function presetAdditions(raw: RawTable): { providers: RawTable; added: ModelEntr
   const reference: ProviderTable = {};
   for (const provider of new Set(missing.map((m) => m.provider))) {
     const catalog = catalogGroupConnection(provider);
-    if (catalog === undefined) continue; // custom and the vendors: the rows' own values, whole.
+    if (catalog === undefined) continue; // custom: the rows' own values, whole.
     const file = fileTables[provider];
     if (file === undefined && !groupsWithRows.has(provider)) {
       providers[provider] = { ...catalog };
@@ -846,6 +859,34 @@ export class ProjectConfigService implements ProjectConfigStore {
   }
 
   /**
+   * Reads every Project's config once through readTable, so the one-time migrations land on
+   * disk before anything else opens a file: core's loader, which a Session created or resumed
+   * through the SDK reads with, runs none of the server's own (markOfficialGroups). Called once
+   * as the App starts, before the schedulers. A file that does not parse is left for the next
+   * read that needs it to report.
+   *
+   * Removal: with the last one-time migration it serves, at the 0.3.0 release preparation (see
+   * markOfficialGroups and changelog/unreleased/2026-10-15-backward-compatibility.md).
+   */
+  async migrateStoredConfigs(): Promise<void> {
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(this.root, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      try {
+        await this.readTable(entry.name);
+      } catch {
+        // An unparseable file: the read that needs it reports it, with its own context.
+      }
+    }
+  }
+
+  /**
    * mtime-gated read of the parsed table; null when the file doesn't exist (readRaw
    * flattens that to `{}`, loadConfig to the preset default config — the two
    * pre-existing missing-file behaviors). Serving the shared cached object is safe
@@ -872,12 +913,18 @@ export class ProjectConfigService implements ProjectConfigStore {
       return null;
     }
     const table = asTable(parseToml(raw));
-    if (migrateProjectConfigTable(table)) {
-      // A file from before MMSP 0.5.0 or before group-level connections (core's
-      // migrateProjectConfigTable): rewritten once, before it is served; the next read parses
-      // the rewritten file (writeRaw drops the cache). Every file writeRaw renders carries a
-      // `[providers]` table, which is what keeps the key hoist from ever running on it again.
-      // Removed with the two migrations at the 0.3.0 release preparation.
+    // Core's migrations first (MMSP 0.5.0's client types, the group-level hoist), then the
+    // server's own, which need the catalog (the `official` flag, markOfficialGroups). Both
+    // run on every call; `||` would skip the second whenever the first changed something.
+    const migrated = migrateProjectConfigTable(table);
+    const marked = markOfficialGroups(table);
+    if (migrated || marked) {
+      // A file from before MMSP 0.5.0, before group-level connections or before the `official`
+      // flag: rewritten once, before it is served; the next read parses the rewritten file
+      // (writeRaw drops the cache). Every file writeRaw renders carries a `[providers]` table,
+      // which is what keeps the key hoist from ever running on it again, and every first-party
+      // group an `official` flag, which keeps markOfficialGroups from running on it again.
+      // Removed with the migrations at the 0.3.0 release preparation.
       await this.writeRaw(projectId, table);
       return table;
     }
@@ -1401,12 +1448,11 @@ export class ProjectConfigService implements ProjectConfigStore {
    *      or cleared, since that row then follows its group, and for a request naming the
    *      group alone (the group settings dialog has no model), unless "clear" is checked
    *      there, which clears the group key itself;
-   *   4. otherwise the environment: a provider-scoped variable (the Penguin Go relay's
-   *      PENGUIN_GO_API_KEY) resolved here for the group's rows, and otherwise the variable
-   *      of whichever protocol each probe speaks, resolved inside detectModelProtocol
-   *      because the protocol is the thing being determined — and only for a URL that is
-   *      the vendor's own (see core's endpointEnvApiKey), never for a gateway or a private
-   *      server.
+   *   4. otherwise the environment: the variable of whichever protocol each probe speaks,
+   *      resolved inside detectModelProtocol because the protocol is the thing being
+   *      determined — and only for a URL that is the vendor's own (the catalog's
+   *      endpointEnvApiKey), never for a gateway or a private server. No group has a variable
+   *      of its own: Penguin Go and ModelScope take keys from the config alone.
    * Layers 2 to 4 are read server-side only and never travel back to the browser.
    * Detection still runs with no credential at all: a protocol-shaped 401/403 proves the
    * route. Never throws on probe failures — every outcome is reported per probe.
@@ -1416,7 +1462,6 @@ export class ProjectConfigService implements ProjectConfigStore {
     req: ModelProtocolDetectRequest,
   ): Promise<ModelProtocolDetectResponse> {
     let apiKey = req.apiKey;
-    let savedClientType: string | undefined;
     if (apiKey === undefined && req.provider) {
       const raw = await this.readRaw(projectId);
       const group = providerTableOf(raw)[req.provider];
@@ -1432,22 +1477,8 @@ export class ProjectConfigService implements ProjectConfigStore {
           providerConnectionShape(group),
         );
         apiKey = effective.apiKey;
-        savedClientType = effective.clientType;
       } else if (!req.clearApiKey) {
         apiKey = group?.api_key;
-      }
-    }
-    if (apiKey === undefined && req.provider) {
-      // A provider-scoped pair (the relay's) is the harness's to read, for any URL in that
-      // group; a vendor pair is left to the per-probe rule in detectModelProtocol. Without a
-      // relay key, anonymous probing is still safe and can identify a route from its 401.
-      const fallback = modelEnvFallback({
-        provider: req.provider,
-        modelId: req.modelId ?? "",
-        clientType: savedClientType,
-      });
-      if (fallback !== undefined && !fallback.readByClient) {
-        apiKey = process.env[fallback.envKey]?.trim() || undefined;
       }
     }
     return detectModelProtocol({
@@ -1460,7 +1491,9 @@ export class ProjectConfigService implements ProjectConfigStore {
    * Endpoint model listing for the add-group import (see EndpointModelListRequest). All
    * parameters come from the request — a group being created has no stored entry to fall
    * back to; an omitted key is lent the protocol's environment variable only when the URL is
-   * that vendor's own (core's endpointEnvApiKey), and refused otherwise. Never throws: SDK
+   * absent or that vendor's own (the catalog's endpointEnvKey), and refused otherwise — the
+   * decision is made here and core's listing is handed the key, since core knows no vendor
+   * endpoint. Never throws: SDK
    * construction
    * and request failures collapse into `{ ok:false, message }`, an MMSP
    * UnsupportedOperationError additionally sets `unsupported` so the dialog can point at
@@ -1478,10 +1511,19 @@ export class ProjectConfigService implements ProjectConfigStore {
     const clientType = canonicalClientType(req.clientType) ?? req.clientType;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      const apiKey = req.apiKey || endpointEnvApiKey(clientType, req.baseUrl);
+      // The vendor's own endpoint with its variable unset reads differently from an endpoint
+      // the environment is not lent to at all; core's refusal covers the second.
+      const lent = endpointEnvKey(clientType, req.baseUrl);
+      if (apiKey === undefined && lent !== undefined) {
+        throw new ModelCredentialError(
+          `No API key for ${req.baseUrl ?? "the endpoint"}: ${lent} is not set in the server environment. Enter the API key, or set the variable.`,
+        );
+      }
       const listing = listImpl({
         clientType,
         baseUrl: req.baseUrl,
-        ...(req.apiKey ? { apiKey: req.apiKey } : {}),
+        ...(apiKey ? { apiKey } : {}),
       });
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error("model listing timed out")), timeoutMs);
@@ -1513,8 +1555,9 @@ export class ProjectConfigService implements ProjectConfigStore {
    * `[providers.<id>]` values) and, per row, its own values (`clientType`, `credential`)
    * beside `effective` — what the row is actually used with after core's effectiveConnection
    * (row -> group -> none, per field; the file's values only), with where each value came
-   * from. The environment fallback (`envKey`, `envKeyMasked`, an `env` key source) is judged
-   * on that effective shape, so a group pointed at a proxy is never shown a vendor's variable.
+   * from. The environment fallback (`envKey`, `envKeyMasked`, an `env` key source) is the
+   * variable core would lend the row (PRN-021: an `official` group, no base URL of the row's
+   * own), named by the catalog's modelEnvPreviewKey.
    */
   async getModels(projectId: string): Promise<ModelsResponse> {
     const raw = await this.readRaw(projectId);
@@ -1543,24 +1586,18 @@ export class ProjectConfigService implements ProjectConfigStore {
         const cat = catalogEntryFor(provider, modelId);
         const credBaseUrl = own.baseUrl;
         const group = providers[provider];
-        const eff = effectiveConnection(own, providerConnectionShape(group));
-        const effectiveShape = {
-          provider,
-          modelId,
-          clientType: eff.clientType,
-          baseUrl: eff.baseUrl,
-        };
-        // The env fallback the entry is actually allowed (core's modelEnvFallback), on the
-        // EFFECTIVE shape: the variable MMSP's routed client reads — the effective client type
-        // takes priority, otherwise the id routes by the vendor family it begins with — but
-        // only while the effective endpoint is the vendor's own. A gateway, custom or vLLM row
-        // with its own (or its group's) endpoint gets no envKey at all: reporting a name there
-        // would promise a fallback the harness refuses. Nor does a row its group's key
-        // reaches (core's groupKeyReaches): a blank key on it follows the group's, never the
+        const groupShape = providerConnectionShape(group);
+        const eff = effectiveConnection(own, groupShape);
+        // The variable the row would be lent with no key of its own (PRN-021): only in an
+        // `official` group and only with no base URL of the row's own; the explicit variable of
+        // the effective protocol on the group's base URL, else the one the routed client reads.
+        // A gateway, custom or vLLM row gets no envKey at all: reporting a name there would
+        // promise a fallback the harness refuses. Nor does a row its group's key reaches
+        // (core's groupKeyReaches): a blank key on it follows the group's, never the
         // environment.
         const envKey =
           group?.api_key === undefined || !groupKeyReaches(own.baseUrl, group.base_url)
-            ? modelEnvFallback(effectiveShape)?.envKey
+            ? modelEnvPreviewKey(own, groupShape)
             : undefined;
         // The file's annotation only: absent = supported, whatever the catalog says.
         const vision = typeof m.vision === "boolean" ? m.vision : undefined;
@@ -1582,17 +1619,12 @@ export class ProjectConfigService implements ProjectConfigStore {
         // emitted if either api_key or base_url is present on the row itself.
         const apiKey = own.apiKey;
         const createdAt = optStr(m.created_at);
-        // Masked env-fallback preview, for the entries the UI may present as covered (core's
-        // modelEnvPreviewKey — the dialog's hint reads the same function), on the effective
-        // shape and only when neither the row nor its group holds a key: a row on a vendor
-        // endpoint, or a keyless row in a group whose defaults are the vendor's. A vLLM preset
-        // or a custom row with no base URL does fall back under the rule, but is not shown as
-        // configured. Presence is implied by the field, the plaintext never leaves the server,
-        // and an empty variable counts as absent — it would not authenticate either. Read from
-        // this process's env, which on the desktop already includes the imported login-shell
-        // variables.
-        const previewKey =
-          eff.apiKeySource === "none" ? modelEnvPreviewKey(effectiveShape) : undefined;
+        // Masked env-fallback preview, only when neither the row nor its group holds a key that
+        // reaches it — the same variable (the dialog's hint reads the same function). Presence
+        // is implied by the field, the plaintext never leaves the server, and an empty variable
+        // counts as absent — it would not authenticate either. Read from this process's env,
+        // which on the desktop already includes the imported login-shell variables.
+        const previewKey = eff.apiKeySource === "none" ? envKey : undefined;
         const envValue = previewKey !== undefined ? (process.env[previewKey] ?? "") : "";
         const envKeyMasked = envValue !== "" ? maskApiKey(envValue) : undefined;
         const effective: ModelEffectiveConnection = {
@@ -2126,26 +2158,20 @@ export class ProjectConfigService implements ProjectConfigStore {
   /**
    * The key a group's account balance is read with (the catalog's `balance` descriptor names
    * the endpoint): the group's key, and never a row's own — a model keyed to another account
-   * says nothing about this group's balance. Without a group key, the environment key a
-   * Session on one of the group's rows would use if the row held no key: core's
-   * modelEnvFallback decides, on the row's EFFECTIVE shape (its own base URL and protocol, then
-   * the group's table's, then none — so a group pointed at a proxy is lent nothing), and its
-   * variable is read from this process's env as the routed client itself would read it. One
-   * more condition, because the balance request is the server's own rather than the routed
-   * client's: the variable's official endpoint must be the balance endpoint's host, so a vendor
-   * key never reaches another vendor. A DeepSeek group on DeepSeek's endpoint qualifies; a
-   * gateway's rows (TokenDance) get no fallback at all. Penguin Go alone has its own
-   * provider-scoped variable, queried at the trusted authorization origin. Never returned
-   * to the browser.
+   * says nothing about this group's balance. Without a group key, the environment key core
+   * would lend one of the group's keyless rows (PRN-021: only in an `official` group, only to a
+   * row with no base URL of its own; modelEnvPreviewKey names the variable), read from this
+   * process's env as the routed client itself would read it. One more condition, because the
+   * balance request is the server's own rather than the routed client's: the variable's
+   * official endpoint must be the balance endpoint's host, so a vendor key never reaches
+   * another vendor. A DeepSeek group on DeepSeek's endpoint qualifies; a gateway (TokenDance)
+   * or a third-party adapter (Penguin Go) is never official and gets no fallback at all.
+   * Never returned to the browser.
    */
   async getGroupBalanceKey(projectId: string, provider: string): Promise<string | undefined> {
     const raw = await this.readRaw(projectId);
     const group = providerTableOf(raw)[provider];
     if (group?.api_key !== undefined) return group.api_key;
-    // Penguin Go owns a provider-scoped key; no vendor variable may stand in for it.
-    if (provider === PENGUIN_GO_PROVIDER_ID) {
-      return process.env.PENGUIN_GO_API_KEY?.trim() || undefined;
-    }
     const balanceUrl = providerInfo(provider)?.balance?.url;
     if (balanceUrl === undefined) return undefined;
     const origin = (url: string): string | undefined => {
@@ -2161,17 +2187,11 @@ export class ProjectConfigService implements ProjectConfigStore {
       const modelId = optStr(model.model_id);
       if (modelId === undefined) continue;
       const { apiKey: _ownKey, ...own } = ownConnection(model, provider, modelId);
-      const eff = effectiveConnection(own, providerConnectionShape(group));
-      const fallback = modelEnvFallback({
-        provider,
-        modelId,
-        clientType: eff.clientType,
-        baseUrl: eff.baseUrl,
-      });
-      if (fallback === undefined) continue;
-      const endpoints = VENDOR_ENDPOINTS[fallback.envKey] ?? [];
+      const envKey = modelEnvPreviewKey(own, providerConnectionShape(group));
+      if (envKey === undefined) continue;
+      const endpoints = VENDOR_ENDPOINTS[envKey] ?? [];
       if (!endpoints.some((own) => origin(own) === balanceOrigin)) continue;
-      const value = process.env[fallback.envKey]?.trim();
+      const value = process.env[envKey]?.trim();
       if (value) return value;
     }
     return undefined;
