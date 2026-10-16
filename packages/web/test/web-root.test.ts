@@ -23,7 +23,13 @@ const OrgProposalsPage = () => null;
  *   balance on their anchors, and company's unread count on the contributed proposals page's row;
  *   the session list receives the messaging binding, the scheduled mark and the dock's "Browse
  *   files".
+ * - The dock receives the eight panels in their menu order — agents and memory from chat, the
+ *   files from workspace, the trace, messaging, schedules, the built-in browser and the ports from
+ *   theirs — with the names the dictionary held and a glyph in the icon registry, which the dock
+ *   module registers in its panel registry at boot.
+ * - The chat page receives the workflow tab strip beside the conversation.
  */
+import type { ReactElement } from "react";
 import {
   bootModules,
   moduleDefOf,
@@ -76,6 +82,18 @@ import { messagingRowAction } from "../src/features/messaging/session-row-action
 import { scheduledRowMark } from "../src/features/schedules/session-row-mark";
 import { browseFilesAction } from "../src/features/dock/browse-files";
 import type { UserEventHandler } from "../src/state/user-events";
+import { DockModule } from "../src/features/dock/module";
+import { AgentsPanel } from "../src/features/chat/panels/agents-panel";
+import { MemoryPanel } from "../src/features/chat/panels/memory-panel";
+import { WorkspacePanel } from "../src/features/workspace/workspace-panel";
+import { TraceDockPanel } from "../src/features/traces/trace-dock-panel";
+import { MessagingDockPanel } from "../src/features/messaging/messaging-dock-panel";
+import { ScheduleDockPanel } from "../src/features/schedules/schedule-dock-panel";
+import { BuiltinBrowserModule } from "../src/features/builtin-browser/module";
+import type { DockPanelData } from "../src/features/dock/iface";
+import { ChatModule } from "../src/features/chat/module";
+import { sessionTabsOf } from "../src/features/chat/deps";
+import { WorkbenchSessionTab } from "../src/features/workbenches/session-tab";
 
 let pages: readonly WebAppPage[] = [];
 let sessionProviders: readonly Contributed[] = [];
@@ -84,15 +102,17 @@ let userEvents: readonly UserEventHandler[] = [];
 let sidebarSlots: Readonly<Record<string, readonly Contributed[]>> = {};
 let rows: RowExtensions | null = null;
 let sessionListSection: unknown = null;
+let dockPanels: readonly Contributed[] = [];
+let sessionTabs: readonly Contributed[] = [];
 
 /** A slot's code halves in the order the shell mounts them. */
 const codeByOrder = (list: readonly Contributed[]): unknown[] =>
   [...list].sort((a, b) => (a.data.order as number) - (b.data.order as number)).map((c) => c.code);
 
 /**
- * Boots the real tree as bootWeb does, with the shell, the sidebar and the session list standing
- * in by doubles that keep their slots' contributions instead of binding them into components
- * (which need a browser to render).
+ * Boots the real tree as bootWeb does, with the shell, the sidebar, the session list, the dock and
+ * the chat page standing in by doubles that keep their slots' contributions instead of binding
+ * them into components (which need a browser to render).
  */
 beforeAll(async () => {
   const webApp = Object.assign(new WebAppModule(), {
@@ -122,6 +142,18 @@ beforeAll(async () => {
       sessionListSection = sessionList.section;
     },
   });
+  const dock = Object.assign(new DockModule(), {
+    setup({ contributions }: ClassCtx) {
+      dockPanels = contributions.panels ?? [];
+      dock.dock = {};
+    },
+  });
+  const chat = Object.assign(new ChatModule(), {
+    setup(ctx: ClassCtx) {
+      sessionTabs = ctx.contributions.sessionTabs ?? [];
+      ChatModule.prototype.setup.call(chat, ctx);
+    },
+  });
   await bootModules(
     moduleDefOf(WebRoot, {
       manifests: table.modules as unknown as ManifestTable,
@@ -129,6 +161,8 @@ beforeAll(async () => {
         [WebAppModule, webApp],
         [SidebarModule, sidebar],
         [SessionListModule, sessionList],
+        [DockModule, dock],
+        [ChatModule, chat],
       ]),
     }),
     {
@@ -226,7 +260,6 @@ describe("the booted page table", () => {
       },
     ];
     const orgRenderers = new Set(["OrgProposalsPage"]);
-    // Old builtin proposals renderer is split out; iframe org pages still use the framework.
     expect(orgPagesOf(contributedPages(pages, remote, orgRenderers)).map((p) => p.key)).toEqual([
       "org-proposals",
     ]);
@@ -299,5 +332,79 @@ describe("the booted sidebar slots", () => {
     expect(rows?.sessionEntries).toEqual([messagingRowAction.sessionEntry]);
     expect(rows?.marks).toEqual([messagingRowAction.sessionMark, scheduledRowMark.sessionMark]);
     expect(rows?.workspaceEntries).toEqual([browseFilesAction.workspaceEntry]);
+  });
+});
+
+describe("the booted dock slot", () => {
+  it("the dock receives the eight panels, in their order, each from its module", () => {
+    // In contributed order, as the dock registers them (dock/module.ts).
+    const panels = [...dockPanels]
+      .map((c) => ({ ...(c.data as unknown as DockPanelData), Body: c.code }))
+      .sort((a, b) => a.order - b.order);
+    expect(
+      panels.map(({ kind, title, titleZh, icon, Body }) => ({ kind, title, titleZh, icon, Body })),
+    ).toEqual([
+      {
+        kind: "agents",
+        title: "Agents panel",
+        titleZh: "智能体面板",
+        icon: "robotPair",
+        Body: AgentsPanel,
+      },
+      {
+        kind: "workspace",
+        title: "Files",
+        titleZh: "文件浏览",
+        icon: "folder",
+        Body: WorkspacePanel,
+      },
+      { kind: "memory", title: "Memory", titleZh: "记忆", icon: "brain", Body: MemoryPanel },
+      {
+        kind: "trace",
+        title: en.nav.traces,
+        titleZh: zh.nav.traces,
+        icon: "eye",
+        Body: TraceDockPanel,
+      },
+      {
+        kind: "messaging",
+        title: "Remote control",
+        titleZh: "远程控制",
+        icon: "paperPlane",
+        Body: MessagingDockPanel,
+      },
+      {
+        kind: "schedules",
+        title: en.schedule.panelTitle,
+        titleZh: zh.schedule.panelTitle,
+        icon: "alarmClock",
+        Body: ScheduleDockPanel,
+      },
+      {
+        kind: "builtin-browser",
+        title: "Browser",
+        titleZh: "浏览器",
+        icon: "globe",
+        // A wrapper around BuiltinBrowserPanel that carries where the browser is offered.
+        Body: new BuiltinBrowserModule().panel,
+      },
+    ]);
+    for (const panel of panels) expect(glyphOf(panel.icon)).not.toBe("");
+    expect(Object.fromEntries(dockPanels.map((c) => [c.data.kind as string, c.from]))).toEqual({
+      agents: "ChatModule",
+      memory: "ChatModule",
+      workspace: "WorkspaceModule",
+      trace: "TracesModule",
+      messaging: "MessagingModule",
+      schedules: "SchedulesModule",
+      "builtin-browser": "BuiltinBrowserModule",
+    });
+  });
+});
+
+describe("the booted chat slot", () => {
+  it("the chat page receives the workflow tab strip", () => {
+    expect(sessionTabsOf(sessionTabs).map(({ Tab }) => Tab)).toEqual([WorkbenchSessionTab]);
+    expect(sessionTabs.map((c) => c.from)).toEqual(["WorkbenchesModule"]);
   });
 });

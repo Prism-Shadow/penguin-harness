@@ -14,7 +14,7 @@ import { turnPricing, sameModelRef } from "../../models";
 import { openPanel } from "../../dock";
 import type { useMainChatControls } from "./main-chat-controls";
 
-/** Exact consecutive main ChatPage statements 158..163; called once, in original order. */
+/** Exact consecutive main ChatPage statements 159..164; called once, in original order. */
 export function useMainChatActions(scope: ReturnType<typeof useMainChatControls>) {
   const {
     navigate,

@@ -21,8 +21,7 @@
 import { useEffect } from "react";
 import { Button, Skeleton, guardLeave, useUnsavedChanges } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { setCloseGuard } from "../../lib/dock-close-guard";
-import { tabKey } from "../../lib/dock-tab-key";
+import { setCloseGuard, tabKey } from "../dock";
 import {
   MessagingBindingBody,
   MessagingBindingHelp,

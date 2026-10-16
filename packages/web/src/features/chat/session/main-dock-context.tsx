@@ -1,3 +1,4 @@
+import { ChatSessionContext } from "../../../lib/chat-session";
 /**
  * What the chat page hands its dock panels. A dock renders every panel the same way — the
  * registered Body with its `active` flag and nothing else — but the built-in bodies
@@ -6,16 +7,16 @@
  * composer's entry points. The page provides it once around both docks; a body reads it with
  * useChatDock.
  */
-import { createContext, useContext, type ReactNode } from "react";
+import { useContext, type Context, type ReactNode } from "react";
 
 import type { ModelsResponse, SessionInfo } from "@prismshadow/penguin-server/api";
-import type { PermissionPick } from "../../lib/permission-level";
-import type { StreamModel } from "../../lib/omni/stream-model";
-import type { MemoryChangeRow, MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import type { ComposerReference } from "../../lib/workspace-tree";
-import type { StreamRenderContext } from "./message-stream";
-import type { SessionStreamState } from "./use-session-stream";
-import type { useMemoryListing } from "./use-memory-listing";
+import type { PermissionPick } from "../../../lib/permission-level";
+import type { StreamModel } from "../../../lib/omni/stream-model";
+import type { MemoryChangeRow, MemoryLocateTarget } from "../../../lib/omni/memory-changes";
+import type { ComposerReference } from "../../../lib/workspace-tree";
+import type { StreamRenderContext } from "../message-stream";
+import type { SessionStreamState } from "../use-session-stream";
+import type { useMemoryListing } from "../use-memory-listing";
 
 export interface ChatDockState {
   /** The conversation on screen; null on the draft page and while none is selected (yet). */
@@ -64,7 +65,8 @@ export interface ChatDockState {
   prefillComposer: (text: string) => void;
 }
 
-const ChatDockContext = createContext<ChatDockState | null>(null);
+// Public and private readers share this single context; the page always supplies the full state.
+const ChatDockContext = ChatSessionContext as Context<ChatDockState | null>;
 
 /**
  * Provides the chat page's dock state to the panel bodies below it. A context provider adds

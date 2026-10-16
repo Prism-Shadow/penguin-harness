@@ -29,7 +29,7 @@ import { exitedProcessIds, reportableProcessFailure } from "../process-list";
 import { PROCESS_POLL_MS, STAT_PATHS_PER_REQUEST } from "./main-chat-helpers";
 import type { useMainChatTranscript } from "./main-chat-transcript";
 
-/** Exact consecutive main ChatPage statements 75..127; called once, in original order. */
+/** Exact consecutive main ChatPage statements 76..128; called once, in original order. */
 export function useMainChatLifecycle(scope: ReturnType<typeof useMainChatTranscript>) {
   const {
     navigate,

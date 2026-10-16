@@ -6,7 +6,7 @@ import { ConversationOutline } from "../conversation-outline";
 import { DraftView } from "./draft-view";
 import { GoalStatusBanner } from "../goal-banner";
 import { DockPanel, DockLauncher } from "../../dock";
-import { ChatDockProvider } from "../chat-dock-context";
+import { ChatDockProvider } from "../session/main-dock-context";
 import { ArchivedSessionStub } from "../archived-session-stub";
 import type { MainChatView } from "./main-chat-view";
 

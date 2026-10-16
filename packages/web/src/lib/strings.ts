@@ -529,7 +529,6 @@ export const zh = {
 
   /** The agent browser — the built-in one (desktop app) or the user's own Chrome: its dock panel, toolbar and dialogs. */
   builtinBrowser: {
-    /** The dock tab's name, also in the dock's menus and the launcher. */
     panelTitle: "浏览器",
     /** The browser's own tab strip (its accessible name). */
     tabs: "标签页",
@@ -3237,6 +3236,9 @@ export const zh = {
   },
 
   chat: {
+    workspacePanel: "文件浏览",
+    memoryViewTitle: "记忆",
+    openAgents: "智能体面板",
     newSessionMenu: "新建对话",
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
@@ -3922,8 +3924,6 @@ Benchmark：
     historyLoadFailed: "历史消息加载失败",
     statsLabel: "统计信息",
     removeImage: "移除图片",
-    openAgents: "智能体面板",
-    workspacePanel: "文件浏览",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,
@@ -3935,7 +3935,6 @@ Benchmark：
     memoryScopeWorkspace: (key: string) => `工作区记忆（${key}）`,
     memoryOpWrite: "写入",
     memoryOpEdit: "编辑",
-    memoryViewTitle: "记忆",
     memoryChangedMark: "本次对话已更改",
     memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
     memoryRowOpen: "查看内容",

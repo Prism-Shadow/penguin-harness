@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { sessionThinkingLevel } from "../../model-picker";
 import { useDockMount, closedDockView, dockViews } from "../../dock";
-import type { ChatDockState } from "../chat-dock-context";
+import type { ChatDockState } from "./main-dock-context";
 import { terminalApiSupported } from "../../terminal";
 import type { useMainChatActions } from "./main-chat-actions";
 
@@ -16,7 +16,7 @@ export function agentPagePath(agentId: string, machineId: string | null, tab: st
   return `/agents/${encodeURIComponent(agentId)}?${params.toString()}`;
 }
 
-/** Exact consecutive main ChatPage statements 164..169; called once, in original order. */
+/** Exact consecutive main ChatPage statements 165..170; called once, in original order. */
 export function useMainChatDock(scope: ReturnType<typeof useMainChatActions>) {
   const {
     navigate,

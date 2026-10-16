@@ -10,7 +10,7 @@ import { machineForSession } from "../../../lib/session-machines";
 import { handoffMessage, modelSwitchMessage } from "../agent-handoff";
 import type { useMainChatLifecycle } from "./main-chat-lifecycle";
 
-/** Exact consecutive main ChatPage statements 128..134; called once, in original order. */
+/** Exact consecutive main ChatPage statements 129..135; called once, in original order. */
 export function useMainChatSends(scope: ReturnType<typeof useMainChatLifecycle>) {
   const {
     navigate,

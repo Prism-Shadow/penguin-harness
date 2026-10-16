@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../../lib/strings";
-import { useWorkbenchTabs } from "../../workbenches";
 import { useDocumentTitle } from "../../../lib/use-document-title";
 import type { MemoryLocateTarget } from "../../../lib/omni/memory-changes";
 import { DRAFT_SESSION_ID, parkedDraftIdOf } from "../draft-sessions";
@@ -17,7 +16,7 @@ import { setDockCwd, dockVersion, openPanel, panelDock, subscribeDock } from "..
 import { terminalApiSupported, subscribeTerminals } from "../../terminal";
 import type { useMainChatInputs } from "./main-chat-inputs";
 
-/** Exact consecutive main ChatPage statements 25..60; called once, in original order. */
+/** Exact consecutive main ChatPage statements 26..61; called once, in original order. */
 export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) {
   const { location, params, projectId, agentId, sessions, isSessionDeleted } = scope;
 
@@ -209,15 +208,11 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
   // workflows live on: a Session on a machine runs a copy of the Agent there, and the workflows
   // it built are in that copy. The current Agent is always one of this server's, so going by
   // it listed the wrong Agent's workflows (or none) for every Session on a machine.
-  const workflowTabs = useWorkbenchTabs(
-    projectId,
-    pageAgentId,
-    draft
-      ? (resolvedDraftOwner?.machineId ?? null)
-      : selected === null
-        ? null
-        : machineForSession(selected.sessionId),
-  );
+  const workflowMachineId = draft
+    ? (resolvedDraftOwner?.machineId ?? null)
+    : selected === null
+      ? null
+      : machineForSession(selected.sessionId);
   // New shells start in this conversation's Workspace — its files are what a terminal
   // opened here is for. While drafting, the Workspace is the one picked in the draft and
   // DraftView publishes it instead (a child effect runs before this one, so this must
@@ -230,11 +225,7 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
     if (draft) return;
     setDockCwd(
       selected?.workspace ?? null,
-      draft
-        ? (resolvedDraftOwner?.machineId ?? null)
-        : selected === null
-          ? null
-          : machineForSession(selected.sessionId),
+      selected === null ? null : machineForSession(selected.sessionId),
     );
   }, [draft, selected]);
 
@@ -283,7 +274,7 @@ export function useMainChatRouting(scope: ReturnType<typeof useMainChatInputs>) 
     pageAgentId,
     pageMachineId,
     models,
-    workflowTabs,
+    workflowMachineId,
     activeModelRef,
   };
 }
