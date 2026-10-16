@@ -8,6 +8,10 @@
  *   back to the main Session's model when that mapping is missing or was evicted past its cap.
  *
  * Querying:
+ * - Given UTC-recorded usage at month/day boundaries, organization finance uses its IANA
+ *   calendar days (including both DST transitions), conserves spend, and excludes other sessions.
+ * - Given no matching/priced usage, organization finance returns no daily costs.
+ * - Given organization-zone queries, cost-center daily series retain their recorded dates.
  * - A scheduled model is priced per record by the tier its request ran in, each seller by its
  *   own windows, so a finished period's total never moves with the clock.
  * - The summary cards cover today, the last 7 days and everything; a model without pricing is
@@ -37,6 +41,7 @@ import type { PricingRates } from "../src/services/usage-service.js";
 import { openDatabase } from "../src/db/database.js";
 import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "../src/internal/dates.js";
 import type { DatabaseSync } from "node:sqlite";
+import { zonedPeriodRange } from "../src/organization/zoned.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 
 const CTX = {
@@ -174,6 +179,149 @@ describe("usage-service (cost computed on the fly)", () => {
     });
   }
 
+  it.each([
+    {
+      zone: "Asia/Shanghai",
+      period: "2026-09",
+      from: "2026-08-31T16:00:00.000Z",
+      to: "2026-09-30T16:00:00.000Z",
+      points: [
+        ["2026-09-01T15:59:59.999Z", "2026-09-01"],
+        ["2026-09-01T16:00:00.000Z", "2026-09-02"],
+      ],
+    },
+    {
+      zone: "America/Santiago",
+      period: "2026-09",
+      from: "2026-09-01T04:00:00.000Z",
+      to: "2026-10-01T03:00:00.000Z",
+      points: [
+        ["2026-09-06T03:59:59.999Z", "2026-09-05"],
+        ["2026-09-06T04:00:00.000Z", "2026-09-06"],
+        ["2026-09-07T02:59:59.999Z", "2026-09-06"],
+        ["2026-09-07T03:00:00.000Z", "2026-09-07"],
+      ],
+    },
+    {
+      zone: "Asia/Kathmandu",
+      period: "2026-09",
+      from: "2026-08-31T18:15:00.000Z",
+      to: "2026-09-30T18:15:00.000Z",
+      points: [
+        ["2026-09-01T18:14:59.999Z", "2026-09-01"],
+        ["2026-09-01T18:15:00.000Z", "2026-09-02"],
+      ],
+    },
+    {
+      zone: "America/New_York",
+      period: "2026-03",
+      from: "2026-03-01T05:00:00.000Z",
+      to: "2026-04-01T04:00:00.000Z",
+      points: [
+        ["2026-03-08T04:59:59.999Z", "2026-03-07"],
+        ["2026-03-08T05:00:00.000Z", "2026-03-08"],
+        ["2026-03-09T03:59:59.999Z", "2026-03-08"],
+        ["2026-03-09T04:00:00.000Z", "2026-03-09"],
+      ],
+    },
+    {
+      zone: "America/New_York",
+      period: "2026-11",
+      from: "2026-11-01T04:00:00.000Z",
+      to: "2026-12-01T05:00:00.000Z",
+      points: [
+        ["2026-11-01T05:30:00.000Z", "2026-11-01"],
+        ["2026-11-01T06:30:00.000Z", "2026-11-01"],
+        ["2026-11-02T04:59:59.999Z", "2026-11-01"],
+        ["2026-11-02T05:00:00.000Z", "2026-11-02"],
+      ],
+    },
+  ])(
+    "finance groups $zone $period by local days and conserves the month total",
+    async ({ zone, period, from, to, points }) => {
+      const range = zonedPeriodRange(zone, period)!;
+      expect(new Date(range.fromMs).toISOString()).toBe(from);
+      expect(new Date(range.toMs).toISOString()).toBe(to);
+      const last = new Date(range.toMs - 1).toISOString();
+      const expected = new Map<string, number>();
+      for (const [ts, date] of [
+        [from, `${period}-01`],
+        ...points,
+        [
+          last,
+          `${period}-${new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5)), 0)).getUTCDate()}`,
+        ],
+      ]) {
+        insert(ts!, { ts: ts!, date: ts!.slice(0, 10) });
+        expected.set(date!, (expected.get(date!) ?? 0) + ROW_COST);
+      }
+      for (const ts of [new Date(range.fromMs - 1).toISOString(), to])
+        insert(ts.slice(0, 10), { ts });
+      insert(from.slice(0, 10), { ts: from, sessionId: "unrelated-session" });
+      insert(from.slice(0, 10), { ts: from, projectId: "unrelated-project" });
+      const svc = service(new Date(from));
+      const daily = await svc.dailyCostForSessions("p1", ["s1"], from, last, zone);
+      expect(daily.map((day) => day.date)).toEqual([...expected.keys()].sort());
+      for (const day of daily) expect(day.cost).toBeCloseTo(expected.get(day.date)!, 12);
+      const total = await svc.costBySession("p1", ["s1"], from, last);
+      expect(daily.reduce((sum, day) => sum + day.cost, 0)).toBeCloseTo(
+        total.bySession.get("s1")!,
+        12,
+      );
+      // Organization queries must not change the cost center's recorded, server-local keys.
+      const serverDays = repo.seriesByModel("p1", "day", {
+        sessionIds: ["s1"],
+        fromTs: from,
+        toTs: last,
+      });
+      expect(serverDays.map((row) => row.key).sort()).toEqual(
+        [
+          ...new Set([from, ...points.map(([ts]) => ts!), last].map((ts) => ts.slice(0, 10))),
+        ].sort(),
+      );
+    },
+  );
+
+  it("finance keeps each provider's pricing for a shared model and excludes unpriced usage", async () => {
+    const ts = "2026-08-31T16:00:00.000Z";
+    for (const provider of ["seller-a", "seller-b", "unpriced"])
+      insert("2026-08-31", { ts, provider, modelId: "shared" });
+    const svc = wire(UsageService, {
+      usage: repo,
+      errors: wire(ErrorsRepo, { db }),
+      lookupPricing: async (_project, provider) => {
+        if (provider === "unpriced") return undefined;
+        const multiplier = provider === "seller-a" ? 1 : 2;
+        const rate = { cacheRead: multiplier, cacheWrite: multiplier * 2, output: multiplier * 4 };
+        return { peak: rate, offPeak: rate };
+      },
+      clock: { now: () => new Date(ts) },
+    });
+    const daily = await svc.dailyCostForSessions(
+      "p1",
+      ["s1"],
+      ts,
+      "2026-09-30T15:59:59.999Z",
+      "Asia/Shanghai",
+    );
+    expect(daily.map((day) => day.date)).toEqual(["2026-09-01"]);
+    expect(daily[0]!.cost).toBeCloseTo(96 / 1e6, 12);
+    const total = await svc.costBySession("p1", ["s1"], ts, "2026-09-30T15:59:59.999Z");
+    expect(total.unpriced).toBe(true);
+    expect(daily[0]!.cost).toBeCloseTo(total.bySession.get("s1")!, 12);
+  });
+
+  it("finance returns no daily costs for empty sessions, empty windows, or unpriced models", async () => {
+    const svc = service(new Date("2026-09-01T00:00:00.000Z"));
+    const from = "2026-08-31T16:00:00.000Z";
+    const to = "2026-09-30T15:59:59.999Z";
+    insert("2026-09-01", { modelId: "unpriced" });
+    expect(await svc.dailyCostForSessions("p1", ["s1"], to, from, "Asia/Shanghai")).toEqual([]);
+    for (const sessions of [[], ["absent"], ["s1"]]) {
+      expect(await svc.dailyCostForSessions("p1", sessions, from, to, "Asia/Shanghai")).toEqual([]);
+    }
+  });
+
   it("a scheduled model is priced per record, and the total does not move with the clock", async () => {
     // The defect this pins: pricing the whole table at whichever tier is in force when the page
     // is opened made a finished week's cost double at 09:00 Beijing and halve at 12:00. The tier
@@ -201,6 +349,16 @@ describe("usage-service (cost computed on the fly)", () => {
       });
       const res = await svc.query("p1", { groupBy: "date", from: "2026-08-31", to: "2026-08-31" });
       expect(res.summary.total.cost, at).toBeCloseTo(expected, 10);
+      const daily = await svc.dailyCostForSessions(
+        "p1",
+        ["s1"],
+        "2026-08-30T16:00:00.000Z",
+        "2026-08-31T15:59:59.999Z",
+        "Asia/Shanghai",
+      );
+      expect(daily).toHaveLength(1);
+      expect(daily[0]!.date).toBe("2026-08-31");
+      expect(daily[0]!.cost).toBeCloseTo(expected, 10);
     }
   });
 

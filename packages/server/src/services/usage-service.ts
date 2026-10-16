@@ -43,6 +43,7 @@ import type {
   UsageAgentBucketCount,
   UsageFilter,
   PeakTier,
+  UsageTimeBucket,
 } from "../db/repos/usage.js";
 import {
   enumerateBuckets,
@@ -50,6 +51,7 @@ import {
   formatLocalDate,
   localDateMinusDays,
 } from "../internal/dates.js";
+import { zonedDate, zonedDateStart } from "../organization/zoned.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Clock } from "../hmr/capabilities.js";
@@ -298,13 +300,33 @@ export class UsageService implements UsageQueries {
     sessionIds: readonly string[],
     fromTs: string,
     toTs: string,
+    timeZone: string,
   ): Promise<Array<{ date: string; cost: number }>> {
     if (sessionIds.length === 0) return [];
+    const buckets: UsageTimeBucket[] = [];
+    const lastDate = zonedDate(timeZone, Date.parse(toTs));
+    // Advance calendar dates, not instants: DST can shorten or lengthen a day.
+    let date = zonedDate(timeZone, Date.parse(fromTs));
+    let start = zonedDateStart(timeZone, date);
+    for (; date <= lastDate;) {
+      const next = new Date(`${date}T00:00:00.000Z`);
+      next.setUTCDate(next.getUTCDate() + 1);
+      const nextDate = next.toISOString().slice(0, 10);
+      const end = zonedDateStart(timeZone, nextDate);
+      buckets.push({
+        key: date,
+        fromTs: new Date(start).toISOString(),
+        toTs: new Date(end).toISOString(),
+      });
+      date = nextDate;
+      start = end;
+    }
     const rows = this.usage.seriesByModel(
       projectId,
       "day",
       { sessionIds, fromTs, toTs },
       this.tiers(),
+      buckets,
     );
     const rates = new Map<string, TieredRates | undefined>();
     const byDate = new Map<string, number>();

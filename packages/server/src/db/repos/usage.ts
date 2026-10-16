@@ -104,6 +104,13 @@ export interface UsageAgentBucketCount {
   denominator: number;
 }
 
+/** Explicit UTC boundaries for a calendar bucket; end is exclusive. */
+export interface UsageTimeBucket {
+  key: string;
+  fromTs: string;
+  toTs: string;
+}
+
 /** Time-series precision (mirrors the API's UsageGranularity). */
 export type UsageSeriesGranularity = "minute" | "hour" | "day" | "week" | "month";
 
@@ -315,8 +322,22 @@ export class UsageRepo implements UsageStore {
     granularity: UsageSeriesGranularity,
     f: UsageFilter = {},
     tiers: readonly PeakTier[] = [],
+    buckets?: readonly UsageTimeBucket[],
   ): UsageSeriesModelSums[] {
-    const expr = BUCKET_EXPRS[granularity];
+    if (buckets?.length === 0) return [];
+    const bucketParams: Record<string, string> = {};
+    // Explicit boundaries let callers use calendar days in an IANA zone, where a
+    // DST day need not be 24 hours. Ordinary cost-center queries keep their keys.
+    const expr = buckets
+      ? `CASE ${buckets
+          .map((bucket, i) => {
+            bucketParams[`b${i}from`] = bucket.fromTs;
+            bucketParams[`b${i}to`] = bucket.toTs;
+            bucketParams[`b${i}key`] = bucket.key;
+            return `WHEN ts >= :b${i}from AND ts < :b${i}to THEN :b${i}key`;
+          })
+          .join(" ")} END`
+      : BUCKET_EXPRS[granularity];
     const { where, params } = this.conds(projectId, f);
     const peak = peakExpr(tiers);
     const rows = this.db
@@ -324,10 +345,10 @@ export class UsageRepo implements UsageStore {
         `SELECT ${expr} AS key, provider, model_id, ${peak.sql} AS peak, ${SUM_COLUMNS},
                 COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
                 COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS denominator
-         FROM usage_records WHERE ${where}
+         FROM usage_records WHERE ${where}${buckets ? ` AND (${expr}) IS NOT NULL` : ""}
          GROUP BY key, provider, model_id, peak`,
       )
-      .all({ ...params, ...peak.params });
+      .all({ ...params, ...peak.params, ...bucketParams });
     return rows.map((r) => ({
       key: r.key as string,
       ...toSums(r),

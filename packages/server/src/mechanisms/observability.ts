@@ -20,6 +20,7 @@ import type {
   UsageSeriesGranularity,
   UsageSeriesModelSums,
   PeakTier,
+  UsageTimeBucket,
 } from "../db/repos/usage.js";
 import type {
   UsageErrorsPage,
@@ -106,6 +107,7 @@ export abstract class UsageStore {
     granularity: UsageSeriesGranularity,
     f?: UsageFilter,
     tiers?: readonly PeakTier[],
+    buckets?: readonly UsageTimeBucket[],
   ): UsageSeriesModelSums[];
   abstract agentSeries(
     projectId: string,
@@ -141,5 +143,6 @@ export abstract class UsageQueries {
     sessionIds: readonly string[],
     fromTs: string,
     toTs: string,
+    timeZone: string,
   ): Promise<Array<{ date: string; cost: number }>>;
 }
