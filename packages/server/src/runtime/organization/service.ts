@@ -949,6 +949,13 @@ export class OrganizationService {
             ...(req.duties !== undefined ? { duties: req.duties } : {}),
           }),
         );
+      } else {
+        // Keep the Agent's own brief and carried plugins. Only fill missing employee
+        // plugins, before publishing a chart entry or opening a desk that needs them.
+        for (const plugin of DEFAULT_EMPLOYEE_PLUGINS) {
+          const { installed } = await this.deps.agents.pluginVersion(projectId, agentId, plugin);
+          if (installed === null) await this.deps.agents.updatePlugin(projectId, agentId, plugin);
+        }
       }
       const employee: OrgEmployee = {
         agentId,
