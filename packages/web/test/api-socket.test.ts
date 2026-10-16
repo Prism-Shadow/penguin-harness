@@ -1,6 +1,6 @@
 /**
  * The API socket client (api/socket.ts) against a scripted WebSocket: frames out, answers
- * in, streams that outlive the socket, the identity it settles by itself, and the fallback
+ * in, streams that outlive the socket, the identity it settles by itself, and giving up
  * when no socket is to be had.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -256,13 +256,8 @@ describe("streams", () => {
     expect(last().frames()).toHaveLength(3); // fatal: no further attempt
   });
 
-  it("falls back to the caller's EventSource after the handshake keeps failing", async () => {
-    const fallbackCloses: number[] = [];
-    let built = 0;
-    const conn = socket.stream("/api/events", handlers(), () => {
-      built += 1;
-      return { close: () => fallbackCloses.push(1) };
-    });
+  it("gives up on the socket after three handshakes never opened, and streams wait silently", async () => {
+    const conn = socket.stream("/api/events", handlers());
     for (let i = 0; i < 3; i++) {
       await Promise.resolve();
       await Promise.resolve();
@@ -270,17 +265,14 @@ describe("streams", () => {
       vi.advanceTimersByTime(250);
     }
     expect(socket.isUnavailable()).toBe(true);
-    expect(built).toBe(1);
-    // A later stream goes straight to the fallback, and calls are refused so fetch is used.
-    socket.stream("/api/events", handlers(), () => {
-      built += 1;
-      return { close: () => undefined };
-    });
-    expect(built).toBe(2);
     expect(socket.isOpen()).toBe(false);
     await expect(socket.ready()).resolves.toBe(false);
+    // A later stream waits too: no second transport, and nothing ever answers.
+    const late = handlers();
+    socket.stream("/api/events", late);
+    vi.advanceTimersByTime(60_000);
+    expect(late.errors).toEqual([]);
     conn.close();
-    expect(fallbackCloses).toEqual([1]);
   });
 });
 
@@ -312,22 +304,19 @@ describe("ready", () => {
     expect(noWs.isUnavailable()).toBe(true);
   });
 
-  it("hands a stream already waiting to its EventSource when the browser has no WebSocket", async () => {
+  it("a stream waiting when the browser has no WebSocket stays silent, never answered", async () => {
     vi.stubGlobal("WebSocket", undefined);
     const noWs = new ApiSocket(
       () => "ws://test/socket",
       async () => "admin",
     );
-    let built = 0;
-    noWs.stream("/api/events", handlers(), () => {
-      built += 1;
-      return { close: () => undefined };
-    });
-    expect(built).toBe(0); // waiting on the identity, as with a socket
+    const h = handlers();
+    noWs.stream("/api/events", h);
+    expect(h.errors).toEqual([]); // waiting on the identity, as with a socket
     await Promise.resolve();
     await Promise.resolve();
     expect(noWs.isUnavailable()).toBe(true);
-    expect(built).toBe(1);
+    expect(h.errors).toEqual([]); // silent: no error either, the stream simply has no transport
   });
 
   it("starts unavailable when told there is nothing to connect to", async () => {
