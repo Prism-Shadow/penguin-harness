@@ -101,6 +101,7 @@ export function SidebarSessionRow({
   const selectedEntry = rows.sessionEntries.find((entry) => entry.id === openEntry);
   const EntryDialog = selectedEntry?.Dialog;
   const menu = withEntries(
+    sessionRowActions(CONTEXT_MENU_ACTIONS, rowState, run).filter(
       (item) => !rows.sessionEntries.some((entry) => entry.id === item.id),
     ),
     rows.sessionEntries.map((entry) => ({
