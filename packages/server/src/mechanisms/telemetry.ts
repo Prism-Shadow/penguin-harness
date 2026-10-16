@@ -21,6 +21,12 @@ export abstract class Telemetry extends Interface<{
   /** Stores the switch in the server settings and applies it at once (off drops the buffer). */
   setEnabled(enabled: boolean): void;
   /**
+   * Calls `listener` with the switch now and again whenever setEnabled changes it; returns the
+   * unsubscribe. For probes that cannot ask `on()` themselves — the machine transport's, whose
+   * sessions outlive this App generation and read a process-wide slot (machines/transport/timings.ts).
+   */
+  watch(listener: (on: boolean) => void): () => void;
+  /**
    * Records one sample (a no-op while off) and returns the stored copy, or null. The keys of
    * the enclosing scope (see within) are merged under the sample's own. The caller may still
    * add to the returned sample's `bytes` — a streamed response is counted as it is written.

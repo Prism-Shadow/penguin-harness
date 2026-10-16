@@ -45,6 +45,7 @@ import type { Resources } from "@prismshadow/penguin-core/kernel";
 import { sshFailureText } from "../ssh-failure.js";
 import { noteSignIn, signInFor } from "./login.js";
 import type { SignIn } from "./login.js";
+import { NO_ANSWER, timedCommand } from "./timings.js";
 
 /**
  * What a command in the session produced. `output` is stdout and stderr merged, with the
@@ -269,7 +270,7 @@ class MachineShell implements MachineSession {
     const next = this.#queue.then(() => this.#runExclusive(command, opts));
     // The queue must survive a rejection, or one failure would stall every later command.
     this.#queue = next.catch(() => undefined);
-    return next;
+    return timedCommand(this.address, () => next);
   }
 
   /** The session while it is up — pid and SOCKS port — or null. */
@@ -466,7 +467,7 @@ class MachineShell implements MachineSession {
         // fact that the machine simply never replied.
         this.#pending = null;
         this.#reset();
-        resolve({ code: 255, output: "the machine did not answer in time" });
+        resolve({ code: 255, output: NO_ANSWER });
       }, opts.timeoutMs ?? COMMAND_TIMEOUT_MS);
       this.#pending = { resolve, timer, onLine: opts.onLine };
       const mark = `printf '\\n${this.#mark} %s\\n' "$?"`;

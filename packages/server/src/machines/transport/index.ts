@@ -43,3 +43,5 @@ export {
   readSshConfig,
   writeSshConfig,
 } from "./targets.js";
+export { emit, round, setTimingsSink, timingsSink } from "./timings.js";
+export type { MachineSample, TimingsSink } from "./timings.js";
