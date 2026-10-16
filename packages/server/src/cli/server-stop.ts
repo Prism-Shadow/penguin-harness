@@ -12,10 +12,12 @@
  * same call on every platform this runs on.
  * Docs: /docs/cli § "penguin server / penguin web".
  */
-import { liveServerLock, readServerLock } from "@prismshadow/penguin-server/lock";
+import path from "node:path";
+import { liveServerLock, readServerLock } from "../lock.js";
 import type { Command } from "commander";
-import type { Messages } from "../i18n.js";
-import { resolveRootOption } from "../root-option.js";
+import type { CliContext } from "@prismshadow/penguin-core/plugin";
+import { serveMessages } from "./messages.js";
+import { serverCliSummary } from "./module.js";
 
 /** How long a server that was signalled gets to let go of its lock. */
 const STOP_TIMEOUT_MS = 15_000;
@@ -39,13 +41,20 @@ interface StopResult {
   detail?: string;
 }
 
-export function registerStopCommand(server: Command, t: Messages): void {
+/**
+ * Attaches the subcommand to the `penguin server` command (see serve.ts's
+ * registerCliCommands). The data root is the CLI's documented priority — `--root` >
+ * PENGUIN_HOME > the default — resolved through the context the host hands down.
+ */
+export function registerStopCommand(server: Command, ctx: CliContext): void {
+  const m = serveMessages(ctx.language);
   server
     .command("stop")
-    .description(t.serverStop.desc)
-    .option("--root <dir>", t.common.root)
+    .description(serverCliSummary("server.stop", ctx.language))
+    .option("--root <dir>", m.root)
     .action(async (opts: { root?: string }) => {
-      const result = await stop(resolveRootOption(opts.root));
+      const root = opts.root !== undefined ? path.resolve(opts.root) : ctx.root;
+      const result = await stop(root);
       process.stdout.write(JSON.stringify(result) + "\n");
       if (!result.ok) process.exitCode = 1;
     });

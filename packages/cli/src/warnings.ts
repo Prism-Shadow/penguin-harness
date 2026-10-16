@@ -1,13 +1,15 @@
 /**
  * Drops one Node warning, and only that one.
  *
- * `commands/serve.ts` pulls in `commands/reset-password.ts`, which imports
- * `@prismshadow/penguin-server/reset-admin-password` — that reaches `node:sqlite` while
- * the module graph loads, so on a Node that still flags the builtin experimental every
+ * `commands/auth.ts` statically imports `@prismshadow/penguin-server/auth-token`, whose
+ * module initializes the server's db layer — `process.getBuiltinModule("node:sqlite")`
+ * at module scope — so on a Node that still flags the builtin experimental every
  * `penguin` invocation prints
  * `ExperimentalWarning: SQLite is an experimental feature ...`, including the ones whose
  * whole output is a usage error. Nothing in the CLI's own behavior depends on the
- * builtin's stability, and the user has no action to take.
+ * builtin's stability, and the user has no action to take. (The serve group's
+ * reset-admin-password reaches the same builtin too, now at dispatch rather than at
+ * load: the filter below covers that arrival the same way, being process-wide.)
  *
  * The filter lives in the entry module rather than in a launcher flag because both ways
  * of starting the CLI reach it: the release tarball's `bin/penguin` execs
