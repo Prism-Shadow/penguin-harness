@@ -282,9 +282,8 @@ export function useSessionStream(
       // Hydrate the goal banner only once the subscription is live (fires on first connect and
       // every reconnect); the prev/active guards keep it from clobbering a live banner.
       onOpen: hydrateGoal,
-      // A stream refused for good (401/403/404 — or, on the EventSource fallback, a handshake
-      // the browser gave up on) is reported as closed: ask whether this browser is still signed
-      // in (api/session-probe.ts).
+      // A stream refused for good (401/403/404) is reported as closed: ask whether this
+      // browser is still signed in (api/session-probe.ts).
       onError: (closed) => {
         if (closed) void probeSession();
       },
