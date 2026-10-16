@@ -783,7 +783,7 @@ export interface ModelTestRequest {
   apiKey?: string;
   /** "Clear saved API key" is checked: the test does **not** fall back to the stored key (tests against the current draft). */
   clearApiKey?: boolean;
-  /** Speed-test mode: raises the probe's output cap (16 -> 64 tokens) so TTFT/TPS are measurable; costs a little more quota. */
+  /** Speed-test mode: its own 64-token cap with a prompt that keeps generating, so TTFT/TPS describe decoding rather than one round trip; costs a little more quota. */
   speed?: boolean;
   /**
    * base URL (not secret; the frontend always sends the form's current value): a string
