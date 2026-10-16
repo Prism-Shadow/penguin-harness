@@ -485,12 +485,20 @@ export function DraftView({
   // (or after a failed fetch) the picker stays disabled (null). The Agent is the one on the
   // workspace's machine, so its settings are read and written over there.
   const [agentThinkingLevel, setAgentThinkingLevel] = useState<string | null>(null);
+  /**
+   * The draft's Agent once the list on offer carries it. Nothing is asked about an id the cache
+   * or the route named until then: a cached id may be one this Project does not have (deleted
+   * since, or written while another Project's Agents were on screen), and the request would only
+   * come back "This agent no longer exists."
+   */
+  const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
+  const resolvedAgentId = selectedAgent?.agentId ?? null;
   useEffect(() => {
     setAgentThinkingLevel(null);
-    if (!agentId) return;
+    if (!resolvedAgentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, agentId, workspaceMachine)
+      .getAgentConfig(projectId, resolvedAgentId, workspaceMachine)
       .then((res) => {
         if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
       })
@@ -498,7 +506,7 @@ export function DraftView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, workspaceMachine]);
+  }, [projectId, resolvedAgentId, workspaceMachine]);
   const thinkingLevel =
     agentThinkingLevel === null || chatDefaults === null
       ? null
@@ -542,10 +550,10 @@ export function DraftView({
   useEffect(() => {
     setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
     setSkillsLoaded(false);
-    if (!agentId) return;
+    if (!resolvedAgentId) return;
     let cancelled = false;
     api
-      .getAgentSkills(projectId, agentId, workspaceMachine)
+      .getAgentSkills(projectId, resolvedAgentId, workspaceMachine)
       .then((res) => {
         if (!cancelled) setAgentSkills(res.skills);
       })
@@ -556,7 +564,7 @@ export function DraftView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, workspaceMachine]);
+  }, [projectId, resolvedAgentId, workspaceMachine]);
 
   // —— Auto-cache ——
   // Options (Agent / Workspace / approval mode / Model) are discrete clicks: written
@@ -861,8 +869,6 @@ export function DraftView({
   }, []);
   const readComposerText = useCallback(() => textRef.current, []);
 
-  const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
-  const resolvedAgentId = selectedAgent?.agentId ?? null;
   useEffect(() => {
     onAgentChange?.(resolvedAgentId, workspaceMachine);
     if (resolvedAgentId && workspaceMachine === null) setCurrentAgentId(resolvedAgentId);

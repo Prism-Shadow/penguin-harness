@@ -17,9 +17,15 @@ sign-in and its cookie across reload; a pending approval that must not write unt
 and completed history plus a working follow-up after reload. The last scenario covers the
 post-reload send regression from #89. Only the LLM boundary is replaced by the shared mock.
 
+PR CI also runs `project-switch.spec.mjs`: two Projects with distinct Agents, switched while
+their lists are still loading — one late Agent list forced with a route delay, and a slow-machine
+run with the renderer CPU throttled and every API answer delayed from a fixed seed. It fails on
+anything of one Project shown under the other, on any request that pairs a Project with an Agent
+it does not have, and on any `agent_not_found` answer.
+
 ```sh
-pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs
-SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs
+pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs
+SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs
 ```
 
 Arguments are forwarded to Playwright, so a spec path or `--grep` selects a focused run.

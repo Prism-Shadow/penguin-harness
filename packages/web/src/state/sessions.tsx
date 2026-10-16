@@ -105,6 +105,13 @@ import {
 } from "../lib/session-grouping";
 import type { ActivityKey, StreamPosition } from "../lib/session-grouping";
 import { noteScheduleEvent } from "../features/schedules/schedule-store";
+import {
+  isCurrentProject,
+  ofProject,
+  scoped,
+  scopedValue,
+  type Scoped,
+} from "../lib/project-scope";
 import { useProject } from "./project";
 
 interface SessionsContextValue {
@@ -599,6 +606,10 @@ export function createSessionsStore() {
      * (archived, subagent, company) is held for the page showing it and never counted.
      */
     const insert = (session: SessionInfo) => {
+      // Only this Project's rows: a row handed in for a conversation of the Project just left
+      // (a lookup that settled after the switch, a notification clicked later) is not this
+      // list's, and held here it would put that Project's Agent under this one.
+      if (!ofProject(session, get().projectId)) return;
       const existed = get().sessions.some((s) => s.sessionId === session.sessionId);
       // Per SOURCE and stream: the row belongs to the machine it lives on, and the whole
       // stream (scope "") is the one the totals were fetched against.
@@ -789,7 +800,10 @@ export function createSessionsStore() {
               }),
             )
           ).flat();
-          if (g !== gen) return;
+          // Superseded, or asked for a Project the list has since left: the Provider's context
+          // sync moves `projectId` before the next Agent set exists, and no reload runs to
+          // supersede this one until it does — so the Project is compared, not only `gen`.
+          if (g !== gen || !isCurrentProject(projectId, get().projectId)) return;
           // Agents this server did not answer about. Per Agent, not per server: a damaged
           // index or a 500 on ONE Agent is a different event from this server being
           // unreadable, and reading the first as the second is what leaves the page on a
@@ -1119,7 +1133,8 @@ export function createSessionsStore() {
             }),
           )
         ).flat();
-        if (g !== gen) return; // Project switch / reload raced this page: drop it.
+        // Project switch / reload raced this page: drop it.
+        if (g !== gen || !isCurrentProject(projectId, get().projectId)) return;
         const ok = results.filter((r) => r !== null);
         const prev = get().sessions;
         const seen = new Set(prev.map((s) => s.sessionId));
@@ -1556,6 +1571,41 @@ export function applyUserEvent(
   if (ev.projectId === store.getState().projectId) void store.getState().reload();
 }
 
+/** The list's rows, pages and totals — everything in the store that is read for one Project. */
+type ListedState = Pick<
+  SessionsStoreState,
+  | "sessions"
+  | "pageState"
+  | "countsByAgent"
+  | "workspaceCountsByAgent"
+  | "workspaceLatestByAgent"
+  | "workspaceLatestActiveByAgent"
+  | "loading"
+>;
+
+/** What the list holds for a Project it has not been read for yet: nothing, and still loading. */
+const NOTHING_LISTED: ListedState = {
+  sessions: [],
+  pageState: new Map(),
+  countsByAgent: new Map(),
+  workspaceCountsByAgent: new Map(),
+  workspaceLatestByAgent: new Map(),
+  workspaceLatestActiveByAgent: new Map(),
+  loading: true,
+};
+
+/**
+ * The store's list as `projectId` may read it: the store's own when it holds that Project's,
+ * else nothing and loading. The Provider publishes through this, so no consumer ever reads one
+ * Project's rows — or the Agents they name — under another (see SessionsProvider).
+ */
+function sessionsListFor(
+  state: ListedState & Pick<SessionsStoreState, "projectId">,
+  projectId: string | null,
+): ListedState {
+  return isCurrentProject(projectId, state.projectId) ? state : NOTHING_LISTED;
+}
+
 export function SessionsProvider({ children }: { children: ReactNode }) {
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -1618,10 +1668,10 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
    * machine that cannot answer contributes what it was last seen running — the same account
    * the composer offers a remote draft, and better than dropping its rows.
    */
-  const [machineAgentIdsJson, setMachineAgentIdsJson] = useState("{}");
+  const [machineAgents, setMachineAgents] = useState<Scoped<string> | null>(null);
   useEffect(() => {
     if (projectId === null) {
-      setMachineAgentIdsJson("{}");
+      setMachineAgents(null);
       return;
     }
     let cancelled = false;
@@ -1642,12 +1692,16 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
           }
         }),
       ]);
-      if (!cancelled) setMachineAgentIdsJson(JSON.stringify(Object.fromEntries(answers)));
+      if (!cancelled)
+        setMachineAgents(scoped(projectId, JSON.stringify(Object.fromEntries(answers))));
     })();
     return () => {
       cancelled = true;
     };
   }, [projectId, machineIdsKey, offlineMachineIdsKey]);
+  // The machines' Agents of THIS Project only: until the answer for it is in, none — the
+  // previous Project's would ask its machines about Agents this Project does not have.
+  const machineAgentIdsJson = scopedValue(machineAgents, projectId) ?? "{}";
 
   /**
    * The Project and its Agent set: what the list is OF. A change here invalidates every row
@@ -1736,7 +1790,13 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     return () => conn.close();
   }, [store]);
 
-  const { pageState, countsByAgent, machineIds } = state;
+  // The store is told about a Project switch in the effect above, one commit after useProject()
+  // reports it — and in that commit every descendant's effects run before this Provider's. So
+  // the list is published only for the Project it was read for: under any other it is empty and
+  // loading, never the previous Project's rows (their Agents paired with the new Project).
+  const listed = sessionsListFor(state, projectId);
+  const { pageState, countsByAgent } = listed;
+  const { machineIds } = state;
 
   const sources = useMemo<(string | null)[]>(() => [null, ...machineIds], [machineIds]);
 
@@ -1798,7 +1858,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   // pure waste.
   const byAgent = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
-    for (const s of state.sessions) {
+    for (const s of listed.sessions) {
       const list = map.get(s.agentId);
       if (list) list.push(s);
       else map.set(s.agentId, [s]);
@@ -1807,7 +1867,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     // place): sort each Agent's list in activity order, the key the server pages by.
     for (const list of map.values()) list.sort(mostRecentFirst);
     return map;
-  }, [state.sessions]);
+  }, [listed.sessions]);
 
   const machineLabels = useMemo<ReadonlyMap<string, string>>(() => {
     const entries = JSON.parse(machineLabelsJson) as [string | null, string][];
@@ -1818,19 +1878,19 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<SessionsContextValue>(() => {
     return {
-      sessions: state.sessions,
+      sessions: listed.sessions,
       byAgent,
-      countsByAgent: state.countsByAgent,
-      workspaceCountsByAgent: state.workspaceCountsByAgent,
-      workspaceLatestByAgent: state.workspaceLatestByAgent,
-      workspaceLatestActiveByAgent: state.workspaceLatestActiveByAgent,
+      countsByAgent: listed.countsByAgent,
+      workspaceCountsByAgent: listed.workspaceCountsByAgent,
+      workspaceLatestByAgent: listed.workspaceLatestByAgent,
+      workspaceLatestActiveByAgent: listed.workspaceLatestActiveByAgent,
       liveStatuses: state.liveStatuses,
       machineLabels,
       machineIds: state.machineIds,
       isLoadedFor,
       hasMoreFor,
       activityWatermarkFor,
-      loading: state.loading,
+      loading: listed.loading,
       machinesUnreachable: state.offlineMachineIds.length > 0,
       offlineMachineIds: state.offlineMachineIds,
       reload: state.reload,
@@ -1842,7 +1902,16 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       setStatus: state.setStatus,
       setTitle: state.setTitle,
     };
-  }, [state, byAgent, machineLabels, isLoadedFor, hasMoreFor, activityWatermarkFor, isDeleted]);
+  }, [
+    state,
+    listed,
+    byAgent,
+    machineLabels,
+    isLoadedFor,
+    hasMoreFor,
+    activityWatermarkFor,
+    isDeleted,
+  ]);
 
   return <SessionsContext.Provider value={value}>{children}</SessionsContext.Provider>;
 }
