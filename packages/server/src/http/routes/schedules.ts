@@ -7,9 +7,10 @@
  * Any member can read; only the owner can modify. The file is declarative intent:
  * POST/PUT fully replace the file, validation always goes through parseScheduleFile
  * (same rules as hand-edited files), and writes take effect immediately via reconciliation.
- * A write that could never fire (a one-shot whose start_at, or any task whose end_at, is
- * already past) is refused: the scheduler would archive it the moment it landed. Settled
- * tasks are archived by the scheduler, so no listing here ever shows one.
+ * Two writes are refused: any task whose end_at is already past (it could never fire, and the
+ * scheduler would archive it the moment it landed), and a one-shot whose start_at is already
+ * past (it would fire immediately; "run once now" is not offered — user decision 2026-10-15).
+ * Settled tasks are archived by the scheduler, so no listing here ever shows one.
  */
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
