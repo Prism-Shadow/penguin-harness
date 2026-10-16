@@ -31,9 +31,9 @@ Whatever you add to the UI or the copy, check it before you call it done: **deci
 decorate; one accent, one voice; hierarchy from scale and space; subtract first; specific beats
 punchy; decoration must mean something.** No gradients, glows, emoji, pill spam, cards in cards,
 coloured keywords or "it's not just X — it's Y". Reuse the theme tokens and `lib/tone.ts`; status
-is an icon plus a tooltip; sections are ruled, not boxed. Run
-`node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs <what you touched>` and triage
-every hit. `reference/ai-slop.md` has the repo's own decisions and the full catalogue.
+is a labelled pill or an icon plus a tooltip, never a bare coloured dot; sections are ruled, not
+boxed. Run `node .agents/skills/penguin-harness-dev/reference/ai-slop/scan.mjs <what you touched>`
+and triage every hit. `reference/ai-slop.md` has the repo's own decisions and the full catalogue.
 
 ## Repo shape — read before your first edit
 

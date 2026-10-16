@@ -56,6 +56,10 @@ export default defineConfig({
     testTimeout: process.platform === "win32" ? 30_000 : 5_000,
     hookTimeout: process.platform === "win32" ? 30_000 : 10_000,
     retry: process.platform === "win32" ? 2 : process.platform === "darwin" ? 1 : 0,
+    // Everything a run writes under the OS temp directory stays in one directory of its own,
+    // which teardown reports on and removes; every file sweeps the temp roots it was handed.
+    globalSetup: ["test/setup/run-temp-dir.ts"],
+    setupFiles: ["test/setup/temp-roots.ts"],
     // `vitest run --coverage` maps every file under src/, loaded by a test or not.
     coverage: {
       provider: "v8",

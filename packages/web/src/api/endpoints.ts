@@ -391,8 +391,10 @@ export const removeMember = (projectId: string, username: string) =>
   );
 
 /** New-chat defaults ([default_chat]): member-readable prefill for the draft page. */
-export const getChatDefaults = (projectId: string) =>
-  apiFetch<ChatDefaultsDto>(`/api/projects/${encodeURIComponent(projectId)}/chat-defaults`);
+export const getChatDefaults = (projectId: string, machineId: string | null = null) =>
+  apiFetch<ChatDefaultsDto>(`/api/projects/${encodeURIComponent(projectId)}/chat-defaults`, {
+    server: machineId,
+  });
 
 /** Whole-block replace (owner): an omitted key clears it; returns the stored block. */
 export const putChatDefaults = (projectId: string, body: ChatDefaultsDto) =>
@@ -417,8 +419,10 @@ export const putCommandPolicy = (
 
 // Model configuration -------------------------------------------------------------------
 
-export const getModels = (projectId: string) =>
-  apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`);
+export const getModels = (projectId: string, machineId: string | null = null) =>
+  apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`, {
+    server: machineId,
+  });
 
 export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
   apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`, {
@@ -620,8 +624,11 @@ const memoryBase = (projectId: string, agentId: string) =>
 const memoryFilesBase = (projectId: string, agentId: string, scopeKey: string) =>
   `${memoryBase(projectId, agentId)}/scopes/${encodeURIComponent(scopeKey)}/files`;
 
-export const getMemoryOverview = (projectId: string, agentId: string) =>
-  apiFetch<MemoryOverviewResponse>(memoryBase(projectId, agentId));
+export const getMemoryOverview = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) => apiFetch<MemoryOverviewResponse>(memoryBase(projectId, agentId), { server: machineId });
 
 /** Inserts the {{MEMORY}} placeholder into the agent's prompt template (idempotent) — the explicit adoption path for an agent created before Memory. */
 export const insertMemoryPlaceholder = (projectId: string, agentId: string) =>
@@ -630,12 +637,26 @@ export const insertMemoryPlaceholder = (projectId: string, agentId: string) =>
     body: {},
   });
 
-export const getMemoryFiles = (projectId: string, agentId: string, scopeKey: string) =>
-  apiFetch<MemoryFilesResponse>(memoryFilesBase(projectId, agentId, scopeKey));
+export const getMemoryFiles = (
+  projectId: string,
+  agentId: string,
+  scopeKey: string,
+  machineId: string | null = null,
+) =>
+  apiFetch<MemoryFilesResponse>(memoryFilesBase(projectId, agentId, scopeKey), {
+    server: machineId,
+  });
 
-export const getMemoryFile = (projectId: string, agentId: string, scopeKey: string, name: string) =>
+export const getMemoryFile = (
+  projectId: string,
+  agentId: string,
+  scopeKey: string,
+  name: string,
+  machineId: string | null = null,
+) =>
   apiFetch<MemoryFileResponse>(
     `${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`,
+    { server: machineId },
   );
 
 export const deleteMemoryFile = (
@@ -690,19 +711,25 @@ export const createAgent = (projectId: string, body: AgentCreateRequest) =>
     body,
   });
 
-export const getAgentConfig = (projectId: string, agentId: string) =>
+export const getAgentConfig = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentConfigResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config`,
+    { server: machineId },
   );
 
 export const putAgentConfig = (
   projectId: string,
   agentId: string,
   body: AgentConfigUpdateRequest,
+  machineId: string | null = null,
 ) =>
   apiFetch<AgentConfigResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config`,
-    { method: "PUT", body },
+    { method: "PUT", body, server: machineId },
   );
 
 /** Probes one MCP Server entry's reachability (server-side connect + tool discovery; nothing is saved). */
@@ -956,13 +983,17 @@ export const listArchivedSessionGroups = (query: ArchivedSessionsQuery = {}) =>
     query: { q: query.q, source: query.source, projectId: query.projectId },
   });
 
-/** One group's archived Sessions, newest activity first, continuing below `before` (the last row held). */
+/**
+ * One group's archived Sessions, newest activity first, continuing below `before` (the last row
+ * held). A machine's group names its `machineId`: this server reads the page from that machine.
+ */
 export const listArchivedSessions = (
   query: ArchivedSessionsQuery & {
     projectId: string;
     workspace: string;
     limit: number;
     before?: ActivityKey;
+    machineId?: string;
   },
 ) =>
   apiFetch<ArchivedSessionsResponse>("/api/me/archived-sessions", {
@@ -973,6 +1004,7 @@ export const listArchivedSessions = (
       workspace: query.workspace,
       limit: query.limit,
       before: query.before ? activityCursorParam(query.before) : undefined,
+      machineId: query.machineId,
     },
   });
 
@@ -1761,9 +1793,14 @@ export const getLanguages = () => apiFetch<LanguageIndexResponse>("/api/language
 export const getPluginReadme = (name: string) =>
   apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
 
-export const getAgentSkills = (projectId: string, agentId: string) =>
+export const getAgentSkills = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentSkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
+    { server: machineId },
   );
 
 export const getAgentHooks = (projectId: string, agentId: string) =>

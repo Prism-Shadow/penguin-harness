@@ -173,12 +173,7 @@ import {
   orderGroups,
   saveGroupOrder,
 } from "../../lib/group-order";
-import {
-  CONTEXT_MENU_ACTIONS,
-  HOVER_ROW_ACTIONS,
-  rowActionsFor,
-  sessionRowActions,
-} from "../ui/session-row-menu";
+import { CONTEXT_MENU_ACTIONS, HOVER_ROW_ACTIONS, sessionRowActions } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import {
@@ -2453,10 +2448,12 @@ export function Sidebar({
                       onToggle={() => toggleGroup(group.key)}
                       // The folder opens and closes with the group.
                       glyph={collapsed ? ICONS.folder : ICONS.folderOpen}
-                      label={nameOnMachine(
-                        group.temp ? S.chat.tempWorkspaces : group.label,
-                        machineName,
-                      )}
+                      label={group.temp ? S.chat.tempWorkspaces : group.label}
+                      // The machine stays readable however narrow the column: two machines'
+                      // groups can share a name, and the machine is what tells them apart.
+                      {...(machineName !== null
+                        ? { qualifier: S.chat.machineTag(machineName) }
+                        : {})}
                       count={
                         searching
                           ? groupRows.length
@@ -2758,8 +2755,6 @@ function SidebarSessionRow({
     handler[action](s);
   };
   const rowState = { pinned };
-  // A Session on a connected machine is not archivable from here (rowActionsFor).
-  const onMachine = machineForSession(s.sessionId) !== null;
   return (
     <SessionRow
       sessionId={s.sessionId}
@@ -2796,8 +2791,8 @@ function SidebarSessionRow({
       // Sized for the widest compact time each language produces — 「12月31日」 and 「59 分钟前」 in
       // zh, "Nov 30" in en.
       timeSlot={locale === "zh" ? "wide" : "narrow"}
-      hoverActions={sessionRowActions(rowActionsFor(HOVER_ROW_ACTIONS, onMachine), rowState, run)}
-      menuActions={sessionRowActions(rowActionsFor(CONTEXT_MENU_ACTIONS, onMachine), rowState, run)}
+      hoverActions={sessionRowActions(HOVER_ROW_ACTIONS, rowState, run)}
+      menuActions={sessionRowActions(CONTEXT_MENU_ACTIONS, rowState, run)}
       moreLabel={S.chat.moreActions}
       onOpen={() => onOpen(s)}
       draggable={draggable}

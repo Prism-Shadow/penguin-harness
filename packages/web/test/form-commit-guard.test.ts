@@ -126,8 +126,20 @@ const inReach = (file: SourceFile) =>
   file.rel.endsWith(".tsx") &&
   (file.rel.startsWith("features/") || file.rel === "components/layout/project-dialogs.tsx");
 
-const parse = (file: SourceFile) =>
-  ts.createSourceFile(file.path, file.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+/** Each file is parsed once, however many checks read it. */
+const parsed = new WeakMap<SourceFile, ts.SourceFile>();
+const parse = (file: SourceFile): ts.SourceFile => {
+  let sf = parsed.get(file);
+  if (sf === undefined) {
+    sf = ts.createSourceFile(file.path, file.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    parsed.set(file, sf);
+  }
+  return sf;
+};
+
+/** Whether the text names a Save the checks read (`S.common.save`), or a Create too. */
+const mentionsSave = (file: SourceFile, create = false) =>
+  file.text.includes("S.common.save") || (create && file.text.includes("S.common.create"));
 
 const lineOf = (sf: ts.SourceFile, node: ts.Node) =>
   sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
@@ -191,6 +203,8 @@ function commitsFrom(sf: ts.SourceFile, node: ts.Node, name: string): string[] {
 
 /** Check 1: "file:line what" for every typed control that commits from its own handler. */
 function handlerCommits(file: SourceFile): string[] {
+  // Every finding is an onBlur or an onChange: a file that spells neither has none.
+  if (!file.text.includes("onBlur") && !file.text.includes("onChange")) return [];
   const sf = parse(file);
   const found: string[] = [];
   visit(sf, (node) => {
@@ -290,6 +304,7 @@ function shellScopeOf(call: ts.CallExpression): string | null {
 
 /** Check 4: each component that saves a form in a shell scope, and whether it holds the close. */
 function shellScopeSaves(file: SourceFile): Array<{ where: string; held: boolean }> {
+  if (!mentionsSave(file)) return [];
   const sf = parse(file);
   const found: Array<{ where: string; held: boolean }> = [];
   visit(sf, (node) => {
@@ -340,6 +355,7 @@ describe("the settings commit model in the source", () => {
       .filter(inReach)
       .filter((f) => !listed(EXCUSED_FILES, f.rel))
       .filter((f) => {
+        if (!mentionsSave(f, true)) return false;
         const sf = parse(f);
         return offersSave(sf) && !callsAny(sf, REGISTERS);
       })

@@ -17,6 +17,12 @@
  * itself; clipped at the grid, what shows is always the grid. It is `overflow: clip`, not
  * `hidden`, since a hidden box would become a scroll container for anything sticky inside it.
  *
+ * The body is held to the card's width (`min-w-0`), as `Fold`'s is. The grid's one column is
+ * `auto`, and an `auto` column grows to its item's minimum width — left automatic, the body's
+ * min-content width, where a line that truncates with `nowrap` counts at its full length. One long
+ * line would make the column wider than the card: every row in the section would run past its
+ * edge, and the card would clip each row's actions.
+ *
  * Open or folded is the caller's when it passes `open` (a page that remembers it), the section's
  * own otherwise, starting from `defaultOpen`.
  */
@@ -87,7 +93,7 @@ export function CollapsibleSection({
         data-layout-motion
         className={`grid overflow-clip ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
       >
-        <div id={bodyId} className="min-h-0" inert={!open}>
+        <div id={bodyId} className="min-h-0 min-w-0" inert={!open}>
           <div className="border-t border-line-muted">{children}</div>
         </div>
       </div>

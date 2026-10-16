@@ -22,8 +22,11 @@
  * typed in and the box are its draft (the search and the tab are not), so closing it with any of
  * them changed asks first, and nothing closes it while Add is in flight.
  *
- * `AddMachineBody` and `AddMachineFooter` are pure functions of their props; the dialog around them
- * holds the state, reads the hosts' lines once when it opens, and makes the requests.
+ * How each part looks is the shared package's add-machine shell (`AddMachineShell`,
+ * `MachineHostList`, `MachineHostRow`, `AddMachineFooter` in `@prismshadow/penguin-ui`);
+ * `AddMachineBody` and `AddMachineFooter` here hand it this dialog's words and rows and are pure
+ * functions of their props; the dialog around them holds the state, reads the hosts' lines once
+ * when it opens, and makes the requests.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -32,16 +35,11 @@ import type {
   SshHostSummary,
 } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
-  Button,
-  Checkbox,
-  GlyphIcon,
-  ICONS,
-  ICON_SIZE,
+  AddMachineFooter as AddMachineFooterView,
+  AddMachineShell,
+  MachineHostList,
+  MachineHostRow,
   Modal,
-  NoticeStrip,
-  SearchInput,
-  Tabs,
   useFormDraft,
   useGuardedClose,
 } from "@prismshadow/penguin-ui";
@@ -49,7 +47,6 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { toneInk } from "../../lib/tone";
 import { ADD_TABS, addPlan, hostRows } from "./add-machine-view";
 import type { AddTab, HostRow } from "./add-machine-view";
 import { highlightSegments } from "./machines-match";
@@ -86,25 +83,10 @@ export interface AddMachineBodyProps {
   error: string | null;
 }
 
-/** An alias with the search's matched characters in the strong ink and the rest muted. */
-function Alias({ row }: { row: HostRow }) {
-  const { alias } = row.machine;
-  if (row.positions.length === 0) return <>{alias}</>;
-  return (
-    <>
-      {highlightSegments(alias, row.positions).map((segment, i) => (
-        <span key={i} className={segment.hit ? "font-semibold text-fg" : "text-fg-muted"}>
-          {segment.text}
-        </span>
-      ))}
-    </>
-  );
-}
-
 /**
- * One host to tick: the whole row toggles. The server glyph leads it, the name follows with its
- * reach muted beside it, and a host another Project already installed says so at the end — adding
- * it costs no transfer.
+ * One host to tick: the shared row, with the search's matched characters picked out of its name,
+ * how its block reaches it, and — when another Project already installed it — that it costs no
+ * transfer.
  */
 function HostRowItem({
   row,
@@ -117,29 +99,18 @@ function HostRowItem({
 }) {
   const { machine } = row;
   return (
-    <li data-host={machine.alias} data-picked={on ? "true" : "false"}>
-      <label
-        className={`flex min-w-0 items-center gap-3 px-3 py-2.5 transition-colors duration-150 hover:bg-surface-muted ${
-          on ? "bg-surface-muted" : ""
-        }`}
-      >
-        <Checkbox checked={on} onChange={() => onPick(machine.id)} aria-label={machine.alias} />
-        <GlyphIcon d={ICONS.server} size={ICON_SIZE.rowLead} className="shrink-0 text-fg-subtle" />
-        <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          <span className="truncate font-mono text-sm">
-            <Alias row={row} />
-          </span>
-          {row.reach !== null && (
-            <span className="min-w-0 truncate font-mono text-xs text-fg-muted">{row.reach}</span>
-          )}
-        </span>
-        {machine.elsewhere !== undefined && (
-          <Badge variant="soft" tone="neutral">
-            {S.machines.addDialog.elsewhere(machine.elsewhere.version)}
-          </Badge>
-        )}
-      </label>
-    </li>
+    <MachineHostRow
+      alias={machine.alias}
+      segments={row.positions.length === 0 ? [] : highlightSegments(machine.alias, row.positions)}
+      reach={row.reach}
+      note={
+        machine.elsewhere === undefined
+          ? null
+          : S.machines.addDialog.elsewhere(machine.elsewhere.version)
+      }
+      checked={on}
+      onToggle={() => onPick(machine.id)}
+    />
   );
 }
 
@@ -157,50 +128,28 @@ function ConfigPanel({
   "rows" | "offered" | "query" | "onQuery" | "picked" | "onPick" | "onTab"
 >) {
   const a = S.machines.addDialog;
-  if (offered === 0) {
-    // Nothing left in the config: the other tab is how a machine gets here.
-    return (
-      <div data-empty="no-hosts" className="flex flex-col items-start gap-3 py-2">
-        <p className="flex items-start gap-2 text-sm text-fg-muted">
-          <GlyphIcon
-            d={ICONS.info}
-            size={ICON_SIZE.inlineGlyph}
-            className="mt-1 shrink-0 text-fg-subtle"
-          />
-          {a.noHosts}
-        </p>
-        <Button
-          size="sm"
-          variant="secondary"
-          data-action="to-manual"
-          onClick={() => onTab("manual")}
-        >
-          <GlyphIcon d={ICONS.penLine} size={ICON_SIZE.inlineGlyph} />
-          {a.tabs.manual}
-        </Button>
-      </div>
-    );
-  }
   return (
-    <div className="space-y-3">
-      <SearchInput value={query} onChange={onQuery} placeholder={a.search} aria-label={a.search} />
-      {rows.length === 0 ? (
-        <p data-empty="no-match" className="py-2 text-sm text-fg-muted">
-          {a.noMatch(query.trim())}
-        </p>
-      ) : (
-        <ul className="max-h-72 divide-y divide-line overflow-y-auto border-y border-line">
-          {rows.map((row) => (
-            <HostRowItem
-              key={row.machine.id}
-              row={row}
-              on={picked.has(row.machine.id)}
-              onPick={onPick}
-            />
-          ))}
-        </ul>
-      )}
-    </div>
+    <MachineHostList
+      query={query}
+      onQuery={onQuery}
+      searchLabel={a.search}
+      // Nothing left in the config: the other tab is how a machine gets here.
+      exhausted={
+        offered === 0
+          ? { text: a.noHosts, actionLabel: a.tabs.manual, onAction: () => onTab("manual") }
+          : null
+      }
+      noMatch={rows.length === 0 ? a.noMatch(query.trim()) : null}
+    >
+      {rows.map((row) => (
+        <HostRowItem
+          key={row.machine.id}
+          row={row}
+          on={picked.has(row.machine.id)}
+          onPick={onPick}
+        />
+      ))}
+    </MachineHostList>
   );
 }
 
@@ -208,38 +157,19 @@ export function AddMachineBody(props: AddMachineBodyProps) {
   const a = S.machines.addDialog;
   const { tab, onTab, form, errors, onField, onSignIn, error } = props;
   return (
-    <div className="space-y-4">
-      <p className="text-sm">{a.intro}</p>
-      <div>
-        <Tabs
-          items={ADD_TABS.map((key) => ({ key, label: a.tabs[key] }))}
-          active={tab}
-          onChange={onTab}
-        />
-        <div role="tabpanel" aria-label={a.tabs[tab]} data-tab={tab} className="pt-4">
-          {tab === "config" ? (
-            <ConfigPanel {...props} />
-          ) : (
-            <HostFields form={form} errors={errors} onChange={onField} onSignIn={onSignIn} />
-          )}
-        </div>
-      </div>
-      {error !== null && (
-        <NoticeStrip
-          tone="attention"
-          className="flex items-start gap-1.5 rounded-md border px-3 py-2 text-sm"
-        >
-          <span data-slot="icon" className="mt-1 shrink-0">
-            <GlyphIcon
-              d={ICONS.alertCircle}
-              size={ICON_SIZE.inlineGlyph}
-              className={toneInk.attention}
-            />
-          </span>
-          <span>{error}</span>
-        </NoticeStrip>
+    <AddMachineShell
+      intro={a.intro}
+      tabs={ADD_TABS.map((key) => ({ key, label: a.tabs[key] }))}
+      tab={tab}
+      onTab={onTab}
+      error={error}
+    >
+      {tab === "config" ? (
+        <ConfigPanel {...props} />
+      ) : (
+        <HostFields form={form} errors={errors} onChange={onField} onSignIn={onSignIn} />
       )}
-    </div>
+    </AddMachineShell>
   );
 }
 
@@ -258,40 +188,13 @@ export interface AddMachineFooterProps {
  * The footer: the box at the start of the row, Cancel and Add at its end; on a phone the box takes
  * a line of its own above them.
  */
-export function AddMachineFooter({
-  installNow,
-  onInstallNow,
-  submitLabel,
-  canSubmit,
-  busy,
-  onCancel,
-  onSubmit,
-}: AddMachineFooterProps) {
+export function AddMachineFooter(props: AddMachineFooterProps) {
   return (
-    <>
-      <Checkbox
-        size="sm"
-        checked={installNow}
-        onChange={onInstallNow}
-        label={S.machines.addDialog.installNow}
-        data-option="install-now"
-        className="mr-auto basis-full self-center sm:basis-auto"
-      />
-      <Button size="sm" disabled={busy} onClick={onCancel}>
-        {S.common.cancel}
-      </Button>
-      <Button
-        size="sm"
-        variant="primary"
-        disabled={!canSubmit || busy}
-        aria-busy={busy}
-        data-action="add"
-        onClick={onSubmit}
-      >
-        <GlyphIcon d={ICONS.plus} size={ICON_SIZE.inlineGlyph} />
-        {submitLabel}
-      </Button>
-    </>
+    <AddMachineFooterView
+      {...props}
+      installNowLabel={S.machines.addDialog.installNow}
+      cancelLabel={S.common.cancel}
+    />
   );
 }
 

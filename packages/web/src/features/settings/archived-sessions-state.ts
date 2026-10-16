@@ -17,6 +17,10 @@
  * - The page follows the user channel: a Session archived, unarchived, deleted or opened by a
  *   program elsewhere refreshes it the same way, debounced; a run starting or settling redraws
  *   its row's busy glyph in place, with nothing read again.
+ * - An admin's groups include the machines their Projects use (this server asks each one): a
+ *   machine's group is read from that machine, acted on there — its rows by id, the whole group
+ *   pinned to the machine's own count time — and its events reach the page through this
+ *   server's channel, wrapped as `machine_event`. Machines that could not be asked are named.
  *
  * A vanilla store with its async actions, so the page's whole behaviour is exercised in Node
  * against the fetch fake (the component only renders it and asks before a delete).
@@ -67,8 +71,12 @@ export interface GroupRows {
   loading: boolean;
 }
 
-/** What an action acts on: some rows by id (a row's own buttons), or the selection (the bar's). */
-export type ArchiveTarget = { kind: "ids"; ids: string[] } | { kind: "selection" };
+/**
+ * What an action acts on: some rows by id (a row's own buttons, with the machine of the group
+ * they are in), or the selection (the bar's).
+ */
+export type ArchiveTarget =
+  { kind: "ids"; ids: string[]; machineId?: string } | { kind: "selection" };
 
 /**
  * A group chosen whole with Select all: every Session its count saw at `until`, loaded or not,
@@ -78,7 +86,9 @@ export type ArchiveTarget = { kind: "ids"; ids: string[] } | { kind: "selection"
 export interface WholeGroup {
   projectId: string;
   workspace: string;
-  /** The groups' `asOf` the count was read at. */
+  /** The machine the group is on; absent on this server. */
+  machineId?: string;
+  /** The time the group's count was read at, by the clock of the server that counted it. */
   until: string;
   /** How many Sessions the group held at `until`. */
   count: number;
@@ -112,11 +122,17 @@ export interface ArchiveState {
   busy: boolean;
   /** Why the last read failed; null when it did not. */
   error: string | null;
+  /** Machines whose archive could not be read this time, by alias. */
+  unreachable: string[];
 }
 
-/** A group's key: its Project and its Workspace (a path or `temp`), which no id or path can forge. */
-export const groupKey = (group: Pick<ArchivedSessionGroup, "projectId" | "workspace">): string =>
-  `${group.projectId}\0${group.workspace}`;
+/**
+ * A group's key: its machine (none for this server), its Project and its Workspace (a path or
+ * `temp`), which no id or path can forge. The same path on two machines is two directories.
+ */
+export const groupKey = (
+  group: Pick<ArchivedSessionGroup, "projectId" | "workspace" | "machineId">,
+): string => `${group.machineId ?? ""}\0${group.projectId}\0${group.workspace}`;
 
 /** The groups on screen: the first `groupLimit`. */
 export function shownGroups(state: ArchiveState): ArchivedSessionGroup[] {
@@ -198,8 +214,12 @@ export interface ArchiveStoreState extends ArchiveState {
   dispose: () => void;
 }
 
-/** Whether a user-channel event can change what the archive lists. */
+/**
+ * Whether a user-channel event can change what the archive lists: this server's own, or one a
+ * connected machine said (this server relays it as `machine_event`).
+ */
 export function touchesArchive(ev: ServerEvent): boolean {
+  if (ev.type === "machine_event") return touchesArchive(ev.event);
   if (ev.type === "session_archived" || ev.type === "session_deleted") return true;
   // What a program opens is archived from the start: it may be one of this page's rows now.
   return (
@@ -217,7 +237,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   return createStore<ArchiveStoreState>((set, get) => {
-    /** One group's rows, `limit` of them below `before` (from the top when absent). */
+    /** One group's rows, `limit` of them below `before` (from the top when absent), from its machine. */
     const fetchRows = async (group: ArchivedSessionGroup, limit: number, before?: SessionInfo) =>
       api.listArchivedSessions({
         ...query(get().filters),
@@ -225,6 +245,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
         workspace: group.workspace,
         limit,
         ...(before !== undefined ? { before: activityKeyOf(before) } : {}),
+        ...(group.machineId !== undefined ? { machineId: group.machineId } : {}),
       });
 
     const setRows = (key: string, rows: GroupRows) => {
@@ -285,8 +306,11 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       let groups: ArchivedSessionGroup[];
       let total: number;
       let asOf: string;
+      let unreachable: string[];
       try {
-        ({ groups, total, asOf } = await api.listArchivedSessionGroups(query(get().filters)));
+        const answer = await api.listArchivedSessionGroups(query(get().filters));
+        ({ groups, total, asOf } = answer);
+        unreachable = (answer.unreachable ?? []).map((machine) => machine.alias);
       } catch (err) {
         if (g !== gen) return;
         set({ error: apiErrorText(err) });
@@ -297,7 +321,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       // Rows of groups that are gone go with them.
       const present = new Set(groups.map(groupKey));
       const rows = new Map([...get().rows].filter(([key]) => present.has(key)));
-      set({ groups, total, asOf, rows, error: null });
+      set({ groups, total, asOf, rows, error: null, unreachable });
       await fillGroups(g, groups.slice(0, get().groupLimit), (key) =>
         keep ? (caps.get(key) ?? ARCHIVE_ROW_PAGE) : ARCHIVE_ROW_PAGE,
       );
@@ -342,15 +366,39 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       });
     };
 
+    /** The machine each held row is on (absent: this server), from the group that holds it. */
+    const machinesOfHeld = (): Map<string, string | undefined> => {
+      const machineOfKey = new Map((get().groups ?? []).map((g) => [groupKey(g), g.machineId]));
+      const out = new Map<string, string | undefined>();
+      for (const [key, rows] of get().rows) {
+        for (const s of rows.sessions) out.set(s.sessionId, machineOfKey.get(key));
+      }
+      return out;
+    };
+
     /**
-     * The batch requests for a target: chunks of ids for the rows named or picked, and one filter
-     * per whole group — pinned to the time its count was read at, without its unticked rows.
+     * The batch requests for a target: chunks of ids for the rows named or picked — one run of
+     * chunks per server they are on — and one filter per whole group, pinned to the time its count
+     * was read at, without its unticked rows. A machine's batch names the machine.
      */
     const batchesOf = (target: ArchiveTarget): ArchivedSessionsBatch[] => {
-      const ids = target.kind === "ids" ? target.ids : [...get().selection.picked];
+      const byMachine = new Map<string | undefined, string[]>();
+      if (target.kind === "ids") byMachine.set(target.machineId, target.ids);
+      else {
+        const held = machinesOfHeld();
+        for (const id of get().selection.picked) {
+          const machineId = held.get(id);
+          byMachine.set(machineId, [...(byMachine.get(machineId) ?? []), id]);
+        }
+      }
       const out: ArchivedSessionsBatch[] = [];
-      for (let i = 0; i < ids.length; i += BATCH_MAX) {
-        out.push({ sessionIds: ids.slice(i, i + BATCH_MAX) });
+      for (const [machineId, ids] of byMachine) {
+        for (let i = 0; i < ids.length; i += BATCH_MAX) {
+          out.push({
+            sessionIds: ids.slice(i, i + BATCH_MAX),
+            ...(machineId !== undefined ? { machineId } : {}),
+          });
+        }
       }
       if (target.kind === "ids") return out;
       for (const whole of get().selection.wholes.values()) {
@@ -362,6 +410,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
             until: whole.until,
             ...(whole.excluded.size > 0 ? { exclude: [...whole.excluded] } : {}),
           },
+          ...(whole.machineId !== undefined ? { machineId: whole.machineId } : {}),
         });
       }
       return out;
@@ -409,6 +458,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       selection: NO_SELECTION,
       busy: false,
       error: null,
+      unreachable: [],
 
       load: async (filters) => {
         set({
@@ -420,6 +470,7 @@ export function createArchiveStore(onError: (message: string) => void = () => un
           rows: new Map(),
           selection: NO_SELECTION,
           error: null,
+          unreachable: [],
         });
         await read(false);
       },
@@ -509,7 +560,9 @@ export function createArchiveStore(onError: (message: string) => void = () => un
           wholes.set(key, {
             projectId: group.projectId,
             workspace: group.workspace,
-            until: state.asOf,
+            ...(group.machineId !== undefined ? { machineId: group.machineId } : {}),
+            // A machine's group was counted by the machine's clock: its batch is pinned to that.
+            until: group.asOf ?? state.asOf,
             count: group.count,
             excluded: new Set(),
           });
@@ -524,8 +577,10 @@ export function createArchiveStore(onError: (message: string) => void = () => un
       remove: (target) => act(target, (batch) => api.deleteSessions(batch)),
 
       noteEvent: (ev) => {
-        if (ev.type === "session_state") {
-          patchStatus(ev.sessionId, ev.state);
+        // A machine's own run state arrives wrapped, and redraws its row the same way.
+        const said = ev.type === "machine_event" ? ev.event : ev;
+        if (said.type === "session_state") {
+          patchStatus(said.sessionId, said.state);
           return;
         }
         if (!touchesArchive(ev) || refreshTimer !== null) return;

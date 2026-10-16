@@ -5,6 +5,8 @@
  * recreation.
  * - Given existing Agent API settings and a key, upgrading adds unset session defaults without
  *   changing the saved exposure, approvals or key; reopening keeps the selected defaults.
+ * - Given a machine row from before adoption times, upgrading leaves it without one (the
+ *   pre-existing-Sessions rule does not apply to it), and a rollback keeps the times written.
  *
  * Two properties carry everything else: a real 0.2.4 database reaches exactly the shape a
  * fresh one is created with (so a runtime older than the platform pushed onto it becomes
@@ -621,6 +623,7 @@ describe("migration 8 → current: model-promotions", () => {
         "sessions-kept-at",
         "agent-api-session-settings",
         "agent-api-concurrency",
+        "machines-adopted-at",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
@@ -649,6 +652,7 @@ describe("migration 8 → current: model-promotions", () => {
         "sessions-kept-at",
         "agent-api-session-settings",
         "agent-api-concurrency",
+        "machines-adopted-at",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
@@ -677,6 +681,7 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         "sessions-kept-at",
         "agent-api-session-settings",
         "agent-api-concurrency",
+        "machines-adopted-at",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(tableExists()).toEqual({ "1": 1 });
@@ -727,6 +732,7 @@ describe("migration 12 → current: browser-extensions", () => {
         "sessions-kept-at",
         "agent-api-session-settings",
         "agent-api-concurrency",
+        "machines-adopted-at",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
       db.exec("PRAGMA foreign_keys = ON");
@@ -790,6 +796,7 @@ describe("migration 13 → current: agent-api", () => {
         "sessions-kept-at",
         "agent-api-session-settings",
         "agent-api-concurrency",
+        "machines-adopted-at",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
       const enable = () =>
@@ -878,6 +885,7 @@ describe("migration 14 → current: messaging-conversations", () => {
         "sessions-kept-at",
         "agent-api-session-settings",
         "agent-api-concurrency",
+        "machines-adopted-at",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
       const put = () =>
@@ -922,6 +930,7 @@ describe("migration 15 → current: sessions-kept-at", () => {
         "sessions-kept-at",
         "agent-api-session-settings",
         "agent-api-concurrency",
+        "machines-adopted-at",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(db.prepare("SELECT session_id, kept_at FROM sessions").all()).toEqual([
@@ -942,6 +951,51 @@ describe("migration 15 → current: sessions-kept-at", () => {
       expect(schemaVersion(db)).toBe(15);
       expect(db.prepare("SELECT kept_at FROM sessions").get()).toEqual({
         kept_at: "2026-10-11T01:00:00.000Z",
+      });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+/** A database stamped at migration 18: machine rows carry no adoption time yet. */
+function open18(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  db.exec("ALTER TABLE machines DROP COLUMN adopted_at");
+  db.exec("PRAGMA user_version = 18");
+  return db;
+}
+
+describe("migration 18 → current: machines-adopted-at", () => {
+  const insertMachine = (db: DatabaseSync) =>
+    db.exec(
+      "INSERT INTO machines (address, machine_id, version, installed_at) VALUES ('ssh:nas', 'm1', '0.2.16', '2026-10-14T00:00:00.000Z')",
+    );
+
+  it("adds the adoption time while a pushed platform boots, leaving a machine adopted before it without one", () => {
+    const db = open18();
+    try {
+      insertMachine(db);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["machines-adopted-at"]);
+      expect(db.prepare("SELECT address, adopted_at FROM machines").all()).toEqual([
+        { address: "ssh:nas", adopted_at: null },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("down keeps the column and the times in it", () => {
+    const db = open18();
+    try {
+      insertMachine(db);
+      migrate(db);
+      db.exec("UPDATE machines SET adopted_at = '2026-10-15T00:00:00.000Z'");
+      rollbackTo(db, 18);
+      expect(schemaVersion(db)).toBe(18);
+      expect(db.prepare("SELECT adopted_at FROM machines").get()).toEqual({
+        adopted_at: "2026-10-15T00:00:00.000Z",
       });
     } finally {
       db.close();

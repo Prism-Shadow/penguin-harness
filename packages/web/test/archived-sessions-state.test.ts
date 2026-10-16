@@ -22,6 +22,13 @@
  *   an event about something else does nothing.
  * - Given a run starting or settling on a row the page holds, the row's run state changes where
  *   it stands, with nothing read again.
+ * - Given a machine's groups beside this server's, each group's rows are read from the server it
+ *   is on, and a machine that could not be read is named.
+ * - Given rows on a machine, a row's own button, a selection spanning both servers and a whole
+ *   group each act on the server the rows are on — the whole group pinned to the machine's own
+ *   count time — and never on the other.
+ * - Given a machine's own archive event or run state, relayed by this server, the page reads
+ *   itself again or redraws the row, as for this server's.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -48,6 +55,13 @@ const ALL: ArchiveFilters = { q: "", source: null, projectId: null };
 
 /** The server's archived rows. */
 let rows: SessionInfo[];
+/** Rows that live on a machine, by session id → machine id; the rest are this server's. */
+let onMachine: Map<string, string>;
+/** The machines the fake server could not read, by alias. */
+let unreachable: string[];
+/** The time the machine says it took its counts at. */
+const MACHINE_AS_OF = "2026-10-11T09:59:30.000Z";
+const MACHINE = "QS7J4YVgSovi-Z2c";
 let fetch: FakeFetch;
 /** An action the server refuses, when set. */
 let refuse = false;
@@ -92,11 +106,15 @@ const newestFirst = (
         ? 1
         : 0;
 
-/** The rows a query (or a batch's filter) matches, newest first. */
-function matching(params: { get(name: string): string | null }): SessionInfo[] {
+/** The rows a query (or a batch's filter) matches on one server (`machine` null: this one), newest first. */
+function matching(
+  params: { get(name: string): string | null },
+  machine: string | null = null,
+): SessionInfo[] {
   const q = (params.get("q") ?? "").toLowerCase();
   const workspace = params.get("workspace");
   return rows
+    .filter((s) => (onMachine.get(s.sessionId) ?? null) === machine)
     .filter((s) => q === "" || (s.title ?? "").toLowerCase().includes(q))
     .filter((s) => workspace === null || s.workspace === workspace)
     .sort(newestFirst);
@@ -105,25 +123,38 @@ function matching(params: { get(name: string): string | null }): SessionInfo[] {
 function serve(request: FetchRequest): Response {
   if (request.path === "/api/me/archived-sessions/groups") {
     const groups = new Map<string, ArchivedSessionGroup>();
-    for (const s of matching(request.query)) {
-      const g = groups.get(s.workspace);
-      if (g) g.count += 1;
-      else {
-        groups.set(s.workspace, {
-          projectId: "p",
-          projectName: "Project",
-          workspace: s.workspace,
-          count: 1,
-          latest: s.lastActiveAt,
-        });
+    for (const machine of [null, MACHINE]) {
+      for (const s of matching(request.query, machine)) {
+        const key = `${machine}:${s.workspace}`;
+        const g = groups.get(key);
+        if (g) g.count += 1;
+        else {
+          groups.set(key, {
+            projectId: "p",
+            projectName: "Project",
+            workspace: s.workspace,
+            count: 1,
+            latest: s.lastActiveAt,
+            ...(machine === null
+              ? {}
+              : { machineId: machine, machineAlias: "box", asOf: MACHINE_AS_OF }),
+          });
+        }
       }
     }
     const list = [...groups.values()];
-    return json({ groups: list, total: list.reduce((n, g) => n + g.count, 0), asOf });
+    return json({
+      groups: list,
+      total: list.reduce((n, g) => n + g.count, 0),
+      asOf,
+      ...(unreachable.length > 0
+        ? { unreachable: unreachable.map((alias) => ({ machineId: `id-${alias}`, alias })) }
+        : {}),
+    });
   }
   if (request.path === "/api/me/archived-sessions") {
     const before = request.query.get("before");
-    let list = matching(request.query);
+    let list = matching(request.query, request.query.get("machineId"));
     if (before !== null) {
       const comma = before.indexOf(",");
       const cursor = { lastActiveAt: before.slice(0, comma), sessionId: before.slice(comma + 1) };
@@ -134,7 +165,12 @@ function serve(request: FetchRequest): Response {
   }
   if (request.path.startsWith("/api/me/archived-sessions/")) {
     if (refuse) return apiError(500, "internal");
-    const body = request.body as { sessionIds?: string[]; filter?: Record<string, unknown> };
+    const body = request.body as {
+      sessionIds?: string[];
+      filter?: Record<string, unknown>;
+      machineId?: string;
+    };
+    const machine = body.machineId ?? null;
     // The filter's query part matches as the listing does; its rows left out stay.
     const exclude = (body.filter?.exclude as string[] | undefined) ?? [];
     const query = new URLSearchParams();
@@ -142,11 +178,13 @@ function serve(request: FetchRequest): Response {
       const value = body.filter?.[name];
       if (typeof value === "string") query.set(name, value);
     }
-    const ids =
+    // A batch acts on the server it names, and on nothing of another's.
+    const ids = (
       body.sessionIds ??
-      matching(query)
+      matching(query, machine)
         .map((s) => s.sessionId)
-        .filter((id) => !exclude.includes(id));
+        .filter((id) => !exclude.includes(id))
+    ).filter((id) => (onMachine.get(id) ?? null) === machine);
     rows = rows.filter((s) => !ids.includes(s.sessionId));
     return json({ done: ids.length, missing: [] });
   }
@@ -155,6 +193,8 @@ function serve(request: FetchRequest): Response {
 
 beforeEach(() => {
   rows = [];
+  onMachine = new Map();
+  unreachable = [];
   refuse = false;
   asOf = "2026-10-11T10:00:00.000Z";
   fetch = stubFetch(serve);
@@ -167,10 +207,23 @@ const run = (prefix: string, workspace: string, n: number, from = 0) =>
     row(`${prefix}-${String(i).padStart(2, "0")}`, workspace, from + n - i),
   );
 
-const shownIds = (store: ReturnType<typeof createArchiveStore>, workspace: string) =>
-  shownRows(store.getState().rows.get(groupKey({ projectId: "p", workspace }))).map(
-    (s) => s.sessionId,
-  );
+const shownIds = (
+  store: ReturnType<typeof createArchiveStore>,
+  workspace: string,
+  machineId?: string,
+) =>
+  shownRows(
+    store
+      .getState()
+      .rows.get(groupKey({ projectId: "p", workspace, ...(machineId ? { machineId } : {}) })),
+  ).map((s) => s.sessionId);
+
+/** `n` rows in `workspace` on the machine, newest first by their index. */
+const machineRun = (prefix: string, workspace: string, n: number, from = 0) =>
+  run(prefix, workspace, n, from).map((s) => {
+    onMachine.set(s.sessionId, MACHINE);
+    return s;
+  });
 
 const paths = () => fetch.requests.map((r) => r.path);
 
@@ -458,5 +511,94 @@ describe("the archive page", () => {
     expect(held().map((s) => s.status)).toEqual(["idle", "idle"]);
     await vi.advanceTimersByTimeAsync(ARCHIVE_REFRESH_DELAY_MS);
     expect(fetch.requests).toEqual([]);
+  });
+
+  it("reads each group's rows from the server it is on, and names a machine it could not read", async () => {
+    rows = [...run("l", "/a", 2, 100), ...machineRun("m", "/a", 3)];
+    unreachable = ["nas"];
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    const groups = shownGroups(store.getState());
+    expect(groups.map((g) => [g.workspace, g.machineId ?? null, g.count])).toEqual([
+      ["/a", null, 2],
+      ["/a", MACHINE, 3],
+    ]);
+    // The same path on two servers is two groups, each read from its own.
+    expect(shownIds(store, "/a")).toEqual(["l-00", "l-01"]);
+    expect(shownIds(store, "/a", MACHINE)).toEqual(["m-00", "m-01", "m-02"]);
+    const pages = fetch.requests.filter((r) => r.path === "/api/me/archived-sessions");
+    expect(pages.map((r) => r.query.get("machineId")).sort()).toEqual([MACHINE, null]);
+    expect(store.getState().unreachable).toEqual(["nas"]);
+  });
+
+  it("acts on a machine's rows on that machine: a row's own button, a mixed selection, a whole group", async () => {
+    rows = [...run("l", "/a", 2, 100), ...machineRun("m", "/a", 3), ...machineRun("n", "/n", 2)];
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    const local = groupKey({ projectId: "p", workspace: "/a" });
+    const remote = groupKey({ projectId: "p", workspace: "/a", machineId: MACHINE });
+    const batches = () => fetch.requests.filter((r) => r.method === "POST");
+
+    fetch.requests.length = 0;
+    await store.getState().unarchive({ kind: "ids", ids: ["m-00"], machineId: MACHINE });
+    expect(batches().map((r) => r.body)).toEqual([{ sessionIds: ["m-00"], machineId: MACHINE }]);
+
+    fetch.requests.length = 0;
+    store.getState().toggle(local, "l-00");
+    store.getState().toggle(remote, "m-01");
+    await store.getState().unarchive({ kind: "selection" });
+    expect(batches().map((r) => r.body)).toEqual([
+      { sessionIds: ["l-00"] },
+      { sessionIds: ["m-01"], machineId: MACHINE },
+    ]);
+    expect(rows.map((s) => s.sessionId).sort()).toEqual(["l-01", "m-02", "n-00", "n-01"]);
+
+    // The machine counted the group by its own clock; the batch is pinned to that time.
+    fetch.requests.length = 0;
+    store.getState().toggleGroup(groupKey({ projectId: "p", workspace: "/n", machineId: MACHINE }));
+    await store.getState().remove({ kind: "selection" });
+    expect(batches().map((r) => r.body)).toEqual([
+      { filter: { projectId: "p", workspace: "/n", until: MACHINE_AS_OF }, machineId: MACHINE },
+    ]);
+    expect(rows.map((s) => s.sessionId).sort()).toEqual(["l-01", "m-02"]);
+  });
+
+  it("reads itself again for a machine's archive event, and redraws a machine row's run state", async () => {
+    vi.useFakeTimers();
+    rows = machineRun("m", "/a", 2);
+    const store = createArchiveStore();
+    await store.getState().load(ALL);
+    fetch.requests.length = 0;
+    const relayed = (event: ServerEvent): ServerEvent => ({
+      type: "machine_event",
+      machineId: MACHINE,
+      event,
+    });
+    store.getState().noteEvent(
+      relayed({
+        type: "session_state",
+        sessionId: "m-01",
+        projectId: "p",
+        state: "running",
+        lastActiveAt: new Date(Date.UTC(2026, 9, 11, 10, 0)).toISOString(),
+        hasTrace: true,
+      }),
+    );
+    expect(
+      shownRows(
+        store
+          .getState()
+          .rows.get(groupKey({ projectId: "p", workspace: "/a", machineId: MACHINE })),
+      ).map((s) => s.status),
+    ).toEqual(["idle", "running"]);
+    await vi.advanceTimersByTimeAsync(ARCHIVE_REFRESH_DELAY_MS);
+    expect(fetch.requests).toEqual([]);
+
+    store
+      .getState()
+      .noteEvent(relayed({ type: "session_deleted", sessionId: "m-00", projectId: "p" }));
+    await vi.advanceTimersByTimeAsync(ARCHIVE_REFRESH_DELAY_MS);
+    await vi.runAllTimersAsync();
+    expect(paths().filter((p) => p.endsWith("/groups"))).toHaveLength(1);
   });
 });

@@ -51,17 +51,21 @@ import {
   KeyValue,
   KeyValueRow,
   LogView,
+  MachineStatusPill,
+  MachineToolbar as MachineToolbarView,
   Modal,
+  Notice,
   NoticeStrip,
   RuledSection,
   Spinner,
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
+import { dismissNotice, envOnlyNoticeId, useNoticeDismissed } from "../../lib/notice-dismissals";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
-import { DOT_TONE, jobMoving } from "./machine-card";
 import {
   configSyncView,
+  envOnlyItems,
   jobView,
   machineChip,
   machineFacts,
@@ -114,6 +118,14 @@ export interface MachineDetailBodyProps {
   noImage: boolean;
   /** The clock the reconnecting streak and the last check are measured from. */
   now?: number;
+  /**
+   * Whether the person closed the "keys from the environment" notice over what it names now:
+   * shown when false (the default), hidden when true, and hidden while unknown (null), so a
+   * closed notice never flashes in.
+   */
+  envOnlyDismissed?: boolean | null;
+  /** Closes that notice; without it the notice has no close cross. */
+  onDismissEnvOnly?: () => void;
   onAct: (verb: MachineVerb) => void;
 }
 
@@ -135,29 +147,11 @@ function MachineTile() {
 }
 
 /**
- * The state as one chip in its tone: the glyph — a spinner for a working machine — then the word.
- * The glyph is information, not decoration: it is the shape that tells apart two states sharing a
- * tone. The reason rides on the glyph, which shows no text of its own: the tooltip layer shows a
- * hint only where its words are not already on screen, so on the word it would never open.
+ * The state as the shared status pill, the one the machine's card wears: the glyph — a spinner for
+ * a machine that is working or coming back — then the word, the reason on the pill's hover.
  */
 function StatusChip({ chip }: { chip: MachineChip }) {
-  return (
-    <Badge variant="soft" tone={DOT_TONE[chip.tone]}>
-      <span
-        className="inline-flex"
-        {...(chip.reason === null
-          ? {}
-          : { "data-tooltip": chip.reason, "data-tooltip-content": "text" })}
-      >
-        {chip.glyph === null ? (
-          <Spinner size="xs" tone="success" label={chip.word} />
-        ) : (
-          <GlyphIcon d={chip.glyph} size={ICON_SIZE.inlineGlyph} className={toneInk[chip.tone]} />
-        )}
-      </span>
-      <span className="ml-1">{chip.word}</span>
-    </Badge>
-  );
+  return <MachineStatusPill state={chip.state} label={chip.word} reason={chip.reason} />;
 }
 
 /**
@@ -389,48 +383,48 @@ function CheckList({ lines, alias }: { lines: readonly CheckLine[]; alias: strin
 }
 
 /**
- * The toolbar: the verbs in one row of flat buttons, the primary one first in the primary look,
- * wrapping where the row does not fit; a request in flight greys every one. No rule above or below
- * it: the spacing around the row is what sets it apart. `data-verb` names each for whatever reads
- * the markup.
+ * The toolbar: the shared `MachineToolbar` — the verbs in one row of flat buttons, a request in
+ * flight greying every one — with each button asking the page for its verb, and `note`, the one
+ * sentence saying why the greyed verbs wait, under it.
  */
 export function MachineToolbar({
   items,
   busy,
+  note = null,
   onAct,
 }: {
   items: readonly ToolbarItem[];
   busy: boolean;
+  note?: string | null;
   onAct: (verb: MachineVerb) => void;
 }) {
   return (
-    <div
-      role="toolbar"
-      aria-label={S.machines.detail.toolbar.label}
-      className="flex flex-wrap items-center gap-1"
-    >
-      {items.map((item) => (
-        <Button
-          key={item.verb}
-          size="sm"
-          variant={item.primary ? "primary" : "ghost"}
-          data-verb={item.verb}
-          disabled={busy || item.held !== null}
-          onClick={() => onAct(VERB_OF[item.verb])}
-        >
-          <GlyphIcon d={item.glyph} size={ICON_SIZE.inlineGlyph} />
-          {item.label}
-        </Button>
-      ))}
-    </div>
+    <MachineToolbarView
+      items={items.map((item) => ({ ...item, held: item.held !== null }))}
+      label={S.machines.detail.toolbar.label}
+      busy={busy}
+      note={note}
+      onAct={(verb: ToolbarVerb) => onAct(VERB_OF[verb])}
+    />
   );
 }
 
 /**
  * The last config sync: one quiet line — a check, or the danger cross on a failure, beside the
- * words — and, when the sync left anything behind, one attention notice saying what and why.
+ * words — and, when the sync left anything behind, attention notices saying what and why: the
+ * shared notice for the model keys only this server's environment holds, which the person may
+ * close (as the initial-password banner can be) and which comes back when another such key
+ * appears, and the models the machine would not take.
  */
-function ConfigSync({ view }: { view: ConfigSyncView }) {
+function ConfigSync({
+  view,
+  envOnlyDismissed = false,
+  onDismissEnvOnly,
+}: {
+  view: ConfigSyncView;
+  envOnlyDismissed?: boolean | null;
+  onDismissEnvOnly?: () => void;
+}) {
   const c = S.machines.detail.configSync;
   return (
     <>
@@ -445,23 +439,29 @@ function ConfigSync({ view }: { view: ConfigSyncView }) {
         />
         <span className="min-w-0 break-words whitespace-pre-line">{view.line}</span>
       </p>
-      {(view.envOnly || view.skipped.length > 0) && (
+      {view.envOnly && envOnlyDismissed === false && (
+        <Notice
+          tone="attention"
+          className="mt-3"
+          {...(onDismissEnvOnly !== undefined ? { dismiss: { onClick: onDismissEnvOnly } } : {})}
+        >
+          <span data-env-only="">{c.envOnly}</span>
+        </Notice>
+      )}
+      {view.skipped.length > 0 && (
         <NoticeStrip
           tone="attention"
           data-config-sync-notice=""
-          className="mt-3 space-y-2 rounded-md border px-3 py-2 text-sm"
+          className="mt-3 rounded-md border px-3 py-2 text-sm"
         >
-          {view.envOnly && <p data-env-only="">{c.envOnly}</p>}
-          {view.skipped.length > 0 && (
-            <div data-skipped="">
-              <p>{c.skippedTitle}</p>
-              <ul className="mt-1 list-disc space-y-1 pl-5 break-words">
-                {view.skipped.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <div data-skipped="">
+            <p>{c.skippedTitle}</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5 break-words">
+              {view.skipped.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
         </NoticeStrip>
       )}
     </>
@@ -478,6 +478,8 @@ export function MachineDetailBody({
   busy,
   noImage,
   now = Date.now(),
+  envOnlyDismissed = false,
+  onDismissEnvOnly,
   onAct,
 }: MachineDetailBodyProps) {
   const m = S.machines;
@@ -520,14 +522,20 @@ export function MachineDetailBody({
         </div>
         {toolbar.items.length > 0 && (
           <div>
-            <MachineToolbar items={toolbar.items} busy={busy} onAct={onAct} />
             {/* Why the greyed verbs wait, once, in words — never on a hover the reader has to find. */}
-            {toolbar.sentence !== null && (
-              <p data-held="" className="mt-1.5 text-xs text-fg-muted">
-                {toolbar.sentence}
-              </p>
+            <MachineToolbar
+              items={toolbar.items}
+              busy={busy}
+              note={toolbar.sentence}
+              onAct={onAct}
+            />
+            {configSync !== null && (
+              <ConfigSync
+                view={configSync}
+                envOnlyDismissed={envOnlyDismissed}
+                {...(onDismissEnvOnly !== undefined ? { onDismissEnvOnly } : {})}
+              />
             )}
-            {configSync !== null && <ConfigSync view={configSync} />}
           </div>
         )}
       </div>
@@ -704,6 +712,11 @@ export function MachineDetailDialog({
 }) {
   const { alias, local } = body.machine;
   const [host, setHost] = useState<SshHostResponse | null>(null);
+  // The "keys from this server's environment" notice, closed per account and per machine over
+  // the keys it names (lib/notice-dismissals.ts).
+  const envOnly = envOnlyItems(body.machine);
+  const envOnlyId = envOnlyNoticeId(body.machine.id);
+  const envOnlyDismissed = useNoticeDismissed(envOnlyId, envOnly);
   useEffect(() => {
     setHost(null);
     if (local) return;
@@ -729,7 +742,13 @@ export function MachineDetailDialog({
   }, []);
   return (
     <Modal open title={alias} onClose={onClose} widthClass="sm:max-w-3xl">
-      <MachineDetailBody {...body} host={host} now={Date.now()} />
+      <MachineDetailBody
+        {...body}
+        host={host}
+        now={Date.now()}
+        envOnlyDismissed={envOnlyDismissed}
+        onDismissEnvOnly={() => dismissNotice(envOnlyId, envOnly)}
+      />
     </Modal>
   );
 }

@@ -134,6 +134,7 @@ import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, sameModelRef, turnPricing } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { useMemoryListing } from "./use-memory-listing";
+import { useMachineModels } from "../../lib/machine-models";
 import { deletedChangeKeys } from "./memory-nav";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
@@ -250,6 +251,16 @@ export const parkedDraftIdOf = (routeSessionId: string | null): string | null =>
  */
 const STAT_PATHS_PER_REQUEST = 100;
 
+/**
+ * An Agent's settings page, on one tab: this server's Agent, or with `machineId` the Agent of
+ * that id on that machine, which the page reads and writes over there (`?machine=`).
+ */
+function agentPagePath(agentId: string, machineId: string | null, tab: string): string {
+  const params = new URLSearchParams();
+  if (machineId !== null) params.set("machine", machineId);
+  params.set("tab", tab);
+  return `/agents/${encodeURIComponent(agentId)}?${params.toString()}`;
+}
 export function ChatPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -286,7 +297,8 @@ export function ChatPage() {
   const [credentialGuide, setCredentialGuide] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
-  const [models, setModels] = useState<ModelsResponse | null>(null);
+  /** This server's model configuration for the Project (the page's own while it acts here). */
+  const [localModels, setLocalModels] = useState<ModelsResponse | null>(null);
   // Background processes the conversation started (the details popover list), refreshed by
   // the polling effect below; procBusy marks the rows whose Stop / Remove requests are in
   // flight (every exited row at once while "clear exited" runs).
@@ -502,6 +514,13 @@ export function ChatPage() {
     : selected === null
       ? null
       : machineForSession(selected.sessionId);
+  /**
+   * The models this page offers and prices by: those of the server it acts on. A draft whose
+   * workspace is on a machine creates its Session over there, and a conversation on a machine
+   * runs there — either way the machine's own models are the ones it can take.
+   */
+  const machineModels = useMachineModels(projectId, pageMachineId);
+  const models = pageMachineId === null ? localModels : machineModels;
   const returnWorkbench = (
     location.state as {
       workbench?: { projectId: string; agentId: string; tabId: string; machineId: string | null };
@@ -637,10 +656,12 @@ export function ChatPage() {
   const sessionMemoryChanges = memoryChangesRef.current;
   // The Agent's memory listing, fetched once the Memory tab exists (its body is mounted
   // even behind another tab) or this conversation has changes to mark; shared by the
-  // Memory panel and the card's deleted-row marking.
+  // Memory panel and the card's deleted-row marking. Read from the machine the conversation
+  // is on: its Agent is that machine's, and so is its memory.
   const memoryListing = useMemoryListing(
     projectId,
     selected?.agentId ?? null,
+    selected === null ? null : machineForSession(selected.sessionId),
     panelDock("memory") !== null || sessionMemoryChanges.length > 0,
     sessionMemoryChanges,
   );
@@ -667,6 +688,13 @@ export function ChatPage() {
   // causing the new chat to end up created on the old Agent.
   const selectedSessionId = selected?.sessionId ?? null;
   const selectedAgentId = selected?.agentId ?? null;
+  /**
+   * The machine the selected Session's Agent lives on (null: this server). A Session on a
+   * machine runs that machine's Agent: its settings — the thinking level and compaction threshold
+   * the composer shows and edits, the settings page it links to — are that Agent's, read and
+   * written over there. The same id on this server is another Agent.
+   */
+  const selectedAgentMachine = selected === null ? null : machineForSession(selected.sessionId);
   // The thinking level pinned on THIS Session, read straight off the Session row
   // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
   // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
@@ -749,7 +777,7 @@ export function ChatPage() {
   useEffect(() => {
     setAgentThinkingLevel("");
     setCompactionLimit(undefined);
-  }, [projectId, selectedAgentId]);
+  }, [projectId, selectedAgentId, selectedAgentMachine]);
   // Re-read on focus as well as on an Agent switch: the threshold is edited on another page, so
   // the value this composer holds can go stale under it. Routing to the settings page and back
   // remounts this page and refetches anyway; the focus listener covers the other tab editing the
@@ -765,7 +793,7 @@ export function ChatPage() {
     if (!projectId || !selectedAgentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, selectedAgentId)
+      .getAgentConfig(projectId, selectedAgentId, selectedAgentMachine)
       .then((res) => {
         if (cancelled) return;
         setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
@@ -775,7 +803,7 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedAgentId, agentConfigTick]);
+  }, [projectId, selectedAgentId, selectedAgentMachine, agentConfigTick]);
   /**
    * Commits the threshold the context panel's cutter proposed, then re-reads the Agent config
    * this page holds so the ring, the cutter and the small-window notice all move together.
@@ -789,9 +817,12 @@ export function ChatPage() {
     async (maxContextLength: number): Promise<void> => {
       if (!projectId || !selectedAgentId) return;
       try {
-        await api.putAgentConfig(projectId, selectedAgentId, {
-          config: { compaction: { maxContextLength } },
-        });
+        await api.putAgentConfig(
+          projectId,
+          selectedAgentId,
+          { config: { compaction: { maxContextLength } } },
+          selectedAgentMachine,
+        );
       } catch (e) {
         toastError(apiErrorText(e));
         throw e;
@@ -800,7 +831,7 @@ export function ChatPage() {
       setAgentConfigTick((n) => n + 1);
       toastSuccess(S.chat.contextThresholdSaved(humanizeTokens(maxContextLength)));
     },
-    [projectId, selectedAgentId],
+    [projectId, selectedAgentId, selectedAgentMachine],
   );
 
   // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
@@ -1242,7 +1273,7 @@ export function ChatPage() {
     [runProcessAction, exitedIds],
   );
 
-  // Model config (context window + credential guide): fetched once per Project.
+  // This server's model config (context window + credential guide): fetched once per Project.
   //
   // The credential guide **only ever nags once per lifetime** (first entry after registration):
   // gated by the server prefs' credentialGuideSeen — previously it checked "default model has no
@@ -1253,12 +1284,12 @@ export function ChatPage() {
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    setModels(null);
+    setLocalModels(null);
     void (async () => {
       try {
         const res = await api.getModels(projectId);
         if (cancelled) return;
-        setModels(res);
+        setLocalModels(res);
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
         const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
@@ -1288,11 +1319,11 @@ export function ChatPage() {
     const onEvent = (e: Event) => {
       const detail = chatDefaultsChangedDetail(e, projectId);
       if (!detail || detail.defaultModel === undefined) return;
-      setModels(null);
+      setLocalModels(null);
       api
         .getModels(projectId)
         .then((res) => {
-          if (!cancelled) setModels(res);
+          if (!cancelled) setLocalModels(res);
         })
         .catch(() => undefined);
     };
@@ -2065,9 +2096,11 @@ export function ChatPage() {
   const terminalSupported = terminalApiSupported();
 
   // The Memory panel's way to its management: add / edit / delete live on the Agent's
-  // settings page, on the memory tab.
+  // settings page, on the memory tab — the page of the Agent on the machine the conversation
+  // is on.
   const openMemorySettings = useCallback(
-    (memoryAgentId: string) => navigate(`/agents/${memoryAgentId}?tab=memory`),
+    (memoryAgentId: string, machineId: string | null) =>
+      navigate(agentPagePath(memoryAgentId, machineId, "memory")),
     [navigate],
   );
   /**
@@ -2186,7 +2219,9 @@ export function ChatPage() {
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       {...(compactionLimit !== undefined ? { compactionLimit } : {})}
       onChangeCompactionLimit={onChangeCompactionLimit}
-      onOpenAgentSettings={() => navigate(`/agents/${selected.agentId}?tab=runtime`)}
+      onOpenAgentSettings={() =>
+        navigate(agentPagePath(selected.agentId, selectedAgentMachine, "runtime"))
+      }
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}

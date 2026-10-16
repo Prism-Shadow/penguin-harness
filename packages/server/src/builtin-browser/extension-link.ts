@@ -11,7 +11,8 @@
  *
  * - The server speaks first: `hello`. The extension answers `{ version: 1, backend: "chrome",
  *   extension: { version, chrome, name } }`; another version or backend is closed 4005, and no
- *   answer within the hello timeout 4008. Until then the link is not `connected`.
+ *   answer within the hello timeout 4008. Until then — and until the connect listeners have run,
+ *   the tab list refreshed among them — the link is not `connected`.
  * - `ping` every 20 s, answered `{}`: Chrome keeps an extension's service worker alive while a
  *   WebSocket carries traffic. Any frame from the extension counts as a sign of life; two pings
  *   without one close the socket 4008.
@@ -107,6 +108,8 @@ interface Pending {
 interface Attachment {
   socket: ExtensionSocket;
   hello: BrowserHello | null;
+  /** Answered hello, and the connect listeners have run: what `connected` means. */
+  ready: boolean;
   handshake: Promise<boolean>;
   pingTimer: NodeJS.Timeout | null;
   /** Pings in a row that went unanswered with no other frame in between. */
@@ -133,9 +136,12 @@ export class ExtensionLink implements BrowserLink {
     this.timing = { ...DEFAULT_EXTENSION_LINK_TIMING, ...timing };
   }
 
-  /** Whether an extension is connected and has answered `hello`. */
+  /**
+   * Whether an extension is connected: it answered `hello` and the connect listeners have run.
+   * Between the two the tab list is still the one from before, which nothing may read as live.
+   */
   get connected(): boolean {
-    return this.current?.hello != null;
+    return this.current?.ready === true;
   }
 
   /** The connected extension's hello; null while none is. */
@@ -161,6 +167,7 @@ export class ExtensionLink implements BrowserLink {
     const attachment: Attachment = {
       socket,
       hello: null,
+      ready: false,
       handshake: Promise.resolve(false),
       pingTimer: null,
       missed: 0,
@@ -217,10 +224,13 @@ export class ExtensionLink implements BrowserLink {
     });
   }
 
-  /** True once the attached extension has answered `hello`; false while no socket is attached. */
+  /**
+   * True once the attached extension has answered `hello` and the connect listeners have run;
+   * false while no socket is attached.
+   */
   handshake(_force = false): Promise<boolean> {
     if (this.current === null) return Promise.resolve(false);
-    if (this.current.hello !== null) return Promise.resolve(true);
+    if (this.current.ready) return Promise.resolve(true);
     return this.current.handshake;
   }
 
@@ -277,7 +287,9 @@ export class ExtensionLink implements BrowserLink {
         // A listener's failure (a tab refresh that timed out) does not undo the handshake.
       }
     }
-    return this.current === attachment;
+    if (this.current !== attachment) return false;
+    attachment.ready = true;
+    return true;
   }
 
   private ping(attachment: Attachment): void {

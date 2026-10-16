@@ -59,18 +59,6 @@ export const CONTEXT_MENU_ACTIONS: readonly SessionRowAction[] = [
 ];
 
 /**
- * The actions a row offers on one surface: all of them, but archive on a Session that lives on a
- * connected machine. The archive page lists this server's Sessions only, so such a Session, once
- * archived, would have no way back in the UI; it is offered again once that page lists machines.
- */
-export function rowActionsFor(
-  actions: readonly SessionRowAction[],
-  onMachine: boolean,
-): readonly SessionRowAction[] {
-  return onMachine ? actions.filter((action) => action !== "archive") : actions;
-}
-
-/**
  * A company desk row's menu (features/company/org-session-groups.tsx). A desk's title and its
  * lifecycle belong to the organization — the employee names it, hiring and firing open and
  * close it — so rename, archive, delete and pin are not its reader's to run. What is left is
