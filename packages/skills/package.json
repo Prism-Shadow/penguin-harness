@@ -1,0 +1,54 @@
+{
+  "name": "@prismshadow/skills",
+  "version": "0.2.13",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "description": "Checks that a skill directory's SKILL.md parses, with the parser vendored from vercel-labs/skills.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/skills"
+  },
+  "keywords": [
+    "agent-skills",
+    "skill-md",
+    "validate"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "src/vendor/vercel-skills/LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "tsup",
+    "prepack": "tsup && node -e \"require('node:fs').copyFileSync('../../LICENSE','LICENSE')\"",
+    "postpack": "node -e \"require('node:fs').rmSync('LICENSE',{force:true})\""
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.6"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "types": "./dist/index.d.ts"
+  }
+}
