@@ -35,11 +35,22 @@ shared component. Verify the shared change in the gallery and in a representativ
 ### Landing, docs and gallery chrome
 
 Use `@prismshadow/penguin-ui/site` for the shared `SiteHeader`, `SiteNavLinks`,
-`SiteLanguageMenu`, `SiteThemeToggle`, `SiteGitHubLink` and site icons. Import
-`@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors. This entry is
-independent of the app renderer and full theme; public sites do not need the app's bundled fonts
-or Markdown renderer just to render navigation. Their wrappers only adapt routes, labels and
-preferences. Do not restore copied navbar markup, language-menu event handlers or theme cycles.
+`SiteLanguageMenu`, `SiteThemeToggle`, `SiteGitHubLink` and site icons, and for what the sites'
+pages share: `SiteFooter`, `SiteCodeCard`, `SiteCopyButton`, `SitePill`, `SiteMarkdown` (article
+prose with `SiteCodeBlock` and `SiteCodeTabs`; the docs pass `SITE_DOC_REMARK_PLUGINS` and every
+site passes `highlightSiteCode`), `SiteToc` with `useActiveTocEntry`, `SiteSidebarNav`,
+`SiteSearchDialog`, `SiteExternalLink`, the preference providers (`SiteThemeProvider`,
+`SiteLocaleProvider`, the shared `penguin-site.*` keys) and `useRouteScroll`. Import
+`@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors; a site's
+Tailwind entry also imports `site-page.css` (the `dark` variant, the brand scale, the neutral dark
+ramp, body defaults). This entry is independent of the app renderer and full theme; public sites
+do not need the app's bundled fonts just to render a page. Their wrappers only adapt routes,
+labels, content and preferences. Do not restore copied navbar markup, language-menu event
+handlers, theme cycles, footers, copy buttons or Markdown typography in a site package.
+
+A site component is held to the package's de-slop rules like any other: its look lives in
+`site-content.css` or `site-prose.css` on the `--site-*` palette (Tailwind's values, the neutral
+dark ramp), never as palette utilities, `dark:` variants or literal font sizes in its markup.
 
 Public-site controls keep their fixed visual identity through the gallery's theme changes.
 Their shared recipes live in `packages/ui/src/site.css`; landing content, marketing sections and

@@ -4,8 +4,8 @@
  * a post missing the active language falls back to the other one, so the list
  * is always complete in both locales.
  */
-import { parseFrontmatter } from "./frontmatter";
-import type { Locale } from "../state/locale";
+import { parseFrontmatter } from "@prismshadow/penguin-ui/site";
+import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
 
 export type BlogCategory = "news" | "practice" | "perspectives" | "changelog";
 

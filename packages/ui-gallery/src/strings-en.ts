@@ -495,6 +495,11 @@ export const en: GalleryStrings = {
         title: "Avatars",
         description: "The user and agent avatars at their sizes, and a stack of them.",
       },
+      site: {
+        title: "Public site",
+        description:
+          "What the landing page and the docs share: the footer, the code card and copy button, pills, an article's contents, the docs sidebar, search, the external-link confirmation and article prose.",
+      },
       files: {
         title: "Files",
         description:
@@ -979,6 +984,89 @@ export const en: GalleryStrings = {
         { id: "release-notes", name: "Release Notes" },
         { id: "qa", name: "QA" },
       ],
+    },
+    site: {
+      footer: "Footer",
+      footerHint:
+        "The landing page's brand and link columns; the docs' single line of copyright and links.",
+      tagline: "Unified and Stable RSI Framework.",
+      columns: [
+        { title: "Product", links: ["Cases", "Quick start", "Blog", "Download"] },
+        { title: "Resources", links: ["GitHub repository", "Docs", "Gallery"] },
+      ],
+      lineLinks: ["Home", "GitHub repository", "Apache-2.0 License"],
+      copyright: "© 2026 Prism Shadow · Open source under Apache-2.0",
+      code: "Code and copy",
+      codeHint:
+        "A command card carries a copy button; once the text is on the clipboard its icon turns to a check, the label stays, and a screen reader hears Copied.",
+      copy: "Copy",
+      copiedAnnouncement: "Copied",
+      copyMarkdown: "Copy Markdown",
+      copyLink: "Copy page link",
+      pills: "Pills",
+      pillsHint: "A blog post's category and pinned mark: the tone names a kind, not a state.",
+      pillTones: {
+        brand: "Product news",
+        "brand-outline": "Practice",
+        teal: "Perspectives",
+        neutral: "Release notes",
+      },
+      article: "Article",
+      articleHint:
+        "The prose blog posts and doc pages share. Headings carry anchors, fenced code is highlighted, and tab groups and callouts are the docs' Markdown extensions; its contents sit on the right.",
+      articleBody:
+        '## Install\n\nOne command in a terminal installs it:\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### By platform\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- Blocked on first launch\n>\n> Allow it in the system settings.\n\n## Next steps\n\n- Run `penguin web` to open the Web App\n- Back to [Install](#install)\n\n| Command | What it does |\n| --- | --- |\n| `penguin` | Chat in the terminal |\n| `penguin web` | Start the Web App |',
+      toc: "On this page",
+      sidebar: "Docs sidebar",
+      sidebarHint:
+        "Pages by section, sub-pages indented under their parent, the current page in the brand colour; search at the top.",
+      sidebarSections: [
+        {
+          title: "Get started",
+          pages: ["Introduction", "Quickstart", "Key concepts"],
+          children: ["Desktop app", "CLI and Web App"],
+        },
+        { title: "Guides", pages: ["Web App", "Chat"], children: [] },
+      ],
+      search: "Search",
+      searchHint: "Ctrl/⌘ K or the sidebar's button opens it; arrow keys choose, Enter opens.",
+      searchLabels: {
+        open: "Search docs",
+        label: "Search docs",
+        placeholder: "Search titles, sections and text",
+        start: "Type to search every page in this language",
+        noResults: "No matching pages",
+        noResultsHint: "Try a shorter or different word",
+        results: "Search results",
+        close: "Close search",
+        keyboardHint: "Use the arrow keys to select, then press Enter to open",
+      },
+      searchResults: [
+        {
+          title: "Install the CLI",
+          context: "CLI and Web App",
+          snippet: "Run the installer for your platform; it bundles its own Node.js runtime.",
+        },
+        {
+          title: "Offline install",
+          context: "CLI and Web App",
+          snippet: "Download your platform's bundle, extract it and run the installer inside.",
+        },
+        {
+          title: "Install the SDK",
+          context: "SDK",
+          snippet: "In your project directory: npm install @prismshadow/penguin-core.",
+        },
+      ],
+      leave: "External link",
+      leaveHint: "A link that leaves the site asks first, with the full address in the dialog.",
+      leaveLink: "GitHub repository",
+      leaveLabels: {
+        title: "You're about to open an external link",
+        body: "This link goes to a site outside PenguinHarness and opens in a new tab:",
+        cancel: "Cancel",
+        open: "Open link",
+      },
     },
     files: {
       tree: "File tree",

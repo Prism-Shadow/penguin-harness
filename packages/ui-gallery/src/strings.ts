@@ -498,6 +498,11 @@ export const zh = {
           "统计图的基础：所有图表共用的绘图原语、当前主题的图表令牌，以及建立在它们之上的每一种图表——环形图、环形仪表、图例、趋势与用量柱、请求与成功率、迷你折线、轨迹时间线。",
       },
       avatars: { title: "头像", description: "用户头像与智能体头像的各个尺寸，以及头像组。" },
+      site: {
+        title: "公开站点",
+        description:
+          "落地页与文档站共用的组件：页脚、代码卡片与复制按钮、胶囊、文章目录、文档侧栏、搜索、外链确认与文章排版。",
+      },
       files: {
         title: "文件",
         description:
@@ -949,6 +954,87 @@ export const zh = {
         { id: "release-notes", name: "Release Notes" },
         { id: "qa", name: "QA" },
       ] as readonly { id: string; name: string }[],
+    },
+    site: {
+      footer: "页脚",
+      footerHint: "落地页的品牌与链接栏，文档站的一行版权与链接。",
+      tagline: "统一、稳定的 Agent 自进化框架",
+      columns: [
+        { title: "产品", links: ["案例", "快速开始", "博客", "下载"] },
+        { title: "资源", links: ["GitHub 仓库", "文档", "画廊"] },
+      ] as readonly { title: string; links: readonly string[] }[],
+      lineLinks: ["产品主页", "GitHub 仓库", "Apache-2.0 License"] as readonly string[],
+      copyright: "© 2026 Prism Shadow · 基于 Apache-2.0 协议开源",
+      code: "代码与复制",
+      codeHint:
+        "命令卡片带复制按钮；写入剪贴板后图标换成对勾，按钮文字不变，读屏软件播报「已复制」。",
+      copy: "复制",
+      copiedAnnouncement: "已复制",
+      copyMarkdown: "复制 Markdown",
+      copyLink: "复制页面链接",
+      pills: "胶囊",
+      pillsHint: "博客文章的分类与置顶标记：色调表示类别，不表示状态。",
+      pillTones: {
+        brand: "产品动态",
+        "brand-outline": "技术实践",
+        teal: "观点",
+        neutral: "更新日志",
+      },
+      article: "文章",
+      articleHint:
+        "博客文章与文档页共用的排版。标题带锚点，围栏代码块高亮，标签组与提示框是文档的 Markdown 扩展；本页右侧是它的目录。",
+      articleBody:
+        '## 安装\n\n在终端运行一行命令即可安装：\n\n```bash\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n### 按平台\n\n```bash tab="Linux / macOS"\ncurl -fsSL https://penguin.ooo/install.sh | sh\n```\n\n```powershell tab="Windows"\nirm https://penguin.ooo/install.ps1 | iex\n```\n\n> [!INFO]- 首次启动被系统拦下\n>\n> 在系统设置里允许它运行即可。\n\n## 下一步\n\n- 运行 `penguin web` 打开 Web App\n- 回到[安装](#安装)\n\n| 命令 | 作用 |\n| --- | --- |\n| `penguin` | 在终端里对话 |\n| `penguin web` | 启动 Web App |',
+      toc: "本页目录",
+      sidebar: "文档侧栏",
+      sidebarHint: "分节列出页面，子页面缩进在父页面下，当前页以品牌色标出；顶部是搜索入口。",
+      sidebarSections: [
+        {
+          title: "开始",
+          pages: ["产品介绍", "快速开始", "核心概念"],
+          children: ["桌面应用", "命令行与 Web App"],
+        },
+        { title: "使用指南", pages: ["Web App", "对话"], children: [] as readonly string[] },
+      ] as readonly { title: string; pages: readonly string[]; children: readonly string[] }[],
+      search: "搜索",
+      searchHint: "Ctrl/⌘ K 或侧栏顶部的按钮打开；方向键选择，回车打开。",
+      searchLabels: {
+        open: "搜索文档",
+        label: "搜索文档",
+        placeholder: "搜索标题、章节和正文",
+        start: "输入关键词搜索当前语言的全部文档",
+        noResults: "没有找到相关文档",
+        noResultsHint: "请尝试更短或不同的关键词",
+        results: "搜索结果",
+        close: "关闭搜索",
+        keyboardHint: "使用上下方向键选择，按回车打开",
+      },
+      searchResults: [
+        {
+          title: "安装命令行",
+          context: "命令行与 Web App",
+          snippet: "按平台运行安装脚本，安装包自带 Node.js 运行时。",
+        },
+        {
+          title: "离线安装",
+          context: "命令行与 Web App",
+          snippet: "下载对应平台的安装包后解压并运行其中的安装脚本。",
+        },
+        {
+          title: "安装 SDK",
+          context: "SDK",
+          snippet: "在项目目录中运行 npm install @prismshadow/penguin-core。",
+        },
+      ] as readonly { title: string; context: string; snippet: string }[],
+      leave: "外部链接",
+      leaveHint: "离开站点的链接先确认，对话框里显示完整地址。",
+      leaveLink: "GitHub 仓库",
+      leaveLabels: {
+        title: "即将打开外部链接",
+        body: "这个链接指向 PenguinHarness 之外的网站，会在新标签页中打开：",
+        cancel: "取消",
+        open: "继续打开",
+      },
     },
     files: {
       tree: "文件树",

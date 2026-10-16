@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DocPage } from "../src/lib/docs";
-import { parseFrontmatter } from "../src/lib/frontmatter";
+import { parseFrontmatter } from "@prismshadow/penguin-ui/site";
 import { DOC_SLUGS } from "../src/lib/nav";
 import {
   buildSearchRecords,
@@ -12,7 +12,6 @@ import {
   normalizeSearchText,
   searchRecords,
 } from "../src/lib/search";
-import { getSearchShortcutLabel } from "../src/lib/shortcut";
 
 const docs: DocPage[] = [
   {
@@ -276,17 +275,5 @@ describe("docs search", () => {
     const records = buildSearchRecords(docs);
     expect(searchRecords(records, "  ")).toEqual([]);
     expect(searchRecords(records, "does-not-exist")).toEqual([]);
-  });
-});
-
-describe("docs search shortcut", () => {
-  it("uses the Command key label on Apple platforms", () => {
-    expect(getSearchShortcutLabel("MacIntel")).toBe("⌘ K");
-    expect(getSearchShortcutLabel("iPad")).toBe("⌘ K");
-  });
-
-  it("uses the Control key label on non-Apple platforms", () => {
-    expect(getSearchShortcutLabel("Win32")).toBe("Ctrl K");
-    expect(getSearchShortcutLabel("Linux x86_64")).toBe("Ctrl K");
   });
 });

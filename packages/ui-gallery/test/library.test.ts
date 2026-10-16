@@ -63,6 +63,7 @@ describe("the library's topics", () => {
       "streaming",
       "charts",
       "avatars",
+      "site",
       "files",
       "content",
       "layout",
