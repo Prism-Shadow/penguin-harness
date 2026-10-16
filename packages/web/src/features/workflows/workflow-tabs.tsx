@@ -30,6 +30,7 @@ import {
   type WorkflowTab,
   type WorkflowUpdatedDetail,
 } from "../../lib/workflow-tabs";
+import { isSafeMode, useSafeMode } from "../../rescue/safe-mode";
 import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
 import { localizedText } from "../chat/skill-use";
@@ -40,6 +41,7 @@ export function useWorkflowTabs(
   agentId: string | null,
   machineId: string | null = null,
 ) {
+  const safe = useSafeMode();
   const [tabs, setTabs] = useState<WorkflowTab[]>([]);
   const [notices, setNotices] = useState<WorkflowNotice[]>([]);
   const [active, setActiveRaw] = useState<string | null>(null);
@@ -50,20 +52,20 @@ export function useWorkflowTabs(
   const asked = useRef(0);
   const refresh = useCallback(async () => {
     const mine = ++asked.current;
-    if (projectId === null || agentId === null) {
+    if (safe || projectId === null || agentId === null) {
       setTabs([]);
       setNotices([]);
       return;
     }
     try {
       const res = await api.getWorkflows(projectId, agentId, machineId);
-      if (asked.current !== mine) return;
+      if (asked.current !== mine || isSafeMode()) return;
       setTabs(workflowTabsOf(res.workflows, machineId));
       setNotices(workflowNoticesOf(res.workflows));
     } catch {
       // The strip is a convenience over the chat: a failed list leaves it as it was.
     }
-  }, [projectId, agentId, machineId]);
+  }, [safe, projectId, agentId, machineId]);
 
   useEffect(() => {
     setActiveRaw(null);
@@ -79,7 +81,9 @@ export function useWorkflowTabs(
     return () => window.removeEventListener(WORKFLOW_UPDATED_EVENT, onUpdated);
   }, [projectId, agentId, refresh]);
 
-  const settled = settleActiveTab(active, tabs);
+  const visibleTabs = safe ? [] : tabs;
+  const visibleNotices = safe ? [] : notices;
+  const settled = settleActiveTab(active, visibleTabs);
   // A tab that is gone is forgotten, not merely filtered: kept, the raw id would pull the
   // frame back over the chat the moment a workflow of the same id reappears — which is what
   // an Agent rewriting its folder (delete, then write) looks like from here.
@@ -87,7 +91,14 @@ export function useWorkflowTabs(
     if (active !== null && settled === null) setActiveRaw(null);
   }, [active, settled]);
   const activeTab = settled === null ? null : (tabs.find((t) => t.tabId === settled) ?? null);
-  return { tabs, notices, active: settled, activeTab, setActive: setActiveRaw, refresh };
+  return {
+    tabs: visibleTabs,
+    notices: visibleNotices,
+    active: settled,
+    activeTab,
+    setActive: setActiveRaw,
+    refresh,
+  };
 }
 
 /** How long a page that never finishes loading stays hidden before it is shown as it is. */

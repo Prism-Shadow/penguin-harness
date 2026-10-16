@@ -67,6 +67,8 @@ export interface ShortcutCommand {
    * Serialized chords ("Mod+Shift+KeyW"); null = unbound by default. `default` covers every
    * platform without an entry of its own.
    */
+  /** Allows the recovery palette to run over an open dialog or menu. */
+  overDialogs?: true;
   defaults: {
     default: string | null;
     mac?: string | null;

@@ -23,11 +23,13 @@ import {
   type WorkflowTab,
 } from "../../lib/workflow-tabs";
 import { rememberSelection } from "../../state/project";
-import { AppPalette } from "../palette/app-palette";
+import { useSafeMode } from "../../rescue/safe-mode";
+import { usePaletteActions } from "../../lib/palette-actions";
 import { openUserEvents } from "../../api/sse";
 import { WorkflowFrame } from "./workflow-tabs";
 
 export function WorkflowAppPage() {
+  const safe = useSafeMode();
   const params = useParams();
   const projectId = params["projectId"] ?? "";
   const agentId = params["agentId"] ?? "";
@@ -41,6 +43,10 @@ export function WorkflowAppPage() {
   const paletteShortcut = useShortcutLabel("palette.toggle");
 
   useEffect(() => {
+    if (safe) {
+      setTab(null);
+      return;
+    }
     let alive = true;
     const load = async () => {
       try {
@@ -73,7 +79,7 @@ export function WorkflowAppPage() {
       window.removeEventListener(WORKFLOW_UPDATED_EVENT, onUpdated);
       conn.close();
     };
-  }, [projectId, agentId, workflowId, tabKey, machineId]);
+  }, [safe, projectId, agentId, workflowId, tabKey, machineId]);
 
   const exit = useMemo<PaletteAction[]>(
     () => [
@@ -89,6 +95,10 @@ export function WorkflowAppPage() {
     ],
     [projectId, agentId, navigate],
   );
+
+  usePaletteActions(exit);
+
+  if (safe) return <div role="status">{S.rescue.marker}</div>;
 
   return (
     <div className="relative h-full w-full bg-white pt-[env(titlebar-area-height,0px)] dark:bg-gray-950">
@@ -121,7 +131,6 @@ export function WorkflowAppPage() {
           <span>{S.workflows.exitHint(paletteShortcut)}</span>
         </div>
       )}
-      <AppPalette extra={exit} />
     </div>
   );
 }
