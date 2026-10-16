@@ -25,6 +25,7 @@ import {
 import type { ModelProviderInfo, OffPeakDiscount } from "@prismshadow/penguin-core/model-catalog";
 
 import { orderModelGroups } from "./model-group-order";
+import type { PeakWindows } from "../../lib/peak-windows";
 
 /** Paired model reference (same shape as the server DTO's ModelRefDto; a model is always referenced as (provider, modelId)). */
 export interface ModelRefValue {
@@ -222,24 +223,6 @@ export interface DiscountedPrice {
    * Absent otherwise: a row that also runs a promotion is explained as the promotion.
    */
   peak?: PeakWindows;
-}
-
-/**
- * A schedule's peak windows reduced to the parts a sentence about them needs. Each dictionary
- * spells this one digest in its own words, so the explanation follows the schedule a row
- * actually declares; the catalog carries more than one vendor's windows. Both name the zone as
- * Beijing time: every catalog schedule is written in UTC+8, which the catalog's tests pin.
- */
-export interface PeakWindows {
-  /**
-   * The ISO weekdays the windows fall on (1 = Monday … 7 = Sunday), as inclusive runs of
-   * consecutive days: `[[1, 5]]` is Monday to Friday.
-   */
-  days: Array<[number, number]>;
-  /** The runs cover the whole week, so the windows recur daily. */
-  everyDay: boolean;
-  /** The windows on those days, as whole-hour `[start, end)` pairs in Beijing time. */
-  hours: OffPeakDiscount["peakHours"];
 }
 
 /** The digest of one schedule's peak windows (see PeakWindows). */

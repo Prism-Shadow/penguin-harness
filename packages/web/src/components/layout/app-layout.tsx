@@ -31,7 +31,7 @@ import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navKeysFor } from "../../lib/nav-group-collapse";
-import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
+import { navNoteFor, useUpdateBadges } from "../../features/todos";
 import { backgroundStyle, useBackground } from "../../state/background";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";

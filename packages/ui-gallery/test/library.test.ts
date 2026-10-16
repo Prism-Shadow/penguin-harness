@@ -270,7 +270,7 @@ describe("the content board", () => {
   it("highlights through the app's highlighter, handed over by the frame", () => {
     const entry = read("../src/library/main.tsx");
     expect(entry).toMatch(/<CodeHighlighterProvider highlight=\{highlightCode\}>/);
-    expect(entry).toMatch(/from "\.\.\/\.\.\/\.\.\/web\/src\/features\/chat\/code-highlight"/);
+    expect(entry).toMatch(/from "\.\.\/\.\.\/\.\.\/web\/src\/lib\/highlight\/code-highlight"/);
     // KaTeX's sheet comes with the package's Markdown; neither frame reaches into node_modules.
     for (const frame of ["../src/library/main.tsx", "../src/app/main.tsx"]) {
       expect(read(frame)).not.toMatch(/katex\.min\.css/);

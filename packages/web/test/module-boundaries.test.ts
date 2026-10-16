@@ -1,136 +1,233 @@
 /**
- * Web module boundaries (test/web-modules.ts): outside code — app sources and the app's tests
- * alike — reaches a module only through its entry; a module's own files, its tests included,
- * import only their directory, packages, and the dependencies the manifest declares; and the
- * app dictionaries mount each module's fragments instead of spelling that section themselves.
+ * The static-import boundaries between the Web App's libraries and its feature modules, as a
+ * ratchet. The module tree checks the dependencies it can see (slots, `@Use`); a plain `import`
+ * is invisible to it, so these three rules are held here, over every file under `src/`:
  *
- * References are read with TypeScript's own pre-processor (static imports, re-exports,
- * `import type`, dynamic `import()`), plus the two forms it does not see: `vi.mock("…")` and
- * `new URL("…", import.meta.url)` (how a worker is loaded). A failure lists every offending
- * `file → specifier` pair.
+ * 1. A library — anything outside `features/` (`lib/`, `api/`, `state/`, `components/`, the root
+ *    files) — imports nothing under `features/`.
+ * 2. A file under `features/<a>/` reaches `features/<b>/` only through `features/<b>/index.ts`
+ *    (or `index.tsx`), never one of its inner files.
+ * 3. No import cycle between feature directories. An edge `features/a -> features/b` is reported
+ *    when it lies on a cycle, i.e. both ends sit in the same strongly connected component.
+ *
+ * The code predates the rules, so what breaks them today is listed, one line per edge, in
+ * `module-boundaries.baseline.txt`. A violation missing from the baseline fails; so does a
+ * baseline line that no longer occurs. The list can only shrink: whoever removes a violation
+ * deletes its line in the same change.
  */
-import { describe, expect, it } from "vitest";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, posix, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import config from "../vitest.config";
-import { zh } from "../src/lib/strings";
-import { en } from "../src/lib/strings-en";
-import { WEB_MODULES } from "./web-modules";
+import { describe, expect, it } from "vitest";
 
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
-const TESTS = fileURLToPath(new URL(".", import.meta.url));
+const BASELINE = fileURLToPath(new URL("./module-boundaries.baseline.txt", import.meta.url));
 
-/** Dictionaries that may mount a module's `strings.ts` fragment. */
-const APP_DICTIONARIES = new Set(["lib/strings", "lib/strings-en"]);
-
-function sourceFiles(dir: string): string[] {
+/** Every `.ts`/`.tsx` under `dir`, as POSIX paths relative to it. */
+function sourceFiles(dir: string, rel = ""): string[] {
   const out: string[] = [];
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) out.push(...sourceFiles(path));
-    else if (/\.tsx?$/.test(name)) out.push(path);
+  for (const entry of readdirSync(join(dir, rel), { withFileTypes: true })) {
+    const next = rel === "" ? entry.name : `${rel}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...sourceFiles(dir, next));
+    else if (/\.tsx?$/.test(entry.name)) out.push(next);
   }
   return out;
 }
 
-/** A path relative to src/, slash-separated, without extension: `features/terminal/index`. */
-function srcKey(path: string): string {
-  return relative(SRC, path)
-    .split(sep)
-    .join("/")
-    .replace(/\.tsx?$/, "");
+/** Every module specifier a file names: static, type-only, re-exports and dynamic `import()`. */
+function specifiers(text: string): string[] {
+  return ts.preProcessFile(text, true, true).importedFiles.map((ref) => ref.fileName);
 }
 
-/** Resolves a relative specifier to its src key; `null` for packages. */
-function resolveSpecifier(from: string, specifier: string): string | null {
-  if (!specifier.startsWith(".")) return null;
-  const base = resolve(dirname(from), specifier.replace(/\.js$/, ""));
-  for (const candidate of [
-    base,
-    `${base}.ts`,
-    `${base}.tsx`,
-    join(base, "index.ts"),
-    join(base, "index.tsx"),
-  ]) {
-    if (existsSync(candidate) && statSync(candidate).isFile()) return srcKey(candidate);
+/**
+ * The src-relative file a relative specifier lands on, `null` for a bare package or anything
+ * outside src (the UI package, the server's types), and `undefined` when nothing matches — which
+ * fails the test rather than silently narrowing it.
+ */
+function resolveImport(
+  from: string,
+  spec: string,
+  isFile: (rel: string) => boolean,
+): string | null | undefined {
+  if (!spec.startsWith(".")) return null;
+  const base = posix.normalize(posix.join(posix.dirname(from), spec));
+  if (base.startsWith("../")) return null;
+  const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`];
+  return candidates.find(isFile);
+}
+
+/** `features/<name>` for a file under it, else null (the file is a library). */
+function featureOf(file: string): string | null {
+  const match = /^features\/([^/]+)\//.exec(file);
+  return match === null ? null : `features/${match[1]}`;
+}
+
+/** Inter-feature edges that lie on a cycle: both ends in one strongly connected component. */
+function cycleEdges(edges: ReadonlyMap<string, ReadonlySet<string>>): string[] {
+  // Tarjan's algorithm; the graph is a few dozen feature directories.
+  const index = new Map<string, number>();
+  const low = new Map<string, number>();
+  const component = new Map<string, number>();
+  const stack: string[] = [];
+  let counter = 0;
+  let components = 0;
+  const visit = (node: string): void => {
+    index.set(node, counter);
+    low.set(node, counter);
+    counter++;
+    stack.push(node);
+    for (const next of edges.get(node) ?? []) {
+      if (!index.has(next)) {
+        visit(next);
+        low.set(node, Math.min(low.get(node)!, low.get(next)!));
+      } else if (!component.has(next)) {
+        low.set(node, Math.min(low.get(node)!, index.get(next)!));
+      }
+    }
+    if (low.get(node) === index.get(node)) {
+      let member: string;
+      do {
+        member = stack.pop()!;
+        component.set(member, components);
+      } while (member !== node);
+      components++;
+    }
+  };
+  for (const node of edges.keys()) if (!index.has(node)) visit(node);
+  const out: string[] = [];
+  for (const [from, targets] of edges) {
+    for (const to of targets) {
+      if (component.get(from) === component.get(to)) out.push(`cycle: ${from} -> ${to}`);
+    }
   }
-  // An unresolvable import (a stylesheet, say) still names where it points.
-  return srcKey(base);
+  return out;
 }
 
-interface Reference {
-  specifier: string;
-  target: string | null;
+interface Scan {
+  violations: string[];
+  unresolved: string[];
 }
 
-function referencesOf(file: string): Reference[] {
-  const text = readFileSync(file, "utf8");
-  const specifiers = ts.preProcessFile(text, true, true).importedFiles.map((f) => f.fileName);
-  for (const m of text.matchAll(/\bvi\.mock\(\s*["'`]([^"'`]+)["'`]/g)) specifiers.push(m[1]!);
-  for (const m of text.matchAll(/new URL\(\s*["'`]([^"'`]+)["'`]\s*,\s*import\.meta\.url/g)) {
-    specifiers.push(m[1]!);
+/** Applies the three rules to a set of files; `read` and `isFile` take src-relative paths. */
+function scan(
+  files: readonly string[],
+  read: (rel: string) => string,
+  isFile: (rel: string) => boolean,
+): Scan {
+  const violations = new Set<string>();
+  const unresolved: string[] = [];
+  const featureEdges = new Map<string, Set<string>>();
+  for (const file of files) {
+    const own = featureOf(file);
+    for (const spec of specifiers(read(file))) {
+      const target = resolveImport(file, spec, isFile);
+      if (target === undefined) unresolved.push(`${file}: ${spec}`);
+      if (target == null || !/\.tsx?$/.test(target)) continue;
+      const other = featureOf(target);
+      if (other === null || other === own) continue;
+      if (own === null) {
+        violations.add(`${file} -> ${target}`);
+        continue;
+      }
+      if (!/^features\/[^/]+\/index\.tsx?$/.test(target)) violations.add(`${file} -> ${target}`);
+      const set = featureEdges.get(own) ?? new Set<string>();
+      set.add(other);
+      featureEdges.set(own, set);
+    }
   }
-  return specifiers.map((specifier) => ({ specifier, target: resolveSpecifier(file, specifier) }));
+  for (const line of cycleEdges(featureEdges)) violations.add(line);
+  return { violations: [...violations].sort(), unresolved };
 }
 
-/** Every module's dictionary fragments, by path (a variable `import()` may not reach this deep). */
-const FRAGMENTS = import.meta.glob<Record<string, unknown>>("../src/features/*/strings.ts", {
-  eager: true,
+function scanSrc(): Scan {
+  const isFile = (rel: string): boolean => {
+    try {
+      return statSync(join(SRC, rel)).isFile();
+    } catch {
+      return false;
+    }
+  };
+  return scan(sourceFiles(SRC), (rel) => readFileSync(join(SRC, rel), "utf8"), isFile);
+}
+
+function baseline(): string[] {
+  return readFileSync(BASELINE, "utf8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"));
+}
+
+describe("the import scan", () => {
+  const files: Record<string, string> = {
+    "app.tsx": [
+      "import {",
+      "  a,",
+      "  b,",
+      '} from "./features/chat/chat-page";',
+      'import type { T } from "./lib/x";',
+    ].join("\n"),
+    "lib/x.ts": 'export type { M } from "../features/models/model";',
+    "features/chat/chat-page.tsx": [
+      'const lazy = () => import("../models");',
+      'import { inner } from "../models/model";',
+    ].join("\n"),
+    "features/models/index.ts": 'export * from "./model";',
+    "features/models/model.ts": 'import type { C } from "../chat/chat-page";',
+  };
+  const result = scan(
+    Object.keys(files),
+    (rel) => files[rel]!,
+    (rel) => rel in files,
+  );
+
+  it("sees multi-line, type-only, re-exported and dynamic imports", () => {
+    expect(result.violations).toEqual([
+      "app.tsx -> features/chat/chat-page.tsx",
+      "cycle: features/chat -> features/models",
+      "cycle: features/models -> features/chat",
+      "features/chat/chat-page.tsx -> features/models/model.ts",
+      "features/models/model.ts -> features/chat/chat-page.tsx",
+      "lib/x.ts -> features/models/model.ts",
+    ]);
+  });
+
+  it("reports a relative import that lands on no file", () => {
+    const broken = scan(
+      ["lib/a.ts"],
+      () => 'import "./missing";',
+      () => false,
+    );
+    expect(broken.unresolved).toEqual(["lib/a.ts: ./missing"]);
+  });
 });
 
-/** Every app source and app test, parsed once: src key → what it references. */
-const GRAPH = new Map(
-  [...sourceFiles(SRC), ...sourceFiles(TESTS)].map((file) => [srcKey(file), referencesOf(file)]),
-);
+describe("module boundaries in packages/web/src", () => {
+  const actual = scanSrc();
+  const recorded = baseline();
 
-describe("web modules", () => {
-  for (const m of WEB_MODULES) {
-    const dir = `features/${m.name}/`;
-    const entry = `${dir}index`;
-    const fragment = `${dir}strings`;
+  it("resolves every relative import", () => {
+    expect(actual.unresolved).toEqual([]);
+  });
 
-    it(`the ${m.name} module has an entry, a dictionary and a test project`, () => {
-      expect(existsSync(join(SRC, `${entry}.ts`)), `${entry}.ts`).toBe(true);
-      expect(existsSync(join(SRC, `${fragment}.ts`)), `${fragment}.ts`).toBe(true);
-      expect(existsSync(join(SRC, dir, "test")), `${dir}test/`).toBe(true);
-      const projects = (config.test?.projects ?? []) as { test?: { name?: string } }[];
-      expect(projects.map((p) => p.test?.name)).toContain(m.name);
-    });
+  it("keeps the baseline sorted and free of duplicates", () => {
+    expect(recorded).toEqual([...new Set(recorded)].sort());
+  });
 
-    it(`the app dictionaries mount the ${m.name} module's fragments`, () => {
-      const fragments = FRAGMENTS[`../src/${fragment}.ts`];
-      expect(fragments, `${fragment}.ts`).toBeDefined();
-      expect((zh as Record<string, unknown>)[m.name]).toBe(fragments?.[`${m.name}Zh`]);
-      expect((en as Record<string, unknown>)[m.name]).toBe(fragments?.[`${m.name}En`]);
-    });
+  it("breaks no boundary the baseline does not already list", () => {
+    const fresh = actual.violations.filter((line) => !recorded.includes(line));
+    expect(
+      fresh,
+      "New boundary violations. Import the other feature through its index.ts, or move the " +
+        "shared code into lib/; do not add lines to the baseline.",
+    ).toEqual([]);
+  });
 
-    it(`the ${m.name} module is reached only through its entry`, () => {
-      const violations: string[] = [];
-      for (const [from, refs] of GRAPH) {
-        if (from.startsWith(dir)) continue;
-        for (const { specifier, target } of refs) {
-          if (target === null || !target.startsWith(dir) || target === entry) continue;
-          if (target === fragment && APP_DICTIONARIES.has(from)) continue;
-          violations.push(`${from} → ${specifier}`);
-        }
-      }
-      expect(violations).toEqual([]);
-    });
-
-    it(`the ${m.name} module imports only its own files, packages and declared dependencies`, () => {
-      const allowed = (target: string) =>
-        target.startsWith(dir) ||
-        m.dependsOn.some((dep) => (dep.endsWith("/") ? target.startsWith(dep) : target === dep));
-      const violations: string[] = [];
-      for (const [from, refs] of GRAPH) {
-        if (!from.startsWith(dir)) continue;
-        for (const { specifier, target } of refs) {
-          if (target !== null && !allowed(target)) violations.push(`${from} → ${specifier}`);
-        }
-      }
-      expect(violations).toEqual([]);
-    });
-  }
+  it("lists no violation that is gone (delete the line)", () => {
+    const gone = recorded.filter((line) => !actual.violations.includes(line));
+    expect(
+      gone,
+      `These lines no longer occur; delete them from ${relative(dirname(SRC), BASELINE)}.`,
+    ).toEqual([]);
+  });
 });

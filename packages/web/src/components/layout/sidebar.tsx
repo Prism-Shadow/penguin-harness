@@ -210,7 +210,7 @@ import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { UserMenu } from "./user-menu";
 import { PinnedBalanceBadge } from "../../features/models/group-balance";
 import { isCurrentPath, renderRouterLink } from "./router-link";
-import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
+import { navNoteFor, useUpdateBadges } from "../../features/todos";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useProjectSchedules } from "../../features/schedules/schedule-store";
 import { useCompany } from "../../state/company";

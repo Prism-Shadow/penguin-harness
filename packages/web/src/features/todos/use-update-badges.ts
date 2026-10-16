@@ -19,11 +19,11 @@
  * `use-project-todos.ts` does not even make that request).
  */
 import { useMemo } from "react";
-import { S } from "./strings";
-import { useUpdateFlow } from "./use-update-flow";
-import { useVersionInfo } from "./use-version-info";
-import { badgeNote, softwareUpdate } from "./update-badges";
-import type { BadgeSource, SoftwareUpdate, UpdateBadgeNote } from "./update-badges";
+import { S } from "../../lib/strings";
+import { useUpdateFlow } from "../../lib/use-update-flow";
+import { useVersionInfo } from "../../lib/use-version-info";
+import { badgeNote, softwareUpdate } from "../../lib/update-badges";
+import type { BadgeSource, SoftwareUpdate, UpdateBadgeNote } from "../../lib/update-badges";
 import {
   kernelUpdateTodo,
   pluginUpdateTodo,
@@ -34,8 +34,8 @@ import {
 import type { Todo, TodoKey } from "./todo-badges";
 import { useTodoDismissals } from "./todo-dismissals";
 import { useProjectTodos } from "./use-project-todos";
-import { catalogDelta } from "../features/models/catalog-sync";
-import { useProject } from "../state/project";
+import { catalogDelta } from "../models/catalog-sync";
+import { useProject } from "../../state/project";
 
 /** The nav routes that can carry a dot, and what each one's dot leads to. */
 export type BadgedRoute = "/agents" | "/plugins" | "/models" | "/usage";

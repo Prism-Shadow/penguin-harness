@@ -23,7 +23,7 @@
  * flag), which is why `setWorkMode` is the single handler both mode switches call.
  *
  * The chosen mode and the organization last opened are user preferences (`workMode`,
- * `lastOrgKey` in ui_prefs) mirrored into localStorage (lib/work-mode.ts) so a reload stands
+ * `lastOrgKey` in ui_prefs) mirrored into localStorage (features/company/work-mode.ts) so a reload stands
  * in the right mode before the preferences arrive; the stored copy wins once it does — unless
  * the mode was already chosen in this load. A route claims its mode when it is entered (an
  * organization route company mode, a conversation of the user's own development mode), and a
@@ -89,7 +89,7 @@ import {
   initialWorkMode,
   storeLastOrgKey,
   storeWorkMode,
-} from "../lib/work-mode";
+} from "../features/company/work-mode";
 import { useAuth } from "./auth";
 import { useOrgPages } from "../features/company/use-org-pages";
 import { useProject } from "./project";

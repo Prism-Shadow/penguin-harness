@@ -185,9 +185,7 @@ import {
 } from "./model-group-pins";
 import type { ModelGroupPins } from "./model-group-pins";
 import { clearDraftModelRef } from "../chat/draft-cache";
-import { useUpdateBadges } from "../../lib/use-update-badges";
-import { dismissTodo } from "../../lib/todo-dismissals";
-import { refreshProjectTodos } from "../../lib/use-project-todos";
+import { useUpdateBadges, dismissTodo, refreshProjectTodos } from "../todos";
 import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
 import type { PresetSyncHost } from "./preset-sync";
 import { buildImportedRows, groupImportConnection } from "./group-import";

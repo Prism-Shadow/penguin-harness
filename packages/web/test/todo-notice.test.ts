@@ -1,6 +1,6 @@
 /**
  * The shared page notice (the UI package's `TodoNotice`, todo-notice.tsx) and the decisions
- * behind its bulk-update button (lib/bulk-update.ts).
+ * behind its bulk-update button (features/todos/bulk-update.ts).
  *
  * Guard, over every `<TodoNotice>` call site in the source roots (discovered, not listed):
  * - The notice is defined in one place.
@@ -17,8 +17,13 @@
  */
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
-import { bulkOutcome, failedList, firstFailure, noticeCounts } from "../src/lib/bulk-update";
-import type { Todo } from "../src/lib/todo-badges";
+import {
+  bulkOutcome,
+  failedList,
+  firstFailure,
+  noticeCounts,
+} from "../src/features/todos/bulk-update";
+import type { Todo } from "../src/features/todos/todo-badges";
 import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
 /** Web and the shared UI package: the notice's call sites are counted wherever they live. */

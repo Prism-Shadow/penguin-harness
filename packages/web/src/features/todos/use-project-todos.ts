@@ -28,8 +28,8 @@
  */
 import { useEffect, useState } from "react";
 import type { ModelsResponse, UsageErrorsPage } from "@prismshadow/penguin-server/api";
-import * as api from "../api/endpoints";
-import { presetRange } from "../features/usage/usage-controls";
+import * as api from "../../api/endpoints";
+import { presetRange } from "../usage/usage-controls";
 
 /** The unexpected-error probe's window: the cost center's own default preset (see the header). */
 const ERROR_RANGE_PRESET = "7d";

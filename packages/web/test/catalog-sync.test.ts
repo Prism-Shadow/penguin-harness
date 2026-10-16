@@ -20,7 +20,7 @@ import {
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelInfo } from "@prismshadow/penguin-server/api";
 import { catalogDelta } from "../src/features/models/catalog-sync";
-import { presetUpdateTodo } from "../src/lib/todo-badges";
+import { presetUpdateTodo } from "../src/features/todos/todo-badges";
 
 const PRESETS = presetModelEntries();
 const ref = (p: { provider: string; model_id: string }) => `${p.provider}/${p.model_id}`;

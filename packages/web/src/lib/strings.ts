@@ -11,7 +11,7 @@
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
-import type { PeakWindows } from "../features/models/model-grouping";
+import type { PeakWindows } from "./peak-windows";
 import type { ModelGroupSort } from "../features/models/model-sort";
 import type { StartPageSiteId } from "../features/builtin-browser/new-tab-page";
 import { terminalZh } from "../features/terminal/strings";

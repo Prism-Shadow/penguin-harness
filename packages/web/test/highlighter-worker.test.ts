@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
-const CHAT = join(SRC, "features/chat");
+const HIGHLIGHT = join(SRC, "lib/highlight");
 
 /** Every `.ts`/`.tsx` under src/, as [path relative to src, source text]. */
 function sources(dir: string, rel = ""): Array<[string, string]> {
@@ -36,7 +36,7 @@ function sources(dir: string, rel = ""): Array<[string, string]> {
 
 describe("the highlighting worker", () => {
   it("is what the client talks to", () => {
-    const client = readFileSync(join(CHAT, "highlighter.ts"), "utf8");
+    const client = readFileSync(join(HIGHLIGHT, "highlighter.ts"), "utf8");
     // `new URL(…, import.meta.url)` is the form Vite resolves into a bundled worker chunk; a
     // bare string path builds without complaint and 404s at runtime.
     expect(client).toMatch(
@@ -50,16 +50,16 @@ describe("the highlighting worker", () => {
         /^import\s(?!type\s)[^;]*from "@prismshadow\/penguin-ui\/highlighter"/m.test(src),
       )
       .map(([path]) => path);
-    expect(importers).toEqual(["features/chat/highlighter.worker.ts"]);
+    expect(importers).toEqual(["lib/highlight/highlighter.worker.ts"]);
   });
 
   it("leaves the client's own use of the engine dynamic, as its fallback", () => {
-    const client = readFileSync(join(CHAT, "highlighter.ts"), "utf8");
+    const client = readFileSync(join(HIGHLIGHT, "highlighter.ts"), "utf8");
     expect(client).toMatch(/await import\("@prismshadow\/penguin-ui\/highlighter"\)/);
   });
 
   it("is what the app hands the package's code surfaces, loaded on the first block", () => {
-    const hook = readFileSync(join(CHAT, "code-highlight.ts"), "utf8");
+    const hook = readFileSync(join(HIGHLIGHT, "code-highlight.ts"), "utf8");
     expect(hook).toMatch(/import\("\.\/highlighter"\)[\s\S]*highlightToHtml/);
     const app = readFileSync(join(SRC, "app.tsx"), "utf8");
     expect(app).toContain("<CodeHighlighterProvider highlight={highlightCode}>");
