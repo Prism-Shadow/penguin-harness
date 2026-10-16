@@ -127,7 +127,7 @@ describe("identity", () => {
   it("closes on an identity change and opens the next user's on the next call", async () => {
     await openViaReady();
     const h = handlers();
-    socket.stream("/api/events", h, () => ({ close: () => undefined }));
+    socket.stream("/api/events", h);
     socket.identityChanged();
     expect(socket.isOpen()).toBe(false);
     expect(h.errors).toEqual([false]); // the stream is parked, not dropped
@@ -142,7 +142,7 @@ describe("identity", () => {
 describe("streams", () => {
   it("issues the stream as a call, dispatches events by kind, and cancels on close", async () => {
     const h = handlers();
-    const conn = socket.stream("/api/events", h, () => ({ close: () => undefined }));
+    const conn = socket.stream("/api/events", h);
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -164,11 +164,10 @@ describe("streams", () => {
   it("dispatches by event name: heartbeat to nobody, server_event by name, every other name by name too", async () => {
     const h = handlers();
     const named: Array<[string, unknown, string | null]> = [];
-    socket.stream(
-      "/api/projects/p1/machines/events",
-      { ...h, onEvent: (name, data, eventId) => named.push([name, data, eventId]) },
-      () => ({ close: () => undefined }),
-    );
+    socket.stream("/api/projects/p1/machines/events", {
+      ...h,
+      onEvent: (name, data, eventId) => named.push([name, data, eventId]),
+    });
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -193,7 +192,7 @@ describe("streams", () => {
 
   it("treats an unlisted event name as an OmniMessage when the caller supplied no onEvent", async () => {
     const h = handlers();
-    socket.stream("/api/events", h, () => ({ close: () => undefined }));
+    socket.stream("/api/events", h);
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -211,7 +210,7 @@ describe("streams", () => {
 
   it("re-issues a stream after a drop with the last event id, on a fresh socket", async () => {
     const h = handlers();
-    socket.stream("/api/sessions/s1/stream", h, () => ({ close: () => undefined }));
+    socket.stream("/api/sessions/s1/stream", h);
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -238,7 +237,7 @@ describe("streams", () => {
 
   it("re-issues a stream the server ended, and one answered 503, but not one refused", async () => {
     const h = handlers();
-    socket.stream("/server/m1/api/events", h, () => ({ close: () => undefined }));
+    socket.stream("/server/m1/api/events", h);
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -333,7 +332,7 @@ describe("ready", () => {
 describe("robustness", () => {
   it("closes a socket that has gone silent for two beats and brings the streams back", async () => {
     const h = handlers();
-    socket.stream("/api/events", h, () => ({ close: () => undefined }));
+    socket.stream("/api/events", h);
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -352,7 +351,7 @@ describe("robustness", () => {
   });
 
   it("keeps trying a server that is down instead of giving the socket up", async () => {
-    socket.stream("/api/events", handlers(), () => ({ close: () => undefined }));
+    socket.stream("/api/events", handlers());
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -476,7 +475,7 @@ describe("deadlines", () => {
   it("issues a stream again when the server has not opened it in time", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const h = handlers();
-    socket.stream("/api/sessions/s1/stream", h, () => ({ close: () => undefined }));
+    socket.stream("/api/sessions/s1/stream", h);
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -499,7 +498,7 @@ describe("deadlines", () => {
   it("backs a machine stream off on its own while the hub says no socket carries it, and resets once it opens", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const h = handlers();
-    socket.stream("/server/m1/api/events", h, () => ({ close: () => undefined }));
+    socket.stream("/server/m1/api/events", h);
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -533,7 +532,7 @@ describe("deadlines", () => {
 
   it("issues a stream once when a reconnect comes before its own retry", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    socket.stream("/server/m1/api/events", handlers(), () => ({ close: () => undefined }));
+    socket.stream("/server/m1/api/events", handlers());
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -565,12 +564,7 @@ describe("deadlines", () => {
 describe("per-stream heartbeat", () => {
   /** A watched stream, opened and handed a frame so its own deadline is armed. */
   async function watched(h: StreamHandlers): Promise<StreamConnection> {
-    const conn = socket.stream(
-      "/api/projects/p1/machines/events",
-      h,
-      () => ({ close: () => undefined }),
-      { heartbeatMs: 20_000 },
-    );
+    const conn = socket.stream("/api/projects/p1/machines/events", h, { heartbeatMs: 20_000 });
     await Promise.resolve();
     await Promise.resolve();
     last().open();
@@ -631,7 +625,7 @@ describe("per-stream heartbeat", () => {
   it("watches nothing on a stream whose caller asked for no heartbeat", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const quiet = handlers();
-    socket.stream("/api/sessions/s1/stream", quiet, () => ({ close: () => undefined }));
+    socket.stream("/api/sessions/s1/stream", quiet);
     await Promise.resolve();
     await Promise.resolve();
     last().open();
