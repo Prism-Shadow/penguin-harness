@@ -38,6 +38,42 @@ function isVaultEntry(entryPath: string): boolean {
   return path.posix.basename(entryPath.replaceAll("\\", "/")) === VAULT_BASENAME;
 }
 
+/** Resolve only links that survive moving agent_state out of the extracted package. */
+async function packageConfigPath(stateDir: string): Promise<string> {
+  if (!(await fs.lstat(stateDir)).isDirectory()) {
+    throw new Error("agent_state must be a directory, not a symbolic link.");
+  }
+  const parts = ["system_config.yaml"];
+  let current = stateDir;
+  let hops = 0;
+  while (parts.length > 0) {
+    const part = parts.shift()!;
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      if (current === stateDir)
+        throw new Error("Configuration links must stay inside agent_state.");
+      current = path.dirname(current);
+      continue;
+    }
+    const next = path.join(current, part);
+    const entry = await fs.lstat(next);
+    if (entry.isSymbolicLink()) {
+      // Match the existing config writer's 40-hop limit.
+      if (++hops > 40) throw new Error("Too many configuration symbolic links.");
+      const link = await fs.readlink(next);
+      if (path.parse(link).root !== "") {
+        throw new Error("Configuration links must be relative to agent_state.");
+      }
+      parts.unshift(...link.split(process.platform === "win32" ? /[/\\]+/ : /\/+/));
+    } else {
+      current = next;
+      if (parts.length === 0 && entry.isFile()) return path.join(stateDir, "system_config.yaml");
+      if (!entry.isDirectory()) throw new Error("Configuration must resolve to a regular file.");
+    }
+  }
+  throw new Error("Configuration must resolve to a regular file.");
+}
+
 @Component()
 export class SnapshotService implements Snapshots {
   @Use() private readonly paths!: Paths;
@@ -189,13 +225,15 @@ export class SnapshotService implements Snapshots {
         throw badRequest("Import failed: not a valid tar.gz snapshot package.");
       }
 
-      // Validation: the package must contain agent_state/system_config.yaml, and version must be valid.
-      const configPath = path.join(extractDir, "agent_state", "system_config.yaml");
+      const incomingState = path.join(extractDir, "agent_state");
       let parsed: unknown;
       try {
+        const configPath = await packageConfigPath(incomingState);
         parsed = parseYaml(await fs.readFile(configPath, "utf8"));
       } catch {
-        throw badRequest("Import failed: the package is missing agent_state/system_config.yaml.");
+        throw badRequest(
+          "Import failed: agent_state must be a directory containing a readable system_config.yaml; configuration links must be relative and stay inside agent_state.",
+        );
       }
       if (
         parsed === null ||
@@ -228,7 +266,6 @@ export class SnapshotService implements Snapshots {
       // Prepare the vault before swapping directories; snapshots exclude secrets,
       // so a failed rollback must retain the original state in staging.
       const stateDir = agentStateDir(this.root, projectId, agentId);
-      const incomingState = path.join(extractDir, "agent_state");
       let vault: Buffer | null = null;
       try {
         vault = await fs.readFile(agentVaultPath(this.root, projectId, agentId));
@@ -256,7 +293,13 @@ export class SnapshotService implements Snapshots {
       }
       return { version: incoming };
     } finally {
-      if (!preserveStaging) await fs.rm(staging, { recursive: true, force: true });
+      if (!preserveStaging) {
+        try {
+          await fs.rm(staging, { recursive: true, force: true });
+        } catch (error) {
+          console.warn(`Could not remove import staging directory: ${staging}`, error);
+        }
+      }
     }
   }
 }
