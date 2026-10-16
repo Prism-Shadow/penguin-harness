@@ -37,5 +37,12 @@
     },
     "title": "Browser Automation",
     "title_zh": "浏览器自动化"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^3.2.6"
   }
 }

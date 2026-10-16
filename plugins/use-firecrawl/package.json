@@ -36,5 +36,12 @@
     },
     "title": "Firecrawl Search",
     "title_zh": "Firecrawl 搜索"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^3.2.6"
   }
 }

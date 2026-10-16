@@ -37,5 +37,12 @@
     },
     "title": "Humanizer",
     "title_zh": "去 AI 味写作"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^3.2.6"
   }
 }

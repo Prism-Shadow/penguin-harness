@@ -36,5 +36,12 @@
     },
     "title": "Bento Slides",
     "title_zh": "Bento 幻灯片"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@prismshadow/skills": "workspace:*",
+    "vitest": "^3.2.6"
   }
 }
