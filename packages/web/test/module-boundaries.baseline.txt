@@ -8,7 +8,6 @@ cycle: features/agents -> features/plugins
 cycle: features/agents -> features/schedules
 cycle: features/ai-create -> features/chat
 cycle: features/builtin-browser -> features/dock
-cycle: features/builtin-browser -> features/settings
 cycle: features/chat -> features/agents
 cycle: features/chat -> features/ai-create
 cycle: features/chat -> features/builtin-browser

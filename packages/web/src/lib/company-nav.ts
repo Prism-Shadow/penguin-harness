@@ -1,6 +1,6 @@
 /**
  * Company-mode page entries, in rendered order: each key names its route segment, its S.nav
- * label (`S.nav.org.<key>`) and its NAV_ICONS glyph (`NAV_ICONS.org<Key>`). Channels are not
+ * label (`S.nav.org.<key>`) and its glyph (company-nav-icons.ts). Channels are not
  * among them — they are the sidebar's own list, the way conversations are in development
  * mode, and they live under `/channels/:channelId` rather than behind a nav row.
  */

@@ -46,6 +46,8 @@ export { toggleDock } from "./dock-state";
 
 export type { DockPosition } from "./dock-state";
 
+export { setCloseGuard } from "../../lib/dock-close-guard";
+
 export { tabKey } from "./dock-state";
 
 export { launcherHiddenVersion } from "./dock-launcher-state";

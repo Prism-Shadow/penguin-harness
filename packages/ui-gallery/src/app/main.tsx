@@ -19,7 +19,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../../web/src/app";
 import { bootWeb } from "../../../web/src/web-root";
-import { requestSettings } from "../../../web/src/features/settings/settings-request";
+import { requestSettings } from "../../../web/src/lib/settings-request";
 import type { SettingsSectionKey } from "../../../web/src/lib/settings-sections";
 import "./app.css";
 import { parseFrameParams } from "./frame";

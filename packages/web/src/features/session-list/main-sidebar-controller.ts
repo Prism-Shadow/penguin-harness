@@ -1,5 +1,6 @@
 import type {
   MainSidebarProps,
+  SidebarBindingReader,
   SidebarNavSelector,
   SidebarPagesReader,
 } from "../../lib/main-sidebar-bindings";
@@ -28,8 +29,9 @@ export function useMainSidebarController(
   props: MainSidebarProps,
   selectNavPages: SidebarNavSelector,
   readPages: SidebarPagesReader,
+  useBindings: SidebarBindingReader,
 ) {
-  const scope0 = useMainSidebarInputs(props, selectNavPages, readPages);
+  const scope0 = useMainSidebarInputs(props, selectNavPages, readPages, useBindings);
   const scope1 = useMainSidebarSessions(scope0);
   const scope2 = useMainSidebarNavCollapsed(scope1);
   const scope3 = useMainSidebarGroupMode(scope2);
