@@ -22,7 +22,7 @@
 import type { MouseEventHandler } from "react";
 import { ICON_GAP, ICON_SIZE } from "../../../icon-scale";
 import { Button } from "../../actions/button/button";
-import { Badge } from "../../feedback/badge/badge";
+import { Pill } from "../../feedback/pill/pill";
 import { GlyphIcon } from "../../icons/glyph-icon/glyph-icon";
 import { ICONS } from "../../icons/icons";
 import { UpdatePill } from "../../icons/update-dot/update-dot";
@@ -145,11 +145,7 @@ export function MachineCard({
               />
               <span className="min-w-0 truncate text-base font-bold">{alias}</span>
             </span>
-            {local !== null && (
-              <Badge variant="outline" size="sm">
-                {local.tag}
-              </Badge>
-            )}
+            {local !== null && <Pill>{local.tag}</Pill>}
             <MachineStatusPill {...status} />
           </button>
           {update !== null && <UpdatePill onClick={update.onClick}>{update.label}</UpdatePill>}

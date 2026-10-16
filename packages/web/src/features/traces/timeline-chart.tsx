@@ -30,7 +30,7 @@ import type {
   TraceToolSpan,
 } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
+  Pill,
   Dot,
   Legend,
   TimelineBar,
@@ -543,7 +543,7 @@ export function TimelineChart({
               <div key={g.taskIndex} className="space-y-1">
                 {!hideTaskLabel && (
                   <div className="flex items-center gap-2 pl-[5.5rem]">
-                    <Badge size="sm">{S.traces.task(g.taskIndex + 1)}</Badge>
+                    <Pill>{S.traces.task(g.taskIndex + 1)}</Pill>
                     <span className="font-mono text-xs text-gray-400">
                       {humanizeDuration(g.total)}
                     </span>

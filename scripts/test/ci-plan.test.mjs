@@ -16,7 +16,8 @@
  * - Given the comparison base is absent or unusable, when planning CI, then all packages run.
  * - Given no changes or only changelog text, when planning CI, then no package jobs are needed.
  * - Given a new package, when planning CI, then it receives tests without editing a shard list.
- * - Given a release requests full validation, when planning CI, then every package and OS runs.
+ * - Given a release requests full validation, when planning CI, then every package and OS runs,
+ *   macOS and Windows with the browser and site packages in a shard of their own.
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -216,6 +217,10 @@ describe("affected CI", { concurrency: false }, () => {
         assert.ok(members(matrix).has(name(consumer)), `${consumer} needs platform coverage`);
       }
     }
+    // Sites are covered once on Linux; only a full run takes them to macOS and Windows.
+    for (const matrix of [plan.macos, plan.windows]) {
+      assert.ok(!matrix.include.some((shard) => shard.shard === "sites"));
+    }
     assert.equal(plan.installer, true);
     assert.equal(plan.e2e, true);
   });
@@ -356,6 +361,15 @@ describe("affected CI", { concurrency: false }, () => {
     expected.delete("@penguinharness/catalog-only");
     for (const matrix of [plan.linux, plan.macos, plan.windows]) {
       assert.deepEqual(members(matrix), expected);
+    }
+    for (const matrix of [plan.macos, plan.windows]) {
+      const sites = matrix.include.find((shard) => shard.shard === "sites");
+      assert.deepEqual(
+        new Set(sites.packages),
+        names("ui", "web", "ui-gallery", "docs", "landing"),
+      );
+      const rest = matrix.include.find((shard) => shard.shard === "rest");
+      assert.ok(!rest.packages.some((pkg) => sites.packages.includes(pkg)), "each site runs once");
     }
     for (const job of [
       "tests",

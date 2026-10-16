@@ -419,6 +419,13 @@ export interface UiPrefs {
    */
   todoDismissed?: Record<string, Record<string, string>>;
   /**
+   * Notices the user closed, by notice id (a machine's model keys only this server's environment
+   * holds: `machine-env-only:<machine id>`), each the SIGNATURE of what it named when closed — its
+   * items sorted, one per line — so it comes back when a new item appears (web's
+   * `lib/notice-dismissals.ts`). Replaced whole on every write, like `todoDismissed`.
+   */
+  noticesDismissed?: Record<string, string>;
+  /**
    * The draft screen's user-defined shortcuts, in display order. Replaced whole on every write
    * (the merge is shallow, so the array is one field like any other) and bounded on write by
    * services/draft-shortcuts.ts — count, title length and prompt length — because this is the one

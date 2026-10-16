@@ -14,8 +14,8 @@
  *   `overwrite` the directory is replaced whole, its evaluation records and `.jobs/` gone — but
  *   not while an evaluation of it is still running (a trial under `.jobs/` without its result, or
  *   the Test Agent's State packed for one), which is a 409 `benchmark_busy` that changes nothing
- *   until the evaluation ends. Overwrites of one id sent at once each land or answer that 409,
- *   never a failure, and leave one whole copy.
+ *   until the evaluation ends. Overwrites of one id sent at once all land, one after another,
+ *   and leave one whole copy; first imports of one id sent at once land once, the rest 409.
  * - An export carries `benchmark_config.toml` as the file reads and the cases, and none of the
  *   copy's own state (scoreboard, `.jobs/`, dot-entries, symlinks, stray files); it imports back
  *   as the same package with no scores. A Benchmark without a version exports as `<id>.zip`.
@@ -395,7 +395,7 @@ describe("benchmark packages", () => {
       },
     );
 
-    it("overwrites of one id sent at once each land or answer 409 benchmark_exists, and leave one whole copy", async () => {
+    it("overwrites of one id sent at once all land, one after another, and leave one whole copy", async () => {
       const dataBase64 = zipB64(packageFiles("report-writing-v1"));
       expect((await member.post(`${base}/archive`, { dataBase64 })).status).toBe(201);
 
@@ -405,16 +405,28 @@ describe("benchmark packages", () => {
         ),
       );
 
-      for (const res of answers) {
-        if (res.status === 201) continue;
-        expect(res.status).toBe(409);
-        expect(((await res.json()) as ErrorBody).error.code).toBe("benchmark_exists");
-      }
-      expect(answers.some((res) => res.status === 201)).toBe(true);
+      expect(answers.map((res) => res.status)).toEqual([201, 201, 201, 201]);
+      // Nothing a replacement moved aside is left staged beside the copy.
       expect(await fs.readdir(dir)).toEqual(["report-writing-v1"]);
       for (const [rel, text] of Object.entries(CASES)) {
         expect(await fs.readFile(path.join(dir, "report-writing-v1", rel), "utf8"), rel).toBe(text);
       }
+    });
+
+    it("first imports of one id sent at once: one lands, the others answer 409 benchmark_exists", async () => {
+      const dataBase64 = zipB64(packageFiles("report-writing-v1"));
+
+      const answers = await Promise.all(
+        Array.from({ length: 3 }, () => member.post(`${base}/archive`, { dataBase64 })),
+      );
+
+      const refused = answers.filter((res) => res.status !== 201);
+      expect(answers.length - refused.length).toBe(1);
+      for (const res of refused) {
+        expect(res.status).toBe(409);
+        expect(((await res.json()) as ErrorBody).error.code).toBe("benchmark_exists");
+      }
+      expect(await fs.readdir(dir)).toEqual(["report-writing-v1"]);
     });
 
     const refusals: Array<[string, () => string, number, string]> = [

@@ -79,7 +79,7 @@ export function machineStatus(reading: MachineReading | null): MachineStatusPill
   };
 }
 
-/** What a machine's state mark shows: its pill, and its words, tone and shape in one record. */
+/** What a machine's state mark shows: its pill, and its words and tone in one record. */
 export interface MachineMark {
   state: MachineState;
   /** The state's word alone, as the pill shows it. */
@@ -91,11 +91,6 @@ export interface MachineMark {
   tone: Tone;
   /** A job is queued or running for it. */
   moving: boolean;
-  /**
-   * The glyph of a machine that is not working — a cross for a failed job (danger), an alert for
-   * a machine out of reach (attention: waiting on its network, not failed); null otherwise.
-   */
-  glyph: string | null;
 }
 
 /** A machine's mark; `reading` is null for this server's own entry, which is simply serving. */
@@ -115,12 +110,6 @@ export function machineMark(reading: MachineReading | null): MachineMark {
           : `${status.label} · ${reason}`,
     tone: reading === null ? "link" : readingTone(reading),
     moving: reading !== null && (reading.kind === "queued" || reading.kind === "working"),
-    glyph:
-      reading?.kind === "failed" || reading?.kind === "signInRefused"
-        ? ICONS.xCircle
-        : reading?.kind === "unreachable"
-          ? ICONS.alertCircle
-          : null,
   };
 }
 

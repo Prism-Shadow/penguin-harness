@@ -19,6 +19,7 @@ import type { DesktopService } from "../src/services/desktop-service.js";
 import type { AuthService } from "../src/auth/service.js";
 import type { AdminService } from "../src/services/admin-service.js";
 import type { ProjectService } from "../src/services/project-service.js";
+import { ShippedBuiltinBenchmarkSeeds } from "../src/services/project-service.js";
 import type { ProjectAccess } from "../src/services/project-access.js";
 import type { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ModelOAuthService } from "../src/services/model-oauth-service.js";
@@ -85,8 +86,35 @@ import type { Access } from "../src/mechanisms/projects.js";
 import { ProcessShellPort } from "../src/builtin-browser/module.js";
 import type { BrowserShellPort } from "../src/builtin-browser/shell-link.js";
 
+/** The roots {@link makeTempRoot} handed out that nothing has removed yet. */
+const tempRoots = new Set<string>();
+
+/**
+ * A fresh directory under the OS temp directory. Remove it with {@link removeTempRoot} when the
+ * test is done; whatever a test file leaves is removed when the file ends
+ * (test/setup/temp-roots.ts), and what even that cannot remove is reported by the run's teardown
+ * (test/setup/run-temp-dir.ts).
+ */
 export async function makeTempRoot(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-server-test-"));
+  tempRoots.add(root);
+  return root;
+}
+
+/**
+ * Removes a root. maxRetries: Windows can report ENOTEMPTY/EBUSY while handles from the test's
+ * own just-closed files (SQLite, trace writers) are still being released — Node's rm retries
+ * these codes with a delay. A plain rm was the top cause of ci-windows cascades (cleanup throws →
+ * hook timeout → "database is not open" in later files).
+ */
+export async function removeTempRoot(root: string): Promise<void> {
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  tempRoots.delete(root);
+}
+
+/** Removes every root still handed out; one that cannot be removed is left for the report. */
+export async function removeTempRoots(): Promise<void> {
+  await Promise.all([...tempRoots].map((root) => removeTempRoot(root).catch(() => {})));
 }
 
 let symlinkCapability: boolean | undefined;
@@ -312,6 +340,12 @@ export interface TestAppOptions {
   browserShellPort?: BrowserShellPort;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
   passwordHashCost?: number;
+  /**
+   * Write the shipped built-in Benchmarks into every Project the app creates, as production
+   * does. Off by default: they are several hundred files and directories per Project — most
+   * of what a boot or a provisioned user writes — and only the scenarios about them read them.
+   */
+  builtinBenchmarks?: boolean;
   log?: (line: string) => void;
   now?: () => Date;
   /** The plugins this app boots with (their modules and replacements), as the runtime would have loaded them. */
@@ -335,6 +369,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   const out: Array<readonly [ModuleClass, object]> = [];
   if (o.log) out.push([ConsoleLog, { line: o.log }]);
   if (o.now) out.push([SystemClock, { now: o.now }]);
+  if (!o.builtinBenchmarks) out.push([ShippedBuiltinBenchmarkSeeds, { benchmarks: [] }]);
   if (o.passwordHashCost !== undefined) {
     const cost = o.passwordHashCost;
     out.push([ScryptHasher, { hash: (password: string) => hashPassword(password, cost) }]);
@@ -406,24 +441,32 @@ export function replacementsFor(o: TestAppOptions): Replacements {
 export async function createTestApp(options: TestAppOptions = {}): Promise<TestApp> {
   const { beforeSeed, config, plugins, ...overrides } = options;
   const root = await makeTempRoot();
-  if (beforeSeed) await beforeSeed(root);
-  const finalConfig = { ...testConfig(root), ...config };
-  const boot = await bootAppDeps(
-    finalConfig,
-    replacementsFor({
-      log: () => {},
-      passwordHashCost: TEST_PASSWORD_HASH_COST,
-      // The bridge's per-line pace is a real wait in production; every test but the one
-      // about the pacing itself collapses it to nothing.
-      messagingLineDelayMs: 0,
-      ...overrides,
-    }),
-    undefined,
-    plugins,
-  );
-  // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
+  let boot: ServerBoot | undefined;
+  try {
+    if (beforeSeed) await beforeSeed(root);
+    boot = await bootAppDeps(
+      { ...testConfig(root), ...config },
+      replacementsFor({
+        log: () => {},
+        passwordHashCost: TEST_PASSWORD_HASH_COST,
+        // The bridge's per-line pace is a real wait in production; every test but the one
+        // about the pacing itself collapses it to nothing.
+        messagingLineDelayMs: 0,
+        ...overrides,
+      }),
+      undefined,
+      plugins,
+    );
+    // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).
+    await flattenForTests(boot).authService.seedAdmin();
+  } catch (error) {
+    // A boot a scenario expects to be refused still wrote the root it was given.
+    if (boot !== undefined) flattenForTests(boot).db.close();
+    await removeTempRoot(root).catch(() => {});
+    throw error;
+  }
   const deps = flattenForTests(boot);
-  await deps.authService.seedAdmin();
+  const finalConfig = { ...testConfig(root), ...config };
   // The seed hashes and discards; tests know the password only because the config injects it.
   // With a null override there is nothing to know, and such tests never password-login.
   const adminPassword = finalConfig.seedAdminPassword ?? TEST_ADMIN_PASSWORD;
@@ -440,11 +483,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
       deps.hmr.dispose();
       deps.channels.dispose();
       deps.db.close();
-      // maxRetries: Windows can report ENOTEMPTY/EBUSY while handles from the test's own
-      // just-closed files (SQLite, trace writers) are still being released — Node's rm
-      // retries these codes with a delay. A plain rm was the top cause of ci-windows
-      // cascades (cleanup throws → hook timeout → "database is not open" in later files).
-      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      await removeTempRoot(root);
     },
   };
 }

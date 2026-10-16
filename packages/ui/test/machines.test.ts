@@ -3,8 +3,8 @@
  * stepper and the list. The card, the toolbar and the add dialog's shell are exercised through
  * the web app's machines suites, which hand them real machine records.
  *
- * - Every state is said in words: the pill shows its word beside a glyph — or a spinner while the
- *   machine is moving — and never stands as a bare coloured dot.
+ * - Every state is said in a word alone — no glyph, never a bare coloured dot — on the same pill
+ *   shape as the tag beside it (`Pill`), only its tone differing.
  * - A reason behind the word is the pill's marked hint (it shows over the word) and is read out
  *   with the word; a pill with nothing more to say carries no hint.
  * - A job's stepper draws one segment per step, the one under way as the live signal, and says
@@ -20,20 +20,23 @@ import {
 } from "../src/components/machines/machine-status/machine-status";
 import { MachineStepper } from "../src/components/machines/machine-stepper/machine-stepper";
 import { MachineList } from "../src/components/machines/machine-list/machine-list";
-import { renderStatic } from "../src/testing";
+import { Pill } from "../src/components/feedback/pill/pill";
+import { classTokens, renderStatic } from "../src/testing";
 
 /** The words a piece of markup shows, tags dropped. */
 const textOf = (html: string) => html.replace(/<[^>]*>/g, "");
 
 describe("the machine status pill", () => {
-  it.each(MACHINE_STATES)("%s: says its state in a word beside a glyph or a spinner", (state) => {
+  /** A pill's shape: its classes without the ones that carry its tone. */
+  const shape = (html: string) => classTokens(html).filter((token) => !token.includes("tone-"));
+  const tag = shape(renderStatic(createElement(Pill, { children: "this server" })));
+
+  it.each(MACHINE_STATES)("%s: says its state in a word alone, in the tag's shape", (state) => {
     const html = renderStatic(createElement(MachineStatusPill, { state, label: "Word" }));
     expect(textOf(html)).toBe("Word");
-    expect(html).toMatch(/<svg/);
+    expect(html).not.toMatch(/<svg/);
     expect(html).toContain(`data-machine-state="${state}"`);
-    // Moving states spin; the spinner names what runs for assistive technology.
-    const spins = html.includes('data-live="spinner"');
-    expect(spins).toBe(state === "working" || state === "reconnecting");
+    expect(shape(html)).toEqual(tag);
   });
 
   it("carries the reason as a marked hint and reads it out with the word", () => {

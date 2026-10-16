@@ -6,6 +6,8 @@
  *   placement with EEXIST on every platform; the other copy stays as it is, and nothing is left in
  *   staging.
  * - A replacement takes the id's directory whole, and leaves nothing in staging either.
+ * - Overwrites of one id sent at once never write together: the last one asked for holds the id,
+ *   whole, and no moved-aside copy is left behind in staging.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -58,6 +60,32 @@ describe("placing a Benchmark", () => {
       "CASE-001",
       "benchmark_config.toml",
     ]);
+    expect(await fs.readdir(dir)).toEqual([ID]);
+  });
+
+  it("runs overwrites of one id sent at once one after another, and the last one asked for holds the id", async () => {
+    await placeBenchmark(dir, ID, (stage) => writePackage(stage, "v0\n"));
+    let writing = 0;
+    let together = 0;
+    const overwrite = (n: number) =>
+      placeBenchmark(
+        dir,
+        ID,
+        async (stage) => {
+          writing += 1;
+          together = Math.max(together, writing);
+          // Hand the event loop over mid-write, where an overlapping placement would start its own.
+          await new Promise((resolve) => setImmediate(resolve));
+          await writePackage(stage, `v${n}\n`);
+          writing -= 1;
+        },
+        { replace: true },
+      );
+
+    await Promise.all([1, 2, 3, 4].map(overwrite));
+
+    expect(together).toBe(1);
+    expect(await fs.readFile(path.join(dir, ID, "benchmark_config.toml"), "utf8")).toBe("v4\n");
     expect(await fs.readdir(dir)).toEqual([ID]);
   });
 });

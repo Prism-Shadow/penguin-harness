@@ -84,11 +84,17 @@ Rules:
   name or in adjacent text.
 - **No coloured dot carries a status on its own** (owner, 2026-10-15: 「不要用意义不明的颜色点」,
   after the Machines page's blue dot). A dot whose meaning lives only in its hue and a hover is a
-  mark the reader has to decode. A state is a **labelled pill** — `Badge` in the state's tone, its
-  word on screen, a glyph beside it, the reason on the badge's `tooltip` (`MachineStatusPill` is
-  the pattern) — or, where a row has no room for a word, an **icon** whose shape says the state and
+  mark the reader has to decode. A state is a **labelled pill** — `Pill` in the state's tone, its
+  word on screen and no glyph, the reason on the pill's `tooltip` (`MachineStatusPill` is the
+  pattern) — or, where a row has no room for a word, an **icon** whose shape says the state and
   whose tooltip and `aria-label` name it. A dot stays only as decoration beside words that already
   say the state, or as a pulse on something live.
+- **One shape for every short label on a row** (owner, 2026-10-15: 「运行中胶囊和本服务端统一一下，用
+  ui 库抽象」). A state, a kind or a fact beside a name ("Running", "this server", "v0.2.16",
+  "vision", "CLI") is a `Pill`: the badge at its small size in its soft weight, words only, with
+  only the tone to choose. Two labels side by side never differ in height, padding, radius, type
+  or border. Reach for `Badge` itself only for what is not a row label: a count, an outline or
+  solid weight a design asks for, a superscript mark.
 - **Contrast is measured, not assumed.** The ratios in `tone.ts` are WCAG 2.x against the four
   surfaces marks actually sit on — white and gray-50 in light, and the values the default theme
   *overrides* for dark (`packages/ui/src/themes/github.css`: gray-950 is `#000000`, gray-900 is

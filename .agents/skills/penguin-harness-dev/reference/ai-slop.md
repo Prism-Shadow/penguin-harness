@@ -26,7 +26,7 @@ entry, a PR body.
 
 ## What this repo already decided (these win over any generic rule)
 
-- Status is a labelled pill (the state's word and glyph in its tone) or an icon whose tooltip /
+- Status is a labelled pill (`Pill`: the state's word in its tone, no glyph) or an icon whose tooltip /
   `aria-label` names it — never a bare coloured dot the reader has to decode (owner, 2026-10-15),
   no textual `[failed]` markers, no red warning prose. Icon-only buttons are flat: no fill at rest or on hover, the glyph deepens.
 - Info and action sections are ruled (a divider, title left, actions right), not boxed in cards.

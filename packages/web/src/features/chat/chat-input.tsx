@@ -97,7 +97,6 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
-  Button,
   CheckIcon,
   ChevronDown,
   Chip,
@@ -109,7 +108,7 @@ import {
   ICONS,
   ICON_SIZE,
   MenuSelect,
-  NoticeStrip,
+  Notice,
   PickerList,
   ProviderLogo,
   SendButton,
@@ -2196,36 +2195,33 @@ export function ChatInput({
           waiting on the user. Dismissible, because keeping the threshold high on purpose is a
           legitimate answer and a notice with no way down stops being read. */}
       {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
-        // The buttons keep their labels whole, so where the sentence would be left a few
-        // characters a line beside them (a phone at a large text size), they drop to a row
-        // of their own instead; the sentence keeps a readable width either way.
-        <NoticeStrip
+        // The shared notice: its buttons keep their labels whole, so where the sentence would
+        // be left a few characters a line beside them (a phone at a large text size), they
+        // drop to a row of their own instead.
+        <Notice
           tone="attention"
-          className="anim-fade mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-2.5 py-2 text-xs"
+          className="anim-fade mb-1"
+          dismiss={{
+            label: S.chat.contextWindowUnderThresholdDismiss,
+            onClick: () => {
+              if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
+              setWindowNoticeDismissed(true);
+            },
+          }}
+          {...(onOpenAgentSettings
+            ? {
+                action: {
+                  label: S.chat.contextWindowUnderThresholdAction,
+                  onClick: onOpenAgentSettings,
+                },
+              }
+            : {})}
         >
-          <p className="min-w-0 grow basis-56">
-            {S.chat.contextWindowUnderThreshold(
-              humanizeTokens(contextWindow),
-              humanizeTokens(compactionLimit),
-            )}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
-                setWindowNoticeDismissed(true);
-              }}
-            >
-              {S.chat.contextWindowUnderThresholdDismiss}
-            </Button>
-            {onOpenAgentSettings && (
-              <Button size="sm" variant="primary" onClick={onOpenAgentSettings}>
-                {S.chat.contextWindowUnderThresholdAction}
-              </Button>
-            )}
-          </div>
-        </NoticeStrip>
+          {S.chat.contextWindowUnderThreshold(
+            humanizeTokens(contextWindow),
+            humanizeTokens(compactionLimit),
+          )}
+        </Notice>
       )}
 
       {/* When the model doesn't support viewing images directly: images still upload as usual,

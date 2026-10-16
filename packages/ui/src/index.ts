@@ -33,6 +33,7 @@ export * from "./components/icons/status-icon/status-icon";
 export * from "./components/icons/activity-icon/activity-icon";
 export * from "./components/icons/update-dot/update-dot";
 export * from "./components/feedback/badge/badge";
+export * from "./components/feedback/pill/pill";
 export * from "./components/feedback/skeleton/skeleton";
 export * from "./components/feedback/empty-state/empty-state";
 

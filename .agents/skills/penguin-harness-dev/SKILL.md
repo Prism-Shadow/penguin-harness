@@ -22,7 +22,7 @@ them when the task reaches them:
 | `reference/model-catalog.md` | Touching `model-catalog.ts`, pricing, provider groups or glyphs |
 | `reference/authoring.md` | Writing a blog post, auditing prose, or proposing a simplification |
 | `reference/release.md` | Preparing a release: the branch order, what changes, the announcement, the blog post and its screenshots |
-| `reference/testing.md` | **Writing or changing any test**: scenarios first, behaviour only, one fake per boundary, branch coverage, speed |
+| `reference/testing.md` | **Writing or changing any test**: scenarios first, behaviour only, one fake per boundary, branch coverage, speed, CI time as a cost |
 | `reference/ai-slop.md` | **Every** change a user sees or reads: UI, styles, UI strings, docs, landing, blog, changelog — the rules, the scanner, the catalogue of tells |
 
 ## No AI slop — every time something is rendered or written
@@ -81,7 +81,9 @@ test a constant, a copied table, a UI string against its dictionary, or which pr
 ran. Fake only at the system's edge with the package's shared helpers (one fetch fake, one mock
 LLM, `createTestApp`, real temp dirs, fake timers); do not `vi.mock` the package's own modules.
 Every branch a change adds is taken by a scenario; pruning never lowers branch coverage. No real
-sleeps, no per-test servers. `reference/testing.md` has the rules and the checklist.
+sleeps, no per-test servers. CI time is a cost paid three times (Linux, macOS, Windows): keep each
+test well under a second, and check your PR's job durations after CI. `reference/testing.md` has
+the rules and the checklist.
 
 ## Verify what you changed
 
