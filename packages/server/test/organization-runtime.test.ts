@@ -1,4 +1,6 @@
 /**
+ * - Given usage recorded on a UTC host at Shanghai month boundaries, finance returns
+ *   organization-local dates and the same total through the real usage gateway.
  * Organization runtime semantics with doubles and a controlled clock — no real LLM, no
  * core Session: creation writes the files and opens the CEO's desk with an init run; a hire
  * opens the newcomer's desk and the reconcile pass opens the desks nothing else did (a
@@ -21,6 +23,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { parseOrgTriggerMessage, saveProjectConfig } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
+import { UsageRepo } from "../src/db/repos/usage.js";
+import { ErrorsRepo } from "../src/db/repos/errors.js";
+import { UsageService } from "../src/services/usage-service.js";
 import { MembersRepo } from "../src/db/repos/members.js";
 import { OrgCacheRepo } from "../src/db/repos/organizations.js";
 import { ProjectsRepo } from "../src/db/repos/projects.js";
@@ -2611,6 +2616,51 @@ describe("organization runtime", () => {
   });
 
   describe("budgets", () => {
+    it("finance uses the organization timezone through the real usage gateway", async () => {
+      await createOrg();
+      const sessionId = (await service.desk(P, ORG, CEO, {})).sessionId;
+      const usage = wire(UsageRepo, { db });
+      deps.usage = wire(UsageService, {
+        usage,
+        errors: wire(ErrorsRepo, { db }),
+        lookupPricing: async () => ({
+          peak: { cacheRead: 1, cacheWrite: 2, output: 4 },
+          offPeak: { cacheRead: 1, cacheWrite: 2, output: 4 },
+        }),
+        clock: { now: () => new Date(T0) },
+      });
+      for (const ts of [
+        "2026-08-31T15:59:59.999Z",
+        "2026-08-31T16:00:00.000Z",
+        "2026-09-01T16:00:00.000Z",
+        "2026-09-30T15:59:59.999Z",
+        "2026-09-30T16:00:00.000Z",
+      ]) {
+        usage.insert({
+          ts,
+          date: ts.slice(0, 10),
+          projectId: P,
+          agentId: CEO,
+          sessionId,
+          originSessionId: null,
+          provider: "custom",
+          modelId: "priced",
+          cacheRead: 10,
+          cacheWrite: 1,
+          output: 5,
+          total: 16,
+        });
+      }
+      const finance = await service.finance(P, ORG, "2026-09");
+      expect(finance.daily.map((day) => day.date)).toEqual([
+        "2026-09-01",
+        "2026-09-02",
+        "2026-09-30",
+      ]);
+      expect(finance.total).toBeCloseTo((3 * 32) / 1e6, 12);
+      expect(finance.daily.reduce((sum, day) => sum + day.cost, 0)).toBeCloseTo(finance.total, 12);
+    });
+
     it("warns once, pauses the employee's calendar and its subordinates, and resumes when the budget is raised", async () => {
       await createOrg();
       await service.hire(P, ORG, {

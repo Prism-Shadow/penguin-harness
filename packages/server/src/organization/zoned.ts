@@ -133,3 +133,18 @@ export function zonedDayRange(timeZone: string, date: string): { fromMs: number;
     toMs: zonedLocalToUtc(timeZone, y, m, d + 1),
   };
 }
+
+/** First instant whose local date is at least `date`, including skipped midnights/dates. */
+export function zonedDateStart(timeZone: string, date: string): number {
+  const nominal = Date.parse(`${date}T00:00:00.000Z`);
+  // IANA offsets fit inside this interval. Searching dates also handles a clock
+  // jumping over midnight or repeating it, unlike resolving a wall-clock 00:00.
+  let low = nominal - 36 * 60 * 60_000;
+  let high = nominal + 36 * 60 * 60_000;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (zonedDate(timeZone, mid) < date) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}

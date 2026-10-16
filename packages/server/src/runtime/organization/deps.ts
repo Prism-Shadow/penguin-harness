@@ -131,6 +131,7 @@ export interface OrgUsageGateway {
     sessionIds: readonly string[],
     fromTs: string,
     toTs: string,
+    timeZone: string,
   ): Promise<Array<{ date: string; cost: number }>>;
 }
 

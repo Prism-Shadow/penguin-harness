@@ -2,6 +2,8 @@
  * Organization file formats (src/organization): every intent and fact file round-trips
  * through its serializer and parser, hand-edit tolerance is the same set of rules the API
  * writes under, and the timezone arithmetic behind budget periods and message days is exact.
+ * Given a skipped or repeated midnight (or skipped date), the finance date boundary is
+ * the first instant belonging to that local date or the next existing date.
  */
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -40,6 +42,7 @@ import {
 } from "../src/organization/paths.js";
 import {
   zonedDate,
+  zonedDateStart,
   zonedMonthRange,
   zonedOffsetMinutes,
   zonedPeriodRange,
@@ -484,6 +487,18 @@ describe("principals", () => {
 });
 
 describe("zoned time", () => {
+  it.each([
+    ["America/Santiago", "2026-09-06", "2026-09-06T04:00:00.000Z", "2026-09-06"],
+    ["America/Havana", "2026-03-08", "2026-03-08T05:00:00.000Z", "2026-03-08"],
+    ["America/Havana", "2026-11-01", "2026-11-01T04:00:00.000Z", "2026-11-01"],
+    ["Pacific/Apia", "2011-12-30", "2011-12-30T10:00:00.000Z", "2011-12-31"],
+  ])("finds the first local date instant for %s %s", (zone, date, instant, actualDate) => {
+    const start = zonedDateStart(zone, date);
+    expect(new Date(start).toISOString()).toBe(instant);
+    expect(zonedDate(zone, start)).toBe(actualDate);
+    expect(zonedDate(zone, start - 1) < date).toBe(true);
+  });
+
   it("names days and months in the organization's timezone", () => {
     const ms = Date.parse("2026-08-31T20:30:00Z");
     expect(zonedDate("Asia/Shanghai", ms)).toBe("2026-09-01");
