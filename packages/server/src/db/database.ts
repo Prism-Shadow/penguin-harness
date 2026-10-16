@@ -53,6 +53,9 @@ export function openDatabase(dbPath: string): DatabaseSync {
   }
   const db = new sqlite.DatabaseSync(dbPath);
   db.exec("PRAGMA journal_mode = WAL;");
+  // Page cache: the default (2MB) is tuned for embedded use; the FTS + activity
+  // tables alone are ~700MB on an active install (2026-10-12 perf).
+  db.exec("PRAGMA cache_size = -64000;");
   // A second connection (the CLI minting a token while the server runs) waits for the write
   // lock rather than failing SQLITE_BUSY at once.
   db.exec("PRAGMA busy_timeout = 5000;");
