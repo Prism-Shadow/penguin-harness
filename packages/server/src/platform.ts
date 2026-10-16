@@ -136,6 +136,7 @@ import {
   DesktopRoutes,
   DesktopTrayRoutes,
   DesktopUpdateRoutes,
+  DesktopWindowRoutes,
 } from "./http/routes/desktop.js";
 import { CommandRoutes } from "./http/routes/command.js";
 import { InstallRoutes } from "./http/routes/install.js";
@@ -506,6 +507,7 @@ export class CompanyModule {}
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
     DesktopPrivacySettingsRoutes,
+    DesktopWindowRoutes,
     PluginRoutes,
     PluginRegistryRoutes,
     NpmPluginPackages,

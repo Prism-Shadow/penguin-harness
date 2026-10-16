@@ -1136,6 +1136,7 @@ export const zh = {
     checkingUpdates: "正在检查更新…",
     openDevTools: "打开开发者工具",
     projectOnGitHub: "在 GitHub 上查看项目",
+    newWindow: "新建窗口",
   },
   modelPicker: {
     /** Accessible name of the dialog's provider-group rail. */
