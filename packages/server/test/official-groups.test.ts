@@ -14,15 +14,20 @@
  *   alone leaves it as the file has it.
  * - Given a new Project, or "Restore defaults", the first-party vendor groups are official and no
  *   other group is.
+ * - Given an official group on a base URL, a probe of a row that follows the group's protocol
+ *   carries the group protocol's variable to that endpoint; a row pinned to another vendor's
+ *   client is refused before any request, and that vendor's key never reaches the endpoint.
  */
 import fs from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseToml } from "smol-toml";
-import { projectConfigPath } from "@prismshadow/penguin-core";
+import { projectConfigPath, renderProjectConfigToml } from "@prismshadow/penguin-core";
 import { wire } from "@prismshadow/penguin-core/kernel";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
-import type { ModelsResponse, ProjectCreateResponse } from "../src/api/types.js";
+import type { ModelsResponse, ModelTestResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, makeTempRoot, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -230,6 +235,66 @@ describe("the official flag through the API", () => {
       official: false,
       api_key: "g-key",
     });
+  });
+
+  it("an official group on a base URL lends its variable only to rows that read it: a row pinned to Anthropic's client in the OpenAI group is refused, and ANTHROPIC_API_KEY is never sent", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-openai-env-lent-0001");
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-anthropic-env-must-not-cross");
+    // The group's endpoint, played by a local server that records what each request carried.
+    const seen: string[] = [];
+    const server = createServer((req, res) => {
+      seen.push(JSON.stringify(req.headers));
+      req.resume();
+      req.on("end", () => {
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: { message: "test-reject", type: "invalid_request" } }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      // The file is the truth: the OpenAI group is official on this endpoint, as a user who
+      // runs their own OpenAI-compatible mirror may mark it by hand.
+      await fs.writeFile(
+        projectConfigPath(t.root, projectId),
+        renderProjectConfigToml({
+          providers: {
+            openai: {
+              base_url: `http://127.0.0.1:${port}/v1`,
+              client_type: "openai-official",
+              official: true,
+            },
+          },
+          models: [
+            { provider: "openai", model_id: "gpt-6-luna" },
+            { provider: "openai", model_id: "claude-sonnet-5", client_type: "anthropic-official" },
+          ],
+        }),
+        "utf8",
+      );
+      const probe = async (modelId: string) =>
+        (await (
+          await owner.post(`/api/projects/${projectId}/models/test`, {
+            provider: "openai",
+            modelId,
+          })
+        ).json()) as ModelTestResponse;
+
+      const pinned = await probe("claude-sonnet-5");
+      expect(pinned.ok).toBe(false);
+      expect(pinned.message).toMatch(/has no API key.*set the API key on the model entry/);
+      expect(seen).toEqual([]);
+
+      // The row on the group's own protocol reaches the endpoint with the group's variable.
+      expect((await probe("gpt-6-luna")).ok).toBe(false);
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.join("\n")).toContain("sk-openai-env-lent-0001");
+      expect(seen.join("\n")).not.toContain("sk-anthropic-env-must-not-cross");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      vi.unstubAllEnvs();
+    }
   });
 
   it("Restore defaults puts the flags back with the catalog's tables", async () => {

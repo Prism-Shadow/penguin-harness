@@ -13,7 +13,7 @@ Whether a keyless model may use a vendor's environment variable (`OPENAI_API_KEY
 ## The rule
 
 - A key on the model, or the group's key that reaches it, is used as written.
-- A model with neither may use the environment only when its group is `official = true` and the model names no `base_url` of its own. With no group base URL, nothing is handed over and MMSP's client reads its own variable pair, a `*_BASE_URL` set beside the key included. With a group base URL, the variable of the effective `client_type` is read and passed explicitly; an unset variable, or no protocol to name one, is refused.
+- A model with neither may use the environment only when its group is `official = true` and the model names no `base_url` of its own. With no group base URL, nothing is handed over and MMSP's client reads its own variable pair, a `*_BASE_URL` set beside the key included. With a group base URL, the variable the group's `client_type` reads is read and passed explicitly, but only to a model whose effective `client_type` reads the same variable (the same `MMSP_CLIENTS` prefix); a model pinned to a client that reads another vendor's variable is refused and told to set its own key. An unset variable, or a group with no protocol to name one, is refused too.
 - Every other keyless model is refused with "has no API key": gateways, Penguin Go, ModelScope, custom, vLLM, user-created groups, and any model with a base URL of its own, the vendor's own endpoint included. A model on the `mmsp` client with a base URL is still sent no key.
 
 ## Who sets the flag

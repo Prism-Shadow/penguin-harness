@@ -70,7 +70,7 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 
 ### 供应商凭证变量
 
-模型条目没有 `api_key`、分组也没有能借给它的 `api_key` 时，**只有所在分组标为 `official = true`、且条目自己不带 `base_url`** 时才可用厂商的环境变量（见[分组连接信息](#分组连接信息)）。分组也没有 `base_url` 时，由厂商的客户端自行读取它那对变量，包括在 key 旁一并设置的 `*_BASE_URL`；分组带 `base_url`（厂商自己的端点之一）时，由 PenguinHarness 按生效的 `client_type` 读取对应变量并显式传入，变量未设置、或没有协议可据以命名变量时即拒绝。其余条目必须有自己的或分组的 `api_key`，否则 PenguinHarness 拒绝为它构建客户端：网关分组、Penguin Go、ModelScope、custom、vLLM 与自建分组，以及任何自带 `base_url` 的条目，即使那就是厂商自己的端点。见[设置 API key](/models#设置-api-key)。
+模型条目没有 `api_key`、分组也没有能借给它的 `api_key` 时，**只有所在分组标为 `official = true`、且条目自己不带 `base_url`** 时才可用厂商的环境变量（见[分组连接信息](#分组连接信息)）。分组也没有 `base_url` 时，由厂商的客户端自行读取它那对变量，包括在 key 旁一并设置的 `*_BASE_URL`；分组带 `base_url`（厂商自己的端点之一）时，由 PenguinHarness 读取分组 `client_type` 对应的变量并显式传入，但只给生效 `client_type` 读取同一变量的条目；条目固定到读取其他厂商变量的客户端时不借，须在条目上设置 key；变量未设置、或分组没有协议可据以命名变量时即拒绝。其余条目必须有自己的或分组的 `api_key`，否则 PenguinHarness 拒绝为它构建客户端：网关分组、Penguin Go、ModelScope、custom、vLLM 与自建分组，以及任何自带 `base_url` 的条目，即使那就是厂商自己的端点。见[设置 API key](/models#设置-api-key)。
 
 | 分组 | API key | Base URL |
 | --- | --- | --- |
