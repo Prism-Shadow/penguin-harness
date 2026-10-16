@@ -20,6 +20,8 @@ import type { Auth, Users } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { Errors } from "../mechanisms/observability.js";
 import type { Settings } from "../mechanisms/settings.js";
+import { telemetryRequests } from "../telemetry/http.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
 
 /**
  * The assembled business surface: one request in, one response (or a decline) out.
@@ -65,6 +67,7 @@ export class HttpModule {
   @Use() private readonly settings!: Settings;
   @Use() private readonly access!: Access;
   @Use() private readonly users!: Users;
+  @Use() private readonly telemetry?: Telemetry;
   @Provide() http!: Http;
   setup({ contributions }: ClassCtx) {
     const routes = [...(contributions.routes ?? [])]
@@ -156,6 +159,8 @@ export class HttpModule {
       }
       return capped.mw(c, next);
     });
+    // Telemetry records both HTTP and socket-entered requests without duplicating request logs.
+    if (this.telemetry !== undefined) app.use("*", telemetryRequests(this.telemetry));
     app.use("/api/*", sameOriginWrites(this.config.trustProxy));
     // A machine's API is reached through this server (machines/proxy.ts), with this server's
     // cookie: the same question, asked here because the hop drops the Origin.
