@@ -66,6 +66,7 @@ import {
   routedClientType,
   saveProjectConfig,
   setDefaultModel,
+  setModelFallbackChain,
   setProviderConnection,
   setVaultEntry,
   skillsDir,
@@ -1002,6 +1003,19 @@ describe("project-config round trip", () => {
 
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(loaded.default_model).toEqual({ provider: "custom", model_id: "gpt-test" });
+
+    // The fallback chain rides the same save/reload path: an ordered list of paired
+    // references, and clearing it REMOVES the key rather than storing an empty list.
+    await setModelFallbackChain(tmpRoot, DEFAULT_PROJECT_ID, [
+      { provider: "custom", model_id: "gpt-test" },
+    ]);
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).model_fallback_chain).toEqual([
+      { provider: "custom", model_id: "gpt-test" },
+    ]);
+    await setModelFallbackChain(tmpRoot, DEFAULT_PROJECT_ID, []);
+    expect(
+      (await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).model_fallback_chain,
+    ).toBeUndefined();
 
     // The credential is inlined in the entry; the two independent fields provider and
     // model_id together form the unique key.

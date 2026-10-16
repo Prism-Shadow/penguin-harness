@@ -265,6 +265,21 @@ export interface ProjectConfig {
    */
   providers?: ProviderTable;
   models: ModelEntry[];
+  /**
+   * The fallback chain: the models a Session is moved onto, in order, when its own model
+   * answers 429 (see the `rate_limited` outcome code) — the host switches the Session and
+   * resends the turn rather than spending the backoff ladder on a quota that is gone.
+   *
+   * `[[model_fallback_chain]]` entries are paired references, highest priority first:
+   *
+   *   [[model_fallback_chain]]
+   *   provider = "anthropic"
+   *   model_id = "claude-sonnet-4-6"
+   *
+   * Absent or empty = no failover: a rate-limited turn retries on its own model, as it
+   * always has. Each entry must name a configured model (validated where one is written).
+   */
+  model_fallback_chain?: ModelRef[];
 }
 
 /**
@@ -315,6 +330,17 @@ function parseRefField(file: string, name: string, value: unknown): ModelRef | u
     );
   }
   return { provider: ref.provider, model_id: ref.model_id };
+}
+
+/** Validates the model_fallback_chain field: an ordered list of paired references, empty allowed. */
+function parseRefList(file: string, name: string, value: unknown): ModelRef[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error(
+      `${name} in .project_config.toml must be a list of { provider = "...", model_id = "..." } references: ${file}. ${OLD_FORMAT_HINT}`,
+    );
+  }
+  return value.map((entry) => parseRefField(file, name, entry) as ModelRef);
 }
 
 /** Validates a model entry: both provider and model_id must be strings (an old-format entry is missing provider). */
@@ -866,6 +892,7 @@ export function projectConfigFromTable(
   const commandPolicy = parseCommandPolicy(parsed.command_policy);
   const plugins = parsePluginTables(parsed.plugins);
   const providers = parseProviderTable(parsed.providers);
+  const fallbackChain = parseRefList(file, "model_fallback_chain", parsed.model_fallback_chain);
   return {
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
@@ -874,6 +901,7 @@ export function projectConfigFromTable(
     ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),
     ...(plugins !== undefined ? { plugins } : {}),
     ...(providers !== undefined ? { providers } : {}),
+    ...(fallbackChain !== undefined ? { model_fallback_chain: fallbackChain } : {}),
     models: ((parsed.models as unknown[] | undefined) ?? []).map((m) => assertModelEntry(file, m)),
   };
 }
@@ -1123,6 +1151,24 @@ export async function addModel(
 
   await saveProjectConfig(root, projectId, cfg);
   return cfg;
+}
+
+/**
+ * Sets the Project's model fallback chain (`[[model_fallback_chain]]`), the ordered models a
+ * Session is moved onto when its own model answers 429. An empty list **clears** the field —
+ * the key is then absent, the same state as never having set one.
+ */
+export async function setModelFallbackChain(
+  root: string,
+  projectId: string,
+  refs: readonly ModelRef[],
+): Promise<ModelRef[]> {
+  const cfg = await loadProjectConfig(root, projectId);
+  const chain = refs.map((ref) => ({ provider: ref.provider, model_id: ref.model_id }));
+  if (chain.length === 0) delete cfg.model_fallback_chain;
+  else cfg.model_fallback_chain = chain;
+  await saveProjectConfig(root, projectId, cfg);
+  return chain;
 }
 
 /**

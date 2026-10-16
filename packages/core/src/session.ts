@@ -155,6 +155,12 @@ export interface SessionConfig {
    */
   imagesDir: string;
   /**
+   * Whether a rate limit (429) ends the turn instead of riding the reconnect ladder, because
+   * the host has another model to finish it on (see ContextEngineDeps.failoverOnRateLimit).
+   * Absent = the ladder, which is what a host with nowhere else to run the Session wants.
+   */
+  failoverOnRateLimit?: boolean;
+  /**
    * Whether the first context's model accepts image input (from ModelEntry.vision). Prompts and
    * steering messages fold their images only while the running context's model has none — a
    * context `openNextContext` opens brings its own answer (SessionOpenedContext.modelHasVision).
@@ -441,6 +447,9 @@ export class Session {
       environment: config.environment,
       ...(config.trace ? { trace: config.trace } : {}),
       ...(config.maxTurns !== undefined ? { maxTurns: config.maxTurns } : {}),
+      ...(config.failoverOnRateLimit !== undefined
+        ? { failoverOnRateLimit: config.failoverOnRateLimit }
+        : {}),
       // Context compaction: the new-context factory + resolved settings; the engine writes the
       // context's session_meta (and tool_list_ready) at the start of the new Trace file after
       // splitting. The factory is wrapped so the opener is told the model a switch in flight is

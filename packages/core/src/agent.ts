@@ -258,6 +258,12 @@ export interface CreateSessionOptions {
    * `company` for company mode's desk and ticket Sessions).
    */
   source?: SessionSource;
+  /**
+   * Whether a rate limit (429) ends the turn instead of riding the reconnect ladder, because
+   * the host has another model to finish it on (see SessionConfig.failoverOnRateLimit). The
+   * host decides: absent = the ladder, which is what a Project with no fallback chain wants.
+   */
+  failoverOnRateLimit?: boolean;
 }
 
 export interface ResumeSessionOptions {
@@ -266,6 +272,8 @@ export interface ResumeSessionOptions {
   /** Explicit credentials; if unspecified, falls back to the Project config, then to the vendor's environment variable on the same terms as CreateSessionOptions.apiKey. */
   apiKey?: string;
   baseUrl?: string;
+  /** Whether a rate limit ends the turn for the resumed Session (see CreateSessionOptions.failoverOnRateLimit). */
+  failoverOnRateLimit?: boolean;
 }
 
 /**
@@ -296,6 +304,8 @@ interface SessionSpec {
   thinkingLevel: ThinkingLevelName | null | undefined;
   subagentDepth: number;
   source: SessionSource;
+  /** Whether a rate limit ends the turn for this Session (see CreateSessionOptions.failoverOnRateLimit). */
+  failoverOnRateLimit?: boolean;
 }
 
 /**
@@ -744,6 +754,9 @@ export class Agent {
       thinkingLevel: opts.thinkingLevel,
       subagentDepth: opts.subagentDepth ?? 0,
       source: opts.source ?? "user",
+      ...(opts.failoverOnRateLimit !== undefined
+        ? { failoverOnRateLimit: opts.failoverOnRateLimit }
+        : {}),
     };
     // The first context: assembled from the Agent State on disk now (never from this Agent
     // object's load-time snapshot — a long-lived Agent, a self-spawned subagent's for
@@ -841,6 +854,9 @@ export class Agent {
       thinkingLevel: undefined,
       subagentDepth: 0,
       source: normalizeSessionSource(meta.source),
+      ...(opts.failoverOnRateLimit !== undefined
+        ? { failoverOnRateLimit: opts.failoverOnRateLimit }
+        : {}),
     };
     // The context follows the Trace. A context a completed compaction closed is opened here
     // for the first time — nothing was produced under any configuration yet — so it is
@@ -1012,6 +1028,9 @@ export class Agent {
       imagesDir: sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
       modelHasVision: context.modelEntry.vision !== false,
       modelSwitch: rt.modelSwitch,
+      ...(spec.failoverOnRateLimit !== undefined
+        ? { failoverOnRateLimit: spec.failoverOnRateLimit }
+        : {}),
       ...(context.maxTurns !== undefined ? { maxTurns: context.maxTurns } : {}),
       // Sandbox command policy, strict-tier like the rest of the context (though
       // Project-owned, never Agent State): read from disk when each context opens, so an
