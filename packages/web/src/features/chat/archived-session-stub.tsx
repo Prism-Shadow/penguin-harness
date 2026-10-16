@@ -10,7 +10,7 @@
 import { useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
+  Pill,
   Button,
   ConfirmModal,
   GlyphIcon,
@@ -74,9 +74,7 @@ export function ArchivedSessionStub({
         <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-fg-muted">
           <span>{formatDateTime(session.lastActiveAt)}</span>
           <span aria-hidden>·</span>
-          <Badge tone="neutral" size="sm">
-            {S.chat.sessionSource[source]}
-          </Badge>
+          <Pill tone="neutral">{S.chat.sessionSource[source]}</Pill>
         </p>
         <p className="text-sm text-fg-muted">{S.chat.archivedStub.note}</p>
         <div className="mt-3 flex items-center gap-2">

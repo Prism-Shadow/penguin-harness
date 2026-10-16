@@ -110,14 +110,13 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
   const rest = tests.filter((name) => !core.includes(name) && !server.includes(name));
   const linuxRest = rest.filter((name) => !webCli.includes(name));
   // Browser/static-site behavior is covered once on Linux. Native runtime packages
-  // still run on every OS; release validation retains the complete three-OS suite.
-  const nativeRest = full
-    ? rest
-    : rest.filter(
-        (name) =>
-          nativeAffected.has(name) &&
-          !["web", "ui", "ui-gallery", "docs", "landing"].some((p) => name === `${prefix}${p}`),
-      );
+  // still run on every OS; release validation retains the complete three-OS suite, with the
+  // sites in a shard of their own there: beside the native packages they made the longest job
+  // of a full run (8 min on Windows).
+  const isSite = (name) =>
+    ["web", "ui", "ui-gallery", "docs", "landing"].some((p) => name === `${prefix}${p}`);
+  const nativeRest = rest.filter((name) => !isSite(name) && (full || nativeAffected.has(name)));
+  const sites = full ? rest.filter(isSite) : [];
   const linux = [
     shard("core", core),
     shard("server", server),
@@ -149,6 +148,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
       smoke: nativeAffected.has(`${prefix}desktop`),
       must_run: "sandbox-seatbelt,sandbox-dsh",
     }),
+    shard("sites", sites),
   ].filter((s) => s.packages.length);
   const windows = [
     shard("core", core),
@@ -158,6 +158,7 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
       }),
     ),
     shard("rest", nativeRest, { must_run: "sandbox-dsh" }),
+    shard("sites", sites),
   ].filter((s) => s.packages.length);
   const types = selected.filter((p) => p.scripts.typecheck).map((p) => p.name);
   return {

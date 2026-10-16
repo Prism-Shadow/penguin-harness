@@ -17,7 +17,7 @@ import type {
   CaseMaterial,
   WorkspaceFileEntry,
 } from "@prismshadow/penguin-server/api";
-import { Badge, FileBrowser } from "@prismshadow/penguin-ui";
+import { FileBrowser, Pill } from "@prismshadow/penguin-ui";
 import type { FileBrowserPreview, FileTreeRow, TreeToggle } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
@@ -334,7 +334,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
       if (row.material !== "rubric") return null;
       return (
         <span className="shrink-0">
-          <Badge size="sm">{S.benchmark.agentHidden}</Badge>
+          <Pill>{S.benchmark.agentHidden}</Pill>
         </span>
       );
     }

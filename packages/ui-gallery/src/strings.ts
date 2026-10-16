@@ -678,12 +678,19 @@ export const zh = {
       },
       action: "查看",
       dismiss: "忽略",
-      variants: "三种变体",
+      variants: "四种变体",
       variantNames: {
         strip: "条带：横贯面板",
         callout: "提示块：独立成块",
         inline: "行内：嵌在内容里",
+        banner: "横幅：横贯一栏、居中一行，关闭叉在最右",
       },
+      bannerText: "当前账号正在使用初始密码，建议尽快修改",
+      bannerAction: "去修改",
+      closable: "可关闭的提示",
+      reopen: "重新显示",
+      closableHint: "关闭叉是平的，取提示自己的墨色；要跨页面记住关闭的，由调用方保存。",
+      closableText: "环境变量里的模型密钥无法同步到这台机器，请先手动配置模型密钥。",
       retry: "重试",
       calloutTitle: "模板里缺少记忆占位符",
       calloutBody: "在提示词模板里插入占位符后，记忆才会注入对话。",
@@ -755,6 +762,15 @@ export const zh = {
       body: (tab: string) => `「${tab}」的内容。`,
     },
     badges: {
+      pills: "标签胶囊",
+      pillsHint:
+        "一种形状：高度、内边距、圆角、字号与描边都相同，只按语义换语气；只写词，不带图形。",
+      pillRow: {
+        thisServer: "本服务端",
+        running: "运行中",
+        update: "需要更新",
+        caption: "卡片标题行：标签、状态与更新胶囊同一形状",
+      },
       badges: "徽标",
       tones: {
         neutral: "默认",
@@ -1416,7 +1432,8 @@ export const zh = {
     },
     machines: {
       pills: "状态胶囊",
-      pillsHint: "每种状态都是一个词加一个图形，原因悬停胶囊显示；不用意义不明的彩色圆点。",
+      pillsHint:
+        "每种状态都是一个词，与本服务端标签同一形状，原因悬停胶囊显示；不带图形，也不用意义不明的彩色圆点。",
       states: {
         serving: "运行中",
         ready: "运行中",

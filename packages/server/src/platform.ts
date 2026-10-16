@@ -96,7 +96,11 @@ import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
 import { ProjectNotifier } from "./services/project-events.js";
-import { ProjectService, ProjectRuns } from "./services/project-service.js";
+import {
+  ProjectService,
+  ProjectRuns,
+  ShippedBuiltinBenchmarkSeeds,
+} from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
 import { AdminService } from "./services/admin-service.js";
 import { Scheduler, ScheduleSessionCreator, ScheduleTaskRunner } from "./runtime/scheduler.js";
@@ -293,6 +297,7 @@ export class IdentityModule {}
     AgentsRepo,
     ProjectAccess,
     ProjectNotifier,
+    ShippedBuiltinBenchmarkSeeds,
     ProjectService,
     ProjectConfigService,
     ModelOAuthService,

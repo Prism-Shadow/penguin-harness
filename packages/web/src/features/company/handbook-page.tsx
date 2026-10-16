@@ -27,7 +27,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import type { OrgHandbookFile, OrgHandbookFileResponse } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
+  Pill,
   Button,
   ConfirmModal,
   EmptyState,
@@ -382,7 +382,7 @@ export function HandbookPage() {
                   and its accessible name. */}
               {isIndex && (
                 <span className="shrink-0">
-                  <Badge size="sm">{S.company.handbook.indexLabel}</Badge>
+                  <Pill>{S.company.handbook.indexLabel}</Pill>
                 </span>
               )}
               {selectedFile !== null && (

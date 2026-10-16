@@ -219,10 +219,13 @@ export class ExtensionHub {
 
   private publish(entry: Entry, state: "connected" | "disconnected" | "replaced"): void {
     const row = entry.extensionId !== null ? this.deps.store.findById(entry.extensionId) : null;
+    // "connected" is published by the last connect listener, a moment before the link counts as
+    // connected itself: the extension it names is the one that just connected.
+    const connected = state === "connected" ? entry.extensionId : this.connectedId(entry.userId);
     this.deps.publish(entry.userId, {
       type: "builtin_browser_extension",
       state,
-      ...(row !== null ? { extension: this.record(row, this.connectedId(entry.userId)) } : {}),
+      ...(row !== null ? { extension: this.record(row, connected) } : {}),
     });
   }
 }
