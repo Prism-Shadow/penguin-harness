@@ -20,6 +20,9 @@
  * bootInstallScope for why that is the remedy rather than making those modules lazy.
  */
 import { StrictMode } from "react";
+import type { ComponentType } from "react";
+import { bootFailedRoot } from "./rescue/rescue-panel";
+import { adoptSafeModeParam } from "./rescue/safe-mode";
 import { createRoot } from "react-dom/client";
 import { hasEscLayers } from "@prismshadow/penguin-ui";
 import { App } from "./app";
@@ -45,21 +48,25 @@ installSelectionCopy(document);
 const container = document.getElementById("root");
 if (!container) throw new Error("#root mount point not found");
 
-function mount(): void {
+function mount(Root?: ComponentType<{ initialPath?: string }>): void {
   createRoot(container!).render(
     <StrictMode>
-      <App />
+      <App {...(Root === undefined ? {} : { Root })} />
     </StrictMode>,
   );
 }
 
 // A second tab can recognise a replaced root while this one is open, leaving everything on
 // screen here pointing at a data root that is gone.
+adoptSafeModeParam();
 watchInstallScope();
 
 // The rejection handler mounts too: bootInstallScope already swallows everything it can, and
 // the app must mount even if it somehow does not.
-void bootInstallScope().then((action) => {
-  if (action === "reload") location.reload();
-  else mount();
-}, mount);
+void bootInstallScope().then(
+  (action) => {
+    if (action === "reload") location.reload();
+    else mount();
+  },
+  (error: unknown) => mount(bootFailedRoot(error)),
+);

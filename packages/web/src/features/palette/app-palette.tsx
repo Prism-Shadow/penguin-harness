@@ -19,6 +19,8 @@ import { CommandPalette, toastError, toastInfo } from "@prismshadow/penguin-ui";
 import type { PaletteAction } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
+import { setSafeMode, useSafeMode } from "../../rescue/safe-mode";
+import { useAddedPaletteActions } from "../../lib/palette-actions";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
@@ -92,6 +94,8 @@ export function hostCommandActions(
  * workbench route registers its way out here, which is why it exists at all on that route.
  */
 export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteAction[] }) {
+  const added = useAddedPaletteActions();
+  const safe = useSafeMode();
   const [open, setOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -134,7 +138,14 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
 
   const actions = useMemo<PaletteAction[]>(
     () => [
+      ...added,
       ...extra,
+      {
+        id: "safe-mode",
+        label: safe ? S.rescue.leaveAction : S.rescue.enterAction,
+        keywords: ["safe mode", "contributions", "plugins"],
+        run: () => setSafeMode(!safe),
+      },
       {
         id: "harness-history",
         label: S.commandPalette.harnessHistory,
@@ -165,7 +176,7 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
         },
       },
     ],
-    [extra, offers, locale],
+    [added, safe, extra, offers, locale],
   );
 
   return (
