@@ -3,6 +3,7 @@
 - **Date:** 2026-10-16
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1175](https://github.com/Prism-Shadow/penguin-harness/pull/1175)
 
 [中文版](2026-10-16-agent-state-transfer-consistency.zh.md)
 
