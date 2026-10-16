@@ -13,7 +13,7 @@
 ## 规则
 
 - 条目自己的 key，或能借给它的分组密钥，原样使用。
-- 两者都没有时，只有所在分组 `official = true` 且条目不自带 `base_url`，才可用环境变量。分组也没有 base URL 时什么都不传，由 MMSP 的客户端自行读取其变量对（包括在 key 旁设置的 `*_BASE_URL`）；分组带 base URL 时，按生效 `client_type` 读取对应变量并显式传入，变量未设置、或没有协议可据以命名变量时拒绝。
+- 两者都没有时，只有所在分组 `official = true` 且条目不自带 `base_url`，才可用环境变量。分组也没有 base URL 时什么都不传，由 MMSP 的客户端自行读取其变量对（包括在 key 旁设置的 `*_BASE_URL`）；分组带 base URL 时，读取分组 `client_type` 对应的变量并显式传入，但只给生效 `client_type` 读取同一变量（同一个 `MMSP_CLIENTS` 前缀）的模型；固定到读取其他厂商变量的客户端的模型被拒绝，并提示在模型上设置 key。变量未设置、或分组没有协议可据以命名变量时同样拒绝。
 - 其余无 key 的模型一律以「has no API key」拒绝：网关、Penguin Go、ModelScope、custom、vLLM、自建分组，以及自带 base URL 的模型（厂商自身端点也不例外）。协议为 `mmsp` 且有 base URL 的模型仍不带 key 发出。
 
 ## 由谁写入

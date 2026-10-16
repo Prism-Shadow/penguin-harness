@@ -2483,6 +2483,21 @@ describe("official groups (which groups the environment may lend a vendor key to
     // A row with its own base URL, or in a group no longer official: nothing.
     expect(preview({ ...flash, base_url: "https://api.deepseek.com" })).toBeUndefined();
     expect(preview(flash, { official: false })).toBeUndefined();
+    // A row pinned to another vendor's client on an official group's base URL: nothing either,
+    // as a Session on it is refused; with no base URL, its client's own variable.
+    const pinned = {
+      provider: "openai",
+      model_id: "claude-sonnet-5",
+      client_type: "anthropic-official",
+    };
+    expect(
+      preview(pinned, {
+        official: true,
+        base_url: "https://api.openai.com/v1",
+        client_type: "openai-official",
+      }),
+    ).toBeUndefined();
+    expect(preview(pinned, { official: true })).toBe("ANTHROPIC_API_KEY");
   });
 
   it("a bare endpoint is lent a protocol's variable only with no base URL or on that vendor's own endpoint", () => {

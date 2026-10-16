@@ -13,9 +13,12 @@
  *   environment is never read.
  * - Given an official group with no base URL, a keyless row is handed nothing: the routed
  *   client reads its own variable pair, whether or not the variable is set.
- * - Given an official group with a base URL, a keyless row gets the effective client type's
- *   variable passed explicitly (the row's protocol over the group's); unset is refused, naming
- *   the variable; no protocol to name one is refused, naming the fix.
+ * - Given an official group with a base URL, a keyless row gets the variable the group's
+ *   protocol reads passed explicitly, when its own protocol reads the same one; unset is refused,
+ *   naming the variable; a group with no protocol to name one is refused, naming the fix.
+ * - Given an official group with a base URL, a row pinned to a client that reads another
+ *   vendor's variable is refused, telling the user to set the key on the row, and that vendor's
+ *   variable is never read — let alone sent to the group's endpoint.
  * - Given an official group, a row that names its own base URL is refused, never lent the
  *   environment — even when that base URL is the vendor's own.
  * - Given a group that is not official, a keyless row is refused whatever vendor variables are
@@ -215,7 +218,7 @@ describe("resolveEntryCredential (PRN-021: the environment follows the group's o
     ).toEqual({ clientType: "deepseek-official" });
   });
 
-  it("an official group with a base URL passes the effective protocol's variable explicitly", () => {
+  it("an official group with a base URL passes its protocol's variable explicitly, to a row whose protocol reads the same one", () => {
     const zai = {
       official: true,
       baseUrl: "https://open.bigmodel.cn/api/paas/v4",
@@ -227,20 +230,85 @@ describe("resolveEntryCredential (PRN-021: the environment follows the group's o
       baseUrl: zai.baseUrl,
       clientType: "zai-official",
     });
-    // The row's own protocol names the variable over the group's.
+    // A row pinned to another client that reads the group's variable still gets it.
+    const openai = {
+      official: true,
+      baseUrl: "https://api.openai.com/v1",
+      clientType: "openai-official",
+    };
     expect(
-      resolveEntryCredential({ ...row, client_type: "anthropic-official" }, zai, {}, VENDOR_ENV),
-    ).toMatchObject({ apiKey: "sk-anthropic-env", clientType: "anthropic-official" });
+      resolveEntryCredential(
+        { provider: "openai", model_id: "gpt-6", client_type: "openai-chat" },
+        openai,
+        {},
+        VENDOR_ENV,
+      ),
+    ).toEqual({ apiKey: "sk-openai-env", baseUrl: openai.baseUrl, clientType: "openai-chat" });
     // Unset: refused, naming the variable, before any client exists.
     expect(() => resolveEntryCredential(row, zai, {}, { OPENAI_API_KEY: "x" })).toThrow(
       /has no API key.*ZAI_API_KEY/,
     );
-    // No protocol to name one, or one MMSP does not have: refused, naming the fix.
+    // No group protocol to name one, or one MMSP does not have: refused, naming the fix — even
+    // for a row whose own protocol would name one.
     for (const clientType of [undefined, "not-a-client"]) {
-      expect(() => resolveEntryCredential(row, { ...zai, clientType }, {}, VENDOR_ENV)).toThrow(
-        /has no API key.*set the group's protocol/,
-      );
+      for (const own of [undefined, "zai-official"]) {
+        expect(() =>
+          resolveEntryCredential(
+            { ...row, client_type: own },
+            { ...zai, clientType },
+            {},
+            VENDOR_ENV,
+          ),
+        ).toThrow(/has no API key.*set the group's protocol/);
+      }
     }
+  });
+
+  it("a row pinned to another vendor's client in an official group with a base URL is refused, and that vendor's key is never read", () => {
+    // An official OpenAI group on OpenAI's endpoint, holding a row pinned to Anthropic's client.
+    const openai = {
+      official: true,
+      baseUrl: "https://api.openai.com/v1",
+      clientType: "openai-official",
+    };
+    const row = {
+      provider: "openai",
+      model_id: "claude-sonnet-5",
+      client_type: "anthropic-official",
+    };
+    const read: string[] = [];
+    const env = new Proxy(VENDOR_ENV as Record<string, string | undefined>, {
+      get(target, key) {
+        if (typeof key === "string") read.push(key);
+        return target[key as string];
+      },
+    });
+    let refusal: unknown;
+    try {
+      resolveEntryCredential(row, openai, {}, env);
+    } catch (err) {
+      refusal = err;
+    }
+    expect(refusal).toBeInstanceOf(ModelCredentialError);
+    expect((refusal as Error).message).toMatch(
+      /has no API key.*anthropic-official.*set the API key on the model entry/,
+    );
+    expect((refusal as Error).message).not.toContain(VENDOR_ENV.ANTHROPIC_API_KEY);
+    expect(read).not.toContain("ANTHROPIC_API_KEY");
+    expect(environmentKeyRoute({ clientType: "anthropic-official" }, openai)).toEqual({
+      kind: "foreign",
+      clientType: "anthropic-official",
+    });
+    // A protocol MMSP does not have reads no variable of the group's either.
+    expect(() =>
+      resolveEntryCredential({ ...row, client_type: "not-a-client" }, openai, {}, VENDOR_ENV),
+    ).toThrow(/set the API key on the model entry/);
+    // With no base URL, the pinned client goes to its own vendor's endpoint with its own
+    // variable, read by the client itself: nothing is handed over, nothing is refused.
+    expect(resolveEntryCredential(row, { official: true }, {}, env)).toEqual({
+      clientType: "anthropic-official",
+    });
+    expect(read).not.toContain("ANTHROPIC_API_KEY");
   });
 
   it("a row that names its own base URL gets no environment key, even in an official group and on the vendor's own endpoint", () => {

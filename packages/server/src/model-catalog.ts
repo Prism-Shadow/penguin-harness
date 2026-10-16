@@ -3708,7 +3708,7 @@ export function officialConnection(
  * server-side write of either field stores. A first-party vendor group (officialVendor) gets
  * the boolean officialConnection answers, and an official group with a base URL but no protocol
  * gets the vendor's official client as its `client_type`: core names the environment variable
- * after the effective client type, and the client a vendor's rows route to by id is that one.
+ * after the group's client type, and the client a vendor's rows route to by id is that one.
  * Every other group loses the key (absent reads as false). A fresh object; `group` is not
  * changed.
  */
@@ -3753,8 +3753,9 @@ export function providerEnvFallbackKey(
 
 /**
  * The variable a keyless row authenticates with under PRN-021 (core's environmentKeyRoute),
- * or undefined when the environment lends it nothing: the explicit variable for a row on its
- * official group's base URL, else — no base URL anywhere — the one the routed client reads
+ * or undefined when the environment lends it nothing: the group protocol's variable for a row
+ * on its official group's base URL whose protocol reads the same one (a row pinned to another
+ * vendor's client gets none), else — no base URL anywhere — the one the routed client reads
  * (resolveModelEnv on the effective protocol, the id's family otherwise). `entry` is the row's
  * OWN values and `group` its `[providers.<id>]` table.
  *
@@ -3766,8 +3767,8 @@ export function modelEnvPreviewKey(
   group: ProviderConnectionShape | undefined,
 ): string | undefined {
   const route = environmentKeyRoute(entry, group);
-  if (route === undefined || route.kind === "unnamed") return undefined;
-  if (route.kind === "explicit") return route.envKey;
+  if (route?.kind === "explicit") return route.envKey;
+  if (route?.kind !== "client") return undefined;
   return resolveModelEnv(entry.modelId, entry.clientType?.trim() || group?.clientType)?.envKey;
 }
 
