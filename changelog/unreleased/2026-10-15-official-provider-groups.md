@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `cli`, `model-catalog`
+- **PR:** [#1166](https://github.com/Prism-Shadow/penguin-harness/pull/1166)
 - **Breaking:** yes — only rows of an `official` group that name no base URL of their own may use a vendor environment variable, and `PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL` are no longer read
 
 [中文版](2026-10-15-official-provider-groups.zh.md)

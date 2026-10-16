@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** refactor
 - **Scope:** `server`, `core`
+- **PR:** [#1166](https://github.com/Prism-Shadow/penguin-harness/pull/1166)
 - **Breaking:** yes — environment keys follow the Project config's `official` flag, and `PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL` are no longer read
 
 [中文版](2026-10-15-backward-compatibility.zh.md)

@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `cli`, `model-catalog`
+- **PR:** [#1166](https://github.com/Prism-Shadow/penguin-harness/pull/1166)
 - **Breaking:** yes — 只有 `official` 分组里不自带 base URL 的条目可用厂商环境变量，`PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL` 不再读取
 
 [English](2026-10-15-official-provider-groups.md)
