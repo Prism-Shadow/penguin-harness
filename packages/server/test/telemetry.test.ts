@@ -157,7 +157,9 @@ describe("telemetry", () => {
     expect((await member.delete("/api/telemetry")).status).toBe(403);
     expect((await member.put("/api/admin/settings", { telemetry: false })).status).toBe(403);
     expect((await admin.delete("/api/telemetry")).status).toBe(200);
-    expect(await read("?view=samples")).toMatchObject({ buffered: 0, samples: [] });
+    // A clear leaves nothing behind: what the read finds is only its own memory snapshot.
+    const after = (await read("?view=samples")).samples ?? [];
+    expect(after.map((s) => s.probe).filter((p) => !p.endsWith(".memory"))).toEqual([]);
     await turn(false);
     expect(await read()).toMatchObject({ enabled: false, buffered: 0 });
   });
