@@ -1,6 +1,6 @@
 /**
- * Shell↔server message-port relay (desktop mode only): client updates, the tray icon, and the
- * Workspace picker's macOS folder access.
+ * Shell↔server message-port relay (desktop mode only): client updates, the tray icon, the
+ * Workspace picker's macOS folder access, and the command palette's New Window.
  *
  * Under the desktop shell this server runs as an Electron utilityProcess, which injects
  * `process.parentPort` — an EventEmitter-ish port to the shell. The shell pushes its
@@ -22,6 +22,7 @@ import type {
   DesktopFolderAccessResult,
   DesktopFolderAccessResultMessage,
   DesktopOpenPrivacySettingsMessage,
+  DesktopOpenWindowMessage,
   DesktopTrayCommandMessage,
   DesktopTrayStatus,
   DesktopTrayStatusMessage,
@@ -240,5 +241,8 @@ export function wireShellUpdatePort(
   });
   desktop.onCommand((command) => {
     port.postMessage({ type: "host-command", command } satisfies HostCommandMessage);
+  });
+  desktop.onOpenWindowCommand(() => {
+    port.postMessage({ type: "desktop-open-window" } satisfies DesktopOpenWindowMessage);
   });
 }

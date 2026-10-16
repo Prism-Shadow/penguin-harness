@@ -20,6 +20,7 @@ import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { setSafeMode, useSafeMode } from "../../rescue/safe-mode";
 import { useAddedPaletteActions } from "../../lib/palette-actions";
+import { offersNewWindow } from "../../lib/desktop-window";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
@@ -114,6 +115,8 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
     [],
   );
   const toggleShortcut = useShortcutLabel("palette.toggle");
+  const { desktopMode, sessionVia } = useAuth();
+  const newWindow = offersNewWindow({ desktopMode, sessionVia });
 
   const { user } = useAuth();
   const isAdmin = user?.isAdmin === true;
@@ -150,6 +153,19 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
     () => [
       ...added,
       ...extra,
+      // The shell opens the window; the page only asks (see lib/desktop-window.ts).
+      ...(newWindow
+        ? [
+            {
+              id: "new-window",
+              label: S.commandPalette.newWindow,
+              keywords: ["new window", "open window", "second window"],
+              run: () => {
+                void api.openDesktopWindow().catch((err: unknown) => toastError(apiErrorText(err)));
+              },
+            },
+          ]
+        : []),
       {
         id: "safe-mode",
         label: safe ? S.rescue.leaveAction : S.rescue.enterAction,
@@ -186,7 +202,7 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
         },
       },
     ],
-    [added, safe, extra, offers, locale],
+    [added, safe, extra, offers, locale, newWindow],
   );
 
   return (

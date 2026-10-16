@@ -5580,6 +5580,11 @@ export interface DesktopOpenPrivacySettingsMessage {
   pane: DesktopPrivacyPane;
 }
 
+/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/window). No reply. */
+export interface DesktopOpenWindowMessage {
+  type: "desktop-open-window";
+}
+
 /**
  * A native action the host process can run on the page's behalf — what the desktop shell's
  * application menu used to offer, reached from the command palette instead (the menu bar
