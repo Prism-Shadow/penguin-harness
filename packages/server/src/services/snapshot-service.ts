@@ -26,11 +26,13 @@ import {
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config, Paths } from "../hmr/capabilities.js";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import type { Paths } from "../hmr/capabilities.js";
 import type { Snapshots } from "../mechanisms/agents.js";
 
 /** Vault file name inside a snapshot/import package (used for archive filtering). */
 const VAULT_BASENAME = ".vault.toml";
+const TRANSFERS_RESOURCE_ID = "platform.agentStateTransfers";
 
 function isVaultEntry(entryPath: string): boolean {
   return path.posix.basename(entryPath.replaceAll("\\", "/")) === VAULT_BASENAME;
@@ -39,8 +41,39 @@ function isVaultEntry(entryPath: string): boolean {
 @Component()
 export class SnapshotService implements Snapshots {
   @Use() private readonly paths!: Paths;
+  private transfers = new Map<string, Promise<void>>();
   private get root(): string {
     return this.paths.root;
+  }
+
+  setup({ resources }: ClassCtx) {
+    // In-flight HTTP transfers outlive the platform generation that accepted them.
+    this.transfers = resources.claim(TRANSFERS_RESOURCE_ID) ?? this.transfers;
+    resources.register(TRANSFERS_RESOURCE_ID, this.transfers);
+  }
+
+  private async withTransfer<T>(
+    projectId: string,
+    agentId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    let key: string;
+    try {
+      key = await fs.realpath(agentDir(this.root, projectId, agentId));
+    } catch {
+      throw new HttpError(404, "agent_not_found", "Agent does not exist.");
+    }
+    const next = (this.transfers.get(key) ?? Promise.resolve()).then(operation);
+    const settled = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.transfers.set(key, settled);
+    try {
+      return await next;
+    } finally {
+      if (this.transfers.get(key) === settled) this.transfers.delete(key);
+    }
   }
 
   /** Current Agent State version number (missing field treated as 1); throws 404 if the Agent doesn't exist. */
@@ -62,6 +95,14 @@ export class SnapshotService implements Snapshots {
     projectId: string,
     agentId: string,
   ): Promise<{ version: number; file: string }> {
+    return this.withTransfer(projectId, agentId, () => this.packSnapshot(projectId, agentId));
+  }
+
+  /** Called while this Agent's transfer owns the state directory. */
+  private async packSnapshot(
+    projectId: string,
+    agentId: string,
+  ): Promise<{ version: number; file: string }> {
     const version = await this.currentVersion(projectId, agentId);
     const dir = snapshotsDir(this.root, projectId, agentId);
     const file = path.join(dir, `v${version}.tar.gz`);
@@ -73,17 +114,21 @@ export class SnapshotService implements Snapshots {
     }
     await fs.mkdir(dir, { recursive: true });
     const tmp = `${file}.tmp-${randomBytes(4).toString("hex")}`;
-    await tar.create(
-      {
-        gzip: true,
-        cwd: agentDir(this.root, projectId, agentId),
-        file: tmp,
-        portable: true,
-        filter: (p) => !isVaultEntry(p),
-      },
-      ["agent_state"],
-    );
-    await fs.rename(tmp, file);
+    try {
+      await tar.create(
+        {
+          gzip: true,
+          cwd: agentDir(this.root, projectId, agentId),
+          file: tmp,
+          portable: true,
+          filter: (p) => !isVaultEntry(p),
+        },
+        ["agent_state"],
+      );
+      await fs.rename(tmp, file);
+    } finally {
+      await fs.rm(tmp, { force: true });
+    }
     return { version, file };
   }
 
@@ -113,10 +158,22 @@ export class SnapshotService implements Snapshots {
     archive: Buffer,
     opts: { confirm: boolean; preSnapshot?: boolean },
   ): Promise<{ version: number }> {
+    return this.withTransfer(projectId, agentId, () =>
+      this.replaceFromArchive(projectId, agentId, archive, opts),
+    );
+  }
+
+  private async replaceFromArchive(
+    projectId: string,
+    agentId: string,
+    archive: Buffer,
+    opts: { confirm: boolean; preSnapshot?: boolean },
+  ): Promise<{ version: number }> {
     const current = await this.currentVersion(projectId, agentId);
     const base = agentDir(this.root, projectId, agentId);
     const staging = path.join(base, `.import-${randomBytes(6).toString("hex")}`);
     await fs.mkdir(staging, { recursive: true });
+    let preserveStaging = false;
     try {
       const archiveFile = path.join(staging, "archive.tar.gz");
       await fs.writeFile(archiveFile, archive);
@@ -166,22 +223,17 @@ export class SnapshotService implements Snapshots {
       }
 
       // Automatically snapshots the current version before import (reused if one already exists for that version), so a mistaken import can be rolled back.
-      if (opts.preSnapshot !== false) await this.ensureSnapshot(projectId, agentId);
+      if (opts.preSnapshot !== false) await this.packSnapshot(projectId, agentId);
 
-      // Replace agent_state: first merge the current vault into the staging
-      // directory to be swapped in (extraction already filtered out any vault
-      // inside the package, so no conflict), making the replacement a pure rename
-      // swap — once the swap lands, there's no further write that can fail. The
-      // vault never goes into a snapshot, so if recovery fails after the swap, the
-      // `finally` cleanup of staging would delete the only vault copy with no way
-      // to roll back.
+      // Prepare the vault before swapping directories; snapshots exclude secrets,
+      // so a failed rollback must retain the original state in staging.
       const stateDir = agentStateDir(this.root, projectId, agentId);
       const incomingState = path.join(extractDir, "agent_state");
       let vault: Buffer | null = null;
       try {
         vault = await fs.readFile(agentVaultPath(this.root, projectId, agentId));
-      } catch {
-        // No vault means nothing to preserve.
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
       }
       if (vault !== null) {
         await fs.writeFile(path.join(incomingState, VAULT_BASENAME), vault, { mode: 0o600 });
@@ -191,12 +243,20 @@ export class SnapshotService implements Snapshots {
       try {
         await fs.rename(incomingState, stateDir);
       } catch (err) {
-        await fs.rename(trash, stateDir); // Rollback: restore the old directory if swapping in the new one fails.
+        try {
+          await fs.rename(trash, stateDir);
+        } catch (restoreError) {
+          preserveStaging = true;
+          throw new AggregateError(
+            [err, restoreError],
+            `Import failed and the previous Agent State could not be restored. Recovery copy: ${trash}`,
+          );
+        }
         throw err;
       }
       return { version: incoming };
     } finally {
-      await fs.rm(staging, { recursive: true, force: true });
+      if (!preserveStaging) await fs.rm(staging, { recursive: true, force: true });
     }
   }
 }
