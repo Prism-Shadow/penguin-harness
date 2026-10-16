@@ -37,23 +37,15 @@
  * dialog's back control pops.
  *
  * Company events ride the same user-level event stream the session list consumes
- * (state/sessions.tsx forwards them through `publishCompanyEvent`): the store keeps the
- * channel counters of the open organization in step and bumps a version per event family,
- * which the pages watch to refetch — the query routes carry the durable state, the events only say
+ * (state/sessions.tsx hands them to `companyUserEvents`, company's contribution to
+ * `SessionsModule.userEvents`): the store keeps the channel counters of the open organization
+ * in step and bumps a version per event family, which the pages watch to refetch — the query routes carry the durable state, the events only say
  * that it moved.
  *
  * State lives in a zustand vanilla store (one instance per Provider mount) like the Project
  * and Session stores; the Provider is the lifecycle component that hydrates it.
  */
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type {
   CompanyServerEvent,
@@ -68,23 +60,24 @@ import type {
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import { toastAttention } from "@prismshadow/penguin-ui";
-import * as api from "../api/endpoints";
-import { apiErrorText } from "../lib/api-error";
-import { S } from "../lib/strings";
-import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/company-beta";
-import { channelBadgeCounts } from "../features/company/channel-list";
-import { homePath, orgKey, parseOrgKey, type WorkMode } from "../lib/company-nav";
+import * as api from "../../api/endpoints";
+import { apiErrorText } from "../../lib/api-error";
+import { S } from "../../lib/strings";
+import { markBetaNoticeShown, shouldShowBetaNotice } from "./company-beta";
+import { channelBadgeCounts } from "./channel-list";
+import { homePath, orgKey, parseOrgKey, type WorkMode } from "../../lib/company-nav";
 
-import { withDeskMessagingChannel } from "../features/company/org-sessions";
+import { withDeskMessagingChannel } from "./org-sessions";
 import {
   clearLastOrgKey,
   initialLastOrgKey,
   initialWorkMode,
   storeLastOrgKey,
   storeWorkMode,
-} from "../lib/work-mode";
-import { useAuth } from "./auth";
-import { useProject } from "./project";
+} from "../../lib/work-mode";
+import { useAuth } from "../../state/auth";
+import { useProject } from "../../state/project";
+import type { UserEventHandler } from "../../state/user-events";
 
 /** The event families the organization scheduler publishes on the user channel. */
 export function isCompanyEvent(ev: ServerEvent): ev is CompanyServerEvent {
@@ -97,8 +90,8 @@ export function isCompanyEvent(ev: ServerEvent): ev is CompanyServerEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Event fan-out: the one SSE connection (state/sessions.tsx) publishes here, and the store
-// plus any mounted page subscribe. Module level, because the connection outlives every page.
+// Event fan-out: the one SSE connection (state/sessions.tsx) publishes here through
+// `companyUserEvents`, and the store plus any mounted page subscribe. Module level, because the connection outlives every page.
 // ---------------------------------------------------------------------------
 
 type CompanyEventListener = (ev: CompanyServerEvent) => void;
@@ -123,9 +116,22 @@ export function subscribeCompanyEvents(listener: CompanyEventListener): () => vo
  */
 const resyncListeners = new Set<() => void>();
 
-export function publishCompanyResync(): void {
+function publishCompanyResync(): void {
   for (const listener of resyncListeners) listener();
 }
+
+/**
+ * Company's handler on the user event stream: the scheduler's notifications, and what a plugin
+ * publishes about its own organization surfaces, fan out to the company store and any mounted
+ * organization page, from whichever source; a resync from any source has them re-read their
+ * snapshots.
+ */
+export const companyUserEvents: UserEventHandler = {
+  event: (ev) => {
+    if (isCompanyEvent(ev)) publishCompanyEvent(ev);
+  },
+  resync: () => publishCompanyResync(),
+};
 
 export function subscribeCompanyResync(listener: () => void): () => void {
   resyncListeners.add(listener);
@@ -139,25 +145,6 @@ export function useCompanyEvents(handler: CompanyEventListener): void {
   const ref = useRef(handler);
   ref.current = handler;
   useEffect(() => subscribeCompanyEvents((ev) => ref.current(ev)), []);
-}
-
-/** Which ticket the detail dialog is showing; a ticket is always read inside one organization. */
-export interface TicketDialogTarget {
-  projectId: string;
-  orgId: string;
-  ticketId: string;
-}
-
-/** Version counters, one per event family: a page refetches when the one it depends on moves. */
-export interface CompanyVersions {
-  /** The organization list (an org's summary counts changed: a budget pause, a run, a resync). */
-  orgs: number;
-  /** A new message landed in one of the organization's channels. */
-  messages: number;
-  tickets: number;
-  /** A desk or ticket Session was opened by the scheduler, or a resync may have lost that news. */
-  runs: number;
-  budget: number;
 }
 
 interface CompanyStoreState {
@@ -652,59 +639,6 @@ export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
 
 export type CompanyStore = ReturnType<typeof createCompanyStore>;
 
-interface CompanyContextValue {
-  /** The server's master switch. */
-  serverEnabled: boolean;
-  /** The user's own switch. */
-  personalEnabled: boolean;
-  /** Both switches on: the mode switch renders and `/org` routes resolve. */
-  available: boolean;
-  /** The effective mode: the chosen one while company mode is available, development otherwise. */
-  workMode: WorkMode;
-  /** Where `/` and an unmatched path lead in the effective mode (company-nav.ts homePath). */
-  homePath: string;
-  setWorkMode: (mode: WorkMode) => void;
-  setPersonalEnabled: (enabled: boolean) => void;
-  organizations: OrganizationSummary[];
-  orgsLoading: boolean;
-  orgsLoaded: boolean;
-  currentOrgKey: string | null;
-  /** The summary of the open organization (or, outside its routes, of the one last opened), when the list holds it. */
-  currentOrg: OrganizationSummary | null;
-  lastOrgKey: string | null;
-  setCurrentOrg: (key: string | null) => void;
-  /** The open organization's channels; null until the first listing arrives. */
-  channels: OrgChannelItem[] | null;
-  channelsError: string | null;
-  /** Unread and @me summed over the channels the user belongs to — the sidebar's and the rail's badges. */
-  channelUnread: number;
-  channelMentions: number;
-  reloadChannels: () => Promise<void>;
-  markChannelRead: (channelId: string) => void;
-  /** Desk and ticket Sessions of every organization of the current Project, keyed by org key. */
-  orgSessions: ReadonlyMap<string, OrgSessionsResponse>;
-  /** Writes a desk's messaging binding change into `orgSessions` (null = unbound), so its row's mark follows at once. */
-  setDeskMessagingChannel: (sessionId: string, channel: MessagingChannel | null) => void;
-  /** The open organization's employees, in chart order; null until the first read. */
-  orgChart: OrgChartResponse | null;
-  orgChartError: string | null;
-  reloadOrgChart: () => Promise<void>;
-  /** The ticket the detail dialog is showing; null when it is closed. */
-  ticketDialog: TicketDialogTarget | null;
-  /** How many tickets the dialog can go back through (the parents and children followed inside it). */
-  ticketBackDepth: number;
-  openTicket: (projectId: string, orgId: string, ticketId: string) => void;
-  closeTicket: () => void;
-  backTicket: () => void;
-  /** Say that a ticket was written here, so every surface that lists tickets refetches. */
-  ticketsChanged: () => void;
-  versions: CompanyVersions;
-  reloadOrganizations: () => Promise<void>;
-  reloadOrgSessions: () => Promise<void>;
-}
-
-const CompanyContext = createContext<CompanyContextValue | null>(null);
-
 export function CompanyProvider({ children }: { children: ReactNode }) {
   const { user, companyMode } = useAuth();
   const { projects, currentProject } = useProject();
@@ -875,8 +809,12 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
 }
 
-export function useCompany(): CompanyContextValue {
-  const ctx = useContext(CompanyContext);
-  if (!ctx) throw new Error("useCompany must be used within a CompanyProvider");
-  return ctx;
-}
+import {
+  CompanyContext,
+  type CompanyContextValue,
+  type CompanyVersions,
+  type TicketDialogTarget,
+} from "../../lib/company-context";
+
+export { useCompany } from "../../lib/company-context";
+export type { CompanyVersions, TicketDialogTarget } from "../../lib/company-context";

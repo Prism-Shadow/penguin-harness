@@ -30,7 +30,7 @@ import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navKeysFor } from "../../lib/nav-group-collapse";
-import { navPagesOf, useWebAppPages } from "../../web-app";
+import { navPagesOf, useWebAppLayers, useWebAppPages } from "../../web-app";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { backgroundStyle, useBackground } from "../../state/background";
 import { useAuth } from "../../state/auth";
@@ -39,7 +39,7 @@ import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
 import { useTrayLocale } from "../../state/use-tray-locale";
 import { NAV_ICONS } from "../../lib/nav-icons";
-import { useCompany } from "../../state/company";
+import { useCompany } from "../../features/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows, DefaultChannelRailRow } from "../../features/company/channel-sidebar";
 import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
@@ -52,12 +52,8 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { AppInfoDialog } from "../account/app-info-dialog";
-import { TerminalDockRuntime } from "../../features/terminal";
-import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
-import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
-import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
+
 import { setDockScope } from "../../features/dock/dock-state";
-import { AppPalette } from "../../features/palette/app-palette";
 
 /**
  * Whether the pinned sidebar (or its rail) is on screen: the shell's navigation column is
@@ -336,6 +332,7 @@ export function AppLayout() {
   // browser session, so a dot can be there on a fresh load instead of waiting for someone to
   // open the sidebar menu. Every other anchor reads the same caches passively.
   const badges = useUpdateBadges(true);
+  const layers = useWebAppLayers();
   // The drawer holds the sidebar, so the drawer button is named after what the sidebar lists:
   // conversations in development mode, channels in company mode.
   const company = useCompany();
@@ -500,17 +497,12 @@ export function AppLayout() {
       <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
         <Outlet />
       </main>
-      {/* The docks themselves render inside the chat page (features/dock); the xterm
-          views live in this pool and are adopted into dock tab bodies by DOM handoff,
-          so navigating between pages never reconnects a terminal. */}
-      <TerminalDockRuntime />
-      {/* Reconciles the shortcut mirror with the account's prefs and carries edits back. */}
-      <ShortcutRuntime />
-      {/* The built-in browser's pages (desktop app only): they live here, outside every page,
-          and are laid over the dock's browser tab by coordinates — a webview moved in the DOM
-          reloads, so navigating the app must never re-parent one. */}
-      <BuiltinBrowserLayer />
-      <AppPalette />
+      {/* The layers modules contributed (WebAppModule.layers): overlays and headless runtimes,
+          mounted once here, outside every page, so navigating never remounts or re-parents
+          one — a terminal would reconnect, a built-in browser's webview would reload. */}
+      {layers.map(({ id, Component }) => (
+        <Component key={id} />
+      ))}
     </AppShell>
   );
 }

@@ -16,8 +16,8 @@
  * The server has no per-Session schedule field and no push channel for the schedule directories —
  * an agent may write a task file at any moment — so the store decides *when* to look: on
  * navigation (the Project or the Session on screen changing), whenever the window regains focus
- * while a reader is mounted, on the `schedule_fired` / `schedule_queued` events (wired in
- * state/sessions.tsx), on the panel's slow poll while it is on screen, after every mutation the
+ * while a reader is mounted, on the `schedule_fired` / `schedule_queued` events
+ * (`scheduleUserEvents`, this feature's share of the user event stream), on the panel's slow poll while it is on screen, after every mutation the
  * panel makes, and on the edge where a turn settles (chat-page.tsx) — a turn may have written a
  * task file of its own.
  *
@@ -31,6 +31,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { ProjectScheduleItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
+import type { UserEventHandler } from "../../state/user-events";
 
 interface Entry {
   projectId: string;
@@ -135,14 +136,28 @@ export function retainSchedules(projectId: string | null): () => void {
 }
 
 /**
- * A schedule event landed for some Project (state/sessions.tsx, chat-page.tsx): refresh only when
- * that Project is on screen, so a task firing in another Project costs no request.
+ * A schedule event landed for some Project (`scheduleUserEvents`, chat-page.tsx): refresh only
+ * when that Project is on screen, so a task firing in another Project costs no request.
  */
 export function noteScheduleEvent(projectId: string): void {
   const entry = peek(projectId);
   if (entry === undefined || entry.readers === 0) return;
   void refreshSchedules(projectId);
 }
+
+/**
+ * The schedules' handler on the user event stream (`SessionsModule.userEvents`). Either schedule
+ * event moves a task's state — nextFireAt, lastFiredAt, the queued flag, or a one-off going
+ * done — so the conversation's schedule list is stale from here; `noteScheduleEvent` decides
+ * whether the Project is the one on screen.
+ */
+export const scheduleUserEvents: UserEventHandler = {
+  event: (ev) => {
+    if (ev.type === "schedule_fired" || ev.type === "schedule_queued") {
+      noteScheduleEvent(ev.projectId);
+    }
+  },
+};
 
 /** Regaining focus re-reads every Project a mounted reader is showing, and no other. */
 const onFocus = (): void => {
