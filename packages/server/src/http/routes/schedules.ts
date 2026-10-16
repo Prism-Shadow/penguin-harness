@@ -269,12 +269,10 @@ async function upsert(
   const raw = serializeSchedule(fields);
   const parsed = parseScheduleFile(name, raw);
   if (!parsed.ok) throw badRequest(`Invalid schedule configuration: ${parsed.error}`);
-  // Refuse a task that could never fire: the scheduler would archive it as soon as it landed.
+  // A one-shot in the past would fire at once (not offered); a past end_at could never fire.
   const nowMs = Date.now();
   if (parsed.def.periodMs === undefined && parsed.def.startAtMs <= nowMs) {
-    throw badRequest(
-      "start_at is already past: a one-time task needs a future start time.",
-    );
+    throw badRequest("start_at is already past: a one-time task needs a future start time.");
   }
   if (parsed.def.endAtMs !== undefined && parsed.def.endAtMs <= nowMs) {
     throw badRequest(
