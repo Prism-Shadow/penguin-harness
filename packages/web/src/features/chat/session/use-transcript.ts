@@ -8,6 +8,7 @@ import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import type { StreamModel } from "../../../lib/amsp/stream-model";
 import { aggregateMemoryChanges, sameMemoryChanges } from "../../../lib/amsp/memory-changes";
 import { panelDock } from "../../dock";
+import { machineForSession } from "../../../lib/session-machines";
 import { useOutlineRailFit } from "../conversation-outline";
 import { buildInputHistory } from "../input-history";
 import { buildOutline } from "../outline-model";
@@ -88,10 +89,12 @@ export function useTranscript(
   const sessionMemoryChanges = memoryChangesRef.current;
   // The Agent's memory listing, fetched once the Memory tab exists (its body is mounted
   // even behind another tab) or this conversation has changes to mark; shared by the
-  // Memory panel and the card's deleted-row marking.
+  // Memory panel and the card's deleted-row marking. Read from the machine the conversation
+  // is on: its Agent is that machine's, and so is its memory.
   const memoryListing = useMemoryListing(
     projectId,
     selected?.agentId ?? null,
+    selected === null ? null : machineForSession(selected.sessionId),
     panelDock("memory") !== null || sessionMemoryChanges.length > 0,
     sessionMemoryChanges,
   );

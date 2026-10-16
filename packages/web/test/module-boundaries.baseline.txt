@@ -48,7 +48,7 @@ cycle: features/terminal -> features/dock
 features/chat/body/main-chat-body.tsx -> features/dock/composer-height.ts
 features/chat/history-load-failed.tsx -> features/machines/machine-card.tsx
 features/chat/machine-away.ts -> features/machines/machines-view.ts
-features/company/handbook-page.tsx -> features/chat/workspace-browser.tsx
+features/company/handbook-page.tsx -> features/workspace/workspace-browser.tsx
 features/terminal/terminal-panel.tsx -> features/dock/dock-state.ts
 features/terminal/terminal-panel.tsx -> features/dock/dock-terminal.ts
 features/terminal/terminal-panel.tsx -> features/dock/panel-context.tsx
