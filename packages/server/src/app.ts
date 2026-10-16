@@ -38,6 +38,9 @@ import {
   HMR_HOST_RESOURCE_ID,
   HMR_CONTROL_RESOURCE_ID,
   HMR_OVERRIDES_RESOURCE_ID,
+  HMR_SHELL_FRAMES_RESOURCE_ID,
+  newShellFrames,
+  type ShellFrames,
   HMR_TEST_PLUGINS_RESOURCE_ID,
   type Replacements,
   HMR_PROXY_RESOURCE_ID,
@@ -103,7 +106,6 @@ import type { QQScanTransport } from "./runtime/messaging/qq-scan.js";
 import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { commandRoutes } from "./http/routes/command.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -196,6 +198,8 @@ export interface ServerBoot {
    * hmr/platform.ts), which is why `tree` is derived from it on every read rather than held.
    */
   instance: Instance<PlatformApi>;
+  /** The host's message port as state; index.ts fills it when a port exists. */
+  shellFrames: ShellFrames;
   /**
    * The tree the running App serves — read through `instance` each time, so a plugin
    * change's re-assembly is seen without any push. A generation that has no tree to answer
@@ -332,6 +336,8 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
+  const shellFrames = newShellFrames();
+  hmr.resources.register(HMR_SHELL_FRAMES_RESOURCE_ID, shellFrames);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -354,7 +360,10 @@ export async function bootAppDeps(
   // members: the runtime singletons published above, and `tree` — which follows the
   // instance of the moment, so a re-assembly (a plugin change, no push) is never missed.
   // Per-request business dispatch rides the seam.
-  booted = liveTree({ config, db, channels, hmr, control: ctl, desktop, instance }, tree);
+  booted = liveTree(
+    { config, db, channels, hmr, control: ctl, desktop, instance, shellFrames },
+    tree,
+  );
   return booted;
 }
 
@@ -400,6 +409,7 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
+    shellFrames: boot.shellFrames,
     get authService() {
       return authService();
     },
@@ -524,12 +534,6 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
 
   // Every route but /api/hmr is the platform's, served through the seam above. What follows
   // is the layer's own tail: static hosting and the SPA fallback.
-
-  // Host commands for the command palette, mounted in every mode — a plain server answers
-  // with an empty list, so the page has one question to ask wherever it runs.
-  app.use("/api/command", authMiddleware(deps.authService, deps.config.trustProxy));
-  app.use("/api/command/*", authMiddleware(deps.authService, deps.config.trustProxy));
-  app.route("/api/command", commandRoutes(deps));
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a

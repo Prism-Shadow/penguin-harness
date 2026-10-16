@@ -129,6 +129,7 @@ import {
   DesktopUpdateRoutes,
   DesktopWindowRoutes,
 } from "./http/routes/desktop.js";
+import { CommandRoutes } from "./http/routes/command.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
@@ -458,6 +459,7 @@ export class CompanyModule {}
     VersionRoutes,
     HmrRoutes,
     DesktopRoutes,
+    CommandRoutes,
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
     DesktopPrivacySettingsRoutes,
