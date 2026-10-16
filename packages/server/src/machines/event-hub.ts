@@ -46,9 +46,6 @@ export function isUserEventsPath(path: string): boolean {
   return (path.split("?")[0] ?? path) === "/api/events";
 }
 
-/** The SSE writer's own beat (http/sse.ts): what the hub times an upstream stream's silence by. */
-export const STREAM_HEARTBEAT_MS = HEARTBEAT_MS;
-
 /** Beats a stream may miss before it is read as silent. */
 export const SILENT_BEATS = 2;
 /**
@@ -265,7 +262,7 @@ export class MachineEventHub {
     private readonly log: (line: string) => void,
     options: MachineEventHubOptions = {},
   ) {
-    this.#heartbeatMs = options.heartbeatMs ?? STREAM_HEARTBEAT_MS;
+    this.#heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
     this.#replayCount = options.replayCount ?? EVENT_REPLAY_COUNT;
     this.#replayBytes = options.replayBytes ?? EVENT_REPLAY_BYTES;
     this.#openTimeoutMs = options.openTimeoutMs ?? STREAM_OPEN_TIMEOUT_MS;
@@ -433,7 +430,7 @@ export class MachineEventHub {
   #upstreamSink(subscription: Subscription): Sink {
     return {
       onStart: () => {
-        this.#clearOpenTimer(subscription);
+        subscription.openTimer = this.#clearTimer(subscription.openTimer);
         subscription.opened = true;
         subscription.failures = 0;
         this.#armSilence(subscription);
@@ -488,9 +485,7 @@ export class MachineEventHub {
    * without a hub in the middle.
    */
   #ended(subscription: Subscription): void {
-    this.#clearTimers(subscription);
-    subscription.socket = null;
-    subscription.callId = -1;
+    this.#release(subscription);
     const wasOpen = subscription.opened;
     subscription.opened = false;
     if (wasOpen || [...subscription.readers].some((reader) => reader.started)) {
@@ -540,9 +535,7 @@ export class MachineEventHub {
       this.#fail(subscription, status, body);
       return;
     }
-    this.#clearTimers(subscription);
-    subscription.socket = null;
-    subscription.callId = -1;
+    this.#release(subscription);
     const readers = this.#takeReaders(subscription);
     for (const reader of readers) reader.sink.onResponse(status, body);
   }
@@ -555,9 +548,7 @@ export class MachineEventHub {
    * hub dials again on its backoff.
    */
   #fail(subscription: Subscription, status: number, body: unknown): void {
-    this.#clearTimers(subscription);
-    subscription.socket = null;
-    subscription.callId = -1;
+    this.#release(subscription);
     subscription.opened = false;
     const held = [...subscription.readers].some((reader) => reader.hold !== undefined);
     const readers = held ? [...subscription.readers] : this.#takeReaders(subscription);
@@ -587,10 +578,8 @@ export class MachineEventHub {
 
   /** The session moved: whatever is in flight for the old one is let go and re-issued at once. */
   #restart(subscription: Subscription): void {
-    this.#clearTimers(subscription);
     if (subscription.callId >= 0) subscription.socket?.cancel(subscription.callId);
-    subscription.socket = null;
-    subscription.callId = -1;
+    this.#release(subscription);
     subscription.opened = false;
     this.#ensure(subscription);
   }
@@ -599,10 +588,8 @@ export class MachineEventHub {
   #drop(subscription: Subscription): void {
     if (subscription.gone) return;
     subscription.gone = true;
-    this.#clearTimers(subscription);
     if (subscription.callId >= 0) subscription.socket?.cancel(subscription.callId);
-    subscription.socket = null;
-    subscription.callId = -1;
+    this.#release(subscription);
     this.#takeReaders(subscription);
   }
 
@@ -617,7 +604,7 @@ export class MachineEventHub {
   }
 
   #armSilence(subscription: Subscription): void {
-    this.#clearSilenceTimer(subscription);
+    subscription.silenceTimer = this.#clearTimer(subscription.silenceTimer);
     subscription.silenceTimer = setTimeout(
       () => this.#silent(subscription),
       SILENT_BEATS * this.#heartbeatMs,
@@ -625,23 +612,21 @@ export class MachineEventHub {
     subscription.silenceTimer.unref?.();
   }
 
-  #clearOpenTimer(subscription: Subscription): void {
-    if (subscription.openTimer !== null) clearTimeout(subscription.openTimer);
-    subscription.openTimer = null;
+  /** Clears a timer that may or may not be running; either way there is none afterwards. */
+  #clearTimer(timer: ReturnType<typeof setTimeout> | null): null {
+    if (timer !== null) clearTimeout(timer);
+    return null;
   }
 
-  #clearSilenceTimer(subscription: Subscription): void {
-    if (subscription.silenceTimer !== null) clearTimeout(subscription.silenceTimer);
-    subscription.silenceTimer = null;
-  }
-
-  #clearTimers(subscription: Subscription): void {
+  /** Lets a subscription's in-flight state go: its timers, the close watch, the upstream hold. */
+  #release(subscription: Subscription): void {
     subscription.detachClose?.();
     subscription.detachClose = null;
-    this.#clearOpenTimer(subscription);
-    this.#clearSilenceTimer(subscription);
-    if (subscription.reissueTimer !== null) clearTimeout(subscription.reissueTimer);
-    subscription.reissueTimer = null;
+    subscription.openTimer = this.#clearTimer(subscription.openTimer);
+    subscription.silenceTimer = this.#clearTimer(subscription.silenceTimer);
+    subscription.reissueTimer = this.#clearTimer(subscription.reissueTimer);
+    subscription.socket = null;
+    subscription.callId = -1;
   }
 }
 
