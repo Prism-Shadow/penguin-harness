@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** fix
 - **Scope:** `web`, `ci`
+- **PR:** [#1165](https://github.com/Prism-Shadow/penguin-harness/pull/1165)
 
 [English](2026-10-15-project-switch-isolation.md)
 
