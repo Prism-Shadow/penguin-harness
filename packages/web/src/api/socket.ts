@@ -35,6 +35,8 @@ import type { StreamConnection, StreamHandlers } from "./sse";
 /** Reconnect backoff, the ssh reconnect's shape: doubling from the floor to the ceiling. */
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
+const backoffMs = (fails: number): number =>
+  Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** fails);
 /** Consecutive handshakes that never opened before the page gives the socket up for EventSource and fetch. */
 const GIVE_UP_AFTER = 3;
 /** A handshake refused outright (a runtime without the socket) is retried this soon — the backoff is for connections that were up and dropped. */
@@ -261,14 +263,9 @@ export class ApiSocket {
       this.#freshProbe = fresh;
       this.#open(this.urlFor(userId), userId);
     }
-    const state = this.#stateNow(); // #open() moved it; read it afresh
+    const state: State = this.#state; // #open() moved it; read it afresh
     if (state !== "connecting") return state === "open";
     return new Promise((resolve) => this.#readyWaiters.push(resolve));
-  }
-
-  /** The state through a call, which the type checker cannot narrow across #open()'s mutation. */
-  #stateNow(): State {
-    return this.#state;
   }
 
   #settleReady(open: boolean): void {
@@ -379,9 +376,9 @@ export class ApiSocket {
       close: () => {
         entry.closed = true;
         entry.fallen?.close();
-        this.#clearRetry(entry);
-        this.#clearOpenDeadline(entry);
-        this.#clearStreamDeadline(entry);
+        entry.retry = this.#clearTimer(entry.retry);
+        entry.openDeadline = this.#clearTimer(entry.openDeadline);
+        entry.streamDeadline = this.#clearTimer(entry.streamDeadline);
         this.#waiting.delete(entry);
         if (entry.id !== null) {
           this.#streams.delete(entry.id);
@@ -427,7 +424,7 @@ export class ApiSocket {
     }, HANDSHAKE_TIMEOUT_MS);
     ws.onopen = () => {
       if (this.#ws !== ws) return;
-      this.#clearHandshakeDeadline();
+      this.#handshakeDeadline = this.#clearTimer(this.#handshakeDeadline);
       this.#state = "open";
       this.#attempts = 0;
       this.#neverOpened = 0;
@@ -445,7 +442,7 @@ export class ApiSocket {
     };
     ws.onclose = (event?: CloseEvent) => {
       if (this.#ws !== ws) return;
-      this.#clearHandshakeDeadline();
+      this.#handshakeDeadline = this.#clearTimer(this.#handshakeDeadline);
       // The browser's one word on a refused handshake: 1006 with no reason is a handshake the
       // server answered with a status (401, 404, 503…), which the WebSocket API never shows.
       // A handshake this client gave up on keeps the reason it recorded.
@@ -492,7 +489,7 @@ export class ApiSocket {
   #fallBackWaiting(): void {
     for (const entry of this.#waiting) {
       if (entry.closed) continue;
-      this.#clearRetry(entry);
+      entry.retry = this.#clearTimer(entry.retry);
       entry.fallen = entry.fallback();
     }
     this.#waiting.clear();
@@ -500,7 +497,7 @@ export class ApiSocket {
 
   #issue(entry: StreamEntry): void {
     // Whatever issues it — a reconnect or its own retry — the other must not issue it again.
-    this.#clearRetry(entry);
+    entry.retry = this.#clearTimer(entry.retry);
     if (entry.closed || entry.fallen !== null || entry.id !== null) return;
     if (this.#ws === null || this.#state !== "open") return;
     this.#waiting.delete(entry);
@@ -509,7 +506,7 @@ export class ApiSocket {
     this.#streams.set(id, entry);
     const headers: Record<string, string> = { accept: "text/event-stream" };
     if (entry.lastEventId !== null) headers["last-event-id"] = entry.lastEventId;
-    this.#clearOpenDeadline(entry);
+    entry.openDeadline = this.#clearTimer(entry.openDeadline);
     entry.openDeadline = setTimeout(() => {
       entry.openDeadline = null;
       if (entry.id !== id || this.#streams.get(id) !== entry) return;
@@ -523,14 +520,10 @@ export class ApiSocket {
     this.#ws.send(JSON.stringify({ id, call: { method: "GET", path: entry.path, headers } }));
   }
 
-  #clearRetry(entry: StreamEntry): void {
-    if (entry.retry !== null) clearTimeout(entry.retry);
-    entry.retry = null;
-  }
-
-  #clearOpenDeadline(entry: StreamEntry): void {
-    if (entry.openDeadline !== null) clearTimeout(entry.openDeadline);
-    entry.openDeadline = null;
+  /** Clears a timer that may or may not be running; either way there is none afterwards. */
+  #clearTimer(timer: ReturnType<typeof setTimeout> | null): null {
+    if (timer !== null) clearTimeout(timer);
+    return null;
   }
 
   /**
@@ -556,27 +549,17 @@ export class ApiSocket {
     }, 2 * beatMs);
   }
 
-  #clearStreamDeadline(entry: StreamEntry): void {
-    if (entry.streamDeadline !== null) clearTimeout(entry.streamDeadline);
-    entry.streamDeadline = null;
-  }
-
-  #clearHandshakeDeadline(): void {
-    if (this.#handshakeDeadline !== null) clearTimeout(this.#handshakeDeadline);
-    this.#handshakeDeadline = null;
-  }
-
   /** The stream is off the socket for now; issue it again after a pause (or at once on reconnect). */
   #reissue(entry: StreamEntry, delayMs: number): void {
-    this.#clearOpenDeadline(entry);
-    this.#clearStreamDeadline(entry);
+    entry.openDeadline = this.#clearTimer(entry.openDeadline);
+    entry.streamDeadline = this.#clearTimer(entry.streamDeadline);
     if (entry.id !== null) {
       this.#streams.delete(entry.id);
       entry.id = null;
     }
     if (entry.closed) return;
     this.#waiting.add(entry);
-    this.#clearRetry(entry);
+    entry.retry = this.#clearTimer(entry.retry);
     entry.retry = setTimeout(() => {
       entry.retry = null;
       if (this.#state === "open") this.#issue(entry);
@@ -598,7 +581,7 @@ export class ApiSocket {
       // Any frame for the id is the server's answer to the issue, opened or not — and it is
       // this stream's own beat: the open `stream` frame, a machine_event, a server_event and a
       // bare `heartbeat` all count.
-      this.#clearOpenDeadline(stream);
+      stream.openDeadline = this.#clearTimer(stream.openDeadline);
       this.#armStreamDeadline(stream);
       if ("event" in frame) {
         const eventId = (frame.eventId as string | null) ?? null;
@@ -678,11 +661,11 @@ export class ApiSocket {
     }
     this.#calls.clear();
     for (const entry of this.#streams.values()) {
-      this.#clearOpenDeadline(entry);
+      entry.openDeadline = this.#clearTimer(entry.openDeadline);
       // The stream is off the socket, so its silence is no longer a fact about it: the drop
       // has already been reported, and the beat is measured again from the next issue's first
       // frame. Left armed, it would warn about a stream that is not there.
-      this.#clearStreamDeadline(entry);
+      entry.streamDeadline = this.#clearTimer(entry.streamDeadline);
       entry.id = null;
       entry.handlers.onError?.(false);
       this.#waiting.add(entry);
@@ -723,15 +706,11 @@ export class ApiSocket {
 
   /** A stream's own re-issue delay: the reconnect's doubling shape, counted per stream. */
   #streamBackoff(entry: StreamEntry): number {
-    const ms = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** entry.failures);
-    entry.failures += 1;
-    return ms;
+    return backoffMs(entry.failures++);
   }
 
   #backoff(): number {
-    const ms = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** this.#attempts);
-    this.#attempts += 1;
-    return ms;
+    return backoffMs(this.#attempts++);
   }
 }
 

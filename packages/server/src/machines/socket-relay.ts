@@ -33,10 +33,9 @@ import {
   isUserEventsPath,
 } from "./event-hub.js";
 import type { MachineEventHubOptions } from "./event-hub.js";
-import { SOCKET_DIAL_TIMEOUT_MS, MachineSockets, unavailable } from "./machine-sockets.js";
+import { MachineSockets, unavailable } from "./machine-sockets.js";
 import type { MachineSocket, MachineSocketTarget, Sink } from "./machine-sockets.js";
 
-export { SOCKET_DIAL_TIMEOUT_MS, STREAM_OPEN_TIMEOUT_MS };
 export type { MachineSocketTarget };
 
 export interface MachineSocketRelayOptions extends MachineEventHubOptions {

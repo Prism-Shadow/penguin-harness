@@ -13,8 +13,9 @@
  * machines again and attaches the ones it does not carry yet. A machine that has joined stays
  * attached as the hub's holder, which dials it again after a failure (event-hub.ts, `Hold`).
  */
+import { HEARTBEAT_MS } from "../http/sse.js";
 import { formatSseEvent } from "../socket/sse-text.js";
-import { STREAM_HEARTBEAT_MS, SUBSCRIBER_HIGH_WATER_BYTES } from "./event-hub.js";
+import { SUBSCRIBER_HIGH_WATER_BYTES } from "./event-hub.js";
 import type { MachineEventHub } from "./event-hub.js";
 import type { MachineSocketTarget } from "./machine-sockets.js";
 
@@ -184,7 +185,7 @@ export function machineEventsStream(
         `[machines] could not read the machines an aggregate event stream watches: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }, options.heartbeatMs ?? STREAM_HEARTBEAT_MS);
+  }, options.heartbeatMs ?? HEARTBEAT_MS);
   beat.unref?.();
 
   return response;
