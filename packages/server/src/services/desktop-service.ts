@@ -158,6 +158,22 @@ export class DesktopService {
     this.privacySettingsSender(pane);
     return true;
   }
+
+  // --- window relay ------------------------------------------------------------
+
+  private openWindowSender: (() => void) | null = null;
+
+  /** index.ts registers the message-port sender; absent outside a shell-forked process. */
+  onOpenWindowCommand(sender: () => void): void {
+    this.openWindowSender = sender;
+  }
+
+  /** Invoked by the window route; false when no shell port is wired (tests, plain runs). */
+  requestOpenWindow(): boolean {
+    if (!this.openWindowSender) return false;
+    this.openWindowSender();
+    return true;
+  }
 }
 
 /** Asks the shell to read one folder; resolves with its answer, or null when none came in time. */

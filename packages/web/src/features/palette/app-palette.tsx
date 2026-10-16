@@ -6,11 +6,15 @@
  * rather than navigating — closing it leaves the user exactly where they were.
  */
 import { useEffect, useMemo, useState } from "react";
-import { CommandPalette } from "@prismshadow/penguin-ui";
+import { CommandPalette, toastError } from "@prismshadow/penguin-ui";
 import type { PaletteAction } from "@prismshadow/penguin-ui";
+import * as api from "../../api/endpoints";
+import { apiErrorText } from "../../lib/api-error";
+import { offersNewWindow } from "../../lib/desktop-window";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutLabel } from "../../lib/shortcuts/use-keymap";
 import { S } from "../../lib/strings";
+import { useAuth } from "../../state/auth";
 import { HarnessHistoryOverlay } from "../harness/harness-history-overlay";
 
 /** A mount point with nothing to add shares one empty list, so the action memo stays put. */
@@ -35,10 +39,25 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
     [],
   );
   const toggleShortcut = useShortcutLabel("palette.toggle");
+  const { desktopMode, sessionVia } = useAuth();
+  const newWindow = offersNewWindow({ desktopMode, sessionVia });
 
   const actions = useMemo<PaletteAction[]>(
     () => [
       ...extra,
+      // The shell opens the window; the page only asks (see lib/desktop-window.ts).
+      ...(newWindow
+        ? [
+            {
+              id: "new-window",
+              label: S.commandPalette.newWindow,
+              keywords: ["new window", "open window", "second window"],
+              run: () => {
+                void api.openDesktopWindow().catch((err: unknown) => toastError(apiErrorText(err)));
+              },
+            },
+          ]
+        : []),
       {
         id: "harness-history",
         label: S.commandPalette.harnessHistory,
@@ -46,7 +65,7 @@ export function AppPalette({ extra = NO_EXTRA }: { extra?: readonly PaletteActio
         run: () => setHistoryOpen(true),
       },
     ],
-    [extra],
+    [extra, newWindow],
   );
   return (
     <>

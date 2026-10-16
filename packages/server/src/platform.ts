@@ -134,6 +134,7 @@ import {
   DesktopRoutes,
   DesktopTrayRoutes,
   DesktopUpdateRoutes,
+  DesktopWindowRoutes,
 } from "./http/routes/desktop.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { HandshakeRoutes } from "./http/routes/handshake.js";
@@ -501,6 +502,7 @@ export class CompanyModule {}
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
     DesktopPrivacySettingsRoutes,
+    DesktopWindowRoutes,
     PluginRoutes,
     PluginRegistryRoutes,
     NpmPluginPackages,
