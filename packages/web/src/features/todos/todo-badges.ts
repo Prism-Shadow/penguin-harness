@@ -26,7 +26,7 @@
  * `use-project-todos.ts` wires them to the live stores and turns a count into localized copy.
  */
 import type { AgentSummary, UsageErrorsPage } from "@prismshadow/penguin-server/api";
-import type { CatalogDelta } from "../features/models/catalog-sync";
+import type { CatalogDelta } from "../models/catalog-sync";
 
 /** The four trails, in sidebar order. Also the key each dismissal is stored under. */
 export type TodoKey = "agents" | "plugins" | "models" | "errors";

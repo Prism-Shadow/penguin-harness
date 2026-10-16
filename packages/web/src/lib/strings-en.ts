@@ -5,7 +5,7 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
  * of a label/sentence or in a proper name (Agent State).
  */
-import type { PeakWindows } from "../features/models/model-grouping";
+import type { PeakWindows } from "./peak-windows";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
