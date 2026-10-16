@@ -1,3 +1,4 @@
+import { glyphOf } from "../../lib/nav-icons";
 import { marksFor } from "../../lib/sidebar-modes";
 import {
   SidebarAccountButton,
@@ -13,7 +14,7 @@ import {
   type NavEntryKey as NavGroupKey,
 } from "../../lib/sidebar-nav-state";
 
-import { NAV_ICONS, glyphOf } from "../../lib/nav-icons";
+import { pageTitle } from "..";
 import { UserMenu } from "./user-menu";
 import { isCurrentPath, renderRouterLink } from "./router-link";
 import { isNavPage } from "../../lib/main-sidebar-persistence";
@@ -23,6 +24,7 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
   const {
     location,
     user,
+    locale,
     badges,
     slotBadges,
     modeStates,
@@ -70,19 +72,17 @@ export function createMainSidebarNavigation(scope: MainSidebarState) {
    * hangs at the row's right edge, vertically centred on the row.
    */
   const renderNavEntry = (key: NavGroupKey) => {
-    const to = `/${key}`;
     const page = navPages.find((page) => page.key === key);
-    const label =
-      typeof S.nav[key as keyof typeof S.nav] === "string"
-        ? (S.nav[key as keyof typeof S.nav] as string)
-        : (page?.title ?? key);
+    if (page === undefined) return null;
+    const to = page.path;
+    const label = pageTitle(page, locale);
     const note = notes.get(key) ?? null;
     const pinned = isNavPinned(key, navPins);
     return (
       <SidebarNavEntry
         key={key}
         label={label}
-        glyph={NAV_ICONS[key as keyof typeof NAV_ICONS]}
+        glyph={glyphOf(page.icon ?? key)}
         href={to}
         active={isCurrentPath(to, location.pathname)}
         renderLink={renderRouterLink}
