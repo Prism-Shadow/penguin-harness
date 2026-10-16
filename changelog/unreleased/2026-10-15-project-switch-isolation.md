@@ -32,6 +32,11 @@ network.
   shown on the page.
 - An Agent's memory listing is keyed by its Project too, so the `default_agent` of one Project no
   longer stands in for another's.
+- The cost center's Agent filter belongs to the Project it was chosen in — the `?agentId=` deep
+  link to the Project the page was opened in — so after a switch the page reads the new Project
+  unfiltered. A usage answer for the Project just left, or for filters changed since, is dropped.
+- A Benchmark's page leaves for the new Project's Benchmarks list on a Project switch instead of
+  asking the new Project about that Benchmark.
 - CI's browser job also runs `project-switch.spec.mjs`: two Projects with distinct Agents,
   switched while their lists load — one late Agent list forced by a route delay, and a run with
   the renderer CPU throttled and every API answer delayed from a fixed seed. It fails on anything

@@ -16,4 +16,6 @@
 - 路由指向的对话只在其所属 Project 下显示，无论它来自列表、直接查询，还是在重新加载期间被保留；切换后页面打开新 Project 最近的对话或新对话。
 - Agent 设置页在切换 Project 时转到新 Project 的智能体列表，不再向新 Project 询问该 Agent；另一个 Agent 迟到的配置应答也不再显示在页面上。
 - Agent 的记忆列表同样按 Project 区分，一个 Project 的 `default_agent` 不再顶替另一个 Project 的。
+- 成本中心的 Agent 筛选归属于选定它时的 Project（`?agentId=` 深链接归属于打开页面时的 Project），切换后页面按新 Project 不加筛选读取；刚离开的 Project 的用量应答，或筛选已改变后才到的应答，一律丢弃。
+- Benchmark 详情页在切换 Project 时转到新 Project 的 Benchmark 列表，不再向新 Project 询问该 Benchmark。
 - CI 的浏览器任务新增运行 `project-switch.spec.mjs`：两个各有专属 Agent 的 Project，在列表加载期间来回切换——一次用路由延迟制造迟到的 Agent 列表，一次把渲染进程 CPU 降速并按固定种子给每个 API 应答加随机延迟。只要一个 Project 的内容出现在另一个之下、有请求把 Project 与其不拥有的 Agent 配对，或有应答返回 `agent_not_found`，就判失败。该 spec 原有的插件页检查改为卸载默认自进化工具包自己的 Skill `agent-optimization`。

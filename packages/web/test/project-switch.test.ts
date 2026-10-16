@@ -19,23 +19,35 @@
  *   shown in its place.
  * - Given an Agent's settings page under one Project: a switch to another asks it nothing about
  *   that Agent and leaves for the Agents list.
+ * - Given the cost center filtered to A's Agent by its deep link, with A's answer late: after the
+ *   switch to B no usage read names that Agent under B, and A's answer never shows under B.
+ * - Given a Benchmark's page under A: a switch to B asks B nothing about that Benchmark and
+ *   leaves for the Benchmarks list.
  * - Given A's organization Sessions answering after B's: B's stay.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Fragment, createElement as h, useEffect } from "react";
+import { MemoryRouter, Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type {
   AgentSummary,
+  BenchmarkSummary,
   OrganizationSummary,
   OrgSessionsResponse,
   SessionInfo,
   SessionsBatchRequest,
+  UsageBucket,
+  UsageResponse,
 } from "@prismshadow/penguin-server/api";
 import { AuthProvider } from "../src/state/auth";
+import { LocaleProvider } from "../src/state/locale";
+import { ThemeProvider } from "../src/state/theme";
 import { ProjectProvider, useProject } from "../src/state/project";
 import { SessionsProvider, createSessionsStore, useSessions } from "../src/state/sessions";
 import { createCompanyStore } from "../src/state/company";
 import { useMemoryListing } from "../src/features/chat/use-memory-listing";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { UsagePage } from "../src/features/usage/usage-page";
+import { BenchmarkDetailPage } from "../src/features/benchmark/benchmark-detail-page";
 import { ADMIN_ME } from "./helpers/admin-settings";
 import {
   AGENT_ID,
@@ -70,6 +82,7 @@ const summary = (agentId: string) =>
     skillCount: 0,
     hookCount: 0,
     workbenchCount: 0,
+    pluginUpdates: [],
   }) as unknown as AgentSummary;
 
 function session(projectId: string, agentId: string): SessionInfo {
@@ -92,9 +105,44 @@ function session(projectId: string, agentId: string): SessionInfo {
   };
 }
 
+/** Tokens each Project's cost center reports, so the screen says whose answer it shows. */
+const TOKENS: Record<string, number> = { [A]: 111, [B]: 222 };
+
+/** A Project's cost center answer: its own token total, and its own Agent named in the usage. */
+const usageOf = (projectId: string): UsageResponse => {
+  const bucket: UsageBucket = {
+    total: TOKENS[projectId] ?? 0,
+    requests: 1,
+    cost: null,
+    hasUncosted: false,
+  };
+  return {
+    summary: { today: bucket, last7d: bucket, total: bucket },
+    groupBy: "date",
+    groups: [],
+    granularity: "day",
+    series: [],
+    byAgentSeries: [],
+    byModelSeries: [],
+    agentIds: (AGENTS[projectId] ?? []).filter((agentId) => agentId !== "default_agent"),
+    models: [],
+    errors: { total: 0, unexpected: 0, rows: 0, recent: [], topCode: null },
+  };
+};
+
+/** A published Benchmark only A has. */
+const ALPHA_BENCHMARK: BenchmarkSummary = {
+  id: "alpha-bench",
+  title: "Alpha bench",
+  status: "published",
+  caseCount: 0,
+  evaluations: [],
+  agentIds: [],
+};
+
 /** Every Agent a request names — in its path, an `agentId` query or a batch body — with the Project it names. */
 function pairsOf(request: FetchRequest): Array<[string, string]> {
-  const path = /^\/api\/projects\/([^/]+)\/(agents|sessions)(?:\/([^/]+))?/.exec(request.path);
+  const path = /^\/api\/projects\/([^/]+)(?:\/(agents|sessions)(?:\/([^/]+))?)?/.exec(request.path);
   if (path === null) return [];
   const projectId = decodeURIComponent(path[1]!);
   const pairs: Array<[string, string]> = [];
@@ -146,6 +194,17 @@ function twoProjectServer() {
     if (agents && method === "GET") {
       return json({ agents: (AGENTS[agents[1]!] ?? []).map(summary) });
     }
+    const usage = /^\/api\/projects\/([^/]+)\/usage$/.exec(path);
+    if (usage) return json(usageOf(usage[1]!));
+    if (/^\/api\/projects\/[^/]+\/usage\/errors$/.test(path)) {
+      return json({ items: [], total: 0, rows: 0 });
+    }
+    const benchmarks = /^\/api\/projects\/([^/]+)\/benchmarks$/.exec(path);
+    if (benchmarks && method === "GET") {
+      return json({ benchmarks: benchmarks[1] === A ? [ALPHA_BENCHMARK] : [] });
+    }
+    const cases = /^\/api\/projects\/([^/]+)\/benchmarks\/([^/]+)\/cases$/.exec(path);
+    if (cases && cases[1] === A && cases[2] === ALPHA_BENCHMARK.id) return json({ cases: [] });
     const batch = /^\/api\/projects\/([^/]+)\/sessions\/batch$/.exec(path);
     if (batch && method === "POST") {
       const projectId = batch[1]!;
@@ -240,7 +299,19 @@ async function mountShell() {
 
 beforeEach(() => {
   localStorage.clear();
+  vi.stubGlobal("matchMedia", (media: string) => ({
+    matches: false,
+    media,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
 });
+
+/** Switches the shell to B: the switcher's one job, as a button. */
+function SwitchToB() {
+  const { setCurrentProjectId } = useProject();
+  return h("button", { onClick: () => setCurrentProjectId(B) }, "switch to B");
+}
 
 afterEach(async () => {
   await unmountAll();
@@ -369,6 +440,68 @@ describe("pages over a Project switch", () => {
     expect(
       server.fetch.requests.filter((r) =>
         r.path.startsWith(`/api/projects/${OTHER_PROJECT_ID}/agents/${AGENT_ID}`),
+      ),
+    ).toEqual([]);
+  });
+
+  it("the cost center drops A's Agent filter and A's late answer after the switch to B", async () => {
+    const server = twoProjectServer();
+    const releaseA = server.hold((r) => r.path === `/api/projects/${A}/usage`);
+    localStorage.setItem("penguin.lastProjectId", A);
+    await mount(
+      h(
+        MemoryRouter,
+        { initialEntries: ["/usage?agentId=alpha"] },
+        h(ThemeProvider, null, h(ProjectProvider, null, h(SwitchToB), h(UsagePage))),
+      ),
+    );
+    await waitFor(() => server.fetch.requests.some((r) => r.path === `/api/projects/${A}/usage`));
+    // The filter's trigger shows the picked Agent; the totals show whose answer is on screen.
+    const screen = () => document.body.textContent ?? "";
+
+    await click(button("switch to B"));
+    await waitFor(() => screen().includes(String(TOKENS[B])));
+    await releaseA();
+    expect(screen()).toContain(String(TOKENS[B]));
+    expect(screen()).not.toContain(String(TOKENS[A]));
+    expect(screen()).not.toContain("alpha");
+    expect(strayRequests(server.fetch.requests)).toEqual([]);
+  });
+
+  it("a Benchmark's page asks the next Project nothing about that Benchmark and leaves for the Benchmarks list", async () => {
+    const server = twoProjectServer();
+    localStorage.setItem("penguin.lastProjectId", A);
+    stubEventSource();
+    const router = createMemoryRouter(
+      [
+        {
+          element: h(ProjectProvider, null, h(SessionsProvider, null, h(SwitchToB), h(Outlet))),
+          children: [
+            { path: "/benchmark", element: h("p", null, "Benchmarks list") },
+            { path: "/benchmark/:benchmarkId", element: h(BenchmarkDetailPage) },
+          ],
+        },
+      ],
+      { initialEntries: ["/benchmark", `/benchmark/${ALPHA_BENCHMARK.id}`] },
+    );
+    await mount(
+      h(
+        LocaleProvider,
+        null,
+        h(AuthProvider, null, h(ThemeProvider, null, h(RouterProvider, { router }))),
+      ),
+    );
+    await waitFor(() =>
+      server.fetch.requests.some(
+        (r) => r.path === `/api/projects/${A}/benchmarks/${ALPHA_BENCHMARK.id}/cases`,
+      ),
+    );
+
+    await click(button("switch to B"));
+    await waitFor(() => whereIs(router) === "/benchmark");
+    expect(
+      server.fetch.requests.filter((r) =>
+        r.path.startsWith(`/api/projects/${B}/benchmarks/${ALPHA_BENCHMARK.id}`),
       ),
     ).toEqual([]);
   });

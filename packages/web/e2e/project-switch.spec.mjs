@@ -13,7 +13,8 @@
  *   landing mid-load, several times over, each Project settles on its own conversation and
  *   Agents, no request pairs a Project with an Agent of the other, and no `agent_not_found`
  *   (「该 Agent 已不存在。」) comes back. A new chat in B whose remembered draft names A's Agent
- *   (written while A's Agents were on screen) asks nothing about it either.
+ *   (written while A's Agents were on screen) asks nothing about it either, and neither does the
+ *   cost center opened on A's Agent (`/usage?agentId=`) once the user switches to B.
  *
  * A Project is created with a display name different from the username: a newly registered
  * user's initial Project is named after the user, and the account button at the sidebar's foot
@@ -371,6 +372,25 @@ test("on a slow machine, quick Project switches keep each Project's Agents and c
   await expect(page.getByRole("heading", { name: "PenguinHarness" })).toBeVisible({
     timeout: 30_000,
   });
+  await page.waitForTimeout(3_000);
+
+  // The cost center, opened on A's Agent by its deep link (an in-app navigation), then B.
+  await switchProject(page, "Beta Project", "Alpha Project");
+  const filtered = page.waitForRequest((req) => {
+    const url = new URL(req.url());
+    return (
+      url.pathname === `/api/projects/${a}/usage` &&
+      url.searchParams.get("agentId") === "alpha_only"
+    );
+  });
+  await page.evaluate(() => {
+    const idx = (window.history.state?.idx ?? 0) + 1;
+    window.history.pushState({ usr: null, key: "e2e", idx }, "", "/usage?agentId=alpha_only");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page).toHaveURL(/\/usage\?agentId=alpha_only$/);
+  await filtered;
+  await switchProject(page, "Alpha Project", "Beta Project");
   await page.waitForTimeout(3_000);
 
   expect(bad).toEqual([]);

@@ -66,6 +66,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { scopeKey, scoped, scopedValue, type Scoped } from "../../lib/project-scope";
+import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
 import { useProject } from "../../state/project";
 import { normalizeRuntime, runtimeDraftOf, runtimeErrors, runtimeUpdateOf } from "./runtime-form";
 import type { RuntimeDraft, RuntimeNumberField } from "./runtime-form";
@@ -138,17 +139,9 @@ export function AgentSettingsPage() {
   useDocumentTitle(S.agent.settings);
   const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
-  /**
-   * The route's Agent is one of the Project the page was opened in. A Project switch leaves the
-   * page for the new Project's Agents: asked under that Project, the same id names another
-   * Agent or none at all, and every tab would answer "This agent no longer exists."
-   */
-  const openedIn = useRef<string | null>(null);
-  if (openedIn.current === null) openedIn.current = projectId;
-  const switchedAway = projectId !== openedIn.current;
-  useEffect(() => {
-    if (switchedAway) navigate("/agents", { replace: true });
-  }, [switchedAway, navigate]);
+  // The route's Agent is one of the Project the page was opened in: a Project switch leaves for
+  // the new Project's Agents, where every tab would otherwise answer "This agent no longer exists."
+  const switchedAway = useLeaveOnProjectSwitch(projectId, "/agents");
 
   /** The config and its load failure, each tagged with the Agent it was read for. */
   const pageScope = scopeKey(projectId, agentId);

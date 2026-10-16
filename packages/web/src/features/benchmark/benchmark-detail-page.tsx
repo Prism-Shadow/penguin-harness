@@ -28,6 +28,7 @@ import * as api from "../../api/endpoints";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useSessions } from "../../state/sessions";
+import { useLeaveOnProjectSwitch } from "../../lib/use-opened-in-project";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -170,6 +171,9 @@ export function BenchmarkDetailPage() {
   const { machineIds, machineLabels } = useSessions();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  // The route's Benchmark is one of the Project the page was opened in: a Project switch leaves
+  // for the new Project's Benchmarks rather than asking that Project about this id.
+  const switchedAway = useLeaveOnProjectSwitch(projectId, "/benchmark");
 
   const [benchmark, setBenchmark] = useState<MergedBenchmark | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -184,7 +188,7 @@ export function BenchmarkDetailPage() {
   // it whole — merged over this server and the machines it holds — and picks its own out of it.
   const machinesKey = machineIds.join(",");
   useEffect(() => {
-    if (!projectId || benchmarkId === "") return;
+    if (!projectId || benchmarkId === "" || switchedAway) return;
     let cancelled = false;
     setBenchmark(null);
     setError(null);
@@ -202,12 +206,12 @@ export function BenchmarkDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId, benchmarkId, machinesKey]);
+  }, [projectId, benchmarkId, machinesKey, switchedAway]);
 
   // The Project's models, for the Use dialog's conversation-model picker; a failure just leaves
   // the picker at the Project default.
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || switchedAway) return;
     let cancelled = false;
     api
       .getModels(projectId)
@@ -218,9 +222,11 @@ export function BenchmarkDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, switchedAway]);
 
-  if (!projectId) return null;
+  // Switched away: nothing of the Benchmark renders (its cases would be asked of the new
+  // Project) while the navigation above takes the page to the list.
+  if (!projectId || switchedAway) return null;
 
   /** The ssh alias of a machine, or null for this server. An unlabelled machine falls back to its id. */
   const machineNameOf = (machineId: string | null): string | null =>
