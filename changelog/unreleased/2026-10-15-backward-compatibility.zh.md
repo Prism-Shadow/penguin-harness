@@ -3,7 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** refactor
 - **Scope:** `server`, `core`
-- **PR:** [#1166](https://github.com/Prism-Shadow/penguin-harness/pull/1166)
+- **PR:** [#1166](https://github.com/Prism-Shadow/penguin-harness/pull/1166), [#1167](https://github.com/Prism-Shadow/penguin-harness/pull/1167)
 - **Breaking:** yes — 环境变量改由 Project 配置的 `official` 标记决定，`PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL` 不再读取，Penguin Go 的 MMSP 之前路由只由服务端迁移
 
 [English](2026-10-15-backward-compatibility.md)

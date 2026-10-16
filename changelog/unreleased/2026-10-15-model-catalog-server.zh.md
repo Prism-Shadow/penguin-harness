@@ -3,6 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** refactor
 - **Scope:** `core`, `server`, `web`, `cli`, `model-catalog`
+- **PR:** [#1167](https://github.com/Prism-Shadow/penguin-harness/pull/1167)
 - **Breaking:** yes — 移除 `@prismshadow/penguin-core/model-catalog`，core 的默认 Project 配置不再带模型
 
 [English](2026-10-15-model-catalog-server.md)

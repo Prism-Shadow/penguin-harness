@@ -3,7 +3,7 @@
 - **Date:** 2026-10-15
 - **Type:** refactor
 - **Scope:** `server`, `core`
-- **PR:** [#1166](https://github.com/Prism-Shadow/penguin-harness/pull/1166)
+- **PR:** [#1166](https://github.com/Prism-Shadow/penguin-harness/pull/1166), [#1167](https://github.com/Prism-Shadow/penguin-harness/pull/1167)
 - **Breaking:** yes — environment keys follow the Project config's `official` flag, `PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL` are no longer read, and only the server migrates Penguin Go's pre-MMSP routes
 
 [中文版](2026-10-15-backward-compatibility.zh.md)
