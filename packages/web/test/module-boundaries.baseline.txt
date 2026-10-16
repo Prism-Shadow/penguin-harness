@@ -73,6 +73,7 @@ cycle: features/settings -> features/builtin-browser
 cycle: features/settings -> features/dock
 cycle: features/terminal -> features/dock
 features/chat/chat-page.tsx -> features/dock/composer-height.ts
+features/company/handbook-page.tsx -> features/chat/workspace-browser.tsx
 features/terminal/terminal-list.ts -> features/dock/dock-state.ts
 features/terminal/terminal-view-pool.tsx -> features/dock/dock-state.ts
 lib/strings.ts -> features/models/model-sort.ts
