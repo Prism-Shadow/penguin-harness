@@ -8,7 +8,8 @@
  *   nothing reaches the shell (install replaces the running app, so its gate is pinned every
  *   way); a plain server has no such routes; with no shell wired a command answers 503.
  * - /api/command lists what the host offers (nothing on a plain server) and forwards a run, for
- *   any admin session; a known command not offered here answers 409, an unknown one 404.
+ *   any admin session; whatever the host offers is forwarded, words included, and an id it did
+ *   not offer answers 409.
  * - Only a well-formed updater frame is read.
  * - A wired port stores pushed frames, ignores garbage, and carries commands out.
  * - A plain Node process has no shell port to wire.
@@ -182,7 +183,7 @@ describe("/api/command", () => {
       const { cookie } = await loginAdmin(plain.app);
       const listed = await plain.app.request("/api/command", { headers: { cookie } });
       expect(listed.status).toBe(200);
-      expect(await listed.json()).toEqual({ commands: [] });
+      expect(await listed.json()).toEqual({ commands: [], offers: [] });
       const run = await plain.app.request("/api/command/install-cli", {
         method: "POST",
         headers: { cookie, "content-type": "application/json" },
@@ -197,18 +198,31 @@ describe("/api/command", () => {
     try {
       // Any admin session, not only the shell's own window: the command acts on the host.
       const { cookie } = await loginAdmin(t.app);
-      t.deps.desktop!.setCommands(["install-cli"]);
-      const ran: string[] = [];
-      t.deps.desktop!.onCommand((command) => ran.push(command));
+      const installCli = { command: "install-cli", label: "Install it", labelZh: "装上它" };
+      // A command this build has no words for: offered, listed, runnable.
+      const revealLogs = { command: "reveal-logs", label: "Reveal logs", labelZh: "打开日志" };
+      // The host's own frame, put where the host would put it: the platform reads THAT,
+      // never a list the runtime parsed for it.
+      t.deps.shellFrames.hostCommands = {
+        type: "host-commands",
+        commands: [installCli, revealLogs],
+      };
+      const ran: unknown[] = [];
+      t.deps.shellFrames.post = (frame) => ran.push(frame);
       const listed = await t.app.request("/api/command", { headers: { cookie } });
-      expect(await listed.json()).toEqual({ commands: ["install-cli"] });
+      expect(await listed.json()).toEqual({
+        // The legacy field stays narrow — a page older than `offers` looks every id up in a
+        // table of its own and a miss there blanks it.
+        commands: ["install-cli"],
+        offers: [installCli, revealLogs],
+      });
       const run = await t.app.request("/api/command/install-cli", {
         method: "POST",
         headers: { cookie, "content-type": "application/json" },
         body: "{}",
       });
       expect(run.status).toBe(202);
-      expect(ran).toEqual(["install-cli"]);
+      expect(ran).toEqual([{ type: "host-command", command: "install-cli" }]);
       // Known but not offered here, and not a command at all.
       const notOffered = await t.app.request("/api/command/check-updates", {
         method: "POST",
@@ -221,7 +235,18 @@ describe("/api/command", () => {
         headers: { cookie, "content-type": "application/json" },
         body: "{}",
       });
-      expect(unknown.status).toBe(404);
+      expect(unknown.status).toBe(409);
+      // An id this build never heard of, but the host did offer: forwarded, not judged.
+      const newer = await t.app.request("/api/command/reveal-logs", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(newer.status).toBe(202);
+      expect(ran).toEqual([
+        { type: "host-command", command: "install-cli" },
+        { type: "host-command", command: "reveal-logs" },
+      ]);
     } finally {
       await t.cleanup();
     }
@@ -272,10 +297,26 @@ describe("desktop-update-port", () => {
     expect(desktop.requestUpdateCommand("check")).toBe(true);
     expect(port.sent).toEqual([{ type: "desktop-updater-command", action: "check" }]);
 
-    // The host's commands ride the same port: its offer in, the page's ask out. Unknown
-    // names in an offer are dropped, not stored.
-    port.emit({ type: "host-commands", commands: ["install-cli", "format-disk"] });
+    // The host's commands ride the same port: its offer in, the page's ask out. What the
+    // host names is stored as the host wrote it — an id this build never heard of included,
+    // since the host is the one that decides what it can do.
+    const offer = { command: "reveal-logs", label: "Reveal logs", labelZh: "打开日志" };
+    port.emit({
+      type: "host-commands",
+      commands: [{ command: "install-cli", label: "Install it", labelZh: "装上它" }, offer],
+    });
+    expect(desktop.getCommandOffers()).toEqual([
+      { command: "install-cli", label: "Install it", labelZh: "装上它" },
+      offer,
+    ]);
+    // The legacy list stays narrow: only ids this build also has words for.
     expect(desktop.getCommands()).toEqual(["install-cli"]);
+    // A shell older than offers sends bare ids; they arrive as offers without words.
+    port.emit({ type: "host-commands", commands: ["install-cli"] });
+    expect(desktop.getCommandOffers()).toEqual([
+      { command: "install-cli", label: "", labelZh: "" },
+    ]);
+    // Not a list at all: ignored, and what was stored stays.
     port.emit({ type: "host-commands", commands: "install-cli" });
     expect(desktop.getCommands()).toEqual(["install-cli"]);
     expect(desktop.requestCommand("install-cli")).toBe(true);
