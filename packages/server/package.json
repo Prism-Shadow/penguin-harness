@@ -53,6 +53,18 @@
     "./plugin": {
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
+    },
+    "./plugin/loader": {
+      "types": "./dist/plugin/loader.d.ts",
+      "import": "./dist/plugin/loader.js"
+    },
+    "./cli/manifest": {
+      "types": "./dist/cli/module.d.ts",
+      "import": "./dist/cli/module.js"
+    },
+    "./cli/serve": {
+      "types": "./dist/cli/serve.d.ts",
+      "import": "./dist/cli/serve.js"
     }
   },
   "main": "./dist/index.js",
@@ -74,6 +86,7 @@
     "@prismshadow/amsp": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@xterm/headless": "^5.5.0",
+    "commander": "^13.0.0",
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",
     "hono": "^4.12.34",

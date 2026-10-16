@@ -6,7 +6,7 @@
  *   penguin web [--port <port>] [--host <host>] [--no-open] [--app <project>/<agent>/<workflow>[/<tab>]]
  *
  * Both are entry points into the same service process: after setting PORT / HOST, it
- * dynamically imports `@prismshadow/penguin-server` (whose entry point handles dotenv
+ * dynamically imports this package's own entry (whose entry point handles dotenv
  * loading and graceful shutdown on its own), so the two never listen on separate ports
  * in parallel. Port/host priority: command-line option > existing environment variable
  * (including .env) > default 7364 / 127.0.0.1. `penguin web` additionally polls until the
@@ -23,23 +23,26 @@
  * The child is told a supervisor is there (PENGUIN_SUPERVISED=1); a dev run through tsx
  * cannot be re-spawned by node and runs in-process as before, where the server reports
  * that a restart must be done by hand.
+ *
+ * This module is the server package's `cli.commands` CODE half (the data half is
+ * module.ts): the CLI host imports `registerCliCommands` only when a dispatch names one
+ * of the package's keys, and receives everything else — the language, the data root — on
+ * the `CliContext` it is handed.
  * Docs: /docs/cli § "penguin server / penguin web".
  */
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import path from "node:path";
-import {
-  DEFAULT_SERVER_PORT,
-  SERVER_RESTART_EXIT_CODE,
-  resolveRoot,
-} from "@prismshadow/penguin-core";
-import { liveServerLock } from "@prismshadow/penguin-server/lock";
+import { DEFAULT_SERVER_PORT, SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
+import { liveServerLock } from "../lock.js";
 import type { Command } from "commander";
-import type { Messages, WebProbeFailureKind } from "../i18n.js";
+import type { CliContext, CliCommandRegister } from "@prismshadow/penguin-core/plugin";
+import { serveMessages, type WebProbeFailureKind } from "./messages.js";
+import { serverCliSummary } from "./module.js";
 import { registerResetPasswordCommand } from "./reset-password.js";
 import { registerStatusCommand } from "./server-status.js";
 import { registerStopCommand } from "./server-stop.js";
-import { serverStartEntry } from "../server-entry.js";
+import { serverStartEntry } from "./server-entry.js";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
 export interface ReadinessFailure {
@@ -128,10 +131,10 @@ export function cliEntryFor(argv1: string | undefined): string | null {
  * or null. The server itself re-checks on startup (the in-process backstop); checking
  * here keeps the friendly path — `penguin server` refuses with the URL, `penguin web`
  * simply opens the existing instance. Locks live per data root, so a second server on a
- * DIFFERENT root is untouched. See @prismshadow/penguin-server/lock.
+ * DIFFERENT root is untouched. See lock.ts.
  */
-async function existingInstanceUrl(): Promise<string | null> {
-  const lock = await liveServerLock(resolveRoot());
+async function existingInstanceUrl(root: string): Promise<string | null> {
+  const lock = await liveServerLock(root);
   return lock === null ? null : `http://localhost:${lock.port}/`;
 }
 
@@ -157,11 +160,12 @@ export function supervisorDecision(
  * first child is spawned; the process then lives as long as the child does (the handle
  * keeps the event loop alive) and takes its exit code.
  */
-function supervise(cliEntry: string, host: string, port: number, t: Messages): void {
+function supervise(cliEntry: string, host: string, port: number, ctx: CliContext): void {
+  const m = serveMessages(ctx.language);
   let stopping = false;
   let child: ChildProcess | null = null;
   const spawnChild = async (): Promise<void> => {
-    const entry = await serverStartEntry(cliEntry, resolveRoot());
+    const entry = await serverStartEntry(cliEntry, ctx.root);
     if (stopping) return;
     child = spawn(process.execPath, [entry, "server", "--port", String(port), "--host", host], {
       stdio: "inherit",
@@ -170,7 +174,7 @@ function supervise(cliEntry: string, host: string, port: number, t: Messages): v
     child.on("exit", (code, signal) => {
       const decision = supervisorDecision({ code, signal }, stopping);
       if (decision.action === "respawn") {
-        process.stdout.write(`${t.serve.restarting}\n`);
+        process.stdout.write(`${m.serve.restarting}\n`);
         void spawnChild();
         return;
       }
@@ -194,7 +198,7 @@ function supervise(cliEntry: string, host: string, port: number, t: Messages): v
 
 async function startServer(
   opts: { port?: string; host?: string },
-  t: Messages,
+  ctx: CliContext,
 ): Promise<{ host: string; port: number }> {
   const port = resolvePort(opts.port, process.env.PORT);
   const host = opts.host ?? process.env.HOST ?? DEFAULT_HOST;
@@ -214,10 +218,10 @@ async function startServer(
   // The same re-runnable entry is what makes supervision possible: the child is exactly
   // this command again, marked as the child so it does not supervise in turn.
   if (cliEntry !== null && process.env[SERVE_CHILD_ENV] !== "1") {
-    supervise(cliEntry, host, port, t);
+    supervise(cliEntry, host, port, ctx);
     return { host, port };
   }
-  await import("@prismshadow/penguin-server");
+  await import("../index.js");
   return { host, port };
 }
 
@@ -352,40 +356,49 @@ function openBrowser(url: string): void {
   }
 }
 
-export function registerServeCommands(program: Command, t: Messages): void {
+/**
+ * The serve group's code half: registers `server` (with its subcommands) and `web` on the
+ * host's program. Descriptions come from the package's `cli.commands` declaration
+ * (module.ts) so help and the registered commands cannot drift; everything else the
+ * commands print comes from cli/messages.ts in the context's language.
+ */
+export const registerCliCommands: CliCommandRegister = (rawProgram, ctx): void => {
+  // The host passes commander; keep its version opaque at the package contract seam.
+  const program = rawProgram as Command;
+  const m = serveMessages(ctx.language);
   const server = program
     .command("server")
-    .description(t.serve.serverDesc)
-    .option("--port <port>", t.serve.port)
-    .option("--host <host>", t.serve.host)
+    .description(serverCliSummary("server", ctx.language))
+    .option("--port <port>", m.serve.port)
+    .option("--host <host>", m.serve.host)
     .action(async (opts: { port?: string; host?: string }) => {
-      const existing = await existingInstanceUrl();
+      const existing = await existingInstanceUrl(ctx.root);
       if (existing !== null) {
-        process.stderr.write(t.serverAlreadyRunning(existing) + "\n");
+        process.stderr.write(m.serverAlreadyRunning(existing) + "\n");
         process.exitCode = 1;
         return;
       }
-      await startServer(opts, t);
+      await startServer(opts, ctx);
     });
   // Bare `penguin server` still starts the service (commander runs the action when no
   // subcommand is named); the subcommand only dispatches on an exact name match.
-  registerResetPasswordCommand(server, t);
-  registerStatusCommand(server, t);
-  registerStopCommand(server, t);
+  registerResetPasswordCommand(server, ctx);
+  registerStatusCommand(server, ctx);
+  registerStopCommand(server, ctx);
 
   program
     .command("web")
-    .description(t.serve.webDesc)
-    .option("--port <port>", t.serve.port)
-    .option("--host <host>", t.serve.host)
-    .option("--no-open", t.serve.noOpen)
-    .option("--app <spec>", t.serve.app)
+    .description(serverCliSummary("web", ctx.language))
+    .option("--port <port>", m.serve.port)
+    .option("--host <host>", m.serve.host)
+    .option("--no-open", m.serve.noOpen)
+    .option("--app <spec>", m.serve.app)
     .action(async (opts: { port?: string; host?: string; open: boolean; app?: string }) => {
       // Resolved first so a malformed spec fails before anything starts.
       const page = opts.app === undefined ? "" : appPagePath(opts.app);
-      const existing = await existingInstanceUrl();
+      const existing = await existingInstanceUrl(ctx.root);
       if (existing !== null) {
-        process.stdout.write(t.webAlreadyRunning(existing) + "\n");
+        process.stdout.write(m.webAlreadyRunning(existing) + "\n");
         // Nothing is printed when attaching to a server that is already up: a server with
         // no admin password yet prints a first-login LINK, and that link's token lives only
         // in the running server's memory — this terminal cannot reproduce it, and should
@@ -393,16 +406,16 @@ export function registerServeCommands(program: Command, t: Messages): void {
         if (opts.open) openBrowser(existing + page);
         return;
       }
-      const { host, port } = await startServer(opts, t);
+      const { host, port } = await startServer(opts, ctx);
       const url = browserUrl(host, port);
       const readiness = await waitForReady(url);
       if (!readiness.ready) {
         process.stderr.write(
-          `${t.webProbeFailed(url, readiness.failure.detail, readiness.failure.kind, port)}\n`,
+          `${m.webProbeFailed(url, readiness.failure.detail, readiness.failure.kind, port)}\n`,
         );
         return;
       }
-      process.stdout.write(`${t.webReady(url + page)}\n`);
+      process.stdout.write(`${m.webReady(url + page)}\n`);
       if (opts.open) openBrowser(url + page);
     });
-}
+};

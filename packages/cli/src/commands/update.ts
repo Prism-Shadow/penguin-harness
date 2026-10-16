@@ -29,10 +29,10 @@
  * the replaced tree: every module it needs is statically imported at the top of the bundle and
  * therefore fully loaded before any action runs, every message it will print is resolved up front,
  * and after the child exits it only removes its own temp directory, writes already-computed
- * strings and sets an exit code. It never `import()`s anything (the CLI's only dynamic import is
- * `@prismshadow/penguin-server`, reachable solely from the serve commands), and never re-reads a
- * file. On POSIX an unlinked file stays valid for whoever has it open, so the running process is
- * unaffected.
+ * strings and sets an exit code. It never `import()`s anything (a dynamic import happens only
+ * when a dispatch names a CONTRIBUTED command's package — never inside this one), and never
+ * re-reads a file. On POSIX an unlinked file stays valid for whoever has it open, so the
+ * running process is unaffected.
  *
  * Where the installer script is written, and why it matters: `tmpdir()` is world-writable and
  * shared, so a fixed or guessable name there is a local privilege-escalation primitive — another

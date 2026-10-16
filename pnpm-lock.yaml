@@ -519,6 +519,9 @@ importers:
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
+      commander:
+        specifier: ^13.0.0
+        version: 13.1.0
       dotenv:
         specifier: ^17.0.0
         version: 17.4.2

@@ -1134,6 +1134,11 @@ export const zh = {
       toggle === null ? "↑↓ 选择 · Enter 执行" : `${toggle} 切换 · ↑↓ 选择 · Enter 执行`,
     harnessHistory: "Harness 历史",
     newWindow: "新建窗口",
+    /** The desktop shell's native actions, offered here because its menu bar stays hidden. */
+    installCli: "安装 penguin 命令…",
+    checkUpdates: "检查桌面版更新…",
+    checkingUpdates: "正在检查更新…",
+    projectOnGitHub: "在 GitHub 上查看项目",
   },
   modelPicker: {
     /** Accessible name of the dialog's provider-group rail. */

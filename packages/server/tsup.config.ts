@@ -37,6 +37,17 @@ export default defineConfig({
     // this bundle entirely — they are configuration resolved from the installation,
     // not platform capability.
     "plugin/index": "src/plugin/index.ts",
+    // "./plugin/loader": the module resolver the CLI host shares — the plugin bases, the
+    // Project closure and the table reader its `cli.commands` discovery reads plugins'
+    // data halves through, without importing a package.
+    "plugin/loader": "src/plugin/loader.ts",
+    // "./cli/manifest": the server package's `cli.commands` data half — the declarations
+    // the CLI host reads on every start to list and dispatch the serve group. Light on
+    // purpose: nothing but the kernel decorators, so help never loads the service.
+    "cli/module": "src/cli/module.ts",
+    // "./cli/serve": the serve group's code half — `registerCliCommands`, imported by the
+    // host only when a dispatch names one of the package's keys.
+    "cli/serve": "src/cli/serve.ts",
   },
   format: ["esm"],
   target: "node24",

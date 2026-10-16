@@ -6,7 +6,8 @@
  * unconditionally kept the entry this app was installed with, so a change on the entry side
  * (the process entry, the terminal WebSocket handshake) needed a new app install. Starting
  * through the pushed CLI makes it arrive with a push and a restart, as `penguin server` does
- * (packages/cli/src/server-entry.ts). Nothing pushed, or a broken record, starts the bundled
+ * (the serve group lives in the server package now, packages/server/src/cli/server-entry.ts).
+ * Nothing pushed, or a broken record, starts the bundled
  * server: a server that starts beats one that does not.
  */
 import fs from "node:fs";
@@ -19,7 +20,8 @@ const pushed = root !== undefined ? await readPushedCli(root) : null;
 
 if (pushed?.kind === "bundle") {
   // The CLI's `server` command runs the server in this process when it is marked as a
-  // supervisor's child (PENGUIN_SERVE_CHILD, packages/cli/src/commands/serve.ts): the
+  // supervisor's child (PENGUIN_SERVE_CHILD, the serve group's supervisor in
+  // packages/server/src/cli/serve.ts): the
   // desktop main process is the supervisor here, and a second one would spawn
   // process.execPath — the Electron binary. It also records which CLI started it as
   // PENGUIN_CLI_ENTRY (what the Agents' `penguin` runs and self-update re-runs), read from

@@ -13,7 +13,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { readPushedCli } from "@prismshadow/penguin-server/hmr/manifest";
+import { readPushedCli } from "../hmr/manifest.js";
 
 /** The loader that runs the pushed CLI, emitted next to `penguin.js` (tsup.config.ts). */
 export const PUSHED_CLI_LOADER = "penguin-hmr.js";

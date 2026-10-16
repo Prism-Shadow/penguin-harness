@@ -1,13 +1,14 @@
 /**
- * Which CLI entry starts a server (src/server-entry.ts): the pushed one, through the
+ * Which CLI entry starts a server (src/cli/server-entry.ts): the pushed one, through the
  * `penguin-hmr` loader, when the data root records a usable pushed CLI; the installed one
- * otherwise.
+ * otherwise. Moved with the module from packages/cli/test/server-entry.test.ts;
+ * assertions unchanged.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { serverStartEntry } from "../src/server-entry.js";
+import { serverStartEntry } from "../src/cli/server-entry.js";
 
 let dir: string;
 let root: string;
