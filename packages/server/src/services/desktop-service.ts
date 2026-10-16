@@ -32,6 +32,7 @@ import type {
   DesktopTrayStatus,
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
+  HostCommand,
 } from "../api/types.js";
 
 /** What the page may ask the shell's updater to do (the relayed command's `action`). */
@@ -156,6 +157,28 @@ export class DesktopService {
   requestPrivacySettings(pane: DesktopPrivacyPane): boolean {
     if (!this.privacySettingsSender) return false;
     this.privacySettingsSender(pane);
+    return true;
+  }
+
+  // --- host commands offered to the page -------------------------------------
+  private commands: HostCommand[] = [];
+  private commandSender: ((command: HostCommand) => void) | null = null;
+
+  getCommands(): HostCommand[] {
+    return this.commands;
+  }
+
+  setCommands(commands: HostCommand[]): void {
+    this.commands = commands;
+  }
+
+  onCommand(sender: (command: HostCommand) => void): void {
+    this.commandSender = sender;
+  }
+
+  requestCommand(command: HostCommand): boolean {
+    if (!this.commandSender) return false;
+    this.commandSender(command);
     return true;
   }
 }
