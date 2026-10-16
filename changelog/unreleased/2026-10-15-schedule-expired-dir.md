@@ -4,6 +4,7 @@
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `docs`, `skills`
 - **PR:** [#1159](https://github.com/Prism-Shadow/penguin-harness/pull/1159)
+- **Breaking:** yes — a one-shot task whose start time has already passed is refused (400) instead of firing once immediately
 
 [中文版](2026-10-15-schedule-expired-dir.zh.md)
 
@@ -36,3 +37,13 @@ deleted.
   **Paused**.
 - The Scheduled tasks, Agents, CLI, Configuration and Server API docs, the CLI help, the Create
   with AI prompt and the `penguin-orchestration` Skill describe the archive and the new refusals.
+
+## Compatibility
+
+- A one-shot task whose `startAt` has already passed used to fire immediately:
+  `penguin schedule add <name> --start-at now` without `--period`, and the same request from the
+  form or the API. It is now refused with 400; give a future start time.
+- Switching a disabled one-shot task back on after its time has passed used to fire it immediately;
+  that is now refused too. Change its start time first.
+- Files on disk are never rewritten. Tasks already settled move into `expired/` as described
+  above.

@@ -4,6 +4,7 @@
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `docs`, `skills`
 - **PR:** [#1159](https://github.com/Prism-Shadow/penguin-harness/pull/1159)
+- **Breaking:** yes — 开始时间已过的一次性任务改为拒绝（400），不再立即执行一次
 
 [English](2026-10-15-schedule-expired-dir.md)
 
@@ -20,3 +21,11 @@
 - schedules API 的 `POST` 与 `PUT` 对 `startAt` 已过的一次性任务、以及 `endAt` 已过的任务返回 400。CLI 与 Web 表单随之同样拒绝，因此 `penguin schedule add --start-at now` 现在须带 `--period`。
 - 定时任务面板去掉了**已完成**筛选，保留**全部**、**生效中**和**已暂停**。
 - 定时任务、智能体、CLI、配置与服务器 API 文档，CLI 帮助、「用 AI 创建」的提示词以及 `penguin-orchestration` Skill 写明了归档行为与新的拒绝规则。
+
+## 兼容性
+
+- 开始时间已过的一次性任务过去会立即执行一次：不带 `--period` 的
+  `penguin schedule add <name> --start-at now`，以及表单或 API 发出的同样请求。现在一律返回 400，
+  须给出将来的开始时间。
+- 重新启用一个时刻已过的停用一次性任务，过去会立即执行；现在同样被拒绝，须先修改开始时间。
+- 磁盘上的文件从不改写。已经过时的任务按上文移入 `expired/`。
