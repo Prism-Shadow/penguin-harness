@@ -273,7 +273,7 @@ async function upsert(
   const nowMs = Date.now();
   if (parsed.def.periodMs === undefined && parsed.def.startAtMs <= nowMs) {
     throw badRequest(
-      "start_at is already past: a one-time task would never fire. Pick a later time.",
+      "start_at is already past: a one-time task needs a future start time.",
     );
   }
   if (parsed.def.endAtMs !== undefined && parsed.def.endAtMs <= nowMs) {
