@@ -17,6 +17,21 @@ A skill is valid when that parser accepts it: the file is readable, its YAML fro
 parses, and `name` and `description` are present and are strings. The reasons are upstream's
 own messages.
 
+The vendored parser is this repository's one SKILL.md reader, and the package also exports it
+with its writing counterpart (not vendored; upstream only reads):
+
+```ts
+import { formatFrontmatter, parseFrontmatter } from "@prismshadow/skills";
+
+parseFrontmatter("---\nname: x\n---\n# Body\n"); // { data: { name: "x" }, content: "# Body\n" }
+formatFrontmatter([["name", "x"], ["description", "Use it when: asked"]]);
+// '---\nname: x\ndescription: "Use it when: asked"\n---'
+```
+
+`parseFrontmatter` throws when the block is not valid YAML. `formatFrontmatter` takes an object
+or ordered `[key, value]` entries, leaves out undefined values, and keeps each value on one line;
+its output reads back to the same values through `parseFrontmatter`.
+
 ## Updating the vendored copy
 
 1. Check out vercel-labs/skills at the new commit.
@@ -30,6 +45,7 @@ Its only runtime dependency is `yaml` (upstream's own).
 
 ## Not published
 
-The package is private and is never published to npm. Its only consumers are the plugins'
-`test/skills.test.ts`, which take it as a `workspace:*` devDependency; it resolves to its
-TypeScript source, so they need no build.
+The package is private and is never published to npm. Its consumers are the plugins'
+`test/skills.test.ts` and core, which take it as a `workspace:*` devDependency; it resolves to
+its TypeScript source, so they need no build. Core lists it as a devDependency and bundles it
+into its own `dist` (tsup `noExternal`), so the published core does not depend on this package.

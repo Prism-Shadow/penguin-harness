@@ -34,9 +34,12 @@ export default defineConfig({
   // from "@prismshadow/penguin-core"` would not link. Bundling the package keeps every name a
   // static export of core; it has no dependency of its own and holds no state, so the copy in
   // core's dist and the one a host imports beside it are the same pure functions.
-  noExternal: ["@prismshadow/amsp"],
+  noExternal: ["@prismshadow/amsp", "@prismshadow/skills"],
   dts: true,
   clean: true,
   sourcemap: true,
   define: buildGitDefine(),
+  // @prismshadow/skills (the vendored SKILL.md parser and its writer) is a devDependency bundled
+  // into dist, so the published core carries that code and never imports the package at run
+  // time; its own runtime dependency, yaml, is one of core's dependencies and stays external.
 });
