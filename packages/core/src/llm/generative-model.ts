@@ -614,13 +614,6 @@ export function isFastModeUnsupportedError(error: unknown): boolean {
 export const FAST_MODE_UNSUPPORTED_GUIDANCE =
   "Fast mode is enabled for this model; turn it off in the model settings to use this model.";
 
-/**
- * Whether any level of the error chain is an HTTP **429** — the provider's rate limit, or a
- * quota that is exhausted for now. The outcome stays `retryable` (a short burst is exactly
- * what the reconnect ladder is for), but it is classified apart from a transport drop: the
- * code is what lets a host tell "the wire blipped" from "this model has no quota left", and
- * act on the second.
- */
 export function isRateLimitError(error: unknown): boolean {
   return anyInCauseChain(error, (level) => {
     const err = level as { status?: unknown; statusCode?: unknown };
@@ -630,17 +623,85 @@ export function isRateLimitError(error: unknown): boolean {
 }
 
 /**
+ * Error codes/types that name a **server-side** failure rather than a rejection of the
+ * request: gateways put upstream breakage in whatever status they please, so the status
+ * alone cannot carry the distinction (Console Go reports a broken upstream hop as 400, 403
+ * or 413 alike).
+ */
+const SERVER_SIDE_CODES: ReadonlySet<string> = new Set([
+  "server_error",
+  "api_error",
+  "upstream_error",
+  "internal_error",
+  "service_unavailable",
+  "overloaded_error",
+  "no_available_workers",
+]);
+
+/**
+ * Text markers for the same statement, for gateways that ship the failure as **plain text**:
+ * Console Go answers a broken upstream hop with
+ * `403 Upstream request failed: [server_error] Upstream response was not valid JSON` — no
+ * structured body, so `providerSignals` has nothing to read and only the message carries it.
+ */
+const SERVER_SIDE_TEXT: readonly RegExp[] = [
+  /\[(?:server_error|api_error|upstream_error)\]/i,
+  /upstream response was not valid json/i,
+  /model is unavailable/i,
+  /(?:upstream|provider|service) (?:is )?temporarily unavailable/i,
+];
+
+/**
+ * Whether this error level carries the provider's own statement that the failure was on the
+ * server side. Structured codes first (the OpenAI-compatible body shape), then the message
+ * text and a raw string body — the plain-text gateway shape above.
+ */
+function declaresServerSideFailure(level: object): boolean {
+  if (providerSignals(level).some((code) => SERVER_SIDE_CODES.has(code.toLowerCase()))) return true;
+  const err = level as { message?: unknown; error?: unknown };
+  const texts = [err.message, err.error].filter((v): v is string => typeof v === "string");
+  return texts.some((text) => SERVER_SIDE_TEXT.some((pattern) => pattern.test(text)));
+}
+
+/**
+ * Whether the response carried no body at all — the OpenAI-compatible SDKs render that as
+ * `400 status code (no body)`. Nothing to judge means no certainty to act on: an edge that
+ * drops mid-response answers exactly like a definitive rejection, and one month of Traces
+ * holds 33 such 4xx (each killing the run it landed in, while the neighbouring requests of
+ * the same session — identical payload, same provider — succeeded before and after).
+ */
+function hasEmptyProviderBody(level: object): boolean {
+  const message = (level as { message?: unknown }).message;
+  return typeof message === "string" && /^\d{3} status code \(no body\)$/.test(message.trim());
+}
+
+/**
  * Determines whether an error is a definitive provider rejection of the request itself —
- * the `fatal` detector for errored requests. Only an explicit HTTP client-error status
- * counts: 4xx minus 408 (request timeout) and 429 (rate limit), which are transient by
- * definition. Deliberately an allowlist of certainty, probed down the `cause` chain
- * (SDKs wrap the real response error): everything this misses stays `retryable`, because
- * retrying a genuinely fatal error costs one ladder and ends with the same message, while
- * refusing to retry a transient one destroys the turn. Authentication is checked
- * separately (`isAuthenticationError`) and first — a 401 is fatal through that path with
- * its more specific message handling.
+ * the `fatal` detector for errored requests. An explicit HTTP client-error status counts
+ * (4xx minus 408 request-timeout and 429 rate-limit, which are transient by definition)
+ * **unless the provider's own payload says otherwise**: a body declaring a server-side
+ * failure, or no body at all. Both exemptions exist because the gateways in front of the
+ * providers answer upstream breakage with a 4xx status, and taking that status at face value
+ * is what turns a one-second hiccup into a dead run — one month of Traces holds 108 such
+ * gateway 4xx kills: 51 are `[invalid_request_error]` tool-call pairings we really do cause,
+ * but 33 carry no body at all and 2 announce `[server_error]` / `api_error` outright, and
+ * each of those stopped a session that was healthy on the very next request. The
+ * asymmetry is deliberate and matches the retry ladder: retrying a genuinely fatal error
+ * costs one ladder (~60s) and ends with the same message, while refusing to retry a
+ * transient one destroys the turn. Probed down the whole `cause` chain (SDKs wrap the real
+ * response error), with the server-side evidence outweighing a status found on any level.
+ * Authentication is checked separately (`isAuthenticationError`) and first — a 401 is fatal
+ * through that path with its more specific message handling.
  */
 export function isFatalProviderRejection(error: unknown): boolean {
+  if (
+    anyInCauseChain(
+      error,
+      (level) => declaresServerSideFailure(level) || hasEmptyProviderBody(level),
+    )
+  ) {
+    return false;
+  }
   return anyInCauseChain(error, (level) => {
     const err = level as { status?: unknown; statusCode?: unknown };
     const status = typeof err.status === "number" ? err.status : err.statusCode;
