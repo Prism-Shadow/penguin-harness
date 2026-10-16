@@ -4,6 +4,7 @@
  * tsconfig paths to the server contract file types.ts; must not be a value import — server
  * code must not enter the browser bundle).
  */
+import type { SearchQuery, SearchResults } from "@prismshadow/penguin-server/api";
 import type {
   AdminPasswordResetRequest,
   AdminUserCreateRequest,
@@ -974,6 +975,31 @@ export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
 
 export const deleteSession = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+
+/**
+ * Whole-Project conversation search: substring over titles AND message bodies, ranked
+ * server-side, with up to three excerpted hits per Session.
+ *
+ * `q` is required and an empty one is a 400: the caller decides what an empty box shows, and
+ * it is never "every conversation". `total` is the Project-wide match count BEFORE
+ * limit/offset, so the caller can page without a second request.
+ */
+export const searchSessions = (projectId: string, params: Omit<SearchQuery, "projectId">) =>
+  apiFetch<SearchResults>(`/api/projects/${encodeURIComponent(projectId)}/sessions/search`, {
+    query: {
+      q: params.q,
+      agentId: params.agentId,
+      from: params.from,
+      to: params.to,
+      workspace: params.workspace,
+      // The query bag takes strings and numbers; the flag rides as the `1` the rest of this
+      // file sends, and is simply absent when the caller did not ask for archived rows.
+      includeArchived: params.includeArchived ? 1 : undefined,
+      limit: params.limit,
+      offset: params.offset,
+      sort: params.sort,
+    },
+  });
 
 // The archive page (Settings › Archived chats) -------------------------------------------
 

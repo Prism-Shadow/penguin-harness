@@ -1849,6 +1849,16 @@ export interface SessionInfo {
    * which renders as `user`.
    */
   source?: SessionSource;
+  /**
+   * Direct parent session id (L2.1 squad parentage): set on rows spawned by another
+   * session, read straight from the index row; absent for top-level and legacy rows.
+   */
+  parentSessionId?: string;
+  /**
+   * Multi-agent work group tag from the child's session_meta (`run_subagent` squad
+   * arg); absent when the session belongs to no squad. `cost --by squad` groups on it.
+   */
+  squad?: string;
   createdAt: string;
   /**
    * Last activity the server drove for this Session (ISO 8601, same convention as
@@ -1881,6 +1891,22 @@ export interface SessionInfo {
    * in no list.
    */
   archived: boolean;
+  /**
+   * What this Session's records add up to, present only when the request asked for it
+   * (`withStats=1`): the counters a row badge shows (turns / tool calls / produced files) and
+   * what it was last doing. Absent means "not asked for", never "none happened".
+   */
+  activity?: SessionActivityView;
+  /**
+   * The Session's own first prompt, truncated, as read at Trace registration
+   * (`trace_sessions.title`). Present only when the request asked for stats (`withStats=1`)
+   * and the Session has a registered Trace, and independent of {@link SessionInfo.title}:
+   * that one is the model's own name for the conversation, which for a subagent is routinely
+   * its opening instruction restated ("Caller agent: … 任务…") and so cannot tell two children
+   * apart. This is the question the work actually started from. Never a fallback for a
+   * missing title — it is what a row about a subagent is TITLED by.
+   */
+  firstPrompt?: string;
   /**
    * Absolute path of the session's latest Trace file (the current context shard); absent
    * when no Trace exists yet. Populated on the **single-session GET only** — list rows omit
@@ -2123,6 +2149,8 @@ export interface SessionBatchPageRequest {
   withCounts?: boolean;
   /** The user's own rows only: leave an organization's own sessions out of page and totals. */
   excludeOrg?: boolean;
+  /** Per-row work counters + each Session's first prompt, as the sidebar's rows draw them. */
+  withStats?: boolean;
 }
 
 /**
@@ -2143,7 +2171,205 @@ export interface SessionsBatchResponse {
   results: SessionBatchResult[];
 }
 
-/** Server directory browsing (the Workspace picker): starts from the home directory by default, can navigate up to the root. */
+/** One message a search matched, cut to a readable excerpt. */
+export interface SearchHit {
+  /** Who said it: `user`, `assistant`, `thinking` (a reasoning block) or `tool` (a tool call). */
+  role: string;
+  /** The record's timestamp (ISO 8601), as written in the Trace. */
+  at: string;
+  /** The Trace shard the message lives in, for jumping to it in the conversation. */
+  fileIndex: number;
+  /** The record's line within that shard — stable, and what the conversation view keys on. */
+  lineNo: number;
+  /** The excerpt, with `…` where it was cut. */
+  snippet: string;
+  /** Matched ranges as [start, end) offsets INTO {@link snippet}, ascending and non-overlapping. */
+  marks: Array<[number, number]>;
+}
+
+/** One Session a search found, with the messages that matched inside it. */
+export interface SearchResult {
+  sessionId: string;
+  projectId: string;
+  agentId: string;
+  provider: string;
+  modelId: string;
+  workspace: string;
+  title?: string;
+  createdAt: string;
+  lastActiveAt: string;
+  archived: boolean;
+  hasTrace: boolean;
+  /** True when the Session matched on its TITLE only, so no message excerpt could be shown. */
+  matchedTitle: boolean;
+  /** How many of the Session's messages matched (0 on a title-only match). */
+  matchCount: number;
+  /** Up to three matched messages, best match first. */
+  hits: SearchHit[];
+}
+
+/** How far along the search index is, so a first search can say "still indexing". */
+export interface SearchIndexState {
+  state: "ready" | "building";
+  indexed: number;
+  total: number;
+}
+
+/** The answer to one search-box query. */
+export interface SearchResults {
+  query: string;
+  /** Matching Sessions across the whole Project, before `offset`/`limit` were applied. */
+  total: number;
+  results: SearchResult[];
+  index: SearchIndexState;
+}
+
+/** One search request, as the service receives it (query strings already validated). */
+export interface SearchQuery {
+  projectId: string;
+  q: string;
+  /** Narrows to one Agent; absent = every Agent in the Project. */
+  agentId?: string;
+  /** yyyy-mm-dd bounds on the Session's own creation date. */
+  from?: string;
+  to?: string;
+  /** Substring of the Session's Workspace path. */
+  workspace?: string;
+  includeArchived?: boolean;
+  limit?: number;
+  offset?: number;
+  sort?: "recent" | "relevance";
+}
+
+/** What a Session's Trace records add up to: the counters a list row or a header shows. */
+export interface SessionActivityView {
+  /** Prompts a person (or a parent agent) sent — one per turn. */
+  turns: number;
+  /** User + assistant text records. */
+  messages: number;
+  toolCalls: number;
+  /** Distinct files a producing tool wrote. */
+  files: number;
+  /** The most recent tool that ran, so a row can say what the Session is busy with. */
+  lastTool?: string;
+  /** The kind of the Session's most recent record: user / assistant / thinking / tool. */
+  lastKind?: string;
+}
+
+/** One hour of a Project's activity, for the workbench's "when was I busy" series. */
+export interface ActivityBucketView {
+  /** The hour's start, ISO 8601. */
+  at: string;
+  turns: number;
+  messages: number;
+  toolCalls: number;
+}
+
+/** One line of a Project's event stream. */
+export interface ActivityEventView {
+  sessionId: string;
+  agentId: string;
+  at: string;
+  kind: string;
+  toolName?: string;
+  file?: string;
+  /** The opening words of a prompt, so the stream reads as what was asked. */
+  text?: string;
+}
+
+/** One Session in a workbench's list, with its output. */
+export interface ActivitySessionView {
+  sessionId: string;
+  agentId: string;
+  workspace: string;
+  title?: string;
+  lastActiveAt: string;
+  turns: number;
+  toolCalls: number;
+  files: number;
+  /** The files it delivered, most recently touched first. */
+  producedFiles: string[];
+}
+
+/** A date range of work across every Session in a Project. */
+export interface ProjectActivity {
+  from: string;
+  to: string;
+  totals: {
+    sessions: number;
+    turns: number;
+    messages: number;
+    toolCalls: number;
+    files: number;
+    /** Wall-clock hours in the range that saw any activity at all. */
+    activeHours: number;
+  };
+  buckets: ActivityBucketView[];
+  sessions: ActivitySessionView[];
+  events: ActivityEventView[];
+  /**
+   * How far the index that answers this has got. A workbench whose first load happens during
+   * a cold build would otherwise render an empty board and look broken rather than busy —
+   * "no activity recorded" and "not indexed yet" are different answers and must read
+   * differently.
+   */
+  index: SearchIndexState;
+}
+
+/** One user prompt and everything the agent did in answer to it. */
+export interface SessionTurn {
+  /** 1-based position of this turn in the conversation. */
+  index: number;
+  startedAt: string;
+  endedAt?: string;
+  /** The user's own words, truncated. */
+  userText: string;
+  /** The assistant's closing words for the turn, truncated. */
+  assistantText?: string;
+  tools: SessionTurnTool[];
+  /** Files the turn wrote or edited. */
+  files: string[];
+  /** Subagent Sessions this turn started. */
+  subagents: string[];
+}
+
+/** One tool call inside a turn, as a step of the work rather than as a log line. */
+export interface SessionTurnTool {
+  name: string;
+  at: string;
+  /** False when the call's output carried an error. */
+  ok: boolean;
+  /** A one-line rendering of what the call was asked to do (a command, a path, a question). */
+  label: string;
+}
+
+/** A Session's work process as a timeline: what was asked, what ran, what came out. */
+export interface SessionTurns {
+  sessionId: string;
+  title?: string;
+  workspace: string;
+  createdAt: string;
+  lastActiveAt: string;
+  totals: {
+    turns: number;
+    messages: number;
+    toolCalls: number;
+    files: number;
+    subagents: number;
+    elapsedMs: number;
+  };
+  /**
+   * The turn's tool calls counted by what they DID, which is the only breakdown a reader can
+   * act on: `read` is the agent looking, `write` is it producing, `execute` is it running
+   * something. A long tail of one-line counts (77 × read_file) says nothing on its own.
+   */
+  toolsByKind: { read: number; write: number; execute: number; other: number };
+  /** The most-called tools, most frequent first. */
+  toolsByName: Array<{ name: string; count: number }>;
+  turns: SessionTurn[];
+}
+
+/** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
 export interface DirEntryInfo {
   name: string;
   /** Absolute path of this entry (a folder's can be submitted directly as a Workspace). */
