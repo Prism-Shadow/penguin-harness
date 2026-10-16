@@ -2170,8 +2170,9 @@ export const zh = {
         "- 不要读取或改动 .project_config.toml，配置只经 penguin 命令。",
         `- 最后运行 \`penguin config model list --project-id ${projectId} --root <数据根目录>\` 把结果列给我。`,
       ].join("\n"),
-    /** Penguin Go's "Sync models" (in its Connected menu) adds the models the platform newly offers; it never rewrites the ones already here. */
-    platformSyncAdded: (n: number): string => `已新增 ${n} 个模型`,
+    /** Penguin Go's "Sync models" adds missing models and refreshes existing prices and promotions. */
+    platformSyncResult: (added: number, updated: number): string =>
+      `已新增 ${added} 个模型，更新 ${updated} 个模型`,
     platformUpToDate: "已是最新",
     homepage: "模型主页",
     speedTest: "测速",
