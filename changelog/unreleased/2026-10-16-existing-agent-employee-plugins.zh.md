@@ -3,6 +3,7 @@
 - **Date:** 2026-10-16
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1177](https://github.com/Prism-Shadow/penguin-harness/pull/1177)
 - **Issue:** [#736](https://github.com/Prism-Shadow/penguin-harness/issues/736)
 
 [English](2026-10-16-existing-agent-employee-plugins.md)
