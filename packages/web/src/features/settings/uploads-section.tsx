@@ -1,7 +1,12 @@
 /**
- * Upload limits (admin only, server-global), modelled on the proxy section beside it. Two
- * whole-MB numbers — the per-file attachment cap and the per-message total — written together
- * by a single PUT to /api/admin/settings, so a rejected value writes nothing.
+ * Uploads (admin only, server-global), modelled on the proxy section beside it. Two whole-MB
+ * limits — the per-file attachment cap and the per-message total — and the automatic image
+ * compression the composer applies before it uploads a large picture, written together by a
+ * single PUT to /api/admin/settings, so a rejected value writes nothing.
+ *
+ * The limits and the compression are different kinds of setting and are worded as such: a limit
+ * is what the server refuses, the compression is what a composer is asked to do before it sends.
+ * Nothing about the switch changes what an upload may weigh.
  *
  * The bounds quoted under each field, and the fixed limits the page's "?" names, come from the
  * server (`/api/me` uploadLimits) rather than from constants here: the range is a statement
@@ -23,6 +28,7 @@ import {
   Button,
   Input,
   SettingsSection,
+  Switch,
   toastError,
   toastSuccess,
   useFormDraft,
@@ -35,10 +41,13 @@ import { apiErrorText } from "../../lib/api-error";
 import { SETTINGS_SCOPE } from "../../lib/unsaved/scopes";
 import { useAuth } from "../../state/auth";
 
-/** The two boxes as typed. Kept as strings: a number input that clears to NaN cannot be typed into. */
+/** The form as typed. Kept as strings: a number input that clears to NaN cannot be typed into. */
 interface LimitsDraft {
   max: string;
   total: string;
+  /** The compression switch, and the threshold box under it: same form, same draft. */
+  compression: boolean;
+  overMb: string;
 }
 
 /** A box's value as Save would send it: the whole number, or the text itself when it is not one. */
@@ -48,22 +57,37 @@ function limitOf(text: string): number | string {
   return trimmed !== "" && Number.isInteger(n) ? n : trimmed;
 }
 
-const limitsOf = (draft: LimitsDraft) => ({ max: limitOf(draft.max), total: limitOf(draft.total) });
+const limitsOf = (draft: LimitsDraft) => ({
+  max: limitOf(draft.max),
+  total: limitOf(draft.total),
+  compression: draft.compression,
+  overMb: limitOf(draft.overMb),
+});
 
 export function UploadsSection() {
-  const { uploadLimits, refresh } = useAuth();
+  const { uploadLimits, uploadPolicy, refresh } = useAuth();
   /** Stored settings as hydrated on mount (null until then). */
   const [settings, setSettings] = useState<ServerSettings | null>(null);
   const stored = (next: ServerSettings | null): LimitsDraft =>
     next === null
-      ? { max: "", total: "" }
-      : { max: String(next.attachmentMaxMb), total: String(next.attachmentTotalMb) };
+      ? { max: "", total: "", compression: false, overMb: "" }
+      : {
+          max: String(next.attachmentMaxMb),
+          total: String(next.attachmentTotalMb),
+          compression: next.imageCompression,
+          overMb: String(next.imageCompressionOverMb),
+        };
   const form = useFormDraft(stored(settings), { scope: SETTINGS_SCOPE, normalize: limitsOf });
   /**
    * The server's `invalid_attachment_limit` (a value outside the range it owns): a statement
    * about the pair, so it marks both boxes. Cleared by the next keystroke.
    */
   const [rangeError, setRangeError] = useState<string | null>(null);
+  /**
+   * The server's `invalid_image_compression` (a threshold outside the range it owns): its own
+   * field, its own server code. Cleared by the next keystroke.
+   */
+  const [compressionRangeError, setCompressionRangeError] = useState<string | null>(null);
   /** Save is in flight, which holds the dialog's close until it answers. */
   const [busy, setBusy] = useState(false);
   useSaving(busy, SETTINGS_SCOPE);
@@ -94,6 +118,7 @@ export function UploadsSection() {
   const limits = limitsOf(form.draft);
   const maxBad = typeof limits.max !== "number";
   const totalBad = typeof limits.total !== "number";
+  const overBad = typeof limits.overMb !== "number";
   const shapeError = S.errors.byCode.invalid_attachment_limit;
   // Only an edit is judged: the boxes are empty, and clean, until the stored values arrive.
   const limitError =
@@ -102,25 +127,40 @@ export function UploadsSection() {
       : rangeError !== null
         ? { text: rangeError, max: true, total: true }
         : null;
+  /** The compression box's inline error: its own shape, its own server code, its own field. */
+  const compressionError =
+    form.dirty && overBad ? S.errors.byCode.invalid_image_compression : compressionRangeError;
 
   const save = async () => {
     if (settings === null || busy || !form.dirty) return;
-    if (typeof limits.max !== "number" || typeof limits.total !== "number") return;
+    if (
+      typeof limits.max !== "number" ||
+      typeof limits.total !== "number" ||
+      typeof limits.overMb !== "number"
+    ) {
+      return;
+    }
     setBusy(true);
     setRangeError(null);
+    setCompressionRangeError(null);
     try {
       const res = await api.adminPutSettings({
         attachmentMaxMb: limits.max,
         attachmentTotalMb: limits.total,
+        imageCompression: limits.compression,
+        imageCompressionOverMb: limits.overMb,
       });
       adopt(res.settings);
-      // The composer reads the limits from /api/me, so re-pull them: without this the tab that
-      // just raised the cap would keep refusing files at the old number until the next reload.
+      // The composer reads both the limits and the policy from /api/me, so re-pull them: without
+      // this the tab that just raised the cap would keep refusing files at the old number, and
+      // the one that just changed the threshold would keep applying the old one, until a reload.
       await refresh().catch(() => {});
       toastSuccess(S.common.saved);
     } catch (e) {
       if (e instanceof ApiError && e.code === "invalid_attachment_limit") {
         setRangeError(apiErrorText(e));
+      } else if (e instanceof ApiError && e.code === "invalid_image_compression") {
+        setCompressionRangeError(apiErrorText(e));
       } else {
         toastError(apiErrorText(e));
       }
@@ -140,6 +180,7 @@ export function UploadsSection() {
             onClick={() => {
               form.reset();
               setRangeError(null);
+              setCompressionRangeError(null);
             }}
           >
             {S.common.reset}
@@ -147,7 +188,7 @@ export function UploadsSection() {
           <Button
             size="sm"
             variant="primary"
-            disabled={!hydrated || !form.dirty || maxBad || totalBad || busy}
+            disabled={!hydrated || !form.dirty || maxBad || totalBad || overBad || busy}
             onClick={() => void save()}
           >
             {S.common.save}
@@ -199,6 +240,36 @@ export function UploadsSection() {
         onChange={(e) => {
           form.patch({ total: e.target.value });
           setRangeError(null);
+        }}
+      />
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium">{S.settings.imageCompression}</span>
+        <Switch
+          checked={form.draft.compression}
+          onChange={(next) => form.patch({ compression: next })}
+          disabled={!hydrated}
+        />
+      </div>
+      <Input
+        label={S.settings.imageCompressionOverMb}
+        required
+        size="sm"
+        type="number"
+        inputMode="numeric"
+        min={uploadPolicy.imageCompressionMinMb}
+        max={uploadPolicy.imageCompressionMaxMb}
+        hint={S.settings.imageCompressionOverMbHint(
+          uploadPolicy.imageCompressionMinMb,
+          uploadPolicy.imageCompressionMaxMb,
+        )}
+        value={form.draft.overMb}
+        // Editable while the switch is off — the threshold is what the switch turns on, and a
+        // field that greys out on toggle would make setting the two in one pass awkward.
+        disabled={!hydrated}
+        {...(compressionError !== null ? { error: compressionError } : {})}
+        onChange={(e) => {
+          form.patch({ overMb: e.target.value });
+          setCompressionRangeError(null);
         }}
       />
     </SettingsSection>
