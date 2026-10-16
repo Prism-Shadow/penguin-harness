@@ -1,6 +1,13 @@
 /**
  * Built-in model catalog (single source of truth): official chat models that MMSP can
- * auto-route, shared by core's default config, server's initial config, and web/cli display.
+ * auto-route, the provider groups, pricing and off-peak rules, presets and their sync helpers,
+ * and the UI helpers — the server's, which seeds a new Project's config from it, and the Web
+ * App's, the CLI's and the component gallery's, which display it. Published as the
+ * browser-safe subpath `@prismshadow/penguin-server/model-catalog`.
+ *
+ * Core knows none of this (PRN-021): it holds MMSP's client table and the connection rules
+ * (`@prismshadow/penguin-core/model-connection`), and the catalog reaches it only through the
+ * Project config this module seeds, `official` flags included.
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
  * DeepSeek, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
  * 2026-08-18; the direct Anthropic group: 2026-08-20; the DeepSeek V4 Flash Vision Exp rows:
@@ -86,19 +93,20 @@
  * OpenAI Responses endpoint, and the explicit pin keeps a Qwen or DeepSeek id from auto-routing
  * to a vendor client with a different request shape.
  *
- * App attribution (`attributionHeaders`, bottom of this file) rides alongside the protocol
- * pins: it names PenguinHarness to the gateways that read such a header, keyed on the
- * endpoint host rather than on the provider group.
+ * App attribution (the headers that name PenguinHarness to the gateways that read one) is not
+ * here: it is keyed on the endpoint host, not on a provider group, and lives beside its only
+ * caller, core's GenerativeModel.
  *
- * This file imports no Node built-ins (type-only imports only), so it can be bundled directly
- * for the browser.
+ * This file imports no Node built-ins and only core's browser-safe connection subpath (plus
+ * type-only imports), so it can be bundled directly for the browser.
  */
 import type {
   ModelEntry,
   ModelPricing,
+  ModelRef,
   ProviderConnection,
   ProviderTable,
-} from "./project-config.js";
+} from "@prismshadow/penguin-core";
 import {
   MMSP_CLIENTS,
   canonicalClientType,
@@ -106,12 +114,12 @@ import {
   mmspClient,
   sameClientType,
   sameEndpoint,
-} from "./model-connection.js";
+} from "@prismshadow/penguin-core/model-connection";
 import type {
   FastModeProtocol,
   ModelCredentialShape,
   ProviderConnectionShape,
-} from "./model-connection.js";
+} from "@prismshadow/penguin-core/model-connection";
 
 /** Model provider info (used for web grouping/logo and the "API key blank falls back to env var" hint). */
 /**
@@ -305,7 +313,7 @@ export interface ModelCatalogEntry {
    */
   retired?: true;
   /**
-   * This row is, or once was, the default model of new Projects (defaultProjectConfig). Usage
+   * This row is, or once was, the default model of new Projects (PRESET_DEFAULT_MODEL). Usage
    * recorded on it stays priced after a Project stops storing the row — "Restore defaults"
    * deletes every row that is not a preset, retired ones included, and a former default is
    * often most of an older Project's history: retainedCatalogPricing gives the cost path this
@@ -338,32 +346,6 @@ const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
 const ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
 export const PENGUIN_GO_BASE_URL = "https://go.penguin.ooo/api/v1";
 
-/**
- * Go-owned connection URLs, including stored routes from before the MMSP switch. The
- * `token.penguin.ooo` origin and the `/api`, `/api/v1beta` and `/api/anthropic` paths are those
- * pre-MMSP routes, recognized only so they can be migrated: removed with the migration at the
- * 0.3.0 release preparation (see migratePenguinGoRoutes in project-config.ts).
- */
-export function isPenguinGoEndpoint(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  try {
-    const url = new URL(value);
-    const origins = ["https://go.penguin.ooo", "https://token.penguin.ooo"];
-    if (process.env.PENGUIN_GO_ORIGIN) origins.push(new URL(process.env.PENGUIN_GO_ORIGIN).origin);
-    return (
-      origins.includes(url.origin) &&
-      !url.username &&
-      !url.password &&
-      !url.search &&
-      !url.hash &&
-      ["/api", "/api/v1", "/api/v1beta", "/api/anthropic"].includes(
-        url.pathname.replace(/\/+$/, ""),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
 /** OpenCode Go's OpenAI-protocol base: the clients append /chat/completions or /responses. */
 const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
 /** OpenCode Go's Anthropic Messages base: the SDK appends /v1/messages itself, so no /v1 here. */
@@ -2378,7 +2360,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // Flash, Max and Plus tiers are independent: a newer Flash does not replace a Pro.
   // Generic clients pin the documented wire protocol. The /zen/go aliases remain live;
   // keeping them avoids changing existing group endpoints. Requests name their conversation
-  // through attributionHeaders' x-opencode-session header.
+  // through the x-opencode-session header core's GenerativeModel attaches.
   // Prices measure subscription allowance consumed, not the monthly fee. Cache writes use
   // the input price when no write premium is published. GPT Luna (>272K), Haiku (>100K),
   // Grok (>200K) and Qwen Plus (>256K) store the base tier. DeepSeek stores its peak rates
@@ -3931,6 +3913,22 @@ export function catalogGroupConnection(
 }
 
 /**
+ * The default model of a new Project: DeepSeek V4.1 Flash, which the vendor serves under the
+ * bare name `deepseek-flash` — the current generation of the Flash series, at the same price
+ * and schedule as the V4 rows it replaces, and it reads images, so a new Project can take a
+ * pasted screenshot without anyone having to notice why it could not. The bare id begins with
+ * the `deepseek-` family, so MMSP routes it to DeepSeek's official client without a pin. A
+ * Project's default is copied in at creation (the server's seed, and "Restore defaults") and
+ * owned by it from then on, so this reaches new Projects alone; an existing one keeps whatever
+ * it stored, and "Add new models" never touches the stored default. Its catalog row carries
+ * `wasDefault`, as every former default's does.
+ */
+export const PRESET_DEFAULT_MODEL: Readonly<ModelRef> = {
+  provider: "deepseek",
+  model_id: "deepseek-flash",
+};
+
+/**
  * `[providers.<id>]` for every built-in group with a catalogGroupConnection, in the catalog's
  * group order — what a new Project's file stores beside presetModelEntries' rows. A fresh
  * object on every call, so a caller may change it.
@@ -3945,8 +3943,8 @@ export function presetProviderTable(): ProviderTable {
 }
 
 /**
- * Catalog -> preset ModelEntry list (shared by defaultProjectConfig and the server's initial
- * config, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
+ * Catalog -> preset ModelEntry list (what the server seeds a new Project with and what
+ * "Add new models" and "Restore defaults" write, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
  * separate fields (`model_id` is the plain upstream id). The facts a row stores are the
  * context window, the price and `vision = false`, plus the row's protocol and endpoint where
  * they differ from its group's table in `groups` (catalogModelEntry): beside those tables, the
@@ -4093,89 +4091,4 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
   }
   if (provider === "custom") return undefined;
   return providerInfo(provider)?.modelsUrl;
-}
-
-/**
- * App attribution: how the harness identifies itself to gateways that rank or report the apps
- * calling them. Both values describe PenguinHarness itself, never a model or an account.
- *
- * `APP_URL` is also the `app_url` a provider OAuth flow stamps onto the key it mints, which is
- * why it is exported: a stable app URL is required there, and a second copy would let the two
- * attributions drift apart.
- */
-export const APP_URL = "https://penguin.ooo/";
-const APP_TITLE = "PenguinHarness";
-/**
- * OpenRouter marketplace categories, comma-separated. OpenRouter accepts at most **two per
- * request** from a fixed slug list and silently drops anything else, so this string is
- * exactly two recognised slugs.
- */
-const OPENROUTER_CATEGORIES = "cli-agent,personal-agent";
-
-/**
- * Lowercase host of a base URL; undefined when it is blank or unparseable. A fully-qualified
- * trailing dot is stripped: `URL` keeps it in `hostname`, but `openrouter.ai.` names the same
- * server as `openrouter.ai` and has to match the same way. Stripping cannot widen the match —
- * a suffix-anchored comparison rejects `openrouter.ai.attacker.com` with or without the dot.
- */
-function endpointHost(baseUrl: string | undefined): string | undefined {
-  if (!baseUrl?.trim()) return undefined;
-  try {
-    return new URL(baseUrl).hostname.toLowerCase().replace(/\.$/, "");
-  } catch {
-    return undefined;
-  }
-}
-
-/** Host equality extended to subdomains; suffix-anchored, so `notopenrouter.ai` never matches. */
-function hostMatches(host: string, domain: string): boolean {
-  return host === domain || host.endsWith(`.${domain}`);
-}
-
-/**
- * Attribution headers for a request's base URL, or undefined when that endpoint runs no
- * attribution scheme (every direct vendor, and every gateway that does not read one).
- *
- * Keyed on the endpoint host rather than on the catalog's provider group, because the group
- * is a display bucket while the headers are a property of the server being called: a `custom`
- * entry pointed at OpenRouter is still PenguinHarness talking to OpenRouter and is attributed
- * identically. The flip side is that an entry carrying no `base_url` of its own gets no
- * headers even when `OPENAI_BASE_URL` sends it to a gateway — that variable is read inside
- * MMSP and never reaches this side.
- *
- * - OpenRouter (https://openrouter.ai/docs/app-attribution): `HTTP-Referer` is the identity
- *   that creates the app page and drives the rankings, `X-OpenRouter-Title` is its display
- *   name, `X-OpenRouter-Categories` files it under marketplace categories.
- * - TokenDance (https://tokendance.space/docs/app-attribution): `X-App-URL` alone, and it
- *   takes priority over any App URL recorded on the API key — the same key may be in use by
- *   other tools, so the per-request value is the accurate one.
- * - OpenCode (https://opencode.ai): `x-opencode-session` alone, and it names the conversation
- *   rather than the app — the gateway keys its routing and prompt caching on it, so the value
- *   has to hold still across a conversation's requests and differ between conversations. It
- *   is **always** sent: the gateway refuses a request that names none (400 "Request is missing
- *   x-opencode-session"). A Session's requests carry the Session's id; a request with none (a
- *   connectivity test, a vision probe) gets a fresh random id, making it a conversation of its
- *   own — never a shared constant, which would file every such request under one session. A
- *   caller that sends several requests without a Session computes the headers once and
- *   reuses them (GenerativeModel does, per instance), so they share that one id.
- */
-export function attributionHeaders(
-  baseUrl: string | undefined,
-  sessionId?: string,
-): Record<string, string> | undefined {
-  const host = endpointHost(baseUrl);
-  if (!host) return undefined;
-  if (hostMatches(host, "openrouter.ai")) {
-    return {
-      "HTTP-Referer": APP_URL,
-      "X-OpenRouter-Title": APP_TITLE,
-      "X-OpenRouter-Categories": OPENROUTER_CATEGORIES,
-    };
-  }
-  if (hostMatches(host, "tokendance.space")) return { "X-App-URL": APP_URL };
-  if (hostMatches(host, "opencode.ai")) {
-    // The global Web Crypto rather than node:crypto: this module is bundled into the web app too.
-    return { "x-opencode-session": sessionId || globalThis.crypto.randomUUID() };
-  }
-  return undefined;
 }

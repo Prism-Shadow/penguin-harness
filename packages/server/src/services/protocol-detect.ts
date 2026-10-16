@@ -56,7 +56,8 @@
  * works with no credential at all (a protocol-shaped 401 identifies the route), and sending
  * the user's vendor key to a URL they typed is exactly what the rule forbids.
  */
-import { endpointEnvApiKey, userAgent } from "@prismshadow/penguin-core";
+import { userAgent } from "@prismshadow/penguin-core";
+import { endpointEnvApiKey } from "../model-catalog.js";
 import type {
   ModelProtocolDetectResponse,
   ModelProtocolProbeDto,

@@ -130,11 +130,11 @@ packages/
 │   ├── hooks/                      # the stop / pre_tool_use / user_prompt hook points and the hook-script runner
 │   ├── plugins/                    # the built-in plugin library and its loader
 │   ├── plugin/ · kernel/           # the plugin contract a server plugin compiles against · the hot-update module kernel
-│   ├── state/                      # paths · default-config · project-config · model-catalog · memory
+│   ├── state/                      # paths · default-config · project-config · model-connection · memory
 │   │                               # agent-state (Skill install, prompt assembly) · agent-vault · builtin-agents
 │   ├── trace/                      # writer.ts append-only JSONL · resume.ts replay-based recovery
 │   └── internal/                   # shared helpers: dates, Session support, merge queue, session-title.ts (one-shot title generation, never in Trace)
-├── server/src                      # index.ts boot sequence · app assembly · db (node:sqlite) · auth · http/routes · runtime · services · hmr · plugin · terminal
+├── server/src                      # index.ts boot sequence · app assembly · db (node:sqlite) · auth · http/routes · runtime · services · hmr · plugin · terminal · model-catalog.ts
 ├── cli/src                         # commander entry · commands/ (run / chat / input / logs / ls / agent / project / schedule / config / serve …) · server client and approval prompts
 ├── web/src                         # api client · state · lib/omni stream rendering · components · feature pages (layout below)
 ├── desktop/                        # the Electron shell

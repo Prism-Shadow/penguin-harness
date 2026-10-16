@@ -134,7 +134,7 @@ import type {
   WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 // The catalog decides which groups publish a balance, as it does on the server.
-import { catalogEntryFor, providerInfo } from "../../../../core/dist/state/model-catalog.js";
+import { catalogEntryFor, providerInfo } from "../../../../server/dist/model-catalog.js";
 import { READ_ONLY } from "./errors";
 import { amspTryStream, dayKey, effectiveOf } from "./fixtures";
 import type { UsageDay } from "./fixtures";

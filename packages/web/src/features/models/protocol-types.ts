@@ -6,7 +6,7 @@
  * The probing itself is server-side (packages/server/src/services/protocol-detect.ts); these
  * only decide what the dialog shows and what is worth sending there.
  */
-import { modelEnvPreviewKey, providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { modelEnvPreviewKey, providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
 
 /**

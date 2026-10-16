@@ -26,10 +26,14 @@
  * - Given Session creation's explicit pair, it sits above the row; a blank one is no override.
  * - Given no key, the endpoint listing is refused before any client exists, except on an open
  *   MMSP server, which is listed keyless on the wire.
+ * - Given the installed MMSP, every client type the table names constructs (the gemini-official
+ *   alias included), and a name the table lacks is one MMSP refuses too.
  */
 import { describe, expect, it, vi } from "vitest";
+import { AutoLLMClient } from "@prismshadow/mmsp";
 import { listEndpointModels } from "../src/llm/list-models.js";
 import {
+  MMSP_CLIENTS,
   ModelCredentialError,
   effectiveConnection,
   environmentKeyRoute,
@@ -359,5 +363,28 @@ describe("listEndpointModels credential gate (the add-group import)", () => {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe("MMSP_CLIENTS (core's mirror of MMSP's client types)", () => {
+  it("every client type the table names is one the installed MMSP builds, and a name it lacks MMSP refuses", () => {
+    // When an MMSP upgrade drops an alias, its row fails here and goes (see
+    // changelog/0.2.15/2026-10-10-backward-compatibility.md).
+    for (const clientType of Object.keys(MMSP_CLIENTS)) {
+      expect(
+        () =>
+          new AutoLLMClient({
+            model: "probe-model",
+            clientType,
+            apiKey: "sk-probe",
+            baseUrl: "https://example.invalid/v1",
+          }),
+        clientType,
+      ).not.toThrow();
+    }
+    expect(Object.hasOwn(MMSP_CLIENTS, "gemini-3.8")).toBe(false);
+    expect(
+      () => new AutoLLMClient({ model: "probe-model", clientType: "gemini-3.8", apiKey: "sk" }),
+    ).toThrow(/Unknown client type/);
   });
 });

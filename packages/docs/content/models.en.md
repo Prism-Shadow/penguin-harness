@@ -477,7 +477,7 @@ The per-request output limit and the compaction threshold both follow this windo
 
 ## Built-in provider groups
 
-The table below lists the built-in groups and, for the seven a new Project marks official, the environment variable their models use when neither the model nor the group has a key; the other groups use none (—). The catalog source is `packages/core/src/state/model-catalog.ts`. Each variable also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create. The other groups' rows **never fall back**: a gateway's protocol client reads `OPENAI_*` (or `ANTHROPIC_*`), which holds your vendor key, so a gateway group is never official and that key is not sent to it (see [Set API keys](#set-api-keys)).
+The table below lists the built-in groups and, for the seven a new Project marks official, the environment variable their models use when neither the model nor the group has a key; the other groups use none (—). The catalog source is `packages/server/src/model-catalog.ts`. Each variable also has a `_BASE_URL` variant, for example `ANTHROPIC_BASE_URL`. The **Models** page lists the groups in this order, followed by the groups you create. The other groups' rows **never fall back**: a gateway's protocol client reads `OPENAI_*` (or `ANTHROPIC_*`), which holds your vendor key, so a gateway group is never official and that key is not sent to it (see [Set API keys](#set-api-keys)).
 
 | Provider | API key env var | Notes |
 | --- | --- | --- |

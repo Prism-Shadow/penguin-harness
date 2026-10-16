@@ -21,6 +21,7 @@ import { sessionMeta, userText } from "../src/omnimessage/index.js";
 import type { OmniMessage, SessionSource } from "../src/omnimessage/index.js";
 import { tracesDir } from "../src/state/paths.js";
 import { stubProviderKeys } from "./provider-keys.js";
+import { seedProject } from "./seeded-project.js";
 
 let tmpRoot: string;
 let workspace: string;
@@ -33,6 +34,8 @@ beforeEach(async () => {
   workspace = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-source-ws-"));
   process.env.PENGUIN_HOME = tmpRoot;
   restoreKeys = stubProviderKeys();
+  // The Project a host would have seeded: core itself carries no models.
+  await seedProject(tmpRoot);
 });
 
 afterEach(async () => {

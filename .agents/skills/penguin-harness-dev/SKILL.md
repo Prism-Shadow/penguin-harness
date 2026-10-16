@@ -19,7 +19,7 @@ them when the task reaches them:
 | --- | --- |
 | `reference/verification.md` | A test fails oddly, CI reads green when it should not, or the user asks you to run the suite on another machine |
 | `reference/changelog.md` | Writing or auditing a changelog entry |
-| `reference/model-catalog.md` | Touching `model-catalog.ts`, pricing, provider groups or glyphs |
+| `reference/model-catalog.md` | Touching the server's `model-catalog.ts`, pricing, provider groups, the `official` flag or glyphs |
 | `reference/authoring.md` | Writing a blog post, auditing prose, or proposing a simplification |
 | `reference/release.md` | Preparing a release: the branch order, what changes, the announcement, the blog post and its screenshots |
 | `reference/testing.md` | **Writing or changing any test**: scenarios first, behaviour only, one fake per boundary, branch coverage, speed |
@@ -93,7 +93,7 @@ The full chain CI runs is `pnpm build`, `pnpm format:check`, `pnpm typecheck`, `
 Pick the narrowest evidence that would actually fail for this change's regression:
 
 ```sh
-pnpm --filter @prismshadow/penguin-core exec vitest run test/model-catalog.test.ts   # one file, ~1s
+pnpm --filter @prismshadow/penguin-server exec vitest run test/model-catalog.test.ts # one file, ~2s
 pnpm --filter @prismshadow/penguin-web test                                          # one package
 ```
 
@@ -102,7 +102,8 @@ pnpm --filter @prismshadow/penguin-web test                                     
 | Markdown only — changelog, `.github/CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
 | `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
 | `plugins/**` (repo root) | the `plugins` package test (loader, README tables, the hook scripts against fake Traces) + `docs`'s `skills-sync.test.ts` |
-| The model catalog | core `model-catalog.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts`, server `models.test.ts` |
+| The model catalog | server `model-catalog.test.ts`, `official-groups.test.ts` and `models.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts` |
+| The credential rule or a row's effective connection | core `model-connection.test.ts`, server `official-groups.test.ts` and `models.test.ts` |
 | Request assembly, history rebuild, compaction, the system prompt, a tool's description or schema | core's three `prompt-cache-*` suites — read the section below before you touch what they report |
 | One package's source | that package's `test`, plus `typecheck` |
 | Exported core types, or anything downstream imports | `pnpm build` + `pnpm typecheck` before any test |
@@ -182,6 +183,19 @@ Whatever is decided, compatibility code is a standing cost: name **how long it s
 it, and what has to be true first**, at the code site and in a dedicated
 `changelog/unreleased/YYYY-MM-DD-backward-compatibility.md`. Other entries in that batch reference
 that file instead of re-telling it. A batch with no compatibility handling has no such file.
+
+## Core never special-cases a model, provider or gateway
+
+`packages/core/src` contains no model ids, provider ids, vendor hostnames or endpoints, and no
+catalog data. Model knowledge lives in the server's catalog (`packages/server/src/model-catalog.ts`,
+published as the browser-safe `@prismshadow/penguin-server/model-catalog`, which the Web App, the
+CLI and the gallery import) and reaches core only through the Project config the server seeds —
+`[providers.<id>]` with its `official` flag, `[[models]]`, `default_model` — or through host hooks
+(`AgentAssembly`). Core keeps MMSP's client-type table (`MMSP_CLIENTS`: variable prefix, open
+server, path, fast mode) because that is protocol knowledge, not model knowledge. The one exception
+is the gateway attribution headers in `GenerativeModel` (`attributionHeaders`). A change that wants
+core to know a model or a vendor belongs in the catalog and the config it seeds instead; a core test
+that needs a Project writes a fixture (`test/seeded-project.ts`), never the catalog.
 
 ## The message protocol is closed by default
 

@@ -43,23 +43,15 @@ import {
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
-  MODELSCOPE_PROVIDER_ID,
-  PENGUIN_GO_PROVIDER_ID,
-  catalogEntryFor,
-  catalogGroupConnection,
   defaultProjectConfig,
   effectiveConnection,
   groupKeyReaches,
   imageUrlMessage,
   metaMaxTokens,
   migrateProjectConfigTable,
-  migratePenguinGoRoutes,
   ModelCredentialError,
   parseProviderTable,
-  presetModelEntries,
-  presetPromotions,
   projectConfigFromTable,
-  retainedCatalogPricing,
   projectConfigPath,
   providerConnectionShape,
   renderProjectConfigToml,
@@ -67,17 +59,26 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import {
+  MODELSCOPE_PROVIDER_ID,
+  PENGUIN_GO_PROVIDER_ID,
+  PRESET_DEFAULT_MODEL,
   VENDOR_ENDPOINTS,
+  catalogEntryFor,
+  catalogGroupConnection,
   endpointEnvApiKey,
   endpointEnvKey,
   fixedClientType,
   fixedClientTypeRefuses,
   modelEnvPreviewKey,
+  presetModelEntries,
+  presetPromotions,
+  presetProviderTable,
   providerInfo,
+  retainedCatalogPricing,
   unaddableModel,
   unroutableVendorModel,
   withOfficialFlag,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "../model-catalog.js";
 import { sameClientType, sameEndpoint } from "@prismshadow/penguin-core/model-connection";
 import type {
   PluginTables,
@@ -125,7 +126,7 @@ import type {
   PlatformModelCatalog,
 } from "./platform-auth-types.js";
 import { detectModelProtocol } from "./protocol-detect.js";
-import { markOfficialGroups } from "./project-config-migrations.js";
+import { markOfficialGroups, migratePenguinGoRoutes } from "./project-config-migrations.js";
 import {
   VISION_PROBE_IMAGE,
   VISION_PROBE_MAX_TOKENS,
@@ -773,6 +774,24 @@ export async function collectUtilityCompletion(
   }
 }
 
+/**
+ * What a new Project's file holds, and what "Restore defaults" puts back: core's default config
+ * (the factory command policy, and no models — core carries no model knowledge) with the
+ * built-in catalog's default model, each built-in group's `[providers.<id>]` table (`official`
+ * on the first-party groups) and the preset rows. No keys: the user fills in an API key once per
+ * group, or leaves a first-party group's blank for the vendor's environment variable. From here
+ * on the file alone says where every request goes; the catalog is not read again when one is
+ * built.
+ */
+export function presetProjectConfig(): ProjectConfig {
+  return {
+    ...defaultProjectConfig(),
+    default_model: { ...PRESET_DEFAULT_MODEL },
+    providers: presetProviderTable(),
+    models: presetModelEntries(),
+  };
+}
+
 @Component()
 export class ProjectConfigService implements ProjectConfigStore {
   /**
@@ -914,11 +933,13 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
     const table = asTable(parseToml(raw));
     // Core's migrations first (MMSP 0.5.0's client types, the group-level hoist), then the
-    // server's own, which need the catalog (the `official` flag, markOfficialGroups). Both
-    // run on every call; `||` would skip the second whenever the first changed something.
+    // server's own, which need the catalog (Penguin Go's pre-MMSP routes, the `official` flag).
+    // All run on every call; `||` would skip the later ones whenever an earlier one changed
+    // something.
     const migrated = migrateProjectConfigTable(table);
+    const routed = migratePenguinGoRoutes(table) > 0;
     const marked = markOfficialGroups(table);
-    if (migrated || marked) {
+    if (migrated || routed || marked) {
       // A file from before MMSP 0.5.0, before group-level connections or before the `official`
       // flag: rewritten once, before it is served; the next read parses the rewritten file
       // (writeRaw drops the cache). Every file writeRaw renders carries a `[providers]` table,
@@ -934,8 +955,8 @@ export class ProjectConfigService implements ProjectConfigStore {
 
   /**
    * Typed view of the same cached table — byte-for-byte the semantics of core's
-   * `loadProjectConfig` (missing file → preset default config; legacy format → the
-   * same error, via core's shared narrowing) without its per-call readFile + parse.
+   * `loadProjectConfig` (missing file → core's default config, which carries no models; legacy
+   * format → the same error, via core's shared narrowing) without its per-call readFile + parse.
    * Serves the scheduler's model-ref validation (see schedule-store).
    */
   async loadConfig(projectId: string): Promise<ProjectConfig> {
@@ -965,17 +986,17 @@ export class ProjectConfigService implements ProjectConfigStore {
   }
 
   /**
-   * Initial config for a newly created Project: display name + preset built-in
-   * model catalog (the default model, each built-in group's endpoint and protocol in
-   * `[providers.<id>]`, and all preset entries, sourced from the same core
-   * defaultProjectConfig; an entry stores its catalog facts, plus a protocol or endpoint only
-   * where it differs from its group's table — and no key). From here on the file alone says
-   * where every request goes; the catalog is not read again when one is built. Users only need
-   * to fill in an API key as needed, once per group (leave it blank to fall back to the
-   * provider's environment variable).
+   * Initial config for a newly created Project: display name + the built-in catalog's seed
+   * (presetProjectConfig: the default model, each built-in group's `[providers.<id>]` table —
+   * endpoint, protocol, and `official` on the first-party groups — and all preset entries; an
+   * entry stores its catalog facts, plus a protocol or endpoint only where it differs from its
+   * group's table — and no key). From here on the file alone says where every request goes; the
+   * catalog is not read again when one is built. Users only need to fill in an API key as
+   * needed, once per group (leave a first-party group's blank for the vendor's environment
+   * variable).
    */
   async writeInitialConfig(projectId: string, name: string): Promise<void> {
-    const preset = defaultProjectConfig();
+    const preset = presetProjectConfig();
     await this.writeRaw(projectId, {
       name,
       ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
@@ -1004,7 +1025,7 @@ export class ProjectConfigService implements ProjectConfigStore {
   async ensurePresetModels(projectId: string): Promise<boolean> {
     const raw = await this.readRaw(projectId);
     if (asArray(raw.models).length > 0) return false;
-    const preset = defaultProjectConfig();
+    const preset = presetProjectConfig();
     const { providers, added } = presetAdditions(raw);
     await this.writeRaw(projectId, {
       ...raw,
@@ -2312,7 +2333,7 @@ export class ProjectConfigService implements ProjectConfigStore {
    *   (presetAdditions), and their promotions are stored. A group the file has neither rows
    *   nor a table for gets the catalog's table. Nothing else moves: no existing row, group
    *   table, promotion, key or reference.
-   * - `restore`: the model configuration becomes a new Project's (defaultProjectConfig) and
+   * - `restore`: the model configuration becomes a new Project's (presetProjectConfig) and
    *   keeps only the API keys. The rows are the non-retired presets in catalog order, the
    *   built-in groups' tables the catalog's, the default model the catalog's, and there is no
    *   vision model. Everything else goes: every row that is not a preset (the user's own,
@@ -2367,7 +2388,7 @@ export class ProjectConfigService implements ProjectConfigStore {
   private async restorePresets(projectId: string): Promise<PresetSyncResponse> {
     const raw = await this.readRaw(projectId);
     const current = asArray(raw.models);
-    const fresh = defaultProjectConfig();
+    const fresh = presetProjectConfig();
     const keyOf = (row: RawTable) => refKey(String(row.provider), String(row.model_id));
     const presetRefs = new Set(fresh.models.map((m) => refKey(m.provider, m.model_id)));
 

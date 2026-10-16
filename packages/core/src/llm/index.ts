@@ -21,6 +21,8 @@ export {
   mapThinkingLevel,
   toolDefinitionsToSchemas,
   buildUniConfig,
+  APP_URL,
+  attributionHeaders,
 } from "./generative-model.js";
 export { listEndpointModels } from "./list-models.js";
 export type { ListEndpointModelsOptions } from "./list-models.js";

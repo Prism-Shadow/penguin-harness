@@ -4,7 +4,7 @@
 - **Type:** refactor
 - **Scope:** `server`, `core`
 - **PR:** [#1166](https://github.com/Prism-Shadow/penguin-harness/pull/1166)
-- **Breaking:** yes — environment keys follow the Project config's `official` flag, and `PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL` are no longer read
+- **Breaking:** yes — environment keys follow the Project config's `official` flag, `PENGUIN_GO_API_KEY` / `PENGUIN_GO_BASE_URL` are no longer read, and only the server migrates Penguin Go's pre-MMSP routes
 
 [中文版](2026-10-15-backward-compatibility.zh.md)
 
@@ -19,3 +19,11 @@ Users act only in the cases the new rule stops covering: a custom or user-create
 ### Lifetime
 
 Remove `markOfficialGroups` and its call in `ProjectConfigService.readTable` at the 0.3.0 release preparation, together with core's `migrateProjectConfigTable`, once the release notes say a Project last opened before this release must be opened once on a 0.2.x server first. Whoever prepares 0.3.0 removes it. The startup sweep (`migrateStoredConfigs`) goes with the last migration it serves.
+
+## Penguin Go's pre-MMSP routes
+
+The one-time migration of Penguin Go routes stored before the MMSP switch (`google-genai` / `deepseek-official` on `token.penguin.ooo/api`) now runs only in the server's read path, including the startup sweep. Core's `loadProjectConfig` no longer migrates them. A file read by the SDK alone keeps its old routes until a server reads it. The tolerated shape, its scope and the user action are unchanged from [the 0.2.15 entry](../0.2.15/2026-10-12-backward-compatibility.md): nothing to do when the file is opened through the server, the desktop app or the CLI.
+
+### Lifetime
+
+Remove the no-`endpoint` call in `ProjectConfigService.readTable`, the `endpoint === undefined` branch of `migratePenguinGoRoutes` and the pre-MMSP origin and paths in `isPenguinGoEndpoint` at the 0.3.0 release preparation, together with the migrations above. The `endpoint` path stays.

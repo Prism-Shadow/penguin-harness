@@ -476,7 +476,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 ## 内置供应商分组
 
-下表列出了各个内置分组，以及新建 Project 标为 official 的七个分组在模型和分组都没有 key 时使用的环境变量；其余分组不使用任何环境变量（—）。模型目录的源码位于 `packages/core/src/state/model-catalog.ts`。每个变量还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。其余分组的条目**从不回退**：网关的协议客户端读取 `OPENAI_*`（或 `ANTHROPIC_*`），里面存的是你的厂商 key，因此网关分组从不是 official，这把 key 也不会被发往网关（见[设置 API key](#设置-api-key)）。
+下表列出了各个内置分组，以及新建 Project 标为 official 的七个分组在模型和分组都没有 key 时使用的环境变量；其余分组不使用任何环境变量（—）。模型目录的源码位于 `packages/server/src/model-catalog.ts`。每个变量还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。其余分组的条目**从不回退**：网关的协议客户端读取 `OPENAI_*`（或 `ANTHROPIC_*`），里面存的是你的厂商 key，因此网关分组从不是 official，这把 key 也不会被发往网关（见[设置 API key](#设置-api-key)）。
 
 | 供应商 | API key 环境变量 | 说明 |
 | --- | --- | --- |

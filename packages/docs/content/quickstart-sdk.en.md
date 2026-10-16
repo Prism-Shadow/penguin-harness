@@ -31,7 +31,7 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 
 Replace `sk-...` with your API key. The CLI writes the model to the data root, and the SDK can use it right away.
 
-You can also keep credentials off disk entirely. When a model entry has no inline `api_key` and its requests go to the vendor's own endpoint, the key comes from the vendor's environment variable that [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) (the LLM gateway library) reads, such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.
+You can also keep credentials off disk entirely. When a model has no `api_key` of its own or its group's, its group is marked `official = true` and the model names no `base_url` of its own, the key comes from the vendor's environment variable that [MMSP](https://www.npmjs.com/package/@prismshadow/mmsp) (the LLM gateway library) reads, such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically. The server marks the first-party groups official when it creates a Project or first reads its config. The SDK itself carries no model catalog, so on a data root only the SDK touches, add your models with `addModel` and mark the group yourself, for example `setProviderConnection(root, projectId, "deepseek", { official: true })`; see [Configuration](/configuration#group-connections).
 
 ## Run your first program
 

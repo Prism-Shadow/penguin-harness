@@ -15,7 +15,7 @@ import {
   MODEL_CATALOG,
   modelEnvPreviewKey,
   presetProviderTable,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-connection";
 import { zh as ZH } from "../src/lib/strings";
 import { en as EN } from "../src/lib/strings-en";

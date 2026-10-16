@@ -37,10 +37,6 @@
       "types": "./dist/llm/context-limits.d.ts",
       "import": "./dist/llm/context-limits.js"
     },
-    "./model-catalog": {
-      "types": "./dist/state/model-catalog.d.ts",
-      "import": "./dist/state/model-catalog.js"
-    },
     "./model-connection": {
       "types": "./dist/state/model-connection.d.ts",
       "import": "./dist/state/model-connection.js"
