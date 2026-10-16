@@ -3,6 +3,7 @@
 - **Date:** 2026-10-16
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1178](https://github.com/Prism-Shadow/penguin-harness/pull/1178)
 - **Issue:** [#738](https://github.com/Prism-Shadow/penguin-harness/issues/738)
 
 [中文版](2026-10-16-organization-finance-timezone.zh.md)
