@@ -347,6 +347,8 @@ export interface TelemetryKeys {
   request?: string;
   session?: string;
   generation?: number;
+  /** The machine a connection probe measured, by its address (`ssh:<alias>`). */
+  machine?: string;
 }
 
 /** A sample as a probe hands it over; the buffer stamps `ts`. */
@@ -5682,10 +5684,18 @@ export interface MachineJob {
    * installing, connecting: running, then its answer. Absent for every other job.
    */
   diagnosis?: { state: "running" } | ({ state: "done" } & MachineDiagnosis);
+  /**
+   * The connect stages this job ran, each with when it began and ended — which one a slow
+   * connect spent its time in (machines/connect-stages.ts). Only a job that connects has
+   * them, only the stages it needed, in the order it ran them. Absent from a server older
+   * than this field.
+   */
+  stages?: MachineStageTiming[];
   result:
     | null
     | { ok: true; installed: "installed" | "already-installed"; version: string | null }
-    | { ok: true; connected: true }
+    /** `connectedAt`: when the connection was held (ISO). Absent from an older server. */
+    | { ok: true; connected: true; connectedAt?: string }
     /** The machine's server is stopped and stays so until it is started again. */
     | { ok: true; stopped: true }
     /** The program is gone from the machine; `dataRemoved` says whether its data root went too. */
@@ -5799,6 +5809,32 @@ export interface MachineUninstallRequest {
  * `POST /api/projects/:projectId/machines/kinds/:kind/definitions`: define a machine of that
  * kind by hand (201 with the list); `PUT …/definitions/:name` rewrites one (the name stays).
  * 400 `machine_definition_invalid` says `<field>: <why>`, 409 `machine_exists` a name taken.
+ * The stages of a connect, finer than its phases: asking what runs there, starting its server
+ * when none does, asking again, holding the connection, and handing over the Model config
+ * and then the plugins. A stage not needed is not run and not recorded.
+ */
+export const MACHINE_CONNECT_STAGES = [
+  "probe",
+  "start-server",
+  "reprobe",
+  "hold",
+  "sync-models",
+  "sync-plugins",
+] as const;
+export type MachineConnectStage = (typeof MACHINE_CONNECT_STAGES)[number];
+
+/** One connect stage as a job ran it. ISO timestamps; `ok` false when it did not go through. */
+export interface MachineStageTiming {
+  stage: MachineConnectStage;
+  startedAt: string;
+  endedAt: string;
+  ok: boolean;
+}
+
+/**
+ * `POST /api/projects/:projectId/machines/ssh-hosts`: append a host block to this server's
+ * `~/.ssh/config`. Answers the machines list (201), or 400 `ssh_host_invalid` naming the
+ * field, or 409 `ssh_host_exists`.
  */
 export interface MachineDefinitionRequest {
   name: string;

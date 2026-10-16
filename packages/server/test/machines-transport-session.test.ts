@@ -18,6 +18,8 @@
  * - A held session outlives its generation in the resource registry: a successor judged to speak
  *   another contract opens its own, and one that adopts it is the one told when it drops — not
  *   the generation that opened it.
+ * - With a telemetry sink set, every command is a sample: its exit code, a timeout as such,
+ *   never its text.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -62,6 +64,11 @@ const target = (name: string, machine: Machine = testMachine(name)): RemoteTarge
   machine,
   node: "node",
 });
+  setTimingsSink,
+  useControlSockets,
+} from "../src/machines/transport/index.js";
+import { SshPasswords } from "../src/machines/ssh-passwords.js";
+import type { MachineSample } from "../src/machines/transport/index.js";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
@@ -148,6 +155,25 @@ exec /bin/sh
     expect((await conn.exec("exit 3")).code).toBe(3);
     expect(await conn.exec("echo still here")).toMatchObject({ code: 0, stdout: "still here\n" });
     expect(spawns()).toHaveLength(1);
+  });
+
+  it("with a sink set, every command is a sample — exit code, a timeout as such, never its text", async () => {
+    const conn = connectionTo({ alias: "nas", user: "deploy" });
+    const samples: MachineSample[] = [];
+    setTimingsSink((sample) => samples.push(sample));
+    try {
+      expect((await conn.exec("echo top-secret-words")).code).toBe(0);
+      expect((await conn.exec("exit 3")).code).toBe(3);
+      await conn.stream("sleep 5", { input: Buffer.alloc(0), timeoutMs: 150 });
+    } finally {
+      setTimingsSink(null);
+    }
+    expect(samples.map((s) => [s.probe, s.status, s.attrs?.code])).toEqual([
+      ["machine.ssh.command", "ok", 0],
+      ["machine.ssh.command", "exit", 3],
+      ["machine.ssh.command", "timeout", 255],
+    ]);
+    expect(JSON.stringify(samples)).not.toContain("top-secret-words");
   });
 
   it("hands a command its stdin as a heredoc, bytes intact, and relays lines as they arrive", async () => {
