@@ -958,8 +958,9 @@
      (theme.css: 1 while the edge is live, registered so it interpolates): on `done` it eases to
      nothing over the reveal duration while the host holds `data-settling` (StreamText drops it
      when the transition ends), so the last lines settle into full ink instead of snapping, and a
-     settled reply carries no mask at all; one that mounts finished never had one. Under reduced
-     motion the veil is not drawn. */
+     settled reply carries no mask at all; one that mounts finished never had one. Each run of new
+     words also fades in on its own (theme.css, `[data-arrive]`). Under reduced motion the veil is
+     not drawn. */
   :root[data-theme="modern"] .ui-stream > [data-slot="caret"] {
     display: none;
   }

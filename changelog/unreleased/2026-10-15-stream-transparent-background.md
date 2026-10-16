@@ -1,4 +1,4 @@
-# Streaming replies and loading screens no longer cover the custom background
+# Streaming text fades in smoothly; streaming and loading no longer cover the custom background
 
 - **Date:** 2026-10-15
 - **Type:** fix
@@ -7,8 +7,9 @@
 
 [中文版](2026-10-15-stream-transparent-background.zh.md)
 
-With a custom background image set, every transient state now shows the image the way the
-settled screen does.
+In Frost, streaming text fades in as it arrives instead of popping in a word at a time. With a
+custom background image set, every transient state now shows the image the way the settled screen
+does.
 
 ## Streaming
 
@@ -19,6 +20,18 @@ included, shows through and nothing is painted over it. The fade keeps its shape
 settle: the last line and a half fade to six tenths of their ink while the text arrives, and ease
 back to full ink over the reveal duration once it is whole, after which the reply carries no
 mask. Without an image the fade looks as before.
+
+## Arriving text
+
+In Frost, new words no longer pop in one at a time when tokens arrive fast. Each stretch of text
+the reveal puts on screen fades in on its own over the reveal duration, in prose, lists, tables,
+inline code, math and code blocks alike, and a list item, table or code block that arrives whole
+fades in as one, its bullet and fill with it. The words are on screen at once and only their ink
+rises; nothing is painted, so the image behind shows through them. A reply whose first delta is
+large is revealed from its start rather than showing its opening lines at once. When the last
+stretch has faded, the reply is exactly the markup of one that never streamed; code highlighting
+and formulas appear then, up to the reveal duration later than before. Primer and Console are
+unchanged, and with reduced motion the text shows at once.
 
 ## Loading
 

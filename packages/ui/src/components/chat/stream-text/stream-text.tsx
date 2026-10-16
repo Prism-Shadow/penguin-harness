@@ -2,8 +2,8 @@
  * Text arriving in the transcript, one effect wherever it streams: an assistant reply's body
  * (`AssistantText`), a thinking row's text, a compaction's summary and a tool call's output. It is
  * the `ui-stream` host, so a theme's reveal is the same on all four: Primer shows the text as it
- * lands under a pulsing bar, Frost lets words in under a soft veil over the trailing lines (no
- * caret), Console types it out behind a blinking block.
+ * lands under a pulsing bar, Frost fades each new run of words in under a soft veil over the
+ * trailing lines (no caret), Console types it out behind a blinking block.
  *
  * `data-state` is `streaming` while the text is still coming in — the stream is open, or the
  * paced reveal (use-stream-reveal.ts, on the theme's `--ui-stream-reveal` / `--ui-stream-rate`)
@@ -17,6 +17,15 @@
  * veil can hold its mask exactly that long, so the newest lines settle into full ink instead of
  * snapping, and a settled reply carries no mask. A host that mounts finished never settles.
  *
+ * Under a `fade` reveal each stretch the reveal puts on screen is a run of its own for the
+ * theme's reveal duration, `data-arrive` on a span around it (or on an element that arrived
+ * whole: a list item, a table, a code block), and the theme fades it in (stream-arrivals.ts).
+ * After every commit the host pins each run's fade to the moment the run arrived, so a run whose
+ * element React re-created or reused is exactly as far along as before. Markdown stays in its
+ * streaming mode until the last run has faded — a highlighted code block or a typeset formula
+ * would drop the runs inside it mid-fade — and then renders once more without them, so the
+ * settled host is the markup of a reply that never streamed.
+ *
  * Two formats. `markdown` renders the revealed prefix through `Md` in its streaming mode (no
  * highlighting, no KaTeX) until done, so blocks grow as they are typed. `plain` renders it
  * verbatim in a `<pre>`, the text node followed by the caret, so Console's cursor sits right after
@@ -24,9 +33,10 @@
  * tail — a height cap, whose inner scroll would carry the veil off with its first screen — goes in
  * `settledClassName`, which the host takes only once done.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { Md } from "../../content/prose/prose";
+import { arrivalText, pinArrivals } from "../../content/prose/stream-arrivals";
 import { StreamingCaret } from "../assistant-text/streaming-caret";
 import { useStreamReveal } from "../assistant-text/use-stream-reveal";
 
@@ -103,20 +113,25 @@ export function StreamText({
   settledClassName = "",
   children,
 }: StreamTextProps) {
-  const revealed = useStreamReveal(text, streaming);
+  const { revealed, arrivals } = useStreamReveal(text, streaming);
   const live = streaming || revealed.length < text.length;
+  const fading = arrivals.length > 0;
   const host = useRef<HTMLElement | null>(null);
   const setHost = useCallback((element: HTMLElement | null) => {
     host.current = element;
   }, []);
   const settling = useSettling(live, host);
+  // Before the frame paints: every run's fade starts when the run arrived.
+  useLayoutEffect(() => {
+    if (fading && host.current !== null) pinArrivals(host.current);
+  }, [fading, arrivals, revealed]);
   const look = [className, live ? "" : settledClassName].filter((part) => part !== "").join(" ");
   const state = live ? "streaming" : "done";
   const settle = settling ? { "data-settling": "" } : {};
   if (format === "plain") {
     return (
       <pre ref={setHost} className={`ui-stream ${look}`.trimEnd()} data-state={state} {...settle}>
-        {revealed}
+        {arrivalText(revealed, arrivals)}
         {live && <StreamingCaret />}
         {!live && children}
       </pre>
@@ -125,7 +140,7 @@ export function StreamText({
   return (
     <div ref={setHost} className={`ui-stream ${look}`.trimEnd()} data-state={state} {...settle}>
       {/* Re-renders the revealed text directly while live; memoized, so a settled body skips the re-parse, and code blocks highlight once on settle (see prose.tsx). */}
-      <Md text={revealed} streaming={live} />
+      <Md text={revealed} streaming={live || fading} arrivals={arrivals} />
       {live && <StreamingCaret />}
       {!live && children}
     </div>

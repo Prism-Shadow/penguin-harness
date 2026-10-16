@@ -278,6 +278,16 @@
    *   entry moved to the other area, a regrouped session list, the glyph and the title a run
    *   settles into — fades (and de-blurs) in once; put it on the appended or swapped-in element
    *   only, never on what a page mounts with. Streaming text does not use it (`ui-stream` does).
+   * - `data-arrive` inside a `ui-stream` host: a run of streaming text a `fade` reveal just put on
+   *   screen (or an element that arrived whole: a list item, a table, a code block) fades in over
+   *   the reveal duration. The host pins each run's fade to the moment the run arrived
+   *   (stream-arrivals.ts), so the run reads as far along as it is old whichever element React
+   *   gives it, and drops the attribute once the last run has faded. The fade fills both ways:
+   *   a finished fade stays on its element (holding full ink, which changes nothing) for as long
+   *   as the element is a run, so when React hands that element to a newer run the host finds the
+   *   fade and starts it again at the new run's time instead of the element showing it at once.
+   *   Opacity only: nothing is painted, so whatever lies behind the text shows through the newest
+   *   words.
    * - `data-layout-motion`: an element whose size changes between states, the sidebar's width or a
    *   disclosure's `grid-template-rows: 0fr ↔ 1fr` — or whose place does, a dock surface lifting
    *   off the page column to cover it (`top`, `left`); the theme sets the duration and the curve.
@@ -365,6 +375,15 @@
     from {
       opacity: 0;
       filter: blur(var(--ui-reveal-blur));
+    }
+  }
+
+  .ui-stream [data-arrive] {
+    animation: ui-stream-arrive var(--ui-dur-reveal) var(--ui-ease-out) both;
+  }
+  @keyframes ui-stream-arrive {
+    from {
+      opacity: 0;
     }
   }
 
@@ -467,7 +486,9 @@
    host's own pulse) and may draw on the host itself (Console's cursor cell after a list), so
    those are named: the caret holds still and a layer goes at once. Frost's veil is gated on
    motion in its own recipe and is simply not drawn. The reveal's pace is the app's, which shows
-   the whole text under either signal. */
+   the whole text under either signal and puts no run on screen to fade; a run left over from
+   before the switch shows at full ink. */
+:root[data-motion="reduced"] .ui-stream [data-arrive],
 :root[data-motion="reduced"] .ui-stream [data-slot="caret"],
 :root[data-motion="reduced"] .ui-stream::before,
 :root[data-motion="reduced"] .ui-stream::after,
@@ -490,6 +511,7 @@
   :is(.ui-activity, .ui-activity *)::after {
     animation: none;
   }
+  .ui-stream [data-arrive],
   .ui-stream [data-slot="caret"],
   .ui-stream::before,
   .ui-stream::after,
