@@ -452,12 +452,12 @@ Penguin Go 的 key 通过服务端轮询的设备授权交付，而不是浏览�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/projects/:projectId/platform-auth/start` | 开启一次性授权流程，平台给出的截止时间在本地最多按十分钟计：→ 201 `{flowId, authorizeUrl, expiresAt}` |
-| POST | `/api/projects/:projectId/platform-auth/sync` | 用分组密钥拉取平台模型目录，补齐 Project 缺少的模型：→ 模型表，外加 `added` 与 `updated`（恒为 0）计数 |
+| POST | `/api/projects/:projectId/platform-auth/sync` | 用分组密钥拉取平台模型目录，补齐缺少的模型并更新已有模型的价格、促销和 Go 管理的路由：→ 模型表，外加 `added` 与 `updated` 计数 |
 | GET | `/api/projects/:projectId/platform-auth/:flowId/status` | 由服务端向 Penguin Go 轮询，随后把交付的 key 写为分组密钥并补齐平台的模型：`{status: pending\|applying\|completed\|cancelled\|apply_failed\|error, error?, applied?}` |
 | POST | `/api/projects/:projectId/platform-auth/:flowId/retry` | 本地写入失败后重试写入；不会再次索取这次一次性交付，流程处于其他状态时返回 `409 platform_auth_not_retryable` |
 | POST | `/api/projects/:projectId/platform-auth/:flowId/cancel` | 取消本地流程；平台侧的待处理记录按自己的 TTL 过期 |
 
-服务端先校验交付的 key、端点和模型目录，然后才写入任何内容。校验通过后，它把 key 只写一次，作为 `[providers.penguin-go]` 的分组密钥，组内没有自己 key 的模型都使用它；再补入平台提供而 Project 没有的模型，带上牌价、协议与促销。补入模型的端点与**同步新增模型**同一规则：分组设置里有 base URL 时，只在与平台自己的中转地址不同时写在模型上，因此指向代理的分组会把它一并带过去；分组设置里没有 base URL 时，模型带上完整的地址。已有的模型一概不改写，价格、协议与促销都不动，任何模型都不会被删除。写入完成后会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
+服务端先校验交付的 key、端点和模型目录，然后才写入任何内容。校验通过后，它把 key 只写一次，作为 `[providers.penguin-go]` 的分组密钥，组内没有自己 key 的模型都使用它；再补入平台提供而 Project 没有的模型，带上牌价、协议与促销。补入模型的端点与**同步新增模型**同一规则：分组设置里有 base URL 时，只在与平台自己的中转地址不同时写在模型上，因此指向代理的分组会把它一并带过去；分组设置里没有 base URL 时，模型带上完整的地址。平台返回的已有模型会更新牌价和促销，已结束的促销会被清除，其他标注和用户重定向的连接保持不变，Go 管理的路由会更新。响应中没有的模型保留价格和折扣，不删除模型。写入完成后会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
 
 flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`sync` 在没有已存 key 或平台拒绝这把 key 时返回 `409 platform_reauthorization_required`，平台拒绝提供目录或返回的目录无法解析时返回 `502 platform_sync_failed`，平台不可达则是 `502 platform_unreachable`。交付的 key 未能写入本地时，流程停在 `apply_failed`，重试路由正是为此准备的。
 
