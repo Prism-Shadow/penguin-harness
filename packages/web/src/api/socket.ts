@@ -260,9 +260,14 @@ export class ApiSocket {
       this.#freshProbe = fresh;
       this.#open(this.urlFor(userId), userId);
     }
-    const state: State = this.#state; // #open() moved it; read it afresh
+    const state = this.#stateNow(); // #open() moved it; read it afresh
     if (state !== "connecting") return state === "open";
     return new Promise((resolve) => this.#readyWaiters.push(resolve));
+  }
+
+  /** The state through a call, which the type checker cannot narrow across #open()'s mutation. */
+  #stateNow(): State {
+    return this.#state;
   }
 
   #settleReady(open: boolean): void {
