@@ -22,6 +22,8 @@ import {
   sessionScope,
 } from "../auth/session-scope.js";
 import type { ScopeLookups } from "../auth/session-scope.js";
+import { telemetryRequests } from "../telemetry/http.js";
+import type { Telemetry } from "../mechanisms/telemetry.js";
 
 /**
  * The assembled business surface: one request in, one response (or a decline) out.
@@ -68,6 +70,7 @@ export class HttpModule {
   @Use() private readonly access!: Access;
   @Use() private readonly users!: Users;
   @Use() private readonly sessionsRepo!: SessionIndex;
+  @Use() private readonly telemetry?: Telemetry;
   @Provide() http!: Http;
   /**
    * The Sessions a session credential created (`penguin run --agent-id <colleague>`), by id →
@@ -170,6 +173,8 @@ export class HttpModule {
     // A machine's API is reached through this server (machines/proxy.ts), with this server's
     // cookie: the same question, asked here because the hop drops the Origin.
     app.use("/server/*", sameOriginWrites);
+    // Telemetry records both HTTP and socket-entered requests without duplicating request logs.
+    if (this.telemetry !== undefined) app.use("*", telemetryRequests(this.telemetry));
     app.use("/api/*", jsonOnlyWrites);
 
     // Protected routes: the gate this surface was assembled with (the cookie one, or "this

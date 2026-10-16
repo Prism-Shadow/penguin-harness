@@ -5,6 +5,7 @@
  * proxy" switches and their shared explicit address), the upload policy (the automatic
  * image-compression switch and the size above which it applies), the company-mode switch, and
  * the switch that lets users drive their own Chrome through the extension, and the Agent API switch.
+ * The telemetry master switch is applied through the Telemetry node.
  * A PUT applies immediately: everything is validated first (a rejected request writes
  * nothing), then the persisted values are written, then the process dispatcher is
  * rebuilt so new outbound connections follow the change without a restart (the agent
@@ -35,6 +36,8 @@ import type { ProxyControl } from "../../hmr/capabilities.js";
 export interface AdminSettingsRouteDeps {
   proxyControl: ProxyControl;
   serverSettingsRepo: Settings;
+  /** The telemetry switch lives with the other system settings, but its value is held (and applied) by the Telemetry node. */
+  telemetry: Telemetry;
 }
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
 import {
@@ -47,6 +50,7 @@ import {
   proxyProbeTarget,
 } from "../../services/proxy-probe.js";
 import type { Settings } from "../../mechanisms/settings.js";
+import type { Telemetry } from "../../mechanisms/telemetry.js";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the
@@ -105,6 +109,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
       companyMode: deps.serverSettingsRepo.getCompanyMode(),
       browserExtensionsEnabled: deps.serverSettingsRepo.getBrowserExtensionsEnabled(),
       agentApiEnabled: deps.serverSettingsRepo.getAgentApiEnabled(),
+      telemetry: deps.telemetry.on(),
     },
   });
 
@@ -123,6 +128,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     const companyMode = optionalBoolean(body, "companyMode");
     const browserExtensionsEnabled = optionalBoolean(body, "browserExtensionsEnabled");
     const agentApiEnabled = optionalBoolean(body, "agentApiEnabled");
+    const telemetry = optionalBoolean(body, "telemetry");
     const proxyUrlProvided = body.proxyUrl !== undefined;
     const proxyUrl = proxyUrlProvided ? parseProxyUrl(body.proxyUrl) : null;
     const imageCompression = optionalBoolean(body, "imageCompression");
@@ -150,6 +156,8 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     // Read per request by the /api/amsp/v1 gate: off refuses every Agent API call from the next
     // request on (403 agent_api_disabled); each Agent's switch, approval mode and keys stay.
     if (agentApiEnabled !== undefined) deps.serverSettingsRepo.setAgentApiEnabled(agentApiEnabled);
+    // Stored and applied in one step: the next request is sampled (or not) without a restart.
+    if (telemetry !== undefined) deps.telemetry.setEnabled(telemetry);
     if (proxyForApp !== undefined) deps.serverSettingsRepo.setProxyForApp(proxyForApp);
     if (proxyForAgent !== undefined) deps.serverSettingsRepo.setProxyForAgent(proxyForAgent);
     if (proxyUrlProvided) deps.serverSettingsRepo.setProxyUrl(proxyUrl);

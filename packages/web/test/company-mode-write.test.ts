@@ -25,6 +25,7 @@ const settings = (companyMode: boolean): ServerSettings => ({
   browserExtensionsEnabled: true,
   agentApiEnabled: true,
   githubTokenSet: false,
+  telemetry: false,
 });
 
 /** Records what the switch sent and answers with the server's stored settings. */

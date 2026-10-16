@@ -29,12 +29,17 @@ export function declined(): Response {
   return new Response(null, { status: 404, headers: { [DECLINE_HEADER]: DECLINE_TOKEN } });
 }
 
+/** Whether a response is this module's decline marker (the request is left to whoever sits behind the seam). */
+export function isDeclined(response: Response): boolean {
+  return response.headers.get(DECLINE_HEADER) === DECLINE_TOKEN;
+}
+
 /** Bridges a Hono app (structurally: anything fetch-shaped) onto the seam contract. */
 export function seamHttp(app: {
   fetch: (request: Request) => Response | Promise<Response>;
 }): (request: Request) => Promise<Response | null> {
   return async (request) => {
     const response = await app.fetch(request);
-    return response.headers.get(DECLINE_HEADER) === DECLINE_TOKEN ? null : response;
+    return isDeclined(response) ? null : response;
   };
 }
