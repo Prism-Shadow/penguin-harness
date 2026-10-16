@@ -1,7 +1,20 @@
+/**
+ * The serve group as the server package contributes it (src/cli/serve.ts): port/host
+ * resolution, the browser launcher, the readiness probe and its diagnostics, the
+ * supervisor's respawn decision, and the registration the CLI host dispatches into —
+ * `registerCliCommands`, over a CliContext the test builds.
+ *
+ * Moved with the commands from packages/cli/test/serve.test.ts; the assertions are the
+ * ones that proved "behavior unchanged", only the registration surface is new: the
+ * group's text now comes from the package's own tables (cli/messages.ts, module.ts)
+ * keyed by the context's language, not from the CLI host's message module.
+ */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
 import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
+import type { CliContext } from "@prismshadow/penguin-core/plugin";
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
@@ -10,12 +23,28 @@ import {
   browserUrl,
   cliEntryFor,
   describeReadinessFailure,
-  registerServeCommands,
+  registerCliCommands,
   resolvePort,
   supervisorDecision,
   waitForReady,
-} from "../src/commands/serve.js";
-import { getMessages } from "../src/i18n.js";
+} from "../src/cli/serve.js";
+import { serveMessages } from "../src/cli/messages.js";
+import { serverCliCommands } from "../src/cli/module.js";
+
+/** A CliContext for registration: the serve group reads the language and the root; nothing else is touched here. */
+function fakeCtx(root: string, language: "en" | "zh" = "en"): CliContext {
+  return {
+    language,
+    root,
+    write: () => {},
+    writeErr: () => {},
+    renderTable: () => "",
+    connect: () => {
+      throw new Error("not connected in this test");
+    },
+    readSession: () => null,
+  };
+}
 
 describe("resolvePort (option > env var > default 7364)", () => {
   it("derives DEFAULT_PORT from core's DEFAULT_SERVER_PORT", () => {
@@ -69,15 +98,34 @@ describe("browserUrl (wildcard listen addresses map to 127.0.0.1)", () => {
   });
 });
 
-describe("registerServeCommands (command registration)", () => {
+describe("registerCliCommands (the code half the host dispatches into)", () => {
+  // The registration reads the context's language alone — the actions that would touch
+  // the root never run here, so the root can be a path nothing created.
+  const root = path.join(os.tmpdir(), "penguin-cli-serve-root");
   it("registers the server and web top-level commands; web defaults to open=true (--no-open turns it off)", () => {
     const program = new Command();
-    registerServeCommands(program, getMessages("en"));
+    registerCliCommands(program, fakeCtx(root));
     const names = program.commands.map((c) => c.name());
     expect(names).toContain("server");
     expect(names).toContain("web");
     const web = program.commands.find((c) => c.name() === "web")!;
     expect(web.opts().open).toBe(true);
+  });
+  it("the `server` command carries its subcommands (status / stop / reset-admin-password)", () => {
+    const program = new Command();
+    registerCliCommands(program, fakeCtx(root));
+    const server = program.commands.find((c) => c.name() === "server")!;
+    expect(server.commands.map((c) => c.name())).toEqual(
+      expect.arrayContaining(["status", "stop", "reset-admin-password"]),
+    );
+  });
+  it("the registered descriptions are the package's cli.commands summaries, in the context's language", () => {
+    const program = new Command();
+    registerCliCommands(program, fakeCtx(root, "zh"));
+    const server = program.commands.find((c) => c.name() === "server")!;
+    expect(server.description()).toBe(
+      serverCliCommands().find((entry) => entry.key === "server")!.summary.zh,
+    );
   });
 });
 
@@ -211,14 +259,14 @@ describe("readiness probe diagnostics", () => {
     const detail = "UND_ERR_CONNECT_TIMEOUT: Connect Timeout Error";
     const url = "http://127.0.0.1:7364/";
     for (const lang of ["en", "zh"] as const) {
-      const timeout = getMessages(lang).webProbeFailed(url, detail, "timeout", 7364);
+      const timeout = serveMessages(lang).webProbeFailed(url, detail, "timeout", 7364);
       // Actionable means naming the port the user has to let through, not just reporting a
       // timeout; the probe error stays visible either way.
       expect(timeout, lang).toContain("7364");
       expect(timeout, lang).toContain(detail);
       // The kind picks the hint: a timeout must not read like a refused connection.
       expect(timeout, lang).not.toBe(
-        getMessages(lang).webProbeFailed(url, detail, "refused", 7364),
+        serveMessages(lang).webProbeFailed(url, detail, "refused", 7364),
       );
     }
   });
