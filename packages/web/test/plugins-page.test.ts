@@ -554,3 +554,78 @@ describe("a plugin the running build cannot fully run", () => {
     });
   });
 });
+
+/** One registry entry, as the merged index would list it — optionally for one platform only. */
+const entry = (name: string, os?: string[]): PluginIndexEntry => ({
+  name,
+  version: "0.2.3",
+  description: `${name}, as the registry describes it`,
+  authors: [],
+  license: "MIT",
+  ...(os === undefined ? {} : { os }),
+});
+
+describe("module plugin versions and platforms", () => {
+  it("an installed row carries the version on that machine's disk, not the registry's", () => {
+    const onDisk: InstalledPluginsResponse = {
+      ...deployment,
+      plugins: [
+        {
+          ...listed("@acme/shared", { everywhere: true, machines: [], here: true }),
+          version: "0.2.2",
+        },
+      ],
+    };
+    const view: PluginView = { machineId: SELF, remote: null };
+    // The registry lists 0.2.3; the copy this server resolves and runs is 0.2.2, and that is
+    // what the row states.
+    const rows = moduleParts(onDisk, [entry("@acme/shared")], view);
+    expect(rows.map((r) => [r.specifier, r.version])).toEqual([["@acme/shared", "0.2.2"]]);
+  });
+
+  it("another machine's row carries the version that machine's own answer states", () => {
+    const remote: InstalledPluginsResponse = {
+      ...deployment,
+      machineId: GPU,
+      plugins: [
+        {
+          ...listed("@acme/gpu-only", { everywhere: false, machines: [GPU], here: true }),
+          version: "0.2.4",
+        },
+      ],
+    };
+    const rows = moduleParts(deployment, [], { machineId: GPU, remote });
+    expect(rows.map((r) => [r.specifier, r.version])).toEqual([
+      ["@acme/shared", undefined],
+      ["@acme/gpu-only", "0.2.4"],
+    ]);
+  });
+
+  it("marks an entry for another platform, keeps it, and sorts it after the rest", () => {
+    const view: PluginView = { machineId: SELF, remote: null };
+    const linux = { ...deployment, plugins: [], platform: "linux" };
+    const index = [entry("@acme/m", ["darwin"]), entry("@acme/a"), entry("@acme/t", ["linux"])];
+    expect(moduleParts(linux, index, view).map((r) => [r.specifier, r.otherPlatform])).toEqual([
+      ["@acme/a", undefined],
+      ["@acme/t", undefined],
+      ["@acme/m", ["darwin"]],
+    ]);
+  });
+
+  it("judges the platform by the machine in view, and not at all when it is not known", () => {
+    const index = [entry("@acme/mac", ["darwin"])];
+    const linux = { ...deployment, plugins: [], platform: "linux" };
+    // The machine in view is a mac: not for another platform there.
+    const remote: InstalledPluginsResponse = {
+      ...deployment,
+      machineId: GPU,
+      plugins: [],
+      platform: "darwin",
+    };
+    const there: PluginView = { machineId: GPU, remote };
+    expect(moduleParts(linux, index, there)[0]!.otherPlatform).toBeUndefined();
+    // A server that predates `platform` does not say: offered as before.
+    const old = { ...deployment, plugins: [] };
+    expect(moduleParts(old, index)[0]!.otherPlatform).toBeUndefined();
+  });
+});

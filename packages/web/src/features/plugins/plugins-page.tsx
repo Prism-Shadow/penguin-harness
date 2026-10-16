@@ -225,9 +225,10 @@ export function PluginsPage() {
   const registry = useRead(pluginIndex, INDEX_KEY, () => api.getPluginIndex(), EVERY_VISIT);
   const index = registry.value?.plugins ?? (registry.error !== null ? [] : null);
   /**
-   * Sources that answered with nothing. A published index that is down shortens the list
-   * instead of emptying it (the server merges tolerantly), so the page has to say so — a
-   * silently shorter list reads as "that plugin does not exist".
+   * The registry's request failed. A published index that is down shortens the list instead
+   * of emptying it (the server merges tolerantly), and the whole request failing leaves none
+   * of it — so the page has to say so: a silently shorter list reads as "that plugin does
+   * not exist", and a missing entry must not claim the registry had answered.
    */
   const indexFailures = registry.value?.failures ?? [];
   /**

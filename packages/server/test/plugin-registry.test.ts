@@ -298,6 +298,8 @@ interface PackageManifest {
   description?: string;
   license?: string;
   files?: string[];
+  /** The platforms the package runs on, read by the build into the index entry's `os`. */
+  penguinOs?: string[];
 }
 
 const packages = new Map<string, { dir: string; manifest: PackageManifest }>();
@@ -439,6 +441,24 @@ describe("the builtin catalogue and the packages it lists", () => {
   beforeAll(async () => {
     const index = await builtinPluginRegistry().index();
     cards = await sandboxCards(index.map((entry) => packages.get(entry.name)!.dir));
+  });
+
+  /**
+   * The platform marks ride the committed index: each entry's `os` is what the package's own
+   * `penguinOs` declares (npm's `os` would make npm refuse the package on every other
+   * platform), so the catalogue and the packages cannot drift apart on them.
+   */
+  it("marks builtin backends with the platforms their packages declare", async () => {
+    const index = await builtinPluginRegistry().index();
+    for (const entry of index) {
+      expect(entry.os, entry.name).toEqual(packages.get(entry.name)!.manifest.penguinOs);
+    }
+    expect(index.find((e) => e.name === "@penguinharness/sandbox-bwrap")!.os).toEqual(["linux"]);
+    expect(index.find((e) => e.name === "@penguinharness/sandbox-seatbelt")!.os).toEqual([
+      "darwin",
+    ]);
+    expect(index.find((e) => e.name === "@penguinharness/sandbox-wsl")!.os).toEqual(["win32"]);
+    expect(index.find((e) => e.name === "@penguinharness/sandbox-dsh")!.os).toBeUndefined();
   });
 
   it("lists the sandbox backends in plugins/, each named as that package names itself", async () => {

@@ -18,6 +18,9 @@
     "name": "Prism-Shadow",
     "url": "https://github.com/Prism-Shadow"
   },
+  "penguinOs": [
+    "win32"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",

@@ -3459,6 +3459,15 @@ export const zh = {
     shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
     /** In place of the description of a package that carries none. */
     noDescription: "暂无描述",
+    /** The description of an installed package that neither the registry lists nor the build ships. */
+    noEntry: "市场里没有它的条目。",
+    /** The description while the registry's request has failed: no claim about entries at all. */
+    registryUnavailable: "来源不可用。",
+    /** The state of a registry entry for other platforms than the machine in view's. */
+    otherPlatform: (platforms: string): string => `仅适用于 ${platforms}`,
+    /** Why Install is unavailable on such a row. */
+    otherPlatformHint: (platforms: string): string =>
+      `只能在 ${platforms} 上运行，不适用于本机的平台。要装到那类机器上，请先选中那台机器。`,
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
     libraryBuiltinHint: "随本次构建自带；安装到 Agent 即可在那里使用。",
     /** Plugin count in the group header (small text to the right of the category name). */

@@ -738,3 +738,34 @@ describe("a shared plugin's accessible removal", () => {
     expect(button).not.toContain("aria-describedby");
   });
 });
+
+describe("plugin version, platform and registry state", () => {
+  it("shows the installed version rather than the index version", () => {
+    const row = moduleRow("active");
+    row.module!.version = "0.2.2";
+    const html = card(row, true);
+    expect(html).toContain("v0.2.2");
+    expect(html).not.toContain("v0.2.3");
+  });
+  it("does not claim a missing entry before the registry answers", () => {
+    const render = (registry: "loading" | "failed" | "answered", shipped: boolean) => {
+      const row = moduleRow("active", shipped);
+      Object.assign(row.module!, { entry: undefined, registry });
+      return card(row, true);
+    };
+    expect(render("loading", false)).not.toContain(en.plugins.noEntry);
+    expect(render("loading", true)).not.toContain(en.plugins.shippedNoEntry);
+    expect(render("answered", false)).toContain(en.plugins.noEntry);
+    expect(render("answered", true)).toContain(en.plugins.shippedNoEntry);
+    expect(render("failed", false)).toContain(en.plugins.registryUnavailable);
+  });
+  it("marks an available plugin for another platform and disables Install", () => {
+    const row = moduleRow("none");
+    row.module!.otherPlatform = ["darwin"];
+    const html = card(row, true);
+    expect(html).toContain(en.plugins.otherPlatform("macOS"));
+    expect(html).toMatch(
+      /<button(?=[^>]*aria-label="Install sandbox-bwrap")(?=[^>]*disabled="")[^>]*>/,
+    );
+  });
+});

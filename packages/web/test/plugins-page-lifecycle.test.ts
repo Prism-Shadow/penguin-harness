@@ -178,9 +178,25 @@ describe("the Plugins page's response lifecycle", () => {
   it("specific machine Install and Remove both carry the selected own-table target", async () => {
     context.machines = ["Other00000000000"];
     const empty = { ...snapshot("unused"), plugins: [], shipped: ["@acme/plugin"] };
-    vi.mocked(api.getInstalledPlugins).mockResolvedValue(empty);
+    // Each read answers by the machine it was asked for: this server lists nothing, the
+    // machine in view lists the plugin on its own table.
+    vi.mocked(api.getInstalledPlugins).mockImplementation(
+      (_projectId: string, server: string | null) =>
+        server === null
+          ? Promise.resolve(empty)
+          : Promise.resolve({
+              ...snapshot("@acme/plugin"),
+              machineId: server,
+              plugins: snapshot("@acme/plugin").plugins.map((p) => ({
+                ...p,
+                machines: [server],
+                here: false,
+              })),
+            }),
+    );
     const installed = {
       ...snapshot("@acme/plugin"),
+      machineId: "Other00000000000",
       plugins: snapshot("@acme/plugin").plugins.map((p) => ({
         ...p,
         machines: ["Other00000000000"],

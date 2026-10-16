@@ -17,6 +17,9 @@
     "name": "Prism-Shadow",
     "url": "https://github.com/Prism-Shadow"
   },
+  "penguinOs": [
+    "linux"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",

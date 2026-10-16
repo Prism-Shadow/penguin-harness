@@ -32,6 +32,8 @@ export interface ClassPackage {
   exports?: unknown;
   /** The entry's source, when it is not the default class (a package that throws on import, say). */
   index?: string;
+  /** package.json `version`, when the test reads it off the copy on disk. */
+  version?: string;
 }
 
 /** Writes one plugin package into `dir` and returns its entry file. */
@@ -43,6 +45,7 @@ export async function writeClassPackage(dir: string, pkg: ClassPackage): Promise
     path.join(dir, "package.json"),
     JSON.stringify({
       name: pkg.name,
+      ...(pkg.version !== undefined ? { version: pkg.version } : {}),
       type: "module",
       main,
       ...(pkg.exports !== undefined ? { exports: pkg.exports } : {}),

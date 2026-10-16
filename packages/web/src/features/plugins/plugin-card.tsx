@@ -60,7 +60,7 @@ import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
 import { SkillTile } from "../skills";
 import { PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
-import type { PluginRow } from "./plugin-groups";
+import { platformName, type PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";
 import {
   PluginStatusMark,
@@ -334,8 +334,15 @@ export function PluginCard(props: PluginCardProps) {
               : S.plugins.installing
             : S.plugins.install
           : S.plugins.uninstall;
-        // A removal another Project still needs says why it cannot run, as its marked hint.
-        const blockedWhy = install ? undefined : mod.removeBlocked;
+        // A removal another Project still needs says why it cannot run, as its marked hint;
+        // an install the machine in view cannot run (the entry names other platforms) is
+        // disabled with that reason instead.
+        const blockedWhy =
+          install && mod.otherPlatform !== undefined
+            ? S.plugins.otherPlatformHint(mod.otherPlatform.map(platformName).join(" / "))
+            : install
+              ? undefined
+              : mod.removeBlocked;
         out.push(
           <EntityCardAction
             key={install ? "module-install" : "module-remove"}
@@ -430,6 +437,16 @@ export function PluginCard(props: PluginCardProps) {
         ),
         props.pending === true ? (
           <Skeleton key="status" className="h-3 w-16 shrink-0" />
+        ) : row.module?.otherPlatform !== undefined ? (
+          <span
+            key="status"
+            data-tooltip={S.plugins.otherPlatformHint(
+              row.module.otherPlatform.map(platformName).join(" / "),
+            )}
+            data-tooltip-content="text"
+          >
+            {S.plugins.otherPlatform(row.module.otherPlatform.map(platformName).join(" / "))}
+          </span>
         ) : (
           <PluginStatusMark key="status" status={status} hint={hint} />
         ),

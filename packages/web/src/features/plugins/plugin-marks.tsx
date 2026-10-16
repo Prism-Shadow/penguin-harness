@@ -167,6 +167,7 @@ export function rowIcon(row: PluginRow): IconRef | undefined {
 
 /** The version a row shows: the plugin's npm version (the library's), else the index entry's. */
 export function rowVersion(row: PluginRow): string | undefined {
+  if (row.module !== undefined && row.module.state !== "none") return row.module.version;
   return row.library?.version ?? row.module?.entry?.version;
 }
 
@@ -210,6 +211,12 @@ export function rowTitle(row: PluginRow, locale: "zh" | "en"): string {
     : localizedText(locale, plugin.title || row.name, plugin.titleZh);
 }
 
+function missingDescription(row: PluginRow): string {
+  if (row.module?.registry === "loading") return "\u00a0";
+  if (row.module?.registry === "failed") return S.plugins.registryUnavailable;
+  return row.module?.shipped === false ? S.plugins.noEntry : S.plugins.shippedNoEntry;
+}
+
 /** A description as shown: the package's own text, or the placeholder when it carries none. */
 const orPlaceholder = (text: string): string =>
   text.trim() === "" ? S.plugins.noDescription : text;
@@ -221,7 +228,7 @@ const orPlaceholder = (text: string): string =>
  */
 export function rowShortDescription(row: PluginRow, locale: "zh" | "en"): string {
   const texts = row.library ?? row.module?.entry;
-  if (texts === undefined) return S.plugins.shippedNoEntry;
+  if (texts === undefined) return missingDescription(row);
   return orPlaceholder(
     locale === "zh"
       ? texts.shortDescriptionZh ||
@@ -249,7 +256,7 @@ export function rowHasDescription(row: PluginRow, locale: "zh" | "en"): boolean 
 /** A row's full description in the UI language, the placeholder when the package carries none. */
 export function rowDescription(row: PluginRow, locale: "zh" | "en"): string {
   const text = ownDescription(row, locale);
-  return text === null ? S.plugins.shippedNoEntry : orPlaceholder(text);
+  return text === null ? missingDescription(row) : orPlaceholder(text);
 }
 
 /** npm's `github:<owner>/<repo>` shorthand for a repository, optionally `#<ref>`. */

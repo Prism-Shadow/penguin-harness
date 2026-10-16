@@ -318,6 +318,57 @@ describe("installed plugins", () => {
     expect(shared).not.toContain('"@acme/mine"');
   });
 
+  it("reports the version of the copy on disk, not the one an index lists", async () => {
+    // An index can name a version the copy on this machine is not: the store keys an entry
+    // by the package's own package.json, and the row describes what resolves here — the
+    // page shows the copy this server runs, whatever the listing claims.
+    await ship({ name: "@acme/disk", module: "Disk", version: "0.2.2" });
+    // A published index that lists the package at a version the disk does not hold: served by
+    // this test's own server, saved as the settings group says, so the page reads it the way
+    // a deployment configures one.
+    let base = "";
+    const serve = createServer((req, res) => {
+      if (req.url === "/index.json") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify([
+            {
+              name: "@acme/disk",
+              version: "0.2.3",
+              description: "the listing's copy",
+              authors: ["acme"],
+              license: "MIT",
+            },
+          ]),
+        );
+      } else {
+        res.writeHead(404).end();
+      }
+    });
+    await new Promise<void>((resolve) => serve.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(serve.address() as AddressInfo).port}`;
+    try {
+      const saved = await admin.put("/api/admin/plugin-config", {
+        name: "plugin-index",
+        values: { sources: [`${base}/index.json`] },
+      });
+      expect(saved.status).toBe(200);
+      const listed = await admin.put("/api/projects/default_project/plugins/installed", {
+        plugins: ["@acme/disk"],
+      });
+      expect(listed.status).toBe(200);
+      const res = await view();
+      expect(res.platform).toBe(process.platform);
+      expect(res.plugins[0]).toMatchObject({
+        specifier: "@acme/disk",
+        version: "0.2.2",
+        active: true,
+      });
+    } finally {
+      serve.close();
+    }
+  });
+
   it("reports why a listed plugin failed to load, not a restart that would not help", async () => {
     // A shipped package that throws on import.
     await ship({

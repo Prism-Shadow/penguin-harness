@@ -3255,6 +3255,15 @@ export const en: Strings = {
     shippedNoEntry: "Ships with this build; the registry has no entry for it yet.",
     /** In place of the description of a package that carries none. */
     noDescription: "No description",
+    /** The description of an installed package that neither the registry lists nor the build ships. */
+    noEntry: "The registry has no entry for it.",
+    /** The description while the registry's request has failed: no claim about entries at all. */
+    registryUnavailable: "The plugin registry is unavailable.",
+    /** The state of a registry entry for other platforms than the machine in view's. */
+    otherPlatform: (platforms: string): string => `for ${platforms} only`,
+    /** Why Install is unavailable on such a row. */
+    otherPlatformHint: (platforms: string): string =>
+      `Runs only on ${platforms}, not on this machine's platform. Pick a machine of that platform to install it there.`,
     /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
     libraryBuiltinHint: "Ships with this build; install it to an agent to use it there.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),

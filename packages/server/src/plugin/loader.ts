@@ -346,6 +346,12 @@ export interface PluginDeclarationRead {
   linked?: true;
   /** The author directory the link points at (when `linked`). */
   linkPath?: string;
+  /**
+   * The version of the copy this server resolves, read from its own package.json — what is on
+   * disk, which is not necessarily what a registry lists (a data-root install shadows the
+   * shipped copy). Absent when the package does not resolve here.
+   */
+  version?: string;
 }
 
 export async function readPluginDeclaration(
@@ -370,11 +376,23 @@ export async function readPluginDeclaration(
     return { error: err instanceof Error ? err.message : String(err) };
   }
   if (read === null) return { error: `no package.json above ${resolved.file}` };
+  const version = await readManifestVersion(read.where);
   return {
     modules: [...read.plugin.modules],
     replaces: [...read.plugin.replaces],
     builtin: resolved.base.builtin,
+    ...(version === undefined ? {} : { version }),
   };
+}
+
+/** The `version` a package.json states, or undefined when it states none or cannot be read. */
+async function readManifestVersion(manifest: string): Promise<string | undefined> {
+  try {
+    const { version } = JSON.parse(await fs.readFile(manifest, "utf8")) as { version?: unknown };
+    return typeof version === "string" ? version : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

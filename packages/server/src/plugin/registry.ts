@@ -92,7 +92,7 @@ function asIndexEntry(value: unknown): IndexDocumentEntry | null {
   ] as const) {
     if (e[key] !== undefined && typeof e[key] !== "string") return null;
   }
-  for (const key of ["keywords", "categories"] as const) {
+  for (const key of ["keywords", "categories", "os"] as const) {
     if (e[key] !== undefined && !isStringArray(e[key])) return null;
   }
   if (e.updatedAt !== undefined && typeof e.updatedAt !== "number") return null;
