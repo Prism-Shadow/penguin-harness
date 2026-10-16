@@ -25,7 +25,7 @@ export const en: GalleryStrings = {
     },
     lang: {
       label: "Language",
-      zh: "ä¸­æ",
+      zh: "中文",
       en: "English",
       system: "System",
     },
@@ -42,12 +42,12 @@ export const en: GalleryStrings = {
     nav: "Surfaces",
     onThisPage: "On this page",
     settings: "View settings",
-    notFound: (id) => `There is no page named â${id}â.`,
+    notFound: (id) => `There is no page named “${id}”.`,
     allSurfaces: "All surfaces",
     feedbackTitle: "Feedback",
     feedbackBody:
       "Quote the breadcrumb at the end of a frame's toolbar, or copy the page's address with the link button.",
-    feedbackExample: "Frost âº Chat Â· dark",
+    feedbackExample: "Frost › Chat · dark",
   },
   surfaceGroups: {
     conversation: "Conversation",
@@ -61,120 +61,120 @@ export const en: GalleryStrings = {
       title: "Chat",
       description:
         "A finished Task: thinking, three tool calls, a diff, and a Markdown answer with a table and code.",
-      how: "Sidebar âº any row of the session list.",
+      how: "Sidebar › any row of the session list.",
     },
     "chat-running": {
-      title: "Chat Â· tool running",
+      title: "Chat · tool running",
       description:
         "A Task mid-run: a command is executing, and the tool row shows the running state and its timer.",
-      how: "Sidebar âº a session row with the running mark.",
+      how: "Sidebar › a session row with the running mark.",
     },
     "chat-thinking": {
-      title: "Chat Â· thinking",
+      title: "Chat · thinking",
       description:
         "A Task mid-run: the model is thinking; the thinking row shows the running state and the text keeps growing.",
-      how: "Sidebar âº a session row with the running mark.",
+      how: "Sidebar › a session row with the running mark.",
     },
     "chat-streaming": {
-      title: "Chat Â· streaming",
+      title: "Chat · streaming",
       description:
         "A Task mid-run: the answer is streaming in and reveals the way the current theme does it; once done it holds for a moment and streams again, on a loop.",
-      how: "Sidebar âº a session row with the running mark.",
+      how: "Sidebar › a session row with the running mark.",
     },
     "chat-approval": {
-      title: "Chat Â· awaiting approval",
+      title: "Chat · awaiting approval",
       description:
         "A Task waiting on a human: a command needs approval; allow or deny it and the Task carries on and ends.",
-      how: "Sidebar âº a session row with the approval mark.",
+      how: "Sidebar › a session row with the approval mark.",
     },
     "chat-harness": {
-      title: "Chat Â· harness rows",
+      title: "Chat · harness rows",
       description:
         "Every row neither a person nor the model wrote: a handoff origin, Skills and an attached file, the MCP connect row, background-task notices, a scheduled trigger, a reconnect, an abort, a provider error, a compaction and a model switch, the rounds and steering of a goal run, each Task's stats line and the goal banner.",
-      how: "Sidebar âº âFix the hooks doc citationsâ, the oldest row of the session list.",
+      how: "Sidebar › “Fix the hooks doc citations”, the oldest row of the session list.",
     },
     "chat-org": {
-      title: "Chat Â· organization trigger",
+      title: "Chat · organization trigger",
       description:
         "A desk Session an organization's scheduler opened: the first message's trigger block folds into a one-line origin notice.",
-      how: "Company mode âº an employee's desk.",
+      how: "Company mode › an employee's desk.",
     },
     "chat-rsi": {
-      title: "Chat Â· self-evolution round",
+      title: "Chat · self-evolution round",
       description:
         "The General Agent improves the docs Agent with the Default RSI Toolkit: it reads the Reference score and the weakest case's Trace, snapshots the Agent State and edits it, evaluates every case through parallel evaluator subagents, and keeps the new version because it scores higher.",
-      how: "Sidebar âº General Agent âº âImprove Docs Expert on Docs QA v1â. A round starts from Evaluation Center âº a Benchmark âº Use âº Optimize.",
+      how: "Sidebar › General Agent › “Improve Docs Expert on Docs QA v1”. A round starts from Evaluation Center › a Benchmark › Use › Optimize.",
     },
     "chat-new": {
       title: "New chat",
       description:
         "The draft page: pick the Agent, Workspace, approval mode and model, then type and send the first message.",
-      how: "Sidebar âº New chat.",
+      how: "Sidebar › New chat.",
     },
     agents: {
       title: "Agents",
       description:
         "The Agent list: each Agent's activity curve and its session, tool, Skill and schedule counts.",
-      how: "Sidebar âº Agents.",
+      how: "Sidebar › Agents.",
     },
     "agent-settings": {
       title: "Agent settings",
       description:
         "One Agent's settings page: overview, prompt, memory, runtime, tools, Skills, hooks, Vault and schedule tabs.",
-      how: "Agents âº any Agent.",
+      how: "Agents › any Agent.",
     },
     schedules: {
       title: "Schedules",
       description:
         "The Agent settings' schedule tab: periods, next fire time, the bound Session and model.",
-      how: "Agents âº Agent settings âº the Schedules tab.",
+      how: "Agents › Agent settings › the Schedules tab.",
     },
     plugins: {
       title: "Plugins",
       description: "Every plugin by category, to regroup or search; a card opens its details.",
-      how: "Sidebar âº Plugins.",
+      how: "Sidebar › Plugins.",
     },
     models: {
       title: "Models",
       description:
         "The model table by provider: the default model, credentials, prices, context windows and usage.",
-      how: "Sidebar âº Models.",
+      how: "Sidebar › Models.",
     },
     machines: {
       title: "Machines",
       description:
         "This machine and remote ones: install state, connections, probe results, and adding an ssh host.",
-      how: "Sidebar âº Machines (admins only).",
+      how: "Sidebar › Machines (admins only).",
     },
     usage: {
       title: "Cost center",
       description:
         "Thirty days of usage: Tokens, cost, requests and success rate, grouped by date, Agent, model or Session, with the error panel.",
-      how: "Sidebar âº Cost center.",
+      how: "Sidebar › Cost center.",
     },
     benchmark: {
       title: "Evaluation center",
       description:
         "The Benchmark list: published and draft status, case counts, and the score trend across evaluations.",
-      how: "Sidebar âº Evaluation center.",
+      how: "Sidebar › Evaluation center.",
     },
     "benchmark-detail": {
       title: "Benchmark detail",
       description:
         "One Benchmark: the score curve, each evaluation's case scores, and the cases' statement and rubric files.",
-      how: "Evaluation center âº any Benchmark.",
+      how: "Evaluation center › any Benchmark.",
     },
     settings: {
       title: "Settings",
       description:
         "The settings dialog: profile, general, appearance (theme, mode, accent, text size, fonts), account, and the server settings.",
-      how: "The account menu at the bottom of the sidebar âº Settings.",
+      how: "The account menu at the bottom of the sidebar › Settings.",
     },
     "settings-appearance": {
       title: "Appearance settings",
       description:
-        "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing â where theme switching lives.",
-      how: "The account menu at the bottom of the sidebar âº Settings âº Appearance.",
+        "The settings dialog on its Appearance page: theme, mode, accent, the five text sizes and the font pairing — where theme switching lives.",
+      how: "The account menu at the bottom of the sidebar › Settings › Appearance.",
     },
     login: {
       title: "Login",
@@ -186,7 +186,7 @@ export const en: GalleryStrings = {
   home: {
     eyebrow: "Surface gallery",
     title: "Penguin UI",
-    lead: "The real Web App, running in three themes, two modes, five text sizes, the font pairings and two languages â on an in-browser demo API, fully clickable.",
+    lead: "The real Web App, running in three themes, two modes, five text sizes, the font pairings and two languages — on an in-browser demo API, fully clickable.",
     app: "The app",
     appLead:
       "This is the app itself: the sidebar, every center, the chat and the settings all open. The theme and size controls drive the app in the frame; sending a message streams a scripted reply.",
@@ -195,7 +195,7 @@ export const en: GalleryStrings = {
       "One page per surface: the app opened on it, under whatever theme, size and fonts you set.",
     library: "Component library",
     libraryLead:
-      "The real Web components, one page per kind, rendered under the theme, mode, size and fonts you set â and interactive.",
+      "The real Web components, one page per kind, rendered under the theme, mode, size and fonts you set — and interactive.",
     fonts: "Fonts",
     fontsLead: "Each theme's default faces, the current choice, specimens and licences.",
   },
@@ -206,14 +206,14 @@ export const en: GalleryStrings = {
     accentTheme: "Theme's own",
     size: "Size",
     sizeNames: { xs: "XS", s: "S", m: "M", l: "L", xl: "XL" },
-    sizeTitle: (name, px) => `${name} Â· ${px}px root`,
+    sizeTitle: (name, px) => `${name} · ${px}px root`,
     fontLatin: "Latin font",
     fontCjk: "CJK font",
     fontTheme: "Theme default",
     fontSystem: "System",
     viewport: "Viewport",
     viewports: { desktop: "Desktop", phone: "Phone" },
-    langNames: { en: "EN", zh: "ä¸­æ" },
+    langNames: { en: "EN", zh: "中文" },
   },
   readout: {
     label: "Fonts in use",
@@ -221,14 +221,14 @@ export const en: GalleryStrings = {
     cjk: "CJK",
     mono: "Mono",
     system: "System",
-    pending: "Readingâ¦",
+    pending: "Reading…",
   },
   crumb: {
     modes: { light: "light", dark: "dark" },
     phone: "phone",
   },
   intro: {
-    resolving: "Resolving tokensâ¦",
+    resolving: "Resolving tokens…",
   },
   frame: {
     open: "Open standalone",
@@ -280,14 +280,14 @@ export const en: GalleryStrings = {
     scene: {
       pageTier: "page",
       cardTitle: "Docs Expert",
-      cardMeta: "3 sessions Â· $0.0231",
-      nested: "Inner radius = outer radius â padding",
+      cardMeta: "3 sessions · $0.0231",
+      nested: "Inner radius = outer radius − padding",
       primary: "Save",
       secondary: "Cancel",
       input: "Search sessions",
       badge: "Running",
       menuTier: "z-[60] menu",
-      menuItems: ["Pin", "Rename", "Move toâ¦"],
+      menuItems: ["Pin", "Rename", "Move to…"],
       backdropTier: "z-50 dialog",
       dialogTitle: "Delete this session?",
       dialogBody: "Its transcript and Trace files are deleted with it.",
@@ -307,7 +307,7 @@ export const en: GalleryStrings = {
       sizeOptions: ["XS", "S", "M", "L", "XL"],
       general: "General",
       language: "Language",
-      languageOptions: ["ä¸­æ", "English"],
+      languageOptions: ["中文", "English"],
       notifications: "Notify when done",
     },
     stack0Note: "stack-0: the narrow bars between a glyph and its label",
@@ -316,7 +316,7 @@ export const en: GalleryStrings = {
     iconRegistry: (icons, files) => `${icons} icons from ${files} files`,
     duplicateNames: "One path, several names",
     iconMarks: "Marks drawn as components",
-    durations: "Durations Ã easings",
+    durations: "Durations × easings",
     reducedNote: "Reduced motion: every change shows its end state at once.",
     liveSignal: "Live signals",
     loading: "Loading",
@@ -331,7 +331,7 @@ export const en: GalleryStrings = {
       "The app window through .ui-shell: the field, the navigation column and the main column, related as each theme decides.",
     presence: "Presence",
     presenceNote:
-      "A menu from the top, a dialog from the centre, a toast from the bottom â each on the active theme's enter and exit tokens.",
+      "A menu from the top, a dialog from the centre, a toast from the bottom — each on the active theme's enter and exit tokens.",
     reveal: "Reveal",
     revealNote:
       "New rows appear inside a settled list; each moves once, on the reveal tokens, as it appears.",
@@ -405,11 +405,11 @@ export const en: GalleryStrings = {
     pages: { defaults: "Defaults", specimens: "Specimens", licences: "Licences" },
     defaultsTitle: "Default faces",
     defaultsHint:
-      "Each theme's default face per role: Latin (reading and interface), CJK and mono. âSystemâ leaves the role to the platform.",
+      "Each theme's default face per role: Latin (reading and interface), CJK and mono. “System” leaves the role to the platform.",
     system: "System",
     current: "Current choice",
     currentHint:
-      "The pairing picked in View settings; âtheme defaultâ is the active theme's row above. What actually renders is on the next line.",
+      "The pairing picked in View settings; “theme default” is the active theme's row above. What actually renders is on the next line.",
     followsTheme: (theme) => `Theme default (${theme})`,
     specimensTitle: "Specimens",
     licencesTitle: "Licences",
@@ -489,7 +489,7 @@ export const en: GalleryStrings = {
       charts: {
         title: "Charts",
         description:
-          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them â the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline.",
+          "The chart foundation: the primitives every chart draws through, the current theme's chart tokens, and every chart built on them — the donut, the ring gauge, the legend, cost trend and token bars, requests and success rate, the sparkline, the Trace timeline.",
       },
       avatars: {
         title: "Avatars",
@@ -552,7 +552,7 @@ export const en: GalleryStrings = {
       edit: "Edit",
       states: "States",
       disabled: "Disabled",
-      busy: "Savingâ¦",
+      busy: "Saving…",
       links: "Links",
       linksHint:
         "A link in a sentence is always underlined; a standalone one shows the underline on hover. An external link opens in a new tab and carries the external mark.",
@@ -578,7 +578,7 @@ export const en: GalleryStrings = {
       base: "Base size",
       small: "Form size",
       textarea: "Textarea",
-      textareaPlaceholder: "Write a system promptâ¦",
+      textareaPlaceholder: "Write a system prompt…",
       mono: "Monospace",
       monoValue: "temperature: 0.2\nmax_tokens: 4096",
       password: "Password",
@@ -653,7 +653,7 @@ export const en: GalleryStrings = {
       menu: "More actions",
       menuPin: "Pin",
       menuRename: "Rename",
-      menuMove: "Move toâ¦",
+      menuMove: "Move to…",
       menuDelete: "Delete",
       menuRows: "Menu rows",
       menuRowsHint:
@@ -725,11 +725,11 @@ export const en: GalleryStrings = {
       save: "Save",
       cancel: "Cancel",
       confirm: "Confirmation",
-      openConfirm: "Delete sessionâ¦",
+      openConfirm: "Delete session…",
       confirmTitle: "Delete this session?",
       confirmBody: "The transcript and the Trace files go with it; this cannot be undone.",
       confirmLabel: "Delete",
-      openSaveConfirm: "Save changesâ¦",
+      openSaveConfirm: "Save changes…",
       saveConfirmTitle: "Save these changes?",
       saveConfirmBody: "The agent uses the new settings from its next task.",
       paged: "Paged dialog",
@@ -753,9 +753,9 @@ export const en: GalleryStrings = {
       palette: "Command palette",
       paletteAside: "Type to filter; each action opens another dialog on this board.",
       openPalette: "Open the command palette",
-      palettePlaceholder: "Type to filter commandsâ¦",
+      palettePlaceholder: "Type to filter commands…",
       paletteEmpty: "No matching commands",
-      paletteHint: "ââ to select Â· Enter to run Â· Esc to close",
+      paletteHint: "↑↓ to select · Enter to run · Esc to close",
     },
     tooltips: {
       attribute: "The data-tooltip attribute",
@@ -778,7 +778,7 @@ export const en: GalleryStrings = {
       badged: "With an update badge",
       items: ["Overview", "Trace", "Files", "Settings"],
       badgeText: "3 skills can be updated",
-      body: (tab) => `The â${tab}â tab's content.`,
+      body: (tab) => `The “${tab}” tab's content.`,
     },
     badges: {
       pills: "Label pills",
@@ -854,7 +854,7 @@ export const en: GalleryStrings = {
     streaming: {
       reply: "Assistant reply",
       output: "Tool output",
-      receiving: "Receivingâ¦",
+      receiving: "Receiving…",
       received: "All received",
       modes: {
         instant: "shows text the moment it arrives, with no motion",
@@ -904,29 +904,29 @@ export const en: GalleryStrings = {
       palette: "Palette",
       geometry: "Geometry",
       tokenMeaning: {
-        "--ui-chart-1": "slot 1 Â· violet",
-        "--ui-chart-2": "slot 2 Â· amber",
-        "--ui-chart-3": "slot 3 Â· sky",
-        "--ui-chart-4": "slot 4 Â· rose",
-        "--ui-chart-5": "slot 5 Â· emerald",
-        "--ui-chart-6": "slot 6 Â· fuchsia",
-        "--ui-chart-7": "slot 7 Â· spare",
-        "--ui-chart-8": "slot 8 Â· spare",
+        "--ui-chart-1": "slot 1 · violet",
+        "--ui-chart-2": "slot 2 · amber",
+        "--ui-chart-3": "slot 3 · sky",
+        "--ui-chart-4": "slot 4 · rose",
+        "--ui-chart-5": "slot 5 · emerald",
+        "--ui-chart-6": "slot 6 · fuchsia",
+        "--ui-chart-7": "slot 7 · spare",
+        "--ui-chart-8": "slot 8 · spare",
         "--ui-chart-ref": "reference line",
         "--ui-chart-cache-read": "cache read",
         "--ui-chart-cache-write": "cache write",
         "--ui-chart-output": "output",
         "--ui-chart-grid": "grid",
         "--ui-chart-axis": "axis",
-        "--ui-chart-bar-fill": "share of its band a bar fills (0â1)",
+        "--ui-chart-bar-fill": "share of its band a bar fills (0–1)",
         "--ui-chart-bar-radius": "bar top radius",
         "--ui-chart-bar-stroke": "bar outline width",
         "--ui-chart-bar-stroke-color": "bar outline colour (series = the series colour)",
-        "--ui-chart-bar-opacity": "bar fill opacity (0â1)",
+        "--ui-chart-bar-opacity": "bar fill opacity (0–1)",
         "--ui-chart-line-width": "line width",
         "--ui-chart-point-radius": "data point radius",
         "--ui-chart-curve": "curve (linear / smooth / step)",
-        "--ui-chart-area-opacity": "area fill opacity (0â1)",
+        "--ui-chart-area-opacity": "area fill opacity (0–1)",
       },
       donut: "Token donut",
       donutHint:
@@ -989,7 +989,7 @@ export const en: GalleryStrings = {
       emptyDir: "Empty directory",
       root: ".",
       readme:
-        "# Docs Expert\n\nBuilds a BM25 index over `corpus/` and answers questions about the Claude Code docs.\n\n- `src/rag.ts` â retrieval\n- `test/` â cases",
+        "# Docs Expert\n\nBuilds a BM25 index over `corpus/` and answers questions about the Claude Code docs.\n\n- `src/rag.ts` — retrieval\n- `test/` — cases",
       truncated: "File too large; preview truncated, download for the full file",
       unsupported: "Preview not supported for this type; download instead",
       download: "Download",
@@ -1002,7 +1002,7 @@ export const en: GalleryStrings = {
       wrap: "Wrap lines",
       crumbs: "Path strip",
       crumbsHint:
-        "When the path does not fit, its leading parts fold into one ââ¦â; the file name gives way last",
+        "When the path does not fit, its leading parts fold into one “…”; the file name gives way last",
       menu: "File menu",
       menuFile: "File",
       menuFolder: "Folder",
@@ -1032,15 +1032,15 @@ export const en: GalleryStrings = {
         small: "Small: secondary information and metadata.",
         caption: "Caption: a note under a chart or a control.",
         eyebrow: "Group label",
-        mono: "sess_7f3a Â· ~/work/penguin",
+        mono: "sess_7f3a · ~/work/penguin",
         label: "Field label",
       },
       inline: { before: "Run ", code: "pnpm install", after: " to install the dependencies." },
       prose: "Markdown prose",
       proseSample:
-        "## Release checks\n\nConfirm **three things** before you release, then run `pnpm -r build`. See the [release notes](https://penguin.ooo).\n\n- Type checks pass\n- Every test passes\n- The changelog is written\n\n> When a data root is taken, use another one â never end someone else's process.\n\n| Check | Command |\n| --- | --- |\n| Types | `pnpm typecheck` |\n| Tests | `pnpm test` |\n\n```bash\npnpm -r build && pnpm test\n```\n\nThe cache hit rate is \\(r = h / (h + m)\\).",
+        "## Release checks\n\nConfirm **three things** before you release, then run `pnpm -r build`. See the [release notes](https://penguin.ooo).\n\n- Type checks pass\n- Every test passes\n- The changelog is written\n\n> When a data root is taken, use another one — never end someone else's process.\n\n| Check | Command |\n| --- | --- |\n| Types | `pnpm typecheck` |\n| Tests | `pnpm test` |\n\n```bash\npnpm -r build && pnpm test\n```\n\nThe cache hit rate is \\(r = h / (h + m)\\).",
       compact: "Compact: a channel message",
-      compactSample: "Merged **#897** â `feat/ui-w2` can go.",
+      compactSample: "Merged **#897** — `feat/ui-w2` can go.",
       code: "Code",
       surface: "Code surface: line numbers, no frame",
       diff: "Diff",
@@ -1152,7 +1152,7 @@ export const en: GalleryStrings = {
                 kind: "remaining",
                 value: 180,
                 max: 1000,
-                prefix: "Â¥",
+                prefix: "¥",
                 warn: 300,
                 danger: 100,
               },
@@ -1246,7 +1246,7 @@ export const en: GalleryStrings = {
             type: "steps",
             title: "Rotate the API key",
             steps: [
-              { text: "Open Settings âº Keys." },
+              { text: "Open Settings › Keys." },
               { text: "Create a new key and copy it.", note: "The new key works at once." },
               {
                 text: "Delete the old key.",
@@ -1419,7 +1419,7 @@ export const en: GalleryStrings = {
       reasons: {
         failed: "Failed at Restart the server: no answer on port 7364 within 30 s.",
         unreachable: "ssh: connect to host 10.0.0.12 port 22: Connection timed out",
-        working: "Downloading penguin-harness 0.2.16â¦",
+        working: "Downloading penguin-harness 0.2.16…",
         reconnecting: "Attempt 4",
         behind: "Version 0.2.16 is available",
       },
@@ -1439,12 +1439,12 @@ export const en: GalleryStrings = {
         installing: "Installing the program",
       },
       waits: {
-        reconnecting: "Reconnectingâ¦",
+        reconnecting: "Reconnecting…",
         stopped: "Its server is stopped",
         notConnected: "Not connected yet",
         failed: "The last job failed",
         signInRefused:
-          "That machine refused the saved password â enter it again in the machine's SSH settings.",
+          "That machine refused the saved password — enter it again in the machine's SSH settings.",
         notInstalled: "Not installed yet",
         windows: "Installed; start its server by hand on this Windows machine",
       },
