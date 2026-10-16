@@ -6,30 +6,10 @@
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type {
-  MeResponse,
-  UploadLimits,
-  UploadPolicy,
-  UserInfo,
-} from "@prismshadow/penguin-server/api";
+import type { MeResponse, UploadPolicy, UserInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
 import { probeSession } from "../api/session-probe";
-
-/**
- * Stand-in until GET /api/me answers, matching the server's shipped defaults. The window is the
- * mount-time fetch, before a composer can be used at all; the server re-validates every upload
- * against the real limits regardless, so a stale value here can only make the composer's
- * pre-flight check slightly wrong, never let an oversize file through.
- */
-const DEFAULT_UPLOAD_LIMITS: UploadLimits = {
-  attachmentMaxMb: 100,
-  attachmentTotalMb: 120,
-  attachmentMaxCount: 20,
-  imageMaxMb: 20,
-  attachmentLimitMinMb: 1,
-  attachmentLimitMaxMb: 200,
-};
 
 /**
  * A GET /api/me issued right after a successful login failed: does the session it was meant to
@@ -47,11 +27,13 @@ export function loginSessionSurvives(error: unknown): boolean {
 }
 
 /**
- * The stand-in for the upload policy, as DEFAULT_UPLOAD_LIMITS is for the limits. A stale value here costs at most one image that was
- * re-encoded, or not, against the previous setting — the policy shapes what a tab uploads, it
- * does not decide what the server accepts.
+ * Stand-in until GET /api/me answers, matching the server's shipped defaults. The window is the
+ * mount-time fetch, before a composer can be used at all, and the policy shapes what a tab
+ * uploads rather than what the server accepts — so a stale value here costs at most one image
+ * that was re-encoded, or not, against the previous setting.
  */
 const DEFAULT_UPLOAD_POLICY: UploadPolicy = {
+  attachmentMaxCount: 20,
   imageCompression: true,
   imageCompressionOverMb: 4,
   imageCompressionMinMb: 1,
@@ -82,12 +64,6 @@ interface AuthContextValue {
    * server.)
    */
   sessionVia: MeResponse["sessionVia"];
-  /**
-   * Upload limits in force on this server (admin-settable). The composer reads them to refuse an
-   * oversize pick before reading it and to name the real number in the message, so the client
-   * check and the server check can never disagree about what "too large" means.
-   */
-  uploadLimits: UploadLimits;
   /**
    * How this server wants uploads handled (admin-settable). The composer reads it to decide
    * whether a large image is re-encoded before it is uploaded.
@@ -137,7 +113,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [previewIsolated, setPreviewIsolated] = useState(true);
   const [desktopMode, setDesktopMode] = useState(false);
   const [sessionVia, setSessionVia] = useState<MeResponse["sessionVia"]>("password");
-  const [uploadLimits, setUploadLimits] = useState<UploadLimits>(DEFAULT_UPLOAD_LIMITS);
   const [uploadPolicy, setUploadPolicy] = useState<UploadPolicy>(DEFAULT_UPLOAD_POLICY);
   // Off until /api/me says otherwise, as it is on a server nobody has turned it on: the mode
   // switch must not flash for a server that has company mode off.
@@ -162,7 +137,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPreviewIsolated(res.previewIsolated);
         setDesktopMode(res.desktopMode);
         setSessionVia(res.sessionVia);
-        setUploadLimits(res.uploadLimits);
         setUploadPolicy(res.uploadPolicy);
         setUploadPolicy(res.uploadPolicy);
         setCompanyMode(res.companyMode);
@@ -218,7 +192,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPreviewIsolated(me.previewIsolated);
       setDesktopMode(me.desktopMode);
       setSessionVia(me.sessionVia);
-      setUploadLimits(me.uploadLimits);
       setUploadPolicy(me.uploadPolicy);
       setCompanyMode(me.companyMode);
     } catch (e) {
@@ -246,7 +219,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPreviewIsolated(res.previewIsolated);
     setDesktopMode(res.desktopMode);
     setSessionVia(res.sessionVia);
-    setUploadLimits(res.uploadLimits);
     setCompanyMode(res.companyMode);
   }, []);
 
@@ -257,7 +229,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         previewIsolated,
         desktopMode,
         sessionVia,
-        uploadLimits,
         uploadPolicy,
         companyMode,
         login,

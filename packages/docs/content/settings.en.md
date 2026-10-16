@@ -1,9 +1,9 @@
 ---
 title: Settings
-description: Manage your profile, preferences, archived chats and password, and, as an admin, users, the proxy, upload limits, company mode, the Agent API and plugins.
+description: Manage your profile, preferences, archived chats and password, and, as an admin, users, the proxy, uploads, company mode, the Agent API and plugins.
 ---
 
-**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences, your archived chats and your password, and, for an admin, the server's users, proxy, upload limits, company mode, Agent API and plugins, the sandbox among them.
+**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences, your archived chats and your password, and, for an admin, the server's users, proxy, uploads, company mode, Agent API and plugins, the sandbox among them.
 
 - Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance), [Keyboard shortcuts](#keyboard-shortcuts), [Archived chats](#archived-chats) and [Account](#account).
 - Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Uploads](#uploads), [Company mode](#company-mode), [Agent API](#agent-api) and [Plugins](#plugins).
@@ -266,26 +266,16 @@ The test measures this server's own outbound hop to the model providers. It list
 
 ## Uploads
 
-The **Uploads** page is admin-only and server-global. It holds the two size limits and the automatic image compression:
+The **Uploads** page is admin-only and server-global. It holds the automatic image compression:
 
 | Field | Default | Allowed range |
 | --- | --- | --- |
-| **Max attachment size (MB)** | 100MB | 1–200MB |
-| **Max total per message (MB)** | 120MB | 1–200MB |
 | **Compress large images** | On | — |
 | **Compress images larger than (MB)** | 4MB | 1–64MB |
 
-The total may not sit below the per-file cap, because that combination would make a legal single attachment unsendable. A value outside the range, such as "100GB" typed into a MB field as 102400, is refused with the reason shown under the input rather than accepted. Validation precedes every write: one bad field in a PUT leaves the other fields untouched too.
+There are no size limits to set. An attachment goes to the Session scratchpad and the model opens it by path, so nothing downstream grows with the file. An inline image is the opposite — it enters the conversation and the Trace, where its size is paid again on every history page and every Session resume — so it is made smaller rather than turned away: an image over the threshold is resized to fit a 2048px box and re-encoded in its own format, in the browser, before it is uploaded.
 
-The limits and the compression answer different questions. A limit is what the server refuses. The compression is what the browser does before it uploads: an image over the threshold is resized to fit a 2048px box and re-encoded in its own format, so the upload shrinks with the picture. A smaller image is sent byte-for-byte, and so is any animated or vector image — a canvas round trip would return a first frame or a rasterization, which is a different picture, not a smaller one. If the re-encode comes out no smaller than the original, the original is sent.
-
-Compression is worth having because an inline image is not an attachment: it enters the conversation and the Trace, where its size is paid again on every history page and every Session resume. The 20MB inline-image cap applies to what is actually uploaded, so a compressed picture is measured after the re-encode.
-
-### Change the upload limits
-
-1. On the **Uploads** page, in **Max attachment size (MB)**, enter a whole number of MB between 1 and 200.
-2. In **Max total per message (MB)**, enter a whole number of MB between 1 and 200, and not below the per-file cap.
-3. Select **Save**.
+A smaller image is sent byte-for-byte, and so is any animated or vector image — a canvas round trip would return a first frame or a rasterization, which is a different picture, not a smaller one. If the re-encode comes out no smaller than the original, the original is sent. A value outside the range, such as "100GB" typed into a MB field as 102400, is refused with the reason shown under the input. Validation precedes every write: one bad field in a PUT leaves the other fields untouched too.
 
 ### Change image compression
 
@@ -293,7 +283,7 @@ Compression is worth having because an inline image is not an attachment: it ent
 2. In **Compress images larger than (MB)**, enter a whole number of MB between 1 and 64. The field stays editable while the switch is off, so both can be set in one pass.
 3. Select **Save**.
 
-Saving takes effect immediately, with no restart: the attachment validators and the request body cap read the limits per request, and a composer reads the compression policy from its next `/api/me`.
+Saving takes effect immediately, with no restart: a composer reads the policy from its next `/api/me`.
 
 ## Company mode
 

@@ -18,10 +18,15 @@ export abstract class Settings {
   /** The stored GitHub token, or null when none. */
   abstract getGithubToken(): string | null;
   abstract setGithubToken(value: string): void;
-  abstract getAttachmentMaxMb(): number;
-  abstract setAttachmentMaxMb(value: number): void;
-  abstract getAttachmentTotalMb(): number;
-  abstract setAttachmentTotalMb(value: number): void;
+  /**
+   * Compatibility member: uploads have no size limit any more, and nothing on this platform
+   * reads it. It stays because a hot push replaces the platform but never the runtime, and an
+   * older runtime (the packaged v0.2.13 release among them) calls it from its request
+   * middleware on every request (`createApp`'s body cap, `bodyLimitBytes(settings()
+   * .getAttachmentLimitsMb())`); without it every request on such a runtime answers 500. It
+   * answers the limits an admin stored before they were retired, or the old defaults. Remove it
+   * only when no supported runtime calls it.
+   */
   abstract getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number };
   abstract getImageCompression(): boolean;
   abstract setImageCompression(value: boolean): void;

@@ -16,8 +16,8 @@
  *   Access-Control-Allow-Origin; with keyless access off it is 401.
  * - Given a key, every response carries Access-Control-Allow-Origin *, errors included; a
  *   preflight is answered without one.
- * - Given a body the server-wide checks refuse before the group is reached (over the body cap:
- *   413; not JSON: 415), a keyed request still carries Access-Control-Allow-Origin *, so a
+ * - Given a non-JSON body refused before the group is reached (415), a keyed request
+ *   still carries Access-Control-Allow-Origin *, so a
  *   browser reads the code rather than a CORS failure; a keyless one carries none.
  * - Given an unknown path under the prefix, the answer is a JSON 404 — not the SPA, not a 401.
  *
@@ -89,7 +89,7 @@ import type {
   SessionResponse,
 } from "../src/api/types.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
-import { bodyLimitBytes } from "../src/services/attachment-limits.js";
+import { parseRunInput } from "../src/amsp/run-stream.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import { adoptSession, fakeSession, sessionRow, uniqueSessionId } from "./fixtures/session.js";
@@ -399,23 +399,13 @@ describe("Agent API: the gate", () => {
   });
 
   it("a keyed request the server-wide body checks refuse still carries Access-Control-Allow-Origin *", async () => {
-    const cap = bodyLimitBytes(t.deps.serverSettingsRepo.getAttachmentLimitsMb());
-    const oversized = (headers: Record<string, string>) =>
-      t.app.request(`${PREFIX}/agents/${P}/${A}/runs`, {
-        method: "POST",
-        headers: { ...headers, "content-type": "application/json", "content-length": `${cap + 1}` },
-        body: JSON.stringify({ input: "small" }),
-      });
     const notJson = (headers: Record<string, string>) =>
       t.app.request(`${PREFIX}/agents/${P}/${A}/runs`, {
         method: "POST",
         headers: { ...headers, "content-type": "text/plain" },
         body: "hello",
       });
-    for (const [send, status, code] of [
-      [oversized, 413, "payload_too_large"],
-      [notJson, 415, "unsupported_media_type"],
-    ] as const) {
+    for (const [send, status, code] of [[notJson, 415, "unsupported_media_type"]] as const) {
       const keyed = await send({ authorization: `Bearer ${key}` });
       expect(keyed.headers.get("access-control-allow-origin")).toBe("*");
       expect(await errorOf(keyed)).toMatchObject({ status, code });
@@ -958,18 +948,6 @@ describe("Agent API: runs", () => {
       { input: [{ type: "image_url", image_url: "data:text/plain;base64,aGk=" }] },
       "input[0].image_url",
     ],
-    [
-      "an image over the inline cap",
-      {
-        input: [
-          {
-            type: "image_url",
-            image_url: `data:image/png;base64,${Buffer.alloc(21 * 1024 * 1024).toString("base64")}`,
-          },
-        ],
-      },
-      "input[0].image_url",
-    ],
     ["an unknown item type", { input: [{ type: "audio" }] }, "input[0].type"],
   ])("%s is 400 bad_request naming the field, and creates nothing", async (_case, body, field) => {
     const before = t.deps.sessionsRepo.listByAgent(P, A).length;
@@ -984,25 +962,16 @@ describe("Agent API: runs", () => {
     expect(t.deps.sessionsRepo.listByAgent(P, A)).toHaveLength(before);
   });
 
-  it("images over the per-message total are 400 bad_request", async () => {
-    expect(
-      (await admin.put("/api/admin/settings", { attachmentMaxMb: 1, attachmentTotalMb: 1 })).status,
-    ).toBe(200);
-    try {
-      const image = `data:image/png;base64,${Buffer.alloc(700 * 1024).toString("base64")}`;
-      const res = await amsp(t, `/agents/${P}/${A}/runs`, {
-        key,
-        body: {
-          input: [
-            { type: "image_url", image_url: image },
-            { type: "image_url", image_url: image },
-          ],
-        },
-      });
-      expect(await errorOf(res)).toMatchObject({ status: 400, code: "bad_request" });
-    } finally {
-      await admin.put("/api/admin/settings", { attachmentTotalMb: 120, attachmentMaxMb: 100 });
-    }
+  it("does not reintroduce retired inline-image or per-message byte limits", () => {
+    const image = `data:image/png;base64,${Buffer.alloc(21 * 1024 * 1024).toString("base64")}`;
+    const input = [
+      { type: "image_url", image_url: image },
+      { type: "image_url", image_url: image },
+    ];
+    expect(parseRunInput(input)).toHaveLength(2);
+    expect(() =>
+      parseRunInput([{ type: "image_url", image_url: "data:text/plain;base64,aGk=" }]),
+    ).toThrow();
   });
 
   it("a keep-alive comment is written after 15 s of silence", async () => {

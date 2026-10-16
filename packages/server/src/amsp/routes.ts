@@ -34,7 +34,7 @@ export interface AmspRouteDeps
   extends
     Omit<AmspGateDeps, "settings" | "agentConfig">,
     Omit<RunStreamDeps, "settings" | "manager"> {
-  settings: Pick<Settings, "getAgentApiEnabled" | "getAttachmentLimitsMb">;
+  settings: Pick<Settings, "getAgentApiEnabled">;
   agentConfig: Pick<AgentConfig, "exists" | "readCardMeta">;
   manager: RunStreamDeps["manager"] & {
     decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny"): boolean;
