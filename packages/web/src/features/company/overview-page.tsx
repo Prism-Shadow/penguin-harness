@@ -667,6 +667,8 @@ export function OverviewPage() {
                   size={40}
                   cost={spend.cost}
                   currency={currency}
+                  warnRatio={detail.settings.budgetWarnRatio}
+                  pauseRatio={detail.settings.budgetPauseRatio}
                   {...(spend.budget !== null ? { budget: spend.budget } : {})}
                   {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
                 />
@@ -681,6 +683,8 @@ export function OverviewPage() {
                   cost={spend.cost}
                   currency={currency}
                   compact
+                  warnRatio={detail.settings.budgetWarnRatio}
+                  pauseRatio={detail.settings.budgetPauseRatio}
                   {...(spend.budget !== null ? { budget: spend.budget } : {})}
                   {...(spend.ratio !== null ? { ratio: spend.ratio } : {})}
                 />
