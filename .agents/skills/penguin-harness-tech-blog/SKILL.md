@@ -71,9 +71,11 @@ count as a figure.
   `site/src/docs/agent-loop.en.md` and the `.flowchart` rules in `site/src/styles/global.css`.
   - A `<figure>` holds `<svg viewBox="…" role="img" aria-labelledby="…">` with a `<title>`,
     followed by a `<figcaption>`.
-  - Marks carry classes, never inline colours. The blog's stylesheet styles those classes from the
-    site's tokens, with `html.dark` variants, so a figure follows the theme. Reuse the existing
-    classes, and add one there when a figure needs a new kind of mark.
+  - Marks carry classes, never inline colours. The `.post-figure` and `.fig-*` rules in
+    `packages/landing/src/styles.css` style them from the site palette (`--site-*`), with
+    `html.dark` variants, so a figure follows the theme. Reuse those classes, and add one there
+    when a figure needs a new kind of mark. Nothing else reads post bodies (the landing site has no
+    blog search index, RSS feed or Markdown export), so the SVG needs no text conversion.
   - SVG text is in the file's language. The en and zh posts each carry their own copy, so a drawn
     figure needs no asset pair and no hosting step.
   - The same content as text (the steps, or the numbers) sits in a visually hidden list after the
@@ -103,7 +105,9 @@ count as a figure.
   with no caption, so the alt text carries the finding, and a visible caption is a one-line italic
   paragraph under the image.
 - **Look at every figure as a reader will.** Render the post page in the light and the dark theme,
-  at desktop width and at 390 px.
+  at desktop width and at 390 px. On a narrow screen a wide figure scrolls inside the prose column,
+  as tables do, instead of shrinking its text below legibility; the page itself never scrolls
+  sideways.
 - **Table or chart.**
   - A table holds exact numbers a reader will look up.
   - A chart shows a comparison a reader should see at a glance.
