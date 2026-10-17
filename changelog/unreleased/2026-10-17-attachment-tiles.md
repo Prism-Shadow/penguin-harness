@@ -3,6 +3,7 @@
 - **Date:** 2026-10-17
 - **Type:** fix
 - **Scope:** `ui`, `web`, `ui-gallery`, `docs`
+- **PR:** [#1191](https://github.com/Prism-Shadow/penguin-harness/pull/1191)
 
 [中文版](2026-10-17-attachment-tiles.zh.md)
 
