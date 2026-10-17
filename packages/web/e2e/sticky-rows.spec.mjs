@@ -105,12 +105,15 @@ function scrollInto(page, toolRow, into) {
       rowOffset: r.top - h.bottom,
       sectionAbove: s.top < top(),
       sectionBelow: s.bottom - r.bottom,
-      // Whole pixels inside both rows and clear of their rounded corners: an edge pixel shared
-      // with what lies below the row, or a corner a theme rounds, holds a sliver of the output.
+      margin: Math.round(head.closest(".ui-frame").getBoundingClientRect().left) - 40,
+      // The stretch of both rows past their words, in whole pixels: nothing of the rows' own
+      // is drawn there, so every pixel is either the row's ground or what shows through it.
+      // (A row pinned at a fractional offset rasterizes its words a little differently from
+      // one scroll position to the next.)
       band: {
-        x: Math.ceil(h.left) + 8,
+        x: Math.round(h.left + h.width * 0.4),
         y: Math.ceil(h.top),
-        width: Math.floor(h.right) - Math.ceil(h.left) - 16,
+        width: Math.round(h.width * 0.45),
         height: Math.floor(r.bottom) - Math.ceil(h.top) - 1,
       },
     };
@@ -202,16 +205,8 @@ test("under a custom background the rows still pin, hide what scrolls under them
   const pinned = await expectPinnedAndOpaque(page, toolRow);
   // A strip of the pinned head past its words, and the same strip of the transcript's empty
   // margin beside the card: the head paints the background, not a strip of its own.
-  const strip = { width: 24, height: 8 };
-  const onHead = await page.screenshot({
-    clip: {
-      x: Math.round(pinned.band.x + pinned.band.width * 0.7),
-      y: pinned.band.y + 2,
-      ...strip,
-    },
-  });
-  const inMargin = await page.screenshot({
-    clip: { x: pinned.band.x - strip.width - 12, y: pinned.band.y + 2, ...strip },
-  });
+  const strip = { y: pinned.band.y + 2, width: 24, height: 8 };
+  const onHead = await page.screenshot({ clip: { x: pinned.band.x, ...strip } });
+  const inMargin = await page.screenshot({ clip: { x: pinned.margin, ...strip } });
   expect(await pixelsApart(page, onHead, inMargin)).toEqual([]);
 });
