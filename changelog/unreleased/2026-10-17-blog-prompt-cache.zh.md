@@ -3,6 +3,7 @@
 - **Date:** 2026-10-17
 - **Type:** process
 - **Scope:** `landing`
+- **PR:** [#1186](https://github.com/Prism-Shadow/penguin-harness/pull/1186)
 
 [English](2026-10-17-blog-prompt-cache.md)
 
