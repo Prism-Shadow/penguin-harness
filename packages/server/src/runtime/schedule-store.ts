@@ -278,7 +278,8 @@ export async function deleteScheduleFile(
   try {
     await fs.unlink(file);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
   }
 }
