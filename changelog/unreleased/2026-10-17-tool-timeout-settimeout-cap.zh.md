@@ -3,6 +3,7 @@
 - **Date:** 2026-10-17
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#1184](https://github.com/Prism-Shadow/penguin-harness/pull/1184)
 
 [English](2026-10-17-tool-timeout-settimeout-cap.md)
 
