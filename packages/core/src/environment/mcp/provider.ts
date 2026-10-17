@@ -26,7 +26,7 @@
  *
  * Execution: a call is bridged to `client.callTool` with the Environment-merged abort
  * signal passed through. The SDK's own per-request timeout is pushed out of the way
- * (`MAX_SDK_TIMEOUT_MS`) so Environment stays the single timekeeper — its per-tool
+ * (`MAX_SET_TIMEOUT_MS`) so Environment stays the single timekeeper — its per-tool
  * `timeoutMs` (server entry override or Environment default) aborts the signal, which
  * cancels the in-flight request. Result content maps as: text blocks → output text; image
  * blocks → `images` data URLs; audio/binary-resource blocks → placeholder lines;
@@ -47,6 +47,7 @@ import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotoc
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage } from "../../omnimessage/index.js";
 import { VERSION, userAgent } from "../../index.js";
+import { MAX_SET_TIMEOUT_MS } from "../../internal/deadline-timer.js";
 import type {
   ConfinedSpawn,
   MCPServerConfig,
@@ -78,13 +79,6 @@ export function mcpToolName(serverName: string, toolName: string): string {
  * the module's warn-and-skip stance).
  */
 const LLM_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
-
-/**
- * Largest delay setTimeout can represent (~24.8 days): used as the SDK per-request timeout
- * so it never fires before Environment's own tool timeout, which is the single authority
- * (it aborts the shared signal; a larger value would overflow to an immediate fire).
- */
-const MAX_SDK_TIMEOUT_MS = 2_147_483_647;
 
 /** Rolling stderr tail kept per stdio server for connect-failure diagnostics (chars). */
 const STDERR_TAIL_LIMIT = 2048;
@@ -657,7 +651,9 @@ export class McpToolProvider {
           .callTool(
             { name: tool.name, arguments: args },
             {
-              timeout: MAX_SDK_TIMEOUT_MS,
+              // Cap at the setTimeout limit so the SDK never fires before Environment's
+              // tool timeout (a larger value would overflow to an immediate fire).
+              timeout: MAX_SET_TIMEOUT_MS,
               ...(ctx.signal ? { signal: ctx.signal } : {}),
             },
           )

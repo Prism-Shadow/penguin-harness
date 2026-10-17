@@ -28,6 +28,7 @@
  * Docs: /docs/tools § "Execution contract".
  */
 import path from "node:path";
+import { armDeadline } from "../internal/deadline-timer.js";
 import { partialToolCallOutput, toolCallOutput, userText } from "../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
@@ -669,14 +670,17 @@ export class Environment implements EnvironmentInterface {
     const detachCtrl = new AbortController();
     this.inFlight.set(toolCallId, { detach: detachCtrl, detachable: tool.detachable === true });
     let timedOut = false;
-    const timer =
+    const cancelTimer =
       timeoutMs > 0
-        ? setTimeout(() => {
-            timedOut = true;
-            ac.abort();
-          }, timeoutMs)
+        ? armDeadline(
+            timeoutMs,
+            () => {
+              timedOut = true;
+              ac.abort();
+            },
+            { unref: true },
+          )
         : null;
-    timer?.unref?.();
 
     // Consume the tool stream: the head window is forwarded live, text past it is withheld into
     // a bounded rolling tail; nested messages pass through; manual iteration to capture the
@@ -825,7 +829,7 @@ export class Environment implements EnvironmentInterface {
       // A tool throw also collapses into the uniform finalization: keep already-streamed content, don't discard produced output.
       thrown = err;
     } finally {
-      if (timer) clearTimeout(timer);
+      cancelTimer?.();
       signal?.removeEventListener("abort", onAbort);
       // The call is over: a detach arriving from here on has nothing to act on and must
       // answer "not running" rather than firing a controller nobody is listening to.
