@@ -2,6 +2,8 @@
  * The transcript's two sticky levels: a work group's head pins to the top of the transcript,
  * and the open row inside it pins right below the head, while what they head scrolls under them.
  *
+ * In each theme (each paints its activity rows its own way):
+ *
  * - Given a settled work group with one tool call's output open, when the transcript is
  *   scrolled into that output, the group head sits flush at the top of the transcript, the tool
  *   row sits right below it, and the output's lines pass under both without showing through.
@@ -18,6 +20,8 @@ const MOCK = process.env.MOCK_URL;
 const USER = "stickyrows";
 const PASSWORD = "password123";
 const REPLY = "Command finished; the result looks as expected.";
+/** The three themes: stored id → name. */
+const THEMES = { github: "Primer", modern: "Frost", geek: "Console" };
 
 test.use({ viewport: { width: 1280, height: 720 } });
 test.describe.configure({ mode: "serial" });
@@ -57,8 +61,9 @@ test.beforeAll(async ({ browser }) => {
   await page.close();
 });
 
-/** Opens the conversation, its work group and the second tool call's output. */
-async function openOutput(page) {
+/** Opens the conversation in a theme, then its work group and the second tool call's output. */
+async function openOutput(page, theme) {
+  await page.addInitScript((id) => localStorage.setItem("penguin.themeId", id), theme);
   await login(page.request, USER, PASSWORD);
   await page.goto(`/chat/${sessionId}`);
   const head = page.locator("[data-group-header]");
@@ -177,36 +182,38 @@ function pixelsApart(page, a, b) {
   );
 }
 
-test("the group head and the open tool row pin at the top while the output scrolls under them", async ({
-  page,
-}) => {
-  const toolRow = await openOutput(page);
-  await expectPinnedAndOpaque(page, toolRow);
-});
-
-test("under a custom background the rows still pin, hide what scrolls under them, and show the image", async ({
-  page,
-}) => {
-  // A flat wallpaper at full strength: any area showing only the background has its colour.
-  await page.addInitScript(() => {
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 8;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#3a7d5c";
-    ctx.fillRect(0, 0, 8, 8);
-    localStorage.setItem("penguin.background.image", canvas.toDataURL("image/png"));
-    localStorage.setItem(
-      "penguin.background.settings",
-      JSON.stringify({ transparency: 0, mode: "tile", position: "left top" }),
-    );
+for (const [theme, name] of Object.entries(THEMES)) {
+  test(`${name}: the group head and the open tool row pin at the top while the output scrolls under them`, async ({
+    page,
+  }) => {
+    const toolRow = await openOutput(page, theme);
+    await expectPinnedAndOpaque(page, toolRow);
   });
-  const toolRow = await openOutput(page);
-  await expect(page.locator(".ui-shell[data-wallpaper]")).toHaveCount(1);
-  const pinned = await expectPinnedAndOpaque(page, toolRow);
-  // A strip of the pinned head past its words, and the same strip of the transcript's empty
-  // margin beside the card: the head paints the background, not a strip of its own.
-  const strip = { y: pinned.band.y + 2, width: 24, height: 8 };
-  const onHead = await page.screenshot({ clip: { x: pinned.band.x, ...strip } });
-  const inMargin = await page.screenshot({ clip: { x: pinned.margin, ...strip } });
-  expect(await pixelsApart(page, onHead, inMargin)).toEqual([]);
-});
+
+  test(`${name}: under a custom background the rows still pin, hide what scrolls under them, and show the image`, async ({
+    page,
+  }) => {
+    // A flat wallpaper at full strength: any area showing only the background has its colour.
+    await page.addInitScript(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 8;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#3a7d5c";
+      ctx.fillRect(0, 0, 8, 8);
+      localStorage.setItem("penguin.background.image", canvas.toDataURL("image/png"));
+      localStorage.setItem(
+        "penguin.background.settings",
+        JSON.stringify({ transparency: 0, mode: "tile", position: "left top" }),
+      );
+    });
+    const toolRow = await openOutput(page, theme);
+    await expect(page.locator(".ui-shell[data-wallpaper]")).toHaveCount(1);
+    const pinned = await expectPinnedAndOpaque(page, toolRow);
+    // A strip of the pinned head past its words, and the same strip of the transcript's empty
+    // margin beside the card: the head paints the background, not a strip of its own.
+    const strip = { y: pinned.band.y + 2, width: 24, height: 8 };
+    const onHead = await page.screenshot({ clip: { x: pinned.band.x, ...strip } });
+    const inMargin = await page.screenshot({ clip: { x: pinned.margin, ...strip } });
+    expect(await pixelsApart(page, onHead, inMargin)).toEqual([]);
+  });
+}
