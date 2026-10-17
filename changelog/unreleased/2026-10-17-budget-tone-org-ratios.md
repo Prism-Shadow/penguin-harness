@@ -3,6 +3,7 @@
 - **Date:** 2026-10-17
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1182](https://github.com/Prism-Shadow/penguin-harness/pull/1182)
 - **Issue:** [#737](https://github.com/Prism-Shadow/penguin-harness/issues/737)
 
 [中文版](2026-10-17-budget-tone-org-ratios.zh.md)
