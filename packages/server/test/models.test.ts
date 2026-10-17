@@ -78,7 +78,7 @@ import {
   presetPromotions,
   presetProviderTable,
   providerInfo,
-} from "../src/model-catalog.js";
+} from "../src/model-catalog/index.js";
 import type {
   ErrorBody,
   ModelsResponse,

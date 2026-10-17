@@ -61,18 +61,20 @@ import {
   MODELSCOPE_PROVIDER_ID,
   PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
-  catalogGroupConnection,
   fixedClientType,
   fixedClientTypeRefuses,
   isVendorGroup,
-  modelEnvPreviewKey,
-  presetModelEntries,
-  presetPromotions,
   providerInfo,
   retainedCatalogPricing,
   unaddableModel,
   unroutableVendorModel,
-} from "../model-catalog.js";
+} from "../model-catalog/catalog.js";
+import { modelEnvPreviewKey } from "../model-catalog/env-keys.js";
+import {
+  catalogGroupConnection,
+  presetModelEntries,
+  presetPromotions,
+} from "../model-catalog/seed.js";
 import { sameClientType, sameEndpoint } from "@prismshadow/penguin-core/model-connection";
 import type {
   PluginTables,

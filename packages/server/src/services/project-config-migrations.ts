@@ -15,8 +15,8 @@ import {
   MINIMAX_BASE_URL,
   PENGUIN_GO_BASE_URL,
   PENGUIN_GO_PROVIDER_ID,
-  routedClientType,
-} from "../model-catalog.js";
+} from "../model-catalog/catalog.js";
+import { routedClientType } from "../model-catalog/routing.js";
 
 /** A TOML table: a plain object, not an array. */
 function isTable(value: unknown): value is Record<string, unknown> {

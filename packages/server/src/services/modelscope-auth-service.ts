@@ -18,7 +18,7 @@
 import { randomBytes } from "node:crypto";
 import { userAgent } from "@prismshadow/penguin-core";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import { MODELSCOPE_PROVIDER_ID } from "../model-catalog.js";
+import { MODELSCOPE_PROVIDER_ID } from "../model-catalog/catalog.js";
 import { HttpError } from "../http/errors.js";
 import { normalizeModelScopeBridgeUrl } from "../config.js";
 import { Config } from "../hmr/capabilities.js";

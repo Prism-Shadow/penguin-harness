@@ -30,7 +30,7 @@ export default defineConfig({
     // "./model-catalog": the built-in model catalog. No Node dependency — it imports core's
     // browser-safe connection subpath alone — so the Web App, the component gallery and the CLI
     // bundle the same rows, groups and helpers the server seeds a Project with.
-    "model-catalog": "src/model-catalog.ts",
+    "model-catalog": "src/model-catalog/index.ts",
     "initial-password": "src/initial-password.ts",
     "reset-admin-password": "src/reset-admin-password.ts",
     "auth-token": "src/auth-token.ts",

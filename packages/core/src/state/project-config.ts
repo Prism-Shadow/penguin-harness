@@ -35,12 +35,8 @@ import type {
 } from "../interfaces/index.js";
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
-import {
-  canonicalClientType,
-  groupKeyReaches,
-  sameClientType,
-  sameEndpoint,
-} from "./model-connection.js";
+import { canonicalClientType, sameClientType } from "./mmsp-clients.js";
+import { groupKeyReaches, sameEndpoint } from "./model-connection.js";
 import { projectConfigPath } from "./paths.js";
 
 /** Model reference: a `(provider, model_id)` pair (never string-concatenated anywhere). */

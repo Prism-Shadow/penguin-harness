@@ -52,7 +52,7 @@ import {
   routedClientType,
   unaddableModel,
   unroutableVendorModel,
-} from "../src/model-catalog.js";
+} from "../src/model-catalog/index.js";
 
 /**
  * What a stored row is used with, the way a Session builds it: the row's own values, then its

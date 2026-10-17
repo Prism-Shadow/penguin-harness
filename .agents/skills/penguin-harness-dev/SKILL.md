@@ -187,12 +187,12 @@ that file instead of re-telling it. A batch with no compatibility handling has n
 ## Core never special-cases a model, provider or gateway
 
 `packages/core/src` contains no model ids, provider ids, vendor hostnames or endpoints, and no
-catalog data. Model knowledge lives in the server's catalog (`packages/server/src/model-catalog.ts`,
+catalog data. Model knowledge lives in the server's catalog (`packages/server/src/model-catalog/`,
 published as the browser-safe `@prismshadow/penguin-server/model-catalog`, which the Web App, the
 CLI and the gallery import) and reaches core only through the Project config the server seeds —
 `[providers.<id>]`, `[[models]]`, `default_model` — or through host hooks
-(`AgentAssembly`). Core keeps MMSP's client-type table (`MMSP_CLIENTS`: variable prefix, open
-server, path, fast mode) because that is protocol knowledge, not model knowledge. The one exception
+(`AgentAssembly`). Core keeps MMSP's client-type table (`state/mmsp-clients.ts`: variable prefix,
+open server, path, fast mode) because that is protocol knowledge, not model knowledge. The one exception
 is App attribution: `llm/app-attribution.ts` (`attributionHeaders`) names the gateways whose headers
 `GenerativeModel` attaches. A change that wants core to know a model or a vendor belongs in the
 catalog and the config it seeds instead; a core test that needs a Project writes a fixture
@@ -201,8 +201,8 @@ catalog and the config it seeds instead; a core test that needs a Project writes
 ## One concern per module
 
 Logic with its own reason to change — an identification scheme (App attribution), a migration, a
-derivation rule (which variable a keyless row reads), a protocol mirror (MMSP's routing table) — gets a file of
-its own beside its caller, never a section appended to a large neighbour. A change that moves or
+derivation rule (which variable a keyless row reads), a protocol mirror (MMSP's routing table) —
+gets a file of its own beside its caller, never a section appended to a large neighbour. A change that moves or
 reshapes a large file splits it along its concerns, keeping the import graph acyclic: a module
 cycle that reads a binding at load time fails with a TDZ `ReferenceError`. The case that set the
 rule: [#1167](https://github.com/Prism-Shadow/penguin-harness/pull/1167) first put App attribution

@@ -8,7 +8,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
-import { MODEL_CATALOG, PRESET_DEFAULT_MODEL, presetProviderTable } from "../src/model-catalog.js";
+import {
+  MODEL_CATALOG,
+  PRESET_DEFAULT_MODEL,
+  presetProviderTable,
+} from "../src/model-catalog/index.js";
 import { presetProjectConfig } from "../src/services/project-config-seed.js";
 
 describe("the seed of a new Project", () => {

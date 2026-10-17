@@ -1,10 +1,11 @@
 # Changing the built-in model catalog
 
-Loaded on demand from `SKILL.md`. `packages/server/src/model-catalog.ts` is the single source of
-truth for presets: the server seeds a new Project's config from it, and the Web App, the CLI and the
-gallery display it through the browser-safe subpath `@prismshadow/penguin-server/model-catalog`.
-Core never reads it (see the core rule in `SKILL.md`). It is a *catalog*, not a routing table —
-MMSP owns routing.
+Loaded on demand from `SKILL.md`. `packages/server/src/model-catalog/catalog.ts` is the single
+source of truth for presets: the server seeds a new Project's config from it (`seed.ts`), and the
+Web App, the CLI and the gallery display it through the browser-safe subpath
+`@prismshadow/penguin-server/model-catalog` (`index.ts`). MMSP's routing mirror is `routing.ts`,
+and the variable names the UI previews are `env-keys.ts`. Core never reads any of it (see the core
+rule in `SKILL.md`). It is a *catalog*, not a routing table — MMSP owns routing.
 
 ## Pricing
 

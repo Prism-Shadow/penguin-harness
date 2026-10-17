@@ -28,7 +28,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { APP_URL } from "@prismshadow/penguin-core";
-import { presetModelEntries, providerInfo } from "../src/model-catalog.js";
+import { presetModelEntries, providerInfo } from "../src/model-catalog/index.js";
 import type {
   ModelOAuthCodeResponse,
   ModelOAuthStartResponse,
