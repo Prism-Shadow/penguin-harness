@@ -16,10 +16,13 @@ PR CI runs `smoke.spec.mjs`, three browser scenarios against the real HTTP serve
 sign-in and its cookie across reload; a pending approval that must not write until allowed;
 and completed history plus a working follow-up after reload. The last scenario covers the
 post-reload send regression from #89. Only the LLM boundary is replaced by the shared mock.
+Beside it CI runs `sticky-rows.spec.mjs`: a work group's head and an open tool row stay pinned
+at the top of the transcript while the output scrolls under them, with and without a custom
+background.
 
 ```sh
-pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs
-SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs
+pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs sticky-rows.spec.mjs
+SKIP_BUILD=1 pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs sticky-rows.spec.mjs
 ```
 
 Arguments are forwarded to Playwright, so a spec path or `--grep` selects a focused run.
