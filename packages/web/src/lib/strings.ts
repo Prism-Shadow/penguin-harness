@@ -135,13 +135,14 @@ export const zh = {
       `把这 ${count} 台机器更新到本服务端的版本？每台都会重装程序、重启服务并重新连接，期间正在用它的人会短暂断开。`,
     /**
      * The one word for a machine's state, keyed by its reading; `serving` is this server's. The
-     * card's mark and the Machine dialog's status chip both say it.
+     * card's status pill and the Machine dialog's both say it. A connected machine reads as
+     * running, the word this server's own entry wears.
      */
     state: {
       serving: "运行中",
       queued: "排队中",
       working: "处理中",
-      ready: "已连接",
+      ready: "运行中",
       reconnecting: "重新连接中",
       failed: "失败",
       installedOnly: "已安装",
@@ -803,6 +804,9 @@ export const zh = {
       n === 1
         ? "确定删除这个对话？它的消息与 Trace 将被移除，且不可恢复。"
         : `确定删除这 ${n} 个对话？它们的消息与 Trace 将被移除，且不可恢复。`,
+    /** Above the list: machines whose archived chats could not be read this time, by alias. */
+    unreachable: (machines: string[]): string =>
+      `这些机器暂时连不上，其上的已归档对话未列出：${machines.join("、")}`,
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */
@@ -1380,6 +1384,11 @@ export const zh = {
     moreRows: (count: number): string => `另有 ${count} 条未显示`,
     /** Name of the aggregated result list (read out when it is announced). */
     resultsLabel: "查找结果",
+    /** The Markdown reader's outline: its rail's title and the button that opens it. */
+    outline: "目录",
+    /** The Markdown reader's find button, and its find box's placeholder. */
+    inDocument: "在文档中查找",
+    documentPlaceholder: "在文档中查找…",
   },
 
   common: {
@@ -6069,35 +6078,8 @@ Benchmark：
     },
     /** The handbook page: the knowledge base directory, its index and its documents. */
     handbook: {
-      info: "组织的知识库：handbook/ 目录下的 Markdown 文档。索引（README.md）是每次触发都会让员工 Agent 先读的那一页，其余文档由索引列出、按需再读。",
-      /** The pinned first row: the index, and why it is pinned. */
-      indexLabel: "索引 · 每轮先读",
-      documents: "文档",
-      /** The tree's own controls: closing every folder, and what a folder row's count means. */
-      collapseAll: "全部折叠",
-      documentsInFolder: (n: number): string => `${n} 篇文档`,
-      noOtherDocuments: "还没有其他文档。新建一篇，并在索引里列出它。",
-      emptyDocument: "这篇文档还是空的。",
-      newDocument: "新建文档",
-      creating: "创建中…",
-      pathField: "路径",
-      pathPlaceholder: "decisions/2026-09-02-hire-plan.md",
-      pathHint:
-        "相对于 handbook/ 的路径，用 / 分层；每段以字母或数字开头，仅字母、数字、. _ -；省略扩展名时补 .md。",
-      pathInvalid: "路径无效：每段以字母或数字开头，仅字母、数字、. _ -，用 / 分层，最多八层。",
-      pathExists: "该文档已存在。",
-      documentCreated: "文档已创建",
-      deleteDocument: "删除文档",
-      deleteConfirm: (path: string): string =>
-        `删除 ${path}？文档会从 handbook/ 目录移除；索引里指向它的条目不会自动更新。`,
-      documentDeleted: "文档已删除",
+      /** The page could not read the handbook's listing (which names its directory). */
       loadFailed: "手册加载失败",
-      documentLoadFailed: "文档加载失败",
-      /** A row's tooltip: when the file was last written, and its size. */
-      updatedAt: (time: string, size: string): string => `更新于 ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
-      editorHint: (shortcut: string | null): string =>
-        shortcut === null ? "Markdown" : `Markdown · ${shortcut} 保存`,
     },
   },
   errors: {

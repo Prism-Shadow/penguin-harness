@@ -143,58 +143,67 @@ describe("built-in Agent provisioning", () => {
   });
 
   it("a new Project, initial or created, comes with the example and the seven built-ins, listed as plain published Benchmarks whose statements say how each case is run", async () => {
-    const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
-    const created = (await (
-      await owner.post("/api/projects", { projectId: "owner1-bench", name: "Bench" })
-    ).json()) as ProjectCreateResponse;
-    for (const projectId of [projects.projects[0]!.projectId, created.project.projectId]) {
-      const base = `/api/projects/${projectId}/benchmarks`;
-      const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
-      const example = body.benchmarks.find((b) => b.id === "example-benchmark")!;
-      const builtins = body.benchmarks.filter((b) => b.id.startsWith(BUILTIN_PREFIX));
-      expect(builtins, projectId).toHaveLength(7);
-      expect(body.benchmarks.map((b) => b.id)).toEqual([
-        "example-benchmark",
-        ...builtins.map((b) => b.id),
-      ]);
-      for (const bench of [example, ...builtins]) {
-        // Seeded, at a revision of their own.
-        expect(bench.origin, bench.id).toEqual({ kind: "builtin" });
-        expect(bench.version, bench.id).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
-      }
-      for (const bench of builtins) {
-        // Read like any Benchmark: nothing in the summary sets a built-in apart.
-        expect(Object.keys(bench).sort(), bench.id).toEqual(Object.keys(example).sort());
-        // Ready to evaluate, and never evaluated: no baseline ships with them.
-        expect(bench.status).toBe("published");
-        expect(bench.runs).toBe(1);
-        expect(bench.evaluations).toEqual([]);
-        expect(bench.caseCount).toBeGreaterThan(0);
-        const cases = (await (
-          await owner.get(`${base}/${bench.id}/cases`)
-        ).json()) as BenchmarkCasesResponse;
-        expect(cases.cases).toHaveLength(bench.caseCount);
-        for (const c of cases.cases) {
-          // Listed under the title its statement opens with.
-          expect(c.title).not.toBe(c.id);
-          // The statement links the task's folder in the public repository and says how the
-          // case is run.
-          const statement = await (
-            await owner.get(`${base}/${bench.id}/cases/${c.id}/files/content?path=README.md`)
-          ).text();
-          expect(statement, c.id).toMatch(
-            /^- Task: `[^`]+` in https:\/\/github\.com\/\S+\/tree\/\S+$/m,
-          );
-          expect(statement, c.id).toMatch(/^## How this case is run$/m);
-          expect(statement, c.id).toMatch(/harbor run -p \S+ -i \S+ /);
+    // The one scenario that reads the shipped catalog whole, on an app that writes it as
+    // production does (createTestApp leaves the built-ins out unless asked).
+    const shipped = await createTestApp({ builtinBenchmarks: true });
+    try {
+      const owner = apiClient(shipped.app, (await provisionUser(shipped.app, "owner1")).cookie);
+      const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
+      const created = (await (
+        await owner.post("/api/projects", { projectId: "owner1-bench", name: "Bench" })
+      ).json()) as ProjectCreateResponse;
+      for (const projectId of [projects.projects[0]!.projectId, created.project.projectId]) {
+        const base = `/api/projects/${projectId}/benchmarks`;
+        const body = (await (await owner.get(base)).json()) as BenchmarksResponse;
+        const example = body.benchmarks.find((b) => b.id === "example-benchmark")!;
+        const builtins = body.benchmarks.filter((b) => b.id.startsWith(BUILTIN_PREFIX));
+        expect(builtins, projectId).toHaveLength(7);
+        expect(body.benchmarks.map((b) => b.id)).toEqual([
+          "example-benchmark",
+          ...builtins.map((b) => b.id),
+        ]);
+        for (const bench of [example, ...builtins]) {
+          // Seeded, at a revision of their own.
+          expect(bench.origin, bench.id).toEqual({ kind: "builtin" });
+          expect(bench.version, bench.id).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
+        }
+        for (const bench of builtins) {
+          // Read like any Benchmark: nothing in the summary sets a built-in apart.
+          expect(Object.keys(bench).sort(), bench.id).toEqual(Object.keys(example).sort());
+          // Ready to evaluate, and never evaluated: no baseline ships with them.
+          expect(bench.status).toBe("published");
+          expect(bench.runs).toBe(1);
+          expect(bench.evaluations).toEqual([]);
+          expect(bench.caseCount).toBeGreaterThan(0);
+          const cases = (await (
+            await owner.get(`${base}/${bench.id}/cases`)
+          ).json()) as BenchmarkCasesResponse;
+          expect(cases.cases).toHaveLength(bench.caseCount);
+          for (const c of cases.cases) {
+            // Listed under the title its statement opens with.
+            expect(c.title).not.toBe(c.id);
+            // The statement links the task's folder in the public repository and says how the
+            // case is run.
+            const statement = await (
+              await owner.get(`${base}/${bench.id}/cases/${c.id}/files/content?path=README.md`)
+            ).text();
+            expect(statement, c.id).toMatch(
+              /^- Task: `[^`]+` in https:\/\/github\.com\/\S+\/tree\/\S+$/m,
+            );
+            expect(statement, c.id).toMatch(/^## How this case is run$/m);
+            expect(statement, c.id).toMatch(/harbor run -p \S+ -i \S+ /);
+          }
         }
       }
+    } finally {
+      await shipped.cleanup();
     }
   });
 
   it("an existing default_project adopted at bootstrap keeps its own Benchmarks and is given only the missing ones", async () => {
     const mine = `${BUILTIN_PREFIX}sec-a`;
     const adopted = await createTestApp({
+      builtinBenchmarks: true,
       // A data root the CLI made before the server's first start, holding a Benchmark of its
       // own under a built-in's id.
       beforeSeed: async (root) => {

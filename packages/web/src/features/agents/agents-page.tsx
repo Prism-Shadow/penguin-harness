@@ -26,7 +26,7 @@ import { Link, useLocation, useNavigate } from "react-router";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
-  Badge,
+  Pill,
   Button,
   Card,
   ConfirmModal,
@@ -464,7 +464,7 @@ export function AgentsPage() {
             <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
               {a.agentId}
             </span>
-            <Badge>v{a.version}</Badge>
+            <Pill>v{a.version}</Pill>
             {/* Kernel-outdated pill: the card the sidebar's Agents dot leads to, so it
                         names the state in words rather than as another bare dot — a capsule in
                         the version badge's own geometry, in the attention tint (behind is

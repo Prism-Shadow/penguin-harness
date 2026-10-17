@@ -23,8 +23,9 @@
  * |                    | `SkillTile`                                              |                                                       |
  * | `ui-eyebrow`       | a group label naming the items below it (never directly  | —                                                     |
  * |                    | above an `h1`–`h4`); hosts: `Text variant="eyebrow"`,    |                                                       |
- * |                    | the sidebar's and group headers' labels                  |                                                       |
- * | `ui-display`       | the one display title of a page or hero                  | only on an `h1` or `[aria-level="1"]`                 |
+ * |                    | the sidebar's and group headers' labels, and the public  |                                                       |
+ * |                    | sites' `SiteToc` and `SiteSidebarNav` section labels     |                                                       |
+ * | `ui-display`      | the one display title of a page or hero                  | only on an `h1` or `[aria-level="1"]`                 |
  * |                    | hosts: `Heading level={1} display`, `PageHeader`'s title |                                                       |
  * | `ui-live`          | motion for something that is running right now           | `data-live="dot" \| "caret" \| "spinner" \| "bar"`   |
  * |                    | hosts: the Spinner, a pulsing Dot, the streaming caret   |                                                       |
@@ -72,6 +73,9 @@
  * menu's rows are inset bands concentric with the panel. An opted-in shell wallpaper uses
  * `NavigationBackdrop` (`data-glass="navigation"`) in all themes: only this separate layer
  * filters the image, preserving the navigation column's menu positioning.
+ *
+ * Public-site chrome uses the same floating-layer hook on `SiteHeader` and its menu.
+ * `site.css` keeps those surfaces fixed while the gallery changes the app theme below them.
  *
  * The three structure hooks (2026-09-19) are how the themes differ in organisation, not only in
  * colour and radius:

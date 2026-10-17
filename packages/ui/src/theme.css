@@ -25,6 +25,7 @@
  */
 
 @import "./wallpaper.css";
+@import "./cursors.css";
 
 /* How far a `ui-stream` host's newest lines are veiled, 0 to 1 (Frost multiplies it into its
    mask), private to the recipes (not a token) and registered as a number so a transition can

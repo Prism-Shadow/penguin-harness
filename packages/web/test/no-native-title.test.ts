@@ -26,14 +26,27 @@ import type { SourceFile } from "./helpers/roots";
 /** Intrinsic elements whose `title` the platform needs. */
 const TITLE_ALLOWED_ON = new Set(["iframe"]);
 
+/** Each scanned file is parsed once, though both scans read it. */
+const parsed = new WeakMap<object, ts.SourceFile>();
+function parseTsx(file: Pick<SourceFile, "path" | "text">): ts.SourceFile {
+  let source = parsed.get(file);
+  if (source === undefined) {
+    source = ts.createSourceFile(
+      file.path,
+      file.text,
+      ts.ScriptTarget.Latest,
+      /* setParentNodes */ true,
+      ts.ScriptKind.TSX,
+    );
+    parsed.set(file, source);
+  }
+  return source;
+}
+
 function nativeTitles(file: Pick<SourceFile, "path" | "text" | "id">): string[] {
-  const source = ts.createSourceFile(
-    file.path,
-    file.text,
-    ts.ScriptTarget.Latest,
-    /* setParentNodes */ true,
-    ts.ScriptKind.TSX,
-  );
+  // A title attribute, or a `title` key spread onto an element, spells the word.
+  if (!file.text.includes("title")) return [];
+  const source = parseTsx(file);
   const hits: string[] = [];
   const at = (node: ts.Node) =>
     `${file.id}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`;
@@ -130,13 +143,8 @@ function hasContent(children: ts.NodeArray<ts.JsxChild>, source: ts.SourceFile):
  * of a named or hidden whole, and is not asked for a name of its own.
  */
 function unnamedHints(file: Pick<SourceFile, "path" | "text" | "id">): string[] {
-  const source = ts.createSourceFile(
-    file.path,
-    file.text,
-    ts.ScriptTarget.Latest,
-    /* setParentNodes */ true,
-    ts.ScriptKind.TSX,
-  );
+  if (!file.text.includes("data-tooltip")) return [];
+  const source = parseTsx(file);
   const hits: string[] = [];
   const insideNamedWhole = (node: ts.Node): boolean => {
     for (let up = node.parent; up !== undefined; up = up.parent) {

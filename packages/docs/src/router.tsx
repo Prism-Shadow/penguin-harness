@@ -1,28 +1,22 @@
 /**
  * Router + layout: sticky top bar, left sidebar (sticky column on desktop, overlay
  * panel on mobile), doc content, slim footer. basename comes from Vite's BASE_URL so
- * the site works under the GitHub Pages subpath ("/<repo>/docs/"); scroll restores to
- * top on route change (hash targets excluded).
+ * the site works under the GitHub Pages subpath ("/<repo>/docs/"); a route change
+ * scrolls to the top or to its hash target (useRouteScroll).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router";
+import { SiteFooter, useRouteScroll, useSearchHotkey } from "@prismshadow/penguin-ui/site";
 import { Nav } from "./components/nav";
 import { Sidebar } from "./components/sidebar";
-import { Footer } from "./components/footer";
-import { DocSearchDialog } from "./components/doc-search-dialog";
-import { hashTargetId } from "./lib/hash";
+import { DocSearch } from "./components/doc-search";
+import { S } from "./lib/strings";
+import { LICENSE_URL, REPO_URL, SITE_URL } from "./lib/links";
 import { DocPage } from "./pages/doc-page";
 
-/**
- * Last history entry whose scroll was already handled. Module-level so it survives
- * the locale-keyed remount of the whole tree: switching language re-mounts Layout,
- * and without this guard the navigation effect would re-run (jumping to the hash or
- * to the top) and defeat LocaleScope's scroll preservation.
- */
-let handledLocationKey = "";
-
 function Layout() {
-  const { pathname, hash, key } = useLocation();
+  const location = useLocation();
+  const { pathname, hash, key } = location;
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -39,37 +33,13 @@ function Layout() {
     [menuOpen],
   );
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() === "k" &&
-        (event.ctrlKey || event.metaKey) &&
-        !event.altKey &&
-        !event.shiftKey
-      ) {
-        event.preventDefault();
-        if (!searchOpen) openSearch();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openSearch, searchOpen]);
+  const openSearchByKey = useCallback(() => openSearch(), [openSearch]);
+  useSearchHotkey(searchOpen, openSearchByKey);
+  useRouteScroll(location);
 
-  // Genuine route change: jump to top; with a hash scroll to the target once it is
-  // in the DOM. Also close the mobile sidebar.
+  // Any navigation closes the mobile sidebar.
   useEffect(() => {
     setMenuOpen(false);
-    if (key === handledLocationKey) return;
-    handledLocationKey = key;
-    if (hash) {
-      // Anchors of CJK headings arrive percent-encoded in the URL hash.
-      const el = document.getElementById(hashTargetId(hash));
-      if (el) {
-        el.scrollIntoView();
-        return;
-      }
-    }
-    window.scrollTo(0, 0);
   }, [pathname, hash, key]);
 
   return (
@@ -97,8 +67,15 @@ function Layout() {
         </main>
       </div>
 
-      <Footer />
-      <DocSearchDialog
+      <SiteFooter
+        copyright={S.footer.copyright}
+        links={[
+          { id: "site", href: SITE_URL, label: S.footer.site },
+          { id: "repo", href: REPO_URL, label: S.footer.repo, external: true },
+          { id: "license", href: LICENSE_URL, label: S.footer.license, external: true },
+        ]}
+      />
+      <DocSearch
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         returnFocusRef={searchReturnFocusRef}

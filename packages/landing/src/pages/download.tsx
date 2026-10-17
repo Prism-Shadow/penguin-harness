@@ -77,7 +77,7 @@ function FaqItem({
       open={defaultOpen}
       className="group rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium tracking-tight [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-default list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium tracking-tight [&::-webkit-details-marker]:hidden">
         {question}
         <ChevronDownIcon className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-180 dark:text-gray-500" />
       </summary>

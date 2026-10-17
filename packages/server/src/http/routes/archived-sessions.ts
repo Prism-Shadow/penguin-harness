@@ -11,6 +11,9 @@
  * A group chosen whole (Select all) is a filter carrying the snapshot its count was read at
  * (`until`, the groups response's `asOf`) and the rows unticked since (`exclude`), so it acts on
  * the rows the user saw counted and kept chosen, and on none that came after.
+ *
+ * An admin's groups include the machines their Projects use; a page or a batch naming a group's
+ * `machineId` goes to that machine.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -21,9 +24,18 @@ import type {
   ArchivedSessionsQuery,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { ArchivedSessionsService } from "../../services/archived-sessions-service.js";
+import type {
+  ArchiveCaller,
+  ArchivedSessionsService,
+} from "../../services/archived-sessions-service.js";
 import { HttpError } from "../errors.js";
-import { badRequest, parseActivityCursor, parseNonNegativeInt, readJson } from "../validate.js";
+import {
+  badRequest,
+  listingViewOfRequest,
+  parseActivityCursor,
+  parseNonNegativeInt,
+  readJson,
+} from "../validate.js";
 
 /** What this route group reaches — bound by its module (routes/sessions.ts SessionApiRoutes). */
 export interface ArchivedSessionsRouteDeps {
@@ -84,6 +96,23 @@ function parseWorkspace(raw: unknown): string {
   return raw;
 }
 
+/** A machine's own id as a request names it (base64url); anything else names no machine. */
+function parseMachineId(raw: unknown): string {
+  if (typeof raw !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(raw)) {
+    throw new HttpError(404, "unknown_machine", "No such machine in the Projects you can open.");
+  }
+  return raw;
+}
+
+/** Who asks, as the service reads them. */
+function callerOf(c: Context<AppEnv>): ArchiveCaller {
+  return {
+    userId: c.var.user.userId,
+    isAdmin: c.var.user.isAdmin,
+    view: listingViewOfRequest(c),
+  };
+}
+
 /** The query string's parameters as one object. */
 function queryOf(c: Context<AppEnv>): Record<string, unknown> {
   return c.req.query();
@@ -108,9 +137,15 @@ function parseExclude(raw: unknown): string[] {
   return raw as string[];
 }
 
-/** A batch's body: `{sessionIds}` (1–500 ids) or `{filter}`, exactly one of them. */
+/** A batch's body: `{sessionIds}` (1–500 ids) or `{filter}`, exactly one of them, and an optional `machineId`. */
 async function parseBatch(c: Context<AppEnv>): Promise<ArchivedSessionsBatch> {
   const body = await readJson(c);
+  const machine = body.machineId === undefined ? {} : { machineId: parseMachineId(body.machineId) };
+  return { ...parseTarget(body), ...machine };
+}
+
+/** A batch's target: `{sessionIds}` or `{filter}`, exactly one of them. */
+function parseTarget(body: Record<string, unknown>): ArchivedSessionsBatch {
   const hasIds = body.sessionIds !== undefined;
   const hasFilter = body.filter !== undefined;
   if (hasIds === hasFilter) throw badRequest("Send either sessionIds or filter.");
@@ -143,7 +178,7 @@ export function archivedSessionsRoutes(deps: ArchivedSessionsRouteDeps): Hono<Ap
   const app = new Hono<AppEnv>();
 
   app.get("/groups", async (c) =>
-    c.json(await deps.service.groups(c.var.user.userId, parseQuery(queryOf(c)))),
+    c.json(await deps.service.groups(callerOf(c), parseQuery(queryOf(c)))),
   );
 
   app.get("/", async (c) => {
@@ -160,22 +195,23 @@ export function archivedSessionsRoutes(deps: ArchivedSessionsRouteDeps): Hono<Ap
       if (before === null) throw badRequest("before must be <lastActiveAt>,<sessionId>.");
     }
     return c.json(
-      await deps.service.rows(c.var.user.userId, {
+      await deps.service.rows(callerOf(c), {
         ...query,
         projectId: query.projectId,
         workspace: parseWorkspace(raw.workspace),
         limit,
         ...(before ? { before } : {}),
+        ...(raw.machineId !== undefined ? { machineId: parseMachineId(raw.machineId) } : {}),
       }),
     );
   });
 
   app.post("/unarchive", async (c) =>
-    c.json(await deps.service.unarchive(c.var.user.userId, await parseBatch(c))),
+    c.json(await deps.service.unarchive(callerOf(c), await parseBatch(c))),
   );
 
   app.post("/delete", async (c) =>
-    c.json(await deps.service.delete(c.var.user.userId, await parseBatch(c))),
+    c.json(await deps.service.delete(callerOf(c), await parseBatch(c))),
   );
 
   return app;

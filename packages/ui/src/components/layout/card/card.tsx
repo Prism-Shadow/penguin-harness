@@ -55,7 +55,7 @@ export function Card({
     <CardPaddingContext.Provider value={padding}>
       <Tag
         {...rest}
-        className={`${framed ? "ui-frame " : ""}min-w-0 rounded-md ${framed ? "border border-line bg-surface" : ""} ${PADDING[padding]} ${interactive ? `cursor-pointer transition-colors duration-150 ${framed ? "hover:!border-line-emphasis" : "hover:bg-control-hover"}` : ""} ${className}`}
+        className={`${framed ? "ui-frame " : ""}min-w-0 rounded-md ${framed ? "border border-line bg-surface" : ""} ${PADDING[padding]} ${interactive ? `cursor-default transition-colors duration-150 ${framed ? "hover:!border-line-emphasis" : "hover:bg-control-hover"}` : ""} ${className}`}
         data-wallpaper-surface={framed ? "panel" : undefined}
       >
         {children}

@@ -29,7 +29,7 @@ const VARIANT: Record<ButtonVariant, string> = {
     "border border-transparent bg-transparent font-medium text-fg-muted hover:bg-control-hover hover:text-fg",
   // Text that acts: no box, the link colour, the underline on hover. It keeps the body weight,
   // because a link-button sits in a sentence or a row of plain text.
-  link: "text-link underline-offset-2 hover:text-link-hover hover:underline disabled:no-underline",
+  link: "cursor-pointer text-link underline-offset-2 hover:text-link-hover hover:underline disabled:no-underline",
 };
 
 const SIZE: Record<ButtonSize, string> = {
@@ -144,13 +144,12 @@ export function IconButton({ label, size = "md", title, ...rest }: IconButtonPro
  * since the hidden `<input type="file">` has to be labelled to be clickable. Built from the records
  * `Button` reads, so a variant or a rung moves in one place.
  *
- * Two deliberate differences from `Button`: the focus outline is drawn while the input inside has
- * keyboard focus, because the label itself never takes focus, and `cursor-pointer` is spelled out,
- * which a `<button>` gets from the base rules and a `<label>` does not.
+ * The focus outline is drawn while the input inside has keyboard focus, because the label itself
+ * never takes focus. The shared theme gives labels and buttons the same cursor.
  */
 export function buttonClass(
   variant: ButtonVariant,
   size: Exclude<ButtonSize, "icon" | "icon-sm">,
 ): string {
-  return `${BASE} cursor-pointer has-[:focus-visible]:[outline:var(--ui-focus-ring)] has-[:focus-visible]:[outline-offset:var(--ui-focus-ring-offset)] ${look(variant, size)}`;
+  return `${BASE} has-[:focus-visible]:[outline:var(--ui-focus-ring)] has-[:focus-visible]:[outline-offset:var(--ui-focus-ring-offset)] ${look(variant, size)}`;
 }

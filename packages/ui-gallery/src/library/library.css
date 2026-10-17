@@ -8,6 +8,8 @@
 @import "../../../web/src/styles.css";
 @source "../../../web/src";
 @import "../foundations/foundations.css";
+/* The public sites' components and prose, for the 公开站点 board: scoped to their own classes. */
+@import "@prismshadow/penguin-ui/site.css";
 
 /* Framed, the document is exactly as tall as its board — the page around it takes the height
    from the board and sizes the frame — so it never scrolls itself: a scrollbar would only flash

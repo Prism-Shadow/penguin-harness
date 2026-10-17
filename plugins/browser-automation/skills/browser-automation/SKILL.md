@@ -1,7 +1,7 @@
 ---
 name: browser-automation
 description: Drive the PenguinHarness agent browser — the desktop app's built-in browser or the user's own Chrome — from the shell with `penguin browser`: open pages, read them as simplified HTML or text, act with JavaScript and trusted clicks and typing, and pull structured data out of them (orders, search results, tables), signed in with the user's own accounts. Use it for any task on a website that needs a real browser or the user's sign-in, such as finding an Amazon order.
-version: 2026.10.04.1
+version: 2026.10.15.1
 ---
 
 # Browser automation
@@ -114,4 +114,4 @@ Finding and listing Amazon orders — the sign-in check, searching, extracting r
 | `penguin browser history [<query>] [-n 20]` | Pages visited in the built-in browser, and imported history (built-in only) |
 | `--json` on any command | The raw response |
 
-An error is one line, `error: <code>: <message>`, with exit code 1. The codes: `browser_unavailable` (see Before you start; also when the user paused the extension in Chrome — ask them to resume it), `no_tab` (open a page first), `no_such_tab`, `tab_crashed`, `tab_released` (see Rules), `cdp_refused` (a raw command outside the tab; the user's Chrome also refuses its cookies, storage and file paths), `not_supported` (import and history on the user's Chrome), `timeout`, `invalid_url`, `script_error`, `source_not_found`, `import_failed`, and `invalid_argument` for a command typed wrong.
+An error is one line, `error: <code>: <message>`, with exit code 1. The codes: `browser_unavailable` (see Before you start; also when the user paused the extension in Chrome — ask them to resume it), `no_tab` (open a page first), `no_such_tab`, `tab_crashed`, `tab_released` (see Rules), `keyboard_focus_failed` (the built-in browser could not give the tab keyboard focus, so nothing was typed; retry once), `cdp_refused` (a raw command outside the tab; the user's Chrome also refuses its cookies, storage and file paths), `not_supported` (import and history on the user's Chrome), `timeout`, `invalid_url`, `script_error`, `source_not_found`, `import_failed`, and `invalid_argument` for a command typed wrong.

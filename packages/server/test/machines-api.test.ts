@@ -36,6 +36,9 @@
  *   Project's machines.
  * - Given a connected machine, its directories are listed through the alias holding it.
  * - Given a probe, the machine's own id is learned and kept; this machine's id is minted once.
+ *   A machine is adopted when this server first records it (hearing its id later changes nothing),
+ *   and a repointed alias adopts the newcomer; a machine recorded before adoption times were kept
+ *   never gets one, whatever a probe or a connect hears later.
  * - Given a batch to use, machines work side by side and each ends connected; stop using keeps
  *   the install.
  * - Given an ssh-config edit, a new block is appended, this app's block is rewritten in place,
@@ -2028,6 +2031,57 @@ describe("machines API", () => {
       expect(t.deps.machines.job()?.result).toMatchObject({ ok: true });
       expect((await byId("ssh:nas"))?.machineId).toBe(ID);
     });
+
+    it("adopts a machine when it first records it, not when its id is heard, and a repointed alias adopts the newcomer", async () => {
+      let id: string | null = null;
+      let now = "2026-08-24T12:00:00.000Z";
+      await boot({
+        now: () => new Date(now),
+        probe: async () => ({ state: { kind: "running", port: 7364, pid: 1 }, machineId: id }),
+      });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/install");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(machinesRepo.get("ssh:nas")?.adoptedAt).toBe("2026-08-24T12:00:00.000Z");
+
+      // The machine saying who it is later is the same machine this server took up already:
+      // what was created on it through this server since must not start reading as its own.
+      now = "2026-08-25T12:00:00.000Z";
+      id = ID;
+      await admin.post("/api/projects/default_project/machines/probe");
+      expect((await byId("ssh:nas"))?.machineId).toBe(ID);
+      expect(machinesRepo.get("ssh:nas")?.adoptedAt).toBe("2026-08-24T12:00:00.000Z");
+
+      now = "2026-08-26T12:00:00.000Z";
+      id = "PO_VCwpQrw1hQLV-";
+      await admin.post("/api/projects/default_project/machines/probe");
+      expect(machinesRepo.get("ssh:nas")?.adoptedAt).toBe("2026-08-26T12:00:00.000Z");
+    });
+
+    it.each([
+      ["whose id it had heard", ID],
+      ["whose id it had not heard yet", null],
+    ])(
+      "never gives a machine adopted before adoption times were kept one, %s: not on a probe, not on a connect",
+      async (_, known) => {
+        // The user's decision (2026-10-15): the Sessions on such a machine stay as they are.
+        await boot({
+          probe: async () => ({ state: { kind: "running", port: 7364, pid: 1 }, machineId: ID }),
+        });
+        machinesRepo.patch("ssh:nas", {
+          ...(known === null ? {} : { machineId: known }),
+          version: "9.9.9",
+          installedAt: "2026-08-01T00:00:00.000Z",
+        });
+        machinesRepo.setMembers("default_project", ["ssh:nas"]);
+        await admin.post("/api/projects/default_project/machines/probe");
+        expect((await byId("ssh:nas"))?.machineId).toBe(ID);
+        expect(machinesRepo.get("ssh:nas")?.adoptedAt).toBeNull();
+
+        await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+        await waitFor(() => t.deps.machines.job()?.running === false);
+        expect(machinesRepo.get("ssh:nas")?.adoptedAt).toBeNull();
+      },
+    );
 
     it("a machine whose server never started stays without one", async () => {
       await boot({ probe: async () => ({ state: { kind: "stopped" }, machineId: null }) });

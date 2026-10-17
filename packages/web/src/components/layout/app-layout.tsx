@@ -11,11 +11,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import {
   AppShell,
-  CloseIcon,
   Drawer,
   ICONS,
   MobileTopBar,
-  NoticeStrip,
+  Notice,
   Rail,
   RailAccountButton,
   RailDivider,
@@ -479,37 +478,19 @@ export function AppLayout() {
 
       {/* Initial-password notice banner (seed/admin-set password): disappears once passwordIsInitial clears after a successful change.
           Hidden in desktop mode — the seed password there is random and never shown, so "change it" is meaningless nagging.
-          Permanently dismissible via the X on the right (per-user ui_prefs); only rendered once
-          hydrated prefs confirm it was never dismissed, so it does not flash-then-vanish on load. */}
+          The shared notice's banner: the sentence and its "change it now" word centred, the
+          close cross at the far edge. Permanently dismissible (per-user ui_prefs); only rendered
+          once hydrated prefs confirm it was never dismissed, so it does not flash-then-vanish on
+          load. */}
       {passwordBannerRelevant && passwordBannerDismissed === false && (
-        <NoticeStrip
-          banner
+        <Notice
+          variant="banner"
           tone="attention"
-          className="relative flex shrink-0 items-center justify-center gap-3 border-b px-8 py-1.5 text-xs"
+          action={{ label: S.account.changeNow, onClick: () => setChangePasswordOpen(true) }}
+          dismiss={{ ariaLabel: S.common.close, onClick: dismissPasswordBanner }}
         >
-          <span>{S.account.initialPasswordBanner}</span>
-          <button
-            type="button"
-            className="shrink-0 whitespace-nowrap font-medium underline underline-offset-2 hover:text-amber-950 dark:hover:text-amber-100"
-            onClick={() => setChangePasswordOpen(true)}
-          >
-            {S.account.changeNow}
-          </button>
-          {/* Amber-toned twin of the shared CloseButton (same glyph + aria-label) — its hardcoded
-              gray colors would clash here. Flat: hover feedback is icon-color-only (no background
-              fill), same hover shades as the change-now link. Absolutely positioned at the right
-              edge: near-full-height hit area without growing the banner and without transform (see
-              the stacking-context note in the file header); the banner's symmetric px-8 keeps the
-              centered text clear. */}
-          <button
-            type="button"
-            aria-label={S.common.close}
-            onClick={dismissPasswordBanner}
-            className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-100"
-          >
-            <CloseIcon size={12} />
-          </button>
-        </NoticeStrip>
+          {S.account.initialPasswordBanner}
+        </Notice>
       )}
 
       <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
