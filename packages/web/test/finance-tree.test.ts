@@ -6,7 +6,10 @@
  * - The ledger shows the roots alone until a parent is expanded, one level per expanded
  *   parent, never below a folded ancestor, and a childless row has nothing to fold.
  * - Periods move by whole months across years; other shapes are refused.
- * - A budget reads success under 80%, attention from 80%, danger from 100%, muted without one.
+ * - A budget reads success below the warn ratio, attention from it, danger from the pause
+ *   ratio (80% / 100% when none are given); muted without a budget. The finance page prefers
+ *   the server's warned/paused flags over a raw ratio.
+ * - A pause ratio of 0.5 paints 60% danger; a warn ratio of 0.9 leaves 85% success.
  * - Each day becomes a trend point on its date carrying its cost; the axis breaks after a
  *   skipped calendar day (across months too) and never around an unparsable date.
  * - The KPI row measures the total against the root's budget (leaving budget and ratio out
@@ -20,6 +23,7 @@
 import { describe, expect, it } from "vitest";
 import type { OrgFinanceEmployee, OrgFinanceTicket } from "@prismshadow/penguin-server/api";
 import {
+  budgetFlagsTone,
   budgetTone,
   dailyBreaks,
   financeKpis,
@@ -150,6 +154,21 @@ describe("budgetTone", () => {
     expect(budgetTone(1)).toBe("danger");
     expect(budgetTone(undefined)).toBe("muted");
     expect(budgetTone(Number.NaN)).toBe("muted");
+  });
+
+  it("uses the given warn and pause ratios instead of 80% and 100%", () => {
+    expect(budgetTone(0.6, 0.8, 0.5)).toBe("danger");
+    expect(budgetTone(0.85, 0.9, 1)).toBe("success");
+    expect(budgetTone(0.9, 0.9, 1.2)).toBe("attention");
+  });
+});
+
+describe("budgetFlagsTone", () => {
+  it("prefers the server's paused and warned flags over a raw ratio", () => {
+    expect(budgetFlagsTone({ warned: false, paused: false, hasBudget: true })).toBe("success");
+    expect(budgetFlagsTone({ warned: true, paused: false, hasBudget: true })).toBe("attention");
+    expect(budgetFlagsTone({ warned: true, paused: true, hasBudget: true })).toBe("danger");
+    expect(budgetFlagsTone({ warned: false, paused: false, hasBudget: false })).toBe("muted");
   });
 });
 

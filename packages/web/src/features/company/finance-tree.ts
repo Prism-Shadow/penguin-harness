@@ -164,11 +164,35 @@ export function shiftPeriod(period: string, delta: number): string | null {
  */
 export type BudgetTone = Extract<Tone, "muted" | "success" | "attention" | "danger">;
 
-/** The tone a spend-against-budget ratio takes: attention from 80%, danger from 100%, success below; muted without a budget. */
-export function budgetTone(ratio: number | undefined): BudgetTone {
+/**
+ * The tone a spend-against-budget ratio takes. `warnRatio` / `pauseRatio` default to the
+ * organization's stock 0.8 / 1.0; pass the organization's configured values so a meter
+ * that is already paused is not still painted healthy.
+ */
+export function budgetTone(
+  ratio: number | undefined,
+  warnRatio: number = 0.8,
+  pauseRatio: number = 1,
+): BudgetTone {
   if (ratio === undefined || !Number.isFinite(ratio)) return "muted";
-  if (ratio >= 1) return "danger";
-  if (ratio >= 0.8) return "attention";
+  if (ratio >= pauseRatio) return "danger";
+  if (ratio >= warnRatio) return "attention";
+  return "success";
+}
+
+/**
+ * The tone the finance page paints from the server's `warned` / `paused` flags, which
+ * already applied the organization's ratios. A pause outranks a warning; no budget and
+ * neither flag is muted.
+ */
+export function budgetFlagsTone(state: {
+  warned: boolean;
+  paused: boolean;
+  hasBudget: boolean;
+}): BudgetTone {
+  if (state.paused) return "danger";
+  if (state.warned) return "attention";
+  if (!state.hasBudget) return "muted";
   return "success";
 }
 
