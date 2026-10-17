@@ -9,6 +9,7 @@
  *   pin, the lines under them still do not show through, and the pinned rows show the image
  *   rather than a painted strip.
  */
+import { writeFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin, login } from "./auth.mjs";
 
@@ -89,9 +90,13 @@ function scrollInto(page, toolRow, into) {
     }
     const top = () => scroller.getBoundingClientRect().top;
     const section = row.parentElement;
-    scroller.scrollTop += section.getBoundingClientRect().top - top() + into;
+    scroller.scrollTop = Math.round(
+      scroller.scrollTop + section.getBoundingClientRect().top - top() + into,
+    );
     // Two frames: what a row paints while stuck is decided after the scroll, on the next frame.
+    // And every face the text on screen asked for has arrived, so no glyph changes in between.
     await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    await document.fonts.ready;
     const h = head.getBoundingClientRect();
     const r = row.getBoundingClientRect();
     const s = section.getBoundingClientRect();
@@ -125,6 +130,8 @@ async function expectPinnedAndOpaque(page, toolRow) {
   const shotA = await page.screenshot({ clip: first.band });
   await scrollInto(page, toolRow, 97);
   const shotB = await page.screenshot({ clip: second.band });
+  writeFileSync(test.info().outputPath("band-60.png"), shotA);
+  writeFileSync(test.info().outputPath("band-97.png"), shotB);
   expect(shotA.equals(shotB)).toBe(true);
   return second;
 }
