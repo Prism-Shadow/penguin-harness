@@ -946,54 +946,42 @@
   }
 
   /* A reply still arriving surfaces through a soft veil, so the newest words read as fading in
-     (the reveal paces them word by word): over the trailing line and a half a gradient runs from
-     nothing to the page's own colour at four tenths, so how faint a line is says how new it is —
-     no line, no box, no band where the veil stops, and nothing under it: a glow there would sit
-     on the middle of the block whatever its newest words were, saying nothing. The text moving
-     up through it is the only motion; each line brightens as it leaves.
-     The veil is the host's `::after`, drawn only while the stream's caret is the host's last
-     child: the caret marks where the text ends, so what the host appends after it (a stop
-     reason, a files card) is never veiled; the caret itself is not shown. On `done` — or once
-     something follows the caret — the veil eases away over the reveal duration: the fade runs
-     on opacity, and a discrete `step-end` transition holds the gradient until the fade is over,
-     so the last lines settle into full ink instead of snapping. A reply that mounts finished
-     carries only an empty, transparent layer. Under reduced motion the veil is not drawn. */
-  :root[data-theme="modern"] .ui-stream {
-    position: relative;
-  }
+     (the reveal paces them word by word): over the trailing line and a half the text itself
+     fades, down to six tenths of its ink at the foot, so how faint a line is says how new it is
+     — no line, no box, no band where the veil stops, and nothing painted: the veil is a mask on
+     the host, so whatever lies behind the text (the page, a card, a custom background image)
+     shows through the newest words and nothing is laid over it. The text moving up through it
+     is the only motion; each line brightens as it leaves.
+     The veil is drawn only while the stream's caret is the host's last child: the caret marks
+     where the text ends, so what the host appends after it (a stop reason, a files card) is
+     never veiled; the caret itself is not shown. How far it is drawn is `--_stream-veil`
+     (theme.css: 1 while the edge is live, registered so it interpolates): on `done` it eases to
+     nothing over the reveal duration while the host holds `data-settling` (StreamText drops it
+     when the transition ends), so the last lines settle into full ink instead of snapping, and a
+     settled reply carries no mask at all; one that mounts finished never had one. Each run of new
+     words also fades in on its own (theme.css, `[data-arrive]`). Under reduced motion the veil is
+     not drawn. */
   :root[data-theme="modern"] .ui-stream > [data-slot="caret"] {
     display: none;
   }
-  :root[data-theme="modern"] .ui-stream::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background-size: 100% 1.5lh;
-    background-position: bottom;
-    background-repeat: no-repeat;
-    opacity: 0;
-    transition:
-      opacity var(--ui-dur-reveal) var(--ui-ease-out),
-      background-image var(--ui-dur-reveal) step-end allow-discrete;
-  }
-  :root[data-theme="modern"]
-    .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child)::after {
-    opacity: 1;
-    /* The veil says which lines are newest. deslop-ignore-next-line 06 */
-    background-image: linear-gradient(
-      to bottom,
-      transparent,
-      color-mix(in srgb, var(--ui-canvas) 40%, transparent)
-    );
-    transition: opacity var(--ui-dur-reveal) var(--ui-ease-out);
-  }
-  :root[data-theme="modern"][data-motion="reduced"] .ui-stream::after {
-    display: none;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :root[data-theme="modern"] .ui-stream::after {
-      display: none;
+  @media (prefers-reduced-motion: no-preference) {
+    :root[data-theme="modern"]:not([data-motion="reduced"]) .ui-stream {
+      transition: --_stream-veil var(--ui-dur-reveal) var(--ui-ease-out);
+    }
+    /* The veil says which lines are newest. */
+    :root[data-theme="modern"]:not([data-motion="reduced"])
+      .ui-stream[data-state="streaming"]:has(> [data-slot="caret"]:last-child),
+    :root[data-theme="modern"]:not([data-motion="reduced"]) .ui-stream[data-settling] {
+      -webkit-mask-image: linear-gradient(
+        to bottom,
+        #000000 calc(100% - 1.5lh),
+        rgb(0 0 0 / calc(1 - 0.4 * var(--_stream-veil)))
+      );
+      mask-image: linear-gradient(
+        to bottom,
+        #000000 calc(100% - 1.5lh),
+        rgb(0 0 0 / calc(1 - 0.4 * var(--_stream-veil)))
+      );
     }
   }
 

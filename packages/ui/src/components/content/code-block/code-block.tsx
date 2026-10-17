@@ -34,6 +34,8 @@ import {
 import type { CSSProperties, ReactElement, ReactNode } from "react";
 import { useUiStrings } from "../../../strings";
 import { CopyButton } from "../../actions/copy-button/copy-button";
+import { arrivalText } from "../prose/stream-arrivals";
+import type { RevealArrival } from "../prose/stream-arrivals";
 import type { CodeHighlighter } from "./highlight-options";
 import { runtimeLanguageGeneration, subscribeToRuntimeLanguages } from "./code-languages";
 import "../prose/prose.css";
@@ -91,6 +93,7 @@ export function CodeSurface({
   wrap = false,
   settleMs = 0,
   className = "",
+  arrivals,
   children,
 }: {
   language: string;
@@ -113,6 +116,12 @@ export function CodeSurface({
    */
   settleMs?: number;
   className?: string;
+  /**
+   * Runs of the code still fading in, as offsets into it (a streaming reply's block, see
+   * stream-arrivals.ts): the unhighlighted text puts each in a `data-arrive` span. A highlighted
+   * or numbered surface ignores them.
+   */
+  arrivals?: readonly RevealArrival[];
   /** Laid over the code in the same scroll box (the Files panel's editor puts its textarea here). */
   children?: ReactNode;
 }) {
@@ -192,7 +201,7 @@ export function CodeSurface({
         <pre>
           <code>
             {lines === null
-              ? code
+              ? arrivalText(code, arrivals)
               : // No newline between the spans: they are blocks, and the text a selection
                 // serialises out of a run of blocks already carries the breaks.
                 lines.map((line, i) => (
@@ -210,13 +219,17 @@ export function CodeSurface({
 
 /**
  * A fenced block in a message: the language and a copy button over the code. The frame's
- * fill, rules and body read the `--ui-code-*` tokens; the size is the theme's code rung.
+ * fill, rules and body read the `--ui-code-*` tokens; the size is the theme's code rung. A block
+ * in a reply still fading in (stream-arrivals.ts) may carry `arrive`, the time it arrived, and
+ * fades in whole, and `arrivals`, the runs of its code that came after it.
  */
 export function CodeBlock({
   language,
   code,
   highlight = true,
   copyLabel,
+  arrive,
+  arrivals,
 }: {
   language: string;
   code: string;
@@ -224,10 +237,17 @@ export function CodeBlock({
   highlight?: boolean | CodeHighlighter;
   /** The copy button's name and tooltip; the interface's "Copy code" when omitted. */
   copyLabel?: string;
+  /** When the block arrived in a reply still fading in, ms (`data-arrive`). */
+  arrive?: number;
+  /** As on `CodeSurface`. */
+  arrivals?: readonly RevealArrival[];
 }) {
   const strings = useUiStrings();
   return (
-    <div className="code-block ui-frame my-2 overflow-hidden rounded-lg border border-[var(--ui-code-line)]">
+    <div
+      className="code-block ui-frame my-2 overflow-hidden rounded-lg border border-[var(--ui-code-line)]"
+      data-arrive={arrive === undefined || !Number.isFinite(arrive) ? undefined : arrive}
+    >
       <div
         data-slot="head"
         className="flex items-center justify-between border-b border-[var(--ui-code-line)] bg-[var(--ui-code-bg)] px-3 py-1"
@@ -241,7 +261,7 @@ export function CodeBlock({
         data-slot="body"
         className="overflow-x-auto bg-canvas text-[length:var(--ui-text-code-size)] leading-relaxed"
       >
-        <CodeSurface language={language} code={code} highlight={highlight} />
+        <CodeSurface language={language} code={code} highlight={highlight} arrivals={arrivals} />
       </div>
     </div>
   );

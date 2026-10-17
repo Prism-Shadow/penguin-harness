@@ -863,7 +863,7 @@ export const en: GalleryStrings = {
       received: "All received",
       modes: {
         instant: "shows text the moment it arrives, with no motion",
-        fade: "fades in word by word, the newest line and a half rising out of a soft veil",
+        fade: "reveals word by word, each new run fading in, the newest line and a half rising out of a soft veil",
         typewriter: "types out character by character behind a solid block caret",
       },
       unset: "treated as instant",

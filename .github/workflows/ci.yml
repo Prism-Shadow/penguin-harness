@@ -511,12 +511,14 @@ jobs:
           build: "@prismshadow/penguin-server...,@prismshadow/penguin-web..."
       - name: Install Chromium
         run: pnpm --filter @prismshadow/penguin-web exec playwright install --with-deps chromium
-      # The smoke suite, plus the transcript's sticky rows: pinning is layout only a real
-      # engine computes, so no unit test can hold it.
+      # project-switch.spec.mjs holds the Project-isolation line: two Projects with distinct
+      # Agents, switched quickly under a throttled CPU and seeded API latency, must never pair
+      # one Project with the other's Agents. It costs about half a minute. sticky-rows.spec.mjs
+      # holds the transcript's sticky rows: pinning is layout only a real engine computes.
       - name: Browser integration smoke (mock LLM)
         env:
           SKIP_BUILD: "1"
-        run: pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs sticky-rows.spec.mjs
+        run: pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs
       - name: Browser failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

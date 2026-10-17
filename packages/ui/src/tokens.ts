@@ -46,7 +46,7 @@
  * alone. `--ui-dur-fast` / `base` / `slow` stay the state-change durations a component may name.
  * A reply that is still streaming is paced by the two streaming tokens (`--ui-stream-reveal`,
  * `--ui-stream-rate`) and dressed by the `ui-stream` hook: Primer shows it as it lands, Frost
- * lets it surface word by word through a soft veil, Console types it out behind a block cursor.
+ * fades it in word by word under a soft veil, Console types it out behind a block cursor.
  */
 
 /**
@@ -556,10 +556,11 @@ export const TOKEN_GROUPS = [
     title: "Streaming — how a reply is revealed",
     // What AssistantText's reveal hook reads, once per theme, to pace an assistant reply that
     // is still arriving: the reveal (`instant` shows the text as it lands, `fade` reveals it word
-    // by word, `typewriter` character by character — the exact keywords) and its rate, a plain
-    // number of characters per second (0 where the reveal is `instant` and no rate applies).
-    // The look of the arriving text is the `ui-stream` hook's (hooks.ts); these two say only
-    // how fast it arrives. Neither varies by mode.
+    // by word, each run of words fading in over the theme's `--ui-dur-reveal`, `typewriter`
+    // character by character — the exact keywords) and its rate, a plain number of characters
+    // per second (0 where the reveal is `instant` and no rate applies). The look of the arriving
+    // text is the `ui-stream` hook's (hooks.ts); these two say only how fast it arrives. Neither
+    // varies by mode.
     names: ["--ui-stream-reveal", "--ui-stream-rate"],
   },
   {
@@ -615,8 +616,9 @@ export const TOKEN_NAMES: readonly TokenName[] = TOKEN_GROUPS.flatMap(
 
 /**
  * The keywords `--ui-stream-reveal` takes, exactly: `instant` (a streaming reply shows as it
- * lands), `fade` (it is revealed word by word) and `typewriter` (character by character), the
- * last two at `--ui-stream-rate` characters per second. A value outside the list reads as
+ * lands), `fade` (it is revealed word by word, each run fading in over `--ui-dur-reveal`) and
+ * `typewriter` (character by character), the last two at `--ui-stream-rate` characters per
+ * second. A value outside the list reads as
  * `instant`, so a reader never paces text a theme did not ask to pace.
  */
 export const STREAM_REVEALS = ["instant", "fade", "typewriter"] as const;

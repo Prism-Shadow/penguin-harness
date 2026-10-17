@@ -16,7 +16,9 @@ import { join } from "node:path";
 import { Script, createContext, runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import {
+  BACKGROUND_STORAGE_KEYS,
   BOOT_SCRIPT,
+  BOOT_WALLPAPER_PROPERTIES,
   DEFAULT_TEXT_SIZE,
   FONT_CJK_OPTIONS,
   FONT_LATIN_OPTIONS,
@@ -24,9 +26,12 @@ import {
   TEXT_SIZE_PX,
   THEME_STORAGE_KEYS,
   applyThemeAttributes,
+  backgroundLayerStyle,
   isFontCjk,
   isFontLatin,
+  readBackground,
   readTextSize,
+  releaseBootWallpaper,
 } from "../src/boot";
 import type { AccentChoice } from "../src/boot";
 import {
@@ -43,20 +48,31 @@ import { WEB_DIR } from "./helpers/paths";
 interface FakeRoot {
   classList: { add(name: string): void; toggle(name: string, on: boolean): void };
   dataset: Record<string, string | undefined>;
-  style: { fontSize?: string };
+  style: {
+    fontSize?: string;
+    setProperty(name: string, value: string): void;
+    removeProperty(name: string): void;
+  };
+  /** The custom properties written on the root (the boot wallpaper's). */
+  properties: Map<string, string>;
   classes: Set<string>;
 }
 
 function fakeRoot(): FakeRoot {
   const classes = new Set<string>();
+  const properties = new Map<string, string>();
   return {
     classes,
+    properties,
     classList: {
       add: (name) => void classes.add(name),
       toggle: (name, on) => void (on ? classes.add(name) : classes.delete(name)),
     },
     dataset: {},
-    style: {},
+    style: {
+      setProperty: (name, value) => void properties.set(name, value),
+      removeProperty: (name) => void properties.delete(name),
+    },
   };
 }
 
@@ -304,6 +320,90 @@ describe("BOOT_SCRIPT", () => {
     };
     runInNewContext(BOOT_SCRIPT, context);
     expect(Object.keys(context).sort()).toEqual(["document", "localStorage", "matchMedia"]);
+  });
+});
+
+describe("the boot wallpaper", () => {
+  const IMAGE = "data:image/png;base64,aW1hZ2U=";
+  const P = BOOT_WALLPAPER_PROPERTIES;
+
+  /** Runs the script over a stored background and returns the root it painted. */
+  function bootWith(image: string | null, settings: string | null) {
+    const root = fakeRoot();
+    context.document = { documentElement: root };
+    context.localStorage = fakeStorage({
+      [BACKGROUND_STORAGE_KEYS.image]: image,
+      [BACKGROUND_STORAGE_KEYS.settings]: settings,
+    });
+    context.matchMedia = () => ({ matches: false });
+    compiled.runInContext(context);
+    return root;
+  }
+
+  it("lays a stored image on the first frame exactly as the shell's wallpaper will, for every stored setting", () => {
+    const transparencies = [undefined, 0, 37, 100, -20, 140, "40", null];
+    const modes = [undefined, "cover", "contain", "tile", "original", "stretch"];
+    const positions = [undefined, "left top", "right bottom", "center center", "middle"];
+    const raw = ["{not json", "null", "[]", "42"];
+    const settingsCases: (string | null)[] = [null, ...raw];
+    for (const transparency of transparencies)
+      for (const mode of modes)
+        for (const position of positions)
+          settingsCases.push(JSON.stringify({ transparency, mode, position }));
+    const mismatches: string[] = [];
+    for (const settings of settingsCases) {
+      const root = bootWith(IMAGE, settings);
+      const store = fakeStorage({
+        [BACKGROUND_STORAGE_KEYS.image]: IMAGE,
+        [BACKGROUND_STORAGE_KEYS.settings]: settings,
+      });
+      const { image, settings: read } = readBackground(store);
+      const shell = backgroundLayerStyle(image, read);
+      const painted = {
+        attribute: root.dataset.bootWallpaper,
+        image: root.properties.get(P.image),
+        size: root.properties.get(P.size),
+        repeat: root.properties.get(P.repeat),
+        position: root.properties.get(P.position),
+        opacity: Number(root.properties.get(P.opacity)),
+      };
+      const expected = {
+        attribute: "",
+        image: shell.backgroundImage,
+        size: shell.backgroundSize,
+        repeat: shell.backgroundRepeat,
+        position: shell.backgroundPosition,
+        opacity: shell.opacity,
+      };
+      if (JSON.stringify(painted) !== JSON.stringify(expected)) {
+        mismatches.push(`${settings}: ${JSON.stringify(painted)} vs ${JSON.stringify(expected)}`);
+      }
+    }
+    expect(settingsCases.length).toBeGreaterThan(200);
+    expect(mismatches.slice(0, 5)).toEqual([]);
+  });
+
+  it("paints nothing for no image, or for anything that is not locally encoded raster data", () => {
+    for (const image of [
+      null,
+      "https://example.com/tracker.png",
+      "data:image/svg+xml;base64,PHN2Zz4=",
+      'data:image/png;base64,aW1h") , url("https://example.com/x.png',
+    ]) {
+      const root = bootWith(image, null);
+      expect(root.dataset.bootWallpaper, `${image}`).toBeUndefined();
+      expect(root.properties.size, `${image}`).toBe(0);
+    }
+  });
+
+  it("ends when the first screen mounts, leaving nothing of itself on the root", () => {
+    const root = bootWith(IMAGE, JSON.stringify({ transparency: 30, mode: "tile" }));
+    expect(root.dataset.bootWallpaper).toBe("");
+    releaseBootWallpaper(root as unknown as HTMLElement);
+    expect(root.dataset.bootWallpaper).toBeUndefined();
+    expect(root.properties.size).toBe(0);
+    // A second release, or one with nothing painted, is a no-op.
+    expect(() => releaseBootWallpaper(root as unknown as HTMLElement)).not.toThrow();
   });
 });
 

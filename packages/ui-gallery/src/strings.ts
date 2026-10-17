@@ -839,7 +839,7 @@ export const zh = {
       received: "已全部到达",
       modes: {
         instant: "即时：文字一到就显示，不加动效",
-        fade: "淡入：按词显现，最新的一行半从一层轻纱里浮现",
+        fade: "淡入：按词显现，每段新到的文字各自淡入，最新的一行半从一层轻纱里浮现",
         typewriter: "打字机：逐字打出，末尾跟着一个实心块状光标",
       } as Record<StreamReveal, string>,
       unset: "按即时处理",
