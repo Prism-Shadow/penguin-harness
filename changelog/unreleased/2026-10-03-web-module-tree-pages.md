@@ -25,3 +25,5 @@ The kernel brings arktype into the browser bundle: the production entry chunk gr
 - Nothing users see changed.
 
 CI regression coverage follows the current shared highlighter paths and keeps the terminal helper tests inside the terminal module, discovered by the flat Vitest configuration. The dictionaries retain their existing bilingual shape; fragment extraction is not a prerequisite for booting a kernel module. The layout reaches both browser operations through the existing browser entry, reducing its two browser edges to one without adding a baseline exception. The gallery answers the contributions endpoint with empty slots when no server plugins exist.
+
+The e2e launcher forwards its arguments to Playwright, so CI's `smoke.spec.mjs` filter runs only the three smoke scenarios instead of silently launching the entire browser suite.
