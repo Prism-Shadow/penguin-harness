@@ -111,15 +111,16 @@ function scrollInto(page, toolRow, into) {
       rowOffset: r.top - h.bottom,
       sectionAbove: s.top < top(),
       sectionBelow: s.bottom - r.bottom,
-      // The stretch of both rows past their words, in whole pixels: nothing of the rows' own
-      // is drawn there, so every pixel is either the row's ground or what shows through it.
-      // (A row pinned at a fractional offset rasterizes its words a little differently from
+      // The stretch of both rows past their words, two pixels in from the head's top edge and
+      // the row's bottom: nothing of the rows' own is drawn there, so every pixel is either the
+      // rows' ground or what shows through it. (A row pinned at a fractional offset
+      // rasterizes its words, and the pixel rows its edges cross, a little differently from
       // one scroll position to the next.)
       band: {
         x: Math.round(h.left + h.width * 0.4),
-        y: Math.ceil(h.top),
+        y: Math.ceil(h.top) + 2,
         width: Math.round(h.width * 0.45),
-        height: Math.floor(r.bottom) - Math.ceil(h.top) - 1,
+        height: Math.floor(r.bottom) - Math.ceil(h.top) - 4,
       },
     };
   }, into);
