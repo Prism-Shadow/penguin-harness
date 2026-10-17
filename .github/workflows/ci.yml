@@ -519,6 +519,10 @@ jobs:
         env:
           SKIP_BUILD: "1"
         run: pnpm --filter @prismshadow/penguin-web test:e2e smoke.spec.mjs project-switch.spec.mjs sticky-rows.spec.mjs
+      # Layout the component library only shows in a real engine, measured in the gallery:
+      # list rows keep their actions inside the card, attachment tiles keep their image's shape.
+      - name: Component layout checks (ui-gallery)
+        run: pnpm --filter @prismshadow/penguin-ui-gallery test:e2e
       - name: Browser failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -527,6 +531,7 @@ jobs:
           path: |
             packages/web/test-results/
             packages/web/e2e-logs/
+            packages/ui-gallery/test-results/
           if-no-files-found: ignore
           retention-days: 7
 
