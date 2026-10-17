@@ -13,20 +13,22 @@
  * (Http.fetchAs) — no credential travels with a frame, and there is nothing in a frame to
  * forge.
  *
- * A `text/event-stream` Response is read to its end and re-framed per event (the SSE
- * heartbeat comments are dropped — the socket pings on its own); a cancel frame, the socket
- * closing, or the client lagging past HIGH_WATER aborts the Request, which is how the
- * endpoint's own subscription is released. Everything else is a one-shot frame. Sign-in and
- * the upgrade channel answer 421 — a cookie cannot be set on a socket answer, and a push must
- * not ride the transport it replaces — as does anything the platform declines: the client
- * makes those calls over HTTP instead.
+ * A call that asks for an event stream is answered directly: its route sends the stream to
+ * the call's own answer (stream-answer.ts) — a start frame, one frame per event, an end —
+ * with no HTTP Response in between. A route that answers a Response instead — an auth
+ * refusal, a machine's non-streaming answer — leaves the answer untouched, and that Response
+ * is framed like any call's. A cancel frame, the socket closing, or the client lagging past
+ * HIGH_WATER aborts the Request, which is how the endpoint's own subscription is released.
+ * Sign-in and the upgrade channel answer 421 — a cookie cannot be set on a socket answer,
+ * and a push must not ride the transport it replaces — as does anything the platform
+ * declines: the client makes those calls over HTTP instead.
  */
 import type { WebSocket } from "ws";
 import { sessionKindPath } from "../api/types.js";
 import { declined } from "../hmr/hono-seam.js";
 import { CALL_HEADERS, parseClientFrame } from "./frames.js";
 import type { CallFrame, ServerFrame } from "./frames.js";
-import { SseParser } from "./sse-text.js";
+import { StreamAnswer } from "./stream-answer.js";
 
 /** Same cadence as the SSE heartbeat: a peer that answers no ping within two beats is gone. */
 export const HEARTBEAT_MS = 20_000;
@@ -65,6 +67,8 @@ function callable(path: string): boolean {
 export interface ApiSocketDeps {
   /** The platform's routes, entered as the socket's user (Http.fetchAs). */
   fetch: (request: Request) => Promise<Response>;
+  /** The same routes, for a call that asks for an event stream: its answer rides the Request in (stream-answer.ts). */
+  fetchStream: (request: Request, answer: StreamAnswer) => Promise<Response>;
   /** The origin in-process requests are addressed to (the canonical App host, as HTTP requests carry it). */
   origin: string;
   log: (line: string) => void;
@@ -89,7 +93,7 @@ function responseHeaders(res: Response): Record<string, string> {
 const errorBody = (code: string, message: string) => ({ error: { code, message } });
 
 export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
-  /** In-flight calls by id; a streaming call stays here until its end. */
+  /** In-flight calls by id; a streaming call stays here until its answer is over. */
   const inflight = new Map<number, AbortController>();
   let alive = true;
 
@@ -162,38 +166,52 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       body = JSON.stringify(call.body);
       headers["content-type"] ??= "application/json";
     }
-
+    const request = new Request(new URL(call.path, deps.origin), {
+      method: call.method,
+      headers,
+      ...(body !== undefined ? { body } : {}),
+      signal: controller.signal,
+    });
+    // The client marks a stream call with the one header of its own it may set (CALL_HEADERS
+    // lets it through): that call is handed the answer bound to its id, for its route to
+    // answer the stream directly (stream-answer.ts). Every other call is made as any call
+    // is, and whatever Response comes back is framed below.
+    const answer = (headers["accept"] ?? "").includes("text/event-stream")
+      ? new StreamAnswer(id, send, controller, () => ws.bufferedAmount > HIGH_WATER_BYTES)
+      : null;
     let res: Response;
     try {
-      res = await deps.fetch(
-        new Request(new URL(call.path, deps.origin), {
-          method: call.method,
-          headers,
-          ...(body !== undefined ? { body } : {}),
-          signal: controller.signal,
-        }),
-      );
+      res = await (answer === null ? deps.fetch(request) : deps.fetchStream(request, answer));
     } catch (err) {
       if (controller.signal.aborted) return;
       deps.log(`[socket] ${call.method} ${call.path}: ${err instanceof Error ? err.message : err}`);
       reject(id, 500, "internal", "Internal server error.");
       return;
     }
+    if (answer?.started) {
+      // The route answered the stream itself: the Response it returned carries nothing, and
+      // the id stays in flight until the answer is over — a cancel frame still reaches it.
+      await res.body?.cancel().catch(() => undefined);
+      await answer.done;
+      return;
+    }
     if (controller.signal.aborted) {
       await res.body?.cancel().catch(() => undefined);
       return;
     }
+    await answerOnce(id, res);
+  }
+
+  /** Frames a Response a route answered without streaming, as any call's answer. */
+  async function answerOnce(id: number, res: Response): Promise<void> {
     if (isDeclined(res)) {
       // Not the platform's to answer: not this transport's to carry either.
       httpRequired(id);
       return;
     }
-
-    const type = res.headers.get("content-type") ?? "";
-    if (type.startsWith("text/event-stream")) return stream(id, res, controller);
-
     // One-shot: JSON parsed, text as text, an empty body as null. A body of another kind
     // (a download) does not ride this transport — the client falls back to HTTP on 415.
+    const type = res.headers.get("content-type") ?? "";
     const text = await res.text().catch(() => "");
     let parsed: unknown = null;
     if (text !== "") {
@@ -216,41 +234,5 @@ export function serveApiSocket(ws: WebSocket, deps: ApiSocketDeps): void {
       }
     }
     send({ id, status: res.status, headers: responseHeaders(res), body: parsed });
-  }
-
-  async function stream(id: number, res: Response, controller: AbortController): Promise<void> {
-    send({ id, status: res.status, stream: true, headers: responseHeaders(res) });
-    const reader = res.body?.getReader();
-    if (!reader) return send({ id, end: true, reason: "closed" });
-    const stop = () => reader.cancel().catch(() => undefined);
-    controller.signal.addEventListener("abort", stop, { once: true });
-    const parser = new SseParser();
-    const decoder = new TextDecoder();
-    let reason: string | undefined = "closed";
-    try {
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (ws.bufferedAmount > HIGH_WATER_BYTES) {
-          // Fast-forward, never buffer without bound: the client re-issues the call with
-          // its last event id and the endpoint's own buffer fills the gap (or says resync).
-          reason = "lagging";
-          await stop();
-          break;
-        }
-        for (const event of parser.feed(decoder.decode(value, { stream: true }))) {
-          send({ id, event: event.event, eventId: event.id, data: event.data });
-        }
-      }
-      const last = parser.flush();
-      if (last !== null && reason === "closed") {
-        send({ id, event: last.event, eventId: last.id, data: last.data });
-      }
-    } catch {
-      // The reader was cancelled (our abort) or the endpoint failed; either way the stream is over.
-    } finally {
-      controller.signal.removeEventListener("abort", stop);
-    }
-    if (!controller.signal.aborted) send({ id, end: true, reason });
   }
 }

@@ -26,6 +26,7 @@
  * that machine behind it.
  */
 import { formatSseEvent } from "../socket/sse-text.js";
+import type { StreamAnswer } from "../socket/stream-answer.js";
 import {
   MachineEventHub,
   STREAM_OPEN_TIMEOUT_MS,
@@ -72,17 +73,27 @@ export class MachineSocketRelay {
   async stream(
     machineId: string,
     target: MachineSocketTarget,
-    request: { path: string; lastEventId: string | null },
+    request: {
+      path: string;
+      lastEventId: string | null;
+      /**
+       * The socket transport's own answer, when it is the caller (socket/stream-answer.ts):
+       * the stream answers it directly, as the frames the machine sends, and the Response
+       * this resolves carries nothing.
+       */
+      answer?: StreamAnswer | null;
+    },
   ): Promise<Response> {
+    const answer = request.answer ?? null;
     if (isUserEventsPath(request.path)) {
       // The one subscription per machine: every reader of this machine's events, whichever
       // tab or route asked, is served from it (event-hub.ts).
-      return this.#respond(machineId, (sink) =>
+      return this.#respond(machineId, answer, (sink) =>
         this.#events.subscribe(machineId, target, request.lastEventId, sink),
       );
     }
     const got = await this.#sockets.socketFor(machineId, target);
-    if (!("answer" in got)) return this.#direct(machineId, got.socket, request);
+    if (!("answer" in got)) return this.#direct(machineId, got.socket, request, answer);
     return got.answer;
   }
 
@@ -91,10 +102,11 @@ export class MachineSocketRelay {
     machineId: string,
     socket: MachineSocket,
     request: { path: string; lastEventId: string | null },
+    answer: StreamAnswer | null,
   ): Promise<Response> {
     const headers: Record<string, string> = { accept: "text/event-stream" };
     if (request.lastEventId !== null) headers["last-event-id"] = request.lastEventId;
-    return this.#respond(machineId, (base) => {
+    return this.#respond(machineId, answer, (base) => {
       // Issued, but neither opened nor answered nor ended in time: the socket is not serving.
       const opening = setTimeout(() => {
         this.log(
@@ -126,12 +138,19 @@ export class MachineSocketRelay {
   }
 
   /**
-   * Turns a stream's answers into one `text/event-stream` Response. `begin` issues whatever
-   * carries the stream — a call on the machine's socket, or the event hub's subscription — and
-   * returns the way to stop it; the open deadline is the caller's, since only the caller knows
-   * what a stream that never opened means for its transport.
+   * Turns a stream's answers into one `text/event-stream` Response — or, when the socket
+   * transport is the caller, into the answer its Request carried (socket/stream-answer.ts):
+   * the frames the machine sends become the frames this server sends its reader, with no
+   * SSE text written in between. `begin` issues whatever carries the stream — a call on
+   * the machine's socket, or the event hub's subscription — and returns the way to stop it;
+   * the open deadline is the caller's, since only the caller knows what a stream that never
+   * opened means for its transport.
    */
-  #respond(machineId: string, begin: (sink: Sink) => () => void): Promise<Response> {
+  #respond(
+    machineId: string,
+    answer: StreamAnswer | null,
+    begin: (sink: Sink) => () => void,
+  ): Promise<Response> {
     return new Promise<Response>((resolve) => {
       let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
       let ended = false;
@@ -151,72 +170,106 @@ export class MachineSocketRelay {
           // Already closed by the consumer.
         }
       };
-      const sink: Sink = {
-        onStart: (status) => {
-          if (ended) return; // given up on already; the machine's late answer is not this request's
-          resolve(
-            new Response(
-              new ReadableStream<Uint8Array>(
-                {
-                  start: (c) => {
-                    controller = c;
-                  },
-                  cancel: () => finish(),
-                },
-                // The reader's own queue, in bytes: a consumer that stops reading leaves it
-                // full, which is how a stalled reader is found (SUBSCRIBER_HIGH_WATER_BYTES).
-                new ByteLengthQueuingStrategy({ highWaterMark: SUBSCRIBER_HIGH_WATER_BYTES }),
-              ),
-              {
-                status,
-                headers: {
-                  "content-type": "text/event-stream",
-                  "cache-control": "no-cache",
-                  "x-accel-buffering": "no",
-                },
-              },
-            ),
-          );
-        },
-        onEvent: (event) => {
-          if (ended || controller === null) return;
-          controller.enqueue(
-            encoder.encode(
-              formatSseEvent({ id: event.eventId, event: event.event, data: event.data }),
-            ),
-          );
-          if (controller.desiredSize !== null && controller.desiredSize <= 0) {
-            // The reader stopped consuming: its stream is ended so it re-issues with its last
-            // event id, rather than this server buffering for it without bound.
-            this.log(
-              `[machines] stream on ${machineId}: the reader is not consuming; ending the stream so it re-issues`,
-            );
-            finish();
-          }
-        },
-        onEnd: () => {
-          if (ended) return;
-          if (controller === null) {
-            // Ended before it began: the socket dropped mid-handshake of the call.
-            end();
-            resolve(
-              unavailable(
-                502,
-                "server_unreachable",
-                `The connection to ${machineId} closed before the stream began.`,
-              ),
-            );
-            return;
-          }
-          finish();
-        },
-        onResponse: (status, body) => {
-          if (!end()) return;
-          // The endpoint answered without streaming (404, 403, …): pass its answer through.
-          resolve(Response.json(body ?? null, { status }));
-        },
+      /** Ended before it began: the socket dropped mid-handshake of the call. */
+      const neverBegan = (): void => {
+        end();
+        resolve(
+          unavailable(
+            502,
+            "server_unreachable",
+            `The connection to ${machineId} closed before the stream began.`,
+          ),
+        );
       };
+      /** The endpoint answered without streaming (404, 403, …): pass its answer through. */
+      const answered = (status: number, body: unknown): void => {
+        if (!end()) return;
+        resolve(Response.json(body ?? null, { status }));
+      };
+      const sink: Sink =
+        answer === null
+          ? {
+              onStart: (status) => {
+                if (ended) return; // given up on already; the machine's late answer is not this request's
+                resolve(
+                  new Response(
+                    new ReadableStream<Uint8Array>(
+                      {
+                        start: (c) => {
+                          controller = c;
+                        },
+                        cancel: () => finish(),
+                      },
+                      // The reader's own queue, in bytes: a consumer that stops reading leaves it
+                      // full, which is how a stalled reader is found (SUBSCRIBER_HIGH_WATER_BYTES).
+                      new ByteLengthQueuingStrategy({ highWaterMark: SUBSCRIBER_HIGH_WATER_BYTES }),
+                    ),
+                    {
+                      status,
+                      headers: {
+                        "content-type": "text/event-stream",
+                        "cache-control": "no-cache",
+                        "x-accel-buffering": "no",
+                      },
+                    },
+                  ),
+                );
+              },
+              onEvent: (event) => {
+                if (ended || controller === null) return;
+                controller.enqueue(
+                  encoder.encode(
+                    formatSseEvent({ id: event.eventId, event: event.event, data: event.data }),
+                  ),
+                );
+                if (controller.desiredSize !== null && controller.desiredSize <= 0) {
+                  // The reader stopped consuming: its stream is ended so it re-issues with its last
+                  // event id, rather than this server buffering for it without bound.
+                  this.log(
+                    `[machines] stream on ${machineId}: the reader is not consuming; ending the stream so it re-issues`,
+                  );
+                  finish();
+                }
+              },
+              onEnd: () => {
+                if (ended) return;
+                if (controller === null) return neverBegan();
+                finish();
+              },
+              onResponse: answered,
+            }
+          : {
+              onStart: (status) => {
+                if (ended) return;
+                answer.start(status, { "content-type": "text/event-stream" });
+                resolve(new Response(null, { status: 200 }));
+              },
+              onEvent: (event) => {
+                if (ended) return;
+                answer.event(event.event, event.eventId, event.data);
+              },
+              onEnd: () => {
+                if (ended) return;
+                if (!answer.started) return neverBegan();
+                end();
+                answer.end("closed");
+              },
+              onResponse: answered,
+            };
       stop = begin(sink);
+      if (answer !== null) {
+        // The one release path (socket/serve.ts): a cancel frame, the socket closing, the
+        // lagging rule — the call's Request is aborted, which stops this stream the way
+        // cancelling the HTTP body does. The release may even precede the subscription: a
+        // cancel can arrive while the dial was still pending, when no event will ever fire
+        // this listener, so an already-aborted call is released here too.
+        const release = (): void => {
+          end();
+          resolve(new Response(null, { status: 200 }));
+        };
+        answer.signal.addEventListener("abort", release, { once: true });
+        if (answer.signal.aborted) release();
+      }
       // begin may end synchronously, before it hands back the subscription's detach.
       if (ended) stop();
     });

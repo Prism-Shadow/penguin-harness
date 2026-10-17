@@ -199,7 +199,11 @@ describe("calls", () => {
   it("closes on a reused id", async () => {
     const s = await open({ cookie });
     if (!("ws" in s)) throw new Error("handshake refused");
-    send(s.ws, { id: 1, call: { method: "GET", path: "/api/events" } });
+    // The stream call as the client makes it: marked by the accept header it always sends.
+    send(s.ws, {
+      id: 1,
+      call: { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
+    });
     expect((await s.next()).stream).toBe(true);
     send(s.ws, { id: 1, call: { method: "GET", path: "/api/me" } });
     expect((await s.closed()).code).toBe(1002);
@@ -210,7 +214,10 @@ describe("streams", () => {
   it("frames a text/event-stream endpoint per event and ends on cancel", async () => {
     const s = await open({ cookie });
     if (!("ws" in s)) throw new Error("handshake refused");
-    send(s.ws, { id: 7, call: { method: "GET", path: "/api/events" } });
+    send(s.ws, {
+      id: 7,
+      call: { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
+    });
     const start = await s.next();
     expect(start).toMatchObject({ id: 7, status: 200, stream: true });
     const hello = await s.next();
@@ -220,7 +227,10 @@ describe("streams", () => {
     // Cancel releases the subscription silently; a fresh call on the same socket works.
     try {
       send(s.ws, { id: 7, cancel: true });
-      send(s.ws, { id: 8, call: { method: "GET", path: "/api/events" } });
+      send(s.ws, {
+        id: 8,
+        call: { method: "GET", path: "/api/events", headers: { accept: "text/event-stream" } },
+      });
       // The endpoint's initial ping may already be queued before the cancel was received.
       // Cancellation cannot retract a frame sent for the old call; match the new call by id.
       let frame = await s.next();
@@ -239,7 +249,11 @@ describe("streams", () => {
     if (!("ws" in s)) throw new Error("handshake refused");
     send(s.ws, {
       id: 1,
-      call: { method: "GET", path: "/api/events", headers: { "last-event-id": "0-999999" } },
+      call: {
+        method: "GET",
+        path: "/api/events",
+        headers: { accept: "text/event-stream", "last-event-id": "0-999999" },
+      },
     });
     expect(await s.next()).toMatchObject({ id: 1, stream: true });
     const first = await s.next();

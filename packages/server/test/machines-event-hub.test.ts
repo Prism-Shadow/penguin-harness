@@ -10,7 +10,7 @@ import type { Duplex } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import { SseParser } from "../src/socket/sse-text.js";
+import { SseParser } from "./helpers/sse-parser.js";
 import type { SseEvent } from "../src/socket/sse-text.js";
 import { MachineEventHub } from "../src/machines/event-hub.js";
 import { machineEventsStream } from "../src/machines/aggregate-stream.js";

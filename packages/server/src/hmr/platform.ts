@@ -58,6 +58,7 @@ import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
 import { isApiSocketRef } from "../socket/ref.js";
 import { serveApiSocket } from "../socket/serve.js";
+import { carryStreamAnswer } from "../socket/stream-answer.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { AgentStateStore } from "../runtime/agent-state.js";
@@ -821,24 +822,28 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         const userId = session.ownerUserId;
         apiSockets.add(ws);
         ws.once("close", () => apiSockets.delete(ws));
+        // One entry per call into the App of the moment; a stream call's answer rides its
+        // Request in (socket/stream-answer.ts), so its route answers it directly.
+        const entered = (request: Request): Promise<Response> => {
+          const http = inner.api
+            .business()
+            ?.api<{ fetchAs(userId: string, request: Request): Promise<Response> }>(
+              "HttpModule",
+              "http",
+            );
+          if (http === undefined) {
+            return Promise.resolve(
+              Response.json(
+                { error: { code: "unavailable", message: "The App is being replaced." } },
+                { status: 503 },
+              ),
+            );
+          }
+          return http.fetchAs(userId, request);
+        };
         serveApiSocket(ws, {
-          fetch: (request) => {
-            const http = inner.api
-              .business()
-              ?.api<{ fetchAs(userId: string, request: Request): Promise<Response> }>(
-                "HttpModule",
-                "http",
-              );
-            if (http === undefined) {
-              return Promise.resolve(
-                Response.json(
-                  { error: { code: "unavailable", message: "The App is being replaced." } },
-                  { status: 503 },
-                ),
-              );
-            }
-            return http.fetchAs(userId, request);
-          },
+          fetch: entered,
+          fetchStream: (request, answer) => entered(carryStreamAnswer(request, answer)),
           origin: `${url.protocol}//${url.host}`,
           log,
         });

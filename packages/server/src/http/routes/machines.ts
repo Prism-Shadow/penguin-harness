@@ -56,6 +56,7 @@ import type {
 } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
+import { answerOf } from "../../socket/stream-answer.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { MachinesService } from "../../machines/service.js";
 import type { MachineEventHub } from "../../machines/event-hub.js";
@@ -123,6 +124,9 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       watched,
       c.req.header("Last-Event-ID") ?? null,
       (line) => console.log(line),
+      // The socket transport's answer, when the socket carried this call
+      // (socket/stream-answer.ts): the events answer it directly.
+      { answer: answerOf(c.req.raw) },
     );
   });
 
