@@ -105,11 +105,10 @@ describe("session-loader", () => {
   });
 
   it("self-heal rebuild re-records a registry-known source in the fresh session_meta; an unknown one is company on an org row, api on an api row, user on any other", async () => {
-    // The anthropic pair, in its official group, constructs without a credential (the same
-    // pair session-index creates over HTTP); custom/m1 would demand a key at client construction.
+    // The anthropic pair constructs without a credential (the same pair session-index
+    // creates over HTTP); custom/m1 would demand a key at client construction.
     await saveProjectConfig(root, PROJECT, {
       default_model: { provider: "anthropic", model_id: "claude-sonnet-4-6" },
-      providers: { anthropic: { official: true } },
       models: [{ provider: "anthropic", model_id: "claude-sonnet-4-6", context_window: 1000 }],
     });
     const ws = path.join(root, "ws-heal");

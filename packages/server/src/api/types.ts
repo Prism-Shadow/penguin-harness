@@ -557,12 +557,6 @@ export interface ProviderConnectionDto {
   apiKeyMasked?: string;
   /** When the group key was written (ISO 8601). */
   createdAt?: string;
-  /**
-   * Present when the group's table says `official = true`: its endpoint is its vendor's own, so
-   * a keyless row that names no base URL of its own may use the vendor's environment variable
-   * (PRN-021). The server recomputes it whenever the group's base URL or protocol is written.
-   */
-  official?: true;
 }
 
 /** Where an effective connection value comes from: the row itself, its group, or nowhere (the client's default). */
@@ -580,7 +574,11 @@ export interface ModelEffectiveConnection {
   baseUrlSource: ConnectionSourceDto;
   clientType?: string;
   clientTypeSource: ConnectionSourceDto;
-  /** `env` = no row or group key, and the environment lends one (an `official` group, no base URL of the row's own). */
+  /**
+   * `env` = no key in the file and no base URL on the row or its group, so MMSP's routed client
+   * reads its own variable — reported when that variable holds a value here (`envKeyMasked`),
+   * `none` otherwise.
+   */
   apiKeySource: "model" | "provider" | "env" | "none";
   /** Mask of the key the row would use, whichever source; absent when none. */
   apiKeyMasked?: string;
@@ -636,9 +634,10 @@ export interface ModelInfo {
   discount?: number;
   /**
    * Environment variable name the entry falls back to when api_key is empty (e.g.
-   * ANTHROPIC_API_KEY); unset when it gets no fallback — a group that is not `official` (a
-   * gateway, custom, vLLM, a user-created group, Penguin Go, ModelScope, a vendor group pointed
-   * at a proxy), a row with a base URL of its own, or an id nothing routes.
+   * ANTHROPIC_API_KEY): only for a row with no key in the file and no base URL on the row or
+   * its group, which MMSP's routed client then reads. Unset for a row with a key (its own or a
+   * group key that reaches it), a row sent to a base URL from the file (a gateway, Penguin Go,
+   * ModelScope, a vendor's second host or a proxy), or an id nothing routes.
    */
   envKey?: string;
   /**

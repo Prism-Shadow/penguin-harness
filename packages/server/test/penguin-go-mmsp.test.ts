@@ -304,8 +304,6 @@ describe("Penguin Go stored projects", () => {
         fast_mode: true,
       });
       const file = projectConfigPath(t.root, id);
-      // The server's read also marks the official groups, once; after it no load rewrites.
-      await t.deps.projectConfigService.loadConfig(id);
       const first = await fs.readFile(file, "utf8");
       await loadProjectConfig(t.root, id);
       await t.deps.projectConfigService.loadConfig(id);

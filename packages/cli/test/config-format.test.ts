@@ -86,20 +86,10 @@ describe("formatModelRows: the connection a model is used with", () => {
   const row = { provider: "deepseek", model_id: "deepseek-flash" };
   const env = { DEEPSEEK_API_KEY: "sk-env-deepseek-7777" };
 
-  it("a keyless model of an official group shows the environment's key, marked (env)", () => {
-    const [line] = formatModelRows(
-      { providers: { deepseek: { official: true } }, models: [row] },
-      env,
-    );
+  it("a keyless model the environment covers shows that key, marked (env)", () => {
+    const [line] = formatModelRows({ models: [row] }, env);
     expect(line).toContain("api_key=****7777 (env)");
     expect(line).not.toContain("sk-env-deepseek-7777");
-  });
-
-  it("a keyless model of a group not marked official shows no key, whatever the environment holds", () => {
-    for (const providers of [undefined, { deepseek: { official: false } }]) {
-      const [line] = formatModelRows({ ...(providers ? { providers } : {}), models: [row] }, env);
-      expect(line).toContain("api_key=-");
-    }
   });
 
   it("a group key wins over the environment, marked (provider); a model's own key wins over both", () => {
@@ -118,13 +108,15 @@ describe("formatModelRows: the connection a model is used with", () => {
     expect(own).toMatch(/api_key=\*{4}9999$/);
   });
 
-  it("a group base URL pointing at a proxy is the model's endpoint, and the environment no longer covers it", () => {
-    const [line] = formatModelRows(
-      { providers: { deepseek: { base_url: "https://proxy.example/v1" } }, models: [row] },
-      env,
-    );
-    expect(line).toContain("base_url=https://proxy.example/v1 (provider)");
-    expect(line).toContain("api_key=-");
+  it("a group base URL is the model's endpoint, and the environment no longer covers it — the vendor's own endpoint included", () => {
+    for (const baseUrl of ["https://proxy.example/v1", "https://api.deepseek.com"]) {
+      const [line] = formatModelRows(
+        { providers: { deepseek: { base_url: baseUrl } }, models: [row] },
+        env,
+      );
+      expect(line, baseUrl).toContain(`base_url=${baseUrl} (provider)`);
+      expect(line, baseUrl).toContain("api_key=-");
+    }
   });
 
   it("a gateway row with no group table shows no endpoint or protocol: the catalog fills nothing in", () => {

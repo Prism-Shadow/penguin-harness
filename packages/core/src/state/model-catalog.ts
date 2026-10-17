@@ -93,16 +93,11 @@
  * This file imports no Node built-ins (type-only imports only), so it can be bundled directly
  * for the browser.
  */
-import type {
-  ModelEntry,
-  ModelPricing,
-  ProviderConnection,
-  ProviderTable,
-} from "./project-config.js";
+import type { ModelEntry, ModelPricing, ProviderTable } from "./project-config.js";
 import {
   MMSP_CLIENTS,
   canonicalClientType,
-  environmentKeyRoute,
+  effectiveConnection,
   mmspClient,
   sameClientType,
   sameEndpoint,
@@ -172,10 +167,11 @@ export interface ModelProviderInfo {
   /** Display name (brand name, shared by Chinese and English UI). */
   label: string;
   /**
-   * API key env var name: the pair MMSP's client for this group's rows reads when handed no
-   * key. Whether a keyless row may actually lean on it is the Project config's call: only a
-   * group marked `official` lends it (PRN-021, see officialVendor) — a gateway group records
-   * OPENAI_* because that is what its generic client reads, and is never official.
+   * API key env var name: the pair MMSP's client for this group's rows reads when handed
+   * nothing. Whether a row is handed nothing is core's effectiveConnection (`apiKeySource ===
+   * "env"`: no key in the file and no base URL on the row or its group, PRN-021) — a gateway
+   * group records OPENAI_* because that is what its generic client reads, and its rows carry
+   * the gateway's base URL, so they are never handed nothing.
    */
   envKey: string;
   /** base URL env var name. */
@@ -332,8 +328,15 @@ const QWEN_TOKEN_PLAN_BASE_URL =
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
-const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+/**
+ * The vendor endpoints the DeepSeek and MiniMax presets carried as a row base URL from
+ * 2026-08-18 / 2026-09-10 until 2026-10-03 (#917), which a Project from that window may still
+ * store. The server's one-time vendor-endpoint migration removes them from those groups; it and
+ * MINIMAX_BASE_URL go at the 0.3.0 release preparation (DEEPSEEK_BASE_URL stays for the
+ * balance endpoint).
+ */
+export const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
+export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 const MODELSCOPE_BASE_URL = "https://api-inference.modelscope.cn/v1";
 const ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1";
 export const PENGUIN_GO_BASE_URL = "https://go.penguin.ooo/api/v1";
@@ -430,11 +433,11 @@ export const MODELSCOPE_PROVIDER_ID = "modelscope";
  * three generic clients within OpenCode Go). Those clients read the vendor variables
  * (**OPENAI_API_KEY / OPENAI_BASE_URL**, and ANTHROPIC_* for OpenCode Go's `ant-messages`
  * rows) when the credential is blank, not the gateway's own variable names, so every gateway
- * group records the OPENAI_* pair as the fact it is — and that is exactly why a gateway group
- * is never `official` and its keyless rows are refused the environment: the variable holds the
- * user's OpenAI (or Anthropic) key, and a gateway is neither. ModelScope also records the
- * OPENAI_* pair; its group credential is an api-inference access token taken from the config
- * alone.
+ * group records the OPENAI_* pair as the fact it is. A new Project writes each gateway's base
+ * URL on its group, so a keyless gateway row is refused rather than handed nothing: the
+ * variable holds the user's OpenAI (or Anthropic) key, and a gateway is neither. ModelScope
+ * also records the OPENAI_* pair; its group credential is an api-inference access token taken
+ * from the config alone.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
@@ -468,8 +471,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     label: "Penguin Go",
     // The authorization flow writes the relay key once, on the group's `[providers.penguin-go]`
     // table, and that key is the only one the group's rows use: a third-party adapter takes
-    // keys from the config alone, so the group is never `official`. The env pair records what
-    // the mmsp client reads, as a fact. Every row names the relay and speaks MMSP, so a new
+    // keys from the config alone, and every row names the relay, so none is handed the
+    // environment's. The env pair records what the mmsp client reads, as a fact. Every row names the relay and speaks MMSP, so a new
     // Project writes both on the group; the protocol is fixed (fixedClientType).
     envKey: "MMSP_API_KEY",
     envBaseUrlKey: "MMSP_BASE_URL",
@@ -485,9 +488,8 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // One key serves the whole group, but its models sit on four protocols (see the group's
     // block comment in MODEL_CATALOG), so no group-level pin: a new Project writes each row's
     // protocol on the row, and the Messages or Google base on the rows that use it. The env pair
-    // records what its Chat Completions majority's client reads. Like every gateway, the group
-    // is never `official`, so a keyless row is refused the environment: the key goes on the
-    // group or the row.
+    // records what its Chat Completions majority's client reads. Like every gateway's, its rows
+    // carry a base URL, so a keyless row is refused: the key goes on the group or the row.
     id: "opencode-go",
     label: "OpenCode Go",
     envKey: "OPENAI_API_KEY",
@@ -3655,171 +3657,41 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
 }
 
 /**
- * The endpoints MMSP's official clients talk to when handed no base URL, per credential
- * variable: the OpenAI and Anthropic SDK defaults, Google's Generative Language host, the
- * defaults the DeepSeek, Z.AI, Moonshot and MiniMax clients carry, plus the second official
- * host where a vendor runs two (Z.AI's mainland bigmodel.cn, Moonshot's international .ai,
- * MiniMax's mainland minimaxi.com). A first-party group is `official` only while its base URL
- * is absent or one of these (officialConnection), and a bare endpoint is lent a protocol's
- * variable only when it is one of them (endpointEnvKey).
- */
-export const VENDOR_ENDPOINTS: Readonly<Record<string, readonly string[]>> = {
-  OPENAI_API_KEY: ["https://api.openai.com/v1"],
-  ANTHROPIC_API_KEY: ["https://api.anthropic.com"],
-  GEMINI_API_KEY: ["https://generativelanguage.googleapis.com"],
-  DEEPSEEK_API_KEY: [DEEPSEEK_BASE_URL],
-  ZAI_API_KEY: ["https://api.z.ai/api/paas/v4", "https://open.bigmodel.cn/api/paas/v4"],
-  MOONSHOT_API_KEY: ["https://api.moonshot.cn/v1", "https://api.moonshot.ai/v1"],
-  MINIMAX_API_KEY: [MINIMAX_BASE_URL, "https://api.minimaxi.com/v1"],
-  // The mmsp client sends MMSP_API_KEY only to MMSP_BASE_URL (or its default), i.e. only when
-  // handed no base URL: no base URL a row names is lent it.
-  MMSP_API_KEY: [],
-};
-
-/**
- * The vendor whose own endpoint a first-party group may be marked `official` for: the variable
- * its official client reads (`DEEPSEEK_API_KEY`, …) and that client's type. Undefined for every
- * other group — gateways, vLLM, custom, user-defined groups, and the third-party adapters
- * (Penguin Go, ModelScope), whose keys come from the config alone.
- *
- * The client is the official client of a vendor family (MODEL_FAMILIES) reading the group's
- * variable, so the answer follows MMSP's own routing: a group whose rows MMSP routes by id to
- * that client is the vendor's.
- */
-export function officialVendor(
-  providerId: string,
-): { envKey: string; clientType: string } | undefined {
-  if (!isVendorGroup(providerId)) return undefined;
-  const envKey = providerInfo(providerId)!.envKey;
-  if ((VENDOR_ENDPOINTS[envKey]?.length ?? 0) === 0) return undefined;
-  const clientType = MODEL_FAMILIES.map(([, client]) => client).find(
-    (client) => `${MMSP_CLIENTS[client]?.env}_API_KEY` === envKey,
-  );
-  return clientType === undefined ? undefined : { envKey, clientType };
-}
-
-/**
- * Whether a group's stored connection keeps it on its vendor's own endpoint — what `official`
- * means in `[providers.<id>]` (PRN-021). True for a first-party vendor group (officialVendor)
- * whose base URL is absent or one of VENDOR_ENDPOINTS' for the vendor's variable, and whose
- * protocol is absent or one that reads that variable. Judged on the group's table as the file
- * stores it, never on the catalog's.
- *
- * The server writes the answer into the file — the seed, the one-time migration, and every
- * write of a group's base URL or protocol (withOfficialFlag) — and core reads only the stored
- * boolean: a user who edits it by hand is followed.
- */
-export function officialConnection(
-  providerId: string,
-  group: { base_url?: string | undefined; client_type?: string | undefined } | undefined,
-): boolean {
-  const vendor = officialVendor(providerId);
-  if (vendor === undefined) return false;
-  const clientType = group?.client_type?.trim();
-  if (clientType && `${mmspClient(clientType)?.env}_API_KEY` !== vendor.envKey) return false;
-  const baseUrl = group?.base_url?.trim();
-  return !baseUrl || VENDOR_ENDPOINTS[vendor.envKey]!.some((own) => sameEndpoint(own, baseUrl));
-}
-
-/**
- * A group's table with `official` recomputed from its base URL and protocol — what every
- * server-side write of either field stores. A first-party vendor group (officialVendor) gets
- * the boolean officialConnection answers, and an official group with a base URL but no protocol
- * gets the vendor's official client as its `client_type`: core names the environment variable
- * after the group's client type, and the client a vendor's rows route to by id is that one.
- * Every other group loses the key (absent reads as false). A fresh object; `group` is not
- * changed.
- */
-export function withOfficialFlag<T extends ProviderConnection | Record<string, unknown>>(
-  providerId: string,
-  group: T,
-): T {
-  const next: Record<string, unknown> = { ...group };
-  const vendor = officialVendor(providerId);
-  if (vendor === undefined) {
-    delete next.official;
-    return next as unknown as T;
-  }
-  const shape = {
-    base_url: typeof next.base_url === "string" ? next.base_url : undefined,
-    client_type: typeof next.client_type === "string" ? next.client_type : undefined,
-  };
-  const official = officialConnection(providerId, shape);
-  next.official = official;
-  if (official && shape.base_url?.trim() && !shape.client_type?.trim()) {
-    next.client_type = vendor.clientType;
-  }
-  return next as unknown as T;
-}
-
-/**
  * The variable a group's settings may present as covering a blank group key, or undefined —
- * the group dialog's hint. Only an official group has one (environmentKeyRoute): its
- * protocol's variable when it names one, else, with no base URL, the vendor's own (rows route
- * to the vendor's official client by id); a group with a base URL and no protocol names none.
+ * the group dialog's hint. Only a group with no base URL has one: its rows are handed nothing
+ * (core's effectiveConnection, `env`) and the routed client reads its own variable. That is the
+ * group protocol's variable when it names one, else, for a first-party vendor group whose rows
+ * route by id to the vendor's own client, the vendor's (isVendorGroup); nothing for a gateway,
+ * custom, vLLM or user-defined group with no protocol.
  */
 export function providerEnvFallbackKey(
   providerId: string,
-  group: ProviderConnectionShape | undefined,
+  group: Pick<ProviderConnectionShape, "baseUrl" | "clientType"> | undefined,
 ): string | undefined {
-  if (group?.official !== true) return undefined;
-  const client = mmspClient(group.clientType);
+  if (group?.baseUrl?.trim()) return undefined;
+  const client = mmspClient(group?.clientType);
   if (client !== undefined) return `${client.env}_API_KEY`;
-  if (group.baseUrl?.trim()) return undefined;
-  return officialVendor(providerId)?.envKey;
+  return isVendorGroup(providerId) ? providerInfo(providerId)?.envKey : undefined;
 }
 
 /**
- * The variable a keyless row authenticates with under PRN-021 (core's environmentKeyRoute),
- * or undefined when the environment lends it nothing: the group protocol's variable for a row
- * on its official group's base URL whose protocol reads the same one (a row pinned to another
- * vendor's client gets none), else — no base URL anywhere — the one the routed client reads
- * (resolveModelEnv on the effective protocol, the id's family otherwise). `entry` is the row's
- * OWN values and `group` its `[providers.<id>]` table.
+ * The variable a row with no key authenticates with, or undefined. Only with no base URL on the
+ * row or its group (core's effectiveConnection, `apiKeySource === "env"`): the `*_API_KEY` the
+ * client MMSP routes the row to reads (resolveModelEnv on the effective protocol, the id's
+ * family otherwise). A row with a key in the file, or sent to a base URL from the file, gets
+ * none. `entry` is the row's OWN values, key included, and `group` its `[providers.<id>]` table.
  *
- * The server's `GET /models` preview, the balance query, the machine sync's report, the web
- * dialog's hint and the CLI's list read this, so they cannot disagree with what a Session gets.
+ * The server's `GET /models` preview, the machine sync's report, the web dialog's hint and the
+ * CLI's list read this, so they cannot disagree with what a Session gets.
  */
 export function modelEnvPreviewKey(
-  entry: ModelCredentialShape,
+  entry: ModelCredentialShape & { apiKey?: string | undefined },
   group: ProviderConnectionShape | undefined,
 ): string | undefined {
-  const route = environmentKeyRoute(entry, group);
-  if (route?.kind === "explicit") return route.envKey;
-  if (route?.kind !== "client") return undefined;
-  return resolveModelEnv(entry.modelId, entry.clientType?.trim() || group?.clientType)?.envKey;
-}
-
-/**
- * The variable the environment lends a bare endpoint spoken to on a generic protocol client —
- * the add-group listing and the protocol probes, which have a base URL and a protocol but no
- * entry yet, so no group to be official: the protocol's variable when the URL is absent (the
- * client's own default endpoint) or one of that variable's vendor endpoints
- * (VENDOR_ENDPOINTS), and undefined for a gateway or a private server. The mmsp client has no
- * listed endpoint: MMSP_API_KEY goes only where MMSP_BASE_URL points.
- */
-export function endpointEnvKey(
-  clientType: string,
-  baseUrl: string | undefined,
-): string | undefined {
-  const client = mmspClient(clientType);
-  if (client === undefined) return undefined;
-  const envKey = `${client.env}_API_KEY`;
-  const url = baseUrl?.trim();
-  if (!url) return envKey;
-  return (VENDOR_ENDPOINTS[envKey] ?? []).some((own) => sameEndpoint(own, url))
-    ? envKey
+  const effective = effectiveConnection(entry, group);
+  return effective.apiKeySource === "env"
+    ? resolveModelEnv(entry.modelId, effective.clientType)?.envKey
     : undefined;
-}
-
-/** endpointEnvKey's variable, read from `env`; undefined when there is none or it is unset. */
-export function endpointEnvApiKey(
-  clientType: string,
-  baseUrl: string | undefined,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): string | undefined {
-  const envKey = endpointEnvKey(clientType, baseUrl);
-  return envKey === undefined ? undefined : env[envKey]?.trim() || undefined;
 }
 
 /**
@@ -3895,17 +3767,15 @@ function sharedValue(
  * row of the group carries; canonical spelling). Retired rows count: the Projects that still
  * carry one store its difference from the same table.
  *
- * A first-party vendor group (officialVendor) carries neither — its rows go to the client's
- * defaults — and is marked `official = true` instead: its endpoint is the vendor's own, so its
- * keyless rows may use the vendor's environment variable (PRN-021).
- *
  * Undefined for `custom` (it holds the user's own endpoints), for an id the catalog does not
- * know, and for a group with none of the three. A reference value: nothing reads it when a
- * request is built.
+ * know, and for a group with neither — the first-party vendors, whose rows go to the
+ * client's defaults, so their keyless rows are handed nothing and MMSP's client reads the
+ * vendor's environment variable (PRN-021). A reference value: nothing reads it when a request
+ * is built.
  */
 export function catalogGroupConnection(
   providerId: string,
-): { base_url?: string; client_type?: string; official?: true } | undefined {
+): { base_url?: string; client_type?: string } | undefined {
   const info = providerInfo(providerId);
   if (info === undefined || info.id === "custom") return undefined;
   const rows = MODEL_CATALOG.filter((m) => m.provider === providerId);
@@ -3922,12 +3792,10 @@ export function catalogGroupConnection(
         sameClientType,
       ),
   );
-  const official = officialConnection(providerId, { base_url: baseUrl, client_type: clientType });
-  if (baseUrl === undefined && clientType === undefined && !official) return undefined;
+  if (baseUrl === undefined && clientType === undefined) return undefined;
   return {
     ...(baseUrl !== undefined ? { base_url: baseUrl } : {}),
     ...(clientType !== undefined ? { client_type: clientType } : {}),
-    ...(official ? { official: true as const } : {}),
   };
 }
 

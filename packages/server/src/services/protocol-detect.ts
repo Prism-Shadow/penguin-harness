@@ -47,16 +47,13 @@
  * before the next one is tried. The candidate that answered is reported back as `baseUrl`
  * so the caller can correct the field. Worst case a detection is six short probes.
  *
- * Credential resolution is layered: the caller passes the key typed in the dialog or the
- * entry's stored one, and when there is neither, each probe falls back to the environment
- * variable for the protocol IT speaks (`ANTHROPIC_API_KEY` for `ant-messages`,
- * `OPENAI_API_KEY` for the two OpenAI protocols — see envApiKeyForProtocol) — but only when
- * the probed base URL is that vendor's own endpoint. A gateway or a private server gets an
- * anonymous probe: detection still
- * works with no credential at all (a protocol-shaped 401 identifies the route), and sending
- * the user's vendor key to a URL they typed is exactly what the rule forbids.
+ * Credentials: the caller passes the key typed in the dialog or the entry's stored one, and
+ * with neither the probes go out anonymously. Detection always has a URL, and a URL is never
+ * lent an environment variable (PRN-021), the vendor's own included: sending the user's vendor
+ * key to a URL they typed is exactly what the rule forbids, and detection works with no
+ * credential at all (a protocol-shaped 401 identifies the route).
  */
-import { endpointEnvApiKey, userAgent } from "@prismshadow/penguin-core";
+import { userAgent } from "@prismshadow/penguin-core";
 import type {
   ModelProtocolDetectResponse,
   ModelProtocolProbeDto,
@@ -108,27 +105,6 @@ export const PROTOCOL_PROBES: readonly ProbeSpec[] = [
   { clientType: "ant-messages", path: "/v1/messages", headers: anthropicHeaders },
   { clientType: "openai-chat", path: "/chat/completions", headers: bearerHeaders },
 ];
-
-/**
- * Environment-variable fallback for a probe's credential, resolved PER PROTOCOL and PER URL.
- *
- * Which env var backs a request depends on the protocol being spoken, and detection is
- * precisely the case where the protocol is not yet known — so the resolution happens once
- * per probe rather than once per detection: `ant-messages` reads `ANTHROPIC_API_KEY`,
- * `openai-responses` / `openai-chat` read `OPENAI_API_KEY`. The catalog's endpointEnvApiKey
- * lends the variable only to the vendor's own endpoint (its VENDOR_ENDPOINTS), the same table
- * that decides whether a group is `official`.
- *
- * Server-side only: the value is placed in a request header and never returned to the
- * browser, echoed in a result, or logged.
- */
-export function envApiKeyForProtocol(
-  clientType: ProtocolClientType,
-  baseUrl: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  return endpointEnvApiKey(clientType, baseUrl, env);
-}
 
 /** Whether a string is an absolute http(s) URL (the only base URLs worth probing). */
 export function isHttpUrl(value: string): boolean {
@@ -347,26 +323,22 @@ async function runProbe(
 export async function detectModelProtocol(options: {
   baseUrl: string;
   /**
-   * Explicit credential (the key typed in the dialog, or the entry's stored key). When
-   * absent, each probe falls back to the environment variable for the protocol it speaks,
-   * where the probed URL is allowed one — see envApiKeyForProtocol. An authenticated probe
-   * is what makes the difference between a protocol-shaped error (which identifies the
-   * route) and the generic 401 or gateway HTML that an anonymous request often draws.
+   * Explicit credential (the key typed in the dialog, or the entry's stored key); absent, the
+   * probes go out anonymously. An authenticated probe is what makes the difference between a
+   * protocol-shaped error (which identifies the route) and the generic 401 or gateway HTML
+   * that an anonymous request often draws.
    */
   apiKey?: string;
   /** Injection point for tests; defaults to global fetch (which routes through the admin proxy settings, see net/proxy.ts). */
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
-  /** Environment source for the per-protocol fallback; injectable so tests need not mutate process.env. */
-  env?: NodeJS.ProcessEnv;
 }): Promise<ModelProtocolDetectResponse> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? PROBE_TIMEOUT_MS;
   const probes: ModelProtocolProbeDto[] = [];
   for (const baseUrl of candidateBaseUrls(options.baseUrl)) {
     for (const spec of PROTOCOL_PROBES) {
-      const apiKey = options.apiKey ?? envApiKeyForProtocol(spec.clientType, baseUrl, options.env);
-      const probe = await runProbe(spec, baseUrl, apiKey, fetchImpl, timeoutMs);
+      const probe = await runProbe(spec, baseUrl, options.apiKey, fetchImpl, timeoutMs);
       probes.push(probe);
       if (probe.outcome === "served") return { detected: spec.clientType, baseUrl, probes };
     }

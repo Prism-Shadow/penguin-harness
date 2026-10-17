@@ -1669,7 +1669,6 @@ describe("machines API", () => {
               { provider: "deepseek", model_id: "deepseek-v4-flash", api_key: "sk-x" },
               { provider: "openai", model_id: "gpt-5" },
             ],
-            providers: { openai: { official: true } },
             command_policy: { enabled: false, rules: [{ name: "no-rm", pattern: "rm -rf" }] },
             default_chat: { agent_id: "ours", workspace: "/home/me/here", thinking_level: "high" },
           }) as never,

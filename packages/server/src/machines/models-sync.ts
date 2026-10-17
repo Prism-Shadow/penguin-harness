@@ -21,7 +21,7 @@
  */
 import type { MachineApi } from "./machine-api.js";
 import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
-import { modelEnvPreviewKey, resolveModelEnv } from "@prismshadow/penguin-core/model-catalog";
+import { resolveModelEnv } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelEntry, ModelRef, ProviderTable } from "@prismshadow/penguin-core";
 import type {
   ModelInfo,
@@ -260,12 +260,12 @@ export interface EnvSourced {
 /**
  * The values a Project's models take from this server's environment, which no sync can carry:
  * the config is all it sends. Core's credential rule decides, on each row's effective
- * connection (the row's own values, then its group's):
+ * connection (the row's own values, then its group's). Only a row with no base URL on the row
+ * or its group reads anything from the environment, and from its routed client's pair:
  *
- * - a row that holds no key, of its own or its group's, authenticates with the variable core
- *   lends it (an `official` group, no base URL of the row's own; modelEnvPreviewKey names it)
- *   — when that variable is set here;
- * - a row with a key and no base URL goes where its routed client's `*_BASE_URL` points, when
+ * - with no key in the file (core's `env`), it authenticates with the pair's `*_API_KEY` —
+ *   when that variable is set here;
+ * - with a key, from the file or from here, it goes where the pair's `*_BASE_URL` points, when
  *   that is set here.
  *
  * A variable that is not set here is not listed: the row does not run here either.
@@ -287,28 +287,18 @@ export function envSourced(
       },
       providerConnectionShape(local.providers?.[entry.provider]),
     );
+    // A base URL from the file is never lent a variable, and its requests go there.
+    if (effective.baseUrl !== undefined) continue;
+    const pair = resolveModelEnv(entry.model_id, effective.clientType);
+    if (pair === undefined) continue;
     const add = (variable: string) =>
       found.push({ provider: entry.provider, modelId: entry.model_id, variable });
     let keyed = effective.apiKey !== undefined;
-    if (!keyed) {
-      const envKey = modelEnvPreviewKey(
-        {
-          provider: entry.provider,
-          modelId: entry.model_id,
-          clientType: entry.client_type,
-          baseUrl: entry.base_url,
-        },
-        providerConnectionShape(local.providers?.[entry.provider]),
-      );
-      if (envKey !== undefined && set(envKey)) {
-        add(envKey);
-        keyed = true;
-      }
+    if (effective.apiKeySource === "env" && set(pair.envKey)) {
+      add(pair.envKey);
+      keyed = true;
     }
-    if (keyed && effective.baseUrl === undefined) {
-      const pair = resolveModelEnv(entry.model_id, effective.clientType);
-      if (pair !== undefined && set(pair.envBaseUrlKey)) add(pair.envBaseUrlKey);
-    }
+    if (keyed && set(pair.envBaseUrlKey)) add(pair.envBaseUrlKey);
   }
   return found;
 }

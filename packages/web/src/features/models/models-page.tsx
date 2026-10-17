@@ -127,6 +127,7 @@ import {
   catalogEntryFor,
   fastModeProtocol,
   isAddableGroup,
+  isVendorGroup,
   modelHomepageUrl,
   providerInfo,
   unroutableVendorModel,
@@ -410,7 +411,7 @@ export interface RowState {
   vision: boolean;
   /** Environment variable name used as fallback when api_key is empty (given by the server based on catalog/protocol). */
   envKey?: string;
-  /** Masked preview of the env-fallback value (first-party official entries only; the plaintext never leaves the server). */
+  /** Masked preview of the env-fallback value (only for a keyless row with no base URL anywhere; the plaintext never leaves the server). */
   envKeyMasked?: string;
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
@@ -3291,11 +3292,12 @@ function ModelDialog({
   // the model id and API key labels in both the add and edit dialogs; custom
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
-  // The variable a blank key may be PRESENTED as covered by, for the entry as drafted (core's
-  // modelEnvPreviewKey, which the server's masked preview reads too) on its EFFECTIVE shape:
-  // undefined for every row whose endpoint — its own or the one it follows — is not the
-  // vendor's own (a gateway's endpoint, a custom or vLLM server, a vendor group pointed at a
-  // proxy) and for a keyless vLLM / custom row with no base URL anywhere. The hint and the
+  // The variable a blank key may be PRESENTED as covered by, for the entry as drafted (the
+  // catalog's modelEnvPreviewKey, which the server's masked preview reads too): only with no
+  // base URL on the row or its group, since a base URL from the file is never lent a variable
+  // (a gateway's endpoint, a custom or vLLM server, a vendor's second host, a proxy). A custom,
+  // vLLM or user-group row with no base URL anywhere does get its protocol client's variable,
+  // as its Session would, and the note below says where its requests go. The hint and the
   // stored-mask block below follow this.
   const liveEnvKey = envHintKeyFor(
     form.provider,
@@ -3448,15 +3450,21 @@ function ModelDialog({
     envKey: envHintKey,
     baseUrlRequired,
   });
-  // Default endpoint note (zhipu / moonshot each have domestic / international
-  // endpoints): shown only when the env fallback hint appears (hence keyed off the same
-  // envHintKey) and this entry actually goes through the provider's own client (the
-  // resolved envKey matches the provider) — entries going through the OpenAI
-  // client (OPENAI_API_KEY) have no provider default endpoint to speak of.
+  // Where a blank key's requests go, shown only beside the env fallback hint (hence keyed off
+  // the same envHintKey). A vendor group whose client defaults to one of two hosts (zhipu /
+  // moonshot) says how to reach the other one, when this entry goes through the provider's
+  // own client (the resolved envKey matches the provider). Any other group's row on a protocol
+  // client — custom, vLLM, a user group — says that its requests go to that client's default
+  // endpoint (api.openai.com for OPENAI_API_KEY) unless the matching `*_BASE_URL` is set, so a
+  // self-hosted id is never sent there unannounced.
   const envNote =
-    envHintKey !== undefined && envHintKey === dialogProvider?.envKey
-      ? S.models.providerEnvNotes[form.provider]
-      : undefined;
+    envHintKey === undefined
+      ? undefined
+      : envHintKey === dialogProvider?.envKey && S.models.providerEnvNotes[form.provider]
+        ? S.models.providerEnvNotes[form.provider]
+        : !isVendorGroup(form.provider)
+          ? S.models.envBaseUrlNote(envHintKey.replace(/_API_KEY$/, "_BASE_URL"))
+          : undefined;
   // The add dialog's note on the protocol a new model will speak, inside its Details: the
   // group's (with blank fields following the group where it also names the endpoint, the user's
   // own endpoint where it does not), or — a custom / user-defined group with nothing to follow —
@@ -3607,7 +3615,7 @@ function ModelDialog({
               {S.models.baseUrl}
             </FieldLabel>
             {/* Always live: no API key is needed (the server falls back to the stored key
-                and then to the protocol's env var), and anything that does go wrong is
+                and then probes anonymously), and anything that does go wrong is
                 explained in a popup. `detecting` only guards re-entrancy. */}
             <Button
               variant="link"

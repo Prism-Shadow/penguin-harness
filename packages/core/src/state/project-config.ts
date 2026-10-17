@@ -140,8 +140,8 @@ export interface ModelEntry {
   pricing?: ModelPricing;
   /**
    * API key for this model alone, overriding the group's `[providers.<id>].api_key`; with
-   * neither, the vendor's environment variable where the group is `official` and the row names
-   * no base URL of its own (PRN-021, environmentKeyRoute).
+   * neither, and no base URL on the row or its group, MMSP's routed client reads its own
+   * environment variable (PRN-021, effectiveConnection).
    */
   api_key?: string;
   /**
@@ -207,13 +207,6 @@ export interface ProviderConnection {
   client_type?: string;
   /** api_key's write time (ISO 8601); a display field maintained by the interface layer, as on rows. */
   created_at?: string;
-  /**
-   * The group's endpoint is its vendor's own: a keyless row that names no base URL of its own
-   * may use the vendor's environment variable (PRN-021, environmentKeyRoute). Absent reads as
-   * false. Core only reads it; the server writes it from its catalog (the seed, and every write
-   * of the group's base URL or protocol), and a hand edit is followed.
-   */
-  official?: boolean;
 }
 
 /** Every group's connection defaults, keyed by provider id. */
@@ -283,8 +276,8 @@ export interface ProjectConfig {
  * differs from its group's) and, beside them, each built-in group's endpoint and protocol in
  * `[providers.<id>]` (presetProviderTable) — so the file alone says where every request goes,
  * and the catalog is not read again when one is built. No keys are included: the user only
- * needs to fill in an API key as needed (left empty, the vendor groups' keyless rows use the
- * vendor's environment variable: their tables are marked `official`).
+ * needs to fill in an API key as needed (left empty, a row whose row and group name no base
+ * URL — the first-party vendors' — uses the vendor's environment variable, read by MMSP).
  */
 export function defaultProjectConfig(): ProjectConfig {
   return {
@@ -644,9 +637,8 @@ export function migratePenguinGoRoutes(table: Record<string, unknown>, endpoint?
 
 /**
  * Leniently parses the `[providers]` table: a value that is not a table reads as absent; a
- * member that is not a table is dropped, and so is one left with no field; each string field is
- * kept only when non-blank, `official` only when a boolean, and `client_type` is normalized
- * through canonicalClientType.
+ * member that is not a table is dropped, and so is one left with no field; each field is kept
+ * only when a non-blank string, and `client_type` is normalized through canonicalClientType.
  * Undefined when no member remains — absent and empty mean the same: no group sets anything.
  * Exported for the server, which narrows its cached parse the same way.
  */
@@ -664,7 +656,6 @@ export function parseProviderTable(value: unknown): ProviderTable | undefined {
     if (clientType !== undefined) connection.client_type = canonicalClientType(clientType)!;
     const createdAt = presentString(member.created_at);
     if (createdAt !== undefined) connection.created_at = createdAt;
-    if (typeof member.official === "boolean") connection.official = member.official;
     if (Object.keys(connection).length > 0) out[id] = connection;
   }
   return Object.keys(out).length > 0 ? out : undefined;
@@ -1140,15 +1131,12 @@ export async function addModel(
 /**
  * A change to one group's `[providers.<id>]` table. Per field: a non-blank string sets it,
  * `null` or a blank string clears it, absent keeps it. Setting `api_key` stamps `created_at`
- * with the write time; clearing it removes `created_at` with it. `official` takes a boolean,
- * or `null` to remove it (absent reads as false): a host that knows which endpoints are a
- * vendor's own recomputes it when it writes the base URL or the protocol.
+ * with the write time; clearing it removes `created_at` with it.
  */
 export interface ProviderConnectionPatch {
   base_url?: string | null;
   client_type?: string | null;
   api_key?: string | null;
-  official?: boolean | null;
 }
 
 /**
@@ -1188,10 +1176,6 @@ export async function setProviderConnection(
       next.api_key = value.trim();
       next.created_at = new Date().toISOString();
     }
-  }
-  if (patch.official !== undefined) {
-    if (patch.official === null) delete next.official;
-    else next.official = patch.official;
   }
   const providers: ProviderTable = { ...cfg.providers };
   if (Object.keys(next).length > 0) providers[id] = next;

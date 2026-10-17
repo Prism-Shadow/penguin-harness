@@ -37,7 +37,7 @@ import { protocolPathForModel } from "../src/features/models/protocol-path";
 /** The group table a new Project writes for a built-in group, in the resolver's shape. */
 function presetGroup(id: string): ProviderConnectionShape {
   const table = presetProviderTable()[id] ?? {};
-  return { baseUrl: table.base_url, clientType: table.client_type, official: table.official };
+  return { baseUrl: table.base_url, clientType: table.client_type };
 }
 
 describe("the protocols the picker offers", () => {
@@ -205,8 +205,8 @@ describe("needsProtocolDetectOnSave (save detects a still-unset protocol first)"
   });
 });
 
-describe("envHintKeyFor (the API-key field promises a variable only where core would lend it)", () => {
-  it("names nothing for a gateway, custom, vLLM or user-defined row, whatever endpoint it names", () => {
+describe("envHintKeyFor (the API-key field promises a variable only where no base URL is set)", () => {
+  it("names nothing for a row sent to a base URL: a gateway's, a custom or vLLM server, the vendor's own", () => {
     // The #786 finding: once an Anthropic row had proved OPENAI_API_KEY / ANTHROPIC_API_KEY
     // set, a TokenDance or OpenCode Go row read "leave empty to use the ... env var".
     for (const [provider, modelId, clientType, baseUrl] of [
@@ -225,7 +225,7 @@ describe("envHintKeyFor (the API-key field promises a variable only where core w
     }
   });
 
-  it("names the vendor's variable for a row of an official vendor group that names no base URL of its own", () => {
+  it("names the vendor's variable for a first-party row with no base URL anywhere", () => {
     expect(envHintKeyFor("anthropic", "claude-sonnet-4-6", "", "", presetGroup("anthropic"))).toBe(
       "ANTHROPIC_API_KEY",
     );
@@ -235,34 +235,39 @@ describe("envHintKeyFor (the API-key field promises a variable only where core w
     expect(envHintKeyFor("deepseek", "deepseek-flash", "", "", presetGroup("deepseek"))).toBe(
       "DEEPSEEK_API_KEY",
     );
-    // On its official group's own base URL, the group protocol's variable.
-    expect(
-      envHintKeyFor("deepseek", "deepseek-flash", "", "", {
-        baseUrl: "https://api.deepseek.com",
-        clientType: "deepseek-official",
-        official: true,
-      }),
-    ).toBe("DEEPSEEK_API_KEY");
   });
 
-  it("drops the hint once the row names a base URL of its own, the vendor's own included", () => {
-    const anthropic = presetGroup("anthropic");
+  it("drops the hint once the row or its group names a base URL, the vendor's own included", () => {
     for (const baseUrl of ["https://proxy.example/anthropic", "https://api.anthropic.com/"]) {
       expect(
-        envHintKeyFor("anthropic", "claude-sonnet-4-6", "", baseUrl, anthropic),
+        envHintKeyFor("anthropic", "claude-sonnet-4-6", "", baseUrl, presetGroup("anthropic")),
+        baseUrl,
+      ).toBeUndefined();
+    }
+    for (const baseUrl of ["https://proxy.example/deepseek", "https://api.deepseek.com"]) {
+      expect(
+        envHintKeyFor("deepseek", "deepseek-flash", "", "", {
+          baseUrl,
+          clientType: "deepseek-official",
+        }),
         baseUrl,
       ).toBeUndefined();
     }
   });
 
-  it("follows the group's stored flag: a group pointed at a proxy, or with its flag cleared, lends nothing", () => {
-    expect(
-      envHintKeyFor("deepseek", "deepseek-flash", "", "", {
-        baseUrl: "https://proxy.example/deepseek",
-        official: false,
-      }),
-    ).toBeUndefined();
-    expect(envHintKeyFor("deepseek", "deepseek-flash", "", "", undefined)).toBeUndefined();
+  it("names a custom-like row's protocol client's variable with no base URL anywhere — the protocol it will be saved on, never the id's family", () => {
+    // `claude-sonnet-5` typed into a custom group is saved on the custom default client, so the
+    // hint names OPENAI_API_KEY, not the Anthropic variable its id's family would read.
+    expect(envHintKeyFor("custom", "claude-sonnet-5", "", "")).toBe("OPENAI_API_KEY");
+    expect(envHintKeyFor("my-group", "claude-sonnet-5", "", "")).toBe("OPENAI_API_KEY");
+    // A protocol the user chose is honoured.
+    expect(envHintKeyFor("custom", "whatever", "ant-messages", "")).toBe("ANTHROPIC_API_KEY");
+    // A group protocol wins over the id: vLLM's preset table pins its client.
+    expect(envHintKeyFor("vllm", "deepseek-ai/DeepSeek-V4-Pro", "", "", presetGroup("vllm"))).toBe(
+      "OPENAI_API_KEY",
+    );
+    // A vendor group still routes by id, which is how it really works.
+    expect(envHintKeyFor("anthropic", "claude-sonnet-5", "", "")).toBe("ANTHROPIC_API_KEY");
   });
 
   it("agrees with the server's preview rule on every case", () => {

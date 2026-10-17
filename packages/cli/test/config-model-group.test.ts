@@ -6,9 +6,6 @@
  * Penguin Go (fixed to mmsp, for its models too), and never touches a model's own value; the
  * flags that describe one model, and a base URL that is not an absolute http(s) URL, are refused
  * there.
- * Writing a group's base URL or protocol recomputes its `official` flag as the server would: a
- * first-party group on its vendor's own endpoint keeps it (and gains the vendor's client), on a
- * proxy loses it; a key alone leaves it; no other group ever carries one.
  * `model remove --provider <group>` without `--model-id` drops the table and keeps the models.
  * The `--clear-*` flags clear a model's own value too. `model list` prints the groups' tables,
  * then what each model is used with, read from the file alone: a group value marked
@@ -424,35 +421,6 @@ describe("penguin config model remove without --model-id: the group's connection
   });
 });
 
-describe("penguin config model add --provider: the official flag", () => {
-  it("a base URL or protocol written recomputes it; a key alone leaves it; other groups never carry one", async () => {
-    // A proxy is not the vendor's own endpoint: the group's keyless models lose the environment.
-    expect(
-      (await run(["add", "--provider", "deepseek", "--base-url", "https://proxy.example/ds"])).code,
-    ).toBe(0);
-    expect((await readConfig()).providers?.deepseek).toEqual({
-      base_url: "https://proxy.example/ds",
-      official: false,
-    });
-    // Back on DeepSeek's own endpoint: official again, with the client that names the variable.
-    await run(["add", "--provider", "deepseek", "--base-url", "https://api.deepseek.com"]);
-    expect((await readConfig()).providers?.deepseek).toEqual({
-      base_url: "https://api.deepseek.com",
-      client_type: "deepseek-official",
-      official: true,
-    });
-    // A key alone keeps the flag the file has.
-    await run(["add", "--provider", "deepseek", "--api-key", "sk-ds-aaaa"]);
-    expect((await readConfig()).providers?.deepseek).toMatchObject({ official: true });
-    // A gateway pointed at a vendor's endpoint gets no flag.
-    await run(["add", "--provider", "tokendance", "--base-url", "https://api.openai.com/v1"]);
-    expect((await readConfig()).providers?.tokendance).not.toHaveProperty("official");
-    // Removing a vendor group's connection leaves it on the client's defaults: official.
-    expect((await run(["remove", "--provider", "deepseek"])).code).toBe(0);
-    expect((await readConfig()).providers?.deepseek).toEqual({ official: true });
-  });
-});
-
 describe("penguin config model list", () => {
   it("prints the groups' stored connections above the models, keys masked", async () => {
     await run(["add", "--provider", "vllm", "--base-url", "http://10.0.0.5:8000/v1"]);
@@ -462,9 +430,7 @@ describe("penguin config model list", () => {
     expect(await groupLine("vllm")).toMatch(
       /^vllm\s+base_url=http:\/\/10\.0\.0\.5:8000\/v1\s+client_type=openai-chat-vllm-adapter\s+api_key=-$/,
     );
-    // A vendor group stores only its official flag; its models go to the client defaults.
-    expect(await groupLine("deepseek")).toMatch(
-      /^deepseek\s+base_url=-\s+client_type=-\s+api_key=-\s+official=true$/,
-    );
+    // A vendor group that stores nothing has no line; its models go to the client defaults.
+    expect(await groupLine("deepseek")).toBeUndefined();
   });
 });

@@ -9,10 +9,11 @@
  * client reads and which one calls an open server keyless. That is protocol knowledge, not
  * model knowledge.
  *
- * The environment rule (PRN-021): a row with no key of its own and no group key that reaches it
- * may use a vendor's environment variable only when its group is marked `official = true` (the
- * group's endpoint is its vendor's own) and the row names no base URL of its own. Every other
- * keyless row is refused, except on an open MMSP server.
+ * The environment rule (PRN-021): a row with no key in the file whose row and group both name
+ * no base URL is handed nothing, and MMSP's routed client reads its own `*_API_KEY` and
+ * `*_BASE_URL`, so the key and the endpoint both come from the operator's environment. A row
+ * with no key that is sent to a base URL from the file is refused, except on an open MMSP
+ * server. Core never reads an environment variable itself.
  *
  * This file imports no Node built-ins (type-only imports only), so the Web App bundles it
  * through the `@prismshadow/penguin-core/model-connection` subpath.
@@ -110,10 +111,10 @@ export function sameClientType(a: string, b: string): boolean {
 }
 
 /**
- * A model entry that cannot be given to an MMSP client as configured: no key, and no
- * environment variable it may use. The message names the model and what to do, and says
- * "API key" so hosts that classify credential errors by message (the server's
- * `isMissingCredential`) file it with the SDKs' own missing-credential errors.
+ * A model entry that cannot be given to an MMSP client as configured: no key in the file, and a
+ * base URL from the file, so no environment variable is used for it. The message names the
+ * model and what to do, and says "API key" so hosts that classify credential errors by message
+ * (the server's `isMissingCredential`) file it with the SDKs' own missing-credential errors.
  */
 export class ModelCredentialError extends Error {
   constructor(message: string) {
@@ -135,17 +136,19 @@ export interface ModelCredentialShape {
 /** Where an effective connection value came from: the row, its group's table, or nowhere. */
 export type ConnectionSource = "model" | "provider" | "none";
 
+/**
+ * Where a row's key comes from: the row, its group, the environment, or nowhere. `env` = no key
+ * in the file and no base URL anywhere: core hands MMSP nothing and the routed client reads its
+ * own `*_API_KEY` (an unset variable is MMSP's own error). `none` = no key in the file and a base
+ * URL from the file: nothing is sent, and keylessEndpoint says whether the request still goes out.
+ */
+export type ApiKeySource = ConnectionSource | "env";
+
 /** A group's `[providers.<id>]` connection as the resolver reads it (providerConnectionShape). */
 export interface ProviderConnectionShape {
   baseUrl?: string | undefined;
   clientType?: string | undefined;
   apiKey?: string | undefined;
-  /**
-   * `true`: the group's endpoint is its vendor's own, so a keyless row that names no base URL
-   * of its own may use the vendor's environment variable (environmentKeyRoute). Anything else
-   * lends nothing.
-   */
-  official?: boolean | undefined;
 }
 
 /** The connection a request for one row is built with, and where each value came from. */
@@ -155,8 +158,7 @@ export interface EffectiveConnection {
   clientType?: string;
   clientTypeSource: ConnectionSource;
   apiKey?: string;
-  /** No "env" here: whether the environment lends a key is environmentKeyRoute's call. */
-  apiKeySource: ConnectionSource;
+  apiKeySource: ApiKeySource;
 }
 
 /** `[providers.<id>]` -> the resolver's shape (snake -> camel); undefined in, undefined out. */
@@ -164,12 +166,7 @@ export function providerConnectionShape(
   p: ProviderConnection | undefined,
 ): ProviderConnectionShape | undefined {
   if (p === undefined) return undefined;
-  return {
-    baseUrl: p.base_url,
-    clientType: p.client_type,
-    apiKey: p.api_key,
-    ...(p.official !== undefined ? { official: p.official } : {}),
-  };
+  return { baseUrl: p.base_url, clientType: p.client_type, apiKey: p.api_key };
 }
 
 /** The first candidate holding a non-blank value, with its source; blank and absent are the same. */
@@ -222,12 +219,13 @@ export function groupKeyReaches(
  *
  *   base_url:    row -> provider -> none
  *   client_type: row -> provider -> none
- *   api_key:     row -> provider (only where groupKeyReaches) -> none
+ *   api_key:     row -> provider (only where groupKeyReaches) -> env (no base URL anywhere) -> none
  *
  * where "provider" is the group's `[providers.<id>]` table (providerConnectionShape) and
  * "none" means the client library's own default: no base URL = the routed client's default
- * endpoint (or its `*_BASE_URL` variable), no client type = MMSP routes by the id's family,
- * no key = the environment, where environmentKeyRoute allows it. client_type passes
+ * endpoint (or its `*_BASE_URL` variable), no client type = MMSP routes by the id's family.
+ * A row with no key in the file is `env` when no base URL is set anywhere (the routed client
+ * reads its own variable pair) and `none` otherwise (see ApiKeySource). client_type passes
  * canonicalClientType.
  *
  * A row's own value always wins over its group's, so a group protocol never overrides the
@@ -258,7 +256,8 @@ export function effectiveConnection(
       : {}),
     clientTypeSource: clientType.source,
     ...(apiKey.value !== undefined ? { apiKey: apiKey.value } : {}),
-    apiKeySource: apiKey.source,
+    apiKeySource:
+      apiKey.source !== "none" ? apiKey.source : baseUrl.value === undefined ? "env" : "none",
   };
 }
 
@@ -276,72 +275,21 @@ export function keylessEndpoint(
 }
 
 /**
- * How a keyless row may use the environment (PRN-021), or undefined when it may not:
- *
- * - `client`: the routed MMSP client reads its own variable pair — hand it nothing, so the
- *   client's own lookup, a `*_BASE_URL` the user set beside the key, and the client's own error
- *   when the variable is unset all apply unchanged;
- * - `explicit`: the harness reads `envKey` and passes its value, because MMSP refuses a base URL
- *   handed no key rather than lend its variable to it;
- * - `unnamed`: the row could use the environment, but its group names no client type, so no
- *   variable belongs to the group's base URL;
- * - `foreign`: the row's own client type reads another variable than its group's (another
- *   vendor's key, which must not travel to this group's endpoint), or one MMSP does not have.
- */
-export type EnvironmentKeyRoute =
-  | { kind: "client" }
-  | { kind: "explicit"; envKey: string }
-  | { kind: "unnamed" }
-  | { kind: "foreign"; clientType: string };
-
-/**
- * PRN-021's environment rule, decided from the Project config alone. A row with no key of its
- * own and no group key that reaches it may use the environment only when its group is marked
- * `official = true` and the row names no base URL of its own (an override base URL counts as
- * the row's own):
- *
- * - the group has no base URL either: `client` — the routed client reads its own variable and
- *   goes to its own vendor's default endpoint, whatever protocol the row pins;
- * - the group has a base URL: `explicit` with the variable the group's client type reads, but
- *   only when the row's effective client type (its own, else the group's) reads that same
- *   variable — the same MMSP_CLIENTS `env` prefix. A row pinned to a client that reads another
- *   variable is `foreign`: that variable belongs to another vendor's endpoint, not this group's.
- *   A group with no client type, or one MMSP does not have, is `unnamed`.
- *
- * Every other row — a group that is not official, a row pointed at its own endpoint — is
- * lent nothing: undefined. `entry` is the row's OWN values, not its effective ones. Only core's
- * client table is consulted; no vendor is named.
- */
-export function environmentKeyRoute(
-  entry: { baseUrl?: string | undefined; clientType?: string | undefined },
-  group: ProviderConnectionShape | undefined,
-): EnvironmentKeyRoute | undefined {
-  if (group?.official !== true || entry.baseUrl?.trim()) return undefined;
-  if (!group.baseUrl?.trim()) return { kind: "client" };
-  const groupClient = mmspClient(group.clientType);
-  if (groupClient === undefined) return { kind: "unnamed" };
-  const own = entry.clientType?.trim();
-  if (own && mmspClient(own)?.env !== groupClient.env) return { kind: "foreign", clientType: own };
-  return { kind: "explicit", envKey: `${groupClient.env}_API_KEY` };
-}
-
-/**
- * The credential and protocol an MMSP client is built with for a config row: its effective
- * connection, and for a row with no key the environment rule (environmentKeyRoute) — the one
- * function every path shares: Session creation and resume, the vision describer, the
- * connectivity / speed / vision probes and the utility completion.
+ * The credential and protocol an MMSP client is built with for a config row — the one function
+ * every path shares: Session creation and resume, the vision describer, the connectivity /
+ * speed / vision probes and the utility completion. It reads effectiveConnection:
  *
  * - A key on the row, or the group's key that reaches it (or the caller's override), is used
  *   as written.
- * - No key, official group, no base URL anywhere: nothing is handed over and the routed client
- *   reads its own variable pair — including the SDK's own error when the variable is unset.
- * - No key, official group with a base URL: the variable the group's client type reads is passed
- *   explicitly, to a row whose effective client type reads the same one; an unset variable, a
- *   group with no client type to name one, and a row pinned to a client that reads another
- *   vendor's variable are refused here.
+ * - No key, no base URL anywhere (`env`): nothing is handed over and the routed client reads
+ *   its own `*_API_KEY` / `*_BASE_URL` pair — including the SDK's own error when the variable
+ *   is unset.
  * - No key on the mmsp client with a base URL (keylessEndpoint): the base URL alone, so the
  *   client sends no key, which an open MMSP server takes — as MMSP itself does.
- * - Any other keyless row is refused with a ModelCredentialError before any client exists.
+ * - Any other keyless row — sent to a base URL from the file, the vendor's own included — is
+ *   refused with a ModelCredentialError before any client exists. The message names the
+ *   variable pair only when the row's protocol is pinned: with none, MMSP routes by the id's
+ *   family, which core does not know.
  *
  * `override` is the caller's explicit pair (Session creation's apiKey / baseUrl) and sits above
  * the row's own values; blank counts as absent there too. An override base URL is the row's
@@ -349,59 +297,31 @@ export function environmentKeyRoute(
  */
 export function resolveEntryCredential(
   entry: Pick<ModelEntry, "provider" | "model_id" | "client_type" | "base_url" | "api_key">,
-  provider: ProviderConnectionShape | undefined,
+  group: ProviderConnectionShape | undefined,
   override: { apiKey?: string | undefined; baseUrl?: string | undefined } = {},
-  env: Readonly<Record<string, string | undefined>> = process.env,
 ): { apiKey?: string; baseUrl?: string; clientType?: string } {
-  const own = {
-    provider: entry.provider,
-    modelId: entry.model_id,
-    clientType: entry.client_type,
-    baseUrl: override.baseUrl?.trim() ? override.baseUrl : entry.base_url,
-    apiKey: override.apiKey?.trim() ? override.apiKey : entry.api_key,
-  };
-  const effective = effectiveConnection(own, provider);
+  const effective = effectiveConnection(
+    {
+      provider: entry.provider,
+      modelId: entry.model_id,
+      clientType: entry.client_type,
+      baseUrl: override.baseUrl?.trim() ? override.baseUrl : entry.base_url,
+      apiKey: override.apiKey?.trim() ? override.apiKey : entry.api_key,
+    },
+    group,
+  );
   const connection = {
     ...(effective.baseUrl !== undefined ? { baseUrl: effective.baseUrl } : {}),
     ...(effective.clientType !== undefined ? { clientType: effective.clientType } : {}),
   };
   if (effective.apiKey !== undefined) return { apiKey: effective.apiKey, ...connection };
-  const ref = `${entry.provider}/${entry.model_id}`;
-  const route = environmentKeyRoute(own, provider);
-  if (route?.kind === "client") return connection;
-  if (route?.kind === "explicit") {
-    const value = env[route.envKey]?.trim();
-    if (!value) {
-      throw new ModelCredentialError(
-        `Model ${ref} has no API key: set one on the model entry or its group, or set ${route.envKey} in the server environment.`,
-      );
-    }
-    return { apiKey: value, ...connection };
-  }
-  if (route?.kind === "unnamed") {
-    throw new ModelCredentialError(
-      `Model ${ref} has no API key, and its group's base URL comes with no protocol that names an environment variable: set the API key on the model entry or its group, or set the group's protocol.`,
-    );
-  }
-  if (route?.kind === "foreign") {
-    throw new ModelCredentialError(
-      `Model ${ref} has no API key. Its protocol (${route.clientType}) reads another environment variable than its group's, and that key does not go to the group's endpoint: set the API key on the model entry.`,
-    );
-  }
+  if (effective.apiKeySource === "env") return connection;
   if (keylessEndpoint(effective.clientType, effective.baseUrl)) return connection;
-  // A Bedrock region on the entry is not "not the vendor's": it is AWS, whose usual
-  // credential is the default provider chain rather than a key. Until MMSP stops letting its
-  // Bedrock client attach ANTHROPIC_API_KEY, a keyless row here is refused, and the message
-  // says what still works.
-  const baseUrl = effective.baseUrl?.trim();
-  if (baseUrl?.toLowerCase().startsWith("bedrock://")) {
-    throw new ModelCredentialError(
-      `Model ${ref} has no API key. A Bedrock endpoint set on the model entry cannot fall back to the environment yet: set the entry's AWS key (access,secret), or leave its base URL empty and set ANTHROPIC_BASE_URL=${baseUrl} in the server environment.`,
-    );
-  }
+  const prefix = mmspClient(effective.clientType)?.env;
   throw new ModelCredentialError(
-    provider?.official === true
-      ? `Model ${ref} has no API key. It names a base URL of its own, so no environment variable is used for it: set the API key on the model entry.`
-      : `Model ${ref} has no API key. Its group is not marked official (its endpoint is not the vendor's own), so no environment variable is used for it: set the API key on the model entry or its group.`,
+    `Model ${entry.provider}/${entry.model_id} has no API key. It is sent to ${effective.baseUrl}, so no environment variable is used for it: set the API key on the model entry or its group` +
+      (prefix !== undefined
+        ? `, or clear the base URL and set ${prefix}_API_KEY (and ${prefix}_BASE_URL=${effective.baseUrl} if that endpoint is not the client's default) in the server environment.`
+        : "."),
   );
 }

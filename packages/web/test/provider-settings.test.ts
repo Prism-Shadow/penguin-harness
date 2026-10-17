@@ -27,7 +27,8 @@
  *   line under the fields, no count of the models' own values.
  * - Given a group whose catalog names a model list (OpenRouter, TokenDance), the dialog links
  *   to it in a new tab; custom and a user-defined group have none, and no link.
- * - A blank group key promises an environment variable only where it may be sent there.
+ * - A blank group key promises an environment variable only for a group with no base URL — the
+ *   vendor's own endpoint included — and only one the server proved is set.
  * - A model with nothing of its own follows the group's table field by field, and a field the
  *   table leaves blank is the client's default — never the catalog's value.
  * - A group key reaches a model with no base URL of its own or one on the group's origin; a
@@ -84,7 +85,6 @@ function presetGroup(id: string): ProviderConnectionDto {
   return {
     ...(table.base_url !== undefined ? { baseUrl: table.base_url } : {}),
     ...(table.client_type !== undefined ? { clientType: table.client_type } : {}),
-    ...(table.official === true ? { official: true as const } : {}),
   };
 }
 
@@ -443,35 +443,23 @@ describe("a blank group key and the environment", () => {
   const detected = new Set(["DEEPSEEK_API_KEY"]);
   const blank = { baseUrl: "", clientType: null };
 
-  it("promises the vendor's variable for an official group, and for a draft that keeps it on the vendor's own endpoint, where the server proved it is set", () => {
-    const deepseek = presetGroup("deepseek");
-    expect(groupEnvKey("deepseek", blank, detected, deepseek)).toBe("DEEPSEEK_API_KEY");
-    expect(
-      groupEnvKey(
-        "deepseek",
-        { ...blank, baseUrl: "https://api.deepseek.com/" },
-        detected,
-        deepseek,
-      ),
-    ).toBe("DEEPSEEK_API_KEY");
+  it("promises the vendor's variable for a vendor group with no base URL, where the server proved it is set", () => {
+    expect(groupEnvKey("deepseek", blank, detected)).toBe("DEEPSEEK_API_KEY");
+    expect(groupEnvKey("deepseek", blank, new Set())).toBeUndefined();
   });
 
-  it("promises nothing for a proxy, an unset variable, a group not marked official or a gateway", () => {
-    const deepseek = presetGroup("deepseek");
-    expect(
-      groupEnvKey(
-        "deepseek",
-        { ...blank, baseUrl: "https://proxy.example/v1" },
-        detected,
-        deepseek,
-      ),
-    ).toBeUndefined();
-    expect(groupEnvKey("deepseek", blank, new Set(), deepseek)).toBeUndefined();
-    // The file is the truth: a vendor group whose flag was cleared by hand lends nothing.
-    expect(groupEnvKey("deepseek", blank, detected, {})).toBeUndefined();
-    expect(
-      groupEnvKey("openrouter", blank, new Set(["OPENAI_API_KEY"]), presetGroup("openrouter")),
-    ).toBeUndefined();
+  it("promises nothing once the group names a base URL, the vendor's own included", () => {
+    for (const baseUrl of ["https://proxy.example/v1", "https://api.deepseek.com/"]) {
+      expect(groupEnvKey("deepseek", { ...blank, baseUrl }, detected), baseUrl).toBeUndefined();
+    }
+  });
+
+  it("with no base URL, a group's protocol names its variable, whichever group it is; a gateway with neither names none", () => {
+    const openai = new Set(["OPENAI_API_KEY"]);
+    expect(groupEnvKey("openrouter", blank, openai)).toBeUndefined();
+    expect(groupEnvKey("openrouter", { ...blank, clientType: "openai-chat" }, openai)).toBe(
+      "OPENAI_API_KEY",
+    );
   });
 });
 
@@ -495,7 +483,7 @@ describe("what a group's models inherit", () => {
     expect(inheritedConnection("openrouter", "x-ai/grok-5", undefined)).toEqual({
       baseUrlSource: "none",
       clientTypeSource: "none",
-      apiKeySource: "none",
+      apiKeySource: "env",
     });
   });
 

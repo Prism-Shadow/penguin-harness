@@ -83,7 +83,6 @@ import {
   setVisionModel,
   unaddableModel,
   unroutableVendorModel,
-  withOfficialFlag,
 } from "@prismshadow/penguin-core";
 import { parseApprovalAnswer } from "../approval.js";
 import { resolveRootOption } from "../root-option.js";
@@ -117,9 +116,10 @@ function sourceMark(source: ConnectionSource): string {
 
 /**
  * The key a row is used with, masked: its own, its group's (marked `(provider)`), or — with
- * neither — the environment variable core would lend it (an `official` group, no base URL of
- * the row's own; modelEnvPreviewKey, which the server's preview reads too), marked `(env)` when
- * that variable is set. `-` when there is none.
+ * neither, and no base URL on the row or its group (core's `env`) — the variable MMSP's routed
+ * client reads (modelEnvPreviewKey, which the server's preview reads too), marked `(env)` when
+ * that variable is set. An env mark therefore means no base URL anywhere. `-` when there is
+ * none.
  */
 function displayedKey(
   entry: ModelEntry,
@@ -127,15 +127,17 @@ function displayedKey(
   group: ProviderConnection | undefined,
   env: Readonly<Record<string, string | undefined>>,
 ): string {
-  if (effective.apiKeySource !== "none") {
+  if (effective.apiKeySource === "model" || effective.apiKeySource === "provider") {
     return `${maskApiKey(effective.apiKey)}${sourceMark(effective.apiKeySource)}`;
   }
+  if (effective.apiKeySource === "none") return maskApiKey(undefined);
   const envKey = modelEnvPreviewKey(
     {
       provider: entry.provider,
       modelId: entry.model_id,
       clientType: entry.client_type,
       baseUrl: entry.base_url,
+      apiKey: entry.api_key,
     },
     providerConnectionShape(group),
   );
@@ -213,10 +215,8 @@ export function formatGroupRows(cfg: ProjectConfig): string[] {
     base_url: `base_url=${shown(connection.base_url)}`,
     client_type: `client_type=${shown(connection.client_type)}`,
     api_key: `api_key=${maskApiKey(connection.api_key?.trim() || undefined)}`,
-    // Whether the group's keyless models may use the vendor's environment variable (PRN-021).
-    official: connection.official === undefined ? "" : `official=${connection.official}`,
   }));
-  return alignColumns(cells, ["provider", "base_url", "client_type", "api_key", "official"]);
+  return alignColumns(cells, ["provider", "base_url", "client_type", "api_key"]);
 }
 
 /** A group name of the user's own: a lowercase letter or digit first, then lowercase letters, digits, `-` and `_`, at most 32 characters. */
@@ -356,11 +356,7 @@ async function addGroupConnection(
   }
   let cfg: ProjectConfig;
   try {
-    const before = (await loadProjectConfig(root, opts.projectId)).providers?.[group];
-    cfg = await setProviderConnection(root, opts.projectId, group, {
-      ...patch,
-      ...officialPatch(group, before, patch),
-    });
+    cfg = await setProviderConnection(root, opts.projectId, group, patch);
   } catch (err) {
     refuse(t, err instanceof Error ? err.message : String(err));
     return;
@@ -388,37 +384,9 @@ async function addGroupConnection(
 }
 
 /**
- * What a group write that sets or clears the base URL or the protocol does to `official`, as
- * the server's group routes do it (withOfficialFlag on the table the write leaves): the flag to
- * write — `null` removes it — and, for an official group left on a base URL with no protocol,
- * the vendor's official client. Nothing for a write that touches neither field.
- */
-function officialPatch(
-  group: string,
-  before: ProviderConnection | undefined,
-  patch: ProviderConnectionPatch,
-): ProviderConnectionPatch {
-  if (patch.base_url === undefined && patch.client_type === undefined) return {};
-  const next: ProviderConnection = { ...before };
-  for (const field of ["base_url", "client_type"] as const) {
-    if (patch[field] === undefined) continue;
-    const value = patch[field]?.trim();
-    if (value) next[field] = value;
-    else delete next[field];
-  }
-  const routed = withOfficialFlag(group, next);
-  return {
-    official: routed.official ?? null,
-    ...(routed.client_type !== next.client_type ? { client_type: routed.client_type } : {}),
-  };
-}
-
-/**
  * `model remove` without `--model-id`: drops the group's `[providers.<group>]` table, every
  * field of it, and leaves its models alone — the only way to delete models stays one pair at a
- * time. A first-party vendor group keeps one field: on the client's defaults it is its vendor's
- * own endpoint, so `official = true` is written back, as the server's group routes would. A
- * group with no table is refused, pointing at `--model-id`.
+ * time. A group with no table is refused, pointing at `--model-id`.
  */
 async function removeGroupConnection(
   opts: { provider: string; projectId: string; root?: string },
@@ -427,22 +395,14 @@ async function removeGroupConnection(
   const root = resolveRootOption(opts.root);
   const group = String(opts.provider).trim();
   const before = await loadProjectConfig(root, opts.projectId);
-  // The official flag alone is the catalog's answer about the group, not a connection the
-  // user stored: there is nothing to remove.
-  const stored = before.providers?.[group];
-  if (
-    stored === undefined ||
-    (stored.base_url === undefined &&
-      stored.client_type === undefined &&
-      stored.api_key === undefined)
-  ) {
+  if (before.providers?.[group] === undefined) {
     refuse(t, t.providerNothingToRemove(group));
     return;
   }
-  const cleared: ProviderConnectionPatch = { api_key: null, base_url: null, client_type: null };
   const cfg = await setProviderConnection(root, opts.projectId, group, {
-    ...cleared,
-    ...officialPatch(group, undefined, cleared),
+    api_key: null,
+    base_url: null,
+    client_type: null,
   });
   const models = cfg.models.filter((m) => m.provider === group).length;
   process.stdout.write(`${t.providerRemoved(group, models)}\n`);
@@ -724,7 +684,6 @@ export function registerConfigCommand(program: Command, t: Messages): void {
           api_key: null,
           base_url: null,
           client_type: null,
-          official: null,
         });
       }
       // The default model rides along on the confirmation (as it does for add/update) because
