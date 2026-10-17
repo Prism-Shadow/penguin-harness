@@ -113,7 +113,11 @@ async function expectPinnedAndOpaque(page, toolRow) {
     expect(at.sectionAbove).toBe(true);
     expect(at.sectionBelow).toBeGreaterThan(40);
     expect(Math.abs(at.headOffset)).toBeLessThan(1);
-    expect(Math.abs(at.rowOffset)).toBeLessThan(1);
+    // Right below the head: never a gap the text could show through. A theme whose head is
+    // taller than the eight spacing units the row's offset assumes tucks the row's top under
+    // the head's bottom padding by a pixel or two.
+    expect(at.rowOffset).toBeLessThan(0.5);
+    expect(at.rowOffset).toBeGreaterThan(-4);
   }
   // Different lines of output lie under the band at the two positions: identical pixels mean
   // none of them shows through the pinned head or row.
