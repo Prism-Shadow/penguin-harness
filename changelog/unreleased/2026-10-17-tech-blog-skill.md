@@ -3,6 +3,7 @@
 - **Date:** 2026-10-17
 - **Type:** process
 - **Scope:** `skills`
+- **PR:** [#1188](https://github.com/Prism-Shadow/penguin-harness/pull/1188)
 
 [中文版](2026-10-17-tech-blog-skill.zh.md)
 
