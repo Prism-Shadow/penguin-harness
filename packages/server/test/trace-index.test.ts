@@ -5,6 +5,9 @@
  * A cache row registered before the source was required (NULL, or the retired `benchmark`)
  * reads as a head that records no source (which the session list reads with the row's client)
  * / as `cli`, without being rewritten.
+ *
+ * - Given two date dirs and the older one's mtime in the future, later reconciles of
+ *   the unchanged tree still cost zero directory scans (clock skew is cacheable).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -178,6 +181,22 @@ describe("trace-index", () => {
     expect(files.map((f) => f.index)).toEqual([1]);
     // The forced pass also swept in the other blind-spot shard.
     expect(h.traceIndex.repo.listFilesBySession(P, A, OLD)).toHaveLength(2);
+  });
+
+  it("a date dir whose mtime is in the future stays cacheable: later reconciles cost zero directory scans", async () => {
+    await writeTraceFile(root, P, A, "2026-07-01", OLD, 1, [userText("old day")]);
+    await writeTraceFile(root, P, A, "2026-07-05", S1, 1, [userText("new day")]);
+    await backdate(tracesRoot(root), path.join(tracesRoot(root), "2026-07-05"));
+    const future = new Date(Date.now() + 60 * 60 * 1000);
+    await fs.utimes(path.join(tracesRoot(root), "2026-07-01"), future, future);
+
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.repo.listFilesByAgent(P, A)).toHaveLength(2);
+
+    const scans = h.traceIndex.counters.dirScans;
+    await h.traceIndex.reconcileAgent(P, A);
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.counters.dirScans).toBe(scans);
   });
 
   it("import registers synchronously (rows + facts, no re-read); Session delete removes files and rows", async () => {
