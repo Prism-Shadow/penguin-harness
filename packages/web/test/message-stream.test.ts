@@ -14,7 +14,7 @@
  * - Given files attached to a prompt, each file is named in its own tile above the text.
  * - Given a prompt that follows a reply, its images do not join the earlier prompt.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -22,7 +22,9 @@ import { MessageStream } from "../src/features/chat/message-stream";
 import type { StreamRenderContext } from "../src/features/chat/message-stream";
 import type { ChatItem } from "../src/lib/omni/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
-import { S } from "../src/lib/strings";
+import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { LocaleProvider } from "../src/state/locale";
+import { stubLocalStorage } from "./helpers/storage";
 
 /** The behaviour each rendered link received, by the href it was sorted from. */
 const rendered = vi.hoisted(() => new Map<string | undefined, LinkBehavior>());
@@ -135,9 +137,21 @@ describe("MessageStream prompts with attachments", () => {
     origin: [],
     taskRunning: false,
   };
+  // A message the person sent carries its time in the reader's locale.
+  beforeEach(() => {
+    stubLocalStorage().setItem("penguin.lang", "en");
+  });
+  afterEach(() => {
+    setActiveStrings(zh);
+    vi.unstubAllGlobals();
+  });
   const stream = (items: ChatItem[]) =>
     renderToStaticMarkup(
-      createElement(MessageStream, { items, version: 1, ctx, onAddExcerpt: () => {} }),
+      createElement(
+        LocaleProvider,
+        null,
+        createElement(MessageStream, { items, version: 1, ctx, onAddExcerpt: () => {} }),
+      ),
     );
   const anchorCount = (html: string) => html.match(/data-outline-anchor=/g)?.length ?? 0;
   const imageCount = (html: string) => html.match(/<img\b/g)?.length ?? 0;
