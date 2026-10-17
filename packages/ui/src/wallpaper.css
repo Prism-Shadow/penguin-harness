@@ -68,21 +68,52 @@
     background-color: var(--wallpaper-hover-fill);
   }
 }
-/* Activity rows need no painted strip. Let them scroll with their bodies: a clear sticky row
-   would otherwise superimpose its words on the text moving underneath. */
+/* Activity rows need no painted strip: they sit on the image like the canvas around them. */
 @media not (prefers-reduced-transparency: reduce) {
   .ui-shell[data-wallpaper] .ui-frame:has(> .ui-activity):not([role="dialog"] *),
   .ui-shell[data-wallpaper] .ui-activity:not([role="dialog"] *) {
     background-color: transparent;
   }
-  .ui-shell[data-wallpaper] .ui-activity.sticky:not([role="dialog"] *) {
-    position: relative;
-    top: auto;
-  }
   .ui-shell[data-wallpaper]
     .ui-activity:not([data-state="error"], [role="dialog"] *):is(button, :has(button)):hover
     :is([data-slot="label"], [data-slot="detail"]) {
     color: var(--ui-fg);
+  }
+}
+/* A pinned activity row (a work group's head, an open thinking or tool row) still pins. While it
+   is stuck, its backdrop (`WallpaperBackdrop`) paints the page colour and the image again under
+   its words, laid against the window like the shell's own layer, so the row still reads as clear
+   while the text scrolling under it stays hidden; at rest nothing is drawn. Only a stuck row
+   draws it, so a long transcript holds two such layers at most. A browser that cannot report a
+   stuck row lets the rows scroll with their bodies instead: a clear pinned row would lay its
+   words over the text moving underneath. */
+[data-wallpaper-backdrop] {
+  display: none;
+}
+@media not (prefers-reduced-transparency: reduce) {
+  @supports (container-type: scroll-state) {
+    .ui-shell[data-wallpaper] .ui-activity.sticky:not([role="dialog"] *) {
+      container-type: scroll-state;
+    }
+    @container scroll-state(stuck: top) {
+      .ui-shell[data-wallpaper]
+        .ui-activity.sticky:not([role="dialog"] *)
+        > [data-wallpaper-backdrop] {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        clip-path: inset(0);
+        pointer-events: none;
+        background-color: var(--ui-canvas);
+      }
+    }
+  }
+  @supports not (container-type: scroll-state) {
+    .ui-shell[data-wallpaper] .ui-activity.sticky:not([role="dialog"] *) {
+      position: relative;
+      top: auto;
+    }
   }
 }
 /* The lifted dock owns an opaque canvas and a copy of the viewport-aligned image. Its cards
