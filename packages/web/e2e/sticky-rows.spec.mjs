@@ -7,9 +7,9 @@
  * - Given a settled work group with one tool call's output open, when the transcript is
  *   scrolled into that output, the group head sits flush at the top of the transcript, the tool
  *   row sits right below it, and the output's lines pass under both without showing through.
- * - Given the same conversation under a custom background image, the head and the row still
- *   pin, the lines under them still do not show through, and the pinned rows show the image
- *   rather than a painted strip.
+ * - Given the same conversation under a custom background image, in light and dark mode, the
+ *   head and the row still pin, the lines under them still do not show through, and the pinned
+ *   rows show the image over the page colour rather than a painted strip.
  */
 import { writeFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
@@ -190,30 +190,35 @@ for (const [theme, name] of Object.entries(THEMES)) {
     await expectPinnedAndOpaque(page, toolRow);
   });
 
-  test(`${name}: under a custom background the rows still pin, hide what scrolls under them, and show the image`, async ({
-    page,
-  }) => {
-    // A flat wallpaper at full strength: any area showing only the background has its colour.
-    await page.addInitScript(() => {
-      const canvas = document.createElement("canvas");
-      canvas.width = canvas.height = 8;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#3a7d5c";
-      ctx.fillRect(0, 0, 8, 8);
-      localStorage.setItem("penguin.background.image", canvas.toDataURL("image/png"));
-      localStorage.setItem(
-        "penguin.background.settings",
-        JSON.stringify({ transparency: 0, mode: "tile", position: "left top" }),
-      );
+  for (const mode of ["light", "dark"]) {
+    test(`${name}, ${mode}: under a custom background the rows still pin, hide what scrolls under them, and show the image`, async ({
+      page,
+    }) => {
+      // A flat wallpaper at half strength: an area showing only the background is the page
+      // colour and the image's colour mixed, so a stuck row matches it only if it lays the
+      // same image over the same page colour.
+      await page.addInitScript((mode) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 8;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#3a7d5c";
+        ctx.fillRect(0, 0, 8, 8);
+        localStorage.setItem("penguin.theme", mode);
+        localStorage.setItem("penguin.background.image", canvas.toDataURL("image/png"));
+        localStorage.setItem(
+          "penguin.background.settings",
+          JSON.stringify({ transparency: 50, mode: "tile", position: "left top" }),
+        );
+      }, mode);
+      const toolRow = await openOutput(page, theme);
+      await expect(page.locator(".ui-shell[data-wallpaper]")).toHaveCount(1);
+      const pinned = await expectPinnedAndOpaque(page, toolRow);
+      // A strip of the pinned head past its words, and the same strip of the transcript's
+      // empty margin beside the card: the head paints the background, not a strip of its own.
+      const strip = { y: pinned.band.y + 2, width: 24, height: 8 };
+      const onHead = await page.screenshot({ clip: { x: pinned.band.x, ...strip } });
+      const inMargin = await page.screenshot({ clip: { x: pinned.margin, ...strip } });
+      expect(await pixelsApart(page, onHead, inMargin)).toEqual([]);
     });
-    const toolRow = await openOutput(page, theme);
-    await expect(page.locator(".ui-shell[data-wallpaper]")).toHaveCount(1);
-    const pinned = await expectPinnedAndOpaque(page, toolRow);
-    // A strip of the pinned head past its words, and the same strip of the transcript's empty
-    // margin beside the card: the head paints the background, not a strip of its own.
-    const strip = { y: pinned.band.y + 2, width: 24, height: 8 };
-    const onHead = await page.screenshot({ clip: { x: pinned.band.x, ...strip } });
-    const inMargin = await page.screenshot({ clip: { x: pinned.margin, ...strip } });
-    expect(await pixelsApart(page, onHead, inMargin)).toEqual([]);
-  });
+  }
 }
