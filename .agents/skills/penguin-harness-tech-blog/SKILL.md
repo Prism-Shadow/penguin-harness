@@ -36,6 +36,7 @@ apply to every post. This page covers what those two do not: the shape and the v
 | Section | Its job | In the reference post | en words |
 | --- | --- | --- | ---: |
 | Opening, no heading | What the team cares about, the stakes in the reader's own workloads, then one sentence of scope | "To us, it's all the same: make stuff go _really_ fast." … "Today, we'll be talking about how we evolved our filesystem stack…" | 100–150 |
+| TL;DR, optional | Three to five bullets with the headline numbers, right after the opening | (none; the reference post goes straight on) | 50–100 |
 | Background | The existing system the reader must hold in mind, and the property the new work has to keep. One diagram. | ImageFS: lazy loading, cache tiers, OverlayFS for writes | 150–250 |
 | The obvious plan | The constraint, and the natural answer to it. Let it look right. | virtio-fs bridges the VM boundary; boot is fast. "So we shipped it… right?" | 150–250 |
 | The turn | The measurement that broke the plan, against a baseline. Then one operation taken apart on a timeline with real units, down to a root cause stated in one sentence. | Bar chart of five operations; one `chown` = three host round trips, 99 µs; "virtio-fs is a _shared_ filesystem" | 300–400 |
@@ -53,8 +54,7 @@ started the work. What holds in every post is that a measured problem comes befo
 fix's cost is named.
 
 **Not in the shape:**
-- a TL;DR box, a dek, or an "In this post we will…" agenda list (the opening's last sentence is the
-  scope);
+- a dek, or an "In this post we will…" agenda list (the opening's last sentence is the scope);
 - "Introduction", "Overview" or "Conclusion" headings;
 - a closing recap of what the reader just read.
 
@@ -62,19 +62,48 @@ Acknowledgements, with full names, are optional and go last.
 
 ## Figures
 
+A technical post is drawn, not only written (owner, 2026-10-17). Every post needs at least one
+diagram of the mechanism, and a chart for each measurement it argues from. A table alone does not
+count as a figure.
+
+- **Inline SVG in the post's Markdown.** The model is the agent-loop flowchart in the MMSP docs
+  (<https://mmsp.penguin.ooo/docs/agent-loop/>). Its source is in the agenthub repo:
+  `site/src/docs/agent-loop.en.md` and the `.flowchart` rules in `site/src/styles/global.css`.
+  - A `<figure>` holds `<svg viewBox="…" role="img" aria-labelledby="…">` with a `<title>`,
+    followed by a `<figcaption>`.
+  - Marks carry classes, never inline colours. The blog's stylesheet styles those classes from the
+    site's tokens, with `html.dark` variants, so a figure follows the theme. Reuse the existing
+    classes, and add one there when a figure needs a new kind of mark.
+  - SVG text is in the file's language. The en and zh posts each carry their own copy, so a drawn
+    figure needs no asset pair and no hosting step.
+  - The same content as text (the steps, or the numbers) sits in a visually hidden list after the
+    `<svg>`. It serves screen readers and anything that reads the post as Markdown.
+  - Every id is unique per figure and per language (`<slug>-<figure>-en-…`), because all ids share
+    one page.
+- **Go beyond boxes and arrows when that explains more.** The owner asked for bolder figures than
+  a plain flowchart: request strips coloured by state, timelines with real units, annotated charts,
+  before/after splits. The ai-slop rule still decides:
+  - every mark, colour and motion encodes something: a state, a quantity or a step;
+  - each state keeps one colour across every figure in the post, and stays legible in greyscale and
+    in dark mode;
+  - motion appears only to show a process, never as atmosphere, and is off under
+    `prefers-reduced-motion`;
+  - no decorative gradients or glows.
+- **Draw from the data.** Generate a chart's SVG from the same output the tables and the prose come
+  from (a throwaway script is fine), so a bar and the number beside it cannot disagree. Units go on
+  the axis.
 - **One figure per idea the reader must hold**, placed right after the paragraph that introduces it.
 - **Draw mirror pairs.** The old and new data paths, and the old and new per-operation timelines,
   use the same layout, scale and labels. The reference post pairs figures 1↔6, 4↔5 and 3↔7.
 - **A caption states the finding, with its numbers.** "virtio-fs + ImageFS is slowest on every
   operation: chown 9.87 s against 2.31 s on gVisor and 1.58 s on ImageFS", never "Benchmark
-  results". The blog renders `![alt](…)` as a bare `<img>` with no caption element. The alt text
-  therefore carries the finding. A figure that needs a visible caption gets a one-line italic
-  paragraph directly under it.
-- **Charts:**
-  - Charts are SVG, with units on the axis. Each system keeps one colour across every chart in the
-    post, and ours stays distinguishable from the baseline in greyscale.
-  - Labels are per language, so a chart is a pair: `<name>-en.svg` / `<name>-zh.svg`.
-  - Everything is hosted in the community repo's `blog-assets/`, per `reference/authoring.md`.
+  results".
+- **Screenshots and video are captured, not drawn.** They are hosted in the community repo's
+  `blog-assets/`, per `reference/authoring.md`. The blog renders `![alt](…)` as a bare `<img>`
+  with no caption, so the alt text carries the finding, and a visible caption is a one-line italic
+  paragraph under the image.
+- **Look at every figure as a reader will.** Render the post page in the light and the dark theme,
+  at desktop width and at 390 px.
 - **Table or chart.**
   - A table holds exact numbers a reader will look up.
   - A chart shows a comparison a reader should see at a glance.
@@ -149,14 +178,17 @@ Polishing is optional.
 
 ## Before the PR
 
-- The opening ends with the scope sentence. There is no TL;DR.
+- The opening ends with the scope sentence, and a TL;DR, if there is one, follows it.
 - Every section's last sentence moves the story on. Recap sentences are deleted.
 - A measured problem precedes the fix, and the fix's cost is named.
 - Figures:
+  - there is a diagram of the mechanism, and a chart for each measurement the post argues from;
+  - drawn figures are inline SVG with classes, a `<title>`, a `<figcaption>` and a hidden text
+    equivalent;
   - every figure appears after the prose that introduces it;
-  - alt text or the caption states the finding with numbers;
+  - the caption states the finding with numbers;
   - before/after figures share a layout;
-  - every chart has an en and a zh file.
+  - every figure was looked at in both themes, at desktop and phone width.
 - Numbers:
   - every number has a unit, a baseline and a source;
   - the method sentence is there;

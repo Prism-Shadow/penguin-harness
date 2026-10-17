@@ -12,12 +12,15 @@ deep dives on the landing blog. Its reference post is Modal's
 [Building fast filesystems for VMs](https://modal.com/blog/vm-sandbox-filesystem). From that post it
 takes:
 
-- a section order: an opening that ends on one scope sentence, background, the obvious plan, the
+- a section order: an opening that ends on one scope sentence, an optional TL;DR, background, the obvious plan, the
   measurement that broke it, the redesign with its cost named, implementation, results against the
   naive baseline, and a short close;
 - word budgets per section;
-- figures placed after the prose that introduces them, before/after figures in one layout, and
-  captions that state the finding with its numbers;
+- figures: every post is drawn. Diagrams and charts are inline SVG in the post's Markdown, on the
+  model of the agent-loop flowchart in the MMSP docs: classes styled for both themes, text in each
+  language's file, and a hidden text equivalent. Bolder figures are welcome when every mark encodes
+  something. Before/after figures share one layout, and captions state the finding with its
+  numbers;
 - how numbers are presented: units, both endpoints of every ratio, a real baseline, and one sentence
   on method that also says whether the numbers come from a simulator or a live provider;
 - voice rules for the English and the Chinese posts.
