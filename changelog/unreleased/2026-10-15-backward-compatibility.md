@@ -23,7 +23,7 @@ Remove at the 0.3.0 release preparation, by whoever prepares it, together with c
 
 ## Penguin Go's pre-MMSP routes
 
-The one-time migration of Penguin Go routes stored before the MMSP switch (`google-genai` / `deepseek-official` on `token.penguin.ooo/api`) now runs only in the server's read path, including the startup sweep. Core's `loadProjectConfig` no longer migrates them. A file read by the SDK alone keeps its old routes until a server reads it. The tolerated shape, its scope and the user action are unchanged from [the 0.2.15 entry](../0.2.15/2026-10-12-backward-compatibility.md): nothing to do when the file is opened through the server, the desktop app or the CLI.
+The one-time migration of Penguin Go routes stored before the MMSP switch (`google-genai` / `deepseek-official` on `token.penguin.ooo/api`) now runs only in the server's read path, including the startup sweep. Core's `loadProjectConfig` no longer migrates them. A file read only by the CLI or the SDK keeps its old routes until a server reads it. The tolerated shape and its scope are unchanged from [the 0.2.15 entry](../0.2.15/2026-10-12-backward-compatibility.md); the user action narrows to: nothing to do when the file is opened through the server or the desktop app.
 
 ### Lifetime
 
