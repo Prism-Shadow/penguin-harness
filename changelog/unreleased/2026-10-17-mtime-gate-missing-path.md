@@ -3,6 +3,7 @@
 - **Date:** 2026-10-17
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1183](https://github.com/Prism-Shadow/penguin-harness/pull/1183)
 - **Issue:** [#301](https://github.com/Prism-Shadow/penguin-harness/issues/301)
 
 [中文版](2026-10-17-mtime-gate-missing-path.zh.md)
