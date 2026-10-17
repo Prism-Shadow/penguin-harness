@@ -133,14 +133,45 @@ async function expectPinnedAndOpaque(page, toolRow) {
   }
   // Different lines of output lie under the band at the two positions: identical pixels mean
   // none of them shows through the pinned head or row.
+  const band = second.band;
   await scrollInto(page, toolRow, 60);
-  const shotA = await page.screenshot({ clip: first.band });
+  const shotA = await page.screenshot({ clip: band });
   await scrollInto(page, toolRow, 97);
-  const shotB = await page.screenshot({ clip: second.band });
+  const shotB = await page.screenshot({ clip: band });
   writeFileSync(test.info().outputPath("band-60.png"), shotA);
   writeFileSync(test.info().outputPath("band-97.png"), shotB);
-  expect(shotA.equals(shotB)).toBe(true);
+  expect(await pixelsApart(page, shotA, shotB), JSON.stringify({ first, second })).toEqual([]);
   return second;
+}
+
+/** Where two same-sized screenshots differ: up to five `x,y` pixel positions, none when equal. */
+function pixelsApart(page, a, b) {
+  return page.evaluate(
+    async (sources) => {
+      const [one, two] = await Promise.all(
+        sources.map(async (src) => {
+          const image = new Image();
+          image.src = src;
+          await image.decode();
+          const canvas = document.createElement("canvas");
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const context = canvas.getContext("2d");
+          context.drawImage(image, 0, 0);
+          return context.getImageData(0, 0, image.width, image.height);
+        }),
+      );
+      const apart = [];
+      for (let i = 0; i < one.data.length && apart.length < 5; i += 4) {
+        if ([0, 1, 2].some((c) => one.data[i + c] !== two.data[i + c])) {
+          const at = i / 4;
+          apart.push(`${at % one.width},${Math.floor(at / one.width)}`);
+        }
+      }
+      return apart;
+    },
+    [a, b].map((png) => `data:image/png;base64,${png.toString("base64")}`),
+  );
 }
 
 test("the group head and the open tool row pin at the top while the output scrolls under them", async ({
@@ -182,5 +213,5 @@ test("under a custom background the rows still pin, hide what scrolls under them
   const inMargin = await page.screenshot({
     clip: { x: pinned.band.x - strip.width - 12, y: pinned.band.y + 2, ...strip },
   });
-  expect(onHead.equals(inMargin)).toBe(true);
+  expect(await pixelsApart(page, onHead, inMargin)).toEqual([]);
 });
