@@ -524,6 +524,11 @@ export const en: GalleryStrings = {
         description:
           "The Machines page's parts: the status pill in every state, the machine card and its list, the dialog toolbar and the add dialog.",
       },
+      attachments: {
+        title: "Attachments",
+        description:
+          "Images and files attached in a conversation: staged in the composer, in the message once sent, in a steer's chip, at phone width, with long names and when an image fails to load.",
+      },
       colour: {
         title: "Colour",
         description: "Surfaces, inks, lines, the accent, the tones, chart series and code colours.",
@@ -1628,6 +1633,36 @@ export const en: GalleryStrings = {
       submitCount: (count: number) => `Add ${count}`,
       exhaustedCaption: "Nothing left in the ssh config to add",
       noHosts: "Every host in the ssh config is on this page already.",
+    },
+    attachments: {
+      composer: "Composer",
+      composerHint:
+        "Staged images and files share one row at the top of the composer: images at one height and their own ratio, files with their kind's glyph, name and size; the remove button always shows.",
+      sent: "Sent message",
+      sentHint:
+        "The same tiles as the composer, above the text bubble: a row of images, a row of files, one time footer.",
+      steer: "Steer",
+      steerHint: "A steer's images and files inside its chip, at the composer's size.",
+      narrow: "Phone width",
+      narrowHint:
+        "At phone width the tiles wrap, a long file name truncates first, and the remove button stays in view.",
+      shapes: "Ratios and sizes",
+      shapesHint:
+        "Landscape, portrait, square, tiny and very wide images keep their own ratio; past a bound or smaller than the tile, the whole picture is fitted inside it — never stretched, cropped or enlarged.",
+      failed: "Failed to load",
+      failedHint:
+        "An image that cannot load keeps a square tile with the image glyph, and says why on hover.",
+      reset: "Restore every attachment",
+      imageAlt: "Image uploaded by user",
+      removeImage: "Remove image",
+      removeFile: "Remove file",
+      unavailable: "This image could not be loaded",
+      prompt: "Here are the screenshots and the logs from yesterday's build. Why did it fail?",
+      steerText: "Also look at these two",
+      steerLabel: "Steer",
+      time: "14:05",
+      copy: "Copy message",
+      placeholder: "Type a message…",
     },
   },
 };

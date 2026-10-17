@@ -3709,6 +3709,8 @@ Scenarios:
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
     retryNothing: "Nothing to retry: that turn's input has already been sent.",
     imageAlt: "Image uploaded by user",
+    /** The hint on a sent image that did not load (its file was removed, or its machine is out of reach). */
+    imageUnavailable: "This image could not be loaded",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via read_file)",
@@ -4047,9 +4049,7 @@ Scenarios:
     },
     /** The skills note's fixed phrase (the count picks the plural); the skill names follow it as `nameList`. */
     skillsLabel: (count: number): string => `Using skill${count === 1 ? "" : "s"}`,
-    /** Attached-file notice above a user message: this fixed phrase, then the file names as `nameList`. */
-    attachedFilesLabel: (count: number): string => `Attached file${count === 1 ? "" : "s"}`,
-    /** Names listed after a note's fixed phrase (skills, files). */
+    /** Names listed after a note's fixed phrase (the skills). */
     nameList: (names: string[]): string => names.join(", "),
     /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "More input options",

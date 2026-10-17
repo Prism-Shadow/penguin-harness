@@ -193,6 +193,8 @@ export * from "./components/overlays/command-palette/command-palette";
 // behind it, the assistant reply on it, and the changes card.
 // The reveal's pacing (stream-reveal.ts) stays inside the family: its hook is the door.
 export * from "./components/chat/message-bubble/message-bubble";
+// The images and files a message carries: the composer, the sent message and a steer's chip.
+export * from "./components/chat/attachments/attachments";
 export * from "./components/chat/stream-text/stream-text";
 export * from "./components/chat/assistant-text/assistant-text";
 export * from "./components/chat/assistant-text/streaming-caret";

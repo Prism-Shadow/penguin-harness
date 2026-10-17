@@ -3872,6 +3872,8 @@ Benchmark：
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
     retryNothing: "没有可重试的内容：那一轮的输入已随后续消息发出。",
     imageAlt: "用户上传的图片",
+    /** The hint on a sent image that did not load (its file was removed, or its machine is out of reach). */
+    imageUnavailable: "图片无法加载",
     toolImageAlt: "工具输出的图片",
     imagesAsPathHint:
       "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 read_file 查看）",
@@ -4244,9 +4246,7 @@ Benchmark：
     },
     /** The skills note's fixed phrase (the count picks the en plural); the skill names follow it as `nameList`. */
     skillsLabel: (_count: number): string => "使用技能",
-    /** Attached-file notice above a user message: this fixed phrase, then the file names (only the names; the paths stay in the Trace) as `nameList`. */
-    attachedFilesLabel: (_count: number): string => "附加文件",
-    /** Names listed after a note's fixed phrase (skills, files). */
+    /** Names listed after a note's fixed phrase (the skills). */
     nameList: (names: string[]): string => names.join("、"),
     /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "更多输入方式",

@@ -557,6 +557,13 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
 - **Example and template cards show a short summary**, one line saying what it is; the full text
   (a mission, a prompt) lands in the field it fills, and examples live where the choice is made,
   not again under that field (company landing, 2026-10-03).
+- **What a message carries is an attachment tile.** An image or a file attached to a message —
+  staged in the composer, sent, or inside a steer — is the UI package's `AttachmentImage` /
+  `AttachmentFile` in an `AttachmentList`, never a hand-built thumbnail or a chip. An image box
+  takes a box radius (`rounded-md`), never `rounded-control`: Frost's controls are pills at
+  9999px, and that radius on a box that is not square draws a stadium (owner, 2026-10-17:
+  「图片传上去不知道为啥变成椭圆了」). The gallery's attachments board and its browser spec
+  (`packages/ui-gallery/e2e/attachments.spec.mjs`) hold the shapes.
 - **Comments explain constraints, not history**, and never cite a design doc — inline the constraint.
 
 ## Verify
