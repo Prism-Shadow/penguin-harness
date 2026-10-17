@@ -105,7 +105,14 @@ function scrollInto(page, toolRow, into) {
       rowOffset: r.top - h.bottom,
       sectionAbove: s.top < top(),
       sectionBelow: s.bottom - r.bottom,
-      band: { x: h.left, y: h.top, width: h.width, height: r.bottom - h.top },
+      // Whole pixels inside both rows: an edge pixel shared with what lies below the row
+      // would hold a sliver of the output.
+      band: {
+        x: Math.ceil(h.left),
+        y: Math.ceil(h.top),
+        width: Math.floor(h.right) - Math.ceil(h.left),
+        height: Math.floor(r.bottom) - Math.ceil(h.top) - 1,
+      },
     };
   }, into);
 }
@@ -166,7 +173,11 @@ test("under a custom background the rows still pin, hide what scrolls under them
   // margin beside the card: the head paints the background, not a strip of its own.
   const strip = { width: 24, height: 8 };
   const onHead = await page.screenshot({
-    clip: { x: pinned.band.x + pinned.band.width * 0.7, y: pinned.band.y + 2, ...strip },
+    clip: {
+      x: Math.round(pinned.band.x + pinned.band.width * 0.7),
+      y: pinned.band.y + 2,
+      ...strip,
+    },
   });
   const inMargin = await page.screenshot({
     clip: { x: pinned.band.x - strip.width - 4, y: pinned.band.y + 2, ...strip },
