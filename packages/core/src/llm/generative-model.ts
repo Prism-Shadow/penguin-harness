@@ -69,6 +69,7 @@ import type {
   ToolDefinition,
 } from "../interfaces/index.js";
 import { userAgent } from "../index.js";
+import { armDeadline } from "../internal/deadline-timer.js";
 import { attributionHeaders } from "../state/model-catalog.js";
 import { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 import {
@@ -886,20 +887,18 @@ export class GenerativeModel implements LLMInterface {
     userSignal?.addEventListener("abort", onUserAbort, { once: true });
 
     let timedOut = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelTimer: (() => void) | null = null;
     const clearTimer = (): void => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
+      cancelTimer?.();
+      cancelTimer = null;
     };
     const armTimer = (): void => {
       if (this.requestTimeoutMs <= 0) return; // Timeout disabled
       clearTimer();
-      timer = setTimeout(() => {
+      cancelTimer = armDeadline(this.requestTimeoutMs, () => {
         timedOut = true;
         ac.abort();
-      }, this.requestTimeoutMs);
+      });
     };
 
     /**

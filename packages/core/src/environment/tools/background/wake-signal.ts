@@ -1,3 +1,5 @@
+import { armDeadline } from "../../../internal/deadline-timer.js";
+
 /**
  * WakeSignal —— a single wakeup point shared by background sessions.
  *
@@ -29,15 +31,16 @@ export class WakeSignal {
 
   /** Waits for "woken up" or `ms` to elapse, whichever comes first. */
   async wait(ms: number): Promise<void> {
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let settle!: () => void;
     const timeout = new Promise<void>((resolve) => {
-      // wait is part of an active operation: the timer needs to keep the process alive, and is cleaned up immediately below after notify.
-      timer = setTimeout(resolve, ms);
+      settle = resolve;
     });
+    // wait is part of an active operation: the timer needs to keep the process alive, and is cleaned up immediately below after notify.
+    const cancel = armDeadline(ms, settle);
     try {
       await Promise.race([this.promise, timeout]);
     } finally {
-      if (timer) clearTimeout(timer);
+      cancel();
     }
   }
 }
