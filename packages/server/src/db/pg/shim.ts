@@ -20,6 +20,8 @@
  * instance: 127.0.0.1:15432 tracker/tracker, schema `penguin`).
  */
 import { Worker, receiveMessageOnPort, MessageChannel } from "node:worker_threads";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { translateScript, translateStatement, convertPlaceholders } from "./translate.js";
 
 /** The subset of node:sqlite's DatabaseSync the platform actually uses. */
@@ -60,6 +62,27 @@ interface Reply {
 const QUERY_TIMEOUT_MS = Number(process.env.PENGUIN_PG_QUERY_TIMEOUT_MS || 120000);
 const META_TABLE = "_pg_meta";
 
+/**
+ * The worker file lives at dist/db/pg/worker.cjs, but where THIS module ends up
+ * depends on the bundler: inlined into dist/db/pg/shim-entry.js, or split into a
+ * chunk at the dist root. Try both relative resolutions and take the one that
+ * exists (the dist-root one wins, which is the production layout).
+ */
+function resolveWorkerUrl(): URL {
+  const candidates = [
+    new URL("./db/pg/worker.cjs", import.meta.url),
+    new URL("./pg/worker.cjs", import.meta.url),
+  ];
+  for (const u of candidates) {
+    try {
+      if (existsSync(fileURLToPath(u))) return u;
+    } catch {
+      // not a file URL (bundled oddly) — fall through
+    }
+  }
+  return candidates[0];
+}
+
 function parseDsn(dsn: string): PgConfig {
   const u = new URL(dsn);
   return {
@@ -86,9 +109,14 @@ export function pgConfigFromEnv(): PgConfig {
 
 /** A translated statement ready to execute; params follow the $1..$n order. */
 class PgStatementSync implements PgStatementSyncLike {
+  /**
+   * @param namedOrder named parameters in $1..$n order, captured from the ORIGINAL
+   * (pre-translation) SQL — the translated SQL no longer contains `:name` tokens.
+   */
   constructor(
     private readonly shim: PgDatabaseSync,
     private readonly sql: string,
+    private readonly namedOrder: readonly string[] = [],
   ) {}
 
   private buildParams(params: unknown[]): unknown[] | null {
@@ -102,11 +130,10 @@ class PgStatementSync implements PgStatementSyncLike {
       !(first instanceof Uint8Array) &&
       !(first instanceof Date)
     ) {
-      // Named-parameter object: order by first appearance in the SQL.
+      // Named-parameter object: order by first appearance in the ORIGINAL SQL.
       const obj = first as Record<string, unknown>;
-      const { named } = convertPlaceholders(this.sql);
-      if (named.length === 0) return [];
-      return named.map((n) => {
+      if (this.namedOrder.length === 0) return [];
+      return this.namedOrder.map((n) => {
         if (!(n in obj)) throw new Error(`pg-shim: missing named parameter '${n}'`);
         return obj[n];
       });
@@ -145,8 +172,11 @@ class LazyPgStatement implements PgStatementSyncLike {
 
   private stmt(): PgStatementSync {
     if (!this.inner) {
+      // Capture the named-parameter order from the ORIGINAL SQL before translation
+      // rewrites `:name` into `$n`.
+      const { named } = convertPlaceholders(this.sql);
       const translated = translateStatement(this.sql, { pkOf: (t) => this.shim.pkOf(t) });
-      this.inner = new PgStatementSync(this.shim, translated ?? this.sql);
+      this.inner = new PgStatementSync(this.shim, translated ?? this.sql, named);
     }
     return this.inner;
   }
@@ -179,9 +209,9 @@ export class PgDatabaseSync implements PgDatabaseSyncLike {
 
   constructor(cfg?: PgConfig) {
     this.cfg = cfg ?? pgConfigFromEnv();
-    const workerUrl = new URL("./pg/worker.js", import.meta.url);
-    this.worker = new Worker(workerUrl, {
-      type: "module",
+    // The worker is built as CommonJS (tsup onSuccess → esbuild): pg's dependency
+    // graph uses dynamic require() that esbuild's ESM output cannot express.
+    this.worker = new Worker(resolveWorkerUrl(), {
       env: { ...process.env, PENGUIN_PG_CFG: JSON.stringify(this.cfg) },
     });
     const { port1, port2 } = new MessageChannel();
@@ -229,8 +259,9 @@ export class PgDatabaseSync implements PgDatabaseSyncLike {
     Atomics.store(this.ctrl, 0, 0);
     if (!this.primed) {
       // First request carries the reply port (transferred; neuters the main-side
-      // copy) and the shared control block (shared by reference).
-      this.worker.postMessage({ req, port: this.workerPort, ctrl: this.ctrl });
+      // copy) and the shared control block (shared by reference). A MessagePort
+      // in a message MUST be listed in the transferList.
+      this.worker.postMessage({ req, port: this.workerPort, ctrl: this.ctrl }, [this.workerPort]);
       this.primed = true;
     } else {
       this.worker.postMessage({ req });
@@ -242,7 +273,7 @@ export class PgDatabaseSync implements PgDatabaseSyncLike {
     const received = receiveMessageOnPort(this.replyPort);
     if (!received) throw new Error("pg-shim: worker reply missing");
     const reply = received.message as Reply;
-    if (reply.error) throw new Error(`pg-shim: ${reply.error}`);
+    if (reply.error) throw new Error(`pg-shim: ${reply.error} | sql: ${sql.slice(0, 240)}`);
     return { rows: reply.result?.rows ?? [], changes: reply.result?.changes ?? 0 };
   }
 
@@ -271,14 +302,15 @@ export class PgDatabaseSync implements PgDatabaseSyncLike {
         `SELECT CAST(value AS INTEGER) AS user_version FROM ${META_TABLE} WHERE key = 'user_version'`,
       );
     }
-    // PRAGMA table_info(t) → information_schema (ensureColumn + sqlite-copy style callers)
+    // PRAGMA table_info(t) → information_schema (ensureColumn + sqlite-copy style callers).
+    // The table name is regex-validated and inlined: callers pass no parameters.
     const ti = sql.match(/^\s*PRAGMA\s+table_info\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*;?\s*$/i);
     if (ti) {
       return new PgStatementSync(
         this,
         `SELECT column_name AS name, data_type AS type, is_nullable AS notnull
            FROM information_schema.columns
-          WHERE table_schema = current_schema() AND table_name = $1
+          WHERE table_schema = current_schema() AND table_name = '${ti[1]}'
           ORDER BY ordinal_position`,
       );
     }

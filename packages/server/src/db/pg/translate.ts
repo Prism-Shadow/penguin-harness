@@ -215,17 +215,191 @@ function translateDateExprs(sql: string): string {
     (_m, col, shift) =>
       `CAST(to_char(((${col})::timestamptz + INTERVAL '${shift.replace(/^\+/, "")}') AT TIME ZONE 'UTC', 'HH24') AS INTEGER)`,
   );
-  // date(<col>, '-6 days', 'weekday 1') → ISO Monday
+  // date(<col>, '-6 days', 'weekday 1') → ISO Monday（::text 对齐 sqlite date() 的 TEXT 返回）
   s = s.replace(
     /date\(\s*["']?date["']?\s*,\s*'-6 days'\s*,\s*'weekday 1'\s*\)/gi,
-    `date_trunc('week', ("date")::date)::date`,
+    `date_trunc('week', ("date")::date)::date::text`,
   );
-  // date(ts, :dayShift / $n) → UTC wall date + bound interval
+  // date(ts, :dayShift / $n) → UTC wall date + bound interval（::text 同上）
   s = s.replace(
     /date\(\s*([A-Za-z_][A-Za-z0-9_.]*)\s*,\s*(:\w+|\$\d+)\s*\)/gi,
-    (_m, col, param) => `(((${col})::timestamptz AT TIME ZONE 'UTC')::date + (${param})::interval)`,
+    (_m, col, param) => `(((((${col})::timestamptz AT TIME ZONE 'UTC')::date + (${param})::interval))::date::text)`,
   );
   return s;
+}
+
+/**
+ * FTS5 support (session_search).
+ *
+ * The platform indexes a CJK unigram+bigram projection (services/search-text.ts) into
+ * FTS5's `session_search` virtual table and queries it with `session_search MATCH ?`
+ * plus FTS5's hidden `rank` (bm25) column. PostgreSQL has no FTS5, so:
+ *
+ *  - CREATE VIRTUAL TABLE ... USING fts5(...) → a plain table with the same columns
+ *    plus a generated `body_tsv` tsvector column ('simple' config tokenizes a CJK run
+ *    as one token — matching unicode61 — and the projection's U+0001 separators split
+ *    it into exactly the pieces FTS5 indexed)
+ *  - `session_search MATCH ?` → `body_tsv @@ to_tsquery('simple', ?)` — the VALUE at
+ *    that parameter is an FTS5 expression (quoted phrases joined by AND), converted to
+ *    tsquery syntax by the worker when it sees to_tsquery('simple', $n) in the SQL
+ *  - bare `rank` → -ts_rank(body_tsv, to_tsquery('simple', $n)) (negated so ascending
+ *    order = best first, matching bm25's more-negative-is-better), reusing the SAME
+ *    parameter; `raw, rank` in a SELECT list keeps an `AS rank` alias so subqueries
+ *    that pass it through keep working
+ *  - LIKE → ILIKE (SQLite's LIKE is ASCII-case-insensitive; PG's is not)
+ */
+function translateFts(sql: string): string {
+  let s = sql;
+
+  // CREATE VIRTUAL TABLE ... USING fts5(cols) → plain table + tsvector + indexes
+  const vt = s.match(
+    /CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?([A-Za-z_][A-Za-z0-9_]*)["']?\s+USING\s+fts5\s*\(([\s\S]*?)\)\s*;?\s*$/i,
+  );
+  if (vt) {
+    const table = vt[1];
+    const cols: Array<{ name: string; indexed: boolean }> = [];
+    for (const raw of vt[2].split(",")) {
+      const line = raw.trim();
+      if (!line) continue;
+      const m = line.match(/^["']?([A-Za-z_][A-Za-z0-9_]*)["']?(?:\s+UNINDEXED)?/i);
+      if (!m) continue;
+      cols.push({ name: m[1], indexed: !/UNINDEXED/i.test(line) });
+    }
+    const INT_COLS = new Set(["file_index", "line_no"]);
+    const defs = cols.map(
+      (c) => `${c.name} ${INT_COLS.has(c.name) ? "BIGINT" : "TEXT"}`,
+    );
+    const parts = [
+      `CREATE TABLE IF NOT EXISTS ${table} (\n  ${defs.join(",\n  ")},\n`
+      + `  body_tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', coalesce(body, ''))) STORED\n)`,
+      `CREATE INDEX IF NOT EXISTS idx_ss_body_tsv ON ${table} USING gin(body_tsv)`,
+      `CREATE INDEX IF NOT EXISTS idx_ss_session ON ${table}(session_id, file_index, line_no)`,
+    ];
+    return parts.join(";\n") + ";";
+  }
+
+  // session_search MATCH ? → body_tsv @@ to_tsquery('simple', ?)
+  // (placeholder conversion happens after this, so the ? becomes $n.)
+  s = s.replace(/session_search\s+MATCH\s+\?/gi, "body_tsv @@ to_tsquery('simple', ?)");
+
+  // LIKE → ILIKE (ASCII case-insensitivity parity)
+  s = s.replace(/\bLIKE\b/g, "ILIKE");
+
+  return s;
+}
+
+/**
+ * After placeholder conversion: rewrite bare `rank` in FTS queries. The MATCH rewrite
+ * above guarantees the statement contains `body_tsv @@ to_tsquery('simple', $n)`.
+ */
+function translateFtsRank(sql: string): string {
+  const m = sql.match(/body_tsv\s*@@\s*to_tsquery\('simple',\s*(\$\d+)\)/i);
+  if (!m) return sql;
+  const q = `(-ts_rank(body_tsv, to_tsquery('simple', ${m[1]})))`;
+  let s = sql;
+  // SELECT-list form: `raw, rank` → `raw, <expr> AS rank` — but NOT the pass-through
+  // form in hitsFor's outer query (`raw, rank FROM (`), which refers to a subquery's
+  // output column and has no body_tsv in scope.
+  s = s.replace(/raw,\s*rank\b(?!\s*FROM\s*\()/gi, `raw, ${q} AS rank`);
+  // Remaining bare rank: ORDER BY rank, min(rank), window ORDER BY rank.
+  // `AS rank` aliases (produced above) and `rank FROM (` pass-throughs are excluded.
+  s = s.replace(/(?<!\bAS )\brank\b(?!\s*FROM\s*\()/g, q);
+  return s;
+}
+
+/**
+ * SQLite is lax about bare columns in aggregate queries (`SELECT session_id, agent_id,
+ * count(*) ... GROUP BY session_id` picks an arbitrary agent_id); PostgreSQL requires
+ * every selected bare column to be grouped or aggregated. For each selected bare column
+ * that is neither, append it to the GROUP BY list. Functionally dependent columns (a
+ * session's agent) group identically, so the result set is unchanged.
+ */
+function fixGroupBy(sql: string): string {
+  const gbMatch = sql.match(/\bGROUP\s+BY\s+/i);
+  if (!gbMatch || gbMatch.index === undefined) return sql;
+  const gbStart = gbMatch.index + gbMatch[0].length;
+  // GROUP BY list runs until ORDER BY / LIMIT / HAVING / end (top level).
+  const tail = sql.slice(gbStart);
+  const tailStop = tail.search(/\b(ORDER\s+BY|LIMIT|HAVING)\b/i);
+  const gbList = (tailStop === -1 ? tail : tail.slice(0, tailStop)).trim();
+  const grouped = new Set(
+    gbList
+      .split(",")
+      .map((c) => c.trim().replace(/^["']|["']$/g, "").toLowerCase())
+      .filter(Boolean),
+  );
+  // SELECT list: between the first top-level SELECT and FROM.
+  const selMatch = sql.match(/\bSELECT\b/i);
+  if (!selMatch || selMatch.index === undefined) return sql;
+  const fromMatch = sql.slice(selMatch.index).match(/\bFROM\b/i);
+  if (!fromMatch || fromMatch.index === undefined) return sql;
+  const selectList = sql.slice(selMatch.index + 6, selMatch.index + fromMatch.index);
+  const items = splitTopLevel(selectList);
+  const toAdd: string[] = [];
+  for (const raw of items) {
+    const item = raw.trim();
+    if (!item) continue;
+    // Aggregates are fine as-is.
+    if (/\b(count|sum|min|max|avg|total|group_concat)\s*\(/i.test(item)) continue;
+    // Strip a trailing alias; the alias itself counts as grouped (GROUP BY key).
+    const aliasMatch = item.match(/\s+AS\s+["']?([\w]+)["']?\s*$/i);
+    const expr = (aliasMatch ? item.slice(0, aliasMatch.index) : item).trim();
+    if (aliasMatch && grouped.has(aliasMatch[1].toLowerCase())) continue;
+    // Only bare column references (optionally table-qualified).
+    if (!/^["']?[\w]+["']?(?:\.["']?[\w]+["']?)?$/.test(expr)) continue;
+    const bare = expr.replace(/["']/g, "").toLowerCase();
+    const col = bare.includes(".") ? bare.split(".").pop()! : bare;
+    if (grouped.has(bare) || grouped.has(col)) continue;
+    if (!toAdd.some((c) => c.toLowerCase() === expr.toLowerCase())) toAdd.push(expr);
+  }
+  if (toAdd.length === 0) return sql;
+  const newList = gbList ? `${gbList}, ${toAdd.join(", ")}` : toAdd.join(", ");
+  // Rebuild: [prefix incl. "GROUP BY "] + new list + [remainder from the original
+  // tail boundary, with a separating space so "…, agent_id ORDER BY" stays valid].
+  const remainder = tailStop === -1 ? "" : ` ${tail.slice(tailStop)}`;
+  return sql.slice(0, gbStart) + newList + remainder;
+}
+
+/** Split on top-level commas (paren/quote aware). */
+function splitTopLevel(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = "";
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch === "'" || ch === '"') {
+      const q = ch;
+      cur += ch;
+      i += 1;
+      while (i < s.length) {
+        cur += s[i];
+        if (s[i] === q) {
+          if (s[i + 1] === q) {
+            cur += s[i + 1];
+            i += 2;
+            continue;
+          }
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === "(") depth += 1;
+    if (ch === ")") depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0) {
+      out.push(cur);
+      cur = "";
+      i += 1;
+      continue;
+    }
+    cur += ch;
+    i += 1;
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
 }
 
 export interface TranslateCtx {
@@ -289,9 +463,19 @@ export function translateStatement(sql: string, ctx: TranslateCtx): string | nul
   // Date-function rewrites (usage/errors repos)
   s = translateDateExprs(s);
 
+  // FTS5 rewrites (session_search): MATCH → tsvector, LIKE → ILIKE.
+  // CREATE VIRTUAL TABLE ... USING fts5(...) returns its own DDL bundle outright.
+  if (/CREATE\s+VIRTUAL\s+TABLE/i.test(s)) {
+    return translateFts(s);
+  }
+  s = translateFts(s);
+
   // Placeholders last (so ON CONFLICT SQL added above has none of its own)
   const { sql: withParams } = convertPlaceholders(s);
-  return withParams;
+  // FTS rank rewrite needs the final $n indices.
+  const withRank = translateFtsRank(withParams);
+  // SQLite allows bare columns under GROUP BY; PostgreSQL does not.
+  return fixGroupBy(withRank);
 }
 
 /** Translate a full script (exec): every statement, no-ops dropped. */

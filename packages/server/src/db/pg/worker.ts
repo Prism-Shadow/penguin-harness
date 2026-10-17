@@ -95,14 +95,83 @@ function sanitize(v: unknown): unknown {
   return v;
 }
 
+/**
+ * Convert an FTS5 MATCH expression (the platform's own dialect: double-quoted
+ * phrases joined by ` AND `, see services/search-text.ts queryExpression) into
+ * tsquery syntax. Phrase tokens become adjacency-chained lexemes; clauses are
+ * ANDed. An empty expression yields a lexeme that matches nothing.
+ */
+function fts5ToTsquery(expr: string): string {
+  if (typeof expr !== "string" || !expr.trim()) return "'__pg_shim_no_match__'";
+  const clauses: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < expr.length; i += 1) {
+    const ch = expr[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      cur += ch;
+      continue;
+    }
+    if (!inQuotes && expr.startsWith(" AND ", i)) {
+      clauses.push(cur);
+      cur = "";
+      i += 4;
+      continue;
+    }
+    cur += ch;
+  }
+  clauses.push(cur);
+  const out = clauses
+    .map((c) => {
+      const t = c.trim();
+      if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) {
+        const phrase = t.slice(1, -1).replace(/""/g, '"');
+        const toks = phrase
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((tok) => `'${tok.replace(/'/g, "''")}'`);
+        return toks.join(" <-> ");
+      }
+      if (!t) return "";
+      return `'${t.replace(/'/g, "''")}'`;
+    })
+    .filter(Boolean);
+  return out.join(" & ") || "'__pg_shim_no_match__'";
+}
+
+/**
+ * Params feeding to_tsquery('simple', $n) are FTS5 expressions — convert their
+ * VALUES to tsquery syntax. The translator rewrites `session_search MATCH ?`
+ * into exactly that form, so the marker is self-describing in the SQL.
+ */
+function convertFtsParams(sql: string, params: unknown[] | null): unknown[] | null {
+  if (!params) return null;
+  const marker = /to_tsquery\('simple',\s*\$(\d+)\)/gi;
+  let m: RegExpExecArray | null;
+  const idxs = new Set<number>();
+  while ((m = marker.exec(sql)) !== null) {
+    idxs.add(Number(m[1]));
+  }
+  if (idxs.size === 0) return params;
+  const out = [...params];
+  for (const n of idxs) {
+    if (n >= 1 && n <= out.length && typeof out[n - 1] === "string") {
+      out[n - 1] = fts5ToTsquery(out[n - 1] as string);
+    }
+  }
+  return out;
+}
+
 async function handle(req: Req): Promise<Result> {
   const c = await getClient();
   const params = req.params ? req.params.map(sanitize) : null;
+  const finalParams = convertFtsParams(req.sql, params);
   if (req.want === "exec") {
     await c.query(req.sql);
     return { ok: true };
   }
-  const res = await c.query(req.sql, params || []);
+  const res = await c.query(req.sql, finalParams || []);
   if (req.want === "rows") return { rows: res.rows };
   return { changes: res.rowCount ?? 0 };
 }

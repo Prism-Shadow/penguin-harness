@@ -117,6 +117,58 @@ export interface UsageQuery {
    * the day is the server's own.
    */
   utcOffsetMinutes?: number;
+  /**
+   * Cap on the number of GROUPS returned, applied to the most recent ones. Only meaningful for a
+   * grouping with an inherent order — `session` and `agent` do (their key is the id), `date` does
+   * (its key is the day), `model` and `squad` do not. Omitted = every group, which is what the
+   * export and the cost page expect.
+   *
+   * Why it exists: `groupBy=session` over a long-lived Project returns one row per Session that
+   * ever ran — thousands here — while a list view renders the newest handful. The cost is in the
+   * aggregation itself, so capping what the caller will actually read is worth far more than
+   * trimming the response body afterwards.
+   */
+  groupLimit?: number;
+}
+
+/**
+ * Orders grouped rows "most recent first" for `UsageQuery.groupLimit`, for the dimensions where
+ * that is well defined:
+ *
+ *   - `session`: the id embeds its creation timestamp (`session-YYYY-mm-dd-HH-MM-SS-hash`), so a
+ *     string comparison IS chronological order — no date column needed.
+ *   - `date`: the key is the day itself, so string order is chronological.
+ *   - `agent`: the id is opaque; sorted by id for a stable, reproducible page.
+ *
+ * `model` and `squad` are left alone — neither has an order the server could vouch for, so the
+ * route refuses a limit there rather than return an arbitrary subset (see the route's check).
+ */
+function orderForLimit(groupBy: UsageGroupBy, rows: UsageGroupModelSums[]): UsageGroupModelSums[] {
+  if (groupBy === "session" || groupBy === "date" || groupBy === "agent") {
+    return [...rows].sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0));
+  }
+  return rows;
+}
+
+/**
+ * Everything one `query()` reads out of the store, before any pricing. Split out from the
+ * response so the row cache can hold exactly this: these rows are the expensive, slow-moving half
+ * of the route, while the priced response is cheap to rebuild and must never be stale.
+ */
+interface AggregatedRows {
+  todayRows: UsageModelSums[];
+  last7dRows: UsageModelSums[];
+  totalRows: UsageModelSums[];
+  /** Grouped by the requested dimension, before `groupLimit` trims it. */
+  groupRows: UsageGroupModelSums[];
+  seriesRows: UsageSeriesModelSums[];
+  agentBucketRows: UsageAgentBucketCount[];
+  modelBucketRows: UsageSeriesModelSums[];
+  /** The zero-filled bucket keys the series is drawn over (a property of the range, not of the data). */
+  bucketKeys: string[];
+  granularity: UsageGranularity;
+  /** The error-table filter the response's `errors` is folded from. */
+  errorFilter: ErrorFilter;
 }
 
 /** One page of the error detail table (see {@link UsageService.queryErrors}). */
@@ -239,6 +291,27 @@ export class UsageService implements UsageQueries {
     this.projectConfig.getPricing(projectId, provider, modelId);
 
   /**
+   * Short-lived cache of the AGGREGATION ROWS, keyed by the Project + every parameter that
+   * selects rows.
+   *
+   * Why rows and not the finished response: the rows are the expensive half — ~1s of SQL against
+   * the observed 161k-row table — while pricing and folding them is cheap. Caching the rows
+   * therefore keeps the whole win and removes the staleness question entirely: a price is looked
+   * up fresh on every read, so an edit (or a promotion landing, or a preset sync) shows up on the
+   * very next query instead of waiting out a TTL. Only the token sums can be briefly behind, and
+   * that is exactly what {@link invalidate} on record exists to end.
+   *
+   * The rows change only when a token_usage lands, and the cost center, the sidebar and the chat
+   * header all ask for the same window — the observed traffic was ~50 calls in three minutes,
+   * nearly all with identical parameters.
+   */
+  private readonly cache = new Map<string, { projectId: string; at: number; rows: AggregatedRows }>();
+  /** How long a set of aggregated rows is reused. Short enough that a figure is never meaningfully stale. */
+  private static readonly CACHE_TTL_MS = 15_000;
+  /** Upper bound on cached row-sets — the parameter space is small, but a long-lived process should not grow this without limit. */
+  private static readonly CACHE_MAX = 64;
+
+  /**
    * The catalog's time-based schedules, as the aggregations want them.
    *
    * Split by the SCHEDULE, not by whether this Project is on the catalog's price: a Project
@@ -323,7 +396,74 @@ export class UsageService implements UsageQueries {
   }
 
   async query(projectId: string, q: UsageQuery): Promise<UsageResponse> {
+    const cacheKey = this.cacheKey(projectId, q);
+    const nowMs = Date.now();
+    const hit = this.cache.get(cacheKey);
+    // Rows from the last few seconds are reused; everything after them — pricing, folding, the
+    // response shape — is rebuilt on every read, so nothing but the token sums can be stale.
+    const rows =
+      hit !== undefined && nowMs - hit.at < UsageService.CACHE_TTL_MS
+        ? hit.rows
+        : await this.aggregateRows(projectId, q, nowMs, cacheKey);
+    return await this.buildResponse(projectId, q, rows);
+  }
+
+  /**
+   * The cache key: the Project plus every parameter that can change a figure. Built from the
+   * resolved fields rather than the raw object, so an absent filter and an `undefined` one are
+   * the same entry.
+   */
+  private cacheKey(projectId: string, q: UsageQuery): string {
+    return JSON.stringify([
+      projectId,
+      q.groupBy ?? "date",
+      q.granularity ?? "day",
+      q.agentId ?? null,
+      q.provider ?? null,
+      q.modelId ?? null,
+      q.from ?? null,
+      q.to ?? null,
+      q.fromTs ?? null,
+      q.toTs ?? null,
+      q.utcOffsetMinutes ?? null,
+      q.includeGlobalErrors ?? false,
+      q.groupLimit ?? null,
+    ]);
+  }
+
+  /**
+   * Drops every cached answer for one Project (or all of them). Called when usage is recorded, so
+   * a figure on screen is never held for the full TTL after new tokens have actually landed.
+   *
+   * Entries carry their `projectId` rather than encoding it into a flat key string precisely so
+   * this can match on the Project without re-parsing the key.
+   */
+  invalidate(projectId?: string): void {
+    if (projectId === undefined) {
+      this.cache.clear();
+      return;
+    }
+    for (const [key, entry] of this.cache) {
+      if (entry.projectId === projectId) this.cache.delete(key);
+    }
+  }
+
+  /**
+   * The raw aggregated rows one query reads, kept apart from pricing so the row cache
+   * can hold them (see the cache field's note): everything that is expensive and
+   * slow-moving lives here, everything that must never be stale does not.
+   */
+  private async aggregateRows(
+    projectId: string,
+    q: UsageQuery,
+    nowMs: number,
+    cacheKey: string,
+  ): Promise<AggregatedRows> {
     const today = formatLocalDate(this.clock.now());
+    // A grouped-by-Session response over a long-lived Project carries one row per Session that
+    // ever ran (thousands here). The sidebar only ever shows the most recent ones, so an explicit
+    // limit lets that caller ask for what it renders; without one the full set is returned, which
+    // is what every other caller (and the export) expects.
     // Top-level filter: agent + model (the cost center switches views by agent/model; the model filter is always sent as a pair).
     const base: UsageFilter = {};
     if (q.agentId !== undefined) base.agentId = q.agentId;
@@ -344,19 +484,18 @@ export class UsageService implements UsageQueries {
       ...(q.toTs !== undefined ? { toTs: q.toTs } : {}),
     };
     const tiers = this.tiers();
-    const todayRows = this.usage.bucketByModel(projectId, win(today, today), tiers);
-    const last7dRows = this.usage.bucketByModel(
-      projectId,
-      win(localDateMinusDays(this.clock.now(), 6)),
-      tiers,
-    );
-    const totalRows = this.usage.bucketByModel(projectId, { ...win(q.from, q.to), ...ts }, tiers);
-    const groupRows = this.usage.groupsByModel(
-      projectId,
-      q.groupBy,
-      { ...win(q.from, q.to), ...ts },
-      tiers,
-    );
+    // The rollup answers every one of these exactly when folding a day's rows changes nothing
+    // (rollupSafeFor: no price tier, no timestamp window, no session subset). When it does, the
+    // same query runs against usage_records — same figures, more rows to scan.
+    const canRollup = this.usage.rollupSafeFor({}, tiers);
+    const bucket = (f: UsageFilter) =>
+      canRollup ? this.usage.rollupBucketByModel(projectId, f) : this.usage.bucketByModel(projectId, f, tiers);
+    const todayRows = bucket(win(today, today));
+    const last7dRows = bucket(win(localDateMinusDays(this.clock.now(), 6)));
+    const totalRows = bucket({ ...win(q.from, q.to), ...ts });
+    const groupRows = canRollup
+      ? this.usage.rollupGroupsByModel(projectId, q.groupBy, { ...win(q.from, q.to), ...ts })
+      : this.usage.groupsByModel(projectId, q.groupBy, { ...win(q.from, q.to), ...ts }, tiers);
     // Time series at the requested precision, zero-filled over the requested
     // range, defaulting to the last 30 days when no range is given.
     const granularity = q.granularity ?? "day";
@@ -384,12 +523,13 @@ export class UsageService implements UsageQueries {
         "Date range too wide for this granularity; narrow the range or coarsen the granularity.",
       );
     }
-    const seriesRows = this.usage.seriesByModel(
-      projectId,
-      granularity,
-      { ...win(seriesFrom, seriesTo), ...ts },
-      tiers,
-    );
+    // Only DAY buckets are foldable: an hour/minute series needs each row's own instant, which
+    // the day-grained rollup does not carry.
+    const dailySeries = granularity === "day";
+    const seriesRows =
+      canRollup && dailySeries
+        ? this.usage.rollupSeriesByModel(projectId, { ...win(seriesFrom, seriesTo), ...ts })
+        : this.usage.seriesByModel(projectId, granularity, { ...win(seriesFrom, seriesTo), ...ts }, tiers);
     // Per-Agent and per-Model series: each drops its own dimension's filter (its
     // chart draws that dimension's whole breakdown) but honors the other
     // dimension plus the selected range.
@@ -400,11 +540,13 @@ export class UsageService implements UsageQueries {
       ...(q.to !== undefined ? { to: q.to } : {}),
       ...ts,
     };
-    const agentBucketRows = this.usage.agentSeries(projectId, granularity, {
-      ...agentFree,
-      from: seriesFrom,
-      to: seriesTo,
-    });
+    const agentFreeRange = { ...agentFree, from: seriesFrom, to: seriesTo };
+    // agentSeries carries no price dimension, so the only thing that can disqualify the rollup here
+    // is the bucket granularity (a sub-day series needs the instant).
+    const agentBucketRows =
+      dailySeries && this.usage.rollupSafeFor(agentFreeRange, [])
+        ? this.usage.rollupAgentSeries(projectId, agentFreeRange)
+        : this.usage.agentSeries(projectId, granularity, agentFreeRange);
     // With no model filter set, dropping the model filter leaves exactly the
     // query `seriesRows` already ran: reuse its rows instead of running the
     // heaviest query on this route (bucket x model) a second time.
@@ -429,6 +571,41 @@ export class UsageService implements UsageQueries {
     };
 
     // Each paired reference that occurs is looked up for its current price only once.
+    const rows: AggregatedRows = {
+      todayRows,
+      last7dRows,
+      totalRows,
+      groupRows,
+      seriesRows,
+      agentBucketRows,
+      modelBucketRows,
+      bucketKeys,
+      granularity,
+      errorFilter,
+    };
+    // Replace this key's entry and, past the bound, the oldest one (Map iterates in
+    // insertion order, so the first key is the least recently added).
+    this.cache.delete(cacheKey);
+    this.cache.set(cacheKey, { projectId, at: nowMs, rows });
+    if (this.cache.size > UsageService.CACHE_MAX) {
+      const oldest = this.cache.keys().next();
+      if (!oldest.done) this.cache.delete(oldest.value);
+    }
+    return rows;
+  }
+
+  /**
+   * Prices a set of aggregated rows and folds them into the response. Deliberately NOT
+   * cached: the rows behind a cost figure move at most once a minute, but a PRICE moves
+   * the moment someone edits it, and a cost page showing yesterday's rate is worse than a
+   * slow one.
+   */
+  private async buildResponse(
+    projectId: string,
+    q: UsageQuery,
+    rows: AggregatedRows,
+  ): Promise<UsageResponse> {
+    const { todayRows, last7dRows, totalRows, groupRows, seriesRows, agentBucketRows, modelBucketRows, bucketKeys, granularity, errorFilter } = rows;
     const rates = new Map<string, TieredRates | undefined>();
     const allRefs = new Map<string, { provider: string; modelId: string }>();
     for (const r of [...todayRows, ...last7dRows, ...totalRows, ...groupRows, ...seriesRows]) {
@@ -445,7 +622,18 @@ export class UsageService implements UsageQueries {
         total: this.foldBucket(totalRows, rates),
       },
       groupBy: q.groupBy,
-      groups: this.foldGroups(groupRows, rates, q.groupBy),
+      // `groupLimit` keeps the most recent groups only. Which end is "most recent" depends on the
+      // dimension (a session id embeds its creation time; a date sorts chronologically; an agent
+      // id does not), so the service is told the order by the caller rather than guessing — and
+      // a limit on a dimension with no such order is refused rather than silently dropping rows
+      // the caller would have shown.
+      groups: this.foldGroups(
+        q.groupLimit === undefined
+          ? groupRows
+          : orderForLimit(q.groupBy, groupRows).slice(0, q.groupLimit),
+        rates,
+        q.groupBy,
+      ),
       granularity,
       series: this.foldSeries(bucketKeys, seriesRows, rates),
       byAgentSeries: foldAgentSeries(bucketKeys, agentBucketRows),

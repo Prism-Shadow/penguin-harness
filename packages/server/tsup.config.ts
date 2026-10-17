@@ -21,7 +21,7 @@ export default defineConfig({
   // so it has no reason to be a tsup entry or a subpath export.
   entry: {
     index: "src/index.ts",
-    "db/pg/worker": "src/db/pg/worker.ts",
+    "db/pg/shim-entry": "src/db/pg/shim-entry.ts",
     "api/types": "src/api/types.ts",
     lock: "src/lock.ts",
     // "./machine-status": what `penguin server status` prints. A CONTROLLER runs that command
@@ -67,6 +67,20 @@ export default defineConfig({
   onSuccess: async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const repo = path.join(here, "..", "..");
+    // The PG shim's connection worker is built as CommonJS: pg's dependency graph
+    // uses dynamic require() that esbuild's ESM output cannot express.
+    const esbuild = await import("esbuild");
+    await esbuild.build({
+      entryPoints: [path.join(here, "src/db/pg/worker.ts")],
+      outfile: path.join(here, "dist/db/pg/worker.cjs"),
+      bundle: true,
+      format: "cjs",
+      platform: "node",
+      target: "node24",
+      external: ["pg-native"],
+      sourcemap: true,
+      logLevel: "silent",
+    });
     for (const { name, from } of FAR_SIDE_SCRIPTS) {
       fs.copyFileSync(path.join(repo, from), path.join(here, "dist", name));
     }

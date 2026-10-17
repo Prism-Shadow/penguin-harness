@@ -50,6 +50,8 @@ import type { MessagesPageRequest } from "../../services/trace-service.js";
 import { withImagesByReference } from "../../services/trace-images.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import { sessionSearchRoutes } from "./session-search.js";
+import type { SessionSearch } from "../../mechanisms/conversation-search.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
@@ -1886,6 +1888,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 250,
       },
       {
+        id: "session-api.session-search",
+        prefix: "/api/projects/:projectId/sessions",
+        auth: "user",
+        order: 255,
+      },
+      {
         id: "session-api.sessions-batch",
         prefix: "/api/projects/:projectId/sessions/batch",
         auth: "user",
@@ -1946,6 +1954,7 @@ export class SessionApiRoutes {
   @Use() private readonly sources!: SessionOrigins;
   @Use() private readonly errorsRepo!: ErrorLog;
   @Use() private readonly usage!: UsageQueries;
+  @Use() private readonly sessionSearch!: SessionSearch;
   @Use() private readonly liveStreams!: LiveStreams;
   @Use() private readonly auth!: Auth;
   @Use() private readonly drivers!: SessionDrivers;
@@ -1963,6 +1972,7 @@ export class SessionApiRoutes {
   @Bind("session-api.vault") vaultRoutes!: Hono<AppEnv>;
   @Bind("session-api.agent-sessions") agentSessionsRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions-batch") sessionsBatchRoutes!: Hono<AppEnv>;
+  @Bind("session-api.session-search") sessionSearchRoutes!: Hono<AppEnv>;
   @Bind("session-api.usage") usageRoutes!: Hono<AppEnv>;
   @Bind("session-api.workspace-files") workspaceFilesRoutes!: Hono<AppEnv>;
   @Bind("session-api.sessions") sessionsRoutes!: Hono<AppEnv>;
@@ -2062,6 +2072,10 @@ export class SessionApiRoutes {
     this.vaultRoutes = vaultRoutes({ agentConfigService, manager, access });
     this.agentSessionsRoutes = agentSessionsRoutes(sessionsDeps);
     this.sessionsBatchRoutes = sessionsBatchRoutes(sessionsDeps);
+    this.sessionSearchRoutes = sessionSearchRoutes({
+      access,
+      search: this.sessionSearch,
+    });
     this.usageRoutes = usageRoutes({ access, usageService: this.usage });
     this.workspaceFilesRoutes = workspaceFilesRoutes({
       access,
