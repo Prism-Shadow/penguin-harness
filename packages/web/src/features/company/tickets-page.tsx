@@ -326,7 +326,7 @@ export function TicketsPage() {
       data-ticket-card={t.ticketId}
       data-tooltip={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
       {...drag.cardProps(t)}
-      className={`${cardFrame(t)} cursor-pointer select-none transition-[border-color,opacity] duration-150 [-webkit-touch-callout:none] hover:border-gray-300 dark:hover:border-gray-600 ${
+      className={`${cardFrame(t)} select-none transition-[border-color,opacity] duration-150 [-webkit-touch-callout:none] hover:border-gray-300 dark:hover:border-gray-600 ${
         lifted?.ticket.ticketId === t.ticketId ? "opacity-40" : ""
       }`}
     >

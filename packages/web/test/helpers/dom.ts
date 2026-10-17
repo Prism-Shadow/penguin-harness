@@ -35,6 +35,17 @@ if (typeof Element !== "undefined") {
   proto.scrollIntoView ??= () => {};
 }
 
+// Nor has it a `ResizeObserver`, which a control that fits itself to its own width starts on
+// mount (the breadcrumb strip, a files browser's layout). With nothing laid out there is nothing
+// to observe, so a silent one stands in.
+if (typeof window !== "undefined") {
+  globalThis.ResizeObserver ??= class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  };
+}
+
 export interface Mounted {
   /** The element the tree renders into; portaled dialogs land in `document.body` beside it. */
   container: HTMLElement;

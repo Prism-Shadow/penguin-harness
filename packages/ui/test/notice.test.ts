@@ -77,6 +77,42 @@ describe("Notice", () => {
     );
     expect(html).toContain('aria-label="关闭"');
   });
+  it("closes with a flat cross in its own ink, never a grey control laid on top", () => {
+    const html = renderStatic(
+      createElement(Notice, {
+        tone: "attention",
+        dismiss: { onClick: noop },
+        children: "Heads up",
+      }),
+    );
+    const cross = html.slice(html.indexOf('<button type="button" aria-label="Dismiss"'));
+    expect(cross).not.toBe("");
+    const tokens = classTokens(cross.slice(0, cross.indexOf(">")));
+    expect(tokens).not.toContain("hover:bg-surface-muted");
+    expect(tokens).not.toContain("text-fg-subtle");
+  });
+
+  it("lays a banner out as one centred line: the sentence, its action word, the cross at the far edge", () => {
+    const html = renderStatic(
+      createElement(Notice, {
+        tone: "attention",
+        variant: "banner",
+        action: { label: "Change it now", onClick: noop },
+        dismiss: { ariaLabel: "Close", onClick: noop },
+        children: "This account still uses its initial password.",
+      }),
+    );
+    expect(html).toContain("data-banner");
+    expect(classTokens(html)).toEqual(expect.arrayContaining(["justify-center", "border-b"]));
+    expect(html.indexOf("initial password")).toBeLessThan(html.indexOf(">Change it now<"));
+    // The action is a word in the sentence's line, not a boxed button.
+    expect(html).toMatch(/<button type="button"[^>]*class="[^"]*underline[^"]*">Change it now</);
+    // The cross stands out of the flow at the far edge, named as the caller asked.
+    expect(html).toMatch(
+      /data-slot="actions" class="absolute[^"]*right-[^"]*"><button[^>]*aria-label="Close"/,
+    );
+    expect(html.match(/<button/g)).toHaveLength(2);
+  });
 });
 
 describe("TodoNotice", () => {

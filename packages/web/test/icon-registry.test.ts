@@ -38,6 +38,7 @@ const OWN_DRAWINGS: ReadonlySet<string> = new Set([
   "packages/ui/src/components/icons/marks/marks.tsx",
   "packages/ui/src/components/icons/chevron/chevron.tsx",
   "packages/ui/src/components/icons/logos/provider-logo.tsx",
+  "packages/ui/src/components/icons/logos/github-logo.tsx",
   "packages/ui/src/components/icons/sets/octicons.ts",
   "packages/ui/src/components/icons/sets/pixel.ts",
   "packages/ui/src/components/icons/sets/duotone.ts",

@@ -3,8 +3,8 @@
  * built, with what five sample reviews cost in model calls under the caption.
  */
 import { S } from "../lib/strings";
-import { useLocale } from "../state/locale";
-import type { Locale } from "../state/locale";
+import { useSiteLocale } from "@prismshadow/penguin-ui/site";
+import type { SiteLocale as Locale } from "@prismshadow/penguin-ui/site";
 import { Section } from "../components/section";
 import { DemoVideo } from "../components/demo-video";
 import { demoVideoUrl } from "../lib/links";
@@ -18,7 +18,7 @@ const DEMO: Record<Locale, { video: string; poster: string }> = {
 };
 
 export function Cases() {
-  const { locale } = useLocale();
+  const { locale } = useSiteLocale();
   const demo = DEMO[locale];
   const c = S.cases;
 

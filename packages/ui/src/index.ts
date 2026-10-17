@@ -33,6 +33,7 @@ export * from "./components/icons/status-icon/status-icon";
 export * from "./components/icons/activity-icon/activity-icon";
 export * from "./components/icons/update-dot/update-dot";
 export * from "./components/feedback/badge/badge";
+export * from "./components/feedback/pill/pill";
 export * from "./components/feedback/skeleton/skeleton";
 export * from "./components/feedback/empty-state/empty-state";
 
@@ -261,3 +262,28 @@ export * from "./components/shell/session-row/session-row";
 
 // The drag image every draggable row hands the browser: an opaque, themed copy of the row.
 export * from "./components/overlays/drag-preview/drag-preview";
+
+// Machines — the Machines page's presentation: the status pill and the state-to-look mapping, a
+// job's stepper, the machine card and the list it sits in, the Machine dialog's toolbar, and the
+// add dialog's shell (its body, host list and rows, and footer).
+export * from "./components/machines/machine-status/machine-status";
+export * from "./components/machines/machine-stepper/machine-stepper";
+export * from "./components/machines/machine-card/machine-card";
+export * from "./components/machines/machine-list/machine-list";
+export * from "./components/machines/machine-toolbar/machine-toolbar";
+export * from "./components/machines/add-machine/add-machine";
+
+// Reading and finding: the find-in-page machinery the app's find bar and the Markdown reader share
+// (the text matcher, the DOM index with its highlight paint and reveal, the control row), the
+// reader with its outline model, and the measured width a layout that follows its own room reads.
+export * from "./components/content/find/find-text";
+export * from "./components/content/find/find-dom";
+export * from "./components/content/find/find-field";
+export * from "./components/content/markdown-reader/outline";
+export * from "./components/content/markdown-reader/markdown-reader";
+export * from "./components/layout/measure/use-measured-width";
+
+// The files browser's frame: its layout at the measured width, the toolbar row and the two panes,
+// which the Workspace Files panel and the organization handbook both lay out with.
+export * from "./components/files/files-frame/files-layout";
+export * from "./components/files/files-frame/files-frame";

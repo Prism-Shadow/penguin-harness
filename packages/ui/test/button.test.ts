@@ -108,7 +108,7 @@ describe("IconButton", () => {
 });
 
 describe("buttonClass", () => {
-  it("is the Button look on a label, with a pointer and the focus of the input inside", () => {
+  it("is the Button look on a label, with the focus of the input inside", () => {
     const label = buttonClass("secondary", "sm").split(/\s+/);
     const button = classTokens(
       renderStatic(createElement(Button, { variant: "secondary", size: "sm" }, "Upload")),
@@ -117,7 +117,6 @@ describe("buttonClass", () => {
       expect(label).toContain(token);
       expect(button).toContain(token);
     }
-    expect(label).toContain("cursor-pointer");
     expect(label).toContain("has-[:focus-visible]:[outline:var(--ui-focus-ring)]");
     expect(label).not.toContain("font-mono");
   });

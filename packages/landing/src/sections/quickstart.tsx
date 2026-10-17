@@ -229,7 +229,7 @@ export function Quickstart() {
                   ))}
                 </div>
                 <details className="mt-3 text-xs">
-                  <summary className="cursor-pointer font-medium text-brand-700 dark:text-brand-300">
+                  <summary className="cursor-default font-medium text-brand-700 dark:text-brand-300">
                     {S.quickstart.install.offlineCommand}
                   </summary>
                   <CodeCard

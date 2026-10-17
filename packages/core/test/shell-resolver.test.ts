@@ -3,9 +3,9 @@
  * existence/PATH probes are injected) plus one real spawn proving the POSIX fallback
  * chain resolves to something that actually runs a command.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { resolveShell } from "../src/environment/tools/command/shell.js";
@@ -132,9 +132,16 @@ describe("resolveShell — POSIX", () => {
 });
 
 describe("resolveShell — POSIX, real spawn", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
   /** A PATH directory carrying a POSIX sh and a few coreutils, but deliberately no bash. */
   function bashlessBin(): string {
-    const bin = path.join(mkdtempSync(path.join(tmpdir(), "penguin-nobash-")), "bin");
+    const root = mkdtempSync(path.join(tmpdir(), "penguin-nobash-"));
+    roots.push(root);
+    const bin = path.join(root, "bin");
     mkdirSync(bin);
     for (const tool of ["sh", "env", "cat", "echo", "printf"]) {
       try {

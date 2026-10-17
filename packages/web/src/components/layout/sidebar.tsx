@@ -173,12 +173,7 @@ import {
   orderGroups,
   saveGroupOrder,
 } from "../../lib/group-order";
-import {
-  CONTEXT_MENU_ACTIONS,
-  HOVER_ROW_ACTIONS,
-  rowActionsFor,
-  sessionRowActions,
-} from "../ui/session-row-menu";
+import { CONTEXT_MENU_ACTIONS, HOVER_ROW_ACTIONS, sessionRowActions } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import {
@@ -517,8 +512,19 @@ export function Sidebar({
   /** Group header being dragged (its key) and the current group drop hint (target group + which edge). */
   const [dragGroup, setDragGroup] = useState<string | null>(null);
   const [groupDropHint, setGroupDropHint] = useState<{ key: string; after: boolean } | null>(null);
-  // Project resolved on first load / switched: swap in that Project's persisted collapse/pin sets.
-  useEffect(() => {
+  /** Reveal rows with a fetch in flight, keyed by list key (a group, or time mode's whole list) — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
+  const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
+  /** Per-list display cap (keyed by group key, or TIME_LIST_KEY for time mode's whole list; absent = SIDEBAR_PAGE_SIZE). The list's reveal row raises it a page at a time. */
+  const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
+  /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
+  const [groupPage, setGroupPage] = useState(0);
+  // Project resolved on first load / switched: swap in that Project's persisted collapse/pin
+  // sets, row and group orders and registered Workspaces — in the render that sees the switch
+  // (React re-renders before committing), not in an effect: an effect runs a commit late, and
+  // that commit would draw the new Project's list with the previous Project's groups.
+  const [setsFor, setSetsFor] = useState(currentProjectId);
+  if (setsFor !== currentProjectId) {
+    setSetsFor(currentProjectId);
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
     setPinnedSessions(loadPinnedSessions(currentProjectId));
@@ -528,14 +534,7 @@ export function Sidebar({
     setGroupPage(0);
     // The other Project's groups are gone, and so is any meaning their reveal state had.
     setGroupCaps(new Map());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collapseStoreKey, pinStoreKey, currentProjectId]);
-  /** Reveal rows with a fetch in flight, keyed by list key (a group, or time mode's whole list) — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
-  const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
-  /** Per-list display cap (keyed by group key, or TIME_LIST_KEY for time mode's whole list; absent = SIDEBAR_PAGE_SIZE). The list's reveal row raises it a page at a time. */
-  const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
-  /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
-  const [groupPage, setGroupPage] = useState(0);
+  }
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
@@ -2453,10 +2452,12 @@ export function Sidebar({
                       onToggle={() => toggleGroup(group.key)}
                       // The folder opens and closes with the group.
                       glyph={collapsed ? ICONS.folder : ICONS.folderOpen}
-                      label={nameOnMachine(
-                        group.temp ? S.chat.tempWorkspaces : group.label,
-                        machineName,
-                      )}
+                      label={group.temp ? S.chat.tempWorkspaces : group.label}
+                      // The machine stays readable however narrow the column: two machines'
+                      // groups can share a name, and the machine is what tells them apart.
+                      {...(machineName !== null
+                        ? { qualifier: S.chat.machineTag(machineName) }
+                        : {})}
                       count={
                         searching
                           ? groupRows.length
@@ -2758,8 +2759,6 @@ function SidebarSessionRow({
     handler[action](s);
   };
   const rowState = { pinned };
-  // A Session on a connected machine is not archivable from here (rowActionsFor).
-  const onMachine = machineForSession(s.sessionId) !== null;
   return (
     <SessionRow
       sessionId={s.sessionId}
@@ -2796,8 +2795,8 @@ function SidebarSessionRow({
       // Sized for the widest compact time each language produces — 「12月31日」 and 「59 分钟前」 in
       // zh, "Nov 30" in en.
       timeSlot={locale === "zh" ? "wide" : "narrow"}
-      hoverActions={sessionRowActions(rowActionsFor(HOVER_ROW_ACTIONS, onMachine), rowState, run)}
-      menuActions={sessionRowActions(rowActionsFor(CONTEXT_MENU_ACTIONS, onMachine), rowState, run)}
+      hoverActions={sessionRowActions(HOVER_ROW_ACTIONS, rowState, run)}
+      menuActions={sessionRowActions(CONTEXT_MENU_ACTIONS, rowState, run)}
       moreLabel={S.chat.moreActions}
       onOpen={() => onOpen(s)}
       draggable={draggable}

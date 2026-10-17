@@ -66,11 +66,8 @@ const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";
 const CHANGE_AVATAR_CLASS = buttonClass("secondary", "sm");
 
 /**
- * The same control while a write is running. `Button`'s `disabled:` rules cannot help here — a
- * `<label>` takes no disabled state — and a `cursor-not-allowed` beside `buttonClass`'s
- * `cursor-pointer` would be decided by the order the stylesheet was generated in rather than by
- * this string. `pointer-events-none` has no counterpart to lose to, and it removes the hover
- * colour and the pointer cursor together; the input inside is `disabled`, so Tab skips it too.
+ * A label has no disabled state: ignore pointer input while its write runs, including hover
+ * styling. The input inside is disabled too, so Tab skips it.
  */
 const CHANGE_AVATAR_BUSY_CLASS = `${CHANGE_AVATAR_CLASS} pointer-events-none opacity-60`;
 

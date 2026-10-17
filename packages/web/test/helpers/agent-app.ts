@@ -2,7 +2,8 @@
  * The Agent settings suites' world: a server behind the package's fetch fake ({@link stubFetch})
  * and the app frame the page and its dialogs render in.
  *
- * The server holds one Project the signed-in admin owns, with one Agent: its config (a PUT
+ * The server holds one Project the signed-in admin owns (and, when asked, a second one with no
+ * Agent of that id — {@link OTHER_PROJECT_ID}), with one Agent: its config (a PUT
  * merges the update into it and echoes the result, the way the real route does), its vault,
  * its scheduled tasks, its API settings, its skills and hooks (none installed) and the
  * Project's models. A test can refuse the next write with {@link AgentServer.refuseNext}, or
@@ -62,6 +63,8 @@ import type { FakeFetch, FetchRequest } from "./fetch";
 
 export const PROJECT_ID = "proj";
 export const AGENT_ID = "helper";
+/** The second Project `agentServer({ otherProject: true })` lists: it has no Agent at all. */
+export const OTHER_PROJECT_ID = "other";
 
 const AGENT_PATH = `/api/projects/${PROJECT_ID}/agents/${AGENT_ID}`;
 
@@ -192,6 +195,8 @@ export function agentServer(
     machines?: FakeMachine[];
     /** This server's plugin library (by default empty). */
     library?: PluginItem[];
+    /** List {@link OTHER_PROJECT_ID} beside the Agent's Project. */
+    otherProject?: boolean;
   } = {},
 ): AgentServer {
   /** Installed Skill names by `<machine or "">/<agent>`. */
@@ -376,17 +381,22 @@ export function agentServer(
       });
     }
     if (path === "/api/projects") {
+      const project = (projectId: string, name: string) => ({
+        projectId,
+        name,
+        role: "owner",
+        ownerUserId: "admin",
+        createdAt: "2026-01-01T00:00:00Z",
+      });
       return json({
         projects: [
-          {
-            projectId: PROJECT_ID,
-            name: "Project",
-            role: "owner",
-            ownerUserId: "admin",
-            createdAt: "2026-01-01T00:00:00Z",
-          },
+          project(PROJECT_ID, "Project"),
+          ...(options.otherProject ? [project(OTHER_PROJECT_ID, "Other")] : []),
         ],
       });
+    }
+    if (options.otherProject && path === `/api/projects/${OTHER_PROJECT_ID}/agents`) {
+      return json({ agents: [] });
     }
     if (path === `/api/projects/${PROJECT_ID}/agents` && method === "GET") {
       return json({ agents: [{ ...summaryOf(AGENT_ID), name: stored.config.name }] });

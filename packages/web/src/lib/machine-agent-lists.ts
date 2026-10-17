@@ -19,6 +19,8 @@ import { apiErrorText } from "./api-error";
 import { cachedMachineAgents, rememberMachineAgents } from "./machine-cache";
 import { machineLink, remoteAgentsEmpty } from "./machine-link";
 import type { MachineLink } from "./machine-link";
+import { scoped, scopedValue } from "./project-scope";
+import type { Scoped } from "./project-scope";
 import { useMachines } from "../state/machines";
 import { useProject } from "../state/project";
 
@@ -165,7 +167,12 @@ export function useMachineAgents(projectId: string | null): {
     .filter((m) => m.link === "connected")
     .map((m) => m.machineId)
     .join(",");
-  const [answers, setAnswers] = useState<ReadonlyMap<string, Answer>>(new Map());
+  /**
+   * The machines' answers, tagged with the Project they were read for (lib/project-scope.ts):
+   * the reset below lags a Project switch by one commit, and in that commit the previous
+   * Project's answers are not this one's.
+   */
+  const [answers, setAnswers] = useState<Scoped<ReadonlyMap<string, Answer>> | null>(null);
   /** The Project the page is on now: an answer about another is dropped. */
   const currentProject = useRef(projectId);
   currentProject.current = projectId;
@@ -177,21 +184,27 @@ export function useMachineAgents(projectId: string | null): {
     generation.current.set(machineId, gen);
     const current = () =>
       currentProject.current === askProject && generation.current.get(machineId) === gen;
+    /** The Project's answers so far, with this machine's set to `answer`. */
+    const withAnswer = (
+      prev: Scoped<ReadonlyMap<string, Answer>> | null,
+      answer: Answer,
+    ): Scoped<ReadonlyMap<string, Answer>> =>
+      scoped(askProject, new Map(scopedValue(prev, askProject)).set(machineId, answer));
     api.listAgents(askProject, machineId).then(
       (res) => {
         if (!current()) return;
         rememberMachineAgents(askProject, machineId, res.agents);
-        setAnswers((prev) => new Map(prev).set(machineId, { agents: res.agents }));
+        setAnswers((prev) => withAnswer(prev, { agents: res.agents }));
       },
       (err: unknown) => {
         if (!current()) return;
-        setAnswers((prev) => new Map(prev).set(machineId, { error: apiErrorText(err) }));
+        setAnswers((prev) => withAnswer(prev, { error: apiErrorText(err) }));
       },
     );
   }, []);
 
   useEffect(() => {
-    setAnswers(new Map());
+    setAnswers(null);
   }, [projectId]);
 
   /** The connected machines as last rendered, for a change heard between renders. */
@@ -223,30 +236,27 @@ export function useMachineAgents(projectId: string | null): {
     [connectedKey],
   );
 
-  const lists = useMemo(
-    () =>
-      projectId === null
-        ? []
-        : infos.map((machine): MachineAgents => {
-            const answer =
-              machine.link === "connected" ? answers.get(machine.machineId) : undefined;
-            if (answer !== undefined && "agents" in answer) {
-              return { machine, agents: answer.agents, live: true, reason: null };
-            }
-            const failure = answer !== undefined && "error" in answer ? answer.error : null;
-            return {
-              machine,
-              agents: cachedMachineAgents(projectId, machine.machineId),
-              live: false,
-              // Connected and not answered yet is a wait, not a reason.
-              reason:
-                machine.link === "connected" && failure === null
-                  ? null
-                  : remoteAgentsEmpty(machine.link, failure),
-            };
-          }),
-    [projectId, infos, answers],
-  );
+  const lists = useMemo(() => {
+    if (projectId === null) return [];
+    const answered = scopedValue(answers, projectId);
+    return infos.map((machine): MachineAgents => {
+      const answer = machine.link === "connected" ? answered?.get(machine.machineId) : undefined;
+      if (answer !== undefined && "agents" in answer) {
+        return { machine, agents: answer.agents, live: true, reason: null };
+      }
+      const failure = answer !== undefined && "error" in answer ? answer.error : null;
+      return {
+        machine,
+        agents: cachedMachineAgents(projectId, machine.machineId),
+        live: false,
+        // Connected and not answered yet is a wait, not a reason.
+        reason:
+          machine.link === "connected" && failure === null
+            ? null
+            : remoteAgentsEmpty(machine.link, failure),
+      };
+    });
+  }, [projectId, infos, answers]);
 
   return { lists, reload };
 }

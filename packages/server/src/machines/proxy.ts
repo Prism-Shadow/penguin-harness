@@ -14,9 +14,26 @@
  */
 import http from "node:http";
 import { Readable } from "node:stream";
+import { ADOPTED_AT_HEADER } from "../runtime/session-sources.js";
 
 /** Path prefix of the proxy: `/server/<id>/api/…`. */
 export const SERVER_PROXY_PREFIX = "/server/";
+
+/** Where a request to one machine goes, as the machines service answers it. */
+export interface ProxyTarget {
+  /** Dials the machine's server through the session held to it. */
+  agent: http.Agent;
+  /** Its server's port over there. */
+  port: number;
+  /** A session on that machine, as its own cookie. */
+  cookie: string;
+  /**
+   * When this server adopted the machine, sent along as {@link ADOPTED_AT_HEADER} so the machine
+   * reads the Sessions it held before then as CLI tasks; null for a machine adopted before the
+   * time was recorded, which sends nothing.
+   */
+  adoptedAt: string | null;
+}
 
 /** A parsed proxy path: which machine, and the remote-side path to request. */
 interface ProxyPath {
@@ -50,7 +67,8 @@ export function rewriteLocation(header: string, machineId: string): string {
  * `authorization` among them: the proxy speaks to the machine as ITS admin, with a session
  * this server mints over ssh, and a caller's own bearer is a credential for THIS server. Sent
  * on, it would both hand that credential to another machine and outrank the cookie just
- * minted, since the remote's auth reads a bearer first.
+ * minted, since the remote's auth reads a bearer first. And the adoption time: it is this
+ * server's word about the machine, set from its own record or not at all.
  */
 const DROP_REQUEST_HEADERS = new Set([
   "host",
@@ -59,6 +77,7 @@ const DROP_REQUEST_HEADERS = new Set([
   "connection",
   "keep-alive",
   "upgrade",
+  ADOPTED_AT_HEADER,
 ]);
 const DROP_RESPONSE_HEADERS = new Set(["set-cookie", "location", "connection", "keep-alive"]);
 
@@ -72,11 +91,10 @@ const DROP_RESPONSE_HEADERS = new Set(["set-cookie", "location", "connection", "
 function proxyThroughSession(
   request: Request,
   path: ProxyPath,
-  agent: http.Agent,
-  port: number,
-  cookie: string,
+  target: ProxyTarget,
   report?: ProxyReport,
 ): Promise<Response> {
+  const { agent, port, cookie } = target;
   return new Promise((resolve) => {
     const url = new URL(request.url);
     const headers: Record<string, string> = {};
@@ -85,6 +103,7 @@ function proxyThroughSession(
     });
     headers["host"] = `localhost:${port}`;
     headers["cookie"] = cookie;
+    if (target.adoptedAt !== null) headers[ADOPTED_AT_HEADER] = target.adoptedAt;
 
     const upstream = http.request(
       {
@@ -153,9 +172,7 @@ export type ProxyReport = (
 ) => void;
 
 export function machinesProxy(
-  resolve: (
-    machineId: string,
-  ) => Promise<{ agent: http.Agent; port: number; cookie: string } | null>,
+  resolve: (machineId: string) => Promise<ProxyTarget | null>,
   report?: ProxyReport,
 ): (request: Request) => Promise<Response | null> {
   return async (request) => {
@@ -173,6 +190,6 @@ export function machinesProxy(
         { status: 503 },
       );
     }
-    return proxyThroughSession(request, path, target.agent, target.port, target.cookie, report);
+    return proxyThroughSession(request, path, target, report);
   };
 }

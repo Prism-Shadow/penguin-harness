@@ -8,6 +8,9 @@
  *   alone — nothing about `helper` is asked of this server — and the header names the machine.
  * - Saving the name writes it on the machine; this server's `helper` is written nothing.
  * - Switching tabs keeps the page on the machine.
+ * - Given the address a machine Session's links write (the conversation's memory "manage" link
+ *   and the composer's Agent settings, features/chat/chat-page.tsx), the page opens on that tab
+ *   with the machine's Agent, and asks this server nothing about `helper`.
  * - Given the machine is being brought back, the page says so and asks the machine nothing.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -15,6 +18,7 @@ import { createElement as h } from "react";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
+import { agentSettingsPath } from "../src/lib/agent-location";
 import { AGENT_ID, PROJECT_ID, agentServer, mountAgentApp, whereIs } from "./helpers/agent-app";
 import type { FakeMachine } from "./helpers/agent-app";
 import { button, click, field, type, unmountAll, waitFor } from "./helpers/dom";
@@ -91,6 +95,18 @@ describe("a machine's Agent on its settings page", () => {
         (r) => r.machine === null && r.method !== "GET" && r.path.startsWith(AGENT_PATH),
       ),
     ).toEqual([]);
+  });
+
+  it("opens a machine Session's link on its tab with the machine's Agent", async () => {
+    const server = agentServer(undefined, { machines: [GPU] });
+    const router = await mountAgentApp(h(AgentSettingsPage), {
+      at: agentSettingsPath(AGENT_ID, "gpu1", "memory"),
+    });
+    await waitFor(() => server.fetch.requests.some((r) => r.path === `${AGENT_PATH}/memory`));
+    expect(whereIs(router)).toBe(`/agents/${AGENT_ID}?machine=gpu1&tab=memory`);
+    const aboutAgent = server.fetch.requests.filter((r) => r.path.startsWith(AGENT_PATH));
+    expect(aboutAgent.filter((r) => r.path === `${AGENT_PATH}/memory`).length).toBeGreaterThan(0);
+    expect(aboutAgent.filter((r) => r.machine !== "gpu1")).toEqual([]);
   });
 
   it("says a machine being brought back is reconnecting, and asks it nothing", async () => {

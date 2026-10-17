@@ -1059,13 +1059,17 @@ export const listArchivedSessionGroups = (query: ArchivedSessionsQuery = {}) =>
     query: { q: query.q, source: query.source, projectId: query.projectId },
   });
 
-/** One group's archived Sessions, newest activity first, continuing below `before` (the last row held). */
+/**
+ * One group's archived Sessions, newest activity first, continuing below `before` (the last row
+ * held). A machine's group names its `machineId`: this server reads the page from that machine.
+ */
 export const listArchivedSessions = (
   query: ArchivedSessionsQuery & {
     projectId: string;
     workspace: string;
     limit: number;
     before?: ActivityKey;
+    machineId?: string;
   },
 ) =>
   apiFetch<ArchivedSessionsResponse>("/api/me/archived-sessions", {
@@ -1076,6 +1080,7 @@ export const listArchivedSessions = (
       workspace: query.workspace,
       limit: query.limit,
       before: query.before ? activityCursorParam(query.before) : undefined,
+      machineId: query.machineId,
     },
   });
 

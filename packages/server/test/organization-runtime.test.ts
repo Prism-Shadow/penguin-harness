@@ -286,8 +286,14 @@ describe("organization runtime", () => {
 
     await service.writeHandbookFile(P, ORG, "decisions/2026-09-02-hire-plan.md", "# Hire plan\n");
     await service.writeHandbookFile(P, ORG, "conventions.md", "# Conventions\n");
-    const listed = (await service.handbookFiles(P, ORG)).files.map((f) => f.path);
-    expect(listed).toEqual(["README.md", "conventions.md", "decisions/2026-09-02-hire-plan.md"]);
+    const listing = await service.handbookFiles(P, ORG);
+    expect(listing.files.map((f) => f.path)).toEqual([
+      "README.md",
+      "conventions.md",
+      "decisions/2026-09-02-hire-plan.md",
+    ]);
+    // The listing names the directory itself, which the Web App's Files panel browses.
+    expect(listing.dir).toBe(path.join(orgDir(), "handbook"));
     expect(await service.handbookFile(P, ORG, "decisions/2026-09-02-hire-plan.md")).toEqual({
       path: "decisions/2026-09-02-hire-plan.md",
       content: "# Hire plan\n",

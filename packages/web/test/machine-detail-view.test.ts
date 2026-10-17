@@ -112,8 +112,6 @@ describe("the status chip", () => {
       const chip = machineChip(reading, IMAGE);
       expect(chip.word).toBe(S.machines.state[kind]);
       expect(chip.tone).toBe(readingTone(reading));
-      // A spinner stands in for the glyph while the machine is working or coming back, and only then.
-      expect(chip.glyph === null).toBe(kind === "working" || kind === "reconnecting");
       expect(chip.reason !== null).toBe(
         ["failed", "unreachable", "working", "reconnecting", "behind"].includes(kind),
       );
@@ -138,7 +136,6 @@ describe("the status chip", () => {
   it("says this server's own entry is running, with nothing behind the word", () => {
     const chip = machineChip(null, IMAGE);
     expect(chip).toMatchObject({ word: S.machines.state.serving, tone: "link", reason: null });
-    expect(chip.glyph).not.toBeNull();
   });
 });
 

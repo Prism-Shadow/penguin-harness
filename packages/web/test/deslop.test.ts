@@ -97,6 +97,7 @@ const TOKENS_ONLY: readonly string[] = [
   "features/chat/workspace-finder.tsx",
   "features/chat/workspace-finder-model.ts",
   "features/chat/workspace-select.tsx",
+  "features/company/handbook-page.tsx",
   "features/settings/browser-section.tsx",
   "features/settings/chrome-extension-section.tsx",
   "features/settings/shortcut-recorder.tsx",

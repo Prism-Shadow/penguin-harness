@@ -4,7 +4,8 @@
  *
  * Everything here is mechanism: which guests may attach and with what preferences, which
  * navigations a guest may make, the user agent sites see, how a relayed frame is read, which
- * permission prompts a page gets, the guests' right-click menu, and how a tab's load is added up
+ * permission prompts a page gets, which relayed commands type and how their guest takes the
+ * window's keyboard focus first, the guests' right-click menu, and how a tab's load is added up
  * from its processes. What the browser does with its pages — the page scripts, the tab registry,
  * import, what load is too much — is the server platform's (packages/server/src/builtin-browser),
  * delivered by push.
@@ -190,6 +191,44 @@ const GRANTED_PERMISSIONS = new Set([
 
 export function isGrantedPermission(permission: string): boolean {
   return GRANTED_PERMISSIONS.has(permission);
+}
+
+// --- keyboard focus ----------------------------------------------------------
+
+/**
+ * The CDP methods that type. Chromium hands their input to whichever web contents holds the
+ * window's keyboard focus, not to the guest the command names: with the app's composer focused,
+ * a guest's `Input.insertText` types into the composer, and the page's own `element.focus()`
+ * does not move that focus. Mouse input is routed by position and needs nothing.
+ */
+const KEYBOARD_METHODS: ReadonlySet<string> = new Set([
+  "Input.insertText",
+  "Input.dispatchKeyEvent",
+  "Input.imeSetComposition",
+]);
+
+/** Whether a relayed CDP command types, so its guest must hold the window's keyboard focus first. */
+export function typesIntoGuest(method: string): boolean {
+  return KEYBOARD_METHODS.has(method);
+}
+
+/**
+ * The script the shell runs in a guest's embedder before a command that types: it focuses the
+ * guest's <webview> element, which moves the window's keyboard focus into the guest without
+ * raising the window, and answers whether the element holds focus now. No scrolling: a parked
+ * page sits off-screen in a clipping frame. (Electron's own `webContents.focus()` on a guest
+ * raises the window and leaves the keyboard focus where it was.)
+ */
+export function focusGuestScript(guestId: number): string {
+  if (!Number.isSafeInteger(guestId)) throw new Error("bad_command");
+  return `(() => {
+  const view = Array.from(document.querySelectorAll("webview")).find((el) => {
+    try { return el.getWebContentsId() === ${guestId}; } catch { return false; }
+  });
+  if (view === undefined) return false;
+  if (document.activeElement !== view) view.focus({ preventScroll: true });
+  return document.activeElement === view;
+})()`;
 }
 
 // --- the relay ---------------------------------------------------------------

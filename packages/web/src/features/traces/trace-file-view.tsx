@@ -42,7 +42,7 @@ import type {
   TraceToolSpan,
 } from "@prismshadow/penguin-server/api";
 import {
-  Badge,
+  Pill,
   Card,
   CardHeader,
   Chevron,
@@ -693,7 +693,7 @@ export function TraceFileBody({
                   clears the context rather than compacting it. */}
               {compactionBadge !== null && (
                 <span className="shrink-0">
-                  <Badge size="sm">{compactionBadge}</Badge>
+                  <Pill>{compactionBadge}</Pill>
                 </span>
               )}
               <span className="min-w-0 flex-1" />

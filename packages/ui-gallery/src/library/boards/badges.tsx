@@ -1,5 +1,6 @@
 /**
- * 徽标与状态: Badge in every tone and weight, the count, the state dot, StatusIcon in every run
+ * 徽标与状态: the label pill (`Pill`) in every tone and as a row of a card's labels beside the
+ * update pill, Badge in every tone and weight, the count, the state dot, StatusIcon in every run
  * state, the session activity marks, the update dot and pill, and the two readings — the stat
  * tile and the stat chip.
  */
@@ -10,6 +11,7 @@ import {
   Count,
   Dot,
   ICONS,
+  Pill,
   ICON_SIZE,
   ScheduleMark,
   StatChip,
@@ -32,6 +34,24 @@ export function BadgesBoard() {
   const t = S.library.badges;
   return (
     <div className="gf-board">
+      <BoardGroup title={t.pills} aside={t.pillsHint}>
+        <div className="lib-stack lib-stack-wide">
+          <div className="lib-row">
+            {TONES.map((tone) => (
+              <Pill key={tone} tone={tone}>
+                {t.tones[tone]}
+              </Pill>
+            ))}
+          </div>
+          <div className="lib-row">
+            <Pill>{t.pillRow.thisServer}</Pill>
+            <Pill tone="info">{t.pillRow.running}</Pill>
+            <Pill>v0.2.16</Pill>
+            <UpdatePill onClick={() => undefined}>{t.pillRow.update}</UpdatePill>
+            <span className="lib-caption">{t.pillRow.caption}</span>
+          </div>
+        </div>
+      </BoardGroup>
       <BoardGroup title={t.badges}>
         <div className="lib-stack lib-stack-wide">
           {BADGE_VARIANTS.map((variant) => (

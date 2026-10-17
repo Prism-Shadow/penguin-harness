@@ -31,16 +31,18 @@
  * - repeats the page's last error, since it covers the notice that says it;
  * - is this server's record alone for its own entry: no verb, no steps.
  *
- * Every state renders a card and a dialog, the state said by the card mark's accessible name and
- * by the dialog's status chip, and neither carries a hint that cannot open: none sits on words
- * already on screen — what a card's stat means, and the machine's id, are the dialog's to say.
+ * Every state renders a card and a dialog, the state said in words by the card's status pill — its
+ * reason beside the word for a reader that cannot hover — and by the dialog's, and neither carries
+ * a hint that cannot open: none but a marked one sits on words already on screen — what a card's
+ * stat means, and the machine's id, are the dialog's to say.
  *
  * The update notice counts the machines in use on another build; waved away, it stays down while
  * the same machines are behind and comes back when another falls behind or the build moves.
  *
- * vitest runs node-only here, so components are called as functions and their handlers handed
- * clicks as a browser delivers them (test/helpers/fake-dom.ts); a few are rendered to static markup and
- * read back as a tree (test/helpers/markup.ts). The dialog's verbs are found by their `data-verb`,
+ * vitest runs node-only here, so components are called as functions — the shared package's
+ * machine views (the card, the toolbar) drawn too, since they are this page's presentation — and
+ * their handlers handed clicks as a browser delivers them (test/helpers/fake-dom.ts); a few are
+ * rendered to static markup and read back as a tree (test/helpers/markup.ts). The dialog's verbs are found by their `data-verb`,
  * its steps by their `data-step`, the card's buttons by their `data-action`, never by their words.
  */
 import { createElement, isValidElement } from "react";
@@ -55,7 +57,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as ui from "@prismshadow/penguin-ui";
 import { Button, RuledSection } from "@prismshadow/penguin-ui";
-import { Stepper, MachineCard, machineMark } from "../src/features/machines/machine-card";
+import { MachineCard, machineMark } from "../src/features/machines/machine-card";
 import type { MachineCardProps } from "../src/features/machines/machine-card";
 import {
   JobSteps,
@@ -212,6 +214,8 @@ function all(node: ReactNode): AnyElement[] {
 
 /** The shared package's components: the browser renders them; here they stay as they are. */
 const SHARED: ReadonlySet<unknown> = new Set(Object.values(ui));
+/** The shared machine views this page hands its data to: drawn, so what they draw is in the list. */
+const MACHINE_VIEWS: ReadonlySet<unknown> = new Set([ui.MachineCard, ui.MachineToolbar]);
 
 /** A node's children as one flat list: a component may hand on a list inside its own. */
 const nodes = (node: ReactNode): ReactNode[] =>
@@ -229,7 +233,9 @@ function drawn(node: ReactNode): AnyElement[] {
     .flatMap((el) => {
       const element = el as AnyElement;
       const own =
-        typeof element.type === "function" && !SHARED.has(element.type) && element.type !== LogFold;
+        typeof element.type === "function" &&
+        (!SHARED.has(element.type) || MACHINE_VIEWS.has(element.type)) &&
+        element.type !== LogFold;
       const inside = own
         ? (element.type as (props: unknown) => ReactNode)(element.props)
         : element.props.children;
@@ -303,7 +309,9 @@ function card(machine: MachineInfo, job: MachineJob | null = null, busy = false)
     onSyncConfig: vi.fn(),
     onDelete: vi.fn(),
   };
-  const element = MachineCard(props) as AnyElement;
+  // The card hands its data to the shared view; the view's own band is what a browser shows.
+  const view = MachineCard(props) as AnyElement;
+  const element = ui.MachineCard(view.props as unknown as ui.MachineCardProps) as AnyElement;
   const tree = all(element);
   /** The card's buttons by their `data-action`. */
   const buttons = new Map(
@@ -398,11 +406,11 @@ describe("a machine's card", () => {
 
   it("while a job moves there, shows its stepper in place of a reason, and holds Use and Delete", () => {
     const updating = card(behind, runningJob(behind));
-    expect(updating.tree.some((el) => el.type === Stepper)).toBe(true);
+    expect(updating.tree.some((el) => el.type === ui.MachineStepper)).toBe(true);
     expect(updating.waits).toBeNull();
     expect(updating.buttons.get("use")!.props.disabled).toBe(true);
     expect(updating.buttons.get("delete")!.props.disabled).toBe(true);
-    expect(card(behind).tree.some((el) => el.type === Stepper)).toBe(false);
+    expect(card(behind).tree.some((el) => el.type === ui.MachineStepper)).toBe(false);
   });
 
   it("asks to delete the machine with its trash button, and opens nothing", () => {
@@ -653,18 +661,21 @@ describe("every state", () => {
     ["added, nothing installed", added, null],
   ];
 
-  /** The hints in a piece of markup, each with the words of its own a reader sees. */
+  /**
+   * The unmarked hints in a piece of markup, each with the words of its own a reader sees. A
+   * marked hint (`data-tooltip-extra`, the status pill's reason) says what the screen does not, and
+   * shows over the words it sits on.
+   */
   const hintsIn = (html: string) =>
     elementsOf(readMarkup(html))
-      .filter((el) => "data-tooltip" in el.attrs)
+      .filter((el) => "data-tooltip" in el.attrs && !("data-tooltip-extra" in el.attrs))
       .map((el) => ({ hint: el.attrs["data-tooltip"], words: seenText(el).trim() }));
 
   it.each(cases)(
     "%s: neither the card nor the dialog carries a hint that cannot open — none sits on words already on screen",
     (_, machine, job) => {
       const cardHtml = renderToStaticMarkup(createElement(MachineCard, card(machine, job).props));
-      // The card's state mark always carries one: the markup was read.
-      expect(hintsIn(cardHtml).length).toBeGreaterThan(0);
+      expect(cardHtml).toContain(machine.alias);
       for (const html of [cardHtml, dialog(machine, job, { host: HOST, noImage: true }).html]) {
         expect(hintsIn(html).filter((found) => found.words !== "")).toEqual([]);
       }
@@ -672,15 +683,22 @@ describe("every state", () => {
   );
 
   it.each(cases)(
-    "%s: renders a card and a dialog, the state said by the mark's name and the dialog's chip",
+    "%s: renders a card and a dialog, the state said in words by the card's pill and the dialog's",
     (_, machine, job) => {
       const reading = machine.local ? null : readMachine(machine, job, IMAGE);
-      const label = machineMark(reading).label;
+      const mark = machineMark(reading);
       const html = renderToStaticMarkup(
         createElement(MachineCard, { ...card(machine, job).props }),
       );
       expect(html).toContain(machine.alias);
-      expect(html).toContain(`aria-label="${label.replace(/"/g, "&quot;")}"`);
+      const markup = readMarkup(html);
+      expect(seenText(markup)).toContain(mark.word);
+      // The reason is the pill's hover, marked so it shows over the word, and is read out with it.
+      if (mark.reason !== null) {
+        const pill = elementsOf(markup).find((el) => el.attrs["data-tooltip"] === mark.reason);
+        expect(pill?.attrs["data-tooltip-extra"]).toBe("true");
+        expect(html).toContain(` · ${mark.reason}`);
+      }
       const body = renderToStaticMarkup(
         createElement(MachineDetailBody, dialog(machine, job).props),
       );

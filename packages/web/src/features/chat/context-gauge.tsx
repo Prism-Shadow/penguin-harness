@@ -451,7 +451,7 @@ function ContextPanel({
                       onMouseLeave={() => setHovered(null)}
                       onClick={() => togglePinned(p.key)}
                       style={{ flexGrow: p.tokens, flexBasis: 0 }}
-                      className={`h-full cursor-pointer transition-opacity duration-150 ${p.color} ${
+                      className={`h-full cursor-default transition-opacity duration-150 ${p.color} ${
                         litPart !== null && litPart !== p.key ? "opacity-25" : ""
                       }`}
                     />

@@ -134,7 +134,11 @@ export function DraftView({
   onAgentChange,
 }: {
   projectId: string;
-  /** Project model config (already fetched by ChatPage): candidate list and default model. */
+  /**
+   * The model config of the server the draft's workspace is on (ChatPage reads it: this server's,
+   * or the machine's): candidate list and default model. A Session created on a machine can only
+   * name a model that machine has.
+   */
   models: ModelsResponse | null;
   /** Parked draft conversation id (`/chat/draft-…` — see draft-sessions.ts); absent = the ordinary active draft (`/chat/new`). */
   draftId?: string;
@@ -478,14 +482,23 @@ export function DraftView({
   // created on first send reads systemConfig fresh, so it runs with the picked level, which
   // also becomes the Agent's new default — the project default is only a fallback and is
   // never written from here. Refetched whenever the draft's Agent changes; while loading
-  // (or after a failed fetch) the picker stays disabled (null).
+  // (or after a failed fetch) the picker stays disabled (null). The Agent is the one on the
+  // workspace's machine, so its settings are read and written over there.
   const [agentThinkingLevel, setAgentThinkingLevel] = useState<string | null>(null);
+  /**
+   * The draft's Agent once the list on offer carries it. Nothing is asked about an id the cache
+   * or the route named until then: a cached id may be one this Project does not have (deleted
+   * since, or written while another Project's Agents were on screen), and the request would only
+   * come back "This agent no longer exists."
+   */
+  const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
+  const resolvedAgentId = selectedAgent?.agentId ?? null;
   useEffect(() => {
     setAgentThinkingLevel(null);
-    if (!agentId) return;
+    if (!resolvedAgentId) return;
     let cancelled = false;
     api
-      .getAgentConfig(projectId, agentId)
+      .getAgentConfig(projectId, resolvedAgentId, workspaceMachine)
       .then((res) => {
         if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
       })
@@ -493,7 +506,7 @@ export function DraftView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId]);
+  }, [projectId, resolvedAgentId, workspaceMachine]);
   const thinkingLevel =
     agentThinkingLevel === null || chatDefaults === null
       ? null
@@ -508,15 +521,20 @@ export function DraftView({
       const rollback = thinkingRef.current;
       setAgentThinkingLevel(level); // Optimistic: the derived display follows immediately.
       api
-        .putAgentConfig(projectId, agentId, {
-          config: { model: { thinkingLevel: level as AgentModelConfigDto["thinkingLevel"] } },
-        })
+        .putAgentConfig(
+          projectId,
+          agentId,
+          {
+            config: { model: { thinkingLevel: level as AgentModelConfigDto["thinkingLevel"] } },
+          },
+          workspaceMachine,
+        )
         .catch((e: unknown) => {
           setAgentThinkingLevel(rollback);
           toastError(apiErrorText(e));
         });
     },
-    [projectId, agentId],
+    [projectId, agentId, workspaceMachine],
   );
 
   // Skills installed on the currently selected Agent (candidates for the input
@@ -532,10 +550,10 @@ export function DraftView({
   useEffect(() => {
     setAgentSkills((prev) => (prev.length > 0 ? [] : prev));
     setSkillsLoaded(false);
-    if (!agentId) return;
+    if (!resolvedAgentId) return;
     let cancelled = false;
     api
-      .getAgentSkills(projectId, agentId)
+      .getAgentSkills(projectId, resolvedAgentId, workspaceMachine)
       .then((res) => {
         if (!cancelled) setAgentSkills(res.skills);
       })
@@ -546,7 +564,7 @@ export function DraftView({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId]);
+  }, [projectId, resolvedAgentId, workspaceMachine]);
 
   // —— Auto-cache ——
   // Options (Agent / Workspace / approval mode / Model) are discrete clicks: written
@@ -851,8 +869,6 @@ export function DraftView({
   }, []);
   const readComposerText = useCallback(() => textRef.current, []);
 
-  const selectedAgent = agents.find((a) => a.agentId === agentId) ?? null;
-  const resolvedAgentId = selectedAgent?.agentId ?? null;
   useEffect(() => {
     onAgentChange?.(resolvedAgentId, workspaceMachine);
     if (resolvedAgentId && workspaceMachine === null) setCurrentAgentId(resolvedAgentId);
