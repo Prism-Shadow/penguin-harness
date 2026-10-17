@@ -523,6 +523,8 @@ async function createInner(
   //   - machine sessions    held ssh children claimed by the successor through the registry
   //   - runtime singletons  db / auth-state / channels / config / proxy / desktop —
   //                         runtime-owned, re-claimed by every App
+  //   - State transfers     registry `platform.agentStateTransfers`: per-directory queues
+  //                         shared with requests still running in the previous App
   //   - the Agent state     registry `agent:state` (PRFC-0015): running Tasks, pending
   //                         approvals, queued follow-ups, loaded Sessions and their
   //                         environments, all left as they are. A successor whose

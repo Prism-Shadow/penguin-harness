@@ -10,12 +10,11 @@ import type { AppEnv } from "../../auth/middleware.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentTransferRouteDeps {
-  agentConfigService: AgentConfig;
   access: Access;
   snapshots: Snapshots;
 }
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
-import type { AgentConfig, Snapshots } from "../../mechanisms/agents.js";
+import type { Snapshots } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 
 /** Import archive size cap: aligned with the global request body limit (stays within 20MB after base64). */
@@ -60,7 +59,6 @@ export function agentTransferRoutes(deps: AgentTransferRouteDeps): Hono<AppEnv> 
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     deps.access.requireProjectOwner(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const archive = readArchiveBase64(body);
     const confirm = body.confirm === true;
