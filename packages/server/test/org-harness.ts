@@ -183,6 +183,11 @@ export async function makeOrgHarness(opts: {
           if (version !== undefined) plugins.installed.set(`${agentId}:${name}`, version);
         }
       },
+      remove: async (_p, agentId) => {
+        if (!existingAgents.delete(agentId)) {
+          throw new Error(`Agent does not exist: ${agentId}`);
+        }
+      },
       displayName: async (_p, agentId) => `Name of ${agentId}`,
       writeAgentsMd: async (_p, agentId, content) => {
         briefs.set(agentId, content);

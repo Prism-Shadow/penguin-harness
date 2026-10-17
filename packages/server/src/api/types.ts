@@ -6057,6 +6057,12 @@ export interface OrganizationDetail extends OrganizationSummary {
   inbox?: OrgInbox;
   /** The CEO's desk session once opened (creation opens it). */
   ceoDeskSessionId?: string;
+  /**
+   * Creation could not start the CEO's initialization run (the errors log has why, under
+   * `org_desk_unavailable` / `org_dispatch_failed`); present only on the response that
+   * created the organization — the overview reads the desk, not this.
+   */
+  ceoInitSkipped?: boolean;
 }
 
 /**
