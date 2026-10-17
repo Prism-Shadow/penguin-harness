@@ -14,7 +14,7 @@ The built-in model catalog moved from `packages/core` to `packages/server`. It c
 
 - The catalog is `packages/server/src/model-catalog.ts`, published as the browser-safe subpath `@prismshadow/penguin-server/model-catalog`. The Web App, the CLI and the component gallery import it from there. Its only runtime import is core's `@prismshadow/penguin-core/model-connection`.
 - Core's `@prismshadow/penguin-core/model-catalog` subpath and the catalog's re-export from the core root were removed.
-- `attributionHeaders` (OpenRouter, TokenDance, OpenCode's `x-opencode-session`) moved into core's `llm/generative-model.ts`, beside its only caller. `APP_URL` is exported from the core root.
+- `attributionHeaders` (OpenRouter, TokenDance, OpenCode's `x-opencode-session`) moved into core's own App attribution module, `llm/app-attribution.ts`, whose headers `GenerativeModel` attaches to every request. `APP_URL` is exported from the core root.
 
 ## Seeding the Project config
 

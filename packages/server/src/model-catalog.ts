@@ -94,8 +94,8 @@
  * to a vendor client with a different request shape.
  *
  * App attribution (the headers that name PenguinHarness to the gateways that read one) is not
- * here: it is keyed on the endpoint host, not on a provider group, and lives beside its only
- * caller, core's GenerativeModel.
+ * here: it is keyed on the endpoint host, not on a provider group, and is a module of core's
+ * own (`llm/app-attribution.ts`), whose headers GenerativeModel attaches to every request.
  *
  * This file imports no Node built-ins and only core's browser-safe connection subpath (plus
  * type-only imports), so it can be bundled directly for the browser.

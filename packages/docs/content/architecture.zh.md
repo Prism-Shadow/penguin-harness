@@ -125,7 +125,7 @@ packages/
 │   ├── engine/context-engine.ts    # ReAct loop orchestration: turn lifecycle, approvals, carry-over, reconnect, compaction
 │   ├── omnimessage/                # types.ts protocol types · builders.ts constructors · markers/
 │   ├── interfaces/                 # llm.ts · environment.ts · shared.ts (ApproveFn and the vocabulary both sides share)
-│   ├── llm/                        # generative-model.ts MMSP adapter · tool-call-ids.ts id uniqueness · context-limits.ts
+│   ├── llm/                        # generative-model.ts MMSP adapter · app-attribution.ts gateway headers · tool-call-ids.ts id uniqueness · context-limits.ts
 │   ├── environment/                # environment.ts execution close-out · tools/ registry, 7 builtin tools, background sessions · mcp/
 │   ├── hooks/                      # the stop / pre_tool_use / user_prompt hook points and the hook-script runner
 │   ├── plugins/                    # the built-in plugin library and its loader

@@ -14,7 +14,7 @@
 
 - 目录位于 `packages/server/src/model-catalog.ts`，以不含 Node 依赖的子路径 `@prismshadow/penguin-server/model-catalog` 发布，Web App、CLI 与组件画廊都从这里引用。它运行时只引用 core 的 `@prismshadow/penguin-core/model-connection`。
 - 移除了 core 的 `@prismshadow/penguin-core/model-catalog` 子路径，以及 core 根入口对目录的再导出。
-- `attributionHeaders`（OpenRouter、TokenDance，以及 OpenCode 的 `x-opencode-session`）移入 core 的 `llm/generative-model.ts`，与它唯一的调用方放在一起。`APP_URL` 由 core 根入口导出。
+- `attributionHeaders`（OpenRouter、TokenDance，以及 OpenCode 的 `x-opencode-session`）移入 core 独立的应用归因模块 `llm/app-attribution.ts`，由 `GenerativeModel` 附加到每个请求上。`APP_URL` 由 core 根入口导出。
 
 ## Project 配置的种子
 

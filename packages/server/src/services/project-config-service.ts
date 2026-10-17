@@ -61,7 +61,6 @@ import {
 import {
   MODELSCOPE_PROVIDER_ID,
   PENGUIN_GO_PROVIDER_ID,
-  PRESET_DEFAULT_MODEL,
   VENDOR_ENDPOINTS,
   catalogEntryFor,
   catalogGroupConnection,
@@ -72,7 +71,6 @@ import {
   modelEnvPreviewKey,
   presetModelEntries,
   presetPromotions,
-  presetProviderTable,
   providerInfo,
   retainedCatalogPricing,
   unaddableModel,
@@ -128,6 +126,7 @@ import type {
 import { detectModelProtocol } from "./protocol-detect.js";
 import { markOfficialGroups } from "./official-groups.js";
 import { migratePenguinGoRoutes } from "./project-config-migrations.js";
+import { presetProjectConfig } from "./project-config-seed.js";
 import {
   VISION_PROBE_IMAGE,
   VISION_PROBE_MAX_TOKENS,
@@ -773,24 +772,6 @@ export async function collectUtilityCompletion(
     const p = step.value.payload as { type?: string; text?: string };
     if (p.type === "text" && typeof p.text === "string") text += p.text;
   }
-}
-
-/**
- * What a new Project's file holds, and what "Restore defaults" puts back: core's default config
- * (the factory command policy, and no models — core carries no model knowledge) with the
- * built-in catalog's default model, each built-in group's `[providers.<id>]` table (`official`
- * on the first-party groups) and the preset rows. No keys: the user fills in an API key once per
- * group, or leaves a first-party group's blank for the vendor's environment variable. From here
- * on the file alone says where every request goes; the catalog is not read again when one is
- * built.
- */
-export function presetProjectConfig(): ProjectConfig {
-  return {
-    ...defaultProjectConfig(),
-    default_model: { ...PRESET_DEFAULT_MODEL },
-    providers: presetProviderTable(),
-    models: presetModelEntries(),
-  };
 }
 
 @Component()

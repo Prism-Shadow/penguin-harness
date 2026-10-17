@@ -646,7 +646,7 @@ api_key = "sk-..."
 
 Some gateways read a request header that files a call under the app that made it, for their own app rankings, usage reports or routing.
 
-The catalog decides these headers by **endpoint host**, not by the entry's provider group. An entry filed under custom whose base URL points at such a gateway carries the same headers. Only the entry's own `base_url` counts: an endpoint supplied through `OPENAI_BASE_URL` is resolved inside MMSP, is not visible on this side, and is therefore not attributed.
+Core decides these headers by **endpoint host** (`packages/core/src/llm/app-attribution.ts`), not by the entry's provider group. An entry filed under custom whose base URL points at such a gateway carries the same headers. Only the entry's own `base_url` counts: an endpoint supplied through `OPENAI_BASE_URL` is resolved inside MMSP, is not visible on this side, and is therefore not attributed.
 
 | Endpoint | Header | Value |
 | --- | --- | --- |
