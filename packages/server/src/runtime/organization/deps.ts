@@ -99,6 +99,8 @@ export interface OrgAgentGateway {
     description: string | undefined,
     plugins: readonly string[],
   ): Promise<void>;
+  /** Deletes the Agent outright — the undo behind organization creation's cleanup. */
+  remove(projectId: string, agentId: string): Promise<void>;
   /** The Agent's display name (system_config.yaml), falling back to the id. */
   displayName(projectId: string, agentId: string): Promise<string>;
   /** Replaces the Agent's AGENTS.md (the employee brief written at hire time). */
