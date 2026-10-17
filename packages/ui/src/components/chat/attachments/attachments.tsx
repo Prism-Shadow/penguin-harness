@@ -65,7 +65,8 @@ const IMAGE_HEIGHT: Record<AttachmentImageSize, string> = { sm: "h-14", md: "h-3
  * The bounds the tile's width keeps to. Between them the width is the tile's height times the
  * image's ratio; `object-scale-down` fits the picture whole when a bound wins. The upper bound
  * sits on the tile, not the picture: a percentage on the picture would not hold back the width the
- * picture asks its tile for, and the tile would stand wider than what it shows.
+ * picture asks its tile for, and the tile would stand wider than what it shows. It sits on the
+ * row's item (the tile and its remove button), for the same reason one level up.
  */
 const IMAGE_MAX_WIDTH: Record<AttachmentImageSize, string> = {
   sm: "max-w-[min(100%,calc(var(--spacing)*40))]",
@@ -115,7 +116,7 @@ export function AttachmentImage({
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const failed = failedSrc === src;
   return (
-    <div data-slot="attachment" className="anim-pop relative max-w-full shrink-0">
+    <div data-slot="attachment" className={`anim-pop relative shrink-0 ${IMAGE_MAX_WIDTH[size]}`}>
       {failed ? (
         <span
           role="img"
@@ -129,7 +130,7 @@ export function AttachmentImage({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className={`block ${IMAGE_HEIGHT[size]} ${IMAGE_MAX_WIDTH[size]} cursor-zoom-in overflow-hidden rounded-md border border-line bg-surface-muted`}
+          className={`block ${IMAGE_HEIGHT[size]} max-w-full cursor-zoom-in overflow-hidden rounded-md border border-line bg-surface-muted`}
         >
           <img
             src={src}

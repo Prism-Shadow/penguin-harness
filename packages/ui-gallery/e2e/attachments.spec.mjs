@@ -9,8 +9,9 @@
  * radius turns a rectangle into a stadium. Only a real engine resolves a radius against a box.
  *
  * - Given each theme, light and dark, every image tile's corner radius is less than half its
- *   shorter side (a rounded rectangle, never a stadium or an ellipse), and every picture is
- *   either drawn at its own ratio or fitted whole inside its tile — never stretched or cropped.
+ *   shorter side (a rounded rectangle, never a stadium or an ellipse), every picture is either
+ *   drawn at its own ratio or fitted whole inside its tile — never stretched or cropped — and no
+ *   tile stands wider than the picture box it frames.
  * - Given the staged images and files in the composer, every tile in the row has one height.
  * - Given phone width and a file name longer than any tile, the name is cut off inside its tile,
  *   every tile and every remove button lies inside the row, and the page never scrolls sideways;
@@ -47,6 +48,13 @@ const misshapen = (page) =>
       const radius = parseFloat(getComputedStyle(tile).borderTopLeftRadius);
       if (radius * 2 >= Math.min(box.width, box.height)) {
         out.push(`image ${i}: radius ${radius}px on a ${box.width}x${box.height} tile`);
+      }
+      const item = tile.closest('[data-slot="attachment"]').getBoundingClientRect();
+      const frame = img.getBoundingClientRect();
+      if (box.width - frame.width > 3 || item.width - box.width > 1) {
+        out.push(
+          `image ${i}: a ${frame.width}px picture in a ${box.width}px tile in a ${item.width}px item`,
+        );
       }
       const natural = img.naturalWidth / img.naturalHeight;
       const drawn = img.clientWidth / img.clientHeight;
