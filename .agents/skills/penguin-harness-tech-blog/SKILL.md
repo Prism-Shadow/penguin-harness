@@ -179,7 +179,10 @@ count as a figure.
 
 ## Polishing with a model
 
-Polishing is optional.
+Every finished post gets a last pass through a model (owner, 2026-10-17: glm-5.3-flash). The pass
+makes the prose read like a story the team lived, in natural language: connected paragraphs with
+transitions, a developer talking to a developer, not a list of facts. The owner supplies the key for
+each post. It is used for that post's polishing only.
 
 - **Section by section.** Send one section at a time, with an instruction built from the Voice
   section above. The fixed instruction in `penguin-harness-dev`'s
