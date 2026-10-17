@@ -37,6 +37,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatBytes } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
+import { useAgentLocation } from "../../lib/agent-location";
 import {
   answerApproval,
   initialTryState,
@@ -502,6 +503,8 @@ export function ApiTryPanel({
   disabledReason?: string;
 }) {
   const [state, dispatch] = useReducer(reduceTry, S.agent.apiTryExample, initialTryState);
+  /** The machine the Agent lives on: the run, its Session and its answers go there. */
+  const machineId = useAgentLocation();
   const connection = useRef<AbortController | null>(null);
   // Leaving mid-run closes the connection, and the server aborts the run.
   useEffect(() => () => connection.current?.abort(), []);
@@ -525,17 +528,19 @@ export function ApiTryPanel({
         if (state.running || disabled || state.input.trim() === "") return;
         const controller = new AbortController();
         connection.current = controller;
-        void runTry({ projectId, agentId }, dispatch, tryBody(state), controller.signal);
+        void runTry({ projectId, agentId, machineId }, dispatch, tryBody(state), controller.signal);
       }}
       onStop={() => {
-        stopTry(state, connection.current).catch((e: unknown) => toastError(apiErrorText(e)));
+        stopTry(state, connection.current, machineId).catch((e: unknown) =>
+          toastError(apiErrorText(e)),
+        );
       }}
       onNewSession={() => dispatch({ type: "reset" })}
       onView={(view) => dispatch({ type: "view", view })}
       onApprove={async (toolCallId, decision) => {
         if (state.sessionId === null) return;
         try {
-          await answerApproval(state.sessionId, toolCallId, decision, dispatch);
+          await answerApproval(state.sessionId, toolCallId, decision, dispatch, machineId);
         } catch (e) {
           toastError(apiErrorText(e));
         }

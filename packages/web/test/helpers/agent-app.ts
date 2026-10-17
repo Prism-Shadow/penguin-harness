@@ -9,6 +9,15 @@
  * Project's models. A test can refuse the next write with {@link AgentServer.refuseNext}, or
  * read back what was written with {@link AgentServer.writes}.
  *
+ * It answers the plugin library too: this server's (`library`) and each machine's own, and an
+ * install on an Agent takes the named plugins' Skills from the library of the server that holds
+ * the Agent, refusing a plugin that library does not have ({@link AgentServer.skillsOn}).
+ *
+ * It can hold machines too ({@link FakeMachine}): connected ones answer through their proxy
+ * (`/server/<id>/api/…`) with an Agent list of their own — created and deleted there, never
+ * here — and every other Agent request with the same one server's worth of state, the way the
+ * gallery's demo does; one being brought back answers nothing, as a real one has nothing to answer.
+ *
  * The frame is the app's own shape at the route level: a memory data router whose root holds
  * the leave guard (`NavigationGuard`), a sidebar link and the Project and Session-list providers,
  * with the auth provider and the one discard prompt (`UnsavedPrompt`) around it. Beside the
@@ -24,7 +33,10 @@ import { Link, Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
   AgentConfigResponse,
+  AgentSummary,
   ChatDefaultsDto,
+  MachineInfo,
+  PluginItem,
   AgentApiSettings,
   ModelsResponse,
   DirListResponse,
@@ -40,6 +52,7 @@ import type {
 import { AuthProvider } from "../../src/state/auth";
 import { LocaleProvider } from "../../src/state/locale";
 import { ProjectProvider } from "../../src/state/project";
+import { MachinesProvider } from "../../src/state/machines";
 import { SessionsProvider } from "../../src/state/sessions";
 import { NavigationGuard } from "../../src/lib/unsaved/navigation-guard";
 import { UnsavedPrompt } from "../../src/lib/unsaved/unsaved-prompt";
@@ -131,8 +144,25 @@ function applyUpdate(res: AgentConfigResponse, update: AgentConfigUpdateRequest)
   };
 }
 
+/** A machine of the Project, installed and reached through this server's proxy. */
+export interface FakeMachine {
+  machineId: string;
+  /** Its ssh alias: what the pages write after a name. */
+  alias: string;
+  /** Being brought back: listed, but not connected, so nothing may be asked of it. */
+  reconnecting?: boolean;
+  /** The ids of its own Agents, in the order its list answers them (and they were created). */
+  agents: string[];
+  /** Its own plugin library (by default empty): what an Agent created there can start with. */
+  library?: PluginItem[];
+}
+
 export interface AgentServer {
   fetch: FakeFetch;
+  /** The ids of a machine's own Agents now. */
+  machineAgents(machineId: string): string[];
+  /** The Skills installed on an Agent of this server (null) or of a machine. */
+  skillsOn(machineId: string | null, agentId: string): string[];
   /** The Agent's config as the server holds it now. */
   config(): AgentConfigResponse;
   /** The vault keys the server holds now, in order. */
@@ -162,10 +192,17 @@ export function agentServer(
     chatDefaults?: ChatDefaultsDto;
     workbenches?: WorkbenchInfo[];
     workbenchVersions?: WorkbenchVersion[];
+    machines?: FakeMachine[];
+    /** This server's plugin library (by default empty). */
+    library?: PluginItem[];
     /** List {@link OTHER_PROJECT_ID} beside the Agent's Project. */
     otherProject?: boolean;
   } = {},
 ): AgentServer {
+  /** Installed Skill names by `<machine or "">/<agent>`. */
+  const installs = new Map<string, string[]>();
+  const installKey = (machineId: string | null, agentId: string) => `${machineId ?? ""}/${agentId}`;
+  const machines = (options.machines ?? []).map((m) => ({ ...m, agents: [...m.agents] }));
   let apiSettings: AgentApiSettings = {
     enabled: true,
     open: false,
@@ -196,8 +233,9 @@ export function agentServer(
     return apiError(status, code, message);
   };
 
-  const summaryOf = (agentId: string) => ({
+  const summaryOf = (agentId: string): AgentSummary => ({
     agentId,
+    createdAt: "2026-01-01T00:00:00Z",
     activeSessionCount: 0,
     sessionCount: 0,
     sessionActivity: [],
@@ -209,11 +247,139 @@ export function agentServer(
     skillCount: 0,
     hookCount: 0,
     workbenchCount: workbenches.length,
+    memoryCount: 0,
+    apiEnabled: false,
+    pluginUpdates: [],
   });
+
+  /** The machines list as this server reports it: itself first, then each machine. */
+  const machinesList = (): MachineInfo[] => [
+    {
+      id: "local",
+      alias: "this-box",
+      installed: { version: "0.2.16", at: "2026-10-01T00:00:00Z" },
+      machineId: "local-machine",
+      local: true,
+      connection: null,
+      api: null,
+      status: null,
+      root: "/data",
+    },
+    ...machines.map((m): MachineInfo => ({
+      id: `ssh:${m.alias}`,
+      alias: m.alias,
+      installed: { version: "0.2.16", at: "2026-10-01T00:00:00Z" },
+      member: true,
+      machineId: m.machineId,
+      local: false,
+      connection: m.reconnecting === true ? null : { pid: 4242 },
+      ...(m.reconnecting === true
+        ? {
+            reconnect: {
+              since: "2026-10-15T00:00:00Z",
+              attempts: 2,
+              nextAt: null,
+              lastError: null,
+              diagnosis: null,
+            },
+          }
+        : {}),
+      keepConnected: true,
+      api: null,
+      status: { state: "running", checkedAt: "2026-10-15T00:00:00Z", port: 7371 },
+      root: "/home/penguin/.penguin/data",
+    })),
+  ];
+
+  /** What a machine answers itself: its own Agent list; anything else is the shared state below. */
+  const machineAnswer = (request: FetchRequest): Response | null => {
+    const machine = machines.find((m) => m.machineId === request.machine);
+    if (machine === undefined || machine.reconnecting === true) {
+      return apiError(503, "not_connected", `No live forward to ${request.machine}`);
+    }
+    const agentsPath = `/api/projects/${PROJECT_ID}/agents`;
+    if (request.path === agentsPath && request.method === "GET") {
+      // Created on the machine after everything here, one day apart in list order.
+      return json({
+        agents: machine.agents.map((id, i) => ({
+          ...summaryOf(id),
+          name: id,
+          createdAt: `2026-10-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
+        })),
+      });
+    }
+    if (request.path === agentsPath && request.method === "POST") {
+      const body = request.body as { agentId: string; name?: string };
+      machine.agents.push(body.agentId);
+      return json({ agent: { ...summaryOf(body.agentId), name: body.name ?? body.agentId } });
+    }
+    if (request.path === "/api/plugins") {
+      return json({ groups: [{ id: "all", title: "All", plugins: machine.library ?? [] }] });
+    }
+    if (request.path.startsWith(`${agentsPath}/`) && request.method === "DELETE") {
+      const agentId = decodeURIComponent(request.path.slice(agentsPath.length + 1));
+      if (!agentId.includes("/")) {
+        machine.agents = machine.agents.filter((id) => id !== agentId);
+        return new Response(null, { status: 204 });
+      }
+    }
+    return null;
+  };
+
+  /** The library of the server a request reached. */
+  const libraryOf = (machineId: string | null): PluginItem[] =>
+    machineId === null
+      ? (options.library ?? [])
+      : (machines.find((m) => m.machineId === machineId)?.library ?? []);
 
   const answer = (request: FetchRequest): Response => {
     const { method, path } = request;
+    if (request.machine !== null) {
+      const own = machineAnswer(request);
+      if (own !== null) return own;
+    }
     if (path === "/api/me") return json(ADMIN_ME);
+    if (path === "/api/plugins") {
+      return json({ groups: [{ id: "all", title: "All", plugins: libraryOf(request.machine) }] });
+    }
+    if (path === "/api/plugins/registry") return json({ plugins: [], failures: [], pending: [] });
+    if (path === `/api/projects/${PROJECT_ID}/plugins/installed` && method === "GET") {
+      return json({
+        machineId: request.machine ?? "local-machine",
+        file: "project.toml",
+        restartPending: false,
+        shipped: [],
+        plugins: [],
+      });
+    }
+    const pluginsPath = /^\/api\/projects\/[^/]+\/agents\/([^/]+)\/plugins$/.exec(path);
+    if (pluginsPath !== null) {
+      const key = installKey(request.machine, decodeURIComponent(pluginsPath[1]!));
+      if (method === "POST") {
+        const { names } = request.body as { names: string[] };
+        const library = libraryOf(request.machine);
+        const missing = names.find((name) => !library.some((p) => p.name === name));
+        if (missing !== undefined) return apiError(404, "plugin_not_found", missing);
+        const skills = library
+          .filter((p) => names.includes(p.name))
+          .flatMap((p) => p.skills.map((skill) => skill.name));
+        installs.set(key, [...new Set([...(installs.get(key) ?? []), ...skills])]);
+      }
+      const version = (name: string) =>
+        libraryOf(request.machine)
+          .flatMap((p) => p.skills)
+          .find((skill) => skill.name === name)?.version ?? "";
+      return json({
+        skills: (installs.get(key) ?? []).map((name) => ({
+          name,
+          description: "",
+          version: version(name),
+        })),
+        hooks: [],
+        mcpServers: [],
+        workbenches: [],
+      });
+    }
     if (path === "/api/projects") {
       const project = (projectId: string, name: string) => ({
         projectId,
@@ -240,7 +406,7 @@ export function agentServer(
     if (path === `/api/projects/${PROJECT_ID}/models`)
       return json(options.models ?? { models: [], providers: {} });
     if (path === `/api/projects/${PROJECT_ID}/machines`) {
-      return json({ machines: [], imageVersion: null, job: null });
+      return json({ machines: machinesList(), imageVersion: "0.2.16", job: null, jobs: [] });
     }
     if (/^\/api\/projects\/[^/]+\/agents\/[^/]+\/sessions$/.test(path) && method === "GET") {
       return json({ sessions: [] });
@@ -344,6 +510,8 @@ export function agentServer(
   });
   return {
     fetch,
+    machineAgents: (machineId) => machines.find((m) => m.machineId === machineId)?.agents ?? [],
+    skillsOn: (machineId, agentId) => installs.get(installKey(machineId, agentId)) ?? [],
     config: () => stored,
     vaultKeys: () => vault.map((v) => v.key),
     schedules: () => schedules,
@@ -412,12 +580,16 @@ export async function mountAgentApp(
           null,
           h(NavigationGuard),
           h(Link, { to: "/chat" }, "Sidebar chat"),
-          h(ProjectProvider, null, h(SessionsProvider, null, h(Outlet))),
+          h(ProjectProvider, null, h(MachinesProvider, null, h(SessionsProvider, null, h(Outlet)))),
         ),
         children: [
           { path: "/chat", element: h("p", null, "Chat page") },
           { path: "/agents", element: h("p", null, "Agents list") },
           { path: route, element },
+          // Where an Agent card or a create lands when the page under test is not that page.
+          ...(route === "/agents/:agentId"
+            ? []
+            : [{ path: "/agents/:agentId", element: h("p", null, "Agent settings") }]),
           // After the page's own route, so a page mounted at a conversation's path still wins.
           { path: "/chat/:sessionId", element: h("p", null, "Conversation") },
         ],

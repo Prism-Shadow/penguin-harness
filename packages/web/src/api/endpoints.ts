@@ -583,36 +583,54 @@ export const syncPlatformModels = (projectId: string) =>
 
 // Vault environment variables (Agent-level) -------------------------------------------------------
 
-export const getVault = (projectId: string, agentId: string) =>
+export const getVault = (projectId: string, agentId: string, machineId: string | null = null) =>
   apiFetch<VaultResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/vault`,
+    { server: machineId },
   );
 
-export const putVault = (projectId: string, agentId: string, body: VaultUpdateRequest) =>
+export const putVault = (
+  projectId: string,
+  agentId: string,
+  body: VaultUpdateRequest,
+  machineId: string | null = null,
+) =>
   apiFetch<VaultResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/vault`,
-    { method: "PUT", body },
+    { method: "PUT", body, server: machineId },
   );
 
 /** Inserts the {{VAULT}} placeholder into the agent's prompt template — migrating a legacy hardcoded # Vault section verbatim when one is present (idempotent, owner-only). */
-export const insertVaultPlaceholder = (projectId: string, agentId: string) =>
+export const insertVaultPlaceholder = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentVaultConfigDto>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/vault/template-placeholder`,
-    { method: "POST", body: {} },
+    { method: "POST", body: {}, server: machineId },
   );
 
 /** Inserts the {{SKILLS}} placeholder into the agent's prompt template — migrating a legacy hardcoded # Skills section verbatim when one is present (idempotent). */
-export const insertSkillsPlaceholder = (projectId: string, agentId: string) =>
+export const insertSkillsPlaceholder = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentSkillsConfigDto>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills/template-placeholder`,
-    { method: "POST", body: {} },
+    { method: "POST", body: {}, server: machineId },
   );
 
 /** Inserts the {{SCHEDULES}} placeholder into the agent's prompt template (idempotent, owner-only; Schedules has no legacy section to migrate). */
-export const insertSchedulesPlaceholder = (projectId: string, agentId: string) =>
+export const insertSchedulesPlaceholder = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentSchedulesConfigDto>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/schedules/template-placeholder`,
-    { method: "POST", body: {} },
+    { method: "POST", body: {}, server: machineId },
   );
 
 // Memory (Agent-level, agent_state/memory/) -------------------------------------------------
@@ -631,10 +649,15 @@ export const getMemoryOverview = (
 ) => apiFetch<MemoryOverviewResponse>(memoryBase(projectId, agentId), { server: machineId });
 
 /** Inserts the {{MEMORY}} placeholder into the agent's prompt template (idempotent) — the explicit adoption path for an agent created before Memory. */
-export const insertMemoryPlaceholder = (projectId: string, agentId: string) =>
+export const insertMemoryPlaceholder = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<MemoryOverviewResponse>(`${memoryBase(projectId, agentId)}/template-placeholder`, {
     method: "POST",
     body: {},
+    server: machineId,
   });
 
 export const getMemoryFiles = (
@@ -664,9 +687,11 @@ export const deleteMemoryFile = (
   agentId: string,
   scopeKey: string,
   name: string,
+  machineId: string | null = null,
 ) =>
   apiFetch<void>(`${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`, {
     method: "DELETE",
+    server: machineId,
   });
 
 const memoryScopeBase = (projectId: string, agentId: string, scopeKey: string) =>
@@ -678,8 +703,15 @@ const memoryScopeBase = (projectId: string, agentId: string, scopeKey: string) =
  * would save the error body as a file (the skills tab hit the same wall). The server still sets
  * Content-Disposition, for anyone opening the URL directly.
  */
-export const exportMemoryScope = (projectId: string, agentId: string, scopeKey: string) =>
-  apiFetch<MemoryScopeExport>(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`);
+export const exportMemoryScope = (
+  projectId: string,
+  agentId: string,
+  scopeKey: string,
+  machineId: string | null = null,
+) =>
+  apiFetch<MemoryScopeExport>(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`, {
+    server: machineId,
+  });
 
 /** Writes a transfer document into one scope (owner only); `confirm` is required by the modes that would destroy something. */
 export const importMemoryScope = (
@@ -687,10 +719,12 @@ export const importMemoryScope = (
   agentId: string,
   scopeKey: string,
   body: MemoryImportRequest,
+  machineId: string | null = null,
 ) =>
   apiFetch<MemoryImportResponse>(`${memoryScopeBase(projectId, agentId, scopeKey)}/import`, {
     method: "POST",
     body,
+    server: machineId,
   });
 
 // Agent & its configuration ----------------------------------------------------------------
@@ -705,10 +739,16 @@ export const listAgents = (projectId: string, machineId?: string | null) =>
     machineId === undefined ? {} : { server: machineId },
   );
 
-export const createAgent = (projectId: string, body: AgentCreateRequest) =>
+/** Creates an Agent on this server, or with `machineId` on that machine — where it then lives. */
+export const createAgent = (
+  projectId: string,
+  body: AgentCreateRequest,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentCreateResponse>(`/api/projects/${encodeURIComponent(projectId)}/agents`, {
     method: "POST",
     body,
+    server: machineId,
   });
 
 export const getAgentConfig = (
@@ -733,24 +773,37 @@ export const putAgentConfig = (
   );
 
 /** Probes one MCP Server entry's reachability (server-side connect + tool discovery; nothing is saved). */
-export const testAgentMcpServer = (projectId: string, agentId: string, body: MCPServerConfig) =>
+export const testAgentMcpServer = (
+  projectId: string,
+  agentId: string,
+  body: MCPServerConfig,
+  machineId: string | null = null,
+) =>
   apiFetch<McpServerTestResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/mcp-test`,
-    { method: "POST", body },
+    { method: "POST", body, server: machineId },
   );
 
 /** Overwrite system_config.yaml with the current defaults (keeps only name/description/version). */
-export const resetAgentConfig = (projectId: string, agentId: string) =>
+export const resetAgentConfig = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentConfigResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/reset`,
-    { method: "POST" },
+    { method: "POST", server: machineId },
   );
 
 /** Smart-merge the config up to the current defaults generation (customizations kept and reported); non-destructive sibling of resetAgentConfig. */
-export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
+export const kernelUpdateAgentConfig = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentKernelUpdateResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/kernel-update`,
-    { method: "POST" },
+    { method: "POST", server: machineId },
   );
 
 // An Agent's public API (the stream itself is AMSP under /api/amsp/v1; these are its settings) ---
@@ -759,28 +812,45 @@ const agentApiBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/api`;
 
 /** The Agent's API switch, keyless switch, approval mode and keys (any member may read them). */
-export const getAgentApi = (projectId: string, agentId: string) =>
-  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId));
+export const getAgentApi = (projectId: string, agentId: string, machineId: string | null = null) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId), { server: machineId });
 
 /** Changes the given settings and keeps the rest (owner only). */
-export const putAgentApi = (projectId: string, agentId: string, body: AgentApiUpdateRequest) =>
-  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId), { method: "PUT", body });
+export const putAgentApi = (
+  projectId: string,
+  agentId: string,
+  body: AgentApiUpdateRequest,
+  machineId: string | null = null,
+) =>
+  apiFetch<AgentApiResponse>(agentApiBase(projectId, agentId), {
+    method: "PUT",
+    body,
+    server: machineId,
+  });
 
 /** Mints a key (owner only): the answer is the one place the secret is ever shown. */
 export const createAgentApiKey = (
   projectId: string,
   agentId: string,
   body: AgentApiKeyCreateRequest,
+  machineId: string | null = null,
 ) =>
   apiFetch<AgentApiKeyCreateResponse>(`${agentApiBase(projectId, agentId)}/keys`, {
     method: "POST",
     body,
+    server: machineId,
   });
 
 /** Deletes a key for good (owner only): a program presenting it is refused from the next request on. */
-export const deleteAgentApiKey = (projectId: string, agentId: string, keyId: string) =>
+export const deleteAgentApiKey = (
+  projectId: string,
+  agentId: string,
+  keyId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<void>(`${agentApiBase(projectId, agentId)}/keys/${encodeURIComponent(keyId)}`, {
     method: "DELETE",
+    server: machineId,
   });
 
 /**
@@ -792,11 +862,12 @@ export const tryAgentApi = (
   projectId: string,
   agentId: string,
   body: RunRequest,
-  opts: { signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal; machineId?: string | null } = {},
 ) =>
   apiFetchStream(`${agentApiBase(projectId, agentId)}/try`, {
     method: "POST",
     body,
+    server: opts.machineId ?? null,
     ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
   });
 
@@ -918,9 +989,14 @@ export const requestDirAccess = (projectId: string, path: string) =>
  * Skills a directory carries under `.agents/skills` / `.claude/skills`: what picking it at Agent
  * creation would offer to install. `path` must be absolute.
  */
-export const listDirectorySkills = (projectId: string, path: string) =>
+export const listDirectorySkills = (
+  projectId: string,
+  path: string,
+  machineId: string | null = null,
+) =>
   apiFetch<DirectorySkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/dir-skills?path=${encodeURIComponent(path)}`,
+    { server: machineId },
   );
 
 /**
@@ -1205,14 +1281,16 @@ export const postTask = (sessionId: string, body: TaskCreateRequest) =>
 export const getGoal = (sessionId: string) =>
   apiFetch<GoalResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/goal`);
 
+/** `machineId` names the Session's machine where the id map may not know it (an API try run); omitted, the path routes itself. */
 export const postApproval = (
   sessionId: string,
   toolCallId: string,
   body: ApprovalDecisionRequest,
+  machineId?: string | null,
 ) =>
   apiFetch<void>(
     `/api/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(toolCallId)}`,
-    { method: "POST", body },
+    { method: "POST", body, ...(machineId !== undefined ? { server: machineId } : {}) },
   );
 
 /**
@@ -1226,10 +1304,12 @@ export const postToolCallBackground = (sessionId: string, toolCallId: string) =>
     { method: "POST", body: {} },
   );
 
-export const postAbort = (sessionId: string) =>
+/** `machineId` as on {@link postApproval}. */
+export const postAbort = (sessionId: string, machineId?: string | null) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, {
     method: "POST",
     body: {},
+    ...(machineId !== undefined ? { server: machineId } : {}),
   });
 
 /** "Retry now" on the reconnect countdown: skips the remaining backoff wait server-side (skipped:false is the benign "no wait in progress" case — e.g. the timer elapsed in a race — never an error). */
@@ -1509,8 +1589,11 @@ export const getUsage = (
 
 // Agent deletion & Workspace files --------------------------------------------------
 
-export const deleteAgent = (projectId: string, agentId: string) =>
-  apiFetch<void>(`/api/projects/${projectId}/agents/${agentId}`, { method: "DELETE" });
+export const deleteAgent = (projectId: string, agentId: string, machineId: string | null = null) =>
+  apiFetch<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}`,
+    { method: "DELETE", server: machineId },
+  );
 
 export const listWorkspaceFiles = (sessionId: string, path: string) =>
   apiFetch<WorkspaceFilesResponse>(`/api/sessions/${sessionId}/files`, { query: { path } });
@@ -1716,9 +1799,14 @@ export const statSessionFiles = (sessionId: string, paths: string[]) =>
 
 // Scheduled tasks ----------------------------------------------------------------------
 
-export const listSchedules = (projectId: string, agentId: string) =>
+export const listSchedules = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<SchedulesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/schedules`,
+    { server: machineId },
   );
 
 /** Every agent's scheduled tasks in the Project, each stamped with its agent: what the session list's marks read. */
@@ -1729,10 +1817,11 @@ export const createSchedule = (
   projectId: string,
   agentId: string,
   body: ScheduleUpsertRequest & { name: string },
+  machineId: string | null = null,
 ) =>
   apiFetch<ScheduleItem>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/schedules`,
-    { method: "POST", body },
+    { method: "POST", body, server: machineId },
   );
 
 export const updateSchedule = (
@@ -1740,24 +1829,31 @@ export const updateSchedule = (
   agentId: string,
   name: string,
   body: ScheduleUpsertRequest,
+  machineId: string | null = null,
 ) =>
   apiFetch<ScheduleItem>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/schedules/${encodeURIComponent(name)}`,
-    { method: "PUT", body },
+    { method: "PUT", body, server: machineId },
   );
 
-export const deleteSchedule = (projectId: string, agentId: string, name: string) =>
+export const deleteSchedule = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  machineId: string | null = null,
+) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/schedules/${encodeURIComponent(name)}`,
-    { method: "DELETE" },
+    { method: "DELETE", server: machineId },
   );
 
 // Plugin library, and an Agent's installed skills and hook packages ----------------------------
 
 /** Plugin library (available to any logged-in user): groups, each plugin's manifest and the metadata of its skills — never SKILL.md bodies or hook scripts. */
-export const getPluginLibrary = () => apiFetch<PluginLibraryResponse>("/api/plugins");
+export const getPluginLibrary = (machineId: string | null = null) =>
+  apiFetch<PluginLibraryResponse>("/api/plugins", { server: machineId });
 
 /** Everything one library plugin ships as text keyed by path (skills' files, hook scripts), for the plugin detail view's file browser. */
 export const getPluginFiles = (plugin: string) =>
@@ -1772,15 +1868,26 @@ export const getLibraryPluginReadme = (plugin: string) =>
  * plugin is overwritten with the library content (i.e. updated). 201 returns the Agent's
  * refreshed installed lists.
  */
-export const getAgentPlugins = (projectId: string, agentId: string) =>
+export const getAgentPlugins = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
+    { server: machineId },
   );
 
-export const installAgentPlugins = (projectId: string, agentId: string, names: string[]) =>
+/** With `machineId`, installs from THAT machine's library onto its Agent. */
+export const installAgentPlugins = (
+  projectId: string,
+  agentId: string,
+  names: string[],
+  machineId: string | null = null,
+) =>
   apiFetch<AgentPluginsInstallResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/plugins`,
-    { method: "POST", body: { names } satisfies PluginInstallRequest },
+    { method: "POST", body: { names } satisfies PluginInstallRequest, server: machineId },
   );
 
 /** Plugin index (available to any logged-in user): the merged index of every configured registry. */
@@ -1803,31 +1910,51 @@ export const getAgentSkills = (
     { server: machineId },
   );
 
-export const getAgentHooks = (projectId: string, agentId: string) =>
+export const getAgentHooks = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/hooks`,
+    { server: machineId },
   );
 
 /** The Agent's MCP servers in config order: target, the plugin that installed each, the vault keys still missing and whether a sign-in is needed (never a value). */
-export const getAgentMcpServers = (projectId: string, agentId: string) =>
+export const getAgentMcpServers = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentMcpServersResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/mcp-servers`,
+    { server: machineId },
   );
 
 /** Removes one MCP server entry from the Agent, whoever added it; 204, 404 unknown_mcp_server when it is not there. */
-export const uninstallAgentMcpServer = (projectId: string, agentId: string, name: string) =>
+export const uninstallAgentMcpServer = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  machineId: string | null = null,
+) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/mcp-servers/${encodeURIComponent(name)}`,
-    { method: "DELETE" },
+    { method: "DELETE", server: machineId },
   );
 
 /** Uninstalls one hook package (deletes agent_state/hooks/<name>/ whole); 204, 404 not_found when it is not installed. */
-export const uninstallAgentHook = (projectId: string, agentId: string, name: string) =>
+export const uninstallAgentHook = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  machineId: string | null = null,
+) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/hooks/${encodeURIComponent(name)}`,
-    { method: "DELETE" },
+    { method: "DELETE", server: machineId },
   );
 
 /** Installs one hook package from an uploaded zip (base64); 409 hook_exists unless overwrite; 201 returns the latest installed list. */
@@ -1835,40 +1962,63 @@ export const installAgentHookArchive = (
   projectId: string,
   agentId: string,
   body: HookArchiveInstallRequest,
+  machineId: string | null = null,
 ) =>
   apiFetch<AgentHooksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/hooks/archive`,
-    { method: "POST", body },
+    { method: "POST", body, server: machineId },
   );
 
 /** Zip download URL for one installed hook package (server sets Content-Disposition attachment); the export round-trips through installAgentHookArchive. */
-export const agentHookArchiveUrl = (projectId: string, agentId: string, name: string): string =>
-  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-  `/hooks/${encodeURIComponent(name)}/archive`;
+export const agentHookArchiveUrl = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  machineId: string | null = null,
+): string =>
+  apiUrl(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/hooks/${encodeURIComponent(name)}/archive`,
+    machineId,
+  );
 
 /** Installs one skill from an uploaded zip (base64); 409 skill_exists unless overwrite; 201 returns the latest installed list. */
 export const installAgentSkillArchive = (
   projectId: string,
   agentId: string,
   body: SkillArchiveInstallRequest,
+  machineId: string | null = null,
 ) =>
   apiFetch<AgentSkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/skills/archive`,
-    { method: "POST", body },
+    { method: "POST", body, server: machineId },
   );
 
 /** Zip download URL for one installed skill (server sets Content-Disposition attachment); the export round-trips through installAgentSkillArchive. */
-export const agentSkillArchiveUrl = (projectId: string, agentId: string, name: string): string =>
-  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-  `/skills/${encodeURIComponent(name)}/archive`;
+export const agentSkillArchiveUrl = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  machineId: string | null = null,
+): string =>
+  apiUrl(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/skills/${encodeURIComponent(name)}/archive`,
+    machineId,
+  );
 
-export const removeAgentSkill = (projectId: string, agentId: string, name: string) =>
+export const removeAgentSkill = (
+  projectId: string,
+  agentId: string,
+  name: string,
+  machineId: string | null = null,
+) =>
   apiFetch<void>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
       `/skills/${encodeURIComponent(name)}`,
-    { method: "DELETE" },
+    { method: "DELETE", server: machineId },
   );
 
 // Benchmarks (scores, manual creation and deletion) -------------------------------------------
@@ -1982,13 +2132,25 @@ export const benchmarkCaseFileUrl = (
 // Agent State snapshot export / import ------------------------------------------------------
 
 /** Snapshot bundle (tar.gz) download URL: the server sets Content-Disposition attachment, usable directly in <a download>. */
-export const agentExportUrl = (projectId: string, agentId: string): string =>
-  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/export`;
+export const agentExportUrl = (
+  projectId: string,
+  agentId: string,
+  machineId: string | null = null,
+): string =>
+  apiUrl(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/export`,
+    machineId,
+  );
 
-export const importAgent = (projectId: string, agentId: string, body: AgentImportRequest) =>
+export const importAgent = (
+  projectId: string,
+  agentId: string,
+  body: AgentImportRequest,
+  machineId: string | null = null,
+) =>
   apiFetch<AgentImportResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/import`,
-    { method: "POST", body },
+    { method: "POST", body, server: machineId },
   );
 
 // Machines (admin only) ----------------------------------------------------------------

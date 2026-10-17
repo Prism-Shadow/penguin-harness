@@ -1681,6 +1681,11 @@ export const zh = {
     createPluginsHint:
       "创建时安装到该 Agent（技能、钩子包与 MCP 服务器），之后可在其「技能」「钩子」「工具」标签页增删",
     createPluginsEmpty: "插件库暂无可安装的插件",
+    /** Where the new Agent is created (shown once a machine is connected), and its "?". */
+    createLocation: "位置",
+    createLocationHere: "本机",
+    createLocationInfo:
+      "新 Agent 建在哪台服务端上。建在机器上的 Agent 归那台机器所有：插件取那台机器的插件库，之后的设置、对话与删除也都在那台机器上进行。",
     /** The confirmation a picked plugin's stdio MCP server asks for before the Agent is created: the question; the commands follow it. */
     createStdioQuestion: (agent: string): string => `创建 ${agent}？`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
@@ -1920,8 +1925,14 @@ export const zh = {
       `它由插件 ${plugin} 安装，可在插件页的「管理安装」中重新装回。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
-    /** An Agent whose state directory is on a machine: what this server cannot act on, and where it can be. */
-    livesOnMachine: (machine: string) => `该 Agent 在 ${machine} 上，请到那台机器上管理`,
+    /** The hint on a machine Agent's `[SSH: …]` tag: whose Agent this is, and where its actions go. */
+    onMachineHint: (machine: string) =>
+      `这个 Agent 在 ${machine} 上：设置、对话与删除都在那台机器上进行，和本服务端同 id 的 Agent 互不相干。`,
+    /** The disabled Usage button on a machine's Agent: what the usage center counts. */
+    usageThisServerOnly: "成本中心只统计本服务端的 Agent",
+    /** Delete's confirmation for a machine's Agent: the machine it is deleted on. */
+    deleteConfirmOnMachine: (name: string, machine: string): string =>
+      `确认删除 ${machine} 上的 Agent「${name}」？它在那台机器上的目录（含全部 Trace）将被递归删除，不可恢复。`,
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
     /** The Agents page's section of organization employees, and its "?" (what an employee is here). */
@@ -2000,6 +2011,8 @@ export const zh = {
       "应用于之后新建的 API 会话；需要确认时，确认请求会发给调用方，也可在 Web App 中回答。",
     apiConnection: "连接",
     apiBaseUrl: "Base URL",
+    /** A machine's Agent: its API is that machine's server, at this address over there. */
+    apiBaseUrlOnMachine: (machine: string): string => `Base URL（在 ${machine} 上）`,
     apiAgentId: "Agent ID",
     /** A copy button beside a connection value, named for what it copies. */
     apiCopy: (what: string): string => `复制 ${what}`,
@@ -3077,8 +3090,9 @@ export const zh = {
     mcpRunsCommand: (command: string): string => `Agent 会话开始时在本服务器上运行 ${command}`,
     /** The confirm before installing a plugin with a stdio server (any member): the command the server will run. */
     installStdioTitle: (plugin: string, agent: string): string => `将 ${plugin} 安装到 ${agent}？`,
-    installStdioBody: (server: string, command: string): string =>
-      `它的 MCP 服务器 ${server} 会在该 Agent 每次开始会话时，在本服务器上运行 ${command}。`,
+    /** `machine`: the machine the Agent lives on, where the command runs; omitted, this server. */
+    installStdioBody: (server: string, command: string, machine?: string): string =>
+      `它的 MCP 服务器 ${server} 会在该 Agent 每次开始会话时，在${machine === undefined ? "本服务器" : ` ${machine} `}上运行 ${command}。`,
     /** The Set up form (Project owner): the vault values a plugin's MCP servers wait for. */
     setUp: "设置",
     setUpTitle: (plugin: string, agent: string): string => `为 ${agent} 设置 ${plugin}`,

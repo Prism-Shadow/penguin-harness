@@ -90,6 +90,7 @@ import {
   rememberMachineAgents,
   rememberMachineSessions,
 } from "../lib/machine-cache";
+import { subscribeMachineAgentsChanged } from "../lib/machine-agent-lists";
 import { setTerminalMachines } from "../lib/terminal-machines";
 import { machineIdOf } from "../lib/workspace-machines";
 import {
@@ -1669,6 +1670,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
    * the composer offers a remote draft, and better than dropping its rows.
    */
   const [machineAgents, setMachineAgents] = useState<Scoped<string> | null>(null);
+  /** Bumped when a page changed a machine's Agents (created, deleted one): its list is read again. */
+  const [machineAgentsTick, setMachineAgentsTick] = useState(0);
+  useEffect(() => subscribeMachineAgentsChanged(() => setMachineAgentsTick((n) => n + 1)), []);
   useEffect(() => {
     if (projectId === null) {
       setMachineAgents(null);
@@ -1698,7 +1702,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, machineIdsKey, offlineMachineIdsKey]);
+  }, [projectId, machineIdsKey, offlineMachineIdsKey, machineAgentsTick]);
   // The machines' Agents of THIS Project only: until the answer for it is in, none — the
   // previous Project's would ask its machines about Agents this Project does not have.
   const machineAgentIdsJson = scopedValue(machineAgents, projectId) ?? "{}";

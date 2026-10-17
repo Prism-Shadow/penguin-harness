@@ -29,6 +29,8 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
@@ -42,9 +44,12 @@ export function VaultTab({
   /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: () => void;
 }) {
-  const { currentProject, agents, reloadAgents } = useProject();
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
+  const machineId = useAgentLocation();
+  const agents = useAgentsOn(machineId);
   // Prompt-injection controls follow the tab's existing gate: owner-only edits.
   const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
     agentId,
@@ -72,15 +77,15 @@ export function VaultTab({
     try {
       // The injection controls' state loads in parallel with the tab's own table.
       const [res, configView] = await Promise.all([
-        api.getVault(projectId, agentId),
-        api.getAgentConfig(projectId, agentId),
+        api.getVault(projectId, agentId, machineId),
+        api.getAgentConfig(projectId, agentId, machineId),
       ]);
       setEntries(res.entries);
       applyConfig(configView.config);
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId, applyConfig]);
+  }, [projectId, agentId, machineId, applyConfig]);
 
   useEffect(() => {
     void load();
@@ -91,11 +96,11 @@ export function VaultTab({
     if (!projectId || !agentId) return S.common.unknownError;
     setBusy(true);
     try {
-      const res = await api.putVault(projectId, agentId, body);
+      const res = await api.putVault(projectId, agentId, body, machineId);
       setEntries(res.entries);
       toastSuccess(S.agent.savedTakesEffect);
       // Add / delete moves the agent card's vault-key count; refresh the list provider too.
-      void reloadAgents();
+      if (machineId === null) void reloadAgents();
       return null;
     } catch (e) {
       return apiErrorText(e);
@@ -220,6 +225,7 @@ export function VaultTab({
         examples={S.vault.aiAddExamples}
         tail={S.vault.aiAddTail(agentId, projectId)}
         agents={agents}
+        machineId={machineId}
       />
 
       {/* Delete confirmation (shared ConfirmModal, same pattern as Agent / Session deletion). */}

@@ -59,6 +59,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
+import { useAgentLocation } from "../../lib/agent-location";
+import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
 import { useAiBridge } from "../ai-create";
@@ -84,8 +86,11 @@ export function SkillsTab({
   onConfigChanged?: () => void;
 }) {
   const { locale } = useLocale();
-  const { currentProject, agents, reloadAgents } = useProject();
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  /** The machine the Agent lives on (null: this server), and the Agents that server runs. */
+  const machineId = useAgentLocation();
+  const agents = useAgentsOn(machineId);
   // Prompt-injection controls (toggle / template alert / prompt editor): member-level like
   // every other mutation on this tab.
   const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
@@ -112,15 +117,15 @@ export function SkillsTab({
     try {
       // The injection controls' state loads in parallel with the tab's own list.
       const [res, configView] = await Promise.all([
-        api.getAgentSkills(projectId, agentId),
-        api.getAgentConfig(projectId, agentId),
+        api.getAgentSkills(projectId, agentId, machineId),
+        api.getAgentConfig(projectId, agentId, machineId),
       ]);
       setSkills(res.skills);
       applyConfig(configView.config);
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId, applyConfig]);
+  }, [projectId, agentId, machineId, applyConfig]);
 
   useEffect(() => {
     void load();
@@ -134,7 +139,7 @@ export function SkillsTab({
   const exportSkill = async (name: string) => {
     if (!projectId) return;
     try {
-      await downloadArchive(api.agentSkillArchiveUrl(projectId, agentId, name), name);
+      await downloadArchive(api.agentSkillArchiveUrl(projectId, agentId, name, machineId), name);
     } catch (e) {
       toastError(apiErrorText(e));
     }
@@ -145,11 +150,11 @@ export function SkillsTab({
     if (!projectId || removing === null) return;
     setBusy(true);
     try {
-      await api.removeAgentSkill(projectId, agentId, removing);
+      await api.removeAgentSkill(projectId, agentId, removing, machineId);
       toastSuccess(`${S.skills.uninstalledToast(removing, agentName)}${S.agent.takesEffectSuffix}`);
       await load();
       // The agent card's skill count changed; refresh the list provider too.
-      void reloadAgents();
+      if (machineId === null) void reloadAgents();
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -164,7 +169,7 @@ export function SkillsTab({
     toastSuccess(`${S.skills.importDoneToast}${S.agent.takesEffectSuffix}`);
     await load();
     // The agent card's skill count changed; refresh the list provider too.
-    void reloadAgents();
+    if (machineId === null) void reloadAgents();
   };
 
   /** Metadata: the installed copy's version (`YYYY.MM.DD.N`, or the legacy `YYYY-MM-DD.N` on a copy installed before that spelling; empty when the frontmatter carries none), shown bare like the library card. */
@@ -296,6 +301,7 @@ function SkillImportDialog({
   onImported: () => void;
 }) {
   const { openAiChat } = useAiBridge();
+  const machineId = useAgentLocation();
   const form = useFormDraft<string>("", { normalize: (text) => text.trim() });
   const source = form.draft;
   const [uploading, setUploading] = useState(false);
@@ -325,7 +331,7 @@ function SkillImportDialog({
   const openChat = () => {
     if (trimmedSource === "") return;
     discardUnsaved(form.scope);
-    openAiChat({ agentId, text: buildImportPrompt(trimmedSource) });
+    openAiChat({ agentId, text: buildImportPrompt(trimmedSource), machineId });
     onClose();
   };
 
@@ -339,10 +345,12 @@ function SkillImportDialog({
     setUploading(true);
     setUploadError(null);
     try {
-      await api.installAgentSkillArchive(projectId, agentId, {
-        dataBase64,
-        ...(overwrite ? { overwrite: true } : {}),
-      });
+      await api.installAgentSkillArchive(
+        projectId,
+        agentId,
+        { dataBase64, ...(overwrite ? { overwrite: true } : {}) },
+        machineId,
+      );
       setOverwriting(null);
       onImported();
     } catch (e) {

@@ -40,6 +40,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { toneInk } from "../../lib/tone";
+import { useAgentLocation } from "../../lib/agent-location";
 import {
   emptyMcpForm,
   entryToTest,
@@ -131,6 +132,8 @@ export function McpServerDialog({
   // Connectivity probe: runs the current form through POST /config/mcp-test (server-side
   // connect + discovery, nothing saved); the result pops as a toast.
   const [testing, setTesting] = useState(false);
+  /** The machine the Agent lives on: the probe runs there, where the server would. */
+  const machineId = useAgentLocation();
   // The probe's "save first" answer (an unsaved entry that reads the vault), shown beside the
   // test button until the form changes.
   const [saveFirst, setSaveFirst] = useState(false);
@@ -207,7 +210,7 @@ export function McpServerDialog({
     setTesting(true);
     setSaveFirst(false);
     try {
-      const res = await api.testAgentMcpServer(projectId, agentId, tested.server);
+      const res = await api.testAgentMcpServer(projectId, agentId, tested.server, machineId);
       if (res.ok) toastSuccess(S.agent.mcpTestOk(res.tools?.length ?? 0, res.latencyMs));
       else if (res.saveFirst === true) setSaveFirst(true);
       else toastError(S.agent.mcpTestFail(res.error ?? S.common.unknownError));

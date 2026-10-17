@@ -74,6 +74,7 @@ import { formatRelativeDate } from "../../lib/format";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
+import { agentKey, useAgentLocation } from "../../lib/agent-location";
 import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
@@ -154,8 +155,12 @@ export function MemoryTab({
   const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
   const userId = useAuth().user?.userId ?? null;
-  const { currentProject, reloadAgents } = useProject();
+  const { currentProject, reloadAgents: reloadHere } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  /** The machine the Agent lives on, where its memory is; null for this server. */
+  const machineId = useAgentLocation();
+  /** This server's Agent list carries the counts a write here moves; a machine's is read where it is shown. */
+  const reloadAgents = () => (machineId === null ? reloadHere() : Promise.resolve());
   // Import writes a whole group at once, so it follows the Agent State snapshot's owner gate;
   // the server enforces it either way, this only keeps the control out of a member's reach.
   const isOwner = currentProject?.role === "owner";
@@ -167,7 +172,8 @@ export function MemoryTab({
   // Tab-level error is the initial load failure only; actions report via toast.
   const [error, setError] = useState<string | null>(null);
   const [switchBusy, setSwitchBusy] = useState(false);
-  const collapseKey = userId && projectId ? collapsedStoreKey(userId, projectId, agentId) : null;
+  const collapseKey =
+    userId && projectId ? collapsedStoreKey(userId, projectId, agentKey(machineId, agentId)) : null;
   const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsedScopes(collapseKey));
   /** The prompts as last loaded or saved: what the draft below is compared with. */
   const [storedPrompts, setStoredPrompts] = useState<MemoryPrompts | null>(null);
@@ -226,8 +232,8 @@ export function MemoryTab({
     setError(null);
     try {
       const [overview, configView] = await Promise.all([
-        api.getMemoryOverview(projectId, agentId),
-        api.getAgentConfig(projectId, agentId),
+        api.getMemoryOverview(projectId, agentId, machineId),
+        api.getAgentConfig(projectId, agentId, machineId),
       ]);
       // A clean draft follows the stored prompts; one being typed keeps its text.
       setStoredPrompts({
@@ -253,7 +259,8 @@ export function MemoryTab({
             try {
               return {
                 scope,
-                files: (await api.getMemoryFiles(projectId, agentId, scope.scopeKey)).files,
+                files: (await api.getMemoryFiles(projectId, agentId, scope.scopeKey, machineId))
+                  .files,
               };
             } catch {
               // One unreadable scope (bad hand-made directory name, raced delete) must not
@@ -266,7 +273,7 @@ export function MemoryTab({
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId, collapseKey]);
+  }, [projectId, agentId, machineId, collapseKey]);
 
   useEffect(() => {
     void load();
@@ -276,9 +283,12 @@ export function MemoryTab({
     if (!projectId) return;
     setSwitchBusy(true);
     try {
-      const res = await api.putAgentConfig(projectId, agentId, {
-        config: { memory: { enabled: next } },
-      });
+      const res = await api.putAgentConfig(
+        projectId,
+        agentId,
+        { config: { memory: { enabled: next } } },
+        machineId,
+      );
       setEnabled(res.config.memory.enabled);
       toastSuccess(S.agent.savedTakesEffect);
       onConfigChanged?.();
@@ -293,7 +303,7 @@ export function MemoryTab({
   const insertPlaceholder = async () => {
     if (!projectId) return;
     try {
-      const overview = await api.insertMemoryPlaceholder(projectId, agentId);
+      const overview = await api.insertMemoryPlaceholder(projectId, agentId, machineId);
       setTemplateHasMemory(overview.templateHasMemory);
       toastSuccess(S.memory.insertPlaceholderDone);
       onConfigChanged?.();
@@ -331,11 +341,16 @@ export function MemoryTab({
     if (!projectId || !prompts.dirty || savingPrompts) return;
     setSavingPrompts(true);
     try {
-      const res = await api.putAgentConfig(projectId, agentId, {
-        config: {
-          memory: { prompt: prompts.draft.prompt, workspacePrompt: prompts.draft.workspace },
+      const res = await api.putAgentConfig(
+        projectId,
+        agentId,
+        {
+          config: {
+            memory: { prompt: prompts.draft.prompt, workspacePrompt: prompts.draft.workspace },
+          },
         },
-      });
+        machineId,
+      );
       const stored = {
         prompt: res.config.memory.prompt,
         workspace: res.config.memory.workspacePrompt,
@@ -354,7 +369,7 @@ export function MemoryTab({
   const openView = async (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
     if (!projectId) return;
     try {
-      const res = await api.getMemoryFile(projectId, agentId, scope.scopeKey, file.name);
+      const res = await api.getMemoryFile(projectId, agentId, scope.scopeKey, file.name, machineId);
       setSheetSnap("half"); // Every mobile open starts at the browsing height, like the chat panels.
       setViewing({ scope, file: res.file, content: res.content });
       setViewOpen(true);
@@ -388,6 +403,7 @@ export function MemoryTab({
       agentId,
       text,
       ...(workspacePath !== undefined ? { workspace: workspacePath } : {}),
+      machineId,
     });
   };
 
@@ -416,7 +432,7 @@ export function MemoryTab({
   const exportScope = async (scope: MemoryScopeInfo) => {
     if (!projectId) return;
     try {
-      const doc = await api.exportMemoryScope(projectId, agentId, scope.scopeKey);
+      const doc = await api.exportMemoryScope(projectId, agentId, scope.scopeKey, machineId);
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }),
       );
@@ -451,11 +467,13 @@ export function MemoryTab({
     if (!projectId || !importing) return;
     setImportBusy(true);
     try {
-      const res = await api.importMemoryScope(projectId, agentId, importing.scope.scopeKey, {
-        mode: importMode,
-        confirm,
-        payload: importing.doc,
-      });
+      const res = await api.importMemoryScope(
+        projectId,
+        agentId,
+        importing.scope.scopeKey,
+        { mode: importMode, confirm, payload: importing.doc },
+        machineId,
+      );
       const touched = res.added.length + res.overwritten.length + res.removed.length;
       if (touched === 0) toastSuccess(S.memory.importNothingNew);
       else
@@ -492,7 +510,13 @@ export function MemoryTab({
     const target = removing;
     setRemoving(null);
     try {
-      await api.deleteMemoryFile(projectId, agentId, target.scope.scopeKey, target.file.name);
+      await api.deleteMemoryFile(
+        projectId,
+        agentId,
+        target.scope.scopeKey,
+        target.file.name,
+        machineId,
+      );
       toastSuccess(S.memory.deleteDone);
       if (viewing && viewing.file.name === target.file.name) setViewOpen(false);
       await load();

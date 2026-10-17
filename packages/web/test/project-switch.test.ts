@@ -19,6 +19,8 @@
  *   shown in its place.
  * - Given an Agent's settings page under one Project: a switch to another asks it nothing about
  *   that Agent and leaves for the Agents list.
+ * - Given a machine's Agents read under one Project: no render under the next Project is handed
+ *   them, not even the one before the lists hear of the switch.
  * - Given the cost center filtered to A's Agent by its deep link, with A's answer late: after the
  *   switch to B no usage read names that Agent under B, and A's answer never shows under B.
  * - Given a Benchmark's page under A: a switch to B asks B nothing about that Benchmark and
@@ -45,6 +47,7 @@ import { ProjectProvider, useProject } from "../src/state/project";
 import { SessionsProvider, createSessionsStore, useSessions } from "../src/state/sessions";
 import { createCompanyStore } from "../src/state/company";
 import { useMemoryListing } from "../src/features/chat/use-memory-listing";
+import { useMachineAgents } from "../src/lib/machine-agent-lists";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
 import { UsagePage } from "../src/features/usage/usage-page";
 import { BenchmarkDetailPage } from "../src/features/benchmark/benchmark-detail-page";
@@ -52,10 +55,12 @@ import { ADMIN_ME } from "./helpers/admin-settings";
 import {
   AGENT_ID,
   OTHER_PROJECT_ID,
+  PROJECT_ID,
   agentServer,
   mountAgentApp,
   whereIs,
 } from "./helpers/agent-app";
+import type { FakeMachine } from "./helpers/agent-app";
 import { button, click, mount, run, settle, unmountAll, waitFor } from "./helpers/dom";
 import { apiError, json, stubFetch } from "./helpers/fetch";
 import type { FetchRequest } from "./helpers/fetch";
@@ -442,6 +447,39 @@ describe("pages over a Project switch", () => {
         r.path.startsWith(`/api/projects/${OTHER_PROJECT_ID}/agents/${AGENT_ID}`),
       ),
     ).toEqual([]);
+  });
+
+  it("a machine's Agents read under one Project are never handed to a render under the next", async () => {
+    const gpu: FakeMachine = {
+      machineId: "gpu1",
+      alias: "gpu-box",
+      agents: ["default_agent", "gpu_only"],
+    };
+    // The machine lists its two Agents under the Agent's Project, and none under the other.
+    agentServer(undefined, { otherProject: true, machines: [gpu] });
+    /** What each render was handed: the Project it rendered under, and the machine Agents. */
+    const seen: Array<{ projectId: string | null; agentIds: string[] }> = [];
+    function MachineAgentsProbe() {
+      const { currentProject, setCurrentProjectId } = useProject();
+      const projectId = currentProject?.projectId ?? null;
+      const { lists } = useMachineAgents(projectId);
+      seen.push({
+        projectId,
+        agentIds: lists.flatMap((list) => list.agents.map((agent) => agent.agentId)),
+      });
+      return h("button", { onClick: () => setCurrentProjectId(OTHER_PROJECT_ID) }, "switch");
+    }
+    await mountAgentApp(h(MachineAgentsProbe), { route: "/probe", at: "/probe" });
+    await waitFor(() =>
+      seen.some((s) => s.projectId === PROJECT_ID && s.agentIds.includes("gpu_only")),
+    );
+
+    await click(button("switch"));
+    await waitFor(() => seen.at(-1)?.projectId === OTHER_PROJECT_ID);
+    await settle();
+    expect(seen.filter((s) => s.projectId === OTHER_PROJECT_ID && s.agentIds.length > 0)).toEqual(
+      [],
+    );
   });
 
   it("the cost center drops A's Agent filter and A's late answer after the switch to B", async () => {

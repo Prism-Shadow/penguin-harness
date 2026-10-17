@@ -309,6 +309,11 @@ Every control defaults to `sm` so a forgotten prop lands where its neighbours al
 surfaces are outside the family entirely: the chat composer is `text-base` because it holds prose,
 the file editor `font-mono text-xs` because it holds code.
 
+**A toolbar is one height.** `Button`'s `sm` and `base` rungs are the controls' own heights, so a
+search box, a `Select` and a button of one rung line up. A choice in a toolbar is the package's
+`Select` at that rung (the machine picker is one), never a button dressed as a select with a fixed
+`h-*`: the old machine picker, a button with `h-8`, stood about 5px above the controls beside it.
+
 **A button takes the rung of whatever it stands beside.** `Button` defaults to `md`
 (`text-sm px-3 py-1.5`), the page rung, and that is for an action standing on its own: an empty
 state's, the login card's submit, a list's "add a custom model". Wherever a button sits next to form

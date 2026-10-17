@@ -26,6 +26,12 @@ Each agent card shows:
 
 When a newer kernel is available for some agents, their cards show **Kernel update needed**, and a notice at the top of the page offers **Update now** and **Dismiss**. See [Update the kernel](#update-the-kernel).
 
+### Agents on machines
+
+An agent belongs to the server it lives on. When the Project uses machines, each connected machine's own agents sit in the same list as this server's, in the list's order (oldest first), the way the sidebar lists machine workspaces beside local ones. Each machine card carries the machine after the agent's name, as in `[SSH: gpu-box]`. A machine's agent is never merged with one of this server's, even when the ids match: every machine has its own `default_agent`.
+
+Everything on such a card acts on that machine. **Settings** and the counts open the agent's settings there, and every change is saved there. **New chat** starts a conversation in that machine's temporary workspace, and delete removes the agent from that machine. **Cost Center** counts this server's agents only, so the card's costs button is off. While a machine is reconnecting or its server is stopped, the agents it last listed stay in the list, greyed, with an unplugged icon after the machine's name: point at it for the reason. Their buttons are off. Only admins see machines.
+
 You can also reach an agent from the sidebar. When conversations are grouped by agent, each agent's group header has a **New chat** button and an **Agent settings** button, and the sidebar has a **Create agent** button that opens the **Create agent** dialog.
 
 ## Create an agent with AI
@@ -52,12 +58,13 @@ The **Report-writing agent** example creates an agent with the id `report-writer
 ## Create an agent manually
 
 1. On the **Agents** page, select **Create manually**. The **Create agent** dialog opens.
-2. Optional: in **Name**, enter a name. An empty name uses the agent id.
-3. In **Agent id**, enter an id, or select **Generate with AI** beside the field to have the Project's default model derive one from the name, or from the description while the name is empty. An id is 2–64 characters long, starts with a lowercase letter, and uses only lowercase letters, digits and underscores. A proposal replaces what is in the box and stays editable. You cannot change the id later.
-4. Optional: fill in **Description**.
-5. Optional: in **Plugins**, select plugins from the plugin library to install on the new agent. Their Skills and hook packages are installed when the agent is created.
-6. Optional: in **Import Skills from a project directory**, select a directory. PenguinHarness reads the Skills under its `.agents/skills` and `.claude/skills` folders; select the ones to install. If a Skill from the directory has the same name as a Skill from a selected plugin, the directory's Skill is installed.
-7. Select **Create**. The new agent's settings open.
+2. Optional: when a machine is connected, in **Location**, select where the agent is created: **This server** or a machine. An agent created on a machine lives there: the plugins on offer come from that machine's library, the directory in step 7 is one on that machine, and the agent's settings open on that machine. Changing the location clears the plugins and the directory picked so far.
+3. Optional: in **Name**, enter a name. An empty name uses the agent id.
+4. In **Agent id**, enter an id, or select **Generate with AI** beside the field to have the Project's default model derive one from the name, or from the description while the name is empty. An id is 2–64 characters long, starts with a lowercase letter, and uses only lowercase letters, digits and underscores. A proposal replaces what is in the box and stays editable. You cannot change the id later.
+5. Optional: fill in **Description**.
+6. Optional: in **Plugins**, select plugins from the plugin library to install on the new agent. Their Skills and hook packages are installed when the agent is created.
+7. Optional: in **Import Skills from a project directory**, select a directory. PenguinHarness reads the Skills under its `.agents/skills` and `.claude/skills` folders; select the ones to install. If a Skill from the directory has the same name as a Skill from a selected plugin, the directory's Skill is installed.
+8. Select **Create**. The new agent's settings open.
 
 Any Project member can create an agent.
 

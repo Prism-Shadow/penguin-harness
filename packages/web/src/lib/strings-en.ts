@@ -1571,6 +1571,10 @@ export const en: Strings = {
     createPluginsHint:
       "Installed into the agent at creation (skills, hook packages and MCP servers); add or remove them later in its Skills, Hooks and Tools tabs.",
     createPluginsEmpty: "The plugin library has nothing to install.",
+    createLocation: "Location",
+    createLocationHere: "This server",
+    createLocationInfo:
+      "Which server the new agent is created on. An agent created on a machine belongs to that machine: its plugins come from that machine's library, and its settings, chats and deletion all happen there.",
     createStdioQuestion: (agent: string): string => `Create ${agent}?`,
     /** The directory-skills picker's trigger (the field's own label is createDirSkills). */
     createSkillsPlaceholder: "No skills selected",
@@ -1818,7 +1822,11 @@ export const en: Strings = {
     mcpRemoveFromPlugin: (plugin: string): string =>
       `It was installed by plugin ${plugin}; Manage installs on the Plugins page can put it back.`,
     defaultValue: "(default)",
-    livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
+    onMachineHint: (machine: string) =>
+      `This agent lives on ${machine}: its settings, chats and deletion all happen on that machine, apart from this server's agents of the same id.`,
+    usageThisServerOnly: "The usage center counts this server's agents only",
+    deleteConfirmOnMachine: (name: string, machine: string): string =>
+      `Delete agent "${name}" on ${machine}? Its directory there (including all Traces) will be removed recursively and cannot be recovered.`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
     employeesSection: "Company employees",
@@ -1890,6 +1898,7 @@ export const en: Strings = {
       "Applies to API conversations created from now on; when a mode asks, the request goes to the caller and can also be answered here.",
     apiConnection: "Connection",
     apiBaseUrl: "Base URL",
+    apiBaseUrlOnMachine: (machine: string): string => `Base URL (on ${machine})`,
     apiAgentId: "Agent ID",
     apiCopy: (what: string): string => `Copy ${what}`,
     apiKeys: "Keys",
@@ -2927,8 +2936,8 @@ export const en: Strings = {
     mcpRunsCommand: (command: string): string =>
       `Runs ${command} on this server when an agent session starts`,
     installStdioTitle: (plugin: string, agent: string): string => `Install ${plugin} on ${agent}?`,
-    installStdioBody: (server: string, command: string): string =>
-      `Its MCP server ${server} runs ${command} on this server whenever a session of the agent starts.`,
+    installStdioBody: (server: string, command: string, machine?: string): string =>
+      `Its MCP server ${server} runs ${command} on ${machine ?? "this server"} whenever a session of the agent starts.`,
     setUp: "Set up",
     setUpTitle: (plugin: string, agent: string): string => `Set up ${plugin} on ${agent}`,
     setUpDesc: "The values go into the agent's vault; its MCP servers read them when they connect.",

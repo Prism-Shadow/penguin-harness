@@ -463,7 +463,8 @@ export const zh = {
       },
       pickers: {
         title: "选择器",
-        description: "下拉选择、分段控件、开关与开关行、色板、选项菜单、下拉菜单与菜单行。",
+        description:
+          "下拉选择、同档控件的尺寸、分段控件、开关与开关行、色板、选项菜单、下拉菜单与菜单行。",
       },
       toasts: {
         title: "提示弹窗",
@@ -618,6 +619,10 @@ export const zh = {
     pickers: {
       select: "下拉选择",
       selectLabel: "模型",
+      sizes: "控件尺寸",
+      sizeRow: (size: string) => `${size} 档：下拉选择、输入框与按钮同高`,
+      sizeSearch: "搜索插件",
+      sizeButton: "导入插件",
       options: ["DeepSeek V4.1 Flash", "Claude Sonnet 4.5", "GLM-5.3"] as readonly string[],
       segmented: "分段控件",
       segments: ["浅色", "深色", "跟随系统"] as readonly string[],

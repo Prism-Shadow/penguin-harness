@@ -445,7 +445,7 @@ export const en: GalleryStrings = {
       pickers: {
         title: "Pickers",
         description:
-          "Select, segmented control, switch and toggle rows, swatches, option menu, dropdown and menu rows.",
+          "Select, control sizes, segmented control, switch and toggle rows, swatches, option menu, dropdown and menu rows.",
       },
       toasts: {
         title: "Toasts",
@@ -622,6 +622,10 @@ export const en: GalleryStrings = {
     pickers: {
       select: "Select",
       selectLabel: "Model",
+      sizes: "Control sizes",
+      sizeRow: (size: string) => `${size}: a select, an input and a button of one height`,
+      sizeSearch: "Search plugins",
+      sizeButton: "Import plugin",
       options: ["DeepSeek V4.1 Flash", "Claude Sonnet 4.5", "GLM-5.3"],
       segmented: "Segmented",
       segments: ["Light", "Dark", "System"],

@@ -135,6 +135,7 @@ import { hasConfiguredKey, sameModelRef, turnPricing } from "../models/model-gro
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { useMemoryListing } from "./use-memory-listing";
 import { useMachineModels } from "../../lib/machine-models";
+import { agentSettingsPath } from "../../lib/agent-location";
 import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { deletedChangeKeys } from "./memory-nav";
 import { noteScheduleEvent } from "../schedules/schedule-store";
@@ -252,16 +253,6 @@ export const parkedDraftIdOf = (routeSessionId: string | null): string | null =>
  */
 const STAT_PATHS_PER_REQUEST = 100;
 
-/**
- * An Agent's settings page, on one tab: this server's Agent, or with `machineId` the Agent of
- * that id on that machine, which the page reads and writes over there (`?machine=`).
- */
-function agentPagePath(agentId: string, machineId: string | null, tab: string): string {
-  const params = new URLSearchParams();
-  if (machineId !== null) params.set("machine", machineId);
-  params.set("tab", tab);
-  return `/agents/${encodeURIComponent(agentId)}?${params.toString()}`;
-}
 export function ChatPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -2105,7 +2096,7 @@ export function ChatPage() {
   // is on.
   const openMemorySettings = useCallback(
     (memoryAgentId: string, machineId: string | null) =>
-      navigate(agentPagePath(memoryAgentId, machineId, "memory")),
+      navigate(agentSettingsPath(memoryAgentId, machineId, "memory")),
     [navigate],
   );
   /**
@@ -2225,7 +2216,7 @@ export function ChatPage() {
       {...(compactionLimit !== undefined ? { compactionLimit } : {})}
       onChangeCompactionLimit={onChangeCompactionLimit}
       onOpenAgentSettings={() =>
-        navigate(agentPagePath(selected.agentId, selectedAgentMachine, "runtime"))
+        navigate(agentSettingsPath(selected.agentId, selectedAgentMachine, "runtime"))
       }
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
