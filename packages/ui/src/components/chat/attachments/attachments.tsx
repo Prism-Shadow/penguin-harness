@@ -62,13 +62,16 @@ export type AttachmentImageSize = "sm" | "md";
 const IMAGE_HEIGHT: Record<AttachmentImageSize, string> = { sm: "h-14", md: "h-36" };
 
 /**
- * The bounds the picture's width keeps to. Inside them the width is the tile's height times the
- * image's ratio; `object-scale-down` fits the picture whole when a bound wins.
+ * The bounds the tile's width keeps to. Between them the width is the tile's height times the
+ * image's ratio; `object-scale-down` fits the picture whole when a bound wins. The upper bound
+ * sits on the tile, not the picture: a percentage on the picture would not hold back the width the
+ * picture asks its tile for, and the tile would stand wider than what it shows.
  */
-const IMAGE_WIDTH: Record<AttachmentImageSize, string> = {
-  sm: "min-w-10 max-w-40",
-  md: "min-w-14 max-w-[min(100%,28rem)]",
+const IMAGE_MAX_WIDTH: Record<AttachmentImageSize, string> = {
+  sm: "max-w-[min(100%,calc(var(--spacing)*40))]",
+  md: "max-w-[min(100%,28rem)]",
 };
+const IMAGE_MIN_WIDTH: Record<AttachmentImageSize, string> = { sm: "min-w-10", md: "min-w-14" };
 
 /** The tile that stands in for an image that did not load: a square of the image's height. */
 const UNAVAILABLE_BOX: Record<AttachmentImageSize, string> = {
@@ -126,7 +129,7 @@ export function AttachmentImage({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className={`block ${IMAGE_HEIGHT[size]} max-w-full cursor-zoom-in overflow-hidden rounded-md border border-line bg-surface-muted`}
+          className={`block ${IMAGE_HEIGHT[size]} ${IMAGE_MAX_WIDTH[size]} cursor-zoom-in overflow-hidden rounded-md border border-line bg-surface-muted`}
         >
           <img
             src={src}
@@ -134,7 +137,7 @@ export function AttachmentImage({
             loading={lazy ? "lazy" : undefined}
             decoding="async"
             onError={() => setFailedSrc(src)}
-            className={`block h-full w-auto object-scale-down ${IMAGE_WIDTH[size]}`}
+            className={`block h-full w-auto max-w-full object-scale-down ${IMAGE_MIN_WIDTH[size]}`}
           />
         </button>
       )}
@@ -234,7 +237,6 @@ export function AttachmentFile({ name, size, removeLabel, onRemove }: Attachment
   return (
     <div
       data-slot="attachment"
-      data-wallpaper-surface="panel"
       className={`anim-pop flex h-14 w-56 max-w-full shrink-0 items-center gap-2 rounded-md border border-line bg-surface pl-3 ${removeLabel !== undefined ? "pr-1" : "pr-3"}`}
     >
       <GlyphIcon

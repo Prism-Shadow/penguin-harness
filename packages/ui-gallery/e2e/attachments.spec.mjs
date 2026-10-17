@@ -107,6 +107,7 @@ test.describe("attachment tiles", () => {
       const remove = page
         .locator('[data-board="narrow"]')
         .getByRole("button", { name: /^Remove file quarterly-infrastructure-review/ });
+      await remove.scrollIntoViewIfNeeded();
       await expect(remove).toBeInViewport({ ratio: 1 });
     });
   }

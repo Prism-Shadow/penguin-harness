@@ -146,18 +146,22 @@ export function AttachmentsBoard() {
           </Button>
         }
       >
-        <div className="lib-stream" data-board="composer">
+        <div
+          className="lib-stack lib-stack-wide"
+          style={{ maxWidth: "46rem" }}
+          data-board="composer"
+        >
           {composer}
         </div>
       </BoardGroup>
       <BoardGroup title={t.sent} aside={t.sentHint}>
-        <div className="lib-stream" data-board="sent">
+        <div className="lib-stack lib-stack-wide" style={{ maxWidth: "46rem" }} data-board="sent">
           {sent([IMAGES.landscape, IMAGES.portrait, IMAGES.square], FILES.slice(0, 2))}
           {sent([IMAGES.portrait], [])}
         </div>
       </BoardGroup>
       <BoardGroup title={t.steer} aside={t.steerHint}>
-        <div className="lib-stream" data-board="steer">
+        <div className="lib-stack lib-stack-wide" style={{ maxWidth: "46rem" }} data-board="steer">
           <MessageRow spacing="steer">
             <MessageBubble
               variant="steering"
