@@ -222,6 +222,11 @@ describe("organization runtime", () => {
             if (version !== undefined) plugins.installed.set(`${agentId}:${name}`, version);
           }
         },
+        remove: async (_p, agentId) => {
+          if (!existingAgents.delete(agentId)) {
+            throw new Error(`Agent does not exist: ${agentId}`);
+          }
+        },
         displayName: async (_p, agentId) => `Name of ${agentId}`,
         writeAgentsMd: async (_p, agentId, content) => {
           briefs.set(agentId, content);
@@ -583,6 +588,41 @@ describe("organization runtime", () => {
     await expect(
       service.create(P, { orgId: "bad id", mission: "x" }, "alice"),
     ).rejects.toMatchObject({ code: "invalid_org_id" });
+  });
+
+  it("removes the half-made company when the initialization dispatch fails after the writes", async () => {
+    // computeSpend reads through the usage gateway in the dispatch stage — make it throw
+    // there, after every file and the CEO Agent are already on disk.
+    deps.usage.costBySession = async () => {
+      throw new Error("the usage store is down");
+    };
+    await expect(service.create(P, { orgId: ORG, mission: "Build it" }, "alice")).rejects.toThrow(
+      "the usage store is down",
+    );
+    expect(await store.exists(P, ORG)).toBe(false);
+    expect(existsSync(orgDir())).toBe(false);
+    expect(existingAgents.has(CEO)).toBe(false);
+    // The id is reusable: nothing is left to trip org_exists or agent_exists on the retry.
+    deps.usage.costBySession = async (_p, ids) => ({
+      bySession: new Map(ids.map((id) => [id, 0])),
+      unpriced: false,
+    });
+    await createOrg();
+    expect(await store.exists(P, ORG)).toBe(true);
+  });
+
+  it("marks the created organization when the CEO's initialization run could not start", async () => {
+    startFails = true;
+    const detail = await service.create(P, { orgId: ORG, mission: "Build it" }, "alice");
+    expect(detail.ceoInitSkipped).toBe(true);
+    // The organization itself stands; the run's failure is in the errors log.
+    expect(await store.exists(P, ORG)).toBe(true);
+    expect(errors.some((e) => e.code === "org_dispatch_failed")).toBe(true);
+  });
+
+  it("answers a created organization without the skipped mark when its CEO run starts", async () => {
+    const detail = await service.create(P, { orgId: ORG, mission: "Build it" }, "alice");
+    expect("ceoInitSkipped" in detail).toBe(false);
   });
 
   it("writes the creation layout under the org lock, so a delete landing mid-creation cannot leave a half-made directory behind", async () => {

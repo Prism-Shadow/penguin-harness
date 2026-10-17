@@ -557,8 +557,8 @@ export class OrganizationService {
   /**
    * Creates an organization as one whole: directory and files, the CEO Agent (with the
    * company and orchestration plugins and an employee brief), then the initialization work
-   * run on the CEO's desk. Any failure removes what was written; a taken CEO id is a 409
-   * before anything is touched.
+   * run on the CEO's desk. Any failure removes what was written — the directory and the
+   * CEO Agent alike; a taken CEO id is a 409 before anything is touched.
    */
   async create(
     projectId: string,
@@ -606,10 +606,13 @@ export class OrganizationService {
       ...(req.model !== undefined ? { model: req.model } : {}),
     };
     const dir = this.deps.store.dir(projectId, orgId);
+    let initSkipped = false;
     // The layout is written under the organization's lock — the same one a delete holds when
     // it moves the directory to the trash. Unlocked, a delete landing between the exists
     // check above and the lock below would move the half-made directory away and leave this
-    // method writing chart and handbook beside a config that is no longer there.
+    // method writing chart and handbook beside a config that is no longer there. The
+    // initialization dispatch holds the same lock: a failure in it would leave the same
+    // half-made company behind, so it cleans up the same way.
     await this.scheduler.withLock(projectId, orgId, async () => {
       await this.deps.store.createLayout(dir, new Date(this.now()).toISOString());
       try {
@@ -654,21 +657,33 @@ export class OrganizationService {
             language,
           }),
         );
+        const org = await this.requireValidOrg(projectId, orgId);
+        const spend = await computeSpend(this.deps, org, []);
+        initSkipped =
+          (await dispatchToDesk(this.deps, org, ceo, { kind: "init" }, initBody(org), {
+            hop: 0,
+            budget: budgetLine(org, spend, ceo),
+          })) === "skipped";
       } catch (err) {
         await this.deps.store.remove(dir);
+        try {
+          await this.deps.agents.remove(projectId, ceo);
+        } catch (cleanupErr) {
+          // The directory is gone; a CEO Agent left behind is recorded, not raised — the
+          // caller cares about why the create failed, not why the undo stumbled.
+          this.deps.errors.record({
+            source: "organization",
+            err: cleanupErr,
+            code: "org_cleanup_failed",
+            ctx: { projectId, agentId: ceo },
+          });
+        }
         throw err;
       }
     });
-    await this.scheduler.withLock(projectId, orgId, async () => {
-      const org = await this.requireValidOrg(projectId, orgId);
-      const spend = await computeSpend(this.deps, org, []);
-      await dispatchToDesk(this.deps, org, ceo, { kind: "init" }, initBody(org), {
-        hop: 0,
-        budget: budgetLine(org, spend, ceo),
-      });
-    });
     await this.scheduler.reconcile(projectId, orgId);
-    return this.detail(projectId, orgId, userId);
+    const detail = await this.detail(projectId, orgId, userId);
+    return initSkipped ? { ...detail, ceoInitSkipped: true } : detail;
   }
 
   /**
@@ -2920,6 +2935,7 @@ export class OrganizationModule {
         create: async (projectId, agentId, name, description, plugins) => {
           await agentService.createAgent(projectId, agentId, name, description, plugins);
         },
+        remove: (projectId, agentId) => agentService.deleteAgent(projectId, agentId),
         displayName: async (projectId, agentId) =>
           (await agentConfig.readCardMeta(projectId, agentId)).name ?? agentId,
         writeAgentsMd: (projectId, agentId, content) =>

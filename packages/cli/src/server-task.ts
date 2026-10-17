@@ -177,7 +177,14 @@ export async function nextFrameOrDeadline(
   if (remaining <= 0) return "timeout";
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expiry = new Promise<"timeout">((resolve) => {
-    timer = setTimeout(() => resolve("timeout"), remaining);
+    // Node clamps a delay past 2^31-1 ms to 1, so a wait of ~596 h or more would end
+    // right away; hold the timer just under the cap until the deadline arrives.
+    const hold = (): void => {
+      const left = deadlineMs - Date.now();
+      if (left <= 0) resolve("timeout");
+      else timer = setTimeout(hold, Math.min(left, 2 ** 31 - 1));
+    };
+    hold();
   });
   try {
     return await Promise.race([stream.next(), expiry]);
