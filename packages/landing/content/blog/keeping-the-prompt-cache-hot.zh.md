@@ -2,42 +2,30 @@
 title: "让提示词缓存持续命中：PenguinHarness 如何在 CI 里抓住缓存未命中"
 date: 2026-10-16
 category: practice
-excerpt: "Agent 每次请求都要把整个上下文重发一遍，只有这段重复的前缀逐字节不变，供应商才按一成左右的输入价计费。缓存一旦未命中，界面不会变慢，测试也不会失败，代价只体现在账单上。本文介绍 PenguinHarness 怎样让每个请求都只在上一个请求末尾追加内容，以及它的测试体系怎样指出哪个请求不再命中、前缀的哪一层变了、多花了多少 Token，并附上用 Harness 自带缓存模拟器跑出的实验数据。"
+excerpt: "Agent 每次请求都要把整个上下文重发一遍，只有这段重复的前缀逐字节不变，供应商才按一成左右的输入价计费。缓存一旦未命中，界面不会变慢，测试也不会失败，代价只体现在账单上。本文介绍 PenguinHarness 怎样让每个请求都只在上一个请求末尾追加内容，以及它的测试体系怎样指出哪个请求不再命中、前缀的哪一层变了、多花了多少 Token，文中的图都用 Harness 自带的缓存模拟器数据画成。"
 ---
 
-> 本文基于 PenguinHarness 0.2.16 撰写。文中数字来自 Harness 的缓存模拟器：它把 Anthropic 公开的缓存规则应用到录制下来的请求上，并非对线上供应商的实测。
+> 本文基于 PenguinHarness 0.2.16 撰写。文中所有数字都来自 Harness 的缓存模拟器：它把 Anthropic 公开的缓存规则套用到录制下来的请求上，并非线上供应商的实测。
 
-Agent Harness 发给模型的请求几乎每次都一样：系统提示词、工具定义、到目前为止的全部对话，真正新增的只有最后一轮。供应商用提示词缓存（Prompt Cache）把这部分重复变得便宜：最近处理过的前缀，直接从缓存的 KV 状态里取，只收输入价的一小部分。条件很苛刻：每个请求必须从开头起与上一个请求逐字节一致，缓存才会命中。
-
-PenguinHarness 把这个条件当作引擎的硬性要求，把缓存未命中当作必须由测试抓住的回归。本文讲两件事：一是保证每个请求都延续上一个请求的那些引擎规则；二是一旦有改动破坏这些规则，就用供应商的 Token 计数把问题报出来的测试体系。
+Agent 发给模型的请求几乎每次都一样：系统提示词、工具定义、到目前为止的全部对话，末尾再加上新的一轮。供应商把这种重复卖得很便宜：最近处理过的前缀，直接从提示词缓存（Prompt Cache，即这些 Token 的 KV 状态）里取，只收一成左右的输入价。条件很严格：每个请求都必须从开头起与上一个请求逐字节一致。一旦 Harness 的某个改动破坏了这一点，什么错都不会报：回答不变，界面不变，CI 照样全绿，供应商却会在每个进行中的对话的每个请求上，把整段历史重新计费。本文讲 PenguinHarness 如何让每个请求都延续上一个请求，以及我们为抓住破坏这一点的改动而搭建的测试体系。
 
 **要点速览**
 
-- 缓存未命中是看不见的：回答不变，界面不变，CI 照样全绿。按 Anthropic 的标准费率，写入一个 5 分钟缓存条目的 Token 单价是读取的 12.5 倍，所以长对话后期的一次未命中，等于把整段历史重新计费一遍。
-- 测试体系由四部分组成：录制器捕获真实 `GenerativeModel` 会发出的原样请求；诊断器指出相邻两个请求最早在哪里分叉；模拟器按 Anthropic 的规则把录制结果换算成 `cache_read_input_tokens` 和 `cache_creation_input_tokens`；生命周期测试驱动真实的 `Session` 走完各个环节，断言每个请求都读回前一个请求的完整前缀。
-- 用同一套辅助模块跑的 14 个 Session 场景里（插话、重试、中断、后台任务通知、恢复、上下文压缩、子 Agent、模型切换），每个请求都读回了前一个请求的前缀，只有三类例外：Harness 有意改变前缀（切换思考等级、开启新上下文、子 Agent、切换模型），被中断那一轮的文本被改写，以及缓存条目过期。
-- 故意注入的反模式显示了代价：在系统提示词里放时间戳，或者让工具列表顺序不固定，每个请求都会未命中，十个请求的任务输入成本变成 4.2 倍；在工具描述里改一个词、只改一次，成本也是基线的 1.3 倍。
-- 目前每个请求只带一个自动断点，因此切换思考等级或上下文压缩之后的第一个请求，都要为工具和系统提示词重新付费，即使两者逐字节没变。在它们后面加显式断点可以把这段前缀找回来，但前提是这一段本身达到供应商的最小缓存长度。
+- 缓存未命中看不见，代价却不小：按 Anthropic 的标准费率，写入一个 5 分钟缓存条目的 Token 单价是读取的 12.5 倍。
+- 在 [PR #700](https://github.com/Prism-Shadow/penguin-harness/pull/700) 之前，压缩请求的 7,977 个 Token 里只有 3,241 个能从缓存读取；现在它读取 7,945 个，只写入 40 个。
+- 我们的测试体系把真实 `Session` 的请求放进一个按 Anthropic 规则构建的缓存模拟器里重放，一旦某个请求不再读回前一个请求的前缀，测试就失败：共 33 个测试，不联网，不需要密钥。
+- 在系统提示词里放时间戳，十个请求的任务输入成本变成 4.24 倍；工具描述里改一个词，成本变成 1.30 倍。
+- 在工具和系统提示词之后加显式断点，切换思考等级或上下文压缩之后的第一个请求就能读回 1,656 个 Token，而不是一个也读不到。
 
-## Agent 为什么离不开前缀缓存
+## 提示词缓存复用的是什么
 
-以后文实验里的工具循环为例：一个任务、六轮工具调用、七个请求。第七个请求有 11,027 个 Token，其中 9,470 个与第六个请求发过的内容完全相同。整个任务的 44,501 个输入 Token 中，有 33,474 个在重复之前请求发过的内容。
+PenguinHarness 通过 MMSP（`@prismshadow/mmsp`）访问各家供应商。下面按 Anthropic 的规则来讲：它的文档最详细，我们的模拟器实现的也是这套规则；其他供应商在细节上各有不同，但都要求前缀完全一致。请求按固定顺序缓存为一条前缀：先工具，再系统提示词，最后是消息。缓存在断点（`cache_control`）处写入，每个请求最多四个。自动缓存只在最后一个可缓存块上放一个断点，并随对话变长向后移动。MMSP 的 Claude 客户端发的正是这种：顶层一个 `cache_control: {"type": "ephemeral"}`。读取时先检查以每个断点结尾的前缀，再往回看，每个断点最多 20 个位置，断点本身算第一个；连续的 `tool_use` 块或连续的 `tool_result` 块只算一个位置。短于模型最小长度的前缀根本不会被缓存（Claude Sonnet 4.6 是 1,024 个 Token，当前各模型在 512 到 4,096 之间）。条目存活 5 分钟，每被读取一次就免费续期。1 小时有效期的写入价是基础输入价的 2 倍，PenguinHarness 不使用它。
 
-前缀缓存把这种重复变成折扣。在 Anthropic 的 API 上，读取缓存的价格是基础输入价的 0.1 倍（少数最新模型更低），写入默认 5 分钟有效期的条目则要 1.25 倍。未命中的请求要为整段前缀付写入价。
+运转正常的 Agent，每个请求都读回前一个请求的完整前缀，只写入自己追加的部分。我们把请求画成按缓存状态着色的请求条，下面每张图里，同一种颜色都表示同一种状态。
 
-未命中还是无声的。模型收到的 Token 一样，给出的回答也一样；延迟略有上升，界面毫无变化，没有任何断言失败。它只出现在用量报表里，一个月后再出现在账单上。影响也不止一处：只要 Harness 的某个改动挪动了前缀，所有正在进行的对话、每一个请求都会受影响。
+<figure class="post-figure" data-figure="strips"><svg class="fig-svg" viewBox="0 0 560 262" role="img" aria-labelledby="kv-strips-zh-title"><title id="kv-strips-zh-title">工具循环里相邻四个请求的请求条，按缓存状态着色</title><rect x="0.0" y="4.0" width="14.0" height="10.0" class="fig-read"/><text x="19.0" y="14.0" class="fig-note" text-anchor="start">从缓存读取</text><rect x="90.5" y="4.0" width="14.0" height="10.0" class="fig-written"/><text x="109.5" y="14.0" class="fig-note" text-anchor="start">写入</text><polygon points="143.5,5.0 153.5,5.0 148.5,12.0" class="fig-bp"/><text x="158.5" y="14.0" class="fig-note" text-anchor="start">断点</text><text x="32.0" y="59.0" class="fig-label" text-anchor="end">#0</text><rect x="40.0" y="44.0" width="115.7" height="22.0" class="fig-written"/><polygon points="150.7,35.0 160.7,35.0 155.7,42.0" class="fig-bp"/><text x="32.0" y="99.0" class="fig-label" text-anchor="end">#1</text><rect x="40.0" y="84.0" width="115.7" height="22.0" class="fig-read"/><rect x="155.7" y="84.0" width="106.7" height="22.0" class="fig-written"/><polygon points="257.4,75.0 267.4,75.0 262.4,82.0" class="fig-bp"/><path d="M155.7 67.0V83.0" class="fig-link"/><text x="32.0" y="139.0" class="fig-label" text-anchor="end">#2</text><rect x="40.0" y="124.0" width="222.4" height="22.0" class="fig-read"/><rect x="262.4" y="124.0" width="106.8" height="22.0" class="fig-written"/><polygon points="364.2,115.0 374.2,115.0 369.2,122.0" class="fig-bp"/><path d="M262.4 107.0V123.0" class="fig-link"/><text x="32.0" y="179.0" class="fig-label" text-anchor="end">#3</text><rect x="40.0" y="164.0" width="329.2" height="22.0" class="fig-read"/><rect x="369.2" y="164.0" width="106.7" height="22.0" class="fig-written"/><polygon points="470.9,155.0 480.9,155.0 475.9,162.0" class="fig-bp"/><path d="M369.2 147.0V163.0" class="fig-link"/><path d="M40.0 194.0v4H153.6v-4" class="fig-bracket"/><text x="40.0" y="212.0" class="fig-note" text-anchor="start">工具 + 系统提示词，1,656</text><text x="245.7" y="212.0" class="fig-note" text-anchor="start">消息 →</text><path d="M40.0 232.0L520.0 232.0" class="fig-axis"/><path d="M40.0 232.0L40.0 236.0" class="fig-axis"/><text x="40.0" y="248.0" class="fig-tick" text-anchor="middle">0</text><path d="M108.6 232.0L108.6 236.0" class="fig-axis"/><text x="108.6" y="248.0" class="fig-tick" text-anchor="middle">1,000</text><path d="M177.1 232.0L177.1 236.0" class="fig-axis"/><text x="177.1" y="248.0" class="fig-tick" text-anchor="middle">2,000</text><path d="M245.7 232.0L245.7 236.0" class="fig-axis"/><text x="245.7" y="248.0" class="fig-tick" text-anchor="middle">3,000</text><path d="M314.3 232.0L314.3 236.0" class="fig-axis"/><text x="314.3" y="248.0" class="fig-tick" text-anchor="middle">4,000</text><path d="M382.9 232.0L382.9 236.0" class="fig-axis"/><text x="382.9" y="248.0" class="fig-tick" text-anchor="middle">5,000</text><path d="M451.4 232.0L451.4 236.0" class="fig-axis"/><text x="451.4" y="248.0" class="fig-tick" text-anchor="middle">6,000</text><path d="M520.0 232.0L520.0 236.0" class="fig-axis"/><text x="520.0" y="248.0" class="fig-tick" text-anchor="middle">7,000</text><text x="520.0" y="262.0" class="fig-tick" text-anchor="end">Token</text></svg><ol class="fig-steps"><li>请求 #0：共 1,688 个 Token，从缓存读取 0 个，写入 1,688 个。</li><li>请求 #1：共 3,244 个 Token，从缓存读取 1,688 个，写入 1,556 个。</li><li>请求 #2：共 4,801 个 Token，从缓存读取 3,244 个，写入 1,557 个。</li><li>请求 #3：共 6,357 个 Token，从缓存读取 4,801 个，写入 1,556 个。</li></ol><figcaption>工具循环里的每个请求都从缓存读回前一个请求的完整前缀，只写入自己追加的部分：请求 #3 读取 4,801 个 Token，写入 1,556 个。唯一的断点在每个请求的末尾。</figcaption></figure>
 
-## 前缀缓存的工作方式
-
-PenguinHarness 通过 MMSP（`@prismshadow/mmsp`）访问各家供应商。下面列的是 Anthropic 的规则：它的文档写得最细，我们的模拟器实现的就是这套规则。其他供应商各有各的缓存规则，但都要求前缀完全一致。
-
-- **顺序。** 请求按固定顺序缓存成一条前缀：先工具，再系统提示词，最后是消息。任何一处改动，都会让它之后的内容全部失效。
-- **断点。** 缓存在断点（`cache_control`）处写入，每个请求最多四个。自动缓存只在最后一个可缓存块上放一个断点，并随对话变长向后移动。MMSP 的 Claude 客户端发的正是这种：顶层一个 `cache_control: {"type": "ephemeral"}`。
-- **回看。** 读取时先检查以每个断点结尾的前缀，再逐个位置往回找，每个断点最多回看 20 个位置，断点本身算第一个。连续的 `tool_use` 块或连续的 `tool_result` 块只算一个位置。
-- **最小长度。** 太短的前缀根本不会被缓存。最小长度因模型而异：Claude Sonnet 4.6 是 1,024 个 Token，当前各模型在 512 到 4,096 之间。
-- **有效期。** 条目存活 5 分钟，每被读取一次就免费续期。也可以选 1 小时有效期，写入价是基础输入价的 2 倍；PenguinHarness 不用它。
-
-改动之后哪些部分还能保留，取决于上面的顺序：
+前缀里任何一处改动，都会让它之后的内容全部失效。哪些部分还能保留，取决于上面的顺序：
 
 | 改动的内容 | 工具 | 系统提示词 | 消息 |
 | --- | --- | --- | --- |
@@ -49,87 +37,55 @@ PenguinHarness 通过 MMSP（`@prismshadow/mmsp`）访问各家供应商。下�
 | 思考参数 | 取决于模型 | 取决于模型 | 失效 |
 | 较早的某条消息 | 保留 | 保留 | 保留到被改处之前 |
 
-「保留」只表示字节仍然一致。供应商要把它读回来，还得有一个条目恰好在那里结束，而条目只在断点处结束。实验 3 会说明这一点为什么重要。
+「保留」只表示字节仍然一致。供应商要把它读回来，还得有一个条目恰好在那里结束，而条目只在断点处结束。所以 Harness 要守住的性质说起来很简单：每个请求都从开头起逐字节延续前一个请求。我们拿这条性质检查的第一条规则，本来就是为了保护它而写的，结果却破坏了它。
 
-Anthropic 还提供[缓存诊断](https://platform.claude.com/docs/en/build-with-claude/cache-diagnostics)：附上前一次响应的 id，API 就会报告最早的分叉点，类型为 `model_changed`、`system_changed`、`tools_changed` 或 `messages_changed`，并估算分叉点之后的输入 Token 数。我们测试用的诊断器沿用了这套术语。
+## 一条保护缓存、却破坏了缓存的规则
 
-## 引擎如何保证请求只追加
+上下文最大的时候会触发压缩。在默认模式下，引擎请模型总结对话，然后在一个以摘要开头的新上下文里继续。在 [PR #700](https://github.com/Prism-Shadow/penguin-harness/pull/700) 之前，压缩请求是唯一一个不理会用户所选思考等级的请求：它用的是上下文开启时的等级。理由正是缓存：固定它的参数，本意是让它的前缀与要总结的上下文保持一致，而这正是未命中最贵的时刻。
 
-凡是 Harness 不只是追加一轮的地方，前缀都最容易出问题。PenguinHarness 的引擎在每一处都有对应的规则。
+只要没人动等级，这条规则就成立。可是一旦用户中途调整了等级，此后的每一轮都按新等级发出，压缩请求反倒成了唯一一个前缀不同的请求。我们录制了一个 Session（先跑一个任务，再调整思考等级，然后跑一个四轮、越过压缩阈值的任务），在模拟器里重放两次：一次按现在实际发送的样子，一次把压缩请求的参数改回开启时的等级，也就是 #700 之前的样子。#700 之前，压缩请求的 7,977 个 Token 里只读到 3,241 个，写入 4,736 个；现在它读到 7,945 个，只写入 40 个。
 
-- **前缀在一个模型上下文内固定不变。** 系统提示词、工具集（含 MCP 工具）和模型在上下文开启时组装，直到上下文关闭都不再变化。对话途中对 `AGENTS.md`、Skill 或 MCP Server 的修改，无论来自用户还是 Agent 自己，都从下一个上下文开始生效。提示词记录在 Trace 的 `session_meta` 里，恢复一个未关闭的上下文时，按原样沿用这些字节。默认系统提示词里的 `Date:` 一行只写日期，在上下文开启时填入，因此不会在请求之间变化。快速模式属于上下文的模型对象，在上下文内同样不变。
-- **历史只追加。** 已提交的历史由 MMSP 客户端保存，引擎只往后添加。压缩请求复用同一个模型对象和同一份配置，只在末尾追加一个用户轮次，放入尚未发送的工具结果和压缩 Prompt，因此能读回它所跟随的那一轮。摘要不可用而需要重试时，引擎在末尾追加一条纠正说明，而不是改写已经发出的内容。
-- **插话随工具结果一起送出。** 任务运行中用户发来的消息，会以 `[user_steering]` 块的形式，和当前这一轮的工具结果放进同一个用户轮次一起送出。请求依然只是追加。
-- **中断和重试只在后面追加，不改写前面。** 请求被中断时，它携带的工具结果保持结构化，被中断那一轮的其余内容（包括模型已经输出的部分）压平成最后一条用户消息里的 `[turn_aborted]` 块。流式连接断开、引擎重连时，会原样重发原来的输入，并在末尾追加一个 `[turn_retried]` 块，带上失败那次已经产出的内容。这两种情况下，最后一条用户消息之前的内容都不变。
-- **思考等级是上下文内唯一会变的参数。** 它从下一个请求起生效，所以只造成一次未命中，之后保持稳定；压缩请求和下一个上下文也沿用新等级。Web App 在切换前会给出提示，并提供**压缩后切换**。
-- **切换模型时，先在旧模型上压缩。** 摘要就是在旧模型上做的一次普通压缩请求，能读回自己的前缀。新模型则从一条新的缓存线开始，因为缓存只属于一个模型。
-- **`max_tokens` 每次请求都重新计算，但不进入缓存键。** Harness 把它限制在上下文窗口剩余的空间以内，一旦剩余空间小于配置的上限，它就随之变小。它不属于被缓存的前缀。
+<figure class="post-figure" data-figure="replay700"><svg class="fig-svg" viewBox="0 0 560 454" role="img" aria-labelledby="kv-replay700-zh-title"><title id="kv-replay700-zh-title">用同一版式重放两次 #700 场景：修复之前与现在</title><rect x="0.0" y="4.0" width="14.0" height="10.0" class="fig-read"/><text x="19.0" y="14.0" class="fig-note" text-anchor="start">从缓存读取</text><rect x="90.5" y="4.0" width="14.0" height="10.0" class="fig-written"/><text x="109.5" y="14.0" class="fig-note" text-anchor="start">写入</text><rect x="143.5" y="4.0" width="14.0" height="10.0" class="fig-again"/><text x="162.5" y="14.0" class="fig-note" text-anchor="start">重复写入</text><text x="0.0" y="52.0" class="fig-title" text-anchor="start">#700 之前：压缩请求用上下文开启时的等级</text><text x="32.0" y="75.0" class="fig-label" text-anchor="end">#0</text><rect x="40.0" y="64.0" width="84.2" height="14.0" class="fig-written"/><text x="32.0" y="95.0" class="fig-label" text-anchor="end">#1</text><rect x="40.0" y="84.0" width="84.2" height="14.0" class="fig-read"/><rect x="124.2" y="84.0" width="77.8" height="14.0" class="fig-written"/><text x="32.0" y="115.0" class="fig-label" text-anchor="end">#2</text><rect x="40.0" y="104.0" width="162.1" height="14.0" class="fig-again"/><rect x="202.1" y="104.0" width="1.7" height="14.0" class="fig-written"/><text x="452.0" y="115.0" class="fig-note" text-anchor="start">等级已调整</text><text x="32.0" y="135.0" class="fig-label" text-anchor="end">#3</text><rect x="40.0" y="124.0" width="163.8" height="14.0" class="fig-read"/><rect x="203.8" y="124.0" width="77.9" height="14.0" class="fig-written"/><text x="32.0" y="155.0" class="fig-label" text-anchor="end">#4</text><rect x="40.0" y="144.0" width="241.6" height="14.0" class="fig-read"/><rect x="281.6" y="144.0" width="77.8" height="14.0" class="fig-written"/><text x="32.0" y="175.0" class="fig-label" text-anchor="end">#5</text><rect x="40.0" y="164.0" width="319.4" height="14.0" class="fig-read"/><rect x="359.4" y="164.0" width="77.9" height="14.0" class="fig-written"/><text x="32.0" y="195.0" class="fig-label" text-anchor="end">#6</text><rect x="40.0" y="184.0" width="162.1" height="14.0" class="fig-read"/><rect x="202.1" y="184.0" width="235.2" height="14.0" class="fig-again"/><rect x="437.2" y="184.0" width="1.6" height="14.0" class="fig-written"/><text x="452.0" y="195.0" class="fig-note" text-anchor="start">压缩请求</text><path d="M40.0 206.0L440.0 206.0" class="fig-axis"/><path d="M40.0 206.0L40.0 210.0" class="fig-axis"/><text x="40.0" y="222.0" class="fig-tick" text-anchor="middle">0</text><path d="M140.0 206.0L140.0 210.0" class="fig-axis"/><text x="140.0" y="222.0" class="fig-tick" text-anchor="middle">2,000</text><path d="M240.0 206.0L240.0 210.0" class="fig-axis"/><text x="240.0" y="222.0" class="fig-tick" text-anchor="middle">4,000</text><path d="M340.0 206.0L340.0 210.0" class="fig-axis"/><text x="340.0" y="222.0" class="fig-tick" text-anchor="middle">6,000</text><path d="M440.0 206.0L440.0 210.0" class="fig-axis"/><text x="440.0" y="222.0" class="fig-tick" text-anchor="middle">8,000</text><text x="440.0" y="236.0" class="fig-tick" text-anchor="end">Token</text><text x="0.0" y="268.0" class="fig-title" text-anchor="start">现在：压缩请求用 Session 的等级</text><text x="32.0" y="291.0" class="fig-label" text-anchor="end">#0</text><rect x="40.0" y="280.0" width="84.2" height="14.0" class="fig-written"/><text x="32.0" y="311.0" class="fig-label" text-anchor="end">#1</text><rect x="40.0" y="300.0" width="84.2" height="14.0" class="fig-read"/><rect x="124.2" y="300.0" width="77.8" height="14.0" class="fig-written"/><text x="32.0" y="331.0" class="fig-label" text-anchor="end">#2</text><rect x="40.0" y="320.0" width="162.1" height="14.0" class="fig-again"/><rect x="202.1" y="320.0" width="1.7" height="14.0" class="fig-written"/><text x="452.0" y="331.0" class="fig-note" text-anchor="start">等级已调整</text><text x="32.0" y="351.0" class="fig-label" text-anchor="end">#3</text><rect x="40.0" y="340.0" width="163.8" height="14.0" class="fig-read"/><rect x="203.8" y="340.0" width="77.9" height="14.0" class="fig-written"/><text x="32.0" y="371.0" class="fig-label" text-anchor="end">#4</text><rect x="40.0" y="360.0" width="241.6" height="14.0" class="fig-read"/><rect x="281.6" y="360.0" width="77.8" height="14.0" class="fig-written"/><text x="32.0" y="391.0" class="fig-label" text-anchor="end">#5</text><rect x="40.0" y="380.0" width="319.4" height="14.0" class="fig-read"/><rect x="359.4" y="380.0" width="77.9" height="14.0" class="fig-written"/><text x="32.0" y="411.0" class="fig-label" text-anchor="end">#6</text><rect x="40.0" y="400.0" width="397.2" height="14.0" class="fig-read"/><rect x="437.2" y="400.0" width="2.0" height="14.0" class="fig-written"/><text x="452.0" y="411.0" class="fig-note" text-anchor="start">压缩请求</text><path d="M40.0 422.0L440.0 422.0" class="fig-axis"/><path d="M40.0 422.0L40.0 426.0" class="fig-axis"/><text x="40.0" y="438.0" class="fig-tick" text-anchor="middle">0</text><path d="M140.0 422.0L140.0 426.0" class="fig-axis"/><text x="140.0" y="438.0" class="fig-tick" text-anchor="middle">2,000</text><path d="M240.0 422.0L240.0 426.0" class="fig-axis"/><text x="240.0" y="438.0" class="fig-tick" text-anchor="middle">4,000</text><path d="M340.0 422.0L340.0 426.0" class="fig-axis"/><text x="340.0" y="438.0" class="fig-tick" text-anchor="middle">6,000</text><path d="M440.0 422.0L440.0 426.0" class="fig-axis"/><text x="440.0" y="438.0" class="fig-tick" text-anchor="middle">8,000</text><text x="440.0" y="452.0" class="fig-tick" text-anchor="end">Token</text></svg><ol class="fig-steps"><li>#700 之前：压缩请求用上下文开启时的等级：压缩请求（#6）共 7,977 个 Token，读取 3,241 个，写入 4,736 个。</li><li>现在：压缩请求用 Session 的等级：压缩请求（#6）共 7,985 个 Token，读取 7,945 个，写入 40 个。</li><li>两次重放里，调整等级后的第一个请求 #2 都读不到任何内容，要写入整个前缀。</li></ol><figcaption>#700 之前，压缩请求的 7,977 个 Token 里只读到 3,241 个，写入 4,736 个；现在读取 7,945 个，只写入 40 个。请求 #2 在两次重放里都未命中，因为等级正是在那里调整的。</figcaption></figure>
 
-## 催生这套测试的那个 Bug
+把这个请求拆开，就能看到这 4,736 个 Token 从何而来。缓存里那些在它前缀内部结束的条目，都是之前的请求写下的：请求 #0 和 #1 的条目按开启时的等级写入，#2 到 #5 这些较新的条目按调整后的等级写入。思考等级是请求参数，而参数在前缀里排在消息之前，所以调整等级之后写入的每个条目，都在参数块处与压缩请求不同。
 
-这些规则并非一开始就全部成立。在 [PR #700](https://github.com/Prism-Shadow/penguin-harness/pull/700) 之前，压缩请求是唯一一个不理会用户所选思考等级的请求：它用的是上下文开启时的等级。这样设计的理由正是缓存。压缩发生在上下文最大的时候，固定它的参数，本意是让它的前缀与要总结的上下文保持一致。可是一旦用户中途调整了等级，此后的每一轮都按新等级发出，压缩请求反倒成了唯一一个前缀不同的请求，而且偏偏是在前缀最大的时候。
+<figure class="post-figure" data-figure="anatomy"><svg class="fig-svg" viewBox="0 0 560 252" role="img" aria-labelledby="kv-anatomy-zh-title"><title id="kv-anatomy-zh-title">拆开看 #700 之前的压缩请求：哪些缓存条目与它匹配，它在哪里分叉</title><rect x="0.0" y="4.0" width="14.0" height="10.0" class="fig-read"/><text x="19.0" y="14.0" class="fig-note" text-anchor="start">从缓存读取</text><rect x="90.5" y="4.0" width="14.0" height="10.0" class="fig-again"/><text x="109.5" y="14.0" class="fig-note" text-anchor="start">重复写入</text><rect x="168.5" y="4.0" width="14.0" height="10.0" class="fig-written"/><text x="187.5" y="14.0" class="fig-note" text-anchor="start">写入</text><path d="M20.0 46.0L230.7 46.0" class="fig-entry-match"/><text x="20.0" y="39.0" class="fig-note" text-anchor="start">#1 的条目，开启时的等级：匹配，3,241</text><path d="M20.0 80.0L536.4 80.0" class="fig-entry-miss"/><path d="M123.2 75.0l10 10M133.2 75.0l-10 10" class="fig-cross"/><text x="160.0" y="73.0" class="fig-note" text-anchor="start">#5 的条目，等级 high：在参数块处不同，7,945</text><rect x="20.0" y="104.0" width="210.7" height="28.0" class="fig-read"/><rect x="230.7" y="104.0" width="305.2" height="28.0" class="fig-again"/><rect x="535.9" y="104.0" width="2.6" height="28.0" class="fig-written"/><text x="125.3" y="123.0" class="fig-on-read" text-anchor="middle">读取 3,241</text><text x="383.3" y="123.0" class="fig-on-again" text-anchor="middle">重复写入 4,696</text><path d="M21.0 140.0v4H126.6v-4" class="fig-bracket"/><text x="73.8" y="158.0" class="fig-note" text-anchor="middle">工具 + 系统提示词</text><path d="M129.7 140.0v4H229.7v-4" class="fig-bracket"/><text x="179.7" y="158.0" class="fig-note" text-anchor="middle">任务一</text><path d="M231.7 140.0v4H534.9v-4" class="fig-bracket"/><text x="383.3" y="158.0" class="fig-note" text-anchor="middle">#2 到 #5 发过的历史</text><path d="M128.2 102.0V92.0" class="fig-bracket"/><path d="M537.2 140.0V166.0" class="fig-bracket"/><text x="537.2" y="180.0" class="fig-note" text-anchor="end">压缩 Prompt，40</text><text x="132.2" y="100.0" class="fig-note" text-anchor="start">参数块</text><path d="M20.0 192.0L540.0 192.0" class="fig-axis"/><path d="M20.0 192.0L20.0 196.0" class="fig-axis"/><text x="20.0" y="208.0" class="fig-tick" text-anchor="middle">0</text><path d="M150.0 192.0L150.0 196.0" class="fig-axis"/><text x="150.0" y="208.0" class="fig-tick" text-anchor="middle">2,000</text><path d="M280.0 192.0L280.0 196.0" class="fig-axis"/><text x="280.0" y="208.0" class="fig-tick" text-anchor="middle">4,000</text><path d="M410.0 192.0L410.0 196.0" class="fig-axis"/><text x="410.0" y="208.0" class="fig-tick" text-anchor="middle">6,000</text><path d="M540.0 192.0L540.0 196.0" class="fig-axis"/><text x="540.0" y="208.0" class="fig-tick" text-anchor="middle">8,000</text><text x="540.0" y="222.0" class="fig-tick" text-anchor="end">Token</text></svg><ol class="fig-steps"><li>这个请求共 7,977 个 Token：工具和系统提示词（1,656）、开启时等级的参数块、任务一、请求 #2 到 #5 发过的历史，以及 40 个 Token 的压缩 Prompt。</li><li>请求 #1 按开启时的等级为自己 3,241 个 Token 的前缀写过一个条目；它与压缩请求匹配，读取就停在这里。</li><li>请求 #5 按 high 等级为自己 7,945 个 Token 的前缀写过一个条目；它在参数块处就不同，一点也读不到。</li><li>#1 的条目之后那 4,696 个 Token 的历史被重复写入，40 个 Token 的 Prompt 是新内容。</li></ol><figcaption>拆开一个请求看：压缩请求仍然发送开启时的等级，调整等级之后写入的每个条目都在参数块处与它不同。读取只能退回到 #1 的条目（3,241 个 Token），4,696 个 Token 的历史被重复写入。</figcaption></figure>
 
-#700 让压缩请求改用 Session 的等级。当时其实有测试覆盖这个请求，而且把旧行为当成了约定来断言：`engine.test.ts` 期望的等级序列是 `["high", "high", undefined]`。但没有任何测试衡量这个约定的代价。[PR #722](https://github.com/Prism-Shadow/penguin-harness/pull/722) 引入了下文介绍的测试体系，这条不变量从此固定下来：切换一次思考等级只产生一次 `parameters_changed`，压缩请求也使用新等级。
+根因一句话就能说清：压缩请求是唯一一个还在发送开启时等级的请求，所以它的参数与调整等级之后写入的每个缓存条目都不同。当时其实有测试覆盖这个请求，而且把旧行为当成了约定来断言：`engine.test.ts` 期望的等级序列是 `["high", "high", undefined]`。它检查的是请求带了什么，却没有任何测试检查这会花多少钱。我们需要一个按供应商计费方式来读请求的测试。
 
-把两种行为放进模拟器重放，结果如下。这个 Session 先跑一个任务，然后调整思考等级，再跑一个四轮、越过压缩阈值的任务：
+## 让每个请求都延续上一个，并用供应商的 Token 数来衡量
 
-| 压缩请求 | 前缀 | 从缓存读取 | 写入 | 命中率 | 诊断 |
-| --- | ---: | ---: | ---: | ---: | --- |
-| 使用 Session 的等级（现在） | 7,985 | 7,945 | 40 | 99.5% | 无 |
-| 使用上下文开启时的等级（#700 之前） | 7,977 | 3,241 | 4,736 | 40.6% | `parameters_changed [output_config]` |
+一句话概括思路：在一个模型上下文的整个生命周期里，引擎都把请求前缀视为固定不变，再由测试集用供应商自己的 Token 计数来守住这一点。
 
-这个上下文较短，旧行为还能在 20 个位置的回看窗口里找到调整等级之前写入的条目；上下文再长一些，它就什么也读不到了。
+凡是 Harness 不只追加一轮的地方，引擎都有对应的规则：
 
-## 为缓存未命中设计的测试体系
+- **前缀在一个模型上下文内固定不变。** 系统提示词、工具集（含 MCP 工具）和模型在上下文开启时组装。用户或 Agent 对 `AGENTS.md`、Skill 或 MCP Server 的修改，从下一个上下文开始生效；恢复一个未关闭的上下文时，沿用 Trace 的 `session_meta` 里记录的提示词。系统提示词里的 `Date:` 一行只写日期，快速模式属于上下文的模型对象。
+- **历史只追加。** 压缩请求复用同一个模型对象和同一份配置，只在末尾追加一个用户轮次，放入尚未发送的工具结果和压缩 Prompt。摘要不可用时，引擎在末尾追加一条纠正说明后重试。
+- **插话随工具结果一起送出。** 任务运行中用户发来的消息，会以 `[user_steering]` 块的形式，和当前这一轮的工具结果一起放进同一个用户轮次。
+- **中断和重试只改动最后一条用户消息。** 被中断的请求保留它携带的工具结果，这一轮的其余内容（包括模型已经输出的部分）压平成一个 `[turn_aborted]` 块；重连时原样重发原来的输入，并在末尾追加一个 `[turn_retried]` 块。
+- **思考等级是上下文内唯一会变的参数。** 它只造成一次未命中，之后保持稳定；#700 之后，压缩请求和下一个上下文也沿用新等级，Web App 还提供**压缩后切换**。
+- **切换模型时，先在旧模型上压缩**，这次压缩请求能读回自己的前缀；新模型从一条新的缓存线开始。
+- **`max_tokens` 不进入缓存键**，尽管每次请求都会重新计算。
 
-设计上首先要回答：在哪里测量？调用线上 API 能拿到真实数字，但每跑一次都要花钱，结果每次不同，还需要一份贡献者和 CI 的 fork 都没有的密钥。直接给请求组装写单元测试，免费又确定，但测到的是 Harness 心目中的请求，而不是真正到达供应商的字节。这两种性质我们都想要，于是把问题拆成 Harness 的一半和供应商的一半。代码在 [`packages/core/test/helpers/prompt-cache/`](https://github.com/Prism-Shadow/penguin-harness/tree/v0.2.16/packages/core/test/helpers/prompt-cache)。
+[PR #722](https://github.com/Prism-Shadow/penguin-harness/pull/722) 加入了守住这些规则的测试体系。它只替换网络：从脚本化的流到录制下来的请求，中间跑的全是实际发布的代码。
 
-### 按线上原样录制请求
+<figure class="post-figure" data-figure="testsystem"><svg class="fig-svg" viewBox="0 0 560 508" role="img" aria-labelledby="kv-testsystem-zh-title"><title id="kv-testsystem-zh-title">提示词缓存测试体系的流程图</title><defs><marker id="kv-testsystem-zh-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" class="fig-arrowhead"/></marker></defs><rect x="120.0" y="8.0" width="320.0" height="54.0" rx="6" class="fig-terminal"/><text x="280.0" y="31.0" class="fig-title" text-anchor="middle">脚本化的供应商流</text><text x="280.0" y="50.0" class="fig-text" text-anchor="middle">recording.ts：思考、文本、工具调用</text><path d="M280.0 62.0L280.0 86.0" class="fig-edge" marker-end="url(#kv-testsystem-zh-arrow)"/><rect x="120.0" y="88.0" width="320.0" height="54.0" rx="6" class="fig-box"/><text x="280.0" y="111.0" class="fig-title" text-anchor="middle">真实的 Session 或 ContextEngine</text><text x="280.0" y="130.0" class="fig-text" text-anchor="middle">真实的 GenerativeModel；MMSP 照常运行</text><path d="M280.0 142.0L280.0 166.0" class="fig-edge" marker-end="url(#kv-testsystem-zh-arrow)"/><rect x="120.0" y="168.0" width="320.0" height="54.0" rx="6" class="fig-box"/><text x="280.0" y="191.0" class="fig-title" text-anchor="middle">录制下来的请求</text><text x="280.0" y="210.0" class="fig-text" text-anchor="middle">客户端本来要发出的线上格式</text><path d="M220 222V244H140V270" class="fig-edge" marker-end="url(#kv-testsystem-zh-arrow)"/><path d="M340 222V244H420V270" class="fig-edge" marker-end="url(#kv-testsystem-zh-arrow)"/><text x="132.0" y="262.0" class="fig-label" text-anchor="end">Harness 的一半</text><text x="428.0" y="262.0" class="fig-label" text-anchor="start">供应商的一半</text><rect x="20.0" y="272.0" width="240.0" height="54.0" rx="6" class="fig-box"/><text x="140.0" y="295.0" class="fig-title fig-code" text-anchor="middle">diagnoseCacheMiss</text><text x="140.0" y="314.0" class="fig-text" text-anchor="middle">字节变了吗？在哪一层？</text><rect x="300.0" y="272.0" width="240.0" height="54.0" rx="6" class="fig-box"/><text x="420.0" y="295.0" class="fig-title fig-code" text-anchor="middle">PromptCacheSim</text><text x="420.0" y="314.0" class="fig-text" text-anchor="middle">命中了吗？读取、写入、未缓存</text><path d="M140 326V352H280" class="fig-edge"/><path d="M420 326V352H280" class="fig-edge"/><path d="M280.0 352.0L280.0 370.0" class="fig-edge" marker-end="url(#kv-testsystem-zh-arrow)"/><rect x="120.0" y="372.0" width="320.0" height="54.0" rx="6" class="fig-box"/><text x="280.0" y="395.0" class="fig-title" text-anchor="middle">测试集的断言</text><text x="280.0" y="414.0" class="fig-text" text-anchor="middle">expectHits：每个请求读回前一个请求</text><path d="M280.0 426.0L280.0 444.0" class="fig-edge" marker-end="url(#kv-testsystem-zh-arrow)"/><rect x="120.0" y="446.0" width="320.0" height="54.0" rx="6" class="fig-terminal"/><text x="280.0" y="469.0" class="fig-title" text-anchor="middle">通过，或带着报告失败</text><text x="280.0" y="488.0" class="fig-text" text-anchor="middle">哪个请求、哪一层、多少 Token</text></svg><ol class="fig-steps"><li>脚本化的供应商流只替换网络：以签名结束的思考、文本、工具调用，或者断开、挂起。</li><li>真实的 Session（不变量测试集里是真实的 ContextEngine）跑在真实的 GenerativeModel 上，MMSP 的历史和转换照常运行。</li><li>每个请求都按供应商客户端本来要发出的线上格式录制下来。</li><li>Harness 的一半：diagnoseCacheMiss 比较相邻请求，指出最早分叉的那一层。</li><li>供应商的一半：PromptCacheSim 按 Anthropic 的规则重放录制结果，报告读取、写入和未缓存的 Token 数。</li><li>测试集对两者都做断言：不变量测试集断言诊断结果，生命周期测试集里的 expectHits 断言模拟的读取量：每个请求都要完整读回本上下文前一个请求的前缀，除非场景写明了是哪个请求、为什么。</li><li>测试通过，或者失败并给出报告，写明请求、层级和 Token 数。</li></ol><figcaption>测试体系只替换网络。从脚本化的流到录制下来的请求，中间跑的全是实际发布的代码；录制结果交给两个读者判断：一个看字节有没有变，一个看供应商会不会命中。</figcaption></figure>
 
-`recordingModel`（`recording.ts`）构造一个真实的 `GenerativeModel`，只替换一处：供应商客户端的网络流改为从脚本读取。它之上的一切照常运行：模型组装配置，MMSP 把输入合并进有状态的历史，供应商客户端用自己的转换生成请求。录下来的是客户端本来要发出的请求体：Anthropic 格式的消息，以及包含 `tools`、`system`、`thinking` 和 `cache_control` 的配置。
+`recordingModel` 构造一个真实的 `GenerativeModel`，它的供应商客户端从脚本读取流，所以 MMSP 的有状态历史、转换成 Anthropic 请求格式的过程，都照常运行。脚本化的回复依次输出以签名结束的思考、文本和工具调用，可以正常结束，也可以断开连接，或者一直挂起直到被中断。`diagnoseCacheMiss(prev, next)` 返回 `next` 最早在哪一层不再延续 `prev`，优先级与 Anthropic 的[缓存诊断](https://platform.claude.com/docs/en/build-with-claude/cache-diagnostics)一致：`model_changed`、`system_changed`、`tools_changed`、`parameters_changed`，最后是 `messages_changed`，并给出消息、块，以及分叉点之后的输入量估算。`parameters_changed` 是我们自己加的：`thinking`、`output_config` 或 `tool_choice` 变化时，Anthropic 的诊断只返回 `unavailable`。
 
-脚本化的回复按 Claude 响应的方式流式输出：先是以签名结束的思考，然后是文本，最后是工具调用。它可以正常结束，可以在文本之后断开连接让引擎重连，也可以一直挂起直到调用方中断。脚本回复报告的缓存 Token 永远是零，供应商本该命中多少，事后根据录制结果计算。
+这个设计有代价。模拟器模拟的是一家供应商的文档规则，线上部署行为不同的地方，它就可能出错；文档一改，它也得跟着改。测试失败还会挡住合并，直到有人判断这些多出来的 Token 值不值得花，因为谁都不能为了通过而改期望值。换来的是：只要 core 包有改动，这 33 个测试就会在 CI 里运行，不到两秒跑完，不联网、不需要密钥，失败时会写明是哪个请求、哪一层、多少 Token。最难的部分是模拟器：检查得太简单，会放过我们想抓的改动，却拦下本来没问题的改动。
 
-### 指出最早的分叉点
+## 教测试看懂缓存
 
-`diagnoseCacheMiss(prev, next)`（`diagnostics.ts`）比较相邻的两次录制，返回 `next` 最早在哪一层不再是 `prev` 的延续，优先级与 Anthropic 的诊断一致：模型、系统提示词、工具、其余影响 Prompt 的参数，最后是消息。`max_tokens`、`stream` 和 `cache_control` 标记都不参与比较，因为它们都不属于被缓存的前缀。
+我们最先放弃的是在 CI 里调用线上 API：每跑一次都要花钱，每次结果还不一样，而且还需要密钥，可贡献者和 fork 过来的 Pull Request 都没有。第二个放弃的是只用诊断器，断言每个请求都逐字节延续前一个请求。这种做法两头都会错。字节没变的未命中，它看不见：条目过期、回看窗口够不着、前缀不到最小长度。而供应商根本不在乎的改动，它却会报出来。重试或任务中途中断，会给最后一条用户消息加上一个 `[turn_retried]` 或 `[turn_aborted]` 块，诊断器比较的是整条消息，于是报告 `messages_changed`；可这个块排在已缓存的 `tool_result` 之后，供应商照样能读回它之前的全部内容。所以诊断器留下来，负责指出变化发生在哪一层；供应商的那一半则做成了独立的规则引擎 `PromptCacheSim`：
 
-```ts
-type CacheMissReason =
-  | { type: "none" }
-  | { type: "model_changed" }
-  | { type: "system_changed" }
-  | { type: "tools_changed"; detail: string }
-  | { type: "parameters_changed"; keys: string[] }
-  | {
-      type: "messages_changed";
-      index: number;
-      detail: string;
-      cache_missed_input_estimate: number;
-    };
-```
-
-工具层的分叉会说明是名称变了，还是哪个定义变了。消息层的分叉会给出消息序号、角色、第一个不同的块，以及分叉点之后的输入量（按每 4 个字符一个 Token 估算）。`parameters_changed` 是我们自己加的：`thinking`、`output_config` 或 `tool_choice` 变化时，Anthropic 的诊断只返回 `unavailable`，而我们希望直接点出是哪个键。我们的版本还覆盖了快速模式用到的 `speed` 和 `betas`。
-
-诊断器回答的是请求有没有变，回答不了缓存有没有命中：条目过期、回看窗口够不着、前缀不到最小长度，这几种情况下字节都没变。
-
-### 按 Anthropic 规则做缓存重放
-
-`PromptCacheSim`（`simulator.ts`）是作用在录制结果上的规则引擎。它报告的是按 Anthropic 规则运行的供应商会读回多少，用的是供应商自己的字段：`cache_read_input_tokens`、`cache_creation_input_tokens` 和 `input_tokens`。
-
-- **块。** 一个请求会展开成一串有序的块：模型 id、每个工具定义各一块、一个存放快速模式参数（`speed`、`betas`）的虚拟块、系统提示词、一个存放其余影响 Prompt 参数的虚拟块，然后是每条消息的每个内容块。这个顺序正好复现了上面那张表。
+- **块。** 一个请求展开成一串有序的块：模型 id、每个工具定义各一块、一个存放快速模式参数（`speed`、`betas`）的虚拟块、系统提示词、一个存放其余影响 Prompt 参数的虚拟块，然后是每条消息的每个内容块。这个顺序正好复现了上面那张表。
 - **位置。** 连续的 `tool_use` 块或连续的 `tool_result` 块算一个位置，其余每个块各算一个。
-- **只在断点处写入。** 请求在每个断点处写入一个条目，即以该断点结尾的前缀的哈希；请求完成后，条目才可读。默认只有一个断点，放在最后一个块上，与 MMSP 的实际发送一致。选项 `breakpoints: "tools-system-automatic"` 会在最后一个工具和系统提示词之后各加一个显式断点，让测试量出它们能挽回多少。
+- **只在断点处写入。** 请求在每个断点处写入一个条目，即以该断点结尾的前缀的哈希，请求完成后条目才可读。重放会让每个录制的请求都跑完，包括响应开始后才断开或中断的请求，因为文档说响应一开始条目就可用。默认只有一个断点，放在最后一个块上，与 MMSP 的实际发送一致；`breakpoints: "tools-system-automatic"` 会在最后一个工具和系统提示词之后各加一个显式断点。
 - **读取。** 每个断点从自己的位置往回看，最多 20 个位置；取最长的有效匹配，并在读取时续期。
-- **限制。** 不到 1,024 个 Token 的前缀不缓存；条目在最后一次使用 5 分钟后过期，时钟由外部注入，测试可以拨快时间，演示过期。
+- **限制。** 不到 1,024 个 Token 的前缀不缓存；条目在最后一次使用 5 分钟后过期，时钟由外部注入，测试可以把时间拨快，演示过期。
 
-Token 数按每 4 个字符一个估算。模拟器不是分词器，也不是计费模型，它的输入只有 Harness 发到线上的字节。`prompt-cache-simulator.test.ts` 用手写的请求固定了它的规则，一条规则一个测试。
-
-### 驱动真实的 Session 生命周期
-
-`prompt-cache-lifecycle.test.ts` 运行真实的 `Session`：写 Trace，需要执行 shell 命令的场景用真实的 `Environment`，子 Agent 用子 Session。所有录制下来的请求按发出顺序送进同一个 `PromptCacheSim`，因为供应商不会为每个 Session 单独维护缓存。然后用同一个断言 `expectHits` 要求所有场景遵守同一条规则：一个上下文里，除第一个请求外，每个请求都要读回该上下文里前一个请求的完整前缀。
-
-如果某个场景在设计上就做不到，就必须写明是哪个请求、为什么，并用自己的断言限定损失：
+Token 数按每 4 个字符一个来估算，`prompt-cache-simulator.test.ts` 用手写的请求固定了每一条规则。`prompt-cache-lifecycle.test.ts` 再把真实 `Session` 场景里的每个请求（包括子 Session 的请求）送进同一个模拟器，因为供应商不会为每个 Session 单独维护缓存。同一个断言 `expectHits` 要求所有场景遵守同一条规则：一个上下文里，除第一个请求外，每个请求都要读回该上下文里前一个请求的完整前缀。设计上就做不到的场景，必须写明是哪个请求、为什么：
 
 ```ts
 const reason =
@@ -138,143 +94,47 @@ const reason =
 expectHits(order, usages, new Map([[3, reason]]));
 ```
 
-有两项检查防止这些豁免被滥用。凡是在开头以外开启新上下文的请求都必须写明，这样新的缓存线不可能悄悄出现。豁免还必须名副其实：如果被豁免的请求实际上读回了完整前缀，测试就会失败，要求删掉这条豁免，修复之后不会留下过时的借口。
-
-### 三个测试集，以及为什么从不为了通过而改数字
-
-| 测试集 | 测试数 | 检查什么 | 失败意味着什么 |
-| --- | ---: | --- | --- |
-| `prompt-cache-invariants.test.ts` | 8 | 线上的每个请求是否延续前一个请求（真实的 `ContextEngine`，由诊断器判断） | 某个改动让请求不再延续前一个请求。这就是回归本身。 |
-| `prompt-cache-lifecycle.test.ts` | 11 | 按供应商的规则，每个请求是否读回前一个请求的前缀（真实的 `Session`，由模拟器计算） | 同一个回归，用供应商的 Token 数表示。 |
-| `prompt-cache-simulator.test.ts` | 14 | 模拟器是否按文档规则运行（手写请求） | 规则引擎变了。只有供应商文档变了，这才是对的。 |
-
-这 33 个测试随 core 的其他测试一起运行，不联网、不需要密钥，在我们的测试机上不到两秒就能跑完。失败时会打印一份报告。实验 2 里有一个反模式：`exec_command` 的描述在第 #4 个请求时改了一个词。下面是 `expectHits` 打印的内容：
+豁免必须名副其实：如果被豁免的请求实际上读回了完整前缀，测试就会失败，要求删掉这条豁免。某个请求没读全时，报告会写明差了多少、为什么。下面这个变体在第 #4 个请求时改了 `exec_command` 描述里的一个词：
 
 ```text
 #4 should read back all of #3
 prompt-cache report (tokens; previous = the same context's previous request):
-#0  main  read=0      creation=1972 input=0 hit=0.0%   first request of this context
-#1  main  read=1972   creation=1556 input=0 hit=55.9%  full hit on #0
-#2  main  read=3528   creation=1557 input=0 hit=69.4%  full hit on #1
 #3  main  read=5085   creation=1556 input=0 hit=76.6%  full hit on #2
 #4  main  read=0      creation=8199 input=0 hit=0.0%   short of #3 by 6641 tokens: tools_changed ("exec_command" definition changed)
 #5  main  read=8199   creation=1556 input=0 hit=84.0%  full hit on #4
-...
 ```
 
-最重要的一条规则关乎人而不是代码：我们从不为了让测试通过而改这些数字。改一个期望值，或者把某个请求加进「设计上就会未命中」的名单，都是在决定花用户的钱。仓库里的开发指南写得很直白：把变化的那一层和它的代价摆到做决定的人面前，由对方定夺。项目里没有别的信号能暴露缓存回归，一旦把测试改成全绿，回归就会发布出去。
+三个测试集各有分工：
 
-## 实验
+| 测试集 | 测试数 | 失败意味着什么 |
+| --- | ---: | --- |
+| `prompt-cache-invariants.test.ts` | 8 | 某个改动让线上的请求不再延续前一个请求。这就是回归本身。 |
+| `prompt-cache-lifecycle.test.ts` | 11 | 同一个回归，按真实 Session 的生命周期用供应商的 Token 数表示。 |
+| `prompt-cache-simulator.test.ts` | 14 | 规则引擎变了。只有供应商文档变了，这才是对的。 |
 
-### 实验设置
+这些数字从不为了让测试通过而修改。改一个期望值，或者把某个请求加进「设计上就会未命中」的名单，都是在决定花用户的钱，仓库里的开发指南写得很直白。有了 Harness 和模拟器，以前只有账单才能回答的问题，现在可以直接问了。
 
-下面所有数字都出自同一套机制：真实的 `Session` 跑在真实的 `GenerativeModel` 上，流式输出由脚本提供；每个录制的请求按确定的时钟（相邻请求间隔 10 秒）经 `PromptCacheSim` 重放，每处分叉由 `diagnoseCacheMiss` 命名。全程没有调用任何模型 API。这些场景由一个一次性脚本驱动，它只用到上述辅助模块和 `Session` API，没有放进仓库。结果完全确定：同一个脚本跑在同一个提交上，得到同样的表格。
+## 缓存现在看到了什么
 
-- Agent 用的是测试集的固定配置：模型 id 为 `claude-sonnet-4-6`（最小缓存长度 1,024 个 Token），一份长度接近实际的系统提示词，两个工具。固定前缀（模型 id、工具、系统提示词和两个参数块）共 1,673 个 Token。后台命令和子 Agent 两个场景运行在真实的 `Environment` 上，它配置的是占位工具定义，每个只有名称和一行描述。
-- 每次工具调用都返回同样的 5.8 KB 输出，所以一轮工具调用（思考、调用和结果）大约增加 1,556 个 Token。
-- 重放时，每个录制请求的写入都会生效，包括响应开始后才断开或被中断的请求，这与文档「响应一开始条目即可用」的规则一致。
-- **命中率** = 读取 ÷（读取 + 写入 + 未缓存），对场景内全部请求求和，包括冷启动的第一个请求。没有任何前缀低于最小长度，未缓存输入始终为零，表中不列出。
-- **输入成本** = 0.1 × 读取 + 1.25 × 写入 + 1 × 未缓存，单位是基础输入价（Anthropic 的 5 分钟费率）。同一张表里各变体的输出 Token 相同，不计入。
+这些数字来自专门为本文做的一次运行，没有一个来自线上供应商：一个只用上述辅助模块写成的场景脚本，在提交 6aa4ed195 上驱动真实的 `Session` 跑脚本化的流，再把每个请求按相邻 10 秒的间隔送进 `PromptCacheSim` 重放。Agent 用的是测试集的固定配置：模型 id 为 `claude-sonnet-4-6`，固定前缀 1,673 个 Token；每次工具调用都返回同样的 5.8 KB 输出，每轮大约增加 1,556 个 Token。输入成本按每个读取的 Token 计 0.1、每个写入的 Token 计 1.25，即 Anthropic 的 5 分钟费率。
 
-这些是按 Anthropic 规则得到的模拟数字，不是线上供应商的实测值。
+在 14 个 Session 场景里，只有有意改变前缀或条目过期的地方，才会把 Token 再写一遍。工具循环的 44,501 个输入 Token 里有 33,474 个从缓存读取，占 75.2%，每个请求都只写入自己追加的内容。切换思考等级会重复写入 3,241 个 Token；中断任务的第一个请求会把 36 个 Token 的 Prompt 改写进 `[turn_aborted]`。10 分钟后恢复，字节完全相同，整段 4,800 个 Token 的历史却要重写一遍：这是过期，不是分叉。
 
-### 实验 1：Session 生命周期
+<figure class="post-figure" data-figure="lifecycle"><svg class="fig-svg" viewBox="0 0 560 442" role="img" aria-labelledby="kv-lifecycle-zh-title"><title id="kv-lifecycle-zh-title">实验 1：每个 Session 场景读取与写入的 Token 数及命中率</title><rect x="0.0" y="4.0" width="14.0" height="10.0" class="fig-read"/><text x="19.0" y="14.0" class="fig-note" text-anchor="start">从缓存读取</text><rect x="90.5" y="4.0" width="14.0" height="10.0" class="fig-written"/><text x="109.5" y="14.0" class="fig-note" text-anchor="start">写入</text><rect x="143.5" y="4.0" width="14.0" height="10.0" class="fig-again"/><text x="162.5" y="14.0" class="fig-note" text-anchor="start">重复写入</text><circle cx="226.5" cy="9.0" r="4" class="fig-opener"/><text x="236.5" y="14.0" class="fig-note" text-anchor="start">开启新缓存线</text><text x="558.0" y="40.0" class="fig-note" text-anchor="end">命中率</text><text x="188.0" y="59.0" class="fig-label" text-anchor="end">多轮对话，5 个任务</text><rect x="196.0" y="48.0" width="45.1" height="14.0" class="fig-read"/><rect x="241.1" y="48.0" width="11.9" height="14.0" class="fig-written"/><text x="558.0" y="59.0" class="fig-num" text-anchor="end">79.1%</text><text x="188.0" y="83.0" class="fig-label" text-anchor="end">工具循环，6 轮</text><rect x="196.0" y="72.0" width="215.7" height="14.0" class="fig-read"/><rect x="411.7" y="72.0" width="71.1" height="14.0" class="fig-written"/><text x="558.0" y="83.0" class="fig-num" text-anchor="end">75.2%</text><text x="188.0" y="107.0" class="fig-label" text-anchor="end">并行调用，2 轮各 3 个</text><rect x="196.0" y="96.0" width="51.3" height="14.0" class="fig-read"/><rect x="247.3" y="96.0" width="70.0" height="14.0" class="fig-written"/><text x="558.0" y="107.0" class="fig-num" text-anchor="end">42.3%</text><text x="188.0" y="131.0" class="fig-label" text-anchor="end">任务中途插话</text><rect x="196.0" y="120.0" width="104.0" height="14.0" class="fig-read"/><rect x="300.0" y="120.0" width="51.2" height="14.0" class="fig-written"/><text x="558.0" y="131.0" class="fig-num" text-anchor="end">67.0%</text><text x="188.0" y="155.0" class="fig-label" text-anchor="end">断开后重试</text><rect x="196.0" y="144.0" width="53.0" height="14.0" class="fig-read"/><rect x="249.0" y="144.0" width="31.2" height="14.0" class="fig-written"/><text x="558.0" y="155.0" class="fig-num" text-anchor="end">62.9%</text><text x="188.0" y="179.0" class="fig-label" text-anchor="end">任务中途中断</text><rect x="196.0" y="168.0" width="62.7" height="14.0" class="fig-read"/><rect x="258.7" y="168.0" width="31.2" height="14.0" class="fig-written"/><text x="558.0" y="179.0" class="fig-num" text-anchor="end">66.8%</text><text x="188.0" y="203.0" class="fig-label" text-anchor="end">中断任务的第一个请求</text><rect x="196.0" y="192.0" width="52.7" height="14.0" class="fig-read"/><rect x="248.7" y="192.0" width="0.2" height="14.0" class="fig-again"/><rect x="249.0" y="192.0" width="21.4" height="14.0" class="fig-written"/><text x="558.0" y="203.0" class="fig-num" text-anchor="end">70.9%</text><text x="188.0" y="227.0" class="fig-label" text-anchor="end">后台任务通知</text><rect x="196.0" y="216.0" width="20.1" height="14.0" class="fig-read"/><rect x="216.1" y="216.0" width="11.1" height="14.0" class="fig-written"/><text x="558.0" y="227.0" class="fig-num" text-anchor="end">64.3%</text><text x="188.0" y="251.0" class="fig-label" text-anchor="end">1 分钟后恢复</text><rect x="196.0" y="240.0" width="62.7" height="14.0" class="fig-read"/><rect x="258.7" y="240.0" width="31.2" height="14.0" class="fig-written"/><text x="558.0" y="251.0" class="fig-num" text-anchor="end">66.8%</text><text x="188.0" y="275.0" class="fig-label" text-anchor="end">10 分钟后恢复</text><rect x="196.0" y="264.0" width="31.8" height="14.0" class="fig-read"/><rect x="227.8" y="264.0" width="30.9" height="14.0" class="fig-again"/><rect x="258.7" y="264.0" width="31.2" height="14.0" class="fig-written"/><text x="558.0" y="275.0" class="fig-num" text-anchor="end">33.9%</text><text x="188.0" y="299.0" class="fig-label" text-anchor="end">切换思考等级</text><rect x="196.0" y="288.0" width="63.1" height="14.0" class="fig-read"/><rect x="259.1" y="288.0" width="20.9" height="14.0" class="fig-again"/><rect x="280.0" y="288.0" width="31.3" height="14.0" class="fig-written"/><text x="558.0" y="299.0" class="fig-num" text-anchor="end">54.7%</text><circle cx="8.0" cy="319.0" r="4" class="fig-opener"/><text x="188.0" y="323.0" class="fig-label" text-anchor="end">上下文压缩</text><rect x="196.0" y="312.0" width="116.0" height="14.0" class="fig-read"/><rect x="312.0" y="312.0" width="52.6" height="14.0" class="fig-written"/><text x="558.0" y="323.0" class="fig-num" text-anchor="end">68.8%</text><circle cx="8.0" cy="343.0" r="4" class="fig-opener"/><text x="188.0" y="347.0" class="fig-label" text-anchor="end">子 Agent</text><rect x="196.0" y="336.0" width="50.3" height="14.0" class="fig-read"/><rect x="246.3" y="336.0" width="41.1" height="14.0" class="fig-written"/><text x="558.0" y="347.0" class="fig-num" text-anchor="end">55.1%</text><circle cx="8.0" cy="367.0" r="4" class="fig-opener"/><text x="188.0" y="371.0" class="fig-label" text-anchor="end">切换模型</text><rect x="196.0" y="360.0" width="84.9" height="14.0" class="fig-read"/><rect x="280.9" y="360.0" width="42.6" height="14.0" class="fig-written"/><text x="558.0" y="371.0" class="fig-num" text-anchor="end">66.6%</text><path d="M196.0 386.0L453.8 386.0" class="fig-axis"/><path d="M196.0 386.0L196.0 390.0" class="fig-axis"/><text x="196.0" y="402.0" class="fig-tick" text-anchor="middle">0</text><path d="M260.4 386.0L260.4 390.0" class="fig-axis"/><text x="260.4" y="402.0" class="fig-tick" text-anchor="middle">10,000</text><path d="M324.9 386.0L324.9 390.0" class="fig-axis"/><text x="324.9" y="402.0" class="fig-tick" text-anchor="middle">20,000</text><path d="M389.3 386.0L389.3 390.0" class="fig-axis"/><text x="389.3" y="402.0" class="fig-tick" text-anchor="middle">30,000</text><path d="M453.8 386.0L453.8 390.0" class="fig-axis"/><text x="453.8" y="402.0" class="fig-tick" text-anchor="middle">40,000</text><text x="453.8" y="416.0" class="fig-tick" text-anchor="end">Token</text></svg><ol class="fig-steps"><li>多轮对话，5 个任务：5 个请求，读取 7,000 个 Token，写入 1,850 个，命中率 79.1%。</li><li>工具循环，6 轮：7 个请求，读取 33,474 个 Token，写入 11,027 个，命中率 75.2%。</li><li>并行调用，2 轮各 3 个：3 个请求，读取 7,966 个 Token，写入 10,868 个，命中率 42.3%。</li><li>任务中途插话：5 个请求，读取 16,142 个 Token，写入 7,940 个，命中率 67.0%。</li><li>断开后重试：4 个请求，读取 8,220 个 Token，写入 4,845 个，命中率 62.9%。</li><li>任务中途中断：4 个请求，读取 9,736 个 Token，写入 4,847 个，命中率 66.8%。</li><li>中断任务的第一个请求：4 个请求，读取 8,182 个 Token，写入 3,360 个（其中重复写入 36 个），命中率 70.9%。</li><li>后台任务通知：3 个请求，读取 3,122 个 Token，写入 1,730 个，命中率 64.3%。</li><li>1 分钟后恢复：4 个请求，读取 9,730 个 Token，写入 4,834 个，命中率 66.8%。</li><li>10 分钟后恢复：4 个请求，读取 4,930 个 Token，写入 9,634 个（其中重复写入 4,800 个），命中率 33.9%。</li><li>切换思考等级：5 个请求，读取 9,792 个 Token，写入 8,100 个（其中重复写入 3,241 个），命中率 54.7%。</li><li>上下文压缩：8 个请求，读取 17,993 个 Token，写入 8,160 个，命中率 68.8%；按设计开启新的缓存线。</li><li>子 Agent：6 个请求，读取 7,810 个 Token，写入 6,376 个，命中率 55.1%；按设计开启新的缓存线。</li><li>切换模型：7 个请求，读取 13,168 个 Token，写入 6,603 个，命中率 66.6%；按设计开启新的缓存线。</li></ol><figcaption>实验 1。除了有意改变前缀或条目过期的场景，没有任何场景重复写入：切换思考等级重复写入 3,241 个 Token，10 分钟后恢复重复写入 4,800 个。工具循环的命中率达到 75.2%，每个请求只写入自己追加的内容。</figcaption></figure>
 
-请求从 #0 开始编号。「未读全」一列列出读取量少于本上下文中前一个请求完整前缀的请求；对于开启新上下文的请求，则是读取量少于它自身完整前缀的请求。
+反模式都注入在同一条录制好的轨迹里：十个请求，六个工具定义。每次请求都改，整个运行都按写入计费：系统提示词里带时间戳，输入成本从 1.00× 变成 4.24×，而且历史相对每轮新增内容越长，这个倍数就越大，逐渐逼近写入与读取之间 12.5 倍的差距。只改一次，就在改动处把它之后的内容重写一遍。
 
-| 场景 | 请求数 | 读取 | 写入 | 命中率 | 未读全 | 原因 |
-| --- | ---: | ---: | ---: | ---: | --- | --- |
-| 多轮对话，5 个任务 | 5 | 7,000 | 1,850 | 79.1% | 无 | |
-| 工具循环，6 轮 | 7 | 33,474 | 11,027 | 75.2% | 无 | |
-| 并行工具调用，2 轮各 3 个 | 3 | 7,966 | 10,868 | 42.3% | 无 | |
-| 任务中途插话 | 5 | 16,142 | 7,940 | 67.0% | 无 | |
-| 流式连接断开后重试 | 4 | 8,220 | 4,845 | 62.9% | 无 | |
-| 任务中途被中断，再发新 Prompt | 4 | 9,736 | 4,847 | 66.8% | 无 | |
-| 任务的第一个请求被中断 | 4 | 8,182 | 3,360 | 70.9% | #3 | 被中断的 Prompt 改写成了 `[turn_aborted]` |
-| 后台命令及其完成通知 | 3 | 3,122 | 1,730 | 64.3% | 无 | |
-| 1 分钟后从 Trace 恢复 | 4 | 9,730 | 4,834 | 66.8% | 无 | |
-| 10 分钟后从 Trace 恢复 | 4 | 4,930 | 9,634 | 33.9% | #3 | 条目已过期；诊断器未发现分叉 |
-| 切换思考等级 | 5 | 9,792 | 8,100 | 54.7% | #2 | `parameters_changed [output_config]` |
-| 压缩后进入新上下文 | 8 | 17,993 | 8,160 | 68.8% | #5 | 新上下文开启新的缓存线 |
-| 子 Agent | 6 | 7,810 | 6,376 | 55.1% | #2 | 子 Session 开启自己的缓存线 |
-| 切换模型 | 7 | 13,168 | 6,603 | 66.6% | #4 | `model_changed`：新模型，新缓存线 |
+<figure class="post-figure" data-figure="antipatterns"><svg class="fig-svg" viewBox="0 0 560 428" role="img" aria-labelledby="kv-antipatterns-zh-title"><title id="kv-antipatterns-zh-title">实验 2：每个注入的反模式相对基线的输入成本</title><rect x="0.0" y="4.0" width="14.0" height="10.0" class="fig-cost"/><text x="19.0" y="14.0" class="fig-note" text-anchor="start">基线成本</text><rect x="78.0" y="4.0" width="14.0" height="10.0" class="fig-again"/><text x="97.0" y="14.0" class="fig-note" text-anchor="start">重复写入带来的额外成本</text><text x="0.0" y="52.0" class="fig-label" text-anchor="start">基线</text><text x="0.0" y="67.0" class="fig-note fig-code" text-anchor="start">none</text><rect x="230.0" y="46.0" width="57.8" height="14.0" class="fig-cost"/><text x="293.8" y="58.0" class="fig-num" text-anchor="start">1.00×</text><text x="0.0" y="86.0" class="fig-label" text-anchor="start">系统提示词里带时间戳</text><text x="0.0" y="101.0" class="fig-note fig-code" text-anchor="start">system_changed</text><rect x="230.0" y="80.0" width="57.8" height="14.0" class="fig-cost"/><rect x="287.8" y="80.0" width="187.2" height="14.0" class="fig-again"/><text x="481.0" y="92.0" class="fig-num" text-anchor="start">4.24×</text><text x="0.0" y="120.0" class="fig-label" text-anchor="start">每次请求工具顺序不同</text><text x="0.0" y="135.0" class="fig-note fig-code" text-anchor="start">tools_changed</text><rect x="230.0" y="114.0" width="57.8" height="14.0" class="fig-cost"/><rect x="287.8" y="114.0" width="186.9" height="14.0" class="fig-again"/><text x="480.6" y="126.0" class="fig-num" text-anchor="start">4.23×</text><text x="0.0" y="154.0" class="fig-label" text-anchor="start">每个任务强制 tool_choice</text><text x="0.0" y="169.0" class="fig-note fig-code" text-anchor="start">parameters_changed</text><rect x="230.0" y="148.0" width="57.8" height="14.0" class="fig-cost"/><rect x="287.8" y="148.0" width="35.2" height="14.0" class="fig-again"/><text x="329.0" y="160.0" class="fig-num" text-anchor="start">1.61×</text><text x="0.0" y="188.0" class="fig-label" text-anchor="start">一个请求切到别的模型</text><text x="0.0" y="203.0" class="fig-note fig-code" text-anchor="start">model_changed</text><rect x="230.0" y="182.0" width="57.8" height="14.0" class="fig-cost"/><rect x="287.8" y="182.0" width="21.6" height="14.0" class="fig-again"/><text x="315.4" y="194.0" class="fig-num" text-anchor="start">1.37×</text><text x="0.0" y="222.0" class="fig-label" text-anchor="start">工具描述改一个词，一次</text><text x="0.0" y="237.0" class="fig-note fig-code" text-anchor="start">tools_changed</text><rect x="230.0" y="216.0" width="57.8" height="14.0" class="fig-cost"/><rect x="287.8" y="216.0" width="17.5" height="14.0" class="fig-again"/><text x="311.3" y="228.0" class="fig-num" text-anchor="start">1.30×</text><text x="0.0" y="256.0" class="fig-label" text-anchor="start">开启快速模式，一次</text><text x="0.0" y="271.0" class="fig-note fig-code" text-anchor="start">parameters_changed</text><rect x="230.0" y="250.0" width="57.8" height="14.0" class="fig-cost"/><rect x="287.8" y="250.0" width="17.6" height="14.0" class="fig-again"/><text x="311.4" y="262.0" class="fig-num" text-anchor="start">1.30×</text><text x="0.0" y="290.0" class="fig-label" text-anchor="start">插话写进第 #0 条消息</text><text x="0.0" y="305.0" class="fig-note fig-code" text-anchor="start">messages_changed</text><rect x="230.0" y="284.0" width="57.8" height="14.0" class="fig-cost"/><rect x="287.8" y="284.0" width="12.4" height="14.0" class="fig-again"/><text x="306.2" y="296.0" class="fig-num" text-anchor="start">1.21×</text><text x="0.0" y="324.0" class="fig-label" text-anchor="start">丢掉思考签名，一次</text><text x="0.0" y="339.0" class="fig-note fig-code" text-anchor="start">messages_changed</text><rect x="230.0" y="318.0" width="57.8" height="14.0" class="fig-cost"/><rect x="287.8" y="318.0" width="12.2" height="14.0" class="fig-again"/><text x="305.9" y="330.0" class="fig-num" text-anchor="start">1.21×</text><text x="0.0" y="358.0" class="fig-label" text-anchor="start">max_tokens 变化（对照组）</text><text x="0.0" y="373.0" class="fig-note fig-code" text-anchor="start">none</text><rect x="230.0" y="352.0" width="57.8" height="14.0" class="fig-cost"/><text x="293.8" y="364.0" class="fig-num" text-anchor="start">1.00×</text><path d="M287.8 34V382.0" class="fig-ref"/><path d="M230.0 384.0L461.1 384.0" class="fig-axis"/><path d="M230.0 384.0L230.0 388.0" class="fig-axis"/><text x="230.0" y="400.0" class="fig-tick" text-anchor="middle">0×</text><path d="M287.8 384.0L287.8 388.0" class="fig-axis"/><text x="287.8" y="400.0" class="fig-tick" text-anchor="middle">1×</text><path d="M345.6 384.0L345.6 388.0" class="fig-axis"/><text x="345.6" y="400.0" class="fig-tick" text-anchor="middle">2×</text><path d="M403.3 384.0L403.3 388.0" class="fig-axis"/><text x="403.3" y="400.0" class="fig-tick" text-anchor="middle">3×</text><path d="M461.1 384.0L461.1 388.0" class="fig-axis"/><text x="461.1" y="400.0" class="fig-tick" text-anchor="middle">4×</text><text x="461.1" y="414.0" class="fig-tick" text-anchor="end">输入成本，基线的倍数</text></svg><ol class="fig-steps"><li>基线：首个诊断 none，9 个请求里 0 个分叉，输入成本是基线的 1.00×。</li><li>系统提示词里带时间戳：首个诊断 system_changed，9 个请求里 9 个分叉，输入成本是基线的 4.24×。</li><li>每次请求工具顺序不同：首个诊断 tools_changed，9 个请求里 9 个分叉，输入成本是基线的 4.23×。</li><li>每个任务强制 tool_choice：首个诊断 parameters_changed，9 个请求里 3 个分叉，输入成本是基线的 1.61×。</li><li>一个请求切到别的模型：首个诊断 model_changed，9 个请求里 2 个分叉，输入成本是基线的 1.37×。</li><li>工具描述改一个词，一次：首个诊断 tools_changed，9 个请求里 1 个分叉，输入成本是基线的 1.30×。</li><li>开启快速模式，一次：首个诊断 parameters_changed，9 个请求里 1 个分叉，输入成本是基线的 1.30×。</li><li>插话写进第 #0 条消息：首个诊断 messages_changed，9 个请求里 1 个分叉，输入成本是基线的 1.21×。</li><li>丢掉思考签名，一次：首个诊断 messages_changed，9 个请求里 1 个分叉，输入成本是基线的 1.21×。</li><li>max_tokens 变化（对照组）：首个诊断 none，9 个请求里 0 个分叉，输入成本是基线的 1.00×。</li></ol><figcaption>实验 2，十个请求、六个工具的轨迹。每次请求都改，整个运行都按写入计费（系统提示词带时间戳：4.24×）；只改一次，就在改动处把前缀重写一遍（改一个词：1.30×）。输入成本按每个读取的 Token 计 0.1、每个写入的 Token 计 1.25。</figcaption></figure>
 
-**命中率不到 100% 并不等于未命中。** 每个请求都要写入自己追加的内容，所以单个请求最多只能达到「前一个请求的前缀 ÷ 自己的前缀」。在工具循环里，单个请求的命中率从第二个请求的 52.0% 升到第七个请求的 85.9%，而每个请求都读回了前一个请求的全部内容。多轮对话每轮只增加 40 个 Token，命中率稳定在 97.7% 到 97.8%。并行调用的命中率最低，原因相同：它的两个请求各自追加了三个工具结果。
+在工具和系统提示词之后加显式断点，切换思考等级之后的第一个请求、压缩后新上下文的第一个请求，都能读回 1,656 个 Token，而不是一个也读不到。测试固定配置里的子 Session 也能读回 1,495 个，但那只是因为它发送的工具和提示词与父级完全相同；真实的子 Agent 会少掉子 Agent 相关的工具，提示词里写的也是它自己的 Session ID，所以不会有收益，切换模型同样没有。断点还要求它之前的前缀达到最小长度：六个工具时（连同模型 id 共 517 个 Token），时间戳变体仍是 4.24×；十八个工具时（2,269 个 Token），则从 4.44× 降到 3.63×。
 
-**在重试和中断上，诊断器和模拟器的结论不同，而这种不同很有用。** 对于重试和任务中途的中断，诊断器报告 `messages_changed`，因为最后一条用户消息多了一个 `[turn_retried]` 或 `[turn_aborted]` 块；模拟器报告全部读回，因为这个块排在已缓存的 `tool_result` 之后，此前的内容一点没变，而断开或被中断的那个请求已经写入了自己的条目。只有被中断那一轮的输入里带有文本时，例如任务第一个请求里的 Prompt，或随某一轮工具结果送出的插话或通知，已缓存的块才会被改写：这些文本会被压平进 `[turn_aborted]` 块。读取随之退回到再前一个请求；在「任务的第一个请求被中断」这个场景里，损失了 36 个 Token。
+<figure class="post-figure" data-figure="breakpoints"><svg class="fig-svg" viewBox="0 0 560 356" role="img" aria-labelledby="kv-breakpoints-zh-title"><title id="kv-breakpoints-zh-title">实验 3：同样四个请求，只有自动断点时，与在工具和系统提示词之后加断点时的对比</title><rect x="0.0" y="4.0" width="14.0" height="10.0" class="fig-read"/><text x="19.0" y="14.0" class="fig-note" text-anchor="start">从缓存读取</text><rect x="90.5" y="4.0" width="14.0" height="10.0" class="fig-written"/><text x="109.5" y="14.0" class="fig-note" text-anchor="start">写入</text><rect x="143.5" y="4.0" width="14.0" height="10.0" class="fig-again"/><text x="162.5" y="14.0" class="fig-note" text-anchor="start">重复写入</text><text x="0.0" y="52.0" class="fig-title" text-anchor="start">只有自动断点（现状）</text><text x="188.0" y="75.0" class="fig-label" text-anchor="end">切换思考等级后的请求</text><rect x="196.0" y="64.0" width="240.8" height="14.0" class="fig-again"/><rect x="436.8" y="64.0" width="2.5" height="14.0" class="fig-written"/><text x="558.0" y="75.0" class="fig-num" text-anchor="end">读取 0</text><text x="188.0" y="97.0" class="fig-label" text-anchor="end">压缩后的新上下文</text><rect x="196.0" y="86.0" width="127.0" height="14.0" class="fig-written"/><text x="558.0" y="97.0" class="fig-num" text-anchor="end">读取 0</text><text x="188.0" y="119.0" class="fig-label" text-anchor="end">子 Agent（固定配置）</text><rect x="196.0" y="108.0" width="113.7" height="14.0" class="fig-written"/><text x="558.0" y="119.0" class="fig-num" text-anchor="end">读取 0</text><text x="188.0" y="141.0" class="fig-label" text-anchor="end">切换后的新模型</text><rect x="196.0" y="130.0" width="127.0" height="14.0" class="fig-written"/><text x="558.0" y="141.0" class="fig-num" text-anchor="end">读取 0</text><path d="M196.0 154.0L418.9 154.0" class="fig-axis"/><path d="M196.0 154.0L196.0 158.0" class="fig-axis"/><text x="196.0" y="170.0" class="fig-tick" text-anchor="middle">0</text><path d="M270.3 154.0L270.3 158.0" class="fig-axis"/><text x="270.3" y="170.0" class="fig-tick" text-anchor="middle">1,000</text><path d="M344.6 154.0L344.6 158.0" class="fig-axis"/><text x="344.6" y="170.0" class="fig-tick" text-anchor="middle">2,000</text><path d="M418.9 154.0L418.9 158.0" class="fig-axis"/><text x="418.9" y="170.0" class="fig-tick" text-anchor="middle">3,000</text><text x="418.9" y="184.0" class="fig-tick" text-anchor="end">Token</text><text x="0.0" y="210.0" class="fig-title" text-anchor="start">另在工具和系统提示词之后加断点</text><text x="188.0" y="233.0" class="fig-label" text-anchor="end">切换思考等级后的请求</text><rect x="196.0" y="222.0" width="123.0" height="14.0" class="fig-read"/><rect x="319.0" y="222.0" width="117.7" height="14.0" class="fig-again"/><rect x="436.8" y="222.0" width="2.5" height="14.0" class="fig-written"/><text x="558.0" y="233.0" class="fig-num" text-anchor="end">读取 1,656</text><text x="188.0" y="255.0" class="fig-label" text-anchor="end">压缩后的新上下文</text><rect x="196.0" y="244.0" width="123.0" height="14.0" class="fig-read"/><rect x="319.0" y="244.0" width="4.0" height="14.0" class="fig-written"/><text x="558.0" y="255.0" class="fig-num" text-anchor="end">读取 1,656</text><text x="188.0" y="277.0" class="fig-label" text-anchor="end">子 Agent（固定配置）</text><rect x="196.0" y="266.0" width="111.1" height="14.0" class="fig-read"/><rect x="307.1" y="266.0" width="2.7" height="14.0" class="fig-written"/><text x="558.0" y="277.0" class="fig-num" text-anchor="end">读取 1,495</text><text x="188.0" y="299.0" class="fig-label" text-anchor="end">切换后的新模型</text><rect x="196.0" y="288.0" width="127.0" height="14.0" class="fig-written"/><text x="558.0" y="299.0" class="fig-num" text-anchor="end">读取 0</text><path d="M196.0 312.0L418.9 312.0" class="fig-axis"/><path d="M196.0 312.0L196.0 316.0" class="fig-axis"/><text x="196.0" y="328.0" class="fig-tick" text-anchor="middle">0</text><path d="M270.3 312.0L270.3 316.0" class="fig-axis"/><text x="270.3" y="328.0" class="fig-tick" text-anchor="middle">1,000</text><path d="M344.6 312.0L344.6 316.0" class="fig-axis"/><text x="344.6" y="328.0" class="fig-tick" text-anchor="middle">2,000</text><path d="M418.9 312.0L418.9 316.0" class="fig-axis"/><text x="418.9" y="328.0" class="fig-tick" text-anchor="middle">3,000</text><text x="418.9" y="342.0" class="fig-tick" text-anchor="end">Token</text></svg><ol class="fig-steps"><li>只有自动断点（现状），切换思考等级后的请求：共 3,275 个 Token，读取 0 个。</li><li>只有自动断点（现状），压缩后的新上下文：共 1,710 个 Token，读取 0 个。</li><li>只有自动断点（现状），子 Agent（固定配置）：共 1,531 个 Token，读取 0 个。</li><li>只有自动断点（现状），切换后的新模型：共 1,709 个 Token，读取 0 个。</li><li>另在工具和系统提示词之后加断点，切换思考等级后的请求：共 3,275 个 Token，读取 1,656 个。</li><li>另在工具和系统提示词之后加断点，压缩后的新上下文：共 1,710 个 Token，读取 1,656 个。</li><li>另在工具和系统提示词之后加断点，子 Agent（固定配置）：共 1,531 个 Token，读取 1,495 个。</li><li>另在工具和系统提示词之后加断点，切换后的新模型：共 1,709 个 Token，读取 0 个。</li></ol><figcaption>实验 3，两个面板的行和比例尺相同。显式断点让开启新缓存线的四个请求中的三个读回了工具和系统提示词（在这套固定配置下是 1,656 个 Token）；切换模型的请求两种情况下都读不到，因为缓存只属于一个模型。</figcaption></figure>
 
-**有四个请求是有意什么都读不到的。** 切换思考等级、上下文压缩、子 Agent 和切换模型，各自开启了一条新的缓存线。在这里，切换思考等级和上下文压缩之后，工具和系统提示词逐字节没变，模拟器却依然读到零：每个请求只在末尾有一个断点，从来没有哪个条目恰好在系统提示词处结束。在实际产品里，压缩后的新上下文会重新从磁盘组装提示词，只有它依赖的内容（比如 `AGENTS.md`、Memory 索引或日期）在此期间都没变，提示词才会保持一致。测试固定配置里的子 Session 也发送与父级完全相同的工具和系统提示词；真实的子 Agent 则不同，它会少掉子 Agent 相关的工具，系统提示词里写的也是它自己的 Session ID。实验 3 会量出显式断点能带来什么变化。
+模拟器的 Token 数是估算值，所以比例比绝对值更可靠。文档说思考参数的规则取决于模型，模拟器取的是乐观的一侧；它还让每个条目完整存活整个有效期，这一点只有线上接口才能确认。线上的命中率，请看 Web App 为每个对话显示的数据。
 
-**恢复对供应商是透明的，直到条目过期。** 一分钟后恢复，新进程的第一个请求读回了全部重放的历史，包括思考签名。十分钟后恢复，诊断器没有发现分叉，读取量却是零。这是有效期的问题，不是字节的问题。
+## 仍待解决
 
-### 实验 2：故意注入的反模式
-
-我们用真实的 Session 录了一条包含十个请求的轨迹（一个六轮的任务，加一个两轮的后续任务，共六个工具定义），原样重放作为基线。每个变体都像一个不够小心的 Harness 那样改写录制下来的请求，再经过同样的诊断器和模拟器。一次性的改动都发生在第 #4 个请求。
-
-| 变体 | 首个诊断 | 分叉的请求数 | 写入 | 命中率 | 输入成本 |
-| --- | --- | ---: | ---: | ---: | ---: |
-| 基线：PenguinHarness 实际发送的请求 | 无 | 0 | 14,466 | 83.0% | 1.00× |
-| 系统提示词里带时间戳 | `system_changed` | 9 | 85,327 | 0.0% | 4.24× |
-| 每次请求的工具顺序不同 | `tools_changed`（名称顺序变化） | 9 | 85,217 | 0.0% | 4.23× |
-| 改了某个工具描述里的一个词，一次 | `tools_changed`（`"exec_command" definition changed`） | 1 | 21,108 | 75.2% | 1.30× |
-| 某一个请求被路由到另一个模型 | `model_changed` | 2 | 22,663 | 73.4% | 1.37× |
-| 开启快速模式，一次 | `parameters_changed [betas, speed]` | 1 | 21,119 | 75.2% | 1.30× |
-| 每个任务的第一个请求强制 `tool_choice` | `parameters_changed [tool_choice]` | 3 | 27,805 | 67.4% | 1.61× |
-| 把插话写进任务的第一条消息，一次 | `messages_changed`，位置 #0 | 1 | 19,153 | 77.6% | 1.21× |
-| 重建历史时丢掉思考签名，一次 | `messages_changed`，位置 #1 | 1 | 19,087 | 77.5% | 1.21× |
-| 每次请求的 `max_tokens` 不同（对照组） | 无 | 0 | 14,466 | 83.0% | 1.00× |
-
-**每次请求都犯的反模式，会让整个运行都按写入计费。** 系统提示词里带时间戳，或者工具列表顺序打乱，第一个请求之后的每个请求都会未命中。十个请求下来，输入成本是基线的 4.2 倍；历史相对于每轮新增内容越长，这个倍数越大，逐渐逼近写入与读取之间 12.5 倍的差距。
-
-**一次性的改动，会在它发生的位置把后面的一切重写一遍。** 工具描述的改动发生在第 #4 个请求，多写入了 6,642 个 Token；同样的改动如果发生在第 200 个请求，就要把那时的整段历史重新计费。切到备用模型会造成两次未命中：请求转到另一个模型时一次，下一个请求切回来时又一次。切回来时读到的是切换前写入的条目，仍在回看窗口内，所以只损失中间那一段。
-
-**改写较早的历史，读取会退回到改动之前最近的条目。** 把插话写进第一条消息，或者重建历史时丢掉思考签名，都改动了对话深处的某个块。读取退回到改动之前、且仍在 20 个位置以内的最近条目，这里是第一个请求写入的那个；诊断器则精确指出是哪条消息、哪个块。插话放在哪里，没有它是否改写已发送的内容来得重要：像 PenguinHarness 这样随下一轮工具结果送出，就不花任何额外成本（见实验 1）。
-
-**对照组没有任何影响。** `max_tokens` 不属于前缀，每次请求都改它，所有数字都不变。
-
-### 实验 3：断点放在哪里
-
-MMSP 只发送一个自动断点。Anthropic 允许四个，模拟器可以再加两个：一个在最后一个工具定义之后，一个在系统提示词之后。下表只比较两种策略可能产生差别的情况，输入成本都相对于同一策略下的基线。
-
-| 情况 | 只有自动断点（现状） | 另在工具和系统提示词之后加断点 |
-| --- | --- | --- |
-| 切换思考等级：之后的第一个请求（前缀 3,275） | 读到 0 | 读到 1,656 |
-| 上下文压缩：新上下文的第一个请求（1,710） | 读到 0 | 读到 1,656 |
-| 子 Agent（固定配置，子 Session 与父级的工具和提示词相同）：第一个请求（1,531） | 读到 0 | 读到 1,495 |
-| 切换模型：新模型的第一个请求（1,709） | 读到 0 | 读到 0 |
-| 每个任务强制 `tool_choice`，六个工具：输入成本 | 1.61× | 1.43× |
-| 系统提示词带时间戳，六个工具（工具层 517 个 Token）：输入成本 | 4.24× | 4.24× |
-| 系统提示词带时间戳，十八个工具（工具层 2,269 个 Token）：输入成本 | 4.44× | 3.63× |
-| 开启快速模式一次，十八个工具：输入成本 | 1.33× | 1.24× |
-
-在开启新缓存线的四个请求里，显式断点在其中三个上找回了工具和系统提示词：在这套固定配置下，每次 1,495 到 1,656 个 Token。切换模型没有收益，因为缓存只属于一个模型；真实的子 Agent 也不会有收益，因为它的工具和系统提示词本来就与父级不同。
-
-只有断点之前的前缀达到最小长度，断点才有用。六个工具定义加上模型 id 一共 517 个 Token，单独永远不会被缓存，所以时间戳这一行仍是 4.24×。换成十八个工具（2,269 个 Token）后，每个请求都能读回工具层，成本降到 3.63×。思考参数或 `tool_choice` 变化时，两种策略下都仍要为消息付费，因为这些参数位于系统提示词的断点之后。
-
-## 模拟器回答不了的问题
-
-- **它是按 Anthropic 规则建的。** 诊断器只看字节，适用于任何供应商；模拟器的数字能否套用到其他供应商，取决于对方的规则与 Anthropic 有多接近。
-- **Token 数是估算值**，按每个块的 JSON 每 4 个字符一个 Token 计。比起绝对值，比例和对比更可靠。
-- **它按字面理解文档，并取乐观的一侧。** 在模拟器里，思考参数变化时，工具和系统提示词仍然保留，而文档说这取决于模型。模拟器要到请求完成才让条目变为可读，有效期也从那一刻算起；文档则说响应一开始条目就可用，有效期从请求开始时算起。这些差别只有在并发请求、或请求间隔接近五分钟时才有影响，本文的场景都不在此列。模拟器还会让每个条目完整存活整个有效期；线上部署是否如此，只有线上接口才能回答。
-- **它不说明线上的命中率。** Web App 会根据供应商的用量报告，显示每个对话的实际缓存命中率。这几个测试集守护的是 Harness 能控制的那一半。
-
-## 下一步
-
-PR #722 结尾提出的几条建议，目前仍未落地：
-
-- **在 MMSP 的 Claude 客户端里，把显式断点加在工具和系统提示词之后。** 实验 3 量出了它们能挽回多少。
-- **可选的 1 小时有效期。** 在等审批或长时间后台任务的 Agent，很容易闲置超过五分钟，每一次这样的空档都要付出整段前缀的代价，10 分钟后恢复的那一行就是例子。
-- **在 Trace 里记录请求指纹**（系统提示词和工具的哈希、思考等级、历史长度），让 Web App 能像测试里的诊断器那样，把命中率下降的原因标出来。
-- **透传 Anthropic 的缓存诊断**，把 `cache_miss_reason` 显示在它所解释的用量旁边。
-
-守住这些规则的三个测试集，可以这样运行：
-
-```bash
-pnpm --filter @prismshadow/penguin-core exec vitest run \
-  test/prompt-cache-invariants.test.ts \
-  test/prompt-cache-lifecycle.test.ts \
-  test/prompt-cache-simulator.test.ts
-```
+这三个测试集从 PenguinHarness 0.2.13 起就在仓库的 [`packages/core/test`](https://github.com/Prism-Shadow/penguin-harness/tree/v0.2.16/packages/core/test/helpers/prompt-cache) 里。#722 提出的几项改进仍未落地：在 MMSP 的 Claude 客户端里，把显式断点加在工具和系统提示词之后；为等待审批或后台任务超过五分钟的 Agent 提供可选的 1 小时缓存有效期；在 Trace 里记录请求指纹，让 Web App 能说明命中率为什么下降；以及透传 Anthropic 的缓存诊断，放到它所解释的用量旁边。
 
 ---
 

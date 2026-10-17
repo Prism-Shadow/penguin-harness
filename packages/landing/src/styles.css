@@ -273,3 +273,224 @@
     transform: none;
   }
 }
+
+/* ---------- Blog figures: inline SVG in a post's Markdown ----------
+   A drawn figure is a <figure class="post-figure"> holding an <svg class="fig-svg"> whose marks
+   carry the classes below, a visually hidden <ol class="fig-steps"> with the same content as
+   text, and a <figcaption>. The colours come from the sites' palette (site-content.css) and
+   follow the theme. A cache state keeps one colour in every figure: read is the solid brand
+   blue, written is the pale outlined blue, and written again (tokens the previous request had
+   already sent) is the mid amber with a dashed edge, so the three stay apart in greyscale. */
+.post-figure {
+  margin: 1.75rem 0;
+}
+.post-figure .fig-svg {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  height: auto;
+  margin: 0 auto;
+}
+.post-figure figcaption {
+  max-width: 600px;
+  margin: 0.625rem auto 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--site-gray-600);
+}
+html.dark .post-figure figcaption {
+  color: var(--site-gray-400);
+}
+/* The same content as text, for screen readers and for anything that reads the post's Markdown. */
+.post-figure .fig-steps {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.fig-svg text {
+  font-size: 12px;
+  fill: var(--site-gray-600);
+}
+.fig-svg .fig-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  fill: var(--site-gray-900);
+}
+.fig-svg .fig-label {
+  font-weight: 500;
+  fill: var(--site-gray-700);
+}
+.fig-svg .fig-note,
+.fig-svg .fig-tick {
+  font-size: 11.5px;
+  fill: var(--site-gray-500);
+}
+.fig-svg .fig-num {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  fill: var(--site-gray-800);
+}
+.fig-svg .fig-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+.fig-svg .fig-on-read {
+  font-weight: 600;
+  fill: #fff;
+}
+.fig-svg .fig-on-again {
+  font-weight: 600;
+  fill: var(--site-gray-900);
+}
+/* Cache states. */
+.fig-svg .fig-read {
+  fill: var(--site-brand-700);
+}
+.fig-svg .fig-written {
+  fill: var(--site-brand-50);
+  stroke: var(--site-brand-600);
+  stroke-width: 1;
+}
+.fig-svg .fig-again {
+  fill: color-mix(in oklab, var(--site-amber-300) 55%, var(--site-amber-800));
+  stroke: var(--site-amber-800);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+.fig-svg .fig-uncached {
+  fill: var(--site-gray-300);
+}
+/* A cost that is not a cache state: the baseline's share of an input-cost bar. */
+.fig-svg .fig-cost {
+  fill: var(--site-gray-300);
+}
+/* Markers: the breakpoint, the entry a later request reads, a context opening a new line. */
+.fig-svg .fig-bp {
+  fill: var(--site-gray-800);
+}
+.fig-svg .fig-link {
+  fill: none;
+  stroke: var(--site-gray-400);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.fig-svg .fig-entry-match {
+  stroke: var(--site-brand-700);
+  stroke-width: 3;
+}
+.fig-svg .fig-entry-miss {
+  stroke: var(--site-gray-400);
+  stroke-width: 3;
+}
+.fig-svg .fig-cross {
+  fill: none;
+  stroke: var(--site-amber-800);
+  stroke-width: 2;
+}
+.fig-svg .fig-opener {
+  fill: none;
+  stroke: var(--site-gray-600);
+  stroke-width: 1.5;
+}
+.fig-svg .fig-bracket,
+.fig-svg .fig-axis {
+  fill: none;
+  stroke: var(--site-gray-400);
+  stroke-width: 1;
+}
+.fig-svg .fig-ref {
+  fill: none;
+  stroke: var(--site-gray-600);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+/* Flowcharts: terminals, processes and edges, as in the MMSP docs. */
+.fig-svg .fig-box,
+.fig-svg .fig-terminal {
+  fill: #fff;
+  stroke: var(--site-gray-400);
+  stroke-width: 1.25;
+}
+.fig-svg .fig-terminal {
+  fill: var(--site-gray-50);
+}
+.fig-svg .fig-edge {
+  fill: none;
+  stroke: var(--site-gray-500);
+  stroke-width: 1.25;
+}
+.fig-svg .fig-arrowhead {
+  fill: var(--site-gray-500);
+}
+html.dark .fig-svg text {
+  fill: var(--site-gray-400);
+}
+html.dark .fig-svg .fig-title {
+  fill: var(--site-gray-100);
+}
+html.dark .fig-svg .fig-label {
+  fill: var(--site-gray-300);
+}
+html.dark .fig-svg .fig-note,
+html.dark .fig-svg .fig-tick {
+  fill: var(--site-gray-500);
+}
+html.dark .fig-svg .fig-num {
+  fill: var(--site-gray-200);
+}
+html.dark .fig-svg .fig-on-read {
+  fill: var(--site-gray-950);
+}
+html.dark .fig-svg .fig-read {
+  fill: var(--site-brand-300);
+}
+html.dark .fig-svg .fig-written {
+  fill: var(--site-brand-950);
+  stroke: var(--site-brand-400);
+}
+html.dark .fig-svg .fig-again {
+  fill: color-mix(in oklab, var(--site-amber-300) 70%, var(--site-amber-800));
+  stroke: var(--site-amber-300);
+}
+html.dark .fig-svg .fig-uncached,
+html.dark .fig-svg .fig-cost {
+  fill: var(--site-gray-600);
+}
+html.dark .fig-svg .fig-bp {
+  fill: var(--site-gray-200);
+}
+html.dark .fig-svg .fig-link,
+html.dark .fig-svg .fig-entry-miss,
+html.dark .fig-svg .fig-bracket,
+html.dark .fig-svg .fig-axis {
+  stroke: var(--site-gray-600);
+}
+html.dark .fig-svg .fig-entry-match {
+  stroke: var(--site-brand-300);
+}
+html.dark .fig-svg .fig-cross {
+  stroke: var(--site-amber-300);
+}
+html.dark .fig-svg .fig-opener,
+html.dark .fig-svg .fig-ref {
+  stroke: var(--site-gray-400);
+}
+html.dark .fig-svg .fig-box {
+  fill: var(--site-gray-950);
+  stroke: var(--site-gray-600);
+}
+html.dark .fig-svg .fig-terminal {
+  fill: var(--site-gray-900);
+  stroke: var(--site-gray-600);
+}
+html.dark .fig-svg .fig-edge {
+  stroke: var(--site-gray-500);
+}
+html.dark .fig-svg .fig-arrowhead {
+  fill: var(--site-gray-500);
+}
