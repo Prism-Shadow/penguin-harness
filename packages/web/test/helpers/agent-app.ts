@@ -17,8 +17,8 @@
  * either, which the Memory tab reads for its layout breakpoint: every query answers "no match".
  */
 import { vi } from "vitest";
-import { createElement as h } from "react";
-import type { ReactElement } from "react";
+import { createElement as h, type ReactElement } from "react";
+
 import { Link, Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import type {
@@ -44,8 +44,7 @@ import { NavigationGuard } from "../../src/lib/unsaved/navigation-guard";
 import { UnsavedPrompt } from "../../src/lib/unsaved/unsaved-prompt";
 import { ADMIN_ME } from "./admin-settings";
 import { mount } from "./dom";
-import { apiError, json, stubFetch } from "./fetch";
-import type { FakeFetch, FetchRequest } from "./fetch";
+import { apiError, json, stubFetch, type FakeFetch, type FetchRequest } from "./fetch";
 
 export const PROJECT_ID = "proj";
 export const AGENT_ID = "helper";

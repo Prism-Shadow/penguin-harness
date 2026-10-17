@@ -61,20 +61,19 @@ import {
   normalizeSessionSource,
   parseBackgroundTaskDoneMessage,
   parseUserSteeringText,
+  type ApprovalDecision,
+  type CompactionMode,
+  type CompactionReason,
+  type CompleteModelPayload,
+  type EventPayload,
+  type OmniMessage,
+  type PartialModelPayload,
+  type SessionMetaPayload,
+  type SessionSource,
+  type StopReason,
+  type TokenUsagePayload,
 } from "@prismshadow/penguin-core/omnimessage";
-import type {
-  ApprovalDecision,
-  CompactionMode,
-  CompactionReason,
-  CompleteModelPayload,
-  EventPayload,
-  OmniMessage,
-  PartialModelPayload,
-  SessionMetaPayload,
-  SessionSource,
-  StopReason,
-  TokenUsagePayload,
-} from "@prismshadow/penguin-core/omnimessage";
+
 import type { TracePosition } from "@prismshadow/penguin-server/api";
 import {
   addLlmDuration,
@@ -87,10 +86,16 @@ import {
   resetTaskCounters,
   trackMainUsage,
   trackSubagentUsage,
+  type TaskStats,
+  type TaskStatsTracker,
 } from "./task-stats";
-import type { TaskStats, TaskStatsTracker } from "./task-stats";
-import { classifyMemoryPath, mergeMemoryChanges } from "./memory-changes";
-import type { MemoryChangeEntry, MemoryChangeRow } from "./memory-changes";
+
+import {
+  classifyMemoryPath,
+  mergeMemoryChanges,
+  type MemoryChangeEntry,
+  type MemoryChangeRow,
+} from "./memory-changes";
 
 // ---------------------------------------------------------------------------
 // View model types

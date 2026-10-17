@@ -6,8 +6,8 @@
  * composer's entry points. The page provides it once around both docks; a body reads it with
  * useChatDock.
  */
-import { createContext, useContext } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
+
 import type { ModelsResponse, SessionInfo } from "@prismshadow/penguin-server/api";
 import type { PermissionPick } from "../../lib/permission-level";
 import type { StreamModel } from "../../lib/omni/stream-model";

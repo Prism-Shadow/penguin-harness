@@ -24,8 +24,8 @@
  * a zip another server imports, for any member whenever its package is on this server — and,
  * for an admin, Delete on a package an admin installed on the server.
  */
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+
 import type { AgentSummary, PluginItem, QuickStartItem } from "@prismshadow/penguin-server/api";
 import {
   AgentAvatar,
@@ -44,10 +44,10 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { cardBodyClick } from "../../lib/card-open";
 import { apiErrorText } from "../../lib/api-error";
-import { downloadArchive } from "../agents/archive-download";
+import { downloadArchive } from "../agents";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName } from "../../state/project";
-import { SkillTile } from "../skills/skill-icon-view";
+import { SkillTile } from "../skills";
 import { MetaLine, PluginDetailModal, moduleOnThisServer } from "./plugin-detail";
 import type { PluginRow } from "./plugin-groups";
 import { McpServerMarks, McpSetUpModal, StdioInstallBody } from "./plugin-mcp";

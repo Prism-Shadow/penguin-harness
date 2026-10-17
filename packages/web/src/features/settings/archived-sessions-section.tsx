@@ -57,12 +57,10 @@ import {
   shownRows,
   targetCount,
   wholeGroupChosen,
-} from "./archived-sessions-state";
-import type {
-  ArchiveFilters,
-  ArchiveStore,
-  ArchiveTarget,
-  GroupRows,
+  type ArchiveFilters,
+  type ArchiveStore,
+  type ArchiveTarget,
+  type GroupRows,
 } from "./archived-sessions-state";
 
 /** How long typing in the search box rests before the page reads again. */

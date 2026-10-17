@@ -9,7 +9,7 @@ import {
   arrowSequence,
   controlCode,
   hasModifier,
-} from "../src/features/terminal/terminal-keys";
+} from "../terminal-keys";
 
 const CTRL = { ctrl: true, alt: false };
 const ALT = { ctrl: false, alt: true };

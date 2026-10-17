@@ -9,7 +9,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.ts", "src/features/*/test/**/*.test.ts"],
     // Every vi.stubGlobal (fetch, localStorage, …) is undone before the next test starts.
     unstubGlobals: true,
     // `vitest run --coverage`: branch and line coverage of the app's own source.

@@ -23,8 +23,8 @@
  * {{SKILLS}}-placeholder alert (with legacy-template migration) and the editable
  * skills.prompt section, mirroring the Memory tab.
  */
-import { useCallback, useEffect, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import {
   Button,
@@ -59,8 +59,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { SkillTile } from "../skills/skill-icon-view";
-import { localizedShortText } from "../chat/skill-use";
+import { SkillTile } from "../skills";
+import { localizedShortText } from "../../lib/skill-use";
 import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
 import { buildImportPrompt } from "./skill-import-source";

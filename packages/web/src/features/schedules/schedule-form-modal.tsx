@@ -46,9 +46,9 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { ModelCatalogSelect } from "../chat/model-select";
-import { WorkspaceSelect } from "../chat/workspace-select";
-import { sameModelRef } from "../models/model-grouping";
+import { ModelCatalogSelect, WorkspaceSelect } from "../chat";
+
+import { sameModelRef } from "../models";
 import { itemModelRef } from "./schedule-upsert";
 
 /** ISO → datetime-local input value (local timezone, minute precision); returns "" when missing/invalid. */

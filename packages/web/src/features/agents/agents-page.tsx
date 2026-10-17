@@ -20,8 +20,8 @@
  * .claude/skills. A plain new Agent otherwise starts with none. A picked plugin with a stdio MCP
  * server asks before the Agent is created, showing the command it runs on this server.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+
 import { Link, useLocation, useNavigate } from "react-router";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
 import {
@@ -61,16 +61,15 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { prepareNewChatDraft } from "../chat/new-chat";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-import { mergeAgents } from "../../lib/benchmark-merge";
-import type { AgentSource } from "../../lib/benchmark-merge";
+import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
+
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
+
+import { mergeAgents, type AgentSource } from "../../lib/benchmark-merge";
+
 import { useSessions } from "../../state/sessions";
 import { employmentsOf, splitByEmployment } from "./agent-employment";
-import { CreateAgentDialog } from "./create-agent-dialog";
-import type { PluginPickItem } from "./create-agent-dialog";
+import { CreateAgentDialog, type PluginPickItem } from "./create-agent-dialog";
 
 /** Built-in Agents; the server also rejects deletion, so no delete entry point is shown here. */
 const BUILTIN_AGENT_IDS = new Set(["default_agent", "penguin_support"]);

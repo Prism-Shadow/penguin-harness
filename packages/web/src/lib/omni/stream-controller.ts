@@ -29,8 +29,13 @@
  *   the buffer replays on top — so the in-progress message survives a refresh
  *   with its streamed prefix intact and keeps streaming.
  */
-import { isEventMessage, isPartialPayload } from "@prismshadow/penguin-core/omnimessage";
-import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core/omnimessage";
+import {
+  isEventMessage,
+  isPartialPayload,
+  type OmniMessage,
+  type ToolCallPayload,
+} from "@prismshadow/penguin-core/omnimessage";
+
 import type {
   GoalServerEvent,
   MessagesLiveTail,
@@ -53,8 +58,10 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
+  type ChatItem,
+  type StreamModel,
 } from "./stream-model";
-import type { ChatItem, StreamModel } from "./stream-model";
+
 import { seedPriorStats } from "./task-stats";
 
 /** A single pending approval (keyed by approvalKey(origin, toolCallId)). */

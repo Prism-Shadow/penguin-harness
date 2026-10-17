@@ -21,8 +21,9 @@ import {
   REMARK_PLUGINS,
   RequiredMark,
   ZoomableImage,
+  type BadgeStyle,
 } from "@prismshadow/penguin-ui";
-import type { BadgeStyle } from "@prismshadow/penguin-ui";
+
 import ReactMarkdown from "react-markdown";
 import { S } from "../../lib/strings";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";

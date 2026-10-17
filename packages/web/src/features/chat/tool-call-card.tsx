@@ -13,14 +13,19 @@
  */
 import { useMemo } from "react";
 import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
-import { ToolCallCard, useElapsedPast } from "@prismshadow/penguin-ui";
-import type { RunState, ToolCallDuration } from "@prismshadow/penguin-ui";
+import {
+  ToolCallCard,
+  useElapsedPast,
+  type RunState,
+  type ToolCallDuration,
+} from "@prismshadow/penguin-ui";
+
 import { S } from "../../lib/strings";
 import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { routedUrl } from "../../lib/session-machines";
-import { approvalKey } from "../../lib/omni/stream-model";
-import type { ToolCallItem } from "../../lib/omni/stream-model";
+import { approvalKey, type ToolCallItem } from "../../lib/omni/stream-model";
+
 import { useTheme } from "../../state/theme";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
 import { SessionSubagentChip } from "./subagent-chip";

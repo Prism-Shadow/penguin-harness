@@ -26,8 +26,8 @@ import {
   roundsToRead,
   staleRounds,
   visibleRounds,
+  type RoundRange,
 } from "../src/features/traces/trace-rounds";
-import type { RoundRange } from "../src/features/traces/trace-rounds";
 
 /** One synthetic event, identified by its index in the file so a read's slice can be checked exactly. */
 const event = (i: number): OmniMessage => ({

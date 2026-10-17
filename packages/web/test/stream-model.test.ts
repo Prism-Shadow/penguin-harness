@@ -65,12 +65,11 @@ import {
   toolCallOutput,
   userText,
   withOrigin,
+  type OmniMessage,
+  type SessionMetaPayload,
+  type TokenCounts,
 } from "@prismshadow/penguin-core/omnimessage";
-import type {
-  OmniMessage,
-  SessionMetaPayload,
-  TokenCounts,
-} from "@prismshadow/penguin-core/omnimessage";
+
 import {
   approvalKey,
   buildDedupIndex,
@@ -83,22 +82,20 @@ import {
   pushMessage,
   pushMessages,
   registerLocalDecision,
+  type AssistantTextItem,
+  type BackgroundNoticeItem,
+  type CompactionItem,
+  type McpConnectItem,
+  type ReconnectItem,
+  type StreamModel,
+  type SubagentItem,
+  type TaskStatsItem,
+  type ThinkingItem,
+  type ToolCallItem,
+  type UserSteeringItem,
+  type UserTextItem,
 } from "../src/lib/omni/stream-model";
 import { liveSessionElapsedMs } from "../src/lib/omni/task-stats";
-import type {
-  AssistantTextItem,
-  BackgroundNoticeItem,
-  CompactionItem,
-  McpConnectItem,
-  ReconnectItem,
-  StreamModel,
-  SubagentItem,
-  TaskStatsItem,
-  ThinkingItem,
-  ToolCallItem,
-  UserSteeringItem,
-  UserTextItem,
-} from "../src/lib/omni/stream-model";
 
 /** A completion notice as core delivers it: steered (engine drain) or unstamped (idle take). */
 function noticeText(delivery?: "steering"): string {

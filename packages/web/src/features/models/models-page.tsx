@@ -53,8 +53,17 @@
  * write and closes only once it landed — a refused one leaves the table as it was and the draft
  * in the dialog — and closing it with unsaved edits asks first.
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type ReactNode,
+} from "react";
+
 import type {
   CredentialInfo,
   ModelProtocolDetectRequest,
@@ -116,10 +125,10 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
-import { USD_TO_CNY, useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { USD_TO_CNY, useTheme, type Currency } from "../../state/theme";
+
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
+
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
@@ -132,12 +141,11 @@ import {
   modelHomepageUrl,
   providerInfo,
   unroutableVendorModel,
+  type FastModeProtocol,
+  type ModelProviderBridgeAuth,
+  type ModelProviderInfo,
 } from "@prismshadow/penguin-core/model-catalog";
-import type {
-  FastModeProtocol,
-  ModelProviderBridgeAuth,
-  ModelProviderInfo,
-} from "@prismshadow/penguin-core/model-catalog";
+
 import {
   allGroupKeys,
   discountedPrice,
@@ -165,8 +173,10 @@ import {
   needsProtocolDetectOnSave,
   protocolForPersist,
   protocolSelectorValue,
+  type InheritedProtocol,
+  type ProtocolClientType,
 } from "./protocol-types";
-import type { InheritedProtocol, ProtocolClientType } from "./protocol-types";
+
 import {
   isGroupExpanded,
   loadExpandedProviders,
@@ -182,14 +192,20 @@ import {
   storeModelGroupPins,
   storeModelGroupsFolded,
   withModelGroupPinned,
+  type ModelGroupPins,
 } from "./model-group-pins";
-import type { ModelGroupPins } from "./model-group-pins";
-import { clearDraftModelRef } from "../chat/draft-cache";
+
+import { clearDraftModelRef } from "../chat";
 import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { AddNewModelsButton, AddNewModelsConfirm, RestoreDefaultsConfirm } from "./preset-sync";
-import type { PresetSyncHost } from "./preset-sync";
+import {
+  AddNewModelsButton,
+  AddNewModelsConfirm,
+  RestoreDefaultsConfirm,
+  type PresetSyncHost,
+} from "./preset-sync";
+
 import { buildImportedRows, groupImportConnection } from "./group-import";
 import {
   applyProviderUpdate,
@@ -197,8 +213,9 @@ import {
   groupShape,
   inheritedConnection,
   rowKey,
+  type ProviderConnections,
 } from "./connection";
-import type { ProviderConnections } from "./connection";
+
 import { ProviderSettingsDialog } from "./provider-settings-dialog";
 import { GroupSettingsControl } from "./group-settings-menu";
 import {
@@ -207,13 +224,14 @@ import {
   sortModelGroups,
   storeModelGroupSorts,
   withModelGroupSort,
+  type ModelGroupSort,
 } from "./model-sort";
-import type { ModelGroupSort } from "./model-sort";
-import { tpsTone, ttftTone } from "./speed-test";
-import type { SpeedResult, SpeedTone } from "./speed-test";
+
+import { tpsTone, ttftTone, type SpeedResult, type SpeedTone } from "./speed-test";
+
 import { toneInk } from "../../lib/tone";
-import { KeyAuthDialog } from "./key-auth-dialog";
-import type { KeyAuthTexts } from "./key-auth-dialog";
+import { KeyAuthDialog, type KeyAuthTexts } from "./key-auth-dialog";
+
 import {
   HEADER_BUTTON,
   HEADER_LABEL,
@@ -221,12 +239,19 @@ import {
   groupHeaderActions,
   groupKeyFromEnv,
   groupKeyStored,
+  type GroupHeaderAction,
 } from "./group-header";
-import type { GroupHeaderAction } from "./group-header";
+
 import { GroupBalance } from "./group-balance";
 import { DisconnectConfirm, GroupConnection } from "./group-connection";
-import { DetailsFold, MODEL_DIALOG_SLOTS, foldedErrors, foldedSlots } from "./model-dialog-details";
-import type { ModelDialogSlot } from "./model-dialog-details";
+import {
+  DetailsFold,
+  MODEL_DIALOG_SLOTS,
+  foldedErrors,
+  foldedSlots,
+  type ModelDialogSlot,
+} from "./model-dialog-details";
+
 import { isPinned, usePinnedBalance } from "./balance";
 import { TOKENDANCE_PROVIDER_ID, TokenDanceBanner } from "./tokendance-banner";
 

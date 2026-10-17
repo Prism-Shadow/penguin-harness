@@ -100,8 +100,15 @@ import {
 } from "../src/lib/session-grouping";
 import { forgetSessionMachines, machineForSession } from "../src/lib/session-machines";
 import { cachedMachineSessions, rememberMachineSessions } from "../src/lib/machine-cache";
-import { apiError, json, stubFetch } from "./helpers/fetch";
-import type { FakeFetch, FetchHandler, FetchRequest } from "./helpers/fetch";
+import {
+  apiError,
+  json,
+  stubFetch,
+  type FakeFetch,
+  type FetchHandler,
+  type FetchRequest,
+} from "./helpers/fetch";
+
 import { stubLocalStorage } from "./helpers/storage";
 
 /** A server's answer for one Agent: its list, or an HTTP failure. */

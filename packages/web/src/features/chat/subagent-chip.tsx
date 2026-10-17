@@ -7,8 +7,8 @@
  */
 import { SubagentChip } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { hasPendingWithinOrigin } from "../../lib/omni/stream-model";
-import type { StreamModel } from "../../lib/omni/stream-model";
+import { hasPendingWithinOrigin, type StreamModel } from "../../lib/omni/stream-model";
+
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { resolveAgentLabel, shortSessionId } from "./agent-topology";

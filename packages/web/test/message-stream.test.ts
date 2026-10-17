@@ -8,11 +8,11 @@
  * while it is the stream's last item and no Task runs.
  */
 import { describe, expect, it, vi } from "vitest";
-import { createElement } from "react";
-import type { MouseEvent } from "react";
+import { createElement, type MouseEvent } from "react";
+
 import { renderToStaticMarkup } from "react-dom/server";
-import { MessageStream } from "../src/features/chat/message-stream";
-import type { StreamRenderContext } from "../src/features/chat/message-stream";
+import { MessageStream, type StreamRenderContext } from "../src/features/chat/message-stream";
+
 import type { ChatItem } from "../src/lib/omni/stream-model";
 import type { LinkBehavior } from "../src/lib/reply-link";
 import { S } from "../src/lib/strings";

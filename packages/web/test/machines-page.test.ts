@@ -45,8 +45,8 @@
  * rendered to static markup and read back as a tree (test/helpers/markup.ts). The dialog's verbs are found by their `data-verb`,
  * its steps by their `data-step`, the card's buttons by their `data-action`, never by their words.
  */
-import { createElement, isValidElement } from "react";
-import type { ReactElement, ReactNode } from "react";
+import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -57,17 +57,19 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as ui from "@prismshadow/penguin-ui";
 import { Button, RuledSection } from "@prismshadow/penguin-ui";
-import { MachineCard, machineMark } from "../src/features/machines/machine-card";
-import type { MachineCardProps } from "../src/features/machines/machine-card";
+import {
+  MachineCard,
+  machineMark,
+  type MachineCardProps,
+} from "../src/features/machines/machine-card";
 import {
   JobSteps,
   LogFold,
   MachineDetailBody,
+  type MachineDetailBodyProps,
+  type MachineVerb,
 } from "../src/features/machines/machine-detail-dialog";
-import type {
-  MachineDetailBodyProps,
-  MachineVerb,
-} from "../src/features/machines/machine-detail-dialog";
+
 import { machineChip } from "../src/features/machines/machine-detail-view";
 import { readMachine, updateNotice } from "../src/features/machines/machines-view";
 import { formatShortDateTime } from "../src/lib/format";

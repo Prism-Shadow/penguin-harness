@@ -14,8 +14,8 @@
  */
 import { ChangesCard, ICONS } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
-import { memoryRowKey } from "../../lib/omni/memory-changes";
+import { type MemoryChangeRow, memoryRowKey } from "../../lib/omni/memory-changes";
+
 import { scopeGlyph } from "./memory-view";
 
 export function MemoryChangesCard({

@@ -20,8 +20,8 @@ import { useNavigate } from "react-router";
 import { hasUnsaved } from "@prismshadow/penguin-ui";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { CreateAgentDialog } from "../src/features/agents/create-agent-dialog";
-import type { PluginPickItem } from "../src/features/agents/create-agent-dialog";
+import { CreateAgentDialog, type PluginPickItem } from "../src/features/agents/create-agent-dialog";
+
 import {
   PROJECT_ID,
   agentServer,

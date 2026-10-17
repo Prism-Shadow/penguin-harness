@@ -6,9 +6,10 @@
  * does for a user with those preferences.
  *
  * The app's own entry reconciles browser storage against the server's data root before
- * mounting; a frame's storage is fresh every load, so there is nothing to reconcile and the
- * app mounts at once. KaTeX's stylesheet comes with the shared UI package's Markdown (its prose
- * component imports it), as it does in the app.
+ * mounting; a frame's storage is fresh every load, so there is nothing to reconcile, and the
+ * app mounts as soon as its module tree has booted (`bootWeb`, as in the app's entry). KaTeX's
+ * stylesheet comes with the shared UI package's Markdown (its prose component imports it), as
+ * it does in the app.
  *
  * `open=settings` (or `settings.<page>`) asks the app for its Settings dialog through the
  * app's own request seam, which the account menu answers as soon as it mounts; `embed=1` makes
@@ -17,6 +18,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../../web/src/app";
+import { bootWeb } from "../../../web/src/web-root";
 import { requestSettings } from "../../../web/src/features/settings/settings-request";
 import type { SettingsSectionKey } from "../../../web/src/lib/settings-sections";
 import "./app.css";
@@ -66,18 +68,20 @@ if (window.parent !== window) {
 const container = document.getElementById("root");
 if (!container) throw new Error("#root mount point not found");
 
-createRoot(container).render(
-  <StrictMode>
-    <App initialPath={params.route} />
-  </StrictMode>,
-);
+void bootWeb().then((Root) => {
+  createRoot(container).render(
+    <StrictMode>
+      <App Root={Root} initialPath={params.route} />
+    </StrictMode>,
+  );
 
-if (params.open === "settings" || params.open?.startsWith("settings.")) {
-  const page = params.open.slice("settings.".length);
-  requestSettings(isSettingsPage(page) ? { section: page } : {});
-}
+  if (params.open === "settings" || params.open?.startsWith("settings.")) {
+    const page = params.open.slice("settings.".length);
+    requestSettings(isSettingsPage(page) ? { section: page } : {});
+  }
 
-// What the screenshot script waits for: the app mounted and its fonts loaded.
-void document.fonts.ready.then(() => {
-  document.documentElement.dataset.galleryReady = "1";
+  // What the screenshot script waits for: the app mounted and its fonts loaded.
+  void document.fonts.ready.then(() => {
+    document.documentElement.dataset.galleryReady = "1";
+  });
 });

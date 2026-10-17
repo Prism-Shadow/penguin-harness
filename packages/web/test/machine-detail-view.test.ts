@@ -57,10 +57,11 @@ import {
   machineToolbar,
   programDirOf,
   reconnectView,
+  type Fact,
 } from "../src/features/machines/machine-detail-view";
-import type { Fact } from "../src/features/machines/machine-detail-view";
-import { readingTone } from "../src/features/machines/machines-view";
-import type { MachineReading } from "../src/features/machines/machines-view";
+
+import { readingTone, type MachineReading } from "../src/features/machines/machines-view";
+
 import { formatDateTime, formatShortDateTime } from "../src/lib/format";
 import { S } from "../src/lib/strings";
 

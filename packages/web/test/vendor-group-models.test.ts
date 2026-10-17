@@ -25,8 +25,8 @@ import {
   unroutableVendorModel,
 } from "@prismshadow/penguin-core/model-catalog";
 import { groupHeaderActions } from "../src/features/models/group-header";
-import { ModelCard, unroutableFix } from "../src/features/models/models-page";
-import type { RowState } from "../src/features/models/models-page";
+import { ModelCard, unroutableFix, type RowState } from "../src/features/models/models-page";
+
 import { S, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 

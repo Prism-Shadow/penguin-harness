@@ -9,8 +9,8 @@
  * still resets everything); the Provider is a thin lifecycle component that triggers the
  * initial fetches and republishes the store's state through the same context value as before.
  */
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+
 import type { AgentSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";

@@ -20,8 +20,8 @@
  * Opening the chat hands the source over, so the draft is forgotten before the page moves to the
  * conversation.
  */
-import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+
 import type { AgentSummary, BenchmarkSummary } from "@prismshadow/penguin-server/api";
 import {
   Button,

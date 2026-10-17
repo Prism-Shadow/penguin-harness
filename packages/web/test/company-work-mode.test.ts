@@ -15,15 +15,14 @@
  *   choice is kept as it was.
  * - Entering company mode is the user's own move, and only while it is available.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MockInstance } from "vitest";
+import { beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
+
 import { BETA_NOTICE_KEY } from "../src/features/company/company-beta";
 import { WORK_MODE_KEY } from "../src/lib/work-mode";
 import { companyModeAvailable, createCompanyStore, effectiveWorkMode } from "../src/state/company";
-import { json, stubFetch } from "./helpers/fetch";
-import type { FakeFetch } from "./helpers/fetch";
-import { memoryStorage, stubLocalStorage } from "./helpers/storage";
-import type { MemoryStorage } from "./helpers/storage";
+import { json, stubFetch, type FakeFetch } from "./helpers/fetch";
+
+import { memoryStorage, stubLocalStorage, type MemoryStorage } from "./helpers/storage";
 
 let storage: MemoryStorage;
 let setItem: MockInstance<Storage["setItem"]>;

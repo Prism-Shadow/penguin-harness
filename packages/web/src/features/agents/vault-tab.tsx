@@ -30,8 +30,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
+
 import { VaultAddDialog } from "./vault-add-dialog";
 
 export function VaultTab({

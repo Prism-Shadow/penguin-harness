@@ -40,8 +40,9 @@ import {
   switchedOff,
   typedDraftOf,
   valueOf,
+  type Draft,
 } from "./plugin-config-draft";
-import type { Draft } from "./plugin-config-draft";
+
 import { ConfigField } from "./plugin-config-field";
 import { ConfigHeading } from "./plugin-config-heading";
 

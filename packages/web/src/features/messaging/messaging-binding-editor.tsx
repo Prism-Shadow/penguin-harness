@@ -47,8 +47,8 @@
  * editor's unsaved edits with the shared guard under a scope of its own, so leaving it asks
  * first — the dialog's close, the dock tab's ×, a route change.
  */
-import { useEffect, useId, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+
 import type {
   MessagingBindingInfo,
   MessagingBindingsResponse,

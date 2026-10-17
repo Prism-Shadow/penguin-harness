@@ -23,8 +23,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
-import { groupModelRows } from "../src/features/models/model-grouping";
-import type { ModelRowLike, PricingBucketsLike } from "../src/features/models/model-grouping";
+import {
+  groupModelRows,
+  type ModelRowLike,
+  type PricingBucketsLike,
+} from "../src/features/models/model-grouping";
+
 import {
   MODEL_GROUP_SORTS_KEY,
   blendedPrice,

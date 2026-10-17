@@ -30,6 +30,7 @@ import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navKeysFor } from "../../lib/nav-group-collapse";
+import { navPagesOf, useWebAppPages } from "../../web-app";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { backgroundStyle, useBackground } from "../../state/background";
 import { useAuth } from "../../state/auth";
@@ -42,7 +43,7 @@ import { useCompany } from "../../state/company";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
 import { ChannelRailRows, DefaultChannelRailRow } from "../../features/company/channel-sidebar";
 import { DeskRailRows, TempSessionRailRows } from "../../features/company/org-session-groups";
-import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../features/company/company-nav";
+import { COMPANY_NAV_KEYS, orgPagePath, parseOrgKey } from "../../lib/company-nav";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { FindBar } from "../find/find-bar";
 import { UserMenu } from "./user-menu";
@@ -51,10 +52,9 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { AppInfoDialog } from "../account/app-info-dialog";
-import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { TerminalDockRuntime } from "../../features/terminal";
 import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
-import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
-import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
+import { BuiltinBrowserLayer, dispatchBrowser } from "../../features/builtin-browser";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
 
@@ -86,6 +86,7 @@ function pinnedSidebarOnScreen(): boolean {
  */
 function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
+  const navPages = navPagesOf(useWebAppPages());
   const navigate = useNavigate();
   const { currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
@@ -133,16 +134,18 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     icon: string;
     note: string | null;
   }> = inCompany
-    ? COMPANY_NAV_KEYS.map((key) => ({
-        key,
-        // The six entries keep their places with no organization, disabled: a rail that
-        // empties itself reads as a broken shell rather than as an empty one.
-        to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
-        label: S.nav.org[key],
-        icon: COMPANY_NAV_ICONS[key],
-        note: null,
-      }))
-    : navKeysFor(user?.isAdmin === true).map((key) => ({
+    ? [
+        ...COMPANY_NAV_KEYS.map((key) => ({
+          key,
+          // The six entries keep their places with no organization, disabled: a rail that
+          // empties itself reads as a broken shell rather than as an empty one.
+          to: navOrg === null ? null : orgPagePath(navOrg.projectId, navOrg.orgId, key),
+          label: S.nav.org[key],
+          icon: COMPANY_NAV_ICONS[key],
+          note: null as string | null,
+        })),
+      ]
+    : navKeysFor(navPages, user?.isAdmin === true).map((key) => ({
         key,
         to: `/${key}`,
         label: S.nav[key],

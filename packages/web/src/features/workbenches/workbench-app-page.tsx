@@ -23,7 +23,7 @@ import {
   type WorkbenchTab,
 } from "../../lib/workbench-tabs";
 import { rememberSelection } from "../../state/project";
-import { AppPalette } from "../palette/app-palette";
+import { AppPalette } from "../palette";
 import { openUserEvents } from "../../api/sse";
 import { WorkbenchFrame } from "./workbench-tabs";
 

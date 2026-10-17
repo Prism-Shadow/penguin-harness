@@ -10,14 +10,14 @@
  * an account, not an error the user made on this page.
  */
 import { useEffect, useState } from "react";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { type ModelProviderInfo, providerInfo } from "@prismshadow/penguin-core/model-catalog";
+
 import { ChevronDown, Dropdown, Menu, MenuItem, ProviderLogo } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
-import { useTheme } from "../../state/theme";
-import type { Currency } from "../../state/theme";
+import { useTheme, type Currency } from "../../state/theme";
+
 import {
   displayBalance,
   formatBalance,
@@ -26,8 +26,9 @@ import {
   setPinnedBalance,
   useBalance,
   usePinnedBalance,
+  type BalanceState,
 } from "./balance";
-import type { BalanceState } from "./balance";
+
 import { HEADER_TEXT } from "./group-header";
 
 /** How often the pinned balance is read again while the app is open (plus once per page load). */

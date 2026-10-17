@@ -17,8 +17,8 @@ import {
   caretOnLastLine,
   historyStepBack,
   historyStepForward,
+  type HistoryNav,
 } from "../src/features/chat/input-history";
-import type { HistoryNav } from "../src/features/chat/input-history";
 
 let nextId = 0;
 const user = (text: string): ChatItem => ({ kind: "user_text", id: nextId++, text });

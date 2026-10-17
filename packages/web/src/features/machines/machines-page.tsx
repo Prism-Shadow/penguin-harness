@@ -66,11 +66,11 @@ import {
 } from "./machines-view";
 import { probeDelayMs, probeFingerprint } from "./probe-schedule";
 import { SshHostDialog } from "./ssh-host-dialog";
-import { AddMachineDialog } from "./add-machine-dialog";
-import type { AddedMachines } from "./add-machine-dialog";
+import { AddMachineDialog, type AddedMachines } from "./add-machine-dialog";
+
 import { MachineCard } from "./machine-card";
-import { MachineDetailDialog } from "./machine-detail-dialog";
-import type { MachineVerb } from "./machine-detail-dialog";
+import { MachineDetailDialog, type MachineVerb } from "./machine-detail-dialog";
+
 import { programDirOf } from "./machine-detail-view";
 
 /** While a job is on its way, the page reads the list this often too: a net under the server's word. */

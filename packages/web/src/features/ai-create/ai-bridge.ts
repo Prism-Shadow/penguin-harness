@@ -16,10 +16,14 @@ import { useNavigate } from "react-router";
 import type { ModelRefDto } from "@prismshadow/penguin-server/api";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
-import type { DraftCache } from "../chat/draft-cache";
-import { parkActiveDraft } from "../chat/draft-sessions";
+import {
+  DRAFT_SESSION_ID,
+  draftKey,
+  loadDraft,
+  saveDraft,
+  type DraftCache,
+  parkActiveDraft,
+} from "../chat";
 
 export interface AiChatRequest {
   /** The agent that does the work (normally pickDefaultAgent's choice). */

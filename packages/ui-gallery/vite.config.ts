@@ -129,6 +129,9 @@ export default defineConfig({
     watchPackageSources(),
   ],
   resolve: { dedupe: ["react", "react-dom"] },
+  // The app's module classes use standard decorators; the dev server must lower them, as in
+  // the app's own config.
+  esbuild: { target: "es2022" },
   build: {
     // Never inline a font, as in the web app: a small slice would otherwise sit in the
     // stylesheet as a data: URI, whatever theme is shown.

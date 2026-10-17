@@ -10,8 +10,8 @@ import {
   effectiveConnection,
   modelEnvPreviewKey,
   providerInfo,
+  type ProviderConnectionShape,
 } from "@prismshadow/penguin-core/model-catalog";
-import type { ProviderConnectionShape } from "@prismshadow/penguin-core/model-catalog";
 
 /**
  * The protocols the in-field protocol menu offers, in its order: five of MMSP's compatible

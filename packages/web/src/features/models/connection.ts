@@ -10,11 +10,13 @@
  * only source: a field neither the row nor its group sets is the client's default, and the
  * catalog is never consulted.
  */
-import { effectiveConnection, groupKeyReaches } from "@prismshadow/penguin-core/model-catalog";
-import type {
-  EffectiveConnection,
-  ProviderConnectionShape,
+import {
+  effectiveConnection,
+  groupKeyReaches,
+  type EffectiveConnection,
+  type ProviderConnectionShape,
 } from "@prismshadow/penguin-core/model-catalog";
+
 import type {
   CredentialInfo,
   ProviderConnectionDto,

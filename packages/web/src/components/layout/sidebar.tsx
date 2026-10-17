@@ -43,8 +43,15 @@
  * column's muted surface a hover and a selection are washes of the ink (NAV_FILL), and a running
  * status is a small mark, never a block of colour.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type ReactNode,
+} from "react";
+
 import { useLocation, useMatch, useNavigate } from "react-router";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import {
@@ -86,8 +93,9 @@ import {
   toastInfo,
   toastSuccess,
   useArrived,
+  type SidebarDropTarget,
 } from "@prismshadow/penguin-ui";
-import type { SidebarDropTarget } from "@prismshadow/penguin-ui";
+
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeShort } from "../../lib/format";
@@ -97,8 +105,9 @@ import {
   sessionActivityLabel,
   sessionBackgroundTasks,
   sessionRowActivity,
+  type SessionActivity,
 } from "../../lib/session-activity";
-import type { SessionActivity } from "../../lib/session-activity";
+
 import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
@@ -138,8 +147,11 @@ import {
   storeNavGroupCollapsed,
   storeNavPinOverrides,
   withNavPinned,
+  type NavEntryKey,
+  type NavGroupKey,
 } from "../../lib/nav-group-collapse";
-import type { NavEntryKey, NavGroupKey } from "../../lib/nav-group-collapse";
+
+import { navPagesOf, useWebAppPages } from "../../web-app";
 import {
   loadPinnedSessions,
   removePinnedSession,
@@ -153,8 +165,9 @@ import {
   saveWorkspaceRegistry,
   setWorkspaceAlias,
   unregisterWorkspace,
+  type WorkspaceEntry,
 } from "../../lib/workspace-registry";
-import type { WorkspaceEntry } from "../../lib/workspace-registry";
+
 import {
   applyManualReorder,
   initialSessionSortMode,
@@ -164,8 +177,9 @@ import {
   removeFromSessionOrder,
   saveSessionOrder,
   storeSessionSortMode,
+  type SessionSortMode,
 } from "../../lib/session-order";
-import type { SessionSortMode } from "../../lib/session-order";
+
 import {
   commitGroupOrder,
   isOrderableGroupMode,
@@ -173,8 +187,12 @@ import {
   orderGroups,
   saveGroupOrder,
 } from "../../lib/group-order";
-import { CONTEXT_MENU_ACTIONS, HOVER_ROW_ACTIONS, sessionRowActions } from "../ui/session-row-menu";
-import type { SessionRowAction } from "../ui/session-row-menu";
+import {
+  CONTEXT_MENU_ACTIONS,
+  HOVER_ROW_ACTIONS,
+  sessionRowActions,
+  type SessionRowAction,
+} from "../ui/session-row-menu";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   GROUP_MODE_ICONS,
@@ -184,8 +202,9 @@ import {
   initialGroupMode,
   newEntityForGroupMode,
   storeGroupMode,
+  type GroupMode,
 } from "../ui/group-list";
-import type { GroupMode } from "../ui/group-list";
+
 import { writeClipboard } from "../../lib/clipboard";
 import { Truncated } from "../ui/truncated";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
@@ -196,8 +215,9 @@ import {
   draftSessionTitle,
   removeDraftSession,
   useDraftSessions,
+  type DraftSessionEntry,
 } from "../../features/chat/draft-sessions";
-import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
+
 import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { docksOnScreen, openPanel } from "../../features/dock/dock-state";
 import { dockWorkspace } from "../../features/dock/dock-terminal";
@@ -220,8 +240,8 @@ import {
   isOrgRoute,
   orgPagePath,
   parseOrgKey,
-} from "../../features/company/company-nav";
-import type { WorkMode } from "../../features/company/company-nav";
+  type WorkMode,
+} from "../../lib/company-nav";
 
 /** New-chat pen over a baseline (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = ICONS.penLine;
@@ -407,8 +427,10 @@ export function Sidebar({
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Folded collapsible nav area (company mode: the whole nav group); expanded by default, the choice persists across sessions. */
   const [navCollapsed, setNavCollapsed] = useState(initialNavGroupCollapsed);
+  /** The main nav's pages, as the modules contributed them (web-app/page-table.ts). */
+  const navPages = navPagesOf(useWebAppPages());
   /** The user's changes to which nav entries are pinned (the defaults live in nav-group-collapse.ts); persisted like the fold. */
-  const [navPins, setNavPins] = useState(initialNavPinOverrides);
+  const [navPins, setNavPins] = useState(() => initialNavPinOverrides(navPages));
   /** Nav entry being dragged across the areas, and the area a drop would move it into. */
   const [navDrag, setNavDrag] = useState<NavEntryKey | null>(null);
   const [navDropArea, setNavDropArea] = useState<NavArea | null>(null);
@@ -1682,12 +1704,12 @@ export function Sidebar({
     : [];
 
   /**
-   * Development mode's entries by area (nav-group-collapse.ts): New chat, then the
-   * NAV_GROUP_KEYS manifest minus the entries this user's role cannot reach, each pinned or
-   * collapsible, both areas in manifest order. New chat is always pinned and renders in its
+   * Development mode's entries by area (nav-group-collapse.ts): New chat, then the main
+   * nav's pages minus the entries this user's role cannot reach, each pinned or
+   * collapsible, both areas in page order. New chat is always pinned and renders in its
    * fixed slot above the scroll area, so the pinned rows here are the pages after it.
    */
-  const navSplit = splitNavEntries(navEntryKeysFor(user?.isAdmin === true), navPins);
+  const navSplit = splitNavEntries(navEntryKeysFor(navPages, user?.isAdmin === true), navPins);
   const pinnedNavPages = navSplit.pinned.filter(isNavPage);
   const collapsibleNavPages = navSplit.collapsible.filter(isNavPage);
 

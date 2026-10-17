@@ -11,8 +11,11 @@ import {
   fetchJson,
   probeJson,
   type TerminalInfo,
-} from "../terminal/terminal-view";
-import { liveTerminals, noteTerminalCreated, refreshTerminals } from "../terminal/terminal-list";
+  liveTerminals,
+  noteTerminalCreated,
+  refreshTerminals,
+} from "../terminal";
+
 import { machineForTerminal, rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   addTerminalTab,

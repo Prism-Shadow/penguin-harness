@@ -6,8 +6,12 @@
  * server holds still renders. Only when NO source answered is there an error to report.
  */
 import * as api from "../../api/endpoints";
-import { mergeBenchmarkCases, mergeBenchmarks } from "../../lib/benchmark-merge";
-import type { MergedBenchmark, MergedCase } from "../../lib/benchmark-merge";
+import {
+  mergeBenchmarkCases,
+  mergeBenchmarks,
+  type MergedBenchmark,
+  type MergedCase,
+} from "../../lib/benchmark-merge";
 
 /** Settles one read per source (this server first) into the answers that came back. */
 async function askEach<T>(

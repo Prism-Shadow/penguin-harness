@@ -56,7 +56,7 @@ import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk } from "../../lib/tone";
 import { useProject } from "../../state/project";
-import { APPROVAL_MODES } from "../chat/approval-mode";
+import { APPROVAL_MODES } from "../chat";
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
 

@@ -40,16 +40,20 @@ import {
   toolCallOutput,
   userText,
   withOrigin,
+  type OmniMessage,
+  type SessionMetaPayload,
 } from "@prismshadow/penguin-core/omnimessage";
-import type { OmniMessage, SessionMetaPayload } from "@prismshadow/penguin-core/omnimessage";
+
 import {
   agentIdFromStatePath,
   approvalKey,
   createStreamModel,
   hasPendingWithinOrigin,
   pushMessage,
+  type StreamModel,
+  type SubagentItem,
 } from "../src/lib/omni/stream-model";
-import type { StreamModel, SubagentItem } from "../src/lib/omni/stream-model";
+
 import {
   agentIdFromRunSubagentArgs,
   extractTopology,
