@@ -5,9 +5,10 @@
  * all. A test that creates Sessions on the default model therefore writes this first, as a host
  * would.
  *
- * The first-party groups are `official`, so their keyless rows hand MMSP nothing and its client
- * reads the vendor variable (stubProviderKeys stubs those); the gateway group names its endpoint
- * and protocol and holds no key, so its keyless rows are refused. Facts (context windows, vision
+ * The first-party groups have no table, so their keyless rows name no base URL anywhere: MMSP is
+ * handed nothing and its client reads the vendor variable (stubProviderKeys stubs those). The
+ * gateway group names its endpoint and protocol and holds no key, so its keyless rows are
+ * refused. Facts (context windows, vision
  * flags, list prices) are the catalog's for these rows.
  */
 import { DEFAULT_PROJECT_ID, saveProjectConfig } from "../src/index.js";
@@ -20,14 +21,11 @@ const usd = (cacheRead: number, cacheWrite: number, output: number) => ({
   output,
 });
 
-/** The seeded Project: DeepSeek's Flash as the default, three official vendors and one gateway. */
+/** The seeded Project: DeepSeek's Flash as the default, three first-party vendors and one gateway. */
 export function seededProjectConfig(): ProjectConfig {
   return {
     default_model: { provider: "deepseek", model_id: "deepseek-flash" },
     providers: {
-      deepseek: { official: true },
-      anthropic: { official: true },
-      openai: { official: true },
       tokendance: { base_url: "https://tokendance.space/gateway/v1", client_type: "openai-chat" },
     },
     models: [

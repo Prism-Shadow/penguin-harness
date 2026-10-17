@@ -1,6 +1,6 @@
 /**
  * A Project as the server seeds one when it creates it: core's default config with the built-in
- * catalog's default model, group tables (`official` on the first-party groups) and preset rows.
+ * catalog's default model, group tables (none for the first-party groups) and preset rows.
  * Core carries no catalog (PRN-021), so the CLI's config commands, which read and write the
  * file directly, find a missing file empty; these tests start from a seeded Project, as a user's
  * does.

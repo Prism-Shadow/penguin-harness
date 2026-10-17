@@ -19,7 +19,7 @@ them when the task reaches them:
 | --- | --- |
 | `reference/verification.md` | A test fails oddly, CI reads green when it should not, or the user asks you to run the suite on another machine |
 | `reference/changelog.md` | Writing or auditing a changelog entry |
-| `reference/model-catalog.md` | Touching the server's `model-catalog.ts`, pricing, provider groups, the `official` flag or glyphs |
+| `reference/model-catalog.md` | Touching the server's model catalog, pricing, provider groups, which environment variable a keyless row reads, or glyphs |
 | `reference/authoring.md` | Writing a blog post, auditing prose, or proposing a simplification |
 | `reference/release.md` | Preparing a release: the branch order, what changes, the announcement, the blog post and its screenshots |
 | `reference/testing.md` | **Writing or changing any test**: scenarios first, behaviour only, one fake per boundary, branch coverage, speed |
@@ -102,8 +102,8 @@ pnpm --filter @prismshadow/penguin-web test                                     
 | Markdown only — changelog, `.github/CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
 | `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
 | `plugins/**` (repo root) | the `plugins` package test (loader, README tables, the hook scripts against fake Traces) + `docs`'s `skills-sync.test.ts` |
-| The model catalog | server `model-catalog.test.ts`, `official-groups.test.ts` and `models.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts` |
-| The credential rule or a row's effective connection | core `model-connection.test.ts`, server `official-groups.test.ts` and `models.test.ts` |
+| The model catalog | server `model-catalog.test.ts` and `models.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts` |
+| The credential rule or a row's effective connection | core `model-connection.test.ts`, server `models.test.ts` and `models-balance.test.ts` |
 | Request assembly, history rebuild, compaction, the system prompt, a tool's description or schema | core's three `prompt-cache-*` suites — read the section below before you touch what they report |
 | One package's source | that package's `test`, plus `typecheck` |
 | Exported core types, or anything downstream imports | `pnpm build` + `pnpm typecheck` before any test |
@@ -190,7 +190,7 @@ that file instead of re-telling it. A batch with no compatibility handling has n
 catalog data. Model knowledge lives in the server's catalog (`packages/server/src/model-catalog.ts`,
 published as the browser-safe `@prismshadow/penguin-server/model-catalog`, which the Web App, the
 CLI and the gallery import) and reaches core only through the Project config the server seeds —
-`[providers.<id>]` with its `official` flag, `[[models]]`, `default_model` — or through host hooks
+`[providers.<id>]`, `[[models]]`, `default_model` — or through host hooks
 (`AgentAssembly`). Core keeps MMSP's client-type table (`MMSP_CLIENTS`: variable prefix, open
 server, path, fast mode) because that is protocol knowledge, not model knowledge. The one exception
 is App attribution: `llm/app-attribution.ts` (`attributionHeaders`) names the gateways whose headers
@@ -201,7 +201,7 @@ catalog and the config it seeds instead; a core test that needs a Project writes
 ## One concern per module
 
 Logic with its own reason to change — an identification scheme (App attribution), a migration, a
-derivation rule (the `official` flag), a protocol mirror (MMSP's routing table) — gets a file of
+derivation rule (which variable a keyless row reads), a protocol mirror (MMSP's routing table) — gets a file of
 its own beside its caller, never a section appended to a large neighbour. A change that moves or
 reshapes a large file splits it along its concerns, keeping the import graph acyclic: a module
 cycle that reads a binding at load time fails with a TDZ `ReferenceError`. The case that set the

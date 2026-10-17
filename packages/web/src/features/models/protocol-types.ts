@@ -186,9 +186,12 @@ export function needsProtocolDetectOnSave(
  * when nothing should be promised: the catalog's modelEnvPreviewKey — the same function the
  * server's GET /models preview reads, so the hint and the card's "read from environment
  * variable" can never disagree — on the form's own protocol and base URL and its group's
- * stored table. Only a row of an `official` group with no base URL of its own is lent the
- * environment (PRN-021): a gateway, custom, vLLM or user-defined row resolves to nothing, and
- * so does a row the user points at an endpoint of its own.
+ * stored table. A variable only with no base URL on the row or its group (PRN-021): a gateway
+ * row, or any row sent to a base URL, resolves to nothing. A custom, vLLM or user-group row
+ * with no base URL anywhere does resolve, to its protocol client's variable — the Session would
+ * use it — and the protocol is the one the row will be saved with (protocolForPersist), so a
+ * custom-like draft that names none reads the custom groups' default client, never the id's
+ * family.
  */
 export function envHintKeyFor(
   provider: string,
@@ -201,7 +204,8 @@ export function envHintKeyFor(
     {
       provider,
       modelId: modelId.trim(),
-      clientType: clientType.trim() || undefined,
+      clientType:
+        protocolForPersist(provider, clientType, { clientType: group?.clientType }) || undefined,
       baseUrl: baseUrl.trim() || undefined,
     },
     group,

@@ -217,8 +217,8 @@ describe("models preset & catalog enrichment", () => {
     expect(body.models.map(pairKey).filter((key) => retired.includes(key))).toEqual([]);
 
     // The catalog's group connections are written into the file once, as `[providers.<id>]`
-    // tables: the gateways', vLLM's protocol, Penguin Go's relay, and the first-party vendors'
-    // official flag — their rows run on the client's defaults. Custom gets none.
+    // tables: the gateways', vLLM's protocol, Penguin Go's relay. The first-party vendors and
+    // custom get none — their rows run on the client's defaults, or carry their own.
     const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
     for (const id of Object.keys(presetProviderTable())) {
       expect(toml, id).toContain(`[providers.${id}]`);
@@ -228,13 +228,11 @@ describe("models preset & catalog enrichment", () => {
       expect(connection, id).toEqual({
         ...(catalog.base_url !== undefined ? { baseUrl: catalog.base_url } : {}),
         ...(catalog.client_type !== undefined ? { clientType: catalog.client_type } : {}),
-        ...(catalog.official === true ? { official: true } : {}),
       });
     }
-    for (const id of ["deepseek", "anthropic", "openai"]) {
-      expect(body.providers[id], id).toEqual({ official: true });
+    for (const id of ["deepseek", "anthropic", "openai", "custom"]) {
+      expect(body.providers[id], id).toBeUndefined();
     }
-    expect(body.providers.custom).toBeUndefined();
 
     // Every row reads its context window, list price and vision flag off the file — `false`
     // written where the catalog says so, nothing (= supported) elsewhere — and is labelled with
@@ -329,7 +327,7 @@ describe("models preset & catalog enrichment", () => {
     expect(pick(body, "tokendance", "hy4-preview")).not.toHaveProperty("discount");
   });
 
-  it("reports and masks the env fallback only for rows of an official group that name no base URL of their own, and never leaks a value", async () => {
+  it("reports and masks the env fallback only for keyless rows with no base URL anywhere, and never leaks a value", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test-secret-value-123456");
     vi.stubEnv("OPENAI_API_KEY", "sk-openai-test-secret-value-789");
     // A relay variable is nobody's: Penguin Go takes its key from the config alone.
@@ -350,14 +348,14 @@ describe("models preset & catalog enrichment", () => {
       const put = await api.put(url(), {
         defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
         models: [
-          // First-party catalog preset in its official group, variable set: masked preview.
+          // First-party catalog preset with no base URL anywhere, variable set: masked preview.
           { provider: "anthropic", modelId: "claude-sonnet-4-6" },
           // First-party catalog preset, variable empty: named, no preview.
           { provider: "deepseek", modelId: "deepseek-v4-pro" },
-          // Off-catalog id in the official group, pure auto-route: still the vendor's variable.
+          // Off-catalog id in a vendor group, pure auto-route: still the vendor's variable.
           { provider: "anthropic", modelId: "claude-sonnet-4-6-preview" },
-          // The official group, the row on a generic protocol with no base URL: MMSP's OpenAI
-          // client reads its own pair and talks to the OpenAI default, so that is the variable.
+          // A vendor-group row on a generic protocol with no base URL: MMSP's OpenAI client
+          // reads its own pair and talks to the OpenAI default, so that is the variable.
           { provider: "anthropic", modelId: "claude-via-gateway", clientType: "openai" },
           // A vendor-group row naming a base URL of its own — the vendor's own included — gets
           // nothing from the environment.
@@ -366,14 +364,16 @@ describe("models preset & catalog enrichment", () => {
             modelId: "claude-own-endpoint",
             baseUrl: "https://api.anthropic.com",
           },
-          // A gateway row: its group is never official.
+          // A gateway row: it carries the gateway's base URL.
           {
             provider: "openrouter",
             modelId: "xiaomi/mimo-v2.5",
             clientType: "openai-chat",
             baseUrl: "https://openrouter.ai/api/v1",
           },
-          // Custom and vLLM rows: no group of theirs is official, endpoint or not.
+          // Custom and vLLM rows with no base URL anywhere: their protocol client's variable,
+          // which a Session on them would use (the client's default endpoint, api.openai.com,
+          // unless OPENAI_BASE_URL is set); a custom row on a private server: nothing.
           { provider: "custom", modelId: "my-model", clientType: "openai" },
           {
             provider: "custom",
@@ -398,8 +398,6 @@ describe("models preset & catalog enrichment", () => {
       expect(text).not.toContain("sk-openai-test-secret-value-789");
       expect(text).not.toContain("sk-penguin-test-secret-value-456");
       const body = JSON.parse(text) as ModelsResponse;
-      expect(body.providers.anthropic?.official).toBe(true);
-      expect(body.providers.openrouter?.official).toBeUndefined();
       const anthropic = "sk-a…3456";
       expect(pick(body, "anthropic", "claude-sonnet-4-6")).toMatchObject({
         envKey: "ANTHROPIC_API_KEY",
@@ -407,18 +405,26 @@ describe("models preset & catalog enrichment", () => {
         effective: { apiKeySource: "env", apiKeyMasked: anthropic },
       });
       expect(pick(body, "anthropic", "claude-sonnet-4-6-preview").envKeyMasked).toBe(anthropic);
-      expect(pick(body, "deepseek", "deepseek-v4-pro").envKey).toBe("DEEPSEEK_API_KEY");
-      expect(pick(body, "deepseek", "deepseek-v4-pro").envKeyMasked).toBeUndefined();
-      expect(pick(body, "anthropic", "claude-via-gateway")).toMatchObject({
-        envKey: "OPENAI_API_KEY",
-        envKeyMasked: "sk-o…-789",
-      });
+      // Named, but unset here: no preview, and the row reads as keyless.
+      const unset = pick(body, "deepseek", "deepseek-v4-pro");
+      expect(unset.envKey).toBe("DEEPSEEK_API_KEY");
+      expect(unset.envKeyMasked).toBeUndefined();
+      expect(unset.effective.apiKeySource).toBe("none");
+      for (const [provider, modelId] of [
+        ["anthropic", "claude-via-gateway"],
+        ["custom", "my-model"],
+        ["vllm", "Qwen/Qwen3.8-27B"],
+      ] as const) {
+        expect(pick(body, provider, modelId), `${provider}/${modelId}`).toMatchObject({
+          envKey: "OPENAI_API_KEY",
+          envKeyMasked: "sk-o…-789",
+          effective: { apiKeySource: "env", apiKeyMasked: "sk-o…-789" },
+        });
+      }
       for (const [provider, modelId] of [
         ["anthropic", "claude-own-endpoint"],
         ["openrouter", "xiaomi/mimo-v2.5"],
-        ["custom", "my-model"],
         ["custom", "my-local"],
-        ["vllm", "Qwen/Qwen3.8-27B"],
         ["penguin-go", "gemini-3.8-flash"],
       ] as const) {
         const row = pick(body, provider, modelId);
@@ -431,7 +437,7 @@ describe("models preset & catalog enrichment", () => {
     }
   });
 
-  it("PUT a custom model: the vision flag persists; a custom row gets no environment key, a vendor group's row on the openai protocol reads OPENAI_API_KEY; provider is required", async () => {
+  it("PUT a custom model: the vision flag persists; the openai protocol falls back to OPENAI_API_KEY; provider is required", async () => {
     // A vendor-group row on the openai protocol, as a group header's add once wrote it.
     await storeRows(t.root, projectId, [
       { provider: "anthropic", modelId: "claude-via-gateway", clientType: "openai" },
@@ -450,8 +456,7 @@ describe("models preset & catalog enrichment", () => {
     const mine = pick(body, "custom", "my-model");
     expect(mine.displayName).toBeUndefined();
     expect(mine.vision).toBe(false);
-    // Custom is never an official group: its rows need a key of their own or their group's.
-    expect(mine.envKey).toBeUndefined();
+    expect(mine.envKey).toBe("OPENAI_API_KEY");
     // The request carried the deprecated bare "openai" alias (pre-0.4.2 clients/configs):
     // it is normalized to the canonical "openai-chat" on write and reported canonically.
     expect(mine.clientType).toBe("openai-chat");
@@ -461,9 +466,8 @@ describe("models preset & catalog enrichment", () => {
     expect("vision" in opaque).toBe(false);
     expect(opaque.envKey).toBeUndefined();
 
-    // Listed under one vendor's (official) group but using the openai protocol (a model added at
-    // a group header): MMSP's openai-chat client actually reads OPENAI_API_KEY, so the env
-    // fallback reports that, not the vendor's var name.
+    // Listed under one vendor's group but using the openai protocol (a model added at a group header):
+    // MMSP's openai-chat client actually reads OPENAI_API_KEY, so the env fallback reports that, not the vendor's var name.
     expect(pick(body, "anthropic", "claude-via-gateway").envKey).toBe("OPENAI_API_KEY");
 
     // GET again: vision was persisted (not just echoed from the request body), and the disk
@@ -920,7 +924,8 @@ describe("models preset & catalog enrichment", () => {
     ]);
     const put = await api.put(url(), {
       models: [
-        { provider: "moonshot", modelId: "kimi-k2.6", apiKey: "sk-official-aaaa1111" },
+        // The vendor's copy keyless, on the client's defaults; the gateway's with a key.
+        { provider: "moonshot", modelId: "kimi-k2.6" },
         {
           provider: "siliconflow",
           modelId: "kimi-k2.6",
@@ -933,7 +938,7 @@ describe("models preset & catalog enrichment", () => {
     const body = (await put.json()) as ModelsResponse;
     expect(body.models).toHaveLength(2);
     // The two entries are independent: credential and envKey don't cross over.
-    expect(pick(body, "moonshot", "kimi-k2.6").credential?.apiKeyMasked).toBe("sk-o…1111");
+    expect(pick(body, "moonshot", "kimi-k2.6").credential).toBeUndefined();
     expect(pick(body, "moonshot", "kimi-k2.6").envKey).toBe("MOONSHOT_API_KEY");
     expect(pick(body, "siliconflow", "kimi-k2.6").credential?.apiKeyMasked).toBe("sk-g…2222");
     // Saved without a base URL of its own, the gateway's row runs on its group's endpoint —
@@ -1207,7 +1212,7 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(again.defaultModel).toEqual({ provider: "custom", modelId: "new-id" });
   });
 
-  it("a group change is a rekey too: the credential migrates with it; the environment follows the new group's official flag (PRN-021)", async () => {
+  it("a group change is a rekey too: the credential migrates with it; envKey resolves by client, not by group (PRN-021)", async () => {
     // Move the preset DeepSeek model to another group (changing provider is a key change; the paired renamedFrom migrates it).
     const put = await api.put(url(), {
       models: [
@@ -1220,9 +1225,10 @@ describe("model-reference rekeying and the connectivity test", () => {
       ],
     });
     expect(put.status).toBe(200);
-    expect(pick((await put.json()) as ModelsResponse, "deepseek", "deepseek-v4-pro").envKey).toBe(
-      "DEEPSEEK_API_KEY",
-    );
+    // A row holding its own key is named no variable.
+    expect(
+      pick((await put.json()) as ModelsResponse, "deepseek", "deepseek-v4-pro").envKey,
+    ).toBeUndefined();
 
     const put2 = await api.put(url(), {
       models: [
@@ -1239,9 +1245,16 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(moved.provider).toBe("custom");
     expect(moved.modelId).toBe("deepseek-v4-pro");
     expect(moved.credential?.apiKeyMasked).toBe("sk-s…1234");
-    // The environment follows the group: custom is not official, so the moved row is lent
-    // nothing, though MMSP would still route its `deepseek-` id to the DeepSeek client.
-    expect(moved.envKey).toBeUndefined();
+    // Its key cleared, the row names no base URL anywhere: the env fallback follows client
+    // resolution — with no client_type on the entry, MMSP still routes the `deepseek-` id to
+    // the DeepSeek client (reading DEEPSEEK_API_KEY), regardless of group membership.
+    const put3 = await api.put(url(), {
+      models: [
+        { provider: "custom", modelId: "deepseek-v4-pro", clearApiKey: true, vision: false },
+      ],
+    });
+    expect(put3.status).toBe(200);
+    expect(((await put3.json()) as ModelsResponse).models[0]!.envKey).toBe("DEEPSEEK_API_KEY");
   });
 
   it("serializes a ModelScope settings save with a group credential write", async () => {
@@ -1750,8 +1763,8 @@ describe("model-reference rekeying and the connectivity test", () => {
     try {
       // A gateway preset: the group's endpoint, no key. Both OpenAI-protocol gateways and the
       // Messages-protocol custom preset (Atria — the path that carried the Anthropic key in the
-      // #786 finding) are refused, and the refusal is the harness's own sentence, never the
-      // SDK's text with a vendor variable in it.
+      // #786 finding) are refused, and the refusal is the harness's own sentence — it may name
+      // a variable to set, never a value the environment holds.
       for (const [provider, modelId] of [
         ["tokendance", "glm-5.3"],
         ["openrouter", "openai/gpt-5.5"],
@@ -1763,9 +1776,10 @@ describe("model-reference rekeying and the connectivity test", () => {
           expect(res.status).toBe(200);
           const body = (await res.json()) as ModelTestResponse;
           expect(body.ok).toBe(false);
-          expect(body.message).toMatch(/has no API key/);
-          expect(body.message).toMatch(/set the API key on the model entry/);
-          expect(body.message).not.toMatch(/OPENAI_API_KEY|ANTHROPIC_API_KEY|must-not-cross/);
+          expect(body.message).toMatch(
+            /has no API key\. It is sent to \S+, so no environment variable is used for it: set the API key on the model entry or its group/,
+          );
+          expect(body.message).not.toMatch(/must-not-cross/);
         }
       }
       // A not-yet-saved custom row pointed at a private server: same refusal.
@@ -1868,9 +1882,8 @@ describe("model-reference rekeying and the connectivity test", () => {
       expect(cleared.status).toBe(200);
       const body = (await cleared.json()) as ModelTestResponse;
       expect(body.ok).toBe(false);
-      // Refused before any client exists — custom lends no environment key — and if the saved
-      // key were still used, it wouldn't be this message.
-      expect(body.message ?? "").toMatch(/has no API key/);
+      // Missing-credential is thrown synchronously at construction (message contains "credentials"); if the saved key were still used, it wouldn't be this message.
+      expect(body.message ?? "").toMatch(/credential/i);
     } finally {
       if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     }
@@ -2566,7 +2579,6 @@ describe("preset sync: add new models / restore defaults", () => {
     expect(body.providers.deepseek).toEqual({
       apiKeyMasked: "sk-d…0020",
       createdAt: expect.any(String) as string,
-      official: true,
     });
     expect(pick(body, "deepseek", "deepseek-v4-pro").credential).toEqual({
       apiKeyMasked: "sk-d…0008",

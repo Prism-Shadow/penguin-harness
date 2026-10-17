@@ -104,7 +104,7 @@ TokenDance 分组还没有 key 时，所有分组上方会有一条横幅，推�
 3. 可选：在**模型名称**里输入显示名。显示名为空时直接显示模型 id。
 4. 确认**分组**：默认是你点击的那个分组标题栏所在的分组。
 5. 可选：展开默认折叠的**详细配置**，填写其余各项。新模型继承分组的连接信息，其中的连接字段都是覆盖值：
-   - **API key** 与**自定义 base URL**：分组设置了该字段时，占位文字为「留空继承分组设置」；留空即跟随分组，填写的值即成为该模型自己的值。模型必须有 key，自己的或分组密钥都可以：这些分组从不是 official，不会使用任何环境变量。在 **OpenRouter**、**TokenDance**、**SiliconFlow** 和 **Atlas Cloud** 留空 base URL 即使用分组上的网关端点；其余分组必填，除非分组设置里已经给出。
+   - **API key** 与**自定义 base URL**：分组设置了该字段时，占位文字为「留空继承分组设置」；留空即跟随分组，填写的值即成为该模型自己的值。只要模型或分组带 base URL，模型就必须有 key，自己的或分组密钥都可以：文件里的 base URL 从不配给环境变量。在 **OpenRouter**、**TokenDance**、**SiliconFlow** 和 **Atlas Cloud** 留空 base URL 即使用分组上的网关端点；其余分组必填，除非分组设置里已经给出。
    - 协议：在 base URL 字段的后缀里选择，或用**检测协议**探测，见[检测自定义模型的协议](#检测自定义模型的协议)。
    - **上下文窗口**：模型的上下文窗口大小，单位是 Token。模型不在内置模型目录里时，留空会保存为 1000000。
    - **最大输出长度**：每次请求最多输出的 Token 数。留空则使用 Agent 的设置；上下文较小的模型建议调低这个值。
@@ -189,8 +189,8 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 
 - 探测请求是请求体为 `{}` 的最小无效请求，不消耗 Token，也不需要有效的模型 id：返回的错误若符合协议自身的格式，就证明路由存在；返回 `404` 或 `405`，说明路径没有提供服务；HTML 或网关杂讯一律不算数。
 - 探测用的 URL 和认证头，与保存后 MMSP 客户端实际使用的完全一致：OpenAI 系协议用 `Authorization: Bearer`，`ant-messages` 用 `x-api-key` 加 `Authorization: Bearer` 和 `anthropic-version`。所以检测出的协议一定真实可用。
-- 服务端按四步选取探测凭据：优先用弹窗里填写的 API key，其次用这个条目已保存的 key，再次用分组密钥，最后用探测目标协议对应的环境变量（`ant-messages` 用 `ANTHROPIC_API_KEY`，两个 OpenAI 协议用 `OPENAI_API_KEY`）——但只在被探测的 URL 是该厂商自己的端点时才会使用。没有哪个分组有自己专属的变量。每发一次探测都会重新选择，因为此刻要确定的就是协议。这些值不会传到浏览器，也不会出现在响应里。
-- 完全没有凭据也能检测，因为协议格式的 `401` 同样能识别路由。因此网关或私有服务器一律匿名探测：你的厂商 key 不会发往你输入的 URL。
+- 服务端按三步选取探测凭据：优先用弹窗里填写的 API key，其次用这个条目已保存的 key，再次用分组密钥。URL 从不配给环境变量，厂商自己的端点也不例外。这些值不会传到浏览器，也不会出现在响应里。
+- 三者都没有时匿名探测。完全没有凭据也能检测，因为协议格式的 `401` 同样能识别路由；你的厂商 key 不会发往你输入的 URL。
 - 在这些分组里，不会从模型 id 推断任何东西。在自定义分组里输入 `claude-sonnet-5`，不会因此选用 Anthropic 客户端或它的 `ANTHROPIC_*` key：自定义分组一律回退到 `openai-chat`，API key 提示也照此显示。供应商分组和网关分组不受影响：它们的模型按 id 或按分组上存的协议路由。
 - 在检测功能出现之前创建的条目，保留 `client_type = "openai"`，它至今仍是 `openai-chat` 的别名。只有手动选择协议、或某次检测生效时，才会改写这个值。旧的非标准协议值以只读方式显示：「协议：{t}（沿用原配置，不可修改）」。
 - 检测也可以通过 `POST /api/projects/:id/models/detect` 调用（仅 owner 可用），参见 [Server API](/server-api)。
@@ -215,7 +215,7 @@ API key、base URL 与协议始终可见；上下文窗口、**最大输出长�
 - **整个分组。** 在[分组设置](#分组设置)（分组标题栏上的齿轮）里填写，或由[连接账户](#连接账户)写入。两种方式写的都是分组密钥；单个模型上设置的 key 不受影响。
 - **单个模型。** 在**模型配置**里，把 key 填入 **API key**。保存后 key 会打码显示；输入框留空即保留原 key，点击**清除已存 API key** 可删除它，此后该模型重新使用分组密钥。使用分组密钥的模型同样打码显示这把 key。
 - **其他端点。** key 属于签发它的端点：分组密钥只借给没有自己 base URL 的模型，或自己的 base URL 与分组 base URL 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 模型位于分组主机的另一条路径上，照样使用分组密钥。指向别的主机的模型取不到分组密钥，需要自己的 key，例如经代理访问的某个 OpenRouter 模型，或 **Custom** 里自带端点的预置模型 Atria Dawn——**Custom** 的 key 因此不会发往它的主机。这样的模型卡片显示**未配置 key**，**模型配置**的 key 输入框会说明分组密钥不适用。
-- **不配 key。** 模型自己没有 key、也没有能借到的分组密钥时，**只有所在分组标为 official、且模型不带自己的 base URL** 时才使用服务端上厂商的环境变量（见[分组连接信息](/configuration#分组连接信息)）。新建 Project 把七个一方厂商分组标为 official：DeepSeek、Google、OpenAI、Anthropic、Z.AI、Moonshot 与 MiniMax。分组没有 base URL 时，由厂商的客户端自行读取它那对 `*_API_KEY` / `*_BASE_URL`；分组的 base URL 是厂商自己的端点之一时，由服务端按分组的协议传入对应变量。在分组设置里把分组指向代理会取消这个标记，因此指向代理的 DeepSeek 分组不会使用 `DEEPSEEK_API_KEY`。其余模型都必须有自己的 key 或分组密钥：网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、Atlas Cloud、OpenCode Go、两个 Qwen 网关）、Penguin Go、ModelScope、**Custom**、**vLLM**、你创建的分组，以及任何自带 base URL 的模型，即使那就是厂商自己的端点。在这些情况下对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。协议为 `mmsp`、有 base URL 而没有 key 的模型不带 key 发出请求，开放的 MMSP 服务器就是这样调用的。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
+- **不配 key。** 模型自己没有 key、也没有能借到的分组密钥时，**只有模型与分组都不带 base URL** 时才使用服务端的环境变量（见[供应商凭证变量](/configuration#供应商凭证变量)）：它路由到的 MMSP 客户端自行读取那对 `*_API_KEY` / `*_BASE_URL`，key 与端点都来自服务端环境。新建 Project 不给七个一方厂商分组写 base URL：DeepSeek、Google、OpenAI、Anthropic、Z.AI、Moonshot 与 MiniMax。要用环境 key 访问厂商的第二个主机（bigmodel.cn、moonshot.ai）、代理或 Bedrock，就让 base URL 留空，在 key 旁一并设置厂商的 `*_BASE_URL`；一旦在分组或模型设置里填了 base URL（厂商自己的端点也一样），组内模型就必须在文件里有 key。**Custom**、**vLLM** 或你创建的分组里任何一层都不带 base URL 的模型，读取其协议客户端的那对变量（OpenAI 兼容协议为 `OPENAI_*`），请求发往该客户端的缺省端点（api.openai.com），设置了 `OPENAI_BASE_URL` 时发往它；弹窗会在 key 字段旁说明这一点。带 base URL 的模型都必须有自己的 key 或分组密钥：网关分组（TokenDance、OpenRouter、Fireworks AI、SiliconFlow、Atlas Cloud、OpenCode Go、两个 Qwen 网关）、Penguin Go、ModelScope，以及任何被你指向某个端点的模型或分组。在这些情况下对没有 key 的模型发起会话、连通性测试或分组测速，会以「has no API key」失败，而不是借用 `OPENAI_API_KEY` 或 `ANTHROPIC_API_KEY`。协议为 `mmsp`、有 base URL 而没有 key 的模型不带 key 发出请求，开放的 MMSP 服务器就是这样调用的。key 来自环境变量时，卡片和弹窗都会显示这一点；参见[内置供应商分组](#内置供应商分组)。
 
 你填写的 key 存在 Project 的隐藏配置文件里，文件权限为 0600。Web App 里它始终打码显示。
 
@@ -261,7 +261,7 @@ ModelScope 有三处不同：
 
 ### 账户余额
 
-TokenDance、Penguin Go 和 DeepSeek 可以查询 key 所属账户的余额。这些分组有 key 之后，标题栏上会显示余额，币种跟随设置里的**币种**，与价格一样按固定汇率 7 换算。余额始终用**分组密钥**查询：单个模型上设置的 key 一概不算，组内模型的 key 各不相同也不影响余额。没有分组密钥时，DeepSeek 使用服务端的 `DEEPSEEK_API_KEY`，即它的模型本来就会使用的环境变量（见[设置 API key](#设置-api-key)），但仅限分组仍是 official 时，把 base URL 指向别处即取消；TokenDance 与 Penguin Go 需要存到分组上的密钥。账户持有多种货币时显示合计：¥110 加 $5 显示为 `¥145`，或 `$20.71`。查询由服务端用密钥发起，key 不会到达浏览器。
+TokenDance、Penguin Go 和 DeepSeek 可以查询 key 所属账户的余额。这些分组有 key 之后，标题栏上会显示余额，币种跟随设置里的**币种**，与价格一样按固定汇率 7 换算。余额始终用**分组密钥**查询：单个模型上设置的 key 一概不算，组内模型的 key 各不相同也不影响余额。没有分组密钥时，DeepSeek 使用服务端的 `DEEPSEEK_API_KEY`，即它的模型本来就会使用的环境变量（见[设置 API key](#设置-api-key)），但仅限分组不带 base URL 时，设置 base URL（包括 DeepSeek 自己的）即取消；TokenDance 与 Penguin Go 需要存到分组上的密钥。账户持有多种货币时显示合计：¥110 加 $5 显示为 `¥145`，或 `$20.71`。查询由服务端用密钥发起，key 不会到达浏览器。
 
 Penguin Go 在授权所用的 `PENGUIN_GO_ORIGIN` 上调用 `/api/me/by-key`，默认为 `https://go.penguin.ooo`。也可以显式配置次域名 `https://token.penguin.ooo`；请求不会自动切换域名。它的 CNY 账本余额由 PenguinHarness 换算为显示币种。分组标题栏在加载时查询一次；未置顶时不定时刷新。
 
@@ -279,7 +279,7 @@ Penguin Go 在授权所用的 `PENGUIN_GO_ORIGIN` 上调用 `/api/me/by-key`，�
 
 各字段显示的是分组存的值：
 
-- **API key**：即分组密钥，与连接时写入的是同一把；标题栏上没有别处可以填写它。已存的 key 打码显示，并附设置时间；留空即保留原值，勾选**清除分组密钥**可删除它。分组是 official 且对应的环境变量已设置时（见[设置 API key](#设置-api-key)），占位文字会说明留空即使用该环境变量。保存 base URL 或协议会重新计算这个标记，占位文字跟随保存后的结果。供应商的密钥控制台链接在标签旁。
+- **API key**：即分组密钥，与连接时写入的是同一把；标题栏上没有别处可以填写它。已存的 key 打码显示，并附设置时间；留空即保留原值，勾选**清除分组密钥**可删除它。分组不带 base URL、且组内模型读取的环境变量已设置时（见[设置 API key](#设置-api-key)），占位文字会说明留空即使用该环境变量；填写 base URL 后提示即消失，因为 base URL 从不配给环境变量。供应商的密钥控制台链接在标签旁。
 - **自定义 base URL**：占位文字为「未设置：使用客户端默认端点」。整个分组回到目录的端点请用**恢复默认**。右上角的**检测协议**用所填的 base URL（未填则用已存的），以及输入框里的 key（没有则用分组密钥）探测；两个 URL 都没有时不可用。见[检测自定义模型的协议](#检测自定义模型的协议)。
 - **协议**：首项**未设置**把协议交给各模型，模型也没有时按模型 id 路由；其余选项是各通用协议。模型上保存的协议优先于分组默认值。Penguin Go 没有协议菜单，也没有**检测协议**：它的协议固定为 MMSP，由 base URL 下方的一行注明，见 [Penguin Go 分组](#penguin-go-分组)。
 
@@ -476,7 +476,7 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 
 ## 内置供应商分组
 
-下表列出了各个内置分组，以及新建 Project 标为 official 的七个分组在模型和分组都没有 key 时使用的环境变量；其余分组不使用任何环境变量（—）。模型目录的源码位于 `packages/server/src/model-catalog.ts`。每个变量还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。其余分组的条目**从不回退**：网关的协议客户端读取 `OPENAI_*`（或 `ANTHROPIC_*`），里面存的是你的厂商 key，因此网关分组从不是 official，这把 key 也不会被发往网关（见[设置 API key](#设置-api-key)）。
+下表列出了各个内置分组，以及新建 Project 不写 base URL 的七个一方厂商分组在模型和分组都没有 key 时使用的环境变量；其余分组不使用任何环境变量（—）。模型目录的源码位于 `packages/server/src/model-catalog/`。每个变量还有一个 `_BASE_URL` 变体，例如 `ANTHROPIC_BASE_URL`。**模型库**页面按这个顺序列出分组，你创建的分组排在后面。网关分组带 base URL，其条目因此**从不回退**：网关的协议客户端读取 `OPENAI_*`（或 `ANTHROPIC_*`），里面存的是你的厂商 key，这把 key 不会被发往网关（见[设置 API key](#设置-api-key)）。
 
 | 供应商 | API key 环境变量 | 说明 |
 | --- | --- | --- |
@@ -500,15 +500,15 @@ PenguinHarness 升级可能往内置目录里增加预置模型。只要目录�
 | vllm | — | 自托管 vLLM 服务器：协议固定为 `openai-chat-vllm-adapter`，无预置 base URL，八个预置模型价格均为 0（见[连接本地或自托管端点](#连接本地或自托管端点)） |
 | custom | — | 任意 OpenAI 协议端点；自带一个预置模型 Atria Dawn（Anthropic Messages API，地址 `api.atria-asi.ai`，需要自己的 key，上下文窗口 256K，供应商公布价格之前定价 $0） |
 
-OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom、vLLM 和自建分组同样如此，无论条目写的是哪个 base URL。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
+OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / atlascloud / tokendance / qwen-pay-as-you-go / qwen-token-plan）走的是 MMSP 通用的 OpenAI 协议客户端，对应变量是 `OPENAI_API_KEY`；其中没有 key 的条目会被拒绝，而不是把你的 OpenAI key 发过去。custom、vLLM 和自建分组里自身或分组带 base URL 的条目同样如此；任何一层都不带时，读取其协议客户端的那对变量（见[设置 API key](#设置-api-key)）。ModelScope 的凭据是 api-inference token，三条预置都固定使用通用 Responses 协议；没有 key 的 ModelScope 条目同样会被拒绝。
 
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
 - ModelScope 像 Penguin Go 一样是聚合网关，但三条预置都使用 MMSP 通用 Responses 客户端（`client_type = "openai-responses"`）。
-- 无论哪种方式，网关都不是 official，所以凭据规则完全一致。
+- 无论哪种方式，网关都带 base URL，所以凭据规则完全一致。
 - OpenCode Go 分组是例外：它的模型用到四种协议，因此每个模型各自固定协议，见 [OpenCode Go 分组](#opencode-go-分组)。
 
-MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型不带 `base_url`，因此设置了 `MINIMAX_BASE_URL` 时用它，否则用 `https://api.minimax.io/v1`；和其他 `*_BASE_URL` 一样，只有条目没有自己的 `base_url` 时才会读取这个变量。
+MiniMax 的官方客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型不带 `base_url`，因此设置了 `MINIMAX_BASE_URL` 时用它，否则用 `https://api.minimax.io/v1`；和其他 `*_BASE_URL` 一样，只有条目与分组都不带 `base_url` 时才会读取这个变量。
 
 ### Penguin Go 分组
 
@@ -614,7 +614,7 @@ Google、Penguin Go 和 OpenRouter 分组均预置了 Gemini 4 Argon，支持图
 | `vision` | 是否支持图像输入，默认 true |
 | `fast_mode` | 可选的快速模式（默认关闭）：开启后，这个模型的 Session 请求会改走供应商更快的服务层级，价格更高。持久化保存的值只有 `true`；在 Web 端整表保存时省略这个字段会把它清空。没有快速层级的模型会拒绝携带这个设置的请求（参见[快速模式](#快速模式)） |
 | `pricing` | 三档价格（单位 `usd_per_mtok`，即每百万 Token 的美元价格）：`cache_read` / `cache_write` / `output` |
-| `api_key` / `base_url` | 该模型自己的 key 与端点，两项都可选；留空时使用分组的值（key 仅在能借给该模型的端点时），最后回退到供应商的环境变量，其中 key 仅在[设置 API key](#设置-api-key) 允许的范围内回退 |
+| `api_key` / `base_url` | 该模型自己的 key 与端点，两项都可选；留空时使用分组的值（key 仅在能借给该模型的端点时），任何一层都不带 base URL 时再回退到客户端的环境变量（见[设置 API key](#设置-api-key)） |
 
 文件里还保存着 `default_model`、可选的 `vision_model`（即视觉代理模型），以及 `[providers.<分组>]` 里各分组的设置（见[分组设置](#分组设置)与 [Project 配置](/configuration#project-配置)）。新建 Project 的文件已带有目录给出端点或协议的每个内置分组的设置。文件结构（示例）：
 

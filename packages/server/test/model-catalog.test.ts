@@ -34,8 +34,6 @@ import {
   catalogGroupConnection,
   catalogModelEntries,
   effectivePricing,
-  endpointEnvApiKey,
-  endpointEnvKey,
   fastModeProtocol,
   isAddableGroup,
   isVendorGroup,
@@ -43,8 +41,6 @@ import {
   modelHomepageUrl,
   offPeakAt,
   offPeakScheduledRefs,
-  officialConnection,
-  officialVendor,
   presetModelEntries,
   presetPromotions,
   presetProviderTable,
@@ -56,7 +52,6 @@ import {
   routedClientType,
   unaddableModel,
   unroutableVendorModel,
-  withOfficialFlag,
 } from "../src/model-catalog.js";
 
 /**
@@ -667,7 +662,7 @@ describe("model-catalog", () => {
     }
   });
 
-  it("presetProviderTable: what a new Project stores per group — endpoint and protocol where every row shares them, the official flag for first-party vendors, nothing for custom", () => {
+  it("presetProviderTable: what a new Project stores per group — endpoint and protocol where every row shares them, nothing for first-party vendors and custom", () => {
     const table = presetProviderTable();
     const fields = Object.fromEntries(
       Object.entries(table).map(([id, connection]) => [id, Object.keys(connection).sort()]),
@@ -687,21 +682,12 @@ describe("model-catalog", () => {
       modelscope: BOTH,
       // The user's own server: the protocol, and no endpoint to preset.
       vllm: ["client_type"],
-      // First-party vendors route by id to their official clients' own endpoints.
-      deepseek: ["official"],
-      google: ["official"],
-      openai: ["official"],
-      anthropic: ["official"],
-      zhipu: ["official"],
-      moonshot: ["official"],
-      minimax: ["official"],
     });
     // A group with no gateway endpoint or group pin takes the one its rows all carry.
     expect(table["penguin-go"]!.base_url).toBe(PENGUIN_GO_BASE_URL);
     expect(table.fireworks!.client_type).toBe("openai-chat");
     expect(table.modelscope!.client_type).toBe("openai-responses");
-    // First-party vendors: no endpoint or protocol, only the flag that lends them the
-    // environment.
+    // First-party vendors route by id to their official clients' own endpoints: no table.
     for (const id of [
       "deepseek",
       "google",
@@ -711,7 +697,7 @@ describe("model-catalog", () => {
       "moonshot",
       "minimax",
     ]) {
-      expect(catalogGroupConnection(id), id).toEqual({ official: true });
+      expect(catalogGroupConnection(id), id).toBeUndefined();
     }
     expect(catalogGroupConnection("custom")).toBeUndefined();
     expect(catalogGroupConnection("my-own-group")).toBeUndefined();
@@ -2311,41 +2297,22 @@ describe("off-peak schedules", () => {
 });
 
 /**
- * The catalog's side of PRN-021: which groups are `official` (their endpoint is the vendor's
- * own), and the variable names the UI, the preview and the probes show. Core's rule reads only
- * the stored flag; these decide what the server writes and shows.
+ * The catalog's side of PRN-021: a keyless row is handed nothing only with no base URL on the
+ * row or its group, and the variable names the UI shows follow that rule.
  *
- * - Given a new Project's tables, exactly the first-party vendor groups are official: every
- *   vendor preset is handed nothing (its client reads its own pair) and every gateway preset is
- *   refused, whatever vendor variables are set.
- * - Given a group's base URL or protocol is written, the flag is recomputed: the vendor's own
- *   endpoint keeps it and gains the vendor's official client as the protocol; a proxy or a
- *   foreign protocol makes it false; any other group loses the key.
- * - Given Penguin Go or ModelScope, the group is never official, whatever its table says.
- * - Given the stored flag, the group dialog's hint and the row preview name exactly the
- *   variable a Session would use, and nothing where it would be refused.
- * - Given a bare endpoint (listing, probes), a protocol's variable is lent only to no base URL
- *   or the vendor's own endpoint — never to a lookalike, a gateway, or a URL named by
- *   `*_BASE_URL`.
+ * - Given a new Project's tables, every first-party vendor preset is handed nothing (its client
+ *   reads its own pair), and every gateway preset with no key is refused.
+ * - Given a group's settings, the group dialog's hint names a variable only with no base URL:
+ *   the protocol's, else the vendor's own for a first-party group — never with a base URL, the
+ *   vendor's own included.
+ * - Given a row, the preview names exactly the variable a Session would use (a custom-protocol
+ *   row with no base URL anywhere included), and nothing for a row with a key or a base URL.
  */
-describe("official groups (which groups the environment may lend a vendor key to)", () => {
-  const VENDOR_ENV = {
-    OPENAI_API_KEY: "sk-openai-env",
-    ANTHROPIC_API_KEY: "sk-anthropic-env",
-    GEMINI_API_KEY: "sk-gemini-env",
-    DEEPSEEK_API_KEY: "sk-deepseek-env",
-    MMSP_API_KEY: "sk-mmsp-env",
-  };
+describe("environment variable names (where a keyless row is handed nothing)", () => {
   const VENDORS = ["deepseek", "google", "openai", "anthropic", "zhipu", "moonshot", "minimax"];
 
-  it("a new Project marks exactly the first-party vendor groups official: their presets read the client's own variable, every gateway preset is refused", () => {
+  it("under a new Project's tables, every vendor preset is handed nothing and every gateway preset with no key is refused", () => {
     const table = presetProviderTable();
-    expect(
-      Object.entries(table)
-        .filter(([, group]) => group.official === true)
-        .map(([id]) => id)
-        .sort(),
-    ).toEqual([...VENDORS].sort());
     let vendorRows = 0;
     let gatewayRows = 0;
     for (const entry of presetModelEntries()) {
@@ -2353,101 +2320,38 @@ describe("official groups (which groups the environment may lend a vendor key to
       const group = providerConnectionShape(table[entry.provider]);
       if (VENDORS.includes(entry.provider)) {
         vendorRows++;
-        expect(resolveEntryCredential(entry, group, {}, VENDOR_ENV), ref).toEqual({});
+        expect(storedConnection(entry, table).apiKeySource, ref).toBe("env");
+        expect(resolveEntryCredential(entry, group).apiKey, ref).toBeUndefined();
       } else if (providerInfo(entry.provider)?.gatewayBaseUrl !== undefined) {
         gatewayRows++;
-        expect(() => resolveEntryCredential(entry, group, {}, VENDOR_ENV), ref).toThrow(
-          ModelCredentialError,
-        );
+        expect(() => resolveEntryCredential(entry, group), ref).toThrow(ModelCredentialError);
       }
     }
     expect(vendorRows).toBeGreaterThan(20);
     expect(gatewayRows).toBeGreaterThan(20);
   });
 
-  it("writing a group's endpoint or protocol recomputes the flag, and an official group on a base URL gains the vendor's client", () => {
-    // The vendor's other official host: still official, and the client that names
-    // ZAI_API_KEY is written, so core can name the variable.
-    expect(
-      withOfficialFlag("zhipu", { base_url: "https://open.bigmodel.cn/api/paas/v4/" }),
-    ).toEqual({
-      base_url: "https://open.bigmodel.cn/api/paas/v4/",
-      official: true,
-      client_type: "zai-official",
-    });
-    // A protocol the user chose stays, when it reads the vendor's variable.
-    expect(
-      withOfficialFlag("deepseek", {
-        base_url: "https://api.deepseek.com",
-        client_type: "deepseek-official",
-        api_key: "k",
-      }),
-    ).toEqual({
-      base_url: "https://api.deepseek.com",
-      client_type: "deepseek-official",
-      api_key: "k",
-      official: true,
-    });
-    // Back on the client's defaults: official, nothing added.
-    expect(withOfficialFlag("anthropic", { official: false })).toEqual({ official: true });
-    // A proxy, or a protocol reading another variable: not the vendor's own.
-    expect(withOfficialFlag("deepseek", { base_url: "https://proxy.example/deepseek" })).toEqual({
-      base_url: "https://proxy.example/deepseek",
-      official: false,
-    });
-    expect(withOfficialFlag("deepseek", { client_type: "openai-chat", official: true })).toEqual({
-      client_type: "openai-chat",
-      official: false,
-    });
-    // Every other group carries no flag at all.
-    for (const id of ["tokendance", "openrouter", "vllm", "custom", "my-group"]) {
-      expect(
-        withOfficialFlag(id, { base_url: "https://api.openai.com/v1", official: true }),
-        id,
-      ).toEqual({ base_url: "https://api.openai.com/v1" });
-    }
-    // The input is not changed.
-    const group = { base_url: "https://open.bigmodel.cn/api/paas/v4" };
-    withOfficialFlag("zhipu", group);
-    expect(group).toEqual({ base_url: "https://open.bigmodel.cn/api/paas/v4" });
-  });
-
-  it("Penguin Go and ModelScope take keys from the config alone: never official, whatever their table says", () => {
-    for (const id of ["penguin-go", "modelscope"]) {
-      expect(officialVendor(id), id).toBeUndefined();
-      expect(officialConnection(id, undefined), id).toBe(false);
-      expect(officialConnection(id, presetProviderTable()[id]), id).toBe(false);
-    }
-    expect(officialVendor("google")).toEqual({
-      envKey: "GEMINI_API_KEY",
-      clientType: "google-official",
-    });
-  });
-
-  it("the group dialog's hint follows the stored flag: the protocol's variable, else the vendor's own with no base URL", () => {
+  it("the group dialog's hint names a variable only for a group with no base URL", () => {
+    const table = presetProviderTable();
     const hint = (id: string, group: ProviderConnection | undefined) =>
       providerEnvFallbackKey(id, providerConnectionShape(group));
-    const table = presetProviderTable();
     for (const id of VENDORS) {
-      expect(hint(id, table[id]), id).toBe(officialVendor(id)!.envKey);
+      expect(hint(id, table[id]), id).toBe(providerInfo(id)!.envKey);
+      // The vendor's own endpoint written on the group: lent nothing.
+      expect(hint(id, { base_url: "https://api.example.com/v1" }), id).toBeUndefined();
     }
-    // Not official: nothing, whatever the endpoint.
-    expect(hint("deepseek", { official: false })).toBeUndefined();
-    expect(hint("deepseek", undefined)).toBeUndefined();
-    for (const id of ["tokendance", "openrouter", "penguin-go", "modelscope", "vllm", "custom"]) {
+    expect(hint("deepseek", { base_url: "https://api.deepseek.com" })).toBeUndefined();
+    // Gateways and the third-party adapters carry a base URL; custom has no table.
+    for (const id of ["tokendance", "openrouter", "penguin-go", "modelscope", "custom"]) {
       expect(hint(id, table[id]), id).toBeUndefined();
     }
-    // Official on a base URL: the protocol names the variable; with none, nothing.
-    expect(
-      hint("zhipu", {
-        official: true,
-        base_url: "https://open.bigmodel.cn/api/paas/v4",
-        client_type: "zai-official",
-      }),
-    ).toBe("ZAI_API_KEY");
-    expect(
-      hint("zhipu", { official: true, base_url: "https://open.bigmodel.cn/api/paas/v4" }),
-    ).toBeUndefined();
+    // A group with a protocol and no base URL: the protocol's variable, whoever the group is —
+    // vLLM's preset table included, whose rows the client sends to its own default endpoint.
+    expect(hint("vllm", table.vllm)).toBe("OPENAI_API_KEY");
+    expect(hint("my-group", { client_type: "ant-messages" })).toBe("ANTHROPIC_API_KEY");
+    expect(hint("zhipu", { client_type: "zai-official" })).toBe("ZAI_API_KEY");
+    // A user group with neither names nothing: its rows route by id, which a group cannot know.
+    expect(hint("my-group", undefined)).toBeUndefined();
   });
 
   it("the row preview names exactly the variable a Session would use, and nothing where it would be refused", () => {
@@ -2459,6 +2363,7 @@ describe("official groups (which groups the environment may lend a vendor key to
           modelId: entry.model_id,
           clientType: entry.client_type,
           baseUrl: entry.base_url,
+          apiKey: entry.api_key,
         },
         providerConnectionShape(group),
       );
@@ -2466,74 +2371,30 @@ describe("official groups (which groups the environment may lend a vendor key to
       const ref = `${entry.provider}/${entry.model_id}`;
       if (VENDORS.includes(entry.provider)) {
         expect(preview(entry), ref).toBe(providerInfo(entry.provider)!.envKey);
+      } else if (entry.provider === "vllm") {
+        // No base URL anywhere: the vLLM client reads OPENAI_*, as a Session on it would.
+        expect(preview(entry), ref).toBe("OPENAI_API_KEY");
       } else {
         expect(preview(entry), ref).toBeUndefined();
       }
     }
     const flash = { provider: "deepseek", model_id: "deepseek-flash" };
-    // A row on its official group's base URL: the protocol's variable, passed explicitly.
-    expect(
-      preview(flash, {
-        official: true,
-        base_url: "https://api.deepseek.com",
-        client_type: "deepseek-official",
-      }),
-    ).toBe("DEEPSEEK_API_KEY");
-    // A row with its own base URL, or in a group no longer official: nothing.
+    // A key in the file, or a base URL from it — the vendor's own included: nothing.
+    expect(preview({ ...flash, api_key: "sk-row" })).toBeUndefined();
+    expect(preview(flash, { api_key: "sk-group" })).toBeUndefined();
     expect(preview({ ...flash, base_url: "https://api.deepseek.com" })).toBeUndefined();
-    expect(preview(flash, { official: false })).toBeUndefined();
-    // A row pinned to another vendor's client on an official group's base URL: nothing either,
-    // as a Session on it is refused; with no base URL, its client's own variable.
+    expect(preview(flash, { base_url: "https://api.deepseek.com" })).toBeUndefined();
+    // A row pinned to another vendor's client with no base URL: its client's own variable.
     const pinned = {
       provider: "openai",
       model_id: "claude-sonnet-5",
       client_type: "anthropic-official",
     };
+    expect(preview(pinned)).toBe("ANTHROPIC_API_KEY");
+    // A custom row on a protocol client with no base URL anywhere: that client's variable.
     expect(
-      preview(pinned, {
-        official: true,
-        base_url: "https://api.openai.com/v1",
-        client_type: "openai-official",
-      }),
-    ).toBeUndefined();
-    expect(preview(pinned, { official: true })).toBe("ANTHROPIC_API_KEY");
-  });
-
-  it("a bare endpoint is lent a protocol's variable only with no base URL or on that vendor's own endpoint", () => {
-    expect(
-      endpointEnvApiKey("openai-chat", "https://gw.example.com/v1", VENDOR_ENV),
-    ).toBeUndefined();
-    expect(endpointEnvApiKey("ant-messages", "https://gw.example.com", VENDOR_ENV)).toBeUndefined();
-    expect(endpointEnvApiKey("openai-chat", "https://api.openai.com/v1", VENDOR_ENV)).toBe(
-      "sk-openai-env",
-    );
-    expect(endpointEnvApiKey("ant-messages", "https://api.anthropic.com/", VENDOR_ENV)).toBe(
-      "sk-anthropic-env",
-    );
-    expect(endpointEnvApiKey("openai-responses", undefined, VENDOR_ENV)).toBe("sk-openai-env");
-    // Not even when OPENAI_BASE_URL names that very URL; an empty variable counts as unset.
-    expect(
-      endpointEnvApiKey("openai-chat", "https://gw.example.com/v1", {
-        ...VENDOR_ENV,
-        OPENAI_BASE_URL: "https://gw.example.com/v1",
-      }),
-    ).toBeUndefined();
-    expect(
-      endpointEnvApiKey("openai-chat", "https://api.openai.com/v1", { OPENAI_API_KEY: "  " }),
-    ).toBeUndefined();
-    // MMSP_API_KEY goes only where MMSP_BASE_URL points: never to a base URL.
-    expect(endpointEnvApiKey("mmsp", "http://127.0.0.1:25752/v1", VENDOR_ENV)).toBeUndefined();
-    // Lookalikes a string-prefix check would pass.
-    for (const lookalike of [
-      "https://api.openai.com.evil.example/v1",
-      "https://api.openai.com@evil.example/v1",
-      "http://api.openai.com/v1",
-    ]) {
-      expect(endpointEnvKey("openai-chat", lookalike), lookalike).toBeUndefined();
-      expect(officialConnection("openai", { base_url: lookalike }), lookalike).toBe(false);
-    }
-    // A protocol MMSP does not have names nothing.
-    expect(endpointEnvKey("not-a-client", undefined)).toBeUndefined();
+      preview({ provider: "custom", model_id: "qwen-local", client_type: "openai-chat" }),
+    ).toBe("OPENAI_API_KEY");
   });
 });
 
@@ -2583,32 +2444,18 @@ describe("catalog presets under the connection rules", () => {
       apiKeySource: "none",
     });
     // So a Session on it is refused for want of a key rather than sent anywhere with Ollama's.
-    expect(() =>
-      resolveEntryCredential(
-        atria,
-        providerConnectionShape(ollama),
-        {},
-        {
-          ANTHROPIC_API_KEY: "sk-anthropic-env",
-        },
-      ),
-    ).toThrow(ModelCredentialError);
+    expect(() => resolveEntryCredential(atria, providerConnectionShape(ollama))).toThrow(
+      ModelCredentialError,
+    );
     // A key of the preset's own still works, on the preset's endpoint and protocol.
     expect(
-      resolveEntryCredential(
-        { ...atria, api_key: "sk-atria" },
-        providerConnectionShape(ollama),
-        {},
-        {},
-      ),
+      resolveEntryCredential({ ...atria, api_key: "sk-atria" }, providerConnectionShape(ollama)),
     ).toEqual({ apiKey: "sk-atria", baseUrl: cat.baseUrl, clientType: cat.clientType });
     // A model the user typed into custom follows the group in all three fields.
     expect(
       resolveEntryCredential(
         { provider: "custom", model_id: "qwen3.8-27b-local" },
         providerConnectionShape(ollama),
-        {},
-        {},
       ),
     ).toEqual({
       apiKey: "sk-ollama",

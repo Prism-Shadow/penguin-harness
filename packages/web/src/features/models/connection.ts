@@ -32,12 +32,7 @@ export function groupShape(
   group: ProviderConnectionDto | undefined,
 ): ProviderConnectionShape | undefined {
   if (group === undefined) return undefined;
-  return {
-    baseUrl: group.baseUrl,
-    clientType: group.clientType,
-    apiKey: group.apiKeyMasked,
-    ...(group.official === true ? { official: true } : {}),
-  };
+  return { baseUrl: group.baseUrl, clientType: group.clientType, apiKey: group.apiKeyMasked };
 }
 
 /**
@@ -109,8 +104,7 @@ export interface RowKeyLike {
   credential?: CredentialInfo | undefined;
   /**
    * The environment's key, masked, as GET /models reports it: only for a variable that holds a
-   * value, on the row's effective endpoint, and only when neither the row nor its group holds a
-   * key.
+   * value, and only when neither the row nor its group holds a key and neither names a base URL.
    */
   envKeyMasked?: string | undefined;
 }

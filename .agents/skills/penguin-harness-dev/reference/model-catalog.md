@@ -74,14 +74,15 @@ once it stops being a preset.
 
 ## Who may use the environment
 
-A group's `[providers.<id>]` carries `official = true` when its endpoint is its vendor's own; only
-the keyless rows of such a group that name no base URL of their own get a vendor environment
-variable (PRN-021). The catalog decides it — `officialVendor` (the seven first-party groups whose
-variable has listed `VENDOR_ENDPOINTS`), `officialConnection`, `withOfficialFlag` — and the server
-writes it: the seed, Add new models, Restore defaults, and a recompute whenever a group's base URL
-or protocol is written through the API or the CLI. A new vendor group needs its endpoints in
-`VENDOR_ENDPOINTS` and a family in the routing table, or it is never official. Gateways and the
-third-party adapters (Penguin Go, ModelScope) are never official: their keys come from the config.
+A row with no key in the file uses an environment variable only when neither it nor its group
+names a base URL (PRN-021): core hands MMSP nothing and the routed client reads its own
+`*_API_KEY` / `*_BASE_URL`. A base URL from the file — a gateway's, a proxy, the vendor's own — is
+never lent one. So a first-party vendor group gets no table in the seed (`catalogGroupConnection`
+gives it none), and a new vendor group whose ids route by family needs nothing else to read its
+vendor's variable. The catalog only names the variable for the previews (`resolveModelEnv`,
+`modelEnvPreviewKey`, `providerEnvFallbackKey`); it decides nothing about who may use it.
+Gateways and the third-party adapters (Penguin Go, ModelScope) carry a base URL on their group,
+so their keys come from the config.
 
 Existing Projects never migrate automatically: presets are copied into `.project_config.toml` at
 creation and nothing rewrites them. Users pick changes up through the models page's explicit "sync

@@ -1072,45 +1072,33 @@ describe("project-config round trip", () => {
     const text = [
       "[providers.google]",
       'client_type = "gemini-official"',
-      "official = true",
-      "",
-      "[providers.gemini-mirror]",
-      'base_url = "https://generativelanguage.googleapis.com"',
-      'client_type = "gemini-official"',
-      "official = true",
       "",
       "[[models]]",
       'provider = "google"',
       'model_id = "gemini-3.8-flash"',
       "",
       "[[models]]",
-      'provider = "gemini-mirror"',
+      'provider = "custom"',
       'model_id = "gemini-direct"',
+      'client_type = "gemini-official"',
+      'base_url = "https://generativelanguage.googleapis.com"',
+      'api_key = "sk-row"',
       "",
     ].join("\n");
     await fs.writeFile(file, text, "utf8");
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(await fs.readFile(file, "utf8")).toBe(text);
-    const env = { GEMINI_API_KEY: "sk-gemini-env" };
 
     // The group's protocol reaches its keyless row, which the client then serves from the
     // GEMINI_* pair it reads itself.
     const grouped = getModel(loaded, { provider: "google", model_id: "gemini-3.8-flash" })!;
     expect(
-      resolveEntryCredential(grouped, providerConnectionShape(loaded.providers?.google), {}, env),
+      resolveEntryCredential(grouped, providerConnectionShape(loaded.providers?.google)),
     ).toEqual({ clientType: "gemini-official" });
-    // An official group on Google's own endpoint lends its row GEMINI_API_KEY explicitly, as
-    // google-official's would be.
-    const pinned = getModel(loaded, { provider: "gemini-mirror", model_id: "gemini-direct" })!;
-    expect(
-      resolveEntryCredential(
-        pinned,
-        providerConnectionShape(loaded.providers?.["gemini-mirror"]),
-        {},
-        env,
-      ),
-    ).toEqual({
-      apiKey: "sk-gemini-env",
+    // A row naming Google's own endpoint with its own key goes there on the alias, as written.
+    const pinned = getModel(loaded, { provider: "custom", model_id: "gemini-direct" })!;
+    expect(resolveEntryCredential(pinned, undefined)).toEqual({
+      apiKey: "sk-row",
       baseUrl: "https://generativelanguage.googleapis.com",
       clientType: "gemini-official",
     });
@@ -1502,7 +1490,7 @@ describe("project-config round trip", () => {
     // With nothing of its own left, the row runs on its group's table.
     const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(
-      resolveEntryCredential(bare, providerConnectionShape(cfg.providers?.openrouter), {}, {}),
+      resolveEntryCredential(bare, providerConnectionShape(cfg.providers?.openrouter)),
     ).toEqual({
       apiKey: "or-group",
       baseUrl: "https://openrouter.ai/api/v1",
@@ -1740,7 +1728,7 @@ describe("providers (group-level connections)", () => {
         const key = `${m.provider}/${m.model_id}`;
         try {
           const group = providerConnectionShape(cfg.providers?.[m.provider]);
-          return [key, resolveEntryCredential(m, group, {}, {})];
+          return [key, resolveEntryCredential(m, group)];
         } catch (err) {
           return [key, (err as Error).name];
         }
@@ -1805,40 +1793,6 @@ describe("providers (group-level connections)", () => {
     expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).providers).toBeUndefined();
   });
 
-  it("official is read only as a boolean, survives the CLI's load -> save path, and a patch sets or removes it", async () => {
-    await writeRaw([
-      "[providers.vendor]",
-      "official = false",
-      "[providers.word]",
-      'official = "yes"',
-      "[providers.relay]",
-      'base_url = "https://relay.example/api/v1"',
-      "official = 1",
-    ]);
-    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-    expect(loaded.providers).toEqual({
-      vendor: { official: false },
-      relay: { base_url: "https://relay.example/api/v1" },
-    });
-    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, loaded);
-    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).providers).toEqual(
-      loaded.providers,
-    );
-    let cfg = await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "vendor", {
-      official: true,
-    });
-    expect(cfg.providers?.vendor).toEqual({ official: true });
-    // A key alone leaves the flag as the file has it.
-    cfg = await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "vendor", { api_key: "k" });
-    expect(cfg.providers?.vendor).toMatchObject({ official: true, api_key: "k" });
-    // Removing it, and the key, leaves no table at all.
-    cfg = await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "vendor", {
-      official: null,
-      api_key: null,
-    });
-    expect(cfg.providers?.vendor).toBeUndefined();
-  });
-
   it("setProviderConnection sets and clears per field and never touches a model's own key; a cleared table leaves its rows on the client's defaults", async () => {
     await seedProject(tmpRoot);
     await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
@@ -1884,7 +1838,7 @@ describe("providers (group-level connections)", () => {
         },
         providerConnectionShape(cfg.providers?.tokendance),
       ),
-    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" });
+    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "env" });
   });
 
   it("a file from before group tables moves what every row of a group shares onto the group, once, and every model runs on what it ran on", async () => {
@@ -2153,7 +2107,7 @@ describe("providers (group-level connections)", () => {
       api_key: "sk-own",
     });
     let cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-    expect(cfg.providers?.deepseek?.api_key).toBeUndefined();
+    expect(cfg.providers?.deepseek).toBeUndefined();
     expect(getModel(cfg, { provider: "deepseek", model_id: "deepseek-v4-pro" })?.api_key).toBe(
       "sk-own",
     );
@@ -2166,7 +2120,7 @@ describe("providers (group-level connections)", () => {
     await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "deepseek", { api_key: "sk-group" });
     await setProviderConnection(tmpRoot, DEFAULT_PROJECT_ID, "deepseek", { api_key: null });
     cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-    expect(cfg.providers?.deepseek?.api_key).toBeUndefined();
+    expect(cfg.providers?.deepseek).toBeUndefined();
     expect(getModel(cfg, { provider: "deepseek", model_id: "deepseek-flash" })?.api_key).toBe(
       "sk-own",
     );

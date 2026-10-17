@@ -4,7 +4,7 @@
  *
  * - Given a new Project, its default model reads images and routes with no pin, every preset
  *   row resolves to its catalog protocol and endpoint from the file alone, the group tables are
- *   the catalog's (a first-party vendor's names only `official`), and no row carries a key.
+ *   the catalog's (a first-party vendor has none), and no row carries a key.
  */
 import { describe, expect, it } from "vitest";
 import { effectiveConnection, providerConnectionShape } from "@prismshadow/penguin-core";
@@ -69,8 +69,6 @@ describe("the seed of a new Project", () => {
     // first-party vendor has none (its client's own endpoint).
     expect(cfg.providers).toEqual(presetProviderTable());
     expect(cfg.providers?.openrouter?.base_url).toBe("https://openrouter.ai/api/v1");
-    // A first-party vendor names no endpoint or protocol, only the flag that lends its rows
-    // the vendor's environment variable.
-    expect(cfg.providers?.deepseek).toEqual({ official: true });
+    expect(cfg.providers?.deepseek).toBeUndefined();
   });
 });

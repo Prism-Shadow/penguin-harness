@@ -2468,10 +2468,12 @@ export const zh = {
     // wherever the env fallback hint appears.
     providerEnvNotes: {
       zhipu:
-        "缺省端点为 Z.AI 国际版（api.z.ai）；智谱开放平台（bigmodel.cn）的 key 需填 base URL https://open.bigmodel.cn/api/paas/v4",
+        "缺省端点为 Z.AI 国际版（api.z.ai）；智谱开放平台（bigmodel.cn）的 key 需在环境中同时设置 ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4，或在此填写 key 并填该 base URL",
       moonshot:
-        "缺省端点为国内版（api.moonshot.cn）；platform.kimi.com（国际）的 key 需填 base URL https://api.moonshot.ai/v1",
+        "缺省端点为国内版（api.moonshot.cn）；platform.kimi.com（国际）的 key 需在环境中同时设置 MOONSHOT_BASE_URL=https://api.moonshot.ai/v1，或在此填写 key 并填该 base URL",
     } as Record<string, string | undefined>,
+    envBaseUrlNote: (envBaseUrlKey: string): string =>
+      `请求发往该客户端的默认端点；设置了 ${envBaseUrlKey} 时发往该地址`,
     confirmVisionModelTitle: "设为视觉代理模型",
     confirmVisionModel: (name: string): string =>
       `确定把「${name}」设为视觉代理模型？不支持图片的模型用 read_file 读图时将由它代读。`,

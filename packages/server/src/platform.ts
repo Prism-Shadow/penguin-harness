@@ -210,10 +210,10 @@ export class Startup {
 
   async setup() {
     // Every Project's config through the server's read path once, before anything opens one:
-    // what that path writes back (a missing `official` filled in, core's one-time migrations)
-    // is the server's, not core's, and a Session the schedulers resume reads its file with
-    // core's loader. A failure must not block the boot; each file is read again, and written
-    // back, at its next read through the server.
+    // its one-time migrations (core's, and the server's own that need the catalog) write back
+    // there, and a Session the schedulers resume reads its file with core's loader, which runs
+    // only core's. A failure must not block the boot; each file is read again, and written
+    // back, at its next read through the server. Goes with the migrations at 0.3.0.
     await this.projectConfig.migrateStoredConfigs().catch((err: unknown) => {
       this.errors.record({ source: "process", err, code: "config_migration_failed" });
     });

@@ -114,21 +114,17 @@ export function effectiveOf(
       baseUrl: m.credential?.baseUrl,
       apiKey: m.credential?.apiKeyMasked,
     },
-    group && {
-      baseUrl: group.baseUrl,
-      clientType: group.clientType,
-      apiKey: group.apiKeyMasked,
-      official: group.official,
-    },
+    group && { baseUrl: group.baseUrl, clientType: group.clientType, apiKey: group.apiKeyMasked },
   );
-  // The resolver was handed masks for keys, so the key it picked is already masked.
-  const masked = e.apiKeySource === "none" ? m.envKeyMasked : e.apiKey;
+  // The resolver was handed masks for keys, so the key it picked is already masked. A row
+  // handed nothing (`env`) reads as `env` only where the server reported the variable's mask.
+  const masked = e.apiKeySource === "env" ? m.envKeyMasked : e.apiKey;
   return {
     ...(e.baseUrl !== undefined ? { baseUrl: e.baseUrl } : {}),
     baseUrlSource: e.baseUrlSource,
     ...(e.clientType !== undefined ? { clientType: e.clientType } : {}),
     clientTypeSource: e.clientTypeSource,
-    apiKeySource: e.apiKeySource === "none" && m.envKeyMasked ? "env" : e.apiKeySource,
+    apiKeySource: e.apiKeySource !== "env" ? e.apiKeySource : m.envKeyMasked ? "env" : "none",
     ...(masked !== undefined ? { apiKeyMasked: masked } : {}),
   };
 }
@@ -460,16 +456,11 @@ export function buildFixtures(lang: Lang, now: number): DemoFixtures {
       {
         ...(table.base_url !== undefined ? { baseUrl: table.base_url } : {}),
         ...(table.client_type !== undefined ? { clientType: table.client_type } : {}),
-        ...(table.official === true ? { official: true as const } : {}),
       },
     ]),
   );
-  providers.deepseek = {
-    ...providers.deepseek,
-    apiKeyMasked: "sk-3f…9a2c",
-    createdAt: iso(ago(60)),
-  };
-  providers.openai = { ...providers.openai, apiKeyMasked: "sk-pr…7Hd1", createdAt: iso(ago(12)) };
+  providers.deepseek = { apiKeyMasked: "sk-3f…9a2c", createdAt: iso(ago(60)) };
+  providers.openai = { apiKeyMasked: "sk-pr…7Hd1", createdAt: iso(ago(12)) };
   const envKeys: Record<string, Partial<ModelInfo>> = {
     deepseek: { envKey: "DEEPSEEK_API_KEY" },
     anthropic: { envKey: "ANTHROPIC_API_KEY", envKeyMasked: "sk-ant…Qm4x" },
