@@ -23,3 +23,5 @@ kernel 把 arktype 带进了浏览器包：生产包入口 chunk 增加约 184 k
 - web 与画廊的 Vite 配置把 `esbuild.target` 设为 `es2022`，dev server 才会降级装饰器。
 - 边界测试允许 `web-root.ts` import `module.ts`，其他文件不许；路由 import feature 的基线全部删除（公司模式的路由现在 import 提案页）。
 - 用户可见的行为没有变化。
+
+CI 回归测试跟随现行共享高亮路径，终端 helper 单测归入终端模块并由扁平 Vitest 配置发现。词典保持既有双语形状，启动 kernel 模块不以词典片段提取为前提。布局通过既有浏览器入口读取两项能力，将两条浏览器边归并为一条、不增加基线豁免。图库在没有服务端插件时用空槽回答贡献端点。

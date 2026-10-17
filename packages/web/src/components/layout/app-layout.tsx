@@ -54,8 +54,7 @@ import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { AppInfoDialog } from "../account/app-info-dialog";
 import { TerminalDockRuntime } from "../../features/terminal";
 import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
-import { BuiltinBrowserLayer } from "../../features/builtin-browser/browser-layer";
-import { dispatchBrowser } from "../../features/builtin-browser/browser-store";
+import { BuiltinBrowserLayer, dispatchBrowser } from "../../features/builtin-browser";
 import { setDockScope } from "../../features/dock/dock-state";
 import { AppPalette } from "../../features/palette/app-palette";
 

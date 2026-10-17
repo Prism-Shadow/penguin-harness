@@ -187,7 +187,12 @@ import {
   orderGroups,
   saveGroupOrder,
 } from "../../lib/group-order";
-import { CONTEXT_MENU_ACTIONS, HOVER_ROW_ACTIONS, sessionRowActions, type SessionRowAction } from "../ui/session-row-menu";
+import {
+  CONTEXT_MENU_ACTIONS,
+  HOVER_ROW_ACTIONS,
+  sessionRowActions,
+  type SessionRowAction,
+} from "../ui/session-row-menu";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import {
   GROUP_MODE_ICONS,

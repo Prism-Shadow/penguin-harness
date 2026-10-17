@@ -65,7 +65,11 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as ui from "@prismshadow/penguin-ui";
 import { Button, RuledSection } from "@prismshadow/penguin-ui";
-import { MachineCard, machineMark, type MachineCardProps } from "../src/features/machines/machine-card";
+import {
+  MachineCard,
+  machineMark,
+  type MachineCardProps,
+} from "../src/features/machines/machine-card";
 import {
   JobSteps,
   LogFold,

@@ -2,7 +2,7 @@
  * Web module boundaries (test/web-modules.ts): outside code — app sources and the app's tests
  * alike — reaches a module only through its entry; a module's own files, its tests included,
  * import only their directory, packages, and the dependencies the manifest declares; and the
- * app dictionaries mount each module's fragments instead of spelling that section themselves.
+ * app dictionaries provide each module's copy in both languages.
  *
  * References are read with TypeScript's own pre-processor (static imports, re-exports,
  * `import type`, dynamic `import()`), plus the two forms it does not see: `vi.mock("…")` and
@@ -81,11 +81,6 @@ function referencesOf(file: string): Reference[] {
   return specifiers.map((specifier) => ({ specifier, target: resolveSpecifier(file, specifier) }));
 }
 
-/** Every module's dictionary fragments, by path (a variable `import()` may not reach this deep). */
-const FRAGMENTS = import.meta.glob<Record<string, unknown>>("../src/features/*/strings.ts", {
-  eager: true,
-});
-
 /** Every app source and app test, parsed once: src key → what it references. */
 const GRAPH = new Map(
   [...sourceFiles(SRC), ...sourceFiles(TESTS)].map((file) => [srcKey(file), referencesOf(file)]),
@@ -97,19 +92,20 @@ describe("web modules", () => {
     const entry = `${dir}index`;
     const fragment = `${dir}strings`;
 
-    it(`the ${m.name} module has an entry, a dictionary and a test project`, () => {
+    it(`the ${m.name} module has an entry, a kernel module and discoverable unit tests`, () => {
       expect(existsSync(join(SRC, `${entry}.ts`)), `${entry}.ts`).toBe(true);
-      expect(existsSync(join(SRC, `${fragment}.ts`)), `${fragment}.ts`).toBe(true);
+      expect(existsSync(join(SRC, `${dir}module.ts`)), `${dir}module.ts`).toBe(true);
       expect(existsSync(join(SRC, dir, "test")), `${dir}test/`).toBe(true);
-      const projects = (config.test?.projects ?? []) as { test?: { name?: string } }[];
-      expect(projects.map((p) => p.test?.name)).toContain(m.name);
+      expect(config.test?.include).toContain("src/features/*/test/**/*.test.ts");
     });
 
-    it(`the app dictionaries mount the ${m.name} module's fragments`, () => {
-      const fragments = FRAGMENTS[`../src/${fragment}.ts`];
-      expect(fragments, `${fragment}.ts`).toBeDefined();
-      expect((zh as Record<string, unknown>)[m.name]).toBe(fragments?.[`${m.name}Zh`]);
-      expect((en as Record<string, unknown>)[m.name]).toBe(fragments?.[`${m.name}En`]);
+    it(`the app dictionaries provide the ${m.name} module's copy in both languages`, () => {
+      // Dictionary extraction is independent of booting the kernel module tree.
+      const chinese = (zh as Record<string, unknown>)[m.name];
+      const english = (en as Record<string, unknown>)[m.name];
+      expect(chinese).toBeDefined();
+      expect(english).toBeDefined();
+      expect(Object.keys(english as object).sort()).toEqual(Object.keys(chinese as object).sort());
     });
 
     it(`the ${m.name} module is reached only through its entry`, () => {
