@@ -4,6 +4,8 @@
  * the route names when the loaded list does not hold it, and what it does once that is settled:
  *
  * - a Session on screen is shown, and one nobody has answered for yet is waited for;
+ * - a Session of another Project is never the routed one, listed or looked up, so a Project
+ *   switch never shows the previous Project's conversation;
  * - a route naming no Session, a Session deleted from this page and one of another Project
  *   (a Project switch) all open the latest conversation;
  * - a Session the server says does not exist is owned up to in place, never replaced by
@@ -59,24 +61,31 @@ describe("resolveRoutedSession", () => {
   const other: SessionInfo = { ...SESSION, sessionId: "session-b" };
 
   it("takes the list's row when it holds one", () => {
-    expect(resolveRoutedSession("session-a", [other, SESSION], null)).toBe(SESSION);
+    expect(resolveRoutedSession("session-a", [other, SESSION], null, "project-a")).toBe(SESSION);
   });
 
   it("prefers the list's row over the fetched one — the list is the row events keep current", () => {
     const stale: SessionInfo = { ...SESSION, status: "running" };
-    expect(resolveRoutedSession("session-a", [SESSION], stale)).toBe(SESSION);
+    expect(resolveRoutedSession("session-a", [SESSION], stale, "project-a")).toBe(SESSION);
   });
 
   it("falls back to the fetched row, which is what survives a list reload dropping it", () => {
     // An organization's desk opened from the org chart: never in the development list, and
     // dropped from the store again by the next reload.
-    expect(resolveRoutedSession("session-a", [], SESSION)).toBe(SESSION);
-    expect(resolveRoutedSession("session-a", [other], SESSION)).toBe(SESSION);
+    expect(resolveRoutedSession("session-a", [], SESSION, "project-a")).toBe(SESSION);
+    expect(resolveRoutedSession("session-a", [other], SESSION, "project-a")).toBe(SESSION);
   });
 
   it("ignores a fetched row for another id, and answers nothing without a route", () => {
-    expect(resolveRoutedSession("session-a", [], other)).toBeNull();
-    expect(resolveRoutedSession(null, [SESSION], SESSION)).toBeNull();
+    expect(resolveRoutedSession("session-a", [], other, "project-a")).toBeNull();
+    expect(resolveRoutedSession(null, [SESSION], SESSION, "project-a")).toBeNull();
+  });
+
+  it("after a switch to another Project, neither the looked-up row nor a listed one is the routed Session", () => {
+    // The route and the lookup's copy outlive the switch; shown under project-b they would
+    // render that Project with project-a's conversation and Agent.
+    expect(resolveRoutedSession("session-a", [], SESSION, "project-b")).toBeNull();
+    expect(resolveRoutedSession("session-a", [SESSION], SESSION, "project-b")).toBeNull();
   });
 });
 

@@ -23,6 +23,7 @@ import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 import { joinWorkspacePath } from "../../lib/file-path";
 import { formatBytes } from "../../lib/format";
+import { useReaderFind } from "../../lib/reader-find";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import {
@@ -327,6 +328,8 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
     return `${label} / ${path}`;
   };
 
+  const readerFind = useReaderFind();
+
   const rowTrailing = (row: CaseTreeRow): ReactNode => {
     // The rubric is what the case is scored against, and the tested agent never sees it: the
     // badge says so where the folder is, rather than in a note under the tree.
@@ -369,6 +372,8 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, mach
       unsupportedLabel={S.files.previewUnsupported}
       downloadLabel={S.files.download}
       resolveRef={resolveRef}
+      isFindKey={readerFind.isFindKey}
+      findShortcut={readerFind.findShortcut}
       treeWidth={locale === "en" ? 380 : 270}
       treeMaxHeight={53}
       previewHeight={52}

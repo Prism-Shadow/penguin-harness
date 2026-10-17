@@ -1,7 +1,8 @@
 /**
  * English dictionary (constrained by the `Strings` type to the same shape as zh):
- * locale switching goes through state/locale.tsx. Marketing copy uses lowercase `agent`;
- * preserve the established casing of Workspace, Token, Task, Skill, Trace, and other terms.
+ * locale switching goes through the shared SiteLocaleProvider (app.tsx). Marketing copy uses
+ * lowercase `agent`; preserve the established casing of Workspace, Token, Task, Skill, Trace,
+ * and other terms.
  */
 import type { Strings } from "./strings";
 

@@ -1269,6 +1269,9 @@ export const en: Strings = {
     moreRows: (count: number): string => `${count} more not shown`,
     /** Name of the aggregated result list (read out when it is announced). */
     resultsLabel: "Find results",
+    outline: "Outline",
+    inDocument: "Find in document",
+    documentPlaceholder: "Find in document…",
   },
 
   common: {
@@ -2565,7 +2568,6 @@ export const en: Strings = {
     filterAll: "All",
     filterActive: "Active",
     filterPaused: "Paused",
-    filterCompleted: "Completed",
     panelEmpty: "No scheduled tasks in this conversation yet",
     panelNoMatch: "No matching scheduled tasks",
     /** The panel's body on the draft page, where no Session exists yet. */
@@ -2612,7 +2614,7 @@ export const en: Strings = {
      * the file branch, so they are never read as flags of the command beside them.
      */
     aiCreateTail: (agentId: string): string =>
-      `Create this scheduled task for agent \`${agentId}\`. Either run \`penguin schedule add <name> --agent-id ${agentId} --prompt "<the request>" --start-at <ISO 8601 or now>\`, adding \`--period <30m | 12h | 7d>\` when it repeats and \`--end-at <ISO 8601>\` when the request has a natural end — without \`--agent-id\` the task lands on whichever agent is running this conversation rather than on that one; or write the TOML file under that agent's agent_state/schedule/ yourself, with a semantic file name and the \`start_at\`, \`period\` and \`end_at\` keys. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
+      `Create this scheduled task for agent \`${agentId}\`. Either run \`penguin schedule add <name> --agent-id ${agentId} --prompt "<the request>" --start-at <future ISO 8601, or now with --period>\`, adding \`--period <30m | 12h | 7d>\` when it repeats and \`--end-at <ISO 8601>\` when the request has a natural end — without \`--agent-id\` the task lands on whichever agent is running this conversation rather than on that one; or write the TOML file under that agent's agent_state/schedule/ yourself, with a semantic file name and the \`start_at\`, \`period\` and \`end_at\` keys. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
     /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
     suggestionsTitle: "Suggestions",
     suggestions: {
@@ -3706,6 +3708,8 @@ Scenarios:
     /** Toast when Retry finds nothing held: the unfinished turn's input already went out with a later message. */
     retryNothing: "Nothing to retry: that turn's input has already been sent.",
     imageAlt: "Image uploaded by user",
+    /** The hint on a sent image that did not load (its file was removed, or its machine is out of reach). */
+    imageUnavailable: "This image could not be loaded",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via read_file)",
@@ -4044,9 +4048,7 @@ Scenarios:
     },
     /** The skills note's fixed phrase (the count picks the plural); the skill names follow it as `nameList`. */
     skillsLabel: (count: number): string => `Using skill${count === 1 ? "" : "s"}`,
-    /** Attached-file notice above a user message: this fixed phrase, then the file names as `nameList`. */
-    attachedFilesLabel: (count: number): string => `Attached file${count === 1 ? "" : "s"}`,
-    /** Names listed after a note's fixed phrase (skills, files). */
+    /** Names listed after a note's fixed phrase (the skills). */
     nameList: (names: string[]): string => names.join(", "),
     /** Composer "+" extension menu (image upload, file attachment, goal mode) and the goal chip. */
     plusMenu: "More input options",
@@ -5881,36 +5883,8 @@ Scenarios:
     },
     /** The handbook page: the knowledge base directory, its index and its documents. */
     handbook: {
-      info: "The company's knowledge base: the Markdown documents under handbook/. The index (README.md) is the page every trigger makes the employee Agent read first; the other documents are listed from it and read on demand.",
-      /** The pinned first row: the index, and why it is pinned. */
-      indexLabel: "Index · read first every run",
-      documents: "Documents",
-      /** The tree's own controls: closing every folder, and what a folder row's count means. */
-      collapseAll: "Collapse all",
-      documentsInFolder: (n: number): string => `${n} document${n === 1 ? "" : "s"}`,
-      noOtherDocuments: "No other documents yet. Create one and list it in the index.",
-      emptyDocument: "This document is still empty.",
-      newDocument: "New document",
-      creating: "Creating…",
-      pathField: "Path",
-      pathPlaceholder: "decisions/2026-09-02-hire-plan.md",
-      pathHint:
-        "Relative to handbook/, folders separated by /; each segment starts with a letter or digit and uses only letters, digits, . _ -; .md is added when the extension is left out.",
-      pathInvalid:
-        "Invalid path: each segment starts with a letter or digit and uses only letters, digits, . _ -, folders separated by /, at most eight levels.",
-      pathExists: "That document already exists.",
-      documentCreated: "Document created",
-      deleteDocument: "Delete document",
-      deleteConfirm: (path: string): string =>
-        `Delete ${path}? The document is removed from handbook/; the index entry pointing at it is not updated automatically.`,
-      documentDeleted: "Document deleted",
+      /** The page could not read the handbook's listing (which names its directory). */
       loadFailed: "Could not load the handbook",
-      documentLoadFailed: "Could not load the document",
-      /** A row's tooltip: when the file was last written, and its size. */
-      updatedAt: (time: string, size: string): string => `Updated ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
-      editorHint: (shortcut: string | null): string =>
-        shortcut === null ? "Markdown" : `Markdown · ${shortcut} to save`,
     },
   },
   errors: {

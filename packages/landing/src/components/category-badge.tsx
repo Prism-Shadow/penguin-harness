@@ -1,34 +1,23 @@
 /**
- * Blog badges: category (news = brand fill, practice = brand outline, perspectives =
- * teal fill, changelog = neutral) + the pinned marker, all sharing the same pill shape.
+ * Blog badges on the shared site pill: category (news = brand fill, practice = brand outline,
+ * perspectives = teal fill, changelog = neutral) and the pinned marker.
  */
+import { SitePill } from "@prismshadow/penguin-ui/site";
+import type { SitePillTone } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import type { BlogCategory } from "../lib/blog";
 
-const CATEGORY_STYLES: Record<BlogCategory, string> = {
-  news: "border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-300",
-  practice:
-    "border-brand-200 bg-transparent text-brand-700 dark:border-brand-800 dark:text-brand-300",
-  perspectives:
-    "border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-700 dark:bg-teal-950 dark:text-teal-300",
-  changelog:
-    "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300",
+const CATEGORY_TONE: Record<BlogCategory, SitePillTone> = {
+  news: "brand",
+  practice: "brand-outline",
+  perspectives: "teal",
+  changelog: "neutral",
 };
 
 export function CategoryBadge({ category }: { category: BlogCategory }) {
-  return (
-    <span
-      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${CATEGORY_STYLES[category]}`}
-    >
-      {S.blog[category]}
-    </span>
-  );
+  return <SitePill tone={CATEGORY_TONE[category]}>{S.blog[category]}</SitePill>;
 }
 
 export function PinnedBadge() {
-  return (
-    <span className="rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 dark:border-brand-800 dark:bg-brand-950 dark:text-brand-300">
-      {S.blog.pinned}
-    </span>
-  );
+  return <SitePill tone="brand">{S.blog.pinned}</SitePill>;
 }

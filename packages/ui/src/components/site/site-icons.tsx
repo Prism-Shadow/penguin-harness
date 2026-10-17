@@ -86,3 +86,51 @@ export function ChevronDownIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function CopyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.copy} />
+    </Icon>
+  );
+}
+
+export function LinkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.chainLink} />
+    </Icon>
+  );
+}
+
+export function ExternalLinkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.externalLink} />
+    </Icon>
+  );
+}
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.search} />
+    </Icon>
+  );
+}
+
+export function ArrowRightIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.arrowRightCentered} />
+    </Icon>
+  );
+}
+
+export function TerminalIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d={ICONS.terminalPrompt} />
+    </Icon>
+  );
+}

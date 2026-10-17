@@ -1,5 +1,7 @@
-/** Public-site chrome. Import without the application theme or bundled fonts. */
+/** Public-site chrome and content. Import without the application theme or bundled fonts. */
 @import "./cursors.css";
+@import "./site-content.css";
+@import "./site-prose.css";
 
 /* Pin the public site's scale even inside a gallery previewing another theme or text size.
    Portaled menus carry this scope too, so their typography and colours match the trigger. */

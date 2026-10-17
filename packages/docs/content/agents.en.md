@@ -364,7 +364,7 @@ Only the Project owner can create a task manually.
 1. On the **Schedules** tab, select **Create manually**. The **New scheduled task** dialog opens.
 2. In **Name**, enter the task's file name, without `.toml`. You cannot change it later.
 3. In **Period**, enter how often the task runs, such as `30m`, `12h` or `7d`. Leave it empty for a one-off task. The shortest period is 5 minutes.
-4. Set **Start at**, and optionally **End at**.
+4. Set **Start at**, and optionally **End at**. A one-off task needs a **Start at** that is still ahead, and **End at** cannot be in the past.
 5. Under **Target**, choose where the prompt goes:
    - **New session each time**: every run starts a new Session. Optionally choose a **Model** (the Project default if you choose none) and a **Workspace** (a temporary Workspace if you choose none).
    - **Bound Session**: every run goes to one existing Session. Choose it in **Session**.
@@ -375,7 +375,7 @@ To create a task by describing it instead, select **Create with AI**, or pick on
 
 ### Manage scheduled tasks
 
-The table shows each task's **Name**, **Status**, **Period**, **Target**, **Next / last fired** and **Queue**. The status is **Active**, **Disabled**, **Expired**, **Done**, **Missed** or **Invalid**; point at **Invalid** to see why.
+The table shows each task's **Name**, **Status**, **Period**, **Target**, **Next / last fired** and **Queue**. The status is **Active**, **Disabled**, **Expired**, **Done**, **Missed** or **Invalid**; point at **Invalid** to see why. Done, missed and expired tasks are archived and soon leave the table; see [Finished tasks are archived](/schedules#finished-tasks-are-archived).
 
 On each row, the owner can select **Disable** or **Enable**, **Edit**, or **Delete**. Files that cannot be parsed are listed under **Files that failed to parse (skipped by the scheduler)**.
 

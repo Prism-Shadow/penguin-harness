@@ -35,11 +35,22 @@ shared component. Verify the shared change in the gallery and in a representativ
 ### Landing, docs and gallery chrome
 
 Use `@prismshadow/penguin-ui/site` for the shared `SiteHeader`, `SiteNavLinks`,
-`SiteLanguageMenu`, `SiteThemeToggle`, `SiteGitHubLink` and site icons. Import
-`@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors. This entry is
-independent of the app renderer and full theme; public sites do not need the app's bundled fonts
-or Markdown renderer just to render navigation. Their wrappers only adapt routes, labels and
-preferences. Do not restore copied navbar markup, language-menu event handlers or theme cycles.
+`SiteLanguageMenu`, `SiteThemeToggle`, `SiteGitHubLink` and site icons, and for what the sites'
+pages share: `SiteFooter`, `SiteCodeCard`, `SiteCopyButton`, `SitePill`, `SiteMarkdown` (article
+prose with `SiteCodeBlock` and `SiteCodeTabs`; the docs pass `SITE_DOC_REMARK_PLUGINS` and every
+site passes `highlightSiteCode`), `SiteToc` with `useActiveTocEntry`, `SiteSidebarNav`,
+`SiteSearchDialog`, `SiteExternalLink`, the preference providers (`SiteThemeProvider`,
+`SiteLocaleProvider`, the shared `penguin-site.*` keys) and `useRouteScroll`. Import
+`@prismshadow/penguin-ui/site.css` for their scoped appearance and shared cursors; a site's
+Tailwind entry also imports `site-page.css` (the `dark` variant, the brand scale, the neutral dark
+ramp, body defaults). This entry is independent of the app renderer and full theme; public sites
+do not need the app's bundled fonts just to render a page. Their wrappers only adapt routes,
+labels, content and preferences. Do not restore copied navbar markup, language-menu event
+handlers, theme cycles, footers, copy buttons or Markdown typography in a site package.
+
+A site component is held to the package's de-slop rules like any other: its look lives in
+`site-content.css` or `site-prose.css` on the `--site-*` palette (Tailwind's values, the neutral
+dark ramp), never as palette utilities, `dark:` variants or literal font sizes in its markup.
 
 Public-site controls keep their fixed visual identity through the gallery's theme changes.
 Their shared recipes live in `packages/ui/src/site.css`; landing content, marketing sections and
@@ -546,6 +557,13 @@ outside a `Menu` is a plain button, for a panel that mixes rows with a search bo
 - **Example and template cards show a short summary**, one line saying what it is; the full text
   (a mission, a prompt) lands in the field it fills, and examples live where the choice is made,
   not again under that field (company landing, 2026-10-03).
+- **What a message carries is an attachment tile.** An image or a file attached to a message —
+  staged in the composer, sent, or inside a steer — is the UI package's `AttachmentImage` /
+  `AttachmentFile` in an `AttachmentList`, never a hand-built thumbnail or a chip. An image box
+  takes a box radius (`rounded-md`), never `rounded-control`: Frost's controls are pills at
+  9999px, and that radius on a box that is not square draws a stadium (owner, 2026-10-17:
+  「图片传上去不知道为啥变成椭圆了」). The gallery's attachments board and its browser spec
+  (`packages/ui-gallery/e2e/attachments.spec.mjs`) hold the shapes.
 - **Comments explain constraints, not history**, and never cite a design doc — inline the constraint.
 
 ## Verify

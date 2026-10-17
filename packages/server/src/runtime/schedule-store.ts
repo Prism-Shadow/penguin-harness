@@ -2,8 +2,10 @@
  * Schedule file access: `agent_state/schedule/<name>.toml`, where
  * the filename (a semantic name) is the identity. Reads are fault-tolerant (an invalid
  * file is recorded as an error and skipped by the caller); writes only go through the
- * API routes (the system never rewrites existing file content — PUT is a full-file
- * replacement expressing user intent).
+ * API routes (the system never rewrites a file's content — PUT is a full-file
+ * replacement expressing user intent). The one thing the scheduler does to a file on its
+ * own is move a settled task's file, unchanged, into `schedule/expired/`
+ * (archiveScheduleFile); nothing reads that subdirectory back.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -265,6 +267,61 @@ export async function writeScheduleFile(
   const dir = scheduleDir(root, projectId, agentId);
   await fs.mkdir(dir, { recursive: true });
   await atomicWriteFile(path.join(dir, `${name}.toml`), raw, { followSymlinks: true });
+}
+
+/** Subdirectory of `schedule/` that settled task files are archived into (never scanned: every listing reads top-level files only). */
+export const EXPIRED_SCHEDULE_DIR = "expired";
+
+/** `20261015T093000Z`: the archive instant as a file-name suffix (UTC, no separators). */
+function archiveStamp(nowMs: number): string {
+  return new Date(nowMs)
+    .toISOString()
+    .replace(/\.\d{3}Z$/, "Z")
+    .replace(/[-:]/g, "");
+}
+
+async function pathExists(file: string): Promise<boolean> {
+  try {
+    await fs.lstat(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Archive a settled task: move `<name>.toml`, unchanged, into `schedule/expired/`. It never
+ * overwrites — when `expired/<name>.toml` is already there, the moved file becomes
+ * `<name>.<UTC stamp>.toml`, then `<name>.<UTC stamp>-2.toml` and so on. Returns false when the
+ * source file is already gone; any other failure throws.
+ */
+export async function archiveScheduleFile(
+  root: string,
+  projectId: string,
+  agentId: string,
+  name: string,
+  nowMs: number,
+): Promise<boolean> {
+  const dir = scheduleDir(root, projectId, agentId);
+  const source = path.join(dir, `${name}.toml`);
+  if (!(await pathExists(source))) return false;
+  const archive = path.join(dir, EXPIRED_SCHEDULE_DIR);
+  await fs.mkdir(archive, { recursive: true });
+  let target = path.join(archive, `${name}.toml`);
+  const stamp = archiveStamp(nowMs);
+  for (let n = 1; await pathExists(target); n += 1) {
+    target = path.join(archive, `${name}.${stamp}${n === 1 ? "" : `-${n}`}.toml`);
+  }
+  try {
+    await fs.rename(source, target);
+  } catch (err) {
+    // Deleted (or archived by a concurrent pass) since the check above: nothing left to move.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT" && !(await pathExists(source))) {
+      return false;
+    }
+    throw err;
+  }
+  return true;
 }
 
 /** Delete a schedule file; returns false if it doesn't exist. */

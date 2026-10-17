@@ -1,0 +1,428 @@
+/* Public-site article prose (`SiteMarkdown`): blog posts and doc pages read in one voice. Two
+   variants keep the rhythm each surface has always had — `post` for a blog post's flowing text,
+   `doc` for a reference page's ruled sections and plain tables. Unlayered, like the per-site
+   copies it replaces, so it outranks utilities on the Markdown's own elements. The palette is
+   site-content.css's. */
+
+.site-prose {
+  overflow-wrap: break-word;
+  font-size: 15px;
+  color: var(--site-gray-800);
+}
+:root.dark .site-prose {
+  color: var(--site-gray-200);
+}
+.site-prose :is(p, ul, ol, pre, blockquote, table, details) {
+  margin: 0.625rem 0;
+}
+.site-prose li {
+  margin: 0.3rem 0;
+}
+.site-prose p,
+.site-prose li {
+  line-height: 1.75;
+}
+.site-prose :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+}
+.site-prose h1 {
+  font-size: 1.375rem;
+}
+.site-prose h2 {
+  font-size: 1.125rem;
+}
+.site-prose h3 {
+  font-size: 1rem;
+}
+/* A reference page: more air above a section, and each ## ruled off. */
+.site-prose[data-variant="doc"] :is(h1, h2, h3, h4) {
+  margin: 1.75rem 0 0.5rem;
+}
+.site-prose[data-variant="doc"] h2 {
+  font-size: 1.1875rem;
+  border-bottom: 1px solid var(--site-gray-200);
+  padding-bottom: 0.375rem;
+}
+.site-prose[data-variant="doc"] h3 {
+  font-size: 1.0625rem;
+}
+:root.dark .site-prose[data-variant="doc"] h2 {
+  border-color: var(--site-gray-800);
+}
+.site-prose ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.site-prose ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+/* `anywhere` rather than `word-break: break-all`: it only breaks a token that would otherwise
+   overflow, so long URLs wrap cleanly while short Latin words in mixed CJK/Latin link text never
+   split mid-word; unlike `break-word` it also counts the break opportunities toward min-content
+   sizing, so a long link can't blow out flex or table layouts. */
+.site-prose a {
+  color: var(--site-brand-700);
+  text-decoration-line: underline;
+  text-decoration-color: var(--site-brand-300);
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  transition:
+    color 150ms var(--site-ease),
+    text-decoration-color 150ms var(--site-ease);
+}
+:root.dark .site-prose a {
+  color: var(--site-brand-300);
+  text-decoration-color: var(--site-brand-700);
+}
+.site-prose a:hover,
+:root.dark .site-prose a:hover {
+  color: var(--site-brand-600);
+}
+/* Font size only, so fenced blocks keep their size; the chrome below is inline code's. */
+.site-prose code {
+  font-size: 0.85em;
+}
+/* Inline code: a hairline outline over a barely-there brand wash — in prose dense with `code`, a
+   solid fill reads as a row of heavy blocks. Long paths and identifiers break like links. */
+.site-prose :not(pre) > code {
+  border: 1px solid color-mix(in oklab, var(--site-brand-200) 60%, transparent);
+  border-radius: 0.375rem;
+  background: color-mix(in oklab, var(--site-brand-50) 40%, transparent);
+  padding: 0.1em 0.3em;
+  font-size: 0.875em;
+  color: var(--site-gray-900);
+  overflow-wrap: anywhere;
+}
+:root.dark .site-prose :not(pre) > code {
+  border-color: color-mix(in oklab, var(--site-brand-900) 70%, transparent);
+  background: color-mix(in oklab, var(--site-brand-950) 50%, transparent);
+  color: var(--site-gray-100);
+}
+.site-prose pre {
+  overflow-x: auto;
+  border: 1px solid var(--site-gray-200);
+  border-radius: 0.5rem;
+  background: var(--site-gray-50);
+  padding: 0.75rem;
+  font-size: 13px;
+  line-height: 1.5rem;
+}
+:root.dark .site-prose pre {
+  border-color: var(--site-gray-800);
+  background: var(--site-gray-900);
+}
+.site-prose pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+/* A fenced block: .site-code owns the surface and its <pre> only scrolls and pads, so the plain
+   fallback and the highlighted markup sit in one box and the swap causes no reflow. The
+   highlighter writes its theme background inline, which only !important can drop. */
+.site-prose .site-code {
+  margin: 0.625rem 0;
+  overflow: hidden;
+  border: 1px solid var(--site-gray-200);
+  border-radius: 0.5rem;
+  background: var(--site-gray-50);
+}
+:root.dark .site-prose .site-code {
+  border-color: var(--site-gray-800);
+  background: var(--site-gray-900);
+}
+.site-prose .site-code pre {
+  overflow-x: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0.75rem;
+  background: transparent !important;
+  font-size: 13px;
+  line-height: 1.5rem;
+}
+/* Dark mode reads the dual-theme variables the highlighter baked in, so switching the mode never
+   re-highlights. */
+html.dark .site-prose .shiki,
+html.dark .site-prose .shiki span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* A tab group sits on the code surface, so it reads as one object rather than a row of buttons
+   over an unrelated block. */
+.site-prose .site-code-tabs {
+  margin: 0.625rem 0;
+  overflow: hidden;
+  border: 1px solid var(--site-gray-200);
+  border-radius: 0.5rem;
+}
+.site-prose .site-code-tabs-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--site-gray-200);
+  background: var(--site-gray-50);
+  padding: 0.375rem 0.375rem 0;
+}
+.site-prose .site-code-tabs-strip button {
+  border-bottom: 2px solid transparent;
+  border-radius: 0.375rem 0.375rem 0 0;
+  padding: 0.25rem 0.625rem;
+  font-size: 13px;
+  color: var(--site-gray-500);
+  transition: color 150ms var(--site-ease);
+}
+.site-prose .site-code-tabs-strip button:hover {
+  color: var(--site-gray-900);
+}
+.site-prose .site-code-tabs-strip button[aria-selected="true"] {
+  border-bottom-color: var(--site-brand-600);
+  font-weight: 500;
+  color: var(--site-brand-700);
+}
+.site-prose .site-code-tabs .site-code {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+:root.dark .site-prose .site-code-tabs,
+:root.dark .site-prose .site-code-tabs-strip {
+  border-color: var(--site-gray-800);
+}
+:root.dark .site-prose .site-code-tabs-strip {
+  background: var(--site-gray-900);
+}
+:root.dark .site-prose .site-code-tabs-strip button {
+  color: var(--site-gray-400);
+}
+:root.dark .site-prose .site-code-tabs-strip button:hover {
+  color: var(--site-gray-100);
+}
+:root.dark .site-prose .site-code-tabs-strip button[aria-selected="true"] {
+  border-bottom-color: var(--site-brand-400);
+  color: var(--site-brand-300);
+}
+
+/* Callouts (remarkCallout). A collapsible one is a <details>, so the open state is the
+   browser's; the summary is the whole clickable row and its marker turns as a fold chevron does. */
+.site-prose .callout {
+  margin: 0.75rem 0;
+  border: 1px solid;
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.875rem;
+}
+.site-prose .callout > :first-child {
+  margin-top: 0;
+}
+.site-prose .callout > :last-child {
+  margin-bottom: 0;
+}
+.site-prose .callout-title {
+  font-weight: 500;
+}
+.site-prose details.callout > summary {
+  margin-inline: -0.25rem;
+  list-style: none;
+  border-radius: 0.25rem;
+  padding-inline: 0.25rem;
+  user-select: none;
+}
+.site-prose details.callout > summary::-webkit-details-marker {
+  display: none;
+}
+.site-prose details.callout > summary::before {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 0.5rem;
+  vertical-align: 0.09em;
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent currentColor;
+  transition: transform 150ms var(--site-ease);
+}
+.site-prose details.callout[open] > summary::before {
+  transform: rotate(90deg);
+}
+.site-prose details.callout[open] > summary {
+  margin-bottom: 0.5rem;
+}
+.site-prose .callout-info {
+  border-color: var(--site-brand-200);
+  background: color-mix(in oklab, var(--site-brand-50) 50%, transparent);
+}
+.site-prose .callout-info .callout-title {
+  color: var(--site-brand-800);
+}
+.site-prose :is(.callout-warning, .callout-caution) {
+  border-color: var(--site-amber-300);
+  background: color-mix(in oklab, var(--site-amber-50) 60%, transparent);
+}
+.site-prose :is(.callout-warning, .callout-caution) .callout-title {
+  color: var(--site-amber-800);
+}
+:root.dark .site-prose .callout-info {
+  border-color: var(--site-brand-900);
+  background: color-mix(in oklab, var(--site-brand-950) 40%, transparent);
+}
+:root.dark .site-prose .callout-info .callout-title {
+  color: var(--site-brand-200);
+}
+:root.dark .site-prose :is(.callout-warning, .callout-caution) {
+  border-color: var(--site-amber-900);
+  background: color-mix(in oklab, var(--site-amber-950) 30%, transparent);
+}
+:root.dark .site-prose :is(.callout-warning, .callout-caution) .callout-title {
+  color: var(--site-amber-200);
+}
+
+/* <details>/<summary> written as raw HTML in a post (long prompts, transcripts): a card in the
+   language of `pre`. The summary is the card's header, full-bleed so its hover tint reaches the
+   border; an open card adds a hairline under it. The native marker differs per engine and
+   cannot be recoloured, so a CSS chevron in currentColor replaces it, placed against the first
+   line so a summary that wraps keeps it on line one. */
+.site-prose details:not(.callout) {
+  border: 1px solid var(--site-gray-200);
+  border-radius: 0.5rem;
+  background: color-mix(in oklab, var(--site-gray-50) 60%, transparent);
+  padding-inline: 0.875rem;
+}
+.site-prose details:not(.callout)[open] {
+  padding-bottom: 0.625rem;
+}
+.site-prose details:not(.callout) > summary {
+  position: relative;
+  margin-inline: -0.875rem;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.875rem 0.5rem 2rem;
+  font-weight: 500;
+  list-style: none;
+  user-select: none;
+  transition: background-color 150ms var(--site-ease);
+}
+.site-prose details:not(.callout) > summary:hover {
+  background: color-mix(in oklab, var(--site-gray-200) 50%, transparent);
+}
+.site-prose details:not(.callout) > summary::-webkit-details-marker {
+  display: none;
+}
+.site-prose details:not(.callout) > summary::before {
+  content: "";
+  position: absolute;
+  left: 1.125rem;
+  top: calc(0.5rem + 0.75em);
+  width: 0.4em;
+  height: 0.4em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  opacity: 0.6;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  transition: transform 150ms ease;
+}
+.site-prose details:not(.callout)[open] > summary {
+  margin-bottom: 0.25rem;
+  border-bottom: 1px solid var(--site-gray-200);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.site-prose details:not(.callout)[open] > summary::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+/* The last block inside an open card keeps the card's own bottom padding as its only gutter. */
+.site-prose details:not(.callout) > :last-child {
+  margin-bottom: 0;
+}
+:root.dark .site-prose details:not(.callout) {
+  border-color: var(--site-gray-800);
+  background: color-mix(in oklab, var(--site-gray-900) 40%, transparent);
+}
+:root.dark .site-prose details:not(.callout) > summary:hover {
+  background: color-mix(in oklab, var(--site-gray-800) 50%, transparent);
+}
+:root.dark .site-prose details:not(.callout)[open] > summary {
+  border-bottom-color: var(--site-gray-800);
+}
+
+.site-prose blockquote {
+  border-left: 2px solid var(--site-gray-300);
+  padding-left: 0.75rem;
+  color: var(--site-gray-600);
+}
+:root.dark .site-prose blockquote {
+  border-color: var(--site-gray-700);
+  color: var(--site-gray-400);
+}
+
+/* Tables scroll inside the prose column instead of widening the page. A post's table keeps its
+   own width up to the column (`max-content`, so no empty strip past the last cell), lets a cell
+   take a second line above a 9rem floor and only then scrolls, and lays translucent header and
+   zebra fills over the page; a reference page keeps a plain collapsed grid. */
+.site-prose table {
+  display: block;
+  overflow-x: auto;
+}
+.site-prose :is(th, td) {
+  padding: 0.375rem 0.625rem;
+  font-size: var(--site-text-sm);
+  line-height: var(--site-text-sm-lh);
+}
+.site-prose[data-variant="post"] table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  max-width: 100%;
+  scrollbar-width: thin;
+}
+.site-prose[data-variant="post"] :is(th, td) {
+  border-style: solid;
+  border-color: var(--site-gray-200);
+  border-width: 0 1px 1px 0;
+  min-width: 9rem;
+}
+.site-prose[data-variant="post"] :is(th, td):first-child {
+  border-left-width: 1px;
+}
+.site-prose[data-variant="post"] thead :is(th, td) {
+  border-top-width: 1px;
+  background: color-mix(in oklab, var(--site-gray-200) 50%, transparent);
+  text-align: left;
+  font-weight: 600;
+}
+.site-prose[data-variant="post"] tbody tr:nth-child(even) {
+  background: color-mix(in oklab, var(--site-gray-100) 70%, transparent);
+}
+.site-prose[data-variant="doc"] table {
+  border-collapse: collapse;
+}
+.site-prose[data-variant="doc"] :is(th, td) {
+  border: 1px solid var(--site-gray-200);
+}
+.site-prose[data-variant="doc"] th {
+  background: var(--site-gray-50);
+  text-align: left;
+}
+:root.dark .site-prose :is(th, td) {
+  border-color: var(--site-gray-800);
+}
+:root.dark .site-prose[data-variant="post"] thead :is(th, td) {
+  background: color-mix(in oklab, var(--site-gray-800) 60%, transparent);
+}
+:root.dark .site-prose[data-variant="post"] tbody tr:nth-child(even) {
+  background: color-mix(in oklab, var(--site-gray-800) 35%, transparent);
+}
+:root.dark .site-prose[data-variant="doc"] th {
+  background: var(--site-gray-900);
+}
+.site-prose hr {
+  margin: 1rem 0;
+  border-color: var(--site-gray-200);
+}
+:root.dark .site-prose hr {
+  border-color: var(--site-gray-800);
+}

@@ -193,6 +193,8 @@ export * from "./components/overlays/command-palette/command-palette";
 // behind it, the assistant reply on it, and the changes card.
 // The reveal's pacing (stream-reveal.ts) stays inside the family: its hook is the door.
 export * from "./components/chat/message-bubble/message-bubble";
+// The images and files a message carries: the composer, the sent message and a steer's chip.
+export * from "./components/chat/attachments/attachments";
 export * from "./components/chat/stream-text/stream-text";
 export * from "./components/chat/assistant-text/assistant-text";
 export * from "./components/chat/assistant-text/streaming-caret";
@@ -272,3 +274,18 @@ export * from "./components/machines/machine-card/machine-card";
 export * from "./components/machines/machine-list/machine-list";
 export * from "./components/machines/machine-toolbar/machine-toolbar";
 export * from "./components/machines/add-machine/add-machine";
+
+// Reading and finding: the find-in-page machinery the app's find bar and the Markdown reader share
+// (the text matcher, the DOM index with its highlight paint and reveal, the control row), the
+// reader with its outline model, and the measured width a layout that follows its own room reads.
+export * from "./components/content/find/find-text";
+export * from "./components/content/find/find-dom";
+export * from "./components/content/find/find-field";
+export * from "./components/content/markdown-reader/outline";
+export * from "./components/content/markdown-reader/markdown-reader";
+export * from "./components/layout/measure/use-measured-width";
+
+// The files browser's frame: its layout at the measured width, the toolbar row and the two panes,
+// which the Workspace Files panel and the organization handbook both lay out with.
+export * from "./components/files/files-frame/files-layout";
+export * from "./components/files/files-frame/files-frame";

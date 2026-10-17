@@ -1,11 +1,16 @@
 /** Landing routes and preferences rendered through the shared public-site header. */
 import { useState } from "react";
 import { Link, useLocation } from "react-router";
-import { Fold, SiteGitHubLink, SiteHeader, SiteNavLinks } from "@prismshadow/penguin-ui/site";
+import {
+  Fold,
+  SiteGitHubLink,
+  SiteHeader,
+  SiteNavLinks,
+  useSiteLocale,
+} from "@prismshadow/penguin-ui/site";
 import type { SiteLink, SiteLinkProps } from "@prismshadow/penguin-ui/site";
 import { S } from "../lib/strings";
 import { DOCS_URL, galleryUrl, REPO_API_URL, REPO_URL } from "../lib/links";
-import { useLocale } from "../state/locale";
 import { ThemeToggle } from "./theme-toggle";
 import { LangToggle } from "./lang-toggle";
 
@@ -16,7 +21,7 @@ function routeLink({ href, ...props }: SiteLinkProps) {
 export function Nav() {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
-  const { locale } = useLocale();
+  const { locale } = useSiteLocale();
   const links: SiteLink[] = [
     { id: "home", href: "/", label: S.nav.home, active: pathname === "/", render: routeLink },
     {

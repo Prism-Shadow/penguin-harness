@@ -63,11 +63,13 @@ describe("the library's topics", () => {
       "streaming",
       "charts",
       "avatars",
+      "site",
       "files",
       "content",
       "layout",
       "data",
       "machines",
+      "attachments",
     ]);
     const foundations = TOPIC_GROUPS.find((group) => group.id === "foundations")!.topics;
     expect(foundations.map((topic) => topic.id)).toEqual([

@@ -156,31 +156,6 @@ export function LinuxIcon(props: IconProps) {
   );
 }
 
-export function CopyIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </Icon>
-  );
-}
-
-export function ArrowRightIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M5 12h14M12 5l7 7-7 7" />
-    </Icon>
-  );
-}
-
-export function TerminalIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="m4 17 6-6-6-6M12 19h8" />
-    </Icon>
-  );
-}
-
 export function DownloadIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -214,23 +189,12 @@ export function ArrowUpRightIcon(props: IconProps) {
   );
 }
 
-export function ExternalLinkIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-    </Icon>
-  );
-}
-
-export function LinkIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-    </Icon>
-  );
-}
-
 export {
+  ArrowRightIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+  LinkIcon,
+  TerminalIcon,
   GitHubIcon,
   SunIcon,
   MoonIcon,
