@@ -67,6 +67,7 @@ import {
 } from "../../layout/disclosure-row/disclosure-row";
 import type { ActivityKind, ActivityMark } from "../../layout/disclosure-row/disclosure-row";
 import { Fold } from "../../layout/fold/fold";
+import { WallpaperBackdrop } from "../../shell/app-shell/wallpaper";
 
 /**
  * The title's ink says the state with the mark: live work in the success ink, a failure in the
@@ -258,6 +259,7 @@ export function ActivityGroup({
           data-kind={kind}
           data-state={hookState}
         >
+          <WallpaperBackdrop />
           {parts}
         </button>
       ) : (

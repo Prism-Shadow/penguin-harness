@@ -135,6 +135,7 @@ import { hasConfiguredKey, sameModelRef, turnPricing } from "../models/model-gro
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { useMemoryListing } from "./use-memory-listing";
 import { useMachineModels } from "../../lib/machine-models";
+import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { deletedChangeKeys } from "./memory-nav";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
@@ -298,7 +299,10 @@ export function ChatPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   /** This server's model configuration for the Project (the page's own while it acts here). */
-  const [localModels, setLocalModels] = useState<ModelsResponse | null>(null);
+  const [localModelsRead, setLocalModels] = useState<Scoped<ModelsResponse> | null>(null);
+  // Only the current Project's: the read is reset in an effect, and the draft (remounted per
+  // Project in the same commit) would otherwise resolve its model against the last Project's.
+  const localModels = scopedValue(localModelsRead, projectId);
   // Background processes the conversation started (the details popover list), refreshed by
   // the polling effect below; procBusy marks the rows whose Stop / Remove requests are in
   // flight (every exited row at once while "clear exited" runs).
@@ -450,7 +454,7 @@ export function ChatPage() {
   const listed =
     draft || (routeSessionId !== null && isSessionDeleted(routeSessionId))
       ? null
-      : resolveRoutedSession(routeSessionId, sessions, fetchedSession);
+      : resolveRoutedSession(routeSessionId, sessions, fetchedSession, projectId);
   /**
    * The routed Session, held across a refetch that momentarily does not list it.
    *
@@ -475,6 +479,7 @@ export function ChatPage() {
     listed,
     routeSessionId ?? null,
     probeKey !== null && probeFailedKey === probeKey,
+    projectId,
   );
   const routed = draft ? null : heldSession.current;
   /**
@@ -1289,7 +1294,7 @@ export function ChatPage() {
       try {
         const res = await api.getModels(projectId);
         if (cancelled) return;
-        setLocalModels(res);
+        setLocalModels(scoped(projectId, res));
         const { prefs } = await api.getPrefs();
         if (cancelled || prefs.credentialGuideSeen) return;
         const def = res.models.find((m) => sameModelRef(m, res.defaultModel));
@@ -1323,7 +1328,7 @@ export function ChatPage() {
       api
         .getModels(projectId)
         .then((res) => {
-          if (!cancelled) setLocalModels(res);
+          if (!cancelled) setLocalModels(scoped(projectId, res));
         })
         .catch(() => undefined);
     };

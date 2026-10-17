@@ -374,7 +374,7 @@ penguin schedule update <name> [options]
 penguin schedule rm <name> [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
 ```
 
-`penguin schedule ls` lists the scheduled tasks of all agents, or of one with `--agent-id`. Columns: agent, name, enabled, start time, period (`once` for one-shot tasks), target (a bound Session's short id, or `new session`), last fired, and a status marker for every state other than active (`expired`, `done`, `missed` or `invalid`). Schedule files that cannot be parsed are listed too, marked `invalid`.
+`penguin schedule ls` lists the scheduled tasks of all agents, or of one with `--agent-id`. Columns: agent, name, enabled, start time, period (`once` for one-shot tasks), target (a bound Session's short id, or `new session`), last fired, and a status marker for every state other than active (`expired`, `done`, `missed` or `invalid`). Schedule files that cannot be parsed are listed too, marked `invalid`. Done, missed and expired tasks are archived by the server and soon drop out of the list; see [Finished tasks are archived](/schedules#finished-tasks-are-archived).
 
 `add`, `update` and `rm` go through the API, which writes the schedule's TOML file. The file stays the single source of truth, and the CLI acts as a validated writer, the same pattern model config and the vault follow: updates go through the system interface, validation happens at the interface layer, and hand edits stay possible. API errors are printed verbatim, so an agent gets validation right away instead of waiting for the reconcile pass that a hand edit goes through.
 
@@ -383,9 +383,9 @@ Options of `add` and `update`:
 | Option | Description | Default |
 | --- | --- | --- |
 | `--prompt <text>` | The text each firing sends. Required on `add`. | — |
-| `--start-at <ISO\|now>` | First fire time, in ISO 8601 or the literal `now` for the current instant. Required on `add`. | — |
+| `--start-at <ISO\|now>` | First fire time, in ISO 8601 or the literal `now` for the current instant. A one-shot task needs a time that is still ahead, so `now` only suits a task with `--period`. Required on `add`. | — |
 | `--period <duration>` | Fixed interval, at least `5m` (for example `30m`, `12h`, `1d`, `7d`). | One-shot |
-| `--end-at <ISO>` | Stops firing after this instant. | — |
+| `--end-at <ISO>` | Stops firing after this instant, which cannot be in the past. | — |
 | `--session-id <id>` | Binds firings to one Session. Use either this or the new-session options, not both. | — |
 | `--workspace <path>` / `--model-id <id> --provider <group>` | New-session mode: each firing creates a Session on this Workspace and model. The model pair is both-or-neither. | A temporary Workspace; the Project's default model |
 | `--disabled` (`add`) | Creates the task disabled. | Enabled |
@@ -398,7 +398,7 @@ Options of `add` and `update`:
 
 ```bash
 penguin schedule add daily-report --prompt "summarize the day" --start-at 2026-09-01T09:00:00Z --period 1d
-penguin schedule add once-now --prompt "check the deploy" --start-at now --session-id 402a2e24
+penguin schedule add deploy-watch --prompt "check the deploy" --start-at now --period 30m --session-id 402a2e24
 penguin schedule update daily-report --period 12h --disable
 penguin schedule rm daily-report
 ```

@@ -68,6 +68,7 @@ import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { mergeAgents } from "../../lib/benchmark-merge";
 import type { AgentSource } from "../../lib/benchmark-merge";
 import { useSessions } from "../../state/sessions";
+import { scoped, scopedValue, type Scoped } from "../../lib/project-scope";
 import { employmentsOf, splitByEmployment } from "./agent-employment";
 import { CreateAgentDialog } from "./create-agent-dialog";
 import type { PluginPickItem } from "./create-agent-dialog";
@@ -183,6 +184,9 @@ function pluginPickItems(plugins: readonly PluginItem[]): PluginPickItem[] {
   return plugins.map((plugin) => ({ ...plugin, fallbackIcon: ICONS.puzzle }));
 }
 
+/** No machine Agents read for the current Project (yet): one identity, so the merge memo stays put. */
+const NO_MACHINE_AGENTS: AgentSource[] = [];
+
 export function AgentsPage() {
   const navigate = useNavigate();
   useDocumentTitle(S.nav.agents);
@@ -195,7 +199,8 @@ export function AgentsPage() {
    * built from this server alone does not have it at all.
    */
   const { machineIds, machineLabels } = useSessions();
-  const [machineAgents, setMachineAgents] = useState<AgentSource[]>([]);
+  /** The machines' own Agents, tagged with the Project they were listed for. */
+  const [machineAgentsRead, setMachineAgents] = useState<Scoped<AgentSource[]> | null>(null);
   const machinesKey = [...machineIds].join(",");
   /** Header search, the Models page's shape: name, id and description, case-insensitive. */
   const [query, setQuery] = useState("");
@@ -264,8 +269,10 @@ export function AgentsPage() {
     navigate(`/agents/${createdId}`);
   };
 
+  // Only the current Project's: the list is reset in the effect below, a commit after a switch.
+  const machineAgents = scopedValue(machineAgentsRead, projectId ?? null) ?? NO_MACHINE_AGENTS;
   useEffect(() => {
-    setMachineAgents([]);
+    setMachineAgents(null);
     if (!projectId || machinesKey === "") return;
     let cancelled = false;
     void Promise.allSettled(
@@ -277,7 +284,12 @@ export function AgentsPage() {
       // A machine that cannot answer contributes no Agents, which is what not reading it
       // means; this server's own list still stands on its own.
       if (!cancelled) {
-        setMachineAgents(answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : [])));
+        setMachineAgents(
+          scoped(
+            projectId,
+            answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : [])),
+          ),
+        );
       }
     });
     return () => {
