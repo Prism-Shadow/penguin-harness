@@ -280,13 +280,18 @@
    text, and a <figcaption>. The colours come from the sites' palette (site-content.css) and
    follow the theme. A cache state keeps one colour in every figure: read is the solid brand
    blue, written is the pale outlined blue, and written again (tokens the previous request had
-   already sent) is the mid amber with a dashed edge, so the three stay apart in greyscale. */
+   already sent) is the mid amber with a dashed edge, so the three stay apart in greyscale. Below
+   about 460px a figure keeps its drawing at a legible size and scrolls sideways inside the
+   prose column, as a table does, instead of shrinking its text past reading. */
 .post-figure {
   margin: 1.75rem 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 .post-figure .fig-svg {
   display: block;
   width: 100%;
+  min-width: 460px;
   max-width: 600px;
   height: auto;
   margin: 0 auto;
@@ -362,9 +367,6 @@ html.dark .post-figure figcaption {
   stroke-width: 1;
   stroke-dasharray: 3 2;
 }
-.fig-svg .fig-uncached {
-  fill: var(--site-gray-300);
-}
 /* A cost that is not a cache state: the baseline's share of an input-cost bar. */
 .fig-svg .fig-cost {
   fill: var(--site-gray-300);
@@ -389,7 +391,7 @@ html.dark .post-figure figcaption {
 }
 .fig-svg .fig-cross {
   fill: none;
-  stroke: var(--site-amber-800);
+  stroke: var(--site-gray-700);
   stroke-width: 2;
 }
 .fig-svg .fig-opener {
@@ -443,7 +445,8 @@ html.dark .fig-svg .fig-tick {
 html.dark .fig-svg .fig-num {
   fill: var(--site-gray-200);
 }
-html.dark .fig-svg .fig-on-read {
+html.dark .fig-svg .fig-on-read,
+html.dark .fig-svg .fig-on-again {
   fill: var(--site-gray-950);
 }
 html.dark .fig-svg .fig-read {
@@ -457,7 +460,6 @@ html.dark .fig-svg .fig-again {
   fill: color-mix(in oklab, var(--site-amber-300) 70%, var(--site-amber-800));
   stroke: var(--site-amber-300);
 }
-html.dark .fig-svg .fig-uncached,
 html.dark .fig-svg .fig-cost {
   fill: var(--site-gray-600);
 }
@@ -474,7 +476,7 @@ html.dark .fig-svg .fig-entry-match {
   stroke: var(--site-brand-300);
 }
 html.dark .fig-svg .fig-cross {
-  stroke: var(--site-amber-300);
+  stroke: var(--site-gray-300);
 }
 html.dark .fig-svg .fig-opener,
 html.dark .fig-svg .fig-ref {
