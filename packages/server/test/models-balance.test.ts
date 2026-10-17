@@ -16,7 +16,7 @@
  * the URL, the Bearer header and each vendor's documented reply shape are all exercised.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MODEL_CATALOG } from "@prismshadow/penguin-core";
+import { MODEL_CATALOG } from "../src/model-catalog/index.js";
 import type { ModelBalanceResponse, ProjectCreateResponse } from "../src/api/types.js";
 import {
   BALANCE_CACHE_MS,

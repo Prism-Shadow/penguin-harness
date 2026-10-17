@@ -46,7 +46,7 @@ import {
   catalogGroupConnection,
   presetProviderTable,
   providerInfo,
-} from "@prismshadow/penguin-core/model-catalog";
+} from "@prismshadow/penguin-server/model-catalog";
 import type { ModelsResponse, ProviderConnectionDto } from "@prismshadow/penguin-server/api";
 import {
   applyProviderUpdate,

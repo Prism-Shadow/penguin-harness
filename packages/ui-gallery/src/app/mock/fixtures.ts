@@ -57,7 +57,7 @@ import {
   presetModelEntries,
   presetPromotions,
   presetProviderTable,
-} from "../../../../core/dist/state/model-catalog.js";
+} from "../../../../server/dist/model-catalog.js";
 import { effectiveConnection } from "../../../../core/dist/state/model-connection.js";
 // The built-in Benchmarks as core writes them into a new Project: their cards and their cases.
 import {

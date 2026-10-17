@@ -46,7 +46,7 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
 import { formatMoney, humanizeTokens } from "../../lib/format";
-import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
+import { catalogEntryFor } from "@prismshadow/penguin-server/model-catalog";
 import { useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { TrendChart } from "./trend-chart";

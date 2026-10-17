@@ -69,7 +69,7 @@ import type {
   ToolDefinition,
 } from "../interfaces/index.js";
 import { userAgent } from "../index.js";
-import { attributionHeaders } from "../state/model-catalog.js";
+import { attributionHeaders } from "./app-attribution.js";
 import { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 import {
   approximateMessagesTokens,

@@ -64,26 +64,28 @@ import {
   type ProviderConnectionPatch,
   addModel,
   effectiveConnection,
-  fastModeProtocol,
-  fixedClientType,
-  fixedClientTypeRefuses,
   formatModelRef,
   getModel,
   groupKeyReaches,
   loadAgentVault,
   loadProjectConfig,
-  modelEnvPreviewKey,
   providerConnectionShape,
-  providerInfo,
   removeModel,
   removeVaultEntry,
   setDefaultModel,
   setProviderConnection,
   setVaultEntry,
   setVisionModel,
+} from "@prismshadow/penguin-core";
+import {
+  fastModeProtocol,
+  fixedClientType,
+  fixedClientTypeRefuses,
+  modelEnvPreviewKey,
+  providerInfo,
   unaddableModel,
   unroutableVendorModel,
-} from "@prismshadow/penguin-core";
+} from "@prismshadow/penguin-server/model-catalog";
 import { parseApprovalAnswer } from "../approval.js";
 import { resolveRootOption } from "../root-option.js";
 import { getMessages, maskApiKey, type Messages } from "../i18n.js";

@@ -17,7 +17,7 @@
  */
 import { useState } from "react";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import type { ModelProviderInfo } from "@prismshadow/penguin-server/model-catalog";
 import {
   ChevronDown,
   ConfirmModal,

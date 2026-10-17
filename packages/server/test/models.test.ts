@@ -68,6 +68,7 @@ import type { AddressInfo } from "node:net";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderProjectConfigToml, userText, VERSION } from "@prismshadow/penguin-core";
 import {
   MODEL_CATALOG,
   PENGUIN_GO_BASE_URL,
@@ -77,10 +78,7 @@ import {
   presetPromotions,
   presetProviderTable,
   providerInfo,
-  renderProjectConfigToml,
-  userText,
-  VERSION,
-} from "@prismshadow/penguin-core";
+} from "../src/model-catalog/index.js";
 import type {
   ErrorBody,
   ModelsResponse,

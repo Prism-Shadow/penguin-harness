@@ -1,9 +1,10 @@
 # Data compatibility
 
 - **Date:** 2026-10-15
-- **Type:** process
-- **Scope:** `server`
-- **PR:** [#1166](https://github.com/Prism-Shadow/penguin-harness/pull/1166)
+- **Type:** refactor
+- **Scope:** `server`, `core`
+- **PR:** [#1166](https://github.com/Prism-Shadow/penguin-harness/pull/1166), [#1167](https://github.com/Prism-Shadow/penguin-harness/pull/1167)
+- **Breaking:** yes — only the server migrates Penguin Go's pre-MMSP routes; a load through the SDK alone leaves them as written
 
 [中文版](2026-10-15-backward-compatibility.zh.md)
 
@@ -19,3 +20,11 @@ The DeepSeek presets carried `base_url = "https://api.deepseek.com"` from 2026-0
 ### Lifetime
 
 Remove at the 0.3.0 release preparation, by whoever prepares it, together with core's `migrateProjectConfigTable`: `migratePresetVendorEndpoints` and its call in `ProjectConfigService.readTable`, the `MINIMAX_BASE_URL` export of the catalog, the startup sweep (`ProjectConfigStore.migrateStoredConfigs` and its call in `Startup.setup`, which exists for the one-time migrations alone), and the server `project-config-migrations.test.ts` scenarios.
+
+## Penguin Go's pre-MMSP routes
+
+The one-time migration of Penguin Go routes stored before the MMSP switch (`google-genai` / `deepseek-official` on `token.penguin.ooo/api`) now runs only in the server's read path, including the startup sweep. Core's `loadProjectConfig` no longer migrates them. A file read only by the CLI or the SDK keeps its old routes until a server reads it. The tolerated shape and its scope are unchanged from [the 0.2.15 entry](../0.2.15/2026-10-12-backward-compatibility.md); the user action narrows to: nothing to do when the file is opened through the server or the desktop app.
+
+### Lifetime
+
+Remove the no-`endpoint` call in `ProjectConfigService.readTable`, the `endpoint === undefined` branch of `migratePenguinGoRoutes` and the pre-MMSP origin and paths in `isPenguinGoEndpoint` at the 0.3.0 release preparation, together with core's `migrateProjectConfigTable`; whoever prepares 0.3.0 removes them. The `endpoint` path stays. The startup sweep that applies both server migrations goes with them (see above).

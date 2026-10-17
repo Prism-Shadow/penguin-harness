@@ -2,7 +2,9 @@
  * Penguin Go migration through real config stores and the real MMSP HTTP client.
  * - Overlapping and MMSP-only deliveries use MMSP and retain detailed metadata.
  * - New authorization, reauthorization and sync use MMSP with the existing device flow.
- * - Old projects migrate on read, including model overrides, and repeated reads do not rewrite.
+ * - Old projects migrate on the server's read, including model overrides, and repeated reads do
+ *   not rewrite; a load through the SDK alone leaves them as written (the migration needs the
+ *   server's catalog).
  * - Config migration needs no network requests, keys or current-catalog membership.
  * - Other groups and redirected Go rows keep their keys, settings and routes.
  * - The Go protocol is fixed: the group route and the whole-table PUT refuse another one, while
@@ -14,7 +16,6 @@ import fs from "node:fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   GenerativeModel,
-  migratePenguinGoRoutes,
   loadProjectConfig,
   projectConfigPath,
   userText,
@@ -27,6 +28,7 @@ import {
 import type { LLMOutcome, OmniMessage } from "@prismshadow/penguin-core";
 import type { ErrorBody, ModelsResponse } from "../src/api/types.js";
 import { PlatformAuthService, platformConnection } from "../src/services/platform-auth-service.js";
+import { migratePenguinGoRoutes } from "../src/services/project-config-migrations.js";
 import { fakeFetch, jsonResponse, stubFetch } from "./fixtures/fetch.js";
 import { createTestApp, provisionUser, apiClient } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -285,17 +287,19 @@ describe("Penguin Go stored projects", () => {
     ).toMatchObject({ discount: 0.4 });
     expect(fake.calls).toHaveLength(2);
   });
-  it("SDK and cached server loads migrate multiple old projects and do not rewrite a second time", async () => {
+  it("server loads migrate multiple old projects and do not rewrite a second time; an SDK load leaves them as written", async () => {
     const ids = [await project(), await project()];
     const fake = stubFetch(() => {
       throw new Error("Migration must not access the network");
     });
     for (const id of ids) {
       await t.deps.projectConfigService.writeRaw(id, oldConfig(`ep_auto_${id}`));
-      const config =
-        id === ids[0]
-          ? await loadProjectConfig(t.root, id)
-          : await t.deps.projectConfigService.loadConfig(id);
+      // The SDK alone has no catalog to migrate with: the old route stays as written.
+      const file = projectConfigPath(t.root, id);
+      const written = await fs.readFile(file, "utf8");
+      expect((await loadProjectConfig(t.root, id)).models[0]?.client_type).not.toBe("mmsp");
+      expect(await fs.readFile(file, "utf8")).toBe(written);
+      const config = await t.deps.projectConfigService.loadConfig(id);
       expect(config.models[0]).toMatchObject({
         model_id: "deepseek-flash",
         client_type: "mmsp",
@@ -303,7 +307,6 @@ describe("Penguin Go stored projects", () => {
         max_tokens: 1234,
         fast_mode: true,
       });
-      const file = projectConfigPath(t.root, id);
       const first = await fs.readFile(file, "utf8");
       await loadProjectConfig(t.root, id);
       await t.deps.projectConfigService.loadConfig(id);

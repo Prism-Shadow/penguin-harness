@@ -132,7 +132,7 @@ import { modelLabel } from "./model-select";
 import { sessionModelPickerDisabled, sessionRowStale, switchContextShape } from "./model-switch";
 import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, sameModelRef, turnPricing } from "../models/model-grouping";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { providerInfo } from "@prismshadow/penguin-server/model-catalog";
 import { useMemoryListing } from "./use-memory-listing";
 import { useMachineModels } from "../../lib/machine-models";
 import { deletedChangeKeys } from "./memory-nav";
