@@ -259,9 +259,11 @@
 .launcher-fan-out {
   animation: launcher-fan-out 140ms ease-in both;
 }
-/* Message item entrance. */
+/* Message item entrance. It fills backwards only, as the theme's own entrances do: an entrance
+   held at its end would keep a transform on every message, and a transformed box turns the fixed
+   backgrounds inside it into scrolling ones (a stuck work-group row's copy of the wallpaper). */
 .anim-msg {
-  animation: msg-in 180ms ease-out both;
+  animation: msg-in 180ms ease-out backwards;
 }
 
 /* Outline jump feedback: a soft brand wash fading out over the landed-on message. Applied by

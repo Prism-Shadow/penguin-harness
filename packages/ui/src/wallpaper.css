@@ -82,11 +82,12 @@
 }
 /* A pinned activity row (a work group's head, an open thinking or tool row) still pins. While it
    is stuck, its backdrop (`WallpaperBackdrop`) paints the page colour and the image again under
-   its words, laid against the window like the shell's own layer, so the row still reads as clear
-   while the text scrolling under it stays hidden; at rest nothing is drawn. Only a stuck row
-   draws it, so a long transcript holds two such layers at most. A browser that cannot report a
-   stuck row lets the rows scroll with their bodies instead: a clear pinned row would lay its
-   words over the text moving underneath. */
+   its words, the image fixed to the window as the shell's own layer is, so the row still reads
+   as clear while the text scrolling under it stays hidden; at rest nothing is drawn. The image
+   is a fixed background, not a fixed box: a box would be laid against whatever ancestor makes
+   a containing block, and each one would split the transcript into another compositor layer.
+   A browser that cannot report a stuck row lets the rows scroll with their bodies instead: a
+   clear pinned row would lay its words over the text moving underneath. */
 [data-wallpaper-backdrop] {
   display: none;
 }
@@ -103,10 +104,13 @@
         position: absolute;
         inset: 0;
         z-index: -1;
-        clip-path: inset(0);
         pointer-events: none;
         background-color: var(--ui-canvas);
       }
+    }
+    .ui-shell[data-wallpaper] [data-wallpaper-backdrop] > [data-wallpaper-layer] {
+      position: absolute;
+      background-attachment: fixed;
     }
   }
   @supports not (container-type: scroll-state) {

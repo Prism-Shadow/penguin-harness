@@ -9,7 +9,8 @@
  *   row sits right below it, and the output's lines pass under both without showing through.
  * - Given the same conversation under a custom background image, in light and dark mode, the
  *   head and the row still pin, the lines under them still do not show through, and the pinned
- *   rows show the image over the page colour rather than a painted strip.
+ *   rows show exactly what the background shows in their place: the image over the page
+ *   colour, unshifted, rather than a painted strip.
  */
 import { writeFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
@@ -110,7 +111,6 @@ function scrollInto(page, toolRow, into) {
       rowOffset: r.top - h.bottom,
       sectionAbove: s.top < top(),
       sectionBelow: s.bottom - r.bottom,
-      margin: Math.round(head.closest(".ui-frame").getBoundingClientRect().left) - 40,
       // The stretch of both rows past their words, in whole pixels: nothing of the rows' own
       // is drawn there, so every pixel is either the row's ground or what shows through it.
       // (A row pinned at a fractional offset rasterizes its words a little differently from
@@ -123,6 +123,17 @@ function scrollInto(page, toolRow, into) {
       },
     };
   }, into);
+}
+
+/** Hides or shows the whole transcript (its scroll container), leaving its place as it was. */
+function showTranscript(toolRow, shown) {
+  return toolRow.evaluate((button, shown) => {
+    let scroller = button.parentElement;
+    while (!/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) {
+      scroller = scroller.parentElement;
+    }
+    scroller.style.visibility = shown ? "" : "hidden";
+  }, shown);
 }
 
 /** Both levels pinned at two scroll positions, with the same pixels on them at both. */
@@ -152,10 +163,13 @@ async function expectPinnedAndOpaque(page, toolRow) {
   return second;
 }
 
-/** Where two same-sized screenshots differ: up to five `x,y` pixel positions, none when equal. */
-function pixelsApart(page, a, b) {
+/**
+ * Where two same-sized screenshots differ by more than `tolerance` levels in a channel: up to
+ * five `x,y` pixel positions, none when they match.
+ */
+function pixelsApart(page, a, b, tolerance = 0) {
   return page.evaluate(
-    async (sources) => {
+    async ([tolerance, ...sources]) => {
       const [one, two] = await Promise.all(
         sources.map(async (src) => {
           const image = new Image();
@@ -171,14 +185,14 @@ function pixelsApart(page, a, b) {
       );
       const apart = [];
       for (let i = 0; i < one.data.length && apart.length < 5; i += 4) {
-        if ([0, 1, 2].some((c) => one.data[i + c] !== two.data[i + c])) {
+        if ([0, 1, 2].some((c) => Math.abs(one.data[i + c] - two.data[i + c]) > tolerance)) {
           const at = i / 4;
           apart.push(`${at % one.width},${Math.floor(at / one.width)}`);
         }
       }
       return apart;
     },
-    [a, b].map((png) => `data:image/png;base64,${png.toString("base64")}`),
+    [tolerance, ...[a, b].map((png) => `data:image/png;base64,${png.toString("base64")}`)],
   );
 }
 
@@ -194,15 +208,20 @@ for (const [theme, name] of Object.entries(THEMES)) {
     test(`${name}, ${mode}: under a custom background the rows still pin, hide what scrolls under them, and show the image`, async ({
       page,
     }) => {
-      // A flat wallpaper at half strength: an area showing only the background is the page
-      // colour and the image's colour mixed, so a stuck row matches it only if it lays the
-      // same image over the same page colour.
+      // A wallpaper of small coloured blocks, tiled from the window's corner at half strength:
+      // the pinned rows match the background only if they lay the same image over the same
+      // page colour, in the same place.
       await page.addInitScript((mode) => {
         const canvas = document.createElement("canvas");
-        canvas.width = canvas.height = 8;
+        canvas.width = 37;
+        canvas.height = 23;
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#3a7d5c";
-        ctx.fillRect(0, 0, 8, 8);
+        for (let x = 0; x < 37; x += 5) {
+          for (let y = 0; y < 23; y += 5) {
+            ctx.fillStyle = `hsl(${(x * 14 + y * 9) % 360} 70% 50%)`;
+            ctx.fillRect(x, y, 5, 5);
+          }
+        }
         localStorage.setItem("penguin.theme", mode);
         localStorage.setItem("penguin.background.image", canvas.toDataURL("image/png"));
         localStorage.setItem(
@@ -213,12 +232,16 @@ for (const [theme, name] of Object.entries(THEMES)) {
       const toolRow = await openOutput(page, theme);
       await expect(page.locator(".ui-shell[data-wallpaper]")).toHaveCount(1);
       const pinned = await expectPinnedAndOpaque(page, toolRow);
-      // A strip of the pinned head past its words, and the same strip of the transcript's
-      // empty margin beside the card: the head paints the background, not a strip of its own.
-      const strip = { y: pinned.band.y + 2, width: 24, height: 8 };
-      const onHead = await page.screenshot({ clip: { x: pinned.band.x, ...strip } });
-      const inMargin = await page.screenshot({ clip: { x: pinned.margin, ...strip } });
-      expect(await pixelsApart(page, onHead, inMargin)).toEqual([]);
+      // The pinned rows' stretch as it is, then the same stretch with the transcript hidden,
+      // which leaves only what the window's background paints there: the rows show the
+      // background itself, not a strip of their own and not the image shifted or rescaled.
+      const onRows = await page.screenshot({ clip: pinned.band });
+      await showTranscript(toolRow, false);
+      const background = await page.screenshot({ clip: pinned.band });
+      await showTranscript(toolRow, true);
+      // A pinned row may be composited at a fractional offset, which can move a colour by a
+      // few levels; a misplaced image moves whole blocks.
+      expect(await pixelsApart(page, onRows, background, 24)).toEqual([]);
     });
   }
 }
