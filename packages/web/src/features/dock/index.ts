@@ -1,4 +1,8 @@
+export { docksOnScreen } from "./dock-state";
+
 export { openPanel } from "./dock-state";
+
+export { dockWorkspace } from "./dock-terminal";
 
 export { currentDockScope } from "./dock-state";
 
@@ -51,3 +55,5 @@ export { readLauncherHidden } from "./dock-launcher-state";
 export { subscribeLauncherHidden } from "./dock-launcher-state";
 
 export { writeLauncherHidden } from "./dock-launcher-state";
+
+export { setDockScope } from "./dock-state";

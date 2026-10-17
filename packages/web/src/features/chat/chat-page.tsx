@@ -55,7 +55,6 @@ import {
 } from "@prismshadow/penguin-ui";
 import * as api from "../../api/endpoints";
 import { switchDeskModel, useCompany } from "../company";
-
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { useWorkbenchTabs, WorkbenchFrame, WorkbenchTabStrip } from "../workbenches";
@@ -147,7 +146,6 @@ import {
   DockPanel,
   DockLauncher,
   useDockMount,
-  setDockCwd,
   adoptDockScope,
   closedDockView,
   dockViews,
@@ -156,8 +154,8 @@ import {
   openPanel,
   panelDock,
   subscribeDock,
+  setDockCwd,
 } from "../dock";
-
 // importing it registers the built-in panels (their definitions and bodies) with the dock
 import "./builtin-dock-panels";
 import { ChatDockProvider, type ChatDockState } from "./chat-dock-context";

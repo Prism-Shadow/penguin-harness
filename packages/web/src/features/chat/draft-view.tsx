@@ -73,7 +73,6 @@ import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
 import { APPROVAL_MODES } from "./approval-mode";
 import { adoptDockScope, setDockCwd } from "../dock";
-
 import { StartDashboard } from "./start-dashboard";
 import { clearDraft, draftKey, loadDraft, saveDraft, type DraftCache } from "./draft-cache";
 

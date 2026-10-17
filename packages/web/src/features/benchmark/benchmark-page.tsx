@@ -54,7 +54,6 @@ import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
 import { AiCreateModal, pickDefaultAgent, AiCreateButtons } from "../ai-create";
-
 import {
   benchmarkDescription,
   latestWithDelta,

@@ -48,9 +48,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
 import { AiCreateModal, AiCreateButtons } from "../ai-create";
-
 import { ScheduleFormModal, ScheduleSuggestions, scheduleExamples, toggleBody } from "../schedules";
-
 import { usePromptInjection } from "./prompt-injection-controls";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */

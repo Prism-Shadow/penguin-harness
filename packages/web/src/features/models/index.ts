@@ -1,5 +1,7 @@
 export { sameModelRef } from "./model-grouping";
 
+export { PinnedBalanceBadge } from "./group-balance";
+
 export { hasConfiguredKey } from "./model-grouping";
 
 export { promotedPricing } from "./model-grouping";

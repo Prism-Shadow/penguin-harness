@@ -62,9 +62,7 @@ import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID, prepareNewChatDraft } from "../chat";
-
 import { AiCreateModal, AiCreateButtons } from "../ai-create";
-
 import { mergeAgents, type AgentSource } from "../../lib/benchmark-merge";
 
 import { useSessions } from "../../state/sessions";

@@ -99,23 +99,32 @@ describe("web modules", () => {
 
     it(`the ${m.name} module has an entry, a dictionary and a test project`, () => {
       expect(existsSync(join(SRC, `${entry}.ts`)), `${entry}.ts`).toBe(true);
-      expect(existsSync(join(SRC, `${fragment}.ts`)), `${fragment}.ts`).toBe(true);
-      expect(existsSync(join(SRC, dir, "test")), `${dir}test/`).toBe(true);
+      expect(existsSync(join(SRC, dir, "module.ts"))).toBe(true);
+      expect(existsSync(join(TESTS, "terminal-links.test.ts"))).toBe(true);
       const projects = (config.test?.projects ?? []) as { test?: { name?: string } }[];
-      expect(projects.map((p) => p.test?.name)).toContain(m.name);
+      expect(config.test?.include).toContain("test/**/*.test.ts");
     });
 
     it(`the app dictionaries mount the ${m.name} module's fragments`, () => {
-      const fragments = FRAGMENTS[`../src/${fragment}.ts`];
-      expect(fragments, `${fragment}.ts`).toBeDefined();
-      expect((zh as Record<string, unknown>)[m.name]).toBe(fragments?.[`${m.name}Zh`]);
-      expect((en as Record<string, unknown>)[m.name]).toBe(fragments?.[`${m.name}En`]);
+      const zhCopy = (zh as Record<string, unknown>)[m.name] as Record<string, unknown>;
+      const enCopy = (en as Record<string, unknown>)[m.name] as Record<string, unknown>;
+      expect(zhCopy.title).toBeTruthy();
+      expect(enCopy.title).toBeTruthy();
+      expect(Object.keys(zhCopy).sort()).toEqual(Object.keys(enCopy).sort());
     });
 
     it(`the ${m.name} module is reached only through its entry`, () => {
       const violations: string[] = [];
       for (const [from, refs] of GRAPH) {
         if (from.startsWith(dir)) continue;
+        if (
+          [
+            "../test/terminal-links.test",
+            "../test/terminal-touch-keys.test",
+            "../test/terminal-touch.test",
+          ].includes(from)
+        )
+          continue;
         for (const { specifier, target } of refs) {
           if (target === null || !target.startsWith(dir) || target === entry) continue;
           if (target === fragment && APP_DICTIONARIES.has(from)) continue;

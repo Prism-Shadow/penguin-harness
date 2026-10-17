@@ -64,7 +64,6 @@ import { useCompany } from "./company-state";
 import { projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { ModelCatalogSelect, modelLabel, WorkspaceSelect } from "../chat";
-
 import { sameModelRef } from "../models";
 import { ErrorLine, InfoFieldLabel, MoneyPerMonthInput, OrgStatusPill } from "./shared";
 import { orgCreatedTarget } from "../../lib/company-nav";
