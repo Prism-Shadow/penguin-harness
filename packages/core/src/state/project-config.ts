@@ -36,16 +36,18 @@ import type {
 import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
 import {
-  canonicalClientType,
   isPenguinGoEndpoint,
   PENGUIN_GO_BASE_URL,
   PENGUIN_GO_PROVIDER_ID,
-  groupKeyReaches,
   presetModelEntries,
   presetProviderTable,
+} from "./model-catalog.js";
+import {
+  canonicalClientType,
+  groupKeyReaches,
   sameClientType,
   sameEndpoint,
-} from "./model-catalog.js";
+} from "./model-connection.js";
 import { projectConfigPath } from "./paths.js";
 
 /** Model reference: a `(provider, model_id)` pair (never string-concatenated anywhere). */
@@ -138,7 +140,8 @@ export interface ModelEntry {
   pricing?: ModelPricing;
   /**
    * API key for this model alone, overriding the group's `[providers.<id>].api_key`; with
-   * neither, the vendor's environment variable where modelEnvFallback allows it.
+   * neither, and no base URL on the row or its group, MMSP's routed client reads its own
+   * environment variable (PRN-021, effectiveConnection).
    */
   api_key?: string;
   /**
@@ -273,8 +276,8 @@ export interface ProjectConfig {
  * differs from its group's) and, beside them, each built-in group's endpoint and protocol in
  * `[providers.<id>]` (presetProviderTable) — so the file alone says where every request goes,
  * and the catalog is not read again when one is built. No keys are included: the user only
- * needs to fill in an API key as needed (left empty falls back to the vendor's environment
- * variable where modelEnvFallback allows it).
+ * needs to fill in an API key as needed (left empty, a row whose row and group name no base
+ * URL — the first-party vendors' — uses the vendor's environment variable, read by MMSP).
  */
 export function defaultProjectConfig(): ProjectConfig {
   return {

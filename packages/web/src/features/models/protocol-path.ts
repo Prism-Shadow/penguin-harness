@@ -35,7 +35,8 @@
  * `ant-messages`, `openai-chat` — are also what the custom-model protocol detection stores;
  * `google-genai` and `mmsp` are picked by hand.
  */
-import { MMSP_CLIENTS, routedClientType } from "@prismshadow/penguin-core/model-catalog";
+import { routedClientType } from "@prismshadow/penguin-core/model-catalog";
+import { MMSP_CLIENTS } from "@prismshadow/penguin-core/model-connection";
 
 /** The official client of each first-party vendor group, which its unpinned ids route to. */
 const VENDOR_GROUP_CLIENT_TYPES: Readonly<Record<string, string>> = {

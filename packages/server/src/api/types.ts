@@ -574,7 +574,11 @@ export interface ModelEffectiveConnection {
   baseUrlSource: ConnectionSourceDto;
   clientType?: string;
   clientTypeSource: ConnectionSourceDto;
-  /** `env` = no row or group key, and the environment lends one on the effective endpoint (modelEnvFallback). */
+  /**
+   * `env` = no key in the file and no base URL on the row or its group, so MMSP's routed client
+   * reads its own variable — reported when that variable holds a value here (`envKeyMasked`),
+   * `none` otherwise.
+   */
   apiKeySource: "model" | "provider" | "env" | "none";
   /** Mask of the key the row would use, whichever source; absent when none. */
   apiKeyMasked?: string;
@@ -630,21 +634,17 @@ export interface ModelInfo {
   discount?: number;
   /**
    * Environment variable name the entry falls back to when api_key is empty (e.g.
-   * ANTHROPIC_API_KEY); unset when it gets no fallback — an id nothing routes, or an entry
-   * whose base URL is not the vendor's own official endpoint (a gateway preset, a custom /
-   * vLLM / user-created row with its own endpoint, a vendor row re-pointed at a proxy).
+   * ANTHROPIC_API_KEY): only for a row with no key in the file and no base URL on the row or
+   * its group, which MMSP's routed client then reads. Unset for a row with a key (its own or a
+   * group key that reaches it), a row sent to a base URL from the file (a gateway, Penguin Go,
+   * ModelScope, a vendor's second host or a proxy), or an id nothing routes.
    */
   envKey?: string;
   /**
    * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
-   * currently holds for `envKey` — the plaintext is never serialized. Reported only where the
-   * fallback may be presented as covering the entry (core's modelEnvPreviewKey): a row whose
-   * effective base URL is a vendor endpoint (or the Penguin Go relay), or a row with no base URL
-   * in a built-in group other than custom, on the client its id's family names. Gateway rows
-   * never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
-   * although those do fall back. Absent = the variable is unset or empty, or the entry is not
-   * previewable. Computed on the effective shape, and only when no row or group key reaches
-   * the row.
+   * currently holds for `envKey` — the plaintext is never serialized. Absent = the variable is
+   * unset or empty, or the entry gets no fallback. Reported only when no row or group key
+   * reaches the row.
    */
   envKeyMasked?: string;
   /** The row's OWN key (masked) and base URL — overrides of its group's; see `effective`. */

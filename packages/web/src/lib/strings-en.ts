@@ -2305,10 +2305,12 @@ export const en: Strings = {
     },
     providerEnvNotes: {
       zhipu:
-        "Defaults to the Z.AI global endpoint (api.z.ai); keys from bigmodel.cn need base URL https://open.bigmodel.cn/api/paas/v4",
+        "Defaults to the Z.AI global endpoint (api.z.ai); for a bigmodel.cn key, set ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4 beside it, or enter the key here with that base URL",
       moonshot:
-        "Defaults to the China endpoint (api.moonshot.cn); keys from platform.kimi.com need base URL https://api.moonshot.ai/v1",
+        "Defaults to the China endpoint (api.moonshot.cn); for a platform.kimi.com key, set MOONSHOT_BASE_URL=https://api.moonshot.ai/v1 beside it, or enter the key here with that base URL",
     },
+    envBaseUrlNote: (envBaseUrlKey: string): string =>
+      `Requests go to the client's default endpoint, or to ${envBaseUrlKey} when it is set`,
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
       `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,

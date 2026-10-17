@@ -60,6 +60,7 @@ import {
   type ModelPricing,
   type ModelRef,
   type ProjectConfig,
+  type ProviderConnection,
   type ProviderConnectionPatch,
   addModel,
   effectiveConnection,
@@ -115,24 +116,31 @@ function sourceMark(source: ConnectionSource): string {
 
 /**
  * The key a row is used with, masked: its own, its group's (marked `(provider)`), or — with
- * neither — the environment variable the models page would show for it (modelEnvPreviewKey on
- * the effective endpoint, the same narrowing the server's preview applies), marked `(env)`
- * when that variable is set. `-` when there is none.
+ * neither, and no base URL on the row or its group (core's `env`) — the variable MMSP's routed
+ * client reads (modelEnvPreviewKey, which the server's preview reads too), marked `(env)` when
+ * that variable is set. An env mark therefore means no base URL anywhere. `-` when there is
+ * none.
  */
 function displayedKey(
   entry: ModelEntry,
   effective: EffectiveConnection,
+  group: ProviderConnection | undefined,
   env: Readonly<Record<string, string | undefined>>,
 ): string {
-  if (effective.apiKeySource !== "none") {
+  if (effective.apiKeySource === "model" || effective.apiKeySource === "provider") {
     return `${maskApiKey(effective.apiKey)}${sourceMark(effective.apiKeySource)}`;
   }
-  const envKey = modelEnvPreviewKey({
-    provider: entry.provider,
-    modelId: entry.model_id,
-    clientType: effective.clientType,
-    baseUrl: effective.baseUrl,
-  });
+  if (effective.apiKeySource === "none") return maskApiKey(undefined);
+  const envKey = modelEnvPreviewKey(
+    {
+      provider: entry.provider,
+      modelId: entry.model_id,
+      clientType: entry.client_type,
+      baseUrl: entry.base_url,
+      apiKey: entry.api_key,
+    },
+    providerConnectionShape(group),
+  );
   const value = envKey !== undefined ? env[envKey]?.trim() : undefined;
   return value ? `${maskApiKey(value)} (env)` : maskApiKey(undefined);
 }
@@ -176,7 +184,7 @@ export function formatModelRows(
       pricing: entry.pricing
         ? `price=${entry.pricing.cache_read}/${entry.pricing.cache_write}/${entry.pricing.output}`
         : "",
-      api_key: `api_key=${displayedKey(entry, effective, env)}`,
+      api_key: `api_key=${displayedKey(entry, effective, cfg.providers?.[entry.provider], env)}`,
       base_url: effective.baseUrl
         ? `base_url=${effective.baseUrl}${sourceMark(effective.baseUrlSource)}`
         : "",

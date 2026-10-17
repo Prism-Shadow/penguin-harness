@@ -1,9 +1,18 @@
 /**
- * listEndpointModels: the thin MMSP wrapper — routes by the given client type,
- * resolves the credential itself (the environment lends a key only to the vendor's own
- * endpoint and refuses the listing otherwise, before any client exists), forwards the base
+ * listEndpointModels: the thin MMSP wrapper — routes by the given client type, takes the key
+ * from its caller alone and applies a Session's credential rule (PRN-021), forwards the base
  * URL only when present, names PenguinHarness and its version in the User-Agent, and returns
  * the listing verbatim (order preserved, no dedup: presentation policy belongs to callers).
+ *
+ * - Given a key and a base URL, the client is routed by the client type and the listing comes
+ *   back verbatim.
+ * - Given no key and a base URL, the listing is refused before any client exists, whatever the
+ *   environment holds: the wrapped SDK would otherwise read the protocol's variable and send it
+ *   to the typed URL.
+ * - Given no key and no base URL, the client is built with nothing, so it reads its own pair —
+ *   key and endpoint — as a Session's would.
+ * - Given no key on the mmsp client with a base URL, the open MMSP server is listed keyless.
+ * - Given MMSP throws, the error propagates unchanged.
  */
 import { describe, expect, it, vi } from "vitest";
 import { VERSION } from "../src/index.js";
@@ -52,41 +61,42 @@ describe("listEndpointModels", () => {
     ]);
   });
 
-  it("lends the protocol's environment key to the vendor's own endpoint (no base URL = the vendor default)", async () => {
+  it("refuses a keyless listing of a base URL before a client exists, the vendor's own included", async () => {
     captured.options.length = 0;
-    await listEndpointModels({
-      clientType: "ant-messages",
-      env: { ANTHROPIC_API_KEY: " sk-env-1 " },
-    });
+    for (const baseUrl of ["https://gw.example/v1", "https://api.openai.com/v1"]) {
+      await expect(
+        listEndpointModels({ clientType: "openai-chat", baseUrl }),
+      ).rejects.toMatchObject({
+        name: "ModelCredentialError",
+        message: expect.stringContaining("enter the endpoint's API key"),
+      });
+    }
+    expect(captured.options).toEqual([]);
+  });
+
+  it("with no key and no base URL, builds the client with nothing, so it reads its own pair", async () => {
+    captured.options.length = 0;
+    for (const baseUrl of [undefined, "  "]) {
+      await listEndpointModels({ clientType: "openai-chat", ...(baseUrl ? { baseUrl } : {}) });
+    }
     expect(captured.options).toEqual([
-      { model: "ant-messages", clientType: "ant-messages", apiKey: "sk-env-1", defaultHeaders },
+      { model: "openai-chat", clientType: "openai-chat", apiKey: undefined, defaultHeaders },
+      { model: "openai-chat", clientType: "openai-chat", apiKey: undefined, defaultHeaders },
     ]);
   });
 
-  it("refuses a keyless listing of a foreign endpoint before a client exists, whatever the environment holds", async () => {
+  it("lists an open MMSP server with no key, as the mmsp client calls it", async () => {
     captured.options.length = 0;
-    await expect(
-      listEndpointModels({
-        clientType: "openai-chat",
-        baseUrl: "https://gw.example/v1",
-        env: { OPENAI_API_KEY: "sk-env-2" },
-      }),
-    ).rejects.toMatchObject({
-      name: "ModelCredentialError",
-      message: expect.stringContaining("enter the endpoint's API key"),
-    });
-    expect(captured.options).toEqual([]);
-  });
-
-  it("names the unset variable when the vendor's own endpoint has no key to lend", async () => {
-    captured.options.length = 0;
-    await expect(listEndpointModels({ clientType: "ant-messages", env: {} })).rejects.toMatchObject(
+    await listEndpointModels({ clientType: "mmsp", baseUrl: "https://relay.example/api/v1" });
+    expect(captured.options).toEqual([
       {
-        name: "ModelCredentialError",
-        message: expect.stringContaining("ANTHROPIC_API_KEY is not set"),
+        model: "mmsp",
+        clientType: "mmsp",
+        apiKey: undefined,
+        baseUrl: "https://relay.example/api/v1",
+        defaultHeaders,
       },
-    );
-    expect(captured.options).toEqual([]);
+    ]);
   });
 
   it("propagates MMSP errors unchanged (callers collapse them into their outcome shape)", async () => {

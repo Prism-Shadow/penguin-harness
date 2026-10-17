@@ -275,11 +275,12 @@ export async function saveGroupSettings(
 }
 
 /**
- * The environment variable a blank group key would be covered by, or undefined: core's
- * providerEnvFallbackKey on the group as drafted (a first-party vendor group left on the
- * vendor's own endpoint and client, or a provider-scoped variable on the group's endpoint —
- * never a gateway, custom, vLLM or user-defined group), and a variable the server reported a
- * value for. Knowing a variable's name is not knowing it is set, so `detected` is what decides.
+ * The environment variable a blank group key would be covered by, or undefined: the catalog's
+ * providerEnvFallbackKey on the group as drafted — a group with no base URL only (PRN-021: a
+ * base URL from the file is never lent a variable, the vendor's own included), on its
+ * protocol's variable or, for a first-party vendor group with none, the vendor's — and a
+ * variable the server reported a value for. Knowing a variable's name is not knowing it is set,
+ * so `detected` is what decides.
  */
 export function groupEnvKey(
   providerId: string,
@@ -287,7 +288,7 @@ export function groupEnvKey(
   detected: ReadonlySet<string>,
 ): string | undefined {
   const envKey = providerEnvFallbackKey(providerId, {
-    baseUrl: draft.baseUrl,
+    baseUrl: draft.baseUrl.trim() || undefined,
     clientType: draft.clientType ?? undefined,
   });
   return envKey !== undefined && detected.has(envKey) ? envKey : undefined;

@@ -1085,24 +1085,23 @@ describe("project-config round trip", () => {
       'model_id = "gemini-direct"',
       'client_type = "gemini-official"',
       'base_url = "https://generativelanguage.googleapis.com"',
+      'api_key = "sk-row"',
       "",
     ].join("\n");
     await fs.writeFile(file, text, "utf8");
     const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(await fs.readFile(file, "utf8")).toBe(text);
-    const env = { GEMINI_API_KEY: "sk-gemini-env" };
 
     // The group's protocol reaches its keyless row, which the client then serves from the
     // GEMINI_* pair it reads itself.
     const grouped = getModel(loaded, { provider: "google", model_id: "gemini-3.8-flash" })!;
     expect(
-      resolveEntryCredential(grouped, providerConnectionShape(loaded.providers?.google), {}, env),
+      resolveEntryCredential(grouped, providerConnectionShape(loaded.providers?.google)),
     ).toEqual({ clientType: "gemini-official" });
-    // A row naming Google's own endpoint is lent GEMINI_API_KEY, as google-official's would be.
+    // A row naming Google's own endpoint with its own key goes there on the alias, as written.
     const pinned = getModel(loaded, { provider: "custom", model_id: "gemini-direct" })!;
-    expect(pinned.client_type).toBe("gemini-official");
-    expect(resolveEntryCredential(pinned, undefined, {}, env)).toEqual({
-      apiKey: "sk-gemini-env",
+    expect(resolveEntryCredential(pinned, undefined)).toEqual({
+      apiKey: "sk-row",
       baseUrl: "https://generativelanguage.googleapis.com",
       clientType: "gemini-official",
     });
@@ -1501,7 +1500,7 @@ describe("project-config round trip", () => {
     // With nothing of its own left, the row runs on its group's table.
     const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
     expect(
-      resolveEntryCredential(bare, providerConnectionShape(cfg.providers?.openrouter), {}, {}),
+      resolveEntryCredential(bare, providerConnectionShape(cfg.providers?.openrouter)),
     ).toEqual({
       apiKey: "or-group",
       baseUrl: "https://openrouter.ai/api/v1",
@@ -1818,7 +1817,7 @@ describe("providers (group-level connections)", () => {
         const key = `${m.provider}/${m.model_id}`;
         try {
           const group = providerConnectionShape(cfg.providers?.[m.provider]);
-          return [key, resolveEntryCredential(m, group, {}, {})];
+          return [key, resolveEntryCredential(m, group)];
         } catch (err) {
           return [key, (err as Error).name];
         }
@@ -1926,7 +1925,7 @@ describe("providers (group-level connections)", () => {
         },
         providerConnectionShape(cfg.providers?.tokendance),
       ),
-    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "none" });
+    ).toEqual({ baseUrlSource: "none", clientTypeSource: "none", apiKeySource: "env" });
   });
 
   it("Go-owned routes switch to MMSP while OpenCode Go rows keep their own protocols", async () => {
