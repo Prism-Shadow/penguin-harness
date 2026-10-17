@@ -185,7 +185,7 @@ deepseek 条目不存 key，使用分组密钥；openrouter 条目发往其分�
 | `client_type` | 模型条目 → 分组 → 无：按 `model_id` 路由 |
 | `api_key` | 模型条目 → 分组（以能借给该模型为限）→ 无：在[供应商凭证变量](#供应商凭证变量)允许时取环境变量 |
 
-这些值的唯一来源是这个文件。内置模型目录只是参考：新建 Project 时，以及模型库页面的**同步新增模型**与**恢复默认**会把目录写进文件，构建请求时从不读目录。key 属于签发它的端点：分组密钥只借给没有自己 `base_url` 的模型，或自己的 `base_url` 与分组 `base_url` 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 条目位于 `https://opencode.ai/zen/go`，与分组的 `https://opencode.ai/zen/go/v1` 同 origin，能借到；custom 里自带端点的 Atria Dawn 借不到。`official` 由服务端维护。新建 Project、**同步新增模型**与**恢复默认**为一方厂商分组写入它；经模型库页面、API 或 CLI 写入分组的 `base_url` 或 `client_type` 时重新计算：base URL 为空或为厂商自己的端点之一、且协议读取的正是厂商变量时为 `true`，这时有 base URL 而没有协议的分组还会写入厂商的官方客户端作为 `client_type`；否则为 `false`。其他分组不带这个标记。你手动改过的值照常生效。因此把一方厂商分组指向代理后，组内所有模型都不再使用环境变量。这个标记出现之前创建的 Project 会在服务端第一次读取其文件时补写一次，补在旧规则会借出 key 的那些分组上。
+这些值的唯一来源是这个文件。内置模型目录只是参考：新建 Project 时，以及模型库页面的**同步新增模型**与**恢复默认**会把目录写进文件，构建请求时从不读目录。key 属于签发它的端点：分组密钥只借给没有自己 `base_url` 的模型，或自己的 `base_url` 与分组 `base_url` 同 origin（scheme、host、port）的模型。OpenCode Go 的 Anthropic Messages 条目位于 `https://opencode.ai/zen/go`，与分组的 `https://opencode.ai/zen/go/v1` 同 origin，能借到；custom 里自带端点的 Atria Dawn 借不到。`official` 由服务端维护。新建 Project、**同步新增模型**与**恢复默认**为一方厂商分组写入它；经模型库页面、API 或 CLI 写入分组的 `base_url` 或 `client_type` 时重新计算：base URL 为空或为厂商自己的端点之一、且协议读取的正是厂商变量时为 `true`，这时有 base URL 而没有协议的分组还会写入厂商的官方客户端作为 `client_type`；否则为 `false`。其他分组不带这个标记。你手动改过的值照常生效。因此把一方厂商分组指向代理后，组内所有模型都不再使用环境变量。服务端每次读取配置文件时，只要一方厂商分组缺少 `official` 键（这个标记出现之前的文件，或 CLI、SDK 写入时没带它的分组），就按同一规则推出它，连同所需的 `client_type` 一起写回；服务端启动时也会对每个 Project 这样做一遍。文件里已有的值始终保留。没有服务端就没有人补写：只由 SDK 使用的数据根须自行写入 `official`，例如 `setProviderConnection(root, projectId, "deepseek", { official: true })`。
 
 ### 新对话默认值
 

@@ -23,7 +23,7 @@ The built-in model catalog moved from `packages/core` to `packages/server`. It c
 
 ## Migrations
 
-The Penguin Go route migration (`migratePenguinGoRoutes`) moved from core's `loadProjectConfig` path into the server's read path, beside the `official` back-fill. See [data compatibility](2026-10-15-backward-compatibility.md).
+The Penguin Go route migration (`migratePenguinGoRoutes`) moved from core's `loadProjectConfig` path into the server's read path, where the server also fills in a missing `official` as a standing rule. See [data compatibility](2026-10-15-backward-compatibility.md).
 
 ## Compatibility
 

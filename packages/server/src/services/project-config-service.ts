@@ -126,7 +126,8 @@ import type {
   PlatformModelCatalog,
 } from "./platform-auth-types.js";
 import { detectModelProtocol } from "./protocol-detect.js";
-import { markOfficialGroups, migratePenguinGoRoutes } from "./project-config-migrations.js";
+import { markOfficialGroups } from "./official-groups.js";
+import { migratePenguinGoRoutes } from "./project-config-migrations.js";
 import {
   VISION_PROBE_IMAGE,
   VISION_PROBE_MAX_TOKENS,
@@ -878,14 +879,13 @@ export class ProjectConfigService implements ProjectConfigStore {
   }
 
   /**
-   * Reads every Project's config once through readTable, so the one-time migrations land on
-   * disk before anything else opens a file: core's loader, which a Session created or resumed
-   * through the SDK reads with, runs none of the server's own (markOfficialGroups). Called once
-   * as the App starts, before the schedulers. A file that does not parse is left for the next
-   * read that needs it to report.
-   *
-   * Removal: with the last one-time migration it serves, at the 0.3.0 release preparation (see
-   * markOfficialGroups and changelog/unreleased/2026-10-15-backward-compatibility.md).
+   * Reads every Project's config once through readTable, so what the server's read path writes
+   * back — core's one-time migrations, and the server's standing rule that fills in a missing
+   * `official` (markOfficialGroups) — is on disk before anything else opens a file: core's
+   * loader, which a Session created or resumed through the SDK reads with, runs none of the
+   * server's own. Called once as the App starts, before the schedulers; a standing part of the
+   * boot, since the `official` fill is. A file that does not parse is left for the next read
+   * that needs it to report.
    */
   async migrateStoredConfigs(): Promise<void> {
     let entries: Dirent[];
@@ -932,20 +932,23 @@ export class ProjectConfigService implements ProjectConfigStore {
       return null;
     }
     const table = asTable(parseToml(raw));
-    // Core's migrations first (MMSP 0.5.0's client types, the group-level hoist), then the
-    // server's own, which need the catalog (Penguin Go's pre-MMSP routes, the `official` flag).
-    // All run on every call; `||` would skip the later ones whenever an earlier one changed
-    // something.
+    // The one-time migrations first — core's (MMSP 0.5.0's client types, the group-level hoist)
+    // and the server's (Penguin Go's pre-MMSP routes, which need the catalog) — then the
+    // server's standing rule: a first-party group with no `official` gets one
+    // (markOfficialGroups). All run on every call; `||` would skip the later ones whenever an
+    // earlier one changed something.
     const migrated = migrateProjectConfigTable(table);
     const routed = migratePenguinGoRoutes(table) > 0;
     const marked = markOfficialGroups(table);
     if (migrated || routed || marked) {
-      // A file from before MMSP 0.5.0, before group-level connections or before the `official`
-      // flag: rewritten once, before it is served; the next read parses the rewritten file
-      // (writeRaw drops the cache). Every file writeRaw renders carries a `[providers]` table,
-      // which is what keeps the key hoist from ever running on it again, and every first-party
-      // group an `official` flag, which keeps markOfficialGroups from running on it again.
-      // Removed with the migrations at the 0.3.0 release preparation.
+      // A file from before MMSP 0.5.0 or before group-level connections, one with pre-MMSP
+      // Penguin Go routes, or one with a first-party group that has no `official` (from before
+      // the flag, or written by the CLI or the SDK without it): rewritten once, before it is
+      // served; the next read parses the rewritten file (writeRaw drops the cache). Every file
+      // writeRaw renders carries a `[providers]` table, which is what keeps the key hoist from
+      // ever running on it again, and every first-party group an `official` flag, so the next
+      // read fills in nothing. The migrations go at the 0.3.0 release preparation; the
+      // `official` fill stays.
       await this.writeRaw(projectId, table);
       return table;
     }

@@ -20,7 +20,7 @@
 
 - 新建 Project 把七个一方厂商分组标为 `official = true`：DeepSeek、Google、OpenAI、Anthropic、Z.AI、Moonshot 与 MiniMax。「同步新增模型」与「恢复默认」写入同样的分组表。
 - 经模型库页面、API（`PUT /models`、`PUT /models/providers/:provider`）或 `penguin config model add --provider` 写入分组的 base URL 或协议时重新计算：base URL 为空或为该厂商官方端点之一、且协议读取厂商变量时为 `true`；这样的分组有 base URL 而无协议时，同时写入厂商官方客户端为 `client_type`。其他分组不写该键。手工改写文件里的值照常生效。
-- 已有文件在服务端第一次读取时补写一次，见[数据兼容](2026-10-15-backward-compatibility.zh.md)。服务端启动时把每个 Project 的配置读一遍，升级后立即打开的会话也能看到这个标记。
+- 服务端补写缺失的标记是常设规则，而不是一次性迁移。每次读取配置文件时，只要一方厂商分组缺少 `official` 键，就按同一规则推出它并写回，连同带 base URL 的 official 分组所需的 `client_type`。标记出现之前的文件、CLI 或 SDK 写入时没带它的分组都在此列。服务端启动时还会把每个 Project 的配置读一遍，升级后立即打开的会话也能看到这个标记。文件里已有的值始终保留。只由 SDK 使用的数据根不会被补写，须自行写入 `official`。
 - `GET /models` 在每个分组上报告 `official`，分组设置弹窗、模型弹窗的提示、掩码预览、余额查询、机器同步的报告与 `penguin config model list` 都以它为准。
 
 ## Penguin Go 与 ModelScope
@@ -35,6 +35,7 @@
 
 ## 兼容性
 
+- 服务端打开的 Project 无需处理，服务端会补写标记。只由 SDK 使用的数据根，要让一方厂商分组里无 key 的模型使用厂商环境变量，须在这些分组上写入 `official = true`。
 - 依赖旧规则按目的地借用环境变量、而新规则不再覆盖的无 key 模型会被拒绝：custom 或自建分组里没有 base URL 的模型，以及把厂商端点写成自己 base URL 的模型。把 key 填在模型或分组上；厂商分组里的模型也可以清掉自己的 base URL。
 - 手工关掉标记、或指向代理的分组不再借出环境变量。只有端点确实是厂商自身端点时，才手工写 `official = true`。
 - 只设置了 `PENGUIN_GO_API_KEY` 的用户，请在分组标题栏重新连接 Penguin Go，或把 key 粘贴到分组设置里。

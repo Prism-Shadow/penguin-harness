@@ -20,7 +20,7 @@ Whether a keyless model may use a vendor's environment variable (`OPENAI_API_KEY
 
 - A new Project marks the seven first-party groups `official = true`: DeepSeek, Google, OpenAI, Anthropic, Z.AI, Moonshot and MiniMax. **Add new models** and **Restore defaults** write the same tables.
 - Writing a group's base URL or protocol through the Models page, the API (`PUT /models`, `PUT /models/providers/:provider`) or `penguin config model add --provider` recomputes it: `true` while the base URL is absent or one of the vendor's own endpoints and the protocol reads the vendor's variable. Such a group with a base URL and no protocol also gets the vendor's official client as its `client_type`. Other groups carry no flag. A value edited by hand in the file is followed.
-- Existing files gain the flag once, on the server's first read; see [data compatibility](2026-10-15-backward-compatibility.md). The server reads every Project's file once as it starts, so a Session opened right after an upgrade sees the flag too.
+- The server fills in a missing flag as a standing rule, not a one-time migration. Whenever it reads a config file in which a first-party group has no `official` key, it derives the key the same way and writes it back, together with the `client_type` an official group on a base URL needs. That covers a file from before the flag and a group the CLI or the SDK wrote without it. It also reads every Project's file once as it starts, so a Session opened right after an upgrade sees the flag. A value already in the file always stands. A data root used by the SDK alone gets nothing filled in and writes `official` itself.
 - `GET /models` reports `official` on each group, and the group settings dialog, the model dialog's hint, the masked preview, the balance query, the machine sync's report and `penguin config model list` all follow it.
 
 ## Penguin Go and ModelScope
@@ -35,6 +35,7 @@ Both take their key from the group's connection only. `PENGUIN_GO_API_KEY` and `
 
 ## Compatibility
 
+- Projects the server opens need no action: it fills in the flag. A data root used by the SDK alone writes `official = true` on the first-party groups whose keyless models should use the vendor's environment variable.
 - A keyless model that relied on an environment key through a destination the old rule accepted, but the new one does not, is refused: a custom or user-created group's model with no base URL, or a model naming a vendor endpoint as its own base URL. Put the key on the model or its group, or, for a vendor group, clear the model's own base URL.
 - A group whose flag was turned off by hand, or that points at a proxy, lends nothing. Set `official = true` by hand only for an endpoint that is really the vendor's.
 - If you set only `PENGUIN_GO_API_KEY`, reconnect Penguin Go from its group header, or paste the key into its group settings.

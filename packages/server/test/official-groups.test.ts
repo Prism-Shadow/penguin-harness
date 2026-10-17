@@ -3,13 +3,16 @@
  * vendor's environment variable only to the keyless rows of an official group that name no base
  * URL of their own, and reads nothing but the flag — the server decides it from its catalog.
  *
- * - Given a file from before the flag, the server's first read marks exactly the groups the
- *   old rule treated as official — a first-party vendor group on its own endpoint (or none) and
- *   a protocol that reads its variable — adds the vendor's client where such a group names a
- *   base URL, and touches no gateway, adapter, custom or user-defined group.
+ * - Given a file whose first-party groups carry no flag (from before it), the server's read
+ *   marks exactly the groups on their vendor's own endpoint (or none) with a protocol that reads
+ *   the vendor's variable, adds the vendor's client where such a group names a base URL, and
+ *   touches no gateway, adapter, custom or user-defined group.
  * - Given that read happened, the file is not rewritten again, and a flag edited by hand stands.
- * - Given the App starts, every Project's file is migrated before anything opens one, a file no
- *   request ever read included.
+ * - Given a first-party group without the flag appears later (a row the CLI or the SDK wrote),
+ *   the next read fills it in too — a standing rule, not a one-time migration — and leaves every
+ *   flag already there alone.
+ * - Given the App starts, every Project's file is read and filled in before anything opens one, a
+ *   file no request ever read included.
  * - Given a group's base URL or protocol written through the API, the flag is recomputed; a key
  *   alone leaves it as the file has it.
  * - Given a new Project, or "Restore defaults", the first-party vendor groups are official and no
@@ -73,7 +76,7 @@ const PRE_FLAG = [
 const tables = (raw: Record<string, unknown>) =>
   (raw.providers ?? {}) as Record<string, Record<string, unknown>>;
 
-describe("the one-time migration to the official flag", () => {
+describe("the server fills in a missing official flag", () => {
   let root: string;
   let svc: ProjectConfigService;
   const P = "pre-flag";
@@ -143,7 +146,23 @@ describe("the one-time migration to the official flag", () => {
     expect(await fs.readFile(file(), "utf8")).toBe(edited);
   });
 
-  it("the App's start migrates every Project's file before anything opens it, one no request read included", async () => {
+  it("a first-party group that shows up later without the flag gets it at the next read, every flag already there untouched", async () => {
+    await svc.readRaw(P);
+    const before = tables(parseToml(await fs.readFile(file(), "utf8")));
+    // A Moonshot row added by a writer that knows no catalog (the CLI, the SDK): no table.
+    const text = await fs.readFile(file(), "utf8");
+    await fs.writeFile(
+      file(),
+      `${text}\n[[models]]\nprovider = "moonshot"\nmodel_id = "kimi-k3"\n`,
+      "utf8",
+    );
+    const after = tables(await wire(ProjectConfigService, { paths: { root } }).readRaw(P));
+    expect(after.moonshot).toEqual({ official: true });
+    const { moonshot: _added, ...rest } = after;
+    expect(rest).toEqual(before);
+  });
+
+  it("the App's start fills in every Project's file before anything opens it, one no request read included", async () => {
     const other = projectConfigPath(root, "never-read");
     await fs.mkdir(path.dirname(other), { recursive: true });
     await fs.writeFile(other, PRE_FLAG, "utf8");

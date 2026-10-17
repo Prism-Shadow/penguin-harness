@@ -23,7 +23,7 @@
 
 ## 迁移
 
-Penguin Go 路由迁移（`migratePenguinGoRoutes`）从 core 的 `loadProjectConfig` 路径移到服务端的读取路径，与 `official` 的补写放在一起。见[数据兼容](2026-10-15-backward-compatibility.zh.md)。
+Penguin Go 路由迁移（`migratePenguinGoRoutes`）从 core 的 `loadProjectConfig` 路径移到服务端的读取路径，服务端在那里也按常设规则补写缺失的 `official`。见[数据兼容](2026-10-15-backward-compatibility.zh.md)。
 
 ## 兼容性
 
