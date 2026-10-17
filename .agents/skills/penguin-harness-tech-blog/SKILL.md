@@ -43,7 +43,7 @@ apply to every post. This page covers what those two do not: the shape and the v
 | The redesign | The idea in one sentence first, then the mechanism. Name what it costs and what it buys. | "speaking in blocks"; "the host … loses its ability to work with the VM's filesystem. In return…" | 350–450 |
 | Making it real | The hard part of the redesign. The naive implementation and the exact reason it fails. | `mkfs.ext4 -d` needs all content upfront; reflinks fail between FUSE and XFS | 350–450 |
 | Results | The turn's chart again, same layout, new system against the naive baseline and the previous system. The headline number goes in prose with both endpoints. | "`bun install` … dropped 12x, from 12.5 seconds to 1.07 seconds." | 150–250 |
-| Close | Where to get it (version, docs link) and what is still open, in one to three sentences | "generally available"; a screenshot of the open PR that comes next | 30–60 |
+| Close | Where to get it (version, docs link), in one or two sentences | "generally available" | 30–60 |
 
 The whole post runs about 2,000–2,800 words in English. The redesign and its implementation are the
 longest sections; the results section stays short because its figures carry it.
@@ -53,10 +53,23 @@ not, the turn's slot holds the problem measured on the current system, such as t
 started the work. What holds in every post is that a measured problem comes before its fix, and the
 fix's cost is named.
 
+**A post about a system or tool we built** (a test harness, a diagnostic, a pipeline) follows the
+owner's order instead (2026-10-17):
+
+1. why it had to exist, with the stakes measured;
+2. how it is designed;
+3. how to use it;
+4. what it measured;
+5. one worked example at the end, from a real run.
+
+The figure, number and voice rules below apply to it unchanged.
+
 **Not in the shape:**
 - a dek, or an "In this post we will…" agenda list (the opening's last sentence is the scope);
 - "Introduction", "Overview" or "Conclusion" headings;
-- a closing recap of what the reader just read.
+- a closing recap of what the reader just read;
+- TODOs, a roadmap, "what's next" or open recommendations (owner, 2026-10-17). A post reports what
+  exists; plans go in issues.
 
 Acknowledgements, with full names, are optional and go last.
 
@@ -113,7 +126,6 @@ count as a figure.
   - A chart shows a comparison a reader should see at a glance.
   - Do not show the same numbers in both. The exception is the headline number, which also goes
     in prose.
-- A screenshot of a real PR or issue is a good close for "what's next".
 
 ## Numbers
 
@@ -184,6 +196,7 @@ Polishing is optional.
 
 - The opening ends with the scope sentence, and a TL;DR, if there is one, follows it.
 - Every section's last sentence moves the story on. Recap sentences are deleted.
+- No TODO, roadmap or "what's next" text anywhere.
 - A measured problem precedes the fix, and the fix's cost is named.
 - Figures:
   - there is a diagram of the mechanism, and a chart for each measurement the post argues from;
