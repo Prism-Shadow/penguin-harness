@@ -9,8 +9,8 @@
  *   row sits right below it, and the output's lines pass under both without showing through.
  * - Given the same conversation under a custom background image, in light and dark mode, the
  *   head and the row still pin, the lines under them still do not show through, and the pinned
- *   rows show exactly what the background shows in their place: the image over the page
- *   colour, unshifted, rather than a painted strip.
+ *   rows show what the background shows in their place: the image, neither shifted nor
+ *   rescaled, rather than a painted strip.
  */
 import { writeFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
@@ -209,25 +209,28 @@ for (const [theme, name] of Object.entries(THEMES)) {
     test(`${name}, ${mode}: under a custom background the rows still pin, hide what scrolls under them, and show the image`, async ({
       page,
     }) => {
-      // A wallpaper of small coloured blocks, tiled from the window's corner at half strength:
-      // the pinned rows match the background only if they lay the same image over the same
-      // page colour, in the same place.
+      // A wallpaper that changes smoothly and steeply everywhere (red follows x, green follows
+      // y, a triangle wave of 8 levels a pixel), tiled at full strength from the window's
+      // corner: a row showing it a few pixels off, rescaled or not at all differs by far more
+      // than a row that is merely pinned at a fractional offset.
       await page.addInitScript((mode) => {
+        const size = 64;
         const canvas = document.createElement("canvas");
-        canvas.width = 37;
-        canvas.height = 23;
+        canvas.width = canvas.height = size;
         const ctx = canvas.getContext("2d");
-        for (let x = 0; x < 37; x += 5) {
-          for (let y = 0; y < 23; y += 5) {
-            ctx.fillStyle = `hsl(${(x * 14 + y * 9) % 360} 70% 50%)`;
-            ctx.fillRect(x, y, 5, 5);
+        const image = ctx.createImageData(size, size);
+        const wave = (v) => Math.round((Math.abs(v - size / 2) / (size / 2)) * 255);
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            image.data.set([wave(x), wave(y), 128, 255], (y * size + x) * 4);
           }
         }
+        ctx.putImageData(image, 0, 0);
         localStorage.setItem("penguin.theme", mode);
         localStorage.setItem("penguin.background.image", canvas.toDataURL("image/png"));
         localStorage.setItem(
           "penguin.background.settings",
-          JSON.stringify({ transparency: 50, mode: "tile", position: "left top" }),
+          JSON.stringify({ transparency: 0, mode: "tile", position: "left top" }),
         );
       }, mode);
       const toolRow = await openOutput(page, theme);
@@ -240,8 +243,7 @@ for (const [theme, name] of Object.entries(THEMES)) {
       await showTranscript(toolRow, false);
       const background = await page.screenshot({ clip: pinned.band });
       await showTranscript(toolRow, true);
-      // A pinned row may be composited at a fractional offset, which can move a colour by a
-      // few levels; a misplaced image moves whole blocks.
+      // A row pinned at a fractional offset is drawn up to a pixel off the grid: a few levels.
       expect(await pixelsApart(page, onRows, background, 24)).toEqual([]);
     });
   }
