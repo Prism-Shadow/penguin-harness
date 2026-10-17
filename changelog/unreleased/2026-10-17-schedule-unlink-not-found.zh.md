@@ -3,6 +3,7 @@
 - **Date:** 2026-10-17
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#1185](https://github.com/Prism-Shadow/penguin-harness/pull/1185)
 
 [English](2026-10-17-schedule-unlink-not-found.md)
 
