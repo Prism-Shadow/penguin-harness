@@ -105,12 +105,12 @@ function scrollInto(page, toolRow, into) {
       rowOffset: r.top - h.bottom,
       sectionAbove: s.top < top(),
       sectionBelow: s.bottom - r.bottom,
-      // Whole pixels inside both rows: an edge pixel shared with what lies below the row
-      // would hold a sliver of the output.
+      // Whole pixels inside both rows and clear of their rounded corners: an edge pixel shared
+      // with what lies below the row, or a corner a theme rounds, holds a sliver of the output.
       band: {
-        x: Math.ceil(h.left),
+        x: Math.ceil(h.left) + 8,
         y: Math.ceil(h.top),
-        width: Math.floor(h.right) - Math.ceil(h.left),
+        width: Math.floor(h.right) - Math.ceil(h.left) - 16,
         height: Math.floor(r.bottom) - Math.ceil(h.top) - 1,
       },
     };
@@ -180,7 +180,7 @@ test("under a custom background the rows still pin, hide what scrolls under them
     },
   });
   const inMargin = await page.screenshot({
-    clip: { x: pinned.band.x - strip.width - 4, y: pinned.band.y + 2, ...strip },
+    clip: { x: pinned.band.x - strip.width - 12, y: pinned.band.y + 2, ...strip },
   });
   expect(onHead.equals(inMargin)).toBe(true);
 });
