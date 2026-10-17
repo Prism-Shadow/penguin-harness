@@ -5,10 +5,13 @@
  * A cache row registered before the source was required (NULL, or the retired `benchmark`)
  * reads as a head that records no source (which the session list reads with the row's client)
  * / as `cli`, without being rewritten.
+ *
+ * - Given an indexed tree, when a forced reconcile hits EACCES on readdir or on a
+ *   shard stat, the pass fails and the existing rows are not deleted.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionMeta, userText } from "@prismshadow/penguin-core";
 import type { SessionMetaPayload, SessionSource } from "@prismshadow/penguin-core";
 import { makeTempRoot, makeTraceHarness, writeTraceFile } from "./helpers.js";
@@ -243,5 +246,37 @@ describe("trace-index", () => {
     await fs.rm(dir, { recursive: true });
     await h.traceIndex.reconcileAgent(P, A); // the root's mtime moved: date dir purged
     expect(h.traceIndex.repo.listFilesByAgent(P, A)).toEqual([]);
+  });
+
+  it("a permission error on readdir does not delete indexed rows", async () => {
+    await writeTraceFile(root, P, A, "2026-07-05", S1, 1, [userText("keep me")]);
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.repo.listFilesByAgent(P, A)).toHaveLength(1);
+
+    const denied = Object.assign(new Error("EACCES"), { code: "EACCES" });
+    const spy = vi.spyOn(fs, "readdir").mockRejectedValue(denied);
+    await expect(h.traceIndex.reconcileAgent(P, A, { force: true })).rejects.toMatchObject({
+      code: "EACCES",
+    });
+    spy.mockRestore();
+    expect(h.traceIndex.repo.listFilesByAgent(P, A)).toHaveLength(1);
+  });
+
+  it("a permission error on a shard stat does not delete that row", async () => {
+    await writeTraceFile(root, P, A, "2026-07-05", S1, 1, [userText("keep me")]);
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.repo.listFilesByAgent(P, A)).toHaveLength(1);
+
+    const orig = fs.stat.bind(fs);
+    const denied = Object.assign(new Error("EACCES"), { code: "EACCES" });
+    const spy = vi.spyOn(fs, "stat").mockImplementation(async (p, ...rest) => {
+      if (String(p).endsWith(".jsonl")) throw denied;
+      return orig(p, ...rest);
+    });
+    await expect(h.traceIndex.reconcileAgent(P, A, { force: true })).rejects.toMatchObject({
+      code: "EACCES",
+    });
+    spy.mockRestore();
+    expect(h.traceIndex.repo.listFilesByAgent(P, A)).toHaveLength(1);
   });
 });

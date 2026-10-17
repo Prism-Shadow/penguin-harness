@@ -24,11 +24,17 @@ export function cacheable(mtimeMs: number): number {
   return Date.now() - mtimeMs > FRESH_MS ? mtimeMs : -1;
 }
 
-/** mtimeMs of a path; null when it does not exist. */
+/** True when `err` is ENOENT: the path is gone, as opposed to unreadable. */
+export function isMissingPath(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+/** mtimeMs of a path; null when it does not exist. Any other error is thrown. */
 export async function statMtime(p: string): Promise<number | null> {
   try {
     return (await fs.stat(p)).mtimeMs;
-  } catch {
-    return null;
+  } catch (err) {
+    if (isMissingPath(err)) return null;
+    throw err;
   }
 }

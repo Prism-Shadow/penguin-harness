@@ -10,7 +10,7 @@ import path from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
 import { atomicWriteFile, resolveModelRef, scheduleDir } from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
-import { cacheable, statMtime } from "../internal/mtime-gate.js";
+import { cacheable, isMissingPath, statMtime } from "../internal/mtime-gate.js";
 import {
   parseScheduleFile,
   type ScheduleDefinition,
@@ -130,8 +130,10 @@ export class ScheduleFileCache {
       let listing: string[];
       try {
         listing = await fs.readdir(dir);
-      } catch {
-        // Deleted between stat and readdir: treat as missing; a later pass settles it.
+      } catch (err) {
+        // Deleted between stat and readdir: treat as missing. Any other errno is
+        // not absence — abort so the last good cache is kept.
+        if (!isMissingPath(err)) throw err;
         this.seen.set(key, { mtimeMs: null, files: new Map() });
         return [];
       }
@@ -162,16 +164,18 @@ export class ScheduleFileCache {
     let stat: { mtimeMs: number; size: number };
     try {
       stat = await fs.stat(file);
-    } catch {
-      return null;
+    } catch (err) {
+      if (isMissingPath(err)) return null;
+      throw err;
     }
     if (cached && cached.mtimeMs === stat.mtimeMs && cached.sizeBytes === stat.size) return cached;
     this.counters.fileReads += 1;
     let raw: string;
     try {
       raw = await fs.readFile(file, "utf8");
-    } catch {
-      return null;
+    } catch (err) {
+      if (isMissingPath(err)) return null;
+      throw err;
     }
     return {
       mtimeMs: cacheable(stat.mtimeMs),

@@ -48,7 +48,7 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { TraceIndexRepo } from "../db/repos/trace-index.js";
-import { cacheable, statMtime } from "../internal/mtime-gate.js";
+import { cacheable, isMissingPath, statMtime } from "../internal/mtime-gate.js";
 import { readTraceHead } from "../internal/trace-head.js";
 import { fallbackTitle } from "../runtime/title-generator.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -68,8 +68,9 @@ async function listDirs(dir: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     return entries.filter((e) => e.isDirectory()).map((e) => e.name);
-  } catch {
-    return [];
+  } catch (err) {
+    if (isMissingPath(err)) return [];
+    throw err;
   }
 }
 
@@ -77,8 +78,9 @@ async function listFiles(dir: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     return entries.filter((e) => e.isFile()).map((e) => e.name);
-  } catch {
-    return [];
+  } catch (err) {
+    if (isMissingPath(err)) return [];
+    throw err;
   }
 }
 
@@ -245,8 +247,12 @@ export class TraceIndexService implements TraceIndex {
         let size = 0;
         try {
           size = (await fs.stat(path.join(dir, date, file))).size;
-        } catch {
-          continue; // Vanished between readdir and stat: skip; a later pass settles it.
+        } catch (err) {
+          // Vanished between readdir and stat: skip; the vanished-row sweep below
+          // drops it. Any other errno is not absence — abort so the gate is not
+          // recorded clean and the row is not deleted.
+          if (isMissingPath(err)) continue;
+          throw err;
         }
         this.repo.upsertFile({ projectId, agentId, sessionId, fileIndex, date, sizeBytes: size });
         known.delete(fileKey);
