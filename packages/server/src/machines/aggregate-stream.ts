@@ -15,6 +15,7 @@
  */
 import { HEARTBEAT_MS } from "../http/sse.js";
 import { formatSseEvent } from "../socket/sse-text.js";
+import type { StreamAnswer } from "../socket/stream-answer.js";
 import { SUBSCRIBER_HIGH_WATER_BYTES } from "./event-hub.js";
 import type { MachineEventHub } from "./event-hub.js";
 import type { MachineSocketTarget } from "./machine-sockets.js";
@@ -37,6 +38,12 @@ export interface AggregateOptions {
    * re-issue. Injectable so a test does not have to fill a 4 MB socket.
    */
   highWaterBytes?: number;
+  /**
+   * The socket transport's own answer, when it is the caller (socket/stream-answer.ts): the
+   * events answer it directly, as the frames they already are, and the Response this builds
+   * carries nothing.
+   */
+  answer?: StreamAnswer | null;
 }
 
 /**
@@ -52,6 +59,7 @@ export function machineEventsStream(
   log: (line: string) => void = () => undefined,
   options: AggregateOptions = {},
 ): Response {
+  const answer = options.answer ?? null;
   const encoder = new TextEncoder();
   const highWater = options.highWaterBytes ?? SUBSCRIBER_HIGH_WATER_BYTES;
   // Grows as machines join: the aggregate reads it on every event, so a machine is heard from
@@ -78,11 +86,17 @@ export function machineEventsStream(
     } catch {
       // Already closed by the consumer.
     }
+    answer?.end("closed");
   };
 
   /** Writes one frame. The aggregate's buffer already holds what is replay material, so nothing is buffered here. */
   const write = (event: string, data: string, id: string | null): void => {
-    if (ended || controller === null) return;
+    if (ended) return;
+    if (answer !== null) {
+      answer.event(event, id, data);
+      return;
+    }
+    if (controller === null) return;
     controller.enqueue(encoder.encode(formatSseEvent({ id, event, data })));
     if (controller.desiredSize !== null && controller.desiredSize <= 0) {
       // This tab has stopped consuming: it is ended and re-issues with its last event id rather
@@ -132,27 +146,41 @@ export function machineEventsStream(
     }
   };
 
-  const response = new Response(
-    new ReadableStream<Uint8Array>(
-      {
-        start: (c) => {
-          controller = c;
+  // The stream opens before anything is written into it — an HTTP reader gets the Response
+  // with its own queue, the socket's answer its start frame — so the replay below is
+  // written into an open stream, never dropped.
+  let response: Response;
+  if (answer === null) {
+    response = new Response(
+      new ReadableStream<Uint8Array>(
+        {
+          start: (c) => {
+            controller = c;
+          },
+          cancel: () => stop(),
         },
-        cancel: () => stop(),
+        // The tab's own queue, in bytes: a tab that stops reading leaves it full, which is how a
+        // stalled reader is found instead of being buffered for without bound.
+        new ByteLengthQueuingStrategy({ highWaterMark: highWater }),
+      ),
+      {
+        status: 200,
+        headers: {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          "x-accel-buffering": "no",
+        },
       },
-      // The tab's own queue, in bytes: a tab that stops reading leaves it full, which is how a
-      // stalled reader is found instead of being buffered for without bound.
-      new ByteLengthQueuingStrategy({ highWaterMark: highWater }),
-    ),
-    {
-      status: 200,
-      headers: {
-        "content-type": "text/event-stream",
-        "cache-control": "no-cache",
-        "x-accel-buffering": "no",
-      },
-    },
-  );
+    );
+  } else {
+    answer.start(200, { "content-type": "text/event-stream" });
+    // The one release path (socket/serve.ts): a cancel frame or the socket closing aborts
+    // the call's Request, which ends this stream the way cancelling the HTTP body does.
+    answer.signal.addEventListener("abort", stop, { once: true });
+    if (answer.signal.aborted) stop();
+    // Nothing rides it — the answer carries the stream, and serve.ts drops the body.
+    response = new Response(null, { status: 200 });
+  }
 
   // Read before the replay: the machines watched at open are what a `last-event-id` reaches.
   join(watched());

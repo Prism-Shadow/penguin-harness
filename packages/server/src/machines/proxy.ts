@@ -14,6 +14,7 @@
  */
 import http from "node:http";
 import { Readable } from "node:stream";
+import { answerOf } from "../socket/stream-answer.js";
 import type { MachineEventHub } from "./event-hub.js";
 import { MachineSocketRelay } from "./socket-relay.js";
 import type { MachineSockets } from "./machine-sockets.js";
@@ -213,9 +214,12 @@ export function machinesProxy(
       request.method === "GET" &&
       (request.headers.get("accept") ?? "").includes("text/event-stream");
     if (wantsStream) {
+      // The socket transport's answer, when the socket carried this request
+      // (socket/stream-answer.ts): the machine's frames answer it directly.
       const relayed = await relay.stream(path.machineId, target, {
         path: `${path.remotePath}${url.search}`,
         lastEventId: request.headers.get("last-event-id"),
+        answer: answerOf(request),
       });
       if (relayed.status < 500) report?.(path.machineId, { ok: true });
       return relayed;
