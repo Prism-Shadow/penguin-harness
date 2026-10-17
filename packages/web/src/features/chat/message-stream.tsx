@@ -32,7 +32,7 @@ import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { MessageItem } from "./message-item";
 import { interactiveReplyIndex } from "./a2ui-reply";
-import { WorkspaceLinksProvider } from "./workspace-links";
+import { WorkspaceLinksProvider } from "../workspace";
 import { SessionWorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom, type StreamFollow } from "./stream-follow";
 

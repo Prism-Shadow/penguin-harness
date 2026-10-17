@@ -140,12 +140,16 @@ import { SkillIcon, SkillPickList, toggleSkillName } from "../skills";
 import { sameModelRef } from "../models";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { employeesLast, isEmployee } from "../agents";
-import { ModelCatalogSelect, modelLabel } from "./model-select";
-import { ModelPickerModal } from "./model-picker-modal";
+import {
+  ModelCatalogSelect,
+  ThinkingLevelSelect,
+  ModelPickerModal,
+  SELECTABLE_THINKING_LEVELS,
+  modelLabel,
+  thinkingLevelLabel,
+} from "../model-picker";
 import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
-import { ThinkingLevelSelect } from "./thinking-level-select";
-import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import {
   BOOK_ICON,
   buildSkillsMessage,
@@ -164,7 +168,7 @@ import {
 } from "./input-history";
 
 import { isStopAction, midRunAction } from "./composer-send";
-import { PAPERCLIP_ICON } from "./attached-files-banner";
+import { PAPERCLIP_ICON } from "../../lib/attachments";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
 import { modelWindowBelowCompactionLimit } from "../../lib/context";

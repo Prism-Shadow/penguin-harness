@@ -80,7 +80,11 @@ import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
 import { EmployeeAvatar } from "./employee-avatar";
 import { managerCandidates } from "./org-chart-tree";
-import { SELECTABLE_THINKING_LEVELS, effectiveThinkingLevel, thinkingLevelLabel } from "../chat";
+import {
+  SELECTABLE_THINKING_LEVELS,
+  effectiveThinkingLevel,
+  thinkingLevelLabel,
+} from "../model-picker";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
 const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"];

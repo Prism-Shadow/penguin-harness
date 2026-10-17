@@ -53,7 +53,8 @@ import { useSessions } from "../../state/sessions";
 import type { MergedBenchmark } from "../../lib/benchmark-merge";
 import { nameOnMachine } from "../../lib/workspace-machines";
 import { useLocale } from "../../state/locale";
-import { AiCreateModal, pickDefaultAgent, AiCreateButtons } from "../ai-create";
+import { AiCreateModal, AiCreateButtons } from "../ai-create";
+import { pickDefaultAgent } from "../../lib/default-agent";
 import {
   benchmarkDescription,
   latestWithDelta,

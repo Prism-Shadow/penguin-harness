@@ -17,6 +17,7 @@
  * left displayed as-is in the text (e.g. a "could not be saved" note, a path outside this
  * system, or a marker-shaped line a user simply typed).
  */
+import { ICONS } from "@prismshadow/penguin-ui";
 import { apiUrl } from "./server-context";
 import { machineForSession } from "./session-machines";
 import {
@@ -25,6 +26,12 @@ import {
   matchAttachedFileLine,
   matchAttachedImageLine,
 } from "@prismshadow/penguin-core/markers";
+
+/**
+ * The paperclip: the mark of an attached file wherever one is shown or added — the message
+ * banner, the composer's attachment entry, the drop overlay and the Files panel.
+ */
+export const PAPERCLIP_ICON = ICONS.paperclip;
 
 export interface ParsedAttachments {
   /** Body text with restored attachment lines removed (unrecognized lines are kept). */

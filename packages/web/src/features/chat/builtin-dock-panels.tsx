@@ -29,7 +29,7 @@ import { approvalModeChoices } from "./approval-mode";
 import { useChatDock } from "./chat-dock-context";
 import { ChatMemoryView } from "./memory-view";
 import { SubagentsView } from "./subagents-view";
-import { WorkspaceBrowser } from "./workspace-browser";
+import { WorkspaceBrowser } from "../workspace";
 
 /**
  * What a conversation's tab shows on the draft page, before the first send creates the

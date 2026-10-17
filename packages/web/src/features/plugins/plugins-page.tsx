@@ -68,8 +68,14 @@ import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { MachinePicker, type MachineChoice } from "../machines";
-import { DRAFT_SESSION_ID, draftKey, loadDraft, saveDraft, prepareNewChatDraft } from "../chat";
-import { localizedText } from "../../lib/skill-use";
+import {
+  DRAFT_SESSION_ID,
+  draftKey,
+  loadDraft,
+  saveDraft,
+  prepareNewChatDraft,
+  localizedText,
+} from "../chat";
 import { usePluginRepair } from "./plugin-repair";
 import { samePluginTarget, viewedMachine } from "./viewed-machine";
 import { SettingsDialog } from "../settings";

@@ -48,7 +48,7 @@ import {
 } from "../../lib/file-drop";
 
 import { S } from "../../lib/strings";
-import { PAPERCLIP_ICON } from "./attached-files-banner";
+import { PAPERCLIP_ICON } from "../../lib/attachments";
 
 /** The chat area's DOM node, or null when the composer is mounted outside a region. */
 const ChatDropRegionContext = createContext<HTMLElement | null>(null);

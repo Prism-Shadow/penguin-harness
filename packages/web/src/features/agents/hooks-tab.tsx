@@ -57,7 +57,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { localizedText } from "../../lib/skill-use";
+import { localizedText } from "../chat";
 import { SkillTile } from "../skills";
 import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";

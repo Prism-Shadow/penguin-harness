@@ -1,32 +1,3 @@
-/**
- * Organization dialogs, invoked from the sidebar's organization switcher (and the empty
- * landing): create an organization — display name, the id (still required, generated from
- * that name by the field's own button), a one-sentence mission, the Project it belongs to
- * when the user has several, the model its sessions run on (the Project default unless
- * chosen), the company workspace (the organization's own directory unless one is picked) and
- * the CEO's monthly budget, which is the whole company's and is typed in the currency the
- * reader reads money in but stored in USD — and an organization's
- * settings: name, mission, model, workspace, timezone, working language, approval mode, and
- * pause / resume — the one lifecycle control there is, since an organization is never deleted
- * through the App. Pause / resume writes its own PATCH the moment it is clicked; everything
- * else is a draft until Save, which is live once a field differs from what is stored and none
- * of the required ones is empty. Closing the settings with unsaved edits asks first.
- *
- * What the create dialog holds is kept as a draft (org-draft.ts) per user and Project, so an
- * accidental close, a reload or a switch back to development mode does not cost the mission
- * someone spent minutes writing; it is restored on reopen and dropped on a successful create
- * or an explicit "clear draft". A caller that opens the dialog from a proposal (the empty
- * landing's cards) passes that proposal as `initial`: it fills the name and the mission over
- * whatever the draft held, and is then written through to the draft exactly as typed text is.
- *
- * Failures stay inside the dialog: a rejected id lands under the id field, anything else in
- * a strip above the footer, and a settings load that fails offers its retry in place — the
- * fields never sit disabled behind a toast that has already gone.
- *
- * `useOrganizationCreated` is the other half of creating one: what every host of the create
- * dialog does once it succeeds — adopt the organization as the shell's current one, then open
- * where the creation leads.
- */
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import type {
@@ -63,7 +34,8 @@ import { useAuth } from "../../state/auth";
 import { useCompany } from "./company-state";
 import { projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { ModelCatalogSelect, modelLabel, WorkspaceSelect } from "../chat";
+import { ModelCatalogSelect, modelLabel } from "../model-picker";
+import { WorkspaceSelect } from "../workspace";
 import { sameModelRef } from "../models";
 import { ErrorLine, InfoFieldLabel, MoneyPerMonthInput, OrgStatusPill } from "./shared";
 import { orgCreatedTarget } from "../../lib/company-nav";

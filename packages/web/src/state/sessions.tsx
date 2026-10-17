@@ -277,7 +277,7 @@ interface SessionsStoreState {
    * The Project's machines this list could NOT ask — no connection held — by machine id.
    * It is the difference between "this server does not have that Session" and "nobody who
    * might have it answered", which is the whole question for a routed id that is missing
-   * from the list (features/chat/chat-page.tsx). Their rows come from the cache.
+   * from the list (features/chat/session/use-session-lifecycle.ts). Their rows come from the cache.
    */
   offlineMachineIds: string[];
   /**

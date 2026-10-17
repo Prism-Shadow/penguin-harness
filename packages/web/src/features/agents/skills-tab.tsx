@@ -60,7 +60,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { SkillTile } from "../skills";
-import { localizedShortText } from "../../lib/skill-use";
+import { localizedShortText } from "../chat";
 import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
 import { buildImportPrompt } from "./skill-import-source";

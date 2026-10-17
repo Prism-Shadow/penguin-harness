@@ -160,8 +160,9 @@ import {
 import { restoreSelection } from "../../components/ui/text-selection";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
-import { setCloseGuard, tabKey } from "../dock";
-import { PAPERCLIP_ICON } from "./attached-files-banner";
+import { setCloseGuard } from "../../lib/dock-close-guard";
+import { tabKey } from "../../lib/dock-tab-key";
+import { PAPERCLIP_ICON } from "../../lib/attachments";
 import { WorkspaceTreeView } from "./workspace-tree-view";
 
 /**

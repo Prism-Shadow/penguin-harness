@@ -1,7 +1,5 @@
 export { sameModelRef } from "./model-grouping";
-
 export { hasConfiguredKey } from "./model-grouping";
-
 export { promotedPricing } from "./model-grouping";
 
 export { discountedPrice } from "./model-grouping";

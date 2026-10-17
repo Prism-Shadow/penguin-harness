@@ -6,12 +6,9 @@
  * them is rendered as usual by the caller. It keeps the same visual language as message-level
  * notices; the caller owns its user-side alignment and timestamp footer.
  */
-import { ICONS, TranscriptNote } from "@prismshadow/penguin-ui";
+import { TranscriptNote } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
-import { attachmentFileName } from "../../lib/attachments";
-
-/** The paperclip: the mark of attached files, shared with the composer's file-attachment entry. */
-export const PAPERCLIP_ICON = ICONS.paperclip;
+import { PAPERCLIP_ICON, attachmentFileName } from "../../lib/attachments";
 
 export function AttachedFilesBanner({ files }: { files: string[] }) {
   // The names are cut to the line, the composer chip's rule (truncate max-w-56) applied to a

@@ -46,7 +46,8 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
-import { ModelCatalogSelect, WorkspaceSelect } from "../chat";
+import { ModelCatalogSelect } from "../model-picker";
+import { WorkspaceSelect } from "../workspace";
 import { sameModelRef } from "../models";
 import { itemModelRef } from "./schedule-upsert";
 
