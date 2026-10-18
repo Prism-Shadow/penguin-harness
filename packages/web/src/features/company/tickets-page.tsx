@@ -545,12 +545,18 @@ export function TicketsPage() {
       queueOnly && !selectMode && (t.status === "proposed" || t.status === "review");
     return (
       <Fragment key={t.ticketId}>
+        {/* In select mode the face toggles the checkbox; otherwise the drag machine's
+            props own the press AND the click that opens the ticket. The onClick must ride
+            inside the spread below — a separate onClick after it would shadow the
+            machine's opener with undefined and no card would ever open (this exact
+            regression shipped in board v1). */}
         <button
           type="button"
           data-ticket-card={t.ticketId}
           data-tooltip={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
-          {...(selectMode ? { "aria-pressed": isSel } : drag.cardProps(t))}
-          onClick={selectMode ? () => toggleSelect(t.ticketId) : undefined}
+          {...(selectMode
+            ? { "aria-pressed": isSel, onClick: () => toggleSelect(t.ticketId) }
+            : drag.cardProps(t))}
           className={`${cardFrame(t)} cursor-pointer select-none [-webkit-touch-callout:none] ${
             lifted?.ticket.ticketId === t.ticketId ? "opacity-40" : ""
           }${isSel ? " border-accent ring-1 ring-accent" : ""}`}
