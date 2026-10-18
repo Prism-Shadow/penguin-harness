@@ -963,35 +963,37 @@ export function TicketsPage() {
           <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
             {S.company.tickets.selectedCount(selected.size)}
           </span>
-          {/* A dropdown's panel takes the trigger's width, so a trigger left at its content
-              width ellipsises its own options down to one character. A floor on the trigger
-              is what keeps the choices readable. */}
-          <Select
-            className="min-w-[8rem]"
-            value={bulkTarget}
-            onChange={(e) => setBulkTarget(e.target.value)}
-            aria-label={S.company.tickets.bulkMoveTo}
-          >
-            <option value="">{S.company.tickets.bulkMoveTo}</option>
-            {TICKET_COLUMNS.map((s) => (
-              <option key={s} value={s}>
-                {S.company.tickets.columns[s] ?? s}
-              </option>
-            ))}
-          </Select>
-          <Select
-            className="min-w-[8rem]"
-            value={bulkOwner}
-            onChange={(e) => setBulkOwner(e.target.value)}
-            aria-label={S.company.tickets.bulkAssignTo}
-          >
-            <option value="">{S.company.tickets.bulkAssignTo}</option>
-            {employees.map((e) => (
-              <option key={e.agentId} value={`agent:${e.agentId}`}>
-                {e.name}
-              </option>
-            ))}
-          </Select>
+          {/* A dropdown's trigger fills its host, and its panel takes the trigger's width — so
+              each one is hosted in a box of its own. Left as a bare flex child the trigger fills
+              the whole bar, one dropdown to a row, and its choices ellipsise. */}
+          <span className="w-40 shrink-0">
+            <Select
+              value={bulkTarget}
+              onChange={(e) => setBulkTarget(e.target.value)}
+              aria-label={S.company.tickets.bulkMoveTo}
+            >
+              <option value="">{S.company.tickets.bulkMoveTo}</option>
+              {TICKET_COLUMNS.map((s) => (
+                <option key={s} value={s}>
+                  {S.company.tickets.columns[s] ?? s}
+                </option>
+              ))}
+            </Select>
+          </span>
+          <span className="w-44 shrink-0">
+            <Select
+              value={bulkOwner}
+              onChange={(e) => setBulkOwner(e.target.value)}
+              aria-label={S.company.tickets.bulkAssignTo}
+            >
+              <option value="">{S.company.tickets.bulkAssignTo}</option>
+              {employees.map((e) => (
+                <option key={e.agentId} value={`agent:${e.agentId}`}>
+                  {e.name}
+                </option>
+              ))}
+            </Select>
+          </span>
           <Input
             size="sm"
             className="min-w-44 flex-1"
