@@ -27,6 +27,11 @@ Read it before the first draft. Three things make it work, and each is a rule he
 - The prose introduces each claim, and a figure confirms it right after.
 - The before and after figures share one layout, so the difference is the only thing that changes.
 
+**Few words, many figures** (owner, 2026-10-18). Explain why the system exists and the principle
+it works on, then show the choices it rests on as comparisons. Leave out every parameter, option and
+rule a reader does not need to see the idea, and link the reference docs for them instead. Wherever
+a figure can say it, the figure replaces the paragraph.
+
 The file pair, frontmatter, `/blog-assets/` paths and screenshot capture are in
 `penguin-harness-dev`'s `reference/authoring.md`. The copy rules in its `reference/ai-slop.md`
 apply to every post. This page covers what those two do not: the shape and the voice.
@@ -35,18 +40,19 @@ apply to every post. This page covers what those two do not: the shape and the v
 
 | Section | Its job | In the reference post | en words |
 | --- | --- | --- | ---: |
-| Opening, no heading | What the team cares about, the stakes in the reader's own workloads, then one sentence of scope | "To us, it's all the same: make stuff go _really_ fast." … "Today, we'll be talking about how we evolved our filesystem stack…" | 100–150 |
-| TL;DR, optional | Three to five bullets with the headline numbers, right after the opening | (none; the reference post goes straight on) | 50–100 |
-| Background | The existing system the reader must hold in mind, and the property the new work has to keep. One diagram. | ImageFS: lazy loading, cache tiers, OverlayFS for writes | 150–250 |
-| The obvious plan | The constraint, and the natural answer to it. Let it look right. | virtio-fs bridges the VM boundary; boot is fast. "So we shipped it… right?" | 150–250 |
-| The turn | The measurement that broke the plan, against a baseline. Then one operation taken apart on a timeline with real units, down to a root cause stated in one sentence. | Bar chart of five operations; one `chown` = three host round trips, 99 µs; "virtio-fs is a _shared_ filesystem" | 300–400 |
-| The redesign | The idea in one sentence first, then the mechanism. Name what it costs and what it buys. | "speaking in blocks"; "the host … loses its ability to work with the VM's filesystem. In return…" | 350–450 |
-| Making it real | The hard part of the redesign. The naive implementation and the exact reason it fails. | `mkfs.ext4 -d` needs all content upfront; reflinks fail between FUSE and XFS | 350–450 |
-| Results | The turn's chart again, same layout, new system against the naive baseline and the previous system. The headline number goes in prose with both endpoints. | "`bun install` … dropped 12x, from 12.5 seconds to 1.07 seconds." | 150–250 |
-| Close | Where to get it (version, docs link), in one or two sentences | "generally available" | 30–60 |
+| Opening, no heading | What the team cares about, the stakes in the reader's own workloads, then one sentence of scope | "To us, it's all the same: make stuff go _really_ fast." … "Today, we'll be talking about how we evolved our filesystem stack…" | 50–80 |
+| TL;DR, optional | Three or four bullets with the headline numbers, right after the opening | (none; the reference post goes straight on) | 30–60 |
+| Background | The existing system the reader must hold in mind, and the property the new work has to keep. One diagram. | ImageFS: lazy loading, cache tiers, OverlayFS for writes | 80–150 |
+| The obvious plan | The constraint, and the natural answer to it. Let it look right. | virtio-fs bridges the VM boundary; boot is fast. "So we shipped it… right?" | 60–120 |
+| The turn | The measurement that broke the plan, against a baseline. Then one operation taken apart on a timeline with real units, down to a root cause stated in one sentence. | Bar chart of five operations; one `chown` = three host round trips, 99 µs; "virtio-fs is a _shared_ filesystem" | 120–200 |
+| The redesign | The idea in one sentence first, then the mechanism. Name what it costs and what it buys. | "speaking in blocks"; "the host … loses its ability to work with the VM's filesystem. In return…" | 150–250 |
+| Making it real | The hard part of the redesign. The naive implementation and the exact reason it fails. | `mkfs.ext4 -d` needs all content upfront; reflinks fail between FUSE and XFS | 120–200 |
+| Results | The turn's chart again, same layout, new system against the naive baseline and the previous system. The headline number goes in prose with both endpoints. | "`bun install` … dropped 12x, from 12.5 seconds to 1.07 seconds." | 60–120 |
+| Close | Where to get it (version, docs link), in one or two sentences | "generally available" | 20–40 |
 
-The whole post runs about 2,000–2,800 words in English. The redesign and its implementation are the
-longest sections; the results section stays short because its figures carry it.
+The prose runs about 800–1,200 words in English, not counting figure text; the reference post's
+2,500 is the ceiling, not the target. The figures carry the argument, and each section is a figure
+with a few sentences around it.
 
 Adapt the slots and keep the order. Not every story has a shipped plan that failed. When yours does
 not, the turn's slot holds the problem measured on the current system, such as the regression that
@@ -54,13 +60,16 @@ started the work. What holds in every post is that a measured problem comes befo
 fix's cost is named.
 
 **A post about a system or tool we built** (a test harness, a diagnostic, a pipeline) follows the
-owner's order instead (2026-10-17):
+owner's order instead (2026-10-17, shortened 2026-10-18):
 
-1. why it had to exist, with the stakes measured;
-2. how it is designed;
-3. how to use it;
-4. what it measured;
-5. one worked example at the end, from a real run.
+1. why it had to exist, with the stakes measured, in one figure;
+2. the principle and the framework it works on, in one or two diagrams, without a walk through its
+   parameters or rules;
+3. three or four comparisons, one per design choice: the design we did not take against the one we
+   took, as a mirror pair of figures that shows the metric (a cache hit rate, a cost) for each, with
+   a sentence on why not the first and why the second. A real regression the system caught goes in
+   as one of them;
+4. a close with the command that runs it and the docs link, instead of a "how to use" section.
 
 The figure, number and voice rules below apply to it unchanged.
 
@@ -68,6 +77,7 @@ The figure, number and voice rules below apply to it unchanged.
 - a dek, or an "In this post we will…" agenda list (the opening's last sentence is the scope);
 - "Introduction", "Overview" or "Conclusion" headings;
 - a closing recap of what the reader just read;
+- a walk through every parameter, option or rule (owner, 2026-10-18); link the reference docs;
 - TODOs, a roadmap, "what's next" or open recommendations (owner, 2026-10-17). A post reports what
   exists; plans go in issues.
 
@@ -200,6 +210,8 @@ each post. It is used for that post's polishing only.
 - The opening ends with the scope sentence, and a TL;DR, if there is one, follows it.
 - Every section's last sentence moves the story on. Recap sentences are deleted.
 - No TODO, roadmap or "what's next" text anywhere.
+- The prose is within the word budget, and no section explains a parameter or rule the idea does not
+  need. Where a paragraph could be a figure, it is one.
 - A measured problem precedes the fix, and the fix's cost is named.
 - Figures:
   - there is a diagram of the mechanism, and a chart for each measurement the post argues from;

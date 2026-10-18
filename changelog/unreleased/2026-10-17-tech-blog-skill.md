@@ -15,7 +15,8 @@ takes:
 - a section order: an opening that ends on one scope sentence, an optional TL;DR, background, the obvious plan, the
   measurement that broke it, the redesign with its cost named, implementation, results against the
   naive baseline, and a short close;
-- word budgets per section;
+- a short, figure-led budget: about 800–1,200 words of prose, the reason and the principle rather than
+  every parameter, and for a system post, comparisons of the design not taken against the one taken;
 - figures: every post is drawn. Diagrams and charts are inline SVG in the post's Markdown, on the
   model of the agent-loop flowchart in the MMSP docs: classes styled for both themes, text in each
   language's file, and a hidden text equivalent. Bolder figures are welcome when every mark encodes
