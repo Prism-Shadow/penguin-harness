@@ -47,7 +47,7 @@ import { LocaleProvider } from "../src/state/locale";
 import { ThemeProvider } from "../src/state/theme";
 import { ProjectProvider, useProject } from "../src/state/project";
 import { SessionsProvider, createSessionsStore, useSessions } from "../src/state/sessions";
-import { createCompanyStore } from "../src/state/company";
+import { createCompanyStore } from "../src/features/company/company-state";
 import { useMemoryListing } from "../src/features/chat/use-memory-listing";
 import { useMachineAgents } from "../src/lib/machine-agent-lists";
 import { AgentSettingsPage } from "../src/features/agents/agent-settings-page";
@@ -290,7 +290,7 @@ async function mountShell() {
       h("p", null, `${now.projectId}: ${now.agentIds.join(",")} | ${now.rowAgentIds.join(",")}`),
     );
   }
-  await mount(h(AuthProvider, null, h(ProjectProvider, null, h(SessionsProvider, null, h(Page)))));
+  await mount(h(AuthProvider, null, h(ProjectProvider, null, h(SessionsProvider, { userEvents: [] }, h(Page)))));
   await settle();
   return {
     seen,
@@ -534,7 +534,7 @@ describe("pages over a Project switch", () => {
     const router = createMemoryRouter(
       [
         {
-          element: h(ProjectProvider, null, h(SessionsProvider, null, h(SwitchToB), h(Outlet))),
+          element: h(ProjectProvider, null, h(SessionsProvider, { userEvents: [] }, h(SwitchToB), h(Outlet))),
           children: [
             { path: "/benchmark", element: h("p", null, "Benchmarks list") },
             { path: "/benchmark/:benchmarkId", element: h(BenchmarkDetailPage) },
