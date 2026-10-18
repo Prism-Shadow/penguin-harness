@@ -10,13 +10,7 @@ import { backgroundStyle, useBackground } from "../state/background";
  */
 import { useEffect, useState } from "react";
 import { Outlet } from "react-router";
-import {
-  AppShell,
-  Drawer,
-  MobileTopBar,
-  Notice,
-  UpdateDot,
-} from "@prismshadow/penguin-ui";
+import { AppShell, Drawer, MobileTopBar, Notice, UpdateDot } from "@prismshadow/penguin-ui";
 import * as api from "../api/endpoints";
 import { nagsAboutInitialPassword } from "../lib/account-menu";
 import { S } from "../lib/strings";
