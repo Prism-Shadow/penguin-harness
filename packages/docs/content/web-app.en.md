@@ -92,6 +92,7 @@ From top to bottom, the sidebar holds:
 | --- | --- | --- |
 | **New chat** | Open a new conversation draft | [Chat](/chat) |
 | **Agents** | Create agents and edit their prompt, memory, runtime, tools, Skills, hooks, Vault and scheduled tasks | [Agents](/agents) |
+| **Scheduled tasks** | Every agent's scheduled tasks of this Project on one page, filtered by status and type | [Scheduled tasks](/schedules) |
 | **Models** | Configure the Project's models, providers and credentials | [Models](/models) |
 | **Plugins** | Browse plugins, install their Skills and hook packages onto agents, and add server plugins to the Project | [Skills](/skills) |
 | **Machines** | Install this PenguinHarness build on other hosts over ssh and manage the connections to them (admins only) | [Security Model](/security#manage-remote-machines-over-ssh) |
