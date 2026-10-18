@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** refactor
 - **Scope:** `web`
+- **PR:** [#1197](https://github.com/Prism-Shadow/penguin-harness/pull/1197)
 
 [English](2026-10-18-web-route-lazy.md)
 
