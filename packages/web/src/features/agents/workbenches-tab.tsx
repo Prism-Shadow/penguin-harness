@@ -25,8 +25,8 @@ import { WORKBENCH_UPDATED_EVENT, workbenchTabsOf } from "../../lib/workbench-ta
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
-import { localizedText } from "../chat/skill-use";
-import { SkillTile } from "../skills/skill-icon-view";
+import { localizedText } from "../../lib/skill-use";
+import { SkillTile } from "../skills";
 
 /** Agent-owned workbenches, including broken and handler-only packages. */
 export function WorkbenchesTab({ agentId }: { agentId: string }) {

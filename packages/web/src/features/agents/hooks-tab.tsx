@@ -60,7 +60,7 @@ import { agentDisplayName, useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { localizedText } from "../../lib/skill-use";
-import { SkillTile } from "../skills/skill-icon-view";
+import { SkillTile } from "../skills";
 import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
 import { buildHookImportPrompt } from "./hook-import";

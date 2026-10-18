@@ -50,10 +50,10 @@ import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { AiCreateModal } from "../ai-create";
-import { AiCreateButtons } from "../ai-create/ai-create-buttons";
-import { ScheduleFormModal } from "../schedules/schedule-form-modal";
-import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
-import { toggleBody } from "../schedules/schedule-upsert";
+import { AiCreateButtons } from "../ai-create";
+import { ScheduleFormModal } from "../schedules";
+import { ScheduleSuggestions, scheduleExamples } from "../schedules";
+import { toggleBody } from "../schedules";
 import { usePromptInjection } from "./prompt-injection-controls";
 
 /** Display status → badge. A finished one-off is settled: a neutral tag, solid so it still reads. */

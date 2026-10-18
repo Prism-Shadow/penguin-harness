@@ -58,7 +58,7 @@ import { toneInk } from "../../lib/tone";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
 import { useMachineInfo } from "../../lib/machine-agent-lists";
-import { APPROVAL_MODES } from "../chat/approval-mode";
+import { APPROVAL_MODES } from "../chat";
 import { ApiSessionSettings, ApiConcurrencySettings } from "./api-session-settings";
 import { ApiTryPanel } from "./api-try-panel";
 
