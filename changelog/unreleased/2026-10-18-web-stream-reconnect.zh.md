@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#1198](https://github.com/Prism-Shadow/penguin-harness/pull/1198)
 
 [English](2026-10-18-web-stream-reconnect.md)
 
