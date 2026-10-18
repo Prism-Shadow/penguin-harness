@@ -28,8 +28,6 @@
  *   has registered (a plugin's panel not loaded yet) is kept; a malformed entry reads as empty
  *   docks.
  * - Scope switches and moves are instant (no animation); toggles animate.
- * - A detached terminal tab returns to the scope it left, unless that scope already holds the
- *   shell again.
  * - There is one view per open dock; a hidden dock keeps its view to stay mounted on, an empty
  *   one has none.
  * - At most one surface is fullscreen, and only an open dock with tabs enters it. It lasts while
@@ -42,7 +40,7 @@
  * - Given a fullscreen draft, its first send hands fullscreen to the new Session, but never
  *   overwrites an existing Session's fullscreen. A new draft starts at normal size.
  * - Given an inactive fullscreen terminal dock, pruning its last shell prevents fullscreen from
- *   returning when that Session is revisited, even if another terminal returns there first.
+ *   returning when that Session is revisited.
  * - Given fullscreen docks, reloading restores their tabs and sizes at normal size.
  * - Given fullscreen docks in several Sessions, crossing the narrow breakpoint clears all of
  *   them; fullscreen chosen in the merged view still survives switching Sessions.
@@ -445,35 +443,6 @@ describe("instant changes (no animation)", () => {
   });
 });
 
-describe("the detach round trip", () => {
-  it("restores a terminal tab into the scope it left, even while another is on screen", () => {
-    const a = `scope-detach-a-${scopeSeq}`;
-    dock.setDockScope(a);
-    dock.addTerminalTab("term-win", "bottom");
-    dock.removeTab("terminal:term-win"); // the detach: tab leaves while the shell moves out
-    expect(dock.isDockVisible("bottom")).toBe(false);
-
-    dock.setDockScope(`scope-detach-b-${scopeSeq}`); // the user wandered off meanwhile
-    dock.restoreTerminalTab(a, "term-win", "bottom");
-    expect(dock.terminalTabIds()).toEqual([]); // not into the scope on screen
-    dock.setDockScope(a);
-    expect(dock.terminalTabIds()).toEqual(["term-win"]);
-    expect(dock.isDockVisible("bottom")).toBe(true);
-    expect(dock.dockActiveKey("bottom")).toBe("terminal:term-win");
-  });
-
-  it("does nothing when the scope it left already holds the shell again", () => {
-    const a = `scope-detach-c-${scopeSeq}`;
-    dock.setDockScope(a);
-    dock.addTerminalTab("term-back", "bottom"); // the user re-tabbed it before the window closed
-    dock.setDockScope(`scope-detach-d-${scopeSeq}`);
-    dock.restoreTerminalTab(a, "term-back", "right");
-    dock.setDockScope(a);
-    expect(dock.terminalTabDock("term-back")).toBe("bottom");
-    expect(dock.dockTabs("right")).toEqual([]);
-  });
-});
-
 describe("view models", () => {
   it("renders one view per open dock", () => {
     dock.openPanel("workspace", "right");
@@ -623,21 +592,17 @@ describe("fullscreen", () => {
     expect(dock.fullscreenDock()).toBe("right");
   });
 
-  it.each([false, true])(
-    "does not restore fullscreen after an inactive dock's last terminal dies (another returns: %s)",
-    (restoreAnother) => {
-      const owner = dock.currentDockScope();
-      dock.addTerminalTab("fullscreen-terminal", "bottom");
-      dock.setDockFullscreen("bottom");
-      dock.setDockScope(`fullscreen-away-${scopeSeq}`);
-      dock.pruneTerminalTabs(new Map());
-      if (restoreAnother) dock.restoreTerminalTab(owner, "returned-terminal", "bottom");
-      dock.setDockScope(owner);
-      expect(dock.fullscreenDock()).toBeNull();
-      dock.openPanel("memory", "bottom");
-      expect(dock.fullscreenDock()).toBeNull();
-    },
-  );
+  it("does not restore fullscreen after an inactive dock's last terminal dies", () => {
+    const owner = dock.currentDockScope();
+    dock.addTerminalTab("fullscreen-terminal", "bottom");
+    dock.setDockFullscreen("bottom");
+    dock.setDockScope(`fullscreen-away-${scopeSeq}`);
+    dock.pruneTerminalTabs(new Map());
+    dock.setDockScope(owner);
+    expect(dock.fullscreenDock()).toBeNull();
+    dock.openPanel("memory", "bottom");
+    expect(dock.fullscreenDock()).toBeNull();
+  });
 
   it("reloads the dock's tabs and size without restoring fullscreen", async () => {
     const owner = dock.currentDockScope();

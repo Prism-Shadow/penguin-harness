@@ -20,7 +20,6 @@
  *   offers it and its Ctrl+` starts a shell of its own, while the owner's "+" menu offers its
  *   shell opened elsewhere; a draft has no Session, so it offers no terminal at all;
  * - a new shell starts in the conversation's Workspace, not the home directory;
- * - "Detach" hands the terminal off to /terminal?id=… in a new window and its tab leaves;
  * - a failed shell create surfaces as an error toast instead of silence.
  */
 import { test, expect } from "@playwright/test";
@@ -584,42 +583,6 @@ test("a new shell starts in the conversation's Workspace, not at home", async ({
   expect(terminals.filter((t) => t.alive).map((t) => t.cwd.split(/[/\\]/).pop())).toContain(
     dirName,
   );
-  await killAllTerminals(page.request);
-});
-
-test("Detach hands the terminal to /terminal?id=… and its tab leaves the strip", async ({
-  page,
-  context,
-}) => {
-  await provisionAndLogin(page.request, U, P);
-  const projectId = await configureProjectModel(page.request);
-  await killAllTerminals(page.request);
-  const sessionId = await createSession(page.request, projectId);
-  await page.goto(`${BASE}/chat/${sessionId}`);
-  await page.getByPlaceholder(/输入消息/).waitFor();
-
-  await page.keyboard.press("Control+Backquote");
-  await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
-  await waitForShell(page, "DETACH_ME");
-
-  const popupPromise = context.waitForEvent("page");
-  await dockAt(page, "bottom").getByTestId("dock-detach").click();
-  const popup = await popupPromise;
-  await popup.waitForURL(/\/terminal\?id=/);
-  // Same shell, same screen: the marker typed in the dock shows in the window.
-  await expect
-    .poll(() => popup.locator(".xterm-rows").innerText(), { timeout: 20000 })
-    .toContain("DETACH_ME");
-  // The dock let go: no terminal tab left (the dock hid with its last tab gone).
-  await expect(anyDock(page)).toHaveCount(0);
-  // Closing the window hands the shell BACK: its tab returns to the dock it left.
-  await popup.close();
-  await expect(
-    dockAt(page, "bottom").locator(
-      '[data-testid="dock-tab"][data-terminal-id][data-active="true"]',
-    ),
-  ).toBeVisible({ timeout: 10000 });
-  await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("DETACH_ME");
   await killAllTerminals(page.request);
 });
 

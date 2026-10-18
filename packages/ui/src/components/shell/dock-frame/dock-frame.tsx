@@ -69,7 +69,7 @@ export const DOCK_FULLSCREEN_Z = 40;
 /** Where a lifted surface is on its way; the root carries it as `data-fullscreen`. */
 export type DockFullscreenPhase = "entering" | "full" | "exiting";
 
-/** A small square header button: the dock's add, detach, move, fullscreen and hide controls. */
+/** A small square header button: the dock's add, move, fullscreen and hide controls. */
 export function DockHeaderButton({
   label,
   coarse = false,

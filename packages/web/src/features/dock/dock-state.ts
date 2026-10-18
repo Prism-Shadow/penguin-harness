@@ -739,29 +739,6 @@ export function showTerminal(id: string): void {
 }
 
 /**
- * Puts a terminal tab back into a NAMED conversation's dock — the detach round trip: the
- * tab left scope X when its shell moved to a window, and closing that window must return
- * it to X even when another conversation is on screen by then. No-op when that scope
- * already holds the shell again (the user re-tabbed it from its "+" menu meanwhile).
- */
-export function restoreTerminalTab(scopeId: string, id: string, position: DockPosition): void {
-  if (scopeId === scope) {
-    if (terminalTabDock(id) === null) addTerminalTab(id, position);
-    return;
-  }
-  const target = scopes[scopeId] ?? emptyScope();
-  const key = terminalKey(id);
-  if ([...target.right.tabs, ...target.bottom.tabs].some((tab) => tabKey(tab) === key)) return;
-  const state = target[position];
-  state.tabs = [...state.tabs, { kind: "terminal", terminalId: id }];
-  state.active = key;
-  state.open = true;
-  const { [scopeId]: _previous, ...rest } = scopes;
-  scopes = { ...rest, [scopeId]: target };
-  commit();
-}
-
-/**
  * The one rule for which terminal tabs an arrangement may hold: a tab stays in the scope keyed
  * `scopeKey` while its shell is alive and that conversation owns it. A shell whose owner the
  * server did not report (`undefined`: a machine on an older build, which records none) keeps

@@ -21,9 +21,10 @@
  *
  * The header carries the strip, a "+" menu (panels, a fresh shell, and this conversation's
  * live shells that have no tab here — no terminal at all while drafting, which has no Session to
- * own one), a detach button while a terminal is shown, a move-to-other-edge button, a fullscreen
- * toggle, and the dock's × (hide — tabs and everything their bodies hold
- * stay; each tab's own always-visible × is what removes). Tabs drag sideways to reorder;
+ * own one), a move-to-other-edge button, a fullscreen toggle, and the dock's × (hide — tabs and
+ * everything their bodies hold stay; each tab's own always-visible × is what removes). A terminal
+ * has no way out of its conversation's dock: no window of its own, no background form — it is a
+ * tab here, and fullscreen is how it gets large. Tabs drag sideways to reorder;
  * dragging a tab out of the strip brings up the edge overlay (dock-drag.tsx) and dropping on
  * the other edge moves that tab there. Dragging the header itself moves the whole dock the same
  * way. The boundary with the chat content resizes the dock — the right dock through the shared
@@ -34,7 +35,7 @@
  * showing below — and the bottom dock (or the narrow merged view) climbs to the toolbar, over the
  * row and the right dock in it (the store says which surface, if any; the frame draws it, keeping
  * the dock's own box in the flow so nothing underneath reflows, and animates the flip with the
- * theme's layout motion). The strip, the "+" menu and the detach button keep working; what has no
+ * theme's layout motion). The strip and the "+" menu keep working; what has no
  * meaning for a surface grown past its edge is put away — the move button, the header drag,
  * dragging a tab out to the other edge. The boundary drag is how the flip happens by gesture:
  * pulled past the dock's maximum size by a small slack, the dock snaps to fullscreen and the drag
@@ -96,7 +97,6 @@ import { invalidateSlotClips } from "../builtin-browser/slot-registry";
 import { confirmClose } from "./close-guard";
 import {
   createShellInDock,
-  detachTerminal,
   openTerminalInDock,
   untabbedTerminals,
   useDockSessionId,
@@ -288,8 +288,6 @@ export function DockPanel({
   const other: DockPosition = position === "right" ? "bottom" : "right";
   const [addOpen, setAddOpen] = useState(false);
 
-  const activeTab = tabs.find((tab) => tabKey(tab) === activeKey) ?? null;
-
   // The store decides which surface (if any) is fullscreen; this one is it while it is open and
   // the store names its position (the merged view's is "bottom", like the bottom dock's).
   const fullscreen = open && fullscreenDock() === position;
@@ -320,17 +318,6 @@ export function DockPanel({
     removeTab(`terminal:${confirmKill.id}`);
     setConfirmKill(null);
   }, [confirmKill]);
-
-  /**
-   * Detach the shown terminal to its own /terminal window. The shell stays live (and
-   * listed — multi-client attach); its tab leaves the strip, and closing the window puts
-   * it back where it was (dock-terminal.ts owns the round trip).
-   */
-  const detach = useCallback(() => {
-    if (activeTab?.kind !== "terminal") return;
-    const home = merged ? (tabHome(tabKey(activeTab)) ?? "bottom") : position;
-    detachTerminal(activeTab.terminalId, home);
-  }, [activeTab, merged, position]);
 
   // The strip's node: the drag below hit-tests its tabs (the strip itself keeps the shown
   // tab in view and scrolls sideways under the wheel).
@@ -865,16 +852,6 @@ export function DockPanel({
       }
       actions={
         <>
-          {activeTab?.kind === "terminal" && (
-            <DockHeaderButton
-              label={S.terminal.detach}
-              coarse={coarsePointer}
-              data-testid="dock-detach"
-              onClick={detach}
-            >
-              <GlyphIcon d={ICONS.boxArrowOut} size={ICON_SIZE.rowLead} />
-            </DockHeaderButton>
-          )}
           {addMenu}
           {!merged && !fullscreen && tabs.length > 0 && (
             <DockHeaderButton

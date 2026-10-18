@@ -12,12 +12,7 @@ import { useSyncExternalStore } from "react";
 import { toastError } from "@prismshadow/penguin-ui";
 import { S } from "../../lib/strings";
 import { onCommand } from "../../lib/shortcuts/dispatcher";
-import {
-  HttpStatusError,
-  fetchJson,
-  probeJson,
-  type TerminalInfo,
-} from "../terminal/terminal-view";
+import { HttpStatusError, fetchJson, type TerminalInfo } from "../terminal/terminal-view";
 import {
   liveTerminals,
   noteTerminalCreated,
@@ -25,13 +20,11 @@ import {
   refreshTerminals,
   terminalsOf,
 } from "../terminal/terminal-list";
-import { machineForTerminal, rememberTerminalMachine } from "../../lib/terminal-machines";
+import { rememberTerminalMachine } from "../../lib/terminal-machines";
 import {
   addTerminalTab,
   currentDockScope,
   docksOnScreen,
-  removeTab,
-  restoreTerminalTab,
   showTerminal,
   subscribeDock,
   terminalTabDock,
@@ -225,42 +218,6 @@ export async function reownTerminals(fromSessionId: string, toSessionId: string)
       }
     }),
   );
-}
-
-/**
- * Detach a terminal to its own /terminal window, and RETURN it when that window closes:
- * the tab leaves the strip while the shell lives in the window, and closing the window
- * puts the tab back into the conversation and dock it left — even if the user is looking
- * at another conversation by then. There is no cross-window close event, so a slow poll
- * on the handle's `closed` flag watches for it; the restore is skipped when the shell
- * ended inside the window or the user already pulled it back in through a "+" menu.
- * (The handle is why the window is NOT opened with "noopener" — window.open would then
- * return null; the target is this same app's own page.)
- */
-export function detachTerminal(id: string, position: DockPosition): void {
-  const fromScope = currentDockScope();
-  // The machine travels in the URL: the new window starts with an empty terminal map, so
-  // without it a detached remote pane would try to attach to a pty on the wrong computer.
-  const machine = machineForTerminal(id);
-  const popup = window.open(
-    `/terminal?id=${encodeURIComponent(id)}` +
-      (machine === null ? "" : `&machine=${encodeURIComponent(machine)}`),
-    "_blank",
-  );
-  removeTab(`terminal:${id}`);
-  if (!popup) return; // blocked popup: the shell stays reachable from the "+" menus
-  const timer = window.setInterval(() => {
-    if (!popup.closed) return;
-    window.clearInterval(timer);
-    void (async () => {
-      const info = await probeJson<TerminalInfo>(`/api/terminals/${encodeURIComponent(id)}`).catch(
-        () => null,
-      );
-      if (info?.alive !== true) return; // the shell ended in the window: nothing to restore
-      restoreTerminalTab(fromScope, id, position);
-      void refreshTerminals();
-    })();
-  }, 600);
 }
 
 /**
