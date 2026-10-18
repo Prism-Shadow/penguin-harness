@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** fix
 - **Scope:** `web`, `server`, `cli`, `ci`
+- **PR:** [#1205](https://github.com/Prism-Shadow/penguin-harness/pull/1205)
 
 [中文版](2026-10-18-goal-no-plugin.zh.md)
 
