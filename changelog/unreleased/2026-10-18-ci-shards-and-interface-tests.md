@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** process
 - **Scope:** `ci`, `web`, `server`
+- **PR:** [#1206](https://github.com/Prism-Shadow/penguin-harness/pull/1206)
 
 [中文版](2026-10-18-ci-shards-and-interface-tests.zh.md)
 
