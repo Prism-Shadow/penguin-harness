@@ -90,6 +90,35 @@ export abstract class Errors {
 @Interface()
 export abstract class UsageStore {
   abstract insert(r: UsageRecordInsert): void;
+
+  /**
+   * Rebuilds the daily rollup cache from usage_records (see UsageRepo). A cache rebuild, not a
+   * write: no data lives only there, so this is the whole recovery path.
+   */
+  abstract rebuildRollup(projectId?: string): void;
+
+  /**
+   * Whether the rollup can answer this filter EXACTLY. False whenever folding a day's rows
+   * together would change a figure — a price tier in play, a timestamp window, or a named
+   * session subset — in which case the caller must read usage_records instead.
+   */
+  abstract rollupSafeFor(f: UsageFilter, tiers: readonly PeakTier[]): boolean;
+
+  /** bucketByModel's shape, read from the rollup (single-rate only). */
+  abstract rollupBucketByModel(projectId: string, f?: UsageFilter): UsageModelSums[];
+
+  /** groupsByModel's shape, read from the rollup (single-rate only). */
+  abstract rollupGroupsByModel(
+    projectId: string,
+    groupBy: UsageGroupBy,
+    f?: UsageFilter,
+  ): UsageGroupModelSums[];
+
+  /** seriesByModel's shape at DAY granularity, read from the rollup (single-rate only). */
+  abstract rollupSeriesByModel(projectId: string, f?: UsageFilter): UsageSeriesModelSums[];
+
+  /** agentSeries's shape at DAY granularity, read from the rollup. */
+  abstract rollupAgentSeries(projectId: string, f?: UsageFilter): UsageAgentBucketCount[];
   abstract bucketByModel(
     projectId: string,
     f?: UsageFilter,
@@ -127,6 +156,13 @@ export abstract class UsageRecording {
 @Interface()
 export abstract class UsageQueries {
   abstract query(projectId: string, q: UsageQuery): Promise<UsageResponse>;
+
+  /**
+   * Drops the cached answer(s) for one Project (all of them when the Project is omitted). Called
+   * by the recorder the moment usage lands, so a figure already on screen is not held for the
+   * rest of the cache TTL after new tokens have actually landed.
+   */
+  abstract invalidate(projectId?: string): void;
   abstract queryErrors(projectId: string, q: UsageErrorsQuery): UsageErrorsPage;
   abstract clearErrors(projectId: string, q: UsageErrorsClearQuery): number;
   abstract modelTotals(projectId: string): UsageModelTotals;

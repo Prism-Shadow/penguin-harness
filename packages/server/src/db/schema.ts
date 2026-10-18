@@ -113,6 +113,27 @@ CREATE TABLE IF NOT EXISTS usage_records (
   status            TEXT NOT NULL DEFAULT 'completed'  -- request outcome: completed=success (with tokens); others=failure (0 tokens, for success rate)
 );                                            -- cost is not stored: computed at query time from current pricing
 CREATE INDEX IF NOT EXISTS idx_usage_project_date ON usage_records(project_id, date);
+CREATE INDEX IF NOT EXISTS idx_usage_project_ts ON usage_records(project_id, ts);  -- today / last-7d filter on ts; idx_usage_project_date covers date, which is a DIFFERENT column (local yyyy-mm-dd vs the ISO instant), so those range scans were reading the table
+CREATE TABLE IF NOT EXISTS usage_daily_rollup (  -- rebuildable cache: usage_records pre-summed by (date, agent, session, provider, model, peak). Pure SUMs, so every figure is exactly the aggregate over the same rows — nothing is lost by folding, and cost is still priced at query time from current pricing.
+  project_id      TEXT NOT NULL,
+  date            TEXT NOT NULL,
+  agent_id        TEXT NOT NULL,
+  session_id      TEXT NOT NULL,
+  provider        TEXT NOT NULL,
+  model_id        TEXT NOT NULL,
+  peak            INTEGER NOT NULL,      -- 1 = the row's own ts fell in the reference's peak window at rollup time; 0 = off-peak
+  cache_read      INTEGER NOT NULL,
+  cache_write     INTEGER NOT NULL,
+  output          INTEGER NOT NULL,
+  total           INTEGER NOT NULL,
+  requests        INTEGER NOT NULL,
+  completed       INTEGER NOT NULL,      -- requests with status='completed' (the success-rate numerator)
+  denominator     INTEGER NOT NULL,      -- requests with status <> 'aborted' (the denominator)
+  -- The key is exactly the set of dimensions a grouped query can ask for, each of which is a
+  -- column here, so folding a day's rows together changes no figure the rollup is read for.
+  PRIMARY KEY (project_id, date, agent_id, session_id, provider, model_id, peak)
+);
+CREATE INDEX IF NOT EXISTS idx_usage_rollup_project_date ON usage_daily_rollup(project_id, date);
 CREATE INDEX IF NOT EXISTS idx_usage_session_ts ON usage_records(session_id, ts);  -- (session_id) alone was idx_usage_session (dropped on open): ts makes the last_active_at backfill's MAX(ts) a covering index scan instead of a random row lookup per usage record
 CREATE TABLE IF NOT EXISTS error_records (     -- server-side error capture (the Costs page's "Errors" tab)
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
