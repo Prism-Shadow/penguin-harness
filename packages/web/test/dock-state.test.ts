@@ -13,8 +13,11 @@
  *   duplicated, and mix freely with panel tabs.
  * - The whole arrangement switches with the Session and comes back on return; one Session's
  *   terminals never appear in another's docks; a placeholder scope's arrangement passes to the
- *   first Session chosen (a draft's to the Session it becomes, never clobbering); dead shells'
- *   tabs are pruned in every scope.
+ *   first Session chosen (a draft's to the Session it becomes, never clobbering).
+ * - Given the live shells and their owners, a terminal tab stays only in its owner's scope:
+ *   dead shells' tabs, tabs of another Session's shell and terminal tabs under a draft key are
+ *   pruned in every scope, on screen or not; a shell whose owner the server did not report (an
+ *   older build) keeps its tab.
  * - A tab moves to the other dock and activates there (the only tab closes its source dock); a
  *   whole dock moves, merging after the target's tabs; a strip reorders only with a complete,
  *   matching key list.
@@ -25,8 +28,8 @@
  *   has registered (a plugin's panel not loaded yet) is kept; a malformed entry reads as empty
  *   docks.
  * - Scope switches and moves are instant (no animation); toggles animate.
- * - A detached terminal tab returns to the scope it left, unless a conversation already holds
- *   the shell again.
+ * - A detached terminal tab returns to the scope it left, unless that scope already holds the
+ *   shell again.
  * - There is one view per open dock; a hidden dock keeps its view to stay mounted on, an empty
  *   one has none.
  * - At most one surface is fullscreen, and only an open dock with tabs enters it. It lasts while
@@ -193,8 +196,6 @@ describe("conversation scopes (each window manages its own tabs)", () => {
     dock.addTerminalTab("term-owned", "bottom");
     dock.setDockScope(`scope-d-${scopeSeq}`);
     expect(dock.terminalTabDock("term-owned")).toBeNull();
-    // …and cross-scope ownership still counts: the shell is not adoptable here.
-    expect(dock.unownedTerminals(["term-owned", "term-free"])).toEqual(["term-free"]);
   });
 
   it("hands a placeholder-scope arrangement to the first Session chosen", () => {
@@ -237,11 +238,65 @@ describe("conversation scopes (each window manages its own tabs)", () => {
     dock.addTerminalTab("term-dead", "bottom");
     dock.setDockScope(b);
     dock.addTerminalTab("term-live", "bottom");
-    dock.pruneTerminalTabs(new Set(["term-live"]));
+    dock.pruneTerminalTabs(new Map([["term-live", b]]));
     expect(dock.terminalTabIds()).toEqual(["term-live"]);
     dock.setDockScope(a);
     expect(dock.terminalTabIds()).toEqual([]);
     expect(dock.isDockVisible("bottom")).toBe(false); // its only tab died: the dock went away
+  });
+
+  it("drops a tab whose shell another Session owns from every scope, on screen or not", () => {
+    const a = `scope-owner-a-${scopeSeq}`;
+    const b = `scope-owner-b-${scopeSeq}`;
+    const c = `scope-owner-c-${scopeSeq}`;
+    // As an older version could leave them: A's shell tabbed in B and in C as well.
+    dock.setDockScope(c);
+    dock.addTerminalTab("term-of-a", "bottom");
+    dock.setDockScope(a);
+    dock.addTerminalTab("term-of-a", "bottom");
+    dock.setDockScope(b);
+    dock.addTerminalTab("term-of-b", "bottom");
+    dock.addTerminalTab("term-of-a", "bottom");
+
+    dock.pruneTerminalTabs(
+      new Map([
+        ["term-of-a", a],
+        ["term-of-b", b],
+      ]),
+    );
+    expect(dock.terminalTabIds()).toEqual(["term-of-b"]);
+    expect(dock.dockActiveKey("bottom")).toBe("terminal:term-of-b");
+    dock.setDockScope(c);
+    expect(dock.terminalTabIds()).toEqual([]);
+    expect(dock.isDockVisible("bottom")).toBe(false);
+    dock.setDockScope(a);
+    expect(dock.terminalTabIds()).toEqual(["term-of-a"]);
+  });
+
+  it("drops terminal tabs under a draft key and tabs of a shell no Session owns", () => {
+    const draft = `default_project:new-${scopeSeq}`;
+    const session = `scope-loose-${scopeSeq}`;
+    dock.setDockScope(draft);
+    dock.addTerminalTab("term-from-draft", "bottom");
+    dock.setDockScope(session);
+    dock.addTerminalTab("term-unowned", "bottom");
+    dock.pruneTerminalTabs(
+      new Map<string, string | null>([
+        ["term-from-draft", session],
+        ["term-unowned", null],
+      ]),
+    );
+    expect(dock.terminalTabIds()).toEqual([]);
+    dock.setDockScope(draft);
+    expect(dock.terminalTabIds()).toEqual([]);
+  });
+
+  it("keeps the tab of a shell whose owner the server did not report (an older build)", () => {
+    const a = `scope-unknown-${scopeSeq}`;
+    dock.setDockScope(a);
+    dock.addTerminalTab("term-old-machine", "bottom");
+    dock.pruneTerminalTabs(new Map([["term-old-machine", undefined]]));
+    expect(dock.terminalTabIds()).toEqual(["term-old-machine"]);
   });
 });
 
@@ -407,13 +462,15 @@ describe("the detach round trip", () => {
     expect(dock.dockActiveKey("bottom")).toBe("terminal:term-win");
   });
 
-  it("does nothing when some conversation already holds the shell again", () => {
+  it("does nothing when the scope it left already holds the shell again", () => {
     const a = `scope-detach-c-${scopeSeq}`;
     dock.setDockScope(a);
     dock.addTerminalTab("term-back", "bottom"); // the user re-tabbed it before the window closed
-    dock.restoreTerminalTab(`scope-detach-d-${scopeSeq}`, "term-back", "right");
     dock.setDockScope(`scope-detach-d-${scopeSeq}`);
-    expect(dock.terminalTabIds()).toEqual([]);
+    dock.restoreTerminalTab(a, "term-back", "right");
+    dock.setDockScope(a);
+    expect(dock.terminalTabDock("term-back")).toBe("bottom");
+    expect(dock.dockTabs("right")).toEqual([]);
   });
 });
 
@@ -573,7 +630,7 @@ describe("fullscreen", () => {
       dock.addTerminalTab("fullscreen-terminal", "bottom");
       dock.setDockFullscreen("bottom");
       dock.setDockScope(`fullscreen-away-${scopeSeq}`);
-      dock.pruneTerminalTabs(new Set());
+      dock.pruneTerminalTabs(new Map());
       if (restoreAnother) dock.restoreTerminalTab(owner, "returned-terminal", "bottom");
       dock.setDockScope(owner);
       expect(dock.fullscreenDock()).toBeNull();

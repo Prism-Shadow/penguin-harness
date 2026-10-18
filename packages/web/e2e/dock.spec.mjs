@@ -16,6 +16,9 @@
  *   drag past the max and left the same ways; a dock it covers coming on stage ends it;
  * - the arrangement is PER CONVERSATION (each one manages its own tabs, browser-window
  *   style) and survives a reload; the bottom dock's height ratio is a global preference;
+ * - a shell belongs to the conversation that opened it: another conversation's "+" menu never
+ *   offers it and its Ctrl+` starts a shell of its own, while the owner's "+" menu offers its
+ *   shell opened elsewhere; a draft has no Session, so it offers no terminal at all;
  * - a new shell starts in the conversation's Workspace, not the home directory;
  * - "Detach" hands the terminal off to /terminal?id=… in a new window and its tab leaves;
  * - a failed shell create surfaces as an error toast instead of silence.
@@ -64,11 +67,10 @@ async function createSession(request, projectId) {
 }
 
 /**
- * The dock adopts a live shell no conversation holds before creating one, so a leftover
- * shell from a previous test would leak into the next test's screen. Each test starts
- * from zero terminals; kill is async (SIGHUP → pty exit), so poll until none is alive.
- * The persisted arrangement is per-browser-context (fresh per test), so only the
- * server-side shells need cleaning.
+ * Each test starts from zero terminals, so the shell counts and seq numbers it reads are its
+ * own; kill is async (SIGHUP → pty exit), so poll until none is alive. The persisted
+ * arrangement is per-browser-context (fresh per test), so only the server-side shells need
+ * cleaning.
  */
 async function killAllTerminals(request) {
   const { terminals } = await (await request.get(`${BASE}/api/terminals`)).json();
@@ -128,12 +130,19 @@ test("Ctrl+` opens a shell in the bottom dock; hiding keeps it running, reopenin
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
-  await configureProjectModel(page.request);
+  const projectId = await configureProjectModel(page.request);
   await killAllTerminals(page.request);
+  // A draft has no Session to own a shell: the shortcut is not taken there (the count of live
+  // shells below would read 2 if it had started one).
   await page.goto(`${BASE}/chat`);
   await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote");
+  await expect(anyDock(page)).toHaveCount(0);
 
-  // Open with the keyboard, like Codex/VS Code. The docks render on the draft page too.
+  const sessionId = await createSession(page.request, projectId);
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  // Open with the keyboard, like Codex/VS Code.
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 10000 });
   await waitForShell(page, "DOCK_UP_1");
@@ -486,6 +495,64 @@ test("each conversation manages its own tabs: nothing leaks, and each side survi
   ).toBeVisible();
   await waitForShell(page, "STILL_SAME_SHELL");
   await expect(page.locator('[data-tab-id="memory"]')).toHaveCount(0);
+  await killAllTerminals(page.request);
+});
+
+test("a shell belongs to its conversation: another's menu never offers it, the owner's does", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const sidA = await createSession(page.request, projectId);
+  const sidB = await createSession(page.request, projectId);
+  // A's shell opened elsewhere (another device: no tab in this browser), and one no
+  // conversation opened (the API, the CLI). Neither is B's.
+  const opened = async (data) => {
+    const res = await page.request.post(`${BASE}/api/terminals`, { data });
+    expect(res.ok(), "create shell").toBeTruthy();
+    return (await res.json()).id;
+  };
+  const shellOfA = await opened({ cwd: "~", sessionId: sidA });
+  await opened({ cwd: "~" });
+
+  // B: the "+" menu offers a new shell and nothing else; Ctrl+` starts one of B's own.
+  await page.goto(`${BASE}/chat/${sidB}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  await openViaPicker(page, "bottom", "memory");
+  await dockAt(page, "bottom").getByTestId("dock-add").click();
+  await expect(page.getByTestId("dock-add-terminal")).toBeVisible();
+  await expect(page.getByTestId("dock-add-shell")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+Backquote");
+  const tabB = dockAt(page, "bottom").locator('[data-testid="dock-tab"][data-terminal-id]');
+  await expect(tabB).toHaveCount(1, { timeout: 20000 });
+  const shellOfB = await tabB.getAttribute("data-terminal-id");
+  expect(shellOfB).not.toBe(shellOfA);
+  const { terminals } = await (await page.request.get(`${BASE}/api/terminals`)).json();
+  expect(terminals.find((t) => t.id === shellOfB)?.sessionId).toBe(sidB);
+
+  // A: its shell from elsewhere is offered, and only it; picking it attaches.
+  await page.goto(`${BASE}/chat/${sidA}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  await openViaPicker(page, "bottom", "memory");
+  await dockAt(page, "bottom").getByTestId("dock-add").click();
+  await expect(page.getByTestId("dock-add-shell")).toHaveCount(1);
+  await page.locator(`[data-testid="dock-add-shell"][data-terminal-id="${shellOfA}"]`).click();
+  await expect(
+    page.locator(`[data-testid="dock-tab"][data-terminal-id="${shellOfA}"][data-active="true"]`),
+  ).toBeVisible();
+  await waitForShell(page, "OWNED_SHELL");
+
+  // A draft offers no terminal: no row in the "+" menu, no entry on the picker.
+  await page.goto(`${BASE}/chat`);
+  await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+  await page.getByTestId("dock-toggle-bottom").click();
+  await expect(dockAt(page, "bottom").getByTestId("dock-picker")).toBeVisible();
+  await expect(page.getByTestId("dock-pick-terminal")).toHaveCount(0);
+  await dockAt(page, "bottom").getByTestId("dock-add").click();
+  await expect(page.getByTestId("dock-add-workspace")).toBeVisible();
+  await expect(page.getByTestId("dock-add-terminal")).toHaveCount(0);
   await killAllTerminals(page.request);
 });
 

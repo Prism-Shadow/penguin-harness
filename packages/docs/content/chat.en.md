@@ -291,9 +291,9 @@ Good to know:
 
 ### Use a terminal
 
-Terminals open as tabs in the docks, or on the standalone `/terminal` page. Each runs your login shell with your own startup files, then puts this installation's `penguin` first on PATH, the same one agents get (see [PATH launcher](/configuration#path-launcher)).
+Terminals open as tabs in the docks, or on the standalone `/terminal` page. A terminal in the docks belongs to the conversation that opened it: it shows up only in that conversation's docks, and no other conversation can see or open it; a new conversation has no terminal until its first message is sent. In the docks' **+** menu, **Command-line terminal** starts one, and below it are this conversation's terminals that are open elsewhere (another device or browser) but have no tab here. Each runs your login shell with your own startup files, then puts this installation's `penguin` first on PATH, the same one agents get (see [PATH launcher](/configuration#path-launcher)).
 
-- Ctrl+` shows or hides the terminal tabs. With no terminal open, it takes over a running shell no conversation holds, or starts a new one.
+- Ctrl+` shows or hides the terminal tabs. With no terminal open, it brings back one of this conversation's terminals that has no tab here, or starts a new one.
 - Ctrl+Shift+` starts a new terminal in the docks.
 - Ctrl+Alt+`, with a terminal focused, closes that terminal after a confirmation, like the × on its tab. The keystroke never reaches the shell. Ctrl+W does: it is readline's delete-word.
 

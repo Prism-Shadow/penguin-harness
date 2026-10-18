@@ -13,10 +13,12 @@
  *
  * The arrangement is SCOPED to the conversation it was made in, like each browser window
  * managing its own tabs: switching Sessions switches the whole arrangement, and no
- * conversation's tabs depend on another's. The shells behind terminal tabs are per-user
- * and keep running regardless; a scope only decides which of them are on screen here.
- * The draft page and pages with no Session use placeholder scopes; an arrangement made
- * while drafting is handed to the Session the first send creates (adoptDockScope).
+ * conversation's tabs depend on another's. The shells behind terminal tabs belong to the
+ * Session that created them and keep running while off screen; a Session's scope holds
+ * tabs of its own shells only, and the prune below drops any other (pruneTerminalTabs).
+ * The draft page (scoped per Project) and pages with no Session use placeholder scopes; an
+ * arrangement made while drafting is handed to the Session the first send creates
+ * (adoptDockScope).
  * Everything persists (one localStorage entry, least-recently-used scopes aging out), so
  * a reload restores each conversation's docks. Sizes are the exception: how wide/tall the
  * user likes a dock is one preference, not one per conversation.
@@ -132,8 +134,9 @@ function emptyScope(): ScopeLayout {
 /**
  * The scope the dock belongs to before any conversation is open — the login screen, a
  * settings page reached directly by URL. A real Session id never collides with it. The
- * draft page instead scopes to its route id ("new" / a parked draft id), whose
- * arrangement adoptDockScope hands to the Session the first send creates.
+ * draft page instead scopes to its route id ("new" / a parked draft id) qualified by its
+ * Project (`<projectId>:new`), whose arrangement adoptDockScope hands to the Session the first
+ * send creates.
  */
 const NO_SCOPE = "~none";
 
@@ -721,21 +724,6 @@ export function terminalTabIds(): string[] {
     .map((tab) => tab.terminalId);
 }
 
-/**
- * Of `ids`, the ones no conversation holds — created through the API or the CLI, or whose
- * tab was closed. A dock picker's terminal row adopts one of these rather than spawning a
- * second shell beside a perfectly good one.
- */
-export function unownedTerminals(ids: readonly string[]): string[] {
-  const owned = new Set<string>();
-  for (const s of [layout, ...Object.values(scopes)]) {
-    for (const tab of [...s.right.tabs, ...s.bottom.tabs]) {
-      if (tab.kind === "terminal") owned.add(tab.terminalId);
-    }
-  }
-  return ids.filter((id) => !owned.has(id));
-}
-
 /** New terminals land at the bottom dock unless a dock asked for them explicitly. */
 export function addTerminalTab(id: string, position?: DockPosition): void {
   insertTab({ kind: "terminal", terminalId: id }, position ?? terminalTabDock(id) ?? "bottom");
@@ -753,19 +741,20 @@ export function showTerminal(id: string): void {
 /**
  * Puts a terminal tab back into a NAMED conversation's dock — the detach round trip: the
  * tab left scope X when its shell moved to a window, and closing that window must return
- * it to X even when another conversation is on screen by then. No-op when any scope
- * already holds the shell (the user re-tabbed it meanwhile).
+ * it to X even when another conversation is on screen by then. No-op when that scope
+ * already holds the shell again (the user re-tabbed it from its "+" menu meanwhile).
  */
 export function restoreTerminalTab(scopeId: string, id: string, position: DockPosition): void {
-  if (unownedTerminals([id]).length === 0) return;
   if (scopeId === scope) {
-    addTerminalTab(id, position);
+    if (terminalTabDock(id) === null) addTerminalTab(id, position);
     return;
   }
   const target = scopes[scopeId] ?? emptyScope();
+  const key = terminalKey(id);
+  if ([...target.right.tabs, ...target.bottom.tabs].some((tab) => tabKey(tab) === key)) return;
   const state = target[position];
   state.tabs = [...state.tabs, { kind: "terminal", terminalId: id }];
-  state.active = terminalKey(id);
+  state.active = key;
   state.open = true;
   const { [scopeId]: _previous, ...rest } = scopes;
   scopes = { ...rest, [scopeId]: target };
@@ -773,14 +762,35 @@ export function restoreTerminalTab(scopeId: string, id: string, position: DockPo
 }
 
 /**
- * Drops tabs of terminals that no longer exist — across every scope, not just the one on
- * screen: a dead shell's id would otherwise sit in an inactive conversation's arrangement
- * until that conversation aged out of storage.
+ * The one rule for which terminal tabs an arrangement may hold: a tab stays in the scope keyed
+ * `scopeKey` while its shell is alive and that conversation owns it. A shell whose owner the
+ * server did not report (`undefined`: a machine on an older build, which records none) keeps
+ * its tab — nothing says it is misplaced. Everything else goes: a dead shell, another Session's
+ * shell (a tab an older version let cross over), a shell no Session owns, and any terminal tab
+ * under a placeholder key, which no owner can equal.
  */
-export function pruneTerminalTabs(liveIds: ReadonlySet<string>): void {
+function terminalTabBelongs(
+  scopeKey: string,
+  terminalId: string,
+  live: ReadonlyMap<string, string | null | undefined>,
+): boolean {
+  if (!live.has(terminalId)) return false;
+  const owner = live.get(terminalId);
+  return owner === undefined || owner === scopeKey;
+}
+
+/**
+ * Applies terminalTabBelongs to every scope, not just the one on screen: a dead or foreign
+ * shell's tab would otherwise sit in an inactive conversation's arrangement until that
+ * conversation aged out of storage. `live` maps each live shell to its owning Session (null for
+ * none, undefined when the server did not say).
+ */
+export function pruneTerminalTabs(live: ReadonlyMap<string, string | null | undefined>): void {
   let changed = false;
-  const pruneArea = (state: DockAreaState): boolean => {
-    const kept = state.tabs.filter((tab) => tab.kind !== "terminal" || liveIds.has(tab.terminalId));
+  const pruneArea = (key: string, state: DockAreaState): boolean => {
+    const kept = state.tabs.filter(
+      (tab) => tab.kind !== "terminal" || terminalTabBelongs(key, tab.terminalId, live),
+    );
     if (kept.length === state.tabs.length) return false;
     state.tabs = kept;
     if (state.active !== null && !kept.some((tab) => tabKey(tab) === state.active))
@@ -788,14 +798,14 @@ export function pruneTerminalTabs(liveIds: ReadonlySet<string>): void {
     if (kept.length === 0) state.open = false;
     return true;
   };
-  for (const s of Object.values(scopes)) {
+  for (const [key, s] of Object.entries(scopes)) {
     if (s === layout) continue; // the live scope is pruned below
-    if (pruneArea(s.right)) changed = true;
-    if (pruneArea(s.bottom)) changed = true;
+    if (pruneArea(key, s.right)) changed = true;
+    if (pruneArea(key, s.bottom)) changed = true;
     reconcileFullscreen(s);
   }
-  if (pruneArea(layout.right)) changed = true;
-  if (pruneArea(layout.bottom)) changed = true;
+  if (pruneArea(scope, layout.right)) changed = true;
+  if (pruneArea(scope, layout.bottom)) changed = true;
   if (!changed) return;
   commit();
 }
@@ -804,8 +814,8 @@ export function pruneTerminalTabs(liveIds: ReadonlySet<string>): void {
  * Ctrl+`'s toggle, on the store's synchronous half: hides the docks that hold this
  * conversation's terminal tabs when one is shown; restores/activates the newest terminal
  * tab when there are tabs but none on screen. Returns false when this scope has no
- * terminal tab at all — the caller (dock-terminal.ts) then adopts or creates a shell,
- * which is async.
+ * terminal tab at all — the caller (dock-terminal.ts) then brings back one of this
+ * conversation's shells or creates one, which is async.
  */
 export function toggleTerminalDocks(): boolean {
   const ids = terminalTabIds();

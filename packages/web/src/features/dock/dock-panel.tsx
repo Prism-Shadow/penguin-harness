@@ -19,9 +19,10 @@
  * terminal views, which the pool keeps only for shown terminals (an off-screen shell
  * reattaches on return).
  *
- * The header carries the strip, a "+" menu (panels, a fresh shell, and any live shell no
- * conversation holds), a detach button while a terminal is shown, a move-to-other-edge
- * button, a fullscreen toggle, and the dock's × (hide — tabs and everything their bodies hold
+ * The header carries the strip, a "+" menu (panels, a fresh shell, and this conversation's
+ * live shells that have no tab here — no terminal at all while drafting, which has no Session to
+ * own one), a detach button while a terminal is shown, a move-to-other-edge button, a fullscreen
+ * toggle, and the dock's × (hide — tabs and everything their bodies hold
  * stay; each tab's own always-visible × is what removes). Tabs drag sideways to reorder;
  * dragging a tab out of the strip brings up the edge overlay (dock-drag.tsx) and dropping on
  * the other edge moves that tab there. Dragging the header itself moves the whole dock the same
@@ -93,7 +94,13 @@ import {
 import type { TerminalInfo } from "../terminal/terminal-view";
 import { invalidateSlotClips } from "../builtin-browser/slot-registry";
 import { confirmClose } from "./close-guard";
-import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
+import {
+  createShellInDock,
+  detachTerminal,
+  openTerminalInDock,
+  untabbedTerminals,
+  useDockSessionId,
+} from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
 import { DockPanelProvider } from "./panel-context";
 import type { DockPanelHandle } from "./panel-context";
@@ -120,7 +127,6 @@ import {
   subscribeDock,
   tabHome,
   tabKey,
-  unownedTerminals,
   type DockPosition,
   type DockTab,
   type DockView,
@@ -267,6 +273,10 @@ export function DockPanel({
 }: DockPanelProps) {
   useSyncExternalStore(subscribeDock, dockVersion);
   const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
+  // The Session whose shells this dock lists and opens; null while drafting, where the
+  // terminal entries are absent.
+  const sessionId = useDockSessionId();
+  const offersTerminal = terminalSupported && sessionId !== null;
   const closeShortcut = useShortcutLabel("terminal.close");
   const toggleChord = useDisplayedBinding("terminal.toggle");
   // The panels offered here, in registry order: what the "+" menu and the picker list, and
@@ -569,9 +579,8 @@ export function DockPanel({
     openPanel(id, merged ? undefined : position);
   };
 
-  /** Live shells no conversation holds: offer to pull them into this dock. */
-  const adoptableIds = new Set(unownedTerminals(terminals.map((t) => t.id)));
-  const adoptable = terminals.filter((t) => adoptableIds.has(t.id));
+  /** This conversation's live shells with no tab here (opened elsewhere): offer to pull them in. */
+  const untabbed = sessionId === null ? [] : untabbedTerminals(sessionId);
 
   const addMenu = (
     <Dropdown
@@ -600,21 +609,21 @@ export function DockPanel({
             onSelect={() => openPanelHere(definition.id)}
           />
         ))}
-        {terminalSupported && (
+        {offersTerminal && (
           <>
             <MenuSeparator />
             <MenuItem
               data-testid="dock-add-terminal"
-              glyph={ICONS.plus}
-              label={S.terminal.newShell}
+              glyph={NAV_ICONS.terminal}
+              label={S.terminal.shellEntry}
               onSelect={() => {
                 setAddOpen(false);
                 void createShellInDock(merged ? undefined : position);
               }}
             />
-            {/* Live shells no conversation holds, on the small rung: they are entries of the
-                row above rather than panels of their own. */}
-            {adoptable.map((terminal, index) => (
+            {/* This conversation's shells with no tab here, on the small rung: they are
+                entries of the row above rather than panels of their own. */}
+            {untabbed.map((terminal, index) => (
               <MenuItem
                 key={terminal.id}
                 density="sm"
@@ -731,9 +740,10 @@ export function DockPanel({
   };
 
   // An open dock with nothing in it yet: the picker chooses what this dock opens. The
-  // terminal row adopts the newest shell no conversation holds, or starts a fresh one, and
-  // names its hotkey while one is bound; every panel row is one the registry offers here (the
-  // built-in browser only where it can be shown: the desktop app's own window).
+  // terminal row brings back this conversation's newest shell with no tab here, or starts a
+  // fresh one, and names its hotkey while one is bound (a draft has no terminal row); every
+  // panel row is one the registry offers here (the built-in browser only where it can be
+  // shown: the desktop app's own window).
   const pickPanel = (definition: DockPanelDefinition): DockPickerChoice => ({
     key: definition.id,
     label: definition.label(),
@@ -745,7 +755,7 @@ export function DockPanel({
   const browser = leading("builtin-browser");
   const pickerChoices: DockPickerChoice[] = [
     ...(agents !== undefined ? [pickPanel(agents)] : []),
-    ...(terminalSupported
+    ...(offersTerminal
       ? [
           {
             key: "terminal",
