@@ -372,6 +372,7 @@ penguin schedule ls [--project-id <id>] [--agent-id <id>] [--json] [--server <ur
 penguin schedule add <name> --prompt <text> --start-at <ISO|now> [options]
 penguin schedule update <name> [options]
 penguin schedule rm <name> [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
+penguin schedule run <name> [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
 ```
 
 `penguin schedule ls` lists the scheduled tasks of all agents, or of one with `--agent-id`. Columns: agent, name, enabled, start time, period (`once` for one-shot tasks), target (a bound Session's short id, or `new session`), last fired, and a status marker for every state other than active (`expired`, `done`, `missed` or `invalid`). Schedule files that cannot be parsed are listed too, marked `invalid`. Done, missed and expired tasks are archived by the server and soon drop out of the list; see [Finished tasks are archived](/schedules#finished-tasks-are-archived).
@@ -395,12 +396,14 @@ Options of `add` and `update`:
 - `add` creates the task enabled, because adding a task means you want it to run; `--disabled` opts out. This is a deliberate difference from the raw file, whose `enabled = false` default stays for hand edits.
 - `update` reads the stored task, changes it and writes it back, so fields you do not specify keep their values. Switching between the bound-Session and new-session targets clears the other target's fields.
 - `rm` deletes without asking. The server still requires the Project owner.
+- `run` fires one task right now: the same dispatch as a due slot (bound Session or a fresh one, queued when busy), but an extra run that never consumes the schedule — a one-shot's real firing still happens.
 
 ```bash
 penguin schedule add daily-report --prompt "summarize the day" --start-at 2026-09-01T09:00:00Z --period 1d
 penguin schedule add deploy-watch --prompt "check the deploy" --start-at now --period 30m --session-id 402a2e24
 penguin schedule update daily-report --period 12h --disable
 penguin schedule rm daily-report
+penguin schedule run daily-report
 ```
 
 ## penguin org

@@ -35,7 +35,7 @@ import { UsersRepo } from "../src/db/repos/users.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
 import type { ScheduleSessionCreator, ScheduleTaskRunner } from "../src/runtime/scheduler.js";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import { Scheduler } from "../src/runtime/scheduler.js";
+import { Scheduler, ScheduleFireError } from "../src/runtime/scheduler.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ScheduleServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
@@ -669,5 +669,132 @@ describe("scheduler", () => {
     await scheduler.tickOnce();
     expect(errors.some((e) => e.code === "schedule_invalid_file")).toBe(true);
     expect(started).toHaveLength(1);
+  });
+
+  async function fireError(name: string): Promise<ScheduleFireError> {
+    try {
+      await scheduler.fireNow(P, A, name);
+    } catch (err) {
+      expect(err).toBeInstanceOf(ScheduleFireError);
+      return err as ScheduleFireError;
+    }
+    throw new Error(`fireNow(${name}) unexpectedly succeeded`);
+  }
+
+  it("fireNow sends to the bound Session immediately, without consuming the schedule", async () => {
+    insertSession("session-1");
+    await writeFile("manual", [
+      `prompt = "manual prompt"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + 60 * MIN)}"`,
+      `period = "30m"`,
+      `session_id = "session-1"`,
+    ]);
+    const fired = await scheduler.fireNow(P, A, "manual");
+    expect(fired).toEqual({ sessionId: "session-1", queued: false });
+    expect(started).toHaveLength(1);
+    expect(started[0]?.text).toContain("manual prompt");
+    // Only the last-fired time advances: no slot is consumed …
+    const state = repo.find(P, A, "manual");
+    expect(state?.lastFiredAt).toBe(iso(T0));
+    expect(state?.lastSlotMs).toBeNull();
+    // … so the scheduled firing still happens on time.
+    nowMs = T0 + 60 * MIN;
+    await scheduler.tickOnce();
+    expect(started).toHaveLength(2);
+  });
+
+  it("fireNow on a one-shot leaves fired_once untouched, so the real firing still happens", async () => {
+    insertSession("session-1");
+    await writeFile("oneshot", [
+      `prompt = "once"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + 60 * MIN)}"`,
+      `session_id = "session-1"`,
+    ]);
+    await scheduler.fireNow(P, A, "oneshot");
+    expect(started).toHaveLength(1);
+    expect(repo.find(P, A, "oneshot")?.firedOnce).toBe(false);
+    expect(await listed()).toEqual(["oneshot"]);
+    nowMs = T0 + 60 * MIN;
+    await scheduler.tickOnce();
+    expect(started).toHaveLength(2);
+    // The real firing settles and archives it: gone from the listing, file under expired/.
+    expect(await listed()).toEqual([]);
+    expect(await archived()).toEqual(["oneshot.toml"]);
+    expect(repo.find(P, A, "oneshot")).toBeNull();
+  });
+
+  it("fireNow queues behind a busy Session and sends once idle, still without consuming", async () => {
+    insertSession("session-1");
+    await writeFile("busy-one", [
+      `prompt = "queued manual"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + 60 * MIN)}"`,
+      `period = "30m"`,
+      `session_id = "session-1"`,
+    ]);
+    busy.add("session-1");
+    const fired = await scheduler.fireNow(P, A, "busy-one");
+    expect(fired).toEqual({ sessionId: "session-1", queued: true });
+    expect(started).toHaveLength(0);
+    expect(events.some((e) => e.event.type === "schedule_queued")).toBe(true);
+    busy.delete("session-1");
+    await scheduler.tickOnce();
+    expect(started).toHaveLength(1);
+    expect(started[0]?.text).toContain("queued manual");
+    expect(repo.find(P, A, "busy-one")?.lastSlotMs).toBeNull();
+  });
+
+  it("fireNow opens a new Session in new-Session mode", async () => {
+    await writeFile("fresh", [
+      `prompt = "fresh run"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + 60 * MIN)}"`,
+      `period = "30m"`,
+    ]);
+    const fired = await scheduler.fireNow(P, A, "fresh");
+    expect(fired).toEqual({ sessionId: "session-new-1", queued: false });
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ projectId: P, agentId: A, source: "schedule" });
+    expect(started.map((s) => s.sessionId)).toEqual(["session-new-1"]);
+  });
+
+  it("fireNow fires a disabled task: a hand trigger bypasses enabled", async () => {
+    insertSession("session-1");
+    await writeFile("paused", [
+      `prompt = "paused manual"`,
+      `enabled = false`,
+      `start_at = "${iso(T0 + 60 * MIN)}"`,
+      `period = "30m"`,
+      `session_id = "session-1"`,
+    ]);
+    const fired = await scheduler.fireNow(P, A, "paused");
+    expect(fired).toEqual({ sessionId: "session-1", queued: false });
+    expect(started).toHaveLength(1);
+  });
+
+  it("fireNow throws schedule_not_found for an unknown name", async () => {
+    expect((await fireError("nope")).code).toBe("schedule_not_found");
+  });
+
+  it("fireNow throws schedule_invalid for an unparsable file", async () => {
+    await writeFile("broken", [`prompt = "x"`, `enabled = true`, `start_at = "nonsense"`]);
+    expect((await fireError("broken")).code).toBe("schedule_invalid");
+  });
+
+  it("fireNow throws schedule_session_missing and marks the task invalid", async () => {
+    await writeFile("lost", [
+      `prompt = "lost"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + 60 * MIN)}"`,
+      `period = "30m"`,
+      `session_id = "session-gone"`,
+    ]);
+    expect((await fireError("lost")).code).toBe("schedule_session_missing");
+    expect(repo.find(P, A, "lost")?.invalidReason).toBe("session_missing");
+    expect(errors.some((e) => e.code === "schedule_session_missing")).toBe(true);
+    // Marked invalid, a second attempt reports invalid rather than re-checking.
+    expect((await fireError("lost")).code).toBe("schedule_invalid");
   });
 });

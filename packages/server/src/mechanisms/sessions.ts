@@ -136,4 +136,16 @@ export abstract class Scheduling {
     invalid: Array<{ agentId: string; name: string; error: string }>;
   }>;
   abstract dropEntry(projectId: string, agentId: string, name: string): void;
+  /**
+   * Fire one task right now, outside its schedule: the same dispatch as a due slot
+   * (bound Session or a fresh one, queued when busy), but an extra run that never
+   * consumes the schedule itself. Throws when the task cannot run (unknown name —
+   * settled tasks are archived, so they report as unknown — invalid file, lost
+   * Session, Session-creation failure).
+   */
+  abstract fireNow(
+    projectId: string,
+    agentId: string,
+    name: string,
+  ): Promise<{ sessionId: string; queued: boolean }>;
 }

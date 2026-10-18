@@ -3,6 +3,7 @@
  *   GET|POST   /api/projects/:p/agents/:a/schedules
  *   POST       /api/projects/:p/agents/:a/schedules/template-placeholder  # insert the {{SCHEDULES}} placeholder
  *   GET|PUT|DELETE /api/projects/:p/agents/:a/schedules/:name (name is the file name)
+ *   POST       /api/projects/:p/agents/:a/schedules/:name/fire  # fire once now (an extra run; the schedule itself is untouched)
  *   GET        /api/projects/:p/schedules  # every Agent's tasks in the Project, in one list
  * Any member can read; only the owner can modify. The file is declarative intent:
  * POST/PUT fully replace the file, validation always goes through parseScheduleFile
@@ -15,7 +16,12 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
-import type { ProjectSchedulesResponse, ScheduleItem, SchedulesResponse } from "../../api/types.js";
+import type {
+  ProjectSchedulesResponse,
+  ScheduleFireResponse,
+  ScheduleItem,
+  SchedulesResponse,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 
@@ -43,6 +49,7 @@ import {
   parseScheduleFile,
   slotInWindow,
 } from "../../runtime/schedule-file.js";
+import { ScheduleFireError, scheduleStatus } from "../../runtime/scheduler.js";
 import type { ScheduleStateRow } from "../../db/repos/schedules.js";
 import {
   deleteScheduleFile,
@@ -51,7 +58,6 @@ import {
   validateScheduleModelRef,
   writeScheduleFile,
 } from "../../runtime/schedule-store.js";
-import { scheduleStatus } from "../../runtime/scheduler.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config } from "../../hmr/capabilities.js";
 import type { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
@@ -223,6 +229,28 @@ export function scheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
       throw new HttpError(404, "schedule_not_found", `Schedule does not exist: ${name}`);
     deps.scheduler.dropEntry(projectId, agentId, name);
     return c.body(null, 204);
+  });
+
+  // Fire once now (a hand trigger): the same dispatch as a due slot, but an extra run
+  // that never consumes the schedule — owner-only like every other write, member reads.
+  app.post("/:name/fire", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    await deps.agentConfigService.requireExists(projectId, agentId);
+    const name = requireScheduleName(c.req.param("name"));
+    try {
+      const fired = await deps.scheduler.fireNow(projectId, agentId, name);
+      const res: ScheduleFireResponse = { sessionId: fired.sessionId, queued: fired.queued };
+      return c.json(res);
+    } catch (err) {
+      if (err instanceof ScheduleFireError) {
+        if (err.code === "schedule_not_found") throw new HttpError(404, err.code, err.message);
+        if (err.code === "schedule_fire_failed") throw new HttpError(500, err.code, err.message);
+        throw new HttpError(400, err.code, err.message);
+      }
+      throw err;
+    }
   });
 
   return app;

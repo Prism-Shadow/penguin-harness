@@ -2743,6 +2743,12 @@ export const zh = {
     toastSaved: "已保存定时任务",
     toastEnabled: "已启用定时任务",
     toastDisabled: "已停用定时任务",
+    /** Manual fire (fireSchedule): an extra run now; queued when the target Session is busy. */
+    fireNow: "立即触发",
+    toastFired: "已手工触发，额外跑一次",
+    toastQueued: "目标会话正忙，触发已排队",
+    /** A fire that 404s on the route itself: the server is older than this page. */
+    fireStaleServer: "服务端版本过旧，尚无手工触发接口，重启后生效",
     /** The form's target line when it is pinned to one Session (the chat dock panel). */
     targetThisSession: "本对话",
     /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
@@ -6141,6 +6147,9 @@ Benchmark：
       memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
+      schedule_invalid: "该定时任务文件无效，无法触发。",
+      schedule_session_missing: "该任务绑定的会话已不存在，任务已标为无效；改一下任务文件可恢复。",
+      schedule_fire_failed: "触发失败，未能为这次触发打开会话。",
       model_not_addable: "该分组只承载内置模型，不能再添加其他模型；请在自定义分组中添加。",
       penguin_go_protocol_fixed: "Penguin Go 固定使用 MMSP 协议，不能改为其他协议。",
       model_not_routable:

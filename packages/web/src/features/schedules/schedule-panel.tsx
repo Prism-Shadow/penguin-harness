@@ -2,7 +2,7 @@
  * The chat dock's scheduled-tasks panel: the tasks bound to the conversation on screen (the
  * Project's schedules filtered to this Session — new-Session tasks belong to the agent and live
  * on its settings tab), searchable and filtered by state, each row with its human schedule
- * line, an enable switch and an overflow menu (edit / delete); a suggestions list of everyday
+ * line, an enable switch and an overflow menu (fire / edit / delete); a suggestions list of everyday
  * schedules; and the two create buttons in the header — "Create with AI" composes the request
  * and prefills THIS conversation's composer with it (ScheduleAiModal), "Create manually" opens
  * the shared form pinned to this Session. This panel is the only place a task bound to a
@@ -46,6 +46,7 @@ import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { describeSchedule } from "./schedule-describe";
+import { fireErrorText } from "./schedule-fire";
 import { ScheduleAiModal } from "./schedule-ai-modal";
 import { ScheduleFormModal } from "./schedule-form-modal";
 import {
@@ -85,8 +86,16 @@ function StateGlyph({ item }: { item: ScheduleItem }) {
   );
 }
 
-/** A row's overflow menu: edit, and delete in the destructive treatment (small Menu rows). */
-function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+/** A row's overflow menu: fire now, edit, and delete in the destructive treatment (small Menu rows). */
+function RowMenu({
+  onFire,
+  onEdit,
+  onDelete,
+}: {
+  onFire: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const item = (fn: () => void) => () => {
     setOpen(false);
@@ -113,6 +122,7 @@ function RowMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
       }
     >
       <Menu density="sm">
+        <MenuItem glyph={ICONS.play} label={S.schedule.fireNow} onSelect={item(onFire)} />
         <MenuItem glyph={ICONS.pencil} label={S.common.edit} onSelect={item(onEdit)} />
         {/* The glyph inherits the row's red. */}
         <MenuItem glyph={ICONS.trash} label={S.common.delete} danger onSelect={item(onDelete)} />
@@ -182,6 +192,21 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
       await refreshSchedules(projectId);
     } catch (e) {
       toastError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Fire once now: an extra run into this conversation (queued while it is busy), then refresh the shared list. */
+  const fire = async (item: ProjectScheduleItem) => {
+    if (!projectId) return;
+    setBusy(true);
+    try {
+      const fired = await api.fireSchedule(projectId, item.agentId, item.name);
+      toastSuccess(fired.queued ? S.schedule.toastQueued : S.schedule.toastFired);
+      await refreshSchedules(projectId);
+    } catch (e) {
+      toastError(fireErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -307,6 +332,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
                         onChange={() => void toggle(item)}
                       />
                       <RowMenu
+                        onFire={() => void fire(item)}
                         onEdit={() => setForm({ editing: item })}
                         onDelete={() => setDeleting({ agentId: item.agentId, name: item.name })}
                       />

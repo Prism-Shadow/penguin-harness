@@ -10,8 +10,9 @@
  * queue, actions) are nowrap, long text cells (name, target) truncate with the
  * full value on hover, and the existing overflow-x-auto container takes over
  * below the table's min width.
- * Readable by any member; toggle/edit/delete are owner-only — PUT has whole-file
- * replace semantics, so toggling also resends every field and only flips `enabled`.
+ * Readable by any member; fire-now/toggle/edit/delete are owner-only — PUT has whole-file
+ * replace semantics, so toggling also resends every field and only flips `enabled`,
+ * while firing is an extra run that never consumes the schedule (fireSchedule).
  *
  * Prompt-injection controls (usePromptInjection): the schedules.enabled switch, the
  * {{SCHEDULES}}-placeholder alert and the editable schedules.prompt section, mirroring the
@@ -51,6 +52,7 @@ import { useAgentsOn } from "../../lib/machine-agent-lists";
 import { AiCreateModal } from "../ai-create";
 import { AiCreateButtons } from "../ai-create/ai-create-buttons";
 import { ScheduleFormModal } from "../schedules/schedule-form-modal";
+import { fireErrorText } from "../schedules/schedule-fire";
 import { ScheduleSuggestions, scheduleExamples } from "../schedules/schedule-suggestions";
 import { toggleBody } from "../schedules/schedule-upsert";
 import { usePromptInjection } from "./prompt-injection-controls";
@@ -142,6 +144,21 @@ export function SchedulesTab({
       await load();
     } catch (e) {
       toastError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Fire once now: an extra run (queued when the target is busy), then reload so the last-fired time agrees. */
+  const fire = async (item: ScheduleItem) => {
+    if (!projectId) return;
+    setBusy(true);
+    try {
+      const fired = await api.fireSchedule(projectId, agentId, item.name, machineId);
+      toastSuccess(fired.queued ? S.schedule.toastQueued : S.schedule.toastFired);
+      await load();
+    } catch (e) {
+      toastError(fireErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -262,6 +279,14 @@ export function SchedulesTab({
                 </TableCell>
                 {isOwner && (
                   <TableCell align="right" nowrap>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => void fire(item)}
+                    >
+                      {S.schedule.fireNow}
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"

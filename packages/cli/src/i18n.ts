@@ -331,6 +331,7 @@ export interface Messages {
     addDesc: string;
     updateDesc: string;
     rmDesc: string;
+    runDesc: string;
     /** --prompt: the text the firing sends. */
     prompt: string;
     /** --start-at: first fire time, ISO 8601 — or the literal `now` for the current instant (a one-shot needs a future time, so `now` only suits a periodic task). */
@@ -354,6 +355,8 @@ export interface Messages {
     /** Confirmation after add/update; nextFireAt is absent for done/disabled/invalid tasks. */
     written(name: string, enabledText: string, nextFireAt: string | undefined): string;
     removed(name: string): string;
+    /** Confirmation after run; `session` is the short Session id, `queued` means it waits behind a busy target. */
+    fired(name: string, session: string, queued: boolean): string;
     enabled(): string;
     disabled(): string;
     /** Period column for a one-off task (no period configured). */
@@ -1488,6 +1491,8 @@ const en: Messages = {
     updateDesc:
       "Update a scheduled task (read-modify-write: unspecified fields keep their stored values)",
     rmDesc: "Delete a scheduled task (no prompt; the server's owner authorization applies)",
+    runDesc:
+      "Fire a scheduled task once right now (an extra run; the schedule itself is untouched; queued when the target session is busy)",
     prompt: "The text each firing sends",
     startAt:
       "First fire time (ISO 8601), or the literal `now` for the current instant; a one-shot task needs a future time, so `now` only works with --period",
@@ -1504,6 +1509,10 @@ const en: Messages = {
     written: (name, enabledText, nextFireAt) =>
       `Schedule ${name} written (${enabledText}${nextFireAt !== undefined ? `, next fire ${nextFireAt}` : ""}).`,
     removed: (name) => `Schedule ${name} removed.`,
+    fired: (name, session, queued) =>
+      queued
+        ? `Schedule ${name} queued behind busy session ${session}; it fires once the session turns idle.`
+        : `Schedule ${name} fired into session ${session}.`,
     enabled: () => "on",
     disabled: () => "off",
     oneShot: () => "once",
@@ -2615,6 +2624,7 @@ const zh: Messages = {
     addDesc: "创建定时任务（经 API 写入任务文件；缺省即启用——用 --disabled 关闭）",
     updateDesc: "更新定时任务（读改写：未指定的字段保留存储值）",
     rmDesc: "删除定时任务（不做确认；服务端的 owner 授权照旧生效）",
+    runDesc: "立即手工触发一次（额外跑一次，不动原时间表；目标会话忙则排队）",
     prompt: "每次触发要发送的内容",
     startAt:
       "首次触发时刻（ISO 8601），或字面量 `now` 表示当前时刻；一次性任务须用未来时刻，`now` 只适用于带 --period 的任务",
@@ -2631,6 +2641,10 @@ const zh: Messages = {
     written: (name, enabledText, nextFireAt) =>
       `定时任务 ${name} 已写入（${enabledText}${nextFireAt !== undefined ? `，下次触发 ${nextFireAt}` : ""}）。`,
     removed: (name) => `定时任务 ${name} 已删除。`,
+    fired: (name, session, queued) =>
+      queued
+        ? `定时任务 ${name} 已排队（会话 ${session} 正忙，空闲后发送）。`
+        : `定时任务 ${name} 已触发，会话 ${session}。`,
     enabled: () => "开",
     disabled: () => "关",
     oneShot: () => "一次性",
