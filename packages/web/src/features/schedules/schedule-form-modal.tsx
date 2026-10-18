@@ -47,8 +47,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { useAgentLocation } from "../../lib/agent-location";
-import { ModelCatalogSelect } from "../chat";
-import { WorkspaceSelect } from "../chat";
+import { ModelCatalogSelect, WorkspaceSelect } from "../chat";
 import { sameModelRef } from "../models";
 import { itemModelRef } from "./schedule-upsert";
 
