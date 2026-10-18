@@ -290,7 +290,7 @@ async function mountShell() {
       h("p", null, `${now.projectId}: ${now.agentIds.join(",")} | ${now.rowAgentIds.join(",")}`),
     );
   }
-  await mount(h(AuthProvider, null, h(ProjectProvider, null, h(SessionsProvider, { userEvents: [] }, h(Page)))));
+  await mount(h(AuthProvider, null, h(ProjectProvider, null, h(SessionsProvider, { userEvents: [], children: null }, h(Page)))));
   await settle();
   return {
     seen,
@@ -534,7 +534,7 @@ describe("pages over a Project switch", () => {
     const router = createMemoryRouter(
       [
         {
-          element: h(ProjectProvider, null, h(SessionsProvider, { userEvents: [] }, h(SwitchToB), h(Outlet))),
+          element: h(ProjectProvider, null, h(SessionsProvider, { userEvents: [], children: null }, h(SwitchToB), h(Outlet))),
           children: [
             { path: "/benchmark", element: h("p", null, "Benchmarks list") },
             { path: "/benchmark/:benchmarkId", element: h(BenchmarkDetailPage) },
