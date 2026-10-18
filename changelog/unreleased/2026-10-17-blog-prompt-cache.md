@@ -1,4 +1,4 @@
-# A blog post on keeping the prompt cache hot
+# A blog post: inspecting harness performance automatically with a coding agent
 
 - **Date:** 2026-10-17
 - **Type:** process

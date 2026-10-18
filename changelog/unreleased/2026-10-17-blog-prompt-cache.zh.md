@@ -1,4 +1,4 @@
-# 关于提示词缓存持续命中的博客文章
+# 博客文章：用 Coding Agent 自动检查 Harness 的性能
 
 - **Date:** 2026-10-17
 - **Type:** process
