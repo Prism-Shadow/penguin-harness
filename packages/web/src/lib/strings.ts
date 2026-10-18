@@ -144,6 +144,8 @@ export const zh = {
       working: "处理中",
       ready: "运行中",
       reconnecting: "重新连接中",
+      /** The automatic attempts stopped (eight failures, or an ssh failure no retry mends): Retry is the way on. */
+      reconnectStopped: "重连已停止",
       failed: "失败",
       installedOnly: "已安装",
       behind: "有新版本",
@@ -196,6 +198,7 @@ export const zh = {
      */
     composer: {
       reconnecting: "那台机器正在重新连接…",
+      reconnectStopped: "那台机器的自动重连已停止——请在「机器管理」页面重试",
       stopped: "那台机器的服务已停止——请在「机器管理」页面启动它",
       notConnected: "那台机器尚未连接——请在「机器管理」页面启用它",
       missing: "那台机器不在本 Project 的机器列表里",
@@ -222,8 +225,6 @@ export const zh = {
       localUndeletable: "本服务端不能删除",
       /** Why Use waits, in the card's middle while no job moves there. */
       why: {
-        reconnecting: "重新连接中…",
-        reconnectingFor: (span: string) => `重新连接中… · 已 ${span}`,
         stopped: "服务已停止",
         notConnected: "未连接",
         notInstalled: "尚未安装",
@@ -305,19 +306,31 @@ export const zh = {
         stopped: "服务已停止。",
         noImage: "本服务端没有可安装的版本。",
       },
-      /** The section while the server brings a machine it keeps connected back. */
+      /** The section while the server brings a machine it keeps connected back, or stopped trying. */
       reconnect: {
         title: "重新连接",
-        trying: "重新连接中…",
         lasting: (span: string) => `已持续 ${span}`,
-        attempt: (n: number) => `第 ${n} 次尝试`,
-        next: (span: string) => `下次尝试在 ${span}后`,
-        now: "正在尝试",
         lastError: "上次失败：",
         checked: "自动检查的结果：",
-        /** The stored password was refused: no attempt runs until it is saved again. */
-        stopped: "已停止重试",
       },
+    },
+    /**
+     * The retry status while the server brings a machine back (the card's middle, the dialog's
+     * Reconnecting section): `n` is the attempt, `m` the failures in a row that stop the streak.
+     */
+    retry: {
+      trying: (n: number, m: number) => `正在尝试第 ${n}/${m} 次重连…`,
+      /** Waiting for the first attempt: nothing has failed yet. */
+      lost: "连接已断开",
+      failed: (n: number, m: number) => `第 ${n}/${m} 次重连失败`,
+      countdown: (seconds: number) => `${seconds} 秒后重连`,
+      gaveUp: (m: number) => `${m} 次重连都没连上，已停止自动重试`,
+      /** ssh refused in a way no retry mends; the reason under it says the fix. */
+      stoppedSsh: "已停止自动重连",
+      /** The stored password was refused: no Retry, the fix is in the machine's SSH settings. */
+      stoppedPassword: "登录被拒，已停止重连",
+      retryNow: "立即重试",
+      retry: "重试",
     },
     /** The confirmations the page asks before a verb that stops or removes something. */
     confirm: {
@@ -6125,6 +6138,10 @@ Benchmark：
       not_found: "资源不存在，或你没有访问权限。",
       internal: "服务器内部错误，请稍后重试。",
       agent_not_found: "该 Agent 已不存在。",
+      job_running: "这台机器上有任务在执行，请等它完成。",
+      password_refused:
+        "那台机器拒绝了保存的密码——请在机器的 SSH 设置里重新填写，保存后会自动重试。",
+      not_kept_connected: "本服务端没有保持这台机器的连接，无需重连——请用「启动服务」启动它。",
       unknown_agent: "该 Agent 不存在于本 Project。",
       agent_exists: "该 Agent id 已被占用。",
       agent_deleting: "该 Agent 正在删除中。",

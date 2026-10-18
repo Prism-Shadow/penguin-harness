@@ -11,6 +11,10 @@
  * POST /:machineId/release      — drop it from this Project. The install stays.
  * POST /:machineId/connect      — bring that machine's server up and hold a tunnel to it; 202,
  *                                 or 409 when a connect already runs.
+ * POST /:machineId/reconnect    — a person's Retry while the server brings a kept machine back:
+ *                                 the next attempt now, or a new streak after it stopped; 200
+ *                                 with the list, or 409 (`job_running`, `password_refused`,
+ *                                 `not_kept_connected`).
  * POST /:machineId/disconnect   — drop the tunnel (the remote server stays up).
  * POST /add                     — put machines in this Project's list, installing nothing.
  * GET  /ssh-hosts               — every host in the ssh config, with its block's user, host, port.
@@ -342,6 +346,37 @@ export function machinesRoutes(deps: MachinesRouteDeps): Hono<AppEnv> {
       throw new HttpError(409, "connect_refused", "That machine cannot be connected to.");
     }
     return c.json(state(c), 202);
+  });
+
+  // A person's Retry while the server brings a machine back: the next attempt now, or after the
+  // streak stopped a new one from the first attempt. Not a job — the list says how it goes.
+  app.post("/:machineId/reconnect", (c) => {
+    const answer = deps.machines.retryReconnect(c.req.param("machineId"));
+    if (!answer.ok) {
+      if (answer.why === "unknown-machine") {
+        throw new HttpError(404, "unknown_machine", "No such host in this server's ssh config.");
+      }
+      if (answer.why === "busy") {
+        throw new HttpError(
+          409,
+          "job_running",
+          "A job is working on that machine; wait for it to finish.",
+        );
+      }
+      if (answer.why === "password") {
+        throw new HttpError(
+          409,
+          "password_refused",
+          "That machine refused the password saved for it. Save its password again in its SSH settings; that tries again.",
+        );
+      }
+      throw new HttpError(
+        409,
+        "not_kept_connected",
+        "This server does not keep that machine connected, so there is nothing to bring back. Start it instead.",
+      );
+    }
+    return c.json(state(c));
   });
 
   // Addressed by the machine's OWN id, like the proxy: this answers "what is on THAT

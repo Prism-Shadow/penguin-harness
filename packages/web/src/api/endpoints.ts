@@ -2259,6 +2259,16 @@ export const connectMachine = (projectId: string, machineId: string) =>
     { method: "POST", body: {} },
   );
 
+/**
+ * Retry while the server brings a machine back: its next attempt now, or a new streak after the
+ * automatic attempts stopped (200, the list — not a job).
+ */
+export const reconnectMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/reconnect`,
+    { method: "POST", body: {} },
+  );
+
 /** Restarts that machine's server so what runs there matches what is on its disk (202, a job). */
 export const restartMachine = (projectId: string, machineId: string) =>
   apiFetch<MachinesResponse>(

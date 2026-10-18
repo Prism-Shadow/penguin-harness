@@ -298,6 +298,7 @@ export function agentServer(
             reconnect: {
               since: "2026-10-15T00:00:00Z",
               attempts: 2,
+              maxAttempts: 8,
               nextAt: null,
               lastError: null,
               diagnosis: null,
