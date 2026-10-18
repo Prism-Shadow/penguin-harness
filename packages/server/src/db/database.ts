@@ -4,17 +4,30 @@
  * Single process, single writer: a synchronous API is sufficient and avoids a connection
  * pool; WAL mode and foreign key constraints are enabled. Table-creation SQL runs on open
  * (idempotent), with no migration branches (product not yet released).
+ *
+ * POSTGRES MODE (PENGUIN_DB=pg): the same open path runs against a PostgreSQL-backed
+ * DatabaseSync-compatible shim (./pg/shim.js). The PRAGMAs below are no-ops there,
+ * SCHEMA_SQL / ensureColumn / migrate are translated statement-by-statement, and the
+ * schema lives in one PG schema (PENGUIN_PG_SCHEMA, default `penguin`). The switch is an
+ * environment variable so SQLite stays the default for every other deployment and for the
+ * CLI, and so a machine can be moved back by unsetting it.
  */
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { migrate } from "./migrations.js";
+import { openPgDatabase } from "./pg/shim.js";
 import { SCHEMA_SQL } from "./schema.js";
 
 // Fetch the runtime module via process.getBuiltinModule (node >=22.3): avoids static
 // resolution of `node:sqlite` by bundlers/vite (some tools' builtin lists don't yet
 // recognize this experimental module).
 const sqlite = process.getBuiltinModule("node:sqlite");
+
+/** Whether this process talks to PostgreSQL instead of SQLite (see the module doc). */
+export function pgMode(): boolean {
+  return process.env.PENGUIN_DB === "pg";
+}
 
 /**
  * Opens an EXISTING database for a narrow write, without running any schema work.
@@ -26,6 +39,7 @@ const sqlite = process.getBuiltinModule("node:sqlite");
  * token mint should do. The caller has already established that the file exists.
  */
 export function openExistingDatabase(dbPath: string): DatabaseSync {
+  if (pgMode()) return openPgDatabase() as unknown as DatabaseSync;
   const db = new sqlite.DatabaseSync(dbPath);
   db.exec("PRAGMA foreign_keys = ON;");
   // Wait for the live server's write lock instead of failing SQLITE_BUSY at once.
@@ -39,8 +53,12 @@ export function openExistingDatabase(dbPath: string): DatabaseSync {
  * other process owns (`penguin server status`, run over ssh by a controller): the answer must
  * not reshape that server's schema, and must not be able to. The caller has established that
  * the file exists; a read-only open of a missing file is an error, not a creation.
+ *
+ * Under PG the handle is the same shim: the reader only issues SELECTs, and per-connection
+ * roles are the database's business (the instance is the platform's own).
  */
 export function openDatabaseReadOnly(dbPath: string): DatabaseSync {
+  if (pgMode()) return openPgDatabase() as unknown as DatabaseSync;
   const db = new sqlite.DatabaseSync(dbPath, { readOnly: true });
   db.exec("PRAGMA busy_timeout = 5000;");
   return db;
@@ -48,11 +66,8 @@ export function openDatabaseReadOnly(dbPath: string): DatabaseSync {
 
 /** Open (creating if necessary) the database: ensure the parent directory exists, set PRAGMAs, run table creation. */
 export function openDatabase(dbPath: string): DatabaseSync {
-  if (dbPath !== ":memory:") {
-    mkdirSync(path.dirname(dbPath), { recursive: true });
-  }
-  const db = new sqlite.DatabaseSync(dbPath);
-  db.exec("PRAGMA journal_mode = WAL;");
+  const db = pgMode() ? (openPgDatabase() as unknown as DatabaseSync) : openSqliteDatabase(dbPath);
+  db.exec("PRAGMA journal_mode = WAL;"); // no-op under PG (translated to nothing)
   // A second connection (the CLI minting a token while the server runs) waits for the write
   // lock rather than failing SQLITE_BUSY at once.
   db.exec("PRAGMA busy_timeout = 5000;");
@@ -97,6 +112,14 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // owns the process, so there is no boot to roll back out from under it.
   migrate(db);
   return db;
+}
+
+/** The SQLite open on its own: ensure the parent directory exists, then the handle. */
+function openSqliteDatabase(dbPath: string): DatabaseSync {
+  if (dbPath !== ":memory:") {
+    mkdirSync(path.dirname(dbPath), { recursive: true });
+  }
+  return new sqlite.DatabaseSync(dbPath);
 }
 
 /**

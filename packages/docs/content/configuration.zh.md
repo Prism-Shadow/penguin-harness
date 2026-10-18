@@ -15,6 +15,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 | `PORT` | Web 服务监听端口 | `7364` |
 | `HOST` | Web 服务监听地址 | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | 服务器 SQLite 数据库路径 | `<root>/web.db` |
+| `PENGUIN_DB` | 设为 `pg` 时，服务器自己的数据库跑在 PostgreSQL 上（见 [PostgreSQL 存储](#postgresql-存储)） | 未设置：使用 `PENGUIN_WEB_DB` 指向的 SQLite |
 | `PENGUIN_WEB_DIST` | 前端静态资源目录 | 服务器包自带的 `web-dist`（源码检出中为 `packages/web/dist`） |
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的源，例如 `https://preview.example.com` | 未设置：每次请求推导对应的回环地址 |
 | `PENGUIN_GO_ORIGIN` | 服务端发起 Penguin Go Key 授权和余额查询时调用的可信源 | `https://go.penguin.ooo` |
@@ -36,6 +37,22 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 - `PENGUIN_UPDATE_CHECK`：设为 `off` 只关闭自动的版本检查，不影响其他对外请求：模型请求、已启用的远程控制连接、Key 授权和代理测试照常联网。
 - `PENGUIN_NO_LOGIN_SHELL_ENV`：不设置时，导入只填补启动过程没有设置的变量。见[桌面应用快速开始](/quickstart-desktop)。
 - `PENGUIN_CLI_ENTRY`：未设置时，从源码检出启动的服务器提供该检出自己的 CLI（见 [PATH 启动脚本](#path-启动脚本)）。开发入口 `pnpm dev`、`pnpm desktop` 和 `pnpm penguin` 会清掉继承来的值（例如已安装应用的终端传下来的值），始终使用检出自己的 CLI；打包版与安装版的启动仍以它为准。
+
+### PostgreSQL 存储
+
+`PENGUIN_DB=pg` 让平台的数据库——会话、用量记录、设置、Trace 索引——存在 PostgreSQL 里，而不是数据根目录的 `web.db`。SQLite 仍是默认，切回来就是不设这个变量：两个存储都不记录自己由哪个引擎写入，服务器下次启动就会打开变量所指的那一个。
+
+| 变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `PENGUIN_PG_DSN` | 完整连接 URL，例如 `postgres://user:pass@host:5432/penguin?schema=penguin`；设置后覆盖下面的分项 | 未设置 |
+| `PENGUIN_PG_HOST` / `PENGUIN_PG_PORT` | 主机与端口 | `127.0.0.1` / `5432` |
+| `PENGUIN_PG_DB` / `PENGUIN_PG_USER` / `PENGUIN_PG_PASSWORD` | 库、用户、口令 | `penguin` / `penguin` / 空 |
+| `PENGUIN_PG_SCHEMA` | 存放平台表的 PostgreSQL schema，首次连接时创建 | `penguin` |
+| `PENGUIN_PG_TZ` | SQLite `localtime` 出现处所用的时区，例如用量周报的周界 | 服务器自身时区 |
+
+数据层保留同步接口：`pg` 驱动跑在工作线程里，调用线程等待它，因此一个服务器仍只持有一个连接，跨多条语句的事务仍是同一个事务。schema 由与 `web.db` 相同的代码路径创建与迁移，迁移的版本戳存在该 schema 自己的 `_pg_meta` 表里。一个数据库对应一个服务器，与一个 `web.db` 相同——阻止两个服务器共用一个数据根目录的仍是实例锁。
+
+搬迁已有安装是把行复制过去，不是一个开关：`web.db` 与 PostgreSQL schema 是两个独立的存储，两者之间没有任何自动迁移。
 
 ### Agent 所执行命令的环境
 

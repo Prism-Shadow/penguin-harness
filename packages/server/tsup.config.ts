@@ -21,6 +21,9 @@ export default defineConfig({
   // so it has no reason to be a tsup entry or a subpath export.
   entry: {
     index: "src/index.ts",
+    // The PG shim's build entry: NOT imported by the server bundle, present in dist so an
+    // integration test can drive the shim against a real PostgreSQL without a full boot.
+    "db/pg/shim-entry": "src/db/pg/shim-entry.ts",
     "api/types": "src/api/types.ts",
     lock: "src/lock.ts",
     // "./machine-status": what `penguin server status` prints. A CONTROLLER runs that command
@@ -49,8 +52,11 @@ export default defineConfig({
   clean: jsOnly ? ["!**/*.d.ts"] : true,
   sourcemap: true,
   // The hot-update mechanism is a package for the boundary, not for npm (it is `private`):
-  // inlined here so this package's published dist stays self-contained.
-  noExternal: ["@prismshadow/penguin-hmr"],
+  // inlined here so this package's published dist stays self-contained. `pg` is inlined for
+  // the same reason: it is the PG shim's only runtime dependency and dist must not need a
+  // node_modules beside it. `pg-native` is optional and deliberately left unresolved.
+  noExternal: ["@prismshadow/penguin-hmr", "pg"],
+  external: ["pg-native"],
   // Scripts that run somewhere else, as REAL files beside the bundles: the release installers
   // a remote install feeds to the far side (the one thing that has to arrive before the CLI
   // does; everything after is a `penguin` subcommand the machine already has). Each is
@@ -65,6 +71,21 @@ export default defineConfig({
   onSuccess: async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const repo = path.join(here, "..", "..");
+    // The PG shim's connection worker is built as CommonJS: `pg`'s dependency graph uses
+    // dynamic require(), which esbuild's ESM output cannot express. It is a separate file
+    // because the shim loads it with `new Worker(...)` at runtime.
+    const esbuild = await import("esbuild");
+    await esbuild.build({
+      entryPoints: [path.join(here, "src/db/pg/worker.ts")],
+      outfile: path.join(here, "dist/db/pg/worker.cjs"),
+      bundle: true,
+      format: "cjs",
+      platform: "node",
+      target: "node24",
+      external: ["pg-native"],
+      sourcemap: true,
+      logLevel: "silent",
+    });
     for (const { name, from } of FAR_SIDE_SCRIPTS) {
       fs.copyFileSync(path.join(repo, from), path.join(here, "dist", name));
     }

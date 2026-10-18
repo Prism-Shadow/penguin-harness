@@ -15,6 +15,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 | `PORT` | Web service listen port | `7364` |
 | `HOST` | Web service listen address | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
+| `PENGUIN_DB` | Set to `pg` to run the server's own database on PostgreSQL (see [PostgreSQL storage](#postgresql-storage)) | Unset: SQLite at `PENGUIN_WEB_DB` |
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | The server package's bundled `web-dist` (in a source checkout, `packages/web/dist`) |
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | Unset: the loopback counterpart is derived per request |
 | `PENGUIN_GO_ORIGIN` | Trusted origin for Penguin Go key authorization and account balance queries | `https://go.penguin.ooo` |
@@ -36,6 +37,22 @@ Notes:
 - `PENGUIN_UPDATE_CHECK`: `off` turns off the automatic release check, nothing else. Model requests, an enabled remote-control connection, provider key authorization and the proxy test still reach the network.
 - `PENGUIN_NO_LOGIN_SHELL_ENV`: without it, the import fills only variables the launch left unset. See [Desktop quickstart](/quickstart-desktop).
 - `PENGUIN_CLI_ENTRY`: without it, a server started from a source checkout offers that checkout's own CLI (see [PATH launcher](#path-launcher)). The dev entry points `pnpm dev`, `pnpm desktop` and `pnpm penguin` clear a value they inherit, such as one a terminal of the installed app hands on, and always use the checkout's CLI; a packaged or installed launch still honours it.
+
+### PostgreSQL storage
+
+`PENGUIN_DB=pg` keeps the platform's database — Sessions, usage records, settings, the Trace index — in PostgreSQL instead of the data root's `web.db`. SQLite stays the default, and switching back is unsetting the variable: neither store records which engine wrote it, so the server opens whichever the variable names on the next start.
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `PENGUIN_PG_DSN` | Full connection URL, e.g. `postgres://user:pass@host:5432/penguin?schema=penguin`; overrides the components below | Unset |
+| `PENGUIN_PG_HOST` / `PENGUIN_PG_PORT` | Host and port | `127.0.0.1` / `5432` |
+| `PENGUIN_PG_DB` / `PENGUIN_PG_USER` / `PENGUIN_PG_PASSWORD` | Database, user, password | `penguin` / `penguin` / empty |
+| `PENGUIN_PG_SCHEMA` | The PostgreSQL schema that holds the platform's tables; created on first connect | `penguin` |
+| `PENGUIN_PG_TZ` | Zone used where SQLite's `localtime` appears, e.g. a weekly usage rollup's week boundary | The server's own zone |
+
+The data layer keeps its synchronous API: the `pg` driver runs in a worker thread and the calling thread waits for it, so one server still holds one connection and a transaction spread over several statements stays one transaction. The schema is created and migrated by the same code path as `web.db`, and migrations keep their version stamp in the schema's own `_pg_meta` table. One database serves one server, as one `web.db` does — the instance lock is still what keeps two servers off a data root.
+
+Moving an existing installation is a copy of its rows, not a setting: a `web.db` and a PostgreSQL schema are separate stores, and nothing migrates between them automatically.
 
 ### Environment of agent-run commands
 
