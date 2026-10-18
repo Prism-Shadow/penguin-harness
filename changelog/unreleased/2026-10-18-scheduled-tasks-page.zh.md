@@ -3,6 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#1196](https://github.com/Prism-Shadow/penguin-harness/pull/1196)
 
 [English](2026-10-18-scheduled-tasks-page.md)
 
