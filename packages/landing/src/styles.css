@@ -344,14 +344,6 @@ html.dark .post-figure figcaption {
 .fig-svg .fig-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
-.fig-svg .fig-on-read {
-  font-weight: 600;
-  fill: #fff;
-}
-.fig-svg .fig-on-again {
-  font-weight: 600;
-  fill: var(--site-gray-900);
-}
 /* Cache states. */
 .fig-svg .fig-read {
   fill: var(--site-brand-700);
@@ -367,19 +359,9 @@ html.dark .post-figure figcaption {
   stroke-width: 1;
   stroke-dasharray: 3 2;
 }
-/* A cost that is not a cache state: the baseline's share of an input-cost bar. */
-.fig-svg .fig-cost {
-  fill: var(--site-gray-300);
-}
-/* Markers: the breakpoint, the entry a later request reads, a context opening a new line. */
+/* Markers: the breakpoint, and a dotted guide that lines one point up with another. */
 .fig-svg .fig-bp {
   fill: var(--site-gray-800);
-}
-/* A breakpoint a simulator option adds but the harness does not send: the same mark, hollow. */
-.fig-svg .fig-bp-option {
-  fill: none;
-  stroke: var(--site-gray-800);
-  stroke-width: 1.25;
 }
 .fig-svg .fig-link {
   fill: none;
@@ -387,35 +369,11 @@ html.dark .post-figure figcaption {
   stroke-width: 1;
   stroke-dasharray: 2 3;
 }
-.fig-svg .fig-entry-match {
-  stroke: var(--site-brand-700);
-  stroke-width: 3;
-}
-.fig-svg .fig-entry-miss {
-  stroke: var(--site-gray-400);
-  stroke-width: 3;
-}
-.fig-svg .fig-cross {
-  fill: none;
-  stroke: var(--site-gray-700);
-  stroke-width: 2;
-}
-.fig-svg .fig-opener {
-  fill: none;
-  stroke: var(--site-gray-600);
-  stroke-width: 1.5;
-}
 .fig-svg .fig-bracket,
 .fig-svg .fig-axis {
   fill: none;
   stroke: var(--site-gray-400);
   stroke-width: 1;
-}
-.fig-svg .fig-ref {
-  fill: none;
-  stroke: var(--site-gray-600);
-  stroke-width: 1;
-  stroke-dasharray: 4 3;
 }
 /* Flowcharts: terminals, processes and edges, as in the MMSP docs. */
 .fig-svg .fig-box,
@@ -451,10 +409,6 @@ html.dark .fig-svg .fig-tick {
 html.dark .fig-svg .fig-num {
   fill: var(--site-gray-200);
 }
-html.dark .fig-svg .fig-on-read,
-html.dark .fig-svg .fig-on-again {
-  fill: var(--site-gray-950);
-}
 html.dark .fig-svg .fig-read {
   fill: var(--site-brand-300);
 }
@@ -466,30 +420,13 @@ html.dark .fig-svg .fig-again {
   fill: color-mix(in oklab, var(--site-amber-300) 70%, var(--site-amber-800));
   stroke: var(--site-amber-300);
 }
-html.dark .fig-svg .fig-cost {
-  fill: var(--site-gray-600);
-}
 html.dark .fig-svg .fig-bp {
   fill: var(--site-gray-200);
 }
-html.dark .fig-svg .fig-bp-option {
-  stroke: var(--site-gray-200);
-}
 html.dark .fig-svg .fig-link,
-html.dark .fig-svg .fig-entry-miss,
 html.dark .fig-svg .fig-bracket,
 html.dark .fig-svg .fig-axis {
   stroke: var(--site-gray-600);
-}
-html.dark .fig-svg .fig-entry-match {
-  stroke: var(--site-brand-300);
-}
-html.dark .fig-svg .fig-cross {
-  stroke: var(--site-gray-300);
-}
-html.dark .fig-svg .fig-opener,
-html.dark .fig-svg .fig-ref {
-  stroke: var(--site-gray-400);
 }
 html.dark .fig-svg .fig-box {
   fill: var(--site-gray-950);
