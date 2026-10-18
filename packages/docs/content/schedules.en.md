@@ -1,9 +1,9 @@
 ---
 title: Scheduled tasks
-description: Have an agent run a prompt on a schedule in a conversation, and manage those tasks from the conversation's Scheduled tasks panel.
+description: Have an agent run a prompt on a schedule in a conversation, and manage those tasks from the conversation's Scheduled tasks panel or the Project-wide Scheduled tasks page.
 ---
 
-A scheduled task sends a prompt to an agent at a set time, once or on a repeating period. A task bound to a conversation sends its prompt into that conversation, so the agent works with everything the conversation already holds. You create and manage these tasks in the conversation's **Scheduled tasks** panel.
+A scheduled task sends a prompt to an agent at a set time, once or on a repeating period. A task bound to a conversation sends its prompt into that conversation, so the agent works with everything the conversation already holds. You create and manage these tasks in the conversation's **Scheduled tasks** panel, or in the Project-wide **Scheduled tasks** page when you do not know which agent owns the task.
 
 > [!NOTE] Tasks that start a new Session
 > A scheduled task can instead open a new Session each time it runs. You create those on the agent's settings page, which lists all of that agent's scheduled tasks, including the ones bound to conversations. See [Agents](/agents).
@@ -12,6 +12,17 @@ A scheduled task sends a prompt to an agent at a set time, once or on a repeatin
 - To add a task, see [Create a task with AI](#create-a-task-with-ai) or [Create a task manually](#create-a-task-manually).
 - To pause, change or remove a task, see [Turn a task on or off](#turn-a-task-on-or-off) and [Edit or delete a task](#edit-or-delete-a-task).
 - To find a task that has finished, see [Finished tasks are archived](#finished-tasks-are-archived).
+- To see every task of the Project at once, see [See every task of a Project](#see-every-task-of-a-project).
+
+## See every task of a Project
+
+The **Scheduled tasks** page lists every agent's tasks of the current Project in one place, grouped by the agent that owns each one. Open it from the sidebar's **Scheduled tasks** entry. Each row shows the task's name, its status, its schedule in plain words, its target, and when it next and last fired.
+
+The status chips are **All**, **Active** and **Paused**; the type picker groups tasks by their interval — one-off, every few minutes, hourly, daily, weekly — and every choice shows how many tasks sit under it. The search box matches a task's name and its prompt. The choices are written into the page's address, so a filtered view can be reloaded or shared as it stands.
+
+Select a row to see the task in full: its whole prompt, its interval, the Session it is bound to, its start and end, and the Workspace and model a new Session would open with. **Edit** opens the same form as the agent's settings page, where the prompt and every other field can be changed; **Disable** or **Enable** pauses or resumes the task, and **Delete** removes it. Only the Project's owner can make these changes; a member reads.
+
+**New task** in an agent's group creates a task for that agent, in that same form. Files that could not be parsed are listed at the bottom of the page, for every agent at once.
 
 ## Open the Scheduled tasks panel
 

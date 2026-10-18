@@ -39,6 +39,17 @@
         }
       },
       {
+        "id": "web.schedules",
+        "key": "schedules",
+        "path": "/schedules",
+        "nav": "main",
+        "admin": false,
+        "released": true,
+        "renderer": {
+          "builtin": "SchedulesPage"
+        }
+      },
+      {
         "id": "web.models",
         "key": "models",
         "path": "/models",

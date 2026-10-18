@@ -77,16 +77,16 @@ describe("navKeysFor", () => {
 });
 
 describe("pinned vs. collapsible", () => {
-  it("defaults: New chat, Agents, Models and Plugins pinned; the rest collapsible", () => {
+  it("defaults: New chat, Agents, Scheduled tasks, Models and Plugins pinned; the rest collapsible", () => {
     expect(splitNavEntries(navEntryKeysFor(true), {})).toEqual({
-      pinned: ["newChat", "agents", "models", "plugins"],
+      pinned: ["newChat", "agents", "schedules", "models", "plugins"],
       collapsible: ["machines", "usage", "benchmark"],
     });
   });
 
   it("a member's areas are cut from their own entries: an admin-only page is in neither", () => {
     expect(splitNavEntries(navEntryKeysFor(false), {})).toEqual({
-      pinned: ["newChat", "agents", "models", "plugins"],
+      pinned: ["newChat", "agents", "schedules", "models", "plugins"],
       collapsible: ["usage", "benchmark"],
     });
     // A choice stored for it (an admin signed in on this browser before) offers nothing.
@@ -100,7 +100,7 @@ describe("pinned vs. collapsible", () => {
     expect(isNavPinned("models", unpinned)).toBe(false);
     // Models lands ahead of Machines (its manifest place), not at the end it was moved to.
     expect(splitNavEntries(navEntryKeysFor(true), unpinned)).toEqual({
-      pinned: ["newChat", "agents", "plugins"],
+      pinned: ["newChat", "agents", "schedules", "plugins"],
       collapsible: ["models", "machines", "usage", "benchmark"],
     });
   });
@@ -110,7 +110,7 @@ describe("pinned vs. collapsible", () => {
     const second = withNavPinned(withNavPinned({}, "usage", true), "benchmark", true);
     expect(first).toEqual(second);
     expect(splitNavEntries(navEntryKeysFor(true), first)).toEqual({
-      pinned: ["newChat", "agents", "models", "plugins", "usage", "benchmark"],
+      pinned: ["newChat", "agents", "schedules", "models", "plugins", "usage", "benchmark"],
       collapsible: ["machines"],
     });
   });
@@ -162,9 +162,15 @@ describe("pinned vs. collapsible", () => {
 describe("visibleNavKeys", () => {
   it("expanded shows the viewer's every entry; collapsed leaves only the pinned ones visible and reachable (the sidebar renders the folded rows inert at zero height)", () => {
     expect(visibleNavKeys(false)).toEqual(navEntryKeysFor(true));
-    expect(visibleNavKeys(true)).toEqual(["newChat", "agents", "models", "plugins"]);
+    expect(visibleNavKeys(true)).toEqual(["newChat", "agents", "schedules", "models", "plugins"]);
     expect(visibleNavKeys(false, false)).toEqual(navEntryKeysFor(false));
-    expect(visibleNavKeys(true, false)).toEqual(["newChat", "agents", "models", "plugins"]);
+    expect(visibleNavKeys(true, false)).toEqual([
+      "newChat",
+      "agents",
+      "schedules",
+      "models",
+      "plugins",
+    ]);
   });
 
   it("renders the pinned area first, then the collapsible one", () => {
@@ -172,13 +178,19 @@ describe("visibleNavKeys", () => {
     expect(visibleNavKeys(false, true, overrides)).toEqual([
       "newChat",
       "agents",
+      "schedules",
       "plugins",
       "models",
       "machines",
       "usage",
       "benchmark",
     ]);
-    expect(visibleNavKeys(true, true, overrides)).toEqual(["newChat", "agents", "plugins"]);
+    expect(visibleNavKeys(true, true, overrides)).toEqual([
+      "newChat",
+      "agents",
+      "schedules",
+      "plugins",
+    ]);
   });
 });
 
@@ -199,6 +211,7 @@ describe("persisted collapse state (one global localStorage key)", () => {
     expect(visibleNavKeys(initialNavGroupCollapsed(s))).toEqual([
       "newChat",
       "agents",
+      "schedules",
       "models",
       "plugins",
     ]);
@@ -213,7 +226,7 @@ describe("persisted collapse state (one global localStorage key)", () => {
     const s = memoryStorage({ [NAV_GROUP_COLLAPSED_KEY]: "collapsed" });
     expect(initialNavGroupCollapsed(s)).toBe(true);
     const shown = visibleNavKeys(initialNavGroupCollapsed(s), true, initialNavPinOverrides(s));
-    expect(shown).toEqual(["newChat", "agents", "models", "plugins"]);
+    expect(shown).toEqual(["newChat", "agents", "schedules", "models", "plugins"]);
   });
 
   it("unrecognized stored values fall back to expanded", () => {
@@ -251,7 +264,7 @@ describe("persisted pin choices (one global localStorage key)", () => {
     const restored = initialNavPinOverrides(s);
     expect(restored).toEqual(moved);
     expect(splitNavEntries(navEntryKeysFor(true), restored)).toEqual({
-      pinned: ["newChat", "agents", "plugins", "usage"],
+      pinned: ["newChat", "agents", "schedules", "plugins", "usage"],
       collapsible: ["models", "machines", "benchmark"],
     });
   });
