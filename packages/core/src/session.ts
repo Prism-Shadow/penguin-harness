@@ -18,6 +18,7 @@
  * Docs: /docs/agent-loop; /docs/interfaces § "The Human boundary".
  */
 import {
+  abortCodeForInterruption,
   abortEvent,
   buildBackgroundTaskDoneMessage,
   mcpConnectEnd,
@@ -718,7 +719,7 @@ export class Session {
       this.abortedBootstrapRecords = [];
       // Carry the merged list, so repeated aborts keep accumulating exactly once each.
       this.carryOverInput = newMessages;
-      return { kind: "abort", errorCode: "user_abort" };
+      return { kind: "abort", errorCode: abortCodeForInterruption(opts?.signal) };
     }
     // Self-captures title material (the title is derived from the first-turn
     // conversation text): while material isn't frozen yet, collect this call's user text and
@@ -811,7 +812,7 @@ export class Session {
           yield end;
           this.abortedBootstrapRecords.push(end);
         }
-        const aborted = abortEvent("user_abort");
+        const aborted = abortEvent(abortCodeForInterruption(signal));
         yield aborted;
         this.abortedBootstrapRecords.push(aborted);
         return false;

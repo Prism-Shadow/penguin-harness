@@ -224,10 +224,12 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 
 ```ts
 type ErrorCode =
-  // abort causes (a user interruption, the only thing an abort event marks)
+  // abort causes (an interruption — a person's stop, or the server's own restart
+  // cutting the run short — the only things an abort event marks)
   | "user_abort"
   | "backoff_interrupted"
   | "compaction_interrupted"
+  | "server_restart"
   // LLM request failures (request_end / compaction_end)
   | "timeout"                 // idle timeout / connection went silent
   | "network"                 // transport drops, provider 429/5xx, and anything unclassifiable
@@ -357,7 +359,7 @@ interface CompactionEndPayload {
 
 interface AbortPayload {
   type: "abort";
-  error_code?: ErrorCode;     // user_abort / backoff_interrupted / compaction_interrupted
+  error_code?: ErrorCode;     // user_abort / backoff_interrupted / compaction_interrupted / server_restart
   error_message?: string;
   reason?: string | null;     // legacy: older Traces carry the cause as English prose here;
                               // the engine no longer writes it

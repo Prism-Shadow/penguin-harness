@@ -3663,7 +3663,9 @@ Scenarios:
             ? "aborted during reconnect backoff"
             : item?.errorCode === "compaction_interrupted"
               ? "aborted during compaction"
-              : (item?.errorCode ?? item?.reason ?? "");
+              : item?.errorCode === "server_restart"
+                ? "interrupted by a server restart"
+                : (item?.errorCode ?? item?.reason ?? "");
       const text = cause ? `${cause}${item?.errorMessage ? `: ${item.errorMessage}` : ""}` : "";
       return `[Aborted]${text ? `: ${text}` : ""}`;
     },

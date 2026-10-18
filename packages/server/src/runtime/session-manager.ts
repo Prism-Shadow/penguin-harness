@@ -45,6 +45,7 @@ import {
   ModelSwitchRefusedError,
   normalizeSessionSource,
   parseUserSteeringText,
+  SERVER_SHUTDOWN_ABORT_REASON,
   tracesDir,
   userText,
 } from "@prismshadow/penguin-core";
@@ -86,6 +87,8 @@ import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import { AgentStateStore } from "./agent-state.js";
 import type { LiveTail } from "./live-tail.js";
+import { createFileRunMarkStore } from "./run-marks.js";
+import type { RunMarkStore } from "./run-marks.js";
 import { unrunSource } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
@@ -457,6 +460,12 @@ export interface SessionManagerDeps {
    * the desk. Optional; unit tests that do not wire it get nothing.
    */
   onHumanInput?: (sessionId: string) => void;
+  /**
+   * Durable run-mark storage (see run-marks.ts): drive records every driven run here, so
+   * a restart can resume the interrupted ones. Absent = no marks, which is what unit tests
+   * that construct the manager directly get; the App assembly always wires the file store.
+   */
+  runMarks?: RunMarkStore;
 }
 
 /**
@@ -1918,7 +1927,11 @@ export class SessionManager {
     const pending: Promise<void>[] = [];
     for (const entry of this.entries.values()) {
       entry.approvals.denyAll();
-      entry.abort?.abort();
+      // The server's own reason, not a person's stop: core records `server_restart`
+      // instead of `user_abort`, and drive's finally keeps the run mark so the next boot
+      // resumes the run (see run-marks.ts). A run the person already stopped keeps its
+      // first reason — the first abort wins — and is never resurrected.
+      entry.abort?.abort(SERVER_SHUTDOWN_ABORT_REASON);
       if (entry.running) pending.push(entry.running);
       // Suspend means the environment too: dispose kills the Session's remaining
       // background processes (a dev server the conversation started, etc.). Without
@@ -2250,6 +2263,18 @@ export class SessionManager {
     // reach — leaving the entry pinned "running" and every later Task 409ing for the
     // process's lifetime.
     this.touchRow(ctx, (repo, at) => repo.markDriven(ctx.sessionId, at));
+    // Durable run mark (see run-marks.ts): removed when this drive ends, unless the
+    // server's own shutdown cuts it short — then the mark survives for the next boot to
+    // resume. Guarded like the row write above: the store never throws by contract, but a
+    // bug here must not pin the entry "running" with no finally to reach.
+    try {
+      this.deps.runMarks?.markStart(entry.sessionId, {
+        projectId: entry.projectId,
+        agentId: entry.agentId,
+      });
+    } catch (err) {
+      this.log(`[run-marks] markStart failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
     // LLM request failures and tool execution failures aren't expressed via throw (core
     // converges them into the message stream), so the try/catch below can't catch them:
     // the watcher inspects messages one by one and fishes them out for persistence
@@ -2396,6 +2421,13 @@ export class SessionManager {
       );
       this.deps.errors?.record({ source: "session", err, ctx, code: "session_run_failed" });
     } finally {
+      // Restart-resume bookkeeping (see run-marks.ts): a run the server's own shutdown cut
+      // short KEEPS its mark — the next boot resumes it — while every other ending (a
+      // finish, a failure, a person's stop) clears it. Read off the abort signal's reason
+      // rather than the shutdown flag: the first abort wins, so a run the person already
+      // stopped is NOT resurrected when a shutdown lands while it winds down. Captured
+      // before the teardown below nulls the controller.
+      const abortedByShutdown = entry.abort?.signal.reason === SERVER_SHUTDOWN_ABORT_REASON;
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
       watcher?.close();
       // The run is over: no fragment will ever continue, so drop the live tail before the
@@ -2411,6 +2443,19 @@ export class SessionManager {
       entry.status = "idle";
       entry.abort = null;
       entry.running = null;
+      // The durable mark goes with every ending except the server's own shutdown (see
+      // the capture at the top of this finally). A crash in the breath between here and
+      // the follow-up auto-start below still loses queued follow-ups — they are in-memory
+      // by design (see run-marks.ts); the mark only ever covers the run in flight.
+      if (!abortedByShutdown) {
+        try {
+          this.deps.runMarks?.markEnd(entry.sessionId);
+        } catch (err) {
+          this.log(
+            `[run-marks] markEnd failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
       // The run is over, so core has discarded any undelivered steering (see ContextEngine's
       // steeringQueue). What is still in the mirror was therefore never delivered — entries
       // are shifted out as their `[user_steering]` message appears on the stream, and this
@@ -2899,6 +2944,8 @@ export class SessionsModule {
         if (orgCache.ownerOfSession(sessionId) !== null) orgCache.setTriggerHop(sessionId, 0);
       },
       now: () => this.clock.now(),
+      // Durable run marks under the data root (see run-marks.ts): what a restart resumes.
+      runMarks: createFileRunMarkStore(config.root, { onError: (line) => log(line) }),
     });
     const sessionService = new SessionService({
       root: config.root,

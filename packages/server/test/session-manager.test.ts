@@ -48,6 +48,7 @@ import path from "node:path";
 import {
   Environment,
   Session,
+  SERVER_SHUTDOWN_ABORT_REASON,
   abortEvent,
   approvalDecision,
   assistantText,
@@ -83,6 +84,8 @@ import type { ChannelEvent } from "../src/runtime/channel.js";
 import type { ErrorRecordArgs, ErrorSink } from "../src/runtime/error-recorder.js";
 import { SessionManager, FOLLOW_UP_QUEUE_LIMIT } from "../src/runtime/session-manager.js";
 import type { RuntimeSession, SessionLoader } from "../src/runtime/session-manager.js";
+import { createFileRunMarkStore } from "../src/runtime/run-marks.js";
+import type { RunMarkStore } from "../src/runtime/run-marks.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
 import type { TitleRequest } from "../src/runtime/title-generator.js";
 import type { UsageContext } from "../src/runtime/usage-recorder.js";
@@ -179,6 +182,8 @@ describe("session-manager", () => {
     errors?: ErrorSink,
     /** Stubbed clock for persisted timestamps (see the last_active_at test). */
     now?: () => Date,
+    /** Durable run-mark storage, for the restart-resume tests (absent everywhere else). */
+    runMarks?: RunMarkStore,
   ): SessionManager =>
     new SessionManager({
       sessions,
@@ -193,6 +198,7 @@ describe("session-manager", () => {
       },
       ...(errors ? { errors } : {}),
       ...(now ? { now } : {}),
+      ...(runMarks ? { runMarks } : {}),
       log: () => {},
     });
 
@@ -1302,6 +1308,61 @@ describe("session-manager", () => {
     expect((err as { code: string }).code).toBe("shutting_down");
     const compactErr = await manager.startCompact("session-1").catch((e: unknown) => e);
     expect((compactErr as { status: number }).status).toBe(503);
+  });
+
+  it("run marks: a finished run clears its mark", async () => {
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const root = await mkdtemp(path.join(tmpdir(), "run-marks-"));
+    try {
+      const runMarks = createFileRunMarkStore(root, { onError: () => {} });
+      const manager = makeManager(
+        loaderOf(approvalFakeSession("session-1")),
+        undefined,
+        undefined,
+        runMarks,
+      );
+      await manager.startTask("session-1", [userText("hello")]);
+      await waitFor(() => manager.statusOf("session-1") === "idle");
+      expect(runMarks.listMarks()).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("run marks: shutdown keeps the mark with the server reason; a user abort clears it", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "run-marks-"));
+    try {
+      const runMarks = createFileRunMarkStore(root, { onError: () => {} });
+      const reasons: unknown[] = [];
+      const held = fakeSession("session-1", {
+        async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+          yield assistantText("working");
+          await new Promise<void>((resolve) =>
+            opts.signal.addEventListener("abort", () => resolve(), { once: true }),
+          );
+          reasons.push(opts.signal.reason);
+        },
+      });
+      // The server's own shutdown: the mark survives for the next boot to resume.
+      const manager = makeManager(loaderOf(held), undefined, undefined, runMarks);
+      await manager.startTask("session-1", [userText("one")]);
+      await waitFor(() => runMarks.listMarks().length === 1);
+      await manager.shutdown();
+      expect(runMarks.listMarks().map((m) => m.sessionId)).toEqual(["session-1"]);
+      expect(reasons).toEqual([SERVER_SHUTDOWN_ABORT_REASON]);
+      // A person's stop is never resurrected: the mark goes with the run.
+      reasons.length = 0;
+      const manager2 = makeManager(loaderOf(held), undefined, undefined, runMarks);
+      await manager2.startTask("session-1", [userText("two")]);
+      await waitFor(() => manager2.statusOf("session-1") === "running");
+      expect(manager2.abortTask("session-1")).toBe(true);
+      await waitFor(() => manager2.statusOf("session-1") === "idle");
+      expect(runMarks.listMarks()).toEqual([]);
+      expect(reasons).toHaveLength(1);
+      expect(reasons[0]).not.toBe(SERVER_SHUTDOWN_ABORT_REASON);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("sweepIdle: entries idle past the timeout are evicted (reloaded via the loader on next access)", async () => {

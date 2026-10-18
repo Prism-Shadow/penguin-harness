@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   REJECTED_IMAGE_NOTE,
+  SERVER_SHUTDOWN_ABORT_REASON,
   assistantText,
   emptyTokenCounts,
   imageUrlMessage,
@@ -753,6 +754,32 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(texts).toContain("go");
     expect(texts).toContain("next");
     expect(texts.join("\n")).not.toContain("[turn_aborted]");
+  });
+
+  it("shutdown abort carries server_restart on the abort event and the cutoff", async () => {
+    const neverCalled: LLMInterface = {
+      async *streamGenerate() {
+        throw new Error("must not be called");
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm: neverCalled, environment });
+    const controller = new AbortController();
+    controller.abort(SERVER_SHUTDOWN_ABORT_REASON);
+
+    const { all, cutoff } = await collectRunWithReturn(
+      engine,
+      [userText("go")],
+      allowAll,
+      controller.signal,
+    );
+    const aborts = all.filter((m) => (m.payload as { type?: string }).type === "abort");
+    expect(aborts).toHaveLength(1);
+    expect((aborts[0]!.payload as { error_code?: string }).error_code).toBe("server_restart");
+    expect(cutoff).toMatchObject({ kind: "abort", errorCode: "server_restart" });
   });
 
   it("never writes the flatten carry-over to trace (case B): synthesized carry-over is memory-only", async () => {
