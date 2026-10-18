@@ -12,10 +12,10 @@ Shortened the longest CI jobs of web and server pull requests, and spent part of
 ## CI layout
 
 - On Linux the web suite runs in two jobs, `web-1` and `web-2`, each running half of the `web`, `ui` and `cli` test files (`vitest --shard`); each uploads the coverage of its half. A full run splits the Windows `sites` shard the same way; macOS keeps one `sites` job.
-- The Windows server suite runs in four shards instead of three, its files dealt by their measured Windows durations (`packages/server/test/shard-weights.json`, refreshed by `packages/server/scripts/shard-weights.mjs` from a run's logs) instead of by a hash of their paths.
-- The server suite runs one Vitest worker per core, at most four, on Linux and macOS; Windows keeps two.
+- The Windows server suite runs in four shards instead of three, its files dealt by their measured Windows durations (`packages/server/test/shard-weights.json`, averaged over the logs of seven runs and refreshed by `packages/server/scripts/shard-weights.mjs`) instead of by a hash of their paths.
+- The server suite runs one Vitest worker per core on macOS, at most four (three on the runner); Linux and Windows keep two.
 - The typecheck job builds only what the checked packages import: their dependencies, never a site bundle (`web`, `ui-gallery`, `docs`, `landing`) nor the checked packages themselves. The web test jobs build the web's dependencies, not its bundle.
-- browser-smoke builds the server without type declarations, installs Chromium while it builds, and runs `dock.spec.mjs` and `terminal.spec.mjs` beside the existing smoke specs. The dock spec's check that the Files panel is on screen looks for the panel's Refresh button instead of a root label the panel no longer shows.
+- browser-smoke builds the server without type declarations, installs Chromium while it builds, and runs `dock.spec.mjs` (which also selects `mobile-dock.spec.mjs`) and `terminal.spec.mjs` beside the existing smoke specs. The component library's layout checks moved from browser-smoke into the Linux job that tests the gallery. The dock spec's check that the Files panel is on screen looks for the panel's Refresh button instead of a root label the panel no longer shows.
 
 ## New tests
 

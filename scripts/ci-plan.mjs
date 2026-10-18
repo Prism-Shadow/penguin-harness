@@ -155,7 +155,12 @@ export function planCI({ cwd = process.cwd(), base, full = false } = {}) {
     shard("core", core),
     shard("server", server),
     ...(webCli.includes(`${prefix}web`) ? halves("web", webCli) : [shard("web-cli", webCli)]),
-    shard("rest", linuxRest, { must_run: "sandbox-bwrap,sandbox-dsh" }),
+    // `gallery`: the component library's browser layout checks run in the job that tests the
+    // gallery, beside its unit suite, rather than lengthening browser-smoke.
+    shard("rest", linuxRest, {
+      must_run: "sandbox-bwrap,sandbox-dsh",
+      gallery: linuxRest.includes(`${prefix}ui-gallery`),
+    }),
   ].filter((s) => s.packages.length);
   // Collect coverage during the existing Linux run, never in a duplicate test job.
   // These three packages configure V8 to include untested source files as well. A split shard

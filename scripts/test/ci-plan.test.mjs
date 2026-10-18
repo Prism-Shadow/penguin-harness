@@ -12,6 +12,8 @@
  *   without the web among them, ui and cli run whole in one job.
  * - Given any typecheck, when planning CI, then its build selects the checked packages'
  *   dependencies and never a site bundle.
+ * - Given the gallery among the tested packages, when planning CI, then the one Linux job that
+ *   tests it also runs its browser layout checks; without it, no job does.
  * - Given the web's inline boot script changes, when planning CI, then UI's copy guard runs.
  * - Given a plugin without declared consumers changes, when planning CI, then catalog readers run.
  * - Given a file moves between packages, when planning CI, then both owners are checked.
@@ -282,6 +284,20 @@ describe("affected CI", { concurrency: false }, () => {
     // Desktop's shard still carries the web bundle it packs.
     const desktop = plan.linux.include.find((shard) => shard.packages.includes(name("desktop")));
     assert.ok(built(desktop.build).has(name("web")));
+  });
+
+  it("runs the gallery's layout checks in the one Linux job that tests the gallery", () => {
+    const withGallery = changed("packages/web/src/index.js");
+    assert.deepEqual(
+      withGallery.linux.include.filter((shard) => shard.gallery).map((shard) => shard.packages),
+      withGallery.linux.include
+        .filter((shard) => shard.packages.includes(name("ui-gallery")))
+        .map((shard) => shard.packages),
+    );
+    assert.equal(withGallery.linux.include.filter((shard) => shard.gallery).length, 1);
+    git("reset", "--hard", "--quiet", base);
+    const withoutGallery = changed("packages/landing/src/index.js");
+    assert.ok(!withoutGallery.linux.include.some((shard) => shard.gallery));
   });
 
   it("without the web among them, ui and cli run whole in one Linux job", () => {

@@ -5,11 +5,12 @@
  * builtin-agents landed together) against 281 and 280 for the other two.
  *
  * The weights are test/shard-weights.json: seconds per file, as the Windows shards' logs report
- * them. A stale table only unbalances the shards; it never drops or repeats a file (shard-deal.ts).
- * To refresh it from a run whose `test-windows (server-N)` jobs all passed:
+ * them, averaged over several runs. A stale table only unbalances the shards; it never drops or
+ * repeats a file (shard-deal.ts). To refresh it from runs whose `test-windows (server-N)` jobs
+ * all passed:
  *
- *   gh run view <run id> --log > run.log
- *   node packages/server/scripts/shard-weights.mjs run.log
+ *   gh run view <run id> --log > run-1.log   # and a few more runs
+ *   node packages/server/scripts/shard-weights.mjs run-1.log run-2.log run-3.log
  *
  * Ordering within a shard is vitest's own (`sort` is inherited).
  */
