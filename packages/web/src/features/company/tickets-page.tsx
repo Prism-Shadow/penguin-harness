@@ -774,7 +774,7 @@ export function TicketsPage() {
             );
           })}
         </span>
-        <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+        <label className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
           {S.company.tickets.sort}
           <Select
             size="sm"
@@ -793,7 +793,7 @@ export function TicketsPage() {
             ))}
           </Select>
         </label>
-        <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+        <label className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
           {S.company.tickets.group}
           <Select
             size="sm"
@@ -827,9 +827,15 @@ export function TicketsPage() {
         )}
       </div>
 
+      {/* A column never narrows past a readable card: with no room for five of them the board
+          scrolls sideways rather than squeezing the titles down to a few characters. */}
       <div ref={drag.boardRef} className="overflow-x-auto pb-2">
         <div
-          className={`grid gap-3 ${queueOnly ? "min-w-[36rem] grid-cols-2" : "min-w-[50rem] grid-cols-5"}`}
+          className={`grid gap-3 ${
+            queueOnly
+              ? "grid-cols-[repeat(2,minmax(20rem,1fr))]"
+              : "grid-cols-[repeat(5,minmax(15rem,1fr))]"
+          }`}
         >
           {visibleColumns === null
             ? TICKET_COLUMNS.map((status) => <ColumnSkeleton key={status} status={status} />)
@@ -853,7 +859,11 @@ export function TicketsPage() {
                 const groups =
                   groupBy === "none"
                     ? null
-                    : groupTickets(col.tickets, groupBy, { names, titles });
+                    : groupTickets(col.tickets, groupBy, {
+                        names,
+                        titles,
+                        sort,
+                      });
                 return (
                 <div
                   key={col.status}
