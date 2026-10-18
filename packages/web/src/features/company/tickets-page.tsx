@@ -795,6 +795,7 @@ export function TicketsPage() {
           {S.company.tickets.sort}
           <Select
             size="sm"
+            className="min-w-[7rem]"
             value={sort}
             aria-label={S.company.tickets.sortHint}
             onChange={(e) => {
@@ -814,6 +815,7 @@ export function TicketsPage() {
           {S.company.tickets.group}
           <Select
             size="sm"
+            className="min-w-[7rem]"
             value={groupBy}
             aria-label={S.company.tickets.group}
             onChange={(e) => {
@@ -984,7 +986,11 @@ export function TicketsPage() {
           <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
             {S.company.tickets.selectedCount(selected.size)}
           </span>
+          {/* A dropdown's panel takes the trigger's width, so a trigger left at its content
+              width ellipsises its own options down to one character. A floor on the trigger
+              is what keeps the choices readable. */}
           <Select
+            className="min-w-[8rem]"
             value={bulkTarget}
             onChange={(e) => setBulkTarget(e.target.value)}
             aria-label={S.company.tickets.bulkMoveTo}
@@ -997,6 +1003,7 @@ export function TicketsPage() {
             ))}
           </Select>
           <Select
+            className="min-w-[8rem]"
             value={bulkOwner}
             onChange={(e) => setBulkOwner(e.target.value)}
             aria-label={S.company.tickets.bulkAssignTo}
