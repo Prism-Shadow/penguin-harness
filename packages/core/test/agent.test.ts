@@ -846,6 +846,67 @@ describe("Agent.createSession fast mode (session requests only, never the meta o
   });
 });
 
+describe("Agent.createSession one-hour prompt cache (session requests only)", () => {
+  const uniConfigOf = (llm: unknown) =>
+    (llm as { uniConfig?: { prompt_caching?: string } }).uniConfig ?? {};
+
+  it("the entry's prompt_cache_1h reaches the session LLM and is withheld from the meta LLM", async () => {
+    // The annotation buys a lifetime, not a faster result, so only the conversation's own
+    // long-lived cache line benefits from it: a title one-shot has no prefix to keep warm and
+    // would pay the doubled write price for nothing.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "hour-cache-on",
+      client_type: "anthropic-official",
+      prompt_cache_1h: true,
+    });
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-hour-cache");
+    await fs.mkdir(ws, { recursive: true });
+
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      modelId: "hour-cache-on",
+      provider: "custom",
+    });
+    try {
+      await bootstrapped(session);
+      const llm = (session as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
+      expect(uniConfigOf(llm).prompt_caching).toBe("enhance");
+      const bare = (session as unknown as { createBareLLM?: () => unknown }).createBareLLM?.();
+      expect("prompt_caching" in uniConfigOf(bare)).toBe(false);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("an unannotated entry puts no prompt_caching key on the wire at all", async () => {
+    // Every OpenAI-protocol client throws on anything but `enable`, so absence is what keeps
+    // existing configs working unchanged.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "hour-cache-off",
+      client_type: "anthropic-official",
+    });
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-hour-cache-off");
+    await fs.mkdir(ws, { recursive: true });
+
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      modelId: "hour-cache-off",
+      provider: "custom",
+    });
+    try {
+      await bootstrapped(session);
+      const llm = (session as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
+      expect("prompt_caching" in uniConfigOf(llm)).toBe(false);
+    } finally {
+      session.dispose();
+    }
+  });
+});
+
 describe("Agent.createSession vault injection", () => {
   it("injects vault key names (never values) into the assembled system prompt", async () => {
     // Write the Agent vault to disk first; createSession reads that Agent's own .vault.toml.

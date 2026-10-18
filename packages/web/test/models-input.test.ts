@@ -44,6 +44,7 @@ import {
   detectedEnvKeys,
   digitsOnly,
   fastModeState,
+  promptCache1hState,
   modelLabelOf,
   priceToSubmit,
   hasKey,
@@ -340,6 +341,19 @@ describe("toRow (DTO → row edit state)", () => {
     const plain = toRow(dto({ provider: "custom", modelId: "local-qwen" }));
     expect(plain.fastMode).toBe(false);
   });
+
+  it("carries the one-hour cache annotation through; absent = the provider's default lifetime", () => {
+    const hour = toRow(
+      dto({
+        provider: "custom",
+        modelId: "claude-proxy",
+        promptCache1h: true,
+      }),
+    );
+    expect(hour.promptCache1h).toBe(true);
+    const plain = toRow(dto({ provider: "custom", modelId: "claude-proxy" }));
+    expect(plain.promptCache1h).toBe(false);
+  });
 });
 
 describe("nextPointers (where the default/vision-agent model pointers land after save; always paired)", () => {
@@ -576,34 +590,112 @@ describe("fastModeState (whether the dialog offers the fast-mode switch, and on 
   });
 });
 
-describe("capabilityRow (vision support + fast mode sharing one row)", () => {
-  it("splits the row into two half-width cells when both switches are there", () => {
-    expect(capabilityRow({ vision: true, fastMode: true })).toEqual({
+describe("capabilityRow (vision support and the two per-model request switches sharing one row)", () => {
+  it("splits an even count into half-width cells", () => {
+    expect(capabilityRow({ vision: true, fastMode: true, promptCache1h: false })).toEqual({
       show: true,
-      cellClass: undefined,
+      last: "fastMode",
+      lastCellClass: undefined,
+    });
+    expect(capabilityRow({ vision: false, fastMode: true, promptCache1h: true })).toEqual({
+      show: true,
+      last: "promptCache1h",
+      lastCellClass: undefined,
     });
   });
 
-  it("gives a lone switch the full width, in either direction", () => {
-    // The pair is a coincidence, not an invariant. Fast mode is withheld for every model
-    // whose routed client rejects the parameter (the common case), and the vision switch has
-    // to keep rendering on its own — full width, not squeezed into half a row beside a hole.
-    expect(capabilityRow({ vision: true, fastMode: false })).toEqual({
+  it("gives an odd count's last cell the full width", () => {
+    // Which switches exist is a coincidence, not an invariant: fast mode is withheld for every
+    // model whose routed client rejects it (the common case), the one-hour cache only exists on
+    // some, and a preset model has no vision switch at all. With an odd count the last cell
+    // takes full width, not squeezed into half a row beside a hole.
+    expect(capabilityRow({ vision: true, fastMode: false, promptCache1h: false })).toEqual({
       show: true,
-      cellClass: "col-span-2",
+      last: "vision",
+      lastCellClass: "col-span-2",
     });
-    // The mirror image: a preset model annotated by the catalog shows no vision switch, so
-    // fast mode is alone.
-    expect(capabilityRow({ vision: false, fastMode: true })).toEqual({
+    expect(capabilityRow({ vision: false, fastMode: true, promptCache1h: false })).toEqual({
       show: true,
-      cellClass: "col-span-2",
+      last: "fastMode",
+      lastCellClass: "col-span-2",
+    });
+    // All three visible: `last` names the only cell the class may go on. Applying it to every
+    // cell would stack three full-width rows instead of two cells and one.
+    expect(capabilityRow({ vision: true, fastMode: true, promptCache1h: true })).toEqual({
+      show: true,
+      last: "promptCache1h",
+      lastCellClass: "col-span-2",
     });
   });
 
-  it("drops the row entirely when neither switch is there", () => {
-    // A preset model whose client rejects fast mode has no capability switches at all: the
-    // grid must not render, or the dialog's space-y would draw a gap around an empty box.
-    expect(capabilityRow({ vision: false, fastMode: false }).show).toBe(false);
+  it("drops the row entirely when no switch is there", () => {
+    // A preset model whose client rejects both request parameters has no capability switches
+    // at all: the grid must not render, or the dialog's space-y would draw a gap around an
+    // empty box.
+    expect(capabilityRow({ vision: false, fastMode: false, promptCache1h: false })).toEqual({
+      show: false,
+      last: undefined,
+      lastCellClass: undefined,
+    });
+  });
+});
+
+describe("promptCache1hState (whether the dialog offers the one-hour cache switch)", () => {
+  const draft = (partial: {
+    modelId: string;
+    provider?: string;
+    clientType?: string;
+    promptCache1h?: boolean;
+  }) => ({
+    provider: partial.provider ?? "anthropic",
+    modelId: partial.modelId,
+    clientType: partial.clientType ?? "",
+    promptCache1h: partial.promptCache1h ?? false,
+  });
+
+  it("offers it where the routed client is Anthropic's official one", () => {
+    expect(promptCache1hState(draft({ modelId: "claude-sonnet-4-6" }))).toEqual({
+      supported: true,
+      show: true,
+    });
+    // An explicit pin is what decides, not the vendor family the id begins with.
+    expect(
+      promptCache1hState(
+        draft({ provider: "custom", modelId: "my-model", clientType: "anthropic-official" }),
+      ),
+    ).toEqual({ supported: true, show: true });
+  });
+
+  it("withholds it on every other client, including the Anthropic wire without the official client", () => {
+    for (const modelId of ["glm-5.2", "kimi-k3", "deepseek-v4-pro", "gpt-5.5"]) {
+      expect(promptCache1hState(draft({ modelId })), modelId).toEqual({
+        supported: false,
+        show: false,
+      });
+    }
+    // Same wire protocol, different client: MMSP's `ant-messages` refuses anything but ENABLE
+    // before any network I/O, so the switch would only produce a failing turn.
+    expect(
+      promptCache1hState(
+        draft({ provider: "custom", modelId: "my-model", clientType: "ant-messages" }),
+      ),
+    ).toEqual({ supported: false, show: false });
+  });
+
+  it("keeps the switch on a row that already stores the annotation, so it can be turned off", () => {
+    const stranded = promptCache1hState(draft({ modelId: "glm-5.2", promptCache1h: true }));
+    expect(stranded.show).toBe(true);
+    // `supported` stays false, which is what raises the "cannot carry it" line.
+    expect(stranded.supported).toBe(false);
+  });
+
+  it("follows the draft as it is typed: an unsaved protocol change flips the answer", () => {
+    expect(
+      promptCache1hState(draft({ modelId: "claude-sonnet-4-6", clientType: "openai-chat" })).show,
+    ).toBe(false);
+    expect(
+      promptCache1hState(draft({ modelId: "claude-sonnet-4-6", clientType: "  " })).supported,
+    ).toBe(true);
   });
 });
 

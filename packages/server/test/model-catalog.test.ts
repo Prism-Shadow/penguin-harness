@@ -35,6 +35,7 @@ import {
   catalogModelEntries,
   effectivePricing,
   fastModeProtocol,
+  promptCache1hSupported,
   isAddableGroup,
   isVendorGroup,
   modelEnvPreviewKey,
@@ -1999,6 +2000,58 @@ describe("fastModeProtocol (which models may be offered MMSP's fast_mode, and on
     expect(verdictOf("google", "gemini-3.8-flash")).toBe("openai");
     // The relay's Gemini rows speak generateContent, which has no priority tier.
     expect(verdictOf("penguin-go", "gemini-3.8-flash")).toBeUndefined();
+  });
+});
+
+describe("promptCache1hSupported (which models may be offered the one-hour prompt cache)", () => {
+  it("offers it only where the Claude client carries the value", () => {
+    // `prompt_caching: "enhance"` is read by anthropic-official alone, whether the id routes
+    // there or the row pins it.
+    expect(promptCache1hSupported("claude-sonnet-4-6")).toBe(true);
+    expect(promptCache1hSupported("claude-opus-5-5")).toBe(true);
+    expect(promptCache1hSupported("claude-haiku-5-5")).toBe(true);
+    expect(promptCache1hSupported("my-claude-proxy", "anthropic-official")).toBe(true);
+    // Bedrock: MMSP attaches ttl 1h to the last user message there, so the pin still carries it.
+    // (The base URL is deliberately not an input: this asks about the client, not the tier.)
+    expect(promptCache1hSupported("claude-fable-5")).toBe(true);
+  });
+
+  it("refuses every client that accepts ENABLE alone, and every unroutable id", () => {
+    // The compatible Messages client is the near miss: same wire protocol, but it throws on
+    // anything but `enable`, so it gets no toggle.
+    expect(promptCache1hSupported("some-proxy-id", "ant-messages")).toBe(false);
+    // The OpenAI protocols name ENABLE in their own rejection message.
+    expect(promptCache1hSupported("gpt-5.6", "openai-responses")).toBe(false);
+    expect(promptCache1hSupported("gpt-5.6", "openai-chat")).toBe(false);
+    expect(promptCache1hSupported("gpt-5.6")).toBe(false);
+    expect(promptCache1hSupported("claude-sonnet-4-6", "openai")).toBe(false);
+    // Gemini, MiniMax (automatic cache, refuses `enhance` alone), Z.AI, Moonshot, DeepSeek.
+    expect(promptCache1hSupported("gemini-3.8-flash", "google-genai")).toBe(false);
+    expect(promptCache1hSupported("MiniMax-M3")).toBe(false);
+    expect(promptCache1hSupported("glm-5.2")).toBe(false);
+    expect(promptCache1hSupported("kimi-k3")).toBe(false);
+    expect(promptCache1hSupported("deepseek-v4-pro")).toBe(false);
+    // An MMSP server forwards the config to an upstream the harness cannot promise for.
+    expect(promptCache1hSupported("gpt-5.6", "mmsp")).toBe(false);
+    // An id MMSP cannot route has no client at all.
+    expect(promptCache1hSupported("totally-unknown-model")).toBe(false);
+  });
+
+  it("catalog invariant: no non-Anthropic row claims the hour", () => {
+    for (const m of MODEL_CATALOG) {
+      const expected = routedClientType(m.modelId, m.clientType) === "anthropic-official";
+      expect(promptCache1hSupported(m.modelId, m.clientType), `${m.provider}/${m.modelId}`).toBe(
+        expected,
+      );
+    }
+    // The direct Anthropic rows are the ones that currently claim it.
+    expect(catalogEntryFor("anthropic", "claude-fable-5")).toBeDefined();
+    expect(
+      promptCache1hSupported(
+        catalogEntryFor("anthropic", "claude-fable-5")!.modelId,
+        catalogEntryFor("anthropic", "claude-fable-5")!.clientType,
+      ),
+    ).toBe(true);
   });
 });
 

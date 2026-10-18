@@ -2,7 +2,7 @@
  * `penguin config` — manages a Project's models, its groups' connections, the default model,
  * Agent-level vault environment variables, and UI language.
  *
- *   penguin config model add --provider <group> --model-id <upstream id> [--api-key <key> | --clear-api-key] [--base-url <url> | --clear-base-url] [--client-type <type> | --clear-client-type] [--context-window <n>] [--max-tokens <n>] [--vision | --no-vision] [--fast-mode | --no-fast-mode] [--price-cache-read <n>] [--price-cache-write <n>] [--price-output <n>] [--set-default] [--project-id <id>] [--root <dir>]
+ *   penguin config model add --provider <group> --model-id <upstream id> [--api-key <key> | --clear-api-key] [--base-url <url> | --clear-base-url] [--client-type <type> | --clear-client-type] [--context-window <n>] [--max-tokens <n>] [--vision | --no-vision] [--fast-mode | --no-fast-mode] [--prompt-cache-1h | --no-prompt-cache-1h] [--price-cache-read <n>] [--price-cache-write <n>] [--price-output <n>] [--set-default] [--project-id <id>] [--root <dir>]
  *   penguin config model add --provider <group> [--api-key <key> | --clear-api-key] [--base-url <url> | --clear-base-url] [--client-type <type> | --clear-client-type] [--project-id <id>] [--root <dir>]
  *   penguin config model default --provider <group> --model-id <upstream id> [--project-id <id>] [--root <dir>]
  *   penguin config model vision --provider <group> --model-id <upstream id> [--project-id <id>] [--root <dir>]
@@ -82,6 +82,7 @@ import {
   fixedClientType,
   fixedClientTypeRefuses,
   modelEnvPreviewKey,
+  promptCache1hSupported,
   providerInfo,
   unaddableModel,
   unroutableVendorModel,
@@ -293,6 +294,7 @@ async function addGroupConnection(
     maxTokens?: number;
     vision?: boolean;
     fastMode?: boolean;
+    promptCache1h?: boolean;
     priceCacheRead?: number;
     priceCacheWrite?: number;
     priceOutput?: number;
@@ -307,6 +309,7 @@ async function addGroupConnection(
     opts.maxTokens !== undefined ||
     opts.vision !== undefined ||
     opts.fastMode !== undefined ||
+    opts.promptCache1h !== undefined ||
     opts.priceCacheRead !== undefined ||
     opts.priceCacheWrite !== undefined ||
     opts.priceOutput !== undefined ||
@@ -431,6 +434,9 @@ export function registerConfigCommand(program: Command, t: Messages): void {
     // Tri-state like --vision: --fast-mode enables it / --no-fast-mode clears it / neither keeps the existing value (defaults to off; only `true` is persisted).
     .option("--fast-mode", t.config.addFastMode)
     .option("--no-fast-mode", t.config.addNoFastMode)
+    // Tri-state like --fast-mode: --prompt-cache-1h asks for the hour / --no-prompt-cache-1h returns to the provider's default / neither keeps the existing value.
+    .option("--prompt-cache-1h", t.config.addPromptCache1h)
+    .option("--no-prompt-cache-1h", t.config.addNoPromptCache1h)
     .option("--price-cache-read <n>", t.config.addPriceCacheRead, parseFloatArg)
     .option("--price-cache-write <n>", t.config.addPriceCacheWrite, parseFloatArg)
     .option("--price-output <n>", t.config.addPriceOutput, parseFloatArg)
@@ -544,6 +550,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
           ...(clientType !== undefined ? { client_type: clientType } : {}),
           ...(opts.vision !== undefined ? { vision: opts.vision } : {}),
           ...(opts.fastMode !== undefined ? { fast_mode: opts.fastMode } : {}),
+          ...(opts.promptCache1h !== undefined ? { prompt_cache_1h: opts.promptCache1h } : {}),
           ...(Object.keys(pricing).length > 0 ? { pricing } : {}),
           ...(patch.api_key !== undefined ? { api_key: patch.api_key } : {}),
           ...(patch.base_url !== undefined ? { base_url: patch.base_url } : {}),
@@ -562,20 +569,32 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       // endpoint whose capability we cannot see from here (see fastModeProtocol). Judged on the
       // protocol and endpoint the entry is used with, which may be its group's.
       const saved = getModel(cfg, ref);
-      if (opts.fastMode === true && saved !== undefined) {
-        const effective = effectiveConnection(
-          {
-            provider: saved.provider,
-            modelId: saved.model_id,
-            clientType: saved.client_type,
-            baseUrl: saved.base_url,
-          },
-          providerConnectionShape(cfg.providers?.[saved.provider]),
-        );
+      const effective =
+        saved === undefined
+          ? undefined
+          : effectiveConnection(
+              {
+                provider: saved.provider,
+                modelId: saved.model_id,
+                clientType: saved.client_type,
+                baseUrl: saved.base_url,
+              },
+              providerConnectionShape(cfg.providers?.[saved.provider]),
+            );
+      if (opts.fastMode === true && saved !== undefined && effective !== undefined) {
         if (
           fastModeProtocol(saved.model_id, effective.clientType, effective.baseUrl) === undefined
         ) {
           process.stderr.write(`${t.config.fastModeUnsupported(formatModelRef(ref))}\n`);
+        }
+      }
+      // The one-hour cache has a narrower gate: only the Anthropic official client carries the
+      // value, and every other client rejects the parameter before any network I/O. Judged on
+      // the same effective protocol, and a warning for the same reason: a gateway row's
+      // routing is not visible from here.
+      if (opts.promptCache1h === true && saved !== undefined && effective !== undefined) {
+        if (!promptCache1hSupported(saved.model_id, effective.clientType)) {
+          process.stderr.write(`${t.config.promptCache1hUnsupported(formatModelRef(ref))}\n`);
         }
       }
     });

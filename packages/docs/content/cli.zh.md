@@ -705,6 +705,7 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 | `--max-tokens <n>` | 这个模型的最大输出 Token 数，必须是正整数。设置后会覆盖 Agent 的 `model.max_tokens`；小上下文模型应调低此值。 | Agent 的 `model.max_tokens` |
 | `--vision` / `--no-vision` | 标记是否支持图片输入。 | 保持当前值 |
 | `--fast-mode` / `--no-fast-mode` | 开启或关闭快速模式（输出更快，价格更高）。 | 关闭；两个都不写则保持当前值 |
+| `--prompt-cache-1h` / `--no-prompt-cache-1h` | 申请一小时提示缓存（写入更贵，读取能撑过更长的间隔），或关闭它。 | 关闭；两个都不写则保持当前值 |
 | `--price-cache-read <n>` | 缓存读取价格，单位为美元每百万 Token。 | — |
 | `--price-cache-write <n>` | 缓存写入价格，单位为美元每百万 Token。 | — |
 | `--price-output <n>` | 输出价格，单位为美元每百万 Token。 | — |
@@ -716,11 +717,12 @@ penguin config model add --provider vllm --base-url http://10.0.0.5:8000/v1 --cl
 - 只有 `custom`、`vllm`、`openrouter`、`tokendance`、`siliconflow`、`atlascloud` 和用户自定义分组可以手动添加模型。其余内置分组里，新条目必须是该分组在模型目录里的条目，否则以「无法添加」拒绝，与模型库页面及其 API 的规则一致。分组里已有的条目照常更新。
 - `penguin-go` 的协议固定为 `mmsp`，与模型库页面及其 API 一致：传入其他 `--client-type` 会被拒绝，除非它就是该条目或分组已存的值；对分组使用 `--clear-client-type` 同样被拒绝。
 - 如果模型的 MMSP 客户端不接受这个参数，开启 `--fast-mode` 仍会写入条目，但会在 stderr 上打印警告。
+- 对没有路由到 MMSP `anthropic-official` 客户端的模型，`--prompt-cache-1h` 同样如此：条目照常写入，警告会指向 `--no-prompt-cache-1h`。
 - 两种形式下，没有指定的项都保持不变；每一对设置 / 清除选项互斥；取值为空会被拒绝，清除请用对应的 `--clear-*` 选项。
 
 不带 `--model-id` 时：
 
-- 只描述单个模型的选项——`--context-window`、`--max-tokens`、`--vision`、`--fast-mode`、各 `--price-*` 选项与 `--set-default`——会被拒绝，什么也不写入。一个连接字段都没指定的调用同样被拒绝。
+- 只描述单个模型的选项——`--context-window`、`--max-tokens`、`--vision`、`--fast-mode`、`--prompt-cache-1h`、各 `--price-*` 选项与 `--set-default`——会被拒绝，什么也不写入。一个连接字段都没指定的调用同样被拒绝。
 - 除 `penguin-go` 外，每个分组都可以设置协议：模型自己的 `client_type` 优先于分组的，因此 OpenCode Go 的模型保留各自的协议。
 - 分组密钥只借给访问分组端点的模型：没有自己的 base URL，或自己的 base URL 与分组的同 origin（scheme、host、port）。
 - 命令会报告组内有多少模型不受改动影响（自己设置了对应项，或分组密钥借不到它们），并在用户自定义分组还没有模型时给出提示。

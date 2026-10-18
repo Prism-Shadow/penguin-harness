@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import type { UniConfig } from "@prismshadow/mmsp";
 import {
   DEFAULT_TTL_MS,
+  ENHANCED_TTL_MS,
   PromptCacheSim,
   fixedPrefixTokens,
   positionCount,
@@ -226,10 +227,12 @@ describe("prompt-cache simulator", () => {
     const sim = openSim();
     const first = request({ messages: OPENING });
     sim.request(first);
-    // A different output cap and a different breakpoint spelling: same cached prefix.
+    // A different output cap, and a breakpoint marker written in a different but still
+    // five-minute spelling: the same cached prefix. (A one-hour marker would NOT read this
+    // entry — the two lifetimes are separate caches; see the TTL cases below.)
     const relaxed = request({ messages: OPENING });
     relaxed.wireConfig.max_tokens = 8000;
-    relaxed.wireConfig.cache_control = { type: "ephemeral", ttl: "1h" };
+    relaxed.wireConfig.cache_control = { type: "ephemeral" };
     expect(sim.request(relaxed).cache_read_input_tokens).toBe(prefixTokens(first));
   });
 
@@ -291,6 +294,40 @@ describe("prompt-cache simulator", () => {
     const cold = sim.request(request({ messages: OPENING }));
     expect(cold.cache_read_input_tokens).toBe(0);
     expect(cold.cache_creation_input_tokens).toBe(prefixTokens(opening));
+  });
+
+  it("keeps an entry a request asked one hour for, and a plain request does not read it", () => {
+    // What MMSP's `prompt_caching: "enhance"` sends: the same ephemeral marker with `ttl: "1h"`.
+    const enhanced = (spec: RequestSpec = {}): RecordedRequest => {
+      const req = request(spec);
+      req.wireConfig.cache_control = { type: "ephemeral", ttl: "1h" };
+      return req;
+    };
+    let clock = 1_000_000;
+    const sim = openSim({ now: () => clock });
+
+    // Ten minutes — twice the default lifetime, a fifth of the enhanced one.
+    const opening = enhanced({ messages: OPENING });
+    sim.request(opening);
+    clock += 10 * 60 * 1000;
+    expect(sim.request(enhanced({ messages: OPENING })).cache_read_input_tokens).toBe(
+      prefixTokens(opening),
+    );
+
+    // The same prefix asked for under the default lifetime is a different cache, even though
+    // the entry written a moment ago is still live: the annotation is not a hint the provider
+    // is free to read across, so switching it on (or off) costs one full write.
+    const plain = sim.request(request({ messages: OPENING }));
+    expect(plain.cache_read_input_tokens).toBe(0);
+    expect(plain.cache_creation_input_tokens).toBe(prefixTokens(opening));
+    // And that plain write does not become readable by the next enhanced request either.
+    expect(sim.request(enhanced({ messages: OPENING })).cache_read_input_tokens).toBe(
+      prefixTokens(opening),
+    );
+
+    // Past the hour, the enhanced entry is gone as well.
+    clock += ENHANCED_TTL_MS + 1;
+    expect(sim.request(enhanced({ messages: OPENING })).cache_read_input_tokens).toBe(0);
   });
 
   it("checks twenty positions per breakpoint, the breakpoint counting as the first", () => {

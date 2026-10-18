@@ -685,6 +685,94 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(quiet.err).toBe("");
   });
 
+  it("--prompt-cache-1h round-trips as prompt_cache_1h=true; --no-prompt-cache-1h clears it; neither keeps current", async () => {
+    const entryOf = async () => {
+      const parsed = parseToml(
+        await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
+      ) as { models: Array<Record<string, unknown>> };
+      return parsed.models.find((m) => m.provider === "custom" && m.model_id === "hour-1");
+    };
+    const add = await runModel([
+      "add",
+      "--model-id",
+      "hour-1",
+      "--provider",
+      "custom",
+      "--client-type",
+      "anthropic-official",
+      "--base-url",
+      "https://api.anthropic.com",
+      "--prompt-cache-1h",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(add.code).toBe(0);
+    expect(add.err).toBe("");
+    expect((await entryOf())?.prompt_cache_1h).toBe(true);
+
+    // Upsert without either flag keeps the annotation (same merge policy as --fast-mode).
+    const keep = await runModel([
+      "add",
+      "--model-id",
+      "hour-1",
+      "--provider",
+      "custom",
+      "--context-window",
+      "200000",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(keep.code).toBe(0);
+    expect((await entryOf())?.prompt_cache_1h).toBe(true);
+
+    // --no-prompt-cache-1h clears it entirely: absent is the provider's default lifetime, so
+    // no `prompt_cache_1h = false` is written either.
+    const off = await runModel([
+      "add",
+      "--model-id",
+      "hour-1",
+      "--provider",
+      "custom",
+      "--no-prompt-cache-1h",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(off.code).toBe(0);
+    expect("prompt_cache_1h" in ((await entryOf()) ?? {})).toBe(false);
+  });
+
+  it("--prompt-cache-1h on a model whose client rejects it warns on stderr but still writes", async () => {
+    // Only the Anthropic official client carries the hour; every other client throws before
+    // any network I/O. A warning rather than a refusal for the same reason as --fast-mode:
+    // the effective protocol of a gateway row is not visible from the CLI.
+    const warned = await runModel([
+      "add",
+      "--model-id",
+      "glm-5.3",
+      "--provider",
+      "tokendance",
+      "--prompt-cache-1h",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(warned.code).toBe(0);
+    expect(warned.err).toContain("cannot carry the one-hour prompt cache");
+    expect(warned.err).toContain("--no-prompt-cache-1h");
+
+    const quiet = await runModel([
+      "add",
+      "--model-id",
+      "claude-sonnet-4-6",
+      "--provider",
+      "anthropic",
+      "--prompt-cache-1h",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(quiet.code).toBe(0);
+    expect(quiet.err).toBe("");
+  });
+
   it("model default sets the default model under the --root data root (--model-id upstream id + --provider as a pair)", async () => {
     const set = await runModel([
       "default",

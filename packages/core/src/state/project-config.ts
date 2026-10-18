@@ -125,6 +125,19 @@ export interface ModelEntry {
    * builtin catalog.
    */
   fast_mode?: boolean;
+  /**
+   * Per-model one-hour prompt cache (MMSP UniConfig `prompt_caching: "enhance"`): keeps this
+   * model's cached request prefix alive for an hour instead of the provider's default five
+   * minutes. Only `true` is ever persisted; absent = the default lifetime. A provider bills a
+   * one-hour write at twice the base input price (a five-minute write is 1.25×) while a read
+   * is a tenth either way, so the annotation pays for itself on a model whose Session waits
+   * more than five minutes between requests — a long tool run, a background command, a
+   * conversation resumed after a break. Only Claude's official client carries the parameter;
+   * the others reject it (MMSP raises UnsupportedParameterError), which ends the request with
+   * a clear non-retried failure (see llm/generative-model.ts). User-only, never preset by the
+   * builtin catalog.
+   */
+  prompt_cache_1h?: boolean;
   /** Pricing info; absent means this Model's cost isn't counted. */
   pricing?: ModelPricing;
   /**
@@ -942,6 +955,8 @@ export async function addModel(
     max_tokens?: number;
     /** Per-model fast mode; keeps the existing value by default. Only `true` is persisted: an explicit `false` clears the annotation (absent = off). */
     fast_mode?: boolean;
+    /** Per-model one-hour prompt cache; keeps the existing value by default. Only `true` is persisted: an explicit `false` clears the annotation (absent = the provider's five-minute default). */
+    prompt_cache_1h?: boolean;
     /** Price input may cover only some buckets; merged and written as a complete `ModelPricing`. */
     pricing?: Partial<ModelPricing>;
     /** The row's own key; `null` or blank clears it (with its `created_at`), omitted keeps it. */
@@ -990,6 +1005,12 @@ export async function addModel(
   const fastMode = entry.fast_mode ?? existing?.fast_mode;
   if (fastMode === true) {
     modelEntry.fast_mode = true;
+  }
+  // The same rule for the one-hour cache: absent is the provider's default lifetime, so a
+  // hand-edited `false` normalizes to absent instead of being written back.
+  const promptCache1h = entry.prompt_cache_1h ?? existing?.prompt_cache_1h;
+  if (promptCache1h === true) {
+    modelEntry.prompt_cache_1h = true;
   }
   // The three price buckets are merged field by field: an unspecified bucket keeps its existing
   // value (the same policy as context_window/credential); the unit is fixed to usd_per_mtok, and

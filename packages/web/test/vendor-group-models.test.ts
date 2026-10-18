@@ -40,6 +40,7 @@ const row = (patch: Partial<RowState>): RowState => ({
   contextWindow: "128000",
   maxTokens: "",
   fastMode: false,
+  promptCache1h: false,
   clientType: "",
   cacheRead: "",
   cacheWrite: "",

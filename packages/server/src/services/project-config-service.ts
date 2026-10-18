@@ -1350,6 +1350,9 @@ export class ProjectConfigService implements ProjectConfigStore {
     // serving tier sessions would use, so a model rejecting fast_mode fails the test with
     // the actionable message before the config is saved.
     const fastMode = req.fastMode ?? entry.fast_mode === true;
+    // The one-hour cache follows the draft the same way, so a client that cannot carry the hour
+    // is caught by the test rather than by the first session after saving.
+    const promptCache1h = req.promptCache1h ?? entry.prompt_cache_1h === true;
 
     const startedAt = Date.now();
     try {
@@ -1377,6 +1380,7 @@ export class ProjectConfigService implements ProjectConfigStore {
         ),
         ...(clientType ? { clientType } : {}),
         ...(fastMode ? { fastMode: true } : {}),
+        ...(promptCache1h ? { promptCache1h: true } : {}),
         tools: [],
         // The lowest real level, not "none": several reasoning endpoints reject a request
         // that disables thinking outright, and a probe must not fail on the knob it sends.
@@ -1577,6 +1581,8 @@ export class ProjectConfigService implements ProjectConfigStore {
         const maxTokens = optNum(m.max_tokens);
         // Fast mode: TOML annotation only (user-owned); only `true` is reported — absent = off.
         const fastMode = m.fast_mode === true ? true : undefined;
+        // The one-hour cache annotation, under the same rule: only `true` is reported.
+        const promptCache1h = m.prompt_cache_1h === true ? true : undefined;
         // Display name: the explicit TOML field (user-edited) takes priority, then the built-in
         // catalog's label (a name, never sent anywhere). An empty string is not the same as an
         // absent field — absent means "inherit whatever the catalog calls this model", empty
@@ -1630,6 +1636,7 @@ export class ProjectConfigService implements ProjectConfigStore {
           ...(vision !== undefined ? { vision } : {}),
           ...(maxTokens !== undefined ? { maxTokens } : {}),
           ...(fastMode !== undefined ? { fastMode } : {}),
+          ...(promptCache1h !== undefined ? { promptCache1h } : {}),
           ...(envKey ? { envKey } : {}),
           ...(envKeyMasked !== undefined ? { envKeyMasked } : {}),
           ...(pricingDto ? { pricing: pricingDto } : {}),
@@ -1872,6 +1879,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       delete next.vision;
       delete next.max_tokens;
       delete next.fast_mode;
+      delete next.prompt_cache_1h;
       delete next.pricing;
       delete next.display_name;
       // Leftover key from the old concatenated format (request_model_id): defensively stripped, never written to disk again.
@@ -1906,6 +1914,8 @@ export class ProjectConfigService implements ProjectConfigStore {
       if (entry.maxTokens !== undefined) next.max_tokens = entry.maxTokens;
       // Off by default: only `true` is written to disk (absent = off); omitted or false clears the annotation.
       if (entry.fastMode === true) next.fast_mode = true;
+      // The same rule for the one-hour cache: absent is the provider's default lifetime.
+      if (entry.promptCache1h === true) next.prompt_cache_1h = true;
       if (entry.pricing !== undefined) {
         next.pricing = {
           unit: "usd_per_mtok",

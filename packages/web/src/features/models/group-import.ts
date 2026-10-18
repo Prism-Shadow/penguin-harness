@@ -62,6 +62,7 @@ function importedRow(provider: string, modelId: string): RowState {
     contextWindow: "",
     maxTokens: "",
     fastMode: false,
+    promptCache1h: false,
     clientType: "",
     cacheRead: "",
     cacheWrite: "",

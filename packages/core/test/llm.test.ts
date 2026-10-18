@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   EmptyResponseError,
   StreamProtocolError,
+  PromptCaching,
   ThinkingLevel,
   ToolCallArgumentParseError,
   UnsupportedParameterError,
@@ -36,10 +37,12 @@ import {
   buildUniConfig,
   isAuthenticationError,
   isFastModeUnsupportedError,
+  isPromptCachingUnsupportedError,
   isUnusableResponseError,
   isFatalProviderRejection,
   isRateLimitError,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
+  PROMPT_CACHE_1H_UNSUPPORTED_GUIDANCE,
   mapThinkingLevel,
   mergeOmniToUniMessage,
   stripToolCallIdSuffix,
@@ -888,6 +891,17 @@ describe("config helpers", () => {
     expect("fast_mode" in unset).toBe(false);
   });
 
+  it("sets prompt_caching to enhance only when the one-hour cache is enabled", () => {
+    // Enabled: the entry's prompt_cache_1h annotation reaches the wire as MMSP's ENHANCE.
+    const on = buildUniConfig({ modelId: "m", tools: [], promptCache1h: true });
+    expect(on.prompt_caching).toBe(PromptCaching.ENHANCE);
+    // Absent key, not `enable`: every non-Claude client throws on anything but ENABLE, and
+    // every Claude client already caches by default, so the harness never sends a value.
+    const off = buildUniConfig({ modelId: "m", tools: [], promptCache1h: false });
+    expect("prompt_caching" in off).toBe(false);
+    expect("prompt_caching" in buildUniConfig({ modelId: "m", tools: [] })).toBe(false);
+  });
+
   it("always asks for thought summaries (they keep a reasoning phase on the wire)", () => {
     // Unconditional, unlike fast_mode: no client rejects the flag — MMSP maps it where the
     // provider has one and drops it where it doesn't. Beyond showing the user the reasoning,
@@ -1044,6 +1058,45 @@ describe("isFastModeUnsupportedError (fast_mode rejected by a model without a fa
     expect(isFastModeUnsupportedError(new Error("model does not support fast mode"))).toBe(false);
     expect(isFastModeUnsupportedError({ status: 400 })).toBe(false);
     expect(isFastModeUnsupportedError(null)).toBe(false);
+  });
+});
+
+describe("isPromptCachingUnsupportedError (prompt_caching rejected by a client)", () => {
+  const cachingError = () =>
+    new UnsupportedParameterError({
+      client: "OpenAiChatClient",
+      parameter: "prompt_caching",
+      message: "prompt_caching must be ENABLE for OpenAI.",
+    });
+
+  it("detects MMSP's UnsupportedParameterError for prompt_caching, including the cause chain", () => {
+    expect(isPromptCachingUnsupportedError(cachingError())).toBe(true);
+    expect(
+      isPromptCachingUnsupportedError(new Error("request failed", { cause: cachingError() })),
+    ).toBe(true);
+    expect(
+      isPromptCachingUnsupportedError({
+        name: "UnsupportedParameterError",
+        parameter: "prompt_caching",
+        message: "prompt_caching must be ENABLE for Gemini.",
+      }),
+    ).toBe(true);
+  });
+
+  it("stays scoped to prompt_caching: fast_mode's rejection is a different switch", () => {
+    // The two have to stay apart: the fast-mode branch runs first and would explain a
+    // prompt_caching rejection with the wrong setting if either detector widened.
+    expect(
+      isPromptCachingUnsupportedError(
+        new UnsupportedParameterError({
+          client: "MoonshotOfficialClient",
+          parameter: "fast_mode",
+          message: "Kimi does not support fast mode.",
+        }),
+      ),
+    ).toBe(false);
+    expect(isPromptCachingUnsupportedError(new Error("prompt_caching must be ENABLE"))).toBe(false);
+    expect(isPromptCachingUnsupportedError(null)).toBe(false);
   });
 });
 
@@ -1707,6 +1760,50 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     // explain — it carries no HTTP status, so it stays retryable and rides the engine's
     // ladder.
     const model2 = new FastSeamModel(false);
+    const { outcome: outcome2 } = await drain(
+      model2.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome2.status).toBe("retryable");
+  });
+
+  it("marks a one-hour-cache rejection as fatal with actionable guidance (guarded on its own config)", async () => {
+    // What an OpenAI-protocol client does with `prompt_caching: "enhance"`: MMSP throws
+    // before any network I/O. Deterministic for this object's frozen config, so fatal.
+    async function* promptCachingRejected(): AsyncGenerator<UniEvent> {
+      throw new UnsupportedParameterError({
+        client: "OpenAiResponsesClient",
+        parameter: "prompt_caching",
+        message: "prompt_caching must be ENABLE for the Responses API.",
+      });
+    }
+    class CacheSeamModel extends GenerativeModel {
+      constructor(promptCache1h: boolean) {
+        super({
+          modelId: "some-model",
+          clientType: "openai-chat",
+          tools: [],
+          promptCache1h,
+          requestTimeoutMs: 10000,
+          apiKey: "test-key-not-used",
+        });
+      }
+      protected override openStream(): AsyncIterable<UniEvent> {
+        return promptCachingRejected();
+      }
+    }
+    const model = new CacheSeamModel(true);
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome.status).toBe("fatal");
+    // MMSP's own sentence is kept, and the harness says where the switch lives.
+    expect(outcome.errorMessage).toContain("prompt_caching must be ENABLE");
+    expect(outcome.errorMessage).toContain(PROMPT_CACHE_1H_UNSUPPORTED_GUIDANCE);
+    expect(messages.map(typeOf)).not.toContain("token_usage");
+
+    // Guard: a rejection on a config that never asked for the hour keeps the default
+    // classification, exactly like its fast-mode sibling.
+    const model2 = new CacheSeamModel(false);
     const { outcome: outcome2 } = await drain(
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );

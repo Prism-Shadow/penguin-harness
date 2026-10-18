@@ -2297,6 +2297,13 @@ export const zh = {
       "Anthropic 的快速模式目前是限量的 research preview：在你的组织获得授权之前，请求会返回 429 限流错误。",
     /** Badge on a model row whose fast mode is on: a standing premium-billing choice should be visible without opening the dialog. */
     fastModeBadge: "快速",
+    /** Switch label for the per-model one-hour prompt cache; only rendered where the routed client can carry it. */
+    promptCache1h: "一小时缓存",
+    /** Shown while the one-hour cache switch is ON (and as the label's hover title): what it changes about the provider's cache lifetime. */
+    promptCache1hHint:
+      "会话的缓存前缀保留一小时（默认五分钟），缓存写入按更高单价计费；隔一段时间回来仍从缓存读取，不必重新付费",
+    /** Amber line under an ON switch on a model whose client rejects the parameter: the switch stays visible only so it can be turned off. */
+    promptCache1hUnsupported: "该模型无法使用一小时缓存，请关闭，否则请求会失败",
     visionBadge: "视觉",
     /** Light-yellow badge on zero-cost models (all three price buckets 0, e.g. the :free variants and openrouter/free). */
     freeBadge: "免费",

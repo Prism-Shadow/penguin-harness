@@ -152,6 +152,7 @@ interface GenerativeModelConfig {
   contextWindow?: number;
   maxTokens?: number;
   fastMode?: boolean;              // per-model fast mode (MMSP fast_mode; premium faster tier), off by default
+  promptCache1h?: boolean;         // asks for the one-hour prompt cache (MMSP prompt_caching = enhance; Anthropic protocol only), off by default
   thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh" | "max"
   requestTimeoutMs?: number;       // Request idle budget: the longest wait for the next upstream event, default 300000; <=0 disables
   sessionId?: string;              // the Session's id, sent only to endpoints whose attribution header names the conversation
