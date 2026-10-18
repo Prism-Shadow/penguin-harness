@@ -60,6 +60,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { AgentStateStore } from "../runtime/agent-state.js";
 import type { SessionManager } from "../runtime/session-manager.js";
+import { createFileRunMarkStore, resumeInterruptedSessions } from "../runtime/run-marks.js";
 import { terminalRoutes } from "../terminal/routes.js";
 import type { Identity } from "../terminal/identity.js";
 import { platformDef } from "../platform.js";
@@ -251,6 +252,17 @@ const AGENT_STATE_IFACE = "@prismshadow/penguin-server#AgentState";
  */
 const RESUME_AFTER_UPDATE =
   "[harness_updated] The harness was updated while you were working and your run was interrupted. Continue from where you left off.";
+
+/**
+ * Data roots whose interrupted runs this process already resumed (see run-marks.ts): a
+ * backstop so the cold-boot resume below runs once per root even if a future boot path
+ * reaches it twice. The real gate is `handed === undefined` at the call site — a boot
+ * with a predecessor's state is a swap or a re-assembly, not a cold boot, and swaps
+ * resume through their own path (takeover, or resumeStopped) — but a second look would
+ * find no marks anyway (each outcome consumes its mark, or hands it to the run that
+ * owns it now).
+ */
+const coldBootResumedRoots = new Set<string>();
 
 export const DECLARED_RESOURCES: ParkedInterfaces = {
   family: PENGUIN_FAMILY,
@@ -601,6 +613,41 @@ async function createInner(
   );
   const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
   const logNode = business?.api<Log>("RuntimeModule", "Log") ?? null;
+  // Cold-boot resume (see run-marks.ts): runs the previous process left marked —
+  // interrupted by a restart or a crash — start again here, fire-and-forget like the
+  // swap resume above, so a slow Trace replay never delays the boot. Cold boots only
+  // (`handed === undefined`): a boot with a predecessor's state is a swap or a
+  // re-assembly, whose runs continue by takeover or resumeStopped — firing here too
+  // would double-start them (and spend the crash-loop budget on 409s). The per-root set
+  // is the backstop for any boot path that reaches here twice.
+  if (
+    caps !== null &&
+    business !== null &&
+    manager !== null &&
+    handed === undefined &&
+    !coldBootResumedRoots.has(caps.config.root)
+  ) {
+    coldBootResumedRoots.add(caps.config.root);
+    const resumeLog = (line: string): void => {
+      if (logNode !== null) logNode.line(line);
+      else console.log(line);
+    };
+    void resumeInterruptedSessions({
+      store: createFileRunMarkStore(caps.config.root, { onError: resumeLog }),
+      starter: manager,
+      log: resumeLog,
+      recordError: (code, err, mark) =>
+        errors?.record({
+          source: "session",
+          code,
+          kind: "unexpected",
+          err,
+          ctx: { projectId: mark.projectId, agentId: mark.agentId, sessionId: mark.sessionId },
+        }),
+    }).catch((err) =>
+      resumeLog(`[resume] failed: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  }
 
   return {
     log: (line) => (logNode !== null ? logNode.line(line) : console.log(line)),

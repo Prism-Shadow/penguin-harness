@@ -182,6 +182,7 @@ data: [DONE]
 | `code` | Meaning |
 | --- | --- |
 | `user_abort` | The run was aborted: by `POST …/abort`, the caller disconnecting, or someone in the Web App |
+| `server_restart` | The server restarted (or crashed) mid-run; the next boot resumes it automatically |
 | `backoff_interrupted`, `compaction_interrupted` | An abort arrived while the engine waited to retry, or during a compaction |
 | `timeout` | The model's connection went silent |
 | `network` | A dropped connection, a provider `429` or `5xx`, or a failure that fits nowhere else |

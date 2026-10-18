@@ -3831,7 +3831,9 @@ Benchmark：
             ? "重试等待中被中断"
             : item?.errorCode === "compaction_interrupted"
               ? "压缩过程中被中断"
-              : (item?.errorCode ?? item?.reason ?? "");
+              : item?.errorCode === "server_restart"
+                ? "服务重启导致中断"
+                : (item?.errorCode ?? item?.reason ?? "");
       const text = cause ? `${cause}${item?.errorMessage ? `：${item.errorMessage}` : ""}` : "";
       return `[已中断]${text ? `：${text}` : ""}`;
     },

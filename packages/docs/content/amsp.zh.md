@@ -182,6 +182,7 @@ data: [DONE]
 | `code` | 含义 |
 | --- | --- |
 | `user_abort` | 运行被中止：经 `POST …/abort`、调用方断开连接，或有人在 Web App 中中止 |
+| `server_restart` | 服务在运行中重启（或崩溃）；下次启动时会自动续跑 |
 | `backoff_interrupted`、`compaction_interrupted` | 中止发生在引擎等待重试期间，或压缩期间 |
 | `timeout` | 模型连接没有了动静 |
 | `network` | 连接中断、供应商返回 `429` 或 `5xx`，或无法归类的故障 |

@@ -6,6 +6,7 @@
  */
 import type {
   ErrorCode,
+  AbortErrorCode,
   AbortPayload,
   ApprovalDecision,
   ApprovalDecisionPayload,
@@ -273,9 +274,7 @@ export function approvalDecision(
   return event({ type: "approval_decision", decision, tool_call_id: toolCallId });
 }
 
-export function abortEvent(
-  errorCode: "user_abort" | "backoff_interrupted" | "compaction_interrupted" = "user_abort",
-): OmniMessage<AbortPayload> {
+export function abortEvent(errorCode: AbortErrorCode = "user_abort"): OmniMessage<AbortPayload> {
   return event({ type: "abort", error_code: errorCode });
 }
 
