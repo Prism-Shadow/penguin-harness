@@ -3,7 +3,7 @@
 - **Date:** 2026-10-18
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
-- **PR:** [#PRNUM](https://github.com/Prism-Shadow/penguin-harness/pull/PRNUM)
+- **PR:** [#1207](https://github.com/Prism-Shadow/penguin-harness/pull/1207)
 
 [中文版](2026-10-18-terminal-scope.zh.md)
 
