@@ -13,6 +13,10 @@
  * the filter the panel is showing (owner only; `from`/`to` are required, unlike on the reads;
  * an admin's clear also takes the unattributed rows an admin's read shows);
  * GET /api/projects/:p/usage/model-totals — lifetime Token total per Model, unfiltered.
+ *
+ * The dashboard read above is the expensive one (grouped scans, several per request) and the
+ * panel asks for it repeatedly, so its responses are reused for a few seconds, keyed by the
+ * whole request shape — an admin's answer is never served to a member (see usageCacheKey).
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -21,11 +25,13 @@ import type {
   UsageErrorsClearResponse,
   UsageGranularity,
   UsageGroupBy,
+  UsageResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
 import type { UsageQueries } from "../../mechanisms/observability.js";
 import type { Access } from "../../mechanisms/projects.js";
+import type { UsageQuery } from "../../services/usage-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface UsageRouteDeps {
@@ -88,8 +94,53 @@ function tsWindowQuery(c: Context<AppEnv>): { fromTs?: string; toTs?: string } {
   return { ...(fromTs !== undefined ? { fromTs } : {}), ...(toTs !== undefined ? { toTs } : {}) };
 }
 
+/**
+ * How long a dashboard response may be served again. The cost center's panel asks for the same
+ * aggregates repeatedly — once per panel, and again on every poll of its rolling window — while
+ * a miss is a handful of grouped scans over the whole `usage_records` table. A few seconds of
+ * staleness is invisible on an analytics chart.
+ */
+const USAGE_CACHE_TTL_MS = 5_000;
+
+/**
+ * The bucket a window bound in a cache key is folded to. The dashboard recomputes its rolling
+ * `fromTs`/`toTs` from the clock on every poll, so an exact key would miss every time while
+ * describing the same window; the served window then differs from the asked one by less than
+ * this bucket — invisible on the chart. In the KEY only, never in the query.
+ */
+const USAGE_KEY_BUCKET_MS = 30_000;
+
+/** Responses one route instance keeps; past it the map is emptied rather than evicted in order. */
+const USAGE_CACHE_MAX_ENTRIES = 200;
+
+/** Fold an ISO instant to its {@link USAGE_KEY_BUCKET_MS} bucket (anything unparseable stays as it is). */
+function bucketTs(ts: string): string {
+  const ms = Date.parse(ts);
+  if (Number.isNaN(ms)) return ts;
+  return new Date(Math.floor(ms / USAGE_KEY_BUCKET_MS) * USAGE_KEY_BUCKET_MS).toISOString();
+}
+
+/**
+ * The cache key of one dashboard read: the Project plus every field of the query, so two
+ * requests share an entry only when they would be answered the same way. `includeGlobalErrors`
+ * is part of it, which is what keeps an admin's unattributed error rows from ever reaching a
+ * member through the cache.
+ */
+function usageCacheKey(projectId: string, q: UsageQuery): string {
+  const key = {
+    ...q,
+    ...(q.fromTs !== undefined ? { fromTs: bucketTs(q.fromTs) } : {}),
+    ...(q.toTs !== undefined ? { toTs: bucketTs(q.toTs) } : {}),
+  };
+  return `${projectId}::${JSON.stringify(key)}`;
+}
+
 export function usageRoutes(deps: UsageRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+  // One cache per app instance, so a second instance in this process — every test's app —
+  // never reads another's responses.
+  const responses = new Map<string, { at: number; body: UsageResponse }>();
+  const inFlight = new Map<string, Promise<UsageResponse>>();
 
   app.get("/", async (c) => {
     // Defensive id validation.
@@ -111,24 +162,37 @@ export function usageRoutes(deps: UsageRouteDeps): Hono<AppEnv> {
     const agentId = c.req.query("agentId");
     const provider = c.req.query("provider");
     const modelId = c.req.query("modelId");
-    return c.json(
-      await deps.usageService.query(projectId, {
-        groupBy: groupByRaw as UsageGroupBy,
-        granularity,
-        ...window,
-        ...(utcOffsetMinutes !== undefined ? { utcOffsetMinutes } : {}),
-        // Unattributed errors (login failures, process crashes, etc. with no Project
-        // context) are visible only to admins: requireProjectAccess only guarantees
-        // "is a member of this Project" — a regular member seeing another tenant's errors
-        // would be a cross-tenant information leak.
-        includeGlobalErrors: c.var.user.isAdmin,
-        ...(from !== undefined ? { from } : {}),
-        ...(to !== undefined ? { to } : {}),
-        ...(agentId !== undefined && agentId !== "" ? { agentId } : {}),
-        ...(provider !== undefined && provider !== "" ? { provider } : {}),
-        ...(modelId !== undefined && modelId !== "" ? { modelId } : {}),
-      }),
-    );
+    const usageQuery: UsageQuery = {
+      groupBy: groupByRaw as UsageGroupBy,
+      granularity,
+      ...window,
+      ...(utcOffsetMinutes !== undefined ? { utcOffsetMinutes } : {}),
+      // Unattributed errors (login failures, process crashes, etc. with no Project
+      // context) are visible only to admins: requireProjectAccess only guarantees
+      // "is a member of this Project" — a regular member seeing another tenant's errors
+      // would be a cross-tenant information leak.
+      includeGlobalErrors: c.var.user.isAdmin,
+      ...(from !== undefined ? { from } : {}),
+      ...(to !== undefined ? { to } : {}),
+      ...(agentId !== undefined && agentId !== "" ? { agentId } : {}),
+      ...(provider !== undefined && provider !== "" ? { provider } : {}),
+      ...(modelId !== undefined && modelId !== "" ? { modelId } : {}),
+    };
+    const key = usageCacheKey(projectId, usageQuery);
+    const hit = responses.get(key);
+    if (hit !== undefined && Date.now() - hit.at < USAGE_CACHE_TTL_MS) return c.json(hit.body);
+    // Concurrent identical reads — a dashboard fires several panels' worth at once — await the
+    // query already running rather than starting a second. A failed one leaves nothing behind:
+    // the slot is cleared when it settles and only a resolution is ever stored.
+    let pending = inFlight.get(key);
+    if (pending === undefined) {
+      pending = deps.usageService.query(projectId, usageQuery).finally(() => inFlight.delete(key));
+      inFlight.set(key, pending);
+    }
+    const body = await pending;
+    if (responses.size > USAGE_CACHE_MAX_ENTRIES) responses.clear();
+    responses.set(key, { at: Date.now(), body });
+    return c.json(body);
   });
 
   // Lifetime Token total per Model, for the models page's per-card figure. Takes no filters at
