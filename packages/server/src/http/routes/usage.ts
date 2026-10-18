@@ -99,8 +99,13 @@ function tsWindowQuery(c: Context<AppEnv>): { fromTs?: string; toTs?: string } {
  * aggregates repeatedly — once per panel, and again on every poll of its rolling window — while
  * a miss is a handful of grouped scans over the whole `usage_records` table. A few seconds of
  * staleness is invisible on an analytics chart.
+ *
+ * Aligned with {@link USAGE_KEY_BUCKET_MS}: the key is quantized to those buckets, so a shorter
+ * TTL would re-run the same bucket's aggregate several times for one answer. At most one run
+ * per bucket per shape, and the staleness a reader sees is the one the quantized key already
+ * accepts.
  */
-const USAGE_CACHE_TTL_MS = 5_000;
+const USAGE_CACHE_TTL_MS = 30_000;
 
 /**
  * The bucket a window bound in a cache key is folded to. The dashboard recomputes its rolling

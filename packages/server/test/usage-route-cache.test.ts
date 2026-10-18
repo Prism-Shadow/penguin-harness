@@ -105,8 +105,8 @@ describe("GET /api/projects/:projectId/usage", () => {
     vi.useFakeTimers();
     try {
       await app.request(READ_P1);
-      // The TTL is 5s: four seconds in, the entry still stands...
-      vi.advanceTimersByTime(4_000);
+      // The TTL is the 30s key bucket: 29 seconds in, the entry still stands...
+      vi.advanceTimersByTime(29_000);
       await app.request(READ_P1);
       expect(query).toHaveBeenCalledTimes(1);
       // ...and past it, the next read goes back to the service.

@@ -1,4 +1,4 @@
-# The cost center's dashboard read is answered from a five-second cache
+# The cost center's dashboard read is answered from a 30-second cache
 
 - **Date:** 2026-10-18
 - **Type:** fix
@@ -9,7 +9,7 @@
 
 `GET /api/projects/:projectId/usage` ran its grouped scans again on every request, and the cost
 center's dashboard is what asks for them — once per panel, and again on every poll of its rolling
-window. Reads that would be answered the same way now share one cache entry for five seconds.
+window. Reads that would be answered the same way now share one cache entry.
 
 ## Details
 
@@ -19,6 +19,8 @@ window. Reads that would be answered the same way now share one cache entry for 
   instants are folded to 30s buckets — in the key only, where the query the service runs still
   carries the exact instant the caller sent. Polls describing one window share an entry; a window
   whose bound moved past the bucket is a new one.
+- The entry's lifetime is that same 30s bucket, so one bucket's aggregate runs once rather than
+  once per poll, and the staleness a reader sees is the one the quantized key already accepts.
 - Concurrent identical reads await the query already running instead of starting a second.
 - A failed query is neither cached nor shared: its slot is cleared when it settles.
 - The cache is created per route instance, so a second app in the same process — every test's app
