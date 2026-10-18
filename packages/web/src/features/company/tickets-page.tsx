@@ -74,6 +74,7 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { bareKey, isTypingTarget } from "../../lib/shortcuts/page-keys";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
@@ -306,39 +307,29 @@ export function TicketsPage() {
 
   /**
    * Two plain keys while the board is on screen: `/` puts the caret in the search box, `N` opens
-   * the create form. Both stand aside for a field being typed in, for a modifier chord (the
-   * app's own shortcuts all carry one) and for a dialog already open — a keystroke aimed at the
-   * detail dialog must not also rebuild the board behind it. Escape is the way out of select
-   * mode, then out of a search, and goes no further.
+   * the create form (bareKey — a chord belongs to the shortcut registry, and Escape is the
+   * browser's own way out of a field). Both stand aside for a field being typed in and for a
+   * dialog already open — a keystroke aimed at the detail dialog must not also rebuild the
+   * board behind it. Escape leaves select mode, then a search, and goes no further.
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "Escape") {
-        if (e.target instanceof HTMLElement && e.target.tagName === "INPUT" && query !== "") return;
+      const key = bareKey(e);
+      if (key === "Escape") {
         if (selectMode) {
           setSelectMode(false);
           setSelected(new Set());
-        } else if (query !== "") {
+        } else if (query !== "" && !isTypingTarget(e.target)) {
           setQuery("");
         }
         return;
       }
-      const el = document.activeElement;
-      if (
-        el instanceof HTMLElement &&
-        (el.tagName === "INPUT" ||
-          el.tagName === "TEXTAREA" ||
-          el.tagName === "SELECT" ||
-          el.isContentEditable)
-      ) {
-        return;
-      }
+      if (key === null || isTypingTarget(document.activeElement)) return;
       if (company.ticketDialog !== null || createOpen) return;
-      if (e.key === "/") {
+      if (key === "/") {
         e.preventDefault();
         searchRef.current?.focus();
-      } else if (e.key === "n" || e.key === "N") {
+      } else if (key === "n" || key === "N") {
         e.preventDefault();
         setCreateOpen(true);
       }
@@ -550,13 +541,14 @@ export function TicketsPage() {
   };
 
   /**
-   * The card's frame: a hairline box that lifts a little under the pointer — the board's way of
-   * saying the whole face is one target — danger-edged when the server flagged the ticket, and
-   * fully opaque white in both themes so a card passing under a sticky group heading is covered
-   * rather than blended.
+   * The card's frame: a hairline box whose edge and shadow answer the pointer — the board's way
+   * of saying the whole face is one target, without moving the card (a hover that shifts what
+   * is under the cursor is the kind of tween this codebase keeps off surfaces). Danger-edged
+   * when the server flagged the ticket, and opaque in both themes so a card passing under a
+   * sticky group heading is covered rather than blended through.
    */
   const cardFrame = (t: OrgTicketItem) =>
-    `relative block w-full overflow-hidden rounded-lg border bg-white p-3 pl-3.5 text-left text-xs transition-[border-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:shadow-md dark:bg-gray-900 ${
+    `relative block w-full overflow-hidden rounded-lg border bg-white p-3 pl-3.5 text-left text-xs transition-[border-color,box-shadow] duration-150 hover:shadow-sm dark:bg-gray-900 ${
       t.invalid !== undefined
         ? "border-red-300 dark:border-red-800"
         : "border-gray-200 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
@@ -944,7 +936,7 @@ export function TicketsPage() {
                                   type="button"
                                   onClick={() => toggleCollapsed(gkey)}
                                   aria-expanded={!gshut}
-                                  className="sticky top-0 z-[1] flex w-full items-center gap-1.5 rounded bg-gray-50/95 px-1 py-1 text-left text-xs text-gray-600 backdrop-blur hover:bg-gray-100 dark:bg-gray-900/95 dark:text-gray-300 dark:hover:bg-gray-800"
+                                  className="sticky top-0 z-[1] flex w-full items-center gap-1.5 rounded bg-gray-50 px-1 py-1 text-left text-xs text-gray-600 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
                                 >
                                   <Chevron open={!gshut} size={ICON_SIZE.chevronDense} />
                                   <span className="min-w-0 flex-1 truncate font-medium">
